@@ -61,6 +61,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -9602,4 +9603,193 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 
 	// Should still have no blocks since there was nothing to compact.
 	require.Empty(t, db.Blocks())
+}
+
+func TestDBSeriesMetadata(t *testing.T) {
+	opts := DefaultOptions()
+	opts.EnableNativeMetadata = true
+	opts.EnableMetadataWALRecords = true
+	db := newTestDB(t, withOpts(opts))
+
+	ctx := context.Background()
+	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
+	httpLset := labels.FromStrings("__name__", "http_requests_total", "job", "api")
+	goLset := labels.FromStrings("__name__", "go_goroutines", "job", "api")
+
+	// Append samples spanning 3 block ranges with metadata to trigger compaction.
+	app := db.AppenderV2(ctx)
+	for i := range int64(3) {
+		_, err := app.Append(0, httpLset, -1, i*blockRange, float64(i), nil, nil, storage.AOptions{
+			Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests", Unit: ""},
+		})
+		require.NoError(t, err)
+		_, err = app.Append(0, httpLset, -1, i*blockRange+1000, float64(i), nil, nil, storage.AOptions{
+			Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests", Unit: ""},
+		})
+		require.NoError(t, err)
+		_, err = app.Append(0, goLset, -1, i*blockRange, 42.0, nil, nil, storage.AOptions{
+			Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines", Unit: ""},
+		})
+		require.NoError(t, err)
+		_, err = app.Append(0, goLset, -1, i*blockRange+1000, 42.0, nil, nil, storage.AOptions{
+			Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines", Unit: ""},
+		})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// Verify db.SeriesMetadata() returns head metadata before compaction.
+	mr, err := db.SeriesMetadata()
+	require.NoError(t, err)
+
+	meta, ok := mr.GetByMetricName("http_requests_total")
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeCounter, meta.Type)
+	require.Equal(t, "Total HTTP requests", meta.Help)
+
+	meta, ok = mr.GetByMetricName("go_goroutines")
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeGauge, meta.Type)
+	mr.Close()
+
+	require.NoError(t, db.Compact(ctx))
+	require.NotEmpty(t, db.Blocks(), "expected at least one block after compaction")
+
+	// Append new metric with different metadata to head only (after all compacted blocks).
+	headTS := 3 * blockRange
+	app = db.AppenderV2(ctx)
+	_, err = app.Append(0, labels.FromStrings("__name__", "cpu_seconds_total", "job", "api"), -1, headTS, 99.0, nil, nil, storage.AOptions{
+		Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "CPU seconds used", Unit: "seconds"},
+	})
+	require.NoError(t, err)
+	// Also append http_requests_total with updated help text.
+	_, err = app.Append(0, httpLset, -1, headTS, 200.0, nil, nil, storage.AOptions{
+		Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests (updated)", Unit: ""},
+	})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Verify merged metadata: block + head, head should win for same metric.
+	mr, err = db.SeriesMetadata()
+	require.NoError(t, err)
+	defer mr.Close()
+
+	// http_requests_total: head metadata should overwrite block's.
+	meta, ok = mr.GetByMetricName("http_requests_total")
+	require.True(t, ok)
+	require.Equal(t, "Total HTTP requests (updated)", meta.Help)
+
+	// go_goroutines: still available from block.
+	meta, ok = mr.GetByMetricName("go_goroutines")
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeGauge, meta.Type)
+
+	// cpu_seconds_total: only in head.
+	meta, ok = mr.GetByMetricName("cpu_seconds_total")
+	require.True(t, ok)
+	require.Equal(t, "CPU seconds used", meta.Help)
+	require.Equal(t, "seconds", meta.Unit)
+}
+
+func TestDBSeriesMetadataDisabled(t *testing.T) {
+	opts := DefaultOptions()
+	opts.EnableNativeMetadata = false
+	opts.EnableMetadataWALRecords = true
+	db := newTestDB(t, withOpts(opts))
+
+	ctx := context.Background()
+	app := db.AppenderV2(ctx)
+	_, err := app.Append(0, labels.FromStrings("__name__", "http_requests_total", "job", "api"), -1, 0, 1.0, nil, nil, storage.AOptions{
+		Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	mr, err := db.SeriesMetadata()
+	require.NoError(t, err)
+	defer mr.Close()
+
+	require.Equal(t, uint64(0), mr.Total())
+	_, ok := mr.GetByMetricName("http_requests_total")
+	require.False(t, ok)
+}
+
+func TestBlockSizeIncludesSeriesMetadata(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a block with some series data and a metadata sidecar file.
+	blockDir := createBlock(t, dir, genSeries(1, 1, 0, 100))
+	mem := seriesmetadata.NewMemSeriesMetadata()
+	mem.Set("http_requests_total", 0, metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests"})
+	metaSize, err := seriesmetadata.WriteFile(promslog.NewNopLogger(), blockDir, mem)
+	require.NoError(t, err)
+	require.Positive(t, metaSize)
+
+	b, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
+	require.NoError(t, err)
+	defer b.Close()
+
+	// Before lazy load, Size() should not include the metadata file.
+	sizeBeforeLoad := b.Size()
+
+	// Trigger lazy load of series metadata.
+	mr, err := b.SeriesMetadata()
+	require.NoError(t, err)
+	mr.Close()
+
+	// After lazy load, Size() should include the metadata file.
+	sizeAfterLoad := b.Size()
+	require.Greater(t, sizeAfterLoad, sizeBeforeLoad)
+	require.Equal(t, metaSize, sizeAfterLoad-sizeBeforeLoad)
+}
+
+func TestWALReplayPreservesMetadata(t *testing.T) {
+	dir := t.TempDir()
+	opts := DefaultOptions()
+	opts.EnableNativeMetadata = true
+	opts.EnableMetadataWALRecords = true
+
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	app := db.AppenderV2(ctx)
+	_, err = app.Append(0, labels.FromStrings("__name__", "http_requests_total", "job", "api"), -1, 0, 1.0, nil, nil, storage.AOptions{
+		Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests"},
+	})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "go_goroutines", "job", "api"), -1, 0, 42.0, nil, nil, storage.AOptions{
+		Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Verify metadata is present before restart.
+	mr, err := db.SeriesMetadata()
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), mr.Total())
+	mr.Close()
+
+	// Close and reopen the DB, triggering WAL replay.
+	require.NoError(t, db.Close())
+	db, err = Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Close()) }()
+
+	// Verify metadata survived the WAL replay.
+	mr, err = db.SeriesMetadata()
+	require.NoError(t, err)
+	defer mr.Close()
+
+	require.Equal(t, uint64(2), mr.Total())
+
+	meta, ok := mr.GetByMetricName("http_requests_total")
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeCounter, meta.Type)
+	require.Equal(t, "Total HTTP requests", meta.Help)
+
+	meta, ok = mr.GetByMetricName("go_goroutines")
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeGauge, meta.Type)
+	require.Equal(t, "Number of goroutines", meta.Help)
 }

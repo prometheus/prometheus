@@ -38,11 +38,13 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
@@ -243,6 +245,11 @@ type Options struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableMetadataWALRecords bool
+
+	// EnableNativeMetadata enables Parquet-based series metadata persistence.
+	// When enabled, metric metadata (type, unit, help) is persisted to
+	// series_metadata.parquet sidecar files and merged across blocks.
+	EnableNativeMetadata bool
 
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
@@ -987,6 +994,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			PD:                          opts.PostingsDecoderFactory,
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
+			EnableNativeMetadata:        opts.EnableNativeMetadata,
 		})
 	}
 	if err != nil {
@@ -1143,6 +1151,48 @@ func (db *DB) BlockMetas() []BlockMeta {
 		metas = append(metas, b.Meta())
 	}
 	return metas
+}
+
+// SeriesMetadata returns a merged reader of series metadata from all blocks and the head.
+// Returns an empty reader when native metadata is not enabled.
+func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
+	if !db.opts.EnableNativeMetadata {
+		return seriesmetadata.NewMemSeriesMetadata(), nil
+	}
+
+	merged := seriesmetadata.NewMemSeriesMetadata()
+
+	// Collect metadata from all blocks
+	for _, b := range db.Blocks() {
+		mr, err := b.SeriesMetadata()
+		if err != nil {
+			return nil, fmt.Errorf("get block series metadata: %w", err)
+		}
+		err = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
+			merged.Set(name, 0, meta)
+			return nil
+		})
+		mr.Close()
+		if err != nil {
+			return nil, fmt.Errorf("iterate block series metadata: %w", err)
+		}
+	}
+
+	// Collect metadata from head (most recent data, overwrites block metadata)
+	headMeta, err := db.head.SeriesMetadata()
+	if err != nil {
+		return nil, fmt.Errorf("get head series metadata: %w", err)
+	}
+	err = headMeta.IterByMetricName(func(name string, meta metadata.Metadata) error {
+		merged.Set(name, 0, meta)
+		return nil
+	})
+	headMeta.Close()
+	if err != nil {
+		return nil, fmt.Errorf("iterate head series metadata: %w", err)
+	}
+
+	return merged, nil
 }
 
 func (db *DB) run(ctx context.Context) {

@@ -30,16 +30,19 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/compression"
@@ -526,8 +529,11 @@ type erringBReader struct{}
 func (erringBReader) Index() (IndexReader, error)            { return nil, errors.New("index") }
 func (erringBReader) Chunks() (ChunkReader, error)           { return nil, errors.New("chunks") }
 func (erringBReader) Tombstones() (tombstones.Reader, error) { return nil, errors.New("tombstones") }
-func (erringBReader) Meta() BlockMeta                        { return BlockMeta{} }
-func (erringBReader) Size() int64                            { return 0 }
+func (erringBReader) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return nil, errors.New("series metadata")
+}
+func (erringBReader) Meta() BlockMeta { return BlockMeta{} }
+func (erringBReader) Size() int64     { return 0 }
 
 type nopChunkWriter struct{}
 
@@ -2196,4 +2202,75 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 			require.Len(t, db.Blocks(), 2)
 		})
 	}
+}
+
+func TestCompactMergesSeriesMetadata(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create block 1 with metadata for metrics A and B.
+	block1Meta := seriesmetadata.NewMemSeriesMetadata()
+	block1Meta.Set("http_requests_total", 0, metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests", Unit: ""})
+	block1Meta.Set("go_goroutines", 0, metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines", Unit: ""})
+
+	// Create a minimal block1 with some series data.
+	block1Dir := createBlock(t, dir, genSeries(1, 1, 0, 100))
+	_, err := seriesmetadata.WriteFile(promslog.NewNopLogger(), block1Dir, block1Meta)
+	require.NoError(t, err)
+
+	// Create block 2 with updated metadata for metric A and new metric C.
+	block2Meta := seriesmetadata.NewMemSeriesMetadata()
+	block2Meta.Set("http_requests_total", 0, metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests (updated)", Unit: ""})
+	block2Meta.Set("cpu_seconds_total", 0, metadata.Metadata{Type: model.MetricTypeCounter, Help: "CPU time", Unit: "seconds"})
+
+	block2Dir := createBlock(t, dir, genSeries(1, 1, 101, 200))
+	_, err = seriesmetadata.WriteFile(promslog.NewNopLogger(), block2Dir, block2Meta)
+	require.NoError(t, err)
+
+	// Open both blocks.
+	b1, err := OpenBlock(promslog.NewNopLogger(), block1Dir, nil, nil)
+	require.NoError(t, err)
+	defer b1.Close()
+
+	b2, err := OpenBlock(promslog.NewNopLogger(), block2Dir, nil, nil)
+	require.NoError(t, err)
+	defer b2.Close()
+
+	// Create a compactor with native metadata enabled.
+	compactor, err := NewLeveledCompactorWithOptions(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, LeveledCompactorOptions{
+		EnableOverlappingCompaction: true,
+		EnableNativeMetadata:        true,
+	})
+	require.NoError(t, err)
+
+	// Compact the two blocks.
+	outDir := t.TempDir()
+	ulids, err := compactor.Compact(outDir, []string{block1Dir, block2Dir}, []*Block{b1, b2})
+	require.NoError(t, err)
+	require.Len(t, ulids, 1)
+
+	// Open the compacted block and verify metadata.
+	compacted, err := OpenBlock(promslog.NewNopLogger(), filepath.Join(outDir, ulids[0].String()), nil, nil)
+	require.NoError(t, err)
+	defer compacted.Close()
+
+	mr, err := compacted.SeriesMetadata()
+	require.NoError(t, err)
+	defer mr.Close()
+
+	// http_requests_total: block2 should overwrite block1 (later wins).
+	meta, ok := mr.GetByMetricName("http_requests_total")
+	require.True(t, ok)
+	require.Equal(t, "Total requests (updated)", meta.Help)
+
+	// go_goroutines: only in block1, should be preserved.
+	meta, ok = mr.GetByMetricName("go_goroutines")
+	require.True(t, ok)
+	require.Equal(t, model.MetricTypeGauge, meta.Type)
+	require.Equal(t, "Number of goroutines", meta.Help)
+
+	// cpu_seconds_total: only in block2, should be present.
+	meta, ok = mr.GetByMetricName("cpu_seconds_total")
+	require.True(t, ok)
+	require.Equal(t, "CPU time", meta.Help)
+	require.Equal(t, "seconds", meta.Unit)
 }

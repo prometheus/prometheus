@@ -29,11 +29,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -90,6 +92,7 @@ type LeveledCompactor struct {
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
+	enableNativeMetadata        bool
 }
 
 type CompactorMetrics struct {
@@ -178,6 +181,9 @@ type LeveledCompactorOptions struct {
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
 
+	// EnableNativeMetadata enables Parquet-based series metadata persistence during compaction.
+	EnableNativeMetadata bool
+
 	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
@@ -236,6 +242,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		postingsEncoder:             pe,
 		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
+		enableNativeMetadata:        opts.EnableNativeMetadata,
 		blockExcludeFunc:            opts.BlockExcludeFilter,
 	}, nil
 }
@@ -738,6 +745,30 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	// Create an empty tombstones file.
 	if _, err := tombstones.WriteFile(c.logger, tmp, tombstones.NewMemTombstones()); err != nil {
 		return fmt.Errorf("write new tombstones file: %w", err)
+	}
+
+	// Merge and write series metadata from source blocks.
+	// Metadata is deduplicated by metric name - later blocks overwrite earlier ones.
+	if c.enableNativeMetadata {
+		mergedMeta := seriesmetadata.NewMemSeriesMetadata()
+		for _, b := range blocks {
+			mr, err := b.SeriesMetadata()
+			if err != nil {
+				return fmt.Errorf("get series metadata from block: %w", err)
+			}
+			err = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
+				// Use 0 for hash since we're deduplicating by name only
+				mergedMeta.Set(name, 0, meta)
+				return nil
+			})
+			mr.Close() // Must close to release pending readers
+			if err != nil {
+				return fmt.Errorf("iterate series metadata: %w", err)
+			}
+		}
+		if _, err := seriesmetadata.WriteFile(c.logger, tmp, mergedMeta); err != nil {
+			return fmt.Errorf("write series metadata file: %w", err)
+		}
 	}
 
 	df, err := fileutil.OpenDir(tmp)

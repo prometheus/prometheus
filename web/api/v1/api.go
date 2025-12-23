@@ -55,6 +55,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -212,6 +213,7 @@ type TSDBAdminStats interface {
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 	BlockMetas() ([]tsdb.BlockMeta, error)
+	SeriesMetadata() (seriesmetadata.Reader, error)
 }
 
 type QueryOpts interface {
@@ -1468,6 +1470,8 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	metric := r.FormValue("metric")
+
+	// First, collect metadata from active scrape targets (takes precedence)
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if metric == "" {
@@ -1501,6 +1505,32 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 					metrics[md.MetricFamily] = ms
 				}
 				ms[m] = struct{}{}
+			}
+		}
+	}
+
+	// Supplement with persisted TSDB metadata for metrics not found in active targets
+	if api.db != nil {
+		mr, err := api.db.SeriesMetadata()
+		if err != nil {
+			api.logger.Error("error reading persisted series metadata", "err", err)
+		} else if mr != nil {
+			defer mr.Close()
+			if metric == "" {
+				// List all metadata - add entries not already present from scrape targets
+				_ = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
+					if _, exists := metrics[name]; !exists {
+						metrics[name] = map[metadata.Metadata]struct{}{meta: {}}
+					}
+					return nil
+				})
+			} else {
+				// Get specific metric - add if not already present from scrape targets
+				if _, exists := metrics[metric]; !exists {
+					if meta, ok := mr.GetByMetricName(metric); ok {
+						metrics[metric] = map[metadata.Metadata]struct{}{meta: {}}
+					}
+				}
 			}
 		}
 	}

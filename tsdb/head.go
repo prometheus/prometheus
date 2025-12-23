@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -1544,6 +1545,12 @@ func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
 	return h.head.tombstones, nil
 }
 
+// SeriesMetadata returns series metadata for the head.
+// Delegates to the underlying head to extract metadata from memSeries.
+func (h *RangeHead) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return h.head.SeriesMetadata()
+}
+
 func (h *RangeHead) MinTime() int64 {
 	return h.mint
 }
@@ -1735,6 +1742,45 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 // Tombstones returns a new reader over the head's tombstones.
 func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return h.tombstones, nil
+}
+
+// SeriesMetadata returns series metadata for the head.
+// It extracts metadata from all memSeries that have metadata set.
+func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
+	mem := seriesmetadata.NewMemSeriesMetadata()
+
+	// Iterate over all series shards and collect metadata.
+	// We collect series references under the shard RLock, then read metadata
+	// outside it to avoid holding the shard lock while acquiring per-series locks.
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].RLock()
+		shard := make([]*memSeries, 0, len(h.series.series[i]))
+		for _, s := range h.series.series[i] {
+			shard = append(shard, s)
+		}
+		h.series.locks[i].RUnlock()
+
+		for _, s := range shard {
+			s.Lock()
+			meta := s.meta
+			s.Unlock()
+			if meta == nil {
+				continue
+			}
+
+			// s.lset is immutable after creation, safe to read without lock.
+			metricName := s.lset.Get(labels.MetricName)
+			if metricName == "" {
+				continue // Skip series without metric name
+			}
+
+			// Use StableHash of labels as the key for consistent identification.
+			hash := labels.StableHash(s.lset)
+			mem.Set(metricName, hash, *meta)
+		}
+	}
+
+	return mem, nil
 }
 
 // NumSeries returns the number of series tracked in the head.

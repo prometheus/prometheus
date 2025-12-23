@@ -58,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -3914,8 +3915,9 @@ func assertAPIResponseMetadataLen(t *testing.T, got any, expLen int) {
 }
 
 type fakeDB struct {
-	err        error
-	blockMetas []tsdb.BlockMeta
+	err            error
+	blockMetas     []tsdb.BlockMeta
+	seriesMetadata seriesmetadata.Reader
 }
 
 func (f *fakeDB) CleanTombstones() error { return f.err }
@@ -3944,6 +3946,112 @@ func (*fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr 
 
 func (*fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
+}
+
+func (f *fakeDB) SeriesMetadata() (seriesmetadata.Reader, error) {
+	if f.seriesMetadata != nil {
+		return f.seriesMetadata, nil
+	}
+	return seriesmetadata.NewMemSeriesMetadata(), nil
+}
+
+func TestMetricMetadataTSDBSupplementation(t *testing.T) {
+	// Set up TSDB metadata with pre-populated entries.
+	tsdbMeta := seriesmetadata.NewMemSeriesMetadata()
+	tsdbMeta.Set("tsdb_only_metric", 0, metadata.Metadata{Type: model.MetricTypeCounter, Help: "Only in TSDB", Unit: ""})
+	tsdbMeta.Set("go_threads", 0, metadata.Metadata{Type: model.MetricTypeGauge, Help: "TSDB version of go_threads", Unit: ""})
+
+	db := &fakeDB{seriesMetadata: tsdbMeta}
+
+	testTargetRetriever := setupTestTargetRetriever(t)
+
+	api := &API{
+		targetRetriever:       testTargetRetriever.toFactory(),
+		alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
+		now:                   time.Now,
+		config:                func() config.Config { return samplePrometheusCfg },
+		ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+		db:                    db,
+	}
+
+	t.Run("tsdb_only_metric_appears", func(t *testing.T) {
+		// Set up scrape metadata with go_threads.
+		testTargetRetriever.ResetMetadataStore()
+		require.NoError(t, testTargetRetriever.SetMetadataStoreForTargets("test", &testMetaStore{
+			Metadata: []scrape.MetricMetadata{
+				{
+					MetricFamily: "go_threads",
+					Type:         model.MetricTypeGauge,
+					Help:         "Number of OS threads created",
+					Unit:         "",
+				},
+			},
+		}))
+
+		req, err := http.NewRequest(http.MethodGet, "?", nil)
+		require.NoError(t, err)
+
+		res := api.metricMetadata(req)
+		require.Nil(t, res.err)
+
+		data := res.data.(map[string][]metadata.Metadata)
+
+		// go_threads: scrape target metadata should take precedence.
+		goThreads, ok := data["go_threads"]
+		require.True(t, ok)
+		require.Len(t, goThreads, 1)
+		require.Equal(t, "Number of OS threads created", goThreads[0].Help)
+
+		// tsdb_only_metric: should appear from TSDB metadata.
+		tsdbOnly, ok := data["tsdb_only_metric"]
+		require.True(t, ok)
+		require.Len(t, tsdbOnly, 1)
+		require.Equal(t, "Only in TSDB", tsdbOnly[0].Help)
+		require.Equal(t, model.MetricTypeCounter, tsdbOnly[0].Type)
+	})
+
+	t.Run("specific_metric_from_tsdb", func(t *testing.T) {
+		testTargetRetriever.ResetMetadataStore()
+
+		req, err := http.NewRequest(http.MethodGet, "?metric=tsdb_only_metric", nil)
+		require.NoError(t, err)
+
+		res := api.metricMetadata(req)
+		require.Nil(t, res.err)
+
+		data := res.data.(map[string][]metadata.Metadata)
+		tsdbOnly, ok := data["tsdb_only_metric"]
+		require.True(t, ok)
+		require.Len(t, tsdbOnly, 1)
+		require.Equal(t, "Only in TSDB", tsdbOnly[0].Help)
+	})
+
+	t.Run("specific_metric_scrape_wins", func(t *testing.T) {
+		testTargetRetriever.ResetMetadataStore()
+		require.NoError(t, testTargetRetriever.SetMetadataStoreForTargets("test", &testMetaStore{
+			Metadata: []scrape.MetricMetadata{
+				{
+					MetricFamily: "go_threads",
+					Type:         model.MetricTypeGauge,
+					Help:         "Number of OS threads created",
+					Unit:         "",
+				},
+			},
+		}))
+
+		req, err := http.NewRequest(http.MethodGet, "?metric=go_threads", nil)
+		require.NoError(t, err)
+
+		res := api.metricMetadata(req)
+		require.Nil(t, res.err)
+
+		data := res.data.(map[string][]metadata.Metadata)
+		goThreads, ok := data["go_threads"]
+		require.True(t, ok)
+		require.Len(t, goThreads, 1)
+		// Scrape target should take precedence over TSDB.
+		require.Equal(t, "Number of OS threads created", goThreads[0].Help)
+	})
 }
 
 func TestAdminEndpoints(t *testing.T) {
