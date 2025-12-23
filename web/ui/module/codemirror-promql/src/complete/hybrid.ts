@@ -99,6 +99,9 @@ export enum ContextKind {
   MetricName,
   LabelName,
   LabelValue,
+  // info() function data label matchers (resource attributes)
+  InfoDataLabelName,
+  InfoDataLabelValue,
   // static autocompletion
   Function,
   Aggregation,
@@ -118,6 +121,72 @@ export interface Context {
   metricName?: string;
   labelName?: string;
   matchers?: Matcher[];
+}
+
+// extractMetricName extracts the metric name from an expression node.
+// It traverses the tree to find an Identifier node and returns its text.
+function extractMetricName(node: SyntaxNode, state: EditorState): string {
+  // Try to find an Identifier node in the subtree using recursive descent
+  function findIdentifier(n: SyntaxNode): string {
+    if (n.type.id === Identifier) {
+      return state.sliceDoc(n.from, n.to);
+    }
+    // Check children
+    for (let child = n.firstChild; child; child = child.nextSibling) {
+      const result = findIdentifier(child);
+      if (result) {
+        return result;
+      }
+    }
+    return '';
+  }
+  return findIdentifier(node);
+}
+
+// InfoFunctionContext contains information about the info() function call context.
+interface InfoFunctionContext {
+  // Whether we're inside the second argument of info()
+  isInSecondArg: boolean;
+  // The metric expression from the first argument (e.g., "http_requests_total")
+  metricName: string;
+}
+
+// getInfoFunctionContext checks if we're inside the second argument (data label matchers)
+// of the info() function and extracts the metric name from the first argument.
+function getInfoFunctionContext(node: SyntaxNode, state: EditorState): InfoFunctionContext {
+  const notInInfo: InfoFunctionContext = { isInSecondArg: false, metricName: '' };
+
+  // Walk up to find if we're inside a FunctionCallBody
+  let current: SyntaxNode | null = node;
+  while (current !== null) {
+    if (current.type.id === FunctionCallBody) {
+      // Found a FunctionCallBody, now check if its parent function is "info"
+      const parent = current.parent;
+      if (parent !== null) {
+        // The function name is the first child (FunctionIdentifier node).
+        // Check if the text content is "info".
+        const funcName = parent.firstChild;
+        if (funcName) {
+          const name = state.sliceDoc(funcName.from, funcName.to);
+          if (name === 'info') {
+            // Check if node is in the second argument (after the first child of FunctionCallBody)
+            // The FunctionCallBody structure is: FunctionCallBody(Expr, LabelMatchers)
+            // We're in the second argument if we're not within the first child (which is the expression)
+            const firstArg = current.firstChild;
+            if (firstArg !== null && node.from >= firstArg.to) {
+              // Extract the metric name from the first argument
+              // The first arg is typically a VectorSelector with an Identifier child
+              const metricName = extractMetricName(firstArg, state);
+              return { isInSecondArg: true, metricName };
+            }
+          }
+        }
+      }
+      return notInInfo;
+    }
+    current = current.parent;
+  }
+  return notInInfo;
 }
 
 function getMetricNameInGroupBy(tree: SyntaxNode, state: EditorState): string {
@@ -451,6 +520,12 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // so don't offer label-related completions anymore.
         break;
       }
+      // Check if we're in the info() function's second argument
+      const infoCtxLM = getInfoFunctionContext(node, state);
+      if (infoCtxLM.isInSecondArg) {
+        result.push({ kind: ContextKind.InfoDataLabelName, metricName: infoCtxLM.metricName });
+        break;
+      }
       // In that case we are in the given situation:
       //       metric_name{} or {}
       // so we have or to autocomplete any kind of labelName or to autocomplete only the labelName associated to the metric
@@ -464,6 +539,12 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // So we have to continue to autocomplete any kind of labelName
         result.push({ kind: ContextKind.LabelName });
       } else if (node.parent?.type.id === UnquotedLabelMatcher) {
+        // Check if we're in the info() function's second argument
+        const infoCtxLN = getInfoFunctionContext(node, state);
+        if (infoCtxLN.isInSecondArg) {
+          result.push({ kind: ContextKind.InfoDataLabelName, metricName: infoCtxLN.metricName });
+          break;
+        }
         // In that case we are in the given situation:
         //       metric_name{myL} or {myL}
         // so we have or to continue to autocomplete any kind of labelName or
@@ -473,6 +554,19 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       break;
     case StringLiteral:
       if (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher) {
+        // Check if we're in the info() function's second argument
+        const infoCtxSL = getInfoFunctionContext(node, state);
+        if (infoCtxSL.isInSecondArg) {
+          // Get the labelName for info() data label value autocomplete
+          let labelName = '';
+          if (node.parent.firstChild?.type.id === LabelName) {
+            labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to);
+          } else if (node.parent.firstChild?.type.id === QuotedLabelName) {
+            labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to).slice(1, -1);
+          }
+          result.push({ kind: ContextKind.InfoDataLabelValue, labelName: labelName, metricName: infoCtxSL.metricName });
+          break;
+        }
         // In this case we are in the given situation:
         //      metric_name{labelName=""} or metric_name{"labelName"=""}
         // So we can autocomplete the labelValue
@@ -616,10 +710,6 @@ export class HybridComplete implements CompleteStrategy {
   promQL(context: CompletionContext): Promise<CompletionResult | null> | CompletionResult | null {
     const { state, pos } = context;
     const tree = syntaxTree(state).resolve(pos, -1);
-    // The lines above can help you to print the current lezer tree.
-    // It's useful when you are trying to understand why it doesn't autocomplete.
-    // console.log(syntaxTree(state).topNode.toString());
-    // console.log(`current node: ${tree.type.name}`);
     const contexts = analyzeCompletion(state, tree, pos);
     let asyncResult: Promise<Completion[]> = Promise.resolve([]);
     let completeSnippet = false;
@@ -698,6 +788,17 @@ export class HybridComplete implements CompleteStrategy {
           asyncResult = asyncResult.then((result) => {
             return this.autocompleteLabelValue(result, context);
           });
+          break;
+        case ContextKind.InfoDataLabelName:
+          asyncResult = asyncResult.then((result) => {
+            return this.autocompleteInfoDataLabelName(result, context);
+          });
+          break;
+        case ContextKind.InfoDataLabelValue:
+          asyncResult = asyncResult.then((result) => {
+            return this.autocompleteInfoDataLabelValue(result, context);
+          });
+          break;
       }
     }
     return asyncResult.then((result) => {
@@ -795,6 +896,32 @@ export class HybridComplete implements CompleteStrategy {
     }
     return this.prometheusClient.labelValues(context.labelName, context.metricName, context.matchers).then((labelValues: string[]) => {
       return result.concat(labelValues.map((value) => ({ label: value, type: 'text' })));
+    });
+  }
+
+  private autocompleteInfoDataLabelName(result: Completion[], context: Context): Completion[] | Promise<Completion[]> {
+    if (!this.prometheusClient) {
+      return result;
+    }
+    // Use translate=true to get Prometheus-compatible label names
+    // Pass metricName to filter attributes by resources associated with the metric
+    return this.prometheusClient.resourceAttributePairs(true, context.metricName).then((labels) => {
+      const labelNames = Object.keys(labels);
+      return result.concat(labelNames.map((name: string) => ({ label: name, type: 'constant', detail: 'resource attr' })));
+    });
+  }
+
+  private autocompleteInfoDataLabelValue(result: Completion[], context: Context): Completion[] | Promise<Completion[]> {
+    if (!this.prometheusClient || !context.labelName) {
+      return result;
+    }
+    // Capture labelName to avoid TypeScript narrowing issues in the callback
+    const labelName = context.labelName;
+    // Use translate=true to get Prometheus-compatible label names
+    // Pass metricName to filter attributes by resources associated with the metric
+    return this.prometheusClient.resourceAttributePairs(true, context.metricName).then((labels) => {
+      const values = labels[labelName] || [];
+      return result.concat(values.map((value: string) => ({ label: value, type: 'text' })));
     });
   }
 }

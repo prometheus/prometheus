@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -134,6 +135,10 @@ func populateTestWL(t testing.TB, w *wlog.WL, recs []any, buf []byte, enableSTSt
 			buf = enc.MmapMarkers(v, buf)
 		case []record.RefMetadata:
 			buf = enc.Metadata(v, buf)
+		case []record.RefResource:
+			buf = enc.Resources(v, buf)
+		case []record.RefScope:
+			buf = enc.Scopes(v, buf)
 		default:
 			continue
 		}
@@ -184,6 +189,14 @@ func readTestWAL(t testing.TB, dir string) (recs []any) {
 			exemplars, err := dec.Exemplars(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, exemplars)
+		case record.ResourceUpdate:
+			resources, err := dec.Resources(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, resources)
+		case record.ScopeUpdate:
+			scopes, err := dec.Scopes(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, scopes)
 		default:
 			require.Fail(t, "unknown record type")
 		}
@@ -782,6 +795,12 @@ func TestHead_ReadWAL(t *testing.T) {
 				// Only the duplicate series record should have a WAL expiry set.
 				_, ok = head.getWALExpiry(50)
 				require.False(t, ok)
+
+				require.NotNil(t, s100.meta)
+				curMeta := s100.meta.CurrentMetadata()
+				require.NotNil(t, curMeta)
+				require.Equal(t, "foo", curMeta.Unit)
+				require.Equal(t, "total foo", curMeta.Help)
 
 				expandChunk := func(c chunkenc.Iterator) (x []sample) {
 					for c.Next() == chunkenc.ValFloat {
