@@ -52,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -133,6 +134,10 @@ func populateTestWL(t testing.TB, w *wlog.WL, recs []any, buf []byte) []byte {
 			buf = enc.MmapMarkers(v, buf)
 		case []record.RefMetadata:
 			buf = enc.Metadata(v, buf)
+		case []record.RefResource:
+			buf = enc.Resources(v, buf)
+		case []record.RefScope:
+			buf = enc.Scopes(v, buf)
 		default:
 			continue
 		}
@@ -183,6 +188,14 @@ func readTestWAL(t testing.TB, dir string) (recs []any) {
 			exemplars, err := dec.Exemplars(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, exemplars)
+		case record.ResourceUpdate:
+			resources, err := dec.Resources(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, resources)
+		case record.ScopeUpdate:
+			scopes, err := dec.Scopes(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, scopes)
 		default:
 			require.Fail(t, "unknown record type")
 		}
@@ -822,8 +835,10 @@ func TestHead_ReadWAL(t *testing.T) {
 			require.True(t, exemplar.Exemplar{Ts: 101, Value: 7, Labels: labels.FromStrings("trace_id", "zxcv")}.Equals(e[0].Exemplars[0]))
 
 			require.NotNil(t, s100.meta)
-			require.Equal(t, "foo", s100.meta.Unit)
-			require.Equal(t, "total foo", s100.meta.Help)
+			curMeta := s100.meta.CurrentMetadata()
+			require.NotNil(t, curMeta)
+			require.Equal(t, "foo", curMeta.Unit)
+			require.Equal(t, "total foo", curMeta.Help)
 
 			intervals, err := head.tombstones.Get(storage.SeriesRef(s100.ref))
 			require.NoError(t, err)
@@ -7313,4 +7328,202 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 	require.Equal(t, uint64(0), head.NumStaleSeries())
 	require.Equal(t, uint64(numNewSeries), head.NumSeries())
 	require.NoError(t, head.Close())
+}
+
+func TestResourceAndScopeWALReplay(t *testing.T) {
+	dir := t.TempDir()
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.ChunkDirRoot = dir
+
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+
+	head, err := NewHead(nil, nil, wal, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	ctx := context.Background()
+	lset := labels.FromStrings("a", "b")
+
+	// Create a series and commit a sample so the series exists.
+	app := head.Appender(ctx)
+	ref, appErr := app.Append(0, lset, 100, 1.0)
+	require.NoError(t, appErr)
+	require.NoError(t, app.Commit())
+
+	// Add a resource update.
+	app = head.Appender(ctx)
+	_, appErr = app.Append(ref, lset, 200, 2.0)
+	require.NoError(t, appErr)
+	_, appErr = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "frontend"},
+		map[string]string{"host.name": "node-1"},
+		[]storage.EntityData{{Type: "resource", ID: map[string]string{"service.name": "frontend"}}},
+		200,
+	)
+	require.NoError(t, appErr)
+	require.NoError(t, app.Commit())
+
+	// Verify the series has resource set.
+	s := head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, s)
+	s.Lock()
+	require.NotNil(t, s.resource)
+	require.Len(t, s.resource.Versions, 1)
+	require.Equal(t, "frontend", s.resource.Versions[0].Identifying["service.name"])
+	s.Unlock()
+
+	// Close the head and replay WAL into a new head using the same dir.
+	require.NoError(t, head.Close())
+
+	wal2, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+
+	head2, err := NewHead(nil, nil, wal2, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = head2.Close() })
+	require.NoError(t, head2.Init(0))
+
+	// The replayed head should have the resource.
+	s2 := head2.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, s2)
+	s2.Lock()
+	require.NotNil(t, s2.resource, "resource should survive WAL replay")
+	require.Len(t, s2.resource.Versions, 1)
+	require.Equal(t, "frontend", s2.resource.Versions[0].Identifying["service.name"])
+	require.Equal(t, "node-1", s2.resource.Versions[0].Descriptive["host.name"])
+	s2.Unlock()
+}
+
+func TestResourceAndScopeRollback(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, head.Init(0))
+
+	ctx := context.Background()
+	lset := labels.FromStrings("a", "b")
+
+	// Create a series.
+	app := head.Appender(ctx)
+	ref, err := app.Append(0, lset, 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Start a new appender with a resource update, then rollback.
+	app = head.Appender(ctx)
+	_, err = app.Append(ref, lset, 200, 2.0)
+	require.NoError(t, err)
+	_, err = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "frontend"},
+		map[string]string{"host.name": "node-1"},
+		nil,
+		200,
+	)
+	require.NoError(t, err)
+	require.NoError(t, app.Rollback())
+
+	// The series should NOT have a resource after rollback.
+	s := head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, s)
+	s.Lock()
+	require.Nil(t, s.resource, "resource must not be set after rollback")
+	s.Unlock()
+}
+
+func TestResourceDedupInV1Appender(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, head.Init(0))
+
+	ctx := context.Background()
+	lset := labels.FromStrings("a", "b")
+
+	// Create a series.
+	app := head.Appender(ctx)
+	ref, err := app.Append(0, lset, 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Call UpdateResource twice for the same series; second should be deduped.
+	app = head.Appender(ctx)
+	_, err = app.Append(ref, lset, 200, 2.0)
+	require.NoError(t, err)
+	_, err = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "v1"},
+		map[string]string{},
+		nil,
+		200,
+	)
+	require.NoError(t, err)
+	_, err = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "v2"},
+		map[string]string{},
+		nil,
+		200,
+	)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Only the first resource update should have been applied.
+	s := head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, s)
+	s.Lock()
+	require.NotNil(t, s.resource)
+	require.Len(t, s.resource.Versions, 1)
+	require.Equal(t, "v1", s.resource.Versions[0].Identifying["service.name"])
+	s.Unlock()
+}
+
+func TestResourceAndScopeWALReplayWithScope(t *testing.T) {
+	head, w := newTestHead(t, 1000, compression.None, false)
+	// Manually populate the WAL with series + resource + scope records.
+	populateTestWL(t, w, []any{
+		[]record.RefSeries{
+			{Ref: 1, Labels: labels.FromStrings("a", "b")},
+		},
+		[]record.RefSample{
+			{Ref: 1, T: 100, V: 1.0},
+		},
+		[]record.RefResource{
+			{
+				Ref:         1,
+				MinTime:     100,
+				MaxTime:     100,
+				Identifying: map[string]string{"service.name": "frontend"},
+				Descriptive: map[string]string{"host.name": "node-1"},
+			},
+		},
+		[]record.RefScope{
+			{
+				Ref:       1,
+				MinTime:   100,
+				MaxTime:   100,
+				Name:      "go.opentelemetry.io/instrumentation",
+				Version:   "0.42.0",
+				SchemaURL: "https://opentelemetry.io/schemas/1.17.0",
+				Attrs:     map[string]string{"lib.custom": "val"},
+			},
+		},
+	}, nil)
+
+	require.NoError(t, head.Init(0))
+
+	s := head.series.getByID(1)
+	require.NotNil(t, s)
+
+	s.Lock()
+	defer s.Unlock()
+
+	// Resource should be replayed.
+	require.NotNil(t, s.resource)
+	require.Len(t, s.resource.Versions, 1)
+	require.Equal(t, "frontend", s.resource.Versions[0].Identifying["service.name"])
+
+	// Scope should be replayed.
+	require.NotNil(t, s.scope)
+	require.Len(t, s.scope.Versions, 1)
+	require.Equal(t, "go.opentelemetry.io/instrumentation", s.scope.Versions[0].Name)
+	require.Equal(t, "0.42.0", s.scope.Versions[0].Version)
+	require.Equal(t, "val", s.scope.Versions[0].Attrs["lib.custom"])
+
+	_ = w
+	_ = seriesmetadata.EntityTypeResource // Ensure import is used.
 }

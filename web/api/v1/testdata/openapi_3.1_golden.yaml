@@ -1213,6 +1213,163 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+    /resources:
+        get:
+            tags:
+                - resources
+            summary: Get resource attributes
+            description: Returns OTel resource attributes associated with time series. Supports two response formats based on the 'format' parameter.
+            operationId: resources
+            parameters:
+                - name: format
+                  in: query
+                  description: Response format. Default returns full resource data with labels and versions. Set to 'attributes' for a simplified map of attribute names to values (useful for autocomplete).
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                    enum:
+                        - attributes
+                  examples:
+                    default:
+                        value: null
+                    attributes:
+                        value: attributes
+                - name: translate
+                  in: query
+                  description: When set to 'true', translates OTel attribute names to Prometheus label names. Only applicable when format=attributes.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                    enum:
+                        - true
+                        - false
+                  examples:
+                    example:
+                        value: "true"
+                - name: match[]
+                  in: query
+                  description: Series selector to filter resources by matching time series.
+                  required: false
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value:
+                            - '{job="prometheus"}'
+                - name: start
+                  in: query
+                  description: Start timestamp to filter resource versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: End timestamp to filter resource versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+                - name: limit
+                  in: query
+                  description: Maximum number of resources to return.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+            responses:
+                "200":
+                    description: Resource attributes retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ResourcesOutputBody'
+                            examples:
+                                defaultFormat:
+                                    summary: Full resource data with labels and versions
+                                    value:
+                                        data:
+                                            - labels:
+                                                __name__: http_requests_total
+                                                instance: localhost:8080
+                                                job: myservice
+                                              versions:
+                                                - entities:
+                                                    - descriptive:
+                                                        service.version: 1.0.0
+                                                      identifying:
+                                                        service.name: myservice
+                                                      type: service
+                                                  max_time_ms: 1767361020000
+                                                  min_time_ms: 1767357420000
+                                                  resource_attributes:
+                                                    descriptive:
+                                                        host.name: server-01
+                                                        service.version: 1.0.0
+                                                    identifying:
+                                                        service.name: myservice
+                                                        service.namespace: production
+                                        status: success
+                                attributesFormat:
+                                    summary: Simplified attribute name to values map (format=attributes)
+                                    value:
+                                        data:
+                                            host.name:
+                                                - server-01
+                                                - server-02
+                                            service.name:
+                                                - myservice
+                                                - otherservice
+                                            service.namespace:
+                                                - production
+                                                - staging
+                                        status: success
+                default:
+                    description: Error retrieving resource attributes.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
     /metadata:
         get:
             tags:
@@ -1279,6 +1436,245 @@ paths:
                                         status: success
                 default:
                     description: Error retrieving metadata.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+    /metadata/versions:
+        get:
+            tags:
+                - metadata
+            summary: Get time-varying metadata versions per metric
+            operationId: get-metadata-versions
+            parameters:
+                - name: metric
+                  in: query
+                  description: A metric name to filter metadata versions for.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: http_requests_total
+                - name: limit
+                  in: query
+                  description: The maximum number of metadata version entries to return.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+                - name: start
+                  in: query
+                  description: Start timestamp to filter metadata versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: End timestamp to filter metadata versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+            responses:
+                "200":
+                    description: Metadata versions retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/MetadataVersionsOutputBody'
+                            examples:
+                                metadataVersions:
+                                    summary: Time-varying metadata versions per series
+                                    value:
+                                        data:
+                                            - labels:
+                                                __name__: http_requests_total
+                                                instance: localhost:9090
+                                                job: api
+                                              versions:
+                                                - help: Total HTTP requests
+                                                  maxTime: 1700100000000
+                                                  minTime: 1700000000000
+                                                  type: counter
+                                                  unit: ""
+                                                - help: Total HTTP requests processed
+                                                  maxTime: 1700200000000
+                                                  minTime: 1700100000001
+                                                  type: counter
+                                                  unit: ""
+                                        status: success
+                default:
+                    description: Error retrieving metadata versions.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+    /metadata/series:
+        get:
+            tags:
+                - metadata
+            summary: Find metrics by metadata criteria
+            operationId: get-metadata-series
+            parameters:
+                - name: type
+                  in: query
+                  description: Filter by metric type (exact match, e.g. counter, gauge, histogram, summary).
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: counter
+                - name: unit
+                  in: query
+                  description: Filter by metric unit (exact match).
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: seconds
+                - name: help
+                  in: query
+                  description: Filter by help text (RE2 regular expression).
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: Total HTTP.*
+                - name: limit
+                  in: query
+                  description: The maximum number of metadata version entries to return.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+                - name: start
+                  in: query
+                  description: Start timestamp to filter metadata versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: End timestamp to filter metadata versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+            responses:
+                "200":
+                    description: Metadata series retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/MetadataSeriesOutputBody'
+                            examples:
+                                metadataSeries:
+                                    summary: Series matching metadata criteria
+                                    value:
+                                        data:
+                                            - labels:
+                                                __name__: http_request_duration_seconds
+                                                instance: localhost:9090
+                                                job: api
+                                              versions:
+                                                - help: HTTP request duration in seconds
+                                                  maxTime: 1700200000000
+                                                  minTime: 1700000000000
+                                                  type: histogram
+                                                  unit: seconds
+                                            - labels:
+                                                __name__: http_requests_total
+                                                instance: localhost:9090
+                                                job: api
+                                              versions:
+                                                - help: Total HTTP requests
+                                                  maxTime: 1700200000000
+                                                  minTime: 1700000000000
+                                                  type: counter
+                                                  unit: ""
+                                        status: success
+                default:
+                    description: Error retrieving metadata series.
                     content:
                         application/json:
                             schema:
@@ -3253,6 +3649,147 @@ components:
                 - data
             additionalProperties: false
             description: Generic response body.
+        ResourcesOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ResourceAttributesResponse'
+                    description: Array of resource attributes for matching time series.
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for resources endpoint (default format).
+        ResourcesAttributesOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    type: object
+                    additionalProperties:
+                        type: array
+                        items:
+                            type: string
+                    description: Map of attribute names to their unique values.
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for resources endpoint with format=attributes (for autocomplete).
+        ResourceAttributesResponse:
+            type: object
+            properties:
+                labels:
+                    $ref: '#/components/schemas/Labels'
+                versions:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ResourceAttributeVersion'
+                    description: Array of resource attribute versions for this series.
+            required:
+                - labels
+                - versions
+            additionalProperties: false
+            description: Resource attributes for a single time series.
+        ResourceAttributeVersion:
+            type: object
+            properties:
+                resource_attributes:
+                    $ref: '#/components/schemas/ResourceAttributeData'
+                entities:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/EntityData'
+                    description: Entities associated with this resource version.
+                min_time_ms:
+                    type: integer
+                    format: int64
+                    description: Start timestamp of this version in milliseconds.
+                max_time_ms:
+                    type: integer
+                    format: int64
+                    description: End timestamp of this version in milliseconds.
+            required:
+                - resource_attributes
+                - min_time_ms
+                - max_time_ms
+            additionalProperties: false
+            description: A single version of resource attributes with time range.
+        ResourceAttributeData:
+            type: object
+            properties:
+                identifying:
+                    type: object
+                    additionalProperties:
+                        type: string
+                    description: Identifying attributes (e.g., service.name, service.namespace, service.instance.id).
+                descriptive:
+                    type: object
+                    additionalProperties:
+                        type: string
+                    description: Descriptive attributes providing additional context.
+            required:
+                - identifying
+                - descriptive
+            additionalProperties: false
+            description: Resource attribute data with identifying and descriptive attributes.
+        EntityData:
+            type: object
+            properties:
+                type:
+                    type: string
+                    description: Entity type (e.g., service, host).
+                identifying:
+                    type: object
+                    additionalProperties:
+                        type: string
+                    description: Identifying attributes for this entity.
+                descriptive:
+                    type: object
+                    additionalProperties:
+                        type: string
+                    description: Descriptive attributes for this entity.
+            required:
+                - type
+                - identifying
+                - descriptive
+            additionalProperties: false
+            description: Entity data with type and attributes.
         Metadata:
             type: object
             properties:
@@ -3302,6 +3839,106 @@ components:
                 - data
             additionalProperties: false
             description: Response body for metadata endpoint.
+        MetadataVersionEntry:
+            type: object
+            properties:
+                type:
+                    type: string
+                    description: Metric type (counter, gauge, histogram, summary, or untyped).
+                help:
+                    type: string
+                    description: Help text describing the metric.
+                unit:
+                    type: string
+                    description: Unit of the metric.
+                minTime:
+                    type: integer
+                    format: int64
+                    description: Start timestamp (Unix milliseconds) for this metadata version.
+                maxTime:
+                    type: integer
+                    format: int64
+                    description: End timestamp (Unix milliseconds) for this metadata version.
+            required:
+                - type
+                - help
+                - unit
+                - minTime
+                - maxTime
+            additionalProperties: false
+            description: A time-bounded metadata version for a metric.
+        MetadataSeriesEntry:
+            type: object
+            properties:
+                labels:
+                    $ref: '#/components/schemas/Labels'
+                versions:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MetadataVersionEntry'
+            required:
+                - labels
+                - versions
+            additionalProperties: false
+            description: Per-series metadata with label set and versioned metadata entries.
+        MetadataVersionsOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MetadataSeriesEntry'
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for metadata versions endpoint.
+        MetadataSeriesOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MetadataSeriesEntry'
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for metadata series endpoint.
         MetricMetadata:
             type: object
             properties:
@@ -4427,6 +5064,8 @@ components:
 tags:
     - name: query
       description: Query and evaluate PromQL expressions.
+    - name: resources
+      description: Query OTel resource attributes associated with time series.
     - name: metadata
       description: Retrieve metric metadata such as type and unit.
     - name: labels
