@@ -43,6 +43,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -1515,6 +1516,12 @@ func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
 	return h.head.tombstones, nil
 }
 
+// SeriesMetadata returns series metadata for the head.
+// Delegates to the underlying head to extract metadata from memSeries.
+func (h *RangeHead) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return h.head.SeriesMetadata()
+}
+
 func (h *RangeHead) MinTime() int64 {
 	return h.mint
 }
@@ -1658,6 +1665,35 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 // Tombstones returns a new reader over the head's tombstones.
 func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return h.tombstones, nil
+}
+
+// SeriesMetadata returns series metadata for the head.
+// It extracts metadata from all memSeries that have metadata set.
+func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
+	mem := seriesmetadata.NewMemSeriesMetadata()
+
+	// Iterate over all series shards and collect metadata
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].RLock()
+		for _, s := range h.series.series[i] {
+			if s.meta == nil {
+				continue
+			}
+
+			// Extract metric name from __name__ label
+			metricName := s.lset.Get(labels.MetricName)
+			if metricName == "" {
+				continue // Skip series without metric name
+			}
+
+			// Use StableHash of labels as the key for consistent identification.
+			hash := labels.StableHash(s.lset)
+			mem.Set(metricName, hash, *s.meta)
+		}
+		h.series.locks[i].RUnlock()
+	}
+
+	return mem, nil
 }
 
 // NumSeries returns the number of series tracked in the head.
