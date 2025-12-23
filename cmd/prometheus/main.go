@@ -218,6 +218,7 @@ type flagConfig struct {
 	corsRegexString string
 
 	promqlEnableDelayedNameRemoval bool
+	infoResourceStrategy           string
 
 	parserOpts parser.Options
 
@@ -245,6 +246,11 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.web.AppendMetadata = true
 				features.Enable(features.TSDB, "metadata_wal_records")
 				logger.Info("Experimental metadata records in WAL enabled")
+			case "native-metadata":
+				c.tsdb.EnableNativeMetadata = true
+				c.web.EnableNativeMetadata = true
+				features.Enable(features.TSDB, "native_metadata")
+				logger.Info("Experimental native metadata persistence enabled")
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				logger.Info("Experimental per-step statistics reporting")
@@ -322,11 +328,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "use-uncached-io":
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
-			case "native-metadata":
-				c.tsdb.EnableNativeMetadata = true
-				c.web.EnableNativeMetadata = true
-				features.Enable(features.TSDB, "native_metadata")
-				logger.Info("Experimental native series metadata persistence enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -598,6 +599,9 @@ func main() {
 
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
+
+	serverOnlyFlag(a, "query.info-resource-strategy", "Strategy for resolving resource attributes in info(): 'target-info' uses target_info metric-join, 'resource-attributes' uses stored resource attributes (requires native-metadata), 'hybrid' combines both (requires native-metadata).").
+		Default("target-info").EnumVar(&cfg.infoResourceStrategy, "target-info", "resource-attributes", "hybrid")
 
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
@@ -930,8 +934,15 @@ func main() {
 			EnablePerStepStats:       cfg.enablePerStepStats,
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
+			EnableNativeMetadata:     cfg.tsdb.EnableNativeMetadata,
+			InfoResourceStrategy:     promql.InfoResourceStrategy(cfg.infoResourceStrategy),
 			FeatureRegistry:          features.DefaultRegistry,
 			Parser:                   promqlParser,
+			LabelNamerConfig: &promql.LabelNamerConfig{
+				UTF8Allowed:                 !cfgFile.OTLPConfig.TranslationStrategy.ShouldEscape(),
+				UnderscoreLabelSanitization: cfgFile.OTLPConfig.LabelNameUnderscoreSanitization,
+				PreserveMultipleUnderscores: cfgFile.OTLPConfig.LabelNamePreserveMultipleUnderscores,
+			},
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -1277,7 +1288,7 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.tsdb.EnableNativeMetadata, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
 							checksum, err = config.GenerateChecksum(cfg.configFile)
@@ -1286,7 +1297,7 @@ func main() {
 							}
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.tsdb.EnableNativeMetadata, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1311,7 +1322,7 @@ func main() {
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.tsdb.EnableNativeMetadata, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
@@ -1343,7 +1354,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.tsdb.EnableNativeMetadata, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1606,7 +1617,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage, enableNativeMetadata bool, logger *slog.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
@@ -1631,6 +1642,11 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 		if conf.StorageConfig.ExemplarsConfig == nil {
 			conf.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
 		}
+	}
+
+	if conf.OTLPConfig.DisableTargetInfo && !enableNativeMetadata {
+		logger.Warn("otlp.disable_target_info is true but native-metadata feature is not enabled; " +
+			"target_info metric will not be generated and no resource attributes will be persisted")
 	}
 
 	failed := false
@@ -1844,6 +1860,10 @@ func (notReadyAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.La
 }
 
 func (notReadyAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
+func (notReadyAppender) UpdateResource(storage.SeriesRef, labels.Labels, map[string]string, map[string]string, []storage.EntityData, int64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 

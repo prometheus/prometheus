@@ -1672,6 +1672,10 @@ type OTLPConfig struct {
 	// in label names when AllowUTF8 is false. When false, multiple consecutive underscores are
 	// collapsed to a single underscore during label name sanitization.
 	LabelNamePreserveMultipleUnderscores bool `yaml:"label_name_preserve_multiple_underscores,omitempty"`
+	// DisableTargetInfo disables generation of the target_info metric. This is
+	// useful when native resource attribute persistence is enabled and the
+	// info() PromQL function is used instead of target_info join queries.
+	DisableTargetInfo bool `yaml:"disable_target_info,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

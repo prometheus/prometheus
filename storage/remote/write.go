@@ -373,6 +373,12 @@ func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metada
 	return 0, nil
 }
 
+func (*timestampTracker) UpdateResource(storage.SeriesRef, labels.Labels, map[string]string, map[string]string, []storage.EntityData, int64) (storage.SeriesRef, error) {
+	// Resource metadata is not supported for remote write destinations.
+	// Remote write endpoints manage their own resource attributes independently.
+	return 0, nil
+}
+
 // Commit implements storage.Appender.
 func (t *baseTimestampTracker) Commit() error {
 	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)

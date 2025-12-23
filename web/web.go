@@ -300,8 +300,8 @@ type Options struct {
 	IsAgent                    bool
 	STZeroIngestionEnabled     bool
 	EnableTypeAndUnitLabels    bool
-	AppendMetadata             bool
 	EnableNativeMetadata       bool
+	AppendMetadata             bool
 	AppName                    string
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes

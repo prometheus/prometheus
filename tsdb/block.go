@@ -326,22 +326,18 @@ type Block struct {
 	// We maintain this variable to avoid recalculation every time.
 	symbolTableSize uint64
 
-	chunkr     ChunkReader
-	indexr     IndexReader
-	tombstones tombstones.Reader
-
-	// seriesMetadata is lazily loaded on first call to SeriesMetadata().
-	seriesMetadataOnce     sync.Once
-	seriesMetadata         seriesmetadata.Reader
-	seriesMetadataErr      error
-	numBytesSeriesMetadata int64
+	chunkr         ChunkReader
+	indexr         IndexReader
+	tombstones     tombstones.Reader
+	seriesMetadata seriesmetadata.Reader
 
 	logger *slog.Logger
 
-	numBytesChunks    int64
-	numBytesIndex     int64
-	numBytesTombstone int64
-	numBytesMeta      int64
+	numBytesChunks         int64
+	numBytesIndex          int64
+	numBytesTombstone      int64
+	numBytesMeta           int64
+	numBytesSeriesMetadata int64
 }
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
@@ -383,18 +379,26 @@ func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDeco
 	}
 	closers = append(closers, tr)
 
+	smr, sizeSeriesMeta, err := seriesmetadata.ReadSeriesMetadata(logger, dir)
+	if err != nil {
+		return nil, err
+	}
+	closers = append(closers, smr)
+
 	pb = &Block{
-		dir:               dir,
-		meta:              *meta,
-		chunkr:            cr,
-		indexr:            ir,
-		tombstones:        tr,
-		symbolTableSize:   ir.SymbolTableSize(),
-		logger:            logger,
-		numBytesChunks:    cr.Size(),
-		numBytesIndex:     ir.Size(),
-		numBytesTombstone: sizeTomb,
-		numBytesMeta:      sizeMeta,
+		dir:                    dir,
+		meta:                   *meta,
+		chunkr:                 cr,
+		indexr:                 ir,
+		tombstones:             tr,
+		seriesMetadata:         smr,
+		symbolTableSize:        ir.SymbolTableSize(),
+		logger:                 logger,
+		numBytesChunks:         cr.Size(),
+		numBytesIndex:          ir.Size(),
+		numBytesTombstone:      sizeTomb,
+		numBytesMeta:           sizeMeta,
+		numBytesSeriesMetadata: sizeSeriesMeta,
 	}
 	return pb, nil
 }
@@ -407,16 +411,11 @@ func (pb *Block) Close() error {
 
 	pb.pendingReaders.Wait()
 
-	var smErr error
-	if pb.seriesMetadata != nil {
-		smErr = pb.seriesMetadata.Close()
-	}
-
 	return errors.Join(
 		pb.chunkr.Close(),
 		pb.indexr.Close(),
 		pb.tombstones.Close(),
-		smErr,
+		pb.seriesMetadata.Close(),
 	)
 }
 
@@ -480,18 +479,11 @@ func (pb *Block) Tombstones() (tombstones.Reader, error) {
 }
 
 // SeriesMetadata returns a new SeriesMetadataReader against the block data.
-// The metadata file is lazily loaded on first access.
 func (pb *Block) SeriesMetadata() (seriesmetadata.Reader, error) {
-	pb.seriesMetadataOnce.Do(func() {
-		pb.seriesMetadata, pb.numBytesSeriesMetadata, pb.seriesMetadataErr = seriesmetadata.ReadSeriesMetadata(pb.dir)
-	})
-	if pb.seriesMetadataErr != nil {
-		return nil, pb.seriesMetadataErr
-	}
 	if err := pb.startRead(); err != nil {
 		return nil, err
 	}
-	return blockSeriesMetadataReader{Reader: pb.seriesMetadata, b: pb}, nil
+	return &blockSeriesMetadataReader{Reader: pb.seriesMetadata, b: pb}, nil
 }
 
 // GetSymbolTableSize returns the Symbol Table Size in the index of this block.
@@ -620,12 +612,17 @@ func (r blockChunkReader) Close() error {
 
 type blockSeriesMetadataReader struct {
 	seriesmetadata.Reader
-	b *Block
+	b         *Block
+	closeOnce sync.Once
+	closeErr  error
 }
 
-func (r blockSeriesMetadataReader) Close() error {
-	r.b.pendingReaders.Done()
-	return nil
+func (r *blockSeriesMetadataReader) Close() error {
+	r.closeOnce.Do(func() {
+		r.b.pendingReaders.Done()
+		r.closeErr = r.Reader.Close()
+	})
+	return r.closeErr
 }
 
 // Delete matching series between mint and maxt in the block.

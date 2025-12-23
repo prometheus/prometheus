@@ -21,7 +21,17 @@ import (
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 	"github.com/pb33f/libopenapi/orderedmap"
+	yaml "go.yaml.in/yaml/v4"
 )
+
+// createEnumNodes creates YAML nodes for enum values.
+func createEnumNodes(values []string) []*yaml.Node {
+	nodes := make([]*yaml.Node, len(values))
+	for i, v := range values {
+		nodes[i] = &yaml.Node{Kind: yaml.ScalarNode, Value: v}
+	}
+	return nodes
+}
 
 // Path definition methods for API endpoints.
 
@@ -230,6 +240,38 @@ func (*OpenAPIBuilder) seriesPath() *v3.PathItem {
 			Description: "Delete series matching selectors. Note: This is deprecated, use POST /admin/tsdb/delete_series instead.",
 			Tags:        []string{"series"},
 			Responses:   responsesWithErrorExamples("SeriesDeleteOutputBody", seriesDeleteResponseExamples(), errorResponseExamples(), "Series marked for deletion.", "Error deleting series."),
+		},
+	}
+}
+
+func (*OpenAPIBuilder) resourcesPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("format", "Response format. Default returns full resource data with labels and versions. Set to 'attributes' for a simplified map of attribute names to values (useful for autocomplete).", false,
+			base.CreateSchemaProxy(&base.Schema{
+				Type: []string{"string"},
+				Enum: createEnumNodes([]string{"attributes"}),
+			}), []example{{"default", nil}, {"attributes", "attributes"}}),
+		queryParamWithExample("translate", "When set to 'true', translates OTel attribute names to Prometheus label names. Only applicable when format=attributes.", false,
+			base.CreateSchemaProxy(&base.Schema{
+				Type: []string{"string"},
+				Enum: createEnumNodes([]string{"true", "false"}),
+			}), []example{{"example", "true"}}),
+		queryParamWithExample("match[]", "Series selector to filter resources by matching time series.", false, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", []string{"{job=\"prometheus\"}"}}}),
+		queryParamWithExample("start", "Start timestamp to filter resource versions.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp to filter resource versions.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("limit", "Maximum number of resources to return.", false, integerSchema(), []example{{"example", 100}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "resources",
+			Summary:     "Get resource attributes",
+			Description: "Returns OTel resource attributes associated with time series. Supports two response formats based on the 'format' parameter.",
+			Tags:        []string{"resources"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("ResourcesOutputBody", resourcesResponseExamples(), errorResponseExamples(), "Resource attributes retrieved successfully.", "Error retrieving resource attributes."),
 		},
 	}
 }

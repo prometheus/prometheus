@@ -534,6 +534,68 @@ func labelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// resourcesResponseExamples returns examples for /resources response.
+func resourcesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("defaultFormat", &base.Example{
+		Summary: "Full resource data with labels and versions",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": []map[string]any{
+				{
+					"labels": map[string]string{
+						"__name__": "http_requests_total",
+						"instance": "localhost:8080",
+						"job":      "myservice",
+					},
+					"versions": []map[string]any{
+						{
+							"resource_attributes": map[string]any{
+								"identifying": map[string]string{
+									"service.name":      "myservice",
+									"service.namespace": "production",
+								},
+								"descriptive": map[string]string{
+									"service.version": "1.0.0",
+									"host.name":       "server-01",
+								},
+							},
+							"entities": []map[string]any{
+								{
+									"type": "service",
+									"identifying": map[string]string{
+										"service.name": "myservice",
+									},
+									"descriptive": map[string]string{
+										"service.version": "1.0.0",
+									},
+								},
+							},
+							"min_time_ms": int64(1767357420000),
+							"max_time_ms": int64(1767361020000),
+						},
+					},
+				},
+			},
+		}),
+	})
+
+	examples.Set("attributesFormat", &base.Example{
+		Summary: "Simplified attribute name to values map (format=attributes)",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string][]string{
+				"service.name":      {"myservice", "otherservice"},
+				"service.namespace": {"production", "staging"},
+				"host.name":         {"server-01", "server-02"},
+			},
+		}),
+	})
+
+	return examples
+}
+
 // metadataResponseExamples returns examples for /metadata response.
 func metadataResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()

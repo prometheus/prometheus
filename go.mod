@@ -75,6 +75,7 @@ require (
 	go.opentelemetry.io/collector/component v1.51.0
 	go.opentelemetry.io/collector/consumer v1.51.0
 	go.opentelemetry.io/collector/pdata v1.51.0
+	go.opentelemetry.io/collector/pdata/xpdata v0.142.0
 	go.opentelemetry.io/collector/processor v1.51.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.65.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.65.0

@@ -245,9 +245,9 @@ type Options struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
-	// EnableNativeMetadata enables Parquet-based series metadata persistence.
-	// When enabled, metric metadata (type, unit, help) is persisted to
-	// series_metadata.parquet sidecar files and merged across blocks.
+	// EnableNativeMetadata represents 'native-metadata' feature flag.
+	// When enabled, OTel resource/scope attributes are persisted per time series
+	// in Parquet-based metadata files alongside TSDB blocks.
 	EnableNativeMetadata bool
 
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
@@ -354,6 +354,7 @@ type dbMetrics struct {
 	staleSeriesCompactionsTriggered prometheus.Counter
 	staleSeriesCompactionsFailed    prometheus.Counter
 	staleSeriesCompactionDuration   prometheus.Histogram
+	seriesMetadataBytes             prometheus.Gauge
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -454,6 +455,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
+	m.seriesMetadataBytes = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_storage_series_metadata_bytes",
+		Help: "The number of bytes used by series metadata (Parquet) files across all blocks.",
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -474,6 +479,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.staleSeriesCompactionsTriggered,
 			m.staleSeriesCompactionsFailed,
 			m.staleSeriesCompactionDuration,
+			m.seriesMetadataBytes,
 		)
 	}
 	return m
@@ -1056,6 +1062,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
+	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1156,7 +1163,8 @@ func (db *DB) BlockMetas() []BlockMeta {
 // Returns an empty reader when native metadata is not enabled.
 //
 // The merge resolves block/head series refs to labels via each source's index,
-// then merges by labels hash as a transient in-memory key.
+// then merges by labels hash as a transient in-memory key. Also merges
+// resource/scope attributes which are already keyed by labels hash.
 //
 // NOTE: The returned reader's ref values are labels hashes, NOT series refs.
 // The merged result spans multiple indexes so no single series ref is valid.
@@ -1197,11 +1205,31 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 			}
 			return nil
 		})
-		mr.Close()
-		ir.Close()
 		if err != nil {
+			mr.Close()
+			ir.Close()
 			return nil, fmt.Errorf("iterate block versioned metadata: %w", err)
 		}
+		ir.Close()
+		// Collect versioned resources (unified attributes + entities)
+		err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			merged.SetVersionedResource(labelsHash, resources)
+			return nil
+		})
+		if err != nil {
+			mr.Close()
+			return nil, fmt.Errorf("iterate block resources: %w", err)
+		}
+		// Collect versioned scopes (instrumentation library metadata)
+		err = mr.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+			merged.SetVersionedScope(labelsHash, scopes)
+			return nil
+		})
+		if err != nil {
+			mr.Close()
+			return nil, fmt.Errorf("iterate block scopes: %w", err)
+		}
+		mr.Close()
 	}
 
 	// Collect metadata from head, resolving HeadSeriesRef → labels via head's index.
@@ -1238,6 +1266,25 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("iterate head versioned metadata: %w", err)
 	}
+	// Collect versioned resources from head (unified attributes + entities)
+	err = headMeta.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		merged.SetVersionedResource(labelsHash, resources)
+		return nil
+	})
+	if err != nil {
+		headMeta.Close()
+		return nil, fmt.Errorf("iterate head resources: %w", err)
+	}
+	// Collect versioned scopes from head (instrumentation library metadata)
+	err = headMeta.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+		merged.SetVersionedScope(labelsHash, scopes)
+		return nil
+	})
+	if err != nil {
+		headMeta.Close()
+		return nil, fmt.Errorf("iterate head scopes: %w", err)
+	}
+	headMeta.Close()
 
 	return merged, nil
 }
@@ -1920,8 +1967,9 @@ func (db *DB) reloadBlocks() (err error) {
 	}
 
 	var (
-		toLoad     []*Block
-		blocksSize int64
+		toLoad             []*Block
+		blocksSize         int64
+		seriesMetadataSize int64
 	)
 	// All deletable blocks should be unloaded.
 	// NOTE: We need to loop through loadable one more time as there might be loadable ready to be removed (replaced by compacted block).
@@ -1933,8 +1981,10 @@ func (db *DB) reloadBlocks() (err error) {
 
 		toLoad = append(toLoad, block)
 		blocksSize += block.Size()
+		seriesMetadataSize += block.numBytesSeriesMetadata
 	}
 	db.metrics.blocksBytes.Set(float64(blocksSize))
+	db.metrics.seriesMetadataBytes.Set(float64(seriesMetadataSize))
 
 	slices.SortFunc(toLoad, func(a, b *Block) int {
 		switch {

@@ -42,11 +42,15 @@ type CheckpointStats struct {
 	DroppedTombstones int
 	DroppedExemplars  int
 	DroppedMetadata   int
+	DroppedResources  int
+	DroppedScopes     int
 	TotalSeries       int // Processed series including dropped ones.
 	TotalSamples      int // Processed float and histogram samples including dropped ones.
 	TotalTombstones   int // Processed tombstones including dropped ones.
 	TotalExemplars    int // Processed exemplars including dropped ones.
 	TotalMetadata     int // Processed metadata including dropped ones.
+	TotalResources    int // Processed resource updates including dropped ones.
+	TotalScopes       int // Processed scope updates including dropped ones.
 }
 
 // LastCheckpoint returns the directory name and index of the most recent checkpoint.
@@ -173,6 +177,8 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		tstones               []tombstones.Stone
 		exemplars             []record.RefExemplar
 		metadata              []record.RefMetadata
+		resources             []record.RefResource
+		scopes                []record.RefScope
 		st                    = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
 		dec                   = record.NewDecoder(st, logger)
 		enc                   record.Encoder
@@ -180,9 +186,14 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		recs                  [][]byte
 
 		metadataMap = make(map[metadataKey]record.RefMetadata)
+		// Resources and scopes are versioned (descriptive attributes can change over time),
+		// so we keep ALL records per ref, not just the latest. This preserves version history
+		// so that VersionAt() returns correct attributes for historical timestamps after replay.
+		allResourcesMap = make(map[chunks.HeadSeriesRef][]record.RefResource)
+		allScopesMap    = make(map[chunks.HeadSeriesRef][]record.RefScope)
 	)
 	for r.Next() {
-		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
+		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata, resources, scopes = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0], resources[:0], scopes[:0]
 
 		// We don't reset the buffer since we batch up multiple records
 		// before writing them to the checkpoint.
@@ -359,6 +370,34 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			stats.TotalMetadata += len(metadata)
 			stats.DroppedMetadata += len(metadata) - kept
+		case record.ResourceUpdate:
+			resources, err = dec.Resources(rec, resources)
+			if err != nil {
+				return nil, fmt.Errorf("decode resources: %w", err)
+			}
+			repl := 0
+			for _, r := range resources {
+				if keep(r.Ref) {
+					repl++
+					allResourcesMap[r.Ref] = append(allResourcesMap[r.Ref], r)
+				}
+			}
+			stats.TotalResources += len(resources)
+			stats.DroppedResources += len(resources) - repl
+		case record.ScopeUpdate:
+			scopes, err = dec.Scopes(rec, scopes)
+			if err != nil {
+				return nil, fmt.Errorf("decode scopes: %w", err)
+			}
+			repl := 0
+			for _, s := range scopes {
+				if keep(s.Ref) {
+					repl++
+					allScopesMap[s.Ref] = append(allScopesMap[s.Ref], s)
+				}
+			}
+			stats.TotalScopes += len(scopes)
+			stats.DroppedScopes += len(scopes) - repl
 		default:
 			// Unknown record type, probably from a future Prometheus version.
 			continue
@@ -412,6 +451,28 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		})
 		if err := cp.Log(enc.Metadata(allMetadata, buf[:0])); err != nil {
 			return nil, fmt.Errorf("flush metadata records: %w", err)
+		}
+	}
+
+	// Flush all resource records for each series (preserving version history).
+	if len(allResourcesMap) > 0 {
+		var allResources []record.RefResource
+		for _, rs := range allResourcesMap {
+			allResources = append(allResources, rs...)
+		}
+		if err := cp.Log(enc.Resources(allResources, buf[:0])); err != nil {
+			return nil, fmt.Errorf("flush resource records: %w", err)
+		}
+	}
+
+	// Flush all scope records for each series (preserving version history).
+	if len(allScopesMap) > 0 {
+		var allScopes []record.RefScope
+		for _, ss := range allScopesMap {
+			allScopes = append(allScopes, ss...)
+		}
+		if err := cp.Log(enc.Scopes(allScopes, buf[:0])); err != nil {
+			return nil, fmt.Errorf("flush scope records: %w", err)
 		}
 	}
 

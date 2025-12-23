@@ -21,9 +21,12 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/parquet-go/parquet-go"
+	"github.com/parquet-go/parquet-go/compress/zstd"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -47,25 +50,14 @@ func sortMetadata(metas []metadata.Metadata) {
 // SeriesMetadataFilename is the name of the series metadata file in a block directory.
 const SeriesMetadataFilename = "series_metadata.parquet"
 
-// Namespace constants for the metadataRow discriminator.
+// Namespace constants for the content-addressed metadataRow discriminator.
 const (
 	nsMetadataTable   = "metadata_table"   // content-addressed table: unique (type, unit, help) tuples
 	nsMetadataMapping = "metadata_mapping" // maps series→versioned metadata: seriesRef, contentHash, minTime, maxTime
 )
 
-// metadataRow is the unified Parquet schema for series metadata.
-// The Namespace field discriminates the logical row type.
-type metadataRow struct {
-	Namespace   string `parquet:"namespace"`
-	SeriesRef   uint64 `parquet:"series_ref"`
-	MinTime     int64  `parquet:"mint,optional"`
-	MaxTime     int64  `parquet:"maxt,optional"`
-	ContentHash uint64 `parquet:"content_hash,optional"`
-	MetricName  string `parquet:"metric_name,optional"`
-	Type        string `parquet:"type,optional"`
-	Unit        string `parquet:"unit,optional"`
-	Help        string `parquet:"help,optional"`
-}
+// schemaVersion is stored in the Parquet footer for future schema evolution.
+const schemaVersion = "1"
 
 // Reader provides read access to series metadata.
 type Reader interface {
@@ -89,6 +81,13 @@ type Reader interface {
 
 	// VersionedMetadataReader methods for time-varying metadata.
 	VersionedMetadataReader
+
+	// VersionedResourceReader provides access to versioned OTel resources.
+	// Resources include both identifying/descriptive attributes and typed entities.
+	VersionedResourceReader
+
+	// VersionedScopeReader provides access to versioned OTel InstrumentationScope data.
+	VersionedScopeReader
 }
 
 // metadataEntry stores metadata with both ref and metric name for indexing.
@@ -107,6 +106,12 @@ type MemSeriesMetadata struct {
 	// byRefVersioned maps series ref to versioned metadata.
 	byRefVersioned map[uint64]*versionedEntry
 	mtx            sync.RWMutex
+
+	// resourceStore stores OTel resources (attributes + entities) per series
+	resourceStore *MemResourceStore
+
+	// scopeStore stores OTel InstrumentationScope data per series
+	scopeStore *MemScopeStore
 }
 
 // versionedEntry pairs a metric name with versioned metadata for indexing.
@@ -122,8 +127,23 @@ func NewMemSeriesMetadata() *MemSeriesMetadata {
 		byRef:          make(map[uint64]*metadataEntry),
 		byName:         make(map[string]map[metadata.Metadata]struct{}),
 		byRefVersioned: make(map[uint64]*versionedEntry),
+		resourceStore:  NewMemResourceStore(),
+		scopeStore:     NewMemScopeStore(),
 	}
 }
+
+// MetricCount returns the number of metric entries.
+func (m *MemSeriesMetadata) MetricCount() int {
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+	return len(m.byName)
+}
+
+// ResourceCount returns the number of unique series with resource data.
+func (m *MemSeriesMetadata) ResourceCount() int { return m.resourceStore.Len() }
+
+// ScopeCount returns the number of unique series with scope data.
+func (m *MemSeriesMetadata) ScopeCount() int { return m.scopeStore.Len() }
 
 // Get returns metadata for the series with the given ref.
 func (m *MemSeriesMetadata) Get(ref uint64) (metadata.Metadata, bool) {
@@ -372,6 +392,81 @@ func (m *MemSeriesMetadata) TotalVersionedMetadata() int {
 	return len(m.byRefVersioned)
 }
 
+// GetResource returns the current (latest) resource for the series.
+func (m *MemSeriesMetadata) GetResource(labelsHash uint64) (*ResourceVersion, bool) {
+	return m.resourceStore.GetResource(labelsHash)
+}
+
+// GetVersionedResource returns all versions of the resource for the series.
+func (m *MemSeriesMetadata) GetVersionedResource(labelsHash uint64) (*VersionedResource, bool) {
+	return m.resourceStore.GetVersionedResource(labelsHash)
+}
+
+// GetResourceAt returns the resource version active at the given timestamp.
+func (m *MemSeriesMetadata) GetResourceAt(labelsHash uint64, timestamp int64) (*ResourceVersion, bool) {
+	return m.resourceStore.GetResourceAt(labelsHash, timestamp)
+}
+
+// SetResource stores a resource for the series.
+func (m *MemSeriesMetadata) SetResource(labelsHash uint64, resource *ResourceVersion) {
+	m.resourceStore.SetResource(labelsHash, resource)
+}
+
+// SetVersionedResource stores versioned resources for the series.
+func (m *MemSeriesMetadata) SetVersionedResource(labelsHash uint64, resources *VersionedResource) {
+	m.resourceStore.SetVersionedResource(labelsHash, resources)
+}
+
+// DeleteResource removes all resource data for the series.
+func (m *MemSeriesMetadata) DeleteResource(labelsHash uint64) {
+	m.resourceStore.DeleteResource(labelsHash)
+}
+
+// IterResources calls the function for each series' current resource.
+func (m *MemSeriesMetadata) IterResources(f func(labelsHash uint64, resource *ResourceVersion) error) error {
+	return m.resourceStore.IterResources(f)
+}
+
+// IterVersionedResources calls the function for each series' versioned resources.
+func (m *MemSeriesMetadata) IterVersionedResources(f func(labelsHash uint64, resources *VersionedResource) error) error {
+	return m.resourceStore.IterVersionedResources(f)
+}
+
+// TotalResources returns the count of series with resources.
+func (m *MemSeriesMetadata) TotalResources() uint64 {
+	return m.resourceStore.TotalResources()
+}
+
+// TotalResourceVersions returns the total count of all resource versions.
+func (m *MemSeriesMetadata) TotalResourceVersions() uint64 {
+	return m.resourceStore.TotalResourceVersions()
+}
+
+// GetVersionedScope returns all versions of the scope for the series.
+func (m *MemSeriesMetadata) GetVersionedScope(labelsHash uint64) (*VersionedScope, bool) {
+	return m.scopeStore.GetVersionedScope(labelsHash)
+}
+
+// SetVersionedScope stores versioned scopes for the series.
+func (m *MemSeriesMetadata) SetVersionedScope(labelsHash uint64, scopes *VersionedScope) {
+	m.scopeStore.SetVersionedScope(labelsHash, scopes)
+}
+
+// IterVersionedScopes calls the function for each series' versioned scopes.
+func (m *MemSeriesMetadata) IterVersionedScopes(f func(labelsHash uint64, scopes *VersionedScope) error) error {
+	return m.scopeStore.IterVersionedScopes(f)
+}
+
+// TotalScopes returns the count of series with scopes.
+func (m *MemSeriesMetadata) TotalScopes() uint64 {
+	return m.scopeStore.TotalScopes()
+}
+
+// TotalScopeVersions returns the total count of all scope versions.
+func (m *MemSeriesMetadata) TotalScopeVersions() uint64 {
+	return m.scopeStore.TotalScopeVersions()
+}
+
 // parquetReader implements Reader by reading from a Parquet file.
 type parquetReader struct {
 	file           *os.File
@@ -379,12 +474,18 @@ type parquetReader struct {
 	byName         map[string][]metadata.Metadata
 	byRefVersioned map[uint64]*versionedEntry
 
+	// resourceStore stores OTel resources (attributes + entities) loaded from the file
+	resourceStore *MemResourceStore
+
+	// scopeStore stores OTel InstrumentationScope data loaded from the file
+	scopeStore *MemScopeStore
+
 	closeOnce sync.Once
 	closeErr  error
 }
 
 // newParquetReader creates a reader from an open file.
-func newParquetReader(file *os.File) (*parquetReader, error) {
+func newParquetReader(logger *slog.Logger, file *os.File) (*parquetReader, error) {
 	stat, err := file.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("stat file: %w", err)
@@ -491,11 +592,101 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 		byName[name] = metas
 	}
 
+	// Also read resource and scope rows.
+	resourceStore := NewMemResourceStore()
+	scopeStore := NewMemScopeStore()
+	resourceVersionsByHash := make(map[uint64][]*ResourceVersion)
+	scopeVersionsByHash := make(map[uint64][]*ScopeVersion)
+
+	for i := range rows {
+		row := &rows[i]
+
+		switch row.Namespace {
+		case NamespaceResource:
+			// Convert Parquet row to unified ResourceVersion
+			identifying := make(map[string]string, len(row.IdentifyingAttrs))
+			for _, attr := range row.IdentifyingAttrs {
+				identifying[attr.Key] = attr.Value
+			}
+			descriptive := make(map[string]string, len(row.DescriptiveAttrs))
+			for _, attr := range row.DescriptiveAttrs {
+				descriptive[attr.Key] = attr.Value
+			}
+
+			// Parse entities from row
+			var entities []*Entity
+			for _, entityRow := range row.Entities {
+				entityID := make(map[string]string, len(entityRow.ID))
+				for _, attr := range entityRow.ID {
+					entityID[attr.Key] = attr.Value
+				}
+				entityDesc := make(map[string]string, len(entityRow.Description))
+				for _, attr := range entityRow.Description {
+					entityDesc[attr.Key] = attr.Value
+				}
+				entityType := entityRow.Type
+				if entityType == "" {
+					entityType = EntityTypeResource
+				}
+				e := &Entity{
+					Type:        entityType,
+					ID:          entityID,
+					Description: entityDesc,
+				}
+				if err := e.Validate(); err != nil {
+					logger.Warn("Skipping invalid entity during parquet read", "err", err, "type", entityRow.Type)
+					continue
+				}
+				entities = append(entities, e)
+			}
+
+			rv := &ResourceVersion{
+				Identifying: identifying,
+				Descriptive: descriptive,
+				Entities:    entities,
+				MinTime:     row.MinTime,
+				MaxTime:     row.MaxTime,
+			}
+			resourceVersionsByHash[row.LabelsHash] = append(resourceVersionsByHash[row.LabelsHash], rv)
+
+		case NamespaceScope:
+			attrs := make(map[string]string, len(row.ScopeAttrs))
+			for _, attr := range row.ScopeAttrs {
+				attrs[attr.Key] = attr.Value
+			}
+			sv := &ScopeVersion{
+				Name:      row.ScopeName,
+				Version:   row.ScopeVersionStr,
+				SchemaURL: row.SchemaURL,
+				Attrs:     attrs,
+				MinTime:   row.MinTime,
+				MaxTime:   row.MaxTime,
+			}
+			scopeVersionsByHash[row.LabelsHash] = append(scopeVersionsByHash[row.LabelsHash], sv)
+		}
+	}
+
+	// Set versioned resources (already sorted by MinTime from WriteFile order)
+	for labelsHash, versions := range resourceVersionsByHash {
+		resourceStore.SetVersionedResource(labelsHash, &VersionedResource{
+			Versions: versions,
+		})
+	}
+
+	// Set versioned scopes (already sorted by MinTime from WriteFile order)
+	for labelsHash, versions := range scopeVersionsByHash {
+		scopeStore.SetVersionedScope(labelsHash, &VersionedScope{
+			Versions: versions,
+		})
+	}
+
 	return &parquetReader{
 		file:           file,
 		byRef:          byRef,
 		byName:         byName,
 		byRefVersioned: byRefVersioned,
+		resourceStore:  resourceStore,
+		scopeStore:     scopeStore,
 	}, nil
 }
 
@@ -566,6 +757,61 @@ func (r *parquetReader) TotalVersionedMetadata() int {
 	return len(r.byRefVersioned)
 }
 
+// GetResource returns the current (latest) resource for the series.
+func (r *parquetReader) GetResource(labelsHash uint64) (*ResourceVersion, bool) {
+	return r.resourceStore.GetResource(labelsHash)
+}
+
+// GetVersionedResource returns all versions of the resource for the series.
+func (r *parquetReader) GetVersionedResource(labelsHash uint64) (*VersionedResource, bool) {
+	return r.resourceStore.GetVersionedResource(labelsHash)
+}
+
+// GetResourceAt returns the resource version active at the given timestamp.
+func (r *parquetReader) GetResourceAt(labelsHash uint64, timestamp int64) (*ResourceVersion, bool) {
+	return r.resourceStore.GetResourceAt(labelsHash, timestamp)
+}
+
+// IterResources calls the function for each series' current resource.
+func (r *parquetReader) IterResources(f func(labelsHash uint64, resource *ResourceVersion) error) error {
+	return r.resourceStore.IterResources(f)
+}
+
+// IterVersionedResources calls the function for each series' versioned resources.
+func (r *parquetReader) IterVersionedResources(f func(labelsHash uint64, resources *VersionedResource) error) error {
+	return r.resourceStore.IterVersionedResources(f)
+}
+
+// TotalResources returns the count of series with resources.
+func (r *parquetReader) TotalResources() uint64 {
+	return r.resourceStore.TotalResources()
+}
+
+// TotalResourceVersions returns the total count of all resource versions.
+func (r *parquetReader) TotalResourceVersions() uint64 {
+	return r.resourceStore.TotalResourceVersions()
+}
+
+// GetVersionedScope returns all versions of the scope for the series.
+func (r *parquetReader) GetVersionedScope(labelsHash uint64) (*VersionedScope, bool) {
+	return r.scopeStore.GetVersionedScope(labelsHash)
+}
+
+// IterVersionedScopes calls the function for each series' versioned scopes.
+func (r *parquetReader) IterVersionedScopes(f func(labelsHash uint64, scopes *VersionedScope) error) error {
+	return r.scopeStore.IterVersionedScopes(f)
+}
+
+// TotalScopes returns the count of series with scopes.
+func (r *parquetReader) TotalScopes() uint64 {
+	return r.scopeStore.TotalScopes()
+}
+
+// TotalScopeVersions returns the total count of all scope versions.
+func (r *parquetReader) TotalScopeVersions() uint64 {
+	return r.scopeStore.TotalScopeVersions()
+}
+
 // Close releases resources associated with the reader.
 func (r *parquetReader) Close() error {
 	r.closeOnce.Do(func() {
@@ -574,9 +820,15 @@ func (r *parquetReader) Close() error {
 	return r.closeErr
 }
 
+// sortAttrEntries sorts attribute entries by key for deterministic Parquet output.
+func sortAttrEntries(entries []EntityAttributeEntry) {
+	slices.SortFunc(entries, func(a, b EntityAttributeEntry) int {
+		return cmp.Compare(a.Key, b.Key)
+	})
+}
+
 // WriteFile atomically writes series metadata to a Parquet file in the given directory.
-// Writes two namespaces: "metadata_table" (content-addressed unique tuples)
-// and "metadata_mapping" (per-series versioned mappings).
+// Writes content-addressed metadata namespaces plus resource and scope rows.
 func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 	path := filepath.Join(dir, SeriesMetadataFilename)
 	tmp := path + ".tmp"
@@ -617,13 +869,96 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 		})
 	}
 
-	// Sort rows by namespace for compression-friendly grouping.
-	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].Namespace < rows[j].Namespace
-	})
+	// Collect all resources into rows (one row per version, including attributes and entities)
+	err = mr.IterVersionedResources(func(labelsHash uint64, vresource *VersionedResource) error {
+		for _, rv := range vresource.Versions {
+			// Convert resource-level identifying attributes to list
+			idAttrs := make([]EntityAttributeEntry, 0, len(rv.Identifying))
+			for k, v := range rv.Identifying {
+				idAttrs = append(idAttrs, EntityAttributeEntry{
+					Key:   k,
+					Value: v,
+				})
+			}
+			sortAttrEntries(idAttrs)
 
-	if len(rows) == 0 {
-		rows = []metadataRow{}
+			// Convert resource-level descriptive attributes to list
+			descAttrs := make([]EntityAttributeEntry, 0, len(rv.Descriptive))
+			for k, v := range rv.Descriptive {
+				descAttrs = append(descAttrs, EntityAttributeEntry{
+					Key:   k,
+					Value: v,
+				})
+			}
+			sortAttrEntries(descAttrs)
+
+			// Convert entities to list
+			entityRows := make([]EntityRow, 0, len(rv.Entities))
+			for _, entity := range rv.Entities {
+				entityIDAttrs := make([]EntityAttributeEntry, 0, len(entity.ID))
+				for k, v := range entity.ID {
+					entityIDAttrs = append(entityIDAttrs, EntityAttributeEntry{
+						Key:   k,
+						Value: v,
+					})
+				}
+				sortAttrEntries(entityIDAttrs)
+
+				entityDescAttrs := make([]EntityAttributeEntry, 0, len(entity.Description))
+				for k, v := range entity.Description {
+					entityDescAttrs = append(entityDescAttrs, EntityAttributeEntry{
+						Key:   k,
+						Value: v,
+					})
+				}
+				sortAttrEntries(entityDescAttrs)
+
+				entityRows = append(entityRows, EntityRow{
+					Type:        entity.Type,
+					ID:          entityIDAttrs,
+					Description: entityDescAttrs,
+				})
+			}
+
+			rows = append(rows, metadataRow{
+				Namespace:        NamespaceResource,
+				LabelsHash:       labelsHash,
+				MinTime:          rv.MinTime,
+				MaxTime:          rv.MaxTime,
+				IdentifyingAttrs: idAttrs,
+				DescriptiveAttrs: descAttrs,
+				Entities:         entityRows,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("iterate resources: %w", err)
+	}
+
+	// Collect all scopes into rows (one row per version)
+	err = mr.IterVersionedScopes(func(labelsHash uint64, vscope *VersionedScope) error {
+		for _, sv := range vscope.Versions {
+			scopeAttrs := make([]EntityAttributeEntry, 0, len(sv.Attrs))
+			for k, v := range sv.Attrs {
+				scopeAttrs = append(scopeAttrs, EntityAttributeEntry{Key: k, Value: v})
+			}
+			sortAttrEntries(scopeAttrs)
+			rows = append(rows, metadataRow{
+				Namespace:       NamespaceScope,
+				LabelsHash:      labelsHash,
+				MinTime:         sv.MinTime,
+				MaxTime:         sv.MaxTime,
+				ScopeName:       sv.Name,
+				ScopeVersionStr: sv.Version,
+				SchemaURL:       sv.SchemaURL,
+				ScopeAttrs:      scopeAttrs,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("iterate scopes: %w", err)
 	}
 
 	// Create temp file.
@@ -644,7 +979,40 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 		}
 	}()
 
-	writer := parquet.NewGenericWriter[metadataRow](f)
+	// Sort rows for better compression: group by namespace, then by labels_hash,
+	// then by MinTime. This ensures metadata rows are together, resource rows for the
+	// same series are adjacent, and versions are in time order.
+	slices.SortFunc(rows, func(a, b metadataRow) int {
+		if c := strings.Compare(a.Namespace, b.Namespace); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.LabelsHash, b.LabelsHash); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.MinTime, b.MinTime)
+	})
+
+	// Count rows by type for footer metadata.
+	var metricCount, resourceCount, scopeCount int
+	for i := range rows {
+		switch rows[i].Namespace {
+		case nsMetadataTable, nsMetadataMapping:
+			metricCount++
+		case NamespaceResource:
+			resourceCount++
+		case NamespaceScope:
+			scopeCount++
+		}
+	}
+
+	// Write parquet data with zstd compression and footer metadata.
+	writer := parquet.NewGenericWriter[metadataRow](f,
+		parquet.Compression(&zstd.Codec{Level: zstd.SpeedBetterCompression}),
+		parquet.KeyValueMetadata("schema_version", schemaVersion),
+		parquet.KeyValueMetadata("metric_count", strconv.Itoa(metricCount)),
+		parquet.KeyValueMetadata("resource_count", strconv.Itoa(resourceCount)),
+		parquet.KeyValueMetadata("scope_count", strconv.Itoa(scopeCount)),
+	)
 	if _, err := writer.Write(rows); err != nil {
 		return 0, fmt.Errorf("write parquet rows: %w", err)
 	}
@@ -672,12 +1040,15 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 	}
 	tmp = ""
 
+	logger.Info("Series metadata written",
+		"metrics", metricCount, "resources", resourceCount, "scopes", scopeCount, "size", size)
+
 	return size, nil
 }
 
 // ReadSeriesMetadata reads series metadata from a Parquet file in the given directory.
 // If the file does not exist, it returns an empty reader (graceful degradation).
-func ReadSeriesMetadata(dir string) (Reader, int64, error) {
+func ReadSeriesMetadata(logger *slog.Logger, dir string) (Reader, int64, error) {
 	path := filepath.Join(dir, SeriesMetadataFilename)
 
 	f, err := os.Open(path)
@@ -694,7 +1065,7 @@ func ReadSeriesMetadata(dir string) (Reader, int64, error) {
 		return nil, 0, fmt.Errorf("stat metadata file: %w", err)
 	}
 
-	reader, err := newParquetReader(f)
+	reader, err := newParquetReader(logger, f)
 	if err != nil {
 		f.Close()
 		return nil, 0, fmt.Errorf("create parquet reader: %w", err)

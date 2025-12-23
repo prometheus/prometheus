@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -1722,4 +1723,126 @@ func (errIterator) AtST() int64 {
 
 func (e errIterator) Err() error {
 	return e.err
+}
+
+// mockResourceQuerier implements both Querier and ResourceQuerier for testing.
+type mockResourceQuerier struct {
+	noopQuerier
+	resource  *seriesmetadata.ResourceVersion
+	attrNames []string
+}
+
+func (m *mockResourceQuerier) GetResourceAt(_ uint64, _ int64) (*seriesmetadata.ResourceVersion, bool) {
+	if m.resource != nil {
+		return m.resource, true
+	}
+	return nil, false
+}
+
+func (m *mockResourceQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	for _, name := range m.attrNames {
+		fn(name)
+	}
+	return nil
+}
+
+func TestMergeQuerierResourceQuerier(t *testing.T) {
+	rv := &seriesmetadata.ResourceVersion{
+		MinTime: 1000,
+		MaxTime: 2000,
+	}
+	mock := &mockResourceQuerier{
+		resource:  rv,
+		attrNames: []string{"service.name", "host.name"},
+	}
+
+	merged := NewMergeQuerier([]Querier{mock}, nil, ChainedSeriesMerge)
+
+	// The merged querier must satisfy ResourceQuerier.
+	rq, ok := merged.(ResourceQuerier)
+	require.True(t, ok, "merged querier must implement ResourceQuerier")
+
+	// GetResourceAt must delegate.
+	got, found := rq.GetResourceAt(123, 1500)
+	require.True(t, found)
+	require.Equal(t, rv, got)
+
+	// IterUniqueAttributeNames must delegate and return all names.
+	var names []string
+	err := rq.IterUniqueAttributeNames(func(name string) {
+		names = append(names, name)
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"service.name", "host.name"}, names)
+}
+
+func TestMergeQuerierResourceQuerierDedup(t *testing.T) {
+	mock1 := &mockResourceQuerier{
+		attrNames: []string{"service.name", "host.name"},
+	}
+	mock2 := &mockResourceQuerier{
+		attrNames: []string{"host.name", "region"},
+	}
+
+	merged := NewMergeQuerier([]Querier{mock1, mock2}, nil, ChainedSeriesMerge)
+	rq, ok := merged.(ResourceQuerier)
+	require.True(t, ok)
+
+	var names []string
+	err := rq.IterUniqueAttributeNames(func(name string) {
+		names = append(names, name)
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"service.name", "host.name", "region"}, names)
+}
+
+// mockResourceChunkQuerier implements both ChunkQuerier and ResourceQuerier for testing.
+type mockResourceChunkQuerier struct {
+	noopChunkQuerier
+	resource  *seriesmetadata.ResourceVersion
+	attrNames []string
+}
+
+func (m *mockResourceChunkQuerier) GetResourceAt(_ uint64, _ int64) (*seriesmetadata.ResourceVersion, bool) {
+	if m.resource != nil {
+		return m.resource, true
+	}
+	return nil, false
+}
+
+func (m *mockResourceChunkQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	for _, name := range m.attrNames {
+		fn(name)
+	}
+	return nil
+}
+
+func TestMergeChunkQuerierResourceQuerier(t *testing.T) {
+	rv := &seriesmetadata.ResourceVersion{
+		MinTime: 1000,
+		MaxTime: 2000,
+	}
+	mock := &mockResourceChunkQuerier{
+		resource:  rv,
+		attrNames: []string{"service.name", "host.name"},
+	}
+
+	merged := NewMergeChunkQuerier([]ChunkQuerier{mock}, nil, NewCompactingChunkSeriesMerger(ChainedSeriesMerge))
+
+	// The merged chunk querier must satisfy ResourceQuerier.
+	rq, ok := merged.(ResourceQuerier)
+	require.True(t, ok, "merged chunk querier must implement ResourceQuerier")
+
+	// GetResourceAt must delegate.
+	got, found := rq.GetResourceAt(123, 1500)
+	require.True(t, found)
+	require.Equal(t, rv, got)
+
+	// IterUniqueAttributeNames must delegate and return all names.
+	var names []string
+	err := rq.IterUniqueAttributeNames(func(name string) {
+		names = append(names, name)
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"service.name", "host.name"}, names)
 }

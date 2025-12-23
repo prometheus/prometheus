@@ -181,13 +181,12 @@ type LeveledCompactorOptions struct {
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
 
-	// EnableNativeMetadata enables Parquet-based series metadata persistence during compaction.
-	EnableNativeMetadata bool
-
 	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+	// EnableNativeMetadata enables persistence of OTel resource/scope attributes during compaction.
+	EnableNativeMetadata bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -242,8 +241,8 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		postingsEncoder:             pe,
 		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
-		enableNativeMetadata:        opts.EnableNativeMetadata,
 		blockExcludeFunc:            opts.BlockExcludeFilter,
+		enableNativeMetadata:        opts.EnableNativeMetadata,
 	}, nil
 }
 
@@ -785,10 +784,11 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	return nil
 }
 
-// mergeAndWriteSeriesMetadata merges versioned metadata from source blocks and writes
-// it to the new compacted block. Each source block has different BlockSeriesRef values
-// for the same series, so we resolve refs → labels via each block's index, merge by
-// labels hash as a transient in-memory key, then re-key with the new block's refs.
+// mergeAndWriteSeriesMetadata merges versioned metadata, resources, and scopes from
+// source blocks and writes them to the new compacted block. Each source block has
+// different BlockSeriesRef values for the same series, so we resolve refs → labels
+// via each block's index, merge by labels hash as a transient in-memory key, then
+// re-key with the new block's refs.
 func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []BlockReader) error {
 	// Phase 1: Collect metadata from source blocks, resolving refs to labels and
 	// merging by labels hash.
@@ -797,6 +797,9 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 		vm         *seriesmetadata.VersionedMetadata
 	}
 	mergedByLabelsHash := make(map[uint64]*mergedEntry)
+
+	// Resource and scope data is already keyed by labelsHash, so collect directly.
+	output := seriesmetadata.NewMemSeriesMetadata()
 
 	var builder labels.ScratchBuilder
 	for _, b := range blocks {
@@ -828,14 +831,39 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 			}
 			return nil
 		})
-		mr.Close()
-		ir.Close()
 		if err != nil {
+			mr.Close()
+			ir.Close()
 			return fmt.Errorf("iterate versioned series metadata: %w", err)
 		}
+
+		// Merge versioned resources (unified attributes + entities).
+		err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			output.SetVersionedResource(labelsHash, resources)
+			return nil
+		})
+		if err != nil {
+			mr.Close()
+			ir.Close()
+			return fmt.Errorf("iterate resource attributes: %w", err)
+		}
+
+		// Merge versioned scopes.
+		err = mr.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+			output.SetVersionedScope(labelsHash, scopes)
+			return nil
+		})
+		if err != nil {
+			mr.Close()
+			ir.Close()
+			return fmt.Errorf("iterate scope attributes: %w", err)
+		}
+
+		mr.Close()
+		ir.Close()
 	}
 
-	if len(mergedByLabelsHash) == 0 {
+	if len(mergedByLabelsHash) == 0 && output.ResourceCount() == 0 && output.ScopeCount() == 0 {
 		return nil
 	}
 
@@ -870,7 +898,6 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 	}
 
 	// Phase 3: Build the output MemSeriesMetadata with new block refs.
-	output := seriesmetadata.NewMemSeriesMetadata()
 	for lHash, entry := range mergedByLabelsHash {
 		newRef, ok := labelsHashToNewRef[lHash]
 		if !ok {

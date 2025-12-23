@@ -60,7 +60,7 @@ func TestWriteAndReadbackSeriesMetadata(t *testing.T) {
 	require.Positive(t, size)
 
 	// Read back
-	reader, readSize, err := ReadSeriesMetadata(tmpdir)
+	reader, readSize, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
 	require.NoError(t, err)
 	defer reader.Close()
 	require.Equal(t, size, readSize)
@@ -83,7 +83,7 @@ func TestReadNonexistentFile(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	// Reading from a directory without metadata file should return empty reader
-	reader, size, err := ReadSeriesMetadata(tmpdir)
+	reader, size, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
 	require.NoError(t, err)
 	require.Equal(t, int64(0), size)
 	require.Equal(t, uint64(0), reader.Total())
@@ -106,7 +106,7 @@ func TestWriteEmptyMetadata(t *testing.T) {
 	require.Positive(t, size) // Even empty parquet has header
 
 	// Read back
-	reader, _, err := ReadSeriesMetadata(tmpdir)
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
 	require.NoError(t, err)
 	defer reader.Close()
 
@@ -334,7 +334,7 @@ func TestWriteAndReadbackZeroHash(t *testing.T) {
 	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
 	require.NoError(t, err)
 
-	reader, _, err := ReadSeriesMetadata(tmpdir)
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
 	require.NoError(t, err)
 	defer reader.Close()
 
@@ -380,7 +380,7 @@ func TestVersionedMetadataParquetRoundTrip(t *testing.T) {
 	require.Positive(t, size)
 
 	// Read back.
-	reader, readSize, err := ReadSeriesMetadata(tmpdir)
+	reader, readSize, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
 	require.NoError(t, err)
 	defer reader.Close()
 	require.Equal(t, size, readSize)
@@ -440,7 +440,7 @@ func TestVersionedMetadataContentDeduplication(t *testing.T) {
 	require.NoError(t, err)
 
 	// Read back.
-	reader, _, err := ReadSeriesMetadata(tmpdir)
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
 	require.NoError(t, err)
 	defer reader.Close()
 
@@ -481,7 +481,7 @@ func TestLargeMetadata(t *testing.T) {
 	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
 	require.NoError(t, err)
 
-	reader, _, err := ReadSeriesMetadata(tmpdir)
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
 	require.NoError(t, err)
 	defer reader.Close()
 
@@ -494,4 +494,442 @@ func TestLargeMetadata(t *testing.T) {
 		require.Len(t, metas, 1)
 		require.Equal(t, model.MetricTypeCounter, metas[0].Type)
 	}
+}
+
+// Tests for unified resource functionality
+
+func TestResourceBasicOperations(t *testing.T) {
+	store := NewMemResourceStore()
+
+	identifying := map[string]string{
+		"service.name":        "my-service",
+		"service.namespace":   "production",
+		"service.instance.id": "instance-123",
+	}
+	descriptive := map[string]string{
+		"deployment.env": "prod",
+		"host.name":      "host-1",
+	}
+
+	rv := NewResourceVersion(identifying, descriptive, nil, 1000, 2000)
+
+	// Verify version was created correctly
+	require.Equal(t, "my-service", rv.Identifying["service.name"])
+	require.Equal(t, "production", rv.Identifying["service.namespace"])
+	require.Equal(t, "instance-123", rv.Identifying["service.instance.id"])
+	require.Equal(t, "prod", rv.Descriptive["deployment.env"])
+	require.Equal(t, int64(1000), rv.MinTime)
+	require.Equal(t, int64(2000), rv.MaxTime)
+
+	// Store and retrieve
+	store.SetResource(123, rv)
+
+	got, found := store.GetResource(123)
+	require.True(t, found)
+	require.Equal(t, rv.Identifying["service.name"], got.Identifying["service.name"])
+	require.Equal(t, rv.Descriptive["deployment.env"], got.Descriptive["deployment.env"])
+
+	// Test TotalResources
+	require.Equal(t, uint64(1), store.TotalResources())
+
+	// Test delete
+	store.DeleteResource(123)
+	_, found = store.GetResource(123)
+	require.False(t, found)
+}
+
+func TestIsIdentifyingAttribute(t *testing.T) {
+	// Test IsIdentifyingAttribute (for default identifying attribute detection)
+	require.True(t, IsIdentifyingAttribute("service.name"))
+	require.True(t, IsIdentifyingAttribute("service.namespace"))
+	require.True(t, IsIdentifyingAttribute("service.instance.id"))
+	require.False(t, IsIdentifyingAttribute("deployment.env"))
+	require.False(t, IsIdentifyingAttribute("host.name"))
+}
+
+func TestResourceVersionTimeRangeUpdate(t *testing.T) {
+	identifying := map[string]string{"service.name": "my-service"}
+	rv := NewResourceVersion(identifying, nil, nil, 1000, 2000)
+
+	// Update with wider range
+	rv.UpdateTimeRange(500, 3000)
+	require.Equal(t, int64(500), rv.MinTime)
+	require.Equal(t, int64(3000), rv.MaxTime)
+
+	// Update with narrower range - should NOT change
+	rv.UpdateTimeRange(700, 2500)
+	require.Equal(t, int64(500), rv.MinTime)
+	require.Equal(t, int64(3000), rv.MaxTime)
+}
+
+func TestResourceVersioningOnSet(t *testing.T) {
+	store := NewMemResourceStore()
+
+	// First set
+	identifying1 := map[string]string{"service.name": "my-service"}
+	descriptive1 := map[string]string{"deployment.env": "prod"}
+	rv1 := NewResourceVersion(identifying1, descriptive1, nil, 1000, 2000)
+	store.SetResource(123, rv1)
+
+	// Second set for same hash with different attributes - should create new version
+	identifying2 := map[string]string{"service.name": "my-service"}
+	descriptive2 := map[string]string{"host.name": "host-1"}
+	rv2 := NewResourceVersion(identifying2, descriptive2, nil, 3000, 4000)
+	store.SetResource(123, rv2)
+
+	// GetResource returns the current (latest) version
+	got, found := store.GetResource(123)
+	require.True(t, found)
+	require.Equal(t, "my-service", got.Identifying["service.name"])
+	require.Equal(t, "host-1", got.Descriptive["host.name"])
+	// Latest version doesn't have deployment.env
+	require.Empty(t, got.Descriptive["deployment.env"])
+
+	// GetVersionedResource returns all versions
+	vr, found := store.GetVersionedResource(123)
+	require.True(t, found)
+	require.Len(t, vr.Versions, 2)
+
+	// First version (oldest)
+	require.Equal(t, "my-service", vr.Versions[0].Identifying["service.name"])
+	require.Equal(t, "prod", vr.Versions[0].Descriptive["deployment.env"])
+	require.Equal(t, int64(1000), vr.Versions[0].MinTime)
+	require.Equal(t, int64(2000), vr.Versions[0].MaxTime)
+
+	// Second version (current/latest)
+	require.Equal(t, "my-service", vr.Versions[1].Identifying["service.name"])
+	require.Equal(t, "host-1", vr.Versions[1].Descriptive["host.name"])
+	require.Equal(t, int64(3000), vr.Versions[1].MinTime)
+	require.Equal(t, int64(4000), vr.Versions[1].MaxTime)
+}
+
+func TestResourceSameAttributesExtendTimeRange(t *testing.T) {
+	store := NewMemResourceStore()
+
+	// First set
+	identifying := map[string]string{"service.name": "my-service"}
+	rv1 := NewResourceVersion(identifying, nil, nil, 1000, 2000)
+	store.SetResource(123, rv1)
+
+	// Second set with same attributes - should extend time range, not create new version
+	rv2 := NewResourceVersion(identifying, nil, nil, 3000, 4000)
+	store.SetResource(123, rv2)
+
+	// Should still have only one version
+	vr, found := store.GetVersionedResource(123)
+	require.True(t, found)
+	require.Len(t, vr.Versions, 1)
+
+	// Time range should be extended
+	require.Equal(t, int64(1000), vr.Versions[0].MinTime)
+	require.Equal(t, int64(4000), vr.Versions[0].MaxTime)
+}
+
+func TestResourceIter(t *testing.T) {
+	store := NewMemResourceStore()
+
+	// Add multiple entries
+	for i := uint64(1); i <= 5; i++ {
+		identifying := map[string]string{
+			"service.name": fmt.Sprintf("service-%d", i),
+		}
+		rv := NewResourceVersion(identifying, nil, nil, int64(i*1000), int64(i*2000))
+		store.SetResource(i, rv)
+	}
+
+	// Iterate and collect
+	collected := make(map[uint64]*ResourceVersion)
+	err := store.IterResources(func(labelsHash uint64, rv *ResourceVersion) error {
+		collected[labelsHash] = rv
+		return nil
+	})
+	require.NoError(t, err)
+	require.Len(t, collected, 5)
+
+	// Verify content
+	for i := uint64(1); i <= 5; i++ {
+		rv, ok := collected[i]
+		require.True(t, ok)
+		require.Equal(t, fmt.Sprintf("service-%d", i), rv.Identifying["service.name"])
+	}
+}
+
+func TestWriteAndReadbackResources(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// Add metric metadata using versioned approach
+	mem.SetVersioned("http_requests_total", 1, &MetadataVersion{
+		Meta: metadata.Metadata{
+			Type: model.MetricTypeCounter,
+			Help: "Total HTTP requests",
+		},
+		MinTime: 1000,
+		MaxTime: 2000,
+	})
+
+	// Add resources for two different series
+	identifying1 := map[string]string{
+		"service.name":        "frontend",
+		"service.namespace":   "production",
+		"service.instance.id": "frontend-1",
+	}
+	descriptive1 := map[string]string{
+		"deployment.env": "prod",
+	}
+	rv1 := NewResourceVersion(identifying1, descriptive1, nil, 1000, 2000)
+	mem.SetResource(100, rv1)
+
+	identifying2 := map[string]string{
+		"service.name":        "backend",
+		"service.namespace":   "production",
+		"service.instance.id": "backend-1",
+	}
+	descriptive2 := map[string]string{
+		"host.region": "us-west-2",
+	}
+	rv2 := NewResourceVersion(identifying2, descriptive2, nil, 1500, 2500)
+	mem.SetResource(200, rv2)
+
+	// Write to file
+	size, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+	require.Positive(t, size)
+
+	// Read back
+	reader, readSize, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+	require.Equal(t, size, readSize)
+
+	// Verify metric metadata
+	metas, found := reader.GetByMetricName("http_requests_total")
+	require.True(t, found)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+
+	// Verify resource for series 100
+	r1, found := reader.GetResource(100)
+	require.True(t, found)
+	require.Equal(t, "frontend", r1.Identifying["service.name"])
+	require.Equal(t, "production", r1.Identifying["service.namespace"])
+	require.Equal(t, "frontend-1", r1.Identifying["service.instance.id"])
+	require.Equal(t, "prod", r1.Descriptive["deployment.env"])
+	require.Equal(t, int64(1000), r1.MinTime)
+	require.Equal(t, int64(2000), r1.MaxTime)
+
+	// Verify resource for series 200
+	r2, found := reader.GetResource(200)
+	require.True(t, found)
+	require.Equal(t, "backend", r2.Identifying["service.name"])
+	require.Equal(t, "us-west-2", r2.Descriptive["host.region"])
+	require.Equal(t, int64(1500), r2.MinTime)
+	require.Equal(t, int64(2500), r2.MaxTime)
+
+	// Verify totals
+	require.Equal(t, uint64(1), reader.Total())
+	require.Equal(t, uint64(2), reader.TotalResources())
+}
+
+func TestMixedMetadataAndResources(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// Add various metric metadata using versioned approach
+	mem.SetVersioned("requests_total", 1, &MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests"}, MinTime: 1000, MaxTime: 5000,
+	})
+	mem.SetVersioned("temperature_celsius", 2, &MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "celsius"}, MinTime: 1000, MaxTime: 5000,
+	})
+	mem.SetVersioned("latency_seconds", 3, &MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "seconds"}, MinTime: 1000, MaxTime: 5000,
+	})
+
+	// Add resources for multiple series
+	rv1 := NewResourceVersion(
+		map[string]string{
+			"service.name":        "api-gateway",
+			"service.instance.id": "gw-1",
+		},
+		nil, // no descriptive attributes
+		nil, // no entities
+		1000, 5000)
+	mem.SetResource(100, rv1)
+
+	rv2 := NewResourceVersion(
+		map[string]string{
+			"service.name":        "database",
+			"service.instance.id": "db-1",
+		},
+		map[string]string{
+			"db.system": "postgresql",
+		},
+		nil, // no entities
+		2000, 6000)
+	mem.SetResource(200, rv2)
+
+	// Write and read back
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	// Verify all metric metadata
+	require.Equal(t, uint64(3), reader.Total())
+	metas, found := reader.GetByMetricName("requests_total")
+	require.True(t, found)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+
+	metas, found = reader.GetByMetricName("temperature_celsius")
+	require.True(t, found)
+	require.Equal(t, "celsius", metas[0].Unit)
+
+	// Verify all resources
+	require.Equal(t, uint64(2), reader.TotalResources())
+
+	r, found := reader.GetResource(100)
+	require.True(t, found)
+	require.Equal(t, "api-gateway", r.Identifying["service.name"])
+
+	r, found = reader.GetResource(200)
+	require.True(t, found)
+	require.Equal(t, "database", r.Identifying["service.name"])
+	require.Equal(t, "postgresql", r.Descriptive["db.system"])
+}
+
+func TestWriteAndReadbackScopes(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// Add scope data for two series
+	sv1 := NewScopeVersion("go.opentelemetry.io/contrib/instrumentation/net/http", "0.45.0", "https://opentelemetry.io/schemas/1.21.0",
+		map[string]string{"library.language": "go"}, 1000, 2000)
+	mem.SetVersionedScope(100, NewVersionedScope(sv1))
+
+	sv2 := NewScopeVersion("io.opentelemetry.contrib.javaagent", "1.30.0", "",
+		map[string]string{"library.language": "java", "library.framework": "spring"}, 1500, 2500)
+	mem.SetVersionedScope(200, NewVersionedScope(sv2))
+
+	// Write to file
+	size, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+	require.Positive(t, size)
+
+	// Read back
+	reader, readSize, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+	require.Equal(t, size, readSize)
+
+	// Verify scope for series 100
+	vs1, found := reader.GetVersionedScope(100)
+	require.True(t, found)
+	require.Len(t, vs1.Versions, 1)
+	require.Equal(t, "go.opentelemetry.io/contrib/instrumentation/net/http", vs1.Versions[0].Name)
+	require.Equal(t, "0.45.0", vs1.Versions[0].Version)
+	require.Equal(t, "https://opentelemetry.io/schemas/1.21.0", vs1.Versions[0].SchemaURL)
+	require.Equal(t, "go", vs1.Versions[0].Attrs["library.language"])
+	require.Equal(t, int64(1000), vs1.Versions[0].MinTime)
+	require.Equal(t, int64(2000), vs1.Versions[0].MaxTime)
+
+	// Verify scope for series 200
+	vs2, found := reader.GetVersionedScope(200)
+	require.True(t, found)
+	require.Len(t, vs2.Versions, 1)
+	require.Equal(t, "io.opentelemetry.contrib.javaagent", vs2.Versions[0].Name)
+	require.Equal(t, "java", vs2.Versions[0].Attrs["library.language"])
+	require.Equal(t, "spring", vs2.Versions[0].Attrs["library.framework"])
+
+	// Verify totals
+	require.Equal(t, uint64(2), reader.TotalScopes())
+	require.Equal(t, uint64(2), reader.TotalScopeVersions())
+}
+
+func TestMixedMetadataResourcesAndScopes(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// Add metric metadata using versioned approach
+	mem.SetVersioned("http_requests_total", 1, &MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests"}, MinTime: 1000, MaxTime: 5000,
+	})
+
+	// Add resource
+	rv := NewResourceVersion(
+		map[string]string{"service.name": "my-service"},
+		map[string]string{"deployment.env": "prod"},
+		nil, 1000, 5000)
+	mem.SetResource(100, rv)
+
+	// Add scope
+	sv := NewScopeVersion("mylib", "1.0.0", "", map[string]string{"k": "v"}, 1000, 5000)
+	mem.SetVersionedScope(100, NewVersionedScope(sv))
+
+	// Write and read back
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	// Verify all three types
+	require.Equal(t, uint64(1), reader.Total())
+	require.Equal(t, uint64(1), reader.TotalResources())
+	require.Equal(t, uint64(1), reader.TotalScopes())
+
+	metas, found := reader.GetByMetricName("http_requests_total")
+	require.True(t, found)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+
+	r, found := reader.GetResource(100)
+	require.True(t, found)
+	require.Equal(t, "my-service", r.Identifying["service.name"])
+
+	vs, found := reader.GetVersionedScope(100)
+	require.True(t, found)
+	require.Len(t, vs.Versions, 1)
+	require.Equal(t, "mylib", vs.Versions[0].Name)
+	require.Equal(t, "v", vs.Versions[0].Attrs["k"])
+}
+
+func TestScopeVersioningParquetRoundTrip(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// Add two scope versions for the same series
+	vs := &VersionedScope{
+		Versions: []*ScopeVersion{
+			NewScopeVersion("lib", "1.0", "", nil, 1000, 2000),
+			NewScopeVersion("lib", "2.0", "", map[string]string{"new": "attr"}, 3000, 4000),
+		},
+	}
+	mem.SetVersionedScope(100, vs)
+
+	// Write and read back
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	got, found := reader.GetVersionedScope(100)
+	require.True(t, found)
+	require.Len(t, got.Versions, 2)
+	require.Equal(t, "1.0", got.Versions[0].Version)
+	require.Equal(t, int64(1000), got.Versions[0].MinTime)
+	require.Equal(t, "2.0", got.Versions[1].Version)
+	require.Equal(t, "attr", got.Versions[1].Attrs["new"])
+	require.Equal(t, int64(3000), got.Versions[1].MinTime)
+
+	require.Equal(t, uint64(1), reader.TotalScopes())
+	require.Equal(t, uint64(2), reader.TotalScopeVersions())
 }

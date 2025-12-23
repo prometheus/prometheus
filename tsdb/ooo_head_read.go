@@ -34,6 +34,11 @@ import (
 
 var _ IndexReader = &HeadAndOOOIndexReader{}
 
+var (
+	_ storage.ResourceQuerier = &HeadAndOOOQuerier{}
+	_ storage.ResourceQuerier = &HeadAndOOOChunkQuerier{}
+)
+
 type HeadAndOOOIndexReader struct {
 	*headIndexReader            // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
 	inoMint                     int64
@@ -567,6 +572,46 @@ func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *
 	return selectSeriesSet(ctx, sortSeries, hints, matchers, q.index, q.chunkr, q.head.tombstones, q.mint, q.maxt)
 }
 
+// GetResourceAt implements storage.ResourceQuerier.
+func (q *HeadAndOOOQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	reader, err := q.head.SeriesMetadata()
+	if err != nil {
+		return nil, false
+	}
+	// Note: we don't close the reader here as it's the head's reader
+	// which is managed by the head itself.
+	return reader.GetResourceAt(labelsHash, timestamp)
+}
+
+// IterUniqueAttributeNames implements storage.ResourceQuerier.
+func (q *HeadAndOOOQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	reader, err := q.head.SeriesMetadata()
+	if err != nil {
+		return err
+	}
+	// Note: we don't close the reader here as it's the head's reader
+	// which is managed by the head itself.
+	seen := make(map[string]struct{})
+	return reader.IterResources(func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
+		if resource == nil {
+			return nil
+		}
+		for name := range resource.Identifying {
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				fn(name)
+			}
+		}
+		for name := range resource.Descriptive {
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				fn(name)
+			}
+		}
+		return nil
+	})
+}
+
 // HeadAndOOOChunkQuerier queries both the head and the out-of-order head.
 type HeadAndOOOChunkQuerier struct {
 	mint, maxt int64
@@ -617,4 +662,40 @@ func (q *HeadAndOOOChunkQuerier) Close() error {
 
 func (q *HeadAndOOOChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
 	return selectChunkSeriesSet(ctx, sortSeries, hints, matchers, rangeHeadULID, q.index, q.chunkr, q.head.tombstones, q.mint, q.maxt)
+}
+
+// GetResourceAt implements storage.ResourceQuerier.
+func (q *HeadAndOOOChunkQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	reader, err := q.head.SeriesMetadata()
+	if err != nil {
+		return nil, false
+	}
+	return reader.GetResourceAt(labelsHash, timestamp)
+}
+
+// IterUniqueAttributeNames implements storage.ResourceQuerier.
+func (q *HeadAndOOOChunkQuerier) IterUniqueAttributeNames(fn func(name string)) error {
+	reader, err := q.head.SeriesMetadata()
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]struct{})
+	return reader.IterResources(func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
+		if resource == nil {
+			return nil
+		}
+		for name := range resource.Identifying {
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				fn(name)
+			}
+		}
+		for name := range resource.Descriptive {
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				fn(name)
+			}
+		}
+		return nil
+	})
 }

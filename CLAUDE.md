@@ -57,7 +57,7 @@ Service Discovery → Scrape → Storage (TSDB) → PromQL Engine → Web API/UI
 - **cmd/promtool/**: CLI utility for validation, TSDB operations
 - **storage/**: Storage abstraction layer with `Appender`, `Querier` interfaces
 - **tsdb/**: Time series database (head block, WAL, compaction, chunks)
-- **tsdb/seriesmetadata/**: Parquet-based series metadata persistence (type, unit, help)
+- **tsdb/seriesmetadata/**: Series metadata, OTel resource/scope attribute, and entity persistence
 - **promql/**: Query engine and PromQL parser
 - **scrape/**: Metric collection from targets
 - **discovery/**: 30+ service discovery implementations
@@ -67,10 +67,11 @@ Service Discovery → Scrape → Storage (TSDB) → PromQL Engine → Web API/UI
 - **model/labels/**: Label storage and manipulation
 - **model/histogram/**: Native histogram types
 - **web/**: HTTP API and React/Mantine UI
+- **storage/remote/otlptranslator/**: OTLP to Prometheus translation including CombinedAppender
 
 ### Storage Interface Evolution
 
-The storage layer is transitioning from `Appender` (V1) to `AppenderV2`. New code should use `AppenderV2` which combines sample, histogram, and exemplar appending into a single method.
+The storage layer is transitioning from `Appender` (V1) to `AppenderV2`. New code should use `AppenderV2` which combines sample, histogram, and exemplar appending into a single method. The `ResourceQuerier` interface (in `storage/interface.go`) provides `GetResourceAt()` and `IterUniqueAttributeNames()` for querying stored resource data. `ResourceUpdater` provides `UpdateResource()` for ingesting resource attributes with entities.
 
 ### TSDB Structure
 
@@ -78,11 +79,11 @@ The storage layer is transitioning from `Appender` (V1) to `AppenderV2`. New cod
 - **Persistent Blocks**: Immutable on-disk blocks
 - **Compaction**: Merges blocks and applies retention
 - **Chunks**: Gorilla-compressed time series data
-- **Series Metadata**: Parquet-based storage for metric metadata (type, unit, help), enabled via `--enable-feature=native-metadata`
+- **Series Metadata**: Optional Parquet-based storage for metric metadata and OTel resource attributes
 
-### Series Metadata Persistence
+### OTel Native Metadata
 
-This branch adds Parquet-based series metadata persistence to TSDB, gated behind `--enable-feature=native-metadata` (`Options.EnableNativeMetadata`). Metric metadata (type, unit, help) is stored in `series_metadata.parquet` sidecar files alongside standard TSDB blocks.
+Prometheus supports persisting OTel resource attributes, instrumentation scopes, and entities per time series. Enabled via `--enable-feature=native-metadata`.
 
 - **Feature gate**: `--enable-feature=native-metadata` in `cmd/prometheus/main.go` sets both `tsdb.Options.EnableNativeMetadata` and `web.EnableNativeMetadata` (the latter switches API endpoints to TSDB-backed metadata). When disabled (default), `DB.SeriesMetadata()` returns an empty reader and compaction skips metadata merge/write.
 - **Package**: `tsdb/seriesmetadata/` — core types are `VersionedMetadata` (tracks metadata changes over time for a series) and `MetadataVersion` (single version with MinTime/MaxTime and metadata content). Storage backends: `MemSeriesMetadata` (in-memory) and `parquetReader` (Parquet-backed).
@@ -94,8 +95,48 @@ This branch adds Parquet-based series metadata persistence to TSDB, gated behind
 - **Compaction**: `LeveledCompactor.mergeAndWriteSeriesMetadata()` (compact.go, guarded by `enableNativeMetadata`) runs three phases: (1) collect metadata from source blocks, resolving each block's refs to labels via its index and merging by `labels.StableHash`; (2) open the new block's index and map labels hashes to new refs; (3) build `MemSeriesMetadata` with new refs and write via `WriteFile()`.
 - **Web API**: `TSDBAdminStats` interface extended with `SeriesMetadata()` and `SeriesMetadataForMatchers()`; `readyStorage` in main.go implements both. When native metadata is enabled: `/api/v1/metadata` uses TSDB as sole metadata source; `/api/v1/targets/metadata` queries TSDB head per-target via `SeriesMetadataForMatchers()`; `/api/v1/metadata/versions` returns time-versioned metadata history with optional `metric`, `limit`, `start`, `end` parameters; `/api/v1/metadata/series` performs inverse metadata lookup — find metrics by `type` (exact), `unit` (exact), or `help` (RE2 regex), with optional `limit`, `start`, `end` filtering. When disabled, these endpoints fall back to scrape-cache behavior or return empty results.
 - **Parquet schema**: Do not introduce new Parquet schema versions (e.g. v2) or schema migration logic. Modify the existing `metadataRow` struct in place.
+- **Resources**: `UpdateResource()` on `storage.ResourceUpdater` ingests identifying/descriptive attributes plus entities. Data is versioned over time per series (`VersionedResource` → `[]ResourceVersion`); `AddOrExtend()` creates a new version when attributes change or extends the time range when they match
+- **Scopes**: `UpdateScope()` ingests OTel InstrumentationScope data (name, version, schema URL, attributes). Stored as `VersionedScope` → `[]ScopeVersion` in `MemScopeStore`
+- **Entities**: `Entity` type in `tsdb/seriesmetadata/entity.go` with 7 predefined types: `resource`, `service`, `host`, `container`, `k8s.pod`, `k8s.node`, `process`. Each entity has typed ID (identifying) and Description (descriptive) attribute maps. Entities are embedded in `ResourceVersion`
+- **Identifying Attributes**: `service.name`, `service.namespace`, `service.instance.id` used for resource identification
+- **info() Function**: PromQL experimental function to enrich metrics with resource/scope attributes. Three modes controlled by `--query.info-resource-strategy`:
+  - `target-info` (default): metric-join against `target_info` only (no native metadata needed)
+  - `resource-attributes`: uses only stored native metadata via `ResourceQuerier`
+  - `hybrid`: combines native metadata for `target_info` with metric-join for other info metrics; native metadata takes precedence on conflicts
+  - Mode is selected per-call by `classifyInfoMode()` in `promql/info.go` based on `__name__` matchers
+- **Label Name Translation**: `LabelNamerConfig` in `promql/engine.go` controls mapping OTel attribute names to Prometheus label names (UTF-8 handling, underscore sanitization). Used by `buildAttrNameMappings()` to create bidirectional name mappings
+- **API Endpoint**: `/api/v1/resources` for querying stored attributes (supports `format=attributes` for autocomplete). Returns 400 when native metadata is disabled
+- **OTLP Integration**: `CombinedAppender` in `storage/remote/otlptranslator/prometheusremotewrite/` handles OTLP ingestion
+- **Observability**: Instrumentation metrics for monitoring the metadata pipeline:
+  - `prometheus_tsdb_head_resource_updates_committed_total` — resource attribute updates committed
+  - `prometheus_tsdb_head_scope_updates_committed_total` — scope updates committed
+  - `prometheus_tsdb_storage_series_metadata_bytes` — bytes used by Parquet metadata files across all blocks
+  - `prometheus_engine_info_function_calls_total{mode}` — info() calls by resolution mode (`native`, `metric-join`, `hybrid`)
 
-Demo example in `documentation/examples/metadata-persistence/`.
+Demo examples in `documentation/examples/`:
+- `info-autocomplete-demo/`: Interactive demo for info() function autocomplete
+- `otlp-resource-attributes/`: OTLP ingestion with resource attributes
+- `metadata-persistence/`: Basic metadata persistence demo
+
+### Parquet Usage: parquet-common vs tsdb/seriesmetadata
+
+These two systems both use `parquet-go` but solve different problems and should not be merged:
+
+- **parquet-common** (`github.com/prometheus-community/parquet-common`): Replaces entire TSDB block format (labels + sample chunks) with columnar Parquet for cloud-scale analytical storage (Cortex/Thanos). Dynamic schema with one column per label name. Uses advanced Parquet features (projections, row group stats, bloom filters, page-level I/O).
+- **tsdb/seriesmetadata**: Small sidecar Parquet file alongside standard TSDB blocks storing metric metadata and OTel resource attributes. Static struct-based schema with nested lists. Loads entire file into memory for O(1) hash lookup. Typically kilobytes, not gigabytes.
+
+**Why they can't converge**: Incompatible schemas (columnar per-label vs row-oriented with nested lists), incompatible scale assumptions (distributed cloud vs single-node local), and resource attributes are versioned (multiple values over time per series) which doesn't fit parquet-common's one-value-per-row label model. parquet-common exposes no reusable Parquet I/O primitives — its API is purpose-built for time series data.
+
+**Techniques ported from parquet-common to seriesmetadata**:
+- Explicit zstd compression (`zstd.SpeedBetterCompression`) instead of parquet-go defaults
+- Row sorting before write (by namespace, labels_hash, MinTime) for better compression
+- Footer key-value metadata (`schema_version`, `metric_count`, `resource_count`, `scope_count`) for schema evolution
+
+**Not worth porting**: Bloom filters, two-file projections, page-level I/O, row group tuning, sharding, `objstore.Bucket` integration — all designed for cloud-scale data that doesn't apply to a small local metadata file.
+
+**seriesmetadata Storage Model**: Fully denormalized — one Parquet row per resource version per series. Each `metadataRow` embeds all attributes inline (`IdentifyingAttrs`, `DescriptiveAttrs`, `Entities` as nested lists); there is no resource ID table or foreign-key reference. N series sharing the same OTel resource produce N copies of all attributes in the file. The in-memory model mirrors this: `MemResourceStore` is `map[uint64]*versionedResourceEntry` keyed by series `labelsHash`, with independent attribute maps per series. Deduplication is temporal only — `AddOrExtend()` extends time ranges when attributes are unchanged; `MergeVersionedResources()` merges during compaction. No cross-series deduplication exists; Parquet columnar encoding + row sorting (by namespace, labels_hash, MinTime) + zstd compression absorb the redundancy. This works because files are typically KB-sized for single-node Prometheus.
+
+**Distributed-Scale Considerations**: The denormalized model becomes costly at millions of series in clustered HA implementations (e.g., Grafana Mimir) — object storage costs and transfer overhead scale with series count times attribute count. A normalized design would use a content-addressed resource table plus a series-to-resource mapping table to eliminate cross-series duplication. Advanced Parquet techniques (column projections, bloom filters, page-level I/O, row group tuning) become essential for object-storage access patterns. Versioned resources add further complexity: time-range-aware joins, and the compactor must understand version merge semantics. These are forward-looking design notes, not planned work for single-node Prometheus.
 
 ### Build Tags
 

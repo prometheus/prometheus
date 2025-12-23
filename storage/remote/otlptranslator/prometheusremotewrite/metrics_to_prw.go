@@ -26,12 +26,14 @@ import (
 	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -94,6 +96,15 @@ type PrometheusConverter struct {
 	resourceLabels *cachedResourceLabels
 	scopeLabels    *cachedScopeLabels
 	labelNamer     otlptranslator.LabelNamer
+
+	// resourceCtx holds the current resource context (attributes + entities) for the
+	// current ResourceMetrics boundary. Set once per resource via setResourceContext,
+	// then passed through AppendV2Options.Resource to the storage layer.
+	resourceCtx *storage.ResourceContext
+
+	// scopeCtx holds the current scope context for the current ScopeMetrics boundary.
+	// Set once per scope via buildScopeContext, then passed through AppendV2Options.Scope.
+	scopeCtx *storage.ScopeContext
 
 	// sanitizedLabels caches the results of label name sanitization within a request.
 	// This avoids repeated string allocations for the same label names.
@@ -191,6 +202,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			errs = errors.Join(errs, err)
 			continue
 		}
+		c.buildResourceContext(resource)
 
 		// keep track of the earliest and latest timestamp in the ResourceMetrics for
 		// use with the "target" info metric
@@ -203,6 +215,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				errs = errors.Join(errs, err)
 				continue
 			}
+			c.buildScopeContext(scopeMetrics)
 
 			metricSlice := scopeMetrics.Metrics()
 
@@ -245,6 +258,8 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						Help: metric.Description(),
 					},
 					MetricFamilyName: promName,
+					Resource:         c.resourceCtx,
+					Scope:            c.scopeCtx,
 				}
 
 				// handle individual metrics based on type
@@ -478,4 +493,111 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) er
 func (c *PrometheusConverter) clearResourceContext() {
 	c.resourceLabels = nil
 	c.scopeLabels = nil
+	c.resourceCtx = nil
+	c.scopeCtx = nil
+}
+
+// buildResourceContext builds a ResourceContext from the given OTLP resource.
+// The context is cached on the converter and reused for all datapoints within the same ResourceMetrics.
+func (c *PrometheusConverter) buildResourceContext(resource pcommon.Resource) {
+	attrs := resourceAttrsToMap(resource.Attributes())
+	if len(attrs) == 0 {
+		c.resourceCtx = nil
+		return
+	}
+
+	identifying, descriptive := seriesmetadata.SplitAttributes(attrs)
+	entities := extractEntities(resource, attrs)
+
+	c.resourceCtx = &storage.ResourceContext{
+		Identifying: identifying,
+		Descriptive: descriptive,
+		Entities:    entities,
+	}
+}
+
+// buildScopeContext builds a ScopeContext from the given OTLP ScopeMetrics.
+// The context is cached on the converter and reused for all datapoints within the same ScopeMetrics.
+func (c *PrometheusConverter) buildScopeContext(scopeMetrics pmetric.ScopeMetrics) {
+	ils := scopeMetrics.Scope()
+	name := ils.Name()
+	version := ils.Version()
+	schemaURL := scopeMetrics.SchemaUrl()
+
+	attrs := make(map[string]string, ils.Attributes().Len())
+	ils.Attributes().Range(func(k string, v pcommon.Value) bool {
+		attrs[k] = v.AsString()
+		return true
+	})
+
+	if name == "" && version == "" && schemaURL == "" && len(attrs) == 0 {
+		c.scopeCtx = nil
+		return
+	}
+
+	c.scopeCtx = &storage.ScopeContext{
+		Name:      name,
+		Version:   version,
+		SchemaURL: schemaURL,
+		Attrs:     attrs,
+	}
+}
+
+// resourceAttrsToMap converts OTel resource attributes to a map[string]string.
+func resourceAttrsToMap(attrs pcommon.Map) map[string]string {
+	if attrs.Len() == 0 {
+		return nil
+	}
+	result := make(map[string]string, attrs.Len())
+	attrs.Range(func(key string, value pcommon.Value) bool {
+		result[key] = value.AsString()
+		return true
+	})
+	return result
+}
+
+// extractEntities extracts entities from OTLP entity_refs.
+// Returns nil if no entity_refs are present.
+func extractEntities(resource pcommon.Resource, attrs map[string]string) []storage.EntityData {
+	entityRefs := entity.ResourceEntityRefs(resource)
+
+	if entityRefs.Len() == 0 {
+		return nil
+	}
+
+	entities := make([]storage.EntityData, 0, entityRefs.Len())
+	for i := 0; i < entityRefs.Len(); i++ {
+		ref := entityRefs.At(i)
+		entityType := ref.Type()
+		if entityType == "" {
+			entityType = seriesmetadata.EntityTypeResource
+		}
+
+		// Extract identifying attributes by looking up the id_keys in the attributes map
+		idKeys := ref.IdKeys()
+		id := make(map[string]string, idKeys.Len())
+		for j := 0; j < idKeys.Len(); j++ {
+			key := idKeys.At(j)
+			if val, ok := attrs[key]; ok {
+				id[key] = val
+			}
+		}
+
+		// Extract descriptive attributes by looking up the description_keys in the attributes map
+		descKeys := ref.DescriptionKeys()
+		desc := make(map[string]string, descKeys.Len())
+		for j := 0; j < descKeys.Len(); j++ {
+			key := descKeys.At(j)
+			if val, ok := attrs[key]; ok {
+				desc[key] = val
+			}
+		}
+
+		entities = append(entities, storage.EntityData{
+			Type:        entityType,
+			ID:          id,
+			Description: desc,
+		})
+	}
+	return entities
 }
