@@ -10,12 +10,12 @@ jobs:
     steps:
       - name: Build Fuzzers
         id: build
-        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@537c8005ba4c9de026b2fa3550663280d25d6175 # master
+        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@4bf20ff8dfda18ad651583ebca9fb17a7ce1940a # master
         with:
           oss-fuzz-project-name: "prometheus"
           dry-run: false
       - name: Run Fuzzers
-        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@537c8005ba4c9de026b2fa3550663280d25d6175 # master
+        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@4bf20ff8dfda18ad651583ebca9fb17a7ce1940a # master
         # Note: Regularly check for updates to the pinned commit hash at:
         # https://github.com/google/oss-fuzz/tree/master/infra/cifuzz/actions/run_fuzzers
         with:
