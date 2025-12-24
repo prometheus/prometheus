@@ -166,12 +166,11 @@ tarball: npm_licenses common-tarball
 .PHONY: docker
 docker: npm_licenses common-docker
 
-plugins/plugins.go: plugins.yml plugins/generate.go
-	@echo ">> creating plugins list"
-	$(GO) generate -tags plugins ./plugins
-
+# Use build tags like -tags "remove_kubernetes_sd,remove_aws_sd" to exclude specific SDs.
 .PHONY: plugins
-plugins: plugins/plugins.go
+plugins: plugins.yml plugins/generate.go
+	@echo ">> generating plugin files"
+	$(GO) generate -tags plugins ./plugins
 
 .PHONY: build
 build: assets npm_licenses assets-compress plugins common-build
