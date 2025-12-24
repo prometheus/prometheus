@@ -263,6 +263,13 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 			return nil, err
 		}
 		if c.blockExcludeFunc != nil && c.blockExcludeFunc(meta) {
+			// Compactions work from oldest to newest, uploads do the same (usually).
+			// If you continue here you'll skip compactions on this one block, but:
+			// * all further blocks are NOT yet uploaded
+			// * some or all further blocks are uploaded
+			//
+			// If we continue and there are newer blocks to pick from,
+			// then you will compact in a non-continuous way, leaving gaps of individual un-compacted blocks.
 			break
 		}
 		dms = append(dms, dirMeta{dir, meta})
