@@ -170,7 +170,7 @@ docker: npm_licenses common-docker
 .PHONY: plugins
 plugins: plugins.yml plugins/generate.go
 	@echo ">> generating plugin files"
-	$(GO) generate -tags plugins ./plugins
+	GOOS= GOARCH= $(GO) generate -tags plugins ./plugins
 
 .PHONY: build
 build: assets npm_licenses assets-compress plugins common-build
