@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -383,6 +385,79 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 
 	require.NoError(t, s.Close())
+}
+
+// TestWriteStorageApplyConfig_ErrorPreservesState verifies that when
+// WriteStorage.ApplyConfig fails partway through processing
+// (e.g., due to invalid TLS config on a later endpoint), the original
+// queues are preserved and not lost.
+func TestWriteStorageApplyConfig_ErrorPreservesState(t *testing.T) {
+	dir := t.TempDir()
+
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
+	defer s.Close()
+
+	// Initial config with one working endpoint.
+	conf1 := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			{
+				Name: "endpoint1",
+				URL: &common_config.URL{
+					URL: &url.URL{
+						Scheme: "http",
+						Host:   "localhost:9090",
+					},
+				},
+				QueueConfig:     config.DefaultQueueConfig,
+				ProtobufMessage: remoteapi.WriteV1MessageType,
+			},
+		},
+	}
+	require.NoError(t, s.ApplyConfig(conf1))
+
+	hash1, err := toHash(conf1.RemoteWriteConfigs[0])
+	require.NoError(t, err)
+	require.Equal(t, []string{hash1}, slices.Collect(maps.Keys(s.queues)))
+	originalQueue := s.queues[hash1]
+
+	// Try to apply a new config that fails after processing the first endpoint.
+	// The first endpoint is unchanged (will be reused), but the second has invalid TLS config.
+	conf2 := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig, // Same external labels.
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			conf1.RemoteWriteConfigs[0], // Reuse first endpoint (unchanged).
+			{
+				Name: "endpoint2",
+				URL: &common_config.URL{
+					URL: &url.URL{
+						Scheme: "https",
+						Host:   "localhost:9091",
+					},
+				},
+				HTTPClientConfig: common_config.HTTPClientConfig{
+					TLSConfig: common_config.TLSConfig{
+						CAFile: "/nonexistent/ca.pem", // Invalid - causes NewWriteClient to fail.
+					},
+				},
+				QueueConfig:     config.DefaultQueueConfig,
+				ProtobufMessage: remoteapi.WriteV1MessageType,
+			},
+		},
+	}
+
+	// Apply the config - this should fail due to invalid TLS config.
+	err = s.ApplyConfig(conf2)
+	require.Error(t, err)
+
+	// Verify the original queue is still in place after the error.
+	s.mtx.Lock()
+	queueCount := len(s.queues)
+	queue := s.queues[hash1]
+	s.mtx.Unlock()
+
+	require.Equal(t, 1, queueCount, "Queue count should remain 1 after error")
+	require.Same(t, originalQueue, queue, "Queue pointer should be unchanged after error")
 }
 
 func TestOTLPWriteHandler(t *testing.T) {
