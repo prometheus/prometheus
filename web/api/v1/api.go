@@ -445,6 +445,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
+	r.Get("/resource_attributes", wrap(api.resourceAttributes))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
@@ -1530,6 +1531,91 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	return apiFuncResult{res, nil, nil, nil}
+}
+
+// ResourceAttributesResponse is the response format for the resource_attributes endpoint.
+type ResourceAttributesResponse struct {
+	LabelsHash        uint64            `json:"labels_hash,string"`
+	ServiceName       string            `json:"service_name,omitempty"`
+	ServiceNamespace  string            `json:"service_namespace,omitempty"`
+	ServiceInstanceID string            `json:"service_instance_id,omitempty"`
+	Attributes        map[string]string `json:"attributes"`
+	MinTime           int64             `json:"min_time"`
+	MaxTime           int64             `json:"max_time"`
+}
+
+func (api *API) resourceAttributes(r *http.Request) apiFuncResult {
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+
+	limit := -1
+	if s := r.FormValue("limit"); s != "" {
+		var err error
+		if limit, err = strconv.Atoi(s); err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
+		}
+	}
+
+	// Optional filter by labels hash
+	var filterHash uint64
+	if s := r.FormValue("labels_hash"); s != "" {
+		var err error
+		filterHash, err = strconv.ParseUint(s, 10, 64)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("labels_hash must be a valid uint64")}, nil, nil}
+		}
+	}
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// If filtering by a specific labels hash, return just that one
+	if filterHash != 0 {
+		if attrs, ok := mr.GetResourceAttributes(filterHash); ok {
+			resp := ResourceAttributesResponse{
+				LabelsHash:        filterHash,
+				ServiceName:       attrs.ServiceName,
+				ServiceNamespace:  attrs.ServiceNamespace,
+				ServiceInstanceID: attrs.ServiceInstanceID,
+				Attributes:        attrs.Attributes,
+				MinTime:           attrs.MinTime,
+				MaxTime:           attrs.MaxTime,
+			}
+			return apiFuncResult{[]ResourceAttributesResponse{resp}, nil, nil, nil}
+		}
+		return apiFuncResult{[]ResourceAttributesResponse{}, nil, nil, nil}
+	}
+
+	// Return all resource attributes
+	var results []ResourceAttributesResponse
+	err = mr.IterResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.ResourceAttributes) error {
+		if limit >= 0 && len(results) >= limit {
+			return nil // Stop iterating if we've hit the limit
+		}
+		results = append(results, ResourceAttributesResponse{
+			LabelsHash:        labelsHash,
+			ServiceName:       attrs.ServiceName,
+			ServiceNamespace:  attrs.ServiceNamespace,
+			ServiceInstanceID: attrs.ServiceInstanceID,
+			Attributes:        attrs.Attributes,
+			MinTime:           attrs.MinTime,
+			MaxTime:           attrs.MaxTime,
+		})
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resource attributes: %w", err)}, nil, nil}
+	}
+
+	if results == nil {
+		results = []ResourceAttributesResponse{}
+	}
+
+	return apiFuncResult{results, nil, nil, nil}
 }
 
 // RuleDiscovery has info for all rules.

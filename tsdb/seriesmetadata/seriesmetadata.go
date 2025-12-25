@@ -30,22 +30,6 @@ import (
 // SeriesMetadataFilename is the name of the series metadata file in a block directory.
 const SeriesMetadataFilename = "series_metadata.parquet"
 
-// seriesMetadataRow is the Parquet schema for series metadata.
-// Each row represents metadata for a metric, deduplicated by metric name.
-type seriesMetadataRow struct {
-	// MetricName is the __name__ label value for the metric.
-	MetricName string `parquet:"metric_name"`
-	// LabelsHash is the stable hash of the series labels (using labels.StableHash).
-	// Kept for deduplication during compaction.
-	LabelsHash uint64 `parquet:"labels_hash"`
-	// Type is the metric type as a string (counter, gauge, histogram, etc.)
-	Type string `parquet:"type"`
-	// Unit is the metric unit (e.g., "bytes", "seconds")
-	Unit string `parquet:"unit"`
-	// Help is the metric help text
-	Help string `parquet:"help"`
-}
-
 // Reader provides read access to series metadata.
 type Reader interface {
 	// Get returns metadata for the series with the given labels hash.
@@ -69,6 +53,9 @@ type Reader interface {
 
 	// Close releases any resources associated with the reader.
 	Close() error
+
+	// VersionedResourceAttributesReader provides access to versioned resource attributes.
+	VersionedResourceAttributesReader
 }
 
 // metadataEntry stores metadata with both hash and metric name for indexing.
@@ -86,13 +73,17 @@ type MemSeriesMetadata struct {
 	// byName maps metric name to metadata entry (for deduplication)
 	byName map[string]*metadataEntry
 	mtx    sync.RWMutex
+
+	// resourceAttrs stores resource attributes per series
+	resourceAttrs *MemResourceAttributes
 }
 
 // NewMemSeriesMetadata creates a new in-memory series metadata store.
 func NewMemSeriesMetadata() *MemSeriesMetadata {
 	return &MemSeriesMetadata{
-		byHash: make(map[uint64]*metadataEntry),
-		byName: make(map[string]*metadataEntry),
+		byHash:        make(map[uint64]*metadataEntry),
+		byName:        make(map[string]*metadataEntry),
+		resourceAttrs: NewMemResourceAttributes(),
 	}
 }
 
@@ -187,11 +178,64 @@ func (*MemSeriesMetadata) Close() error {
 	return nil
 }
 
+// GetResourceAttributes returns resource attributes for the series with the given labels hash.
+func (m *MemSeriesMetadata) GetResourceAttributes(labelsHash uint64) (*ResourceAttributes, bool) {
+	return m.resourceAttrs.GetResourceAttributes(labelsHash)
+}
+
+// SetResourceAttributes stores resource attributes for the given labels hash.
+func (m *MemSeriesMetadata) SetResourceAttributes(labelsHash uint64, attrs *ResourceAttributes) {
+	m.resourceAttrs.SetResourceAttributes(labelsHash, attrs)
+}
+
+// DeleteResourceAttributes removes resource attributes for the given labels hash.
+func (m *MemSeriesMetadata) DeleteResourceAttributes(labelsHash uint64) {
+	m.resourceAttrs.DeleteResourceAttributes(labelsHash)
+}
+
+// IterResourceAttributes calls the given function for each series' resource attributes.
+func (m *MemSeriesMetadata) IterResourceAttributes(f func(labelsHash uint64, attrs *ResourceAttributes) error) error {
+	return m.resourceAttrs.IterResourceAttributes(f)
+}
+
+// TotalResourceAttributes returns the total count of series with resource attributes.
+func (m *MemSeriesMetadata) TotalResourceAttributes() uint64 {
+	return m.resourceAttrs.TotalResourceAttributes()
+}
+
+// GetVersionedResourceAttributes returns all versions of resource attributes for the series.
+func (m *MemSeriesMetadata) GetVersionedResourceAttributes(labelsHash uint64) (*VersionedResourceAttributes, bool) {
+	return m.resourceAttrs.GetVersionedResourceAttributes(labelsHash)
+}
+
+// GetResourceAttributesAt returns the resource attributes active at the given timestamp.
+func (m *MemSeriesMetadata) GetResourceAttributesAt(labelsHash uint64, timestamp int64) (*ResourceAttributes, bool) {
+	return m.resourceAttrs.GetResourceAttributesAt(labelsHash, timestamp)
+}
+
+// IterVersionedResourceAttributes calls the given function for each series' versioned attributes.
+func (m *MemSeriesMetadata) IterVersionedResourceAttributes(f func(labelsHash uint64, attrs *VersionedResourceAttributes) error) error {
+	return m.resourceAttrs.IterVersionedResourceAttributes(f)
+}
+
+// TotalResourceAttributeVersions returns the total count of all versions across all series.
+func (m *MemSeriesMetadata) TotalResourceAttributeVersions() uint64 {
+	return m.resourceAttrs.TotalResourceAttributeVersions()
+}
+
+// SetVersionedResourceAttributes stores versioned resource attributes for the given labels hash.
+func (m *MemSeriesMetadata) SetVersionedResourceAttributes(labelsHash uint64, attrs *VersionedResourceAttributes) {
+	m.resourceAttrs.SetVersionedResourceAttributes(labelsHash, attrs)
+}
+
 // parquetReader implements Reader by reading from a Parquet file.
 type parquetReader struct {
 	file   *os.File
 	byHash map[uint64]*metadataEntry
 	byName map[string]*metadataEntry
+
+	// resourceAttrs stores resource attributes loaded from the file
+	resourceAttrs *MemResourceAttributes
 
 	closeOnce sync.Once
 	closeErr  error
@@ -204,34 +248,71 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 		return nil, fmt.Errorf("stat file: %w", err)
 	}
 
-	// Use the generic Read function which reads all rows at once
-	rows, err := parquet.Read[seriesMetadataRow](file, stat.Size())
+	// Read all rows using the unified schema
+	rows, err := parquet.Read[metadataRow](file, stat.Size())
 	if err != nil {
 		return nil, fmt.Errorf("read parquet rows: %w", err)
 	}
 
 	// Build lookup maps from rows
-	byHash := make(map[uint64]*metadataEntry, len(rows))
-	byName := make(map[string]*metadataEntry, len(rows))
+	byHash := make(map[uint64]*metadataEntry)
+	byName := make(map[string]*metadataEntry)
+	resourceAttrs := NewMemResourceAttributes()
+
+	// Temporary map to collect resource attribute versions by labelsHash
+	versionsByHash := make(map[uint64][]*ResourceAttributes)
+
 	for i := range rows {
 		row := &rows[i]
-		entry := &metadataEntry{
-			metricName: row.MetricName,
-			labelsHash: row.LabelsHash,
-			meta: metadata.Metadata{
-				Type: model.MetricType(row.Type),
-				Unit: row.Unit,
-				Help: row.Help,
-			},
+
+		switch row.Namespace {
+		case NamespaceMetric, "": // Empty namespace for backward compatibility
+			if row.MetricName == "" {
+				continue // Skip invalid metric rows
+			}
+			entry := &metadataEntry{
+				metricName: row.MetricName,
+				labelsHash: row.LabelsHash,
+				meta: metadata.Metadata{
+					Type: model.MetricType(row.Type),
+					Unit: row.Unit,
+					Help: row.Help,
+				},
+			}
+			byHash[row.LabelsHash] = entry
+			byName[row.MetricName] = entry
+
+		case NamespaceResourceAttrs:
+			// Convert Parquet row to ResourceAttributes
+			attrs := make(map[string]string, len(row.Attributes))
+			for _, attr := range row.Attributes {
+				attrs[attr.Key] = attr.Value
+			}
+			ra := &ResourceAttributes{
+				ServiceName:       row.ServiceName,
+				ServiceNamespace:  row.ServiceNamespace,
+				ServiceInstanceID: row.ServiceInstanceID,
+				Attributes:        attrs,
+				MinTime:           row.MinTime,
+				MaxTime:           row.MaxTime,
+			}
+			// Collect versions - will be sorted and set below
+			versionsByHash[row.LabelsHash] = append(versionsByHash[row.LabelsHash], ra)
 		}
-		byHash[row.LabelsHash] = entry
-		byName[row.MetricName] = entry
+	}
+
+	// Set versioned resource attributes (already sorted by MinTime from WriteFile order)
+	for labelsHash, versions := range versionsByHash {
+		resourceAttrs.SetVersionedResourceAttributes(labelsHash, &VersionedResourceAttributes{
+			Versions: versions,
+		})
 	}
 
 	return &parquetReader{
-		file:   file,
-		byHash: byHash,
-		byName: byName,
+		file:          file,
+		byHash:        byHash,
+		byName:        byName,
+		resourceAttrs: resourceAttrs,
 	}, nil
 }
 
@@ -278,6 +359,41 @@ func (r *parquetReader) Total() uint64 {
 	return uint64(len(r.byName))
 }
 
+// GetResourceAttributes returns resource attributes for the series with the given labels hash.
+func (r *parquetReader) GetResourceAttributes(labelsHash uint64) (*ResourceAttributes, bool) {
+	return r.resourceAttrs.GetResourceAttributes(labelsHash)
+}
+
+// IterResourceAttributes calls the given function for each series' resource attributes.
+func (r *parquetReader) IterResourceAttributes(f func(labelsHash uint64, attrs *ResourceAttributes) error) error {
+	return r.resourceAttrs.IterResourceAttributes(f)
+}
+
+// TotalResourceAttributes returns the total count of series with resource attributes.
+func (r *parquetReader) TotalResourceAttributes() uint64 {
+	return r.resourceAttrs.TotalResourceAttributes()
+}
+
+// GetVersionedResourceAttributes returns all versions of resource attributes for the series.
+func (r *parquetReader) GetVersionedResourceAttributes(labelsHash uint64) (*VersionedResourceAttributes, bool) {
+	return r.resourceAttrs.GetVersionedResourceAttributes(labelsHash)
+}
+
+// GetResourceAttributesAt returns the resource attributes active at the given timestamp.
+func (r *parquetReader) GetResourceAttributesAt(labelsHash uint64, timestamp int64) (*ResourceAttributes, bool) {
+	return r.resourceAttrs.GetResourceAttributesAt(labelsHash, timestamp)
+}
+
+// IterVersionedResourceAttributes calls the given function for each series' versioned attributes.
+func (r *parquetReader) IterVersionedResourceAttributes(f func(labelsHash uint64, attrs *VersionedResourceAttributes) error) error {
+	return r.resourceAttrs.IterVersionedResourceAttributes(f)
+}
+
+// TotalResourceAttributeVersions returns the total count of all versions across all series.
+func (r *parquetReader) TotalResourceAttributeVersions() uint64 {
+	return r.resourceAttrs.TotalResourceAttributeVersions()
+}
+
 // Close releases resources associated with the reader.
 // Safe to call multiple times; only the first call closes the file.
 func (r *parquetReader) Close() error {
@@ -289,21 +405,24 @@ func (r *parquetReader) Close() error {
 
 // WriteFile atomically writes series metadata to a Parquet file in the given directory.
 // It follows the same atomic write pattern as tombstones: write to .tmp, then rename.
+// Writes both metric metadata and resource attributes using the unified schema.
 func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 	path := filepath.Join(dir, SeriesMetadataFilename)
 	tmp := path + ".tmp"
 
-	// Collect all metadata into rows, deduplicated by metric name
+	var rows []metadataRow
+
+	// Collect all metric metadata into rows, deduplicated by metric name
 	seen := make(map[string]struct{})
-	var rows []seriesMetadataRow
 	err := mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
 		if _, ok := seen[name]; ok {
 			return nil // Skip duplicates
 		}
 		seen[name] = struct{}{}
-		rows = append(rows, seriesMetadataRow{
+		rows = append(rows, metadataRow{
+			Namespace:  NamespaceMetric,
 			MetricName: name,
-			LabelsHash: 0, // Hash is not needed in output, but we keep the schema field
+			LabelsHash: 0, // Hash is not strictly needed for metric metadata
 			Type:       string(meta.Type),
 			Unit:       meta.Unit,
 			Help:       meta.Help,
@@ -314,9 +433,34 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 		return 0, fmt.Errorf("iterate metadata by name: %w", err)
 	}
 
-	// If no metadata, write an empty file
-	if len(rows) == 0 {
-		rows = []seriesMetadataRow{}
+	// Collect all resource attributes into rows (one row per version)
+	err = mr.IterVersionedResourceAttributes(func(labelsHash uint64, vattrs *VersionedResourceAttributes) error {
+		for _, attrs := range vattrs.Versions {
+			// Convert attributes map to list
+			attrList := make([]AttributeEntry, 0, len(attrs.Attributes))
+			for k, v := range attrs.Attributes {
+				attrList = append(attrList, AttributeEntry{
+					Key:           k,
+					Value:         v,
+					IsIdentifying: IsIdentifyingAttribute(k),
+				})
+			}
+
+			rows = append(rows, metadataRow{
+				Namespace:         NamespaceResourceAttrs,
+				LabelsHash:        labelsHash,
+				MinTime:           attrs.MinTime,
+				MaxTime:           attrs.MaxTime,
+				ServiceName:       attrs.ServiceName,
+				ServiceNamespace:  attrs.ServiceNamespace,
+				ServiceInstanceID: attrs.ServiceInstanceID,
+				Attributes:        attrList,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("iterate resource attributes: %w", err)
 	}
 
 	// Create temp file
@@ -336,7 +480,7 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 	}()
 
 	// Write parquet data
-	writer := parquet.NewGenericWriter[seriesMetadataRow](f)
+	writer := parquet.NewGenericWriter[metadataRow](f)
 	if _, err := writer.Write(rows); err != nil {
 		return 0, fmt.Errorf("write parquet rows: %w", err)
 	}
