@@ -1666,27 +1666,30 @@ func (h *Head) Tombstones() (tombstones.Reader, error) {
 }
 
 // SeriesMetadata returns series metadata for the head.
-// It extracts metadata from all memSeries that have metadata set.
+// It extracts metadata and resource attributes from all memSeries.
 func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 	mem := seriesmetadata.NewMemSeriesMetadata()
 
-	// Iterate over all series shards and collect metadata
+	// Iterate over all series shards and collect metadata and resource attributes
 	for i := 0; i < h.series.size; i++ {
 		h.series.locks[i].RLock()
 		for _, s := range h.series.series[i] {
-			if s.meta == nil {
-				continue
-			}
-
-			// Extract metric name from __name__ label
-			metricName := s.lset.Get(labels.MetricName)
-			if metricName == "" {
-				continue // Skip series without metric name
-			}
-
 			// Use StableHash of labels as the key for consistent identification.
 			hash := labels.StableHash(s.lset)
-			mem.Set(metricName, hash, *s.meta)
+
+			// Collect metric metadata if present
+			if s.meta != nil {
+				// Extract metric name from __name__ label
+				metricName := s.lset.Get(labels.MetricName)
+				if metricName != "" {
+					mem.Set(metricName, hash, *s.meta)
+				}
+			}
+
+			// Collect resource attributes if present
+			if s.resourceAttrs != nil {
+				mem.SetVersionedResourceAttributes(hash, s.resourceAttrs)
+			}
 		}
 		h.series.locks[i].RUnlock()
 	}
@@ -2178,6 +2181,11 @@ type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
 	ref  chunks.HeadSeriesRef
 	meta *metadata.Metadata
+
+	// resourceAttrs stores OTel resource attributes for this series.
+	// nil if no resource attributes have been set. Supports multiple versions
+	// to track attribute changes over time.
+	resourceAttrs *seriesmetadata.VersionedResourceAttributes
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.

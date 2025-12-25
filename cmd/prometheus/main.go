@@ -1770,6 +1770,10 @@ func (notReadyAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadat
 	return 0, tsdb.ErrNotReady
 }
 
+func (notReadyAppender) UpdateResourceAttributes(storage.SeriesRef, labels.Labels, map[string]string, int64) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (notReadyAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }

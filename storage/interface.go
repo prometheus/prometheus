@@ -299,6 +299,7 @@ type Appender interface {
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater
+	ResourceAttributesUpdater
 	StartTimestampAppender
 }
 
@@ -375,6 +376,21 @@ type MetadataUpdater interface {
 	// UpdateMetadata returns an error.
 	// If the reference is 0 it must not be used for caching.
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
+}
+
+// ResourceAttributesUpdater provides an interface for associating OTel resource
+// attributes to stored series.
+type ResourceAttributesUpdater interface {
+	// UpdateResourceAttributes updates resource attributes for the given series.
+	// The attributes map contains OTel resource attribute key-value pairs.
+	// The timestamp t is used to track when these attributes were observed.
+	// A series reference number is returned which can be used to modify the
+	// attributes of the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to UpdateResourceAttributes() at any point. If the series does not exist,
+	// UpdateResourceAttributes returns an error.
+	// If the reference is 0 it must not be used for caching.
+	UpdateResourceAttributes(ref SeriesRef, l labels.Labels, attrs map[string]string, t int64) (SeriesRef, error)
 }
 
 // StartTimestampAppender provides an interface for appending ST to storage.
