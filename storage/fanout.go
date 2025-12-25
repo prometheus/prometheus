@@ -227,6 +227,20 @@ func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metada
 	return ref, nil
 }
 
+func (f *fanoutAppender) UpdateResourceAttributes(ref SeriesRef, l labels.Labels, attrs map[string]string, t int64) (SeriesRef, error) {
+	ref, err := f.primary.UpdateResourceAttributes(ref, l, attrs, t)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.UpdateResourceAttributes(ref, l, attrs, t); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
 func (f *fanoutAppender) AppendSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64) (SeriesRef, error) {
 	ref, err := f.primary.AppendSTZeroSample(ref, l, t, st)
 	if err != nil {

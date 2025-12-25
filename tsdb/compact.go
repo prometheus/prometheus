@@ -733,22 +733,34 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		return fmt.Errorf("write new tombstones file: %w", err)
 	}
 
-	// Merge and write series metadata from source blocks.
+	// Merge and write series metadata and resource attributes from source blocks.
 	// Metadata is deduplicated by metric name - later blocks overwrite earlier ones.
+	// Resource attributes are merged by labels hash - time ranges are extended.
 	mergedMeta := seriesmetadata.NewMemSeriesMetadata()
 	for _, b := range blocks {
 		mr, err := b.SeriesMetadata()
 		if err != nil {
 			return fmt.Errorf("get series metadata from block: %w", err)
 		}
+		// Merge metric metadata
 		err = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
 			// Use 0 for hash since we're deduplicating by name only
 			mergedMeta.Set(name, 0, meta)
 			return nil
 		})
+		if err != nil {
+			mr.Close()
+			return fmt.Errorf("iterate series metadata: %w", err)
+		}
+		// Merge versioned resource attributes
+		err = mr.IterVersionedResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.VersionedResourceAttributes) error {
+			// SetVersionedResourceAttributes merges versions automatically if entry exists
+			mergedMeta.SetVersionedResourceAttributes(labelsHash, attrs)
+			return nil
+		})
 		mr.Close() // Must close to release pending readers
 		if err != nil {
-			return fmt.Errorf("iterate series metadata: %w", err)
+			return fmt.Errorf("iterate resource attributes: %w", err)
 		}
 	}
 	if _, err := seriesmetadata.WriteFile(c.logger, tmp, mergedMeta); err != nil {

@@ -1123,6 +1123,10 @@ func (a *noOpAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ me
 	return 1, nil
 }
 
+func (*noOpAppender) UpdateResourceAttributes(_ storage.SeriesRef, _ labels.Labels, _ map[string]string, _ int64) (storage.SeriesRef, error) {
+	return 1, nil
+}
+
 func (*noOpAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
 	return 1, nil
 }
