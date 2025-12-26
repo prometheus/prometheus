@@ -142,11 +142,11 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 
 	// Remote write queues only need to change if the remote write config or
 	// external labels change.
-	externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
-	rws.externalLabels = conf.GlobalConfig.ExternalLabels
+	externalLabelsUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
 
 	newQueues := make(map[string]*QueueManager)
 	newHashes := []string{}
+	reusedHashes := make(map[string]bool)
 	for _, rwConf := range conf.RemoteWriteConfigs {
 		hash, err := toHash(rwConf)
 		if err != nil {
@@ -183,11 +183,12 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		}
 
 		queue, ok := rws.queues[hash]
-		if externalLabelUnchanged && ok {
+		if externalLabelsUnchanged && ok {
 			// Update the client in case any secret configuration has changed.
 			queue.SetClient(c)
 			newQueues[hash] = queue
-			delete(rws.queues, hash)
+			// The queue for this hash is reused.
+			reusedHashes[hash] = true
 			continue
 		}
 
@@ -220,10 +221,15 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		newHashes = append(newHashes, hash)
 	}
 
-	// Anything remaining in rws.queues is a queue who's config has
-	// changed or was removed from the overall remote write config.
-	for _, q := range rws.queues {
-		q.Stop()
+	// All validation passed - now safe to modify state.
+	rws.externalLabels = conf.GlobalConfig.ExternalLabels
+
+	// Stop queues which config has changed or was removed from the overall
+	// remote write config.
+	for hash, q := range rws.queues {
+		if !reusedHashes[hash] {
+			q.Stop()
+		}
 	}
 
 	for _, hash := range newHashes {
