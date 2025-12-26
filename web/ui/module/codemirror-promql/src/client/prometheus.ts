@@ -39,6 +39,9 @@ export interface PrometheusClient {
 
   // flags returns flag values that prometheus was configured with.
   flags(): Promise<Record<string, string>>;
+
+  // destroy is called to release all resources held by this client
+  destroy?(): void;
 }
 
 export interface CacheConfig {
@@ -88,6 +91,7 @@ export class HTTPPrometheusClient implements PrometheusClient {
   // when calling it, thus the indirection via another function wrapper.
   private readonly fetchFn: FetchFn = (input: RequestInfo, init?: RequestInit): Promise<Response> => fetch(input, init);
   private requestHeaders: Headers = new Headers();
+  private readonly abortControllers: Set<AbortController> = new Set<AbortController>();
 
   constructor(config: PrometheusConfig) {
     this.url = config.url ? config.url : '';
@@ -199,11 +203,22 @@ export class HTTPPrometheusClient implements PrometheusClient {
     });
   }
 
+  destroy(): void {
+    for (const controller of this.abortControllers) {
+      controller.abort();
+    }
+    this.abortControllers.clear();
+  }
+
   private fetchAPI<T>(resource: string, init?: RequestInit): Promise<T> {
+    const controller = new AbortController();
+    this.abortControllers.add(controller);
+
     if (init) {
       init.headers = this.requestHeaders;
+      init.signal = controller.signal;
     } else {
-      init = { headers: this.requestHeaders };
+      init = { headers: this.requestHeaders, signal: controller.signal };
     }
     return this.fetchFn(this.url + resource, init)
       .then((res) => {
@@ -221,6 +236,9 @@ export class HTTPPrometheusClient implements PrometheusClient {
           throw new Error('missing "data" field in response JSON');
         }
         return apiRes.data;
+      })
+      .finally(() => {
+        this.abortControllers.delete(controller);
       });
   }
 
@@ -447,5 +465,9 @@ export class CachedPrometheusClient implements PrometheusClient {
       this.cache.setFlags(flags);
       return flags;
     });
+  }
+
+  destroy(): void {
+    this.client.destroy?.();
   }
 }
