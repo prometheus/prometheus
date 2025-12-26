@@ -146,7 +146,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
 
 		// Set resource context for persisting resource attributes with each series.
-		c.appender.SetResourceContext(resourceAttrsToMap(resource.Attributes()))
+		c.appender.SetResourceContext(resource)
 
 		// keep track of the earliest and latest timestamp in the ResourceMetrics for
 		// use with the "target" info metric

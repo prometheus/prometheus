@@ -445,7 +445,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
-	r.Get("/resource_attributes", wrap(api.resourceAttributes))
+	r.Get("/resources", wrap(api.resourceAttributes))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
@@ -1533,11 +1533,25 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	return apiFuncResult{res, nil, nil, nil}
 }
 
+// ResourceAttributeData contains identifying and descriptive attribute maps.
+type ResourceAttributeData struct {
+	Identifying map[string]string `json:"identifying"`
+	Descriptive map[string]string `json:"descriptive"`
+}
+
+// EntityData represents a single entity with type and attributes.
+type EntityData struct {
+	Type        string            `json:"type"`
+	Identifying map[string]string `json:"identifying"`
+	Descriptive map[string]string `json:"descriptive"`
+}
+
 // ResourceAttributeVersion is a single version of resource attributes with its time range.
 type ResourceAttributeVersion struct {
-	Attributes map[string]string `json:"resource_attributes"`
-	MinTimeMs  int64             `json:"min_time_ms"`
-	MaxTimeMs  int64             `json:"max_time_ms"`
+	Attributes ResourceAttributeData `json:"resource_attributes"`
+	Entities   []EntityData          `json:"entities,omitempty"`
+	MinTimeMs  int64                 `json:"min_time_ms"`
+	MaxTimeMs  int64                 `json:"max_time_ms"`
 }
 
 // ResourceAttributesResponse is the response format for the resource_attributes endpoint.
@@ -1641,7 +1655,7 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 		lset := set.At().Labels()
 		hash := lset.Hash()
 
-		versioned, ok := mr.GetVersionedResourceAttributes(hash)
+		versioned, ok := mr.GetVersionedResource(hash)
 		if !ok || len(versioned.Versions) == 0 {
 			continue
 		}
@@ -1670,16 +1684,31 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 }
 
 // filterVersions returns versions that overlap with [startMs, endMs].
-func filterVersions(versions []*seriesmetadata.ResourceAttributes, startMs, endMs int64) []ResourceAttributeVersion {
+// Uses the unified ResourceVersion that contains both attributes and entities.
+func filterVersions(versions []*seriesmetadata.ResourceVersion, startMs, endMs int64) []ResourceAttributeVersion {
 	result := make([]ResourceAttributeVersion, 0, len(versions))
 	for _, v := range versions {
 		// Version overlaps if: version.MinTime <= endMs AND version.MaxTime >= startMs
 		if v.MinTime <= endMs && v.MaxTime >= startMs {
-			result = append(result, ResourceAttributeVersion{
-				Attributes: v.Attributes,
-				MinTimeMs:  v.MinTime,
-				MaxTimeMs:  v.MaxTime,
-			})
+			rv := ResourceAttributeVersion{
+				Attributes: ResourceAttributeData{
+					Identifying: v.Identifying,
+					Descriptive: v.Descriptive,
+				},
+				MinTimeMs: v.MinTime,
+				MaxTimeMs: v.MaxTime,
+			}
+
+			// Extract entities from the unified ResourceVersion
+			for _, entity := range v.Entities {
+				rv.Entities = append(rv.Entities, EntityData{
+					Type:        entity.Type,
+					Identifying: entity.ID,
+					Descriptive: entity.Description,
+				})
+			}
+
+			result = append(result, rv)
 		}
 	}
 	return result
@@ -1713,7 +1742,7 @@ func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, start
 	}
 
 	var results []ResourceAttributesResponse
-	err = mr.IterVersionedResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.VersionedResourceAttributes) error {
+	err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
 		if limit >= 0 && len(results) >= limit {
 			return nil
 		}
@@ -1724,7 +1753,7 @@ func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, start
 		}
 
 		// Filter versions to only those overlapping with [start, end]
-		versions := filterVersions(attrs.Versions, startMs, endMs)
+		versions := filterVersions(resources.Versions, startMs, endMs)
 		if len(versions) == 0 {
 			return nil
 		}
@@ -1736,7 +1765,7 @@ func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, start
 		return nil
 	})
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resource attributes: %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
 	}
 
 	if results == nil {

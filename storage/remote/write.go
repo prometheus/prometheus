@@ -344,8 +344,8 @@ func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metada
 	return 0, nil
 }
 
-func (*timestampTracker) UpdateResourceAttributes(storage.SeriesRef, labels.Labels, map[string]string, int64) (storage.SeriesRef, error) {
-	// UpdateResourceAttributes is no-op for remote write for now.
+func (*timestampTracker) UpdateResource(storage.SeriesRef, labels.Labels, map[string]string, map[string]string, []storage.EntityData, int64) (storage.SeriesRef, error) {
+	// UpdateResource is no-op for remote write for now.
 	return 0, nil
 }
 

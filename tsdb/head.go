@@ -1688,9 +1688,9 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 				}
 			}
 
-			// Collect resource attributes if present
-			if s.resourceAttrs != nil {
-				mem.SetVersionedResourceAttributes(hash, s.resourceAttrs)
+			// Collect resource if present
+			if s.resource != nil {
+				mem.SetVersionedResource(hash, s.resource)
 			}
 		}
 		h.series.locks[i].RUnlock()
@@ -2184,10 +2184,10 @@ type memSeries struct {
 	ref  chunks.HeadSeriesRef
 	meta *metadata.Metadata
 
-	// resourceAttrs stores OTel resource attributes for this series.
-	// nil if no resource attributes have been set. Supports multiple versions
-	// to track attribute changes over time.
-	resourceAttrs *seriesmetadata.VersionedResourceAttributes
+	// resource stores unified OTel resource data (attributes + entities) for this series.
+	// nil if no resource has been set. Supports multiple versions
+	// to track resource changes over time.
+	resource *seriesmetadata.VersionedResource
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.

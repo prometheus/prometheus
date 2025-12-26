@@ -17,8 +17,8 @@ package seriesmetadata
 const (
 	// NamespaceMetric indicates a row contains metric metadata (type, unit, help).
 	NamespaceMetric = "metric"
-	// NamespaceResourceAttrs indicates a row contains OTel resource attributes.
-	NamespaceResourceAttrs = "resource_attrs"
+	// NamespaceResource indicates a row contains a unified resource with attributes and entities.
+	NamespaceResource = "resource"
 )
 
 // Identifying attribute keys per OTel semantic conventions.
@@ -29,7 +29,7 @@ const (
 )
 
 // AttributeEntry represents a single resource attribute in the Parquet schema.
-// Used as a nested list within metadataRow.
+// Used as a nested list within metadataRow for backward compatibility.
 type AttributeEntry struct {
 	// Key is the attribute name (e.g., "deployment.environment").
 	Key string `parquet:"key"`
@@ -40,23 +40,42 @@ type AttributeEntry struct {
 	IsIdentifying bool `parquet:"is_identifying"`
 }
 
-// metadataRow is the unified Parquet schema for both metric metadata and resource attributes.
+// EntityAttributeEntry represents a single entity attribute in the Parquet schema.
+// Used for the entity namespace with separate identifying and descriptive attribute lists.
+type EntityAttributeEntry struct {
+	// Key is the attribute name.
+	Key string `parquet:"key"`
+	// Value is the attribute value as a string.
+	Value string `parquet:"value"`
+}
+
+// EntityRow represents a single entity within a resource version in the Parquet schema.
+type EntityRow struct {
+	// Type is the entity type (e.g., "service", "host", "container", "resource").
+	Type string `parquet:"type"`
+	// ID contains identifying attributes that uniquely identify the entity.
+	ID []EntityAttributeEntry `parquet:"id,list"`
+	// Description contains descriptive (non-identifying) attributes.
+	Description []EntityAttributeEntry `parquet:"description,list"`
+}
+
+// metadataRow is the unified Parquet schema for both metric metadata and resources.
 // The Namespace field discriminates between the two types of data.
 type metadataRow struct {
-	// Namespace discriminates the row type: "metric" or "resource_attrs".
+	// Namespace discriminates the row type: "metric" or "resource".
 	Namespace string `parquet:"namespace"`
 
 	// LabelsHash is the stable hash of the series labels (using labels.StableHash).
 	// For metric metadata, this is used for deduplication during compaction.
-	// For resource attributes, this identifies the specific series.
+	// For resources, this identifies the specific series.
 	LabelsHash uint64 `parquet:"labels_hash"`
 
 	// MinTime is the minimum timestamp (in milliseconds) when this metadata was active.
-	// Optional for metric metadata, required for resource attributes.
+	// Optional for metric metadata, required for resources.
 	MinTime int64 `parquet:"mint,optional"`
 
 	// MaxTime is the maximum timestamp (in milliseconds) when this metadata was active.
-	// Optional for metric metadata, required for resource attributes.
+	// Optional for metric metadata, required for resources.
 	MaxTime int64 `parquet:"maxt,optional"`
 
 	// --- Metric metadata fields (namespace="metric") ---
@@ -73,17 +92,14 @@ type metadataRow struct {
 	// Help is the metric help text.
 	Help string `parquet:"help,optional"`
 
-	// --- Resource attributes fields (namespace="resource_attrs") ---
+	// --- Resource fields (namespace="resource") ---
 
-	// ServiceName is the service.name identifying attribute (explicit column for efficient querying).
-	ServiceName string `parquet:"service_name,optional"`
+	// IdentifyingAttrs contains the resource-level identifying attributes.
+	IdentifyingAttrs []EntityAttributeEntry `parquet:"identifying_attrs,list,optional"`
 
-	// ServiceNamespace is the service.namespace identifying attribute.
-	ServiceNamespace string `parquet:"service_namespace,optional"`
+	// DescriptiveAttrs contains the resource-level descriptive attributes.
+	DescriptiveAttrs []EntityAttributeEntry `parquet:"descriptive_attrs,list,optional"`
 
-	// ServiceInstanceID is the service.instance.id identifying attribute.
-	ServiceInstanceID string `parquet:"service_instance_id,optional"`
-
-	// Attributes is the list of all resource attributes (including identifying ones).
-	Attributes []AttributeEntry `parquet:"attributes,list,optional"`
+	// Entities contains typed entities associated with this resource version.
+	Entities []EntityRow `parquet:"entities,list,optional"`
 }

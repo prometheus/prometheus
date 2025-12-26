@@ -1,11 +1,11 @@
 # OTLP Resource Attributes Persistence Demo
 
 This demo showcases how Prometheus persists OTel resource attributes from OTLP metrics
-and makes them queryable via the `/api/v1/resource_attributes` endpoint.
+and makes them queryable via the `/api/v1/resources` endpoint.
 
 ## Overview
 
-When Prometheus receives metrics via OTLP, each ResourceMetrics contains resource
+When Prometheus receives metrics via OTLP, each resource contains attributes
 attributes that describe the source of the metrics (service.name, host.name, etc.).
 This demo shows how these attributes are:
 
@@ -13,7 +13,7 @@ This demo shows how these attributes are:
 2. Stored per-series in the TSDB head (in-memory)
 3. Persisted to Parquet files during block compaction
 4. Retrieved from both head and compacted blocks
-5. Exposed via the `/api/v1/resource_attributes` API
+5. Exposed via the `/api/v1/resources` API
 
 ## Running the Demo
 
@@ -51,7 +51,7 @@ identifying attributes remain constant. Simulates a service migration where:
 Sends additional metrics and shows combined results from head + blocks.
 
 ### Phase 7: API Response Format
-Demonstrates the JSON format returned by `/api/v1/resource_attributes`.
+Demonstrates the JSON format returned by `/api/v1/resources`.
 
 ### Phase 8: Summary
 Summarizes the key concepts demonstrated.
@@ -89,7 +89,7 @@ OTLP Metrics                 TSDB Head              Parquet Block
                                    │                      │
                                    ▼                      ▼
                             ┌─────────────────────────────────┐
-                            │   /api/v1/resource_attributes   │
+                            │       /api/v1/resources          │
                             │   (combined head + blocks)      │
                             └─────────────────────────────────┘
 ```

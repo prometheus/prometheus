@@ -1017,8 +1017,13 @@ func (*appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metad
 	return 0, nil
 }
 
-func (*appender) UpdateResourceAttributes(storage.SeriesRef, labels.Labels, map[string]string, int64) (storage.SeriesRef, error) {
+func (*appender) UpdateResourceAttributes(storage.SeriesRef, labels.Labels, map[string]string, map[string]string, int64) (storage.SeriesRef, error) {
 	// UpdateResourceAttributes is not supported in the Agent.
+	return 0, nil
+}
+
+func (*appender) UpdateEntities(storage.SeriesRef, labels.Labels, []storage.EntityData, int64) (storage.SeriesRef, error) {
+	// UpdateEntities is not supported in the Agent.
 	return 0, nil
 }
 
@@ -1126,6 +1131,11 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 
 	return storage.SeriesRef(series.ref), nil
+}
+
+func (*appender) UpdateResource(_ storage.SeriesRef, _ labels.Labels, _, _ map[string]string, _ []storage.EntityData, _ int64) (storage.SeriesRef, error) {
+	// Agent mode doesn't store resource metadata locally.
+	return 0, nil
 }
 
 // Commit submits the collected samples and purges the batch.
