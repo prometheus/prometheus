@@ -79,6 +79,20 @@ ui-lint:
 	# new Mantine-based UI is fully integrated and the old app can be removed.
 	cd $(UI_PATH)/react-app && npm run lint
 
+.PHONY: generate-promql-functions
+generate-promql-functions: ui-install
+	@echo ">> generating PromQL function signatures"
+	@cd $(UI_PATH)/mantine-ui/src/promql/tools && $(GO) run ./gen_functions_list > ../functionSignatures.ts
+	@echo ">> generating PromQL function documentation"
+	@cd $(UI_PATH)/mantine-ui/src/promql/tools && $(GO) run ./gen_functions_docs $(CURDIR)/docs/querying/functions.md > ../functionDocs.tsx
+	@echo ">> formatting generated files"
+	@cd $(UI_PATH)/mantine-ui && npx prettier --write --print-width 120 src/promql/functionSignatures.ts src/promql/functionDocs.tsx
+
+.PHONY: check-generated-promql-functions
+check-generated-promql-functions: generate-promql-functions
+	@echo ">> checking generated PromQL functions"
+	@git diff --exit-code -- $(UI_PATH)/mantine-ui/src/promql/functionSignatures.ts $(UI_PATH)/mantine-ui/src/promql/functionDocs.tsx || (echo "Generated PromQL function files are out of date. Please run 'make generate-promql-functions' and commit the changes." && false)
+
 .PHONY: assets
 ifndef SKIP_UI_BUILD
 assets: check-node-version ui-install ui-build
@@ -194,6 +208,8 @@ GO_SUBMODULE_DIRS := documentation/examples/remote_storage internal/tools web/ui
 .PHONY: update-all-go-deps
 update-all-go-deps: update-go-deps
 	$(foreach dir,$(GO_SUBMODULE_DIRS),$(MAKE) update-go-deps-in-dir DIR=$(dir);)
+	@echo ">> syncing Go workspace"
+	@$(GO) work sync
 
 .PHONY: update-go-deps-in-dir
 update-go-deps-in-dir:

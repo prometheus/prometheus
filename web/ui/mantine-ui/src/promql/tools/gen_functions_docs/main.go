@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
+	"os"
 	"sort"
 	"strings"
 
@@ -26,20 +26,23 @@ import (
 	"github.com/russross/blackfriday/v2"
 )
 
-var funcDocsRe = regexp.MustCompile("^## `(.+)\\(\\)`\n$|^## (Trigonometric Functions)\n$")
+var funcDocsRe = regexp.MustCompile("^## `([^)]+)\\(\\)` and `([^)]+)\\(\\)`\n$|^## `(.+)\\(\\)`\n$|^## (Trigonometric Functions)\n$")
 
 func main() {
-	resp, err := http.Get("https://raw.githubusercontent.com/prometheus/prometheus/master/docs/querying/functions.md")
+	// Read from local file instead of fetching from upstream.
+	if len(os.Args) < 2 {
+		log.Fatalln("Usage: gen_functions_docs <path-to-functions.md>")
+	}
+	functionsPath := os.Args[1]
+	file, err := os.Open(functionsPath)
 	if err != nil {
-		log.Fatalln("Failed to fetch function docs:", err)
+		log.Fatalln("Failed to open function docs:", err)
 	}
-	if resp.StatusCode != 200 {
-		log.Fatalln("Bad status code while fetching function docs:", resp.Status)
-	}
+	defer file.Close()
 
 	funcDocs := map[string]string{}
 
-	r := bufio.NewReader(resp.Body)
+	r := bufio.NewReader(file)
 	currentFunc := ""
 	currentDocs := ""
 
@@ -58,6 +61,11 @@ func main() {
 				"last_over_time",
 				"present_over_time",
 				"mad_over_time",
+				"first_over_time",
+				"ts_of_first_over_time",
+				"ts_of_last_over_time",
+				"ts_of_max_over_time",
+				"ts_of_min_over_time",
 			} {
 				funcDocs[fn] = currentDocs
 			}
@@ -81,6 +89,12 @@ func main() {
 			} {
 				funcDocs[fn] = currentDocs
 			}
+		case "histogram_count_and_histogram_sum":
+			funcDocs["histogram_count"] = currentDocs
+			funcDocs["histogram_sum"] = currentDocs
+		case "histogram_stddev_and_histogram_stdvar":
+			funcDocs["histogram_stddev"] = currentDocs
+			funcDocs["histogram_stdvar"] = currentDocs
 		default:
 			funcDocs[currentFunc] = currentDocs
 		}
@@ -103,10 +117,16 @@ func main() {
 			}
 			currentDocs = ""
 
-			currentFunc = string(matches[1])
-			if matches[2] != "" {
-				// This is the case for "## Trigonometric Functions"
-				currentFunc = matches[2]
+			if matches[1] != "" && matches[2] != "" {
+				// Combined functions: "## `function1()` and `function2()`"
+				// Store as "function1_and_function2" and handle in saveCurrent.
+				currentFunc = matches[1] + "_and_" + matches[2]
+			} else if matches[3] != "" {
+				// Single function: "## `function_name()`"
+				currentFunc = string(matches[3])
+			} else if matches[4] != "" {
+				// Special section: "## Trigonometric Functions"
+				currentFunc = matches[4]
 			}
 		} else {
 			currentDocs += line

@@ -41,10 +41,10 @@ func main() {
 	sort.Strings(fnNames)
 	fmt.Println(`import { valueType, Func } from './ast';
 
-	export const functionSignatures: Record<string, Func> = {`)
+export const functionSignatures: Record<string, Func> = {`)
 	for _, fnName := range fnNames {
 		fn := parser.Functions[fnName]
 		fmt.Printf("  %s: { name: '%s', argTypes: [%s], variadic: %d, returnType: %s },\n", fn.Name, fn.Name, formatValueTypes(fn.ArgTypes), fn.Variadic, formatValueType(fn.ReturnType))
 	}
-	fmt.Println("}")
+	fmt.Println("};")
 }
