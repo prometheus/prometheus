@@ -580,9 +580,9 @@ func buildAPIResponse(db *tsdb.DB) map[string]any {
 	labelsMap := buildHashToLabelsMap(db)
 
 	type versionEntry struct {
-		ResourceAttributes map[string]string `json:"resourceAttributes"`
-		MinTimeMs          int64             `json:"minTimeMs,omitempty"`
-		MaxTimeMs          int64             `json:"maxTimeMs,omitempty"`
+		ResourceAttributes map[string]string `json:"resource_attributes"`
+		MinTimeMs          int64             `json:"min_time_ms,omitempty"`
+		MaxTimeMs          int64             `json:"max_time_ms,omitempty"`
 	}
 
 	type responseEntry struct {
