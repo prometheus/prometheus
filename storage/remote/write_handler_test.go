@@ -1482,8 +1482,8 @@ func (m *mockAppendable) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, 
 	return ref, nil
 }
 
-func (*mockAppendable) UpdateResourceAttributes(ref storage.SeriesRef, _ labels.Labels, _ map[string]string, _ int64) (storage.SeriesRef, error) {
-	// No-op for mock - resource attributes not tested in write handler tests
+func (*mockAppendable) UpdateResource(ref storage.SeriesRef, _ labels.Labels, _, _ map[string]string, _ []storage.EntityData, _ int64) (storage.SeriesRef, error) {
+	// No-op for mock - resources not tested in write handler tests
 	return ref, nil
 }
 

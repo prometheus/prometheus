@@ -752,10 +752,10 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 			mr.Close()
 			return fmt.Errorf("iterate series metadata: %w", err)
 		}
-		// Merge versioned resource attributes
-		err = mr.IterVersionedResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.VersionedResourceAttributes) error {
-			// SetVersionedResourceAttributes merges versions automatically if entry exists
-			mergedMeta.SetVersionedResourceAttributes(labelsHash, attrs)
+		// Merge versioned resources (unified attributes + entities)
+		err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			// SetVersionedResource merges versions automatically if entry exists
+			mergedMeta.SetVersionedResource(labelsHash, resources)
 			return nil
 		})
 		mr.Close() // Must close to release pending readers

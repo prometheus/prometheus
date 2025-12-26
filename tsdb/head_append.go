@@ -103,13 +103,13 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 	return a.app.UpdateMetadata(ref, l, m)
 }
 
-func (a *initAppender) UpdateResourceAttributes(ref storage.SeriesRef, l labels.Labels, attrs map[string]string, t int64) (storage.SeriesRef, error) {
+func (a *initAppender) UpdateResource(ref storage.SeriesRef, l labels.Labels, identifying, descriptive map[string]string, entities []storage.EntityData, t int64) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.UpdateResourceAttributes(ref, l, attrs, t)
+		return a.app.UpdateResource(ref, l, identifying, descriptive, entities, t)
 	}
 
 	a.app = a.head.appender()
-	return a.app.UpdateResourceAttributes(ref, l, attrs, t)
+	return a.app.UpdateResource(ref, l, identifying, descriptive, entities, t)
 }
 
 func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, st int64) (storage.SeriesRef, error) {
@@ -1056,11 +1056,11 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	return ref, nil
 }
 
-// UpdateResourceAttributes stores OTel resource attributes for the given series.
-// Supports versioning: if attributes change, a new version is created.
-// If attributes are the same, the current version's time range is extended.
+// UpdateResource stores unified OTel resource data (attributes + entities) for the given series.
+// Supports versioning: if the resource changes, a new version is created.
+// If the resource is the same, the current version's time range is extended.
 // For the prototype, this stores in memory without WAL support.
-func (a *headAppender) UpdateResourceAttributes(ref storage.SeriesRef, lset labels.Labels, attrs map[string]string, t int64) (storage.SeriesRef, error) {
+func (a *headAppender) UpdateResource(ref storage.SeriesRef, lset labels.Labels, identifying, descriptive map[string]string, entities []storage.EntityData, t int64) (storage.SeriesRef, error) {
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		s = a.head.series.getByHash(lset.Hash(), lset)
@@ -1069,20 +1069,33 @@ func (a *headAppender) UpdateResourceAttributes(ref storage.SeriesRef, lset labe
 		}
 	}
 	if s == nil {
-		return 0, fmt.Errorf("unknown series when trying to add resource attributes with HeadSeriesRef: %d and labels: %s", ref, lset)
+		return 0, fmt.Errorf("unknown series when trying to add resource with HeadSeriesRef: %d and labels: %s", ref, lset)
 	}
 
 	s.Lock()
 	defer s.Unlock()
 
-	if s.resourceAttrs == nil {
-		// First time setting resource attributes - create versioned container
-		s.resourceAttrs = seriesmetadata.NewVersionedResourceAttributes(attrs, t)
+	// Convert storage.EntityData to seriesmetadata.Entity
+	metadataEntities := make([]*seriesmetadata.Entity, len(entities))
+	for i, e := range entities {
+		entityType := e.Type
+		if entityType == "" {
+			entityType = seriesmetadata.EntityTypeResource
+		}
+		metadataEntities[i] = seriesmetadata.NewEntity(entityType, e.ID, e.Description)
+	}
+
+	// Create a unified ResourceVersion with both attributes and entities
+	resourceVersion := seriesmetadata.NewResourceVersion(identifying, descriptive, metadataEntities, t, t)
+
+	if s.resource == nil {
+		// First time setting resource - create versioned container
+		s.resource = seriesmetadata.NewVersionedResource(resourceVersion)
 	} else {
 		// AddOrExtend handles version creation/extension logic:
-		// - If attributes equal current version: extend time range
-		// - If attributes differ: create new version
-		s.resourceAttrs.AddOrExtend(attrs, t)
+		// - If resource version equals current: extend time range
+		// - If resource version differs: create new version
+		s.resource.AddOrExtend(resourceVersion)
 	}
 
 	return ref, nil

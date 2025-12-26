@@ -1147,19 +1147,19 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 			mr.Close()
 			return nil, fmt.Errorf("iterate block series metadata: %w", err)
 		}
-		// Collect versioned resource attributes
-		err = mr.IterVersionedResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.VersionedResourceAttributes) error {
-			// SetVersionedResourceAttributes merges versions automatically
-			merged.SetVersionedResourceAttributes(labelsHash, attrs)
+		// Collect versioned resources (unified attributes + entities)
+		err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			// SetVersionedResource merges versions automatically
+			merged.SetVersionedResource(labelsHash, resources)
 			return nil
 		})
 		mr.Close()
 		if err != nil {
-			return nil, fmt.Errorf("iterate block resource attributes: %w", err)
+			return nil, fmt.Errorf("iterate block resources: %w", err)
 		}
 	}
 
-	// Collect metadata and resource attributes from head (most recent data, overwrites block metadata)
+	// Collect metadata and resources from head (most recent data, overwrites block metadata)
 	headMeta, err := db.head.SeriesMetadata()
 	if err != nil {
 		return nil, fmt.Errorf("get head series metadata: %w", err)
@@ -1173,15 +1173,15 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 		headMeta.Close()
 		return nil, fmt.Errorf("iterate head series metadata: %w", err)
 	}
-	// Collect versioned resource attributes from head
-	err = headMeta.IterVersionedResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.VersionedResourceAttributes) error {
-		// SetVersionedResourceAttributes merges versions automatically
-		merged.SetVersionedResourceAttributes(labelsHash, attrs)
+	// Collect versioned resources from head (unified attributes + entities)
+	err = headMeta.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		// SetVersionedResource merges versions automatically
+		merged.SetVersionedResource(labelsHash, resources)
 		return nil
 	})
 	headMeta.Close()
 	if err != nil {
-		return nil, fmt.Errorf("iterate head resource attributes: %w", err)
+		return nil, fmt.Errorf("iterate head resources: %w", err)
 	}
 
 	return merged, nil

@@ -227,14 +227,14 @@ func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metada
 	return ref, nil
 }
 
-func (f *fanoutAppender) UpdateResourceAttributes(ref SeriesRef, l labels.Labels, attrs map[string]string, t int64) (SeriesRef, error) {
-	ref, err := f.primary.UpdateResourceAttributes(ref, l, attrs, t)
+func (f *fanoutAppender) UpdateResource(ref SeriesRef, l labels.Labels, identifying, descriptive map[string]string, entities []EntityData, t int64) (SeriesRef, error) {
+	ref, err := f.primary.UpdateResource(ref, l, identifying, descriptive, entities, t)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.UpdateResourceAttributes(ref, l, attrs, t); err != nil {
+		if _, err := appender.UpdateResource(ref, l, identifying, descriptive, entities, t); err != nil {
 			return 0, err
 		}
 	}

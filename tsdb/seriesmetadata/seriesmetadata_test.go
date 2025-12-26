@@ -257,68 +257,50 @@ func TestLargeMetadata(t *testing.T) {
 	}
 }
 
-// Tests for resource attributes functionality
+// Tests for unified resource functionality
 
-func TestResourceAttributesBasicOperations(t *testing.T) {
-	mem := NewMemResourceAttributes()
+func TestResourceBasicOperations(t *testing.T) {
+	store := NewMemResourceStore()
 
-	attrs := map[string]string{
+	identifying := map[string]string{
 		"service.name":        "my-service",
 		"service.namespace":   "production",
 		"service.instance.id": "instance-123",
-		"deployment.env":      "prod",
-		"host.name":           "host-1",
+	}
+	descriptive := map[string]string{
+		"deployment.env": "prod",
+		"host.name":      "host-1",
 	}
 
-	ra := NewResourceAttributes(attrs, 1000, 2000)
+	rv := NewResourceVersion(identifying, descriptive, nil, 1000, 2000)
 
-	// Verify identifying attributes were extracted
-	require.Equal(t, "my-service", ra.ServiceName)
-	require.Equal(t, "production", ra.ServiceNamespace)
-	require.Equal(t, "instance-123", ra.ServiceInstanceID)
-	require.Equal(t, int64(1000), ra.MinTime)
-	require.Equal(t, int64(2000), ra.MaxTime)
+	// Verify version was created correctly
+	require.Equal(t, "my-service", rv.Identifying["service.name"])
+	require.Equal(t, "production", rv.Identifying["service.namespace"])
+	require.Equal(t, "instance-123", rv.Identifying["service.instance.id"])
+	require.Equal(t, "prod", rv.Descriptive["deployment.env"])
+	require.Equal(t, int64(1000), rv.MinTime)
+	require.Equal(t, int64(2000), rv.MaxTime)
 
 	// Store and retrieve
-	mem.SetResourceAttributes(123, ra)
+	store.SetResource(123, rv)
 
-	got, found := mem.GetResourceAttributes(123)
+	got, found := store.GetResource(123)
 	require.True(t, found)
-	require.Equal(t, ra.ServiceName, got.ServiceName)
-	require.Equal(t, ra.Attributes["deployment.env"], got.Attributes["deployment.env"])
+	require.Equal(t, rv.Identifying["service.name"], got.Identifying["service.name"])
+	require.Equal(t, rv.Descriptive["deployment.env"], got.Descriptive["deployment.env"])
 
-	// Test TotalResourceAttributes
-	require.Equal(t, uint64(1), mem.TotalResourceAttributes())
+	// Test TotalResources
+	require.Equal(t, uint64(1), store.TotalResources())
 
 	// Test delete
-	mem.DeleteResourceAttributes(123)
-	_, found = mem.GetResourceAttributes(123)
+	store.DeleteResource(123)
+	_, found = store.GetResource(123)
 	require.False(t, found)
 }
 
-func TestResourceAttributesIdentifying(t *testing.T) {
-	attrs := map[string]string{
-		"service.name":        "my-service",
-		"service.namespace":   "production",
-		"service.instance.id": "instance-123",
-		"deployment.env":      "prod",
-	}
-
-	ra := NewResourceAttributes(attrs, 1000, 2000)
-
-	// Test IdentifyingAttributes
-	identifying := ra.IdentifyingAttributes()
-	require.Len(t, identifying, 3)
-	require.Equal(t, "my-service", identifying["service.name"])
-	require.Equal(t, "production", identifying["service.namespace"])
-	require.Equal(t, "instance-123", identifying["service.instance.id"])
-
-	// Test NonIdentifyingAttributes
-	nonIdentifying := ra.NonIdentifyingAttributes()
-	require.Len(t, nonIdentifying, 1)
-	require.Equal(t, "prod", nonIdentifying["deployment.env"])
-
-	// Test IsIdentifyingAttribute
+func TestIsIdentifyingAttribute(t *testing.T) {
+	// Test IsIdentifyingAttribute (for default identifying attribute detection)
 	require.True(t, IsIdentifyingAttribute("service.name"))
 	require.True(t, IsIdentifyingAttribute("service.namespace"))
 	require.True(t, IsIdentifyingAttribute("service.instance.id"))
@@ -326,105 +308,100 @@ func TestResourceAttributesIdentifying(t *testing.T) {
 	require.False(t, IsIdentifyingAttribute("host.name"))
 }
 
-func TestResourceAttributesTimeRangeUpdate(t *testing.T) {
-	attrs := map[string]string{"service.name": "my-service"}
-	ra := NewResourceAttributes(attrs, 1000, 2000)
+func TestResourceVersionTimeRangeUpdate(t *testing.T) {
+	identifying := map[string]string{"service.name": "my-service"}
+	rv := NewResourceVersion(identifying, nil, nil, 1000, 2000)
 
 	// Update with wider range
-	ra.UpdateTimeRange(500, 3000)
-	require.Equal(t, int64(500), ra.MinTime)
-	require.Equal(t, int64(3000), ra.MaxTime)
+	rv.UpdateTimeRange(500, 3000)
+	require.Equal(t, int64(500), rv.MinTime)
+	require.Equal(t, int64(3000), rv.MaxTime)
 
 	// Update with narrower range - should NOT change
-	ra.UpdateTimeRange(700, 2500)
-	require.Equal(t, int64(500), ra.MinTime)
-	require.Equal(t, int64(3000), ra.MaxTime)
+	rv.UpdateTimeRange(700, 2500)
+	require.Equal(t, int64(500), rv.MinTime)
+	require.Equal(t, int64(3000), rv.MaxTime)
 }
 
-func TestResourceAttributesVersioningOnSet(t *testing.T) {
-	mem := NewMemResourceAttributes()
+func TestResourceVersioningOnSet(t *testing.T) {
+	store := NewMemResourceStore()
 
 	// First set
-	attrs1 := map[string]string{
-		"service.name":   "my-service",
-		"deployment.env": "prod",
-	}
-	ra1 := NewResourceAttributes(attrs1, 1000, 2000)
-	mem.SetResourceAttributes(123, ra1)
+	identifying1 := map[string]string{"service.name": "my-service"}
+	descriptive1 := map[string]string{"deployment.env": "prod"}
+	rv1 := NewResourceVersion(identifying1, descriptive1, nil, 1000, 2000)
+	store.SetResource(123, rv1)
 
 	// Second set for same hash with different attributes - should create new version
-	attrs2 := map[string]string{
-		"service.name": "my-service",
-		"host.name":    "host-1",
-	}
-	ra2 := NewResourceAttributes(attrs2, 3000, 4000)
-	mem.SetResourceAttributes(123, ra2)
+	identifying2 := map[string]string{"service.name": "my-service"}
+	descriptive2 := map[string]string{"host.name": "host-1"}
+	rv2 := NewResourceVersion(identifying2, descriptive2, nil, 3000, 4000)
+	store.SetResource(123, rv2)
 
-	// GetResourceAttributes returns the current (latest) version
-	got, found := mem.GetResourceAttributes(123)
+	// GetResource returns the current (latest) version
+	got, found := store.GetResource(123)
 	require.True(t, found)
-	require.Equal(t, "my-service", got.Attributes["service.name"])
-	require.Equal(t, "host-1", got.Attributes["host.name"])
+	require.Equal(t, "my-service", got.Identifying["service.name"])
+	require.Equal(t, "host-1", got.Descriptive["host.name"])
 	// Latest version doesn't have deployment.env
-	require.Empty(t, got.Attributes["deployment.env"])
+	require.Empty(t, got.Descriptive["deployment.env"])
 
-	// GetVersionedResourceAttributes returns all versions
-	vattrs, found := mem.GetVersionedResourceAttributes(123)
+	// GetVersionedResource returns all versions
+	vr, found := store.GetVersionedResource(123)
 	require.True(t, found)
-	require.Len(t, vattrs.Versions, 2)
+	require.Len(t, vr.Versions, 2)
 
 	// First version (oldest)
-	require.Equal(t, "my-service", vattrs.Versions[0].Attributes["service.name"])
-	require.Equal(t, "prod", vattrs.Versions[0].Attributes["deployment.env"])
-	require.Equal(t, int64(1000), vattrs.Versions[0].MinTime)
-	require.Equal(t, int64(2000), vattrs.Versions[0].MaxTime)
+	require.Equal(t, "my-service", vr.Versions[0].Identifying["service.name"])
+	require.Equal(t, "prod", vr.Versions[0].Descriptive["deployment.env"])
+	require.Equal(t, int64(1000), vr.Versions[0].MinTime)
+	require.Equal(t, int64(2000), vr.Versions[0].MaxTime)
 
 	// Second version (current/latest)
-	require.Equal(t, "my-service", vattrs.Versions[1].Attributes["service.name"])
-	require.Equal(t, "host-1", vattrs.Versions[1].Attributes["host.name"])
-	require.Equal(t, int64(3000), vattrs.Versions[1].MinTime)
-	require.Equal(t, int64(4000), vattrs.Versions[1].MaxTime)
+	require.Equal(t, "my-service", vr.Versions[1].Identifying["service.name"])
+	require.Equal(t, "host-1", vr.Versions[1].Descriptive["host.name"])
+	require.Equal(t, int64(3000), vr.Versions[1].MinTime)
+	require.Equal(t, int64(4000), vr.Versions[1].MaxTime)
 }
 
-func TestResourceAttributesSameAttributesExtendTimeRange(t *testing.T) {
-	mem := NewMemResourceAttributes()
+func TestResourceSameAttributesExtendTimeRange(t *testing.T) {
+	store := NewMemResourceStore()
 
 	// First set
-	attrs := map[string]string{
-		"service.name": "my-service",
-	}
-	ra1 := NewResourceAttributes(attrs, 1000, 2000)
-	mem.SetResourceAttributes(123, ra1)
+	identifying := map[string]string{"service.name": "my-service"}
+	rv1 := NewResourceVersion(identifying, nil, nil, 1000, 2000)
+	store.SetResource(123, rv1)
 
 	// Second set with same attributes - should extend time range, not create new version
-	ra2 := NewResourceAttributes(attrs, 3000, 4000)
-	mem.SetResourceAttributes(123, ra2)
+	rv2 := NewResourceVersion(identifying, nil, nil, 3000, 4000)
+	store.SetResource(123, rv2)
 
 	// Should still have only one version
-	vattrs, found := mem.GetVersionedResourceAttributes(123)
+	vr, found := store.GetVersionedResource(123)
 	require.True(t, found)
-	require.Len(t, vattrs.Versions, 1)
+	require.Len(t, vr.Versions, 1)
 
 	// Time range should be extended
-	require.Equal(t, int64(1000), vattrs.Versions[0].MinTime)
-	require.Equal(t, int64(4000), vattrs.Versions[0].MaxTime)
+	require.Equal(t, int64(1000), vr.Versions[0].MinTime)
+	require.Equal(t, int64(4000), vr.Versions[0].MaxTime)
 }
 
-func TestResourceAttributesIter(t *testing.T) {
-	mem := NewMemResourceAttributes()
+func TestResourceIter(t *testing.T) {
+	store := NewMemResourceStore()
 
 	// Add multiple entries
 	for i := uint64(1); i <= 5; i++ {
-		attrs := map[string]string{
+		identifying := map[string]string{
 			"service.name": fmt.Sprintf("service-%d", i),
 		}
-		mem.SetResourceAttributes(i, NewResourceAttributes(attrs, int64(i*1000), int64(i*2000)))
+		rv := NewResourceVersion(identifying, nil, nil, int64(i*1000), int64(i*2000))
+		store.SetResource(i, rv)
 	}
 
 	// Iterate and collect
-	collected := make(map[uint64]*ResourceAttributes)
-	err := mem.IterResourceAttributes(func(labelsHash uint64, attrs *ResourceAttributes) error {
-		collected[labelsHash] = attrs
+	collected := make(map[uint64]*ResourceVersion)
+	err := store.IterResources(func(labelsHash uint64, rv *ResourceVersion) error {
+		collected[labelsHash] = rv
 		return nil
 	})
 	require.NoError(t, err)
@@ -432,13 +409,13 @@ func TestResourceAttributesIter(t *testing.T) {
 
 	// Verify content
 	for i := uint64(1); i <= 5; i++ {
-		ra, ok := collected[i]
+		rv, ok := collected[i]
 		require.True(t, ok)
-		require.Equal(t, fmt.Sprintf("service-%d", i), ra.ServiceName)
+		require.Equal(t, fmt.Sprintf("service-%d", i), rv.Identifying["service.name"])
 	}
 }
 
-func TestWriteAndReadbackResourceAttributes(t *testing.T) {
+func TestWriteAndReadbackResources(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	mem := NewMemSeriesMetadata()
@@ -449,22 +426,28 @@ func TestWriteAndReadbackResourceAttributes(t *testing.T) {
 		Help: "Total HTTP requests",
 	})
 
-	// Add resource attributes for two different series
-	attrs1 := map[string]string{
+	// Add resources for two different series
+	identifying1 := map[string]string{
 		"service.name":        "frontend",
 		"service.namespace":   "production",
 		"service.instance.id": "frontend-1",
-		"deployment.env":      "prod",
 	}
-	mem.SetResourceAttributes(100, NewResourceAttributes(attrs1, 1000, 2000))
+	descriptive1 := map[string]string{
+		"deployment.env": "prod",
+	}
+	rv1 := NewResourceVersion(identifying1, descriptive1, nil, 1000, 2000)
+	mem.SetResource(100, rv1)
 
-	attrs2 := map[string]string{
+	identifying2 := map[string]string{
 		"service.name":        "backend",
 		"service.namespace":   "production",
 		"service.instance.id": "backend-1",
-		"host.region":         "us-west-2",
 	}
-	mem.SetResourceAttributes(200, NewResourceAttributes(attrs2, 1500, 2500))
+	descriptive2 := map[string]string{
+		"host.region": "us-west-2",
+	}
+	rv2 := NewResourceVersion(identifying2, descriptive2, nil, 1500, 2500)
+	mem.SetResource(200, rv2)
 
 	// Write to file
 	size, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
@@ -482,70 +465,30 @@ func TestWriteAndReadbackResourceAttributes(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, model.MetricTypeCounter, meta.Type)
 
-	// Verify resource attributes for series 100
-	ra1, found := reader.GetResourceAttributes(100)
+	// Verify resource for series 100
+	r1, found := reader.GetResource(100)
 	require.True(t, found)
-	require.Equal(t, "frontend", ra1.ServiceName)
-	require.Equal(t, "production", ra1.ServiceNamespace)
-	require.Equal(t, "frontend-1", ra1.ServiceInstanceID)
-	require.Equal(t, "prod", ra1.Attributes["deployment.env"])
-	require.Equal(t, int64(1000), ra1.MinTime)
-	require.Equal(t, int64(2000), ra1.MaxTime)
+	require.Equal(t, "frontend", r1.Identifying["service.name"])
+	require.Equal(t, "production", r1.Identifying["service.namespace"])
+	require.Equal(t, "frontend-1", r1.Identifying["service.instance.id"])
+	require.Equal(t, "prod", r1.Descriptive["deployment.env"])
+	require.Equal(t, int64(1000), r1.MinTime)
+	require.Equal(t, int64(2000), r1.MaxTime)
 
-	// Verify resource attributes for series 200
-	ra2, found := reader.GetResourceAttributes(200)
+	// Verify resource for series 200
+	r2, found := reader.GetResource(200)
 	require.True(t, found)
-	require.Equal(t, "backend", ra2.ServiceName)
-	require.Equal(t, "us-west-2", ra2.Attributes["host.region"])
-	require.Equal(t, int64(1500), ra2.MinTime)
-	require.Equal(t, int64(2500), ra2.MaxTime)
+	require.Equal(t, "backend", r2.Identifying["service.name"])
+	require.Equal(t, "us-west-2", r2.Descriptive["host.region"])
+	require.Equal(t, int64(1500), r2.MinTime)
+	require.Equal(t, int64(2500), r2.MaxTime)
 
 	// Verify totals
 	require.Equal(t, uint64(1), reader.Total())
-	require.Equal(t, uint64(2), reader.TotalResourceAttributes())
+	require.Equal(t, uint64(2), reader.TotalResources())
 }
 
-func TestResourceAttributesIterInReader(t *testing.T) {
-	tmpdir := t.TempDir()
-
-	mem := NewMemSeriesMetadata()
-
-	// Add multiple resource attributes
-	for i := uint64(1); i <= 3; i++ {
-		attrs := map[string]string{
-			"service.name": fmt.Sprintf("service-%d", i),
-			"host.name":    fmt.Sprintf("host-%d", i),
-		}
-		mem.SetResourceAttributes(i*100, NewResourceAttributes(attrs, int64(i*1000), int64(i*2000)))
-	}
-
-	// Write and read back
-	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
-	require.NoError(t, err)
-
-	reader, _, err := ReadSeriesMetadata(tmpdir)
-	require.NoError(t, err)
-	defer reader.Close()
-
-	// Iterate and verify
-	collected := make(map[uint64]*ResourceAttributes)
-	err = reader.IterResourceAttributes(func(labelsHash uint64, attrs *ResourceAttributes) error {
-		collected[labelsHash] = attrs
-		return nil
-	})
-	require.NoError(t, err)
-	require.Len(t, collected, 3)
-
-	// Verify content
-	for i := uint64(1); i <= 3; i++ {
-		ra, ok := collected[i*100]
-		require.True(t, ok, "missing resource attributes for hash %d", i*100)
-		require.Equal(t, fmt.Sprintf("service-%d", i), ra.ServiceName)
-		require.Equal(t, fmt.Sprintf("host-%d", i), ra.Attributes["host.name"])
-	}
-}
-
-func TestMixedMetadataAndResourceAttributes(t *testing.T) {
+func TestMixedMetadataAndResources(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	mem := NewMemSeriesMetadata()
@@ -555,17 +498,28 @@ func TestMixedMetadataAndResourceAttributes(t *testing.T) {
 	mem.Set("temperature_celsius", 2, metadata.Metadata{Type: model.MetricTypeGauge, Unit: "celsius"})
 	mem.Set("latency_seconds", 3, metadata.Metadata{Type: model.MetricTypeHistogram, Unit: "seconds"})
 
-	// Add resource attributes for multiple series
-	mem.SetResourceAttributes(100, NewResourceAttributes(map[string]string{
-		"service.name":        "api-gateway",
-		"service.instance.id": "gw-1",
-	}, 1000, 5000))
+	// Add resources for multiple series
+	rv1 := NewResourceVersion(
+		map[string]string{
+			"service.name":        "api-gateway",
+			"service.instance.id": "gw-1",
+		},
+		nil, // no descriptive attributes
+		nil, // no entities
+		1000, 5000)
+	mem.SetResource(100, rv1)
 
-	mem.SetResourceAttributes(200, NewResourceAttributes(map[string]string{
-		"service.name":        "database",
-		"service.instance.id": "db-1",
-		"db.system":           "postgresql",
-	}, 2000, 6000))
+	rv2 := NewResourceVersion(
+		map[string]string{
+			"service.name":        "database",
+			"service.instance.id": "db-1",
+		},
+		map[string]string{
+			"db.system": "postgresql",
+		},
+		nil, // no entities
+		2000, 6000)
+	mem.SetResource(200, rv2)
 
 	// Write and read back
 	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
@@ -585,15 +539,15 @@ func TestMixedMetadataAndResourceAttributes(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, "celsius", meta.Unit)
 
-	// Verify all resource attributes
-	require.Equal(t, uint64(2), reader.TotalResourceAttributes())
+	// Verify all resources
+	require.Equal(t, uint64(2), reader.TotalResources())
 
-	ra, found := reader.GetResourceAttributes(100)
+	r, found := reader.GetResource(100)
 	require.True(t, found)
-	require.Equal(t, "api-gateway", ra.ServiceName)
+	require.Equal(t, "api-gateway", r.Identifying["service.name"])
 
-	ra, found = reader.GetResourceAttributes(200)
+	r, found = reader.GetResource(200)
 	require.True(t, found)
-	require.Equal(t, "database", ra.ServiceName)
-	require.Equal(t, "postgresql", ra.Attributes["db.system"])
+	require.Equal(t, "database", r.Identifying["service.name"])
+	require.Equal(t, "postgresql", r.Descriptive["db.system"])
 }

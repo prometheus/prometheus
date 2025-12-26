@@ -21,7 +21,7 @@
 // 3. Queries resource attributes from TSDB head (in-memory)
 // 4. Forces compaction to persist data to Parquet blocks
 // 5. Queries resource attributes from compacted blocks
-// 6. Demonstrates the API response format for /api/v1/resource_attributes
+// 6. Demonstrates the API response format for /api/v1/resources
 package main
 
 import (
@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -188,21 +189,21 @@ func runDemo() error {
 	printSentResources(migratedMetrics)
 
 	// Show the version history (blocks + head combined)
-	fmt.Printf("%sVersion history for payment-service/production:%s\n", colorBold, colorReset)
+	fmt.Printf("%sVersion history for production/payment-service:%s\n", colorBold, colorReset)
 	fmt.Printf("%s(Original version in block, new version in head)%s\n\n", colorGray, colorReset)
 	migratedMeta, err := db.SeriesMetadata() // Combined view shows both versions
 	if err != nil {
 		return fmt.Errorf("get migrated metadata: %w", err)
 	}
-	printResourceAttributesFiltered("payment-service/production attributes:", migratedMeta, "payment-service", "production", db)
+	printResourceAttributesFiltered("production/payment-service attributes:", migratedMeta, "payment-service", "production", db)
 	migratedMeta.Close()
 
 	// === PHASE 6: Show API response format ===
-	printPhase(6, "API response format for /api/v1/resource_attributes")
+	printPhase(6, "API response format for /api/v1/resources")
 
-	apiResponse := buildAPIResponse(db)
+	apiResponse := buildResourceAttributesAPIResponse(db)
 	prettyJSON, _ := json.MarshalIndent(apiResponse, "", "  ")
-	fmt.Printf("%sAPI Response:%s\n", colorBold, colorReset)
+	fmt.Printf("%sAPI Response (/api/v1/resources):%s\n", colorBold, colorReset)
 	fmt.Printf("%s%s%s\n\n", colorGray, string(prettyJSON), colorReset)
 
 	// === Summary ===
@@ -228,7 +229,7 @@ func createOTLPMetrics() pmetric.Metrics {
 	md := pmetric.NewMetrics()
 	now := time.Now()
 
-	// Resource 1: payment-service in production
+	// Resource 1: payment-service in production (with entity_refs)
 	rm1 := md.ResourceMetrics().AppendEmpty()
 	res1 := rm1.Resource()
 	res1.Attributes().PutStr("service.name", "payment-service")
@@ -237,6 +238,21 @@ func createOTLPMetrics() pmetric.Metrics {
 	res1.Attributes().PutStr("host.name", "prod-payment-1.example.com")
 	res1.Attributes().PutStr("cloud.region", "us-west-2")
 	res1.Attributes().PutStr("deployment.environment", "production")
+
+	// Add entity_refs: service entity + host entity
+	entityRefs1 := entity.ResourceEntityRefs(res1)
+	// Service entity
+	serviceRef := entityRefs1.AppendEmpty()
+	serviceRef.SetType("service")
+	serviceRef.IdKeys().Append("service.name")
+	serviceRef.IdKeys().Append("service.namespace")
+	serviceRef.IdKeys().Append("service.instance.id")
+	serviceRef.DescriptionKeys().Append("deployment.environment")
+	// Host entity
+	hostRef := entityRefs1.AppendEmpty()
+	hostRef.SetType("host")
+	hostRef.IdKeys().Append("host.name")
+	hostRef.DescriptionKeys().Append("cloud.region")
 
 	sm1 := rm1.ScopeMetrics().AppendEmpty()
 	m1 := sm1.Metrics().AppendEmpty()
@@ -321,6 +337,22 @@ func createMigratedServiceMetrics() pmetric.Metrics {
 	res.Attributes().PutStr("deployment.environment", "production")    // Same
 	res.Attributes().PutStr("k8s.pod.name", "payment-7d4f8b9c5-xk2pq") // NEW
 
+	// Add entity_refs: service entity + host entity (same structure, different descriptive values)
+	entityRefs := entity.ResourceEntityRefs(res)
+	// Service entity
+	serviceRef := entityRefs.AppendEmpty()
+	serviceRef.SetType("service")
+	serviceRef.IdKeys().Append("service.name")
+	serviceRef.IdKeys().Append("service.namespace")
+	serviceRef.IdKeys().Append("service.instance.id")
+	serviceRef.DescriptionKeys().Append("deployment.environment")
+	serviceRef.DescriptionKeys().Append("k8s.pod.name") // NEW descriptive attribute
+	// Host entity
+	hostRef := entityRefs.AppendEmpty()
+	hostRef.SetType("host")
+	hostRef.IdKeys().Append("host.name")
+	hostRef.DescriptionKeys().Append("cloud.region")
+
 	sm := rm.ScopeMetrics().AppendEmpty()
 	m := sm.Metrics().AppendEmpty()
 	m.SetName("http_requests_total")
@@ -388,8 +420,8 @@ func printSentResources(md pmetric.Metrics) {
 
 		fmt.Printf("  %s%d.%s %s%s%s/%s%s%s\n",
 			colorGreen, i+1, colorReset,
-			colorCyan, serviceName, colorReset,
-			colorYellow, serviceNS, colorReset)
+			colorYellow, serviceNS, colorReset,
+			colorCyan, serviceName, colorReset)
 
 		// Print all attributes
 		res.Attributes().Range(func(k string, v pcommon.Value) bool {
@@ -409,11 +441,11 @@ func printResourceAttributes(title string, reader seriesmetadata.Reader, db *tsd
 
 	type entry struct {
 		hash  uint64
-		attrs *seriesmetadata.VersionedResourceAttributes
+		attrs *seriesmetadata.VersionedResource
 	}
 	var entries []entry
 
-	_ = reader.IterVersionedResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.VersionedResourceAttributes) error {
+	_ = reader.IterVersionedResources(func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
 		entries = append(entries, entry{hash: labelsHash, attrs: attrs})
 		return nil
 	})
@@ -462,21 +494,63 @@ func printResourceAttributes(title string, reader seriesmetadata.Reader, db *tsd
 			}
 
 			fmt.Printf("     %sIdentifying Attributes:%s\n", colorBold, colorReset)
-			fmt.Printf("       service.name: %s%s%s\n", colorCyan, ver.ServiceName, colorReset)
-			fmt.Printf("       service.namespace: %s%s%s\n", colorYellow, ver.ServiceNamespace, colorReset)
-			fmt.Printf("       service.instance.id: %s\n", ver.ServiceInstanceID)
+			// Sort and print identifying attributes
+			idKeys := make([]string, 0, len(ver.Identifying))
+			for k := range ver.Identifying {
+				idKeys = append(idKeys, k)
+			}
+			slices.Sort(idKeys)
+			for _, k := range idKeys {
+				fmt.Printf("       %s%s%s: %s\n", colorCyan, k, colorReset, ver.Identifying[k])
+			}
 
 			fmt.Printf("     %sDescriptive Attributes:%s\n", colorBold, colorReset)
-			// Sort and print non-identifying attributes
-			keys := make([]string, 0, len(ver.Attributes))
-			for k := range ver.Attributes {
-				if !seriesmetadata.IsIdentifyingAttribute(k) {
-					keys = append(keys, k)
-				}
+			// Sort and print descriptive attributes
+			descKeys := make([]string, 0, len(ver.Descriptive))
+			for k := range ver.Descriptive {
+				descKeys = append(descKeys, k)
 			}
-			slices.Sort(keys)
-			for _, k := range keys {
-				fmt.Printf("       %s%s%s: %s\n", colorYellow, k, colorReset, ver.Attributes[k])
+			slices.Sort(descKeys)
+			for _, k := range descKeys {
+				fmt.Printf("       %s%s%s: %s\n", colorYellow, k, colorReset, ver.Descriptive[k])
+			}
+
+			// Print entities if present
+			if len(ver.Entities) > 0 {
+				fmt.Printf("     %sEntities:%s\n", colorBold, colorReset)
+				for _, ent := range ver.Entities {
+					fmt.Printf("       %s[%s]%s\n", colorMagenta, ent.Type, colorReset)
+					if len(ent.ID) > 0 {
+						fmt.Printf("         Identifying: ")
+						entIDKeys := make([]string, 0, len(ent.ID))
+						for k := range ent.ID {
+							entIDKeys = append(entIDKeys, k)
+						}
+						slices.Sort(entIDKeys)
+						for i, k := range entIDKeys {
+							if i > 0 {
+								fmt.Printf(", ")
+							}
+							fmt.Printf("%s%s%s=%s", colorCyan, k, colorReset, ent.ID[k])
+						}
+						fmt.Println()
+					}
+					if len(ent.Description) > 0 {
+						fmt.Printf("         Descriptive: ")
+						entDescKeys := make([]string, 0, len(ent.Description))
+						for k := range ent.Description {
+							entDescKeys = append(entDescKeys, k)
+						}
+						slices.Sort(entDescKeys)
+						for i, k := range entDescKeys {
+							if i > 0 {
+								fmt.Printf(", ")
+							}
+							fmt.Printf("%s%s%s=%s", colorYellow, k, colorReset, ent.Description[k])
+						}
+						fmt.Println()
+					}
+				}
 			}
 
 			if ver.MinTime > 0 {
@@ -499,14 +573,14 @@ func printResourceAttributesFiltered(title string, reader seriesmetadata.Reader,
 
 	type entry struct {
 		hash  uint64
-		attrs *seriesmetadata.VersionedResourceAttributes
+		attrs *seriesmetadata.VersionedResource
 	}
 	var entries []entry
 
-	_ = reader.IterVersionedResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.VersionedResourceAttributes) error {
-		// Filter by current version's service name/namespace
+	_ = reader.IterVersionedResources(func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
+		// Filter by current version's service name/namespace from identifying attributes
 		current := attrs.CurrentVersion()
-		if current != nil && current.ServiceName == serviceName && current.ServiceNamespace == serviceNamespace {
+		if current != nil && current.Identifying[seriesmetadata.AttrServiceName] == serviceName && current.Identifying[seriesmetadata.AttrServiceNamespace] == serviceNamespace {
 			entries = append(entries, entry{hash: labelsHash, attrs: attrs})
 		}
 		return nil
@@ -531,22 +605,64 @@ func printResourceAttributesFiltered(title string, reader seriesmetadata.Reader,
 		for v, ver := range e.attrs.Versions {
 			fmt.Printf("     %s--- Version %d ---%s\n", colorGray, v+1, colorReset)
 
-			fmt.Printf("     %sIdentifying Attributes (unchanged):%s\n", colorBold, colorReset)
-			fmt.Printf("       service.name: %s%s%s\n", colorCyan, ver.ServiceName, colorReset)
-			fmt.Printf("       service.namespace: %s%s%s\n", colorCyan, ver.ServiceNamespace, colorReset)
-			fmt.Printf("       service.instance.id: %s%s%s\n", colorCyan, ver.ServiceInstanceID, colorReset)
+			fmt.Printf("     %sIdentifying Attributes:%s\n", colorBold, colorReset)
+			// Sort and print identifying attributes
+			idKeys := make([]string, 0, len(ver.Identifying))
+			for k := range ver.Identifying {
+				idKeys = append(idKeys, k)
+			}
+			slices.Sort(idKeys)
+			for _, k := range idKeys {
+				fmt.Printf("       %s%s%s: %s\n", colorCyan, k, colorReset, ver.Identifying[k])
+			}
 
 			fmt.Printf("     %sDescriptive Attributes:%s\n", colorBold, colorReset)
-			// Sort and print non-identifying attributes
-			keys := make([]string, 0, len(ver.Attributes))
-			for k := range ver.Attributes {
-				if !seriesmetadata.IsIdentifyingAttribute(k) {
-					keys = append(keys, k)
-				}
+			// Sort and print descriptive attributes
+			descKeys := make([]string, 0, len(ver.Descriptive))
+			for k := range ver.Descriptive {
+				descKeys = append(descKeys, k)
 			}
-			slices.Sort(keys)
-			for _, k := range keys {
-				fmt.Printf("       %s%s%s: %s\n", colorYellow, k, colorReset, ver.Attributes[k])
+			slices.Sort(descKeys)
+			for _, k := range descKeys {
+				fmt.Printf("       %s%s%s: %s\n", colorYellow, k, colorReset, ver.Descriptive[k])
+			}
+
+			// Print entities if present
+			if len(ver.Entities) > 0 {
+				fmt.Printf("     %sEntities:%s\n", colorBold, colorReset)
+				for _, ent := range ver.Entities {
+					fmt.Printf("       %s[%s]%s\n", colorMagenta, ent.Type, colorReset)
+					if len(ent.ID) > 0 {
+						fmt.Printf("         Identifying: ")
+						entIDKeys := make([]string, 0, len(ent.ID))
+						for k := range ent.ID {
+							entIDKeys = append(entIDKeys, k)
+						}
+						slices.Sort(entIDKeys)
+						for i, k := range entIDKeys {
+							if i > 0 {
+								fmt.Printf(", ")
+							}
+							fmt.Printf("%s%s%s=%s", colorCyan, k, colorReset, ent.ID[k])
+						}
+						fmt.Println()
+					}
+					if len(ent.Description) > 0 {
+						fmt.Printf("         Descriptive: ")
+						entDescKeys := make([]string, 0, len(ent.Description))
+						for k := range ent.Description {
+							entDescKeys = append(entDescKeys, k)
+						}
+						slices.Sort(entDescKeys)
+						for i, k := range entDescKeys {
+							if i > 0 {
+								fmt.Printf(", ")
+							}
+							fmt.Printf("%s%s%s=%s", colorYellow, k, colorReset, ent.Description[k])
+						}
+						fmt.Println()
+					}
+				}
 			}
 
 			if ver.MinTime > 0 {
@@ -563,90 +679,6 @@ func printResourceAttributesFiltered(title string, reader seriesmetadata.Reader,
 // printPhase prints a phase header.
 func printPhase(num int, title string) {
 	fmt.Printf("%s%s--- Phase %d: %s ---%s\n\n", colorBold, colorMagenta, num, title, colorReset)
-}
-
-// buildAPIResponse builds a response in the /api/v1/resource_attributes format.
-// Shows all versions for each series with their respective time ranges.
-func buildAPIResponse(db *tsdb.DB) map[string]any {
-	reader, err := db.SeriesMetadata()
-	if err != nil {
-		return map[string]any{
-			"status": "error",
-			"error":  err.Error(),
-		}
-	}
-	defer reader.Close()
-
-	labelsMap := buildHashToLabelsMap(db)
-
-	type versionEntry struct {
-		ResourceAttributes map[string]string `json:"resource_attributes"`
-		MinTimeMs          int64             `json:"min_time_ms,omitempty"`
-		MaxTimeMs          int64             `json:"max_time_ms,omitempty"`
-	}
-
-	type responseEntry struct {
-		Labels   map[string]string `json:"labels"`
-		Versions []versionEntry    `json:"versions"`
-	}
-
-	var data []responseEntry
-	_ = reader.IterVersionedResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.VersionedResourceAttributes) error {
-		lbls := make(map[string]string)
-		if lbs, ok := labelsMap[labelsHash]; ok {
-			lbs.Range(func(l labels.Label) {
-				lbls[l.Name] = l.Value
-			})
-		} else {
-			lbls["__hash__"] = strconv.FormatUint(labelsHash, 10)
-		}
-
-		versions := make([]versionEntry, 0, len(attrs.Versions))
-		for _, ver := range attrs.Versions {
-			versions = append(versions, versionEntry{
-				ResourceAttributes: ver.Attributes,
-				MinTimeMs:          ver.MinTime,
-				MaxTimeMs:          ver.MaxTime,
-			})
-		}
-
-		data = append(data, responseEntry{
-			Labels:   lbls,
-			Versions: versions,
-		})
-		return nil
-	})
-
-	// Sort by metric name, then job for consistent output
-	slices.SortFunc(data, func(a, b responseEntry) int {
-		aName := a.Labels["__name__"]
-		bName := b.Labels["__name__"]
-		if aName != bName {
-			if aName < bName {
-				return -1
-			}
-			return 1
-		}
-		aJob := a.Labels["job"]
-		bJob := b.Labels["job"]
-		if aJob < bJob {
-			return -1
-		}
-		if aJob > bJob {
-			return 1
-		}
-		return 0
-	})
-
-	// Limit to first 3 series for readability
-	if len(data) > 3 {
-		data = data[:3]
-	}
-
-	return map[string]any{
-		"status": "success",
-		"data":   data,
-	}
 }
 
 // buildHashToLabelsMap builds a map from label hash to labels by querying all series from the DB.
@@ -691,4 +723,106 @@ func buildHashToLabelsMap(db *tsdb.DB) map[uint64]labels.Labels {
 	}
 
 	return result
+}
+
+// buildResourceAttributesAPIResponse builds a response in the /api/v1/resources format.
+func buildResourceAttributesAPIResponse(db *tsdb.DB) map[string]any {
+	reader, err := db.SeriesMetadata()
+	if err != nil {
+		return map[string]any{
+			"status": "error",
+			"error":  err.Error(),
+		}
+	}
+	defer reader.Close()
+
+	labelsMap := buildHashToLabelsMap(db)
+
+	type entityEntry struct {
+		Type        string            `json:"type"`
+		Identifying map[string]string `json:"identifying"`
+		Descriptive map[string]string `json:"descriptive"`
+	}
+
+	type resourceAttributeData struct {
+		Identifying map[string]string `json:"identifying"`
+		Descriptive map[string]string `json:"descriptive"`
+	}
+
+	type versionEntry struct {
+		ResourceAttributes resourceAttributeData `json:"resource_attributes"`
+		Entities           []entityEntry         `json:"entities,omitempty"`
+		MinTimeMs          int64                 `json:"min_time_ms"`
+		MaxTimeMs          int64                 `json:"max_time_ms"`
+	}
+
+	type responseEntry struct {
+		Labels   map[string]string `json:"labels"`
+		Versions []versionEntry    `json:"versions"`
+	}
+
+	var data []responseEntry
+	_ = reader.IterVersionedResources(func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
+		lbls := make(map[string]string)
+		if lbs, ok := labelsMap[labelsHash]; ok {
+			lbs.Range(func(l labels.Label) {
+				lbls[l.Name] = l.Value
+			})
+		} else {
+			lbls["__hash__"] = strconv.FormatUint(labelsHash, 10)
+		}
+
+		// Build versions with resource attributes and entities (if any)
+		var versions []versionEntry
+		for _, v := range attrs.Versions {
+			ve := versionEntry{
+				ResourceAttributes: resourceAttributeData{
+					Identifying: v.Identifying,
+					Descriptive: v.Descriptive,
+				},
+				MinTimeMs: v.MinTime,
+				MaxTimeMs: v.MaxTime,
+			}
+
+			// Include entities if present (only when entity_refs were in OTLP data)
+			for _, entity := range v.Entities {
+				ve.Entities = append(ve.Entities, entityEntry{
+					Type:        entity.Type,
+					Identifying: entity.ID,
+					Descriptive: entity.Description,
+				})
+			}
+
+			versions = append(versions, ve)
+		}
+
+		data = append(data, responseEntry{
+			Labels:   lbls,
+			Versions: versions,
+		})
+		return nil
+	})
+
+	// Sort by metric name for consistent output
+	slices.SortFunc(data, func(a, b responseEntry) int {
+		aName := a.Labels["__name__"]
+		bName := b.Labels["__name__"]
+		if aName < bName {
+			return -1
+		}
+		if aName > bName {
+			return 1
+		}
+		return 0
+	})
+
+	// Limit to first 3 series for readability
+	if len(data) > 3 {
+		data = data[:3]
+	}
+
+	return map[string]any{
+		"status": "success",
+		"data":   data,
+	}
 }
