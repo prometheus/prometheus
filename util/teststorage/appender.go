@@ -369,6 +369,17 @@ func (a *appender) UpdateResourceAttributes(ref storage.SeriesRef, l labels.Labe
 	return computeOrCheckRef(ref, l)
 }
 
+// UpdateEntity is a no-op for the test appender.
+func (a *appender) UpdateEntity(ref storage.SeriesRef, l labels.Labels, _ string, _, _ map[string]string, _ int64) (storage.SeriesRef, error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
+	if a.next != nil {
+		return a.next.UpdateEntity(ref, l, "", nil, nil, 0)
+	}
+	return computeOrCheckRef(ref, l)
+}
+
 func (a *appender) Commit() error {
 	if err := a.checkErr(); err != nil {
 		return err

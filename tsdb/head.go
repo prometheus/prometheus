@@ -2185,7 +2185,13 @@ type memSeries struct {
 	// resourceAttrs stores OTel resource attributes for this series.
 	// nil if no resource attributes have been set. Supports multiple versions
 	// to track attribute changes over time.
+	// Deprecated: Use entity instead.
 	resourceAttrs *seriesmetadata.VersionedResourceAttributes
+
+	// entity stores OTel entity data for this series.
+	// nil if no entity has been set. Supports multiple versions
+	// to track entity changes over time.
+	entity *seriesmetadata.VersionedEntity
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.

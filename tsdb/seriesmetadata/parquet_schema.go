@@ -17,8 +17,10 @@ package seriesmetadata
 const (
 	// NamespaceMetric indicates a row contains metric metadata (type, unit, help).
 	NamespaceMetric = "metric"
-	// NamespaceResourceAttrs indicates a row contains OTel resource attributes.
+	// NamespaceResourceAttrs indicates a row contains OTel resource attributes (deprecated, use NamespaceEntity).
 	NamespaceResourceAttrs = "resource_attrs"
+	// NamespaceEntity indicates a row contains OTel entity data with explicit type and structured attributes.
+	NamespaceEntity = "entity"
 )
 
 // Identifying attribute keys per OTel semantic conventions.
@@ -29,7 +31,7 @@ const (
 )
 
 // AttributeEntry represents a single resource attribute in the Parquet schema.
-// Used as a nested list within metadataRow.
+// Used as a nested list within metadataRow for backward compatibility.
 type AttributeEntry struct {
 	// Key is the attribute name (e.g., "deployment.environment").
 	Key string `parquet:"key"`
@@ -38,6 +40,15 @@ type AttributeEntry struct {
 	// IsIdentifying indicates if this attribute is an identifying attribute
 	// (service.name, service.namespace, service.instance.id).
 	IsIdentifying bool `parquet:"is_identifying"`
+}
+
+// EntityAttributeEntry represents a single entity attribute in the Parquet schema.
+// Used for the entity namespace with separate identifying and descriptive attribute lists.
+type EntityAttributeEntry struct {
+	// Key is the attribute name.
+	Key string `parquet:"key"`
+	// Value is the attribute value as a string.
+	Value string `parquet:"value"`
 }
 
 // metadataRow is the unified Parquet schema for both metric metadata and resource attributes.
@@ -73,7 +84,7 @@ type metadataRow struct {
 	// Help is the metric help text.
 	Help string `parquet:"help,optional"`
 
-	// --- Resource attributes fields (namespace="resource_attrs") ---
+	// --- Resource attributes fields (namespace="resource_attrs") - DEPRECATED ---
 
 	// ServiceName is the service.name identifying attribute (explicit column for efficient querying).
 	ServiceName string `parquet:"service_name,optional"`
@@ -86,4 +97,15 @@ type metadataRow struct {
 
 	// Attributes is the list of all resource attributes (including identifying ones).
 	Attributes []AttributeEntry `parquet:"attributes,list,optional"`
+
+	// --- Entity fields (namespace="entity") ---
+
+	// EntityType is the OTel entity type (e.g., "resource", "service", "host").
+	EntityType string `parquet:"entity_type,optional"`
+
+	// IdentifyingAttrs contains the identifying attributes that uniquely identify the entity.
+	IdentifyingAttrs []EntityAttributeEntry `parquet:"identifying_attrs,list,optional"`
+
+	// DescriptiveAttrs contains the descriptive (non-identifying) attributes.
+	DescriptiveAttrs []EntityAttributeEntry `parquet:"descriptive_attrs,list,optional"`
 }

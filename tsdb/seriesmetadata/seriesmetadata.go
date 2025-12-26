@@ -55,7 +55,11 @@ type Reader interface {
 	Close() error
 
 	// VersionedResourceAttributesReader provides access to versioned resource attributes.
+	// Deprecated: Use VersionedEntityReader instead.
 	VersionedResourceAttributesReader
+
+	// VersionedEntityReader provides access to versioned OTel entities.
+	VersionedEntityReader
 }
 
 // metadataEntry stores metadata with both hash and metric name for indexing.
@@ -75,7 +79,11 @@ type MemSeriesMetadata struct {
 	mtx    sync.RWMutex
 
 	// resourceAttrs stores resource attributes per series
+	// Deprecated: Use entityStore instead.
 	resourceAttrs *MemResourceAttributes
+
+	// entityStore stores OTel entities per series
+	entityStore *MemEntityStore
 }
 
 // NewMemSeriesMetadata creates a new in-memory series metadata store.
@@ -84,6 +92,7 @@ func NewMemSeriesMetadata() *MemSeriesMetadata {
 		byHash:        make(map[uint64]*metadataEntry),
 		byName:        make(map[string]*metadataEntry),
 		resourceAttrs: NewMemResourceAttributes(),
+		entityStore:   NewMemEntityStore(),
 	}
 }
 
@@ -228,6 +237,56 @@ func (m *MemSeriesMetadata) SetVersionedResourceAttributes(labelsHash uint64, at
 	m.resourceAttrs.SetVersionedResourceAttributes(labelsHash, attrs)
 }
 
+// GetEntity returns the current (latest) entity for the series.
+func (m *MemSeriesMetadata) GetEntity(labelsHash uint64) (*Entity, bool) {
+	return m.entityStore.GetEntity(labelsHash)
+}
+
+// GetVersionedEntity returns all versions of the entity for the series.
+func (m *MemSeriesMetadata) GetVersionedEntity(labelsHash uint64) (*VersionedEntity, bool) {
+	return m.entityStore.GetVersionedEntity(labelsHash)
+}
+
+// GetEntityAt returns the entity version active at the given timestamp.
+func (m *MemSeriesMetadata) GetEntityAt(labelsHash uint64, timestamp int64) (*Entity, bool) {
+	return m.entityStore.GetEntityAt(labelsHash, timestamp)
+}
+
+// SetEntity stores an entity for the series.
+func (m *MemSeriesMetadata) SetEntity(labelsHash uint64, entity *Entity) {
+	m.entityStore.SetEntity(labelsHash, entity)
+}
+
+// SetVersionedEntity stores versioned entities for the series.
+func (m *MemSeriesMetadata) SetVersionedEntity(labelsHash uint64, entities *VersionedEntity) {
+	m.entityStore.SetVersionedEntity(labelsHash, entities)
+}
+
+// DeleteEntity removes all entity data for the series.
+func (m *MemSeriesMetadata) DeleteEntity(labelsHash uint64) {
+	m.entityStore.DeleteEntity(labelsHash)
+}
+
+// IterEntities calls the function for each series' current entity.
+func (m *MemSeriesMetadata) IterEntities(f func(labelsHash uint64, entity *Entity) error) error {
+	return m.entityStore.IterEntities(f)
+}
+
+// IterVersionedEntities calls the function for each series' versioned entities.
+func (m *MemSeriesMetadata) IterVersionedEntities(f func(labelsHash uint64, entities *VersionedEntity) error) error {
+	return m.entityStore.IterVersionedEntities(f)
+}
+
+// TotalEntities returns the count of series with entities.
+func (m *MemSeriesMetadata) TotalEntities() uint64 {
+	return m.entityStore.TotalEntities()
+}
+
+// TotalEntityVersions returns the total count of all entity versions.
+func (m *MemSeriesMetadata) TotalEntityVersions() uint64 {
+	return m.entityStore.TotalEntityVersions()
+}
+
 // parquetReader implements Reader by reading from a Parquet file.
 type parquetReader struct {
 	file   *os.File
@@ -235,7 +294,11 @@ type parquetReader struct {
 	byName map[string]*metadataEntry
 
 	// resourceAttrs stores resource attributes loaded from the file
+	// Deprecated: Use entityStore instead.
 	resourceAttrs *MemResourceAttributes
+
+	// entityStore stores OTel entities loaded from the file
+	entityStore *MemEntityStore
 
 	closeOnce sync.Once
 	closeErr  error
@@ -258,9 +321,11 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 	byHash := make(map[uint64]*metadataEntry)
 	byName := make(map[string]*metadataEntry)
 	resourceAttrs := NewMemResourceAttributes()
+	entityStore := NewMemEntityStore()
 
-	// Temporary map to collect resource attribute versions by labelsHash
-	versionsByHash := make(map[uint64][]*ResourceAttributes)
+	// Temporary maps to collect versions by labelsHash
+	resourceVersionsByHash := make(map[uint64][]*ResourceAttributes)
+	entityVersionsByHash := make(map[uint64][]*Entity)
 
 	for i := range rows {
 		row := &rows[i]
@@ -283,7 +348,7 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 			byName[row.MetricName] = entry
 
 		case NamespaceResourceAttrs:
-			// Convert Parquet row to ResourceAttributes
+			// Convert Parquet row to ResourceAttributes (deprecated)
 			attrs := make(map[string]string, len(row.Attributes))
 			for _, attr := range row.Attributes {
 				attrs[attr.Key] = attr.Value
@@ -297,13 +362,44 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 				MaxTime:           row.MaxTime,
 			}
 			// Collect versions - will be sorted and set below
-			versionsByHash[row.LabelsHash] = append(versionsByHash[row.LabelsHash], ra)
+			resourceVersionsByHash[row.LabelsHash] = append(resourceVersionsByHash[row.LabelsHash], ra)
+
+		case NamespaceEntity:
+			// Convert Parquet row to Entity
+			id := make(map[string]string, len(row.IdentifyingAttrs))
+			for _, attr := range row.IdentifyingAttrs {
+				id[attr.Key] = attr.Value
+			}
+			description := make(map[string]string, len(row.DescriptiveAttrs))
+			for _, attr := range row.DescriptiveAttrs {
+				description[attr.Key] = attr.Value
+			}
+			entityType := row.EntityType
+			if entityType == "" {
+				entityType = EntityTypeResource
+			}
+			entity := &Entity{
+				Type:        entityType,
+				Id:          id,
+				Description: description,
+				MinTime:     row.MinTime,
+				MaxTime:     row.MaxTime,
+			}
+			// Collect versions - will be sorted and set below
+			entityVersionsByHash[row.LabelsHash] = append(entityVersionsByHash[row.LabelsHash], entity)
 		}
 	}
 
 	// Set versioned resource attributes (already sorted by MinTime from WriteFile order)
-	for labelsHash, versions := range versionsByHash {
+	for labelsHash, versions := range resourceVersionsByHash {
 		resourceAttrs.SetVersionedResourceAttributes(labelsHash, &VersionedResourceAttributes{
+			Versions: versions,
+		})
+	}
+
+	// Set versioned entities (already sorted by MinTime from WriteFile order)
+	for labelsHash, versions := range entityVersionsByHash {
+		entityStore.SetVersionedEntity(labelsHash, &VersionedEntity{
 			Versions: versions,
 		})
 	}
@@ -313,6 +409,7 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 		byHash:        byHash,
 		byName:        byName,
 		resourceAttrs: resourceAttrs,
+		entityStore:   entityStore,
 	}, nil
 }
 
@@ -394,6 +491,41 @@ func (r *parquetReader) TotalResourceAttributeVersions() uint64 {
 	return r.resourceAttrs.TotalResourceAttributeVersions()
 }
 
+// GetEntity returns the current (latest) entity for the series.
+func (r *parquetReader) GetEntity(labelsHash uint64) (*Entity, bool) {
+	return r.entityStore.GetEntity(labelsHash)
+}
+
+// GetVersionedEntity returns all versions of the entity for the series.
+func (r *parquetReader) GetVersionedEntity(labelsHash uint64) (*VersionedEntity, bool) {
+	return r.entityStore.GetVersionedEntity(labelsHash)
+}
+
+// GetEntityAt returns the entity version active at the given timestamp.
+func (r *parquetReader) GetEntityAt(labelsHash uint64, timestamp int64) (*Entity, bool) {
+	return r.entityStore.GetEntityAt(labelsHash, timestamp)
+}
+
+// IterEntities calls the function for each series' current entity.
+func (r *parquetReader) IterEntities(f func(labelsHash uint64, entity *Entity) error) error {
+	return r.entityStore.IterEntities(f)
+}
+
+// IterVersionedEntities calls the function for each series' versioned entities.
+func (r *parquetReader) IterVersionedEntities(f func(labelsHash uint64, entities *VersionedEntity) error) error {
+	return r.entityStore.IterVersionedEntities(f)
+}
+
+// TotalEntities returns the count of series with entities.
+func (r *parquetReader) TotalEntities() uint64 {
+	return r.entityStore.TotalEntities()
+}
+
+// TotalEntityVersions returns the total count of all entity versions.
+func (r *parquetReader) TotalEntityVersions() uint64 {
+	return r.entityStore.TotalEntityVersions()
+}
+
 // Close releases resources associated with the reader.
 // Safe to call multiple times; only the first call closes the file.
 func (r *parquetReader) Close() error {
@@ -434,6 +566,7 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 	}
 
 	// Collect all resource attributes into rows (one row per version)
+	// Deprecated: Use entities instead.
 	err = mr.IterVersionedResourceAttributes(func(labelsHash uint64, vattrs *VersionedResourceAttributes) error {
 		for _, attrs := range vattrs.Versions {
 			// Convert attributes map to list
@@ -461,6 +594,43 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 	})
 	if err != nil {
 		return 0, fmt.Errorf("iterate resource attributes: %w", err)
+	}
+
+	// Collect all entities into rows (one row per version)
+	err = mr.IterVersionedEntities(func(labelsHash uint64, ventities *VersionedEntity) error {
+		for _, entity := range ventities.Versions {
+			// Convert identifying attributes to list
+			idAttrs := make([]EntityAttributeEntry, 0, len(entity.Id))
+			for k, v := range entity.Id {
+				idAttrs = append(idAttrs, EntityAttributeEntry{
+					Key:   k,
+					Value: v,
+				})
+			}
+
+			// Convert descriptive attributes to list
+			descAttrs := make([]EntityAttributeEntry, 0, len(entity.Description))
+			for k, v := range entity.Description {
+				descAttrs = append(descAttrs, EntityAttributeEntry{
+					Key:   k,
+					Value: v,
+				})
+			}
+
+			rows = append(rows, metadataRow{
+				Namespace:        NamespaceEntity,
+				LabelsHash:       labelsHash,
+				MinTime:          entity.MinTime,
+				MaxTime:          entity.MaxTime,
+				EntityType:       entity.Type,
+				IdentifyingAttrs: idAttrs,
+				DescriptiveAttrs: descAttrs,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("iterate entities: %w", err)
 	}
 
 	// Create temp file

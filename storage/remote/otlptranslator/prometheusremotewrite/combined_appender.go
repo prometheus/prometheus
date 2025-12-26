@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 )
 
 // Metadata extends metadata.Metadata with the metric family name.
@@ -103,6 +104,7 @@ func NewCombinedAppenderWithResourceAttrs(app storage.Appender, logger *slog.Log
 		refs:                           make(map[uint64]seriesRef),
 		samplesAppendedWithoutMetadata: metrics.samplesAppendedWithoutMetadata,
 		outOfOrderExemplars:            metrics.outOfOrderExemplars,
+		entityInferrer:                 seriesmetadata.DefaultEntityInferrer,
 	}
 }
 
@@ -128,6 +130,8 @@ type combinedAppender struct {
 	// resourceAttrs holds the current OTel resource attributes context.
 	// Set via SetResourceContext and used to persist attributes for each series.
 	resourceAttrs map[string]string
+	// entityInferrer is used to infer OTel entity type from resource attributes.
+	entityInferrer seriesmetadata.EntityInferenceStrategy
 }
 
 func (b *combinedAppender) AppendSample(ls labels.Labels, meta Metadata, st, t int64, v float64, es []exemplar.Exemplar) (err error) {
@@ -234,7 +238,7 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		}
 	}
 
-	// Update resource attributes in storage if enabled and we have attributes.
+	// Update resource attributes and entities in storage if enabled and we have attributes.
 	// Skip target_info series since it's synthesized from resource attributes and storing
 	// resource attributes for it would be redundant.
 	if b.persistResourceAttrs && len(b.resourceAttrs) > 0 && !exists && ls.Get(model.MetricNameLabel) != targetMetricName {
@@ -243,6 +247,17 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		_, err := b.app.UpdateResourceAttributes(ref, ls, b.resourceAttrs, t)
 		if err != nil {
 			b.logger.Warn("Error while updating resource attributes from OTLP", "err", err)
+		}
+
+		// Infer and store the OTel entity from resource attributes.
+		// The entity inferrer determines the entity type and separates
+		// identifying from descriptive attributes.
+		if b.entityInferrer != nil {
+			entity := b.entityInferrer.InferEntity(b.resourceAttrs, t, t)
+			_, err := b.app.UpdateEntity(ref, ls, entity.Type, entity.Id, entity.Description, t)
+			if err != nil {
+				b.logger.Warn("Error while updating entity from OTLP", "err", err)
+			}
 		}
 	}
 

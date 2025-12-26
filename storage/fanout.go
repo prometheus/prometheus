@@ -241,6 +241,20 @@ func (f *fanoutAppender) UpdateResourceAttributes(ref SeriesRef, l labels.Labels
 	return ref, nil
 }
 
+func (f *fanoutAppender) UpdateEntity(ref SeriesRef, l labels.Labels, entityType string, id, description map[string]string, t int64) (SeriesRef, error) {
+	ref, err := f.primary.UpdateEntity(ref, l, entityType, id, description, t)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.UpdateEntity(ref, l, entityType, id, description, t); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
 func (f *fanoutAppender) AppendSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64) (SeriesRef, error) {
 	ref, err := f.primary.AppendSTZeroSample(ref, l, t, st)
 	if err != nil {

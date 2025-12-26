@@ -349,6 +349,11 @@ func (*timestampTracker) UpdateResourceAttributes(storage.SeriesRef, labels.Labe
 	return 0, nil
 }
 
+func (*timestampTracker) UpdateEntity(storage.SeriesRef, labels.Labels, string, map[string]string, map[string]string, int64) (storage.SeriesRef, error) {
+	// UpdateEntity is no-op for remote write for now.
+	return 0, nil
+}
+
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
 	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)

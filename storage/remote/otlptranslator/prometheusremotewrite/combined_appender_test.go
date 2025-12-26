@@ -844,6 +844,12 @@ func (a *appenderRecorder) UpdateResourceAttributes(ref storage.SeriesRef, ls la
 	return ref, nil
 }
 
+func (a *appenderRecorder) UpdateEntity(ref storage.SeriesRef, ls labels.Labels, _ string, _ map[string]string, _ map[string]string, _ int64) (storage.SeriesRef, error) {
+	a.records = append(a.records, appenderRecord{op: "UpdateEntity", ref: ref, ls: ls})
+	a.setOutRef(ref)
+	return ref, nil
+}
+
 func (a *appenderRecorder) AppendExemplar(ref storage.SeriesRef, ls labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
 	a.records = append(a.records, appenderRecord{op: "AppendExemplar", ref: ref, ls: ls})
 	if a.appendExemplarError != nil {

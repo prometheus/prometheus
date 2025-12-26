@@ -1774,6 +1774,10 @@ func (notReadyAppender) UpdateResourceAttributes(storage.SeriesRef, labels.Label
 	return 0, tsdb.ErrNotReady
 }
 
+func (notReadyAppender) UpdateEntity(storage.SeriesRef, labels.Labels, string, map[string]string, map[string]string, int64) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (notReadyAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }

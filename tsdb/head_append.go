@@ -112,6 +112,15 @@ func (a *initAppender) UpdateResourceAttributes(ref storage.SeriesRef, l labels.
 	return a.app.UpdateResourceAttributes(ref, l, attrs, t)
 }
 
+func (a *initAppender) UpdateEntity(ref storage.SeriesRef, l labels.Labels, entityType string, id, description map[string]string, t int64) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.UpdateEntity(ref, l, entityType, id, description, t)
+	}
+
+	a.app = a.head.appender()
+	return a.app.UpdateEntity(ref, l, entityType, id, description, t)
+}
+
 func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, st int64) (storage.SeriesRef, error) {
 	if a.app != nil {
 		return a.app.AppendSTZeroSample(ref, lset, t, st)
@@ -1083,6 +1092,43 @@ func (a *headAppender) UpdateResourceAttributes(ref storage.SeriesRef, lset labe
 		// - If attributes equal current version: extend time range
 		// - If attributes differ: create new version
 		s.resourceAttrs.AddOrExtend(attrs, t)
+	}
+
+	return ref, nil
+}
+
+// UpdateEntity updates entity data for a series.
+// Supports versioning: if entity attributes change, a new version is created.
+// If attributes are the same, the current version's time range is extended.
+func (a *headAppender) UpdateEntity(ref storage.SeriesRef, lset labels.Labels, entityType string, id, description map[string]string, t int64) (storage.SeriesRef, error) {
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		s = a.head.series.getByHash(lset.Hash(), lset)
+		if s != nil {
+			ref = storage.SeriesRef(s.ref)
+		}
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown series when trying to add entity with HeadSeriesRef: %d and labels: %s", ref, lset)
+	}
+
+	s.Lock()
+	defer s.Unlock()
+
+	// Create the entity with the provided type or default to "resource"
+	if entityType == "" {
+		entityType = seriesmetadata.EntityTypeResource
+	}
+	entity := seriesmetadata.NewEntity(entityType, id, description, t, t)
+
+	if s.entity == nil {
+		// First time setting entity - create versioned container
+		s.entity = seriesmetadata.NewVersionedEntity(entity)
+	} else {
+		// AddOrExtend handles version creation/extension logic:
+		// - If entity equals current version: extend time range
+		// - If entity differs: create new version
+		s.entity.AddOrExtend(entity)
 	}
 
 	return ref, nil

@@ -197,16 +197,31 @@ func runDemo() error {
 	printResourceAttributesFiltered("payment-service/production attributes:", migratedMeta, "payment-service", "production", db)
 	migratedMeta.Close()
 
-	// === PHASE 6: Show API response format ===
-	printPhase(6, "API response format for /api/v1/resource_attributes")
+	// === PHASE 6: Show inferred entities with type and separated attributes ===
+	printPhase(6, "Inferred OTel Entities (Type + Identifying/Descriptive attributes)")
 
-	apiResponse := buildAPIResponse(db)
-	prettyJSON, _ := json.MarshalIndent(apiResponse, "", "  ")
-	fmt.Printf("%sAPI Response:%s\n", colorBold, colorReset)
-	fmt.Printf("%s%s%s\n\n", colorGray, string(prettyJSON), colorReset)
+	fmt.Printf("%sThe entity inferrer determines:%s\n", colorBold, colorReset)
+	fmt.Printf("  - Entity type (service, host, container, k8s.pod, etc.)\n")
+	fmt.Printf("  - Which attributes are %sidentifying%s (uniquely identify the entity)\n", colorCyan, colorReset)
+	fmt.Printf("  - Which attributes are %sdescriptive%s (can change over time)\n\n", colorYellow, colorReset)
+
+	entityMeta, err := db.SeriesMetadata()
+	if err != nil {
+		return fmt.Errorf("get entity metadata: %w", err)
+	}
+	printEntities("Entities from TSDB:", entityMeta, db)
+	entityMeta.Close()
+
+	// === PHASE 7: Show API response format ===
+	printPhase(7, "API response format for /api/v1/entities")
+
+	entityAPIResponse := buildEntityAPIResponse(db)
+	prettyEntityJSON, _ := json.MarshalIndent(entityAPIResponse, "", "  ")
+	fmt.Printf("%sAPI Response (/api/v1/entities):%s\n", colorBold, colorReset)
+	fmt.Printf("%s%s%s\n\n", colorGray, string(prettyEntityJSON), colorReset)
 
 	// === Summary ===
-	printPhase(7, "Summary")
+	printPhase(8, "Summary")
 	fmt.Printf("%sThis demo showed how Prometheus persists OTel resource attributes:%s\n", colorBold, colorReset)
 	fmt.Printf("  %s1.%s Resource attributes arrive via OTLP metrics (service.name, etc.)\n", colorGreen, colorReset)
 	fmt.Printf("  %s2.%s Attributes are stored per-series in TSDB head (in-memory)\n", colorGreen, colorReset)
@@ -691,4 +706,185 @@ func buildHashToLabelsMap(db *tsdb.DB) map[uint64]labels.Labels {
 	}
 
 	return result
+}
+
+// printEntities prints entities from a metadata reader, showing type, identifying, and descriptive attributes.
+func printEntities(title string, reader seriesmetadata.Reader, db *tsdb.DB) {
+	fmt.Printf("%s%s%s\n", colorBold, title, colorReset)
+
+	labelsMap := buildHashToLabelsMap(db)
+
+	type entry struct {
+		hash     uint64
+		entities *seriesmetadata.VersionedEntity
+	}
+	var entries []entry
+
+	_ = reader.IterVersionedEntities(func(labelsHash uint64, entities *seriesmetadata.VersionedEntity) error {
+		entries = append(entries, entry{hash: labelsHash, entities: entities})
+		return nil
+	})
+
+	if len(entries) == 0 {
+		fmt.Printf("  %s(no entities found)%s\n\n", colorGray, colorReset)
+		return
+	}
+
+	// Sort by labels string for consistent output
+	slices.SortFunc(entries, func(a, b entry) int {
+		aLabels := ""
+		bLabels := ""
+		if lbs, ok := labelsMap[a.hash]; ok {
+			aLabels = lbs.String()
+		}
+		if lbs, ok := labelsMap[b.hash]; ok {
+			bLabels = lbs.String()
+		}
+		if aLabels < bLabels {
+			return -1
+		}
+		if aLabels > bLabels {
+			return 1
+		}
+		return 0
+	})
+
+	for i, e := range entries {
+		if lbs, ok := labelsMap[e.hash]; ok {
+			fmt.Printf("  %s%d.%s Series: %s%s%s\n", colorGreen, i+1, colorReset, colorCyan, lbs.String(), colorReset)
+		} else {
+			fmt.Printf("  %s%d.%s Series (hash: %d)\n", colorGreen, i+1, colorReset, e.hash)
+		}
+
+		numVersions := len(e.entities.Versions)
+		if numVersions > 1 {
+			fmt.Printf("     %s(%d versions)%s\n", colorMagenta, numVersions, colorReset)
+		}
+
+		for v, entity := range e.entities.Versions {
+			if numVersions > 1 {
+				fmt.Printf("     %s--- Version %d ---%s\n", colorGray, v+1, colorReset)
+			}
+
+			// Print entity type
+			fmt.Printf("     %sEntity Type:%s %s%s%s\n", colorBold, colorReset, colorMagenta, entity.Type, colorReset)
+
+			// Print identifying attributes
+			fmt.Printf("     %sIdentifying Attributes:%s\n", colorBold, colorReset)
+			if len(entity.Id) == 0 {
+				fmt.Printf("       %s(none)%s\n", colorGray, colorReset)
+			} else {
+				keys := make([]string, 0, len(entity.Id))
+				for k := range entity.Id {
+					keys = append(keys, k)
+				}
+				slices.Sort(keys)
+				for _, k := range keys {
+					fmt.Printf("       %s%s%s: %s\n", colorCyan, k, colorReset, entity.Id[k])
+				}
+			}
+
+			// Print descriptive attributes
+			fmt.Printf("     %sDescriptive Attributes:%s\n", colorBold, colorReset)
+			if len(entity.Description) == 0 {
+				fmt.Printf("       %s(none)%s\n", colorGray, colorReset)
+			} else {
+				keys := make([]string, 0, len(entity.Description))
+				for k := range entity.Description {
+					keys = append(keys, k)
+				}
+				slices.Sort(keys)
+				for _, k := range keys {
+					fmt.Printf("       %s%s%s: %s\n", colorYellow, k, colorReset, entity.Description[k])
+				}
+			}
+
+			if entity.MinTime > 0 {
+				fmt.Printf("     %sTime Range:%s %s - %s\n",
+					colorBold, colorReset,
+					time.UnixMilli(entity.MinTime).Format(time.RFC3339),
+					time.UnixMilli(entity.MaxTime).Format(time.RFC3339))
+			}
+		}
+	}
+	fmt.Println()
+}
+
+// buildEntityAPIResponse builds a response in the /api/v1/entities format.
+func buildEntityAPIResponse(db *tsdb.DB) map[string]any {
+	reader, err := db.SeriesMetadata()
+	if err != nil {
+		return map[string]any{
+			"status": "error",
+			"error":  err.Error(),
+		}
+	}
+	defer reader.Close()
+
+	labelsMap := buildHashToLabelsMap(db)
+
+	type versionEntry struct {
+		Type        string            `json:"type"`
+		Id          map[string]string `json:"id"`
+		Description map[string]string `json:"description"`
+		MinTimeMs   int64             `json:"min_time_ms,omitempty"`
+		MaxTimeMs   int64             `json:"max_time_ms,omitempty"`
+	}
+
+	type responseEntry struct {
+		Labels   map[string]string `json:"labels"`
+		Versions []versionEntry    `json:"versions"`
+	}
+
+	var data []responseEntry
+	_ = reader.IterVersionedEntities(func(labelsHash uint64, entities *seriesmetadata.VersionedEntity) error {
+		lbls := make(map[string]string)
+		if lbs, ok := labelsMap[labelsHash]; ok {
+			lbs.Range(func(l labels.Label) {
+				lbls[l.Name] = l.Value
+			})
+		} else {
+			lbls["__hash__"] = strconv.FormatUint(labelsHash, 10)
+		}
+
+		versions := make([]versionEntry, 0, len(entities.Versions))
+		for _, entity := range entities.Versions {
+			versions = append(versions, versionEntry{
+				Type:        entity.Type,
+				Id:          entity.Id,
+				Description: entity.Description,
+				MinTimeMs:   entity.MinTime,
+				MaxTimeMs:   entity.MaxTime,
+			})
+		}
+
+		data = append(data, responseEntry{
+			Labels:   lbls,
+			Versions: versions,
+		})
+		return nil
+	})
+
+	// Sort by metric name for consistent output
+	slices.SortFunc(data, func(a, b responseEntry) int {
+		aName := a.Labels["__name__"]
+		bName := b.Labels["__name__"]
+		if aName < bName {
+			return -1
+		}
+		if aName > bName {
+			return 1
+		}
+		return 0
+	})
+
+	// Limit to first 3 series for readability
+	if len(data) > 3 {
+		data = data[:3]
+	}
+
+	return map[string]any{
+		"status": "success",
+		"data":   data,
+	}
 }
