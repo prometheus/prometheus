@@ -83,6 +83,7 @@ type RefreshMetricsInstantiator interface {
 type RefreshMetricsManager interface {
 	DiscovererMetrics
 	RefreshMetricsInstantiator
+	DeleteLabelValues(mech, config string)
 }
 
 // A Config provides the configuration and constructor for a Discoverer.
