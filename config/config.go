@@ -687,7 +687,16 @@ func (c *GlobalConfig) isZero() bool {
 		c.ScrapeProtocols == nil &&
 		c.ScrapeNativeHistograms == nil &&
 		!c.ConvertClassicHistogramsToNHCB &&
-		!c.AlwaysScrapeClassicHistograms
+		!c.AlwaysScrapeClassicHistograms &&
+		c.BodySizeLimit == 0 &&
+		c.SampleLimit == 0 &&
+		c.TargetLimit == 0 &&
+		c.LabelLimit == 0 &&
+		c.LabelNameLengthLimit == 0 &&
+		c.LabelValueLengthLimit == 0 &&
+		c.KeepDroppedTargets == 0 &&
+		c.MetricNameValidationScheme == model.UnsetValidation &&
+		c.MetricNameEscapingScheme == ""
 }
 
 const DefaultGoGCPercentage = 75
