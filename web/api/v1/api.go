@@ -1533,37 +1533,55 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	return apiFuncResult{res, nil, nil, nil}
 }
 
-// ResourceAttributesResponse is the response format for the resource_attributes endpoint.
-type ResourceAttributesResponse struct {
-	LabelsHash        uint64            `json:"labels_hash,string"`
-	ServiceName       string            `json:"service_name,omitempty"`
-	ServiceNamespace  string            `json:"service_namespace,omitempty"`
-	ServiceInstanceID string            `json:"service_instance_id,omitempty"`
-	Attributes        map[string]string `json:"attributes"`
-	MinTime           int64             `json:"min_time"`
-	MaxTime           int64             `json:"max_time"`
+// ResourceAttributeVersion is a single version of resource attributes with its time range.
+type ResourceAttributeVersion struct {
+	Attributes map[string]string `json:"resource_attributes"`
+	MinTimeMs  int64             `json:"min_time_ms"`
+	MaxTimeMs  int64             `json:"max_time_ms"`
 }
 
-func (api *API) resourceAttributes(r *http.Request) apiFuncResult {
+// ResourceAttributesResponse is the response format for the resource_attributes endpoint.
+type ResourceAttributesResponse struct {
+	Labels   labels.Labels              `json:"labels"`
+	Versions []ResourceAttributeVersion `json:"versions"`
+}
+
+func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 	if api.db == nil {
 		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
 	}
 
-	limit := -1
-	if s := r.FormValue("limit"); s != "" {
-		var err error
-		if limit, err = strconv.Atoi(s); err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
-		}
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
 	}
 
-	// Optional filter by labels hash
-	var filterHash uint64
-	if s := r.FormValue("labels_hash"); s != "" {
-		var err error
-		filterHash, err = strconv.ParseUint(s, 10, 64)
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	if end.Before(start) {
+		err := errors.New("end timestamp must not be before start timestamp")
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	startMs := timestamp.FromTime(start)
+	endMs := timestamp.FromTime(end)
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
+	// Parse match[] parameters if provided
+	var matcherSets [][]*labels.Matcher
+	if len(r.Form["match[]"]) > 0 {
+		matcherSets, err = parseMatchersParam(r.Form["match[]"])
 		if err != nil {
-			return apiFuncResult{nil, &apiError{errorBadData, errors.New("labels_hash must be a valid uint64")}, nil, nil}
+			return invalidParamError(err, "match[]")
 		}
 	}
 
@@ -1573,37 +1591,147 @@ func (api *API) resourceAttributes(r *http.Request) apiFuncResult {
 	}
 	defer mr.Close()
 
-	// If filtering by a specific labels hash, return just that one
-	if filterHash != 0 {
-		if attrs, ok := mr.GetResourceAttributes(filterHash); ok {
-			resp := ResourceAttributesResponse{
-				LabelsHash:        filterHash,
-				ServiceName:       attrs.ServiceName,
-				ServiceNamespace:  attrs.ServiceNamespace,
-				ServiceInstanceID: attrs.ServiceInstanceID,
-				Attributes:        attrs.Attributes,
-				MinTime:           attrs.MinTime,
-				MaxTime:           attrs.MaxTime,
-			}
-			return apiFuncResult{[]ResourceAttributesResponse{resp}, nil, nil, nil}
-		}
-		return apiFuncResult{[]ResourceAttributesResponse{}, nil, nil, nil}
+	// If no matchers provided, return all resource attributes
+	if len(matcherSets) == 0 {
+		return api.resourceAttributesAll(mr, limit, startMs, endMs)
 	}
 
-	// Return all resource attributes
-	var results []ResourceAttributesResponse
-	err = mr.IterResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.ResourceAttributes) error {
-		if limit >= 0 && len(results) >= limit {
-			return nil // Stop iterating if we've hit the limit
+	// Query series matching the selectors
+	ctx := r.Context()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
 		}
+	}()
+	closer := func() {
+		q.Close()
+	}
+
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+		Limit: toHintLimit(limit),
+	}
+
+	var set storage.SeriesSet
+	if len(matcherSets) > 1 {
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			s := q.Select(ctx, true, hints, mset...)
+			sets = append(sets, s)
+		}
+		set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+	} else {
+		set = q.Select(ctx, false, hints, matcherSets[0]...)
+	}
+
+	var results []ResourceAttributesResponse
+	warnings := set.Warnings()
+
+	for set.Next() {
+		if limit >= 0 && len(results) >= limit {
+			break
+		}
+
+		lset := set.At().Labels()
+		hash := lset.Hash()
+
+		versioned, ok := mr.GetVersionedResourceAttributes(hash)
+		if !ok || len(versioned.Versions) == 0 {
+			continue
+		}
+
+		// Filter versions to only those overlapping with [start, end]
+		versions := filterVersions(versioned.Versions, startMs, endMs)
+		if len(versions) == 0 {
+			continue
+		}
+
 		results = append(results, ResourceAttributesResponse{
-			LabelsHash:        labelsHash,
-			ServiceName:       attrs.ServiceName,
-			ServiceNamespace:  attrs.ServiceNamespace,
-			ServiceInstanceID: attrs.ServiceInstanceID,
-			Attributes:        attrs.Attributes,
-			MinTime:           attrs.MinTime,
-			MaxTime:           attrs.MaxTime,
+			Labels:   lset,
+			Versions: versions,
+		})
+	}
+
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+	}
+
+	if results == nil {
+		results = []ResourceAttributesResponse{}
+	}
+
+	return apiFuncResult{results, nil, warnings, closer}
+}
+
+// filterVersions returns versions that overlap with [startMs, endMs].
+func filterVersions(versions []*seriesmetadata.ResourceAttributes, startMs, endMs int64) []ResourceAttributeVersion {
+	result := make([]ResourceAttributeVersion, 0, len(versions))
+	for _, v := range versions {
+		// Version overlaps if: version.MinTime <= endMs AND version.MaxTime >= startMs
+		if v.MinTime <= endMs && v.MaxTime >= startMs {
+			result = append(result, ResourceAttributeVersion{
+				Attributes: v.Attributes,
+				MinTimeMs:  v.MinTime,
+				MaxTimeMs:  v.MaxTime,
+			})
+		}
+	}
+	return result
+}
+
+// resourceAttributesAll returns all resource attributes without filtering by matchers.
+func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, endMs int64) apiFuncResult {
+	// Build a map from hash to labels by querying all series
+	ctx := context.Background()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer q.Close()
+
+	// Query all series to build hash->labels map
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+	}
+	set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+
+	hashToLabels := make(map[uint64]labels.Labels)
+	for set.Next() {
+		lset := set.At().Labels()
+		hashToLabels[lset.Hash()] = lset
+	}
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+
+	var results []ResourceAttributesResponse
+	err = mr.IterVersionedResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.VersionedResourceAttributes) error {
+		if limit >= 0 && len(results) >= limit {
+			return nil
+		}
+
+		lset, ok := hashToLabels[labelsHash]
+		if !ok {
+			return nil // Skip if we can't find labels for this hash
+		}
+
+		// Filter versions to only those overlapping with [start, end]
+		versions := filterVersions(attrs.Versions, startMs, endMs)
+		if len(versions) == 0 {
+			return nil
+		}
+
+		results = append(results, ResourceAttributesResponse{
+			Labels:   lset,
+			Versions: versions,
 		})
 		return nil
 	})
