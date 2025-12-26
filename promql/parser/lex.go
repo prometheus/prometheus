@@ -143,6 +143,7 @@ var key = map[string]ItemType{
 	"start": START,
 	"end":   END,
 	"step":  STEP,
+	"range": RANGE,
 }
 
 var histogramDesc = map[string]ItemType{
@@ -915,6 +916,9 @@ func (l *Lexer) scanDurationKeyword() bool {
 			case "step":
 				l.emit(STEP)
 				return true
+			case "range":
+				l.emit(RANGE)
+				return true
 			case "min":
 				l.emit(MIN)
 				return true
@@ -1175,7 +1179,7 @@ func lexDurationExpr(l *Lexer) stateFn {
 	case r == ',':
 		l.emit(COMMA)
 		return lexDurationExpr
-	case r == 's' || r == 'S' || r == 'm' || r == 'M':
+	case r == 's' || r == 'S' || r == 'm' || r == 'M' || r == 'r' || r == 'R':
 		if l.scanDurationKeyword() {
 			return lexDurationExpr
 		}
