@@ -238,7 +238,7 @@ func (q *query) Cancel() {
 // Close implements the Query interface.
 func (q *query) Close() {
 	for _, s := range q.matrix {
-		putFPointSlice(s.Floats)
+		putFPointSlice(nil, s.Floats)
 		putHPointSlice(s.Histograms)
 	}
 }
@@ -1456,7 +1456,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 			} else {
 				ss = seriesAndTimestamp{Series{Metric: sample.Metric, DropName: sample.DropName}, ts}
 			}
-			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
+			addToSeries(ev.logger, &ss.Series, enh.Ts, sample.F, sample.H, numSteps)
 			seriess[h] = ss
 		}
 	}
@@ -1464,7 +1464,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 	// Reuse the original point slices.
 	for _, m := range origMatrixes {
 		for _, s := range m {
-			putFPointSlice(s.Floats)
+			putFPointSlice(ev.logger, s.Floats)
 			putHPointSlice(s.Histograms)
 		}
 	}
@@ -1483,7 +1483,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	origMatrix := slices.Clone(inputMatrix)
 	defer func() {
 		for _, s := range origMatrix {
-			putFPointSlice(s.Floats)
+			putFPointSlice(ev.logger, s.Floats)
 			putHPointSlice(s.Histograms)
 		}
 	}()
@@ -1722,7 +1722,7 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 					ev.error(ErrTooManySamples(env))
 				}
 				if ss.Floats == nil {
-					ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
+					ss.Floats = reuseOrGetFPointSlices(ev.logger, prevSS, numSteps)
 				}
 				if recordOrigT {
 					// This is an info metric, where we want to track the original sample timestamp.
@@ -1730,7 +1730,11 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 					// space in the sample.
 					f = float64(origT)
 				}
+				prevCap := cap(ss.Floats)
 				ss.Floats = append(ss.Floats, FPoint{F: f, T: ts})
+				if ev.logger != nil && cap(ss.Floats) != prevCap {
+					ev.logger.Info("FPointSlice resized evalSeries", "sz", numSteps, "cap", cap(ss.Floats), "prev cap", prevCap)
+				}
 			} else {
 				if recordOrigT {
 					ev.error(fmt.Errorf("this should be an info metric, with float samples: %s", ss.Metric))
@@ -2074,10 +2078,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				if len(outVec) > 0 {
 					if outVec[0].H == nil {
 						if ss.Floats == nil {
-							ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
+							ss.Floats = reuseOrGetFPointSlices(ev.logger, prevSS, numSteps)
 						}
 
+						prevCap := cap(ss.Floats)
 						ss.Floats = append(ss.Floats, FPoint{F: outVec[0].F, T: ts})
+						if ev.logger != nil && cap(ss.Floats) != prevCap {
+							ev.logger.Info("FPointSlice resized eval", "sz", numSteps, "cap", cap(ss.Floats), "prev cap", prevCap)
+						}
 					} else {
 						if ss.Histograms == nil {
 							ss.Histograms = reuseOrGetHPointSlices(prevSS, numSteps)
@@ -2122,7 +2130,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		ev.currentSamples -= len(floats) + totalHPointSize(histograms)
-		putFPointSlice(floats)
+		putFPointSlice(ev.logger, floats)
 		putMatrixSelectorHPointSlice(histograms)
 
 		// The absent_over_time function returns 0 or 1 series. So far, the matrix
@@ -2388,14 +2396,17 @@ func reuseOrGetHPointSlices(prevSS *Series, numSteps int) (r []HPoint) {
 
 // reuseOrGetFPointSlices reuses the space from previous slice to create new slice if the former has lots of room.
 // The previous slices capacity is adjusted so when it is re-used from the pool it doesn't overflow into the new one.
-func reuseOrGetFPointSlices(prevSS *Series, numSteps int) (r []FPoint) {
+func reuseOrGetFPointSlices(logger *slog.Logger, prevSS *Series, numSteps int) (r []FPoint) {
 	if prevSS != nil && cap(prevSS.Floats)-2*len(prevSS.Floats) > 0 {
 		r = prevSS.Floats[len(prevSS.Floats):]
 		prevSS.Floats = prevSS.Floats[0:len(prevSS.Floats):len(prevSS.Floats)]
+		if logger != nil {
+			logger.Info("FPointSlice reused", "sz", numSteps, "cap", cap(r), "prev cap", cap(prevSS.Floats))
+		}
 		return r
 	}
 
-	return getFPointSlice(numSteps)
+	return getFPointSlice(logger, numSteps)
 }
 
 func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Context, vs *parser.VectorSelector, call FunctionCall, e *parser.Call) (parser.Value, annotations.Annotations) {
@@ -2491,8 +2502,11 @@ var (
 	matrixSelectorHPool zeropool.Pool[[]HPoint]
 )
 
-func getFPointSlice(sz int) []FPoint {
+func getFPointSlice(logger *slog.Logger, sz int) []FPoint {
 	if p := fPointPool.Get(); p != nil {
+		if logger != nil {
+			logger.Info("FPointSlice from pool", "sz", sz, "cap", cap(p))
+		}
 		return p
 	}
 
@@ -2500,13 +2514,17 @@ func getFPointSlice(sz int) []FPoint {
 		sz = maxPointsSliceSize
 	}
 
+	logger.Info("FPointSlice make", "sz", sz)
 	return make([]FPoint, 0, sz)
 }
 
 // putFPointSlice will return a FPoint slice of size max(maxPointsSliceSize, sz).
 // This function is called with an estimated size which often can be over-estimated.
-func putFPointSlice(p []FPoint) {
+func putFPointSlice(logger *slog.Logger, p []FPoint) {
 	if p != nil {
+		if logger != nil {
+			logger.Info("FPointSlice into pool", "cap", cap(p))
+		}
 		fPointPool.Put(p[:0])
 	}
 }
@@ -2606,7 +2624,7 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 		if totalSize > 0 {
 			matrix = append(matrix, ss)
 		} else {
-			putFPointSlice(ss.Floats)
+			putFPointSlice(ev.logger, ss.Floats)
 			putHPointSlice(ss.Histograms)
 		}
 	}
@@ -2729,7 +2747,7 @@ loop:
 					ev.error(ErrTooManySamples(env))
 				}
 				if floats == nil {
-					floats = getFPointSlice(16)
+					floats = getFPointSlice(ev.logger, 16)
 				}
 				floats = append(floats, FPoint{T: t, F: f})
 			}
@@ -2773,7 +2791,7 @@ loop:
 				ev.error(ErrTooManySamples(env))
 			}
 			if floats == nil {
-				floats = getFPointSlice(16)
+				floats = getFPointSlice(ev.logger, 16)
 			}
 			floats = append(floats, FPoint{T: t, F: f})
 		}
@@ -3552,7 +3570,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 		}
 
 		ss := &outputMatrix[ri]
-		addToSeries(ss, enh.Ts, aggr.floatValue, aggr.histogramValue, numSteps)
+		addToSeries(ev.logger, ss, enh.Ts, aggr.floatValue, aggr.histogramValue, numSteps)
 		ss.DropName = aggr.dropName
 	}
 
@@ -3747,7 +3765,7 @@ seriesLoop:
 			if !ok {
 				ss = Series{Metric: lbls, DropName: dropName}
 			}
-			addToSeries(&ss, enh.Ts, f, h, numSteps)
+			addToSeries(ev.logger, &ss, enh.Ts, f, h, numSteps)
 			seriess[hash] = ss
 		}
 	}
@@ -3922,12 +3940,16 @@ func (ev *evaluator) mergeSeriesWithSameLabelset(mat Matrix) Matrix {
 	return merged
 }
 
-func addToSeries(ss *Series, ts int64, f float64, h *histogram.FloatHistogram, numSteps int) {
+func addToSeries(logger *slog.Logger, ss *Series, ts int64, f float64, h *histogram.FloatHistogram, numSteps int) {
 	if h == nil {
 		if ss.Floats == nil {
-			ss.Floats = getFPointSlice(numSteps)
+			ss.Floats = getFPointSlice(logger, numSteps)
 		}
+		prevCap := cap(ss.Floats)
 		ss.Floats = append(ss.Floats, FPoint{T: ts, F: f})
+		if logger != nil && cap(ss.Floats) != prevCap {
+			logger.Info("FPointSlice resized addToSeries", "sz", numSteps, "cap", cap(ss.Floats), "prev cap", prevCap)
+		}
 		return
 	}
 	if ss.Histograms == nil {
