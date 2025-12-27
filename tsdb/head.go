@@ -43,6 +43,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -1513,6 +1514,12 @@ func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
 	return h.head.tombstones, nil
 }
 
+// SeriesMetadata returns series metadata for the head.
+// Delegates to the underlying head to extract metadata from memSeries.
+func (h *RangeHead) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return h.head.SeriesMetadata()
+}
+
 func (h *RangeHead) MinTime() int64 {
 	return h.mint
 }
@@ -1656,6 +1663,38 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 // Tombstones returns a new reader over the head's tombstones.
 func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return h.tombstones, nil
+}
+
+// SeriesMetadata returns series metadata for the head.
+// It extracts metadata and resource attributes from all memSeries.
+func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
+	mem := seriesmetadata.NewMemSeriesMetadata()
+
+	// Iterate over all series shards and collect metadata and resource attributes
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].RLock()
+		for _, s := range h.series.series[i] {
+			// Use StableHash of labels as the key for consistent identification.
+			hash := labels.StableHash(s.lset)
+
+			// Collect metric metadata if present
+			if s.meta != nil {
+				// Extract metric name from __name__ label
+				metricName := s.lset.Get(labels.MetricName)
+				if metricName != "" {
+					mem.Set(metricName, hash, *s.meta)
+				}
+			}
+
+			// Collect resource attributes if present
+			if s.resourceAttrs != nil {
+				mem.SetVersionedResourceAttributes(hash, s.resourceAttrs)
+			}
+		}
+		h.series.locks[i].RUnlock()
+	}
+
+	return mem, nil
 }
 
 // NumSeries returns the number of series tracked in the head.
@@ -2142,6 +2181,17 @@ type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
 	ref  chunks.HeadSeriesRef
 	meta *metadata.Metadata
+
+	// resourceAttrs stores OTel resource attributes for this series.
+	// nil if no resource attributes have been set. Supports multiple versions
+	// to track attribute changes over time.
+	// Deprecated: Use entity instead.
+	resourceAttrs *seriesmetadata.VersionedResourceAttributes
+
+	// entity stores OTel entity data for this series.
+	// nil if no entity has been set. Supports multiple versions
+	// to track entity changes over time.
+	entity *seriesmetadata.VersionedEntity
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.

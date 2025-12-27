@@ -299,6 +299,8 @@ type Appender interface {
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater
+	ResourceAttributesUpdater
+	EntityUpdater
 	StartTimestampAppender
 }
 
@@ -375,6 +377,42 @@ type MetadataUpdater interface {
 	// UpdateMetadata returns an error.
 	// If the reference is 0 it must not be used for caching.
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
+}
+
+// ResourceAttributesUpdater provides an interface for associating OTel resource
+// attributes to stored series.
+// Deprecated: Use EntityUpdater instead.
+type ResourceAttributesUpdater interface {
+	// UpdateResourceAttributes updates resource attributes for the given series.
+	// The attributes map contains OTel resource attribute key-value pairs.
+	// The timestamp t is used to track when these attributes were observed.
+	// A series reference number is returned which can be used to modify the
+	// attributes of the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to UpdateResourceAttributes() at any point. If the series does not exist,
+	// UpdateResourceAttributes returns an error.
+	// If the reference is 0 it must not be used for caching.
+	UpdateResourceAttributes(ref SeriesRef, l labels.Labels, attrs map[string]string, t int64) (SeriesRef, error)
+}
+
+// EntityUpdater provides an interface for associating OTel entities to stored series.
+// An entity represents an OTel resource with explicit type and separated identifying
+// and descriptive attributes per the OTel Entity Data Model.
+type EntityUpdater interface {
+	// UpdateEntity updates the entity for the given series.
+	// The entityType defines the type of entity (e.g., "service", "host", "resource").
+	// The id map contains identifying attributes that uniquely identify the entity.
+	// The description map contains descriptive (non-identifying) attributes.
+	// The timestamp t is used to track when this entity version was observed.
+	// If the entity's attributes differ from the current version, a new version is created.
+	// If they match, the existing version's time range is extended.
+	// A series reference number is returned which can be used to modify the
+	// entity of the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to UpdateEntity() at any point. If the series does not exist,
+	// UpdateEntity returns an error.
+	// If the reference is 0 it must not be used for caching.
+	UpdateEntity(ref SeriesRef, l labels.Labels, entityType string, id, description map[string]string, t int64) (SeriesRef, error)
 }
 
 // StartTimestampAppender provides an interface for appending ST to storage.

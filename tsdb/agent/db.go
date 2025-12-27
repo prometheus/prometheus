@@ -1017,6 +1017,16 @@ func (*appender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metad
 	return 0, nil
 }
 
+func (*appender) UpdateResourceAttributes(storage.SeriesRef, labels.Labels, map[string]string, int64) (storage.SeriesRef, error) {
+	// UpdateResourceAttributes is not supported in the Agent.
+	return 0, nil
+}
+
+func (*appender) UpdateEntity(storage.SeriesRef, labels.Labels, string, map[string]string, map[string]string, int64) (storage.SeriesRef, error) {
+	// UpdateEntity is not supported in the Agent.
+	return 0, nil
+}
+
 func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	if h != nil {
 		if err := h.Validate(); err != nil {

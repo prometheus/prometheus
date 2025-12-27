@@ -101,6 +101,10 @@ func (m *mockCombinedAppender) Commit() error {
 	return nil
 }
 
+func (*mockCombinedAppender) SetResourceContext(_ map[string]string) {
+	// No-op for mock - resource attributes not tested here
+}
+
 func requireEqual(t testing.TB, expected, actual any, msgAndArgs ...any) {
 	testutil.RequireEqualWithOptions(t, expected, actual, []cmp.Option{cmp.AllowUnexported(combinedSample{}, combinedHistogram{})}, msgAndArgs...)
 }
@@ -830,6 +834,18 @@ func (a *appenderRecorder) UpdateMetadata(ref storage.SeriesRef, ls labels.Label
 	if a.updateMetadataError != nil {
 		return 0, a.updateMetadataError
 	}
+	a.setOutRef(ref)
+	return ref, nil
+}
+
+func (a *appenderRecorder) UpdateResourceAttributes(ref storage.SeriesRef, ls labels.Labels, _ map[string]string, _ int64) (storage.SeriesRef, error) {
+	a.records = append(a.records, appenderRecord{op: "UpdateResourceAttributes", ref: ref, ls: ls})
+	a.setOutRef(ref)
+	return ref, nil
+}
+
+func (a *appenderRecorder) UpdateEntity(ref storage.SeriesRef, ls labels.Labels, _ string, _ map[string]string, _ map[string]string, _ int64) (storage.SeriesRef, error) {
+	a.records = append(a.records, appenderRecord{op: "UpdateEntity", ref: ref, ls: ls})
 	a.setOutRef(ref)
 	return ref, nil
 }

@@ -77,6 +77,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/features"
@@ -1769,6 +1770,14 @@ func (notReadyAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadat
 	return 0, tsdb.ErrNotReady
 }
 
+func (notReadyAppender) UpdateResourceAttributes(storage.SeriesRef, labels.Labels, map[string]string, int64) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
+func (notReadyAppender) UpdateEntity(storage.SeriesRef, labels.Labels, string, map[string]string, map[string]string, int64) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (notReadyAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
@@ -1806,6 +1815,21 @@ func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
 		switch db := x.(type) {
 		case *tsdb.DB:
 			return db.BlockMetas(), nil
+		case *agent.DB:
+			return nil, agent.ErrUnsupported
+		default:
+			panic(fmt.Sprintf("unknown storage type %T", db))
+		}
+	}
+	return nil, tsdb.ErrNotReady
+}
+
+// SeriesMetadata implements the api_v1.TSDBAdminStats interface.
+func (s *readyStorage) SeriesMetadata() (seriesmetadata.Reader, error) {
+	if x := s.get(); x != nil {
+		switch db := x.(type) {
+		case *tsdb.DB:
+			return db.SeriesMetadata()
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		default:

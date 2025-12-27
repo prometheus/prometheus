@@ -55,6 +55,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -212,6 +213,7 @@ type TSDBAdminStats interface {
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 	BlockMetas() ([]tsdb.BlockMeta, error)
+	SeriesMetadata() (seriesmetadata.Reader, error)
 }
 
 type QueryOpts interface {
@@ -443,6 +445,8 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
+	r.Get("/resource_attributes", wrap(api.resourceAttributes))
+	r.Get("/entities", wrap(api.entities))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
@@ -1450,6 +1454,8 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	metric := r.FormValue("metric")
+
+	// First, collect metadata from active scrape targets (takes precedence)
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if metric == "" {
@@ -1487,6 +1493,30 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
+	// Supplement with persisted TSDB metadata for metrics not found in active targets
+	if api.db != nil {
+		mr, err := api.db.SeriesMetadata()
+		if err == nil {
+			defer mr.Close()
+			if metric == "" {
+				// List all metadata - add entries not already present from scrape targets
+				_ = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
+					if _, exists := metrics[name]; !exists {
+						metrics[name] = map[metadata.Metadata]struct{}{meta: {}}
+					}
+					return nil
+				})
+			} else {
+				// Get specific metric - add if not already present from scrape targets
+				if _, exists := metrics[metric]; !exists {
+					if meta, ok := mr.GetByMetricName(metric); ok {
+						metrics[metric] = map[metadata.Metadata]struct{}{meta: {}}
+					}
+				}
+			}
+		}
+	}
+
 	// Put the elements from the pseudo-set into a slice for marshaling.
 	res := map[string][]metadata.Metadata{}
 	for name, set := range metrics {
@@ -1502,6 +1532,436 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	return apiFuncResult{res, nil, nil, nil}
+}
+
+// ResourceAttributeVersion is a single version of resource attributes with its time range.
+type ResourceAttributeVersion struct {
+	Attributes map[string]string `json:"resource_attributes"`
+	MinTimeMs  int64             `json:"min_time_ms"`
+	MaxTimeMs  int64             `json:"max_time_ms"`
+}
+
+// ResourceAttributesResponse is the response format for the resource_attributes endpoint.
+type ResourceAttributesResponse struct {
+	Labels   labels.Labels              `json:"labels"`
+	Versions []ResourceAttributeVersion `json:"versions"`
+}
+
+func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+	}
+
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	if end.Before(start) {
+		err := errors.New("end timestamp must not be before start timestamp")
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	startMs := timestamp.FromTime(start)
+	endMs := timestamp.FromTime(end)
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
+	// Parse match[] parameters if provided
+	var matcherSets [][]*labels.Matcher
+	if len(r.Form["match[]"]) > 0 {
+		matcherSets, err = parseMatchersParam(r.Form["match[]"])
+		if err != nil {
+			return invalidParamError(err, "match[]")
+		}
+	}
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// If no matchers provided, return all resource attributes
+	if len(matcherSets) == 0 {
+		return api.resourceAttributesAll(mr, limit, startMs, endMs)
+	}
+
+	// Query series matching the selectors
+	ctx := r.Context()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
+
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+		Limit: toHintLimit(limit),
+	}
+
+	var set storage.SeriesSet
+	if len(matcherSets) > 1 {
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			s := q.Select(ctx, true, hints, mset...)
+			sets = append(sets, s)
+		}
+		set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+	} else {
+		set = q.Select(ctx, false, hints, matcherSets[0]...)
+	}
+
+	var results []ResourceAttributesResponse
+	warnings := set.Warnings()
+
+	for set.Next() {
+		if limit >= 0 && len(results) >= limit {
+			break
+		}
+
+		lset := set.At().Labels()
+		hash := lset.Hash()
+
+		versioned, ok := mr.GetVersionedResourceAttributes(hash)
+		if !ok || len(versioned.Versions) == 0 {
+			continue
+		}
+
+		// Filter versions to only those overlapping with [start, end]
+		versions := filterVersions(versioned.Versions, startMs, endMs)
+		if len(versions) == 0 {
+			continue
+		}
+
+		results = append(results, ResourceAttributesResponse{
+			Labels:   lset,
+			Versions: versions,
+		})
+	}
+
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+	}
+
+	if results == nil {
+		results = []ResourceAttributesResponse{}
+	}
+
+	return apiFuncResult{results, nil, warnings, closer}
+}
+
+// filterVersions returns versions that overlap with [startMs, endMs].
+func filterVersions(versions []*seriesmetadata.ResourceAttributes, startMs, endMs int64) []ResourceAttributeVersion {
+	result := make([]ResourceAttributeVersion, 0, len(versions))
+	for _, v := range versions {
+		// Version overlaps if: version.MinTime <= endMs AND version.MaxTime >= startMs
+		if v.MinTime <= endMs && v.MaxTime >= startMs {
+			result = append(result, ResourceAttributeVersion{
+				Attributes: v.Attributes,
+				MinTimeMs:  v.MinTime,
+				MaxTimeMs:  v.MaxTime,
+			})
+		}
+	}
+	return result
+}
+
+// resourceAttributesAll returns all resource attributes without filtering by matchers.
+func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, endMs int64) apiFuncResult {
+	// Build a map from hash to labels by querying all series
+	ctx := context.Background()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer q.Close()
+
+	// Query all series to build hash->labels map
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+	}
+	set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+
+	hashToLabels := make(map[uint64]labels.Labels)
+	for set.Next() {
+		lset := set.At().Labels()
+		hashToLabels[lset.Hash()] = lset
+	}
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+
+	var results []ResourceAttributesResponse
+	err = mr.IterVersionedResourceAttributes(func(labelsHash uint64, attrs *seriesmetadata.VersionedResourceAttributes) error {
+		if limit >= 0 && len(results) >= limit {
+			return nil
+		}
+
+		lset, ok := hashToLabels[labelsHash]
+		if !ok {
+			return nil // Skip if we can't find labels for this hash
+		}
+
+		// Filter versions to only those overlapping with [start, end]
+		versions := filterVersions(attrs.Versions, startMs, endMs)
+		if len(versions) == 0 {
+			return nil
+		}
+
+		results = append(results, ResourceAttributesResponse{
+			Labels:   lset,
+			Versions: versions,
+		})
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resource attributes: %w", err)}, nil, nil}
+	}
+
+	if results == nil {
+		results = []ResourceAttributesResponse{}
+	}
+
+	return apiFuncResult{results, nil, nil, nil}
+}
+
+// EntityVersion represents a single version of an entity with its time range.
+type EntityVersion struct {
+	Type        string            `json:"type"`
+	Id          map[string]string `json:"id"`
+	Description map[string]string `json:"description"`
+	MinTimeMs   int64             `json:"min_time_ms"`
+	MaxTimeMs   int64             `json:"max_time_ms"`
+}
+
+// EntitiesResponse is the response format for the entities endpoint.
+type EntitiesResponse struct {
+	Labels   labels.Labels   `json:"labels"`
+	Versions []EntityVersion `json:"versions"`
+}
+
+func (api *API) entities(r *http.Request) (result apiFuncResult) {
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+	}
+
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	if end.Before(start) {
+		err := errors.New("end timestamp must not be before start timestamp")
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	startMs := timestamp.FromTime(start)
+	endMs := timestamp.FromTime(end)
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
+	// Parse match[] parameters if provided
+	var matcherSets [][]*labels.Matcher
+	if len(r.Form["match[]"]) > 0 {
+		matcherSets, err = parseMatchersParam(r.Form["match[]"])
+		if err != nil {
+			return invalidParamError(err, "match[]")
+		}
+	}
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// If no matchers provided, return all entities
+	if len(matcherSets) == 0 {
+		return api.entitiesAll(mr, limit, startMs, endMs)
+	}
+
+	// Query series matching the selectors
+	ctx := r.Context()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
+
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+		Limit: toHintLimit(limit),
+	}
+
+	var set storage.SeriesSet
+	if len(matcherSets) > 1 {
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			s := q.Select(ctx, true, hints, mset...)
+			sets = append(sets, s)
+		}
+		set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+	} else {
+		set = q.Select(ctx, false, hints, matcherSets[0]...)
+	}
+
+	var results []EntitiesResponse
+	warnings := set.Warnings()
+
+	for set.Next() {
+		if limit >= 0 && len(results) >= limit {
+			break
+		}
+
+		lset := set.At().Labels()
+		hash := lset.Hash()
+
+		versioned, ok := mr.GetVersionedEntity(hash)
+		if !ok || len(versioned.Versions) == 0 {
+			continue
+		}
+
+		// Filter versions to only those overlapping with [start, end]
+		versions := filterEntityVersions(versioned.Versions, startMs, endMs)
+		if len(versions) == 0 {
+			continue
+		}
+
+		results = append(results, EntitiesResponse{
+			Labels:   lset,
+			Versions: versions,
+		})
+	}
+
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+	}
+
+	if results == nil {
+		results = []EntitiesResponse{}
+	}
+
+	return apiFuncResult{results, nil, warnings, closer}
+}
+
+// filterEntityVersions returns entity versions that overlap with [startMs, endMs].
+func filterEntityVersions(versions []*seriesmetadata.Entity, startMs, endMs int64) []EntityVersion {
+	result := make([]EntityVersion, 0, len(versions))
+	for _, v := range versions {
+		// Version overlaps if: version.MinTime <= endMs AND version.MaxTime >= startMs
+		if v.MinTime <= endMs && v.MaxTime >= startMs {
+			result = append(result, EntityVersion{
+				Type:        v.Type,
+				Id:          v.Id,
+				Description: v.Description,
+				MinTimeMs:   v.MinTime,
+				MaxTimeMs:   v.MaxTime,
+			})
+		}
+	}
+	return result
+}
+
+// entitiesAll returns all entities without filtering by matchers.
+func (api *API) entitiesAll(mr seriesmetadata.Reader, limit int, startMs, endMs int64) apiFuncResult {
+	// Build a map from hash to labels by querying all series
+	ctx := context.Background()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer q.Close()
+
+	// Query all series to build hash->labels map
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+	}
+	set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+
+	hashToLabels := make(map[uint64]labels.Labels)
+	for set.Next() {
+		lset := set.At().Labels()
+		hashToLabels[lset.Hash()] = lset
+	}
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+
+	var results []EntitiesResponse
+	err = mr.IterVersionedEntities(func(labelsHash uint64, entities *seriesmetadata.VersionedEntity) error {
+		if limit >= 0 && len(results) >= limit {
+			return nil
+		}
+
+		lset, ok := hashToLabels[labelsHash]
+		if !ok {
+			return nil // Skip if we can't find labels for this hash
+		}
+
+		// Filter versions to only those overlapping with [start, end]
+		versions := filterEntityVersions(entities.Versions, startMs, endMs)
+		if len(versions) == 0 {
+			return nil
+		}
+
+		results = append(results, EntitiesResponse{
+			Labels:   lset,
+			Versions: versions,
+		})
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate entities: %w", err)}, nil, nil}
+	}
+
+	if results == nil {
+		results = []EntitiesResponse{}
+	}
+
+	return apiFuncResult{results, nil, nil, nil}
 }
 
 // RuleDiscovery has info for all rules.

@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 )
 
 // initAppender is a helper to initialize the time bounds of the head
@@ -100,6 +101,24 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 
 	a.app = a.head.appender()
 	return a.app.UpdateMetadata(ref, l, m)
+}
+
+func (a *initAppender) UpdateResourceAttributes(ref storage.SeriesRef, l labels.Labels, attrs map[string]string, t int64) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.UpdateResourceAttributes(ref, l, attrs, t)
+	}
+
+	a.app = a.head.appender()
+	return a.app.UpdateResourceAttributes(ref, l, attrs, t)
+}
+
+func (a *initAppender) UpdateEntity(ref storage.SeriesRef, l labels.Labels, entityType string, id, description map[string]string, t int64) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.UpdateEntity(ref, l, entityType, id, description, t)
+	}
+
+	a.app = a.head.appender()
+	return a.app.UpdateEntity(ref, l, entityType, id, description, t)
 }
 
 func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, st int64) (storage.SeriesRef, error) {
@@ -1041,6 +1060,75 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 			Help: meta.Help,
 		})
 		b.metadataSeries = append(b.metadataSeries, s)
+	}
+
+	return ref, nil
+}
+
+// UpdateResourceAttributes stores OTel resource attributes for the given series.
+// Supports versioning: if attributes change, a new version is created.
+// If attributes are the same, the current version's time range is extended.
+// For the prototype, this stores in memory without WAL support.
+func (a *headAppender) UpdateResourceAttributes(ref storage.SeriesRef, lset labels.Labels, attrs map[string]string, t int64) (storage.SeriesRef, error) {
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		s = a.head.series.getByHash(lset.Hash(), lset)
+		if s != nil {
+			ref = storage.SeriesRef(s.ref)
+		}
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown series when trying to add resource attributes with HeadSeriesRef: %d and labels: %s", ref, lset)
+	}
+
+	s.Lock()
+	defer s.Unlock()
+
+	if s.resourceAttrs == nil {
+		// First time setting resource attributes - create versioned container
+		s.resourceAttrs = seriesmetadata.NewVersionedResourceAttributes(attrs, t)
+	} else {
+		// AddOrExtend handles version creation/extension logic:
+		// - If attributes equal current version: extend time range
+		// - If attributes differ: create new version
+		s.resourceAttrs.AddOrExtend(attrs, t)
+	}
+
+	return ref, nil
+}
+
+// UpdateEntity updates entity data for a series.
+// Supports versioning: if entity attributes change, a new version is created.
+// If attributes are the same, the current version's time range is extended.
+func (a *headAppender) UpdateEntity(ref storage.SeriesRef, lset labels.Labels, entityType string, id, description map[string]string, t int64) (storage.SeriesRef, error) {
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		s = a.head.series.getByHash(lset.Hash(), lset)
+		if s != nil {
+			ref = storage.SeriesRef(s.ref)
+		}
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown series when trying to add entity with HeadSeriesRef: %d and labels: %s", ref, lset)
+	}
+
+	s.Lock()
+	defer s.Unlock()
+
+	// Create the entity with the provided type or default to "resource"
+	if entityType == "" {
+		entityType = seriesmetadata.EntityTypeResource
+	}
+	entity := seriesmetadata.NewEntity(entityType, id, description, t, t)
+
+	if s.entity == nil {
+		// First time setting entity - create versioned container
+		s.entity = seriesmetadata.NewVersionedEntity(entity)
+	} else {
+		// AddOrExtend handles version creation/extension logic:
+		// - If entity equals current version: extend time range
+		// - If entity differs: create new version
+		s.entity.AddOrExtend(entity)
 	}
 
 	return ref, nil
