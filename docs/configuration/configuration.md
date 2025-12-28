@@ -919,11 +919,16 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 #### `ecs`
 
-The `ecs` role discovers targets from AWS ECS containers. The private IP address is used by default, but may be changed to
-the public IP address with relabeling.
+The `ecs` role discovers targets from AWS ECS containers. 
 
-The IAM credentials used must have the following permissions to discover
-scrape targets:
+ECS service discovery supports all ECS networking modes:
+- **awsvpc mode** (Fargate and EC2 with ENI): Uses the task's private IP address from its elastic network interface
+- **bridge mode** (EC2): Uses the EC2 host instance's private IP address
+- **host mode** (EC2): Uses the EC2 host instance's private IP address
+
+The private IP address is used by default, but may be changed to the public IP address with relabeling.
+
+The IAM credentials used must have the following permissions to discover scrape targets:
 
 - `ecs:ListClusters`
 - `ecs:DescribeClusters`
@@ -931,6 +936,9 @@ scrape targets:
 - `ecs:DescribeServices`
 - `ecs:ListTasks`
 - `ecs:DescribeTasks`
+- `ecs:DescribeContainerInstances` (required for EC2 launch type tasks)
+- `ec2:DescribeInstances` (required for EC2 launch type tasks)
+- `ec2:DescribeNetworkInterfaces` (required to get public IP for awsvpc mode tasks)
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -952,9 +960,17 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ecs_subnet_id`: the subnet ID where the task is running
 * `__meta_ecs_availability_zone`: the availability zone where the task is running
 * `__meta_ecs_region`: the AWS region
+* `__meta_ecs_public_ip`: the public IP address (from ENI for awsvpc mode, from EC2 instance for bridge/host mode), if available
+* `__meta_ecs_network_mode`: the network mode of the task (awsvpc or bridge)
+* `__meta_ecs_container_instance_arn`: the ARN of the container instance (EC2 launch type only)
+* `__meta_ecs_ec2_instance_id`: the EC2 instance ID (EC2 launch type only)
+* `__meta_ecs_ec2_instance_type`: the EC2 instance type (EC2 launch type only)
+* `__meta_ecs_ec2_instance_private_ip`: the private IP address of the EC2 instance (EC2 launch type only)
+* `__meta_ecs_ec2_instance_public_ip`: the public IP address of the EC2 instance, if available (EC2 launch type only)
 * `__meta_ecs_tag_cluster_<tagkey>`: each cluster tag value, keyed by tag name
 * `__meta_ecs_tag_service_<tagkey>`: each service tag value, keyed by tag name
 * `__meta_ecs_tag_task_<tagkey>`: each task tag value, keyed by tag name
+* `__meta_ecs_tag_ec2_<tagkey>`: each EC2 instance tag value, keyed by tag name (EC2 launch type only)
 
 See below for the configuration options for AWS discovery:
 
