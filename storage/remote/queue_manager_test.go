@@ -1235,7 +1235,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 	rs := WriteResponseStats{}
 	b := labels.NewScratchBuilder(0)
 	for _, ts := range reqProto.Timeseries {
-		labels := ts.ToLabels(&b, nil)
+		labels := ts.ToLabels(&b, nil, false)
 		tsID := labels.String()
 		if len(ts.Samples) > 0 {
 			c.receivedSamples[tsID] = append(c.receivedSamples[tsID], ts.Samples...)
@@ -1279,7 +1279,7 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 	}
 	b := labels.NewScratchBuilder(0)
 	for i, rts := range v2Req.Timeseries {
-		lbls, err := rts.ToLabels(&b, v2Req.Symbols)
+		lbls, err := rts.ToLabels(&b, v2Req.Symbols, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert labels: %w", err)
 		}
@@ -1324,7 +1324,7 @@ func v2RequestToWriteRequest(v2Req *writev2.Request) (*prompb.WriteRequest, erro
 
 		// Convert v2 metadata to v1 format.
 		if rts.Metadata.Type != writev2.Metadata_METRIC_TYPE_UNSPECIFIED {
-			labels, err := rts.ToLabels(&b, v2Req.Symbols)
+			labels, err := rts.ToLabels(&b, v2Req.Symbols, false)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert metadata labels: %w", err)
 			}

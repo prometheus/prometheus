@@ -213,7 +213,7 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query, sortSe
 
 	q := &prompb.QueryResult{}
 	for _, s := range c.store {
-		l := s.ToLabels(&c.b, nil)
+		l := s.ToLabels(&c.b, nil, false)
 		var notMatch bool
 
 		for _, m := range matchers {
@@ -255,7 +255,7 @@ func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Q
 
 		q := &prompb.QueryResult{}
 		for _, s := range c.store {
-			l := s.ToLabels(&c.b, nil)
+			l := s.ToLabels(&c.b, nil, false)
 			var notMatch bool
 
 			for _, m := range matchers {

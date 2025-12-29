@@ -16,6 +16,7 @@ package writev2
 import (
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -50,7 +51,7 @@ func TestSymbolsTable(t *testing.T) {
 	encoded := s.SymbolizeLabels(ls, nil)
 	require.Equal(t, []uint32{1, 3, 4, 5}, encoded)
 	b := labels.NewScratchBuilder(len(encoded))
-	decoded, err := desymbolizeLabels(&b, encoded, s.Symbols())
+	decoded, err := desymbolizeLabels(&b, encoded, s.Symbols(), model.MetricTypeUnknown, "")
 	require.NoError(t, err)
 	require.Equal(t, ls, decoded)
 
