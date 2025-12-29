@@ -17,6 +17,8 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"strconv"
+	"strings"
 
 	"github.com/prometheus/common/model"
 
@@ -86,6 +88,59 @@ type Parser interface {
 	Next() (Entry, error)
 }
 
+// selectContentTypeByQuality parses a comma-separated list of content types
+// and returns the one with the highest quality value (q parameter).
+// If no quality values are present, it returns the first content type.
+// This follows HTTP content negotiation rules (RFC 7231, Section 5.3.2).
+func selectContentTypeByQuality(contentTypes string) string {
+	if strings.TrimSpace(contentTypes) == "" {
+		return ""
+	}
+	types := strings.Split(contentTypes, ",")
+	if len(types) == 1 {
+		return strings.TrimSpace(types[0])
+	}
+
+	bestType := ""
+	bestQuality := -1.0 // Initialize to -1 so any valid quality value will be higher
+
+	for _, ct := range types {
+		ct = strings.TrimSpace(ct)
+		if ct == "" {
+			continue
+		}
+
+		// Parse the content type to extract the quality parameter
+		_, params, err := mime.ParseMediaType(ct)
+		if err != nil {
+			// If we can't parse it, skip this one
+			continue
+		}
+
+		// Extract the quality value (default to 1.0 if not present)
+		quality := 1.0
+		if qStr, ok := params["q"]; ok {
+			// Parse the quality value
+			if qParsed, err := strconv.ParseFloat(qStr, 64); err == nil && qParsed >= 0 && qParsed <= 1 {
+				quality = qParsed
+			}
+		}
+
+		// Select the content type with the highest quality
+		if quality > bestQuality {
+			bestQuality = quality
+			bestType = ct
+		}
+	}
+
+	// If no valid content type was found, return the first one
+	if bestType == "" && len(types) > 0 {
+		return strings.TrimSpace(types[0])
+	}
+
+	return bestType
+}
+
 // extractMediaType returns the mediaType of a required parser. It tries first to
 // extract a valid and supported mediaType from contentType. If that fails,
 // the provided fallbackType (possibly an empty string) is returned, together with
@@ -96,6 +151,12 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 			return "", errors.New("non-compliant scrape target sending blank Content-Type and no fallback_scrape_protocol specified for target")
 		}
 		return fallbackType, fmt.Errorf("non-compliant scrape target sending blank Content-Type, using fallback_scrape_protocol %q", fallbackType)
+	}
+
+	// Some non-compliant targets may return multiple media types (like an Accept header).
+	// Parse and select the content type with the highest quality value.
+	if strings.Contains(contentType, ",") {
+		contentType = selectContentTypeByQuality(contentType)
 	}
 
 	// We have a contentType, parse it.
