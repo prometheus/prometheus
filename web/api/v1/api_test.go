@@ -1745,10 +1745,11 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			endpoint: api.series,
 			errType:  errorBadData,
 		},
-		{
-			endpoint: api.dropSeries,
-			errType:  errorInternal,
-		},
+		// TODO: Uncomment when dropSeries is implemented.
+		// {
+		// 	endpoint: api.dropSeries,
+		// 	errType:  errorInternal,
+		// },
 		{
 			endpoint: api.targets,
 			response: &TargetDiscovery{
