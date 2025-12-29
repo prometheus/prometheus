@@ -982,6 +982,7 @@ curl http://localhost:9090/api/v1/alerts
 ## Querying target metadata
 
 The following endpoint returns metadata about metrics currently scraped from targets.
+Metadata sent over Remote-Write or OTLP to Prometheus is not included in this endpoint and will not show up on the UI in "Explore Metrics".
 This is **experimental** and might change in the future.
 
 ```
