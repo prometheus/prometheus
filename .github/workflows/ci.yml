@@ -202,20 +202,22 @@ jobs:
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
   check_generated_parser:
+    # Checks generated parser and UI functions list. Not renaming as it is a required check.
     name: Check generated parser
     runs-on: ubuntu-latest
+    container:
+      image: quay.io/prometheus/golang-builder:1.25-base
     steps:
       - name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
-      - name: Install Go
-        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+      - uses: prometheus/promci@c0916f0a41f13444612a8f0f5e700ea34edd7c19 # v0.5.3
+      - uses: ./.github/promci/actions/setup_environment
         with:
-          cache: false
-          go-version: 1.25.x
-      - name: Run goyacc and check for diff
-        run: make install-goyacc check-generated-parser
+          enable_npm: true
+      - run: make install-goyacc check-generated-parser
+      - run: make check-generated-promql-functions
   golangci:
     name: golangci-lint
     runs-on: ubuntu-latest
