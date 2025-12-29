@@ -327,7 +327,7 @@ func (h *Head) resetInMemoryState() error {
 	if em == nil {
 		em = NewExemplarMetrics(h.reg)
 	}
-	es, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), em)
+	es, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), em, h.opts.OutOfOrderTimeWindow.Load())
 	if err != nil {
 		return err
 	}
