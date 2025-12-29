@@ -871,7 +871,7 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 	return samples, series
 }
 
-func createProtoTimeseriesWithOld(numSamples, baseTs int64, _ ...labels.Label) []prompb.TimeSeries {
+func createProtoTimeseriesWithOld(numSamples, baseTs int64) []prompb.TimeSeries {
 	samples := make([]prompb.TimeSeries, numSamples)
 	// use a fixed rand source so tests are consistent
 	r := rand.New(rand.NewSource(99))
@@ -2365,8 +2365,14 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 10000
 	filter := func(ts prompb.TimeSeries) bool { return filterTsLimit(99, ts) }
+	originalSamples := createProtoTimeseriesWithOld(numSamples, 100)
+
+	b.ReportAllocs()
 	for b.Loop() {
-		samples := createProtoTimeseriesWithOld(numSamples, 100, extraLabels...)
+		b.StopTimer()
+		samples := make([]prompb.TimeSeries, len(originalSamples))
+		copy(samples, originalSamples)
+		b.StartTimer()
 		result, _ := buildTimeSeries(samples, filter)
 		require.NotNil(b, result)
 	}
