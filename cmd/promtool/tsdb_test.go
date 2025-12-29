@@ -16,6 +16,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -241,4 +242,46 @@ func TestTSDBDumpOpenMetricsRoundTrip(t *testing.T) {
 
 	// Should get back the initial metrics.
 	require.Equal(t, string(initialMetrics), dumpedMetrics)
+}
+
+func TestPromtoolAnalyze(t *testing.T) {
+	metrics := "test_1{} 1 2 3 4 5\n"
+	for i := 1; i < 30; i++ {
+		metrics += fmt.Sprintf("test_%d{index=\"0\"} 1 2 3 4 5\n", i)
+	}
+	storage := promqltest.LoadedStorage(t, "load 1m\n"+metrics)
+	t.Cleanup(func() { storage.Close() })
+
+	storage.CompactHead(tsdb.NewRangeHead(storage.Head(), 0, 10))
+
+	output, err := Promtool("tsdb", "analyze", "--extended", storage.Dir())
+	require.NoError(t, err)
+
+	fmt.Println("Output of `promtool tsdb analyze --extended`:")
+	fmt.Println(output)
+	require.Contains(t, output, strings.TrimSpace(`
+Top 20 metric names by disk usage:
+          34 bytes (  6.67%) test_1
+          17 bytes (  3.33%) test_10
+          17 bytes (  3.33%) test_11
+          17 bytes (  3.33%) test_12
+          17 bytes (  3.33%) test_13
+          17 bytes (  3.33%) test_14
+          17 bytes (  3.33%) test_15
+          17 bytes (  3.33%) test_16
+          17 bytes (  3.33%) test_17
+          17 bytes (  3.33%) test_18
+          17 bytes (  3.33%) test_19
+          17 bytes (  3.33%) test_2
+          17 bytes (  3.33%) test_20
+          17 bytes (  3.33%) test_21
+          17 bytes (  3.33%) test_22
+          17 bytes (  3.33%) test_23
+          17 bytes (  3.33%) test_24
+          17 bytes (  3.33%) test_25
+          17 bytes (  3.33%) test_26
+          17 bytes (  3.33%) test_27
+  total (top       20):          357 bytes (70.00%)
+  total (all       29):          510 bytes
+	`), "The output of `promtool tsdb analyze --extended` does not contain the metric disk usage info.")
 }
