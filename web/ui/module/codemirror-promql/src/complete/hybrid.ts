@@ -575,6 +575,10 @@ export class HybridComplete implements CompleteStrategy {
     return this.prometheusClient;
   }
 
+  destroy(): void {
+    this.prometheusClient?.destroy?.();
+  }
+
   promQL(context: CompletionContext): Promise<CompletionResult | null> | CompletionResult | null {
     const { state, pos } = context;
     const tree = syntaxTree(state).resolve(pos, -1);
