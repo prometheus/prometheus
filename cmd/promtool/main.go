@@ -943,8 +943,8 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 		if errs != nil {
 			warnings, failures, hadWarnings, criticalErrors := categorizeParseErrors(errs)
 			hadParseWarnings = hadWarnings
-			hasErrors = criticalErrors
-			failed = printCategorizedErrors(warnings, failures)
+			hasErrors = hasErrors || criticalErrors
+			failed = failed || printCategorizedErrors(warnings, failures)
 
 			if hasErrors {
 				continue
