@@ -1580,6 +1580,45 @@ func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependenci
 	})
 }
 
+func TestManager_LoadGroups_ShouldIgnoreMultiDocYAML(t *testing.T) {
+	storage := teststorage.New(t)
+	t.Cleanup(func() {
+		require.NoError(t, storage.Close())
+	})
+
+	ruleManager := NewManager(&ManagerOptions{
+		Context:    context.Background(),
+		Logger:     promslog.NewNopLogger(),
+		Appendable: storage,
+		QueryFunc:  func(context.Context, string, time.Time) (promql.Vector, error) { return nil, nil },
+	})
+
+	// Test that multi-document YAML files are accepted for backwards compatibility.
+	// Only the first document should be processed.
+	groups, errs := ruleManager.LoadGroups(
+		time.Second,
+		labels.EmptyLabels(),
+		"",
+		nil,
+		false,
+		[]string{"fixtures/rules_multi_doc.yaml"}...,
+	)
+
+	// Should not return errors (ErrMultiDoc should be filtered out)
+	require.Empty(t, errs, "multi-document YAML should not cause LoadGroups to fail")
+	require.Len(t, groups, 1, "should load exactly one group from first document")
+
+	// Verify only the first document was loaded
+	var groupKey string
+	for key := range groups {
+		groupKey = key
+	}
+	group := groups[groupKey]
+	require.Equal(t, "test", group.Name(), "should load the 'test' group from first document")
+	require.Len(t, group.Rules(), 1, "should have exactly one rule from first document")
+	require.Equal(t, "job:http_requests:rate5m", group.Rules()[0].Name())
+}
+
 func TestDependencyMap(t *testing.T) {
 	ctx := context.Background()
 	opts := &ManagerOptions{
@@ -2609,6 +2648,11 @@ func TestParseFiles(t *testing.T) {
 	t.Run("bad files", func(t *testing.T) {
 		err := ParseFiles([]string{filepath.Join("fixtures", "invalid_rules.y*ml")}, model.UTF8Validation)
 		require.ErrorContains(t, err, "field unexpected_field not found in type rulefmt.Rule")
+	})
+	t.Run("multi-doc files", func(t *testing.T) {
+		// Multi-document YAML should not cause errors (backwards compatibility)
+		err := ParseFiles([]string{filepath.Join("fixtures", "rules_multi_doc.yaml")}, model.UTF8Validation)
+		require.NoError(t, err, "multi-document YAML should be accepted for backwards compatibility")
 	})
 }
 
