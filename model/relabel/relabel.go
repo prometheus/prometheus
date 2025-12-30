@@ -90,7 +90,7 @@ type Config struct {
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty" json:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
-	Regex Regexp `yaml:"regex,omitempty" json:"regex,omitempty"`
+	Regex Regexp `yaml:"regex,omitempty" json:"regex"`
 	// Modulus to take of the hash of concatenated values from the source labels.
 	Modulus uint64 `yaml:"modulus,omitempty" json:"modulus,omitempty"`
 	// TargetLabel is the label to which the resulting string is written in a replacement.

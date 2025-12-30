@@ -1009,7 +1009,7 @@ func TestMarshaling(t *testing.T) {
 
 	// Now in a struct with a tag
 	type foo struct {
-		ALabels Labels `json:"a_labels,omitempty" yaml:"a_labels,omitempty"`
+		ALabels Labels `json:"a_labels" yaml:"a_labels,omitempty"`
 	}
 
 	f := foo{ALabels: lbls}
