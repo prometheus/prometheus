@@ -340,7 +340,19 @@ func (m *Manager) LoadGroups(
 	for _, fn := range filenames {
 		rgs, errs := m.opts.GroupLoader.Load(fn, ignoreUnknownFields, m.opts.NameValidationScheme)
 		if errs != nil {
-			return nil, errs
+			// Filter out ErrMultiDoc to maintain backwards compatibility.
+			// Multi-doc YAML files should warn but not prevent rule loading.
+			var criticalErrs []error
+			for _, err := range errs {
+				if errors.Is(err, rulefmt.ErrMultiDoc) {
+					m.logger.Warn("multi-document YAML file detected, only first document will be used", "file", fn)
+				} else {
+					criticalErrs = append(criticalErrs, err)
+				}
+			}
+			if len(criticalErrs) > 0 {
+				return nil, criticalErrs
+			}
 		}
 
 		for _, rg := range rgs.Groups {
@@ -628,7 +640,16 @@ func ParseFiles(patterns []string, nameValidationScheme model.ValidationScheme) 
 	for fn, pat := range files {
 		_, errs := rulefmt.ParseFile(fn, false, nameValidationScheme)
 		if len(errs) > 0 {
-			return fmt.Errorf("parse rules from file %q (pattern: %q): %w", fn, pat, errors.Join(errs...))
+			// Filter out ErrMultiDoc to maintain backwards compatibility.
+			var criticalErrs []error
+			for _, err := range errs {
+				if !errors.Is(err, rulefmt.ErrMultiDoc) {
+					criticalErrs = append(criticalErrs, err)
+				}
+			}
+			if len(criticalErrs) > 0 {
+				return fmt.Errorf("parse rules from file %q (pattern: %q): %w", fn, pat, errors.Join(criticalErrs...))
+			}
 		}
 	}
 	return nil
