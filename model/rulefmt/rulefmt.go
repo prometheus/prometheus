@@ -380,8 +380,6 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 		return nil, errs
 	}
 
-	// Add the multi-doc warning after critical errors are checked.
-	// This way it's returned alongside the successfully parsed groups.
 	validationErrs := groups.Validate(node, nameValidationScheme)
 	if multiDocErr != nil {
 		validationErrs = append([]error{multiDocErr}, validationErrs...)
