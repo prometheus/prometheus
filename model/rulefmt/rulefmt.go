@@ -361,7 +361,7 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 
 	// Check for additional YAML documents before checking for critical errors.
 	// We need to do this before the early return so we can track if multi-doc is the only issue.
-	var discard interface{}
+	var discard any
 	var multiDocErr error
 	err = decoder.Decode(&discard)
 	if err == nil {
