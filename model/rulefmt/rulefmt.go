@@ -366,7 +366,7 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 	err = decoder.Decode(&discard)
 	if err == nil {
 		// Successfully decoded a second document - this is a multi-doc file.
-		multiDocErr = fmt.Errorf("%w: rule file contains multiple YAML documents, only the first document is processed", ErrMultiDoc)
+		multiDocErr = ErrMultiDoc
 	}
 	// If err is io.EOF, there's only one document (expected case).
 	// If err is something else, we ignore it as it's just for detection.
