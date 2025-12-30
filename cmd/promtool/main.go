@@ -955,7 +955,7 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 			for _, err := range errs {
 				hasErrors = hasErrors || !errors.Is(err, errLint)
 			}
-		} else if !hadParseWarnings {
+		} else {
 			// Only print SUCCESS if there were no parse warnings.
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
 		}
