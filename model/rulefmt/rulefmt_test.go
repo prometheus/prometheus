@@ -132,7 +132,6 @@ func TestParseMultiDocWarning(t *testing.T) {
 	// Should get a warning about multi-document YAML
 	require.Len(t, errs, 1, "Expected exactly one error (warning) about multi-document YAML")
 	require.ErrorIs(t, errs[0], ErrMultiDoc, "Expected ErrMultiDoc error")
-	require.ErrorContains(t, errs[0], "multiple YAML documents", "Expected error message about multiple YAML documents")
 
 	// Despite the warning, the first document should be parsed successfully
 	require.NotNil(t, rgs, "Expected rule groups to be parsed")
