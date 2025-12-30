@@ -921,8 +921,7 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		for _, err := range errs {
 			hasErrors = hasErrors || !errors.Is(err, errLint)
 		}
-	} else if !hadParseWarnings {
-		// Only print SUCCESS if there were no parse warnings.
+	} else {
 		fmt.Printf("  SUCCESS: %d rules found\n", n)
 	}
 	fmt.Println()
