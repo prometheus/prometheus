@@ -477,41 +477,22 @@ func checkExperimental(f bool) {
 
 var errLint = errors.New("lint error")
 
-// categorizeParseErrors separates parsing errors into warnings and failures.
-func categorizeParseErrors(errs []error) (warnings, failures []error, hadWarnings, hasErrors bool) {
-	for _, e := range errs {
-		switch {
-		case errors.Is(e, rulefmt.ErrMultiDoc):
-			warnings = append(warnings, e)
-			hadWarnings = true
-		case errors.Is(e, errLint):
-			failures = append(failures, e)
-			hadWarnings = true
-		default:
-			failures = append(failures, e)
-			hasErrors = true
-		}
-	}
-	return warnings, failures, hadWarnings, hasErrors
-}
-
-// printCategorizedErrors prints warnings and failures to stderr.
-func printCategorizedErrors(warnings, failures []error) bool {
-	if len(warnings) > 0 {
-		fmt.Fprintln(os.Stderr, "  WARNING:")
-		for _, e := range warnings {
-			fmt.Fprintln(os.Stderr, e.Error())
-		}
+// wrapMultiDocErrors wraps any ErrMultiDoc errors with errLint to treat them as lint warnings.
+// This makes multi-doc detection respect --lint-fatal flag while being non-fatal by default.
+func wrapMultiDocErrors(errs []error) []error {
+	if len(errs) == 0 {
+		return errs
 	}
 
-	if len(failures) > 0 {
-		fmt.Fprintln(os.Stderr, "  FAILED:")
-		for _, e := range failures {
-			fmt.Fprintln(os.Stderr, e.Error())
+	wrapped := make([]error, len(errs))
+	for i, err := range errs {
+		if errors.Is(err, rulefmt.ErrMultiDoc) {
+			wrapped[i] = fmt.Errorf("%w: %w", errLint, err)
+		} else {
+			wrapped[i] = err
 		}
-		return true
 	}
-	return false
+	return wrapped
 }
 
 type rulesLintConfig struct {
@@ -904,14 +885,24 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		return true, true
 	}
 	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme)
-	hadParseWarnings := false
-	if errs != nil {
-		failed, hasErrors = processRuleParseErrors(errs)
 
+	// Wrap multi-doc errors as lint errors
+	errs = wrapMultiDocErrors(errs)
+
+	if len(errs) > 0 {
+		fmt.Fprintln(os.Stderr, "  FAILED:")
+		for _, e := range errs {
+			fmt.Fprintln(os.Stderr, e.Error())
+		}
+		failed = true
+		for _, err := range errs {
+			hasErrors = hasErrors || !errors.Is(err, errLint)
+		}
 		if hasErrors {
 			return failed, hasErrors
 		}
 	}
+
 	if n, errs := checkRuleGroups(rgs, ls); errs != nil {
 		fmt.Fprintln(os.Stderr, "  FAILED:")
 		for _, e := range errs {
@@ -921,7 +912,8 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		for _, err := range errs {
 			hasErrors = hasErrors || !errors.Is(err, errLint)
 		}
-	} else {
+	} else if !failed {
+		// Only print SUCCESS if there were no parse errors (even lint ones)
 		fmt.Printf("  SUCCESS: %d rules found\n", n)
 	}
 	fmt.Println()
@@ -933,30 +925,41 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	failed := false
 	hasErrors := false
 	for _, f := range files {
+		fileHasFailed := false
 		fmt.Println("Checking", f)
 		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme)
-		hadParseWarnings := false
-		if errs != nil {
-			warnings, failures, hadWarnings, criticalErrors := categorizeParseErrors(errs)
-			hadParseWarnings = hadWarnings
-			hasErrors = hasErrors || criticalErrors
-			failed = failed || printCategorizedErrors(warnings, failures)
 
+		// Wrap multi-doc errors as lint errors
+		errs = wrapMultiDocErrors(errs)
+
+		if len(errs) > 0 {
+			fmt.Fprintln(os.Stderr, "  FAILED:")
+			for _, e := range errs {
+				fmt.Fprintln(os.Stderr, e.Error())
+			}
+			failed = true
+			fileHasFailed = true
+			for _, err := range errs {
+				hasErrors = hasErrors || !errors.Is(err, errLint)
+			}
 			if hasErrors {
+				fmt.Println()
 				continue
 			}
 		}
+
 		if n, errs := checkRuleGroups(rgs, ls); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
 			}
 			failed = true
+			fileHasFailed = true
 			for _, err := range errs {
 				hasErrors = hasErrors || !errors.Is(err, errLint)
 			}
-		} else {
-			// Only print SUCCESS if there were no parse warnings.
+		} else if !fileHasFailed {
+			// Only print SUCCESS if there were no parse errors (even lint ones)
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
 		}
 		fmt.Println()
