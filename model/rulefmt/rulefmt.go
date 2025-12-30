@@ -382,7 +382,7 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 
 	validationErrs := groups.Validate(node, nameValidationScheme)
 	if multiDocErr != nil {
-		validationErrs = append([]error{multiDocErr}, validationErrs...)
+		validationErrs = append(validationErrs, multiDocErr)
 	}
 
 	return &groups, validationErrs
