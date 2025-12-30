@@ -906,10 +906,7 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme)
 	hadParseWarnings := false
 	if errs != nil {
-		warnings, failures, hadWarnings, criticalErrors := categorizeParseErrors(errs)
-		hadParseWarnings = hadWarnings
-		hasErrors = criticalErrors
-		failed = printCategorizedErrors(warnings, failures)
+		failed, hasErrors = processRuleParseErrors(errs)
 
 		if hasErrors {
 			return failed, hasErrors
