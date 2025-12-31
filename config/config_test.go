@@ -2663,12 +2663,87 @@ func TestAgentMode(t *testing.T) {
 	)
 }
 
-func TestEmptyGlobalBlock(t *testing.T) {
-	c, err := Load("global:\n", promslog.NewNopLogger())
-	require.NoError(t, err)
-	exp := DefaultConfig
-	exp.loaded = true
-	require.Equal(t, exp, *c)
+func TestGlobalConfig(t *testing.T) {
+	t.Run("empty block restores defaults", func(t *testing.T) {
+		c, err := Load("global:\n", promslog.NewNopLogger())
+		require.NoError(t, err)
+		exp := DefaultConfig
+		exp.loaded = true
+		require.Equal(t, exp, *c)
+	})
+
+	// Verify that isZero() correctly identifies non-zero configurations for all
+	// fields in GlobalConfig. This is important because isZero() is used during
+	// YAML unmarshaling to detect empty global blocks that should be replaced
+	// with defaults.
+	t.Run("isZero", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			config     GlobalConfig
+			expectZero bool
+		}{
+			{
+				name:       "empty GlobalConfig",
+				config:     GlobalConfig{},
+				expectZero: true,
+			},
+			{
+				name:       "ScrapeInterval set",
+				config:     GlobalConfig{ScrapeInterval: model.Duration(30 * time.Second)},
+				expectZero: false,
+			},
+			{
+				name:       "BodySizeLimit set",
+				config:     GlobalConfig{BodySizeLimit: 1 * units.MiB},
+				expectZero: false,
+			},
+			{
+				name:       "SampleLimit set",
+				config:     GlobalConfig{SampleLimit: 1000},
+				expectZero: false,
+			},
+			{
+				name:       "TargetLimit set",
+				config:     GlobalConfig{TargetLimit: 500},
+				expectZero: false,
+			},
+			{
+				name:       "LabelLimit set",
+				config:     GlobalConfig{LabelLimit: 100},
+				expectZero: false,
+			},
+			{
+				name:       "LabelNameLengthLimit set",
+				config:     GlobalConfig{LabelNameLengthLimit: 50},
+				expectZero: false,
+			},
+			{
+				name:       "LabelValueLengthLimit set",
+				config:     GlobalConfig{LabelValueLengthLimit: 200},
+				expectZero: false,
+			},
+			{
+				name:       "KeepDroppedTargets set",
+				config:     GlobalConfig{KeepDroppedTargets: 10},
+				expectZero: false,
+			},
+			{
+				name:       "MetricNameValidationScheme set",
+				config:     GlobalConfig{MetricNameValidationScheme: model.LegacyValidation},
+				expectZero: false,
+			},
+			{
+				name:       "MetricNameEscapingScheme set",
+				config:     GlobalConfig{MetricNameEscapingScheme: model.EscapeUnderscores},
+				expectZero: false,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				result := tc.config.isZero()
+				require.Equal(t, tc.expectZero, result)
+			})
+		}
+	})
 }
 
 // ScrapeConfigOptions contains options for creating a scrape config.
