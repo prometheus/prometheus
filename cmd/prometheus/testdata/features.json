@@ -166,7 +166,7 @@
     "query_offset": true
   },
   "scrape": {
-    "extra_scrape_metrics": false,
+    "extra_scrape_metrics": true,
     "start_timestamp_zero_ingestion": false,
     "type_and_unit_labels": false
   },
