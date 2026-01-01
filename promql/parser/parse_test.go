@@ -5282,6 +5282,142 @@ var testExpr = []struct {
 			},
 		},
 	},
+	// Aligned subquery tests
+	{
+		input: `foo[30m::10m]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			Range:   30 * time.Minute,
+			Step:    10 * time.Minute,
+			Aligned: true,
+			EndPos:  13,
+		},
+	},
+	{
+		input: `foo{bar="baz"}[1h::5m]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 14},
+			},
+			Range:   1 * time.Hour,
+			Step:    5 * time.Minute,
+			Aligned: true,
+			EndPos:  22,
+		},
+	},
+	{
+		input: `rate(foo[5m])[30m::10m]`,
+		expected: &SubqueryExpr{
+			Expr: &Call{
+				Func: MustGetFunction("rate"),
+				Args: Expressions{
+					&MatrixSelector{
+						VectorSelector: &VectorSelector{
+							Name: "foo",
+							LabelMatchers: []*labels.Matcher{
+								MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+							},
+							PosRange: posrange.PositionRange{Start: 5, End: 8},
+						},
+						Range:  5 * time.Minute,
+						EndPos: 12,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 13},
+			},
+			Range:   30 * time.Minute,
+			Step:    10 * time.Minute,
+			Aligned: true,
+			EndPos:  23,
+		},
+	},
+	{
+		input: `avg_over_time(rate(foo[5m])[30m::10m])`,
+		expected: &Call{
+			Func: MustGetFunction("avg_over_time"),
+			Args: Expressions{
+				&SubqueryExpr{
+					Expr: &Call{
+						Func: MustGetFunction("rate"),
+						Args: Expressions{
+							&MatrixSelector{
+								VectorSelector: &VectorSelector{
+									Name: "foo",
+									LabelMatchers: []*labels.Matcher{
+										MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+									},
+									PosRange: posrange.PositionRange{Start: 19, End: 22},
+								},
+								Range:  5 * time.Minute,
+								EndPos: 26,
+							},
+						},
+						PosRange: posrange.PositionRange{Start: 14, End: 27},
+					},
+					Range:   30 * time.Minute,
+					Step:    10 * time.Minute,
+					Aligned: true,
+					EndPos:  37,
+				},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 38},
+		},
+	},
+	{
+		input: `foo[10m::] @ 123`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			Timestamp: makeInt64Pointer(123000),
+			Range:     10 * time.Minute,
+			Aligned:   true,
+			EndPos:    16,
+		},
+	},
+	{
+		input: `foo[::10m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 5, End: 10},
+				Err:           errors.New("unexpected colon before duration in duration expression"),
+				Query:         `foo[::10m]`,
+			},
+		},
+	},
+	{
+		input: `foo[30m::10m] offset 5m`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			Range:          30 * time.Minute,
+			Step:           10 * time.Minute,
+			Aligned:        true,
+			OriginalOffset: 5 * time.Minute,
+			EndPos:         23,
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -5839,7 +5975,7 @@ func TestParseHistogramSeries(t *testing.T) {
 		{
 			name:          "space after {{",
 			input:         `{} {{ schema:1}}`,
-			expectedError: `1:7: parse error: unexpected "<Item 57372>" "schema" in series values`,
+			expectedError: `1:7: parse error: unexpected "<Item 57373>" "schema" in series values`,
 		},
 		{
 			name:          "invalid counter reset hint value",
