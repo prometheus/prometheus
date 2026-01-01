@@ -159,6 +159,7 @@ export interface Subquery {
   step: number;
   timestamp: number | null;
   startOrEnd: StartOrEnd;
+  alignEvalTime?: boolean;
 }
 
 export interface NumberLiteral {
