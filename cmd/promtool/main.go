@@ -62,8 +62,9 @@ import (
 )
 
 var (
-	promqlEnableDelayedNameRemoval = false
-	promtoolParserOpts             parser.Options
+	promqlEnableDelayedNameRemoval    = false
+	promqlEnableEvalAlignedSubqueries = false
+	promtoolParserOpts                parser.Options
 )
 
 func init() {
@@ -317,7 +318,7 @@ func main() {
 	promQLLabelsDeleteQuery := promQLLabelsDeleteCmd.Arg("query", "PromQL query.").Required().String()
 	promQLLabelsDeleteName := promQLLabelsDeleteCmd.Arg("name", "Name of the label to delete.").Required().String()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-duration-expr, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-duration-expr, promql-extended-range-selectors, promql-eval-aligned-subqueries. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details").Default("").Strings()
 
 	documentationCmd := app.Command("write-documentation", "Generate command line documentation. Internal use.").Hidden()
 
@@ -358,6 +359,8 @@ func main() {
 				promtoolParserOpts.ExperimentalDurationExpr = true
 			case "promql-extended-range-selectors":
 				promtoolParserOpts.EnableExtendedRangeSelectors = true
+			case "promql-eval-aligned-subqueries":
+				promqlEnableEvalAlignedSubqueries = true
 			case "":
 				continue
 			default:
@@ -420,9 +423,10 @@ func main() {
 		}
 		os.Exit(RulesUnitTestResult(results,
 			promqltest.LazyLoaderOpts{
-				EnableAtModifier:         true,
-				EnableNegativeOffset:     true,
-				EnableDelayedNameRemoval: promqlEnableDelayedNameRemoval,
+				EnableAtModifier:            true,
+				EnableNegativeOffset:        true,
+				EnableDelayedNameRemoval:    promqlEnableDelayedNameRemoval,
+				EnableEvalAlignedSubqueries: promqlEnableEvalAlignedSubqueries,
 			},
 			promtoolParser,
 			*testRulesRun,

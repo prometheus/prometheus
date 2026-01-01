@@ -97,17 +97,18 @@ var TestParserOpts = parser.Options{
 // NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.
 func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
 	return NewTestEngineWithOpts(tb, promql.EngineOpts{
-		Logger:                   nil,
-		Reg:                      nil,
-		MaxSamples:               maxSamples,
-		Timeout:                  100 * time.Second,
-		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
-		EnableAtModifier:         true,
-		EnableNegativeOffset:     true,
-		EnablePerStepStats:       enablePerStepStats,
-		LookbackDelta:            lookbackDelta,
-		EnableDelayedNameRemoval: true,
-		Parser:                   parser.NewParser(TestParserOpts),
+		Logger:                      nil,
+		Reg:                         nil,
+		MaxSamples:                  maxSamples,
+		Timeout:                     100 * time.Second,
+		NoStepSubqueryIntervalFn:    func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
+		EnableAtModifier:            true,
+		EnableNegativeOffset:        true,
+		EnablePerStepStats:          enablePerStepStats,
+		LookbackDelta:               lookbackDelta,
+		EnableDelayedNameRemoval:    true,
+		Parser:                      parser.NewParser(TestParserOpts),
+		EnableEvalAlignedSubqueries: true,
 	})
 }
 
@@ -1694,7 +1695,8 @@ type LazyLoaderOpts struct {
 	// feature flag.
 	EnableDelayedNameRemoval bool
 	// StartTime is the start time for the test. If zero, defaults to Unix epoch.
-	StartTime time.Time
+	StartTime                   time.Time
+	EnableEvalAlignedSubqueries bool
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
@@ -1755,14 +1757,15 @@ func (ll *LazyLoader) clear() error {
 	}
 
 	opts := promql.EngineOpts{
-		Logger:                   nil,
-		Reg:                      nil,
-		MaxSamples:               10000,
-		Timeout:                  100 * time.Second,
-		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
-		EnableAtModifier:         ll.opts.EnableAtModifier,
-		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
-		EnableDelayedNameRemoval: ll.opts.EnableDelayedNameRemoval,
+		Logger:                      nil,
+		Reg:                         nil,
+		MaxSamples:                  10000,
+		Timeout:                     100 * time.Second,
+		NoStepSubqueryIntervalFn:    func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
+		EnableAtModifier:            ll.opts.EnableAtModifier,
+		EnableNegativeOffset:        ll.opts.EnableNegativeOffset,
+		EnableDelayedNameRemoval:    ll.opts.EnableDelayedNameRemoval,
+		EnableEvalAlignedSubqueries: ll.opts.EnableEvalAlignedSubqueries,
 	}
 
 	ll.queryEngine = promql.NewEngine(opts)
