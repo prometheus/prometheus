@@ -30,6 +30,7 @@
     "by": true,
     "delayed_name_removal": false,
     "duration_expr": false,
+    "eval_aligned_subqueries": false,
     "fill": false,
     "fill_left": false,
     "fill_right": false,
