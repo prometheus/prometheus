@@ -184,6 +184,7 @@ var ItemTypeStr = map[ItemType]string{
 	COMMA:         ",",
 	EQL:           "=",
 	COLON:         ":",
+	DOUBLE_COLON:  "::",
 	SEMICOLON:     ";",
 	BLANK:         "_",
 	TIMES:         "x",
@@ -504,7 +505,12 @@ func lexStatements(l *Lexer) stateFn {
 			if l.gotColon {
 				return l.errorf("unexpected colon %q", r)
 			}
-			l.emit(COLON)
+			if t := l.peek(); t == ':' {
+				l.next()
+				l.emit(DOUBLE_COLON)
+			} else {
+				l.emit(COLON)
+			}
 			l.gotColon = true
 			return lexStatements
 		case 's', 'S', 'm', 'M':
@@ -1195,6 +1201,16 @@ func lexDurationExpr(l *Lexer) stateFn {
 		l.gotColon = false
 		return lexStatements
 	case r == ':':
+		if t := l.peek(); t == ':' {
+			if !l.gotDuration {
+				l.emit(COLON)
+				return l.errorf("unexpected colon before duration in duration expression")
+			}
+			l.next()
+			l.emit(DOUBLE_COLON)
+			l.gotColon = true
+			return lexDurationExpr
+		}
 		l.emit(COLON)
 		if !l.gotDuration {
 			return l.errorf("unexpected colon before duration in duration expression")

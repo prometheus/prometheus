@@ -205,6 +205,43 @@ state is mutex guarded. Cumulative-only OTLP requests are not affected.
 
 [d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
 
+## PromQL evaluation-time aligned subqueries
+
+`--enable-feature=promql-eval-aligned-subqueries`
+
+Enables the experimental aligned subquery syntax `[range::step]`.
+
+Aligned subqueries select points on a grid aligned to the evaluation time (or the `@` time). The grid is shifted so that the evaluation time itself is one of the selected points.
+
+Regular subqueries, `[range:step]`, use a fixed global grid based on Unix time 0. Aligned subqueries, `[range::step]`, use a grid based on the current evaluation time.
+
+The selection window remains `(t-range, t]`: points at `t-range` are excluded, and points at `t` are included. With aligned subqueries, `t` is always included when `step > 0`.
+
+Examples:
+
+```
+sum_over_time(http_requests_total[30m::10m])
+rate(foo_total[5m])[20m::5m]
+```
+
+Notes:
+
+- The cost is limited to queries that use `[range::step]`. Regular subqueries keep their existing behavior and cost model.
+- In range queries, aligned subqueries are evaluated for every outer step. When the aligned subquery step doesn't divide the outer evaluation step evenly, Prometheus may use a smaller internal step so that every outer step can select its aligned inner points. The smaller step is the greatest common divisor of both steps.
+
+  For example:
+
+  ```
+  sum_over_time(sum_over_time(metric[21s::7s])[40s::10s])
+  ```
+
+  The inner aligned subquery uses step `7s`, and the outer aligned subquery uses step `10s`. Since `gcd(7s, 10s) = 1s`, Prometheus may evaluate the inner subquery on an internal `1s` grid. The query result is still based on the aligned `7s` points selected for each outer step, but Prometheus may need to load and process many more samples to make those points available.
+- This cost is most noticeable when the greatest common divisor is much smaller than either step, ranges are large, aligned subqueries are nested, or the query matches many series.
+- To preserve correctness across outer steps, Prometheus may keep the full subquery window in memory between steps, which may increase memory usage proportionally to `range/step`.
+- Omitting `step` in `[range::]` uses the same default as regular subqueries (the no-step subquery interval).
+
+See the Subquery section in the Querying Basics for more details and examples.
+
 ## OTLP Native Delta Support
 
 `--enable-feature=otlp-native-delta-ingestion`

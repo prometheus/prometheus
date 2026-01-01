@@ -5282,6 +5282,172 @@ var testExpr = []struct {
 			},
 		},
 	},
+	// Aligned subquery tests
+	{
+		input: `foo[30m::10m]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			Range:   30 * time.Minute,
+			Step:    10 * time.Minute,
+			Aligned: true,
+			EndPos:  13,
+		},
+	},
+	{
+		input: `foo{bar="baz"}[1h::5m]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 14},
+			},
+			Range:   1 * time.Hour,
+			Step:    5 * time.Minute,
+			Aligned: true,
+			EndPos:  22,
+		},
+	},
+	{
+		input: `rate(foo[5m])[30m::10m]`,
+		expected: &SubqueryExpr{
+			Expr: &Call{
+				Func: MustGetFunction("rate"),
+				Args: Expressions{
+					&MatrixSelector{
+						VectorSelector: &VectorSelector{
+							Name: "foo",
+							LabelMatchers: []*labels.Matcher{
+								MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+							},
+							PosRange: posrange.PositionRange{Start: 5, End: 8},
+						},
+						Range:  5 * time.Minute,
+						EndPos: 12,
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 13},
+			},
+			Range:   30 * time.Minute,
+			Step:    10 * time.Minute,
+			Aligned: true,
+			EndPos:  23,
+		},
+	},
+	{
+		input: `avg_over_time(rate(foo[5m])[30m::10m])`,
+		expected: &Call{
+			Func: MustGetFunction("avg_over_time"),
+			Args: Expressions{
+				&SubqueryExpr{
+					Expr: &Call{
+						Func: MustGetFunction("rate"),
+						Args: Expressions{
+							&MatrixSelector{
+								VectorSelector: &VectorSelector{
+									Name: "foo",
+									LabelMatchers: []*labels.Matcher{
+										MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+									},
+									PosRange: posrange.PositionRange{Start: 19, End: 22},
+								},
+								Range:  5 * time.Minute,
+								EndPos: 26,
+							},
+						},
+						PosRange: posrange.PositionRange{Start: 14, End: 27},
+					},
+					Range:   30 * time.Minute,
+					Step:    10 * time.Minute,
+					Aligned: true,
+					EndPos:  37,
+				},
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 38},
+		},
+	},
+	{
+		input: `foo[10m::] @ 123`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			Timestamp: makeInt64Pointer(123000),
+			Range:     10 * time.Minute,
+			Aligned:   true,
+			EndPos:    16,
+		},
+	},
+	{
+		input: `foo[min(1m,step())::1m]`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       MIN,
+				StartPos: 4,
+				EndPos:   18,
+				LHS: &NumberLiteral{
+					Val:      60,
+					Duration: true,
+					PosRange: posrange.PositionRange{Start: 8, End: 10},
+				},
+				RHS: &DurationExpr{
+					Op:       STEP,
+					StartPos: 11,
+					EndPos:   17,
+				},
+			},
+			Step:    time.Minute,
+			Aligned: true,
+			EndPos:  23,
+		},
+	},
+	{
+		input: `foo[::10m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 5, End: 10},
+				Err:           errors.New("unexpected colon before duration in duration expression"),
+				Query:         `foo[::10m]`,
+			},
+		},
+	},
+	{
+		input: `foo[30m::10m] offset 5m`,
+		expected: &SubqueryExpr{
+			Expr: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			Range:          30 * time.Minute,
+			Step:           10 * time.Minute,
+			Aligned:        true,
+			OriginalOffset: 5 * time.Minute,
+			EndPos:         23,
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
@@ -5355,6 +5521,25 @@ func TestParseExpressions(t *testing.T) {
 					require.LessOrEqual(t, e.PositionRange.End, posrange.Pos(len(test.input)), "parse error is not contained in input\nExpression '%s'\nError: %v", test.input, e)
 				}
 			}
+		})
+	}
+}
+
+func TestParseAlignedSubqueryDurationExpressionHelpers(t *testing.T) {
+	for _, input := range []string{
+		`foo[min(1m, step())::1m]`,
+		`foo[min(step(), 1m)::1m]`,
+		`foo[max(1m, step())::1m]`,
+		`foo[max(step(), 1m)::1m]`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			expr, err := testParser.ParseExpr(input)
+			require.NoError(t, err)
+
+			subquery, ok := expr.(*SubqueryExpr)
+			require.True(t, ok)
+			require.True(t, subquery.Aligned)
+			require.NotNil(t, subquery.RangeExpr)
 		})
 	}
 }
@@ -5838,7 +6023,7 @@ func TestParseHistogramSeries(t *testing.T) {
 		{
 			name:          "space after {{",
 			input:         `{} {{ schema:1}}`,
-			expectedError: `1:7: parse error: unexpected "<Item 57372>" "schema" in series values`,
+			expectedError: `1:7: parse error: unexpected "<Item 57373>" "schema" in series values`,
 		},
 		{
 			name:          "invalid counter reset hint value",

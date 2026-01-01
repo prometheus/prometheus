@@ -140,6 +140,23 @@ func TestRulesUnitTest(t *testing.T) {
 			},
 			want: 0,
 		},
+		{
+			name: "Disabled feature (evaluation time aligned subqueries)",
+			args: args{
+				files: []string{"./testdata/eval-aligned-subqueries-test.yml"},
+			},
+			want: 1,
+		},
+		{
+			name: "Enabled feature (evaluation time aligned subqueries)",
+			args: args{
+				files: []string{"./testdata/eval-aligned-subqueries-test.yml"},
+			},
+			queryOpts: promqltest.LazyLoaderOpts{
+				EnableEvalAlignedSubqueries: true,
+			},
+			want: 0,
+		},
 	}
 	reuseFiles := []string{}
 	reuseCount := [2]int{}

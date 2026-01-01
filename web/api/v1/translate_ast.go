@@ -93,13 +93,14 @@ func translateAST(node parser.Expr) any {
 		}
 	case *parser.SubqueryExpr:
 		return map[string]any{
-			"type":       "subquery",
-			"expr":       translateAST(n.Expr),
-			"range":      n.Range.Milliseconds(),
-			"offset":     n.OriginalOffset.Milliseconds(),
-			"step":       n.Step.Milliseconds(),
-			"timestamp":  n.Timestamp,
-			"startOrEnd": getStartOrEnd(n.StartOrEnd),
+			"type":          "subquery",
+			"expr":          translateAST(n.Expr),
+			"range":         n.Range.Milliseconds(),
+			"offset":        n.OriginalOffset.Milliseconds(),
+			"step":          n.Step.Milliseconds(),
+			"timestamp":     n.Timestamp,
+			"startOrEnd":    getStartOrEnd(n.StartOrEnd),
+			"alignEvalTime": n.Aligned,
 		}
 	case *parser.NumberLiteral:
 		return map[string]string{

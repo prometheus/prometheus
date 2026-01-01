@@ -352,7 +352,11 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 	if node.RangeExpr != nil {
 		rangeStr = node.RangeExpr.String()
 	}
-	return fmt.Sprintf("[%s:%s]%s%s", rangeStr, step, at, offset)
+	sep := ":"
+	if node.Aligned {
+		sep = "::"
+	}
+	return fmt.Sprintf("[%s%s%s]%s%s", rangeStr, sep, step, at, offset)
 }
 
 func (node *NumberLiteral) String() string {
