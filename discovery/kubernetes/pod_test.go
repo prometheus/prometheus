@@ -20,6 +20,8 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -623,6 +625,473 @@ func TestPodDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
 					"__meta_kubernetes_pod_uid":                                "abc123",
 				},
 				Source: fmt.Sprintf("pod/%s/testpod", ns),
+			},
+		},
+	}.Run(t)
+}
+
+func makeReplicaSet(name, namespace, deploymentName string, deploymentUID types.UID) *appsv1.ReplicaSet {
+	return &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       types.UID("rs123"),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					Kind:       "Deployment",
+					Name:       deploymentName,
+					UID:        deploymentUID,
+					Controller: makeOptionalBool(true),
+				},
+			},
+		},
+	}
+}
+
+func makeDeployment(name, namespace string) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       types.UID("deploy123"),
+		},
+	}
+}
+
+func makeJob(name, namespace, cronJobName string, cronJobUID types.UID) *batchv1.Job {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       types.UID("job123"),
+		},
+	}
+
+	if cronJobName != "" {
+		job.OwnerReferences = []metav1.OwnerReference{
+			{
+				Kind:       "CronJob",
+				Name:       cronJobName,
+				UID:        cronJobUID,
+				Controller: makeOptionalBool(true),
+			},
+		}
+	}
+
+	return job
+}
+
+func makeCronJob(name, namespace string) *batchv1.CronJob {
+	return &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       types.UID("cronjob123"),
+		},
+	}
+}
+
+func makeReplicaSetOwnedPod(namespace, replicaSetName string, replicaSetUID types.UID) *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: namespace,
+			UID:       types.UID("pod123"),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					Kind:       "ReplicaSet",
+					Name:       replicaSetName,
+					UID:        replicaSetUID,
+					Controller: makeOptionalBool(true),
+				},
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: "testnode",
+			Containers: []v1.Container{
+				{
+					Name:  "testcontainer",
+					Image: "testcontainer:latest",
+					Ports: []v1.ContainerPort{
+						{
+							Name:          "testport",
+							Protocol:      v1.ProtocolTCP,
+							ContainerPort: int32(9000),
+						},
+					},
+				},
+			},
+		},
+		Status: v1.PodStatus{
+			PodIP:  "1.2.3.4",
+			HostIP: "2.3.4.5",
+			Phase:  "Running",
+			Conditions: []v1.PodCondition{
+				{
+					Type:   v1.PodReady,
+					Status: v1.ConditionTrue,
+				},
+			},
+			ContainerStatuses: []v1.ContainerStatus{
+				{
+					Name:        "testcontainer",
+					ContainerID: "docker://a1b2c3d4e5f6",
+				},
+			},
+		},
+	}
+}
+
+func makeJobOwnedPod(namespace, jobName string, jobUID types.UID) *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: namespace,
+			UID:       types.UID("pod123"),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					Kind:       "Job",
+					Name:       jobName,
+					UID:        jobUID,
+					Controller: makeOptionalBool(true),
+				},
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: "testnode",
+			Containers: []v1.Container{
+				{
+					Name:  "testcontainer",
+					Image: "testcontainer:latest",
+					Ports: []v1.ContainerPort{
+						{
+							Name:          "testport",
+							Protocol:      v1.ProtocolTCP,
+							ContainerPort: int32(9000),
+						},
+					},
+				},
+			},
+		},
+		Status: v1.PodStatus{
+			PodIP:  "1.2.3.4",
+			HostIP: "2.3.4.5",
+			Phase:  "Running",
+			Conditions: []v1.PodCondition{
+				{
+					Type:   v1.PodReady,
+					Status: v1.ConditionTrue,
+				},
+			},
+			ContainerStatuses: []v1.ContainerStatus{
+				{
+					Name:        "testcontainer",
+					ContainerID: "docker://a1b2c3d4e5f6",
+				},
+			},
+		},
+	}
+}
+
+func TestPodDiscoveryWithDeployment(t *testing.T) {
+	t.Parallel()
+
+	deployment := makeDeployment("testdeployment", "default")
+	replicaSet := makeReplicaSet("testdeployment-rs-abc", "default", deployment.Name, deployment.UID)
+	pod := makeReplicaSetOwnedPod("default", replicaSet.Name, replicaSet.UID)
+
+	n, _ := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, AttachMetadataConfig{
+		PodMetadataConfig: PodMetadataConfig{Deployment: true},
+	}, pod, replicaSet, deployment)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/testpod": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "1.2.3.4:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":            "testpod",
+					"__meta_kubernetes_namespace":           "default",
+					"__meta_kubernetes_pod_node_name":       "testnode",
+					"__meta_kubernetes_pod_ip":              "1.2.3.4",
+					"__meta_kubernetes_pod_host_ip":         "2.3.4.5",
+					"__meta_kubernetes_pod_ready":           "true",
+					"__meta_kubernetes_pod_phase":           "Running",
+					"__meta_kubernetes_pod_uid":             "pod123",
+					"__meta_kubernetes_pod_controller_kind": "ReplicaSet",
+					"__meta_kubernetes_pod_controller_name": "testdeployment-rs-abc",
+					"__meta_kubernetes_pod_deployment_name": "testdeployment",
+				},
+				Source: "pod/default/testpod",
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithJob(t *testing.T) {
+	t.Parallel()
+
+	job := makeJob("testjob", "default", "", "")
+	pod := makeJobOwnedPod("default", job.Name, job.UID)
+
+	n, _ := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, AttachMetadataConfig{
+		PodMetadataConfig: PodMetadataConfig{Job: true},
+	}, pod, job)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/testpod": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "1.2.3.4:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":            "testpod",
+					"__meta_kubernetes_namespace":           "default",
+					"__meta_kubernetes_pod_node_name":       "testnode",
+					"__meta_kubernetes_pod_ip":              "1.2.3.4",
+					"__meta_kubernetes_pod_host_ip":         "2.3.4.5",
+					"__meta_kubernetes_pod_ready":           "true",
+					"__meta_kubernetes_pod_phase":           "Running",
+					"__meta_kubernetes_pod_uid":             "pod123",
+					"__meta_kubernetes_pod_controller_kind": "Job",
+					"__meta_kubernetes_pod_controller_name": "testjob",
+					"__meta_kubernetes_pod_job_name":        "testjob",
+				},
+				Source: "pod/default/testpod",
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithCronJob(t *testing.T) {
+	t.Parallel()
+
+	cronJob := makeCronJob("testcronjob", "default")
+	job := makeJob("testcronjob-job-abc", "default", cronJob.Name, cronJob.UID)
+	pod := makeJobOwnedPod("default", job.Name, job.UID)
+
+	n, _ := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, AttachMetadataConfig{
+		PodMetadataConfig: PodMetadataConfig{Job: true},
+	}, pod, job, cronJob)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/testpod": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "1.2.3.4:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":            "testpod",
+					"__meta_kubernetes_namespace":           "default",
+					"__meta_kubernetes_pod_node_name":       "testnode",
+					"__meta_kubernetes_pod_ip":              "1.2.3.4",
+					"__meta_kubernetes_pod_host_ip":         "2.3.4.5",
+					"__meta_kubernetes_pod_ready":           "true",
+					"__meta_kubernetes_pod_phase":           "Running",
+					"__meta_kubernetes_pod_uid":             "pod123",
+					"__meta_kubernetes_pod_controller_kind": "Job",
+					"__meta_kubernetes_pod_controller_name": "testcronjob-job-abc",
+					"__meta_kubernetes_pod_job_name":        "testcronjob-job-abc",
+				},
+				Source: "pod/default/testpod",
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithDeploymentUpdate(t *testing.T) {
+	t.Parallel()
+
+	deployment := makeDeployment("testdeployment", "default")
+	deployment.Labels = map[string]string{"version": "v1"}
+
+	replicaSet := makeReplicaSet("testdeployment-rs-abc", "default", deployment.Name, deployment.UID)
+	pod := makeReplicaSetOwnedPod("default", replicaSet.Name, replicaSet.UID)
+
+	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, AttachMetadataConfig{
+		PodMetadataConfig: PodMetadataConfig{Deployment: true},
+	}, pod, replicaSet, deployment)
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			// Update deployment with new labels
+			deployment.Labels["version"] = "v2"
+			deployment.Labels["env"] = "prod"
+			c.AppsV1().Deployments(deployment.Namespace).Update(context.Background(), deployment, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/testpod": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "1.2.3.4:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":            "testpod",
+					"__meta_kubernetes_namespace":           "default",
+					"__meta_kubernetes_pod_node_name":       "testnode",
+					"__meta_kubernetes_pod_ip":              "1.2.3.4",
+					"__meta_kubernetes_pod_host_ip":         "2.3.4.5",
+					"__meta_kubernetes_pod_ready":           "true",
+					"__meta_kubernetes_pod_phase":           "Running",
+					"__meta_kubernetes_pod_uid":             "pod123",
+					"__meta_kubernetes_pod_controller_kind": "ReplicaSet",
+					"__meta_kubernetes_pod_controller_name": "testdeployment-rs-abc",
+					"__meta_kubernetes_pod_deployment_name": "testdeployment",
+				},
+				Source: "pod/default/testpod",
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithJobUpdate(t *testing.T) {
+	t.Parallel()
+
+	job := makeJob("testjob", "default", "", "")
+	job.Labels = map[string]string{"batch": "v1"}
+
+	pod := makeJobOwnedPod("default", job.Name, job.UID)
+
+	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, AttachMetadataConfig{
+		PodMetadataConfig: PodMetadataConfig{Job: true},
+	}, pod, job)
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			// Update job with new labels
+			job.Labels["batch"] = "v2"
+			job.Labels["priority"] = "high"
+			c.BatchV1().Jobs(job.Namespace).Update(context.Background(), job, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/testpod": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "1.2.3.4:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":            "testpod",
+					"__meta_kubernetes_namespace":           "default",
+					"__meta_kubernetes_pod_node_name":       "testnode",
+					"__meta_kubernetes_pod_ip":              "1.2.3.4",
+					"__meta_kubernetes_pod_host_ip":         "2.3.4.5",
+					"__meta_kubernetes_pod_ready":           "true",
+					"__meta_kubernetes_pod_phase":           "Running",
+					"__meta_kubernetes_pod_uid":             "pod123",
+					"__meta_kubernetes_pod_controller_kind": "Job",
+					"__meta_kubernetes_pod_controller_name": "testjob",
+					"__meta_kubernetes_pod_job_name":        "testjob",
+				},
+				Source: "pod/default/testpod",
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithCronJobUpdate(t *testing.T) {
+	t.Parallel()
+
+	cronJob := makeCronJob("testcronjob", "default")
+	cronJob.Labels = map[string]string{"schedule": "hourly"}
+
+	job := makeJob("testcronjob-job-abc", "default", cronJob.Name, cronJob.UID)
+	pod := makeJobOwnedPod("default", job.Name, job.UID)
+
+	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, AttachMetadataConfig{
+		PodMetadataConfig: PodMetadataConfig{CronJob: true},
+	}, pod, job, cronJob)
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			// Update cronjob with new labels
+			cronJob.Labels["schedule"] = "daily"
+			cronJob.Labels["retention"] = "7d"
+			c.BatchV1().CronJobs(cronJob.Namespace).Update(context.Background(), cronJob, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/testpod": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "1.2.3.4:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":            "testpod",
+					"__meta_kubernetes_namespace":           "default",
+					"__meta_kubernetes_pod_node_name":       "testnode",
+					"__meta_kubernetes_pod_ip":              "1.2.3.4",
+					"__meta_kubernetes_pod_host_ip":         "2.3.4.5",
+					"__meta_kubernetes_pod_ready":           "true",
+					"__meta_kubernetes_pod_phase":           "Running",
+					"__meta_kubernetes_pod_uid":             "pod123",
+					"__meta_kubernetes_pod_controller_kind": "Job",
+					"__meta_kubernetes_pod_controller_name": "testcronjob-job-abc",
+					"__meta_kubernetes_pod_cronjob_name":    "testcronjob",
+				},
+				Source: "pod/default/testpod",
 			},
 		},
 	}.Run(t)
