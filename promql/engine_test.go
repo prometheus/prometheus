@@ -1328,6 +1328,115 @@ load 10s
 	}
 }
 
+func TestAlignedSubquery_RangeSumAlignedGrid(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  align_metric 0+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	qry, err := engine.NewRangeQuery(context.Background(), storage, nil,
+		`sum_over_time(align_metric[30s::20s])`,
+		time.Unix(50, 0), time.Unix(100, 0), 10*time.Second,
+	)
+	require.NoError(t, err)
+	res := qry.Exec(context.Background())
+	require.NoError(t, res.Err)
+
+	mat, ok := res.Value.(promql.Matrix)
+	require.True(t, ok)
+	require.Len(t, mat, 1)
+	got := make([]float64, 0, len(mat[0].Floats))
+	for _, p := range mat[0].Floats {
+		got = append(got, p.F)
+	}
+	require.Equal(t, []float64{8, 10, 12, 14, 16, 18}, got)
+}
+
+func TestAlignedSubquery_NestedInstant(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  nested_metric 0+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	qry, err := engine.NewInstantQuery(context.Background(), storage, nil,
+		`sum_over_time(sum_over_time(nested_metric[20s::10s])[40s::20s])`,
+		time.Unix(100, 0),
+	)
+	require.NoError(t, err)
+	res := qry.Exec(context.Background())
+	require.NoError(t, res.Err)
+
+	vec, ok := res.Value.(promql.Vector)
+	require.True(t, ok)
+	require.Len(t, vec, 1)
+	require.InEpsilon(t, 34.0, vec[0].F, defaultEpsilon)
+}
+
+func TestAlignedSubquery_CountVsRegular(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  m 0+1x100
+`)
+	t.Cleanup(func() { storage.Close() })
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	q1, err := engine.NewInstantQuery(context.Background(), storage, nil,
+		`count_over_time(m[30s:20s])`, time.Unix(50, 0))
+	require.NoError(t, err)
+	r1 := q1.Exec(context.Background())
+	require.NoError(t, r1.Err)
+	v1 := r1.Value.(promql.Vector)
+	require.InEpsilon(t, 1.0, v1[0].F, defaultEpsilon)
+
+	q2, err := engine.NewInstantQuery(context.Background(), storage, nil,
+		`count_over_time(m[30s::20s])`, time.Unix(50, 0))
+	require.NoError(t, err)
+	r2 := q2.Exec(context.Background())
+	require.NoError(t, r2.Err)
+	v2 := r2.Value.(promql.Vector)
+	require.InEpsilon(t, 2.0, v2[0].F, defaultEpsilon)
+}
+
+func TestAlignedSubquery_AtModifier(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  at_metric 0+1x50
+`)
+	t.Cleanup(func() { storage.Close() })
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	q, err := engine.NewInstantQuery(context.Background(), storage, nil,
+		`sum_over_time(at_metric[30s::10s] @ 100)`, time.Unix(200, 0))
+	require.NoError(t, err)
+	r := q.Exec(context.Background())
+	require.NoError(t, r.Err)
+	v := r.Value.(promql.Vector)
+	require.InEpsilon(t, 27.0, v[0].F, defaultEpsilon)
+}
+
+func TestAlignedSubquery_NegativeInnerSteps(t *testing.T) {
+	ctx := context.Background()
+	storage := promqltest.LoadedStorage(t, `
+load 1s
+`)
+	t.Cleanup(func() { storage.Close() })
+
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	q, err := engine.NewInstantQuery(ctx, storage, nil, `sum_over_time(vector(1)[9s::5s])`, time.Unix(4, 0))
+	require.NoError(t, err)
+
+	r := q.Exec(ctx)
+	require.NoError(t, r.Err)
+
+	v := r.Value.(promql.Vector)
+	require.Len(t, v, 1)
+	require.InEpsilon(t, 2.0, v[0].F, defaultEpsilon)
+}
+
 func TestMaxQuerySamples(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 load 10s

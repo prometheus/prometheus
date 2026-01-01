@@ -52,6 +52,7 @@ import (
 EQL
 BLANK
 COLON
+DOUBLE_COLON
 COMMA
 COMMENT
 DURATION
@@ -629,6 +630,43 @@ subquery_expr   : expr LEFT_BRACKET positive_duration_expr COLON positive_durati
                                 Expr:  $1.(Expr),
                                 Range: rangeNl,
                                 RangeExpr: rangeExpr,
+                                EndPos: $5.Pos + 1,
+                        }
+                        }
+                | expr LEFT_BRACKET positive_duration_expr DOUBLE_COLON positive_duration_expr RIGHT_BRACKET
+                        {
+                        var rangeNl time.Duration
+                        var stepNl time.Duration
+                        if numLit, ok := $3.(*NumberLiteral); ok {
+                                rangeNl = time.Duration(math.Round(numLit.Val*float64(time.Second)))
+                        }
+                        rangeExpr, _ := $3.(*DurationExpr)
+                        if numLit, ok := $5.(*NumberLiteral); ok {
+                                stepNl = time.Duration(math.Round(numLit.Val*float64(time.Second)))
+                        }
+                        stepExpr, _ := $5.(*DurationExpr)
+                        $$ = &SubqueryExpr{
+                                Expr:  $1.(Expr),
+                                Range: rangeNl,
+                                RangeExpr: rangeExpr,
+                                Step: stepNl,
+                                StepExpr:  stepExpr,
+                                Aligned: true,
+                                EndPos: $6.Pos + 1,
+                        }
+                        }
+                | expr LEFT_BRACKET positive_duration_expr DOUBLE_COLON RIGHT_BRACKET
+                        {
+                        var rangeNl time.Duration
+                        if numLit, ok := $3.(*NumberLiteral); ok {
+                                rangeNl = time.Duration(math.Round(numLit.Val*float64(time.Second)))
+                        }
+                        rangeExpr, _ := $3.(*DurationExpr)
+                        $$ = &SubqueryExpr{
+                                Expr:  $1.(Expr),
+                                Range: rangeNl,
+                                RangeExpr: rangeExpr,
+                                Aligned: true,
                                 EndPos: $5.Pos + 1,
                         }
                         }
