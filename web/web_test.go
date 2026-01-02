@@ -307,6 +307,7 @@ func TestDebugHandler(t *testing.T) {
 				Host:   "localhost.localdomain:9090",
 				Scheme: "http",
 			},
+			Version: &PrometheusVersion{},
 		}
 		handler := New(nil, opts)
 		handler.SetReady(Ready)
@@ -332,6 +333,7 @@ func TestHTTPMetrics(t *testing.T) {
 			Host:   "localhost.localdomain:9090",
 			Scheme: "http",
 		},
+		Version: &PrometheusVersion{},
 	})
 	getReady := func() int {
 		t.Helper()
