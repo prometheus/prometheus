@@ -327,7 +327,7 @@ func (h *Head) resetInMemoryState() error {
 	if em == nil {
 		em = NewExemplarMetrics(h.reg)
 	}
-	es, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), em)
+	es, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), em, h.opts.OutOfOrderTimeWindow.Load())
 	if err != nil {
 		return err
 	}
@@ -1037,6 +1037,8 @@ func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WL) {
 		return
 	}
 
+	h.exemplars.(*CircularExemplarStorage).SetOutOfOrderTimeWindow(oooTimeWindow)
+
 	// Head uses opts.MaxExemplars in combination with opts.EnableExemplarStorage
 	// to decide if it should pass exemplars along to its exemplar storage, so we
 	// need to update opts.MaxExemplars here.
@@ -1044,12 +1046,10 @@ func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WL) {
 	h.opts.MaxExemplars.Store(cfg.StorageConfig.ExemplarsConfig.MaxExemplars)
 	newSize := h.opts.MaxExemplars.Load()
 
-	if prevSize == newSize {
-		return
+	if prevSize != newSize {
+		migrated := h.exemplars.(*CircularExemplarStorage).Resize(newSize)
+		h.logger.Info("Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
 	}
-
-	migrated := h.exemplars.(*CircularExemplarStorage).Resize(newSize)
-	h.logger.Info("Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
 }
 
 // SetOutOfOrderTimeWindow updates the out of order related parameters.
