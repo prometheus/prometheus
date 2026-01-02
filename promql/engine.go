@@ -1191,6 +1191,15 @@ type EvalSeriesHelper struct {
 	sigOrdinal int
 }
 
+// matchedSigKey is used as the key in matchedSigs map to track processed matches.
+// sigOrd is the signature ordinal for matching left-hand and right-hand series.
+// insertSig is the hash of the result metric, used to distinguish different result metrics
+// with the same sigOrd in many-to-one matching (0 for one-to-one matching as placeholder).
+type matchedSigKey struct {
+	sigOrd    int
+	insertSig uint64
+}
+
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
 type EvalNodeHelper struct {
 	// Evaluation timestamp.
@@ -1209,7 +1218,7 @@ type EvalNodeHelper struct {
 
 	// For binary vector matching.
 	rightSigs    map[int]Sample
-	matchedSigs  map[int]map[uint64]struct{}
+	matchedSigs  map[matchedSigKey]struct{}
 	resultMetric map[string]labels.Labels
 	numSigs      int
 
@@ -2901,10 +2910,14 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		rightSigs[sigOrd] = rs
 	}
 
-	// Tracks the matching by signature ordinals. For one-to-one operations the value is nil.
-	// For many-to-one the value is a set of hashes to detect duplicated result elements.
+	// Tracks the matching by signature ordinals to detect duplicate matches.
+	// The map key is matchedSigKey{sigOrd, insertSig} where:
+	//   - sigOrd: the signature ordinal used to match left-hand and right-hand series
+	//   - insertSig: for CardOneToOne, set to 0 as placeholder; for CardManyToOne/CardOneToMany,
+	//     set to metric.Hash() to distinguish different result metrics with the same sigOrd.
+	// The map value is struct{}{} (zero-size type) to indicate the match has been processed.
 	if enh.matchedSigs == nil {
-		enh.matchedSigs = make(map[int]map[uint64]struct{}, len(rightSigs))
+		enh.matchedSigs = make(map[matchedSigKey]struct{}, len(rightSigs))
 	} else {
 		clear(enh.matchedSigs)
 	}
@@ -2949,25 +2962,22 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		if !ev.enableDelayedNameRemoval && returnBool {
 			metric = metric.DropReserved(schema.IsMetadataLabel)
 		}
-		insertedSigs, exists := matchedSigs[sigOrd]
 		if matching.Card == parser.CardOneToOne {
-			if exists {
+			key := matchedSigKey{sigOrd: sigOrd, insertSig: 0}
+			if _, exists := matchedSigs[key]; exists {
 				ev.errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
 			}
-			matchedSigs[sigOrd] = nil // Set existence to true.
+			matchedSigs[key] = struct{}{}
 		} else {
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result Vector. Check whether those labels have already been added for
 			// the same matching labels.
 			insertSig := metric.Hash()
-
-			if !exists {
-				insertedSigs = map[uint64]struct{}{}
-				matchedSigs[sigOrd] = insertedSigs
-			} else if _, duplicate := insertedSigs[insertSig]; duplicate {
+			key := matchedSigKey{sigOrd: sigOrd, insertSig: insertSig}
+			if _, duplicate := matchedSigs[key]; duplicate {
 				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
 			}
-			insertedSigs[insertSig] = struct{}{}
+			matchedSigs[key] = struct{}{}
 		}
 
 		if !keep && !returnBool {
