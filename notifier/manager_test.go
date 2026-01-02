@@ -754,13 +754,15 @@ func TestHangingNotifier(t *testing.T) {
 	// The old implementation of TestHangingNotifier didn't take that into account.
 	ctx := t.Context()
 	reg := prometheus.NewRegistry()
-	sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	sdMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
 	sdManager := discovery.NewManager(
 		ctx,
 		promslog.NewNopLogger(),
 		reg,
 		sdMetrics,
+		refreshMetrics,
 		discovery.Name("sd-manager"),
 		discovery.Updatert(sdUpdatert),
 	)
