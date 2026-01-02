@@ -76,6 +76,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, metadata, decMetadata)
 
+	// Without ST.
 	samples := []RefSample{
 		{Ref: 0, T: 12423423, V: 1.2345},
 		{Ref: 123, T: -1231, V: -123},
@@ -84,6 +85,16 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decSamples, err := dec.Samples(enc.Samples(samples, nil), nil)
 	require.NoError(t, err)
 	require.Equal(t, samples, decSamples)
+
+	// With ST.
+	samplesWithST := []RefSample{
+		{Ref: 0, T: 12423423, ST: 14, V: 1.2345},
+		{Ref: 123, T: -1231, ST: 14, V: -123},
+		{Ref: 2, T: 0, ST: 14, V: 99999},
+	}
+	decSamplesWithST, err := dec.Samples(enc.Samples(samplesWithST, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, samplesWithST, decSamplesWithST)
 
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
