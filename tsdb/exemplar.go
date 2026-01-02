@@ -349,7 +349,10 @@ func (ce *CircularExemplarStorage) shrink(l int64) (migrated int) {
 	// entries first in the order of ingestion.
 	for i := range diff {
 		idx := (deleteStart + i) % oldSize
-		ce.removeExemplar(&ce.exemplars[idx], nil)
+		ref := ce.exemplars[idx].ref
+		if ce.removeExemplar(&ce.exemplars[idx]) {
+			ce.removeIndex(ref)
+		}
 	}
 
 	newSlice := make([]circularBufferEntry, int(l))
@@ -420,21 +423,24 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		}
 	}
 
+	// If the index didn't exist (new series), create one.
+	if !indexExists {
+		idx = &indexEntry{seriesLabels: l}
+		ce.index[string(seriesLabels)] = idx
+	}
+
 	// Remove entries if the buffer is full. Note that this doesn't invalidate the
 	// insertion index since out-of-order exemplars cannot be the oldest exemplar.
 	if prev := &ce.exemplars[ce.nextIndex]; prev.ref != nil {
-		ce.removeExemplar(prev, idx)
-	}
-
-	// Check if we have to create an index. We might delete the index during
-	// removeExemplar, hence we have to check to be correct.
-	if !indexExists {
-		idx = &indexEntry{
-			oldest:       ce.nextIndex,
-			newest:       ce.nextIndex,
-			seriesLabels: l,
+		prevRef := prev.ref
+		if ce.removeExemplar(prev) {
+			if prevRef == idx {
+				// Do not delete the indexEntry we're inserting to.
+				indexExists = false
+			} else {
+				ce.removeIndex(prevRef)
+			}
 		}
-		ce.index[string(seriesLabels)] = idx
 	}
 
 	// We create a new entry in the linked list.
@@ -444,6 +450,8 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	switch {
 	case !indexExists:
 		// Add the first and only exemplar to the list.
+		idx.oldest = ce.nextIndex
+		idx.newest = ce.nextIndex
 		ce.exemplars[ce.nextIndex].prev = noExemplar
 		ce.exemplars[ce.nextIndex].next = noExemplar
 	case e.Ts >= ce.exemplars[idx.newest].exemplar.Ts:
@@ -477,15 +485,13 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	return nil
 }
 
-// removeExemplar removes the given entry from the circular buffer. If this was
-// the only exemplar for the series, the index is removed unless it was keepIndex.
-// When keepIndex is preserved but emptied, its oldest/newest pointers are
-// reinitialized to ce.nextIndex to prepare for a new exemplar insertion.
+// removeExemplar removes the given entry from the circular buffer. Returns true
+// iff the deleted entry was the last entry (and the index is now empty).
 // This function must be called with the lock acquired.
-func (ce *CircularExemplarStorage) removeExemplar(entry *circularBufferEntry, keepIndex *indexEntry) {
+func (ce *CircularExemplarStorage) removeExemplar(entry *circularBufferEntry) bool {
 	ref := entry.ref
 	if ref == nil {
-		return
+		return false
 	}
 
 	if entry.prev != noExemplar {
@@ -500,23 +506,18 @@ func (ce *CircularExemplarStorage) removeExemplar(entry *circularBufferEntry, ke
 		ref.newest = entry.prev
 	}
 
-	// If this was the only exemplar for the series, delete the index entry
-	// unless it's keepIndex (which means we're about to add a new exemplar).
-	removeIndex := ref.oldest == noExemplar && ref.newest == noExemplar
-	if removeIndex {
-		if ref != keepIndex {
-			var buf [1024]byte
-			entryLabels := ref.seriesLabels.Bytes(buf[:])
-			delete(ce.index, string(entryLabels))
-		} else {
-			// Reinitialize the kept index for the upcoming insertion.
-			ref.oldest = ce.nextIndex
-			ref.newest = ce.nextIndex
-		}
-	}
-
 	// Mark this item as deleted.
 	entry.ref = nil
+
+	return ref.oldest == noExemplar && ref.newest == noExemplar
+}
+
+// removeIndex removes an indexEntry from the circular exemplar storage.
+// This function must be called with the lock acquired.
+func (ce *CircularExemplarStorage) removeIndex(ref *indexEntry) {
+	var buf [1024]byte
+	entryLabels := ref.seriesLabels.Bytes(buf[:])
+	delete(ce.index, string(entryLabels))
 }
 
 // findInsertionIndex finds the position at which e should be placed in the
