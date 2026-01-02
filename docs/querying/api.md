@@ -6,6 +6,19 @@ sort_rank: 7
 The current stable HTTP API is reachable under `/api/v1` on a Prometheus
 server. Any non-breaking additions will be added under that endpoint.
 
+## OpenAPI Specification
+
+An OpenAPI 3.2 specification for the HTTP API is available at `/api/v1/openapi.yaml`.
+This machine-readable specification describes all available endpoints, request parameters,
+response formats, and schemas.
+
+The OpenAPI specification can be used to:
+
+- Generate client libraries in various programming languages.
+- Validate API requests and responses.
+- Generate interactive API documentation.
+- Test API endpoints.
+
 ## Format overview
 
 The API response format is JSON. Every successful API request returns a `2xx`
