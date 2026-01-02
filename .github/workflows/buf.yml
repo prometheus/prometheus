@@ -25,7 +25,7 @@ jobs:
         with:
           input: 'prompb'
           against: 'https://github.com/prometheus/prometheus.git#branch=main,ref=HEAD~1,subdir=prompb'
-      - uses: bufbuild/buf-push-action@1c45f6a21ec277ee4c1fa2772e49b9541ea17f38 # v1.1.1
+      - uses: bufbuild/buf-push-action@a654ff18effe4641ebea4a4ce242c49800728459 # v1.2.0
         with:
           input: 'prompb'
           buf_token: ${{ secrets.BUF_TOKEN }}
