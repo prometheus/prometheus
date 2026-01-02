@@ -95,6 +95,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 
 	testCases := []struct {
 		name          string
+		size          int64
 		exemplars     []exemplar.Exemplar
 		wantExemplars []exemplar.Exemplar
 		matcher       []*labels.Matcher
@@ -102,6 +103,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 	}{
 		{
 			name: "insert after newest",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 1},
 				{Labels: series1, Value: 0.2, Ts: 2},
@@ -114,6 +116,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "insert after newest",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 1000},
 				{Labels: series1, Value: 0.2, Ts: 950},
@@ -126,6 +129,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "insert before oldest",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 2},
 				{Labels: series1, Value: 0.2, Ts: 1},
@@ -138,6 +142,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "insert in between",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 1},
 				{Labels: series1, Value: 0.2, Ts: 3},
@@ -152,6 +157,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "insert after newest with overflow",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 1},
 				{Labels: series1, Value: 0.2, Ts: 2},
@@ -167,6 +173,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "insert before oldest with overflow",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 1},
 				{Labels: series1, Value: 0.2, Ts: 2},
@@ -182,6 +189,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "insert between with overflow",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 1},
 				{Labels: series1, Value: 0.2, Ts: 3},
@@ -197,6 +205,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "insert out of the OOO window",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 200},
 				{Labels: series1, Value: 0.2, Ts: 1},
@@ -205,6 +214,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "insert multiple series",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 1},
 				{Labels: series1, Value: 0.2, Ts: 3},
@@ -218,6 +228,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "insert multiple series with overflow",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series2, Value: 0.1, Ts: 1},
 				{Labels: series2, Value: 0.2, Ts: 2},
@@ -232,6 +243,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "series1 overflows series2 out-of-order",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series2, Value: 0.1, Ts: 3},
 				{Labels: series2, Value: 0.2, Ts: 2},
@@ -246,6 +258,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "ignore duplicate exemplars",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 3},
 				{Labels: series1, Value: 0.1, Ts: 3},
@@ -257,6 +270,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "ignore duplicate exemplars when buffer is full",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 3},
 				{Labels: series1, Value: 0.2, Ts: 4},
@@ -272,6 +286,7 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "empty timestamps are valid",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 0},
 				{Labels: series1, Value: 0.2, Ts: 0},
@@ -284,15 +299,48 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 		},
 		{
 			name: "exemplar label length exceeds maximum",
+			size: 3,
 			exemplars: []exemplar.Exemplar{
 				{Labels: labels.FromStrings("a", strings.Repeat("b", exemplar.ExemplarMaxLabelSetLength)), Value: 0.1, Ts: 2},
 			},
 			wantError: storage.ErrExemplarLabelLength,
 		},
+		{
+			name: "native histograms",
+			size: 6,
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+			},
+		},
+		{
+			name: "evict only exemplar for series then re-add",
+			size: 2,
+			exemplars: []exemplar.Exemplar{
+				// series1 at index 0, series2 at index 1, then series1 evicts its own only exemplar
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series2, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.3, Ts: 3},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			exs, err := NewCircularExemplarStorage(3, eMetrics, 100)
+			exs, err := NewCircularExemplarStorage(tc.size, eMetrics, 100)
 			require.NoError(t, err)
 			es := exs.(*CircularExemplarStorage)
 
