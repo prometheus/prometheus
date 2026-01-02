@@ -1,0 +1,186 @@
+# Aligned subqueries - targeted behavioral tests
+#
+# Focus on cases that make the difference between regular (:) and aligned (::) subqueries explicit.
+
+# 1) Comparison of regular (:) vs aligned (::) with non-matching step
+#    Data step=10s, inner step=20s, so epoch-aligned vs eval-time-aligned differ.
+load 10s
+  test_counter 0+1x100
+
+eval range from 50s to 80s step 10s sum_over_time(test_counter[30s:20s])
+  {} 4 10 6 14
+
+eval range from 50s to 80s step 10s sum_over_time(test_counter[30s::20s])
+  {} 8 10 12 14
+
+eval range from 60s to 80s step 10s sum_over_time(test_counter[30s:20s] offset 10s)
+  {} 4 10 6
+
+eval range from 60s to 80s step 10s sum_over_time(test_counter[30s::20s] offset 10s)
+  {} 8 10 12
+
+clear
+
+# 2) Non-divisible alignment cases (epoch vs eval-time alignment)
+#    Data step=1s, inner step=7s, t not divisible by 7 -> different sums.
+load 1s
+  phase_metric 0+1x200
+
+eval instant at 50s sum_over_time(phase_metric[30s:7s])
+  {} 175
+
+eval instant at 50s sum_over_time(phase_metric[30s::7s])
+  {} 180
+
+eval instant at 55s sum_over_time(phase_metric[30s:7s])
+  {} 154
+
+eval instant at 55s sum_over_time(phase_metric[30s::7s])
+  {} 205
+
+eval range from 50s to 70s step 5s sum_over_time(phase_metric[30s:7s])
+  {} 175 154 182 210 280
+
+eval range from 50s to 70s step 5s sum_over_time(phase_metric[30s::7s])
+  {} 180 205 230 255 280
+
+clear
+
+# 3) @-modifier - difference with non-divisible step
+#    @ anchors the subquery; regular remains epoch-aligned, aligned uses @-time.
+load 1s
+  at_phase 0+1x300
+
+eval instant at 200s sum_over_time(at_phase[30s:7s] @ 100)
+  {} 350
+
+eval instant at 200s sum_over_time(at_phase[30s::7s] @ 100)
+  {} 430
+
+clear
+
+# 4) Step larger than range - : may be empty, :: always includes t
+load 10s
+  step_metric 0+1x20
+
+eval range from 50s to 80s step 15s avg_over_time(step_metric[10s:20s])
+  {} _ 6 8
+
+eval range from 50s to 80s step 15s avg_over_time(step_metric[10s::20s])
+  {} 5 6 8
+
+clear
+
+## 5) Millisecond-range regression - ensure no panic and stable output
+load 10s
+  http_requests_total 0+10x1000
+
+eval range from 0 to 1m53s1ms step 10s avg_over_time(rate(http_requests_total[5m])[30m::10m])
+  expect no_info
+  expect no_warn
+  {} _ 0.03333333333333333 0.06666666666666667 0.1 0.13333333333333333 0.16666666666666669 0.2 0.23333333333333334 0.26666666666666666 0.30000000000000004 0.33333333333333337 0.3666666666666667
+
+clear
+
+# 6) Histogram difference - non-matching step shows :: includes t
+load 10s
+  hist_metric {{sum:10 count:10}}+{{sum:10 count:10}}x20
+
+eval instant at 50s sum_over_time(hist_metric[30s:20s])
+  {} {{sum:50 count:50}}
+
+eval instant at 50s sum_over_time(hist_metric[30s::20s])
+  {} {{sum:100 count:100}}
+
+clear
+
+# 7) Nested aligned subqueries - inner and outer both aligned
+load 10s
+  nested_metric 0+1x50
+
+eval instant at 100s sum_over_time(sum_over_time(nested_metric[20s::10s])[40s::20s])
+  {} 34
+
+eval range from 50s to 100s step 10s sum_over_time(sum_over_time(nested_metric[20s::10s])[40s::20s])
+  {} 14 18 22 26 30 34
+
+eval instant at 100s sum_over_time(sum_over_time(nested_metric[20s:10s])[40s:20s])
+  {} 34
+
+eval range from 50s to 100s step 10s sum_over_time(sum_over_time(nested_metric[20s:10s])[40s:20s])
+  {} 10 18 18 26 26 34
+
+clear
+
+# 8) Ultimate mixed case: ':', '::', offset, and '@' combined
+load 10s
+  ultimate_m 0+1x200
+
+eval instant at 100s sum_over_time(sum_over_time(ultimate_m[20s:10s] @ 80)[40s::20s] offset 10s)
+  {} 30
+
+eval range from 90s to 120s step 10s sum_over_time(sum_over_time(ultimate_m[20s:10s] @ 80)[40s::20s] offset 10s)
+  {} 30 30 30 30
+
+clear
+
+# 9) Negative offset with aligned subquery - anchor shifts forward
+load 10s
+  neg_metric 0+1x200
+
+eval range from 50s to 80s step 10s sum_over_time(neg_metric[30s::20s] offset -10s)
+  {} 10 12 14 16
+
+clear
+
+# 10) @ start() and @ end() with aligned subquery - constant anchors per range
+load 10s
+  anchor_m 0+1x200
+
+eval range from 50s to 80s step 10s sum_over_time(anchor_m[30s::20s] @ start())
+  {} 8 8 8 8
+
+eval range from 50s to 80s step 10s sum_over_time(anchor_m[30s::20s] @ end())
+  {} 14 14 14 14
+
+clear
+
+# 11) Default step for [range::] omitted - uses default subquery interval (1m here)
+load 10s
+  def_m 0+1x400
+
+eval instant at 180s sum_over_time(def_m[120s::])
+  {} 30
+
+eval range from 180s to 240s step 10s sum_over_time(def_m[120s::])
+  {} 30 32 34 36 38 40 42
+
+clear
+
+# 12) Non-divisible steps (inner 7s, outer 10s) - densification via GCD
+load 1s
+  phase7 0+1x400
+
+eval range from 50s to 80s step 10s sum_over_time(sum_over_time(phase7[21s::7s])[40s::10s])
+  {} 336 456 576 696
+
+eval range from 50s to 80s step 10s sum_over_time(sum_over_time(phase7[21s:7s])[40s::10s])
+  {} 294 420 546 672
+
+clear
+
+# 13) Sparse data causing empty aligned steps
+load 30s
+  sparse_m 0+1x20
+
+eval range from 50s to 130s step 20s sum_over_time(sparse_m[40s::20s])
+  {} 2 3 5 6 7
+
+clear
+
+# 14) Alignment across epoch 0 (internal negative steps)
+eval instant at 4s sum_over_time(vector(1)[9s:5s])
+  {} 1
+
+eval instant at 4s sum_over_time(vector(1)[9s::5s])
+  {} 2
