@@ -550,7 +550,7 @@ func TestReaderData(t *testing.T) {
 	}
 }
 
-// closeAll closes all given closers while recording error in MultiError.
+// closeAll closes all given closers while recording all errors.
 func closeAll(cs []io.Closer) error {
 	var errs []error
 	for _, c := range cs {
