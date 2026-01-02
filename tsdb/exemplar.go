@@ -271,12 +271,9 @@ func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.
 	// to check for that would be expensive (versus just comparing with the most recent one) especially
 	// since this is run under a lock, and not worth it as we just need to return an error so we do not
 	// append the exemplar.
-	if e.Ts < newestExemplar.Ts ||
+	if (e.Ts < newestExemplar.Ts && e.Ts <= newestExemplar.Ts-ce.oooTimeWindowMillis) ||
 		(e.Ts == newestExemplar.Ts && e.Value < newestExemplar.Value) ||
 		(e.Ts == newestExemplar.Ts && e.Value == newestExemplar.Value && e.Labels.Hash() < newestExemplar.Labels.Hash()) {
-		if e.Ts > newestExemplar.Ts-ce.oooTimeWindowMillis {
-			return nil
-		}
 		if appended {
 			ce.metrics.outOfOrderExemplars.Inc()
 		}
@@ -406,7 +403,25 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		return err
 	}
 
-	// Remove entries if the buffer is full.
+	// If we insert an out-of-order exemplar, we preemptively find the insertion
+	// index to check for duplicates.
+	var insertionIndex int
+	if indexExists {
+		outOfOrder := e.Ts >= ce.exemplars[idx.oldest].exemplar.Ts && e.Ts < ce.exemplars[idx.newest].exemplar.Ts
+		if outOfOrder {
+			insertionIndex = ce.findInsertionIndex(e, idx)
+			if ce.exemplars[insertionIndex].exemplar.Ts == e.Ts {
+				// Assume duplicate exemplar, noop.
+				// Native histograms will exercise this code path a lot due to
+				// having multiple exemplars per series so checking the
+				// value and labels would be too expensive.
+				return nil
+			}
+		}
+	}
+
+	// Remove entries if the buffer is full. Note that this doesn't invalidate the
+	// insertion index since out-of-order exemplars cannot be the oldest exemplar.
 	if prev := &ce.exemplars[ce.nextIndex]; prev.ref != nil {
 		ce.removeExemplar(prev, idx)
 	}
@@ -446,11 +461,10 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	default:
 		// Insert the exemplar into the list by finding the most recent
 		// in-order exemplar that precedes it, and placing it after.
-		insertAt := ce.findInsertionIndex(e, idx)
-		nextExemplar := ce.exemplars[insertAt].next
-		ce.exemplars[ce.nextIndex].prev = insertAt
+		nextExemplar := ce.exemplars[insertionIndex].next
+		ce.exemplars[ce.nextIndex].prev = insertionIndex
 		ce.exemplars[ce.nextIndex].next = nextExemplar
-		ce.exemplars[insertAt].next = ce.nextIndex
+		ce.exemplars[insertionIndex].next = ce.nextIndex
 		if nextExemplar != noExemplar {
 			ce.exemplars[nextExemplar].prev = ce.nextIndex
 		}
@@ -463,13 +477,15 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	return nil
 }
 
-// removeExemplar at given entry from the circular buffer. If this was the only
-// entry in the circular buffer, the index is removed unless it was keepIndex.
+// removeExemplar removes the given entry from the circular buffer. If this was
+// the only exemplar for the series, the index is removed unless it was keepIndex.
+// When keepIndex is preserved but emptied, its oldest/newest pointers are
+// reinitialized to ce.nextIndex to prepare for a new exemplar insertion.
 // This function must be called with the lock acquired.
-func (ce *CircularExemplarStorage) removeExemplar(entry *circularBufferEntry, keepIndex *indexEntry) bool {
+func (ce *CircularExemplarStorage) removeExemplar(entry *circularBufferEntry, keepIndex *indexEntry) {
 	ref := entry.ref
 	if ref == nil {
-		return false
+		return
 	}
 
 	if entry.prev != noExemplar {
@@ -485,16 +501,22 @@ func (ce *CircularExemplarStorage) removeExemplar(entry *circularBufferEntry, ke
 	}
 
 	// If this was the only exemplar for the series, delete the index entry
+	// unless it's keepIndex (which means we're about to add a new exemplar).
 	removeIndex := ref.oldest == noExemplar && ref.newest == noExemplar
-	if removeIndex && ref != keepIndex {
-		var buf [1024]byte
-		entryLabels := ref.seriesLabels.Bytes(buf[:])
-		delete(ce.index, string(entryLabels))
+	if removeIndex {
+		if ref != keepIndex {
+			var buf [1024]byte
+			entryLabels := ref.seriesLabels.Bytes(buf[:])
+			delete(ce.index, string(entryLabels))
+		} else {
+			// Reinitialize the kept index for the upcoming insertion.
+			ref.oldest = ce.nextIndex
+			ref.newest = ce.nextIndex
+		}
 	}
 
 	// Mark this item as deleted.
 	entry.ref = nil
-	return removeIndex
 }
 
 // findInsertionIndex finds the position at which e should be placed in the
@@ -504,7 +526,7 @@ func (ce *CircularExemplarStorage) removeExemplar(entry *circularBufferEntry, ke
 func (ce *CircularExemplarStorage) findInsertionIndex(e exemplar.Exemplar, idx *indexEntry) int {
 	for i := idx.newest; i != noExemplar; {
 		current := ce.exemplars[i]
-		if current.exemplar.Ts < e.Ts {
+		if current.exemplar.Ts <= e.Ts {
 			return i
 		}
 		i = current.prev
