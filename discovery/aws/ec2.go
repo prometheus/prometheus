@@ -116,6 +116,11 @@ func (c *EC2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery
 	return NewEC2Discovery(c, opts)
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *EC2SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
 func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultEC2SDConfig
