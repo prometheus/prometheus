@@ -4418,11 +4418,17 @@ func extendFloats(floats []FPoint, mint, maxt int64, smoothed bool) []FPoint {
 		lastSampleIndex--
 	}
 
-	// TODO: Preallocate the length of the new list.
-	out := make([]FPoint, 0)
-	// Create the new floats list with the boundary samples and the inner samples.
+	// Calculate the number of elements from the original slice to include.
+	count := lastSampleIndex - firstSampleIndex + 1
+	count = max(count, 0)
+
+	// We need space for 'left', the slice elements, and 'right'.
+	out := make([]FPoint, 0, count+2)
+
 	out = append(out, FPoint{T: mint, F: left})
-	out = append(out, floats[firstSampleIndex:lastSampleIndex+1]...)
+	if count > 0 {
+		out = append(out, floats[firstSampleIndex:lastSampleIndex+1]...)
+	}
 	out = append(out, FPoint{T: maxt, F: right})
 
 	return out
