@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -191,6 +192,16 @@ type ExemplarQuerier interface {
 	// Select all the exemplars that match the matchers.
 	// Within a single slice of matchers, it is an intersection. Between the slices, it is a union.
 	Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error)
+}
+
+// ResourceQuerier provides access to OTel resource attributes for series.
+// This is an optional interface that queriers may implement to support
+// the info() PromQL function with resource attributes.
+type ResourceQuerier interface {
+	// GetResourceAt returns the resource version active at the given timestamp for the series.
+	// The labelsHash is the hash of the series labels (from labels.Labels.Hash()).
+	// Returns nil, false if no resource is found for the series.
+	GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool)
 }
 
 // SelectHints specifies hints passed for data selections.
