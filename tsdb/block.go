@@ -172,7 +172,7 @@ type BlockMeta struct {
 	MaxTime int64 `json:"maxTime"`
 
 	// Stats about the contents of the block.
-	Stats BlockStats `json:"stats"`
+	Stats BlockStats `json:"stats,omitempty"`
 
 	// Information on compactions the block was created from.
 	Compaction BlockMetaCompaction `json:"compaction"`

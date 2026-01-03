@@ -110,7 +110,7 @@ type querySamples struct {
 
 // BuiltinStats holds the statistics that Prometheus's core gathers.
 type BuiltinStats struct {
-	Timings queryTimings  `json:"timings"`
+	Timings queryTimings  `json:"timings,omitempty"`
 	Samples *querySamples `json:"samples,omitempty"`
 }
 
