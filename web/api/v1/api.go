@@ -1915,8 +1915,10 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 	}, nil, nil, nil}
 }
 
-const maxChunkCount = ^uint64(0)
-const maxChunkCountFloat = float64(maxChunkCount)
+const (
+	maxChunkCount      = ^uint64(0)
+	maxChunkCountFloat = float64(maxChunkCount)
+)
 
 func safeChunkCount(value float64) uint64 {
 	if math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 {
