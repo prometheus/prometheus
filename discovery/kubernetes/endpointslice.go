@@ -39,6 +39,8 @@ type EndpointSlice struct {
 	logger *slog.Logger
 
 	endpointSliceInf      cache.SharedIndexInformer
+	replicaSetInf         cache.SharedInformer
+	jobInf                cache.SharedInformer
 	serviceInf            cache.SharedInformer
 	podInf                cache.SharedInformer
 	nodeInf               cache.SharedInformer
@@ -54,7 +56,7 @@ type EndpointSlice struct {
 }
 
 // NewEndpointSlice returns a new endpointslice discovery.
-func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *EndpointSlice {
+func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, rs, job, svc, pod, node, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *EndpointSlice {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -71,6 +73,8 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 		logger:                l,
 		endpointSliceInf:      eps,
 		endpointSliceStore:    eps.GetStore(),
+		replicaSetInf:         rs,
+		jobInf:                job,
 		serviceInf:            svc,
 		serviceStore:          svc.GetStore(),
 		podInf:                pod,
@@ -402,7 +406,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps v1.EndpointSlice) *targetgroup.Gr
 		}
 
 		// Attach standard pod labels.
-		target = target.Merge(podLabels(pod))
+		target = target.Merge(podLabels(pod, e.replicaSetInf, e.jobInf))
 
 		// Attach potential container port labels matching the endpoint port.
 		containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
@@ -480,7 +484,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps v1.EndpointSlice) *targetgroup.Gr
 					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
 					podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
+				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod, e.replicaSetInf, e.jobInf)))
 			}
 		}
 	}
