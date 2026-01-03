@@ -4489,6 +4489,25 @@ func TestTSDBStatus(t *testing.T) {
 	}
 }
 
+func TestTSDBStatusChunkCountLargeValue(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	chunks := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_chunks",
+		Help: "Total number of chunks in the head block.",
+	})
+	largeValue := float64(uint64(1) << 63)
+	chunks.Set(largeValue)
+	reg.MustRegister(chunks)
+
+	api := &API{db: &fakeDB{}, gatherer: reg}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status/tsdb", nil)
+	res := api.serveTSDBStatus(req)
+
+	assertAPIError(t, res.err, errorNone)
+	status := res.data.(TSDBStatus)
+	require.Equal(t, uint64(1)<<63, status.HeadStats.ChunkCount)
+}
+
 func TestReturnAPIError(t *testing.T) {
 	cases := []struct {
 		err      error
