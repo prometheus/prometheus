@@ -378,6 +378,7 @@ func (w *Watcher) watch(segmentNum int, tail bool) error {
 	defer segment.Close()
 
 	reader := NewLiveReader(w.logger, w.readerMetrics, segment)
+	defer reader.Close()
 
 	size := int64(math.MaxInt64)
 	if !tail {
@@ -710,6 +711,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 
 		r := NewLiveReader(w.logger, w.readerMetrics, sr)
 		err = readFn(w, r, index, false)
+		r.Close()
 		sr.Close()
 		if err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("readSegment: %w", err)
