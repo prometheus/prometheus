@@ -1679,3 +1679,105 @@ func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
 		})
 	}
 }
+
+// TestWriteHandler_LabelValueLengthLimit tests that label values exceeding the configured
+// maximum length are rejected with appropriate error messages.
+// Regression test for https://github.com/prometheus/prometheus/issues/16525
+func TestWriteHandler_LabelValueLengthLimit(t *testing.T) {
+	const testLimit = 100 // Small limit for testing
+
+	// Create a label value that exceeds the limit.
+	longValue := strings.Repeat("a", testLimit+1)
+
+	for _, tc := range []struct {
+		name         string
+		msgType      remoteapi.WriteMessageType
+		buildPayload func() ([]byte, error)
+		expectedCode int
+		expectedErr  string
+	}{
+		{
+			name:    "V1 message with label value exceeding limit",
+			msgType: remoteapi.WriteV1MessageType,
+			buildPayload: func() ([]byte, error) {
+				ts := []prompb.TimeSeries{{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}, {Name: "foo", Value: longValue}},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: 1}},
+				}}
+				buf, _, _, err := buildWriteRequest(nil, ts, nil, nil, nil, nil, "snappy")
+				return buf, err
+			},
+			expectedCode: http.StatusNoContent, // V1 logs warning but continues (partial write behavior)
+		},
+		{
+			name:    "V2 message with label value exceeding limit",
+			msgType: remoteapi.WriteV2MessageType,
+			buildPayload: func() ([]byte, error) {
+				st := writev2.NewSymbolTable()
+				labelRefs := st.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", longValue), nil)
+				ts := []writev2.TimeSeries{{
+					LabelsRefs: labelRefs,
+					Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+				}}
+				buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
+				return buf, err
+			},
+			expectedCode: http.StatusBadRequest,
+			expectedErr:  "label value exceeds maximum length",
+		},
+		{
+			name:    "V1 message with label value within limit",
+			msgType: remoteapi.WriteV1MessageType,
+			buildPayload: func() ([]byte, error) {
+				ts := []prompb.TimeSeries{{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}, {Name: "foo", Value: "short"}},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: 1}},
+				}}
+				buf, _, _, err := buildWriteRequest(nil, ts, nil, nil, nil, nil, "snappy")
+				return buf, err
+			},
+			expectedCode: http.StatusNoContent,
+		},
+		{
+			name:    "V2 message with label value within limit",
+			msgType: remoteapi.WriteV2MessageType,
+			buildPayload: func() ([]byte, error) {
+				st := writev2.NewSymbolTable()
+				labelRefs := st.SymbolizeLabels(labels.FromStrings("__name__", "test_metric", "foo", "short"), nil)
+				ts := []writev2.TimeSeries{{
+					LabelsRefs: labelRefs,
+					Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+				}}
+				buf, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), ts, st.Symbols(), nil, nil, nil, "snappy")
+				return buf, err
+			},
+			expectedCode: http.StatusNoContent,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, err := tc.buildPayload()
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[tc.msgType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+
+			appendable := &mockAppendable{}
+			handler := NewWriteHandlerWithConfig(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{tc.msgType}, false, false, false, testLimit)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedCode, resp.StatusCode, "unexpected status code: %s", string(body))
+
+			if tc.expectedErr != "" {
+				require.Contains(t, string(body), tc.expectedErr)
+			}
+		})
+	}
+}
