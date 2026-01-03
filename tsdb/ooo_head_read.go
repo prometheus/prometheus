@@ -567,6 +567,17 @@ func (q *HeadAndOOOQuerier) Select(ctx context.Context, sortSeries bool, hints *
 	return selectSeriesSet(ctx, sortSeries, hints, matchers, q.index, q.chunkr, q.head.tombstones, q.mint, q.maxt)
 }
 
+// GetResourceAt implements storage.ResourceQuerier.
+func (q *HeadAndOOOQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	reader, err := q.head.SeriesMetadata()
+	if err != nil {
+		return nil, false
+	}
+	// Note: we don't close the reader here as it's the head's reader
+	// which is managed by the head itself.
+	return reader.GetResourceAt(labelsHash, timestamp)
+}
+
 // HeadAndOOOChunkQuerier queries both the head and the out-of-order head.
 type HeadAndOOOChunkQuerier struct {
 	mint, maxt int64

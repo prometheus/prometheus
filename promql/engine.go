@@ -1213,9 +1213,6 @@ type EvalNodeHelper struct {
 	resultMetric map[string]labels.Labels
 	numSigs      int
 
-	// For info series matching.
-	rightStrSigs map[string]Sample
-
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
 }

@@ -45,6 +45,8 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
@@ -121,6 +123,9 @@ func runDemo() error {
 
 	fmt.Printf("%sOTLP receiver started at:%s http://%s%s%s\n\n", colorGray, colorReset, colorGreen, serverAddr+otlpPath, colorReset)
 
+	// Capture timestamp before sending original metrics (for later info() comparison)
+	originalTimestamp := time.Now()
+
 	// === PHASE 1: Send OTLP metrics with resource attributes ===
 	printPhase(1, "Sending OTLP metrics with resource attributes")
 
@@ -186,6 +191,9 @@ func runDemo() error {
 		return fmt.Errorf("send migrated service metrics: %w", err)
 	}
 	fmt.Printf("%sSent metrics from payment-service after migration%s\n", colorGreen, colorReset)
+
+	// Capture timestamp after sending migrated metrics (for later info() comparison)
+	migratedTimestamp := time.Now()
 	printSentResources(migratedMetrics)
 
 	// Show the version history (blocks + head combined)
@@ -198,8 +206,63 @@ func runDemo() error {
 	printResourceAttributesFiltered("production/payment-service attributes:", migratedMeta, "payment-service", "production", db)
 	migratedMeta.Close()
 
-	// === PHASE 6: Show API response format ===
-	printPhase(6, "API response format for /api/v1/resources")
+	// === PHASE 6: Demonstrate info() function with time-varying attributes ===
+	printPhase(6, "Querying with info() to include resource attributes")
+
+	fmt.Printf("The %sinfo()%s function enriches metrics with resource attributes at query time.\n", colorBold, colorReset)
+	fmt.Printf("When descriptive attributes change over time, info() returns the values\n")
+	fmt.Printf("that were active at the requested timestamp.\n\n")
+
+	// Enable experimental functions (required for info())
+	parser.EnableExperimentalFunctions = true
+
+	// Create PromQL engine
+	ctx := context.Background()
+	engineOpts := promql.EngineOpts{
+		Logger:               logger,
+		Reg:                  prometheus.NewRegistry(),
+		MaxSamples:           50000,
+		Timeout:              time.Minute,
+		EnableNegativeOffset: true,
+	}
+	engine := promql.NewEngine(engineOpts)
+
+	const queryStr = `sum by (method, status, "cloud.region", "host.name") (info(http_requests_total{method="GET",status="200"}))`
+	fmt.Printf("%sQuery:%s %s\n\n", colorBold, colorReset, queryStr)
+
+	// Query at original timestamp (before migration)
+	fmt.Printf("%sAt timestamp BEFORE migration (%s):%s\n", colorBold, originalTimestamp.Format(time.RFC3339), colorReset)
+	query1, err := engine.NewInstantQuery(ctx, db, nil, queryStr, originalTimestamp)
+	if err != nil {
+		return fmt.Errorf("create query for original timestamp: %w", err)
+	}
+	result1 := query1.Exec(ctx)
+	if result1.Err != nil {
+		fmt.Printf("  %sQuery error: %v%s\n", colorRed, result1.Err, colorReset)
+	} else {
+		printPromQLResult(result1)
+	}
+	query1.Close()
+
+	// Query at migrated timestamp (after migration)
+	fmt.Printf("%sAt timestamp AFTER migration (%s):%s\n", colorBold, migratedTimestamp.Format(time.RFC3339), colorReset)
+	query2, err := engine.NewInstantQuery(ctx, db, nil, queryStr, migratedTimestamp)
+	if err != nil {
+		return fmt.Errorf("create query for migrated timestamp: %w", err)
+	}
+	result2 := query2.Exec(ctx)
+	if result2.Err != nil {
+		fmt.Printf("  %sQuery error: %v%s\n", colorRed, result2.Err, colorReset)
+	} else {
+		printPromQLResult(result2)
+	}
+	query2.Close()
+
+	fmt.Printf("%sThis enables time-accurate correlation of metrics with OTel traces/logs,\n", colorCyan)
+	fmt.Printf("even when infrastructure changes occur during the query time range.%s\n\n", colorReset)
+
+	// === PHASE 7: Show API response format ===
+	printPhase(7, "API response format for /api/v1/resources")
 
 	apiResponse := buildResourceAttributesAPIResponse(db)
 	prettyJSON, _ := json.MarshalIndent(apiResponse, "", "  ")
@@ -207,7 +270,7 @@ func runDemo() error {
 	fmt.Printf("%s%s%s\n\n", colorGray, string(prettyJSON), colorReset)
 
 	// === Summary ===
-	printPhase(7, "Summary")
+	printPhase(8, "Summary")
 	fmt.Printf("%sThis demo showed how Prometheus persists OTel resource attributes:%s\n", colorBold, colorReset)
 	fmt.Printf("  %s1.%s Resource attributes arrive via OTLP metrics (service.name, etc.)\n", colorGreen, colorReset)
 	fmt.Printf("  %s2.%s Attributes are stored per-series in TSDB head (in-memory)\n", colorGreen, colorReset)
@@ -216,6 +279,7 @@ func runDemo() error {
 	fmt.Printf("  %s5.%s %sDescriptive%s attributes (host.name, cloud.region) can change over time\n", colorGreen, colorReset, colorYellow, colorReset)
 	fmt.Printf("  %s6.%s %sVersioned storage%s preserves attribute history with time ranges\n", colorGreen, colorReset, colorMagenta, colorReset)
 	fmt.Printf("  %s7.%s Each version tracks when specific attributes were active (MinTime/MaxTime)\n", colorGreen, colorReset)
+	fmt.Printf("  %s8.%s The %sinfo()%s function enriches queries with time-appropriate attributes\n", colorGreen, colorReset, colorBold, colorReset)
 	fmt.Println()
 	fmt.Printf("%sThis enables correlation of Prometheus metrics with OTel traces/logs\n", colorCyan)
 	fmt.Printf("using the identifying resource attributes (service.name, etc.).\n")
@@ -679,6 +743,83 @@ func printResourceAttributesFiltered(title string, reader seriesmetadata.Reader,
 // printPhase prints a phase header.
 func printPhase(num int, title string) {
 	fmt.Printf("%s%s--- Phase %d: %s ---%s\n\n", colorBold, colorMagenta, num, title, colorReset)
+}
+
+// printPromQLResult prints the result of a PromQL query, showing series with their labels and values.
+func printPromQLResult(result *promql.Result) {
+	if result.Value == nil {
+		fmt.Printf("  %s(no results)%s\n\n", colorGray, colorReset)
+		return
+	}
+
+	switch v := result.Value.(type) {
+	case promql.Vector:
+		if len(v) == 0 {
+			fmt.Printf("  %s(no results)%s\n\n", colorGray, colorReset)
+			return
+		}
+		for _, sample := range v {
+			// Print metric labels with color coding for resource attributes
+			fmt.Printf("  %s%s%s ", colorCyan, sample.Metric.Get("__name__"), colorReset)
+			fmt.Printf("{")
+			first := true
+			sample.Metric.Range(func(l labels.Label) {
+				if l.Name == "__name__" {
+					return
+				}
+				if !first {
+					fmt.Printf(", ")
+				}
+				first = false
+				// Color code identifying vs descriptive attributes
+				switch l.Name {
+				case "service.name", "service.namespace", "service.instance.id":
+					fmt.Printf("%s%s%s=%q", colorCyan, l.Name, colorReset, l.Value)
+				case "host.name", "cloud.region", "deployment.environment", "k8s.pod.name":
+					fmt.Printf("%s%s%s=%q", colorYellow, l.Name, colorReset, l.Value)
+				default:
+					fmt.Printf("%s=%q", l.Name, l.Value)
+				}
+			})
+			fmt.Printf("} %s%.0f%s\n", colorBold, sample.F, colorReset)
+		}
+		fmt.Println()
+	case promql.Matrix:
+		if len(v) == 0 {
+			fmt.Printf("  %s(no results)%s\n\n", colorGray, colorReset)
+			return
+		}
+		for _, series := range v {
+			fmt.Printf("  %s%s%s ", colorCyan, series.Metric.Get("__name__"), colorReset)
+			fmt.Printf("{")
+			first := true
+			series.Metric.Range(func(l labels.Label) {
+				if l.Name == "__name__" {
+					return
+				}
+				if !first {
+					fmt.Printf(", ")
+				}
+				first = false
+				switch l.Name {
+				case "service.name", "service.namespace", "service.instance.id":
+					fmt.Printf("%s%s%s=%q", colorCyan, l.Name, colorReset, l.Value)
+				case "host.name", "cloud.region", "deployment.environment", "k8s.pod.name":
+					fmt.Printf("%s%s%s=%q", colorYellow, l.Name, colorReset, l.Value)
+				default:
+					fmt.Printf("%s=%q", l.Name, l.Value)
+				}
+			})
+			fmt.Printf("}")
+			if len(series.Floats) > 0 {
+				fmt.Printf(" %s%.0f%s", colorBold, series.Floats[len(series.Floats)-1].F, colorReset)
+			}
+			fmt.Println()
+		}
+		fmt.Println()
+	default:
+		fmt.Printf("  %sResult type: %T%s\n\n", colorGray, v, colorReset)
+	}
 }
 
 // buildHashToLabelsMap builds a map from label hash to labels by querying all series from the DB.

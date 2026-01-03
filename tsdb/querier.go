@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -103,6 +104,7 @@ func (q *blockBaseQuerier) Close() error {
 
 type blockQuerier struct {
 	*blockBaseQuerier
+	metadataReader seriesmetadata.Reader // for resource attribute lookups
 }
 
 // NewBlockQuerier returns a querier against the block reader and requested min and max time range.
@@ -111,11 +113,32 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &blockQuerier{blockBaseQuerier: q}, nil
+	// Try to get metadata reader from block, it's optional
+	metadataReader, _ := b.SeriesMetadata()
+	return &blockQuerier{blockBaseQuerier: q, metadataReader: metadataReader}, nil
 }
 
 func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
+}
+
+// GetResourceAt implements storage.ResourceQuerier.
+func (q *blockQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	if q.metadataReader == nil {
+		return nil, false
+	}
+	return q.metadataReader.GetResourceAt(labelsHash, timestamp)
+}
+
+// Close closes the querier and releases resources.
+func (q *blockQuerier) Close() error {
+	err := q.blockBaseQuerier.Close()
+	if q.metadataReader != nil {
+		if closeErr := q.metadataReader.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms []*labels.Matcher,
