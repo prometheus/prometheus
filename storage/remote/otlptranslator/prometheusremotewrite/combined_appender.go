@@ -23,12 +23,16 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 )
 
 // Metadata extends metadata.Metadata with the metric family name.
@@ -53,6 +57,11 @@ type CombinedAppender interface {
 	// AppendHistogram appends a histogram and related exemplars, metadata, and
 	// created timestamp to the storage.
 	AppendHistogram(ls labels.Labels, meta Metadata, st, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error
+	// SetResourceContext sets the current OTel resource context.
+	// Entity refs and attributes are extracted from the resource and used
+	// to persist entity information for each series appended until
+	// the context is changed or cleared.
+	SetResourceContext(resource pcommon.Resource)
 }
 
 // CombinedAppenderMetrics is for the metrics observed by the
@@ -83,11 +92,18 @@ func NewCombinedAppenderMetrics(reg prometheus.Registerer) CombinedAppenderMetri
 // updates metadata for each series only once, and appends samples and
 // exemplars for each call.
 func NewCombinedAppender(app storage.Appender, logger *slog.Logger, ingestSTZeroSample, appendMetadata bool, metrics CombinedAppenderMetrics) CombinedAppender {
+	return NewCombinedAppenderWithResourceAttrs(app, logger, ingestSTZeroSample, appendMetadata, false, metrics)
+}
+
+// NewCombinedAppenderWithResourceAttrs creates a combined appender with optional
+// resource attributes persistence support.
+func NewCombinedAppenderWithResourceAttrs(app storage.Appender, logger *slog.Logger, ingestSTZeroSample, appendMetadata, persistResourceAttrs bool, metrics CombinedAppenderMetrics) CombinedAppender {
 	return &combinedAppender{
 		app:                            app,
 		logger:                         logger,
 		ingestSTZeroSample:             ingestSTZeroSample,
 		appendMetadata:                 appendMetadata,
+		persistResourceAttrs:           persistResourceAttrs,
 		refs:                           make(map[uint64]seriesRef),
 		samplesAppendedWithoutMetadata: metrics.samplesAppendedWithoutMetadata,
 		outOfOrderExemplars:            metrics.outOfOrderExemplars,
@@ -108,10 +124,17 @@ type combinedAppender struct {
 	outOfOrderExemplars            prometheus.Counter
 	ingestSTZeroSample             bool
 	appendMetadata                 bool
+	persistResourceAttrs           bool
 	// Used to ensure we only update metadata and created timestamps once, and to share storage.SeriesRefs.
 	// To detect hash collision it also stores the labels.
 	// There is no overflow/conflict list, the TSDB will handle that part.
 	refs map[uint64]seriesRef
+	// resourceAttrs holds the current OTel resource attributes context.
+	// Set via SetResourceContext and used to persist attributes for each series.
+	resourceAttrs map[string]string
+	// entities holds the current OTel entities extracted from entity_refs.
+	// If empty, a default entity is created from resource attributes.
+	entities []storage.EntityData
 }
 
 func (b *combinedAppender) AppendSample(ls labels.Labels, meta Metadata, st, t int64, v float64, es []exemplar.Exemplar) (err error) {
@@ -125,6 +148,62 @@ func (b *combinedAppender) AppendHistogram(ls labels.Labels, meta Metadata, st, 
 		return errors.New("internal error, attempted to append nil histogram")
 	}
 	return b.appendFloatOrHistogram(ls, meta.Metadata, st, t, 0, h, es)
+}
+
+func (b *combinedAppender) SetResourceContext(resource pcommon.Resource) {
+	// Extract attributes as a map
+	b.resourceAttrs = resourceAttrsToMap(resource.Attributes())
+
+	// Extract entities from entity_refs
+	b.entities = extractEntities(resource, b.resourceAttrs)
+}
+
+// extractEntities extracts entities from OTLP entity_refs.
+// Returns nil if no entity_refs are present.
+func extractEntities(resource pcommon.Resource, attrs map[string]string) []storage.EntityData {
+	entityRefs := entity.ResourceEntityRefs(resource)
+
+	if entityRefs.Len() == 0 {
+		// No entity_refs: return nil (no synthetic entities)
+		return nil
+	}
+
+	entities := make([]storage.EntityData, 0, entityRefs.Len())
+	for i := 0; i < entityRefs.Len(); i++ {
+		ref := entityRefs.At(i)
+		entityType := ref.Type()
+		if entityType == "" {
+			entityType = seriesmetadata.EntityTypeResource
+		}
+
+		// Extract identifying attributes by looking up the id_keys in the attributes map
+		idKeys := ref.IdKeys()
+		id := make(map[string]string, idKeys.Len())
+		for j := 0; j < idKeys.Len(); j++ {
+			key := idKeys.At(j)
+			if val, ok := attrs[key]; ok {
+				id[key] = val
+			}
+		}
+
+		// Extract descriptive attributes by looking up the description_keys in the attributes map
+		descKeys := ref.DescriptionKeys()
+		desc := make(map[string]string, descKeys.Len())
+		for j := 0; j < descKeys.Len(); j++ {
+			key := descKeys.At(j)
+			if val, ok := attrs[key]; ok {
+				desc[key] = val
+			}
+		}
+
+		entities = append(entities, storage.EntityData{
+			Type:        entityType,
+			ID:          id,
+			Description: desc,
+		})
+	}
+
+	return entities
 }
 
 func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadata.Metadata, st, t int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) (err error) {
@@ -211,6 +290,31 @@ func (b *combinedAppender) appendFloatOrHistogram(ls labels.Labels, meta metadat
 		if err != nil {
 			b.samplesAppendedWithoutMetadata.Add(1)
 			b.logger.Warn("Error while updating metadata from OTLP", "err", err)
+		}
+	}
+
+	// Update resource in storage if enabled and we have attributes.
+	// Skip target_info series since it's synthesized from resource attributes and storing
+	// resource attributes for it would be redundant.
+	if b.persistResourceAttrs && len(b.resourceAttrs) > 0 && !exists && ls.Get(model.MetricNameLabel) != targetMetricName {
+		// Only update resource for new series (not seen before in this batch).
+		// The timestamp t is used to track when this resource was active.
+
+		// Split resource attributes into identifying and descriptive
+		identifying := make(map[string]string)
+		descriptive := make(map[string]string, len(b.resourceAttrs))
+		for k, v := range b.resourceAttrs {
+			if seriesmetadata.IsIdentifyingAttribute(k) {
+				identifying[k] = v
+			} else {
+				descriptive[k] = v
+			}
+		}
+
+		// Update resource with both attributes and entities in a single call
+		_, err := b.app.UpdateResource(ref, ls, identifying, descriptive, b.entities, t)
+		if err != nil {
+			b.logger.Warn("Error while updating resource from OTLP", "err", err)
 		}
 	}
 

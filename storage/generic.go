@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -90,6 +91,15 @@ func (a *seriesSetAdapter) At() Series {
 
 func (q *querierAdapter) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
 	return &seriesSetAdapter{q.genericQuerier.Select(ctx, sortSeries, hints, matchers...)}
+}
+
+// GetResourceAt implements ResourceQuerier by delegating to the underlying genericQuerier
+// if it supports ResourceQuerier.
+func (q *querierAdapter) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	if rq, ok := q.genericQuerier.(ResourceQuerier); ok {
+		return rq.GetResourceAt(labelsHash, timestamp)
+	}
+	return nil, false
 }
 
 type chunkQuerierAdapter struct {

@@ -508,6 +508,9 @@ type OTLPOptions struct {
 	IngestSTZeroSample bool
 	// AppendMetadata enables writing metadata to WAL when metadata-wal-records feature is enabled.
 	AppendMetadata bool
+	// PersistResourceAttributes enables storing OTel resource attributes per series.
+	// When enabled, resource attributes from OTLP metrics are persisted to Parquet files.
+	PersistResourceAttributes bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
@@ -519,14 +522,15 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 	}
 
 	ex := &rwExporter{
-		logger:                  logger,
-		appendable:              appendable,
-		config:                  configFunc,
-		allowDeltaTemporality:   opts.NativeDelta,
-		lookbackDelta:           opts.LookbackDelta,
-		ingestSTZeroSample:      opts.IngestSTZeroSample,
-		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
-		appendMetadata:          opts.AppendMetadata,
+		logger:                    logger,
+		appendable:                appendable,
+		config:                    configFunc,
+		allowDeltaTemporality:     opts.NativeDelta,
+		lookbackDelta:             opts.LookbackDelta,
+		ingestSTZeroSample:        opts.IngestSTZeroSample,
+		enableTypeAndUnitLabels:   opts.EnableTypeAndUnitLabels,
+		appendMetadata:            opts.AppendMetadata,
+		persistResourceAttributes: opts.PersistResourceAttributes,
 		// Register metrics.
 		metrics: otlptranslator.NewCombinedAppenderMetrics(reg),
 	}
@@ -562,14 +566,15 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 }
 
 type rwExporter struct {
-	logger                  *slog.Logger
-	appendable              storage.Appendable
-	config                  func() config.Config
-	allowDeltaTemporality   bool
-	lookbackDelta           time.Duration
-	ingestSTZeroSample      bool
-	enableTypeAndUnitLabels bool
-	appendMetadata          bool
+	logger                    *slog.Logger
+	appendable                storage.Appendable
+	config                    func() config.Config
+	allowDeltaTemporality     bool
+	lookbackDelta             time.Duration
+	ingestSTZeroSample        bool
+	enableTypeAndUnitLabels   bool
+	appendMetadata            bool
+	persistResourceAttributes bool
 
 	// Metrics.
 	metrics otlptranslator.CombinedAppenderMetrics
@@ -581,7 +586,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		Appender: rw.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
-	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.ingestSTZeroSample, rw.appendMetadata, rw.metrics)
+	combinedAppender := otlptranslator.NewCombinedAppenderWithResourceAttrs(app, rw.logger, rw.ingestSTZeroSample, rw.appendMetadata, rw.persistResourceAttributes, rw.metrics)
 	converter := otlptranslator.NewPrometheusConverter(combinedAppender)
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                    otlpCfg.TranslationStrategy.ShouldAddSuffixes(),

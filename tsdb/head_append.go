@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 )
 
 // initAppender is a helper to initialize the time bounds of the head
@@ -100,6 +101,15 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 
 	a.app = a.head.appender()
 	return a.app.UpdateMetadata(ref, l, m)
+}
+
+func (a *initAppender) UpdateResource(ref storage.SeriesRef, l labels.Labels, identifying, descriptive map[string]string, entities []storage.EntityData, t int64) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.UpdateResource(ref, l, identifying, descriptive, entities, t)
+	}
+
+	a.app = a.head.appender()
+	return a.app.UpdateResource(ref, l, identifying, descriptive, entities, t)
 }
 
 func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, st int64) (storage.SeriesRef, error) {
@@ -1041,6 +1051,51 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 			Help: meta.Help,
 		})
 		b.metadataSeries = append(b.metadataSeries, s)
+	}
+
+	return ref, nil
+}
+
+// UpdateResource stores unified OTel resource data (attributes + entities) for the given series.
+// Supports versioning: if the resource changes, a new version is created.
+// If the resource is the same, the current version's time range is extended.
+// For the prototype, this stores in memory without WAL support.
+func (a *headAppender) UpdateResource(ref storage.SeriesRef, lset labels.Labels, identifying, descriptive map[string]string, entities []storage.EntityData, t int64) (storage.SeriesRef, error) {
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		s = a.head.series.getByHash(lset.Hash(), lset)
+		if s != nil {
+			ref = storage.SeriesRef(s.ref)
+		}
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown series when trying to add resource with HeadSeriesRef: %d and labels: %s", ref, lset)
+	}
+
+	s.Lock()
+	defer s.Unlock()
+
+	// Convert storage.EntityData to seriesmetadata.Entity
+	metadataEntities := make([]*seriesmetadata.Entity, len(entities))
+	for i, e := range entities {
+		entityType := e.Type
+		if entityType == "" {
+			entityType = seriesmetadata.EntityTypeResource
+		}
+		metadataEntities[i] = seriesmetadata.NewEntity(entityType, e.ID, e.Description)
+	}
+
+	// Create a unified ResourceVersion with both attributes and entities
+	resourceVersion := seriesmetadata.NewResourceVersion(identifying, descriptive, metadataEntities, t, t)
+
+	if s.resource == nil {
+		// First time setting resource - create versioned container
+		s.resource = seriesmetadata.NewVersionedResource(resourceVersion)
+	} else {
+		// AddOrExtend handles version creation/extension logic:
+		// - If resource version equals current: extend time range
+		// - If resource version differs: create new version
+		s.resource.AddOrExtend(resourceVersion)
 	}
 
 	return ref, nil
