@@ -9,8 +9,11 @@
       "gomodTidy",
       "gomodUpdateImportPaths"
     ],
-    "schedule": ["* 0-8 * * 1"],
+    "schedule": ["before 9am on the first day of the month"],
     "timezone": "UTC",
+    "github-actions": {
+      "managerFilePatterns": ["scripts/**"]
+    },
     "packageRules": [
       {
         "description": "Don't update replace directives",
@@ -23,6 +26,30 @@
         "description": "Don't update prometheus-io namespace packages",
         "matchPackageNames": ["@prometheus-io/**"],
         "enabled": false
+      },
+      {
+        "description": "Group AWS Go dependencies",
+        "matchManagers": ["gomod"],
+        "matchPackageNames": ["github.com/aws/**"],
+        "groupName": "AWS Go dependencies"
+      },
+      {
+        "description": "Group Azure Go dependencies",
+        "matchManagers": ["gomod"],
+        "matchPackageNames": ["github.com/Azure/**"],
+        "groupName": "Azure Go dependencies"
+      },
+      {
+        "description": "Group Kubernetes Go dependencies",
+        "matchManagers": ["gomod"],
+        "matchPackageNames": ["k8s.io/**"],
+        "groupName": "Kubernetes Go dependencies"
+      },
+      {
+        "description": "Group OpenTelemetry Go dependencies",
+        "matchManagers": ["gomod"],
+        "matchPackageNames": ["go.opentelemetry.io/**"],
+        "groupName": "OpenTelemetry Go dependencies"
       },
       {
         "description": "Group Mantine UI dependencies",
