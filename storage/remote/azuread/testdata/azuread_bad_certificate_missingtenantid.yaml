@@ -1,0 +1,5 @@
+cloud: AzurePublic
+certificate:
+  client_id: 00000000-0000-0000-0000-000000000000
+  certificate_file: /etc/prometheus/certs/app.crt
+  private_key_file: /etc/prometheus/certs/app.key
