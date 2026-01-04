@@ -9,7 +9,7 @@
       "gomodTidy",
       "gomodUpdateImportPaths"
     ],
-    "schedule": ["before 9am on the first day of the month"],
+    "schedule": ["every 6 weeks on the 21st day of the month before 9am"],
     "timezone": "UTC",
     "github-actions": {
       "managerFilePatterns": ["scripts/**"]
