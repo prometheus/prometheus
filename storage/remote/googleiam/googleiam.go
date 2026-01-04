@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
@@ -41,7 +42,15 @@ func NewRoundTripper(cfg *Config, next http.RoundTripper) (http.RoundTripper, er
 		option.WithScopes(scopes),
 	}
 	if cfg.CredentialsFile != "" {
-		opts = append(opts, option.WithCredentialsFile(cfg.CredentialsFile))
+		credBytes, err := os.ReadFile(cfg.CredentialsFile)
+		if err != nil {
+			return nil, fmt.Errorf("error reading Google credentials file: %w", err)
+		}
+		creds, err := google.CredentialsFromJSON(ctx, credBytes, scopes)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing Google credentials file: %w", err)
+		}
+		opts = append(opts, option.WithCredentials(creds))
 	} else {
 		creds, err := google.FindDefaultCredentials(ctx, scopes)
 		if err != nil {
