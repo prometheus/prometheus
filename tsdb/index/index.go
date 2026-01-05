@@ -100,7 +100,7 @@ func (s indexWriterStage) String() string {
 var ErrPostingsOffsetTableTooLarge = errors.New("length size exceeds 4 bytes")
 
 // ErrIndexExceeds64GiB is returned when the index file would exceed the 64GiB limit.
-var ErrIndexExceeds64GiB = errors.New("exceeds max size of 64GiB")
+var ErrIndexExceeds64GiB = errors.New("exceeding max size of 64GiB")
 
 // The table gets initialized with sync.Once but may still cause a race
 // with any other use of the crc32 package anywhere. Thus we initialize it
