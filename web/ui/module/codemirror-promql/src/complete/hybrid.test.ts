@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { analyzeCompletion, computeStartCompletePosition, ContextKind, durationWithUnitRegexp } from './hybrid';
+import { analyzeCompletion, computeStartCompletePosition, computeEndCompletePosition, ContextKind, durationWithUnitRegexp } from './hybrid';
 import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../test/utils-test';
 import { Completion, CompletionContext } from '@codemirror/autocomplete';
 import {
@@ -866,6 +866,73 @@ describe('computeStartCompletePosition test', () => {
   });
 });
 
+describe('computeEndCompletePosition test', () => {
+  const testCases = [
+    {
+      title: 'cursor at end of metric name',
+      expr: 'metric_name',
+      pos: 11, // cursor is at the end
+      expectedEnd: 11,
+    },
+    {
+      title: 'cursor in middle of metric name - should extend to end',
+      expr: 'coredns_cache_hits_total',
+      pos: 14, // cursor is after 'coredns_cache_' (before 'hits')
+      expectedEnd: 24, // should extend to end of 'coredns_cache_hits_total'
+    },
+    {
+      title: 'cursor in middle of metric name inside rate() - should extend to end',
+      expr: 'rate(coredns_cache_hits_total[2m])',
+      pos: 19, // cursor is after 'coredns_cache_' (before 'hits')
+      expectedEnd: 29, // should extend to end of 'coredns_cache_hits_total'
+    },
+    {
+      title: 'cursor in middle of metric name inside sum(rate()) - should extend to end',
+      expr: 'sum(rate(coredns_cache_hits_total[2m]))',
+      pos: 24, // cursor is after 'coredns_cache_' (before 'hits')
+      expectedEnd: 33, // should extend to end of 'coredns_cache_hits_total'
+    },
+    {
+      title: 'cursor at beginning of metric name - should extend to end',
+      expr: 'metric_name',
+      pos: 1, // cursor after 'm'
+      expectedEnd: 11,
+    },
+    {
+      title: 'cursor in middle of incomplete function name - should extend to end',
+      expr: 'sum_ov',
+      pos: 4, // cursor after 'sum_' (before 'ov')
+      expectedEnd: 6, // should extend to end of 'sum_ov'
+    },
+    {
+      title: 'cursor in middle of incomplete function name within aggregator - should extend to end',
+      expr: 'sum(sum_ov(foo[5m]))',
+      pos: 8, // cursor after 'sum_' (before 'ov')
+      expectedEnd: 10, // should extend to end of 'sum_ov'
+    },
+    {
+      title: 'empty bracket - returns pos',
+      expr: '{}',
+      pos: 1,
+      expectedEnd: 1,
+    },
+    {
+      title: 'cursor in label matchers - returns pos',
+      expr: 'metric_name{label="value"}',
+      pos: 12, // cursor after '{'
+      expectedEnd: 12,
+    },
+  ];
+  testCases.forEach((value) => {
+    it(value.title, () => {
+      const state = createEditorState(value.expr);
+      const node = syntaxTree(state).resolve(value.pos, -1);
+      const result = computeEndCompletePosition(state, node, value.pos);
+      expect(result).toEqual(value.expectedEnd);
+    });
+  });
+});
+
 describe('autocomplete promQL test', () => {
   beforeEach(() => {
     mockPrometheusServer();
@@ -912,6 +979,28 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
         from: 4,
         to: 6,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'cursor in middle of metric name - to should extend to end (issue #15839)',
+      expr: 'sum(coredns_cache_hits_total)',
+      pos: 18, // cursor is after 'coredns_cache_' (before 'hits')
+      expectedResult: {
+        options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
+        from: 4,
+        to: 28, // should extend to end of 'coredns_cache_hits_total'
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'cursor in middle of metric name inside rate() - to should extend to end (issue #15839)',
+      expr: 'rate(coredns_cache_hits_total[2m])',
+      pos: 19, // cursor is after 'coredns_cache_' (before 'hits')
+      expectedResult: {
+        options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
+        from: 5,
+        to: 29, // should extend to end of 'coredns_cache_hits_total'
         validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },

@@ -166,6 +166,20 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
   } as CompletionResult;
 }
 
+// computeEndCompletePosition calculates the end position for autocompletion replacement.
+// When the cursor is in the middle of an identifier (e.g., metric name), this ensures the entire
+// identifier is replaced, not just the portion before the cursor. This fixes issue #15839.
+// Note: this method is exported only for testing purpose.
+export function computeEndCompletePosition(state: EditorState, node: SyntaxNode, pos: number): number {
+  // For Identifier nodes (metric names), extend the end position to include
+  // the entire identifier, even if the cursor is in the middle.
+  if (node.type.id === Identifier) {
+    return node.to;
+  }
+  // Default: use the cursor position as the end position
+  return pos;
+}
+
 // Matches complete PromQL durations, including compound units (e.g., 5m, 1d2h, 1h30m, etc.).
 // Duration units are a fixed, safe set (no regex metacharacters), so no escaping is needed.
 export const durationWithUnitRegexp = new RegExp(`^(\\d+(${durationTerms.map((term) => term.label).join('|')}))+$`);
@@ -667,7 +681,13 @@ export class HybridComplete implements CompleteStrategy {
       }
     }
     return asyncResult.then((result) => {
-      return arrayToCompletionResult(result, computeStartCompletePosition(state, tree, pos), pos, completeSnippet, span);
+      return arrayToCompletionResult(
+        result,
+        computeStartCompletePosition(state, tree, pos),
+        computeEndCompletePosition(state, tree, pos),
+        completeSnippet,
+        span
+      );
     });
   }
 
