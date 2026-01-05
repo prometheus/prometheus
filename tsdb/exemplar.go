@@ -262,15 +262,11 @@ func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.
 		return storage.ErrDuplicateExemplar
 	}
 
-	// Since during the scrape the exemplars are sorted first by timestamp, then value, then labels,
-	// if any of these conditions are true, we know that the exemplar is either a duplicate
-	// of a previous one (but not the most recent one as that is checked above) or out of order.
-	// We now allow exemplars with duplicate timestamps as long as they have different values and/or labels
-	// since that can happen for different buckets of a native histogram.
-	// We do not distinguish between duplicates and out of order as iterating through the exemplars
-	// to check for that would be expensive (versus just comparing with the most recent one) especially
-	// since this is run under a lock, and not worth it as we just need to return an error so we do not
-	// append the exemplar.
+	// Reject exemplars older than the OOO time window relative to the newest exemplar.
+	// Exemplars with the same timestamp are ordered by value then label hash to detect
+	// duplicates without iterating through all stored exemplars, which would be too
+	// expensive under lock. Exemplars with equal timestamps but different values or
+	// labels are allowed to support multiple buckets of native histograms.
 	if (e.Ts < newestExemplar.Ts && e.Ts <= newestExemplar.Ts-ce.oooTimeWindowMillis) ||
 		(e.Ts == newestExemplar.Ts && e.Value < newestExemplar.Value) ||
 		(e.Ts == newestExemplar.Ts && e.Value == newestExemplar.Value && e.Labels.Hash() < newestExemplar.Labels.Hash()) {

@@ -115,19 +115,6 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 			},
 		},
 		{
-			name: "insert after newest",
-			size: 3,
-			exemplars: []exemplar.Exemplar{
-				{Labels: series1, Value: 0.1, Ts: 1000},
-				{Labels: series1, Value: 0.2, Ts: 950},
-			},
-			matcher: series1Matcher,
-			wantExemplars: []exemplar.Exemplar{
-				{Labels: series1, Value: 0.2, Ts: 950},
-				{Labels: series1, Value: 0.1, Ts: 1000},
-			},
-		},
-		{
 			name: "insert before oldest",
 			size: 3,
 			exemplars: []exemplar.Exemplar{

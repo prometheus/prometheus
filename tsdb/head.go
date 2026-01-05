@@ -1046,10 +1046,12 @@ func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WL) {
 	h.opts.MaxExemplars.Store(cfg.StorageConfig.ExemplarsConfig.MaxExemplars)
 	newSize := h.opts.MaxExemplars.Load()
 
-	if prevSize != newSize {
-		migrated := h.exemplars.(*CircularExemplarStorage).Resize(newSize)
-		h.logger.Info("Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
+	if prevSize == newSize {
+		return
 	}
+
+	migrated := h.exemplars.(*CircularExemplarStorage).Resize(newSize)
+	h.logger.Info("Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
 }
 
 // SetOutOfOrderTimeWindow updates the out of order related parameters.
