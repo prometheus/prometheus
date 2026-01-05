@@ -167,13 +167,14 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
 }
 
 // computeEndCompletePosition calculates the end position for autocompletion replacement.
-// When the cursor is in the middle of an identifier (e.g., metric name), this ensures the entire
-// identifier is replaced, not just the portion before the cursor. This fixes issue #15839.
+// When the cursor is in the middle of an identifier (e.g., metric name) or label name, this ensures
+// the entire token is replaced, not just the portion before the cursor. This fixes issue #15839.
 // Note: this method is exported only for testing purpose.
 export function computeEndCompletePosition(state: EditorState, node: SyntaxNode, pos: number): number {
-  // For Identifier nodes (metric names), extend the end position to include
-  // the entire identifier, even if the cursor is in the middle.
-  if (node.type.id === Identifier) {
+  // For Identifier nodes (metric names) and LabelName nodes (label names in matchers,
+  // grouping clauses, etc.), extend the end position to include the entire token,
+  // even if the cursor is in the middle.
+  if (node.type.id === Identifier || node.type.id === LabelName) {
     return node.to;
   }
   // Default: use the cursor position as the end position

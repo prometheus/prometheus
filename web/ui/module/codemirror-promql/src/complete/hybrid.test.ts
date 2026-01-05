@@ -922,6 +922,30 @@ describe('computeEndCompletePosition test', () => {
       pos: 12, // cursor after '{'
       expectedEnd: 12,
     },
+    {
+      title: 'cursor in middle of label name in grouping clause - should extend to end',
+      expr: 'sum by (instance_name)',
+      pos: 12, // cursor after 'inst' (before 'ance')
+      expectedEnd: 21, // should extend to end of 'instance_name'
+    },
+    {
+      title: 'cursor in middle of label name in label matcher - should extend to end',
+      expr: 'metric{instance_name="value"}',
+      pos: 11, // cursor after 'inst' (before 'ance')
+      expectedEnd: 20, // should extend to end of 'instance_name'
+    },
+    {
+      title: 'cursor in middle of label name in on() modifier - should extend to end',
+      expr: 'a / on(instance_name) b',
+      pos: 11, // cursor after 'inst' (before 'ance')
+      expectedEnd: 20, // should extend to end of 'instance_name'
+    },
+    {
+      title: 'cursor in middle of label name in ignoring() modifier - should extend to end',
+      expr: 'a / ignoring(instance_name) b',
+      pos: 17, // cursor after 'inst' (before 'ance')
+      expectedEnd: 26, // should extend to end of 'instance_name'
+    },
   ];
   testCases.forEach((value) => {
     it(value.title, () => {
