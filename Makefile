@@ -166,14 +166,8 @@ tarball: npm_licenses common-tarball
 .PHONY: docker
 docker: npm_licenses common-docker
 
-# Use build tags like -tags "remove_kubernetes_sd,remove_aws_sd" to exclude specific SDs.
-.PHONY: plugins
-plugins: plugins.yml plugins/generate.go
-	@echo ">> generating plugin files"
-	GOOS= GOARCH= $(GO) generate -tags plugins ./plugins
-
 .PHONY: build
-build: assets npm_licenses assets-compress plugins common-build
+build: assets npm_licenses assets-compress common-build
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)
