@@ -638,7 +638,7 @@ describe('analyzeCompletion test', () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
       const result = analyzeCompletion(state, node, value.pos);
-      expect(value.expectedContext).toEqual(result);
+      expect(result).toEqual(value.expectedContext);
     });
   });
 });
@@ -861,7 +861,7 @@ describe('computeStartCompletePosition test', () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
       const result = computeStartCompletePosition(state, node, value.pos);
-      expect(value.expectedStart).toEqual(result);
+      expect(result).toEqual(value.expectedStart);
     });
   });
 });
@@ -911,16 +911,16 @@ describe('computeEndCompletePosition test', () => {
       expectedEnd: 10, // should extend to end of 'sum_ov'
     },
     {
-      title: 'empty bracket - returns pos',
+      title: 'empty bracket - ends before the closing bracket',
       expr: '{}',
       pos: 1,
       expectedEnd: 1,
     },
     {
-      title: 'cursor in label matchers - returns pos',
+      title: 'cursor in label matchers - ends before the closing bracket',
       expr: 'metric_name{label="value"}',
       pos: 12, // cursor after '{'
-      expectedEnd: 12,
+      expectedEnd: 25,
     },
     {
       title: 'cursor in middle of label name in grouping clause - should extend to end',
@@ -945,6 +945,54 @@ describe('computeEndCompletePosition test', () => {
       expr: 'a / ignoring(instance_name) b',
       pos: 17, // cursor after 'inst' (before 'ance')
       expectedEnd: 26, // should extend to end of 'instance_name'
+    },
+    {
+      title: 'cursor in middle of function name rate - should extend to end',
+      expr: 'rate(foo[5m])',
+      pos: 2, // cursor after 'ra' (before 'te')
+      expectedEnd: 4, // should extend to end of 'rate'
+    },
+    {
+      title: 'cursor in middle of function name histogram_quantile - should extend to end',
+      expr: 'histogram_quantile(0.9, rate(foo[5m]))',
+      pos: 10, // cursor after 'histogram_' (before 'quantile')
+      expectedEnd: 18, // should extend to end of 'histogram_quantile'
+    },
+    {
+      title: 'cursor in middle of aggregator sum - should extend to end',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 2, // cursor after 'su' (before 'm')
+      expectedEnd: 3, // should extend to end of 'sum'
+    },
+    {
+      title: 'cursor in middle of aggregator count_values - should extend to end',
+      expr: 'count_values("label", foo)',
+      pos: 6, // cursor after 'count_' (before 'values')
+      expectedEnd: 12, // should extend to end of 'count_values'
+    },
+    {
+      title: 'cursor in middle of nested function - should extend to end',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 6, // cursor after 'ra' inside rate (before 'te')
+      expectedEnd: 8, // should extend to end of 'rate'
+    },
+    {
+      title: 'cursor at beginning of aggregator - should extend to end',
+      expr: 'avg by (instance) (rate(foo[5m]))',
+      pos: 1, // cursor after 'a' (before 'vg')
+      expectedEnd: 3, // should extend to end of 'avg'
+    },
+    {
+      title: 'cursor in middle of function name with binary op - should extend to end',
+      expr: 'rate(foo[5m]) / irate(bar[5m])',
+      pos: 17, // cursor after 'ir' inside irate (before 'ate')
+      expectedEnd: 21, // should extend to end of 'irate'
+    },
+    {
+      title: 'error node - returns pos (cursor position)',
+      expr: 'metric_name !',
+      pos: 13, // cursor at '!' (error node)
+      expectedEnd: 13, // error node returns pos
     },
   ];
   testCases.forEach((value) => {
@@ -1398,7 +1446,7 @@ describe('autocomplete promQL test', () => {
       expectedResult: {
         options: [],
         from: 10,
-        to: 10,
+        to: 11,
         validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
@@ -1409,7 +1457,7 @@ describe('autocomplete promQL test', () => {
       expectedResult: {
         options: [],
         from: 10,
-        to: 10,
+        to: 12,
         validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
@@ -1564,7 +1612,7 @@ describe('autocomplete promQL test', () => {
       const context = new CompletionContext(state, value.pos, true);
       const completion = newCompleteStrategy(value.conf);
       const result = await completion.promQL(context);
-      expect(value.expectedResult).toEqual(result);
+      expect(result).toEqual(value.expectedResult);
     });
   });
 

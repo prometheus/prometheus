@@ -167,18 +167,33 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
 }
 
 // computeEndCompletePosition calculates the end position for autocompletion replacement.
-// When the cursor is in the middle of an identifier (e.g., metric name) or label name, this ensures
-// the entire token is replaced, not just the portion before the cursor. This fixes issue #15839.
+// When the cursor is in the middle of a token, this ensures the entire token is replaced,
+// not just the portion before the cursor. This fixes issue #15839.
 // Note: this method is exported only for testing purpose.
 export function computeEndCompletePosition(state: EditorState, node: SyntaxNode, pos: number): number {
-  // For Identifier nodes (metric names) and LabelName nodes (label names in matchers,
-  // grouping clauses, etc.), extend the end position to include the entire token,
-  // even if the cursor is in the middle.
-  if (node.type.id === Identifier || node.type.id === LabelName) {
-    return node.to;
+  // For error nodes, use the cursor position as the end position
+  if (node.type.id === 0) {
+    return pos;
   }
-  // Default: use the cursor position as the end position
-  return pos;
+
+  if (
+    node.type.id === LabelMatchers ||
+    node.type.id === GroupingLabels ||
+    node.type.id === FunctionCallBody ||
+    node.type.id === MatrixSelector ||
+    node.type.id === SubqueryExpr
+  ) {
+    // When we're inside empty brackets, we want to replace up to just before the closing bracket.
+    return node.to - 1;
+  }
+
+  if (node.type.id === StringLiteral && (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher)) {
+    // For label values, we want to replace all content inside the quotes.
+    return node.parent.to - 1;
+  }
+
+  // For all other nodes, extend the end position to include the entire token.
+  return node.to;
 }
 
 // Matches complete PromQL durations, including compound units (e.g., 5m, 1d2h, 1h30m, etc.).
