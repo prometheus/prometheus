@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.9.0-rc.0 / 2025-12-18
+## 3.9.0 / 2026-01-06
 
 - [CHANGE] Native Histograms are no longer experimental! Make the `native-histogram` feature flag a no-op. Use `scrape_native_histograms` config option instead. #17528
 - [CHANGE] API: Add maximum limit of 10,000 sets of statistics to TSDB status endpoint. #17647
