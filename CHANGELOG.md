@@ -1,6 +1,8 @@
 # Changelog
 
-## main / unreleased
+## 3.5.1 / 2026-01-07
+
+No code changes, just built with Go 1.24.11.
 
 ## 3.5.0 / 2025-07-14
 
