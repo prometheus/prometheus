@@ -1212,12 +1212,12 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		fallbackScrapeProtocol:        opts.sp.config.ScrapeFallbackProtocol.HeaderMediaType(),
 		enableCompression:             opts.sp.config.EnableCompression,
 		mrc:                           opts.sp.config.MetricRelabelConfigs,
+		reportExtraMetrics:            opts.sp.config.ExtraScrapeMetricsEnabled(),
 		validationScheme:              opts.sp.config.MetricNameValidationScheme,
 
 		// scrape.Options.
 		enableSTZeroIngestion:   opts.sp.options.EnableStartTimestampZeroIngestion,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
-		reportExtraMetrics:      opts.sp.options.ExtraMetrics,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
 		skipOffsetting:          opts.sp.options.skipOffsetting,

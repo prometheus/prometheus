@@ -74,10 +74,6 @@ func mustParseURL(u string) *config.URL {
 	return &config.URL{URL: parsed}
 }
 
-func boolPtr(b bool) *bool {
-	return &b
-}
-
 const (
 	globBodySizeLimit         = 15 * units.MiB
 	globSampleLimit           = 1500
@@ -109,6 +105,7 @@ var expectedConf = &Config{
 		ScrapeNativeHistograms:         boolPtr(false),
 		AlwaysScrapeClassicHistograms:  false,
 		ConvertClassicHistogramsToNHCB: false,
+		ExtraScrapeMetrics:             boolPtr(false),
 		MetricNameValidationScheme:     model.UTF8Validation,
 	},
 
@@ -236,6 +233,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -360,6 +358,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			HTTPClientConfig: config.HTTPClientConfig{
 				BasicAuth: &config.BasicAuth{
@@ -470,6 +469,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -532,6 +532,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath: "/metrics",
 			Scheme:      "http",
@@ -571,6 +572,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -616,6 +618,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -661,6 +664,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -696,6 +700,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -739,6 +744,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -779,6 +785,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -826,6 +833,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -863,6 +871,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -903,6 +912,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -936,6 +946,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -972,6 +983,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      "/federate",
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1008,6 +1020,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1044,6 +1057,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1077,6 +1091,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1118,6 +1133,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1158,6 +1174,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1195,6 +1212,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1231,6 +1249,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1271,6 +1290,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1314,6 +1334,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(true),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1377,6 +1398,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1410,6 +1432,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1454,6 +1477,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1504,6 +1528,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1544,6 +1569,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1585,6 +1611,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1621,6 +1648,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1659,6 +1687,7 @@ var expectedConf = &Config{
 			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -2755,6 +2784,7 @@ type ScrapeConfigOptions struct {
 	ScrapeNativeHistograms        bool
 	AlwaysScrapeClassicHistograms bool
 	ConvertClassicHistToNHCB      bool
+	ExtraScrapeMetrics            bool
 }
 
 func TestGetScrapeConfigs(t *testing.T) {
@@ -2788,6 +2818,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 			ScrapeNativeHistograms:         boolPtr(opts.ScrapeNativeHistograms),
 			AlwaysScrapeClassicHistograms:  boolPtr(opts.AlwaysScrapeClassicHistograms),
 			ConvertClassicHistogramsToNHCB: boolPtr(opts.ConvertClassicHistToNHCB),
+			ExtraScrapeMetrics:             boolPtr(opts.ExtraScrapeMetrics),
 		}
 		if opts.ScrapeProtocols == nil {
 			sc.ScrapeProtocols = DefaultScrapeProtocols
@@ -2871,6 +2902,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 					ScrapeNativeHistograms:         boolPtr(false),
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
+					ExtraScrapeMetrics:             boolPtr(false),
 
 					MetricsPath: DefaultScrapeConfig.MetricsPath,
 					Scheme:      DefaultScrapeConfig.Scheme,
@@ -2909,6 +2941,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 					ScrapeNativeHistograms:         boolPtr(false),
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
+					ExtraScrapeMetrics:             boolPtr(false),
 
 					HTTPClientConfig: config.HTTPClientConfig{
 						TLSConfig: config.TLSConfig{
@@ -3021,6 +3054,26 @@ func TestGetScrapeConfigs(t *testing.T) {
 			configFile:     "testdata/global_scrape_protocols_and_local_disable_scrape_native_hist.good.yml",
 			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ScrapeNativeHistograms: false, ScrapeProtocols: []ScrapeProtocol{PrometheusText0_0_4}})},
 		},
+		{
+			name:           "A global config that enables extra scrape metrics",
+			configFile:     "testdata/global_enable_extra_scrape_metrics.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ExtraScrapeMetrics: true})},
+		},
+		{
+			name:           "A global config that disables extra scrape metrics",
+			configFile:     "testdata/global_disable_extra_scrape_metrics.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ExtraScrapeMetrics: false})},
+		},
+		{
+			name:           "A global config that disables extra scrape metrics and scrape config that enables it",
+			configFile:     "testdata/local_enable_extra_scrape_metrics.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ExtraScrapeMetrics: true})},
+		},
+		{
+			name:           "A global config that enables extra scrape metrics and scrape config that disables it",
+			configFile:     "testdata/local_disable_extra_scrape_metrics.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ExtraScrapeMetrics: false})},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -3033,6 +3086,99 @@ func TestGetScrapeConfigs(t *testing.T) {
 				require.ErrorContains(t, err, tc.expectedError)
 			}
 			require.Equal(t, tc.expectedResult, scfgs)
+		})
+	}
+}
+
+func TestExtraScrapeMetrics(t *testing.T) {
+	tests := []struct {
+		name          string
+		config        string
+		expectGlobal  *bool
+		expectEnabled bool
+	}{
+		{
+			name: "default values (not set)",
+			config: `
+scrape_configs:
+  - job_name: test
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectGlobal:  boolPtr(false), // inherits from DefaultGlobalConfig
+			expectEnabled: false,
+		},
+		{
+			name: "global enabled",
+			config: `
+global:
+  extra_scrape_metrics: true
+scrape_configs:
+  - job_name: test
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectGlobal:  boolPtr(true),
+			expectEnabled: true,
+		},
+		{
+			name: "global disabled",
+			config: `
+global:
+  extra_scrape_metrics: false
+scrape_configs:
+  - job_name: test
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectGlobal:  boolPtr(false),
+			expectEnabled: false,
+		},
+		{
+			name: "scrape override enabled",
+			config: `
+global:
+  extra_scrape_metrics: false
+scrape_configs:
+  - job_name: test
+    extra_scrape_metrics: true
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectGlobal:  boolPtr(false),
+			expectEnabled: true,
+		},
+		{
+			name: "scrape override disabled",
+			config: `
+global:
+  extra_scrape_metrics: true
+scrape_configs:
+  - job_name: test
+    extra_scrape_metrics: false
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectGlobal:  boolPtr(true),
+			expectEnabled: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(tc.config, promslog.NewNopLogger())
+			require.NoError(t, err)
+
+			// Check global config
+			require.Equal(t, tc.expectGlobal, cfg.GlobalConfig.ExtraScrapeMetrics)
+
+			// Check scrape config
+			scfgs, err := cfg.GetScrapeConfigs()
+			require.NoError(t, err)
+			require.Len(t, scfgs, 1)
+
+			// Check the effective value via the helper method
+			require.Equal(t, tc.expectEnabled, scfgs[0].ExtraScrapeMetricsEnabled())
 		})
 	}
 }

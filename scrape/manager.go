@@ -70,7 +70,8 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 
 	// Register scrape features.
 	if r := o.FeatureRegistry; r != nil {
-		r.Set(features.Scrape, "extra_scrape_metrics", o.ExtraMetrics)
+		// "Extra scrape metrics" is always enabled because it moved from feature flag to config file.
+		r.Enable(features.Scrape, "extra_scrape_metrics")
 		r.Set(features.Scrape, "start_timestamp_zero_ingestion", o.EnableStartTimestampZeroIngestion)
 		r.Set(features.Scrape, "type_and_unit_labels", o.EnableTypeAndUnitLabels)
 	}
@@ -80,7 +81,6 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 
 // Options are the configuration parameters to the scrape manager.
 type Options struct {
-	ExtraMetrics bool
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
 	PassMetadataInContext bool
