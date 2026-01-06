@@ -11,13 +11,13 @@ Prometheus's local time series database stores data in a custom, highly efficien
 
 ### On-disk layout
 
-Ingested samples are grouped into blocks of two hours. Each two-hour block consists
-of a directory containing a chunks subdirectory containing all the time series samples
-for that window of time, a metadata file, and an index file (which indexes metric names
-and labels to time series in the chunks directory). The samples in the chunks directory
-are grouped together into one or more segment files of up to 512MB each by default. When
-series are deleted via the API, deletion records are stored in separate tombstone files
-(instead of deleting the data immediately from the chunk segments).
+Ingested samples are grouped into two-hour blocks. Each block consists of a directory that 
+contains a chunks subdirectory with all the time series samples for that time window, 
+a metadata file,  and an index file (which maps metric names and labels to the time series 
+in the chunks directory). The samples in the chunks directory are organized into one 
+or more segment files, each up to 512 MB by default. When series are deleted via the API, 
+the deletion records are stored in separate tombstone files rather than being immediately 
+removed from the chunk segments.
 
 The current block for incoming samples is kept in memory and is not fully
 persisted. It is secured against crashes by a write-ahead log (WAL) that can be
@@ -59,12 +59,16 @@ A Prometheus server's data directory looks something like this:
 Note that a limitation of local storage is that it is not clustered or
 replicated. Thus, it is not arbitrarily scalable or durable in the face of
 drive or node outages and should be managed like any other single node
-database.
+database. With proper architecture, it is possible to retain years of
+data in local storage.
 
 [Snapshots](querying/api.md#snapshot) are recommended for backups. Backups
 made without snapshots run the risk of losing data that was recorded since
-the last WAL sync, which typically happens every two hours. With proper
-architecture, it is possible to retain years of data in local storage.
+the last TSDB block was created, which typically happens every two hours,
+covering the last three hours of samples. Excluding the WAL files (the
+`chunks_head/`, `wal/`, and `wbl/` directories in `storage.tsdb.path`)
+on backup or restore will ensure a coherent backup, in any case, at the
+cost of losing the time range covered by the WAL files.
 
 Alternatively, external storage may be used via the
 [remote read/write APIs](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).

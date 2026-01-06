@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -126,6 +126,16 @@ func TestRulesUnitTest(t *testing.T) {
 			},
 			queryOpts: promqltest.LazyLoaderOpts{
 				EnableNegativeOffset: true,
+			},
+			want: 0,
+		},
+		{
+			name: "Start time tests",
+			args: args{
+				files: []string{"./testdata/start-time-test.yml"},
+			},
+			queryOpts: promqltest.LazyLoaderOpts{
+				EnableAtModifier: true,
 			},
 			want: 0,
 		},

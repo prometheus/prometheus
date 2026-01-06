@@ -58,6 +58,7 @@ import { lintKeymap } from "@codemirror/lint";
 import {
   IconAlignJustified,
   IconBinaryTree,
+  IconCopy,
   IconDotsVertical,
   IconSearch,
   IconTerminal,
@@ -121,6 +122,7 @@ interface ExpressionInputProps {
   executeQuery: (expr: string) => void;
   treeShown: boolean;
   setShowTree: (showTree: boolean) => void;
+  duplicatePanel: (expr: string) => void;
   removePanel: () => void;
 }
 
@@ -128,6 +130,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
   initialExpr,
   metricNames,
   executeQuery,
+  duplicatePanel,
   removePanel,
   treeShown,
   setShowTree,
@@ -249,6 +252,12 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
                 onClick={() => setShowTree(!treeShown)}
               >
                 {treeShown ? "Hide" : "Show"} tree view
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconCopy style={menuIconStyle} />}
+                onClick={() => duplicatePanel(expr)}
+              >
+                Duplicate query
               </Menu.Item>
               <Menu.Item
                 color="red"

@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -84,6 +84,12 @@ func (w *BlockWriter) initHead() error {
 // Appender can't be called concurrently. However, the returned Appender can safely be used concurrently.
 func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
 	return w.head.Appender(ctx)
+}
+
+// AppenderV2 returns a new appender on the database.
+// AppenderV2 can't be called concurrently. However, the returned AppenderV2 can safely be used concurrently.
+func (w *BlockWriter) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return w.head.AppenderV2(ctx)
 }
 
 // Flush implements the Writer interface. This is where actual block writing

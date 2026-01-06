@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -498,7 +498,9 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 					amSetCovered.CompareAndSwap(k, false, true)
 				}
 
-				n.metrics.latency.WithLabelValues(url).Observe(time.Since(begin).Seconds())
+				durationSeconds := time.Since(begin).Seconds()
+				n.metrics.latencySummary.WithLabelValues(url).Observe(durationSeconds)
+				n.metrics.latencyHistogram.WithLabelValues(url).Observe(durationSeconds)
 				n.metrics.sent.WithLabelValues(url).Add(float64(count))
 
 				wg.Done()

@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -162,7 +162,11 @@ func main() {
 	checkRulesIgnoreUnknownFields := checkRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the rule files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
-	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
+	checkMetricsExtended := checkMetricsCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
+	checkMetricsLint := checkMetricsCmd.Flag(
+		"lint",
+		"Linting checks to apply for metrics. Available options are: all, none. Use --lint=none to disable metrics linting.",
+	).Default(lintOptionAll).String()
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
@@ -257,12 +261,13 @@ func main() {
 	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
 	listPath := tsdbListCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 
-	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump samples from a TSDB.")
+	tsdbDumpCmd := tsdbCmd.Command("dump", "Dump data (series+samples or optionally just series) from a TSDB.")
 	dumpPath := tsdbDumpCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	dumpSandboxDirRoot := tsdbDumpCmd.Flag("sandbox-dir-root", "Root directory where a sandbox directory will be created, this sandbox is used in case WAL replay generates chunks (default is the database path). The sandbox is cleaned up at the end.").String()
 	dumpMinTime := tsdbDumpCmd.Flag("min-time", "Minimum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MinInt64, 10)).Int64()
 	dumpMaxTime := tsdbDumpCmd.Flag("max-time", "Maximum timestamp to dump, in milliseconds since the Unix epoch.").Default(strconv.FormatInt(math.MaxInt64, 10)).Int64()
 	dumpMatch := tsdbDumpCmd.Flag("match", "Series selector. Can be specified multiple times.").Default("{__name__=~'(?s:.*)'}").Strings()
+	dumpFormat := tsdbDumpCmd.Flag("format", "Output format of the dump (prom (default) or seriesjson).").Default("prom").Enum("prom", "seriesjson")
 
 	tsdbDumpOpenMetricsCmd := tsdbCmd.Command("dump-openmetrics", "[Experimental] Dump samples from a TSDB into OpenMetrics text format, excluding native histograms and staleness markers, which are not representable in OpenMetrics.")
 	dumpOpenMetricsPath := tsdbDumpOpenMetricsCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
@@ -374,7 +379,7 @@ func main() {
 		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
-		os.Exit(CheckMetrics(*checkMetricsExtended))
+		os.Exit(CheckMetrics(*checkMetricsExtended, *checkMetricsLint))
 
 	case pushMetricsCmd.FullCommand():
 		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsProtoMsg, *pushMetricsLabels, *metricFiles...))
@@ -428,9 +433,14 @@ func main() {
 		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
 
 	case tsdbDumpCmd.FullCommand():
-		os.Exit(checkErr(dumpSamples(ctx, *dumpPath, *dumpSandboxDirRoot, *dumpMinTime, *dumpMaxTime, *dumpMatch, formatSeriesSet)))
+		format := formatSeriesSet
+		if *dumpFormat == "seriesjson" {
+			format = formatSeriesSetLabelsToJSON
+		}
+		os.Exit(checkErr(dumpTSDBData(ctx, *dumpPath, *dumpSandboxDirRoot, *dumpMinTime, *dumpMaxTime, *dumpMatch, format)))
+
 	case tsdbDumpOpenMetricsCmd.FullCommand():
-		os.Exit(checkErr(dumpSamples(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics)))
+		os.Exit(checkErr(dumpTSDBData(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
@@ -928,15 +938,16 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int
 	if lintSettings.lintDuplicateRules() {
 		dRules := checkDuplicates(rgs.Groups)
 		if len(dRules) != 0 {
-			errMessage := fmt.Sprintf("%d duplicate rule(s) found.\n", len(dRules))
+			var errMessage strings.Builder
+			errMessage.WriteString(fmt.Sprintf("%d duplicate rule(s) found.\n", len(dRules)))
 			for _, n := range dRules {
-				errMessage += fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric)
+				errMessage.WriteString(fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric))
 				n.label.Range(func(l labels.Label) {
-					errMessage += fmt.Sprintf("\t%s: %s\n", l.Name, l.Value)
+					errMessage.WriteString(fmt.Sprintf("\t%s: %s\n", l.Name, l.Value))
 				})
 			}
-			errMessage += "Might cause inconsistency while recording expressions"
-			return 0, []error{fmt.Errorf("%w %s", errLint, errMessage)}
+			errMessage.WriteString("Might cause inconsistency while recording expressions")
+			return 0, []error{fmt.Errorf("%w %s", errLint, errMessage.String())}
 		}
 	}
 
@@ -1011,36 +1022,53 @@ func ruleMetric(rule rulefmt.Rule) string {
 }
 
 var checkMetricsUsage = strings.TrimSpace(`
-Pass Prometheus metrics over stdin to lint them for consistency and correctness.
+Pass Prometheus metrics over stdin to lint them for consistency and correctness, and optionally perform cardinality analysis.
 
 examples:
 
 $ cat metrics.prom | promtool check metrics
 
-$ curl -s http://localhost:9090/metrics | promtool check metrics
+$ curl -s http://localhost:9090/metrics | promtool check metrics --extended
+
+$ curl -s http://localhost:9100/metrics | promtool check metrics --extended --lint=none
 `)
 
 // CheckMetrics performs a linting pass on input metrics.
-func CheckMetrics(extended bool) int {
-	var buf bytes.Buffer
-	tee := io.TeeReader(os.Stdin, &buf)
-	l := promlint.New(tee)
-	problems, err := l.Lint()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error while linting:", err)
+func CheckMetrics(extended bool, lint string) int {
+	// Validate that at least one feature is enabled.
+	if !extended && lint == lintOptionNone {
+		fmt.Fprintln(os.Stderr, "error: at least one of --extended or linting must be enabled")
+		fmt.Fprintln(os.Stderr, "Use --extended for cardinality analysis, or remove --lint=none to enable linting")
 		return failureExitCode
 	}
 
-	for _, p := range problems {
-		fmt.Fprintln(os.Stderr, p.Metric, p.Text)
+	var buf bytes.Buffer
+	var (
+		problems []promlint.Problem
+		reader   io.Reader
+		err      error
+	)
+
+	if lint != lintOptionNone {
+		tee := io.TeeReader(os.Stdin, &buf)
+		l := promlint.New(tee)
+		problems, err = l.Lint()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error while linting:", err)
+			return failureExitCode
+		}
+		for _, p := range problems {
+			fmt.Fprintln(os.Stderr, p.Metric, p.Text)
+		}
+		reader = &buf
+	} else {
+		reader = os.Stdin
 	}
 
-	if len(problems) > 0 {
-		return lintErrExitCode
-	}
+	hasLintProblems := len(problems) > 0
 
 	if extended {
-		stats, total, err := checkMetricsExtended(&buf)
+		stats, total, err := checkMetricsExtended(reader)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return failureExitCode
@@ -1052,6 +1080,10 @@ func CheckMetrics(extended bool) int {
 		}
 		fmt.Fprintf(w, "Total\t%d\t%.f%%\t\n", total, 100.)
 		w.Flush()
+	}
+
+	if hasLintProblems {
+		return lintErrExitCode
 	}
 
 	return successExitCode

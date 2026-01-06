@@ -159,6 +159,12 @@ global:
   # native histogram with custom buckets.
   [ always_scrape_classic_histograms: <boolean> | default = false ]
 
+  # When enabled, Prometheus stores additional time series for each scrape:
+  # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
+  # These metrics help monitor how close targets are to their configured limits.
+  # This option can be overridden per scrape config.
+  [ extra_scrape_metrics: <boolean> | default = false ]
+
   # The following explains the various combinations of the last three options
   # in various exposition cases.
   #
@@ -394,6 +400,10 @@ params:
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
+
+# List of AWS service discovery configurations.
+aws_sd_configs:
+  [ - <aws_sd_config> ... ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -643,6 +653,12 @@ metric_relabel_configs:
 # native histogram with custom buckets.
 [ always_scrape_classic_histograms: <boolean> | default = <global.always_scrape_classic_histograms> ]
 
+# When enabled, Prometheus stores additional time series for this scrape job:
+# scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
+# These metrics help monitor how close targets are to their configured limits.
+# If not set, inherits the value from the global configuration.
+[ extra_scrape_metrics: <boolean> | default = <global.extra_scrape_metrics> ]
+
 # See global configuration above for further explanations of how the last three
 # options combine their effects.
 
@@ -757,15 +773,55 @@ A `tls_config` allows configuring TLS connections.
 
 OAuth 2.0 authentication using the client credentials or password grant type.
 Prometheus fetches an access token from the specified endpoint with
-the given client access and secret keys.
+the given client access and credentials.
 
 ```yaml
 client_id: <string>
+
+# OAuth2 grant type to use. It can be one of
+# "client_credentials" or "urn:ietf:params:oauth:grant-type:jwt-bearer" (RFC 7523).
+# Default value is "client_credentials"
+[ grant_type: <string> ]
+
+# Client secret to provide to authorization server. Only used if
+# GrantType is set empty or set to "client_credentials".
 [ client_secret: <secret> ]
 
 # Read the client secret from a file.
 # It is mutually exclusive with `client_secret`.
 [ client_secret_file: <filename> ]
+
+# Secret key to sign JWT with. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+[ client_certificate_key: <secret> ]
+
+# Read the secret key from a file.
+# It is mutually exclusive with `client_certificate_key`.
+[ client_certificate_key_file: <filename> ]
+
+# JWT kid value to include in the JWT header. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+[ client_certificate_key_id: <string> ]
+
+# Signature algorithm used to sign JWT token. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+# Default value is RS256 and valid values RS256, RS384, RS512
+[ signature_algorithm: <string> ]
+
+# OAuth client identifier used when communicating with
+# the configured OAuth provider. Default value is client_id. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+[ iss: <string> ]
+
+# Intended audience of the request. If empty, the value 
+# of TokenURL is used as the intended audience. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+[ audience: <string> ]
+
+# Map of claims to be added to the JWT token. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+claims:
+  [ <string>: <string> ... ]
 
 # Scopes for the token request.
 scopes:
@@ -810,6 +866,171 @@ http_headers:
     [ secrets: [<secret>, ...] ]
     # Files to read header values from.
     [ files: [<string>, ...] ] ]
+```
+
+### `<aws_sd_config>`
+
+AWS SD configurations allow retrieving scrape targets from AWS services.
+This is a unified service discovery that supports multiple AWS service types through the `role` parameter.
+
+One of the following `role` types can be configured to discover targets:
+
+#### `ec2`
+
+The `ec2` role discovers targets from AWS EC2 instances. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The IAM credentials used must have the `ec2:DescribeInstances` permission to
+discover scrape targets, and may optionally have the
+`ec2:DescribeAvailabilityZones` permission if you want the availability zone ID
+available as a label (see below).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_ec2_ami`: the EC2 Amazon Machine Image
+* `__meta_ec2_architecture`: the architecture of the instance
+* `__meta_ec2_availability_zone`: the availability zone in which the instance is running
+* `__meta_ec2_availability_zone_id`: the [availability zone ID](https://docs.aws.amazon.com/ram/latest/userguide/working-with-az-ids.html) in which the instance is running (requires `ec2:DescribeAvailabilityZones`)
+* `__meta_ec2_instance_id`: the EC2 instance ID
+* `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
+* `__meta_ec2_instance_state`: the state of the EC2 instance
+* `__meta_ec2_instance_type`: the type of the EC2 instance
+* `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
+* `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
+* `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
+* `__meta_ec2_primary_ipv6_addresses`: comma separated list of the Primary IPv6 addresses of the instance, if present. The list is ordered based on the position of each corresponding network interface in the attachment order.
+* `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
+* `__meta_ec2_private_dns_name`: the private DNS name of the instance, if available
+* `__meta_ec2_private_ip`: the private IP address of the instance, if present
+* `__meta_ec2_public_dns_name`: the public DNS name of the instance, if available
+* `__meta_ec2_public_ip`: the public IP address of the instance, if available
+* `__meta_ec2_region`: the region of the instance
+* `__meta_ec2_subnet_id`: comma separated list of subnets IDs in which the instance is running, if available
+* `__meta_ec2_tag_<tagkey>`: each tag value of the instance
+* `__meta_ec2_vpc_id`: the ID of the VPC in which the instance is running, if available
+
+#### `lightsail`
+
+The `lightsail` role discovers targets from [AWS Lightsail](https://aws.amazon.com/lightsail/)
+instances. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_lightsail_availability_zone`: the availability zone in which the instance is running
+* `__meta_lightsail_blueprint_id`: the Lightsail blueprint ID
+* `__meta_lightsail_bundle_id`: the Lightsail bundle ID
+* `__meta_lightsail_instance_name`: the name of the Lightsail instance
+* `__meta_lightsail_instance_state`: the state of the Lightsail instance
+* `__meta_lightsail_instance_support_code`: the support code of the Lightsail instance
+* `__meta_lightsail_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
+* `__meta_lightsail_private_ip`: the private IP address of the instance
+* `__meta_lightsail_public_ip`: the public IP address of the instance, if available
+* `__meta_lightsail_region`: the region of the instance
+* `__meta_lightsail_tag_<tagkey>`: each tag value of the instance
+
+#### `ecs`
+
+The `ecs` role discovers targets from AWS ECS containers. 
+
+ECS service discovery supports all ECS networking modes:
+- **awsvpc mode** (Fargate and EC2 with ENI): Uses the task's private IP address from its elastic network interface
+- **bridge mode** (EC2): Uses the EC2 host instance's private IP address
+- **host mode** (EC2): Uses the EC2 host instance's private IP address
+
+The private IP address is used by default, but may be changed to the public IP address with relabeling.
+
+The IAM credentials used must have the following permissions to discover scrape targets:
+
+- `ecs:ListClusters`
+- `ecs:DescribeClusters`
+- `ecs:ListServices`
+- `ecs:DescribeServices`
+- `ecs:ListTasks`
+- `ecs:DescribeTasks`
+- `ecs:DescribeContainerInstances` (required for EC2 launch type tasks)
+- `ec2:DescribeInstances` (required for EC2 launch type tasks)
+- `ec2:DescribeNetworkInterfaces` (required to get public IP for awsvpc mode tasks)
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_ecs_cluster`: the name of the ECS cluster
+* `__meta_ecs_cluster_arn`: the ARN of the ECS cluster
+* `__meta_ecs_service`: the name of the ECS service
+* `__meta_ecs_service_arn`: the ARN of the ECS service
+* `__meta_ecs_service_status`: the status of the ECS service
+* `__meta_ecs_task_group`: the ECS task group (typically service:service-name)
+* `__meta_ecs_task_arn`: the ARN of the ECS task
+* `__meta_ecs_task_definition`: the ARN of the ECS task definition
+* `__meta_ecs_ip_address`: the private IP address of the task
+* `__meta_ecs_launch_type`: the launch type of the task (EC2 or Fargate)
+* `__meta_ecs_desired_status`: the desired status of the task
+* `__meta_ecs_last_status`: the last known status of the task
+* `__meta_ecs_health_status`: the health status of the task
+* `__meta_ecs_platform_family`: the platform family (e.g., Linux, Windows)
+* `__meta_ecs_platform_version`: the platform version
+* `__meta_ecs_subnet_id`: the subnet ID where the task is running
+* `__meta_ecs_availability_zone`: the availability zone where the task is running
+* `__meta_ecs_region`: the AWS region
+* `__meta_ecs_public_ip`: the public IP address (from ENI for awsvpc mode, from EC2 instance for bridge/host mode), if available
+* `__meta_ecs_network_mode`: the network mode of the task (awsvpc or bridge)
+* `__meta_ecs_container_instance_arn`: the ARN of the container instance (EC2 launch type only)
+* `__meta_ecs_ec2_instance_id`: the EC2 instance ID (EC2 launch type only)
+* `__meta_ecs_ec2_instance_type`: the EC2 instance type (EC2 launch type only)
+* `__meta_ecs_ec2_instance_private_ip`: the private IP address of the EC2 instance (EC2 launch type only)
+* `__meta_ecs_ec2_instance_public_ip`: the public IP address of the EC2 instance, if available (EC2 launch type only)
+* `__meta_ecs_tag_cluster_<tagkey>`: each cluster tag value, keyed by tag name
+* `__meta_ecs_tag_service_<tagkey>`: each service tag value, keyed by tag name
+* `__meta_ecs_tag_task_<tagkey>`: each task tag value, keyed by tag name
+* `__meta_ecs_tag_ec2_<tagkey>`: each EC2 instance tag value, keyed by tag name (EC2 launch type only)
+
+See below for the configuration options for AWS discovery:
+
+```yaml
+# The AWS role to use for service discovery.
+# Must be one of: ec2, lightsail, or ecs.
+role: <string>
+
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+
+# AWS access key ID. If blank, the environment variable AWS_ACCESS_KEY_ID is used.
+[ access_key: <string> ]
+
+# AWS secret access key. If blank, the environment variable AWS_SECRET_ACCESS_KEY is used.
+[ secret_key: <secret> ]
+
+# Named AWS profile used to authenticate.
+[ profile: <string> ]
+
+# AWS Role ARN, an alternative to using AWS API keys.
+[ role_arn: <string> ]
+
+# Refresh interval to re-read the targets list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+
+# Filters can be used optionally to filter the instance list by other criteria (ec2 role only).
+# Available filter criteria can be found here:
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+# Filter API documentation: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_Filter.html
+filters:
+  [ - name: <string>
+      values: <string>, [...] ]
+
+# List of ECS cluster ARNs to discover (ecs role only). If empty, all clusters in the region are discovered.
+# This can significantly improve performance when you only need to monitor specific clusters.
+[ clusters: [<string>, ...] ]
+
+# HTTP client settings, including authentication methods (such as basic auth and
+# authorization), proxy configurations, TLS options, custom HTTP headers, etc.
+[ <http_config> ]
 ```
 
 ### `<azure_sd_config>`
@@ -2401,12 +2622,35 @@ project: <string>
 [ <http_config> ]
 ```
 
-A Service Account Token can be set through `http_config`.
+A [Service Account Key](https://docs.stackit.cloud/platform/access-and-identity/service-accounts/how-tos/manage-service-account-keys/) can be set through `http_config`. This can be done mapping values from STACKIT Service Account json into oauth2 configuration.
+
+From a given Service Account json
+```json
+{
+  //....
+  "credentials": {
+    "kid": "6a7c3b36-xxxxxxxx",
+    "iss": "xxxx@sa.stackit.cloud",
+    "sub": "af2c2336-xxxxxxxx",
+    "aud": "https://stackit-service-account-prod.apps.01.cf.eu01.stackit.cloud",
+    "privateKey": "-----BEGIN PRIVATE KEY-----xxxx"
+  }
+}
+```
+
+properties can be mapped as:
 
 ```yaml
 stackit_sd_config:
-- authorization:
-    credentials: <token>
+- oauth2:
+    client_id: <credentials.sub>
+    client_certificate_key: <credentials.privateKey>
+    client_certificate_key_id: <credentials.kid>
+    iss: <credentials.iss>
+    audience: <credentials.aud>
+    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    token_url: "https://service-account.api.stackit.cloud/token"
+    signature_algorithm: RS512
 ```
 
 ### `<triton_sd_config>`
@@ -2881,9 +3125,18 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+  # Defines the FIPS mode for the AWS STS endpoint.
+  # Requires Prometheus >= 2.54.0
+  # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
+  [ use_fips_sts_endpoint: <boolean> | default = false ]
+
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]
+
+# List of AWS service discovery configurations.
+aws_sd_configs:
+  [ - <aws_sd_config> ... ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -3083,6 +3336,11 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+  # Defines the FIPS mode for the AWS STS endpoint.
+  # Requires Prometheus >= 2.54.0
+  # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
+  [ use_fips_sts_endpoint: <boolean> | default = false ]
+
 # Optional AzureAD configuration.
 # Cannot be used at the same time as basic_auth, authorization, oauth2, sigv4 or google_iam.
 azuread:
@@ -3109,6 +3367,14 @@ azuread:
   # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
   [ sdk:
       [ tenant_id: <string> ] ]
+
+  # Optional custom OAuth 2.0 scope to request when acquiring tokens.
+  # If not specified, defaults to the appropriate monitoring scope for the cloud:
+  # - AzurePublic: https://monitor.azure.com//.default
+  # - AzureGovernment: https://monitor.azure.us//.default  
+  # - AzureChina: https://monitor.azure.cn//.default
+  # Use this to authenticate against custom Azure applications or non-standard endpoints.
+  [ scope: <string> ]
 
 # WARNING: Remote write is NOT SUPPORTED by Google Cloud. This configuration is reserved for future use.
 # Optional Google Cloud Monitoring configuration.

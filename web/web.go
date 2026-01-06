@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -57,6 +57,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/netconnlimit"
 	"github.com/prometheus/prometheus/util/notifications"
@@ -293,15 +294,16 @@ type Options struct {
 	ConvertOTLPDelta           bool
 	NativeOTLPDeltaIngestion   bool
 	IsAgent                    bool
-	CTZeroIngestionEnabled     bool
+	STZeroIngestionEnabled     bool
 	EnableTypeAndUnitLabels    bool
 	AppendMetadata             bool
 	AppName                    string
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
 
-	Gatherer   prometheus.Gatherer
-	Registerer prometheus.Registerer
+	Gatherer        prometheus.Gatherer
+	Registerer      prometheus.Registerer
+	FeatureRegistry features.Collector
 }
 
 // New initializes a new web Handler.
@@ -394,12 +396,31 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableOTLPWriteReceiver,
 		o.ConvertOTLPDelta,
 		o.NativeOTLPDeltaIngestion,
-		o.CTZeroIngestionEnabled,
+		o.STZeroIngestionEnabled,
 		o.LookbackDelta,
 		o.EnableTypeAndUnitLabels,
 		o.AppendMetadata,
 		nil,
+		o.FeatureRegistry,
 	)
+
+	if r := o.FeatureRegistry; r != nil {
+		// Set dynamic API features (based on configuration).
+		r.Set(features.API, "lifecycle", o.EnableLifecycle)
+		r.Set(features.API, "admin", o.EnableAdminAPI)
+		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
+		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
+		r.Set(features.OTLPReceiver, "delta_conversion", o.ConvertOTLPDelta)
+		r.Set(features.OTLPReceiver, "native_delta_ingestion", o.NativeOTLPDeltaIngestion)
+		r.Enable(features.API, "label_values_match") // match[] parameter for label values endpoint.
+		r.Enable(features.API, "query_warnings")     // warnings in query responses.
+		r.Enable(features.API, "query_stats")        // stats parameter for query endpoints.
+		r.Enable(features.API, "time_range_series")  // start/end parameters for /series endpoint.
+		r.Enable(features.API, "time_range_labels")  // start/end parameters for /labels endpoints.
+		r.Enable(features.API, "exclude_alerts")     // exclude_alerts parameter for /rules endpoint.
+		r.Set(features.UI, "ui_v3", !o.UseOldUI)
+		r.Set(features.UI, "ui_v2", o.UseOldUI)
+	}
 
 	if o.RoutePrefix != "/" {
 		// If the prefix is missing for the root path, prepend it.
@@ -433,13 +454,6 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	if h.options.UseOldUI {
 		reactAssetsRoot = "/static/react-app"
 	}
-
-	// The console library examples at 'console_libraries/prom.lib' still depend on old asset files being served under `classic`.
-	router.Get("/classic/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
-		fs := server.StaticFileServer(ui.Assets)
-		fs.ServeHTTP(w, r)
-	})
 
 	router.Get("/version", h.version)
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)

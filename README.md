@@ -69,7 +69,7 @@ To build Prometheus from source code, You need:
 
 * Go: Version specified in [go.mod](./go.mod) or greater.
 * NodeJS: Version specified in [.nvmrc](./web/ui/.nvmrc) or greater.
-* npm: Version 8 or greater (check with `npm --version` and [here](https://www.npmjs.com/)).
+* npm: Version 10 or greater (check with `npm --version` and [here](https://www.npmjs.com/)).
 
 Start by cloning the repository:
 
@@ -82,15 +82,15 @@ You can use the `go` tool to build and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:
 
 ```bash
-GO111MODULE=on go install github.com/prometheus/prometheus/cmd/...
+go install github.com/prometheus/prometheus/cmd/...
 prometheus --config.file=your_config.yml
 ```
 
 *However*, when using `go install` to build Prometheus, Prometheus will expect to be able to
-read its web assets from local filesystem directories under `web/ui/static` and
-`web/ui/templates`. In order for these assets to be found, you will have to run Prometheus
-from the root of the cloned repository. Note also that these directories do not include the
-React UI unless it has been built explicitly using `make assets` or `make build`.
+read its web assets from local filesystem directories under `web/ui/static`. In order for
+these assets to be found, you will have to run Prometheus from the root of the cloned
+repository. Note also that this directory does not include the React UI unless it has been
+built explicitly using `make assets` or `make build`.
 
 An example of the above configuration file can be found [here.](https://github.com/prometheus/prometheus/blob/main/documentation/examples/prometheus.yml)
 

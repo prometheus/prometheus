@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -111,7 +111,8 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		if _, ok := seen[us]; ok {
 			continue
 		}
-		s.metrics.latency.DeleteLabelValues(us)
+		s.metrics.latencySummary.DeleteLabelValues(us)
+		s.metrics.latencyHistogram.DeleteLabelValues(us)
 		s.metrics.sent.DeleteLabelValues(us)
 		s.metrics.errors.DeleteLabelValues(us)
 		seen[us] = struct{}{}

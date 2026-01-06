@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -195,7 +195,7 @@ type parsedEntry struct {
 	lset labels.Labels
 	t    *int64
 	es   []exemplar.Exemplar
-	ct   int64
+	st   int64
 
 	// In EntryType.
 	typ model.MetricType
@@ -255,7 +255,7 @@ func testParse(t *testing.T, p Parser) (ret []parsedEntry) {
 			}
 			got.m = string(m)
 			p.Labels(&got.lset)
-			got.ct = p.CreatedTimestamp()
+			got.st = p.StartTimestamp()
 
 			for e := (exemplar.Exemplar{}); p.Exemplar(&e); {
 				got.es = append(got.es, e)

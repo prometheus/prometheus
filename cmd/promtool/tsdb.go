@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -706,7 +707,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 type SeriesSetFormatter func(series storage.SeriesSet) error
 
-func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
+func dumpTSDBData(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
 	db, err := tsdb.OpenDBReadOnly(dbDir, sandboxDirRoot, nil)
 	if err != nil {
 		return err
@@ -794,12 +795,36 @@ func CondensedString(ls labels.Labels) string {
 	return b.String()
 }
 
+func formatSeriesSetLabelsToJSON(ss storage.SeriesSet) error {
+	seriesCache := make(map[string]struct{})
+	for ss.Next() {
+		series := ss.At()
+		lbs := series.Labels()
+
+		b, err := json.Marshal(lbs)
+		if err != nil {
+			return err
+		}
+
+		if len(b) == 0 {
+			continue
+		}
+
+		s := string(b)
+		if _, ok := seriesCache[s]; !ok {
+			fmt.Println(s)
+			seriesCache[s] = struct{}{}
+		}
+	}
+	return nil
+}
+
 func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
 	for ss.Next() {
 		series := ss.At()
 		lbs := series.Labels()
 		metricName := lbs.Get(labels.MetricName)
-		lbs = lbs.DropMetricName()
+		lbs = lbs.DropReserved(func(n string) bool { return n == labels.MetricName })
 		it := series.Iterator(nil)
 		for it.Next() == chunkenc.ValFloat {
 			ts, val := it.At()
@@ -889,5 +914,5 @@ func generateBucket(minVal, maxVal int) (start, end, step int) {
 	start = minVal - minVal%step
 	end = maxVal - maxVal%step + step
 
-	return
+	return start, end, step
 }

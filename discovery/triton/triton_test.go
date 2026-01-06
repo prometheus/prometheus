@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -83,14 +83,17 @@ var (
 func newTritonDiscovery(c SDConfig) (*Discovery, discovery.DiscovererMetrics, error) {
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	// TODO(ptodev): Add the ability to unregister refresh metrics.
 	metrics := c.NewDiscovererMetrics(reg, refreshMetrics)
 	err := metrics.Register()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	d, err := New(nil, &c, metrics)
+	d, err := New(&c, discovery.DiscovererOptions{
+		Logger:  nil,
+		Metrics: metrics,
+		SetName: "triton",
+	})
 	if err != nil {
 		return nil, nil, err
 	}

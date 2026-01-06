@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -104,49 +104,6 @@ func BenchmarkCreateSeries(b *testing.B) {
 
 	for _, s := range series {
 		h.getOrCreate(s.Labels().Hash(), s.Labels(), false)
-	}
-}
-
-func BenchmarkHeadAppender_Append_Commit_ExistingSeries(b *testing.B) {
-	seriesCounts := []int{100, 1000, 10000}
-	series := genSeries(10000, 10, 0, 0)
-
-	for _, seriesCount := range seriesCounts {
-		b.Run(fmt.Sprintf("%d series", seriesCount), func(b *testing.B) {
-			for _, samplesPerAppend := range []int64{1, 2, 5, 100} {
-				b.Run(fmt.Sprintf("%d samples per append", samplesPerAppend), func(b *testing.B) {
-					h, _ := newTestHead(b, 10000, compression.None, false)
-					b.Cleanup(func() { require.NoError(b, h.Close()) })
-
-					ts := int64(1000)
-					appendSamples := func() error {
-						var err error
-						app := h.Appender(context.Background())
-						for _, s := range series[:seriesCount] {
-							var ref storage.SeriesRef
-							for sampleIndex := range samplesPerAppend {
-								ref, err = app.Append(ref, s.Labels(), ts+sampleIndex, float64(ts+sampleIndex))
-								if err != nil {
-									return err
-								}
-							}
-						}
-						ts += 1000 // should increment more than highest samplesPerAppend
-						return app.Commit()
-					}
-
-					// Init series, that's not what we're benchmarking here.
-					require.NoError(b, appendSamples())
-
-					b.ReportAllocs()
-					b.ResetTimer()
-
-					for b.Loop() {
-						require.NoError(b, appendSamples())
-					}
-				})
-			}
-		})
 	}
 }
 
@@ -1152,7 +1109,7 @@ func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 		{
 			name: "keep series still in the head",
 			prepare: func(t *testing.T, h *Head) {
-				_, _, err := h.getOrCreateWithID(chunks.HeadSeriesRef(existingRef), existingLbls.Hash(), existingLbls, false)
+				_, _, err := h.getOrCreateWithOptionalID(chunks.HeadSeriesRef(existingRef), existingLbls.Hash(), existingLbls, false)
 				require.NoError(t, err)
 			},
 			expected: true,
@@ -5941,7 +5898,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 	}
 }
 
-func testOOOAppendWithNoSeries(t *testing.T, appendFunc func(appender storage.Appender, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
+func testOOOAppendWithNoSeries(t *testing.T, appendFunc func(appender storage.LimitedAppenderV1, lbls labels.Labels, ts, value int64) (storage.SeriesRef, sample, error)) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
 	require.NoError(t, err)
@@ -6284,6 +6241,7 @@ func TestSnapshotAheadOfWALError(t *testing.T) {
 	require.NoError(t, head.Close())
 }
 
+// TODO(bwplotka): Bad benchmark (no b.Loop/b.N), fix or remove.
 func BenchmarkCuttingHeadHistogramChunks(b *testing.B) {
 	const (
 		numSamples = 50000
@@ -6525,19 +6483,19 @@ func TestWALSampleAndExemplarOrder(t *testing.T) {
 			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
 				return app.Append(0, lbls, ts, 1.0)
 			},
-			expectedType: reflect.TypeOf([]record.RefSample{}),
+			expectedType: reflect.TypeFor[[]record.RefSample](),
 		},
 		"histogram sample": {
 			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
 				return app.AppendHistogram(0, lbls, ts, tsdbutil.GenerateTestHistogram(1), nil)
 			},
-			expectedType: reflect.TypeOf([]record.RefHistogramSample{}),
+			expectedType: reflect.TypeFor[[]record.RefHistogramSample](),
 		},
 		"float histogram sample": {
 			appendF: func(app storage.Appender, ts int64) (storage.SeriesRef, error) {
 				return app.AppendHistogram(0, lbls, ts, nil, tsdbutil.GenerateTestFloatHistogram(1))
 			},
-			expectedType: reflect.TypeOf([]record.RefFloatHistogramSample{}),
+			expectedType: reflect.TypeFor[[]record.RefFloatHistogramSample](),
 		},
 	}
 
@@ -6579,6 +6537,8 @@ func TestWALSampleAndExemplarOrder(t *testing.T) {
 // would trigger the
 // `signal SIGSEGV: segmentation violation code=0x1 addr=0x20 pc=0xbb03d1`
 // panic, that we have seen in the wild once.
+//
+// TODO(bwplotka): This no longer can happen in AppenderV2, remove once AppenderV1 is removed, see #17632.
 func TestHeadCompactionWhileAppendAndCommitExemplar(t *testing.T) {
 	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 	app := h.Appender(context.Background())
@@ -6627,18 +6587,12 @@ func stripeSeriesWithCollidingSeries(t *testing.T) (*stripeSeries, *memSeries, *
 	hash := lbls1.Hash()
 	s := newStripeSeries(1, noopSeriesLifecycleCallback{})
 
-	got, created, err := s.getOrSet(hash, lbls1, func() *memSeries {
-		return &ms1
-	})
-	require.NoError(t, err)
+	got, created := s.setUnlessAlreadySet(hash, lbls1, &ms1)
 	require.True(t, created)
 	require.Same(t, &ms1, got)
 
 	// Add a conflicting series
-	got, created, err = s.getOrSet(hash, lbls2, func() *memSeries {
-		return &ms2
-	})
-	require.NoError(t, err)
+	got, created = s.setUnlessAlreadySet(hash, lbls2, &ms2)
 	require.True(t, created)
 	require.Same(t, &ms2, got)
 
@@ -6721,7 +6675,7 @@ func TestHeadAppender_AppendFloatWithSameTimestampAsPreviousHistogram(t *testing
 	require.ErrorIs(t, err, storage.NewDuplicateHistogramToFloatErr(2_000, 10.0))
 }
 
-func TestHeadAppender_AppendCT(t *testing.T) {
+func TestHeadAppender_AppendST(t *testing.T) {
 	testHistogram := tsdbutil.GenerateTestHistogram(1)
 	testHistogram.CounterResetHint = histogram.NotCounterReset
 	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
@@ -6749,7 +6703,7 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 		fSample float64
 		h       *histogram.Histogram
 		fh      *histogram.FloatHistogram
-		ct      int64
+		st      int64
 	}
 	for _, tc := range []struct {
 		name              string
@@ -6759,8 +6713,8 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 		{
 			name: "In order ct+normal sample/floatSample",
 			appendableSamples: []appendableSamples{
-				{ts: 100, fSample: 10, ct: 1},
-				{ts: 101, fSample: 10, ct: 1},
+				{ts: 100, fSample: 10, st: 1},
+				{ts: 101, fSample: 10, st: 1},
 			},
 			expectedSamples: []chunks.Sample{
 				sample{t: 1, f: 0},
@@ -6771,8 +6725,8 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 		{
 			name: "In order ct+normal sample/histogram",
 			appendableSamples: []appendableSamples{
-				{ts: 100, h: testHistogram, ct: 1},
-				{ts: 101, h: testHistogram, ct: 1},
+				{ts: 100, h: testHistogram, st: 1},
+				{ts: 101, h: testHistogram, st: 1},
 			},
 			expectedSamples: func() []chunks.Sample {
 				return []chunks.Sample{
@@ -6785,8 +6739,8 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 		{
 			name: "In order ct+normal sample/floathistogram",
 			appendableSamples: []appendableSamples{
-				{ts: 100, fh: testFloatHistogram, ct: 1},
-				{ts: 101, fh: testFloatHistogram, ct: 1},
+				{ts: 100, fh: testFloatHistogram, st: 1},
+				{ts: 101, fh: testFloatHistogram, st: 1},
 			},
 			expectedSamples: func() []chunks.Sample {
 				return []chunks.Sample{
@@ -6797,10 +6751,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			}(),
 		},
 		{
-			name: "Consecutive appends with same ct ignore ct/floatSample",
+			name: "Consecutive appends with same st ignore st/floatSample",
 			appendableSamples: []appendableSamples{
-				{ts: 100, fSample: 10, ct: 1},
-				{ts: 101, fSample: 10, ct: 1},
+				{ts: 100, fSample: 10, st: 1},
+				{ts: 101, fSample: 10, st: 1},
 			},
 			expectedSamples: []chunks.Sample{
 				sample{t: 1, f: 0},
@@ -6809,10 +6763,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			},
 		},
 		{
-			name: "Consecutive appends with same ct ignore ct/histogram",
+			name: "Consecutive appends with same st ignore st/histogram",
 			appendableSamples: []appendableSamples{
-				{ts: 100, h: testHistogram, ct: 1},
-				{ts: 101, h: testHistogram, ct: 1},
+				{ts: 100, h: testHistogram, st: 1},
+				{ts: 101, h: testHistogram, st: 1},
 			},
 			expectedSamples: func() []chunks.Sample {
 				return []chunks.Sample{
@@ -6823,10 +6777,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			}(),
 		},
 		{
-			name: "Consecutive appends with same ct ignore ct/floathistogram",
+			name: "Consecutive appends with same st ignore st/floathistogram",
 			appendableSamples: []appendableSamples{
-				{ts: 100, fh: testFloatHistogram, ct: 1},
-				{ts: 101, fh: testFloatHistogram, ct: 1},
+				{ts: 100, fh: testFloatHistogram, st: 1},
+				{ts: 101, fh: testFloatHistogram, st: 1},
 			},
 			expectedSamples: func() []chunks.Sample {
 				return []chunks.Sample{
@@ -6837,10 +6791,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			}(),
 		},
 		{
-			name: "Consecutive appends with newer ct do not ignore ct/floatSample",
+			name: "Consecutive appends with newer st do not ignore st/floatSample",
 			appendableSamples: []appendableSamples{
-				{ts: 100, fSample: 10, ct: 1},
-				{ts: 102, fSample: 10, ct: 101},
+				{ts: 100, fSample: 10, st: 1},
+				{ts: 102, fSample: 10, st: 101},
 			},
 			expectedSamples: []chunks.Sample{
 				sample{t: 1, f: 0},
@@ -6850,10 +6804,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			},
 		},
 		{
-			name: "Consecutive appends with newer ct do not ignore ct/histogram",
+			name: "Consecutive appends with newer st do not ignore st/histogram",
 			appendableSamples: []appendableSamples{
-				{ts: 100, h: testHistogram, ct: 1},
-				{ts: 102, h: testHistogram, ct: 101},
+				{ts: 100, h: testHistogram, st: 1},
+				{ts: 102, h: testHistogram, st: 101},
 			},
 			expectedSamples: []chunks.Sample{
 				sample{t: 1, h: testZeroHistogram},
@@ -6863,10 +6817,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			},
 		},
 		{
-			name: "Consecutive appends with newer ct do not ignore ct/floathistogram",
+			name: "Consecutive appends with newer st do not ignore st/floathistogram",
 			appendableSamples: []appendableSamples{
-				{ts: 100, fh: testFloatHistogram, ct: 1},
-				{ts: 102, fh: testFloatHistogram, ct: 101},
+				{ts: 100, fh: testFloatHistogram, st: 1},
+				{ts: 102, fh: testFloatHistogram, st: 101},
 			},
 			expectedSamples: []chunks.Sample{
 				sample{t: 1, fh: testZeroFloatHistogram},
@@ -6876,10 +6830,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			},
 		},
 		{
-			name: "CT equals to previous sample timestamp is ignored/floatSample",
+			name: "ST equals to previous sample timestamp is ignored/floatSample",
 			appendableSamples: []appendableSamples{
-				{ts: 100, fSample: 10, ct: 1},
-				{ts: 101, fSample: 10, ct: 100},
+				{ts: 100, fSample: 10, st: 1},
+				{ts: 101, fSample: 10, st: 100},
 			},
 			expectedSamples: []chunks.Sample{
 				sample{t: 1, f: 0},
@@ -6888,10 +6842,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			},
 		},
 		{
-			name: "CT equals to previous sample timestamp is ignored/histogram",
+			name: "ST equals to previous sample timestamp is ignored/histogram",
 			appendableSamples: []appendableSamples{
-				{ts: 100, h: testHistogram, ct: 1},
-				{ts: 101, h: testHistogram, ct: 100},
+				{ts: 100, h: testHistogram, st: 1},
+				{ts: 101, h: testHistogram, st: 100},
 			},
 			expectedSamples: func() []chunks.Sample {
 				return []chunks.Sample{
@@ -6902,10 +6856,10 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			}(),
 		},
 		{
-			name: "CT equals to previous sample timestamp is ignored/floathistogram",
+			name: "ST equals to previous sample timestamp is ignored/floathistogram",
 			appendableSamples: []appendableSamples{
-				{ts: 100, fh: testFloatHistogram, ct: 1},
-				{ts: 101, fh: testFloatHistogram, ct: 100},
+				{ts: 100, fh: testFloatHistogram, st: 1},
+				{ts: 101, fh: testFloatHistogram, st: 100},
 			},
 			expectedSamples: func() []chunks.Sample {
 				return []chunks.Sample{
@@ -6926,7 +6880,7 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 			for _, sample := range tc.appendableSamples {
 				// Append float if it's a float test case
 				if sample.fSample != 0 {
-					_, err := a.AppendCTZeroSample(0, lbls, sample.ts, sample.ct)
+					_, err := a.AppendSTZeroSample(0, lbls, sample.ts, sample.st)
 					require.NoError(t, err)
 					_, err = a.Append(0, lbls, sample.ts, sample.fSample)
 					require.NoError(t, err)
@@ -6934,7 +6888,7 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 
 				// Append histograms if it's a histogram test case
 				if sample.h != nil || sample.fh != nil {
-					ref, err := a.AppendHistogramCTZeroSample(0, lbls, sample.ts, sample.ct, sample.h, sample.fh)
+					ref, err := a.AppendHistogramSTZeroSample(0, lbls, sample.ts, sample.st, sample.h, sample.fh)
 					require.NoError(t, err)
 					_, err = a.AppendHistogram(ref, lbls, sample.ts, sample.h, sample.fh)
 					require.NoError(t, err)
@@ -6950,12 +6904,12 @@ func TestHeadAppender_AppendCT(t *testing.T) {
 	}
 }
 
-func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
+func TestHeadAppender_AppendHistogramSTZeroSample(t *testing.T) {
 	type appendableSamples struct {
 		ts int64
 		h  *histogram.Histogram
 		fh *histogram.FloatHistogram
-		ct int64 // 0 if no created timestamp.
+		st int64 // 0 if no created timestamp.
 	}
 	for _, tc := range []struct {
 		name              string
@@ -6963,32 +6917,32 @@ func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
 		expectedError     error
 	}{
 		{
-			name: "integer histogram CT lower than minValidTime initiates ErrOutOfBounds",
+			name: "integer histogram ST lower than minValidTime initiates ErrOutOfBounds",
 			appendableSamples: []appendableSamples{
-				{ts: 100, h: tsdbutil.GenerateTestHistogram(1), ct: -1},
+				{ts: 100, h: tsdbutil.GenerateTestHistogram(1), st: -1},
 			},
 			expectedError: storage.ErrOutOfBounds,
 		},
 		{
-			name: "float histograms CT lower than minValidTime initiates ErrOutOfBounds",
+			name: "float histograms ST lower than minValidTime initiates ErrOutOfBounds",
 			appendableSamples: []appendableSamples{
-				{ts: 100, fh: tsdbutil.GenerateTestFloatHistogram(1), ct: -1},
+				{ts: 100, fh: tsdbutil.GenerateTestFloatHistogram(1), st: -1},
 			},
 			expectedError: storage.ErrOutOfBounds,
 		},
 		{
-			name: "integer histogram CT duplicates an existing sample",
+			name: "integer histogram ST duplicates an existing sample",
 			appendableSamples: []appendableSamples{
 				{ts: 100, h: tsdbutil.GenerateTestHistogram(1)},
-				{ts: 200, h: tsdbutil.GenerateTestHistogram(1), ct: 100},
+				{ts: 200, h: tsdbutil.GenerateTestHistogram(1), st: 100},
 			},
 			expectedError: storage.ErrDuplicateSampleForTimestamp,
 		},
 		{
-			name: "float histogram CT duplicates an existing sample",
+			name: "float histogram ST duplicates an existing sample",
 			appendableSamples: []appendableSamples{
 				{ts: 100, fh: tsdbutil.GenerateTestFloatHistogram(1)},
-				{ts: 200, fh: tsdbutil.GenerateTestFloatHistogram(1), ct: 100},
+				{ts: 200, fh: tsdbutil.GenerateTestFloatHistogram(1), st: 100},
 			},
 			expectedError: storage.ErrDuplicateSampleForTimestamp,
 		},
@@ -7006,8 +6960,8 @@ func TestHeadAppender_AppendHistogramCTZeroSample(t *testing.T) {
 			for _, sample := range tc.appendableSamples {
 				a := h.Appender(context.Background())
 				var err error
-				if sample.ct != 0 {
-					ref, err = a.AppendHistogramCTZeroSample(ref, lbls, sample.ts, sample.ct, sample.h, sample.fh)
+				if sample.st != 0 {
+					ref, err = a.AppendHistogramSTZeroSample(ref, lbls, sample.ts, sample.st, sample.h, sample.fh)
 					require.ErrorIs(t, err, tc.expectedError)
 				}
 

@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -140,14 +140,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	c.seenTargetInfo = make(map[targetInfoKey]struct{})
 	resourceMetricsSlice := md.ResourceMetrics()
 
-	numMetrics := 0
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
-		}
-	}
-
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
@@ -165,7 +157,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			for k := 0; k < metricSlice.Len(); k++ {
 				if err := c.everyN.checkContext(ctx); err != nil {
 					errs = multierr.Append(errs, err)
-					return
+					return annots, errs
 				}
 
 				metric := metricSlice.At(k)
@@ -213,7 +205,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+							return annots, errs
 						}
 					}
 				case pmetric.MetricTypeSum:
@@ -225,7 +217,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+							return annots, errs
 						}
 					}
 				case pmetric.MetricTypeHistogram:
@@ -242,14 +234,14 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						if err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-								return
+								return annots, errs
 							}
 						}
 					} else {
 						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 							errs = multierr.Append(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-								return
+								return annots, errs
 							}
 						}
 					}
@@ -272,7 +264,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					if err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+							return annots, errs
 						}
 					}
 				case pmetric.MetricTypeSummary:
@@ -284,7 +276,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+							return annots, errs
 						}
 					}
 				default:
@@ -301,7 +293,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		}
 	}
 
-	return
+	return annots, errs
 }
 
 func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {

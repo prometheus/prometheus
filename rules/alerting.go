@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -45,6 +45,10 @@ const (
 	// AlertStateLabel is the label name indicating the state of an alert.
 	alertStateLabel = "alertstate"
 )
+
+// ErrDuplicateAlertLabelSet is returned when an alerting rule evaluation produces
+// metrics with identical labelsets after applying alert labels.
+var ErrDuplicateAlertLabelSet = errors.New("vector contains metrics with the same labelset after applying alert labels")
 
 // AlertState denotes the state of an active alert.
 type AlertState int
@@ -441,7 +445,7 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 		resultFPs[h] = struct{}{}
 
 		if _, ok := alerts[h]; ok {
-			return nil, errors.New("vector contains metrics with the same labelset after applying alert labels")
+			return nil, ErrDuplicateAlertLabelSet
 		}
 
 		alerts[h] = &Alert{

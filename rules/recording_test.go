@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -176,7 +176,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
 	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
-	require.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
+	require.ErrorIs(t, err, ErrDuplicateRecordingLabelSet)
 }
 
 func TestRecordingRuleLimit(t *testing.T) {

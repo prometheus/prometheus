@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -67,13 +67,13 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			return annots, err
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		ct := convertTimeStamp(pt.StartTimestamp())
+		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
 		// OTel exponential histograms are always Int Histograms.
-		if err = c.appender.AppendHistogram(lbls, meta, ct, ts, hp, exemplars); err != nil {
+		if err = c.appender.AppendHistogram(lbls, meta, st, ts, hp, exemplars); err != nil {
 			return annots, err
 		}
 	}
@@ -106,7 +106,7 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, tempo
 	// Sending a sample that triggers counter reset but with ResetHint==NO
 	// would lead to Prometheus panic as it does not double check the hint.
 	// Thus we're explicitly saying UNKNOWN here, which is always safe.
-	// TODO: using created time stamp should be accurate, but we
+	// TODO: using start timestamp should be accurate, but we
 	// need to know here if it was used for the detection.
 	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
 	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
@@ -286,12 +286,12 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			return annots, err
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		ct := convertTimeStamp(pt.StartTimestamp())
+		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
-		if err = c.appender.AppendHistogram(lbls, meta, ct, ts, hp, exemplars); err != nil {
+		if err = c.appender.AppendHistogram(lbls, meta, st, ts, hp, exemplars); err != nil {
 			return annots, err
 		}
 	}
@@ -312,7 +312,7 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, tem
 	// Sending a sample that triggers counter reset but with ResetHint==NO
 	// would lead to Prometheus panic as it does not double check the hint.
 	// Thus we're explicitly saying UNKNOWN here, which is always safe.
-	// TODO: using created time stamp should be accurate, but we
+	// TODO: using start timestamp should be accurate, but we
 	// need to know here if it was used for the detection.
 	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
 	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232

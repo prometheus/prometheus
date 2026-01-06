@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -231,7 +231,7 @@ func raise(line int, format string, v ...any) error {
 	}
 }
 
-func parseLoad(lines []string, i int) (int, *loadCmd, error) {
+func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error) {
 	if !patLoad.MatchString(lines[i]) {
 		return i, nil, raise(i, "invalid load command. (load[_with_nhcb] <step:duration>)")
 	}
@@ -245,6 +245,7 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 		return i, nil, raise(i, "invalid step definition %q: %s", step, err)
 	}
 	cmd := newLoadCmd(time.Duration(gap), withNHCB)
+	cmd.startTime = startTime
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
@@ -579,7 +580,7 @@ func (t *test) parse(input string) error {
 		case c == "clear":
 			cmd = &clearCmd{}
 		case strings.HasPrefix(c, "load"):
-			i, cmd, err = parseLoad(lines, i)
+			i, cmd, err = parseLoad(lines, i, testStartTime)
 		case strings.HasPrefix(c, "eval"):
 			i, cmd, err = t.parseEval(lines, i)
 		default:
@@ -611,6 +612,7 @@ type loadCmd struct {
 	defs      map[uint64][]promql.Sample
 	exemplars map[uint64][]exemplar.Exemplar
 	withNHCB  bool
+	startTime time.Time
 }
 
 func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
@@ -620,6 +622,7 @@ func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
 		defs:      map[uint64][]promql.Sample{},
 		exemplars: map[uint64][]exemplar.Exemplar{},
 		withNHCB:  withNHCB,
+		startTime: testStartTime,
 	}
 }
 
@@ -632,7 +635,7 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	h := m.Hash()
 
 	samples := make([]promql.Sample, 0, len(vals))
-	ts := testStartTime
+	ts := cmd.startTime
 	for _, v := range vals {
 		if !v.Omitted {
 			samples = append(samples, promql.Sample{
@@ -1430,6 +1433,11 @@ func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine) error {
 func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	q, err := engine.NewRangeQuery(t.context, t.storage, nil, cmd.expr, cmd.start, cmd.end, cmd.step)
 	if err != nil {
+		if cmd.isFail() {
+			if err := cmd.checkExpectedFailure(err); err == nil {
+				return nil
+			}
+		}
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	defer q.Close()
@@ -1473,6 +1481,11 @@ func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promql.QueryEngine) error {
 	q, err := engine.NewInstantQuery(t.context, t.storage, nil, iq.expr, iq.evalTime)
 	if err != nil {
+		if cmd.isFail() {
+			if err := cmd.checkExpectedFailure(err); err == nil {
+				return nil
+			}
+		}
 		return fmt.Errorf("error creating instant query for %q (line %d): %w", cmd.expr, cmd.line, err)
 	}
 	defer q.Close()
@@ -1506,6 +1519,10 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 
 	// Check query returns same result in range mode,
 	// by checking against the middle step.
+	// Skip this check for queries containing range() since it would resolve differently.
+	if strings.Contains(iq.expr, "range()") {
+		return nil
+	}
 	q, err = engine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
 	if err != nil {
 		return fmt.Errorf("error creating range query for %q (line %d): %w", cmd.expr, cmd.line, err)
@@ -1617,6 +1634,8 @@ type LazyLoaderOpts struct {
 	// Currently defaults to false, matches the "promql-delayed-name-removal"
 	// feature flag.
 	EnableDelayedNameRemoval bool
+	// StartTime is the start time for the test. If zero, defaults to Unix epoch.
+	StartTime time.Time
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
@@ -1642,7 +1661,12 @@ func (ll *LazyLoader) parse(input string) error {
 			continue
 		}
 		if strings.HasPrefix(strings.ToLower(patSpace.Split(l, 2)[0]), "load") {
-			_, cmd, err := parseLoad(lines, i)
+			// Determine the start time to use for loading samples.
+			startTime := testStartTime
+			if !ll.opts.StartTime.IsZero() {
+				startTime = ll.opts.StartTime
+			}
+			_, cmd, err := parseLoad(lines, i, startTime)
 			if err != nil {
 				return err
 			}

@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -4463,6 +4463,18 @@ func TestTSDBStatus(t *testing.T) {
 			db:       tsdb,
 			endpoint: tsdbStatusAPI,
 			values:   map[string][]string{"limit": {"0"}},
+			errType:  errorBadData,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"limit": {"10000"}},
+			errType:  errorNone,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"limit": {"10001"}},
 			errType:  errorBadData,
 		},
 	} {

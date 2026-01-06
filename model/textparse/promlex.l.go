@@ -92,10 +92,10 @@ yystate2:
 
 yystate3:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyrule3
-	case c == '\t' || c == ' ':
+	case '\t', ' ':
 		goto yystate3
 	}
 
@@ -105,19 +105,19 @@ yystate4:
 
 yystate5:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyrule5
-	case c == '\t' || c == ' ':
+	case '\t', ' ':
 		goto yystate6
 	}
 
 yystate6:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyrule4
-	case c == '\t' || c == ' ':
+	case '\t', ' ':
 		goto yystate6
 	}
 
@@ -137,104 +137,104 @@ yystate8:
 yystate9:
 	c = l.next()
 yystart9:
-	switch {
+	switch c {
 	default:
 		goto yyabort
-	case c == 'H':
+	case 'H':
 		goto yystate10
-	case c == 'T':
+	case 'T':
 		goto yystate15
-	case c == '\t' || c == ' ':
+	case '\t', ' ':
 		goto yystate3
 	}
 
 yystate10:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyabort
-	case c == 'E':
+	case 'E':
 		goto yystate11
 	}
 
 yystate11:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyabort
-	case c == 'L':
+	case 'L':
 		goto yystate12
 	}
 
 yystate12:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyabort
-	case c == 'P':
+	case 'P':
 		goto yystate13
 	}
 
 yystate13:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyabort
-	case c == '\t' || c == ' ':
+	case '\t', ' ':
 		goto yystate14
 	}
 
 yystate14:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyrule6
-	case c == '\t' || c == ' ':
+	case '\t', ' ':
 		goto yystate14
 	}
 
 yystate15:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyabort
-	case c == 'Y':
+	case 'Y':
 		goto yystate16
 	}
 
 yystate16:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyabort
-	case c == 'P':
+	case 'P':
 		goto yystate17
 	}
 
 yystate17:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyabort
-	case c == 'E':
+	case 'E':
 		goto yystate18
 	}
 
 yystate18:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyabort
-	case c == '\t' || c == ' ':
+	case '\t', ' ':
 		goto yystate19
 	}
 
 yystate19:
 	c = l.next()
-	switch {
+	switch c {
 	default:
 		goto yyrule7
-	case c == '\t' || c == ' ':
+	case '\t', ' ':
 		goto yystate19
 	}
 
@@ -389,12 +389,12 @@ yystate35:
 yystate36:
 	c = l.next()
 yystart36:
-	switch {
+	switch c {
 	default:
 		goto yyabort
-	case c == '"':
+	case '"':
 		goto yystate37
-	case c == '\t' || c == ' ':
+	case '\t', ' ':
 		goto yystate3
 	}
 
@@ -486,7 +486,7 @@ yyrule2: // \n
 	{
 		l.state = sInit
 		return tLinebreak
-		goto yystate0
+
 	}
 yyrule3: // [ \t]+
 	{
@@ -505,49 +505,49 @@ yyrule6: // HELP[\t ]+
 	{
 		l.state = sMeta1
 		return tHelp
-		goto yystate0
+
 	}
 yyrule7: // TYPE[\t ]+
 	{
 		l.state = sMeta1
 		return tType
-		goto yystate0
+
 	}
 yyrule8: // \"(\\.|[^\\"])*\"
 	{
 		l.state = sMeta2
 		return tMName
-		goto yystate0
+
 	}
 yyrule9: // {M}({M}|{D})*
 	{
 		l.state = sMeta2
 		return tMName
-		goto yystate0
+
 	}
 yyrule10: // {C}*
 	{
 		l.state = sInit
 		return tText
-		goto yystate0
+
 	}
 yyrule11: // {M}({M}|{D})*
 	{
 		l.state = sValue
 		return tMName
-		goto yystate0
+
 	}
 yyrule12: // \{
 	{
 		l.state = sLabels
 		return tBraceOpen
-		goto yystate0
+
 	}
 yyrule13: // \{
 	{
 		l.state = sLabels
 		return tBraceOpen
-		goto yystate0
+
 	}
 yyrule14: // {L}({L}|{D})*
 	{
@@ -557,19 +557,19 @@ yyrule15: // \"(\\.|[^\\"])*\"
 	{
 		l.state = sLabels
 		return tQString
-		goto yystate0
+
 	}
 yyrule16: // \}
 	{
 		l.state = sValue
 		return tBraceClose
-		goto yystate0
+
 	}
 yyrule17: // =
 	{
 		l.state = sLValue
 		return tEqual
-		goto yystate0
+
 	}
 yyrule18: // ,
 	{
@@ -579,13 +579,13 @@ yyrule19: // \"(\\.|[^\\"])*\"
 	{
 		l.state = sLabels
 		return tLValue
-		goto yystate0
+
 	}
 yyrule20: // [^{ \t\n]+
 	{
 		l.state = sTimestamp
 		return tValue
-		goto yystate0
+
 	}
 yyrule21: // {D}+
 	{
@@ -595,7 +595,7 @@ yyrule22: // \n
 	if true { // avoid go vet determining the below panic will not be reached
 		l.state = sInit
 		return tLinebreak
-		goto yystate0
+
 	}
 	panic("unreachable")
 

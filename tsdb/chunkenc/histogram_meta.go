@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -40,33 +40,33 @@ func readHistogramChunkLayout(b *bstreamReader) (
 ) {
 	zeroThreshold, err = readZeroThreshold(b)
 	if err != nil {
-		return
+		return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 	}
 
 	v, err := readVarbitInt(b)
 	if err != nil {
-		return
+		return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 	}
 	schema = int32(v)
 
 	positiveSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
-		return
+		return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 	}
 
 	negativeSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
-		return
+		return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 	}
 
 	if histogram.IsCustomBucketsSchema(schema) {
 		customValues, err = readHistogramChunkLayoutCustomBounds(b)
 		if err != nil {
-			return
+			return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 		}
 	}
 
-	return
+	return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 }
 
 func putHistogramChunkLayoutSpans(b *bstream, spans []histogram.Span) {
@@ -550,5 +550,5 @@ func adjustForInserts(spans []histogram.Span, inserts []Insert) (mergedSpans []h
 		addBucket(insertIdx)
 		consumeInsert()
 	}
-	return
+	return mergedSpans
 }

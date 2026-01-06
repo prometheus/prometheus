@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -56,6 +56,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/notifications"
 	"github.com/prometheus/prometheus/util/stats"
@@ -255,6 +256,8 @@ type API struct {
 	otlpWriteHandler   http.Handler
 
 	codecs []Codec
+
+	featureRegistry features.Collector
 }
 
 // NewAPI returns an initialized API type.
@@ -290,11 +293,12 @@ func NewAPI(
 	rwEnabled bool,
 	acceptRemoteWriteProtoMsgs remoteapi.MessageTypes,
 	otlpEnabled, otlpDeltaToCumulative, otlpNativeDeltaIngestion bool,
-	ctZeroIngestionEnabled bool,
+	stZeroIngestionEnabled bool,
 	lookbackDelta time.Duration,
 	enableTypeAndUnitLabels bool,
 	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
+	featureRegistry features.Collector,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -324,6 +328,7 @@ func NewAPI(
 		notificationsGetter: notificationsGetter,
 		notificationsSub:    notificationsSub,
 		overrideErrorCode:   overrideErrorCode,
+		featureRegistry:     featureRegistry,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -339,15 +344,16 @@ func NewAPI(
 	}
 
 	if rwEnabled {
-		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, ctZeroIngestionEnabled, enableTypeAndUnitLabels, appendMetadata)
+		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, stZeroIngestionEnabled, enableTypeAndUnitLabels, appendMetadata)
 	}
 	if otlpEnabled {
 		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{
 			ConvertDelta:            otlpDeltaToCumulative,
 			NativeDelta:             otlpNativeDeltaIngestion,
 			LookbackDelta:           lookbackDelta,
-			IngestCTZeroSample:      ctZeroIngestionEnabled,
+			IngestSTZeroSample:      stZeroIngestionEnabled,
 			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
+			AppendMetadata:          appendMetadata,
 		})
 	}
 
@@ -444,6 +450,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
 	r.Get("/status/tsdb/blocks", wrapAgent(api.serveTSDBBlocks))
+	r.Get("/features", wrap(api.features))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Get("/notifications", api.notifications)
 	r.Get("/notifications/live", api.notificationsSSE)
@@ -1788,6 +1795,29 @@ func (api *API) serveFlags(*http.Request) apiFuncResult {
 	return apiFuncResult{api.flagsMap, nil, nil, nil}
 }
 
+// featuresData wraps feature flags data to provide custom JSON marshaling without HTML escaping.
+// featuresData does not contain user-provided input, and it is more convenient to have unescaped
+// representation of PromQL operators like >=.
+type featuresData struct {
+	data map[string]map[string]bool
+}
+
+func (f featuresData) MarshalJSON() ([]byte, error) {
+	json := jsoniter.Config{
+		EscapeHTML:             false,
+		SortMapKeys:            true,
+		ValidateJsonRawMessage: true,
+	}.Froze()
+	return json.Marshal(f.data)
+}
+
+func (api *API) features(*http.Request) apiFuncResult {
+	if api.featureRegistry == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("feature registry not configured")}, nil, nil}
+	}
+	return apiFuncResult{featuresData{data: api.featureRegistry.Get()}, nil, nil, nil}
+}
+
 // TSDBStat holds the information about individual cardinality.
 type TSDBStat struct {
 	Name  string `json:"name"`
@@ -1836,11 +1866,15 @@ func (api *API) serveTSDBBlocks(*http.Request) apiFuncResult {
 }
 
 func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
+	const maxTSDBLimit = 10000
 	limit := 10
 	if s := r.FormValue("limit"); s != "" {
 		var err error
 		if limit, err = strconv.Atoi(s); err != nil || limit < 1 {
 			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a positive number")}, nil, nil}
+		}
+		if limit > maxTSDBLimit {
+			return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("limit must not exceed %d", maxTSDBLimit)}, nil, nil}
 		}
 	}
 	s, err := api.db.Stats(labels.MetricName, limit)

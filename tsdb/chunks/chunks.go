@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -197,7 +197,7 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 // Used in tests to compare the content of chunks.
 func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
 	if len(chunks) == 0 {
-		return
+		return result
 	}
 
 	for _, chunk := range chunks {
@@ -218,7 +218,7 @@ func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
 			}
 		}
 	}
-	return
+	return result
 }
 
 // Iterator iterates over the chunks of a single time series.

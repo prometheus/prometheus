@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -788,12 +788,12 @@ func (w *WL) LastSegmentAndOffset() (seg, offset int, err error) {
 
 	_, seg, err = Segments(w.Dir())
 	if err != nil {
-		return
+		return seg, offset, err
 	}
 
 	offset = (w.donePages * pageSize) + w.page.alloc
 
-	return
+	return seg, offset, err
 }
 
 // Truncate drops all segments before i.

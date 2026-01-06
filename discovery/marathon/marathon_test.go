@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -51,7 +51,11 @@ func testUpdateServices(client appListClient) ([]*targetgroup.Group, error) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	md, err := NewDiscovery(cfg, nil, metrics)
+	md, err := NewDiscovery(cfg, discovery.DiscovererOptions{
+		Logger:  nil,
+		Metrics: metrics,
+		SetName: "marathon",
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +136,11 @@ func TestMarathonSDRemoveApp(t *testing.T) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	md, err := NewDiscovery(cfg, nil, metrics)
+	md, err := NewDiscovery(cfg, discovery.DiscovererOptions{
+		Logger:  nil,
+		Metrics: metrics,
+		SetName: "marathon",
+	})
 	require.NoError(t, err)
 
 	md.appsClient = func(context.Context, *http.Client, string) (*appList, error) {

@@ -10,12 +10,12 @@ jobs:
     steps:
       - name: Build Fuzzers
         id: build
-        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@cafd7a0eb8ecb4e007c56897996a9b65c49c972f # master
+        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@4bf20ff8dfda18ad651583ebca9fb17a7ce1940a # master
         with:
           oss-fuzz-project-name: "prometheus"
           dry-run: false
       - name: Run Fuzzers
-        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@cafd7a0eb8ecb4e007c56897996a9b65c49c972f # master
+        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@4bf20ff8dfda18ad651583ebca9fb17a7ce1940a # master
         # Note: Regularly check for updates to the pinned commit hash at:
         # https://github.com/google/oss-fuzz/tree/master/infra/cifuzz/actions/run_fuzzers
         with:
@@ -23,7 +23,7 @@ jobs:
           fuzz-seconds: 600
           dry-run: false
       - name: Upload Crash
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure() && steps.build.outcome == 'success'
         with:
           name: artifacts

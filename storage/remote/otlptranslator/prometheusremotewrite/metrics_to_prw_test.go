@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -1067,7 +1067,7 @@ func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 
 											for b.Loop() {
 												app := &noOpAppender{}
-												mockAppender := NewCombinedAppender(app, noOpLogger, false, appMetrics)
+												mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
 												converter := NewPrometheusConverter(mockAppender)
 												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 												require.NoError(b, err)
@@ -1105,7 +1105,7 @@ func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ f
 	return 1, nil
 }
 
-func (*noOpAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+func (*noOpAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
 	return 1, nil
 }
 
@@ -1114,7 +1114,7 @@ func (a *noOpAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ i
 	return 1, nil
 }
 
-func (*noOpAppender) AppendHistogramCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (*noOpAppender) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
 	return 1, nil
 }
 

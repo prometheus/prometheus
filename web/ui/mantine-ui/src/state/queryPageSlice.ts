@@ -58,6 +58,7 @@ export interface Visualizer {
   resolution: GraphResolution;
   displayMode: GraphDisplayMode;
   showExemplars: boolean;
+  yAxisMin: number | null;
 }
 
 export type Panel = {
@@ -86,6 +87,7 @@ export const newDefaultPanel = (): Panel => ({
     resolution: { type: "auto", density: "medium" },
     displayMode: GraphDisplayMode.Lines,
     showExemplars: false,
+    yAxisMin: null,
   },
 });
 
@@ -111,6 +113,19 @@ export const queryPageSlice = createSlice({
     },
     addPanel: (state) => {
       state.panels.push(newDefaultPanel());
+      updateURL(state.panels);
+    },
+    duplicatePanel: (
+      state,
+      { payload }: PayloadAction<{ idx: number; expr: string }>
+    ) => {
+      const newPanel = {
+        ...state.panels[payload.idx],
+        id: randomId(),
+        expr: payload.expr,
+      };
+      // Insert the duplicated panel just below the original panel.
+      state.panels.splice(payload.idx + 1, 0, newPanel);
       updateURL(state.panels);
     },
     removePanel: (state, { payload }: PayloadAction<number>) => {
@@ -151,6 +166,7 @@ export const {
   setPanels,
   addPanel,
   removePanel,
+  duplicatePanel,
   setExpr,
   addQueryToHistory,
   setShowTree,

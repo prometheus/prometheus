@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -670,7 +670,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			}
 			delete(lbls, model.BucketLabel)
 		}
-		return
+		return series, floatSamples, histSamples
 	}
 
 	initNHCBRefs := func(labelCount, histograms, buckets int) (series []RefSeries, floatSamples []RefSample, histSamples []RefHistogramSample) {
@@ -703,7 +703,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			})
 			ref++
 		}
-		return
+		return series, floatSamples, histSamples
 	}
 
 	for _, maker := range []recordsMaker{

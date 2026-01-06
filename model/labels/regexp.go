@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -370,7 +370,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []st
 	}
 
 	if len(sub) == 0 {
-		return
+		return prefix, suffix, contains
 	}
 
 	// Given Prometheus regex matchers are always anchored to the begin/end
@@ -391,7 +391,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []st
 		}
 	}
 
-	return
+	return prefix, suffix, contains
 }
 
 // StringMatcher is a matcher that matches a string in place of a regular expression.
