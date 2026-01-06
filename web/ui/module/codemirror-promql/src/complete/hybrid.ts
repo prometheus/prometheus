@@ -166,6 +166,36 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
   } as CompletionResult;
 }
 
+// computeEndCompletePosition calculates the end position for autocompletion replacement.
+// When the cursor is in the middle of a token, this ensures the entire token is replaced,
+// not just the portion before the cursor. This fixes issue #15839.
+// Note: this method is exported only for testing purpose.
+export function computeEndCompletePosition(node: SyntaxNode, pos: number): number {
+  // For error nodes, use the cursor position as the end position
+  if (node.type.id === 0) {
+    return pos;
+  }
+
+  if (
+    node.type.id === LabelMatchers ||
+    node.type.id === GroupingLabels ||
+    node.type.id === FunctionCallBody ||
+    node.type.id === MatrixSelector ||
+    node.type.id === SubqueryExpr
+  ) {
+    // When we're inside empty brackets, we want to replace up to just before the closing bracket.
+    return node.to - 1;
+  }
+
+  if (node.type.id === StringLiteral && (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher)) {
+    // For label values, we want to replace all content inside the quotes.
+    return node.parent.to - 1;
+  }
+
+  // For all other nodes, extend the end position to include the entire token.
+  return node.to;
+}
+
 // Matches complete PromQL durations, including compound units (e.g., 5m, 1d2h, 1h30m, etc.).
 // Duration units are a fixed, safe set (no regex metacharacters), so no escaping is needed.
 export const durationWithUnitRegexp = new RegExp(`^(\\d+(${durationTerms.map((term) => term.label).join('|')}))+$`);
@@ -667,7 +697,13 @@ export class HybridComplete implements CompleteStrategy {
       }
     }
     return asyncResult.then((result) => {
-      return arrayToCompletionResult(result, computeStartCompletePosition(state, tree, pos), pos, completeSnippet, span);
+      return arrayToCompletionResult(
+        result,
+        computeStartCompletePosition(state, tree, pos),
+        computeEndCompletePosition(tree, pos),
+        completeSnippet,
+        span
+      );
     });
   }
 
