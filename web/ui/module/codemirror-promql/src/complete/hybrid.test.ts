@@ -999,7 +999,7 @@ describe('computeEndCompletePosition test', () => {
     it(value.title, () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
-      const result = computeEndCompletePosition(state, node, value.pos);
+      const result = computeEndCompletePosition(node, value.pos);
       expect(result).toEqual(value.expectedEnd);
     });
   });

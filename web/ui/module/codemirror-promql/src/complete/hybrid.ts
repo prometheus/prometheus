@@ -170,7 +170,7 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
 // When the cursor is in the middle of a token, this ensures the entire token is replaced,
 // not just the portion before the cursor. This fixes issue #15839.
 // Note: this method is exported only for testing purpose.
-export function computeEndCompletePosition(state: EditorState, node: SyntaxNode, pos: number): number {
+export function computeEndCompletePosition(node: SyntaxNode, pos: number): number {
   // For error nodes, use the cursor position as the end position
   if (node.type.id === 0) {
     return pos;
@@ -700,7 +700,7 @@ export class HybridComplete implements CompleteStrategy {
       return arrayToCompletionResult(
         result,
         computeStartCompletePosition(state, tree, pos),
-        computeEndCompletePosition(state, tree, pos),
+        computeEndCompletePosition(tree, pos),
         completeSnippet,
         span
       );
