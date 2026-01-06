@@ -95,20 +95,16 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 	targets := make([]model.LabelSet, len(servers))
 	for i, server := range servers {
 		labels := model.LabelSet{
-			hetznerLabelRole:       model.LabelValue(HetznerRoleHcloud),
-			hetznerLabelServerID:   model.LabelValue(strconv.FormatInt(server.ID, 10)),
-			hetznerLabelServerName: model.LabelValue(server.Name),
-			// NOTE: This now uses server.Location.Name (e.g., "fsn1") instead of the
-			// deprecated server.Datacenter.Name (e.g., "fsn1-dc8"). This makes it
-			// equivalent to hetznerLabelHcloudDatacenterLocation, but we keep it for
-			// backwards compatibility with existing relabel configs.
-			hetznerLabelDatacenter:        model.LabelValue(server.Location.Name),
+			hetznerLabelRole:              model.LabelValue(HetznerRoleHcloud),
+			hetznerLabelServerID:          model.LabelValue(strconv.FormatInt(server.ID, 10)),
+			hetznerLabelServerName:        model.LabelValue(server.Name),
+			hetznerLabelDatacenter:        model.LabelValue(server.Datacenter.Name), //nolint:staticcheck // server.Datacenter is deprecated but kept for backwards compatibility until the next minor release
 			hetznerLabelPublicIPv4:        model.LabelValue(server.PublicNet.IPv4.IP.String()),
 			hetznerLabelPublicIPv6Network: model.LabelValue(server.PublicNet.IPv6.Network.String()),
 			hetznerLabelServerStatus:      model.LabelValue(server.Status),
 
-			hetznerLabelHcloudDatacenterLocation:            model.LabelValue(server.Location.Name),
-			hetznerLabelHcloudDatacenterLocationNetworkZone: model.LabelValue(server.Location.NetworkZone),
+			hetznerLabelHcloudDatacenterLocation:            model.LabelValue(server.Datacenter.Location.Name),        //nolint:staticcheck // server.Datacenter is deprecated but kept for backwards compatibility until the next minor release
+			hetznerLabelHcloudDatacenterLocationNetworkZone: model.LabelValue(server.Datacenter.Location.NetworkZone), //nolint:staticcheck // server.Datacenter is deprecated but kept for backwards compatibility until the next minor release
 			hetznerLabelHcloudType:                          model.LabelValue(server.ServerType.Name),
 			hetznerLabelHcloudCPUCores:                      model.LabelValue(strconv.Itoa(server.ServerType.Cores)),
 			hetznerLabelHcloudCPUType:                       model.LabelValue(server.ServerType.CPUType),

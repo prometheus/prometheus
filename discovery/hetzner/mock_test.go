@@ -156,16 +156,6 @@ func (m *SDMock) HandleHcloudServers() {
           ]
         }
       },
-      "location": {
-        "id": 1,
-        "name": "fsn1",
-        "description": "Falkenstein DC Park 1",
-        "country": "DE",
-        "city": "Falkenstein",
-        "latitude": 50.47612,
-        "longitude": 12.370071,
-        "network_zone": "eu-central"
-      },
       "image": {
         "id": 4711,
         "type": "system",
@@ -285,16 +275,6 @@ func (m *SDMock) HandleHcloudServers() {
             3
           ]
         }
-      },
-      "location": {
-        "id": 1,
-        "name": "fsn1",
-        "description": "Falkenstein DC Park 1",
-        "country": "DE",
-        "city": "Falkenstein",
-        "latitude": 50.47612,
-        "longitude": 12.370071,
-        "network_zone": "eu-central"
       },
       "image": {
         "id": 4711,
@@ -416,16 +396,6 @@ func (m *SDMock) HandleHcloudServers() {
             3
           ]
         }
-      },
-      "location": {
-        "id": 1,
-        "name": "fsn1",
-        "description": "Falkenstein DC Park 1",
-        "country": "DE",
-        "city": "Falkenstein",
-        "latitude": 50.47612,
-        "longitude": 12.370071,
-        "network_zone": "eu-central"
       },
       "image": null,
       "iso": null,
