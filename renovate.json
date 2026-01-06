@@ -9,7 +9,7 @@
       "gomodTidy",
       "gomodUpdateImportPaths"
     ],
-    "schedule": ["57 11 21 * *"],
+    "schedule": ["0 0-8 4 * *"],
     "timezone": "UTC",
     "github-actions": {
       "managerFilePatterns": ["scripts/**"]
