@@ -127,6 +127,16 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	return storage.SeriesRef(s.ref), partialErr
 }
 
+func (a *appenderV2) Commit() error {
+	defer a.appenderV2Pool.Put(a)
+	return a.commit()
+}
+
+func (a *appenderV2) Rollback() error {
+	defer a.appenderV2Pool.Put(a)
+	return a.rollback()
+}
+
 func (a *appenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemplar) error {
 	var errs []error
 	for _, e := range exemplar {
