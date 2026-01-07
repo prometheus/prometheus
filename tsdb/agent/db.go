@@ -1124,13 +1124,22 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 }
 
 // Commit submits the collected samples and purges the batch.
-func (a *appenderBase) Commit() error {
+func (a *appender) Commit() error {
+	defer a.appenderPool.Put(a)
+	return a.commit()
+}
+
+func (a *appender) Rollback() error {
+	defer a.appenderPool.Put(a)
+	return a.rollback()
+}
+
+func (a *appenderBase) commit() error {
 	if err := a.log(); err != nil {
 		return err
 	}
 
 	a.clearData()
-	a.appenderPool.Put(a)
 
 	if a.writeNotified != nil {
 		a.writeNotified.Notify()
@@ -1244,7 +1253,7 @@ func (a *appenderBase) clearData() {
 	a.floatHistogramSeries = a.floatHistogramSeries[:0]
 }
 
-func (a *appenderBase) Rollback() error {
+func (a *appenderBase) rollback() error {
 	// Series are created in-memory regardless of rollback. This means we must
 	// log them to the WAL, otherwise subsequent commits may reference a series
 	// which was never written to the WAL.
@@ -1253,7 +1262,6 @@ func (a *appenderBase) Rollback() error {
 	}
 
 	a.clearData()
-	a.appenderPool.Put(a)
 	return nil
 }
 
