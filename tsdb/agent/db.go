@@ -866,6 +866,26 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	return storage.SeriesRef(series.ref), nil
 }
 
+func (a *appender) Commit() error {
+	if err := a.commitBase(); err != nil {
+		return err
+	}
+	a.appenderPool.Put(a)
+
+	if a.writeNotified != nil {
+		a.writeNotified.Notify()
+	}
+	return nil
+}
+
+func (a *appender) Rollback() error {
+	if err := a.rollbackBase(); err != nil {
+		return err
+	}
+	a.appenderPool.Put(a)
+	return nil
+}
+
 func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, err error) {
 	// Ensure no empty or duplicate labels have gotten through. This mirrors the
 	// equivalent validation code in the TSDB's headAppender.
@@ -1123,18 +1143,13 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 	return storage.SeriesRef(series.ref), nil
 }
 
-// Commit submits the collected samples and purges the batch.
-func (a *appenderBase) Commit() error {
+// commitBase submits the collected samples and purges the batch.
+func (a *appenderBase) commitBase() error {
 	if err := a.log(); err != nil {
 		return err
 	}
 
 	a.clearData()
-	a.appenderPool.Put(a)
-
-	if a.writeNotified != nil {
-		a.writeNotified.Notify()
-	}
 	return nil
 }
 
@@ -1244,7 +1259,7 @@ func (a *appenderBase) clearData() {
 	a.floatHistogramSeries = a.floatHistogramSeries[:0]
 }
 
-func (a *appenderBase) Rollback() error {
+func (a *appenderBase) rollbackBase() error {
 	// Series are created in-memory regardless of rollback. This means we must
 	// log them to the WAL, otherwise subsequent commits may reference a series
 	// which was never written to the WAL.
@@ -1253,7 +1268,6 @@ func (a *appenderBase) Rollback() error {
 	}
 
 	a.clearData()
-	a.appenderPool.Put(a)
 	return nil
 }
 

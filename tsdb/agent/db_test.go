@@ -1368,6 +1368,90 @@ func readWALSamples(t *testing.T, walDir string) []walSample {
 	return outputSamples
 }
 
+// TestAppenderPool verifies that the appender pool returns the correct type after
+// Commit() and Rollback() operations.
+func TestAppenderPool(t *testing.T) {
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	defer s.Close()
+
+	ctx := context.Background()
+	lbls := labels.FromStrings("a", "1")
+
+	t.Run("after Commit", func(t *testing.T) {
+		// Get first appender and commit it.
+		app1 := s.Appender(ctx)
+		ref, err := app1.Append(0, lbls, 1, 1.0)
+		require.NoError(t, err)
+		require.NotZero(t, ref)
+		require.NoError(t, app1.Commit())
+
+		// Get second appender from pool - should still be valid storage.Appender.
+		app2 := s.Appender(ctx)
+		ref, err = app2.Append(ref, lbls, 2, 2.0)
+		require.NoError(t, err)
+		require.NotZero(t, ref)
+		require.NoError(t, app2.Commit())
+	})
+
+	t.Run("after Rollback", func(t *testing.T) {
+		// Get first appender and rollback.
+		app1 := s.Appender(ctx)
+		ref, err := app1.Append(0, labels.FromStrings("b", "1"), 1, 1.0)
+		require.NoError(t, err)
+		require.NotZero(t, ref)
+		require.NoError(t, app1.Rollback())
+
+		// Get second appender from pool - should still be valid storage.Appender.
+		app2 := s.Appender(ctx)
+		ref, err = app2.Append(0, labels.FromStrings("c", "1"), 3, 3.0)
+		require.NoError(t, err)
+		require.NotZero(t, ref)
+		require.NoError(t, app2.Commit())
+	})
+}
+
+// TestAppenderV2Pool verifies that the appenderV2 pool returns the correct type after
+// Commit() and Rollback() operations.
+func TestAppenderV2Pool(t *testing.T) {
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	defer s.Close()
+
+	ctx := context.Background()
+	lbls := labels.FromStrings("a", "1")
+
+	t.Run("after Commit", func(t *testing.T) {
+		// Get first appenderV2 and commit it.
+		app1 := s.AppenderV2(ctx)
+		ref, err := app1.Append(0, lbls, 0, 1, 1.0, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NotZero(t, ref)
+		require.NoError(t, app1.Commit())
+
+		// Get second appenderV2 from pool - should still be valid storage.AppenderV2.
+		app2 := s.AppenderV2(ctx)
+		ref, err = app2.Append(ref, lbls, 0, 2, 2.0, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NotZero(t, ref)
+		require.NoError(t, app2.Commit())
+	})
+
+	t.Run("after Rollback", func(t *testing.T) {
+		// Get first appenderV2 and rollback.
+		app1 := s.AppenderV2(ctx)
+		ref, err := app1.Append(0, labels.FromStrings("b", "1"), 0, 1, 1.0, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NotZero(t, ref)
+		require.NoError(t, app1.Rollback())
+
+		// Get second appenderV2 from pool - should still be valid storage.AppenderV2.
+		app2 := s.AppenderV2(ctx)
+		ref, err = app2.Append(0, labels.FromStrings("c", "1"), 0, 3, 3.0, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NotZero(t, ref)
+		require.NoError(t, app2.Commit())
+	})
+}
+
 func BenchmarkGetOrCreate(b *testing.B) {
 	s := createTestAgentDB(b, nil, DefaultOptions())
 	defer s.Close()

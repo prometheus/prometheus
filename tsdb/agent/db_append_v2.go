@@ -36,6 +36,26 @@ type appenderV2 struct {
 	appenderBase
 }
 
+func (a *appenderV2) Commit() error {
+	if err := a.commitBase(); err != nil {
+		return err
+	}
+	a.appenderV2Pool.Put(a)
+
+	if a.writeNotified != nil {
+		a.writeNotified.Notify()
+	}
+	return nil
+}
+
+func (a *appenderV2) Rollback() error {
+	if err := a.rollbackBase(); err != nil {
+		return err
+	}
+	a.appenderV2Pool.Put(a)
+	return nil
+}
+
 // Append appends pending sample to agent's DB.
 // TODO: Wire metadata in the Agent's appender.
 func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
