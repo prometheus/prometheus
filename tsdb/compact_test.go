@@ -1380,7 +1380,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 	t.Parallel()
 	tests := map[string]func(*DB) int{
 		"Test Head Compaction": func(db *DB) int {
-			rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 - 1
+			rangeToTriggerCompaction := int64(float64(db.compactor.(*LeveledCompactor).ranges[0])*DefaultHeadCompactionRatio) - 1
 			defaultLabel := labels.FromStrings("foo", "bar")
 
 			// Add some data to the head that is enough to trigger a compaction.
