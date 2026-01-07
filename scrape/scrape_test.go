@@ -5982,3 +5982,47 @@ func TestScrapeLoopDisableStalenessMarkerInjection(t *testing.T) {
 		}
 	}
 }
+
+func TestDropsSeriesFromRelabeling(t *testing.T) {
+	s := teststorage.New(t)
+	defer s.Close()
+	ctx := t.Context()
+
+	target := &Target{}
+	relabelConfig := []*relabel.Config{
+		{
+			SourceLabels: model.LabelNames{"__name__"},
+			Regex:        relabel.MustNewRegexp(".*_total$"),
+			Action:       relabel.Keep,
+		},
+		{
+			SourceLabels: model.LabelNames{"__name__"},
+			Regex:        relabel.MustNewRegexp("test_metric_2_total$"),
+			Action:       relabel.Drop,
+		},
+	}
+	metricsText := []byte(`
+# HELP test_metric_1_total This is a counter
+# TYPE test_metric_1_total counter
+test_metric_1_total 123
+# HELP test_metric_2_total This is a counter
+# TYPE test_metric_2_total counter
+test_metric_2_total 234
+# HELP disk_usage_bytes This is a gauge
+# TYPE disk_usage_bytes gauge
+disk_usage_bytes 456
+`)
+
+	sl := newBasicScrapeLoop(t, ctx, &testScraper{}, s.Appender, 0)
+	sl.sampleMutator = func(l labels.Labels) labels.Labels {
+		return mutateSampleLabels(l, target, true, relabelConfig)
+	}
+
+	slApp := sl.appender(ctx)
+	total, added, seriesAdded, err := sl.append(slApp, metricsText, "text/plain", time.Time{})
+	require.NoError(t, err)
+	require.NoError(t, slApp.Rollback())
+	require.Equal(t, 3, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded)
+}
