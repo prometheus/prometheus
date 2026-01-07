@@ -65,7 +65,7 @@ func NewWithError(outOfOrderTimeWindow ...int64) (*TestStorage, error) {
 	reg := prometheus.NewRegistry()
 	eMetrics := tsdb.NewExemplarMetrics(reg)
 
-	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics)
+	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics, opts.OutOfOrderTimeWindow)
 	if err != nil {
 		return nil, fmt.Errorf("opening test exemplar storage: %w", err)
 	}
