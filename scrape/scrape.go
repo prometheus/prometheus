@@ -613,7 +613,9 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		}
 	}
 
-	relabel.ProcessBuilder(lb, rc...)
+	if keep := relabel.ProcessBuilder(lb, rc...); !keep {
+		return labels.EmptyLabels()
+	}
 
 	return lb.Labels()
 }

@@ -5932,3 +5932,47 @@ func TestNewScrapeLoopHonorLabelsWiring(t *testing.T) {
 		})
 	}
 }
+
+func TestDropsSeriesFromMetricRelabeling(t *testing.T) {
+	target := &Target{}
+	relabelConfig := []*relabel.Config{
+		{
+			SourceLabels:         model.LabelNames{"__name__"},
+			Regex:                relabel.MustNewRegexp("test_metric.*$"),
+			Action:               relabel.Keep,
+			NameValidationScheme: model.UTF8Validation,
+		},
+		{
+			SourceLabels:         model.LabelNames{"__name__"},
+			Regex:                relabel.MustNewRegexp("test_metric_2$"),
+			Action:               relabel.Drop,
+			NameValidationScheme: model.UTF8Validation,
+		},
+	}
+	sl, _ := newTestScrapeLoop(t, func(sl *scrapeLoop) {
+		sl.sampleMutator = func(l labels.Labels) labels.Labels {
+			return mutateSampleLabels(l, target, true, relabelConfig)
+		}
+	})
+
+	app := sl.appender()
+	total, added, seriesAdded, err := app.append([]byte("test_metric_1 1\n"), "text/plain", time.Time{})
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 1, seriesAdded)
+
+	total, added, seriesAdded, err = app.append([]byte("test_metric_2 1\n"), "text/plain", time.Time{})
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Equal(t, 0, added)
+	require.Equal(t, 0, seriesAdded)
+
+	total, added, seriesAdded, err = app.append([]byte("unwanted_metric 1\n"), "text/plain", time.Time{})
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Equal(t, 0, added)
+	require.Equal(t, 0, seriesAdded)
+
+	require.NoError(t, app.Commit())
+}
