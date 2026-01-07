@@ -1020,6 +1020,58 @@ func TestOutOfOrderHistogram_V1Message(t *testing.T) {
 	}
 }
 
+func TestNativeHistogramsDisabled_V1Message(t *testing.T) {
+	// When native histograms are disabled in storage, v1 path should return 422.
+	payload, _, _, err := buildWriteRequest(nil, []prompb.TimeSeries{{
+		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
+		Histograms: []prompb.Histogram{prompb.FromIntHistogram(1, &testHistogram)},
+	}}, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{appendHistogramErr: storage.ErrNativeHistogramsDisabled}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+}
+
+func TestNativeHistogramsDisabled_V2Message(t *testing.T) {
+	// When native histograms are disabled in storage, v2 path should return 422 and not count histograms as written.
+	payload, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[config.RemoteWriteProtoMsgV2])
+	req.Header.Set("Content-Encoding", compression.Snappy)
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+	appendable := &mockAppendable{appendHistogramErr: storage.ErrNativeHistogramsDisabled}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV2}, false)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+	// Samples should be counted as written, histograms should be zero, exemplars counted.
+	expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenSamplesHeader))
+	expectHeaderValue(t, 0, resp.Header.Get(rw20WrittenHistogramsHeader))
+	expectHeaderValue(t, 2, resp.Header.Get(rw20WrittenExemplarsHeader))
+	// Ensure no histograms were appended.
+	require.Empty(t, appendable.histograms)
+	// Ensure samples and exemplars were appended.
+	require.NotEmpty(t, appendable.samples)
+	require.NotEmpty(t, appendable.exemplars)
+}
+
 func BenchmarkRemoteWriteHandler(b *testing.B) {
 	labelStrings := []string{
 		"__name__", "test_metric",
