@@ -1126,12 +1126,12 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 // Commit submits the collected samples and purges the batch.
 func (a *appender) Commit() error {
 	defer a.appenderPool.Put(a)
-	return a.appenderBase.commit()
+	return a.commit()
 }
 
 func (a *appender) Rollback() error {
 	defer a.appenderPool.Put(a)
-	return a.appenderBase.rollback()
+	return a.rollback()
 }
 
 func (a *appenderBase) commit() error {
