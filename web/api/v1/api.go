@@ -1828,7 +1828,7 @@ type TSDBStat struct {
 type HeadStats struct {
 	NumSeries     uint64 `json:"numSeries"`
 	NumLabelPairs int    `json:"numLabelPairs"`
-	ChunkCount    uint64 `json:"chunkCount"`
+	ChunkCount    int64  `json:"chunkCount"`
 	MinTime       int64  `json:"minTime"`
 	MaxTime       int64  `json:"maxTime"`
 }
@@ -1881,24 +1881,10 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}
-	metrics, err := api.gatherer.Gather()
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error gathering runtime status: %w", err)}, nil, nil}
-	}
-	chunkCount := uint64(0)
-	for _, mF := range metrics {
-		if *mF.Name != "prometheus_tsdb_head_chunks" {
-			continue
-		}
-		if len(mF.Metric) == 0 {
-			break
-		}
-		m := mF.Metric[0]
-		if m.Gauge == nil {
-			break
-		}
-		chunkCount = safeChunkCount(m.Gauge.GetValue())
-		break
+	const maxInt64 = int64(^uint64(0) >> 1)
+	chunkCount := int64(s.NumChunks)
+	if s.NumChunks > uint64(maxInt64) {
+		chunkCount = maxInt64
 	}
 	return apiFuncResult{TSDBStatus{
 		HeadStats: HeadStats{
@@ -1913,21 +1899,6 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 		MemoryInBytesByLabelName:    TSDBStatsFromIndexStats(s.IndexPostingStats.LabelValueStats),
 		SeriesCountByLabelValuePair: TSDBStatsFromIndexStats(s.IndexPostingStats.LabelValuePairsStats),
 	}, nil, nil, nil}
-}
-
-const (
-	maxChunkCount      = ^uint64(0)
-	maxChunkCountFloat = float64(maxChunkCount)
-)
-
-func safeChunkCount(value float64) uint64 {
-	if math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 {
-		return 0
-	}
-	if value >= maxChunkCountFloat {
-		return maxChunkCount
-	}
-	return uint64(value)
 }
 
 type walReplayStatus struct {

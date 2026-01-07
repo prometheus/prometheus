@@ -1456,6 +1456,7 @@ func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
 
 type Stats struct {
 	NumSeries         uint64
+	NumChunks         uint64
 	MinTime, MaxTime  int64
 	IndexPostingStats *index.PostingsStats
 }
@@ -1465,10 +1466,34 @@ type Stats struct {
 func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	return &Stats{
 		NumSeries:         h.NumSeries(),
+		NumChunks:         h.chunkCount(),
 		MaxTime:           h.MaxTime(),
 		MinTime:           h.MinTime(),
 		IndexPostingStats: h.PostingsCardinalityStats(statsByLabelName, limit),
 	}
+}
+
+func (h *Head) chunkCount() uint64 {
+	var count uint64
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].RLock()
+		for _, series := range h.series.series[i] {
+			series.Lock()
+			count += uint64(len(series.mmappedChunks))
+			if series.headChunks != nil {
+				count += uint64(series.headChunks.len())
+			}
+			if series.ooo != nil {
+				count += uint64(len(series.ooo.oooMmappedChunks))
+				if series.ooo.oooHeadChunk != nil {
+					count++
+				}
+			}
+			series.Unlock()
+		}
+		h.series.locks[i].RUnlock()
+	}
+	return count
 }
 
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
