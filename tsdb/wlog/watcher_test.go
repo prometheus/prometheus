@@ -401,7 +401,8 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			}
 
 			checkpoint := NewCheckpoint(promslog.NewNopLogger(), w)
-			checkpoint.Create(0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0)
+			err = checkpoint.Create(0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0)
+			require.NoError(t, err)
 			w.Truncate(1)
 
 			// Write more records after checkpointing.
