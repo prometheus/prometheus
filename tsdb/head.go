@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -327,7 +327,7 @@ func (h *Head) resetInMemoryState() error {
 	if em == nil {
 		em = NewExemplarMetrics(h.reg)
 	}
-	es, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), em)
+	es, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), em, h.opts.OutOfOrderTimeWindow.Load())
 	if err != nil {
 		return err
 	}
@@ -1036,6 +1036,8 @@ func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WL) {
 	if !h.opts.EnableExemplarStorage {
 		return
 	}
+
+	h.exemplars.(*CircularExemplarStorage).SetOutOfOrderTimeWindow(oooTimeWindow)
 
 	// Head uses opts.MaxExemplars in combination with opts.EnableExemplarStorage
 	// to decide if it should pass exemplars along to its exemplar storage, so we

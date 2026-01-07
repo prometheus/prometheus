@@ -17,6 +17,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecsTypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/prometheus/common/model"
@@ -29,9 +31,12 @@ import (
 type ecsDataStore struct {
 	region string
 
-	clusters []ecsTypes.Cluster
-	services []ecsTypes.Service
-	tasks    []ecsTypes.Task
+	clusters           []ecsTypes.Cluster
+	services           []ecsTypes.Service
+	tasks              []ecsTypes.Task
+	containerInstances []ecsTypes.ContainerInstance
+	ec2Instances       map[string]ec2InstanceInfo // EC2 instance ID to instance info
+	eniPublicIPs       map[string]string          // ENI ID to public IP
 }
 
 func TestECSDiscoveryListClusterARNs(t *testing.T) {
@@ -716,6 +721,7 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 								Details: []ecsTypes.KeyValuePair{
 									{Name: strptr("subnetId"), Value: strptr("subnet-12345")},
 									{Name: strptr("privateIPv4Address"), Value: strptr("10.0.1.100")},
+									{Name: strptr("networkInterfaceId"), Value: strptr("eni-fargate-123")},
 								},
 							},
 						},
@@ -723,6 +729,9 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 							{Key: strptr("Version"), Value: strptr("v1.0")},
 						},
 					},
+				},
+				eniPublicIPs: map[string]string{
+					"eni-fargate-123": "52.1.2.3",
 				},
 			},
 			expected: []*targetgroup.Group{
@@ -749,6 +758,8 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 							"__meta_ecs_health_status":           model.LabelValue("HEALTHY"),
 							"__meta_ecs_platform_family":         model.LabelValue("Linux"),
 							"__meta_ecs_platform_version":        model.LabelValue("1.4.0"),
+							"__meta_ecs_network_mode":            model.LabelValue("awsvpc"),
+							"__meta_ecs_public_ip":               model.LabelValue("52.1.2.3"),
 							"__meta_ecs_tag_cluster_Environment": model.LabelValue("test"),
 							"__meta_ecs_tag_service_App":         model.LabelValue("web"),
 							"__meta_ecs_tag_task_Version":        model.LabelValue("v1.0"),
@@ -825,14 +836,345 @@ func TestECSDiscoveryRefresh(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "TaskWithBridgeNetworking",
+			ecsData: &ecsDataStore{
+				region: "us-west-2",
+				clusters: []ecsTypes.Cluster{
+					{
+						ClusterName: strptr("test-cluster"),
+						ClusterArn:  strptr("arn:aws:ecs:us-west-2:123456789012:cluster/test-cluster"),
+						Status:      strptr("ACTIVE"),
+					},
+				},
+				services: []ecsTypes.Service{
+					{
+						ServiceName: strptr("bridge-service"),
+						ServiceArn:  strptr("arn:aws:ecs:us-west-2:123456789012:service/test-cluster/bridge-service"),
+						ClusterArn:  strptr("arn:aws:ecs:us-west-2:123456789012:cluster/test-cluster"),
+						Status:      strptr("ACTIVE"),
+					},
+				},
+				tasks: []ecsTypes.Task{
+					{
+						TaskArn:              strptr("arn:aws:ecs:us-west-2:123456789012:task/test-cluster/task-bridge"),
+						ClusterArn:           strptr("arn:aws:ecs:us-west-2:123456789012:cluster/test-cluster"),
+						TaskDefinitionArn:    strptr("arn:aws:ecs:us-west-2:123456789012:task-definition/bridge-task:1"),
+						Group:                strptr("service:bridge-service"),
+						LaunchType:           ecsTypes.LaunchTypeEc2,
+						LastStatus:           strptr("RUNNING"),
+						DesiredStatus:        strptr("RUNNING"),
+						HealthStatus:         ecsTypes.HealthStatusHealthy,
+						AvailabilityZone:     strptr("us-west-2a"),
+						ContainerInstanceArn: strptr("arn:aws:ecs:us-west-2:123456789012:container-instance/test-cluster/abc123"),
+						Attachments:          []ecsTypes.Attachment{},
+					},
+				},
+				containerInstances: []ecsTypes.ContainerInstance{
+					{
+						ContainerInstanceArn: strptr("arn:aws:ecs:us-west-2:123456789012:container-instance/test-cluster/abc123"),
+						Ec2InstanceId:        strptr("i-1234567890abcdef0"),
+						Status:               strptr("ACTIVE"),
+					},
+				},
+				ec2Instances: map[string]ec2InstanceInfo{
+					"i-1234567890abcdef0": {
+						privateIP:    "10.0.1.50",
+						publicIP:     "54.1.2.3",
+						subnetID:     "subnet-bridge-1",
+						instanceType: "t3.medium",
+						tags: map[string]string{
+							"Name":        "ecs-host-1",
+							"Environment": "production",
+						},
+					},
+				},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "us-west-2",
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:                   model.LabelValue("10.0.1.50:80"),
+							"__meta_ecs_cluster":                 model.LabelValue("test-cluster"),
+							"__meta_ecs_cluster_arn":             model.LabelValue("arn:aws:ecs:us-west-2:123456789012:cluster/test-cluster"),
+							"__meta_ecs_service":                 model.LabelValue("bridge-service"),
+							"__meta_ecs_service_arn":             model.LabelValue("arn:aws:ecs:us-west-2:123456789012:service/test-cluster/bridge-service"),
+							"__meta_ecs_service_status":          model.LabelValue("ACTIVE"),
+							"__meta_ecs_task_group":              model.LabelValue("service:bridge-service"),
+							"__meta_ecs_task_arn":                model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task/test-cluster/task-bridge"),
+							"__meta_ecs_task_definition":         model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task-definition/bridge-task:1"),
+							"__meta_ecs_region":                  model.LabelValue("us-west-2"),
+							"__meta_ecs_availability_zone":       model.LabelValue("us-west-2a"),
+							"__meta_ecs_ip_address":              model.LabelValue("10.0.1.50"),
+							"__meta_ecs_subnet_id":               model.LabelValue("subnet-bridge-1"),
+							"__meta_ecs_launch_type":             model.LabelValue("EC2"),
+							"__meta_ecs_desired_status":          model.LabelValue("RUNNING"),
+							"__meta_ecs_last_status":             model.LabelValue("RUNNING"),
+							"__meta_ecs_health_status":           model.LabelValue("HEALTHY"),
+							"__meta_ecs_network_mode":            model.LabelValue("bridge"),
+							"__meta_ecs_container_instance_arn":  model.LabelValue("arn:aws:ecs:us-west-2:123456789012:container-instance/test-cluster/abc123"),
+							"__meta_ecs_ec2_instance_id":         model.LabelValue("i-1234567890abcdef0"),
+							"__meta_ecs_ec2_instance_type":       model.LabelValue("t3.medium"),
+							"__meta_ecs_ec2_instance_private_ip": model.LabelValue("10.0.1.50"),
+							"__meta_ecs_ec2_instance_public_ip":  model.LabelValue("54.1.2.3"),
+							"__meta_ecs_public_ip":               model.LabelValue("54.1.2.3"),
+							"__meta_ecs_tag_ec2_Name":            model.LabelValue("ecs-host-1"),
+							"__meta_ecs_tag_ec2_Environment":     model.LabelValue("production"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "MixedNetworkingModes",
+			ecsData: &ecsDataStore{
+				region: "us-west-2",
+				clusters: []ecsTypes.Cluster{
+					{
+						ClusterName: strptr("mixed-cluster"),
+						ClusterArn:  strptr("arn:aws:ecs:us-west-2:123456789012:cluster/mixed-cluster"),
+						Status:      strptr("ACTIVE"),
+					},
+				},
+				services: []ecsTypes.Service{
+					{
+						ServiceName: strptr("mixed-service"),
+						ServiceArn:  strptr("arn:aws:ecs:us-west-2:123456789012:service/mixed-cluster/mixed-service"),
+						ClusterArn:  strptr("arn:aws:ecs:us-west-2:123456789012:cluster/mixed-cluster"),
+						Status:      strptr("ACTIVE"),
+					},
+				},
+				tasks: []ecsTypes.Task{
+					{
+						TaskArn:           strptr("arn:aws:ecs:us-west-2:123456789012:task/mixed-cluster/task-awsvpc"),
+						ClusterArn:        strptr("arn:aws:ecs:us-west-2:123456789012:cluster/mixed-cluster"),
+						TaskDefinitionArn: strptr("arn:aws:ecs:us-west-2:123456789012:task-definition/awsvpc-task:1"),
+						Group:             strptr("service:mixed-service"),
+						LaunchType:        ecsTypes.LaunchTypeFargate,
+						LastStatus:        strptr("RUNNING"),
+						DesiredStatus:     strptr("RUNNING"),
+						HealthStatus:      ecsTypes.HealthStatusHealthy,
+						AvailabilityZone:  strptr("us-west-2a"),
+						Attachments: []ecsTypes.Attachment{
+							{
+								Type: strptr("ElasticNetworkInterface"),
+								Details: []ecsTypes.KeyValuePair{
+									{Name: strptr("subnetId"), Value: strptr("subnet-12345")},
+									{Name: strptr("privateIPv4Address"), Value: strptr("10.0.2.100")},
+									{Name: strptr("networkInterfaceId"), Value: strptr("eni-mixed-awsvpc")},
+								},
+							},
+						},
+					},
+					{
+						TaskArn:              strptr("arn:aws:ecs:us-west-2:123456789012:task/mixed-cluster/task-bridge"),
+						ClusterArn:           strptr("arn:aws:ecs:us-west-2:123456789012:cluster/mixed-cluster"),
+						TaskDefinitionArn:    strptr("arn:aws:ecs:us-west-2:123456789012:task-definition/bridge-task:1"),
+						Group:                strptr("service:mixed-service"),
+						LaunchType:           ecsTypes.LaunchTypeEc2,
+						LastStatus:           strptr("RUNNING"),
+						DesiredStatus:        strptr("RUNNING"),
+						HealthStatus:         ecsTypes.HealthStatusHealthy,
+						AvailabilityZone:     strptr("us-west-2b"),
+						ContainerInstanceArn: strptr("arn:aws:ecs:us-west-2:123456789012:container-instance/mixed-cluster/xyz789"),
+						Attachments:          []ecsTypes.Attachment{},
+					},
+				},
+				containerInstances: []ecsTypes.ContainerInstance{
+					{
+						ContainerInstanceArn: strptr("arn:aws:ecs:us-west-2:123456789012:container-instance/mixed-cluster/xyz789"),
+						Ec2InstanceId:        strptr("i-0987654321fedcba0"),
+						Status:               strptr("ACTIVE"),
+					},
+				},
+				ec2Instances: map[string]ec2InstanceInfo{
+					"i-0987654321fedcba0": {
+						privateIP:    "10.0.1.75",
+						publicIP:     "54.2.3.4",
+						subnetID:     "subnet-bridge-2",
+						instanceType: "t3.large",
+						tags: map[string]string{
+							"Name": "mixed-host",
+							"Team": "platform",
+						},
+					},
+				},
+				eniPublicIPs: map[string]string{
+					"eni-mixed-awsvpc": "52.2.3.4",
+				},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "us-west-2",
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:             model.LabelValue("10.0.2.100:80"),
+							"__meta_ecs_cluster":           model.LabelValue("mixed-cluster"),
+							"__meta_ecs_cluster_arn":       model.LabelValue("arn:aws:ecs:us-west-2:123456789012:cluster/mixed-cluster"),
+							"__meta_ecs_service":           model.LabelValue("mixed-service"),
+							"__meta_ecs_service_arn":       model.LabelValue("arn:aws:ecs:us-west-2:123456789012:service/mixed-cluster/mixed-service"),
+							"__meta_ecs_service_status":    model.LabelValue("ACTIVE"),
+							"__meta_ecs_task_group":        model.LabelValue("service:mixed-service"),
+							"__meta_ecs_task_arn":          model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task/mixed-cluster/task-awsvpc"),
+							"__meta_ecs_task_definition":   model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task-definition/awsvpc-task:1"),
+							"__meta_ecs_region":            model.LabelValue("us-west-2"),
+							"__meta_ecs_availability_zone": model.LabelValue("us-west-2a"),
+							"__meta_ecs_ip_address":        model.LabelValue("10.0.2.100"),
+							"__meta_ecs_subnet_id":         model.LabelValue("subnet-12345"),
+							"__meta_ecs_launch_type":       model.LabelValue("FARGATE"),
+							"__meta_ecs_desired_status":    model.LabelValue("RUNNING"),
+							"__meta_ecs_last_status":       model.LabelValue("RUNNING"),
+							"__meta_ecs_health_status":     model.LabelValue("HEALTHY"),
+							"__meta_ecs_network_mode":      model.LabelValue("awsvpc"),
+							"__meta_ecs_public_ip":         model.LabelValue("52.2.3.4"),
+						},
+						{
+							model.AddressLabel:                   model.LabelValue("10.0.1.75:80"),
+							"__meta_ecs_cluster":                 model.LabelValue("mixed-cluster"),
+							"__meta_ecs_cluster_arn":             model.LabelValue("arn:aws:ecs:us-west-2:123456789012:cluster/mixed-cluster"),
+							"__meta_ecs_service":                 model.LabelValue("mixed-service"),
+							"__meta_ecs_service_arn":             model.LabelValue("arn:aws:ecs:us-west-2:123456789012:service/mixed-cluster/mixed-service"),
+							"__meta_ecs_service_status":          model.LabelValue("ACTIVE"),
+							"__meta_ecs_task_group":              model.LabelValue("service:mixed-service"),
+							"__meta_ecs_task_arn":                model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task/mixed-cluster/task-bridge"),
+							"__meta_ecs_task_definition":         model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task-definition/bridge-task:1"),
+							"__meta_ecs_region":                  model.LabelValue("us-west-2"),
+							"__meta_ecs_availability_zone":       model.LabelValue("us-west-2b"),
+							"__meta_ecs_ip_address":              model.LabelValue("10.0.1.75"),
+							"__meta_ecs_subnet_id":               model.LabelValue("subnet-bridge-2"),
+							"__meta_ecs_launch_type":             model.LabelValue("EC2"),
+							"__meta_ecs_desired_status":          model.LabelValue("RUNNING"),
+							"__meta_ecs_last_status":             model.LabelValue("RUNNING"),
+							"__meta_ecs_health_status":           model.LabelValue("HEALTHY"),
+							"__meta_ecs_network_mode":            model.LabelValue("bridge"),
+							"__meta_ecs_container_instance_arn":  model.LabelValue("arn:aws:ecs:us-west-2:123456789012:container-instance/mixed-cluster/xyz789"),
+							"__meta_ecs_ec2_instance_id":         model.LabelValue("i-0987654321fedcba0"),
+							"__meta_ecs_ec2_instance_type":       model.LabelValue("t3.large"),
+							"__meta_ecs_ec2_instance_private_ip": model.LabelValue("10.0.1.75"),
+							"__meta_ecs_ec2_instance_public_ip":  model.LabelValue("54.2.3.4"),
+							"__meta_ecs_public_ip":               model.LabelValue("54.2.3.4"),
+							"__meta_ecs_tag_ec2_Name":            model.LabelValue("mixed-host"),
+							"__meta_ecs_tag_ec2_Team":            model.LabelValue("platform"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "EC2WithAwsvpcNetworking",
+			ecsData: &ecsDataStore{
+				region: "us-west-2",
+				clusters: []ecsTypes.Cluster{
+					{
+						ClusterName: strptr("ec2-awsvpc-cluster"),
+						ClusterArn:  strptr("arn:aws:ecs:us-west-2:123456789012:cluster/ec2-awsvpc-cluster"),
+						Status:      strptr("ACTIVE"),
+					},
+				},
+				services: []ecsTypes.Service{
+					{
+						ServiceName: strptr("ec2-awsvpc-service"),
+						ServiceArn:  strptr("arn:aws:ecs:us-west-2:123456789012:service/ec2-awsvpc-cluster/ec2-awsvpc-service"),
+						ClusterArn:  strptr("arn:aws:ecs:us-west-2:123456789012:cluster/ec2-awsvpc-cluster"),
+						Status:      strptr("ACTIVE"),
+					},
+				},
+				tasks: []ecsTypes.Task{
+					{
+						TaskArn:              strptr("arn:aws:ecs:us-west-2:123456789012:task/ec2-awsvpc-cluster/task-ec2-awsvpc"),
+						ClusterArn:           strptr("arn:aws:ecs:us-west-2:123456789012:cluster/ec2-awsvpc-cluster"),
+						TaskDefinitionArn:    strptr("arn:aws:ecs:us-west-2:123456789012:task-definition/ec2-awsvpc-task:1"),
+						Group:                strptr("service:ec2-awsvpc-service"),
+						LaunchType:           ecsTypes.LaunchTypeEc2,
+						LastStatus:           strptr("RUNNING"),
+						DesiredStatus:        strptr("RUNNING"),
+						HealthStatus:         ecsTypes.HealthStatusHealthy,
+						AvailabilityZone:     strptr("us-west-2c"),
+						ContainerInstanceArn: strptr("arn:aws:ecs:us-west-2:123456789012:container-instance/ec2-awsvpc-cluster/def456"),
+						// Has BOTH ENI attachment AND container instance ARN - should use ENI
+						Attachments: []ecsTypes.Attachment{
+							{
+								Type: strptr("ElasticNetworkInterface"),
+								Details: []ecsTypes.KeyValuePair{
+									{Name: strptr("subnetId"), Value: strptr("subnet-99999")},
+									{Name: strptr("privateIPv4Address"), Value: strptr("10.0.3.200")},
+									{Name: strptr("networkInterfaceId"), Value: strptr("eni-ec2-awsvpc")},
+								},
+							},
+						},
+					},
+				},
+				eniPublicIPs: map[string]string{
+					"eni-ec2-awsvpc": "52.3.4.5",
+				},
+				// Container instance data - IP should NOT be used, but instance type SHOULD be used
+				containerInstances: []ecsTypes.ContainerInstance{
+					{
+						ContainerInstanceArn: strptr("arn:aws:ecs:us-west-2:123456789012:container-instance/ec2-awsvpc-cluster/def456"),
+						Ec2InstanceId:        strptr("i-ec2awsvpcinstance"),
+						Status:               strptr("ACTIVE"),
+					},
+				},
+				ec2Instances: map[string]ec2InstanceInfo{
+					"i-ec2awsvpcinstance": {
+						privateIP:    "10.0.9.99",    // This IP should NOT be used (ENI IP is used instead)
+						publicIP:     "54.3.4.5",     // This public IP SHOULD be exposed
+						subnetID:     "subnet-wrong", // This subnet should NOT be used (ENI subnet is used instead)
+						instanceType: "c5.2xlarge",   // This instance type SHOULD be used
+						tags: map[string]string{
+							"Name":  "ec2-awsvpc-host",
+							"Owner": "team-a",
+						},
+					},
+				},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "us-west-2",
+					Targets: []model.LabelSet{
+						{
+							model.AddressLabel:                   model.LabelValue("10.0.3.200:80"),
+							"__meta_ecs_cluster":                 model.LabelValue("ec2-awsvpc-cluster"),
+							"__meta_ecs_cluster_arn":             model.LabelValue("arn:aws:ecs:us-west-2:123456789012:cluster/ec2-awsvpc-cluster"),
+							"__meta_ecs_service":                 model.LabelValue("ec2-awsvpc-service"),
+							"__meta_ecs_service_arn":             model.LabelValue("arn:aws:ecs:us-west-2:123456789012:service/ec2-awsvpc-cluster/ec2-awsvpc-service"),
+							"__meta_ecs_service_status":          model.LabelValue("ACTIVE"),
+							"__meta_ecs_task_group":              model.LabelValue("service:ec2-awsvpc-service"),
+							"__meta_ecs_task_arn":                model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task/ec2-awsvpc-cluster/task-ec2-awsvpc"),
+							"__meta_ecs_task_definition":         model.LabelValue("arn:aws:ecs:us-west-2:123456789012:task-definition/ec2-awsvpc-task:1"),
+							"__meta_ecs_region":                  model.LabelValue("us-west-2"),
+							"__meta_ecs_availability_zone":       model.LabelValue("us-west-2c"),
+							"__meta_ecs_ip_address":              model.LabelValue("10.0.3.200"),
+							"__meta_ecs_subnet_id":               model.LabelValue("subnet-99999"),
+							"__meta_ecs_launch_type":             model.LabelValue("EC2"),
+							"__meta_ecs_desired_status":          model.LabelValue("RUNNING"),
+							"__meta_ecs_last_status":             model.LabelValue("RUNNING"),
+							"__meta_ecs_health_status":           model.LabelValue("HEALTHY"),
+							"__meta_ecs_network_mode":            model.LabelValue("awsvpc"),
+							"__meta_ecs_container_instance_arn":  model.LabelValue("arn:aws:ecs:us-west-2:123456789012:container-instance/ec2-awsvpc-cluster/def456"),
+							"__meta_ecs_ec2_instance_id":         model.LabelValue("i-ec2awsvpcinstance"),
+							"__meta_ecs_ec2_instance_type":       model.LabelValue("c5.2xlarge"),
+							"__meta_ecs_ec2_instance_private_ip": model.LabelValue("10.0.9.99"),
+							"__meta_ecs_ec2_instance_public_ip":  model.LabelValue("54.3.4.5"),
+							"__meta_ecs_public_ip":               model.LabelValue("52.3.4.5"),
+							"__meta_ecs_tag_ec2_Name":            model.LabelValue("ec2-awsvpc-host"),
+							"__meta_ecs_tag_ec2_Owner":           model.LabelValue("team-a"),
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := newMockECSClient(tt.ecsData)
+			ecsClient := newMockECSClient(tt.ecsData)
+			ec2Client := newMockECSEC2Client(tt.ecsData.ec2Instances, tt.ecsData.eniPublicIPs)
 
 			d := &ECSDiscovery{
-				ecs: client,
+				ecs: ecsClient,
+				ec2: ec2Client,
 				cfg: &ECSSDConfig{
 					Region:             tt.ecsData.region,
 					Port:               80,
@@ -949,5 +1291,93 @@ func (m *mockECSClient) DescribeTasks(_ context.Context, input *ecs.DescribeTask
 
 	return &ecs.DescribeTasksOutput{
 		Tasks: tasks,
+	}, nil
+}
+
+func (m *mockECSClient) DescribeContainerInstances(_ context.Context, input *ecs.DescribeContainerInstancesInput, _ ...func(*ecs.Options)) (*ecs.DescribeContainerInstancesOutput, error) {
+	var containerInstances []ecsTypes.ContainerInstance
+	for _, ciArn := range input.ContainerInstances {
+		for _, ci := range m.ecsData.containerInstances {
+			if *ci.ContainerInstanceArn == ciArn {
+				containerInstances = append(containerInstances, ci)
+				break
+			}
+		}
+	}
+
+	return &ecs.DescribeContainerInstancesOutput{
+		ContainerInstances: containerInstances,
+	}, nil
+}
+
+// Mock EC2 client wrapper for ECS tests.
+type mockECSEC2Client struct {
+	ec2Instances map[string]ec2InstanceInfo
+	eniPublicIPs map[string]string
+}
+
+func newMockECSEC2Client(ec2Instances map[string]ec2InstanceInfo, eniPublicIPs map[string]string) *mockECSEC2Client {
+	return &mockECSEC2Client{
+		ec2Instances: ec2Instances,
+		eniPublicIPs: eniPublicIPs,
+	}
+}
+
+func (m *mockECSEC2Client) DescribeInstances(_ context.Context, input *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	var reservations []ec2Types.Reservation
+
+	for _, instanceID := range input.InstanceIds {
+		if info, ok := m.ec2Instances[instanceID]; ok {
+			instance := ec2Types.Instance{
+				InstanceId:       &instanceID,
+				PrivateIpAddress: &info.privateIP,
+			}
+			if info.publicIP != "" {
+				instance.PublicIpAddress = &info.publicIP
+			}
+			if info.subnetID != "" {
+				instance.SubnetId = &info.subnetID
+			}
+			if info.instanceType != "" {
+				instance.InstanceType = ec2Types.InstanceType(info.instanceType)
+			}
+			// Add tags
+			for tagKey, tagValue := range info.tags {
+				instance.Tags = append(instance.Tags, ec2Types.Tag{
+					Key:   &tagKey,
+					Value: &tagValue,
+				})
+			}
+			reservation := ec2Types.Reservation{
+				Instances: []ec2Types.Instance{instance},
+			}
+			reservations = append(reservations, reservation)
+		}
+	}
+
+	return &ec2.DescribeInstancesOutput{
+		Reservations: reservations,
+	}, nil
+}
+
+func (m *mockECSEC2Client) DescribeNetworkInterfaces(_ context.Context, input *ec2.DescribeNetworkInterfacesInput, _ ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+	var networkInterfaces []ec2Types.NetworkInterface
+
+	for _, eniID := range input.NetworkInterfaceIds {
+		if publicIP, ok := m.eniPublicIPs[eniID]; ok {
+			eni := ec2Types.NetworkInterface{
+				NetworkInterfaceId: &eniID,
+			}
+			if publicIP != "" {
+				eni.Association = &ec2Types.NetworkInterfaceAssociation{
+					PublicIp: &publicIP,
+				}
+			}
+			networkInterfaces = append(networkInterfaces, eni)
+		}
+	}
+
+	return &ec2.DescribeNetworkInterfacesOutput{
+		NetworkInterfaces: networkInterfaces,
 	}, nil
 }

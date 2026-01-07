@@ -159,6 +159,12 @@ global:
   # native histogram with custom buckets.
   [ always_scrape_classic_histograms: <boolean> | default = false ]
 
+  # When enabled, Prometheus stores additional time series for each scrape:
+  # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
+  # These metrics help monitor how close targets are to their configured limits.
+  # This option can be overridden per scrape config.
+  [ extra_scrape_metrics: <boolean> | default = false ]
+
   # The following explains the various combinations of the last three options
   # in various exposition cases.
   #
@@ -647,6 +653,12 @@ metric_relabel_configs:
 # native histogram with custom buckets.
 [ always_scrape_classic_histograms: <boolean> | default = <global.always_scrape_classic_histograms> ]
 
+# When enabled, Prometheus stores additional time series for this scrape job:
+# scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
+# These metrics help monitor how close targets are to their configured limits.
+# If not set, inherits the value from the global configuration.
+[ extra_scrape_metrics: <boolean> | default = <global.extra_scrape_metrics> ]
+
 # See global configuration above for further explanations of how the last three
 # options combine their effects.
 
@@ -761,15 +773,55 @@ A `tls_config` allows configuring TLS connections.
 
 OAuth 2.0 authentication using the client credentials or password grant type.
 Prometheus fetches an access token from the specified endpoint with
-the given client access and secret keys.
+the given client access and credentials.
 
 ```yaml
 client_id: <string>
+
+# OAuth2 grant type to use. It can be one of
+# "client_credentials" or "urn:ietf:params:oauth:grant-type:jwt-bearer" (RFC 7523).
+# Default value is "client_credentials"
+[ grant_type: <string> ]
+
+# Client secret to provide to authorization server. Only used if
+# GrantType is set empty or set to "client_credentials".
 [ client_secret: <secret> ]
 
 # Read the client secret from a file.
 # It is mutually exclusive with `client_secret`.
 [ client_secret_file: <filename> ]
+
+# Secret key to sign JWT with. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+[ client_certificate_key: <secret> ]
+
+# Read the secret key from a file.
+# It is mutually exclusive with `client_certificate_key`.
+[ client_certificate_key_file: <filename> ]
+
+# JWT kid value to include in the JWT header. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+[ client_certificate_key_id: <string> ]
+
+# Signature algorithm used to sign JWT token. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+# Default value is RS256 and valid values RS256, RS384, RS512
+[ signature_algorithm: <string> ]
+
+# OAuth client identifier used when communicating with
+# the configured OAuth provider. Default value is client_id. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+[ iss: <string> ]
+
+# Intended audience of the request. If empty, the value 
+# of TokenURL is used as the intended audience. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+[ audience: <string> ]
+
+# Map of claims to be added to the JWT token. Only used if
+# GrantType is set to "urn:ietf:params:oauth:grant-type:jwt-bearer".
+claims:
+  [ <string>: <string> ... ]
 
 # Scopes for the token request.
 scopes:
@@ -879,11 +931,16 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 #### `ecs`
 
-The `ecs` role discovers targets from AWS ECS containers. The private IP address is used by default, but may be changed to
-the public IP address with relabeling.
+The `ecs` role discovers targets from AWS ECS containers. 
 
-The IAM credentials used must have the following permissions to discover
-scrape targets:
+ECS service discovery supports all ECS networking modes:
+- **awsvpc mode** (Fargate and EC2 with ENI): Uses the task's private IP address from its elastic network interface
+- **bridge mode** (EC2): Uses the EC2 host instance's private IP address
+- **host mode** (EC2): Uses the EC2 host instance's private IP address
+
+The private IP address is used by default, but may be changed to the public IP address with relabeling.
+
+The IAM credentials used must have the following permissions to discover scrape targets:
 
 - `ecs:ListClusters`
 - `ecs:DescribeClusters`
@@ -891,6 +948,9 @@ scrape targets:
 - `ecs:DescribeServices`
 - `ecs:ListTasks`
 - `ecs:DescribeTasks`
+- `ecs:DescribeContainerInstances` (required for EC2 launch type tasks)
+- `ec2:DescribeInstances` (required for EC2 launch type tasks)
+- `ec2:DescribeNetworkInterfaces` (required to get public IP for awsvpc mode tasks)
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -912,9 +972,17 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ecs_subnet_id`: the subnet ID where the task is running
 * `__meta_ecs_availability_zone`: the availability zone where the task is running
 * `__meta_ecs_region`: the AWS region
+* `__meta_ecs_public_ip`: the public IP address (from ENI for awsvpc mode, from EC2 instance for bridge/host mode), if available
+* `__meta_ecs_network_mode`: the network mode of the task (awsvpc or bridge)
+* `__meta_ecs_container_instance_arn`: the ARN of the container instance (EC2 launch type only)
+* `__meta_ecs_ec2_instance_id`: the EC2 instance ID (EC2 launch type only)
+* `__meta_ecs_ec2_instance_type`: the EC2 instance type (EC2 launch type only)
+* `__meta_ecs_ec2_instance_private_ip`: the private IP address of the EC2 instance (EC2 launch type only)
+* `__meta_ecs_ec2_instance_public_ip`: the public IP address of the EC2 instance, if available (EC2 launch type only)
 * `__meta_ecs_tag_cluster_<tagkey>`: each cluster tag value, keyed by tag name
 * `__meta_ecs_tag_service_<tagkey>`: each service tag value, keyed by tag name
 * `__meta_ecs_tag_task_<tagkey>`: each task tag value, keyed by tag name
+* `__meta_ecs_tag_ec2_<tagkey>`: each EC2 instance tag value, keyed by tag name (EC2 launch type only)
 
 See below for the configuration options for AWS discovery:
 
@@ -2554,12 +2622,35 @@ project: <string>
 [ <http_config> ]
 ```
 
-A Service Account Token can be set through `http_config`.
+A [Service Account Key](https://docs.stackit.cloud/platform/access-and-identity/service-accounts/how-tos/manage-service-account-keys/) can be set through `http_config`. This can be done mapping values from STACKIT Service Account json into oauth2 configuration.
+
+From a given Service Account json
+```json
+{
+  //....
+  "credentials": {
+    "kid": "6a7c3b36-xxxxxxxx",
+    "iss": "xxxx@sa.stackit.cloud",
+    "sub": "af2c2336-xxxxxxxx",
+    "aud": "https://stackit-service-account-prod.apps.01.cf.eu01.stackit.cloud",
+    "privateKey": "-----BEGIN PRIVATE KEY-----xxxx"
+  }
+}
+```
+
+properties can be mapped as:
 
 ```yaml
 stackit_sd_config:
-- authorization:
-    credentials: <token>
+- oauth2:
+    client_id: <credentials.sub>
+    client_certificate_key: <credentials.privateKey>
+    client_certificate_key_id: <credentials.kid>
+    iss: <credentials.iss>
+    audience: <credentials.aud>
+    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    token_url: "https://service-account.api.stackit.cloud/token"
+    signature_algorithm: RS512
 ```
 
 ### `<triton_sd_config>`

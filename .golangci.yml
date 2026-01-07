@@ -182,6 +182,11 @@ linters:
         - name: unused-receiver
         - name: var-declaration
         - name: var-naming
+          # TODO(SuperQ): See: https://github.com/prometheus/prometheus/issues/17766
+          arguments:
+            - []
+            - []
+            - - skip-package-name-checks: true
     testifylint:
       disable:
         - float-compare

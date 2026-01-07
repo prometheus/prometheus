@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -2294,10 +2294,6 @@ func (m mockIndex) LabelValues(_ context.Context, name string, hints *storage.La
 	return values, nil
 }
 
-func (m mockIndex) LabelValueFor(_ context.Context, id storage.SeriesRef, label string) (string, error) {
-	return m.series[id].l.Get(label), nil
-}
-
 func (m mockIndex) LabelNamesFor(_ context.Context, postings index.Postings) ([]string, error) {
 	namesMap := make(map[string]bool)
 	for postings.Next() {
@@ -3315,10 +3311,6 @@ func (mockMatcherIndex) LabelValues(context.Context, string, *storage.LabelHints
 	return []string{}, errors.New("label values called")
 }
 
-func (mockMatcherIndex) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
-	return "", errors.New("label value for called")
-}
-
 func (mockMatcherIndex) LabelNamesFor(context.Context, index.Postings) ([]string, error) {
 	return nil, errors.New("label names for called")
 }
@@ -3737,10 +3729,6 @@ const mockReaderOfLabelsSeriesCount = checkContextEveryNIterations * 10
 
 func (mockReaderOfLabels) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
 	return make([]string, mockReaderOfLabelsSeriesCount), nil
-}
-
-func (mockReaderOfLabels) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
-	panic("LabelValueFor called")
 }
 
 func (mockReaderOfLabels) SortedLabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {

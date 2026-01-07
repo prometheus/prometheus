@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -454,13 +454,6 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	if h.options.UseOldUI {
 		reactAssetsRoot = "/static/react-app"
 	}
-
-	// The console library examples at 'console_libraries/prom.lib' still depend on old asset files being served under `classic`.
-	router.Get("/classic/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
-		fs := server.StaticFileServer(ui.Assets)
-		fs.ServeHTTP(w, r)
-	})
 
 	router.Get("/version", h.version)
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)

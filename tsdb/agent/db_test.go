@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
@@ -1142,6 +1143,10 @@ type walSample struct {
 	ref  storage.SeriesRef
 }
 
+// NOTE(bwplotka): This test is testing behaviour of storage.Appender interface against its invariants (see
+// storage.Appender comment) around validation of the order of samples within a single Appender. This results
+// in a slight bug in AppendSTZero* methods. We are leaving it as-is given the planned removal of AppenderV1 as
+// per https://github.com/prometheus/prometheus/issues/17632.
 func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 	t.Parallel()
 
@@ -1154,7 +1159,7 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 		expectsError bool
 	}
 
-	testHistogram := tsdbutil.GenerateTestHistograms(1)[0]
+	testHistograms := tsdbutil.GenerateTestHistograms(2)
 	zeroHistogram := &histogram.Histogram{}
 
 	lbls := labelsForTest(t.Name(), 1)
@@ -1163,7 +1168,7 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 	testCases := []struct {
 		name                string
 		inputSamples        []appendableSample
-		expectedSamples     []*walSample
+		expectedSamples     []walSample
 		expectedSeriesCount int
 	}{
 		{
@@ -1172,10 +1177,10 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 				{t: 100, st: 1, v: 10, lbls: defLbls},
 				{t: 101, st: 1, v: 10, lbls: defLbls},
 			},
-			expectedSamples: []*walSample{
-				{t: 1, f: 0, lbls: defLbls},
-				{t: 100, f: 10, lbls: defLbls},
-				{t: 101, f: 10, lbls: defLbls},
+			expectedSamples: []walSample{
+				{t: 1, f: 0, lbls: defLbls, ref: 1},
+				{t: 100, f: 10, lbls: defLbls, ref: 1},
+				{t: 101, f: 10, lbls: defLbls, ref: 1},
 			},
 		},
 		{
@@ -1190,15 +1195,15 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 				{
 					t:    300,
 					st:   230,
-					h:    testHistogram,
+					h:    testHistograms[0],
 					lbls: defLbls,
 				},
 			},
-			expectedSamples: []*walSample{
-				{t: 30, f: 0, lbls: defLbls},
-				{t: 100, f: 20, lbls: defLbls},
-				{t: 230, h: zeroHistogram, lbls: defLbls},
-				{t: 300, h: testHistogram, lbls: defLbls},
+			expectedSamples: []walSample{
+				{t: 30, f: 0, lbls: defLbls, ref: 1},
+				{t: 100, f: 20, lbls: defLbls, ref: 1},
+				{t: 230, h: zeroHistogram, lbls: defLbls, ref: 1},
+				{t: 300, h: testHistograms[0], lbls: defLbls, ref: 1},
 			},
 			expectedSeriesCount: 1,
 		},
@@ -1217,27 +1222,27 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 					// invalid ST histogram
 					t:            300,
 					st:           300,
-					h:            testHistogram,
+					h:            testHistograms[0],
 					lbls:         defLbls,
 					expectsError: true,
 				},
 			},
-			expectedSamples: []*walSample{
-				{t: 100, f: 10, lbls: defLbls},
-				{t: 300, h: testHistogram, lbls: defLbls},
+			expectedSamples: []walSample{
+				{t: 100, f: 10, lbls: defLbls, ref: 1},
+				{t: 300, h: testHistograms[0], lbls: defLbls, ref: 1},
 			},
 			expectedSeriesCount: 0,
 		},
 		{
 			name: "In order ct+normal sample/histogram",
 			inputSamples: []appendableSample{
-				{t: 100, h: testHistogram, st: 1, lbls: defLbls},
-				{t: 101, h: testHistogram, st: 1, lbls: defLbls},
+				{t: 100, h: testHistograms[0], st: 1, lbls: defLbls},
+				{t: 101, h: testHistograms[1], st: 1, lbls: defLbls},
 			},
-			expectedSamples: []*walSample{
-				{t: 1, h: &histogram.Histogram{}},
-				{t: 100, h: testHistogram},
-				{t: 101, h: &histogram.Histogram{CounterResetHint: histogram.NotCounterReset}},
+			expectedSamples: []walSample{
+				{t: 1, h: &histogram.Histogram{}, lbls: defLbls, ref: 1},
+				{t: 100, h: testHistograms[0], lbls: defLbls, ref: 1},
+				{t: 101, h: testHistograms[1], lbls: defLbls, ref: 1},
 			},
 		},
 		{
@@ -1248,12 +1253,12 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 				{t: 180_000, st: 40_000, v: 10, lbls: defLbls},
 				{t: 50_000, st: 40_000, v: 10, lbls: defLbls},
 			},
-			expectedSamples: []*walSample{
-				{t: 40_000, f: 0, lbls: defLbls},
-				{t: 50_000, f: 10, lbls: defLbls},
-				{t: 60_000, f: 10, lbls: defLbls},
-				{t: 120_000, f: 10, lbls: defLbls},
-				{t: 180_000, f: 10, lbls: defLbls},
+			expectedSamples: []walSample{
+				{t: 40_000, f: 0, lbls: defLbls, ref: 1},
+				{t: 60_000, f: 10, lbls: defLbls, ref: 1},
+				{t: 120_000, f: 10, lbls: defLbls, ref: 1},
+				{t: 180_000, f: 10, lbls: defLbls, ref: 1},
+				{t: 50_000, f: 10, lbls: defLbls, ref: 1}, // OOO sample.
 			},
 		},
 	}
@@ -1294,7 +1299,7 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 			// Close the DB to ensure all data is flushed to the WAL
 			require.NoError(t, s.Close())
 
-			// Check that we dont have any OOO samples in the WAL by checking metrics
+			// Check that we don't have any OOO samples in the WAL by checking metrics
 			families, err := reg.Gather()
 			require.NoError(t, err, "failed to gather metrics")
 			for _, f := range families {
@@ -1303,26 +1308,13 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 				}
 			}
 
-			outputSamples := readWALSamples(t, s.wal.Dir())
-
-			require.Len(t, outputSamples, len(tc.expectedSamples), "Expected %d samples", len(tc.expectedSamples))
-
-			for i, expectedSample := range tc.expectedSamples {
-				for _, sample := range outputSamples {
-					if sample.t == expectedSample.t && sample.lbls.String() == expectedSample.lbls.String() {
-						if expectedSample.h != nil {
-							require.Equal(t, expectedSample.h, sample.h, "histogram value mismatch (sample index %d)", i)
-						} else {
-							require.Equal(t, expectedSample.f, sample.f, "value mismatch (sample index %d)", i)
-						}
-					}
-				}
-			}
+			got := readWALSamples(t, s.wal.Dir())
+			testutil.RequireEqualWithOptions(t, tc.expectedSamples, got, cmp.Options{cmp.AllowUnexported(walSample{})})
 		})
 	}
 }
 
-func readWALSamples(t *testing.T, walDir string) []*walSample {
+func readWALSamples(t *testing.T, walDir string) []walSample {
 	t.Helper()
 	sr, err := wlog.NewSegmentsReader(walDir)
 	require.NoError(t, err)
@@ -1339,7 +1331,7 @@ func readWALSamples(t *testing.T, walDir string) []*walSample {
 		histograms []record.RefHistogramSample
 
 		lastSeries    record.RefSeries
-		outputSamples = make([]*walSample, 0)
+		outputSamples = make([]walSample, 0)
 	)
 
 	for r.Next() {
@@ -1353,7 +1345,7 @@ func readWALSamples(t *testing.T, walDir string) []*walSample {
 			samples, err = dec.Samples(rec, samples[:0])
 			require.NoError(t, err)
 			for _, s := range samples {
-				outputSamples = append(outputSamples, &walSample{
+				outputSamples = append(outputSamples, walSample{
 					t:    s.T,
 					f:    s.V,
 					lbls: lastSeries.Labels.Copy(),
@@ -1364,7 +1356,7 @@ func readWALSamples(t *testing.T, walDir string) []*walSample {
 			histograms, err = dec.HistogramSamples(rec, histograms[:0])
 			require.NoError(t, err)
 			for _, h := range histograms {
-				outputSamples = append(outputSamples, &walSample{
+				outputSamples = append(outputSamples, walSample{
 					t:    h.T,
 					h:    h.H,
 					lbls: lastSeries.Labels.Copy(),
@@ -1373,14 +1365,14 @@ func readWALSamples(t *testing.T, walDir string) []*walSample {
 			}
 		}
 	}
-
 	return outputSamples
 }
 
-func BenchmarkCreateSeries(b *testing.B) {
+func BenchmarkGetOrCreate(b *testing.B) {
 	s := createTestAgentDB(b, nil, DefaultOptions())
 	defer s.Close()
 
+	// NOTE: This benchmarks appenderBase, so it does not matter if it's V1 or V2.
 	app := s.Appender(context.Background()).(*appender)
 	lbls := make([]labels.Labels, b.N)
 

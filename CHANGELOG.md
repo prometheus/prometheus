@@ -2,12 +2,15 @@
 
 ## main / unreleased
 
-* [FEATURE] Templates: Add urlQueryEscape to template functions. #17403
 * [BUGFIX] TSDB: Register `prometheus_tsdb_sample_ooo_delta` metric properly. #17477
+
+## 3.8.1 / 2025-12-16
+
+* [BUGFIX] remote: Fix Remote Write receiver, so it does not send wrong response headers for v1 flow and cause Prometheus senders to emit false partial error log and metrics. #17683
 
 ## 3.8.0 / 2025-11-28
 
-* [CHANGE] Remote-write 2 (receiving): Update to [2.0-rc.4 spec](https://github.com/prometheus/docs/blob/60c24e450010df38cfcb4f65df874f6f9b26dbcb/docs/specs/prw/remote_write_spec_2_0.md). "created timestamp" (CT) is now called "start timestamp" (ST). #17411
+* [CHANGE] Remote-write: Update receiving to [2.0-rc.4 spec](https://github.com/prometheus/docs/blob/60c24e450010df38cfcb4f65df874f6f9b26dbcb/docs/specs/prw/remote_write_spec_2_0.md). "created timestamp" (CT) is now called "start timestamp" (ST). #17411
 * [CHANGE] TSDB: Native Histogram Custom Bounds with a NaN threshold are now rejected. #17287
 * [FEATURE] OAuth2: support jwt-bearer grant-type (RFC7523 3.1). #17592
 * [FEATURE] Dockerfile: Add OpenContainers spec labels to Dockerfile. #16483
@@ -237,7 +240,7 @@
 
 ## 3.2.1 / 2025-02-25
 
-* [BUGFIX] Don't send Accept` header `escape=allow-utf-8` when `metric_name_validation_scheme: legacy` is configured. #16061
+* [BUGFIX] Don't send `Accept` header `escape=allow-utf-8` when `metric_name_validation_scheme: legacy` is configured. #16061
 
 ## 3.2.0 / 2025-02-17
 
@@ -248,10 +251,10 @@
 * [ENHANCEMENT] scrape: Add metadata for automatic metrics to WAL for `metadata-wal-records` feature. #15837
 * [ENHANCEMENT] promtool: Support linting of scrape interval, through lint option `too-long-scrape-interval`. #15719
 * [ENHANCEMENT] promtool: Add --ignore-unknown-fields option. #15706
-* [ENHANCEMENT] ui: Make "hide empty rules" and hide empty rules" persistent #15807
+* [ENHANCEMENT] ui: Make "hide empty rules" and "hide empty rules" persistent #15807
 * [ENHANCEMENT] web/api: Add a limit parameter to `/query` and `/query_range`. #15552
 * [ENHANCEMENT] api: Add fields Node and ServerTime to `/status`. #15784
-* [PERF] Scraping: defer computing labels for dropped targets until they are needed by the UI.  #15261
+* [PERF] Scraping: defer computing labels for dropped targets until they are needed by the UI. #15261
 * [BUGFIX] remotewrite2: Fix invalid metadata bug for metrics without metadata. #15829
 * [BUGFIX] remotewrite2: Fix the unit field propagation. #15825
 * [BUGFIX] scrape: Fix WAL metadata for histograms and summaries. #15832
@@ -268,9 +271,9 @@
  * [ENHANCEMENT] TSDB: Improve calculation of space used by labels. #13880
  * [ENHANCEMENT] Rules: new metric rule_group_last_rule_duration_sum_seconds. #15672
  * [ENHANCEMENT] Observability: Export 'go_sync_mutex_wait_total_seconds_total' metric. #15339
- * [ENHANCEMEN] Remote-Write: optionally use a DNS resolver that picks a random IP. #15329
+ * [ENHANCEMENT] Remote-Write: optionally use a DNS resolver that picks a random IP. #15329
  * [PERF] Optimize `l=~".+"` matcher. #15474, #15684
- * [PERF] TSDB: Cache all symbols for compaction . #15455
+ * [PERF] TSDB: Cache all symbols for compaction. #15455
  * [PERF] TSDB: MemPostings: keep a map of label values slices. #15426
  * [PERF] Remote-Write: Remove interning hook. #15456
  * [PERF] Scrape: optimize string manipulation for experimental native histograms with custom buckets. #15453

@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -65,7 +65,7 @@ func NewWithError(outOfOrderTimeWindow ...int64) (*TestStorage, error) {
 	reg := prometheus.NewRegistry()
 	eMetrics := tsdb.NewExemplarMetrics(reg)
 
-	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics)
+	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics, opts.OutOfOrderTimeWindow)
 	if err != nil {
 		return nil, fmt.Errorf("opening test exemplar storage: %w", err)
 	}

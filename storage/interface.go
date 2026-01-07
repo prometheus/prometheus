@@ -1,4 +1,4 @@
-// Copyright 2014 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -274,8 +274,8 @@ type AppendOptions struct {
 //
 // Operations on the Appender interface are not goroutine-safe.
 //
-// The order of samples appended via the Appender is preserved within each
-// series. I.e. samples are not reordered per timestamp, or by float/histogram
+// The order of samples appended via the Appender is preserved within each series.
+// I.e. timestamp order within batch is not validated, samples are not reordered per timestamp or by float/histogram
 // type.
 //
 // WARNING: Work AppendableV2 is in progress. Appendable will be removed soon (ETA: Q2 2026).

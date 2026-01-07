@@ -19,6 +19,7 @@ import { CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 // Every different completion mode must implement this interface.
 export interface CompleteStrategy {
   promQL(context: CompletionContext): Promise<CompletionResult | null> | CompletionResult | null;
+  destroy?(): void;
 }
 
 // CompleteConfiguration should be used to customize the autocompletion.

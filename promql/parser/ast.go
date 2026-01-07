@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -116,8 +116,8 @@ type DurationExpr struct {
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 	Wrapped  bool     // Set when the duration is wrapped in parentheses.
 
-	StartPos posrange.Pos // For unary operations and step(), the start position of the operator.
-	EndPos   posrange.Pos // For step(), the end position of the operator.
+	StartPos posrange.Pos // For unary operations, step(), and range(), the start position of the operator.
+	EndPos   posrange.Pos // For step() and range(), the end position of the operator.
 }
 
 // Call represents a function call.
@@ -474,7 +474,7 @@ func (e *BinaryExpr) PositionRange() posrange.PositionRange {
 }
 
 func (e *DurationExpr) PositionRange() posrange.PositionRange {
-	if e.Op == STEP {
+	if e.Op == STEP || e.Op == RANGE {
 		return posrange.PositionRange{
 			Start: e.StartPos,
 			End:   e.EndPos,
