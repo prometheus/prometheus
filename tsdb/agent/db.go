@@ -706,7 +706,8 @@ func (db *DB) truncate(mint int64) error {
 
 	db.metrics.checkpointCreationTotal.Inc()
 
-	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint); err != nil {
+	checkpoint := wlog.NewCheckpoint(db.logger, db.wal)
+	if err = checkpoint.Create(first, last, db.keepSeriesInWALCheckpointFn(last), mint); err != nil {
 		db.metrics.checkpointCreationFail.Inc()
 		var cerr *wlog.CorruptionErr
 		if errors.As(err, &cerr) {

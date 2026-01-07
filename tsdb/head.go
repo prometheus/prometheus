@@ -1352,7 +1352,8 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
+	checkpoint := wlog.NewCheckpoint(h.logger, h.wal)
+	if err = checkpoint.Create(first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		var cerr *chunks.CorruptionErr
 		if errors.As(err, &cerr) {

@@ -1239,7 +1239,8 @@ func TestSizeRetention_AppendV2(t *testing.T) {
 	// Create a WAL checkpoint, and compare sizes.
 	first, last, err := wlog.Segments(db.Head().wal.Dir())
 	require.NoError(t, err)
-	_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0)
+	checkpoint := wlog.NewCheckpoint(promslog.NewNopLogger(), db.Head().wal)
+	err = checkpoint.Create(first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0)
 	require.NoError(t, err)
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
@@ -3506,7 +3507,9 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 	keep := func(id chunks.HeadSeriesRef) bool {
 		return id != 3
 	}
-	_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0)
+
+	checkpoint := wlog.NewCheckpoint(promslog.NewNopLogger(), w)
+	err = checkpoint.Create(first, last-1, keep, 0)
 	require.NoError(t, err)
 
 	// Confirm there's been a checkpoint.
