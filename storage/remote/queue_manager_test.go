@@ -2824,3 +2824,120 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestDataInRateWithBlockedQueue is a regression test for issue https://github.com/prometheus/prometheus/issues/17384.
+// It verifies that dataIn rate is tracked correctly even when:
+// 1. Samples are dropped by relabeling
+// 2. The queue is full and cannot accept more samples
+// This ensures the resharding algorithm has accurate information to scale shards.
+func TestDataInRateWithBlockedQueue(t *testing.T) {
+	cfg := config.DefaultQueueConfig
+	cfg.Capacity = 4
+	cfg.MaxShards = 1
+	cfg.MaxSamplesPerSend = 1
+
+	blockingClient := NewTestBlockedWriteClient()
+	dropRelabelConfig := []*relabel.Config{{
+		SourceLabels: model.LabelNames{"__name__"},
+		Regex:        relabel.MustNewRegexp("dropped_metric"),
+		Action:       relabel.Drop,
+	}}
+	m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, blockingClient, remoteapi.WriteV1MessageType)
+	m.relabelConfigs = dropRelabelConfig
+
+	m.Start()
+	defer func() {
+		if m.shards != nil && m.shards.hardShutdown != nil {
+			m.shards.hardShutdown()
+		}
+	}()
+
+	series := []record.RefSeries{
+		{Ref: chunks.HeadSeriesRef(0), Labels: labels.FromStrings("__name__", "test_metric")},
+		{Ref: chunks.HeadSeriesRef(1), Labels: labels.FromStrings("__name__", "dropped_metric")},
+	}
+	m.StoreSeries(series, 0)
+
+	// Test 1: Verify dataIn increases for accepted samples.
+	acceptedSamples := []record.RefSample{
+		{Ref: chunks.HeadSeriesRef(0), T: 1001, V: 1.0},
+		{Ref: chunks.HeadSeriesRef(0), T: 1002, V: 2.0},
+		{Ref: chunks.HeadSeriesRef(0), T: 1003, V: 3.0},
+	}
+	m.Append(acceptedSamples)
+	// Manually increment dataIn to simulate WriteStorage's behavior.
+	m.dataIn.incr(int64(len(acceptedSamples)))
+
+	expected3 := float64(3) / float64(shardUpdateDuration/time.Second)
+	origRate := 0.0
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		origRate = m.dataIn.rate()
+		return origRate >= expected3-0.1 && origRate <= expected3+0.1
+	}, 500*time.Millisecond, 50*time.Millisecond, "dataIn should count 3 accepted samples")
+
+	// Let the rate go lower so we can more easily measure an increase.
+	lowerRate := 0.0
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		lowerRate = m.dataIn.rate()
+		return (lowerRate < origRate/2.0)
+	}, 2*time.Second, 100*time.Millisecond, "dataIn rate should drop over time")
+
+	// Test 2: Verify dataIn does NOT increase for dropped samples.
+	droppedSamples := []record.RefSample{
+		{Ref: chunks.HeadSeriesRef(1), T: 2001, V: 10.0},
+		{Ref: chunks.HeadSeriesRef(1), T: 2002, V: 20.0},
+	}
+	m.Append(droppedSamples)
+	// Do NOT increment dataIn for dropped samples - they're filtered by relabeling.
+
+	dropRate := 0.0
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		dropRate = m.dataIn.rate()
+		// The rate should continue to drop when we've appended samples that will be dropped by relabeling.
+		return (dropRate < lowerRate/2)
+	}, 500*time.Millisecond, 50*time.Millisecond, "dataIn should NOT change after appending dropped samples")
+
+	// Test 3: Verify dataIn increases again for more valid samples.
+	moreSamples := []record.RefSample{
+		{Ref: chunks.HeadSeriesRef(0), T: 1004, V: 4.0},
+		{Ref: chunks.HeadSeriesRef(0), T: 1005, V: 5.0},
+	}
+	m.Append(moreSamples)
+	// Manually increment dataIn for valid samples.
+	m.dataIn.incr(int64(len(moreSamples)))
+
+	additionalRate := 0.0
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		additionalRate = m.dataIn.rate()
+		return additionalRate > dropRate
+	}, 500*time.Millisecond, 50*time.Millisecond, "dataIn should increase for valid samples")
+
+	// Let rate decay again.
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		lowerRate = m.dataIn.rate()
+		// Allow lower rate again for easier measurement of increase.
+		return (lowerRate < additionalRate/2.0)
+	}, 2*time.Second, 100*time.Millisecond, "dataIn rate drop over time")
+
+	// Test 4: Verify dataIn increases even when queue is full.
+	overflowSamples := []record.RefSample{
+		{Ref: chunks.HeadSeriesRef(0), T: 1006, V: 4.0},
+		{Ref: chunks.HeadSeriesRef(0), T: 1007, V: 5.0},
+	}
+	go func() {
+		m.dataIn.incr(int64(len(overflowSamples)))
+		m.Append(overflowSamples)
+	}()
+
+	require.Eventually(t, func() bool {
+		m.dataIn.tick()
+		rate := m.dataIn.rate()
+		// The rate should increase when we append samples even if the queue is full.
+		return rate > lowerRate
+	}, 5*time.Second, 100*time.Millisecond, "dataIn increase even if the queue is full")
+}
