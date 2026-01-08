@@ -259,6 +259,9 @@ func TestCommit(t *testing.T) {
 	require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
 	require.Equal(t, numSeries*numHistograms*2, walHistogramCount, "unexpected number of histograms")
 	require.Equal(t, numSeries*numHistograms*2, walFloatHistogramCount, "unexpected number of float histograms")
+
+	// Check that we can get another appender after this - see https://github.com/prometheus/prometheus/issues/17800.
+	_ = s.Appender(context.TODO())
 }
 
 func TestRollback(t *testing.T) {
