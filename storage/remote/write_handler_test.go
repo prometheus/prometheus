@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -336,6 +337,83 @@ func TestRemoteWriteHandler_V1Message(t *testing.T) {
 			k++
 		}
 	}
+}
+
+func TestRemoteWriteHandler_V1LabelsGetSorted(t *testing.T) {
+	unsortedLabels := []string{"foo", "b", "__name__", "d", "baz"}
+	protoLabels := make([]prompb.Label, len(unsortedLabels))
+
+	for idx, label := range unsortedLabels {
+		protoLabels[idx] = prompb.Label{Name: label, Value: "test"}
+	}
+	fixtureUnsortedLabels := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels:  protoLabels,
+				Samples: []prompb.Sample{{Value: 1, Timestamp: 1}},
+			},
+		},
+	}
+
+	payload, _, _, err := buildWriteRequest(nil, fixtureUnsortedLabels.Timeseries, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false, false)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	require.Len(t, appendable.samples, 1)
+	slices.Sort(unsortedLabels)
+	resultLabels := make([]string, 0, len(unsortedLabels))
+	appendable.samples[0].l.Range(func(label labels.Label) {
+		resultLabels = append(resultLabels, label.Name)
+	})
+	require.Equal(t, unsortedLabels, resultLabels)
+}
+
+func TestRemoteWriteHandler_V2LabelsGetSorted(t *testing.T) {
+	symbols := []string{"val", "__name__", "b", "baz", "d", "foo"}
+	sortedLabels := symbols[1:]
+
+	timeseries := []writev2.TimeSeries{
+		{
+			LabelsRefs: []uint32{5, 0, 2, 0, 1, 0, 4, 0, 3, 0},
+			Samples:    []writev2.Sample{{Value: 1, Timestamp: 1}},
+			Metadata:   writev2.Metadata{},
+		},
+	}
+
+	payload, _, _, err := buildV2WriteRequest(nil, timeseries, symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+	require.NoError(t, err)
+
+	req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+	req.Header.Set("Content-Encoding", compression.Snappy)
+	req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, false, false, false)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	require.Len(t, appendable.samples, 1)
+	resultLabels := make([]string, 0, len(sortedLabels))
+	appendable.samples[0].l.Range(func(label labels.Label) {
+		resultLabels = append(resultLabels, label.Name)
+	})
+	require.Equal(t, sortedLabels, resultLabels)
 }
 
 func expectHeaderValue(t testing.TB, expected int, got string) {
