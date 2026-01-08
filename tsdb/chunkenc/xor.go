@@ -277,6 +277,10 @@ func (it *xorIterator) AtT() int64 {
 	return it.t
 }
 
+func (it *xorIterator) AtST() int64 {
+	return 0 // This version of XOR format does not support start timestamp.
+}
+
 func (it *xorIterator) Err() error {
 	return it.err
 }

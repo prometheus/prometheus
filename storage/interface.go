@@ -473,9 +473,10 @@ type Series interface {
 }
 
 type mockSeries struct {
-	timestamps []int64
-	values     []float64
-	labelSet   []string
+	timestamps      []int64
+	startTimestamps []int64
+	values          []float64
+	labelSet        []string
 }
 
 func (s mockSeries) Labels() labels.Labels {
@@ -483,15 +484,26 @@ func (s mockSeries) Labels() labels.Labels {
 }
 
 func (s mockSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
-	return chunkenc.MockSeriesIterator(s.timestamps, s.values)
+	return chunkenc.MockSeriesIterator(s.startTimestamps, s.timestamps, s.values)
 }
 
 // MockSeries returns a series with custom timestamps, values and labelSet.
 func MockSeries(timestamps []int64, values []float64, labelSet []string) Series {
 	return mockSeries{
-		timestamps: timestamps,
-		values:     values,
-		labelSet:   labelSet,
+		startTimestamps: make([]int64, len(timestamps)), // 0 means unset.
+		timestamps:      timestamps,
+		values:          values,
+		labelSet:        labelSet,
+	}
+}
+
+// MockSeriesWithST returns a series with custom start timestamps, timestamps, values and labelSet.
+func MockSeriesWithST(startTimestamps, timestamps []int64, values []float64, labelSet []string) Series {
+	return mockSeries{
+		startTimestamps: startTimestamps,
+		timestamps:      timestamps,
+		values:          values,
+		labelSet:        labelSet,
 	}
 }
 

@@ -938,6 +938,10 @@ func (it *floatHistogramIterator) AtT() int64 {
 	return it.t
 }
 
+func (it *floatHistogramIterator) AtST() int64 {
+	return 0 // This version of float histogram format does not support start timestamp.
+}
+
 func (it *floatHistogramIterator) Err() error {
 	return it.err
 }
