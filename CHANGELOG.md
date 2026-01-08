@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.9.1 / 2026-01-07
+
+ - [BUGFIX] Agent: fix crash shortly after startup from invalid type of object. #17802
+ - [BUGFIX] Scraping: fix relabel keep/drop not working. #17807
+
 ## 3.9.0 / 2026-01-06
 
 - [CHANGE] Native Histograms are no longer experimental! Make the `native-histogram` feature flag a no-op. Use `scrape_native_histograms` config option instead. #17528
