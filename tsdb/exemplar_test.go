@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -1199,6 +1200,42 @@ func TestCircularExemplarStorage_Concurrent_AddExemplar_Resize(t *testing.T) {
 			close(started)
 		}
 	}
+}
+
+func TestCircularExemplarStorage_RejectionMetrics(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	metrics := NewExemplarMetrics(reg)
+
+	exs, err := NewCircularExemplarStorage(10, metrics, 100)
+	require.NoError(t, err)
+	es := exs.(*CircularExemplarStorage)
+
+	seriesLabels := labels.FromStrings("service", "test")
+
+	labelsHighHash := labels.FromStrings("trace_id", "b")
+	labelsLowHash := labels.FromStrings("trace_id", "a")
+	if labelsHighHash.Hash() < labelsLowHash.Hash() {
+		labelsHighHash, labelsLowHash = labelsLowHash, labelsHighHash
+	}
+
+	for _, e := range []exemplar.Exemplar{
+		{Labels: labelsHighHash, Value: 1.0, Ts: 1000, HasTs: true}, // initial exemplar
+		{Labels: labelsHighHash, Value: 1.0, Ts: 1000, HasTs: true}, // exact duplicate
+		{Labels: labelsHighHash, Value: 1.0, Ts: 100, HasTs: true},  // out-of-order (outside OOO window)
+		{Labels: labelsHighHash, Value: 0.5, Ts: 1000, HasTs: true}, // same ts, lower value
+		{Labels: labelsLowHash, Value: 1.0, Ts: 1000, HasTs: true},  // same ts, same value, lower label hash
+	} {
+		_ = es.AddExemplar(seriesLabels, e)
+	}
+
+	expected := `
+		# HELP prometheus_tsdb_exemplar_rejected_exemplars_total Total number of rejected exemplars.
+		# TYPE prometheus_tsdb_exemplar_rejected_exemplars_total counter
+		prometheus_tsdb_exemplar_rejected_exemplars_total{reason="duplicate"} 3
+		prometheus_tsdb_exemplar_rejected_exemplars_total{reason="too-old"} 1
+	`
+	err = client_testutil.GatherAndCompare(reg, strings.NewReader(expected), "prometheus_tsdb_exemplar_rejected_exemplars_total")
+	require.NoError(t, err)
 }
 
 // debugCircularBuffer iterates all exemplars in the circular exemplar storage
