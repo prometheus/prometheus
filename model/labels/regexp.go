@@ -77,7 +77,18 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		if matches, caseSensitive := findSetMatches(parsed); caseSensitive {
 			m.setMatches = matches
 		}
-		m.stringMatcher = stringMatcherFromRegexp(parsed)
+
+		// Check if we have a pattern like .*-.*-.*.
+		// If so, then we can rely on the containsInOrder check in compileMatchStringFunction,
+		// so no further inspection of the string is required.
+		// We can't do this in stringMatcherFromRegexpInternal as we only want to apply this
+		// if the top-level pattern satisfies this requirement.
+		if isSimpleConcatenationPattern(parsed) {
+			m.stringMatcher = trueMatcher{}
+		} else {
+			m.stringMatcher = stringMatcherFromRegexp(parsed)
+		}
+
 		m.matchString = m.compileMatchStringFunction()
 	}
 
@@ -403,15 +414,6 @@ type StringMatcher interface {
 // It returns nil if the regexp is not supported.
 func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	clearBeginEndText(re)
-
-	// Check if we have a pattern like .*-.*-.*.
-	// If so, then we can rely on the containsInOrder check in compileMatchStringFunction,
-	// so no further inspection of the string is required.
-	// We can't do this in stringMatcherFromRegexpInternal as we only want to apply this
-	// if the top-level pattern satisfies this requirement.
-	if isSimpleConcatenationPattern(re) {
-		return trueMatcher{}
-	}
 
 	m := stringMatcherFromRegexpInternal(re)
 	m = optimizeEqualOrPrefixStringMatchers(m, minEqualMultiStringMatcherMapThreshold)

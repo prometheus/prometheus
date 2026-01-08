@@ -350,7 +350,7 @@ func BenchmarkToNormalizedLower(b *testing.B) {
 	}
 }
 
-func TestStringMatcherFromRegexp(t *testing.T) {
+func TestNewFastRegexMatcher(t *testing.T) {
 	for _, c := range []struct {
 		pattern string
 		exp     StringMatcher
@@ -373,12 +373,12 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{`(?i:((foo1|foo2|bar)))`, orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
 		{"^((?i:foo|oo)|(bar))$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "OO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
 		{"(?i:(foo1|foo2|bar))", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
-		{".*foo.*", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
-		{"(.*)foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
-		{"(.*)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
+		{".*foo.*", trueMatcher{}},     // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
+		{"(.*)foo.*", trueMatcher{}},   // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
+		{"(.*)foo(.*)", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
 		{"(.+)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: trueMatcher{}}},
 		{"^.+foo.+", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
-		{"^(.*)(foo)(.*)$", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
+		{"^(.*)(foo)(.*)$", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
 		{"^(.*)(foo|foobar)(.*)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: trueMatcher{}, right: trueMatcher{}}},
 		{"^(.*)(foo|foobar)(.+)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
 		{"^(.*)(bar|b|buzz)(.+)$", &containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
@@ -424,10 +424,9 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 	} {
 		t.Run(c.pattern, func(t *testing.T) {
 			t.Parallel()
-			parsed, err := syntax.Parse(c.pattern, syntax.Perl|syntax.DotNL)
+			matcher, err := NewFastRegexMatcher(c.pattern)
 			require.NoError(t, err)
-			matches := stringMatcherFromRegexp(parsed)
-			require.Equal(t, c.exp, matches)
+			require.Equal(t, c.exp, matcher.stringMatcher)
 		})
 	}
 }
