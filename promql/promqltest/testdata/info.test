@@ -34,6 +34,22 @@ eval range from 0m to 10m step 5m info(metric, {data=~".+", non_existent=~".*"})
 eval range from 0m to 10m step 5m info(metric_with_overlapping_label)
     metric_with_overlapping_label{data="base", instance="a", job="1", label="value", another_data="another info"} 0 1 2
 
+# Filtering by a label that exists on both base metric and target_info should work.
+# This is a regression test for https://github.com/prometheus/prometheus/issues/17813.
+# Note: data="base" on base metric, data="info" on target_info - the filter matches target_info.
+eval range from 0m to 10m step 5m info(metric_with_overlapping_label, {data="info"})
+    metric_with_overlapping_label{data="base", instance="a", job="1", label="value"} 0 1 2
+
+# Filtering by a label that exists on both base metric and target_info with regex should work.
+eval range from 0m to 10m step 5m info(metric_with_overlapping_label, {data=~".+"})
+    metric_with_overlapping_label{data="base", instance="a", job="1", label="value"} 0 1 2
+
+# Filtering by a label that exists on both base metric and target_info with same value.
+# The selector matches the target_info, and the join succeeds via identifying labels.
+# Note: Only the instance label is considered for inclusion, but it already exists on base.
+eval range from 0m to 10m step 5m info(metric_with_overlapping_label, {instance="a"})
+    metric_with_overlapping_label{data="base", instance="a", job="1", label="value"} 0 1 2
+
 # Include data labels from target_info specifically.
 eval range from 0m to 10m step 5m info(metric, {__name__="target_info"})
     metric{data="info", instance="a", job="1", label="value", another_data="another info"} 0 1 2
