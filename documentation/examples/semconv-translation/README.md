@@ -19,24 +19,62 @@ Using the `__semconv_url__` selector, Prometheus automatically generates query v
 
 ## Running the Demo
 
+### Option 1: Terminal Demo (Quick)
+
 ```bash
-go run ./documentation/examples/semconv_translation
+go run ./documentation/examples/semconv-translation
 ```
 
-The demo runs three phases automatically:
+This runs three phases automatically and prints results to the terminal.
+
+### Option 2: Browser Demo with Prometheus UI
+
+```bash
+cd documentation/examples/semconv-translation
+./demo.sh
+```
+
+This script:
+1. Populates a TSDB with sample data (2 hours of history)
+2. Launches Prometheus serving that data
+3. Opens your browser to the Prometheus UI with the demo query
+
+You can then try these queries in the UI:
+- `test_bytes_total` - Shows only escaped metrics (old naming, 2h-1h ago)
+- `test` - Shows only native metrics (new naming, 1h ago-now)
+- `test{__semconv_url__="registry/1.1.0"}` - Shows **BOTH** merged!
+
+### Option 3: Manual Browser Demo
+
+```bash
+# Populate the TSDB
+go run ./documentation/examples/semconv-translation \
+  --data-dir=./semconv-demo-data \
+  --populate-only
+
+# Launch Prometheus with semconv feature enabled
+./prometheus \
+  --storage.tsdb.path=./semconv-demo-data \
+  --config.file=/dev/null \
+  --enable-feature=semconv-versioned-read
+
+# Open http://localhost:9090 in your browser
+```
+
+## Demo Phases
 
 ### Phase 1: Write metrics with UnderscoreEscapingWithSuffixes
 
-Simulates an OTLP producer using traditional Prometheus naming:
+Simulates an OTLP producer using traditional Prometheus naming (2 hours ago to 1 hour ago):
 ```
-test_bytes_total{http_response_status_code="200", tenant="alice"}
+test_bytes_total{http_response_status_code="200", instance="producer-escaped", tenant="alice"}
 ```
 
 ### Phase 2: Write metrics with NoTranslation
 
-Simulates an OTLP producer using native OTel UTF-8 naming:
+Simulates an OTLP producer using native OTel UTF-8 naming (1 hour ago to now):
 ```
-test{http.response.status_code="200", tenant="alice"}
+test{http.response.status_code="200", instance="producer-native", tenant="alice"}
 ```
 
 ### Phase 3: Query with __semconv_url__
@@ -52,56 +90,31 @@ This query automatically matches both:
 
 The results are merged and returned with consistent OTel semantic naming.
 
-## Expected Output
+## Command-Line Flags
 
-```
-=== OTel Semantic Conventions Translation Demo ===
-
-TSDB data directory: /tmp/semconv-demo-xxxxx
-
---- Phase 1: Writing metrics with UnderscoreEscapingWithSuffixes strategy ---
-
-  [Written] {__name__="test_bytes_total", http_response_status_code="200", ...} 1500
-  [Written] {__name__="test_bytes_total", http_response_status_code="404", ...} 250
-
---- Phase 2: Writing metrics with NoTranslation strategy ---
-
-  [Written] {__name__="test", http.response.status_code="200", ...} 2300
-  [Written] {__name__="test", http.response.status_code="500", ...} 75
-
---- Phase 3: Querying with __semconv_url__ for unified view ---
-
-Query: test{__semconv_url__="registry/1.1.0"}
-
-Results:
-{__name__="test", http.response.status_code="200", instance="producer-escaped", ...} => 1500
-{__name__="test", http.response.status_code="200", instance="producer-native", ...} => 2300
-{__name__="test", http.response.status_code="404", instance="producer-escaped", ...} => 250
-{__name__="test", http.response.status_code="500", instance="producer-native", ...} => 75
-
---- Summary ---
-Both naming conventions merged into canonical OTel names.
-```
+| Flag | Description |
+|------|-------------|
+| `--data-dir=PATH` | Save TSDB to specified directory (default: temp, deleted on exit) |
+| `--populate-only` | Only populate data, skip query phase (for use with browser demo) |
 
 ## OTLP Translation Strategies
 
 Prometheus supports these OTLP translation strategies:
 
-| Strategy | Description | Example |
-|----------|-------------|---------|
-| `UnderscoreEscapingWithSuffixes` | Traditional Prometheus naming with unit/type suffixes | `test_bytes_total` |
-| `UnderscoreEscapingWithoutSuffixes` | Underscores without unit/type suffixes | `test_bytes` |
-| `NoUTF8EscapingWithSuffixes` | Preserves dots, adds suffixes | `test_total` |
-| `NoTranslation` | Pure OTel naming (requires UTF-8 support) | `test` |
+| Strategy | Description | Metric Example | Label Example |
+|----------|-------------|----------------|---------------|
+| `UnderscoreEscapingWithSuffixes` | Traditional Prometheus naming with unit/type suffixes | `test_bytes_total` | `http_response_status_code` |
+| `UnderscoreEscapingWithoutSuffixes` | Underscores without unit/type suffixes | `test_bytes` | `http_response_status_code` |
+| `NoUTF8EscapingWithSuffixes` | Dots in labels preserved, adds suffixes | `test_total` | `http.response.status_code` |
+| `NoTranslation` | Pure OTel naming (requires UTF-8 support) | `test` | `http.response.status_code` |
 
 When querying with `__semconv_url__`, Prometheus generates variants for all strategies to ensure complete data retrieval regardless of how the data was originally written.
 
 ## How It Works
 
-1. The demo creates a temporary TSDB instance
-2. Writes metrics using two different naming conventions (simulating different OTLP producers)
-3. Wraps the storage with `semconv.AwareStorage()` for semconv-aware querying
-4. Queries using `__semconv_url__` which triggers:
-   - Loading semantic conventions from the embedded registry
-   - Generating matcher variants for all OTLP translation strategies
-   - Merging results with canonical OTel naming
+1. The demo creates a TSDB instance (temp or specified directory)
+2. Writes metrics at different timestamps using different naming conventions
+3. When querying with `__semconv_url__`:
+   - Prometheus loads semantic conventions from the embedded registry
+   - Generates matcher variants for all OTLP translation strategies
+   - Merges results with canonical OTel naming
