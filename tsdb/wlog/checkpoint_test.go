@@ -292,14 +292,15 @@ func TestCheckpoint(t *testing.T) {
 			}
 			require.NoError(t, w.Close())
 
-			stats, err := Checkpoint(promslog.NewNopLogger(), w, 100, 106, func(x chunks.HeadSeriesRef) bool {
+			checkpoint := NewCheckpoint(promslog.NewNopLogger(), w)
+			err = checkpoint.Create(100, 106, func(x chunks.HeadSeriesRef) bool {
 				return x%2 == 0
 			}, last/2)
 			require.NoError(t, err)
 			require.NoError(t, w.Truncate(107))
 			require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
-			require.Equal(t, histogramsInWAL+floatHistogramsInWAL+samplesInWAL, stats.TotalSamples)
-			require.Positive(t, stats.DroppedSamples)
+			require.Equal(t, histogramsInWAL+floatHistogramsInWAL+samplesInWAL, checkpoint.Stats().TotalSamples)
+			require.Positive(t, checkpoint.Stats().DroppedSamples)
 
 			// Only the new checkpoint should be left.
 			files, err := os.ReadDir(dir)
@@ -402,7 +403,8 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	// Run the checkpoint and since the wlog contains corrupt data this should return an error.
-	_, err = Checkpoint(promslog.NewNopLogger(), w, 0, 1, nil, 0)
+	checkpoint := NewCheckpoint(promslog.NewNopLogger(), w)
+	err = checkpoint.Create(0, 1, nil, 0)
 	require.Error(t, err)
 
 	// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
