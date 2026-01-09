@@ -361,6 +361,11 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		app = h.storage
 	}
 
+	version := ""
+	if o.Version != nil {
+		version = o.Version.Version
+	}
+
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
@@ -402,6 +407,10 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.AppendMetadata,
 		nil,
 		o.FeatureRegistry,
+		api_v1.OpenAPIOptions{
+			ExternalURL: o.ExternalURL.String(),
+			Version:     version,
+		},
 	)
 
 	if r := o.FeatureRegistry; r != nil {
