@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -99,6 +100,10 @@ func (m *mockCombinedAppender) Commit() error {
 	m.histograms = append(m.histograms, m.pendingHistograms...)
 	m.pendingHistograms = m.pendingHistograms[:0]
 	return nil
+}
+
+func (*mockCombinedAppender) SetResourceContext(_ pcommon.Resource) {
+	// No-op for mock - resource attributes not tested here
 }
 
 func requireEqual(t testing.TB, expected, actual any, msgAndArgs ...any) {
@@ -830,6 +835,12 @@ func (a *appenderRecorder) UpdateMetadata(ref storage.SeriesRef, ls labels.Label
 	if a.updateMetadataError != nil {
 		return 0, a.updateMetadataError
 	}
+	a.setOutRef(ref)
+	return ref, nil
+}
+
+func (a *appenderRecorder) UpdateResource(ref storage.SeriesRef, ls labels.Labels, _, _ map[string]string, _ []storage.EntityData, _ int64) (storage.SeriesRef, error) {
+	a.records = append(a.records, appenderRecord{op: "UpdateResource", ref: ref, ls: ls})
 	a.setOutRef(ref)
 	return ref, nil
 }
