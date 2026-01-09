@@ -33,6 +33,16 @@ const (
 	noExemplar = -1
 	// Estimated number of exemplars per series, for sizing the index.
 	estimatedExemplarsPerSeries = 16
+
+	// reasonExemplarRejectedUnknown is the default rejection reason used when
+	// an exemplar is rejected for an unrecognized or unexpected error.
+	reasonExemplarRejectedUnknown = "unknown"
+	// reasonExemplarRejectedTooOld is used when an exemplar is rejected because
+	// its timestamp is older than the latest exemplar for the series (out of order).
+	reasonExemplarRejectedTooOld = "too-old"
+	// reasonExemplarRejectedDuplicate is used when an exemplar is rejected because
+	// an exemplar with the same timestamp already exists for the series.
+	reasonExemplarRejectedDuplicate = "duplicate"
 )
 
 type CircularExemplarStorage struct {
@@ -66,7 +76,7 @@ type ExemplarMetrics struct {
 	seriesWithExemplarsInStorage prometheus.Gauge
 	lastExemplarsTs              prometheus.Gauge
 	maxExemplars                 prometheus.Gauge
-	outOfOrderExemplars          prometheus.Counter
+	rejectedExemplars            *prometheus.CounterVec
 }
 
 func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
@@ -89,10 +99,10 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 				"range the current exemplar buffer limit allows. This usually means the last timestamp" +
 				"for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.",
 		}),
-		outOfOrderExemplars: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total",
-			Help: "Total number of out of order exemplar ingestion failed attempts.",
-		}),
+		rejectedExemplars: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_exemplar_rejected_exemplars_total",
+			Help: "Total number of rejected exemplars.",
+		}, []string{"reason"}),
 		maxExemplars: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_exemplar_max_exemplars",
 			Help: "Total number of exemplars the exemplar storage can store, resizeable.",
@@ -105,7 +115,7 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 			m.exemplarsInStorage,
 			m.seriesWithExemplarsInStorage,
 			m.lastExemplarsTs,
-			m.outOfOrderExemplars,
+			m.rejectedExemplars,
 			m.maxExemplars,
 		)
 	}
@@ -223,12 +233,12 @@ func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.
 	// Optimize by moving the lock to be per series (& benchmark it).
 	ce.lock.RLock()
 	defer ce.lock.RUnlock()
-	return ce.validateExemplar(ce.index[string(seriesLabels)], e, false)
+	return ce.validateExemplar(ce.index[string(seriesLabels)], e)
 }
 
 // Not thread safe. The appended parameters tells us whether this is an external validation, or internal
 // as a result of an AddExemplar call, in which case we should update any relevant metrics.
-func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.Exemplar, appended bool) error {
+func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.Exemplar) error {
 	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
@@ -262,18 +272,21 @@ func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.
 		return storage.ErrDuplicateExemplar
 	}
 
-	// Reject exemplars older than the OOO time window relative to the newest exemplar.
-	// Exemplars with the same timestamp are ordered by value then label hash to detect
-	// duplicates without iterating through all stored exemplars, which would be too
-	// expensive under lock. Exemplars with equal timestamps but different values or
-	// labels are allowed to support multiple buckets of native histograms.
-	if (e.Ts < newestExemplar.Ts && e.Ts <= newestExemplar.Ts-ce.oooTimeWindowMillis) ||
-		(e.Ts == newestExemplar.Ts && e.Value < newestExemplar.Value) ||
-		(e.Ts == newestExemplar.Ts && e.Value == newestExemplar.Value && e.Labels.Hash() < newestExemplar.Labels.Hash()) {
-		if appended {
-			ce.metrics.outOfOrderExemplars.Inc()
-		}
+	switch {
+	case e.Ts < newestExemplar.Ts && e.Ts <= newestExemplar.Ts-ce.oooTimeWindowMillis:
+		// Reject exemplars older than the OOO time window relative to the newest exemplar.
 		return storage.ErrOutOfOrderExemplar
+	case e.Ts == newestExemplar.Ts && e.Value < newestExemplar.Value:
+		// Exemplars with the same timestamp are ordered by value to detect duplicates
+		// without iterating through all stored exemplars, which would be too expensive
+		// under lock. Exemplars with equal timestamps but different values are allowed
+		// to support multiple buckets of native histograms.
+		return storage.ErrDuplicateExemplar
+	case e.Ts == newestExemplar.Ts && e.Value == newestExemplar.Value && e.Labels.Hash() < newestExemplar.Labels.Hash():
+		// When timestamp and value are equal, use label hash as final decision for
+		// ordering. Exemplars with different labels are allowed to support multiple
+		// buckets of native histograms.
+		return storage.ErrDuplicateExemplar
 	}
 	return nil
 }
@@ -393,8 +406,9 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	seriesLabels := l.Bytes(buf[:])
 
 	idx, indexExists := ce.index[string(seriesLabels)]
-	err := ce.validateExemplar(idx, e, true)
+	err := ce.validateExemplar(idx, e)
 	if err != nil {
+		ce.metrics.countRejectedExemplar(err)
 		if errors.Is(err, storage.ErrDuplicateExemplar) {
 			// Duplicate exemplar, noop.
 			return nil
@@ -410,6 +424,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		if outOfOrder {
 			insertionIndex = ce.findInsertionIndex(e, idx)
 			if ce.exemplars[insertionIndex].exemplar.Ts == e.Ts {
+				ce.metrics.countRejectedExemplar(storage.ErrDuplicateExemplar)
 				// Assume duplicate exemplar, noop.
 				// Native histograms will exercise this code path a lot due to
 				// having multiple exemplars per series so checking the
@@ -571,6 +586,17 @@ func (ce *CircularExemplarStorage) IterateExemplars(f func(seriesLabels labels.L
 		}
 	}
 	return nil
+}
+
+func (em *ExemplarMetrics) countRejectedExemplar(err error) {
+	reason := reasonExemplarRejectedUnknown
+	switch {
+	case errors.Is(err, storage.ErrDuplicateExemplar):
+		reason = reasonExemplarRejectedDuplicate
+	case errors.Is(err, storage.ErrOutOfOrderExemplar):
+		reason = reasonExemplarRejectedTooOld
+	}
+	em.rejectedExemplars.WithLabelValues(reason).Inc()
 }
 
 type intRange struct {
