@@ -12,8 +12,13 @@
 // limitations under the License.
 
 // This demo showcases OTel semantic conventions translation in Prometheus.
-// It writes metrics using different OTLP translation strategies (naming conventions)
-// and demonstrates how __semconv_url__ queries can merge series with different names.
+// It simulates a migration scenario where a producer changes OTLP translation
+// strategy from UnderscoreEscapingWithSuffixes to NoTranslation (native OTel names).
+//
+// The demo shows:
+//   - How queries break after migration (old metric name returns no new data)
+//   - How __semconv_url__ provides query continuity across the migration
+//   - How aggregations and rate() work seamlessly across naming boundaries
 //
 // Run with: go run ./documentation/examples/semconv-translation
 //
@@ -28,12 +33,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/semconv"
 	"github.com/prometheus/prometheus/tsdb"
 )
@@ -96,15 +103,16 @@ func main() {
 	}
 	defer db.Close()
 
-	// For browser demo, spread data over time so graphs look interesting.
-	// Phase 1 data: 2 hours ago to 1 hour ago (simulating "old" producer).
-	// Phase 2 data: 1 hour ago to now (simulating "new" producer after migration).
+	// Simulate a migration scenario:
+	// - Phase 1 (2h ago to 1h ago): Producer uses UnderscoreEscapingWithSuffixes (old strategy)
+	// - Phase 2 (1h ago to now): Same producer migrates to NoTranslation (new strategy)
+	// This represents a real-world scenario where you upgrade your OTLP configuration.
 	now := time.Now()
 
 	// ===== Phase 1: Write metrics with UnderscoreEscapingWithSuffixes =====
-	printPhase(1, "Writing metrics with UnderscoreEscapingWithSuffixes strategy")
+	printPhase(1, "Before migration: UnderscoreEscapingWithSuffixes")
 
-	fmt.Printf("This simulates an OTLP producer using traditional Prometheus naming.\n")
+	fmt.Printf("Simulating a producer BEFORE migration to native OTel naming.\n")
 	fmt.Printf("The metric 'test' (unit: By, type: counter) becomes 'test_bytes_total'.\n")
 	fmt.Printf("The attribute 'http.response.status_code' becomes 'http_response_status_code'.\n")
 	fmt.Printf("Writing samples from 2 hours ago to 1 hour ago...\n\n")
@@ -120,11 +128,11 @@ func main() {
 	for t := startTime; t.Before(endTime); t = t.Add(interval) {
 		value += 10 // Counter increases over time.
 
+		// Same producer ("myapp") - this is the key point: same source, different naming over time.
 		lbls := labels.FromStrings(
 			"__name__", "test_bytes_total",
 			"http_response_status_code", "200",
-			"tenant", "alice",
-			"instance", "producer-escaped",
+			"instance", "myapp:8080",
 		)
 		_, err = app.Append(0, lbls, t.UnixMilli(), value)
 		if err != nil {
@@ -136,8 +144,7 @@ func main() {
 		lbls404 := labels.FromStrings(
 			"__name__", "test_bytes_total",
 			"http_response_status_code", "404",
-			"tenant", "bob",
-			"instance", "producer-escaped",
+			"instance", "myapp:8080",
 		)
 		_, err = app.Append(0, lbls404, t.UnixMilli(), value*0.1)
 		if err != nil {
@@ -151,14 +158,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("  %s[Written]%s %d samples for test_bytes_total{http_response_status_code=\"200\"}\n", colorGreen, colorReset, int(time.Hour/interval))
-	fmt.Printf("  %s[Written]%s %d samples for test_bytes_total{http_response_status_code=\"404\"}\n\n", colorGreen, colorReset, int(time.Hour/interval))
+	fmt.Printf("  %s[Written]%s %d samples for test_bytes_total{http_response_status_code=\"200\", instance=\"myapp:8080\"}\n", colorGreen, colorReset, int(time.Hour/interval))
+	fmt.Printf("  %s[Written]%s %d samples for test_bytes_total{http_response_status_code=\"404\", instance=\"myapp:8080\"}\n\n", colorGreen, colorReset, int(time.Hour/interval))
 
 	// ===== Phase 2: Write metrics with NoTranslation =====
-	printPhase(2, "Writing metrics with NoTranslation strategy")
+	printPhase(2, "After migration: NoTranslation (native OTel naming)")
 
-	fmt.Printf("This simulates an OTLP producer using native OTel UTF-8 naming.\n")
-	fmt.Printf("The metric 'test' stays as 'test' (no unit suffix).\n")
+	fmt.Printf("Simulating the SAME producer AFTER migration to native OTel naming.\n")
+	fmt.Printf("The metric 'test' stays as 'test' (no unit/type suffix).\n")
 	fmt.Printf("The attribute 'http.response.status_code' preserves its dots.\n")
 	fmt.Printf("Writing samples from 1 hour ago to now...\n\n")
 
@@ -171,11 +178,11 @@ func main() {
 	for t := startTime; t.Before(endTime); t = t.Add(interval) {
 		value += 10
 
+		// Same producer ("myapp"), same logical series - just different naming after migration.
 		lbls := labels.FromStrings(
 			"__name__", "test",
 			"http.response.status_code", "200",
-			"tenant", "alice",
-			"instance", "producer-native",
+			"instance", "myapp:8080",
 		)
 		_, err = app.Append(0, lbls, t.UnixMilli(), value)
 		if err != nil {
@@ -183,14 +190,13 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Also write a 500 series.
-		lbls500 := labels.FromStrings(
+		// Same 404 series, continuing after migration.
+		lbls404 := labels.FromStrings(
 			"__name__", "test",
-			"http.response.status_code", "500",
-			"tenant", "charlie",
-			"instance", "producer-native",
+			"http.response.status_code", "404",
+			"instance", "myapp:8080",
 		)
-		_, err = app.Append(0, lbls500, t.UnixMilli(), value*0.05)
+		_, err = app.Append(0, lbls404, t.UnixMilli(), value*0.1)
 		if err != nil {
 			fmt.Printf("Failed to append: %v\n", err)
 			os.Exit(1)
@@ -202,29 +208,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("  %s[Written]%s %d samples for test{http.response.status_code=\"200\"}\n", colorGreen, colorReset, int(time.Hour/interval))
-	fmt.Printf("  %s[Written]%s %d samples for test{http.response.status_code=\"500\"}\n\n", colorGreen, colorReset, int(time.Hour/interval))
+	fmt.Printf("  %s[Written]%s %d samples for test{http.response.status_code=\"200\", instance=\"myapp:8080\"}\n", colorGreen, colorReset, int(time.Hour/interval))
+	fmt.Printf("  %s[Written]%s %d samples for test{http.response.status_code=\"404\", instance=\"myapp:8080\"}\n\n", colorGreen, colorReset, int(time.Hour/interval))
 
 	// If populate-only mode, exit here.
 	if *populateOnly {
 		fmt.Printf("%s%s--- Data population complete ---%s\n\n", colorBold, colorGreen, colorReset)
 		fmt.Printf("TSDB data written to: %s%s%s\n\n", colorYellow, tsdbDir, colorReset)
 		fmt.Printf("To query this data in the browser, run:\n")
-		fmt.Printf("  %s./prometheus --storage.tsdb.path=%s --config.file=/dev/null%s\n\n", colorCyan, tsdbDir, colorReset)
-		fmt.Printf("Then open http://localhost:9090 and try these queries:\n")
-		fmt.Printf("  1. %stest_bytes_total%s                         # Shows only escaped metrics\n", colorMagenta, colorReset)
-		fmt.Printf("  2. %stest%s                                     # Shows only native metrics\n", colorMagenta, colorReset)
-		fmt.Printf("  3. %stest{__semconv_url__=\"registry/1.1.0\"}%s    # Shows BOTH merged!\n\n", colorMagenta, colorReset)
+		fmt.Printf("  %s./prometheus --storage.tsdb.path=%s --config.file=/dev/null --enable-feature=semconv-versioned-read%s\n\n", colorCyan, tsdbDir, colorReset)
+		fmt.Printf("Then open http://localhost:9090 and try these queries:\n\n")
+		fmt.Printf("  %sThe Problem - Queries break after migration:%s\n", colorYellow, colorReset)
+		fmt.Printf("    %stest_bytes_total%s                           # Only old data (before migration)\n", colorMagenta, colorReset)
+		fmt.Printf("    %stest%s                                       # Only new data (after migration)\n\n", colorMagenta, colorReset)
+		fmt.Printf("  %sThe Solution - Seamless query continuity:%s\n", colorGreen, colorReset)
+		fmt.Printf("    %stest{__semconv_url__=\"registry/1.1.0\"}%s      # ALL data, unified naming!\n", colorMagenta, colorReset)
+		fmt.Printf("    %ssum(test{__semconv_url__=\"registry/1.1.0\"})%s # Aggregation works across boundary\n", colorMagenta, colorReset)
+		fmt.Printf("    %srate(test{__semconv_url__=\"registry/1.1.0\"}[5m])%s # Rate works too!\n\n", colorMagenta, colorReset)
 		return
 	}
 
-	// ===== Phase 3: Query with __semconv_url__ =====
-	printPhase(3, "Querying with __semconv_url__ for unified view")
-
-	fmt.Printf("The __semconv_url__ parameter tells Prometheus to:\n")
-	fmt.Printf("  1. Load the semantic conventions from the embedded registry\n")
-	fmt.Printf("  2. Generate variant matchers for different naming conventions\n")
-	fmt.Printf("  3. Merge results into canonical OTel names\n\n")
+	// ===== Phase 3: Demonstrate the problem - broken queries after migration =====
+	printPhase(3, "The Problem: Queries break after migration")
 
 	// Create semconv-aware storage wrapper.
 	semconvStorage := semconv.AwareStorage(db)
@@ -236,41 +241,165 @@ func main() {
 		Timeout:    time.Minute,
 	}
 	engine := promql.NewEngine(opts)
-
-	// Query using __semconv_url__ to merge both naming conventions.
-	// The registry/1.1.0 file defines the "test" metric with its attributes.
-	query := `test{__semconv_url__="registry/1.1.0"}`
-	fmt.Printf("Query: %s%s%s\n\n", colorMagenta, query, colorReset)
-
 	ctx := context.Background()
-	q, err := engine.NewInstantQuery(ctx, semconvStorage, nil, query, now)
-	if err != nil {
-		fmt.Printf("Failed to create query: %v\n", err)
-		os.Exit(1)
-	}
 
-	result := q.Exec(ctx)
-	if result.Err != nil {
-		fmt.Printf("Query failed: %v\n", result.Err)
-		os.Exit(1)
-	}
+	fmt.Printf("After migrating to native OTel naming, queries using old names miss new data:\n\n")
 
-	fmt.Printf("%sResults:%s\n", colorBold, colorReset)
-	fmt.Printf("%s\n", result.Value.String())
+	// Query 1: Old metric name - only returns pre-migration data
+	runRangeQueryWithDetails(engine, db, ctx, now, "test_bytes_total",
+		"Old metric name - only has data from BEFORE migration")
+
+	// Query 2: New metric name - only returns post-migration data
+	runRangeQueryWithDetails(engine, db, ctx, now, "test",
+		"New metric name - only has data from AFTER migration")
+
+	fmt.Printf("  %s=> Neither query alone shows the complete picture!%s\n\n", colorYellow, colorReset)
+
+	// ===== Phase 4: The solution - semconv-aware queries =====
+	printPhase(4, "The Solution: __semconv_url__ for query continuity")
+
+	fmt.Printf("The __semconv_url__ parameter tells Prometheus to:\n")
+	fmt.Printf("  1. Load semantic conventions from the embedded registry\n")
+	fmt.Printf("  2. Generate query variants for all OTLP naming strategies\n")
+	fmt.Printf("  3. Merge results with canonical OTel names\n\n")
+
+	// Query 3: Semconv-aware query - returns ALL data with unified naming
+	runRangeQueryWithDetails(engine, semconvStorage, ctx, now, `test{__semconv_url__="registry/1.1.0"}`,
+		"Semconv query - returns ALL data with unified OTel naming!")
+
+	fmt.Printf("  %s=> Complete data coverage across the migration boundary!%s\n\n", colorGreen, colorReset)
+
+	// ===== Phase 5: Aggregation across the migration boundary =====
+	printPhase(5, "Aggregation works across the migration boundary")
+
+	fmt.Printf("Aggregations like sum() work seamlessly across different naming conventions:\n\n")
+
+	runRangeQuery(engine, semconvStorage, ctx, now, `sum(test{__semconv_url__="registry/1.1.0"})`,
+		"sum() aggregates data from both naming conventions into one continuous series")
+
+	// ===== Phase 6: Rate calculation across the migration boundary =====
+	printPhase(6, "Counter rates work across the migration boundary")
+
+	fmt.Printf("Even rate() calculations work across the naming change:\n\n")
+
+	runRangeQuery(engine, semconvStorage, ctx, now, `sum(rate(test{__semconv_url__="registry/1.1.0"}[5m]))`,
+		"rate() computes correctly across the migration point")
 
 	// ===== Summary =====
 	fmt.Printf("\n%s%s--- Summary ---%s\n\n", colorBold, colorGreen, colorReset)
-	fmt.Printf("The demo showed how Prometheus can unify metrics from different OTLP producers:\n\n")
-	fmt.Printf("  %s*%s Producer A used UnderscoreEscapingWithSuffixes:\n", colorCyan, colorReset)
-	fmt.Printf("      test_bytes_total{http_response_status_code=\"200\"}\n\n")
-	fmt.Printf("  %s*%s Producer B used NoTranslation:\n", colorCyan, colorReset)
-	fmt.Printf("      test{http.response.status_code=\"200\"}\n\n")
-	fmt.Printf("  %s*%s Query with __semconv_url__ merged both into canonical OTel names:\n", colorCyan, colorReset)
-	fmt.Printf("      test{http.response.status_code=\"200\"}\n\n")
-	fmt.Printf("This enables querying across heterogeneous OTLP producers using\n")
-	fmt.Printf("a single semantic conventions-aware query.\n\n")
+	fmt.Printf("This demo simulated a migration scenario where a producer (myapp:8080)\n")
+	fmt.Printf("changed OTLP translation strategy:\n\n")
+	fmt.Printf("  %s*%s Before migration (2h-1h ago): UnderscoreEscapingWithSuffixes\n", colorCyan, colorReset)
+	fmt.Printf("      test_bytes_total{http_response_status_code=\"200\", instance=\"myapp:8080\"}\n\n")
+	fmt.Printf("  %s*%s After migration (1h ago-now): NoTranslation (native OTel)\n", colorCyan, colorReset)
+	fmt.Printf("      test{http.response.status_code=\"200\", instance=\"myapp:8080\"}\n\n")
+	fmt.Printf("  %s*%s Without __semconv_url__: Queries break, dashboards show gaps\n", colorYellow, colorReset)
+	fmt.Printf("  %s*%s With __semconv_url__: Seamless continuity, all data accessible\n\n", colorGreen, colorReset)
+	fmt.Printf("Key benefits:\n")
+	fmt.Printf("  - Existing dashboards keep working after migration\n")
+	fmt.Printf("  - Aggregations (sum, avg, etc.) work across naming boundaries\n")
+	fmt.Printf("  - Rate calculations produce continuous results\n")
+	fmt.Printf("  - Results use canonical OTel semantic convention names\n\n")
 }
 
 func printPhase(n int, description string) {
 	fmt.Printf("%s%s--- Phase %d: %s ---%s\n\n", colorBold, colorYellow, n, description, colorReset)
+}
+
+// runRangeQuery executes a range query over the last 2.5 hours and displays results.
+func runRangeQuery(engine *promql.Engine, storage storage.Queryable, ctx context.Context, now time.Time, query, description string) {
+	fmt.Printf("  Query: %s%s%s\n", colorMagenta, query, colorReset)
+	fmt.Printf("  %s\n", description)
+
+	// Query over the full time range (2.5h to capture data from both phases).
+	start := now.Add(-150 * time.Minute)
+	end := now
+	step := 5 * time.Minute
+
+	q, err := engine.NewRangeQuery(ctx, storage, nil, query, start, end, step)
+	if err != nil {
+		fmt.Printf("  %s[Error]%s Failed to create query: %v\n\n", colorYellow, colorReset, err)
+		return
+	}
+
+	result := q.Exec(ctx)
+	if result.Err != nil {
+		fmt.Printf("  %s[Error]%s Query failed: %v\n\n", colorYellow, colorReset, result.Err)
+		return
+	}
+
+	// Count data points.
+	resultStr := result.Value.String()
+	if resultStr == "" || resultStr == "{}" {
+		fmt.Printf("  %s[Result]%s No data returned\n\n", colorYellow, colorReset)
+	} else {
+		// Count total data points across all series.
+		pointCount := strings.Count(resultStr, "@")
+		fmt.Printf("  %s[Result]%s %d data points spanning the full 2.5h range\n", colorGreen, colorReset, pointCount)
+		fmt.Printf("           (covering both pre-migration and post-migration data)\n\n")
+	}
+}
+
+// runRangeQueryWithDetails executes a range query and shows time coverage details.
+func runRangeQueryWithDetails(engine *promql.Engine, storage storage.Queryable, ctx context.Context, now time.Time, query, description string) {
+	fmt.Printf("  Query: %s%s%s\n", colorMagenta, query, colorReset)
+	fmt.Printf("  %s\n", description)
+
+	// Query over the full time range (2.5h to capture data from both phases).
+	start := now.Add(-150 * time.Minute)
+	end := now
+	step := 5 * time.Minute
+
+	q, err := engine.NewRangeQuery(ctx, storage, nil, query, start, end, step)
+	if err != nil {
+		fmt.Printf("  %s[Error]%s Failed to create query: %v\n\n", colorYellow, colorReset, err)
+		return
+	}
+
+	result := q.Exec(ctx)
+	if result.Err != nil {
+		fmt.Printf("  %s[Error]%s Query failed: %v\n\n", colorYellow, colorReset, result.Err)
+		return
+	}
+
+	// Analyze the matrix result for time coverage.
+	matrix, ok := result.Value.(promql.Matrix)
+	if !ok || len(matrix) == 0 {
+		fmt.Printf("  %s[Result]%s No data returned\n\n", colorYellow, colorReset)
+		return
+	}
+
+	// Find the time range covered by the data.
+	var minTime, maxTime int64
+	totalPoints := 0
+	for _, series := range matrix {
+		for _, point := range series.Floats {
+			if minTime == 0 || point.T < minTime {
+				minTime = point.T
+			}
+			if point.T > maxTime {
+				maxTime = point.T
+			}
+			totalPoints++
+		}
+	}
+
+	// Calculate time coverage.
+	migrationPoint := now.Add(-1 * time.Hour).UnixMilli()
+	minTimeStr := time.UnixMilli(minTime).Format("15:04")
+	maxTimeStr := time.UnixMilli(maxTime).Format("15:04")
+	migrationStr := time.UnixMilli(migrationPoint).Format("15:04")
+
+	// Determine coverage description.
+	var coverage string
+	if minTime < migrationPoint && maxTime > migrationPoint {
+		coverage = fmt.Sprintf("%s[FULL]%s %s to %s (spans migration at %s)", colorGreen, colorReset, minTimeStr, maxTimeStr, migrationStr)
+	} else if maxTime <= migrationPoint {
+		coverage = fmt.Sprintf("%s[PARTIAL]%s %s to %s (only pre-migration, ends before %s)", colorYellow, colorReset, minTimeStr, maxTimeStr, migrationStr)
+	} else {
+		coverage = fmt.Sprintf("%s[PARTIAL]%s %s to %s (only post-migration, starts after %s)", colorYellow, colorReset, minTimeStr, maxTimeStr, migrationStr)
+	}
+
+	fmt.Printf("  [Result] %d series, %d data points\n", len(matrix), totalPoints)
+	fmt.Printf("           Time coverage: %s\n\n", coverage)
 }

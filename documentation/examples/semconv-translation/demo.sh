@@ -95,10 +95,14 @@ trap cleanup EXIT
 echo -e "${BOLD}${GREEN}Starting Prometheus server...${NC}"
 echo -e "  Web UI: ${CYAN}http://localhost:${PORT}${NC}\n"
 
-echo -e "${BOLD}Try these queries in the browser:${NC}"
-echo -e "  1. ${CYAN}test_bytes_total${NC}                         - Shows only escaped metrics (old naming)"
-echo -e "  2. ${CYAN}test${NC}                                     - Shows only native metrics (new naming)"
-echo -e "  3. ${CYAN}test{__semconv_url__=\"registry/1.1.0\"}${NC}    - Shows BOTH merged!\n"
+echo -e "${BOLD}Try these queries in the browser:${NC}\n"
+echo -e "  ${YELLOW}The Problem - Queries break after migration:${NC}"
+echo -e "    ${CYAN}test_bytes_total${NC}                           - Only old data (before migration)"
+echo -e "    ${CYAN}test${NC}                                       - Only new data (after migration)\n"
+echo -e "  ${GREEN}The Solution - Seamless query continuity:${NC}"
+echo -e "    ${CYAN}test{__semconv_url__=\"registry/1.1.0\"}${NC}      - ALL data, unified naming!"
+echo -e "    ${CYAN}sum(test{__semconv_url__=\"registry/1.1.0\"})${NC} - Aggregation works"
+echo -e "    ${CYAN}rate(test{__semconv_url__=\"registry/1.1.0\"}[5m])${NC} - Rate works too!\n"
 
 echo -e "${YELLOW}Press Ctrl+C to stop the demo.${NC}\n"
 
