@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -388,6 +389,12 @@ func (ch *OOOCompactionHead) Chunks() (ChunkReader, error) {
 
 func (*OOOCompactionHead) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
+}
+
+// SeriesMetadata returns series metadata for the OOO compaction head.
+// Returns an empty reader as OOO head does not persist metadata.
+func (*OOOCompactionHead) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return seriesmetadata.NewMemSeriesMetadata(), nil
 }
 
 var oooCompactionHeadULID = ulid.MustParse("0000000000XX000COMPACTHEAD")
