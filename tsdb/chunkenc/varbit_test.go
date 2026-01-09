@@ -181,3 +181,32 @@ func TestYolo(t *testing.T) {
 		ts = ts.Add(1 * 365 * 24 * time.Hour)
 	}
 }
+
+func TestSTDiff(t *testing.T) {
+	// Just a basic test to see if encoding/decoding works as intended.
+	values := []int64{-1000000, -100000, -1000, -10, 0, 10, 1000, 100000, 1000000}
+
+	for _, v := range values {
+		for bitOffset := 0; bitOffset < 8; bitOffset++ {
+			// Create bstream with bitoffset.
+			bs := bstream{}
+			for i := 0; i < bitOffset; i++ {
+				bs.writeBit(zero)
+			}
+			t.Run(fmt.Sprintf("val %d bit offset %d", v, bitOffset), func(t *testing.T) {
+				putSTDiff(&bs, false, v)
+
+				bsr := newBReader(bs.bytes())
+				// Advance to bitoffset.
+				for i := 0; i < bitOffset; i++ {
+					_, err := bsr.readBit()
+					require.NoError(t, err)
+				}
+				noChange, stDiff, err := readSTDiff(&bsr)
+				require.NoError(t, err)
+				require.False(t, noChange)
+				require.Equal(t, v, stDiff)
+			})
+		}
+	}
+}
