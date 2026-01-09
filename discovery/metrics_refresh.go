@@ -88,3 +88,12 @@ func (m *RefreshMetricsVecs) Register() error {
 func (m *RefreshMetricsVecs) Unregister() {
 	m.metricRegisterer.UnregisterMetrics()
 }
+
+// DeleteLabelValues deletes refresh metrics for a specific mechanism and config.
+// Smart to use this when a scrape job is removed.
+func (m *RefreshMetricsVecs) DeleteLabelValues(mech, config string) {
+	// DeleteLabelValues is used over UnregisterMetrics to only delete metrics for a specific
+	// mechanism and config combination.
+	m.failuresVec.DeleteLabelValues(mech, config)
+	m.durationVec.DeleteLabelValues(mech, config)
+}
