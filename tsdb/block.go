@@ -228,6 +228,18 @@ func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
 	return slices.Contains(bm.Hints, CompactionHintFromOutOfOrder)
 }
 
+func (bm *BlockMetaCompaction) SetStaleSeries() {
+	if bm.FromStaleSeries() {
+		return
+	}
+	bm.Hints = append(bm.Hints, CompactionHintFromStaleSeries)
+	slices.Sort(bm.Hints)
+}
+
+func (bm *BlockMetaCompaction) FromStaleSeries() bool {
+	return slices.Contains(bm.Hints, CompactionHintFromStaleSeries)
+}
+
 const (
 	indexFilename = "index"
 	metaFilename  = "meta.json"
@@ -236,6 +248,10 @@ const (
 	// CompactionHintFromOutOfOrder is a hint noting that the block
 	// was created from out-of-order chunks.
 	CompactionHintFromOutOfOrder = "from-out-of-order"
+
+	// CompactionHintFromStaleSeries is a hint noting that the block
+	// was created from stale series.
+	CompactionHintFromStaleSeries = "from-stale-series"
 )
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
