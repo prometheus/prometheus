@@ -126,3 +126,13 @@ eval instant at 10m sum by (__name__) (metric_total{env="3"} or rate(metric_tota
 # Same as above, but with reversed order.
 eval instant at 10m sum by (__name__) (rate(metric_total{env="3"}[5m]) or metric_total{env="1"})
   metric_total 10
+
+clear
+
+# Test delayed name removal with range queries and OR operator.
+load 10m
+  metric_a 1 _
+  metric_b 3 4
+
+eval range from 0 to 20m step 10m -metric_a or -metric_b
+  {} -1 -4 _

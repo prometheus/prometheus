@@ -153,6 +153,7 @@ WITHOUT
 START
 END
 STEP
+RANGE
 %token preprocessorEnd
 
 // Counter reset hints.
@@ -465,7 +466,7 @@ offset_expr: expr OFFSET offset_duration_expr
                         $$ = $1
                         }
                 | expr OFFSET error
-                        { yylex.(*parser).unexpected("offset", "number, duration, or step()"); $$ = $1 }
+                        { yylex.(*parser).unexpected("offset", "number, duration, step(), or range()"); $$ = $1 }
                 ;
 
 /*
@@ -575,11 +576,11 @@ subquery_expr   : expr LEFT_BRACKET positive_duration_expr COLON positive_durati
                 | expr LEFT_BRACKET positive_duration_expr COLON positive_duration_expr error
                         { yylex.(*parser).unexpected("subquery selector", "\"]\""); $$ = $1 }
                 | expr LEFT_BRACKET positive_duration_expr COLON error
-                        { yylex.(*parser).unexpected("subquery selector", "number, duration, or step() or \"]\""); $$ = $1 }
+                        { yylex.(*parser).unexpected("subquery selector", "number, duration, step(), range(), or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET positive_duration_expr error
                         { yylex.(*parser).unexpected("subquery or range", "\":\" or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET error
-		        { yylex.(*parser).unexpected("subquery or range selector", "number, duration, or step()"); $$ = $1 }
+		        { yylex.(*parser).unexpected("subquery or range selector", "number, duration, step(), or range()"); $$ = $1 }
                 ;
 
 /*
@@ -696,7 +697,7 @@ metric          : metric_identifier label_set
                 ;
 
 
-metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END | LIMITK | LIMIT_RATIO | STEP | ANCHORED | SMOOTHED;
+metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED;
 
 label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
@@ -953,7 +954,7 @@ counter_reset_hint : UNKNOWN_COUNTER_RESET | COUNTER_RESET | NOT_COUNTER_RESET |
 aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK | LIMITK | LIMIT_RATIO;
 
 // Inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
-maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2 | LIMITK | LIMIT_RATIO | STEP | ANCHORED | SMOOTHED;
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2 | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED;
 
 unary_op        : ADD | SUB;
 
@@ -1088,12 +1089,32 @@ offset_duration_expr    : number_duration_literal
                                         EndPos: $3.PositionRange().End,
                                 }
                                 }
+                        | RANGE LEFT_PAREN RIGHT_PAREN
+                                {
+                                $$ = &DurationExpr{
+                                        Op:  RANGE,
+                                        StartPos: $1.PositionRange().Start,
+                                        EndPos: $3.PositionRange().End,
+                                }
+                                }
                         | unary_op STEP LEFT_PAREN RIGHT_PAREN
                                 {
                                 $$ = &DurationExpr{
                                         Op:  $1.Typ,
                                         RHS: &DurationExpr{
                                                 Op:       STEP,
+                                                StartPos: $2.PositionRange().Start,
+                                                EndPos:   $4.PositionRange().End,
+                                        },
+                                        StartPos: $1.Pos,
+                                }
+                                }
+                        | unary_op RANGE LEFT_PAREN RIGHT_PAREN
+                                {
+                                $$ = &DurationExpr{
+                                        Op:  $1.Typ,
+                                        RHS: &DurationExpr{
+                                                Op:       RANGE,
                                                 StartPos: $2.PositionRange().Start,
                                                 EndPos:   $4.PositionRange().End,
                                         },
@@ -1230,6 +1251,14 @@ duration_expr   : number_duration_literal
                         {
                             $$ = &DurationExpr{
                                 Op:       STEP,
+                                StartPos: $1.PositionRange().Start,
+                                EndPos:   $3.PositionRange().End,
+                            }
+                        }
+                | RANGE LEFT_PAREN RIGHT_PAREN
+                        {
+                            $$ = &DurationExpr{
+                                Op:       RANGE,
                                 StartPos: $1.PositionRange().Start,
                                 EndPos:   $3.PositionRange().End,
                             }

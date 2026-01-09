@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -612,7 +612,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 	)
 	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
-	require.EqualError(t, err, "vector contains metrics with the same labelset after applying alert labels")
+	require.ErrorIs(t, err, ErrDuplicateAlertLabelSet)
 }
 
 func TestAlertingRuleLimit(t *testing.T) {

@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -2299,7 +2299,7 @@ func (b *batchMetricsUpdater) recordRetry(sc sendBatchContext) {
 	b.metrics.retriedHistogramsTotal.Add(float64(sc.histogramCount))
 }
 
-// createSpan creates and configures an OpenTelemetry span for batch sending.
+// createBatchSpan creates and configures an OpenTelemetry span for batch sending.
 func createBatchSpan(ctx context.Context, sc sendBatchContext, remoteName, remoteURL string, try int) (context.Context, trace.Span) {
 	ctx, span := otel.Tracer("").Start(ctx, "Remote Send Batch")
 	span.SetAttributes(

@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -108,6 +108,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	now := time.Now()
 	defer func() {
 		d.metrics.Duration.Observe(time.Since(now).Seconds())
+		d.metrics.DurationHistogram.Observe(time.Since(now).Seconds())
 	}()
 
 	tgs, err := d.refreshf(ctx)

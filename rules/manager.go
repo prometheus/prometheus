@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -85,6 +86,7 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	timeSinceStart := time.Since(start)
 
 	g.metrics.IterationDuration.Observe(timeSinceStart.Seconds())
+	g.metrics.IterationDurationHistogram.Observe(timeSinceStart.Seconds())
 	g.updateRuleEvaluationTimeSum()
 	g.setEvaluationTime(timeSinceStart)
 	g.setLastEvaluation(start)
@@ -133,6 +135,9 @@ type ManagerOptions struct {
 	RestoreNewRuleGroups bool
 
 	Metrics *Metrics
+
+	// FeatureRegistry is used to register rule manager features.
+	FeatureRegistry features.Collector
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -171,6 +176,13 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	if o.Logger == nil {
 		o.Logger = promslog.NewNopLogger()
+	}
+
+	// Register rule manager features if a registry is provided.
+	if o.FeatureRegistry != nil {
+		o.FeatureRegistry.Set(features.Rules, "concurrent_rule_eval", o.ConcurrentEvalsEnabled)
+		o.FeatureRegistry.Enable(features.Rules, "query_offset")
+		o.FeatureRegistry.Enable(features.Rules, "keep_firing_for")
 	}
 
 	m := &Manager{

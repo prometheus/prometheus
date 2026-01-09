@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -363,21 +363,6 @@ func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
 func unpackHeadChunkRef(ref chunks.ChunkRef) (seriesID chunks.HeadSeriesRef, chunkID chunks.HeadChunkID, isOOO bool) {
 	sid, cid := chunks.HeadChunkRef(ref).Unpack()
 	return sid, (cid & (oooChunkIDMask - 1)), (cid & oooChunkIDMask) != 0
-}
-
-// LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (h *headIndexReader) LabelValueFor(_ context.Context, id storage.SeriesRef, label string) (string, error) {
-	memSeries := h.head.series.getByID(chunks.HeadSeriesRef(id))
-	if memSeries == nil {
-		return "", storage.ErrNotFound
-	}
-
-	value := memSeries.labels().Get(label)
-	if value == "" {
-		return "", storage.ErrNotFound
-	}
-
-	return value, nil
 }
 
 // LabelNamesFor returns all the label names for the series referred to by the postings.

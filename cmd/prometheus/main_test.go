@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -979,6 +979,7 @@ remote_write:
 // | dataPending         | 0             | 1228.8              |
 // | desiredShards       | 0.6           | 369.2               |.
 func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
+	t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/17489")
 	t.Parallel()
 
 	tmpDir := t.TempDir()

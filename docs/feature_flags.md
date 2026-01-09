@@ -28,6 +28,8 @@ and m-mapped chunks, while a WAL replay from disk is only needed for the parts o
 
 `--enable-feature=extra-scrape-metrics`
 
+> **Note:** This feature flag is deprecated. Please use the `extra_scrape_metrics` configuration option instead (available at both global and scrape-config level). The feature flag will be removed in a future major version. See the [configuration documentation](configuration/configuration.md) for more details.
+
 When enabled, for each instance scrape, Prometheus stores a sample in the following additional time series:
 
 - `scrape_timeout_seconds`. The configured `scrape_timeout` for a target. This allows you to measure each target to find out how close they are to timing out with `scrape_duration_seconds / scrape_timeout_seconds`.
@@ -197,7 +199,12 @@ the offset calculation.
 
 `step()` can be used in duration expressions.
 For a **range query**, it resolves to the step width of the range query.
-For an **instant query**, it resolves to `0s`. 
+For an **instant query**, it resolves to `0s`.
+
+`range()` can be used in duration expressions.
+For a **range query**, it resolves to the full range of the query (end time - start time).
+For an **instant query**, it resolves to `0s`.
+This is particularly useful in combination with `@end()` to look back over the entire query range, e.g., `max_over_time(metric[range()] @ end())`.
 
 `min(<duration>, <duration>)` and `max(<duration>, <duration>)` can be used to find the minimum or maximum of two duration expressions.
 

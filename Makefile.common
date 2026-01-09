@@ -1,4 +1,4 @@
-# Copyright 2018 The Prometheus Authors
+# Copyright The Prometheus Authors
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -61,7 +61,7 @@ PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_
 SKIP_GOLANGCI_LINT :=
 GOLANGCI_LINT :=
 GOLANGCI_LINT_OPTS ?=
-GOLANGCI_LINT_VERSION ?= v2.6.0
+GOLANGCI_LINT_VERSION ?= v2.7.2
 GOLANGCI_FMT_OPTS ?=
 # golangci-lint only supports linux, darwin and windows platforms on i386/amd64/arm64.
 # windows isn't included here because of the path separator being different.
@@ -129,6 +129,12 @@ common-check_license:
                echo "license header checking failed:"; echo "$${licRes}"; \
                exit 1; \
        fi
+	@echo ">> checking for copyright years 2026 or later"
+	@futureYearRes=$$(git grep -E 'Copyright (202[6-9]|20[3-9][0-9])' -- '*.go' ':!:vendor/*' || true); \
+	if [ -n "$${futureYearRes}" ]; then \
+		echo "Files with copyright year 2026 or later found (should use 'Copyright The Prometheus Authors'):"; echo "$${futureYearRes}"; \
+		exit 1; \
+	fi
 
 .PHONY: common-deps
 common-deps:

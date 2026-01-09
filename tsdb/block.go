@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -101,11 +101,6 @@ type IndexReader interface {
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
-
-	// LabelValueFor returns label value for the given label name in the series referred to by ID.
-	// If the series couldn't be found or the series doesn't have the requested label a
-	// storage.ErrNotFound is returned as error.
-	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
 
 	// LabelNamesFor returns all the label names for the series referred to by the postings.
 	// The names returned are sorted.
@@ -565,11 +560,6 @@ func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 func (r blockIndexReader) Close() error {
 	r.b.pendingReaders.Done()
 	return nil
-}
-
-// LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
-	return r.ir.LabelValueFor(ctx, id, label)
 }
 
 // LabelNamesFor returns all the label names for the series referred to by the postings.
