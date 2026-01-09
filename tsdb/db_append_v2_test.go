@@ -193,7 +193,7 @@ func TestDataNotAvailableAfterRollback_AppendV2(t *testing.T) {
 			require.NoError(t, err)
 			walSeriesCount += len(series)
 
-		case record.Samples:
+		case record.Samples, record.SamplesV2:
 			var samples []record.RefSample
 			samples, err = dec.Samples(rec, samples)
 			require.NoError(t, err)
@@ -985,7 +985,7 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeriesAppendV2(t *testing.T, numSampl
 
 	for seriesRef := 1; seriesRef <= numSeries; seriesRef++ {
 		// Log samples before the series is logged to the WAL.
-		var enc record.Encoder
+		enc := record.Encoder{STPerSample: true}
 		var samples []record.RefSample
 
 		for ts := range numSamplesBeforeSeriesCreation {
@@ -1239,7 +1239,7 @@ func TestSizeRetention_AppendV2(t *testing.T) {
 	// Create a WAL checkpoint, and compare sizes.
 	first, last, err := wlog.Segments(db.Head().wal.Dir())
 	require.NoError(t, err)
-	_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0)
+	_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, true)
 	require.NoError(t, err)
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
@@ -1506,7 +1506,7 @@ func TestInitializeHeadTimestamp_AppendV2(t *testing.T) {
 		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), compression.None)
 		require.NoError(t, err)
 
-		var enc record.Encoder
+		enc := record.Encoder{STPerSample: true}
 		err = w.Log(
 			enc.Series([]record.RefSeries{
 				{Ref: 123, Labels: labels.FromStrings("a", "1")},
@@ -1546,7 +1546,7 @@ func TestInitializeHeadTimestamp_AppendV2(t *testing.T) {
 		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), compression.None)
 		require.NoError(t, err)
 
-		var enc record.Encoder
+		enc := record.Encoder{STPerSample: true}
 		err = w.Log(
 			enc.Series([]record.RefSeries{
 				{Ref: 123, Labels: labels.FromStrings("a", "1")},
@@ -3273,7 +3273,7 @@ func testOOOWALWriteAppendV2(t *testing.T,
 				series, err := dec.Series(rec, nil)
 				require.NoError(t, err)
 				records = append(records, series)
-			case record.Samples:
+			case record.Samples, record.SamplesV2:
 				samples, err := dec.Samples(rec, nil)
 				require.NoError(t, err)
 				records = append(records, samples)
@@ -3506,7 +3506,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 	keep := func(id chunks.HeadSeriesRef) bool {
 		return id != 3
 	}
-	_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0)
+	_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, true)
 	require.NoError(t, err)
 
 	// Confirm there's been a checkpoint.

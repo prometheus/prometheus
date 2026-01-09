@@ -108,7 +108,7 @@ func BenchmarkCreateSeries(b *testing.B) {
 }
 
 func populateTestWL(t testing.TB, w *wlog.WL, recs []any, buf []byte) []byte {
-	var enc record.Encoder
+	enc := record.Encoder{STPerSample: true}
 	for _, r := range recs {
 		buf = buf[:0]
 		switch v := r.(type) {
@@ -154,7 +154,7 @@ func readTestWAL(t testing.TB, dir string) (recs []any) {
 			series, err := dec.Series(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, series)
-		case record.Samples:
+		case record.Samples, record.SamplesV2:
 			samples, err := dec.Samples(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, samples)
@@ -2565,7 +2565,7 @@ func TestHead_ReturnsSortedLabelValues(t *testing.T) {
 // TestWalRepair_DecodingError ensures that a repair is run for an error
 // when decoding a record.
 func TestWalRepair_DecodingError(t *testing.T) {
-	var enc record.Encoder
+	enc := record.Encoder{STPerSample: true}
 	for name, test := range map[string]struct {
 		corrFunc  func(rec []byte) []byte // Func that applies the corruption to a record.
 		rec       []byte
@@ -2660,7 +2660,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 // TestWblRepair_DecodingError ensures that a repair is run for an error
 // when decoding a record.
 func TestWblRepair_DecodingError(t *testing.T) {
-	var enc record.Encoder
+	enc := record.Encoder{STPerSample: true}
 	corrFunc := func(rec []byte) []byte {
 		return rec[:3]
 	}
@@ -4528,7 +4528,7 @@ func TestChunkSnapshot(t *testing.T) {
 		require.NoError(t, app.Commit())
 
 		// Add some tombstones.
-		var enc record.Encoder
+		enc := record.Encoder{STPerSample: true}
 		for i := 1; i <= numSeries; i++ {
 			ref := storage.SeriesRef(i)
 			itvs := tombstones.Intervals{
@@ -4602,7 +4602,7 @@ func TestChunkSnapshot(t *testing.T) {
 		require.NoError(t, app.Commit())
 
 		// Add more tombstones.
-		var enc record.Encoder
+		enc := record.Encoder{STPerSample: true}
 		for i := 1; i <= numSeries; i++ {
 			ref := storage.SeriesRef(i)
 			itvs := tombstones.Intervals{
@@ -5417,7 +5417,7 @@ func TestChunkSnapshotReplayBug(t *testing.T) {
 		}
 		// Add a sample so that the series is not garbage collected.
 		samplesRec := record.RefSample{Ref: ref, T: 1000, V: 1000}
-		var enc record.Encoder
+		enc := record.Encoder{STPerSample: true}
 
 		rec := enc.Series([]record.RefSeries{seriesRec}, buf)
 		buf = rec[:0]

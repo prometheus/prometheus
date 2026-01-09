@@ -1067,7 +1067,7 @@ func (a *headAppenderBase) log() error {
 	defer func() { a.head.putBytesBuffer(buf) }()
 
 	var rec []byte
-	var enc record.Encoder
+	enc := record.Encoder{STPerSample: a.head.opts.EnableStartTimePerSample}
 
 	if len(a.seriesRefs) > 0 {
 		rec = enc.Series(a.seriesRefs, buf)
@@ -1749,6 +1749,9 @@ func (a *headAppenderBase) Commit() (err error) {
 			chunkDiskMapper: h.chunkDiskMapper,
 			chunkRange:      h.chunkRange.Load(),
 			samplesPerChunk: h.opts.SamplesPerChunk,
+		},
+		enc: record.Encoder{
+			STPerSample: h.opts.EnableStartTimePerSample,
 		},
 	}
 

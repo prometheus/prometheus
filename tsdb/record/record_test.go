@@ -76,14 +76,62 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, metadata, decMetadata)
 
+	// Without ST.
 	samples := []RefSample{
 		{Ref: 0, T: 12423423, V: 1.2345},
 		{Ref: 123, T: -1231, V: -123},
 		{Ref: 2, T: 0, V: 99999},
 	}
-	decSamples, err := dec.Samples(enc.Samples(samples, nil), nil)
+	encoded := enc.Samples(samples, nil)
+	require.Equal(t, Samples, dec.Type(encoded))
+	decSamples, err := dec.Samples(encoded, nil)
 	require.NoError(t, err)
 	require.Equal(t, samples, decSamples)
+
+	enc = Encoder{STPerSample: true}
+	// Without ST again, but with V1 encoder that enables SamplesV2
+	samples = []RefSample{
+		{Ref: 0, T: 12423423, V: 1.2345},
+		{Ref: 123, T: -1231, V: -123},
+		{Ref: 2, T: 0, V: 99999},
+	}
+	encoded = enc.Samples(samples, nil)
+	require.Equal(t, SamplesV2, dec.Type(encoded))
+	decSamples, err = dec.Samples(encoded, nil)
+	require.NoError(t, err)
+	require.Equal(t, samples, decSamples)
+
+	// With ST.
+	samplesWithST := []RefSample{
+		{Ref: 0, T: 12423423, ST: 14, V: 1.2345},
+		{Ref: 123, T: -1231, ST: 14, V: -123},
+		{Ref: 2, T: 0, ST: 14, V: 99999},
+	}
+	encoded = enc.Samples(samplesWithST, nil)
+	require.Equal(t, SamplesV2, dec.Type(encoded))
+	decSamples, err = dec.Samples(encoded, nil)
+	require.NoError(t, err)
+	require.Equal(t, samplesWithST, decSamples)
+
+	// With ST (ST[i] == T[i-1])
+	samplesWithSTDelta := []RefSample{
+		{Ref: 0, T: 12423400, ST: 12423300, V: 1.2345},
+		{Ref: 123, T: 12423500, ST: 12423400, V: -123},
+		{Ref: 2, T: 12423600, ST: 12423500, V: 99999},
+	}
+	decSamples, err = dec.Samples(enc.Samples(samplesWithSTDelta, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, samplesWithSTDelta, decSamples)
+
+	// With ST (ST[i] == ST[i-1])
+	samplesWithConstST := []RefSample{
+		{Ref: 0, T: 12423400, ST: 12423300, V: 1.2345},
+		{Ref: 123, T: 12423500, ST: 12423300, V: -123},
+		{Ref: 2, T: 12423600, ST: 12423300, V: 99999},
+	}
+	decSamples, err = dec.Samples(enc.Samples(samplesWithConstST, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, samplesWithConstST, decSamples)
 
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
@@ -229,7 +277,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
 	for _, schema := range []int32{-100, 100} {
 		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
-			var enc Encoder
+			enc := Encoder{STPerSample: true}
 
 			var output bytes.Buffer
 			logger := promslog.New(&promslog.Config{Writer: &output})
@@ -264,7 +312,7 @@ func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
 func TestRecord_DecodeInvalidFloatHistogramSchema(t *testing.T) {
 	for _, schema := range []int32{-100, 100} {
 		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
-			var enc Encoder
+			enc := Encoder{STPerSample: true}
 
 			var output bytes.Buffer
 			logger := promslog.New(&promslog.Config{Writer: &output})
@@ -299,7 +347,7 @@ func TestRecord_DecodeInvalidFloatHistogramSchema(t *testing.T) {
 func TestRecord_DecodeTooHighResolutionHistogramSchema(t *testing.T) {
 	for _, schema := range []int32{9, 52} {
 		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
-			var enc Encoder
+			enc := Encoder{STPerSample: true}
 
 			var output bytes.Buffer
 			logger := promslog.New(&promslog.Config{Writer: &output})
@@ -334,7 +382,7 @@ func TestRecord_DecodeTooHighResolutionHistogramSchema(t *testing.T) {
 func TestRecord_DecodeTooHighResolutionFloatHistogramSchema(t *testing.T) {
 	for _, schema := range []int32{9, 52} {
 		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
-			var enc Encoder
+			enc := Encoder{STPerSample: true}
 
 			var output bytes.Buffer
 			logger := promslog.New(&promslog.Config{Writer: &output})
@@ -369,7 +417,7 @@ func TestRecord_DecodeTooHighResolutionFloatHistogramSchema(t *testing.T) {
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
 // Bugfix check for pull/521 and pull/523.
 func TestRecord_Corrupted(t *testing.T) {
-	var enc Encoder
+	enc := Encoder{STPerSample: true}
 	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
 	t.Run("Test corrupted series record", func(t *testing.T) {
@@ -486,6 +534,16 @@ func TestRecord_Type(t *testing.T) {
 	samples := []RefSample{{Ref: 123, T: 12345, V: 1.2345}}
 	recordType = dec.Type(enc.Samples(samples, nil))
 	require.Equal(t, Samples, recordType)
+
+	// With STPerSample set, all Samples are V2
+	enc = Encoder{STPerSample: true}
+	samples = []RefSample{{Ref: 123, T: 12345, V: 1.2345}}
+	recordType = dec.Type(enc.Samples(samples, nil))
+	require.Equal(t, SamplesV2, recordType)
+
+	samplesST := []RefSample{{Ref: 123, ST: 1, T: 12345, V: 1.2345}}
+	recordType = dec.Type(enc.Samples(samplesST, nil))
+	require.Equal(t, SamplesV2, recordType)
 
 	tstones := []tombstones.Stone{{Ref: 1, Intervals: tombstones.Intervals{{Mint: 1, Maxt: 2}}}}
 	recordType = dec.Type(enc.Tombstones(tstones, nil))
@@ -721,7 +779,7 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 				for _, buckets := range []int{0, 1, 10, 100} {
 					b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
 						series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
-						enc := Encoder{}
+						enc := Encoder{STPerSample: true}
 						for b.Loop() {
 							var buf []byte
 							enc.Series(series, buf)
