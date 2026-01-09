@@ -24,17 +24,13 @@ type alertMetrics struct {
 	latencyHistogram        *prometheus.HistogramVec
 	errors                  *prometheus.CounterVec
 	sent                    *prometheus.CounterVec
-	dropped                 prometheus.Counter
-	queueLength             prometheus.GaugeFunc
+	dropped                 *prometheus.CounterVec
+	queueLength             *prometheus.GaugeVec
 	queueCapacity           prometheus.Gauge
 	alertmanagersDiscovered prometheus.GaugeFunc
 }
 
-func newAlertMetrics(
-	r prometheus.Registerer,
-	queueCap int,
-	queueLen, alertmanagersDiscovered func() float64,
-) *alertMetrics {
+func newAlertMetrics(r prometheus.Registerer, alertmanagersDiscovered func() float64) *alertMetrics {
 	m := &alertMetrics{
 		latencySummary: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Namespace:  namespace,
@@ -74,18 +70,18 @@ func newAlertMetrics(
 		},
 			[]string{alertmanagerLabel},
 		),
-		dropped: prometheus.NewCounter(prometheus.CounterOpts{
+		dropped: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "dropped_total",
 			Help:      "Total number of alerts dropped due to errors when sending to Alertmanager.",
-		}),
-		queueLength: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		}, []string{alertmanagerLabel}),
+		queueLength: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queue_length",
 			Help:      "The number of alert notifications in the queue.",
-		}, queueLen),
+		}, []string{alertmanagerLabel}),
 		queueCapacity: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
@@ -97,8 +93,6 @@ func newAlertMetrics(
 			Help: "The number of alertmanagers discovered and active.",
 		}, alertmanagersDiscovered),
 	}
-
-	m.queueCapacity.Set(float64(queueCap))
 
 	if r != nil {
 		r.MustRegister(
