@@ -1075,6 +1075,10 @@ func (it *histogramIterator) AtT() int64 {
 	return it.t
 }
 
+func (it *histogramIterator) AtST() int64 {
+	return 0 // This version of histogram format does not support start timestamp.
+}
+
 func (it *histogramIterator) Err() error {
 	return it.err
 }

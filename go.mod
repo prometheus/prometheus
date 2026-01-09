@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.24.9
+go 1.25.1
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
@@ -28,6 +28,7 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0
 	github.com/envoyproxy/protoc-gen-validate v1.3.0
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
+	github.com/fpetkovski/tscodec-go v0.0.0-20251031072851-c062d1d3fcb9
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-openapi/strfmt v0.25.0
 	github.com/go-zookeeper/zk v1.0.4
@@ -54,6 +55,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.142.0
 	github.com/ovh/go-ovh v1.9.0
+	github.com/parquet-go/bitpack v0.1.1-0.20251029180122-fa1aca9bf2d1
 	github.com/prometheus/alertmanager v0.30.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_golang/exp v0.0.0-20260101091701-2cd067eb23c9
@@ -101,6 +103,8 @@ require (
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.130.1
 )
+
+replace github.com/fpetkovski/tscodec-go => github.com/bwplotka/tscodec-go v0.0.0-20251114063041-506a1020aa2e
 
 require (
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.4 // indirect

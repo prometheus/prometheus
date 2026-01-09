@@ -19,24 +19,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func BenchmarkXorRead(b *testing.B) {
-	c := NewXORChunk()
-	app, err := c.Appender()
-	require.NoError(b, err)
-	for i := int64(0); i < 120*1000; i += 1000 {
-		app.Append(i, float64(i)+float64(i)/10+float64(i)/100+float64(i)/1000)
-	}
+func TestWriteMixedHeader(t *testing.T) {
+	b := make([]byte, 2)
+	writeMixedHeaderSTNotConst(b)
+	writeMixedHeaderSampleNum(b, 30000)
+	isSTConst, numSamples := readMixedHeader(b)
+	require.False(t, isSTConst)
+	require.Equal(t, uint16(30000), numSamples)
 
-	b.ReportAllocs()
+	b = make([]byte, 2)
+	writeMixedHeaderSampleNum(b, 30000)
+	isSTConst, numSamples = readMixedHeader(b)
+	require.True(t, isSTConst)
+	require.Equal(t, uint16(30000), numSamples)
 
-	var it Iterator
-	for b.Loop() {
-		var ts int64
-		var v float64
-		it = c.Iterator(it)
-		for it.Next() != ValNone {
-			ts, v = it.At()
-		}
-		_, _ = ts, v
-	}
+	b = make([]byte, 2)
+	writeMixedHeaderSampleNum(b, 300)
+	writeMixedHeaderSTNotConst(b)
+	isSTConst, numSamples = readMixedHeader(b)
+	require.False(t, isSTConst)
+	require.Equal(t, uint16(300), numSamples)
 }
