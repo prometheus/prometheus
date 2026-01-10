@@ -265,15 +265,30 @@ func BenchmarkMergedStringIter(b *testing.B) {
 	b.ReportAllocs()
 }
 
-func commitIfBatchIsFull(app storage.AppenderTransaction, i int64, batchSize int) (bool, error) {
+type dbReadWriteHandler interface {
+	~*Head | ~*DB
+	Appender(ctx context.Context) storage.Appender
+	AppenderV2(ctx context.Context) storage.AppenderV2
+}
+
+func commitIfBatchIsFull[RWH dbReadWriteHandler](tb testing.TB, db RWH, app *storage.Appender, i int64, batchSize int) bool {
 	if (i+1)%int64(batchSize) == 0 {
-		err := app.Commit()
-		if err != nil {
-			return false, fmt.Errorf("failed to commit batch: %w", err)
-		}
-		return true, nil
+		err := (*app).Commit()
+		require.NoError(tb, err)
+		*app = db.Appender(context.Background())
+		return true
 	}
-	return false, nil
+	return false
+}
+
+func commitIfBatchIsFullV2[RWH dbReadWriteHandler](tb testing.TB, db RWH, app *storage.AppenderV2, i int64, batchSize int) bool {
+	if (i+1)%int64(batchSize) == 0 {
+		err := (*app).Commit()
+		require.NoError(tb, err)
+		*app = db.AppenderV2(context.Background())
+		return true
+	}
+	return false
 }
 
 func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(app storage.Appender, i int)) (*Head, *DB) {
@@ -291,11 +306,7 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	app := h.Appender(context.Background())
 	for i := range numSeries {
 		addSeries(app, i)
-		commited, err := commitIfBatchIsFull(app, int64(i), 1000)
-		require.NoError(b, err)
-		if commited {
-			app = h.Appender(context.Background())
-		}
+		commitIfBatchIsFull(b, db, &app, int64(i), 1000)
 	}
 	require.NoError(b, app.Commit())
 	return h, db

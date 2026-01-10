@@ -3494,12 +3494,8 @@ func BenchmarkHeadChunkQuerier(b *testing.B) {
 	for i := range 120 * 6 {
 		for j := range numTimeseries {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
-			committed, err := commitIfBatchIsFull(app, int64(i), 10)
-			require.NoError(b, err)
-			if committed {
-				app = db.Appender(context.Background())
-			}
-			_, err = app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			commitIfBatchIsFull(b, db, &app, int64(i), 10)
+			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
 			require.NoError(b, err)
 		}
 	}
@@ -3537,12 +3533,8 @@ func BenchmarkHeadQuerier(b *testing.B) {
 	for i := range 120 * 6 {
 		for j := range numTimeseries {
 			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
-			committed, err := commitIfBatchIsFull(app, int64(i), 10)
-			require.NoError(b, err)
-			if committed {
-				app = db.Appender(context.Background())
-			}
-			_, err = app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
+			commitIfBatchIsFull(b, db, &app, int64(i), 10)
+			_, err := app.Append(0, lbls, int64(i*15)*time.Second.Milliseconds(), float64(i*100))
 			require.NoError(b, err)
 		}
 	}

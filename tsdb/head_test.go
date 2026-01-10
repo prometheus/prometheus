@@ -4115,12 +4115,7 @@ func TestAppendHistogram(t *testing.T) {
 				_, err := app.AppendHistogram(0, l, ingestTs, h, nil)
 				require.NoError(t, err)
 				expHistograms = append(expHistograms, sample{t: ingestTs, h: h})
-
-				committed, err := commitIfBatchIsFull(app, ingestTs, 50)
-				require.NoError(t, err)
-				if committed {
-					app = head.Appender(context.Background())
-				}
+				commitIfBatchIsFull(t, head, &app, ingestTs, 50)
 				ingestTs++
 			}
 
@@ -4129,12 +4124,7 @@ func TestAppendHistogram(t *testing.T) {
 				_, err := app.AppendHistogram(0, l, ingestTs, h, nil)
 				require.NoError(t, err)
 				expHistograms = append(expHistograms, sample{t: ingestTs, h: h})
-
-				committed, err := commitIfBatchIsFull(app, ingestTs, 50)
-				require.NoError(t, err)
-				if committed {
-					app = head.Appender(context.Background())
-				}
+				commitIfBatchIsFull(t, head, &app, ingestTs, 50)
 				ingestTs++
 			}
 
@@ -4145,12 +4135,7 @@ func TestAppendHistogram(t *testing.T) {
 				_, err := app.AppendHistogram(0, l, ingestTs, nil, fh)
 				require.NoError(t, err)
 				expFloatHistograms = append(expFloatHistograms, sample{t: ingestTs, fh: fh})
-
-				committed, err := commitIfBatchIsFull(app, ingestTs, 50)
-				require.NoError(t, err)
-				if committed {
-					app = head.Appender(context.Background())
-				}
+				commitIfBatchIsFull(t, head, &app, ingestTs, 50)
 				ingestTs++
 			}
 
@@ -4160,12 +4145,7 @@ func TestAppendHistogram(t *testing.T) {
 				require.NoError(t, err)
 				expFloatHistograms = append(expFloatHistograms, sample{t: ingestTs, fh: fh})
 				ingestTs++
-
-				committed, err := commitIfBatchIsFull(app, ingestTs, 50)
-				require.NoError(t, err)
-				if committed {
-					app = head.Appender(context.Background())
-				}
+				commitIfBatchIsFull(t, head, &app, ingestTs, 50)
 				ingestTs++
 			}
 
@@ -4239,12 +4219,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			_, err := app.AppendHistogram(0, s1, ts, h, nil)
 			require.NoError(t, err)
 			exp[k1] = append(exp[k1], sample{t: ts, h: h.Copy()})
-
-			committed, err := commitIfBatchIsFull(app, ts, 5)
-			require.NoError(t, err)
-			if committed {
-				app = head.Appender(context.Background())
-			}
+			commitIfBatchIsFull(t, head, &app, ts, 5)
 			ts++
 		}
 		require.NoError(t, app.Commit())
@@ -4263,12 +4238,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			_, err := app.AppendHistogram(0, s1, ts, nil, h)
 			require.NoError(t, err)
 			exp[k1] = append(exp[k1], sample{t: ts, fh: h.Copy()})
-
-			committed, err := commitIfBatchIsFull(app, ts, 5)
-			require.NoError(t, err)
-			if committed {
-				app = head.Appender(context.Background())
-			}
+			commitIfBatchIsFull(t, head, &app, ts, 5)
 			ts++
 		}
 		require.NoError(t, app.Commit())
@@ -4312,10 +4282,8 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			}
 			exp[k2] = append(exp[k2], sample{t: ts, h: eh})
 
-			committed, err := commitIfBatchIsFull(app, ts, 20)
-			require.NoError(t, err)
+			committed := commitIfBatchIsFull(t, head, &app, ts-1, 20)
 			if committed {
-				app = head.Appender(context.Background())
 				for range 10 {
 					ts++
 					_, err := app.Append(0, s2, ts, float64(ts))
@@ -4349,10 +4317,8 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			}
 			exp[k2] = append(exp[k2], sample{t: ts, fh: eh})
 
-			committed, err := commitIfBatchIsFull(app, ts, 20)
-			require.NoError(t, err)
+			committed := commitIfBatchIsFull(t, head, &app, ts-1, 20)
 			if committed {
-				app = head.Appender(context.Background())
 				// Add some float.
 				for range 10 {
 					ts++
@@ -5796,11 +5762,7 @@ func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 		for i := range 250 {
 			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
 			lastTs += interval
-			committed, err := commitIfBatchIsFull(app, int64(i), 10)
-			require.NoError(t, err)
-			if committed {
-				app = h.Appender(context.Background())
-			}
+			commitIfBatchIsFull(t, h, &app, int64(i), 10)
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -5862,11 +5824,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 			expSamples = append(expSamples, sample{t: lastTs, f: float64(lastTs)})
 			require.NoError(t, err)
 			lastTs += itvl
-			committed, err := commitIfBatchIsFull(app, int64(i), 10)
-			require.NoError(t, err)
-			if committed {
-				app = h.Appender(context.Background())
-			}
+			commitIfBatchIsFull(t, h, &app, int64(i), 10)
 		}
 		require.NoError(t, app.Commit())
 	}

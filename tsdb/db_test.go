@@ -4566,12 +4566,7 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
 			require.NoError(t, err)
 			lastTs += itvl
-
-			committed, err := commitIfBatchIsFull(app, int64(i), 10)
-			require.NoError(t, err)
-			if committed {
-				app = db.Appender(context.Background())
-			}
+			commitIfBatchIsFull(t, db, &app, int64(i), 10)
 		}
 		require.NoError(t, app.Commit())
 	}
