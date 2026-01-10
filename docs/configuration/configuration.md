@@ -2132,6 +2132,9 @@ Available meta labels:
 * `__meta_kubernetes_pod_uid`: The UID of the pod object.
 * `__meta_kubernetes_pod_controller_kind`: Object kind of the pod controller.
 * `__meta_kubernetes_pod_controller_name`: Name of the pod controller.
+* `__meta_kubernetes_pod_deployment_name`: Name of the deployment the pod belongs to.
+* `__meta_kubernetes_pod_cronjob_name`: Name of the cronjob the pod belongs to.
+* `__meta_kubernetes_pod_job_name`: Name of the job the pod belongs to.
 
 #### `endpoints`
 

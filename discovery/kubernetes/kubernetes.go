@@ -30,6 +30,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	apiv1 "k8s.io/api/core/v1"
 	disv1 "k8s.io/api/discovery/v1"
 	networkv1 "k8s.io/api/networking/v1"
@@ -439,6 +441,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			eps := NewEndpointSlice(
 				d.logger.With("role", "endpointslice"),
 				informer,
+				d.newReplicaSetInformer(ctx),
+				d.newJobInformer(ctx),
 				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
@@ -449,6 +453,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go eps.endpointSliceInf.Run(ctx.Done())
 			go eps.serviceInf.Run(ctx.Done())
 			go eps.podInf.Run(ctx.Done())
+			go eps.replicaSetInf.Run(ctx.Done())
+			go eps.jobInf.Run(ctx.Done())
 		}
 	case RoleEndpoint:
 		for _, namespace := range namespaces {
@@ -505,6 +511,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			eps := NewEndpoints(
 				d.logger.With("role", "endpoint"),
 				d.newIndexedEndpointsInformer(elw),
+				d.newReplicaSetInformer(ctx),
+				d.newJobInformer(ctx),
 				d.mustNewSharedInformer(slw, &apiv1.Service{}, resyncDisabled),
 				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
@@ -515,6 +523,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go eps.endpointsInf.Run(ctx.Done())
 			go eps.serviceInf.Run(ctx.Done())
 			go eps.podInf.Run(ctx.Done())
+			go eps.replicaSetInf.Run(ctx.Done())
+			go eps.jobInf.Run(ctx.Done())
 		}
 	case RolePod:
 		var nodeInformer cache.SharedInformer
@@ -547,10 +557,14 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				d.newIndexedPodsInformer(plw),
 				nodeInformer,
 				namespaceInformer,
+				d.newReplicaSetInformer(ctx),
+				d.newJobInformer(ctx),
 				d.metrics.eventCount,
 			)
 			d.discoverers = append(d.discoverers, pod)
 			go pod.podInf.Run(ctx.Done())
+			go pod.replicaSetInf.Run(ctx.Done())
+			go pod.jobInf.Run(ctx.Done())
 		}
 	case RoleService:
 		var namespaceInformer cache.SharedInformer
@@ -664,6 +678,32 @@ func retryOnError(ctx context.Context, interval time.Duration, f func() error) (
 			err = f()
 		}
 	}
+}
+
+func (d *Discovery) newReplicaSetInformer(_ context.Context) cache.SharedInformer {
+	rs := d.client.AppsV1().ReplicaSets(metav1.NamespaceAll)
+	rslw := &cache.ListWatch{
+		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+			return rs.List(ctx, options)
+		},
+		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+			return rs.Watch(ctx, options)
+		},
+	}
+	return d.mustNewSharedInformer(rslw, &appsv1.ReplicaSet{}, resyncDisabled)
+}
+
+func (d *Discovery) newJobInformer(_ context.Context) cache.SharedInformer {
+	j := d.client.BatchV1().Jobs(metav1.NamespaceAll)
+	jlw := &cache.ListWatch{
+		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+			return j.List(ctx, options)
+		},
+		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+			return j.Watch(ctx, options)
+		},
+	}
+	return d.mustNewSharedInformer(jlw, &batchv1.Job{}, resyncDisabled)
 }
 
 func (d *Discovery) newNodeInformer(_ context.Context) cache.SharedInformer {

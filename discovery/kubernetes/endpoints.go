@@ -41,6 +41,8 @@ type Endpoints struct {
 	serviceInf            cache.SharedInformer
 	podInf                cache.SharedInformer
 	nodeInf               cache.SharedInformer
+	replicaSetInf         cache.SharedInformer
+	jobInf                cache.SharedInformer
 	withNodeMetadata      bool
 	namespaceInf          cache.SharedInformer
 	withNamespaceMetadata bool
@@ -55,7 +57,7 @@ type Endpoints struct {
 // NewEndpoints returns a new endpoints discovery.
 //
 // Deprecated: The Endpoints API is deprecated starting in K8s v1.33+. Use NewEndpointSlice.
-func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *Endpoints {
+func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, rs, job, svc, pod, node, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *Endpoints {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -74,6 +76,8 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node,
 		logger:                l,
 		endpointsInf:          eps,
 		endpointsStore:        eps.GetStore(),
+		replicaSetInf:         rs,
+		jobInf:                job,
 		serviceInf:            svc,
 		serviceStore:          svc.GetStore(),
 		podInf:                pod,
@@ -400,7 +404,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		}
 
 		// Attach standard pod labels.
-		target = target.Merge(podLabels(pod))
+		target = target.Merge(podLabels(pod, e.replicaSetInf, e.jobInf))
 
 		// Attach potential container port labels matching the endpoint port.
 		containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
@@ -484,7 +488,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
 					podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
+				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod, e.replicaSetInf, e.jobInf)))
 			}
 		}
 	}
