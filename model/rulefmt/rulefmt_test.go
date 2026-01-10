@@ -126,6 +126,21 @@ func TestParseFileFailure(t *testing.T) {
 	}
 }
 
+func TestParseMultiDocWarning(t *testing.T) {
+	rgs, errs := ParseFile("testdata/multi_doc.yaml", false, model.UTF8Validation)
+
+	// Should get a warning about multi-document YAML
+	require.Len(t, errs, 1, "Expected exactly one error (warning) about multi-document YAML")
+	require.ErrorIs(t, errs[0], ErrMultiDoc, "Expected ErrMultiDoc error")
+
+	// Despite the warning, the first document should be parsed successfully
+	require.NotNil(t, rgs, "Expected rule groups to be parsed")
+	require.Len(t, rgs.Groups, 1, "Expected only the first document's group to be parsed")
+	require.Equal(t, "first-group", rgs.Groups[0].Name, "Expected first group name from first document")
+	require.Len(t, rgs.Groups[0].Rules, 1, "Expected one rule in first group")
+	require.Equal(t, "FirstAlert", rgs.Groups[0].Rules[0].Alert, "Expected FirstAlert from first document")
+}
+
 func TestTemplateParsing(t *testing.T) {
 	tests := []struct {
 		ruleString string
