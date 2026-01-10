@@ -1774,11 +1774,8 @@ func TestHeadAppenderV2_Append_Histogram(t *testing.T) {
 				_, err := app.Append(0, l, 0, ingestTs, 0, h, nil, storage.AOptions{})
 				require.NoError(t, err)
 				expHistograms = append(expHistograms, sample{t: ingestTs, h: h})
+				commitIfBatchIsFullV2(t, head, &app, ingestTs, 50)
 				ingestTs++
-				if ingestTs%50 == 0 {
-					require.NoError(t, app.Commit())
-					app = head.AppenderV2(context.Background())
-				}
 			}
 
 			// Gauge integer histograms.
@@ -1786,11 +1783,8 @@ func TestHeadAppenderV2_Append_Histogram(t *testing.T) {
 				_, err := app.Append(0, l, 0, ingestTs, 0, h, nil, storage.AOptions{})
 				require.NoError(t, err)
 				expHistograms = append(expHistograms, sample{t: ingestTs, h: h})
+				commitIfBatchIsFullV2(t, head, &app, ingestTs, 50)
 				ingestTs++
-				if ingestTs%50 == 0 {
-					require.NoError(t, app.Commit())
-					app = head.AppenderV2(context.Background())
-				}
 			}
 
 			expFloatHistograms := make([]chunks.Sample, 0, 2*numHistograms)
@@ -1800,11 +1794,8 @@ func TestHeadAppenderV2_Append_Histogram(t *testing.T) {
 				_, err := app.Append(0, l, 0, ingestTs, 0, nil, fh, storage.AOptions{})
 				require.NoError(t, err)
 				expFloatHistograms = append(expFloatHistograms, sample{t: ingestTs, fh: fh})
+				commitIfBatchIsFullV2(t, head, &app, ingestTs, 50)
 				ingestTs++
-				if ingestTs%50 == 0 {
-					require.NoError(t, app.Commit())
-					app = head.AppenderV2(context.Background())
-				}
 			}
 
 			// Gauge float histograms.
@@ -1812,11 +1803,8 @@ func TestHeadAppenderV2_Append_Histogram(t *testing.T) {
 				_, err := app.Append(0, l, 0, ingestTs, 0, nil, fh, storage.AOptions{})
 				require.NoError(t, err)
 				expFloatHistograms = append(expFloatHistograms, sample{t: ingestTs, fh: fh})
+				commitIfBatchIsFullV2(t, head, &app, ingestTs, 50)
 				ingestTs++
-				if ingestTs%50 == 0 {
-					require.NoError(t, app.Commit())
-					app = head.AppenderV2(context.Background())
-				}
 			}
 
 			require.NoError(t, app.Commit())
@@ -1889,11 +1877,8 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 			_, err := app.Append(0, s1, 0, ts, 0, h, nil, storage.AOptions{})
 			require.NoError(t, err)
 			exp[k1] = append(exp[k1], sample{t: ts, h: h.Copy()})
+			commitIfBatchIsFullV2(t, head, &app, ts, 5)
 			ts++
-			if ts%5 == 0 {
-				require.NoError(t, app.Commit())
-				app = head.AppenderV2(context.Background())
-			}
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -1911,11 +1896,8 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 			_, err := app.Append(0, s1, 0, ts, 0, nil, h, storage.AOptions{})
 			require.NoError(t, err)
 			exp[k1] = append(exp[k1], sample{t: ts, fh: h.Copy()})
+			commitIfBatchIsFullV2(t, head, &app, ts, 5)
 			ts++
-			if ts%5 == 0 {
-				require.NoError(t, app.Commit())
-				app = head.AppenderV2(context.Background())
-			}
 		}
 		require.NoError(t, app.Commit())
 		head.mmapHeadChunks()
@@ -1957,9 +1939,8 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 				eh.CounterResetHint = histogram.UnknownCounterReset
 			}
 			exp[k2] = append(exp[k2], sample{t: ts, h: eh})
-			if ts%20 == 0 {
-				require.NoError(t, app.Commit())
-				app = head.AppenderV2(context.Background())
+			committed := commitIfBatchIsFullV2(t, head, &app, ts-1, 20)
+			if committed {
 				// Add some float.
 				for range 10 {
 					ts++
@@ -1993,9 +1974,8 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 				eh.CounterResetHint = histogram.UnknownCounterReset
 			}
 			exp[k2] = append(exp[k2], sample{t: ts, fh: eh})
-			if ts%20 == 0 {
-				require.NoError(t, app.Commit())
-				app = head.AppenderV2(context.Background())
+			committed := commitIfBatchIsFullV2(t, head, &app, ts-1, 20)
+			if committed {
 				// Add some float.
 				for range 10 {
 					ts++
@@ -2181,10 +2161,7 @@ func TestChunkSnapshot_AppenderV2(t *testing.T) {
 				require.NoError(t, err)
 
 				// Create multiple WAL records (commit).
-				if ts%10 == 0 {
-					require.NoError(t, app.Commit())
-					app = head.AppenderV2(context.Background())
-				}
+				commitIfBatchIsFullV2(t, head, &app, ts, 10)
 			}
 		}
 		require.NoError(t, app.Commit())
@@ -2259,10 +2236,7 @@ func TestChunkSnapshot_AppenderV2(t *testing.T) {
 				require.NoError(t, err)
 
 				// Create multiple WAL records (commit).
-				if ts%10 == 0 {
-					require.NoError(t, app.Commit())
-					app = head.AppenderV2(context.Background())
-				}
+				commitIfBatchIsFullV2(t, head, &app, ts, 10)
 			}
 		}
 		require.NoError(t, app.Commit())
@@ -3360,10 +3334,7 @@ func TestMmapPanicAfterMmapReplayCorruption_AppenderV2(t *testing.T) {
 		for i := range 250 {
 			ref, err = app.Append(ref, lbls, 0, lastTs, float64(lastTs), nil, nil, storage.AOptions{})
 			lastTs += interval
-			if i%10 == 0 {
-				require.NoError(t, app.Commit())
-				app = h.AppenderV2(context.Background())
-			}
+			commitIfBatchIsFullV2(t, h, &app, int64(i), 10)
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -3425,10 +3396,7 @@ func TestReplayAfterMmapReplayError_AppenderV2(t *testing.T) {
 			expSamples = append(expSamples, sample{t: lastTs, f: float64(lastTs)})
 			require.NoError(t, err)
 			lastTs += itvl
-			if i%10 == 0 {
-				require.NoError(t, app.Commit())
-				app = h.AppenderV2(context.Background())
-			}
+			commitIfBatchIsFullV2(t, h, &app, int64(i), 10)
 		}
 		require.NoError(t, app.Commit())
 	}
