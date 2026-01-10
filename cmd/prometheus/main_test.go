@@ -59,6 +59,7 @@ var (
 	promPath    = os.Args[0]
 	promConfig  = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
 	agentConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus-agent.yml")
+	webConfig   = filepath.Join("..", "..", "documentation", "examples", "web-config.yml")
 )
 
 func TestMain(m *testing.M) {
@@ -117,12 +118,42 @@ func TestComputeExternalURL(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		_, err := computeExternalURL(test.input, "0.0.0.0:9090")
+		_, err := computeExternalURL(test.input, "0.0.0.0:9090", "")
 		if test.valid {
 			require.NoError(t, err)
 		} else {
 			require.Error(t, err, "input=%q", test.input)
 		}
+	}
+}
+
+func TestComputeExternalURLWithTLS(t *testing.T) {
+	tests := []struct {
+		baseURL   string
+		webConfig string
+	}{
+		{
+			baseURL:   "http://test.com",
+			webConfig: webConfig,
+		},
+		{
+			baseURL:   "http://no-tls.com",
+			webConfig: "",
+		},
+		{
+			baseURL:   "",
+			webConfig: promConfig, // config yaml file missing `tls_server_config`
+		},
+	}
+
+	for _, test := range tests {
+		url, err := computeExternalURL(test.baseURL, "0.0.0.0:9090", test.webConfig)
+		require.NoError(t, err)
+		expected := "http"
+		if test.webConfig == webConfig {
+			expected = "https"
+		}
+		require.Equal(t, expected, url.Scheme)
 	}
 }
 
