@@ -1,0 +1,6 @@
+cloud: AzurePublic
+certificate:
+  client_id: invalid-client-id
+  tenant_id: 00000000-a12b-3cd4-e56f-000000000000
+  certificate_file: /etc/prometheus/certs/app.crt
+  private_key_file: /etc/prometheus/certs/app.key
