@@ -2973,6 +2973,12 @@ labels:
   [ <labelname>: <labelvalue> ... ]
 ```
 
+You can also use special labels like `__address__`, `__scheme__`, `__metrics_path__`,
+`__scrape_interval__`, `__scrape_timeout__` to customize the defined targets. These will
+override the respective settings in the scrape configuration. This is especially useful
+when combined with any of the service discovery mechanisms that do not support these
+settings directly.
+
 ### `<relabel_config>`
 
 Relabeling is a powerful tool to dynamically rewrite the label set of a target before
