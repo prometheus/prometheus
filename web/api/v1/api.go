@@ -1881,19 +1881,10 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}
-	metrics, err := api.gatherer.Gather()
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error gathering runtime status: %w", err)}, nil, nil}
-	}
-	chunkCount := int64(math.NaN())
-	for _, mF := range metrics {
-		if *mF.Name == "prometheus_tsdb_head_chunks" {
-			m := mF.Metric[0]
-			if m.Gauge != nil {
-				chunkCount = int64(m.Gauge.GetValue())
-				break
-			}
-		}
+	const maxInt64 = int64(^uint64(0) >> 1)
+	chunkCount := int64(s.NumChunks)
+	if s.NumChunks > uint64(maxInt64) {
+		chunkCount = maxInt64
 	}
 	return apiFuncResult{TSDBStatus{
 		HeadStats: HeadStats{

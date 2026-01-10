@@ -58,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -3883,6 +3884,19 @@ func (*fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
 
+type statsOnlyDB struct {
+	stats *tsdb.Stats
+}
+
+func (statsOnlyDB) CleanTombstones() error                                         { return nil }
+func (statsOnlyDB) Delete(context.Context, int64, int64, ...*labels.Matcher) error { return nil }
+func (statsOnlyDB) Snapshot(string, bool) error                                    { return nil }
+func (db statsOnlyDB) Stats(string, int) (*tsdb.Stats, error)                      { return db.stats, nil }
+func (statsOnlyDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+	return tsdb.WALReplayStatus{}, nil
+}
+func (statsOnlyDB) BlockMetas() ([]tsdb.BlockMeta, error) { return nil, nil }
+
 func TestAdminEndpoints(t *testing.T) {
 	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: fmt.Errorf("wrap: %w", tsdb.ErrNotReady)}
 	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
@@ -4487,6 +4501,23 @@ func TestTSDBStatus(t *testing.T) {
 			assertAPIError(t, res.err, tc.errType)
 		})
 	}
+}
+
+func TestTSDBStatusChunkCountFromStats(t *testing.T) {
+	stats := &tsdb.Stats{
+		NumSeries:         1,
+		NumChunks:         42,
+		MinTime:           0,
+		MaxTime:           0,
+		IndexPostingStats: &index.PostingsStats{},
+	}
+	api := &API{db: statsOnlyDB{stats: stats}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status/tsdb", nil)
+	res := api.serveTSDBStatus(req)
+
+	assertAPIError(t, res.err, errorNone)
+	status := res.data.(TSDBStatus)
+	require.Equal(t, int64(42), status.HeadStats.ChunkCount)
 }
 
 func TestReturnAPIError(t *testing.T) {
