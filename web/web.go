@@ -634,8 +634,8 @@ func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
 		case Ready:
 			f(w, r)
 		case NotReady:
-			w.WriteHeader(http.StatusServiceUnavailable)
 			w.Header().Set("X-Prometheus-Stopping", "false")
+			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, "Service Unavailable")
 		case Stopping:
 			w.Header().Set("X-Prometheus-Stopping", "true")
