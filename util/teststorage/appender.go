@@ -250,9 +250,6 @@ func (a *Appendable) Appender(ctx context.Context) storage.Appender {
 	} else if a.nextV2 != nil {
 		ret.err = errors.Join(ret.err, errors.New("teststorage.Appendable.Appender() invoked with .ThenV2 but no .Then was supplied; likely bug"))
 	}
-	if a.appendExemplarsError != nil {
-		ret.err = errors.Join(ret.err, errors.New("teststorage.Appendable.Appender() invoked with .WithErr exemplar partial error injection. This is not supported for Appender V1 flow"))
-	}
 	return ret
 }
 
@@ -289,7 +286,7 @@ func computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesR
 
 	if storage.SeriesRef(h) != ref {
 		// Check for buggy ref while we at it.
-		return 0, errors.New("teststorage.appender: found input ref not matching labels; potential bug in Appendable user")
+		return 0, errors.New("teststorage.appender: found input ref not matching labels; potential bug in Appendable usage")
 	}
 	return ref, nil
 }
@@ -322,20 +319,21 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	if a.a.appendExemplarsError != nil {
 		return 0, a.a.appendExemplarsError
 	}
+	var appended bool
 
 	a.a.mtx.Lock()
 	// NOTE(bwplotka): Eventually exemplar has to be attached to a series and soon
 	// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
 	// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
 	i := len(a.a.pendingSamples) - 1
-	for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
-		if ref == storage.SeriesRef(a.a.pendingSamples[i].L.Hash()) {
+	for ; i >= 0; i-- { // Attach exemplars to all matching samples.
+		if labels.Equal(l, a.a.pendingSamples[i].L) {
 			a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, e)
-			break
+			appended = true
 		}
 	}
 	a.a.mtx.Unlock()
-	if i < 0 {
+	if !appended {
 		return 0, fmt.Errorf("teststorage.appender: exemplar appender without series; ref %v; l %v; exemplar: %v", ref, l, e)
 	}
 
@@ -361,19 +359,21 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 		return 0, err
 	}
 
+	var updated bool
+
 	a.a.mtx.Lock()
 	// NOTE(bwplotka): Eventually metadata has to be attached to a series and soon
 	// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
 	// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
 	i := len(a.a.pendingSamples) - 1
-	for ; i >= 0; i-- { // Attach metadata to the last matching sample.
-		if ref == storage.SeriesRef(a.a.pendingSamples[i].L.Hash()) {
+	for ; i >= 0; i-- { // Attach exemplars to all matching samples.
+		if labels.Equal(l, a.a.pendingSamples[i].L) {
 			a.a.pendingSamples[i].M = m
-			break
+			updated = true
 		}
 	}
 	a.a.mtx.Unlock()
-	if i < 0 {
+	if !updated {
 		return 0, fmt.Errorf("teststorage.appender: metadata update without series; ref %v; l %v; m: %v", ref, l, m)
 	}
 
