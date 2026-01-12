@@ -64,6 +64,9 @@ const (
 	// StateFiring is the state of an alert that has been active for longer than
 	// the configured threshold duration.
 	StateFiring
+	// StateExpired is the state of an alert that has been active for longer than
+	// the configured threshold duration plus the maximum firing duration.
+	StateExpired
 )
 
 func (s AlertState) String() string {
@@ -76,6 +79,8 @@ func (s AlertState) String() string {
 		return "pending"
 	case StateFiring:
 		return "firing"
+	case StateExpired:
+		return "expired"
 	}
 	panic(fmt.Errorf("unknown alert state: %d", s))
 }
@@ -121,6 +126,8 @@ type AlertingRule struct {
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
+	// The maximum duration for which an alert should remain firing.
+	maxFiringFor time.Duration
 	// The amount of time that the alert should remain firing after the
 	// resolution.
 	keepFiringFor time.Duration
@@ -158,7 +165,7 @@ type AlertingRule struct {
 
 // NewAlertingRule constructs a new AlertingRule.
 func NewAlertingRule(
-	name string, vec parser.Expr, hold, keepFiringFor time.Duration,
+	name string, vec parser.Expr, hold, maxFiringFor, keepFiringFor time.Duration,
 	labels, annotations, externalLabels labels.Labels, externalURL string,
 	restored bool, logger *slog.Logger,
 ) *AlertingRule {
@@ -168,6 +175,7 @@ func NewAlertingRule(
 		name:                name,
 		vector:              vec,
 		holdDuration:        hold,
+		maxFiringFor:        maxFiringFor,
 		keepFiringFor:       keepFiringFor,
 		labels:              labels,
 		annotations:         annotations,
@@ -211,6 +219,11 @@ func (r *AlertingRule) Health() RuleHealth {
 // Query returns the query expression of the alerting rule.
 func (r *AlertingRule) Query() parser.Expr {
 	return r.vector
+}
+
+// MaxFiringFor returns the max firing duration of the alerting rule.
+func (r *AlertingRule) MaxFiringFor() time.Duration {
+	return r.maxFiringFor
 }
 
 // HoldDuration returns the hold duration of the alerting rule.
@@ -523,6 +536,13 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 			a.FiredAt = ts
 		}
 
+		if r.maxFiringFor > 0 {
+			if a.State == StateFiring && ts.Sub(a.FiredAt) >= r.maxFiringFor {
+				a.State = StateExpired
+				a.ResolvedAt = ts
+			}
+		}
+
 		if r.restored.Load() {
 			vec = append(vec, r.sample(a, ts.Add(-queryOffset)))
 			vec = append(vec, r.forStateSample(a, ts.Add(-queryOffset), float64(a.ActiveAt.Unix())))
@@ -554,6 +574,17 @@ func (r *AlertingRule) State() AlertState {
 		}
 	}
 	return maxState
+}
+
+// ExpiredAlerts returns a slice of expired alerts.
+func (r *AlertingRule) ExpiredAlerts() []*Alert {
+	var res []*Alert
+	for _, a := range r.currentAlerts() {
+		if a.State == StateExpired {
+			res = append(res, a)
+		}
+	}
+	return res
 }
 
 // ActiveAlerts returns a slice of active alerts.

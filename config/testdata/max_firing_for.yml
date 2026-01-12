@@ -1,0 +1,13 @@
+# my global config
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+- job_name: prometheus
+  honor_labels: true
+  static_configs:
+  - targets: ["localhost:9090"]
+
+rule_files:
+- max_firing_for.rules

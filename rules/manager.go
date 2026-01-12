@@ -363,6 +363,7 @@ func (m *Manager) LoadGroups(
 						r.Alert,
 						expr,
 						time.Duration(r.For),
+						time.Duration(r.MaxFiringFor),
 						time.Duration(r.KeepFiringFor),
 						mLabels,
 						labels.FromMap(r.Annotations),

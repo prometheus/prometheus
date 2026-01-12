@@ -1,0 +1,16 @@
+groups:
+- name: max-firing-for
+  rules:
+  - alert: Up
+    expr: up{job="prometheus"} == 1
+    for: 1m
+    max_firing_for: 2m
+    labels:
+      severity: warning
+      severity_override: critical
+
+  - alert: Up
+    expr: up{job="prometheus"} == 1
+    for: 1m
+    labels:
+      severity: critical

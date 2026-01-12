@@ -1533,11 +1533,12 @@ type RuleGroup struct {
 type Rule any
 
 type AlertingRule struct {
-	// State can be "pending", "firing", "inactive".
+	// State can be "pending", "firing", "inactive", "expired".
 	State          string           `json:"state"`
 	Name           string           `json:"name"`
 	Query          string           `json:"query"`
 	Duration       float64          `json:"duration"`
+	MaxFiringFor   float64          `json:"maxFiringFor"`
 	KeepFiringFor  float64          `json:"keepFiringFor"`
 	Labels         labels.Labels    `json:"labels"`
 	Annotations    labels.Labels    `json:"annotations"`
@@ -1660,6 +1661,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				var activeAlerts []*Alert
 				if !excludeAlerts {
 					activeAlerts = rulesAlertsToAPIAlerts(rule.ActiveAlerts())
+					activeAlerts = append(activeAlerts, rulesAlertsToAPIAlerts(rule.ExpiredAlerts())...)
 				}
 
 				enrichedRule = AlertingRule{
@@ -1667,6 +1669,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					Name:           rule.Name(),
 					Query:          rule.Query().String(),
 					Duration:       rule.HoldDuration().Seconds(),
+					MaxFiringFor:   rule.MaxFiringFor().Seconds(),
 					KeepFiringFor:  rule.KeepFiringFor().Seconds(),
 					Labels:         rule.Labels(),
 					Annotations:    rule.Annotations(),
