@@ -323,6 +323,7 @@ func (a *headAppenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemp
 		if err := a.head.exemplars.ValidateExemplar(s.labels(), e); err != nil {
 			if !errors.Is(err, storage.ErrDuplicateExemplar) && !errors.Is(err, storage.ErrExemplarsDisabled) {
 				// Except duplicates, return partial errors.
+				// TODO(bwplotka): Add exemplar info into error.
 				errs = append(errs, err)
 				continue
 			}

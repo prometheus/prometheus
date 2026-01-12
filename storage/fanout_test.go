@@ -132,6 +132,115 @@ func TestFanout_SelectSorted(t *testing.T) {
 	})
 }
 
+func TestFanout_SelectSorted_AppenderV2(t *testing.T) {
+	inputLabel := labels.FromStrings(model.MetricNameLabel, "a")
+	outputLabel := labels.FromStrings(model.MetricNameLabel, "a")
+
+	inputTotalSize := 0
+
+	priStorage := teststorage.New(t)
+	defer priStorage.Close()
+	app1 := priStorage.AppenderV2(t.Context())
+	_, err := app1.Append(0, inputLabel, 0, 0, 0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	inputTotalSize++
+	_, err = app1.Append(0, inputLabel, 0, 1000, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	inputTotalSize++
+	_, err = app1.Append(0, inputLabel, 0, 2000, 2, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	inputTotalSize++
+	require.NoError(t, app1.Commit())
+
+	remoteStorage1 := teststorage.New(t)
+	defer remoteStorage1.Close()
+	app2 := remoteStorage1.AppenderV2(t.Context())
+	_, err = app2.Append(0, inputLabel, 0, 3000, 3, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	inputTotalSize++
+	_, err = app2.Append(0, inputLabel, 0, 4000, 4, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	inputTotalSize++
+	_, err = app2.Append(0, inputLabel, 0, 5000, 5, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	inputTotalSize++
+	require.NoError(t, app2.Commit())
+
+	remoteStorage2 := teststorage.New(t)
+	defer remoteStorage2.Close()
+
+	app3 := remoteStorage2.AppenderV2(t.Context())
+	_, err = app3.Append(0, inputLabel, 0, 6000, 6, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	inputTotalSize++
+	_, err = app3.Append(0, inputLabel, 0, 7000, 7, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	inputTotalSize++
+	_, err = app3.Append(0, inputLabel, 0, 8000, 8, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	inputTotalSize++
+
+	require.NoError(t, app3.Commit())
+
+	fanoutStorage := storage.NewFanout(nil, priStorage, remoteStorage1, remoteStorage2)
+
+	t.Run("querier", func(t *testing.T) {
+		querier, err := fanoutStorage.Querier(0, 8000)
+		require.NoError(t, err)
+		defer querier.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
+		require.NoError(t, err)
+
+		seriesSet := querier.Select(t.Context(), true, nil, matcher)
+
+		result := make(map[int64]float64)
+		var labelsResult labels.Labels
+		var iterator chunkenc.Iterator
+		for seriesSet.Next() {
+			series := seriesSet.At()
+			seriesLabels := series.Labels()
+			labelsResult = seriesLabels
+			iterator := series.Iterator(iterator)
+			for iterator.Next() == chunkenc.ValFloat {
+				timestamp, value := iterator.At()
+				result[timestamp] = value
+			}
+		}
+
+		require.Equal(t, labelsResult, outputLabel)
+		require.Len(t, result, inputTotalSize)
+	})
+	t.Run("chunk querier", func(t *testing.T) {
+		querier, err := fanoutStorage.ChunkQuerier(0, 8000)
+		require.NoError(t, err)
+		defer querier.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
+		require.NoError(t, err)
+
+		seriesSet := storage.NewSeriesSetFromChunkSeriesSet(querier.Select(t.Context(), true, nil, matcher))
+
+		result := make(map[int64]float64)
+		var labelsResult labels.Labels
+		var iterator chunkenc.Iterator
+		for seriesSet.Next() {
+			series := seriesSet.At()
+			seriesLabels := series.Labels()
+			labelsResult = seriesLabels
+			iterator := series.Iterator(iterator)
+			for iterator.Next() == chunkenc.ValFloat {
+				timestamp, value := iterator.At()
+				result[timestamp] = value
+			}
+		}
+
+		require.NoError(t, seriesSet.Err())
+		require.Equal(t, labelsResult, outputLabel)
+		require.Len(t, result, inputTotalSize)
+	})
+}
+
 func TestFanoutErrors(t *testing.T) {
 	workingStorage := teststorage.New(t)
 	defer workingStorage.Close()
@@ -224,9 +333,10 @@ type errChunkQuerier struct{ errQuerier }
 func (errStorage) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
 	return errChunkQuerier{}, nil
 }
-func (errStorage) Appender(context.Context) storage.Appender { return nil }
-func (errStorage) StartTime() (int64, error)                 { return 0, nil }
-func (errStorage) Close() error                              { return nil }
+func (errStorage) Appender(context.Context) storage.Appender     { return nil }
+func (errStorage) AppenderV2(context.Context) storage.AppenderV2 { return nil }
+func (errStorage) StartTime() (int64, error)                     { return 0, nil }
+func (errStorage) Close() error                                  { return nil }
 
 func (errQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return storage.ErrSeriesSet(errSelect)
