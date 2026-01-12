@@ -136,6 +136,19 @@ func (f *fanout) Appender(ctx context.Context) Appender {
 	}
 }
 
+func (f *fanout) AppenderV2(ctx context.Context) AppenderV2 {
+	primary := f.primary.AppenderV2(ctx)
+	secondaries := make([]AppenderV2, 0, len(f.secondaries))
+	for _, storage := range f.secondaries {
+		secondaries = append(secondaries, storage.AppenderV2(ctx))
+	}
+	return &fanoutAppenderV2{
+		logger:      f.logger,
+		primary:     primary,
+		secondaries: secondaries,
+	}
+}
+
 // Close closes the storage and all its underlying resources.
 func (f *fanout) Close() error {
 	errs := []error{
@@ -265,6 +278,57 @@ func (f *fanoutAppender) Commit() (err error) {
 }
 
 func (f *fanoutAppender) Rollback() (err error) {
+	err = f.primary.Rollback()
+
+	for _, appender := range f.secondaries {
+		rollbackErr := appender.Rollback()
+		switch {
+		case err == nil:
+			err = rollbackErr
+		case rollbackErr != nil:
+			f.logger.Error("Squashed rollback error on rollback", "err", rollbackErr)
+		}
+	}
+	return nil
+}
+
+type fanoutAppenderV2 struct {
+	logger *slog.Logger
+
+	primary     AppenderV2
+	secondaries []AppenderV2
+}
+
+func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AOptions) (SeriesRef, error) {
+	ref, err := f.primary.Append(ref, l, st, t, v, h, fh, opts)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.Append(ref, l, st, t, v, h, fh, opts); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (f *fanoutAppenderV2) Commit() (err error) {
+	err = f.primary.Commit()
+
+	for _, appender := range f.secondaries {
+		if err == nil {
+			err = appender.Commit()
+		} else {
+			if rollbackErr := appender.Rollback(); rollbackErr != nil {
+				f.logger.Error("Squashed rollback error on commit", "err", rollbackErr)
+			}
+		}
+	}
+	return err
+}
+
+func (f *fanoutAppenderV2) Rollback() (err error) {
 	err = f.primary.Rollback()
 
 	for _, appender := range f.secondaries {

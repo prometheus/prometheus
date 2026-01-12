@@ -69,6 +69,7 @@ type AppendV2Options struct {
 	// Exemplars (optional) attached to the appended sample.
 	// Exemplar slice MUST be sorted by Exemplar.TS.
 	// Exemplar slice is unsafe for reuse.
+	// Duplicate exemplars errors MUST be ignored by implementations.
 	Exemplars []exemplar.Exemplar
 
 	// RejectOutOfOrder tells implementation that this append should not be out
