@@ -1716,6 +1716,10 @@ func (errIterator) AtT() int64 {
 	return 0
 }
 
+func (errIterator) AtST() int64 {
+	return 0
+}
+
 func (e errIterator) Err() error {
 	return e.err
 }

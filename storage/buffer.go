@@ -171,6 +171,11 @@ func (s fSample) T() int64 {
 	return s.t
 }
 
+// TODO(krajorama): implement ST.
+func (fSample) ST() int64 {
+	return 0
+}
+
 func (s fSample) F() float64 {
 	return s.f
 }
@@ -200,6 +205,11 @@ func (s hSample) T() int64 {
 	return s.t
 }
 
+// TODO(krajorama): implement ST.
+func (hSample) ST() int64 {
+	return 0
+}
+
 func (hSample) F() float64 {
 	panic("F() called for hSample")
 }
@@ -227,6 +237,11 @@ type fhSample struct {
 
 func (s fhSample) T() int64 {
 	return s.t
+}
+
+// TODO(krajorama): implement ST.
+func (fhSample) ST() int64 {
+	return 0
 }
 
 func (fhSample) F() float64 {

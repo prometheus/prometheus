@@ -402,6 +402,10 @@ func (*mockSeriesIterator) AtT() int64 {
 	return 0 // Not really mocked.
 }
 
+func (*mockSeriesIterator) AtST() int64 {
+	return 0 // Not really mocked.
+}
+
 type fakeSeriesIterator struct {
 	nsamples int64
 	step     int64
@@ -426,6 +430,10 @@ func (it *fakeSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64
 
 func (it *fakeSeriesIterator) AtT() int64 {
 	return it.idx * it.step
+}
+
+func (*fakeSeriesIterator) AtST() int64 {
+	return 0 // No start timestamps in this fake iterator.
 }
 
 func (it *fakeSeriesIterator) Next() chunkenc.ValueType {

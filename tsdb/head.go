@@ -2111,7 +2111,10 @@ func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHi
 	return sample{t, v, h, fh}
 }
 
-func (s sample) T() int64                      { return s.t }
+func (s sample) T() int64 { return s.t }
+
+// TODO(krajorama): implement ST.
+func (sample) ST() int64                       { return 0 }
 func (s sample) F() float64                    { return s.f }
 func (s sample) H() *histogram.Histogram       { return s.h }
 func (s sample) FH() *histogram.FloatHistogram { return s.fh }

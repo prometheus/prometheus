@@ -141,7 +141,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 				app, _ := chunk.Appender()
 				for _, smpl := range chk {
 					require.NotNil(t, smpl.fh, "chunk can only contain one type of sample")
-					_, _, _, err := app.AppendFloatHistogram(nil, smpl.t, smpl.fh, true)
+					_, _, _, err := app.AppendFloatHistogram(nil, 0, smpl.t, smpl.fh, true)
 					require.NoError(t, err, "chunk should be appendable")
 				}
 				chkReader[chunkRef] = chunk
@@ -150,7 +150,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 				app, _ := chunk.Appender()
 				for _, smpl := range chk {
 					require.NotNil(t, smpl.h, "chunk can only contain one type of sample")
-					_, _, _, err := app.AppendHistogram(nil, smpl.t, smpl.h, true)
+					_, _, _, err := app.AppendHistogram(nil, 0, smpl.t, smpl.h, true)
 					require.NoError(t, err, "chunk should be appendable")
 				}
 				chkReader[chunkRef] = chunk
@@ -160,7 +160,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 				for _, smpl := range chk {
 					require.Nil(t, smpl.h, "chunk can only contain one type of sample")
 					require.Nil(t, smpl.fh, "chunk can only contain one type of sample")
-					app.Append(smpl.t, smpl.f)
+					app.Append(0, smpl.t, smpl.f)
 				}
 				chkReader[chunkRef] = chunk
 			}
@@ -788,6 +788,10 @@ func (it *mockSampleIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64
 
 func (it *mockSampleIterator) AtT() int64 {
 	return it.s[it.idx].T()
+}
+
+func (it *mockSampleIterator) AtST() int64 {
+	return it.s[it.idx].ST()
 }
 
 func (it *mockSampleIterator) Next() chunkenc.ValueType {
@@ -2096,7 +2100,7 @@ func TestDeletedIterator(t *testing.T) {
 	for i := range 1000 {
 		act[i].t = int64(i)
 		act[i].f = rand.Float64()
-		app.Append(act[i].t, act[i].f)
+		app.Append(0, act[i].t, act[i].f)
 	}
 
 	cases := []struct {
@@ -2156,7 +2160,7 @@ func TestDeletedIterator_WithSeek(t *testing.T) {
 	for i := range 1000 {
 		act[i].t = int64(i)
 		act[i].f = float64(i)
-		app.Append(act[i].t, act[i].f)
+		app.Append(0, act[i].t, act[i].f)
 	}
 
 	cases := []struct {

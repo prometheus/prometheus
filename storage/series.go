@@ -138,6 +138,11 @@ func (it *listSeriesIterator) AtT() int64 {
 	return s.T()
 }
 
+func (it *listSeriesIterator) AtST() int64 {
+	s := it.samples.Get(it.idx)
+	return s.ST()
+}
+
 func (it *listSeriesIterator) Next() chunkenc.ValueType {
 	it.idx++
 	if it.idx >= it.samples.Len() {
@@ -355,18 +360,20 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		lastType = typ
 
 		var (
-			t  int64
-			v  float64
-			h  *histogram.Histogram
-			fh *histogram.FloatHistogram
+			st, t int64
+			v     float64
+			h     *histogram.Histogram
+			fh    *histogram.FloatHistogram
 		)
 		switch typ {
 		case chunkenc.ValFloat:
 			t, v = seriesIter.At()
-			app.Append(t, v)
+			st = seriesIter.AtST()
+			app.Append(st, t, v)
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram(nil)
-			newChk, recoded, app, err = app.AppendHistogram(nil, t, h, false)
+			st = seriesIter.AtST()
+			newChk, recoded, app, err = app.AppendHistogram(nil, st, t, h, false)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
@@ -381,7 +388,8 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram(nil)
-			newChk, recoded, app, err = app.AppendFloatHistogram(nil, t, fh, false)
+			st = seriesIter.AtST()
+			newChk, recoded, app, err = app.AppendFloatHistogram(nil, st, t, fh, false)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
