@@ -29,8 +29,10 @@ import (
 )
 
 const (
-	// OpenAPI version supported by this implementation.
-	openAPIVersion = "3.2.0"
+	// OpenAPI 3.1.0 is the default version with broader compatibility.
+	openAPIVersion31 = "3.1.0"
+	// OpenAPI 3.2.0 supports advanced features like itemSchema for SSE streams.
+	openAPIVersion32 = "3.2.0"
 )
 
 // OpenAPIOptions configures the OpenAPI spec builder.
@@ -50,10 +52,11 @@ type OpenAPIOptions struct {
 
 // OpenAPIBuilder builds and caches OpenAPI specifications.
 type OpenAPIBuilder struct {
-	mu         sync.RWMutex
-	cachedYAML []byte
-	options    OpenAPIOptions
-	logger     *slog.Logger
+	mu           sync.RWMutex
+	cachedYAML31 []byte // Cached OpenAPI 3.1 spec.
+	cachedYAML32 []byte // Cached OpenAPI 3.2 spec.
+	options      OpenAPIOptions
+	logger       *slog.Logger
 }
 
 // NewOpenAPIBuilder creates a new OpenAPI builder with the given options.
@@ -67,25 +70,47 @@ func NewOpenAPIBuilder(opts OpenAPIOptions, logger *slog.Logger) *OpenAPIBuilder
 	return b
 }
 
-// rebuild constructs the OpenAPI spec based on current options.
+// rebuild constructs the OpenAPI specs for both 3.1 and 3.2 versions based on current options.
 func (b *OpenAPIBuilder) rebuild() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	doc := b.buildDocument()
-
-	yamlBytes, err := doc.Render()
+	// Build OpenAPI 3.1 spec.
+	doc31 := b.buildDocument(openAPIVersion31)
+	yamlBytes31, err := doc31.Render()
 	if err != nil {
-		b.logger.Error("failed to render OpenAPI spec - this is a bug, please report it", "err", err)
+		b.logger.Error("failed to render OpenAPI 3.1 spec - this is a bug, please report it", "err", err)
 		return
 	}
-	b.cachedYAML = yamlBytes
+	b.cachedYAML31 = yamlBytes31
+
+	// Build OpenAPI 3.2 spec.
+	doc32 := b.buildDocument(openAPIVersion32)
+	yamlBytes32, err := doc32.Render()
+	if err != nil {
+		b.logger.Error("failed to render OpenAPI 3.2 spec - this is a bug, please report it", "err", err)
+		return
+	}
+	b.cachedYAML32 = yamlBytes32
 }
 
 // ServeOpenAPI returns the OpenAPI specification as YAML.
-func (b *OpenAPIBuilder) ServeOpenAPI(w http.ResponseWriter, _ *http.Request) {
+// By default, serves OpenAPI 3.1.0. Use ?openapi_version=3.2 for OpenAPI 3.2.0.
+func (b *OpenAPIBuilder) ServeOpenAPI(w http.ResponseWriter, r *http.Request) {
+	// Parse query parameter to determine which version to serve.
+	requestedVersion := r.URL.Query().Get("openapi_version")
+
 	b.mu.RLock()
-	yamlData := b.cachedYAML
+	var yamlData []byte
+	switch requestedVersion {
+	case "3.2", "3.2.0":
+		yamlData = b.cachedYAML32
+	case "3.1", "3.1.0":
+		yamlData = b.cachedYAML31
+	default:
+		// Default to OpenAPI 3.1.0 for broader compatibility.
+		yamlData = b.cachedYAML31
+	}
 	b.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
@@ -112,14 +137,30 @@ func (b *OpenAPIBuilder) shouldIncludePath(path string) bool {
 	return false
 }
 
-// buildDocument creates the OpenAPI 3.2 document using high-level structs.
-func (b *OpenAPIBuilder) buildDocument() *v3.Document {
+// shouldIncludePathForVersion checks if a path should be included for a specific OpenAPI version.
+func (b *OpenAPIBuilder) shouldIncludePathForVersion(path, version string) bool {
+	// First check IncludePaths filter.
+	if !b.shouldIncludePath(path) {
+		return false
+	}
+
+	// OpenAPI 3.1 excludes paths that require 3.2 features.
+	// The /notifications/live endpoint uses itemSchema which is a 3.2-only feature.
+	if version == openAPIVersion31 && path == "/notifications/live" {
+		return false
+	}
+
+	return true
+}
+
+// buildDocument creates the OpenAPI document for the specified version using high-level structs.
+func (b *OpenAPIBuilder) buildDocument(version string) *v3.Document {
 	return &v3.Document{
-		Version:    openAPIVersion,
+		Version:    version,
 		Info:       b.buildInfo(),
 		Servers:    b.buildServers(),
-		Tags:       b.buildTags(),
-		Paths:      b.buildPaths(),
+		Tags:       b.buildTags(version),
+		Paths:      b.buildPaths(version),
 		Components: b.buildComponents(),
 	}
 }
@@ -161,83 +202,55 @@ func (b *OpenAPIBuilder) buildServers() []*v3.Server {
 }
 
 // buildTags constructs the global tags list.
-func (*OpenAPIBuilder) buildTags() []*base.Tag {
-	return []*base.Tag{
-		{
-			Name:        "query",
-			Summary:     "Query",
-			Description: "Query and evaluate PromQL expressions.",
-		},
-		{
-			Name:        "metadata",
-			Summary:     "Metadata",
-			Description: "Retrieve metric metadata and information.",
-		},
-		{
-			Name:        "labels",
-			Summary:     "Labels",
-			Description: "Query label names and values.",
-		},
-		{
-			Name:        "series",
-			Summary:     "Series",
-			Description: "Query and manage time series.",
-		},
-		{
-			Name:        "targets",
-			Summary:     "Targets",
-			Description: "Retrieve target and scrape pool information.",
-		},
-		{
-			Name:        "rules",
-			Summary:     "Rules",
-			Description: "Query recording and alerting rules.",
-		},
-		{
-			Name:        "alerts",
-			Summary:     "Alerts",
-			Description: "Query active alerts and alertmanager discovery.",
-		},
-		{
-			Name:        "status",
-			Summary:     "Status",
-			Description: "Retrieve server status and configuration.",
-		},
-		{
-			Name:        "admin",
-			Summary:     "Admin",
-			Description: "Administrative operations for TSDB management.",
-		},
-		{
-			Name:        "features",
-			Summary:     "Features",
-			Description: "Query enabled features.",
-		},
-		{
-			Name:        "remote",
-			Summary:     "Remote Storage",
-			Description: "Remote read and write endpoints.",
-		},
-		{
-			Name:        "otlp",
-			Summary:     "OTLP",
-			Description: "OpenTelemetry Protocol metrics ingestion.",
-		},
-		{
-			Name:        "notifications",
-			Summary:     "Notifications",
-			Description: "Server notifications and events.",
-		},
+// Tag summary is an OpenAPI 3.2 feature, excluded from 3.1.
+// Tag description is supported in both 3.1 and 3.2.
+func (*OpenAPIBuilder) buildTags(version string) []*base.Tag {
+	// Define tags with all metadata.
+	tagData := []struct {
+		name        string
+		summary     string
+		description string
+	}{
+		{"query", "Query", "Query and evaluate PromQL expressions."},
+		{"metadata", "Metadata", "Retrieve metric metadata and information."},
+		{"labels", "Labels", "Query label names and values."},
+		{"series", "Series", "Query and manage time series."},
+		{"targets", "Targets", "Retrieve target and scrape pool information."},
+		{"rules", "Rules", "Query recording and alerting rules."},
+		{"alerts", "Alerts", "Query active alerts and alertmanager discovery."},
+		{"status", "Status", "Retrieve server status and configuration."},
+		{"admin", "Admin", "Administrative operations for TSDB management."},
+		{"features", "Features", "Query enabled features."},
+		{"remote", "Remote Storage", "Remote read and write endpoints."},
+		{"otlp", "OTLP", "OpenTelemetry Protocol metrics ingestion."},
+		{"notifications", "Notifications", "Server notifications and events."},
 	}
+
+	tags := make([]*base.Tag, 0, len(tagData))
+	for _, td := range tagData {
+		tag := &base.Tag{
+			Name:        td.name,
+			Description: td.description, // Description is supported in both 3.1 and 3.2.
+		}
+
+		// Summary is an OpenAPI 3.2 feature only.
+		if version == openAPIVersion32 {
+			tag.Summary = td.summary
+		}
+
+		tags = append(tags, tag)
+	}
+
+	return tags
 }
 
 // buildPaths constructs all API path definitions.
-func (b *OpenAPIBuilder) buildPaths() *v3.Paths {
+func (b *OpenAPIBuilder) buildPaths(version string) *v3.Paths {
 	pathItems := orderedmap.New[string, *v3.PathItem]()
 
 	allPaths := b.getAllPathDefinitions()
 	for pair := allPaths.First(); pair != nil; pair = pair.Next() {
-		if b.shouldIncludePath(pair.Key()) {
+		if b.shouldIncludePathForVersion(pair.Key(), version) {
 			pathItems.Set(pair.Key(), pair.Value())
 		}
 	}

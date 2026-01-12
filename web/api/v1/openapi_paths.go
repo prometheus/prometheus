@@ -565,6 +565,9 @@ func (*OpenAPIBuilder) notificationsPath() *v3.PathItem {
 	}
 }
 
+// notificationsLivePath defines the /notifications/live endpoint.
+// This endpoint uses OpenAPI 3.2's itemSchema feature for documenting SSE streams.
+// It is excluded from the OpenAPI 3.1 specification.
 func (*OpenAPIBuilder) notificationsLivePath() *v3.PathItem {
 	codes := orderedmap.New[string, *v3.Response]()
 	content := orderedmap.New[string, *v3.MediaType]()

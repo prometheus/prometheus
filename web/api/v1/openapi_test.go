@@ -50,8 +50,8 @@ func TestOpenAPIHTTPHandler(t *testing.T) {
 	require.Contains(t, spec, "paths")
 	require.Contains(t, spec, "components")
 
-	// Verify OpenAPI version.
-	require.Equal(t, "3.2.0", spec["openapi"])
+	// Verify OpenAPI version (default is 3.1.0).
+	require.Equal(t, "3.1.0", spec["openapi"])
 
 	// Verify info section.
 	info, ok := spec["info"].(map[any]any)
@@ -243,4 +243,49 @@ func TestOpenAPIShouldIncludePath(t *testing.T) {
 			require.Equal(t, tc.expected, result)
 		})
 	}
+}
+
+// TestOpenAPIVersionConsistency verifies that both OpenAPI versions are properly generated
+// and that 3.2 has exactly one more path than 3.1 (/notifications/live).
+func TestOpenAPIVersionConsistency(t *testing.T) {
+	builder := NewOpenAPIBuilder(OpenAPIOptions{}, promslog.NewNopLogger())
+
+	// Fetch OpenAPI 3.1 spec (default).
+	req31 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil)
+	rec31 := httptest.NewRecorder()
+	builder.ServeOpenAPI(rec31, req31)
+
+	require.Equal(t, http.StatusOK, rec31.Code)
+
+	// Fetch OpenAPI 3.2 spec.
+	req32 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml?openapi_version=3.2", nil)
+	rec32 := httptest.NewRecorder()
+	builder.ServeOpenAPI(rec32, req32)
+
+	require.Equal(t, http.StatusOK, rec32.Code)
+
+	// Parse both specs.
+	var spec31, spec32 map[string]any
+	err := yaml.Unmarshal(rec31.Body.Bytes(), &spec31)
+	require.NoError(t, err)
+	err = yaml.Unmarshal(rec32.Body.Bytes(), &spec32)
+	require.NoError(t, err)
+
+	// Verify versions are different.
+	require.Equal(t, "3.1.0", spec31["openapi"])
+	require.Equal(t, "3.2.0", spec32["openapi"])
+
+	// Verify /notifications/live is only in 3.2.
+	paths31 := spec31["paths"].(map[any]any)
+	paths32 := spec32["paths"].(map[any]any)
+
+	_, found31 := paths31["/notifications/live"]
+	require.False(t, found31, "/notifications/live should not be in OpenAPI 3.1")
+
+	_, found32 := paths32["/notifications/live"]
+	require.True(t, found32, "/notifications/live should be in OpenAPI 3.2")
+
+	// Verify 3.2 has exactly one more path than 3.1.
+	require.Len(t, paths32, len(paths31)+1,
+		"OpenAPI 3.2 should have exactly one more path than 3.1")
 }

@@ -8,7 +8,10 @@ server. Any non-breaking additions will be added under that endpoint.
 
 ## OpenAPI Specification
 
-An OpenAPI 3.2 specification for the HTTP API is available at `/api/v1/openapi.yaml`.
+An OpenAPI specification for the HTTP API is available at `/api/v1/openapi.yaml`.
+By default, it returns OpenAPI 3.1 for broader compatibility. Use `?openapi_version=3.2`
+for OpenAPI 3.2, which includes advanced features and endpoints like `/api/v1/notifications/live`.
+
 This machine-readable specification describes all available endpoints, request parameters,
 response formats, and schemas.
 
