@@ -125,7 +125,8 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 		}
 		switch encoding {
 		case chunkenc.EncXOR:
-			app.Append(s.t, s.f)
+			// TODO(krajorama): pass ST.
+			app.Append(0, s.t, s.f)
 		case chunkenc.EncHistogram:
 			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 			prevHApp, _ := prevApp.(*chunkenc.HistogramAppender)
@@ -133,7 +134,8 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 				newChunk chunkenc.Chunk
 				recoded  bool
 			)
-			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, s.t, s.h, false)
+			// TODO(krajorama): pass ST.
+			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, 0, s.t, s.h, false)
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
@@ -148,7 +150,8 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 				newChunk chunkenc.Chunk
 				recoded  bool
 			)
-			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, s.t, s.fh, false)
+			// TODO(krajorama): pass ST.
+			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, 0, s.t, s.fh, false)
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})

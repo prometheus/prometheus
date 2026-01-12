@@ -3747,12 +3747,12 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 		recoded bool
 	)
 
-	newc, recoded, app, err = app.AppendHistogram(nil, 0, h1.Copy(), false)
+	newc, recoded, app, err = app.AppendHistogram(nil, 0, 0, h1.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
 
-	newc, recoded, _, err = app.AppendHistogram(nil, 10, h1.Copy(), false)
+	newc, recoded, _, err = app.AppendHistogram(nil, 0, 10, h1.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
@@ -3762,7 +3762,7 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	app, err = c2.Appender()
 	require.NoError(t, err)
 
-	app.Append(20, math.Float64frombits(value.StaleNaN))
+	app.Append(0, 20, math.Float64frombits(value.StaleNaN))
 
 	// Make a chunk with two normal histograms that have zero value.
 	h2 := histogram.Histogram{
@@ -3773,12 +3773,12 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	app, err = c3.Appender()
 	require.NoError(t, err)
 
-	newc, recoded, app, err = app.AppendHistogram(nil, 30, h2.Copy(), false)
+	newc, recoded, app, err = app.AppendHistogram(nil, 0, 30, h2.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
 
-	newc, recoded, _, err = app.AppendHistogram(nil, 40, h2.Copy(), false)
+	newc, recoded, _, err = app.AppendHistogram(nil, 0, 40, h2.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)

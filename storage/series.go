@@ -363,10 +363,12 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		switch typ {
 		case chunkenc.ValFloat:
 			t, v = seriesIter.At()
-			app.Append(t, v)
+			// TODO(krajorama): pass ST.
+			app.Append(0, t, v)
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram(nil)
-			newChk, recoded, app, err = app.AppendHistogram(nil, t, h, false)
+			// TODO(krajorama): pass ST.
+			newChk, recoded, app, err = app.AppendHistogram(nil, 0, t, h, false)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
@@ -381,7 +383,8 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram(nil)
-			newChk, recoded, app, err = app.AppendFloatHistogram(nil, t, fh, false)
+			// TODO(krajorama): pass ST.
+			newChk, recoded, app, err = app.AppendFloatHistogram(nil, 0, t, fh, false)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}

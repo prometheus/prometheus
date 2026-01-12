@@ -893,7 +893,8 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			}
 			var h *histogram.Histogram
 			t, h = p.currDelIter.AtHistogram(nil)
-			_, _, app, err = app.AppendHistogram(nil, t, h, true)
+			// TODO(krajorama): pass ST.
+			_, _, app, err = app.AppendHistogram(nil, 0, t, h, true)
 			if err != nil {
 				break
 			}
@@ -910,7 +911,8 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			}
 			var v float64
 			t, v = p.currDelIter.At()
-			app.Append(t, v)
+			// TODO(krajorama): pass ST.
+			app.Append(0, t, v)
 		}
 	case chunkenc.ValFloatHistogram:
 		newChunk = chunkenc.NewFloatHistogramChunk()
@@ -924,7 +926,8 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			}
 			var h *histogram.FloatHistogram
 			t, h = p.currDelIter.AtFloatHistogram(nil)
-			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
+			// TODO(krajorama): pass ST.
+			_, _, app, err = app.AppendFloatHistogram(nil, 0, t, h, true)
 			if err != nil {
 				break
 			}
@@ -1004,7 +1007,8 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 			{
 				var v float64
 				t, v = p.currDelIter.At()
-				app.Append(t, v)
+				// TODO(krajorama): pass ST.
+				app.Append(0, t, v)
 			}
 		case chunkenc.ValHistogram:
 			{
@@ -1012,7 +1016,8 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 				t, v = p.currDelIter.AtHistogram(nil)
 				// No need to set prevApp as AppendHistogram will set the
 				// counter reset header for the appender that's returned.
-				newChunk, recoded, app, err = app.AppendHistogram(nil, t, v, false)
+				// TODO(krajorama): pass ST.
+				newChunk, recoded, app, err = app.AppendHistogram(nil, 0, t, v, false)
 			}
 		case chunkenc.ValFloatHistogram:
 			{
@@ -1020,7 +1025,8 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 				t, v = p.currDelIter.AtFloatHistogram(nil)
 				// No need to set prevApp as AppendHistogram will set the
 				// counter reset header for the appender that's returned.
-				newChunk, recoded, app, err = app.AppendFloatHistogram(nil, t, v, false)
+				// TODO(krajorama): pass ST.
+				newChunk, recoded, app, err = app.AppendFloatHistogram(nil, 0, t, v, false)
 			}
 		}
 
