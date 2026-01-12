@@ -58,3 +58,49 @@ func TestWriterWithDefaultSegmentSize(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, d, 1, "expected only one segment to be created to hold both chunks")
 }
+
+func TestChunkSizeInBytes(t *testing.T) {
+	chunkMetaFloat, err := ChunkFromSamples([]Sample{
+		sample{t: 10, f: 11},
+		sample{t: 20, f: 12},
+		sample{t: 30, f: 13},
+	})
+	require.NoError(t, err)
+
+	chunkMetaHistogram, err := ChunkFromSamples([]Sample{
+		sample{t: 40, h: tsdbutil.GenerateTestHistogram(1)},
+		sample{t: 50, h: tsdbutil.GenerateTestHistogram(2)},
+		sample{t: 60, h: tsdbutil.GenerateTestHistogram(3)},
+	})
+	require.NoError(t, err)
+
+	chunkMetaFloatHistogram, err := ChunkFromSamples([]Sample{
+		sample{t: 70, fh: tsdbutil.GenerateTestFloatHistogram(1)},
+		sample{t: 80, fh: tsdbutil.GenerateTestFloatHistogram(2)},
+		sample{t: 90, fh: tsdbutil.GenerateTestFloatHistogram(3)},
+	})
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+
+	w, err := NewWriter(dir, WithSegmentSize(1024)) // Use a small segment size to avoid allocating 512MB on disk for this test.
+	require.NoError(t, err)
+
+	err = w.WriteChunks(chunkMetaFloat, chunkMetaHistogram, chunkMetaFloatHistogram)
+	require.NoError(t, err)
+
+	err = w.Close()
+	require.NoError(t, err)
+
+	segmentFile := dir + "/000001"
+	segmentInfo, err := os.Stat(segmentFile)
+	require.NoError(t, err)
+	actualSegmentFileSize := segmentInfo.Size()
+
+	varintBuffer := make([]byte, MaxChunkLengthFieldSize)
+	chunkFloatSize := EncodedSizeInBytes(chunkMetaFloat.Chunk, varintBuffer)
+	chunkHistogramSize := EncodedSizeInBytes(chunkMetaHistogram.Chunk, varintBuffer)
+	chunkFloatHistogramSize := EncodedSizeInBytes(chunkMetaFloatHistogram.Chunk, varintBuffer)
+	expectedSegmentFileSize := SegmentHeaderSize + chunkFloatSize + chunkHistogramSize + chunkFloatHistogramSize
+	require.Equal(t, expectedSegmentFileSize, actualSegmentFileSize, "segment file size in bytes does not add up based on the chunk sizes")
+}
