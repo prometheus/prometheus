@@ -26,6 +26,19 @@ type sample struct {
 }
 
 func TestXorRecodingChunk(t *testing.T) {
+	testChunkAppenderV2ST(
+		t,
+		func() Chunk {
+			return NewXorRecodingChunk()
+		},
+		func(c Chunk) (AppenderV2, error) {
+			s := c.(*xorRecodingChunk)
+			return s.AppenderV2()
+		},
+	)
+}
+
+func testChunkAppenderV2ST(t *testing.T, chunkFactory func() Chunk, getAppenderV2 func(c Chunk) (AppenderV2, error)) {
 	t.Run("manual for debugging", func(t *testing.T) {
 		samples := []sample{
 			{ts: 1000, st: 0, f: 1.5},
@@ -33,8 +46,8 @@ func TestXorRecodingChunk(t *testing.T) {
 			{ts: 3000, st: 0, f: 3.5},
 			{ts: 4000, st: 0, f: 4.5},
 		}
-		chunk := NewXorRecodingChunk()
-		app, err := chunk.AppenderV2()
+		chunk := chunkFactory()
+		app, err := getAppenderV2(chunk)
 		require.NoError(t, err)
 		for _, s := range samples {
 			app.Append(s.st, s.ts, s.f)
@@ -53,7 +66,7 @@ func TestXorRecodingChunk(t *testing.T) {
 		require.NoError(t, it.Err())
 	})
 
-	stTimes := []int64{0, 500, 1500, 2500, 3500}
+	stTimes := []int64{0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000}
 	for numberOfSamples := range 5 {
 		samples := make([]sample, numberOfSamples)
 		sampleSTidx := make([]int, numberOfSamples)
@@ -67,8 +80,8 @@ func TestXorRecodingChunk(t *testing.T) {
 			}
 
 			t.Run(fmt.Sprintf("%v", samples), func(t *testing.T) {
-				chunk := NewXorRecodingChunk()
-				app, err := chunk.AppenderV2()
+				chunk := chunkFactory()
+				app, err := getAppenderV2(chunk)
 				require.NoError(t, err)
 				for _, s := range samples {
 					app.Append(s.st, s.ts, s.f)
@@ -88,7 +101,7 @@ func TestXorRecodingChunk(t *testing.T) {
 
 			exhausted := true
 			for j := numberOfSamples - 1; j >= 0; j-- {
-				if sampleSTidx[j] < j+1 {
+				if sampleSTidx[j] < j+2 {
 					sampleSTidx[j]++
 					exhausted = false
 					break

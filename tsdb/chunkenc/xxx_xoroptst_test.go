@@ -19,7 +19,75 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSTHeader(t *testing.T) {
+func TestXorOptSTChunk(t *testing.T) {
+	testChunkAppenderV2ST(
+		t,
+		func() Chunk {
+			return NewXOROptSTChunk()
+		},
+		func(c Chunk) (AppenderV2, error) {
+			s := c.(*xorOptSTChunk)
+			return s.AppenderV2()
+		},
+	)
+}
+
+func TestXorOptSTChunk_MoreThan127Samples(t *testing.T) {
+	const afterMax = maxFirstSTChangeOn + 3
+	t.Run("zero ST", func(t *testing.T) {
+		chunk := NewXOROptSTChunk()
+		app, err := chunk.AppenderV2()
+		require.NoError(t, err)
+		for i := 0; i < afterMax; i++ {
+			app.Append(0, int64(i*10+1), float64(i)*1.5)
+		}
+
+		it := chunk.Iterator(nil)
+		for i := 0; i < afterMax; i++ {
+			require.Equal(t, it.Next(), ValFloat)
+			st := it.AtST()
+			ts, v := it.At()
+			require.Equal(t, int64(0), st)
+			require.Equal(t, int64(i*10+1), ts)
+			require.Equal(t, float64(i)*1.5, v)
+		}
+
+		require.Equal(t, ValNone, it.Next())
+		require.NoError(t, it.Err())
+	})
+
+	t.Run("non-zero ST after 127", func(t *testing.T) {
+		chunk := NewXOROptSTChunk()
+		app, err := chunk.AppenderV2()
+		require.NoError(t, err)
+		for i := 0; i < afterMax; i++ {
+			st := int64(0)
+			if i == afterMax-1 {
+				st = int64((afterMax - 1) * 10)
+			}
+			app.Append(st, int64(i*10+1), float64(i)*1.5)
+		}
+
+		it := chunk.Iterator(nil)
+		for i := 0; i < afterMax; i++ {
+			require.Equal(t, it.Next(), ValFloat)
+			st := it.AtST()
+			ts, v := it.At()
+			if i == afterMax-1 {
+				require.Equal(t, int64((afterMax-1)*10), st)
+			} else {
+				require.Equal(t, int64(0), st)
+			}
+			require.Equal(t, int64(i*10+1), ts)
+			require.Equal(t, float64(i)*1.5, v)
+		}
+
+		require.Equal(t, ValNone, it.Next())
+		require.NoError(t, it.Err())
+	})
+}
+
+func TestXorOptSTChunk_STHeader(t *testing.T) {
 	b := make([]byte, 1)
 	writeHeaderFirstSTKnown(b)
 	firstSTKnown, firstSTChangeOn := readSTHeader(b)
