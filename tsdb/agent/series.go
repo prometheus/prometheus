@@ -14,12 +14,19 @@
 package agent
 
 import (
+	"iter"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
+
+type ActiveSeries interface {
+	Ref() chunks.HeadSeriesRef
+	Labels() labels.Labels
+	LastSampleTimestamp() int64
+}
 
 // memSeries is a chunkless version of tsdb.memSeries.
 type memSeries struct {
@@ -43,6 +50,18 @@ func (m *memSeries) updateTimestamp(newTs int64) bool {
 		return true
 	}
 	return false
+}
+
+func (m *memSeries) Ref() chunks.HeadSeriesRef {
+	return m.ref
+}
+
+func (m *memSeries) Labels() labels.Labels {
+	return m.lset
+}
+
+func (m *memSeries) LastSampleTimestamp() int64 {
+	return m.lastTs
 }
 
 // seriesHashmap lets agent find a memSeries by its label set, via a 64-bit hash.
@@ -297,4 +316,40 @@ func (s *stripeSeries) hashLock(hash uint64) uint64 {
 
 func (s *stripeSeries) refLock(ref chunks.HeadSeriesRef) uint64 {
 	return uint64(ref) & uint64(s.size-1)
+}
+
+func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
+	return func(yield func(ActiveSeries) bool) {
+		stop := false
+		for i := 0; i < s.size; i++ {
+			s.locks[i].RLock()
+
+			for _, series := range s.series[i] {
+				series.Lock()
+
+				j := int(s.hashLock(series.lset.Hash()))
+				if i != j {
+					s.locks[j].RLock()
+				}
+
+				if !yield(series) {
+					stop = true
+				}
+
+				if i != j {
+					s.locks[j].RUnlock()
+				}
+				series.Unlock()
+
+				if stop {
+					break
+				}
+			}
+
+			s.locks[i].RUnlock()
+			if stop {
+				return
+			}
+		}
+	}
 }
