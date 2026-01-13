@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -798,7 +797,7 @@ func (db *DB) Close() error {
 
 	db.metrics.Unregister()
 
-	return tsdb_errors.NewMulti(db.locker.Release(), db.wal.Close()).Err()
+	return errors.Join(db.locker.Release(), db.wal.Close())
 }
 
 type appenderBase struct {

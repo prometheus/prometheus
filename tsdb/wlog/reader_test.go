@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -32,7 +33,6 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/compression"
 )
 
@@ -287,7 +287,7 @@ func (m *multiReadCloser) Read(p []byte) (n int, err error) {
 }
 
 func (m *multiReadCloser) Close() error {
-	return tsdb_errors.NewMulti(tsdb_errors.CloseAll(m.closers)).Err()
+	return errors.Join(closeAll(m.closers))
 }
 
 func allSegments(dir string) (io.ReadCloser, error) {
@@ -548,4 +548,13 @@ func TestReaderData(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// closeAll closes all given closers while recording error in MultiError.
+func closeAll(cs []io.Closer) error {
+	var errs []error
+	for _, c := range cs {
+		errs = append(errs, c.Close())
+	}
+	return errors.Join(errs...)
 }
