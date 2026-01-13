@@ -49,49 +49,6 @@
 
 ## 3.8.0 / 2025-11-28
 
-### Note for users of Native Histograms
-
-Native Histograms are now a stable feature, but they are controlled by the
-`scrape_native_histograms` setting in the configuration file. This setting replaces the older
-`--enable-feature=native-histograms` command\-line flag.
-
-In this release (v3\.8), the feature flag is still accepted for compatibility, but it only changes
-the default of `scrape_native_histograms` to `true`. In the next release (v3\.9):
-
-* the `--enable-feature=native-histograms` flag will do nothing, and
-* the default for `scrape_native_histograms` will always be `false`.
-
-To prepare, move your setup from the flag to the config setting:
-
-1. Upgrade to v3\.8 and keep using `--enable-feature=native-histograms`. Behavior stays the same.
-2. Configure `scrape_native_histograms` in all relevant scrape configs. Set it explicitly to `true`
-   where you want to scrape Native Histograms and to `false` where you do not, so you no longer
-   depend on the default.
-3. Remove the `--enable-feature=native-histograms` flag and verify that scraping still works as
-   expected.
-4. After that, you are ready to upgrade to v3\.9 and later.
-
-Example configuration with Native Histograms enabled globally but disabled for one job:
-
-```yaml
-global:
-  scrape_interval: 15s
-  scrape_native_histograms: true
-
-scrape_configs:
-  - job_name: 'default'
-    static_configs:
-      - targets: ['localhost:9090']
-
-  - job_name: 'no_native_histograms'
-    scrape_interval: 30s
-    scrape_native_histograms: false
-    static_configs:
-      - targets: ['localhost:9091']
-```
-
-### Changes in 3.8.0
-
 * [CHANGE] Remote-write: Update receiving to [2.0-rc.4 spec](https://github.com/prometheus/docs/blob/60c24e450010df38cfcb4f65df874f6f9b26dbcb/docs/specs/prw/remote_write_spec_2_0.md). "created timestamp" (CT) is now called "start timestamp" (ST). #17411
 * [CHANGE] TSDB: Native Histogram Custom Bounds with a NaN threshold are now rejected. #17287
 * [FEATURE] OAuth2: support jwt-bearer grant-type (RFC7523 3.1). #17592
