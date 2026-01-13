@@ -25,6 +25,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -36,6 +42,7 @@ func TestCustomDo(t *testing.T) {
 
 	var received bool
 	h := sendLoop{
+		cfg: &config.DefaultAlertmanagerConfig,
 		opts: &Options{
 			Do: func(_ context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
 				received = true
@@ -48,7 +55,8 @@ func TestCustomDo(t *testing.T) {
 				require.Equal(t, testURL, req.URL.String())
 
 				return &http.Response{
-					Body: io.NopCloser(bytes.NewBuffer(nil)),
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBuffer(nil)),
 				}, nil
 			},
 		},
@@ -184,4 +192,131 @@ func TestMetrics(t *testing.T) {
 	// Verify metrics are re-initialized correctly
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(metrics.dropped.WithLabelValues(alertmanagerURL)))
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(metrics.sent.WithLabelValues(alertmanagerURL)))
+}
+
+func TestTracingInstrumentation(t *testing.T) {
+	// Save original tracer provider and restore after test
+	origTracerProvider := otel.GetTracerProvider()
+	t.Cleanup(func() {
+		otel.SetTracerProvider(origTracerProvider)
+	})
+
+	spanRecorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(spanRecorder),
+	)
+	otel.SetTracerProvider(tp)
+
+	const (
+		testURL        = "http://alertmanager:9093/api/v2/alerts"
+		testAlertCount = 3
+		testBody       = `[{"labels":{"alertname":"test"}}]`
+	)
+
+	tests := []struct {
+		name           string
+		statusCode     int
+		shouldHaveErr  bool
+		expectedStatus codes.Code
+	}{
+		{
+			name:           "successful send",
+			statusCode:     http.StatusOK,
+			shouldHaveErr:  false,
+			expectedStatus: codes.Unset,
+		},
+		{
+			name:           "failed send - bad status",
+			statusCode:     http.StatusInternalServerError,
+			shouldHaveErr:  true,
+			expectedStatus: codes.Error,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spanRecorder.Reset()
+
+			h := sendLoop{
+				cfg: &config.DefaultAlertmanagerConfig,
+				opts: &Options{
+					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: tt.statusCode,
+							Body:       io.NopCloser(bytes.NewBuffer(nil)),
+						}, nil
+					},
+				},
+			}
+
+			ctx, span := otel.Tracer("").Start(context.Background(), "Alert Send Batch", trace.WithSpanKind(trace.SpanKindClient))
+			span.SetAttributes(
+				attribute.String("alertmanager_url", testURL),
+				attribute.Int("alert_count", testAlertCount),
+				attribute.Int("batch_size_bytes", len(testBody)),
+				attribute.String("api_version", string(config.AlertmanagerAPIVersionV2)),
+			)
+
+			err := h.sendOne(ctx, nil, testURL, []byte(testBody))
+			if err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+			}
+			span.End()
+
+			if tt.shouldHaveErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			require.NoError(t, tp.ForceFlush(context.Background()))
+
+			spans := spanRecorder.Ended()
+			require.Len(t, spans, 1, "expected exactly one span to be created")
+
+			recordedSpan := spans[0]
+
+			require.Equal(t, "Alert Send Batch", recordedSpan.Name())
+
+			require.Equal(t, trace.SpanKindClient, recordedSpan.SpanKind())
+
+			attrs := recordedSpan.Attributes()
+			expectedAttrs := map[attribute.Key]attribute.Value{
+				"alertmanager_url": attribute.StringValue(testURL),
+				"alert_count":      attribute.Int64Value(int64(testAlertCount)),
+				"batch_size_bytes": attribute.Int64Value(int64(len(testBody))),
+				"api_version":      attribute.StringValue(string(config.AlertmanagerAPIVersionV2)),
+				"http.status_code": attribute.Int64Value(int64(tt.statusCode)),
+			}
+
+			for key, expectedVal := range expectedAttrs {
+				found := false
+				for _, attr := range attrs {
+					if attr.Key == key {
+						require.Equal(t, expectedVal, attr.Value, "attribute %s has wrong value", key)
+						found = true
+						break
+					}
+				}
+				require.True(t, found, "expected attribute %s not found", key)
+			}
+
+			require.Equal(t, tt.expectedStatus, recordedSpan.Status().Code)
+
+			if tt.shouldHaveErr {
+				events := recordedSpan.Events()
+				require.NotEmpty(t, events, "expected error to be recorded as event")
+				hasExceptionEvent := false
+				for _, event := range events {
+					if event.Name == "exception" {
+						hasExceptionEvent = true
+						break
+					}
+				}
+				require.True(t, hasExceptionEvent, "expected exception event in span")
+			}
+		})
+	}
 }
