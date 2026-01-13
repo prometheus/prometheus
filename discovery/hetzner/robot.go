@@ -34,9 +34,10 @@ import (
 )
 
 const (
-	hetznerRobotLabelPrefix    = hetznerLabelPrefix + "robot_"
-	hetznerLabelRobotProduct   = hetznerRobotLabelPrefix + "product"
-	hetznerLabelRobotCancelled = hetznerRobotLabelPrefix + "cancelled"
+	hetznerRobotLabelPrefix     = hetznerLabelPrefix + "robot_"
+	hetznerLabelRobotDatacenter = hetznerRobotLabelPrefix + "datacenter"
+	hetznerLabelRobotProduct    = hetznerRobotLabelPrefix + "product"
+	hetznerLabelRobotCancelled  = hetznerRobotLabelPrefix + "cancelled"
 )
 
 var userAgent = version.PrometheusUserAgent()
@@ -105,14 +106,15 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 	targets := make([]model.LabelSet, len(servers))
 	for i, server := range servers {
 		labels := model.LabelSet{
-			hetznerLabelRole:           model.LabelValue(HetznerRoleRobot),
-			hetznerLabelServerID:       model.LabelValue(strconv.Itoa(server.Server.ServerNumber)),
-			hetznerLabelServerName:     model.LabelValue(server.Server.ServerName),
-			hetznerLabelDatacenter:     model.LabelValue(strings.ToLower(server.Server.Dc)),
-			hetznerLabelPublicIPv4:     model.LabelValue(server.Server.ServerIP),
-			hetznerLabelServerStatus:   model.LabelValue(server.Server.Status),
-			hetznerLabelRobotProduct:   model.LabelValue(server.Server.Product),
-			hetznerLabelRobotCancelled: model.LabelValue(strconv.FormatBool(server.Server.Canceled)),
+			hetznerLabelRole:            model.LabelValue(HetznerRoleRobot),
+			hetznerLabelServerID:        model.LabelValue(strconv.Itoa(server.Server.ServerNumber)),
+			hetznerLabelServerName:      model.LabelValue(server.Server.ServerName),
+			hetznerLabelDatacenter:      model.LabelValue(strings.ToLower(server.Server.Dc)), // Label name kept for backward compatibility
+			hetznerLabelPublicIPv4:      model.LabelValue(server.Server.ServerIP),
+			hetznerLabelServerStatus:    model.LabelValue(server.Server.Status),
+			hetznerLabelRobotDatacenter: model.LabelValue(strings.ToLower(server.Server.Dc)),
+			hetznerLabelRobotProduct:    model.LabelValue(server.Server.Product),
+			hetznerLabelRobotCancelled:  model.LabelValue(strconv.FormatBool(server.Server.Canceled)),
 
 			model.AddressLabel: model.LabelValue(net.JoinHostPort(server.Server.ServerIP, strconv.FormatUint(uint64(d.port), 10))),
 		}
