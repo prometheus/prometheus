@@ -137,7 +137,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		return nil, err
 	}
 
-	cpdir := checkpointDir(w.Dir(), to)
+	cpdir := CheckpointDir(w.Dir(), to)
 	cpdirtmp := cpdir + checkpointTempFileSuffix
 
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
@@ -407,7 +407,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 // checkpointPrefix is the prefix used for checkpoint files.
 const checkpointPrefix = "checkpoint."
 
-func checkpointDir(dir string, i int) string {
+func CheckpointDir(dir string, i int) string {
 	return filepath.Join(dir, fmt.Sprintf(checkpointPrefix+"%08d", i))
 }
 
