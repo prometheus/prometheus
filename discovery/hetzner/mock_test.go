@@ -124,6 +124,16 @@ func (m *SDMock) HandleHcloudServers() {
         "storage_type": "local",
         "cpu_type": "shared"
       },
+      "location": {
+        "id": 1,
+        "name": "fsn1",
+        "description": "Falkenstein DC Park 1",
+        "country": "DE",
+        "city": "Falkenstein",
+        "latitude": 50.47612,
+        "longitude": 12.370071,
+        "network_zone": "eu-central"
+      },
       "datacenter": {
         "id": 1,
         "name": "fsn1-dc8",
@@ -243,6 +253,16 @@ func (m *SDMock) HandleHcloudServers() {
         ],
         "storage_type": "local",
         "cpu_type": "shared"
+      },
+      "location": {
+        "id": 1,
+        "name": "fsn1",
+        "description": "Falkenstein DC Park 1",
+        "country": "DE",
+        "city": "Falkenstein",
+        "latitude": 50.47612,
+        "longitude": 12.370071,
+        "network_zone": "eu-central"
       },
       "datacenter": {
         "id": 2,
@@ -364,6 +384,16 @@ func (m *SDMock) HandleHcloudServers() {
         ],
         "storage_type": "local",
         "cpu_type": "shared"
+      },
+      "location": {
+        "id": 1,
+        "name": "fsn1",
+        "description": "Falkenstein DC Park 1",
+        "country": "DE",
+        "city": "Falkenstein",
+        "latitude": 50.47612,
+        "longitude": 12.370071,
+        "network_zone": "eu-central"
       },
       "datacenter": {
         "id": 2,
