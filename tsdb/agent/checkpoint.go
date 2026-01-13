@@ -7,18 +7,11 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
-
-type ActiveSeries interface {
-	Ref() chunks.HeadSeriesRef
-	Labels() labels.Labels
-	LastSampleTimestamp() int64
-}
 
 type checkpointFlusher struct {
 	enc         record.Encoder
@@ -144,7 +137,7 @@ func (p CheckpointParams) withDefaults() CheckpointParams {
 }
 
 // Checkpoint creates an unindexed checkpoint containing record.RefSeries and
-// record.RefSample for ActiveSeries and  a record.RefSeries for the recentlyDeleted series.
+// record.RefSample for ActiveSeries and a record.RefSeries for the recentlyDeleted series.
 //
 // The difference between this implementation and [wlog.Checkpoint] is that it skips re-read current checkpoint + segments
 // and relies on data in memory.
