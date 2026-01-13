@@ -113,6 +113,39 @@ func NewTestEngineWithOpts(tb testing.TB, opts promql.EngineOpts) *promql.Engine
 	return ng
 }
 
+// GetBuiltInExprs returns all the eval statement expressions from the built-in test files.
+func GetBuiltInExprs() ([]string, error) {
+	files, err := fs.Glob(testsFs, "*/*.test")
+	if err != nil {
+		return nil, err
+	}
+
+	var exprs []string
+	for _, fn := range files {
+		content, err := fs.ReadFile(testsFs, fn)
+		if err != nil {
+			return nil, err
+		}
+
+		// Create a minimal test struct just for parsing
+		testInstance := &test{
+			cmds: []testCommand{},
+		}
+		if err := testInstance.parse(string(content)); err != nil {
+			return nil, err
+		}
+
+		// Extract expressions from eval commands
+		for _, cmd := range testInstance.cmds {
+			if evalCmd, ok := cmd.(*evalCmd); ok {
+				exprs = append(exprs, evalCmd.expr)
+			}
+		}
+	}
+
+	return exprs, nil
+}
+
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
 func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 	RunBuiltinTestsWithStorage(t, engine, newTestStorage)
