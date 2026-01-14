@@ -382,6 +382,7 @@ type timestampTrackerV2 struct {
 	baseTimestampTracker
 }
 
+// Append implements storage.AppenderV2.
 func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, ts int64, _ float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	switch {
 	case fh != nil, h != nil:

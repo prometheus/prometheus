@@ -289,7 +289,7 @@ func (f *fanoutAppender) Rollback() (err error) {
 			f.logger.Error("Squashed rollback error on rollback", "err", rollbackErr)
 		}
 	}
-	return nil
+	return err
 }
 
 type fanoutAppenderV2 struct {
@@ -340,5 +340,5 @@ func (f *fanoutAppenderV2) Rollback() (err error) {
 			f.logger.Error("Squashed rollback error on rollback", "err", rollbackErr)
 		}
 	}
-	return nil
+	return err
 }
