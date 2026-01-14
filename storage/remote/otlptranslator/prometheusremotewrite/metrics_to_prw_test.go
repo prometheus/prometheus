@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1321,5 +1322,286 @@ func generateExemplars(exemplars pmetric.ExemplarSlice, count int, ts pcommon.Ti
 		e.SetDoubleValue(2.22)
 		e.SetSpanID(pcommon.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08})
 		e.SetTraceID(pcommon.TraceID{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f})
+	}
+}
+
+// createMultiScopeExportRequest creates an export request with multiple scopes per resource.
+// This is useful for benchmarking resource-level label caching, where cached resource labels
+// (job, instance, promoted attributes) should be computed once and reused across all scopes.
+func createMultiScopeExportRequest(
+	resourceAttributeCount int,
+	scopeCount int,
+	metricsPerScope int,
+	labelsPerMetric int,
+	scopeAttributeCount int,
+) pmetricotlp.ExportRequest {
+	request := pmetricotlp.NewExportRequest()
+	ts := pcommon.NewTimestampFromTime(time.Now())
+
+	rm := request.Metrics().ResourceMetrics().AppendEmpty()
+	generateAttributes(rm.Resource().Attributes(), "resource", resourceAttributeCount)
+
+	// Set service attributes for job/instance label generation
+	rm.Resource().Attributes().PutStr("service.name", "test-service")
+	rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
+	rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
+
+	for s := range scopeCount {
+		scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+		scope := scopeMetrics.Scope()
+		scope.SetName(fmt.Sprintf("scope-%d", s))
+		scope.SetVersion("1.0.0")
+		generateAttributes(scope.Attributes(), "scope", scopeAttributeCount)
+
+		metrics := scopeMetrics.Metrics()
+		for m := range metricsPerScope {
+			metric := metrics.AppendEmpty()
+			metric.SetName(fmt.Sprintf("gauge_s%d_m%d", s, m))
+			metric.SetDescription("gauge metric")
+			metric.SetUnit("unit")
+			point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+			point.SetTimestamp(ts)
+			point.SetDoubleValue(float64(m))
+			generateAttributes(point.Attributes(), "series", labelsPerMetric)
+		}
+	}
+
+	return request
+}
+
+// createRepeatedLabelsExportRequest creates an export request where the same label names
+// appear repeatedly across many datapoints. This is useful for benchmarking the label
+// sanitization cache, which should reduce allocations when the same label names are seen multiple times.
+func createRepeatedLabelsExportRequest(
+	uniqueLabelNames int,
+	datapointCount int,
+	labelsPerDatapoint int,
+) pmetricotlp.ExportRequest {
+	request := pmetricotlp.NewExportRequest()
+	ts := pcommon.NewTimestampFromTime(time.Now())
+
+	rm := request.Metrics().ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "test-service")
+	rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
+
+	metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
+
+	// Pre-generate label names that will be reused
+	labelNames := make([]string, uniqueLabelNames)
+	for i := range uniqueLabelNames {
+		labelNames[i] = fmt.Sprintf("label.name.%d", i)
+	}
+
+	for d := range datapointCount {
+		metric := metrics.AppendEmpty()
+		metric.SetName(fmt.Sprintf("gauge_%d", d))
+		metric.SetDescription("gauge metric")
+		metric.SetUnit("unit")
+		point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+		point.SetTimestamp(ts)
+		point.SetDoubleValue(float64(d))
+
+		// Add labels using the same label names (cycling through them)
+		for l := range labelsPerDatapoint {
+			labelName := labelNames[l%uniqueLabelNames]
+			point.Attributes().PutStr(labelName, fmt.Sprintf("value-%d-%d", d, l))
+		}
+	}
+
+	return request
+}
+
+// createMultiResourceExportRequest creates an export request with multiple ResourceMetrics.
+// This is useful for benchmarking the overhead of cache clearing between resources and
+// verifying that caching still helps within each resource.
+func createMultiResourceExportRequest(
+	resourceCount int,
+	resourceAttributeCount int,
+	metricsPerResource int,
+	labelsPerMetric int,
+) pmetricotlp.ExportRequest {
+	request := pmetricotlp.NewExportRequest()
+	ts := pcommon.NewTimestampFromTime(time.Now())
+
+	for r := range resourceCount {
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		generateAttributes(rm.Resource().Attributes(), "resource", resourceAttributeCount)
+
+		// Set unique service attributes per resource for job/instance label generation
+		rm.Resource().Attributes().PutStr("service.name", fmt.Sprintf("service-%d", r))
+		rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
+		rm.Resource().Attributes().PutStr("service.instance.id", fmt.Sprintf("instance-%d", r))
+
+		metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
+		for m := range metricsPerResource {
+			metric := metrics.AppendEmpty()
+			metric.SetName(fmt.Sprintf("gauge_r%d_m%d", r, m))
+			metric.SetDescription("gauge metric")
+			metric.SetUnit("unit")
+			point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+			point.SetTimestamp(ts)
+			point.SetDoubleValue(float64(m))
+			generateAttributes(point.Attributes(), "series", labelsPerMetric)
+		}
+	}
+
+	return request
+}
+
+// BenchmarkFromMetrics_LabelCaching_MultipleDatapointsPerResource benchmarks the resource-level
+// label caching optimization. With caching, resource labels (job, instance, promoted
+// attributes) should be computed once per ResourceMetrics and reused for all datapoints.
+func BenchmarkFromMetrics_LabelCaching_MultipleDatapointsPerResource(b *testing.B) {
+	const (
+		labelsPerMetric     = 5
+		scopeAttributeCount = 3
+	)
+	for _, resourceAttrs := range []int{5, 50} {
+		for _, scopeCount := range []int{1, 10} {
+			for _, metricsPerScope := range []int{10, 100} {
+				b.Run(fmt.Sprintf("res_attrs=%d/scopes=%d/metrics=%d", resourceAttrs, scopeCount, metricsPerScope), func(b *testing.B) {
+					settings := Settings{
+						PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+							PromoteAllResourceAttributes: true,
+						}),
+					}
+					payload := createMultiScopeExportRequest(
+						resourceAttrs,
+						scopeCount,
+						metricsPerScope,
+						labelsPerMetric,
+						scopeAttributeCount,
+					)
+					appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
+					noOpLogger := promslog.NewNopLogger()
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					for b.Loop() {
+						app := &noOpAppender{}
+						mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
+						converter := NewPrometheusConverter(mockAppender)
+						_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+// BenchmarkFromMetrics_LabelCaching_RepeatedLabelNames benchmarks the label sanitization cache.
+// When the same label names appear across many datapoints, the sanitization should
+// only happen once per unique label name within a ResourceMetrics.
+func BenchmarkFromMetrics_LabelCaching_RepeatedLabelNames(b *testing.B) {
+	const labelsPerDatapoint = 20
+	for _, uniqueLabels := range []int{5, 50} {
+		for _, datapoints := range []int{100, 1000} {
+			b.Run(fmt.Sprintf("unique_labels=%d/datapoints=%d", uniqueLabels, datapoints), func(b *testing.B) {
+				settings := Settings{}
+				payload := createRepeatedLabelsExportRequest(
+					uniqueLabels,
+					datapoints,
+					labelsPerDatapoint,
+				)
+				appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
+				noOpLogger := promslog.NewNopLogger()
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for b.Loop() {
+					app := &noOpAppender{}
+					mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
+					converter := NewPrometheusConverter(mockAppender)
+					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// BenchmarkFromMetrics_LabelCaching_ScopeMetadata benchmarks scope-level label caching when
+// PromoteScopeMetadata is enabled. Scope metadata labels (otel_scope_name, version, etc.)
+// should be computed once per ScopeMetrics and reused for all metrics within that scope.
+func BenchmarkFromMetrics_LabelCaching_ScopeMetadata(b *testing.B) {
+	const (
+		resourceAttributeCount = 5
+		labelsPerMetric        = 5
+	)
+	for _, scopeAttrs := range []int{0, 10} {
+		for _, metricsPerScope := range []int{10, 100} {
+			b.Run(fmt.Sprintf("scope_attrs=%d/metrics=%d", scopeAttrs, metricsPerScope), func(b *testing.B) {
+				settings := Settings{
+					PromoteScopeMetadata: true,
+				}
+				payload := createMultiScopeExportRequest(
+					resourceAttributeCount,
+					1, // single scope to isolate scope caching benefit
+					metricsPerScope,
+					labelsPerMetric,
+					scopeAttrs,
+				)
+				appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
+				noOpLogger := promslog.NewNopLogger()
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for b.Loop() {
+					app := &noOpAppender{}
+					mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
+					converter := NewPrometheusConverter(mockAppender)
+					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// BenchmarkFromMetrics_LabelCaching_MultipleResources benchmarks requests with multiple
+// ResourceMetrics. The label sanitization cache is cleared between resources, so this
+// measures the overhead of cache clearing and verifies caching helps within each resource.
+func BenchmarkFromMetrics_LabelCaching_MultipleResources(b *testing.B) {
+	const (
+		resourceAttributeCount = 10
+		labelsPerMetric        = 10
+	)
+	for _, resourceCount := range []int{1, 10, 50} {
+		for _, metricsPerResource := range []int{10, 100} {
+			b.Run(fmt.Sprintf("resources=%d/metrics=%d", resourceCount, metricsPerResource), func(b *testing.B) {
+				settings := Settings{
+					PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+						PromoteAllResourceAttributes: true,
+					}),
+				}
+				payload := createMultiResourceExportRequest(
+					resourceCount,
+					resourceAttributeCount,
+					metricsPerResource,
+					labelsPerMetric,
+				)
+				appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
+				noOpLogger := promslog.NewNopLogger()
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for b.Loop() {
+					app := &noOpAppender{}
+					mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
+					converter := NewPrometheusConverter(mockAppender)
+					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
 	}
 }

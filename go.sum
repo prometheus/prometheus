@@ -571,8 +571,6 @@ go.opentelemetry.io/collector/processor/processortest v0.142.0 h1:wQnJeXDejBL6r8
 go.opentelemetry.io/collector/processor/processortest v0.142.0/go.mod h1:QU5SWj0L+92MSvQxZDjwWCsKssNDm+nD6SHn7IvviUE=
 go.opentelemetry.io/collector/processor/xprocessor v0.142.0 h1:7a1Crxrd5iBMVnebTxkcqxVkRHAlOBUUmNTUVUTnlCU=
 go.opentelemetry.io/collector/processor/xprocessor v0.142.0/go.mod h1:LY/GS2DiJILJKS3ynU3eOLLWSP8CmN1FtdpAMsVV8AU=
-go.opentelemetry.io/collector/semconv v0.128.0 h1:MzYOz7Vgb3Kf5D7b49pqqgeUhEmOCuT10bIXb/Cc+k4=
-go.opentelemetry.io/collector/semconv v0.128.0/go.mod h1:OPXer4l43X23cnjLXIZnRj/qQOjSuq4TgBLI76P9hns=
 go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.64.0 h1:OXSUzgmIFkcC4An+mv+lqqZSndTffXpjAyoR+1f8k/A=
 go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.64.0/go.mod h1:1A4GVLFIm54HFqVdOpWmukap7rgb0frrE3zWXohLPdM=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.64.0 h1:ssfIgGNANqpVFCndZvcuyKbl0g+UAVcbBcqGkG28H0Y=

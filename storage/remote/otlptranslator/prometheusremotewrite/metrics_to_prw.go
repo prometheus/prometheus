@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.uber.org/multierr"
 
 	"github.com/prometheus/prometheus/config"
@@ -62,6 +63,24 @@ type Settings struct {
 	LabelNamePreserveMultipleUnderscores bool
 }
 
+// cachedResourceLabels holds precomputed labels constant for all datapoints in a ResourceMetrics.
+// These are computed once per ResourceMetrics boundary and reused for all datapoints.
+type cachedResourceLabels struct {
+	jobLabel       string        // from service.name + service.namespace
+	instanceLabel  string        // from service.instance.id
+	promotedLabels labels.Labels // promoted resource attributes
+	externalLabels map[string]string
+}
+
+// cachedScopeLabels holds precomputed scope metadata labels.
+// These are computed once per ScopeMetrics boundary and reused for all datapoints.
+type cachedScopeLabels struct {
+	scopeName      string
+	scopeVersion   string
+	scopeSchemaURL string
+	scopeAttrs     labels.Labels // otel_scope_* labels
+}
+
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
 	everyN         everyNTimes
@@ -70,6 +89,15 @@ type PrometheusConverter struct {
 	appender       CombinedAppender
 	// seenTargetInfo tracks target_info samples within a batch to prevent duplicates.
 	seenTargetInfo map[targetInfoKey]struct{}
+
+	// Label caching for optimization - computed once per resource/scope boundary
+	resourceLabels *cachedResourceLabels
+	scopeLabels    *cachedScopeLabels
+	labelNamer     otlptranslator.LabelNamer
+
+	// sanitizedLabels caches the results of label name sanitization within a request.
+	// This avoids repeated string allocations for the same label names.
+	sanitizedLabels map[string]string
 }
 
 // targetInfoKey uniquely identifies a target_info sample by its labelset and timestamp.
@@ -80,10 +108,24 @@ type targetInfoKey struct {
 
 func NewPrometheusConverter(appender CombinedAppender) *PrometheusConverter {
 	return &PrometheusConverter{
-		scratchBuilder: labels.NewScratchBuilder(0),
-		builder:        labels.NewBuilder(labels.EmptyLabels()),
-		appender:       appender,
+		scratchBuilder:  labels.NewScratchBuilder(0),
+		builder:         labels.NewBuilder(labels.EmptyLabels()),
+		appender:        appender,
+		sanitizedLabels: make(map[string]string, 64), // Pre-size for typical label count
 	}
+}
+
+// buildLabelName returns a sanitized label name, using the cache to avoid repeated allocations.
+func (c *PrometheusConverter) buildLabelName(label string) (string, error) {
+	if sanitized, ok := c.sanitizedLabels[label]; ok {
+		return sanitized, nil
+	}
+	sanitized, err := c.labelNamer.Build(label)
+	if err != nil {
+		return "", err
+	}
+	c.sanitizedLabels[label] = sanitized
+	return sanitized, nil
 }
 
 func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
@@ -144,6 +186,13 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
+
+		// Cache resource-level labels for this ResourceMetrics
+		if err := c.setResourceContext(resource, settings); err != nil {
+			errs = multierr.Append(errs, err)
+			continue
+		}
+
 		// keep track of the earliest and latest timestamp in the ResourceMetrics for
 		// use with the "target" info metric
 		earliestTimestamp := pcommon.Timestamp(math.MaxUint64)
@@ -151,6 +200,13 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
 			scopeMetrics := scopeMetricsSlice.At(j)
 			scope := newScopeFromScopeMetrics(scopeMetrics)
+
+			// Cache scope-level labels for this ScopeMetrics
+			if err := c.setScopeContext(scope, settings); err != nil {
+				errs = multierr.Append(errs, err)
+				continue
+			}
+
 			metricSlice := scopeMetrics.Metrics()
 
 			// TODO: decide if instrumentation library information should be exported as labels
@@ -291,6 +347,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				errs = multierr.Append(errs, err)
 			}
 		}
+
+		// Clear cached labels before processing the next ResourceMetrics
+		c.clearResourceContext()
 	}
 
 	return annots, errs
@@ -349,4 +408,123 @@ func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builde
 		return true
 	})
 	return err
+}
+
+// LabelNameBuilder is a function that builds/sanitizes label names.
+type LabelNameBuilder func(string) (string, error)
+
+// addPromotedAttributesToScratch adds promoted resource attributes to a ScratchBuilder.
+// This is used for caching promoted attributes.
+func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labels.ScratchBuilder, resourceAttributes pcommon.Map, buildLabelName LabelNameBuilder) error {
+	if s == nil {
+		return nil
+	}
+
+	if s.promoteAll {
+		var err error
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; !exists {
+				normalized, buildErr := buildLabelName(name)
+				if buildErr != nil {
+					err = buildErr
+					return false
+				}
+				builder.Add(normalized, value.AsString())
+			}
+			return true
+		})
+		return err
+	}
+	var err error
+	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+		if _, exists := s.attrs[name]; exists {
+			normalized, buildErr := buildLabelName(name)
+			if buildErr != nil {
+				err = buildErr
+				return false
+			}
+			builder.Add(normalized, value.AsString())
+		}
+		return true
+	})
+	return err
+}
+
+// setResourceContext precomputes and caches resource-level labels.
+// Called once per ResourceMetrics boundary, before processing any datapoints.
+func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, settings Settings) error {
+	resourceAttrs := resource.Attributes()
+	c.resourceLabels = &cachedResourceLabels{
+		externalLabels: settings.ExternalLabels,
+	}
+
+	// Cache the label namer for reuse
+	c.labelNamer = otlptranslator.LabelNamer{
+		UTF8Allowed:                 settings.AllowUTF8,
+		UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
+		PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
+	}
+	// Clear sanitized labels cache since labelNamer settings may have changed
+	clear(c.sanitizedLabels)
+
+	// Compute job label from service.name + service.namespace
+	if serviceName, ok := resourceAttrs.Get(string(semconv.ServiceNameKey)); ok {
+		val := serviceName.AsString()
+		if serviceNamespace, ok := resourceAttrs.Get(string(semconv.ServiceNamespaceKey)); ok {
+			val = serviceNamespace.AsString() + "/" + val
+		}
+		c.resourceLabels.jobLabel = val
+	}
+
+	// Compute instance label from service.instance.id
+	if instance, ok := resourceAttrs.Get(string(semconv.ServiceInstanceIDKey)); ok {
+		c.resourceLabels.instanceLabel = instance.AsString()
+	}
+
+	// Compute promoted resource attributes
+	if settings.PromoteResourceAttributes != nil {
+		c.scratchBuilder.Reset()
+		if err := settings.PromoteResourceAttributes.addPromotedAttributesToScratch(&c.scratchBuilder, resourceAttrs, c.buildLabelName); err != nil {
+			return err
+		}
+		c.resourceLabels.promotedLabels = c.scratchBuilder.Labels()
+	}
+	return nil
+}
+
+// setScopeContext precomputes and caches scope-level labels.
+// Called once per ScopeMetrics boundary, before processing any metrics.
+func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) error {
+	if !settings.PromoteScopeMetadata || scope.name == "" {
+		c.scopeLabels = nil
+		return nil
+	}
+	c.scopeLabels = &cachedScopeLabels{
+		scopeName:      scope.name,
+		scopeVersion:   scope.version,
+		scopeSchemaURL: scope.schemaURL,
+	}
+	// Compute scope attributes
+	c.scratchBuilder.Reset()
+	var rangeErr error
+	scope.attributes.Range(func(k string, v pcommon.Value) bool {
+		name, err := c.buildLabelName("otel_scope_" + k)
+		if err != nil {
+			rangeErr = err
+			return false
+		}
+		c.scratchBuilder.Add(name, v.AsString())
+		return true
+	})
+	if rangeErr != nil {
+		return rangeErr
+	}
+	c.scopeLabels.scopeAttrs = c.scratchBuilder.Labels()
+	return nil
+}
+
+// clearResourceContext clears cached labels between ResourceMetrics.
+func (c *PrometheusConverter) clearResourceContext() {
+	c.resourceLabels = nil
+	c.scopeLabels = nil
 }
