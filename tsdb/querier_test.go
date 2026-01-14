@@ -574,22 +574,22 @@ var testData = []seriesSamples{
 	{
 		lset: map[string]string{"a": "a"},
 		chunks: [][]sample{
-			{{1, 2, nil, nil}, {2, 3, nil, nil}, {3, 4, nil, nil}},
-			{{5, 2, nil, nil}, {6, 3, nil, nil}, {7, 4, nil, nil}},
+			{{0, 1, 2, nil, nil}, {0, 2, 3, nil, nil}, {0, 3, 4, nil, nil}},
+			{{0, 5, 2, nil, nil}, {0, 6, 3, nil, nil}, {0, 7, 4, nil, nil}},
 		},
 	},
 	{
 		lset: map[string]string{"a": "a", "b": "b"},
 		chunks: [][]sample{
-			{{1, 1, nil, nil}, {2, 2, nil, nil}, {3, 3, nil, nil}},
-			{{5, 3, nil, nil}, {6, 6, nil, nil}},
+			{{0, 1, 1, nil, nil}, {0, 2, 2, nil, nil}, {0, 3, 3, nil, nil}},
+			{{0, 5, 3, nil, nil}, {0, 6, 6, nil, nil}},
 		},
 	},
 	{
 		lset: map[string]string{"b": "b"},
 		chunks: [][]sample{
-			{{1, 3, nil, nil}, {2, 2, nil, nil}, {3, 6, nil, nil}},
-			{{5, 1, nil, nil}, {6, 7, nil, nil}, {7, 2, nil, nil}},
+			{{0, 1, 3, nil, nil}, {0, 2, 2, nil, nil}, {0, 3, 6, nil, nil}},
+			{{0, 5, 1, nil, nil}, {0, 6, 7, nil, nil}, {0, 7, 2, nil, nil}},
 		},
 	},
 }
