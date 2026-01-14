@@ -152,7 +152,7 @@ type Iterator interface {
 	// Before the iterator has advanced, the behaviour is unspecified.
 	AtT() int64
 	// AtST returns the current start timestamp.
-	// Return 0 if the start timestamp is not implemented or not set.
+	// Returns 0 if the start timestamp is not implemented or not set.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	AtST() int64
 	// Err returns the current error. It should be used only after the
