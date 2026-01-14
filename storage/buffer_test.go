@@ -61,10 +61,7 @@ func TestSampleRing(t *testing.T) {
 
 		input := []fSample{}
 		for _, t := range c.input {
-			input = append(input, fSample{
-				t: t,
-				f: float64(rand.Intn(100)),
-			})
+			input = append(input, fSample{t: t, f: float64(rand.Intn(100))})
 		}
 
 		for i, s := range input {
