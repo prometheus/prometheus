@@ -387,13 +387,13 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 func histogramSample(ts int64, hint histogram.CounterResetHint) hSample {
 	h := tsdbutil.GenerateTestHistogram(ts + 1)
 	h.CounterResetHint = hint
-	return hSample{t: ts, h: h}
+	return hSample{st: -ts, t: ts, h: h}
 }
 
 func floatHistogramSample(ts int64, hint histogram.CounterResetHint) fhSample {
 	fh := tsdbutil.GenerateTestFloatHistogram(ts + 1)
 	fh.CounterResetHint = hint
-	return fhSample{t: ts, fh: fh}
+	return fhSample{st: -ts, t: ts, fh: fh}
 }
 
 // Shorthands for counter reset hints.
@@ -1059,7 +1059,7 @@ func (*mockChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 func TestChainSampleIterator(t *testing.T) {
 	for sampleType, sampleFunc := range map[string]func(int64) chunks.Sample{
-		"float":           func(ts int64) chunks.Sample { return fSample{0, ts, float64(ts)} },
+		"float":           func(ts int64) chunks.Sample { return fSample{-ts, ts, float64(ts)} },
 		"histogram":       func(ts int64) chunks.Sample { return histogramSample(ts, uk) },
 		"float histogram": func(ts int64) chunks.Sample { return floatHistogramSample(ts, uk) },
 	} {
@@ -1176,7 +1176,7 @@ func TestChainSampleIteratorHistogramCounterResetHint(t *testing.T) {
 
 func TestChainSampleIteratorSeek(t *testing.T) {
 	for sampleType, sampleFunc := range map[string]func(int64) chunks.Sample{
-		"float":           func(ts int64) chunks.Sample { return fSample{0, ts, float64(ts)} },
+		"float":           func(ts int64) chunks.Sample { return fSample{-ts, ts, float64(ts)} },
 		"histogram":       func(ts int64) chunks.Sample { return histogramSample(ts, uk) },
 		"float histogram": func(ts int64) chunks.Sample { return floatHistogramSample(ts, uk) },
 	} {
@@ -1224,13 +1224,13 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 				switch merged.Seek(tc.seek) {
 				case chunkenc.ValFloat:
 					t, f := merged.At()
-					actual = append(actual, fSample{0, t, f})
+					actual = append(actual, fSample{merged.AtST(), t, f})
 				case chunkenc.ValHistogram:
 					t, h := merged.AtHistogram(nil)
-					actual = append(actual, hSample{0, t, h})
+					actual = append(actual, hSample{merged.AtST(), t, h})
 				case chunkenc.ValFloatHistogram:
 					t, fh := merged.AtFloatHistogram(nil)
-					actual = append(actual, fhSample{0, t, fh})
+					actual = append(actual, fhSample{merged.AtST(), t, fh})
 				}
 				s, err := ExpandSamples(merged, nil)
 				require.NoError(t, err)
@@ -1310,13 +1310,13 @@ func TestChainSampleIteratorSeekHistogramCounterResetHint(t *testing.T) {
 				switch merged.Seek(tc.seek) {
 				case chunkenc.ValFloat:
 					t, f := merged.At()
-					actual = append(actual, fSample{0, t, f})
+					actual = append(actual, fSample{merged.AtST(), t, f})
 				case chunkenc.ValHistogram:
 					t, h := merged.AtHistogram(nil)
-					actual = append(actual, hSample{0, t, h})
+					actual = append(actual, hSample{merged.AtST(), t, h})
 				case chunkenc.ValFloatHistogram:
 					t, fh := merged.AtFloatHistogram(nil)
-					actual = append(actual, fhSample{0, t, fh})
+					actual = append(actual, fhSample{merged.AtST(), t, fh})
 				}
 				s, err := ExpandSamples(merged, nil)
 				require.NoError(t, err)
