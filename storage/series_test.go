@@ -28,11 +28,11 @@ import (
 
 func TestListSeriesIterator(t *testing.T) {
 	it := NewListSeriesIterator(samples{
-		fSample{0, 0},
-		fSample{1, 1},
-		fSample{1, 1.5},
-		fSample{2, 2},
-		fSample{3, 3},
+		fSample{0, 0, 0},
+		fSample{0, 1, 1},
+		fSample{0, 1, 1.5},
+		fSample{0, 2, 2},
+		fSample{0, 3, 3},
 	})
 
 	// Seek to the first sample with ts=1.

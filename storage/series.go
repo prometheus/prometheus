@@ -452,11 +452,11 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, 
 		newSampleFn = func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
 			switch {
 			case h != nil:
-				return hSample{t, h}
+				return hSample{0, t, h}
 			case fh != nil:
-				return fhSample{t, fh}
+				return fhSample{0, t, fh}
 			default:
-				return fSample{t, f}
+				return fSample{0, t, f}
 			}
 		}
 	}
