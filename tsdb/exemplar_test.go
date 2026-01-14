@@ -390,7 +390,7 @@ func TestCircularExemplarStorage_Resize(t *testing.T) {
 				{Labels: series1, Value: 0.1, Ts: 1},
 				{Labels: series1, Value: 0.2, Ts: 2},
 			},
-			wantNextIndex: 2,
+			wantNextIndex: 3,
 		},
 		{
 			name: "in-order, shrink",
@@ -431,7 +431,7 @@ func TestCircularExemplarStorage_Resize(t *testing.T) {
 				{Labels: series1, Value: 0.2, Ts: 2},
 				{Labels: series1, Value: 0.3, Ts: 3},
 			},
-			wantNextIndex: 2,
+			wantNextIndex: 3,
 		},
 		{
 			name: "duplicate timestamps",
@@ -452,7 +452,7 @@ func TestCircularExemplarStorage_Resize(t *testing.T) {
 			exemplars:     []exemplar.Exemplar{},
 			resize:        10,
 			wantExemplars: []exemplar.Exemplar{},
-			wantNextIndex: 0,
+			wantNextIndex: 3,
 		},
 		{
 			name:          "empty input, shrink",
@@ -507,7 +507,7 @@ func TestCircularExemplarStorage_Resize(t *testing.T) {
 			wantExemplars: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.1, Ts: 1},
 			},
-			wantNextIndex: 1,
+			wantNextIndex: 0,
 		},
 	}
 
@@ -658,6 +658,47 @@ func TestCircularExemplarStorage_Resize(t *testing.T) {
 			wantExemplars2: []exemplar.Exemplar{
 				{Labels: series1, Value: 0.5, Ts: 5},
 				{Labels: series1, Value: 0.6, Ts: 6},
+			},
+		},
+		{
+			name: "grow non-full buffer then add entries",
+			addExemplars1: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			resize1: 10,
+			wantExemplars1: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			resize2: 10,
+			addExemplars2: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.3, Ts: 3},
+				{Labels: series1, Value: 0.4, Ts: 4},
+			},
+			wantExemplars2: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
+				{Labels: series1, Value: 0.3, Ts: 3},
+				{Labels: series1, Value: 0.4, Ts: 4},
+			},
+		},
+		{
+			name: "shrink non-full buffer then add entries",
+			addExemplars1: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+			},
+			resize1: 2,
+			wantExemplars1: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+			},
+			resize2: 2,
+			addExemplars2: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.2, Ts: 2},
+			},
+			wantExemplars2: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.2, Ts: 2},
 			},
 		},
 	}
