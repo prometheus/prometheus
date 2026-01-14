@@ -450,6 +450,34 @@ func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labe
 	return err
 }
 
+// getPromotedAttributeNames returns the names of resource attributes that would be promoted.
+// This is used by addResourceTargetInfo to exclude promoted attributes from target_info,
+// since promoted attributes should only appear on metric labels, not on target_info.
+func (s *PromoteResourceAttributes) getPromotedAttributeNames(resourceAttributes pcommon.Map) []string {
+	if s == nil {
+		return nil
+	}
+
+	var names []string
+	if s.promoteAll {
+		// When promoting all, attrs contains the ignore list
+		resourceAttributes.Range(func(name string, _ pcommon.Value) bool {
+			if _, exists := s.attrs[name]; !exists {
+				names = append(names, name)
+			}
+			return true
+		})
+	} else {
+		// When not promoting all, attrs contains the promote list
+		for name := range s.attrs {
+			if _, exists := resourceAttributes.Get(name); exists {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
+}
+
 // setResourceContext precomputes and caches resource-level labels.
 // Called once per ResourceMetrics boundary, before processing any datapoints.
 func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, settings Settings) error {

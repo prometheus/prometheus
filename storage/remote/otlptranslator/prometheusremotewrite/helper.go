@@ -572,6 +572,12 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		name = settings.Namespace + "_" + name
 	}
 
+	// Add promoted attribute names to ignoreAttrs so they don't appear in target_info.
+	// Promoted attributes should only appear on metric labels, not on target_info.
+	promotedAttrs := settings.PromoteResourceAttributes.getPromotedAttributeNames(attributes)
+	if len(promotedAttrs) > 0 {
+		identifyingAttrs = append(identifyingAttrs, promotedAttrs...)
+	}
 	settings.PromoteResourceAttributes = nil
 	if settings.KeepIdentifyingResourceAttributes {
 		// Do not pass identifying attributes as ignoreAttrs below.
