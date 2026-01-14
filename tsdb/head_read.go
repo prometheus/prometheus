@@ -106,8 +106,8 @@ func (h *headIndexReader) Postings(ctx context.Context, name string, values ...s
 	return h.head.postings.Postings(ctx, name, values...), nil
 }
 
-func (h *headIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
-	return h.head.postings.PostingsForLabelMatching(ctx, name, match)
+func (h *headIndexReader) PostingsForLabelMatching(ctx context.Context, name string, prefix string, match func(string) bool) index.Postings {
+	return h.head.postings.PostingsForLabelMatching(ctx, name, prefix,match)
 }
 
 func (h *headIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {

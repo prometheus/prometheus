@@ -446,7 +446,7 @@ func (ir *OOOCompactionHeadIndexReader) Postings(_ context.Context, name string,
 	return index.NewListPostings(ir.ch.postings), nil
 }
 
-func (*OOOCompactionHeadIndexReader) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
+func (*OOOCompactionHeadIndexReader) PostingsForLabelMatching(ctx context.Context, name string, prefix string, match func(string) bool) index.Postings {
 	return index.ErrPostings(errors.New("not supported"))
 }
 
