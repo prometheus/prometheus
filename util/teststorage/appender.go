@@ -225,28 +225,75 @@ func (a *Appendable) String() string {
 
 var errClosedAppender = errors.New("appender was already committed/rolledback")
 
-type appender struct {
+type baseAppender struct {
 	err error
 
-	next storage.Appender
-	a    *Appendable
+	nextTr storage.AppenderTransaction
+	a      *Appendable
 }
 
-func (a *appender) checkErr() error {
+func (a *baseAppender) checkErr() error {
 	a.a.mtx.Lock()
 	defer a.a.mtx.Unlock()
 
 	return a.err
 }
 
+func (a *baseAppender) Commit() error {
+	if err := a.checkErr(); err != nil {
+		return err
+	}
+	defer a.a.openAppenders.Dec()
+
+	if a.a.commitErr != nil {
+		return a.a.commitErr
+	}
+
+	a.a.mtx.Lock()
+	a.a.resultSamples = append(a.a.resultSamples, a.a.pendingSamples...)
+	a.a.pendingSamples = a.a.pendingSamples[:0]
+	a.err = errClosedAppender
+	a.a.mtx.Unlock()
+
+	if a.nextTr != nil {
+		return a.nextTr.Commit()
+	}
+	return nil
+}
+
+func (a *baseAppender) Rollback() error {
+	if err := a.checkErr(); err != nil {
+		return err
+	}
+	defer a.a.openAppenders.Dec()
+
+	a.a.mtx.Lock()
+	a.a.rolledbackSamples = append(a.a.rolledbackSamples, a.a.pendingSamples...)
+	a.a.pendingSamples = a.a.pendingSamples[:0]
+	a.err = errClosedAppender
+	a.a.mtx.Unlock()
+
+	if a.nextTr != nil {
+		return a.nextTr.Rollback()
+	}
+	return nil
+}
+
+type appender struct {
+	baseAppender
+
+	next storage.Appender
+}
+
 func (a *Appendable) Appender(ctx context.Context) storage.Appender {
-	ret := &appender{a: a}
+	ret := &appender{baseAppender: baseAppender{a: a}}
 	if a.openAppenders.Inc() > 1 {
 		ret.err = errors.New("teststorage.Appendable.Appender() concurrent use is not supported; attempted opening new Appender() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
 	}
 
 	if a.next != nil {
-		ret.next = a.next.Appender(ctx)
+		app := a.next.Appender(ctx)
+		ret.next, ret.nextTr = app, app
 	} else if a.nextV2 != nil {
 		ret.err = errors.Join(ret.err, errors.New("teststorage.Appendable.Appender() invoked with .ThenV2 but no .Then was supplied; likely bug"))
 	}
@@ -385,60 +432,21 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 	return computeOrCheckRef(ref, l)
 }
 
-func (a *appender) Commit() error {
-	if err := a.checkErr(); err != nil {
-		return err
-	}
-	defer a.a.openAppenders.Dec()
-
-	if a.a.commitErr != nil {
-		return a.a.commitErr
-	}
-
-	a.a.mtx.Lock()
-	a.a.resultSamples = append(a.a.resultSamples, a.a.pendingSamples...)
-	a.a.pendingSamples = a.a.pendingSamples[:0]
-	a.err = errClosedAppender
-	a.a.mtx.Unlock()
-
-	if a.a.next != nil {
-		return a.next.Commit()
-	}
-	return nil
-}
-
-func (a *appender) Rollback() error {
-	if err := a.checkErr(); err != nil {
-		return err
-	}
-	defer a.a.openAppenders.Dec()
-
-	a.a.mtx.Lock()
-	a.a.rolledbackSamples = append(a.a.rolledbackSamples, a.a.pendingSamples...)
-	a.a.pendingSamples = a.a.pendingSamples[:0]
-	a.err = errClosedAppender
-	a.a.mtx.Unlock()
-
-	if a.next != nil {
-		return a.next.Rollback()
-	}
-	return nil
-}
-
 type appenderV2 struct {
-	appender
+	baseAppender
 
 	next storage.AppenderV2
 }
 
 func (a *Appendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
-	ret := &appenderV2{appender: appender{a: a}}
+	ret := &appenderV2{baseAppender: baseAppender{a: a}}
 	if a.openAppenders.Inc() > 1 {
 		ret.err = errors.New("teststorage.Appendable.AppenderV2() concurrent use is not supported; attempted opening new AppenderV2() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
 	}
 
 	if a.nextV2 != nil {
-		ret.next = a.nextV2.AppenderV2(ctx)
+		app := a.nextV2.AppenderV2(ctx)
+		ret.next, ret.nextTr = app, app
 	} else if a.next != nil {
 		ret.err = errors.Join(ret.err, errors.New("teststorage.Appendable.AppenderV2() invoked with .Then but no .ThenV2 was supplied; likely bug"))
 	}
