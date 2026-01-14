@@ -175,6 +175,13 @@ type RuleGroupNode struct {
 	Labels      map[string]string `yaml:"labels,omitempty"`
 }
 
+// RuleMetadata contains optional metadata for a recording rule.
+type RuleMetadata struct {
+	Type model.MetricType `yaml:"type,omitempty"`
+	Help string           `yaml:"help,omitempty"`
+	Unit string           `yaml:"unit,omitempty"`
+}
+
 // Rule describes an alerting or recording rule.
 type Rule struct {
 	Record        string            `yaml:"record,omitempty"`
@@ -184,6 +191,7 @@ type Rule struct {
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
 	Labels        map[string]string `yaml:"labels,omitempty"`
 	Annotations   map[string]string `yaml:"annotations,omitempty"`
+	Metadata      *RuleMetadata     `yaml:"metadata,omitempty"`
 }
 
 // RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
@@ -195,6 +203,7 @@ type RuleNode struct {
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
 	Labels        map[string]string `yaml:"labels,omitempty"`
 	Annotations   map[string]string `yaml:"annotations,omitempty"`
+	Metadata      *RuleMetadata     `yaml:"metadata,omitempty"`
 }
 
 // Validate the rule and return a list of encountered errors.
@@ -258,6 +267,14 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 				node: &node.Record,
 			})
 		}
+	}
+
+	// Metadata is only valid for recording rules, not alerting rules.
+	if r.Alert != "" && r.Metadata != nil {
+		nodes = append(nodes, WrappedError{
+			err:  errors.New("invalid field 'metadata' in alerting rule"),
+			node: &node.Alert,
+		})
 	}
 
 	for k, v := range r.Labels {

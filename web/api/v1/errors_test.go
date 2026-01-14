@@ -33,6 +33,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/rules"
@@ -290,5 +291,10 @@ func (DummyRulesRetriever) RuleGroups() []*rules.Group {
 
 // AlertingRules implements RulesRetriever.
 func (DummyRulesRetriever) AlertingRules() []*rules.AlertingRule {
+	return nil
+}
+
+// RecordingRulesMetadata implements RulesRetriever.
+func (DummyRulesRetriever) RecordingRulesMetadata() map[string]metadata.Metadata {
 	return nil
 }

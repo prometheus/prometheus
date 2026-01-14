@@ -145,6 +145,9 @@ type AlertmanagerRetriever interface {
 type RulesRetriever interface {
 	RuleGroups() []*rules.Group
 	AlertingRules() []*rules.AlertingRule
+	// RecordingRulesMetadata returns metadata for all recording rules that have metadata configured.
+	// The returned map is keyed by metric name (rule name).
+	RecordingRulesMetadata() map[string]metadata.Metadata
 }
 
 // StatsRenderer converts engine statistics into a format suitable for the API.
@@ -1450,6 +1453,8 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	metric := r.FormValue("metric")
+
+	// Collect metadata from scrape targets.
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
 		for _, t := range tt {
 			if metric == "" {
@@ -1483,6 +1488,30 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 					metrics[md.MetricFamily] = ms
 				}
 				ms[m] = struct{}{}
+			}
+		}
+	}
+
+	// Collect metadata from recording rules.
+	if api.rulesRetriever != nil {
+		rr := api.rulesRetriever(r.Context())
+		if rr != nil {
+			for name, meta := range rr.RecordingRulesMetadata() {
+				// Filter by metric name if specified.
+				if metric != "" && metric != name {
+					continue
+				}
+
+				ms, ok := metrics[name]
+				if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+					continue
+				}
+
+				if !ok {
+					ms = map[metadata.Metadata]struct{}{}
+					metrics[name] = ms
+				}
+				ms[meta] = struct{}{}
 			}
 		}
 	}
@@ -1554,6 +1583,10 @@ type RecordingRule struct {
 	LastEvaluation time.Time        `json:"lastEvaluation"`
 	// Type of a recordingRule is always "recording".
 	Type string `json:"type"`
+	// Metadata fields for recording rules.
+	MetricType model.MetricType `json:"metricType,omitempty"`
+	Help       string           `json:"help,omitempty"`
+	Unit       string           `json:"unit,omitempty"`
 }
 
 func (api *API) rules(r *http.Request) apiFuncResult {
@@ -1676,6 +1709,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				if !returnRecording {
 					break
 				}
+				meta := rule.Metadata()
 				enrichedRule = RecordingRule{
 					Name:           rule.Name(),
 					Query:          rule.Query().String(),
@@ -1685,6 +1719,9 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 					EvaluationTime: rule.GetEvaluationDuration().Seconds(),
 					LastEvaluation: rule.GetEvaluationTimestamp(),
 					Type:           "recording",
+					MetricType:     meta.Type,
+					Help:           meta.Help,
+					Unit:           meta.Unit,
 				}
 			default:
 				err := fmt.Errorf("failed to assert type of rule '%v'", rule.Name())

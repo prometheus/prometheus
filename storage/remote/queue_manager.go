@@ -487,6 +487,7 @@ func NewQueueManager(
 	enableNativeHistogramRemoteWrite bool,
 	enableTypeAndUnitLabels bool,
 	protoMsg remoteapi.WriteMessageType,
+	writeStorage *WriteStorage,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -549,6 +550,10 @@ func NewQueueManager(
 
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
+		// Register this watcher with WriteStorage so SetRulesManager can update it.
+		if writeStorage != nil {
+			writeStorage.registerMetadataWatcher(t.metadataWatcher)
+		}
 	}
 	t.shards = t.newShards()
 

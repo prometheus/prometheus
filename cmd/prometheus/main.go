@@ -927,10 +927,14 @@ func main() {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
 			FeatureRegistry: features.DefaultRegistry,
+			AppendMetadata:  cfg.scrape.AppendMetadata,
 		})
 	}
 
 	scraper.Set(scrapeManager)
+	if ruleManager != nil {
+		remoteStorage.SetRulesManager(ruleManager)
+	}
 
 	cfg.web.Context = ctxWeb
 	cfg.web.TSDBRetentionDuration = cfg.tsdb.RetentionDuration

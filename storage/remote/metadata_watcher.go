@@ -17,11 +17,13 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 )
 
@@ -49,6 +51,9 @@ type MetadataWatcher struct {
 	managerGetter ReadyScrapeManager
 	manager       Watchable
 	writer        MetadataAppender
+
+	rulesManagerMtx sync.RWMutex
+	rulesManager    *rules.Manager
 
 	interval model.Duration
 	deadline time.Duration
@@ -83,6 +88,15 @@ func NewMetadataWatcher(l *slog.Logger, mg ReadyScrapeManager, name string, w Me
 
 		done: make(chan struct{}),
 	}
+}
+
+// SetRulesManager sets the rules manager. The rules manager is created later during initialization
+// (after the MetadataWatcher is created), so this method must be called to provide it once it's available.
+// It can be called at any time to update the rules manager.
+func (mw *MetadataWatcher) SetRulesManager(rm *rules.Manager) {
+	mw.rulesManagerMtx.Lock()
+	defer mw.rulesManagerMtx.Unlock()
+	mw.rulesManager = rm
 }
 
 // Start the MetadataWatcher.
@@ -134,6 +148,8 @@ func (mw *MetadataWatcher) collect() {
 	// scrape.MetricMetadata. In this case, a combination of metric name, help, type, and unit.
 	metadataSet := map[scrape.MetricMetadata]struct{}{}
 	metadata := []scrape.MetricMetadata{}
+
+	// Collect metadata from scrape targets.
 	for _, tset := range mw.manager.TargetsActive() {
 		for _, target := range tset {
 			for _, entry := range target.ListMetadata() {
@@ -141,6 +157,25 @@ func (mw *MetadataWatcher) collect() {
 					metadata = append(metadata, entry)
 					metadataSet[entry] = struct{}{}
 				}
+			}
+		}
+	}
+
+	// Collect metadata from recording rules.
+	mw.rulesManagerMtx.RLock()
+	rm := mw.rulesManager
+	mw.rulesManagerMtx.RUnlock()
+	if rm != nil {
+		for metricName, ruleMeta := range rm.RecordingRulesMetadata() {
+			scrapeMeta := scrape.MetricMetadata{
+				MetricFamily: metricName,
+				Type:         ruleMeta.Type,
+				Help:         ruleMeta.Help,
+				Unit:         ruleMeta.Unit,
+			}
+			if _, ok := metadataSet[scrapeMeta]; !ok {
+				metadata = append(metadata, scrapeMeta)
+				metadataSet[scrapeMeta] = struct{}{}
 			}
 		}
 	}

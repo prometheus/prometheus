@@ -574,11 +574,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}()
 
 		for _, s := range vector {
+			var ref storage.SeriesRef
 			if s.H != nil {
-				_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
+				ref, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
 			} else {
 				app.SetOptions(g.appOpts)
-				_, err = app.Append(0, s.Metric, s.T, s.F)
+				ref, err = app.Append(0, s.Metric, s.T, s.F)
 			}
 
 			if err != nil {
@@ -603,6 +604,17 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					logger.Warn("Rule evaluation result discarded", "err", err, "sample", s)
 				}
 			} else {
+				// Append metadata for recording rules with metadata defined.
+				if g.opts.AppendMetadata {
+					if rr, ok := rule.(*RecordingRule); ok {
+						meta := rr.Metadata()
+						if !meta.IsEmpty() {
+							if _, err := app.UpdateMetadata(ref, s.Metric, meta); err != nil {
+								logger.Debug("Failed to update metadata for recording rule", "rule", rule.Name(), "err", err)
+							}
+						}
+					}
+				}
 				buf := [1024]byte{}
 				seriesReturned[string(s.Metric.Bytes(buf[:]))] = s.Metric
 			}

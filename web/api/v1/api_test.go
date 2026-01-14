@@ -349,8 +349,8 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 
 	recordingExpr, err := parser.ParseExpr(`vector(1)`)
 	require.NoError(m.testing, err, "unable to parse alert expression")
-	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
-	recordingRule2 := rules.NewRecordingRule("recording-rule-2", recordingExpr, labels.FromStrings("testlabel", "rule"))
+	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{}, metadata.Metadata{})
+	recordingRule2 := rules.NewRecordingRule("recording-rule-2", recordingExpr, labels.FromStrings("testlabel", "rule"), metadata.Metadata{})
 	r = append(r, recordingRule)
 	r = append(r, recordingRule2)
 
@@ -379,6 +379,21 @@ func (m *rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 
 func (m *rulesRetrieverMock) RuleGroups() []*rules.Group {
 	return m.ruleGroups
+}
+
+func (m *rulesRetrieverMock) RecordingRulesMetadata() map[string]metadata.Metadata {
+	result := make(map[string]metadata.Metadata)
+	for _, g := range m.ruleGroups {
+		for _, r := range g.Rules() {
+			if recordingRule, ok := r.(*rules.RecordingRule); ok {
+				meta := recordingRule.Metadata()
+				if !meta.IsEmpty() {
+					result[recordingRule.Name()] = meta
+				}
+			}
+		}
+	}
+	return result
 }
 
 func (m *rulesRetrieverMock) toFactory() func(context.Context) RulesRetriever {

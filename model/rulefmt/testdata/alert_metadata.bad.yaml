@@ -1,0 +1,9 @@
+groups:
+  - name: alerting-rules-with-metadata
+    rules:
+      - alert: HighErrorRate
+        expr: job:http_errors_total:rate5m > 0.1
+        for: 5m
+        metadata:
+          type: gauge
+          help: "This should not be allowed on alerting rules"

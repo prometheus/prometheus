@@ -29,6 +29,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
@@ -82,6 +83,13 @@ func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeC
 
 func (s *Storage) Notify() {
 	s.rws.Notify()
+}
+
+// SetRulesManager sets the rules manager for remote write metadata collection. The rules manager
+// is created later during initialization (after Storage is created), so this method must be called
+// to provide it once it's available.
+func (s *Storage) SetRulesManager(rm *rules.Manager) {
+	s.rws.SetRulesManager(rm)
 }
 
 // ApplyConfig updates the state as the new config requires.
