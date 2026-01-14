@@ -447,16 +447,16 @@ func (e errChunksIterator) Err() error    { return e.err }
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different
 // sample implementations. if nil, sample type from this package will be used.
-func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
+func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(st, t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
 	if newSampleFn == nil {
-		newSampleFn = func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
+		newSampleFn = func(st, t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
 			switch {
 			case h != nil:
-				return hSample{0, t, h}
+				return hSample{st, t, h}
 			case fh != nil:
-				return fhSample{0, t, fh}
+				return fhSample{st, t, fh}
 			default:
-				return fSample{0, t, f}
+				return fSample{st, t, f}
 			}
 		}
 	}
@@ -468,17 +468,20 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, 
 			return result, iter.Err()
 		case chunkenc.ValFloat:
 			t, f := iter.At()
+			st := iter.AtST()
 			// NaNs can't be compared normally, so substitute for another value.
 			if math.IsNaN(f) {
 				f = -42
 			}
-			result = append(result, newSampleFn(t, f, nil, nil))
+			result = append(result, newSampleFn(st, t, f, nil, nil))
 		case chunkenc.ValHistogram:
 			t, h := iter.AtHistogram(nil)
-			result = append(result, newSampleFn(t, 0, h, nil))
+			st := iter.AtST()
+			result = append(result, newSampleFn(st, t, 0, h, nil))
 		case chunkenc.ValFloatHistogram:
 			t, fh := iter.AtFloatHistogram(nil)
-			result = append(result, newSampleFn(t, 0, nil, fh))
+			st := iter.AtST()
+			result = append(result, newSampleFn(st, t, 0, nil, fh))
 		}
 	}
 }
