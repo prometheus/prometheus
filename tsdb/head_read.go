@@ -210,6 +210,9 @@ func (h *Head) staleIndex(mint, maxt int64, staleSeriesRefs []storage.SeriesRef)
 }
 
 // headStaleIndexReader gives the stale series that have no out-of-order data.
+// This is only used for stale series compaction at the moment, that will only ask for all
+// the series during compaction. So to make that efficient, this index reader requires the
+// pre-calculated list of stale series refs that can be returned without re-reading the Head.
 type headStaleIndexReader struct {
 	*headIndexReader
 	staleSeriesRefs []storage.SeriesRef
@@ -249,7 +252,7 @@ func (h *headStaleIndexReader) PostingsForAllLabelValues(ctx context.Context, na
 // filterStaleSeriesAndSortPostings returns the stale series references from the given postings
 // that also do not have any out-of-order data.
 func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) ([]storage.SeriesRef, error) {
-	series := make([]*memSeries, 0, 128)
+	series := make([]*memSeries, 0, 1024)
 
 	notFoundSeriesCount := 0
 	for p.Next() {
@@ -261,7 +264,8 @@ func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) ([]storage.Ser
 
 		s.Lock()
 		if s.ooo != nil {
-			// Has out-of-order data; skip it.
+			// Has out-of-order data; skip it because we cannot determine if a series
+			// is stale when it's getting out-of-order data.
 			s.Unlock()
 			continue
 		}
@@ -284,12 +288,11 @@ func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) ([]storage.Ser
 		return labels.Compare(a.labels(), b.labels())
 	})
 
-	// Convert back to list.
-	ep := make([]storage.SeriesRef, 0, len(series))
+	refs := make([]storage.SeriesRef, 0, len(series))
 	for _, p := range series {
-		ep = append(ep, storage.SeriesRef(p.ref))
+		refs = append(refs, storage.SeriesRef(p.ref))
 	}
-	return ep, nil
+	return refs, nil
 }
 
 // SortedPostings returns the postings as it is because we expect any postings obtained via
@@ -307,7 +310,7 @@ func (h *Head) SortedStaleSeriesRefsNoOOOData(ctx context.Context) ([]storage.Se
 
 func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta) []chunks.Meta {
 	for i, c := range s.mmappedChunks {
-		// Do not expose chunks that are outside the specified range.
+		// Do not expose chunks that are outside of the specified range.
 		if !c.OverlapsClosedInterval(mint, maxt) {
 			continue
 		}

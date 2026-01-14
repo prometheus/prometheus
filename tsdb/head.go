@@ -1203,14 +1203,23 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	return h.truncateSeriesAndChunkDiskMapper("truncateMemory")
 }
 
+// truncateStaleSeries removes the provided series as long as they are still stale.
 func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) error {
 	h.chunkSnapshotMtx.Lock()
 	defer h.chunkSnapshotMtx.Unlock()
 
+	if h.MinTime() >= maxt {
+		return nil
+	}
+
+	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
+
+	deleted := h.gcStaleSeries(seriesRefs, maxt)
+
 	// Record these stale series refs in the WAL so that we can ignore them during replay.
 	if h.wal != nil {
 		stones := make([]tombstones.Stone, 0, len(seriesRefs))
-		for _, ref := range seriesRefs {
+		for ref := range deleted {
 			stones = append(stones, tombstones.Stone{
 				Ref:       ref,
 				Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}},
@@ -1221,14 +1230,6 @@ func (h *Head) truncateStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) e
 			return err
 		}
 	}
-
-	if h.MinTime() >= maxt {
-		return nil
-	}
-
-	h.WaitForPendingReadersInTimeRange(h.MinTime(), maxt)
-
-	h.gcStaleSeries(seriesRefs, maxt)
 	return nil
 }
 
@@ -1732,9 +1733,10 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	return actualInOrderMint, minOOOTime, minMmapFile
 }
 
-// gcStaleSeries removes all the stale series provided given that they are still stale
+// gcStaleSeries removes all the provided series as long as they are still stale
 // and the series maxt is <= the given max.
-func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) {
+// The returned references are the series that got deleted.
+func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) map[storage.SeriesRef]struct{} {
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
 	deleted, affected, chunksRemoved := h.series.gcStaleSeries(seriesRefs, maxt)
@@ -1766,6 +1768,8 @@ func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) {
 		}
 		h.walExpiriesMtx.Unlock()
 	}
+
+	return deleted
 }
 
 // Tombstones returns a new reader over the head's tombstones.
@@ -2198,7 +2202,8 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	h.tombstones.DeleteTombstones(deleted)
 }
 
-// TODO: add comments.
+// gcStaleSeries removes all the stale series provided that they are still stale
+// and the series maxt is <= the given max.
 func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int) {
 	var (
 		deleted  = map[storage.SeriesRef]struct{}{}

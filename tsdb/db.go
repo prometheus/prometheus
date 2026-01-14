@@ -100,7 +100,7 @@ func DefaultOptions() *Options {
 
 // Options of the DB storage.
 type Options struct {
-	// staleSeriesImmediateCompactionThreshold is same as below option with same name, but is atomic so that we can do live updates without locks.
+	// staleSeriesCompactionThreshold is same as below option with same name, but is atomic so that we can do live updates without locks.
 	// This is the one that must be used by the code.
 	staleSeriesCompactionThreshold atomic.Float64
 
@@ -1172,7 +1172,6 @@ func (db *DB) run(ctx context.Context) {
 			}
 			// We attempt mmapping of head chunks regularly.
 			db.head.mmapHeadChunks()
-
 		case <-db.compactc:
 			db.metrics.compactionsTriggered.Inc()
 
@@ -1188,7 +1187,6 @@ func (db *DB) run(ctx context.Context) {
 				db.metrics.compactionsSkipped.Inc()
 			}
 			db.autoCompactMtx.Unlock()
-
 		case <-db.stopc:
 			return
 		}
@@ -1608,8 +1606,8 @@ func (db *DB) compactHead(head *RangeHead) error {
 	return nil
 }
 
-// CompactStaleHead compacts all the stale series that do no have out-of-order data into persistent blocks.
-// If a stale series has out-of-order data, it is not possible to tell if the series stopped getting any data completely.
+// CompactStaleHead compacts all the stale series into persistent blocks that do no have out-of-order data.
+// If a stale series has out-of-order data, it is not possible to tell if the series stopped getting data completely.
 func (db *DB) CompactStaleHead() error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
@@ -1617,6 +1615,8 @@ func (db *DB) CompactStaleHead() error {
 	db.logger.Info("Starting stale series compaction")
 	start := time.Now()
 
+	// We get the stale series reference first because this list can change during the compaction below.
+	// It is more efficient and easier to provide an index interface for the stale series when we have a static list.
 	staleSeriesRefs, err := db.head.SortedStaleSeriesRefsNoOOOData(context.Background())
 	if err != nil {
 		return err
@@ -1650,7 +1650,7 @@ func (db *DB) CompactStaleHead() error {
 	}
 	db.head.RebuildSymbolTable(db.logger)
 
-	db.logger.Info("Ending stale series compaction", "duration", time.Since(start))
+	db.logger.Info("Ending stale series compaction", "num_series", meta.Stats.NumSeries, "duration", time.Since(start))
 	return nil
 }
 
