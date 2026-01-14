@@ -191,6 +191,22 @@ func TestCircularExemplarStorage_AddExemplar(t *testing.T) {
 			},
 		},
 		{
+			name: "out-of-order insert where evicted entry is insertion point",
+			size: 3,
+			exemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.2, Ts: 2}, // pos 0, linked list middle
+				{Labels: series1, Value: 0.1, Ts: 1}, // pos 1, linked list oldest
+				{Labels: series1, Value: 0.5, Ts: 5}, // pos 2, linked list newest
+				{Labels: series1, Value: 0.3, Ts: 3},
+			},
+			matcher: series1Matcher,
+			wantExemplars: []exemplar.Exemplar{
+				{Labels: series1, Value: 0.1, Ts: 1},
+				{Labels: series1, Value: 0.3, Ts: 3},
+				{Labels: series1, Value: 0.5, Ts: 5},
+			},
+		},
+		{
 			name: "insert out of the OOO window",
 			size: 3,
 			exemplars: []exemplar.Exemplar{
