@@ -19,6 +19,7 @@ package prometheusremotewrite
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -68,6 +69,10 @@ const (
 func (c *PrometheusConverter) createAttributes(attributes pcommon.Map, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, meta Metadata, extras ...string,
 ) (labels.Labels, error) {
+	if c.resourceLabels == nil {
+		return labels.EmptyLabels(), errors.New("createAttributes called without initializing resource context")
+	}
+
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
 	c.scratchBuilder.Reset()
