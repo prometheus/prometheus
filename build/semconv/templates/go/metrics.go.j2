@@ -1,0 +1,148 @@
+{% import 'helpers.j2' as h -%}
+{# Flatten all metrics from all groups into a single list #}
+{%- set all_metrics = ctx | map(attribute="metrics") | flatten | list -%}
+{# Extract all unique attributes from all metrics #}
+{%- set all_attrs = all_metrics | selectattr("attributes") | map(attribute="attributes") | flatten | unique(attribute="name") | sort(attribute="name") -%}
+// Code generated from semantic convention specification. DO NOT EDIT.
+
+// Package metrics provides Prometheus instrumentation types for metrics
+// defined in this semantic convention registry.
+package metrics
+
+import (
+{%- if all_attrs | selectattr("type","!=","string") | list | length > 0 %}
+	"fmt"
+{%- endif %}
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+// Attribute is an interface for metric label attributes.
+type Attribute interface {
+	ID() string
+	Value() string
+}
+{%- for attr in all_attrs %}
+{%- set name = h.to_go_name(attr.name, "") %}
+
+{%- if attr.type.members is not defined %}
+type {{ name }}Attr {{ attr.type }}
+{%- else %}
+type {{ name }}Attr {{ h.member_type(attr.type.members[0]) }}
+
+var (
+{%- for m in attr.type.members %}
+	{%- set m_name = name ~ h.to_go_name(m.id, "") -%}
+	{% if attr.type.members[0].value is string -%}
+	{%- set m_value = '"' + m.value + '"' -%}
+	{%- else -%}
+	{%- set m_value = m.value -%}
+	{%- endif -%}
+	{%- if m.brief is defined %}
+	{%- set m_brief = m.brief -%}
+	{%- else %}
+	{%- set m_brief = "standardized value " + m_value + ' of ' + name + 'Attr.' -%}
+	{%- endif %}
+{{ h.prefix_brief(m_brief, m_name ~ " is ") | comment(format="go_1tab") }}
+	{{ m_name }} {{ name }}Attr = {{ m_value }}
+{%- endfor %}
+)
+{%- endif %}
+
+func (a {{ name }}Attr) ID() string {
+	return "{{ attr.name }}"
+}
+
+func (a {{ name }}Attr) Value() string {
+	{% if attr.type == "string" -%}
+	return string(a)
+	{%- elif attr.type == "int" -%}
+	return fmt.Sprintf("%d", a)
+	{%- else -%}
+	return fmt.Sprintf("%v", a)
+	{%- endif %}
+}
+{%- endfor %}
+
+{% macro for_each_attr(attrs) %}
+{%- for raw in attrs -%}
+{%- set attr = namespace(raw) -%}
+{%- set attr.id = attr.name -%}
+{%- set attr.namespace = attr.name | attribute_namespace -%}
+{%- set attr.name = attr.name | attribute_id | pascal_case -%}
+{%- set attr.arg = attr.name | replace("Type", "Kind") | camel_case -%}
+{%- set attr.fullname = attr.id | pascal_case -%}
+{%- set attr.pkg = "" -%}
+{%- set attr.type = attr.fullname+"Attr" -%}
+{%- set attr.ref = attr.pkg+attr.type -%}
+{%- set attr.getter = attr.id|pascal_case -%}
+{%- set attr.field = "Attr"+attr.fullname -%}
+{{ caller(attr) }}
+{%- endfor -%}
+{% endmacro %}
+{%- for metric in all_metrics %}
+{%- set metric_name = h.to_go_name(metric.metric_name, "") %}
+{%- set metric_inst = (metric.instrument | default("gauge")) | map_text("go_instrument_type") %}
+{%- set metric_attr = metric.attributes | default([]) | sort -%}
+
+{{ h.metric_typedoc(metric, "") | comment | trim }}
+type {{ metric_name }} struct {
+	*prometheus.{{ metric_inst }}Vec
+}
+
+{{ ["New" ~ metric_name ~ " returns a new " ~ metric_name ~ " instrument."] | comment }}
+func New{{ metric_name }}() {{ metric_name }} {
+{%- if metric_attr | length > 0 %}
+	labels := []string{
+		{%- call(attr) for_each_attr(metric_attr) %}
+		"{{ attr.id }}",
+		{%- endcall %}
+	}
+{%- else %}
+	labels := []string{}
+{%- endif %}
+	return {{ metric_name }}{
+		{{ metric_inst }}Vec: prometheus.New{{ metric_inst }}Vec(prometheus.{{ metric_inst }}Opts{
+			Name: "{{ metric.metric_name }}",
+			Help: "{{ metric.brief | default("") | trim }}",
+		}, labels),
+	}
+}
+
+type {{ metric_name }}Attr interface {
+	Attribute
+	impl{{ metric_name }}()
+}
+{%- if metric_attr | length > 0 %}
+{% call(attr) for_each_attr(metric_attr) %}
+func (a {{ attr.type }}) impl{{ metric_name }}() {}
+{%- endcall %}
+{%- endif %}
+
+func (m {{ metric_name }}) With(
+{%- call(attr) for_each_attr(metric_attr|required) %}
+	{{ attr.arg }} {{ attr.type }},
+{%- endcall %}
+	extra ...{{ metric_name }}Attr,
+) prometheus.{{ metric_inst | replace("Histogram", "Observer") }} {
+{%- if metric_attr | length > 0 %}
+	labels := prometheus.Labels{
+		{%- call(attr) for_each_attr(metric_attr|required) %}
+		"{{ attr.id }}": {{ attr.arg }}.Value(),
+		{%- endcall %}
+		{%- call(attr) for_each_attr(metric_attr|not_required) %}
+		"{{ attr.id }}": "",
+		{%- endcall %}
+	}
+{%- else %}
+	labels := prometheus.Labels{}
+{%- endif %}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.{{ metric_inst }}Vec.With(labels)
+}
+{%- if not loop.last %}
+
+{% endif %}
+{%- endfor %}
+

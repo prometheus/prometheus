@@ -225,3 +225,16 @@ bump-go-version:
 generate-fuzzing-seed-corpus:
 	@echo ">> Generating fuzzing seed corpus"
 	@$(GO) generate -tags fuzzing ./util/fuzzing/corpus_gen
+
+.PHONY: generate-semconv
+generate-semconv:
+	@echo ">> generating semconv code"
+	@./build/semconv/generate.sh
+
+.PHONY: check-semconv
+check-semconv: generate-semconv
+	@echo ">> checking semconv code is up-to-date"
+	@if ! git diff --exit-code -- '*/semconv/metrics.go' '*/semconv/README.md'; then \
+		echo "Generated semconv code is out of date. Run 'make generate-semconv' and commit the changes."; \
+		exit 1; \
+	fi
