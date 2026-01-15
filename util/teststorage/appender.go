@@ -374,7 +374,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
 	i := len(a.a.pendingSamples) - 1
 	for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
-		if ref == storage.SeriesRef(a.a.pendingSamples[i].L.Hash()) {
+		if labels.Equal(l, a.a.pendingSamples[i].L) {
 			a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, e)
 			appended = true
 			break
@@ -415,7 +415,7 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 	// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
 	i := len(a.a.pendingSamples) - 1
 	for ; i >= 0; i-- { // Attach metadata to the last matching sample.
-		if ref == storage.SeriesRef(a.a.pendingSamples[i].L.Hash()) {
+		if labels.Equal(l, a.a.pendingSamples[i].L) {
 			a.a.pendingSamples[i].M = m
 			updated = true
 			break
