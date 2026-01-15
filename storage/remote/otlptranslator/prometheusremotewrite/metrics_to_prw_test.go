@@ -460,9 +460,7 @@ func TestFromMetrics(t *testing.T) {
 
 	t.Run("target_info should not include scope labels when PromoteScopeMetadata is enabled", func(t *testing.T) {
 		// Regression test: When PromoteScopeMetadata is enabled and a scope has a non-empty name,
-		// the cached scopeLabels should NOT be merged into target_info. The bug was that
-		// createAttributes() checked `if c.scopeLabels != nil` without also checking `promoteScope`,
-		// causing scope labels from previous metrics to leak into target_info.
+		// the cached scopeLabels should NOT be merged into target_info.
 		request := pmetricotlp.NewExportRequest()
 		rm := request.Metrics().ResourceMetrics().AppendEmpty()
 
@@ -581,7 +579,6 @@ func TestFromMetrics(t *testing.T) {
 		// Verify target_info has the promoted resource attribute.
 		for _, s := range targetInfoSamples {
 			require.Equal(t, "promoted-value", s.ls.Get("custom_promoted_attr"), "target_info should have promoted resource attributes")
-			// And it should also have the non-promoted resource attribute.
 			require.Equal(t, "another-value", s.ls.Get("another_resource_attr"), "target_info should have non-promoted resource attributes")
 		}
 
@@ -602,7 +599,6 @@ func TestFromMetrics(t *testing.T) {
 		request := pmetricotlp.NewExportRequest()
 		rm := request.Metrics().ResourceMetrics().AppendEmpty()
 
-		// Set up resource attributes including identifying ones.
 		rm.Resource().Attributes().PutStr("service.name", "test-service")
 		rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
 		rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
@@ -1595,7 +1591,7 @@ func createRepeatedLabelsExportRequest(
 
 	metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
 
-	// Pre-generate label names that will be reused
+	// Pre-generate label names that will be reused.
 	labelNames := make([]string, uniqueLabelNames)
 	for i := range uniqueLabelNames {
 		labelNames[i] = fmt.Sprintf("label.name.%d", i)
@@ -1610,7 +1606,7 @@ func createRepeatedLabelsExportRequest(
 		point.SetTimestamp(ts)
 		point.SetDoubleValue(float64(d))
 
-		// Add labels using the same label names (cycling through them)
+		// Add labels using the same label names (cycling through them).
 		for l := range labelsPerDatapoint {
 			labelName := labelNames[l%uniqueLabelNames]
 			point.Attributes().PutStr(labelName, fmt.Sprintf("value-%d-%d", d, l))
@@ -1636,7 +1632,7 @@ func createMultiResourceExportRequest(
 		rm := request.Metrics().ResourceMetrics().AppendEmpty()
 		generateAttributes(rm.Resource().Attributes(), "resource", resourceAttributeCount)
 
-		// Set unique service attributes per resource for job/instance label generation
+		// Set unique service attributes per resource for job/instance label generation.
 		rm.Resource().Attributes().PutStr("service.name", fmt.Sprintf("service-%d", r))
 		rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
 		rm.Resource().Attributes().PutStr("service.instance.id", fmt.Sprintf("instance-%d", r))
@@ -1691,9 +1687,7 @@ func BenchmarkFromMetrics_LabelCaching_MultipleDatapointsPerResource(b *testing.
 						mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
 						converter := NewPrometheusConverter(mockAppender)
 						_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
-						if err != nil {
-							b.Fatal(err)
-						}
+						require.NoError(b, err)
 					}
 				})
 			}
@@ -1725,9 +1719,7 @@ func BenchmarkFromMetrics_LabelCaching_RepeatedLabelNames(b *testing.B) {
 					mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
 					converter := NewPrometheusConverter(mockAppender)
 					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
-					if err != nil {
-						b.Fatal(err)
-					}
+					require.NoError(b, err)
 				}
 			})
 		}
@@ -1765,9 +1757,7 @@ func BenchmarkFromMetrics_LabelCaching_ScopeMetadata(b *testing.B) {
 					mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
 					converter := NewPrometheusConverter(mockAppender)
 					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
-					if err != nil {
-						b.Fatal(err)
-					}
+					require.NoError(b, err)
 				}
 			})
 		}
@@ -1806,9 +1796,7 @@ func BenchmarkFromMetrics_LabelCaching_MultipleResources(b *testing.B) {
 					mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
 					converter := NewPrometheusConverter(mockAppender)
 					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
-					if err != nil {
-						b.Fatal(err)
-					}
+					require.NoError(b, err)
 				}
 			})
 		}

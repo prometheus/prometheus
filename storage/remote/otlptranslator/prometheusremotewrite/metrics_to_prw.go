@@ -367,9 +367,8 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 // LabelNameBuilder is a function that builds/sanitizes label names.
 type LabelNameBuilder func(string) (string, error)
 
-// addPromotedAttributesToScratch adds promoted resource attributes to a ScratchBuilder.
-// This is used for caching promoted attributes.
-func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labels.ScratchBuilder, resourceAttributes pcommon.Map, buildLabelName LabelNameBuilder) error {
+// addPromotedAttributes adds labels for promoted resourceAttributes to the builder.
+func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, buildLabelName LabelNameBuilder) error {
 	if s == nil {
 		return nil
 	}
@@ -383,22 +382,21 @@ func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labe
 				if err != nil {
 					return false
 				}
-				builder.Add(normalized, value.AsString())
+				builder.Set(normalized, value.AsString())
 			}
 			return true
 		})
 		return err
 	}
-
 	var err error
 	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 		if _, exists := s.attrs[name]; exists {
-			normalized, buildErr := buildLabelName(name)
-			if buildErr != nil {
-				err = buildErr
+			var normalized string
+			normalized, err = buildLabelName(name)
+			if err != nil {
 				return false
 			}
-			builder.Add(normalized, value.AsString())
+			builder.Set(normalized, value.AsString())
 		}
 		return true
 	})
@@ -414,14 +412,12 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 		externalLabels: settings.ExternalLabels,
 	}
 
-	// Cache the label namer for reuse
 	c.labelNamer = otlptranslator.LabelNamer{
 		UTF8Allowed:                 settings.AllowUTF8,
 		UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
 		PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
 	}
 
-	// Compute job label from service.name + service.namespace
 	if serviceName, ok := resourceAttrs.Get(string(semconv.ServiceNameKey)); ok {
 		val := serviceName.AsString()
 		if serviceNamespace, ok := resourceAttrs.Get(string(semconv.ServiceNamespaceKey)); ok {
@@ -430,19 +426,17 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 		c.resourceLabels.jobLabel = val
 	}
 
-	// Compute instance label from service.instance.id
 	if instance, ok := resourceAttrs.Get(string(semconv.ServiceInstanceIDKey)); ok {
 		c.resourceLabels.instanceLabel = instance.AsString()
 	}
 
-	// Compute promoted resource attributes
 	if settings.PromoteResourceAttributes != nil {
-		c.scratchBuilder.Reset()
-		if err := settings.PromoteResourceAttributes.addPromotedAttributesToScratch(&c.scratchBuilder, resourceAttrs, c.buildLabelName); err != nil {
+		c.builder.Reset(labels.EmptyLabels())
+		if err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, c.buildLabelName); err != nil {
 			c.clearResourceContext()
 			return err
 		}
-		c.resourceLabels.promotedLabels = c.scratchBuilder.Labels()
+		c.resourceLabels.promotedLabels = c.builder.Labels()
 	}
 	return nil
 }
@@ -461,22 +455,22 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) er
 		scopeVersion:   scope.version,
 		scopeSchemaURL: scope.schemaURL,
 	}
-	// Compute scope attributes
 	c.scratchBuilder.Reset()
-	var rangeErr error
+	var err error
 	scope.attributes.Range(func(k string, v pcommon.Value) bool {
-		name, err := c.buildLabelName("otel_scope_" + k)
+		var name string
+		name, err = c.buildLabelName("otel_scope_" + k)
 		if err != nil {
-			rangeErr = err
 			return false
 		}
 		c.scratchBuilder.Add(name, v.AsString())
 		return true
 	})
-	if rangeErr != nil {
+	if err != nil {
 		c.scopeLabels = nil
-		return rangeErr
+		return err
 	}
+
 	c.scopeLabels.scopeAttrs = c.scratchBuilder.Labels()
 	return nil
 }
