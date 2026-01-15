@@ -531,11 +531,8 @@ func TestFromMetrics(t *testing.T) {
 		require.Equal(t, "1.0.0", metricSamples[0].ls.Get("otel_scope_version"), "metric should have otel_scope_version")
 	})
 
-	t.Run("target_info should not include promoted resource attributes", func(t *testing.T) {
-		// Regression test: When PromoteResourceAttributes is configured, the promoted attributes
-		// should appear on metrics but NOT on target_info. The bug was that createAttributes()
-		// unconditionally merged cached promotedLabels when c.resourceLabels != nil, ignoring
-		// the settings.PromoteResourceAttributes = nil override set by addResourceTargetInfo().
+	t.Run("target_info should include promoted resource attributes", func(t *testing.T) {
+		// Promoted resource attributes should appear on both metrics and target_info.
 		request := pmetricotlp.NewExportRequest()
 		rm := request.Metrics().ResourceMetrics().AppendEmpty()
 
@@ -581,14 +578,85 @@ func TestFromMetrics(t *testing.T) {
 		}
 		require.NotEmpty(t, targetInfoSamples, "expected target_info samples")
 
-		// Verify target_info does NOT have the promoted resource attribute.
+		// Verify target_info has the promoted resource attribute.
 		for _, s := range targetInfoSamples {
-			require.Empty(t, s.ls.Get("custom_promoted_attr"), "target_info should not have promoted resource attributes")
-			// But it should still have the non-promoted resource attribute.
+			require.Equal(t, "promoted-value", s.ls.Get("custom_promoted_attr"), "target_info should have promoted resource attributes")
+			// And it should also have the non-promoted resource attribute.
 			require.Equal(t, "another-value", s.ls.Get("another_resource_attr"), "target_info should have non-promoted resource attributes")
 		}
 
-		// Verify the metric itself DOES have the promoted resource attribute.
+		// Verify the metric also has the promoted resource attribute.
+		var metricSamples []combinedSample
+		for _, s := range mockAppender.samples {
+			if s.ls.Get(labels.MetricName) == "test_gauge" {
+				metricSamples = append(metricSamples, s)
+			}
+		}
+		require.NotEmpty(t, metricSamples, "expected metric samples")
+		require.Equal(t, "promoted-value", metricSamples[0].ls.Get("custom_promoted_attr"), "metric should have promoted resource attribute")
+	})
+
+	t.Run("target_info should include promoted attributes when KeepIdentifyingResourceAttributes is enabled", func(t *testing.T) {
+		// When both PromoteResourceAttributes and KeepIdentifyingResourceAttributes are configured,
+		// target_info should include both the promoted attributes and the identifying attributes.
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+
+		// Set up resource attributes including identifying ones.
+		rm.Resource().Attributes().PutStr("service.name", "test-service")
+		rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
+		rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
+		rm.Resource().Attributes().PutStr("custom.promoted.attr", "promoted-value")
+		rm.Resource().Attributes().PutStr("another.resource.attr", "another-value")
+
+		// Add a metric.
+		ts := pcommon.NewTimestampFromTime(time.Now())
+		scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+		m := scopeMetrics.Metrics().AppendEmpty()
+		m.SetEmptyGauge()
+		m.SetName("test_gauge")
+		m.SetDescription("test gauge")
+		point := m.Gauge().DataPoints().AppendEmpty()
+		point.SetTimestamp(ts)
+		point.SetDoubleValue(1.0)
+
+		mockAppender := &mockCombinedAppender{}
+		converter := NewPrometheusConverter(mockAppender)
+		annots, err := converter.FromMetrics(
+			context.Background(),
+			request.Metrics(),
+			Settings{
+				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+					PromoteResourceAttributes: []string{"custom.promoted.attr"},
+				}),
+				KeepIdentifyingResourceAttributes: true,
+				LookbackDelta:                     defaultLookbackDelta,
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, annots)
+		require.NoError(t, mockAppender.Commit())
+
+		var targetInfoSamples []combinedSample
+		for _, s := range mockAppender.samples {
+			if s.ls.Get(labels.MetricName) == "target_info" {
+				targetInfoSamples = append(targetInfoSamples, s)
+			}
+		}
+		require.NotEmpty(t, targetInfoSamples, "expected target_info samples")
+
+		// Verify target_info has the promoted resource attribute.
+		for _, s := range targetInfoSamples {
+			require.Equal(t, "promoted-value", s.ls.Get("custom_promoted_attr"), "target_info should have promoted resource attributes")
+			// And it should have the identifying attributes (since KeepIdentifyingResourceAttributes is true).
+			require.Equal(t, "test-service", s.ls.Get("service_name"), "target_info should have service.name when KeepIdentifyingResourceAttributes is true")
+			require.Equal(t, "test-namespace", s.ls.Get("service_namespace"), "target_info should have service.namespace when KeepIdentifyingResourceAttributes is true")
+			require.Equal(t, "instance-1", s.ls.Get("service_instance_id"), "target_info should have service.instance.id when KeepIdentifyingResourceAttributes is true")
+			// And the non-promoted resource attribute.
+			require.Equal(t, "another-value", s.ls.Get("another_resource_attr"), "target_info should have non-promoted resource attributes")
+		}
+
+		// Verify the metric also has the promoted resource attribute.
 		var metricSamples []combinedSample
 		for _, s := range mockAppender.samples {
 			if s.ls.Get(labels.MetricName) == "test_gauge" {

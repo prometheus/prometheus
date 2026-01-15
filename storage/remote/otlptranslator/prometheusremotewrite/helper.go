@@ -111,30 +111,30 @@ func (c *PrometheusConverter) createAttributes(attributes pcommon.Map, settings 
 		}
 	}
 
-	// Merge cached promoted resource labels only if promotion is enabled
 	if settings.PromoteResourceAttributes != nil {
+		// Merge cached promoted resource labels.
 		c.resourceLabels.promotedLabels.Range(func(l labels.Label) {
 			if c.builder.Get(l.Name) == "" {
 				c.builder.Set(l.Name, l.Value)
 			}
 		})
 	}
-	// Merge cached job/instance labels
+	// Merge cached job/instance labels.
 	if c.resourceLabels.jobLabel != "" {
 		c.builder.Set(model.JobLabel, c.resourceLabels.jobLabel)
 	}
 	if c.resourceLabels.instanceLabel != "" {
 		c.builder.Set(model.InstanceLabel, c.resourceLabels.instanceLabel)
 	}
-	// Merge cached external labels
+	// Merge cached external labels.
 	for key, value := range c.resourceLabels.externalLabels {
 		if c.builder.Get(key) == "" {
 			c.builder.Set(key, value)
 		}
 	}
 
-	// Merge cached scope labels if scope promotion is enabled (c.scopeLabels is set by setScopeContext)
 	if c.scopeLabels != nil {
+		// Merge cached scope labels if scope promotion is enabled.
 		c.scopeLabels.scopeAttrs.Range(func(l labels.Label) {
 			c.builder.Set(l.Name, l.Value)
 		})
@@ -501,12 +501,6 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		name = settings.Namespace + "_" + name
 	}
 
-	// Add promoted attribute names to ignoreAttrs so they don't appear in target_info.
-	// Promoted attributes should only appear on metric labels, not on target_info.
-	promotedAttrs := settings.PromoteResourceAttributes.getPromotedAttributeNames(attributes)
-	if len(promotedAttrs) > 0 {
-		identifyingAttrs = append(identifyingAttrs, promotedAttrs...)
-	}
 	settings.PromoteResourceAttributes = nil
 	if settings.KeepIdentifyingResourceAttributes {
 		// Do not pass identifying attributes as ignoreAttrs below.

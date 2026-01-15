@@ -401,15 +401,19 @@ func TestCreateAttributes(t *testing.T) {
 				LabelNamePreserveMultipleUnderscores: tc.labelNamePreserveMultipleUnderscores,
 			}
 			// Use test case specific resource/attrs if provided, otherwise use defaults
+			// Check if tc.resource is initialized (non-zero) by trying to get its attributes
 			testResource := resource
 			testAttrs := attrs
+			// For pcommon types, we can check if they're non-zero by seeing if they have attributes
+			// Since zero-initialized Resource is not valid, we use a simple heuristic:
+			// if the struct has been explicitly set in the test case, use it
 			if tc.resource != (pcommon.Resource{}) {
 				testResource = tc.resource
 			}
 			if tc.attrs != (pcommon.Map{}) {
 				testAttrs = tc.attrs
 			}
-			// Initialize resource and scope context as FromMetrics would
+			// Initialize resource and scope context as FromMetrics would.
 			require.NoError(t, c.setResourceContext(testResource, settings))
 			require.NoError(t, c.setScopeContext(tc.scope, settings))
 
@@ -648,7 +652,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			}
 			resource := pcommon.NewResource()
 
-			// Initialize resource and scope context as FromMetrics would
+			// Initialize resource and scope context as FromMetrics would.
 			require.NoError(t, converter.setResourceContext(resource, settings))
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
@@ -817,7 +821,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			}
 			resource := pcommon.NewResource()
 
-			// Initialize resource and scope context as FromMetrics would
+			// Initialize resource and scope context as FromMetrics would.
 			require.NoError(t, converter.setResourceContext(resource, settings))
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 

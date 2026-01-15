@@ -66,9 +66,9 @@ type Settings struct {
 // cachedResourceLabels holds precomputed labels constant for all datapoints in a ResourceMetrics.
 // These are computed once per ResourceMetrics boundary and reused for all datapoints.
 type cachedResourceLabels struct {
-	jobLabel       string        // from service.name + service.namespace
-	instanceLabel  string        // from service.instance.id
-	promotedLabels labels.Labels // promoted resource attributes
+	jobLabel       string        // from service.name + service.namespace.
+	instanceLabel  string        // from service.instance.id.
+	promotedLabels labels.Labels // promoted resource attributes.
 	externalLabels map[string]string
 }
 
@@ -78,7 +78,7 @@ type cachedScopeLabels struct {
 	scopeName      string
 	scopeVersion   string
 	scopeSchemaURL string
-	scopeAttrs     labels.Labels // otel_scope_* labels
+	scopeAttrs     labels.Labels // otel_scope_* labels.
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -90,7 +90,7 @@ type PrometheusConverter struct {
 	// seenTargetInfo tracks target_info samples within a batch to prevent duplicates.
 	seenTargetInfo map[targetInfoKey]struct{}
 
-	// Label caching for optimization - computed once per resource/scope boundary
+	// Label caching for optimization - computed once per resource/scope boundary.
 	resourceLabels *cachedResourceLabels
 	scopeLabels    *cachedScopeLabels
 	labelNamer     otlptranslator.LabelNamer
@@ -187,8 +187,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
-
-		// Cache resource-level labels for this ResourceMetrics
 		if err := c.setResourceContext(resource, settings); err != nil {
 			errs = multierr.Append(errs, err)
 			continue
@@ -201,8 +199,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		for j := range scopeMetricsSlice.Len() {
 			scopeMetrics := scopeMetricsSlice.At(j)
 			scope := newScopeFromScopeMetrics(scopeMetrics)
-
-			// Cache scope-level labels for this ScopeMetrics
 			if err := c.setScopeContext(scope, settings); err != nil {
 				errs = multierr.Append(errs, err)
 				continue
@@ -349,7 +345,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			}
 		}
 
-		// Clear cached labels before processing the next ResourceMetrics
+		// Clear cached labels before processing the next ResourceMetrics.
 		c.clearResourceContext()
 	}
 

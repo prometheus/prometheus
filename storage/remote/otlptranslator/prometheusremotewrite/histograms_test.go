@@ -866,7 +866,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			}
 			resource := pcommon.NewResource()
 
-			// Initialize resource and scope context as FromMetrics would
+			// Initialize resource and scope context as FromMetrics would.
 			require.NoError(t, converter.setResourceContext(resource, settings))
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
@@ -1347,7 +1347,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			}
 			resource := pcommon.NewResource()
 
-			// Initialize resource and scope context as FromMetrics would
+			// Initialize resource and scope context as FromMetrics would.
 			require.NoError(t, converter.setResourceContext(resource, settings))
 			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
