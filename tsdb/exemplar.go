@@ -327,10 +327,10 @@ func (ce *CircularExemplarStorage) grow(l int64) int {
 		{from: ce.nextIndex, to: oldSize},
 		{from: 0, to: ce.nextIndex},
 	}
-	totalCopied, _ := copyExemplarRanges(ce.index, newSlice, ce.exemplars, ranges)
+	totalCopied, migrated := copyExemplarRanges(ce.index, newSlice, ce.exemplars, ranges)
 	ce.nextIndex = totalCopied
 	ce.exemplars = newSlice
-	return oldSize
+	return migrated
 }
 
 // shrink the circular buffer by either trimming from the right or deleting the
@@ -407,8 +407,9 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	// If we insert an out-of-order exemplar, we preemptively find the insertion
 	// index to check for duplicates.
 	var insertionIndex int
+	var outOfOrder bool
 	if indexExists {
-		outOfOrder := e.Ts >= ce.exemplars[idx.oldest].exemplar.Ts && e.Ts < ce.exemplars[idx.newest].exemplar.Ts
+		outOfOrder = e.Ts >= ce.exemplars[idx.oldest].exemplar.Ts && e.Ts < ce.exemplars[idx.newest].exemplar.Ts
 		if outOfOrder {
 			insertionIndex = ce.findInsertionIndex(e, idx)
 			if ce.exemplars[insertionIndex].exemplar.Ts == e.Ts {
@@ -427,8 +428,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		ce.index[string(seriesLabels)] = idx
 	}
 
-	// Remove entries if the buffer is full. Note that this doesn't invalidate the
-	// insertion index since out-of-order exemplars cannot be the oldest exemplar.
+	// Remove entries if the buffer is full.
 	if prev := &ce.exemplars[ce.nextIndex]; prev.ref != nil {
 		prevRef := prev.ref
 		if ce.removeExemplar(prev) {
@@ -438,6 +438,11 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 			} else {
 				ce.removeIndex(prevRef)
 			}
+		} else if outOfOrder && insertionIndex == ce.nextIndex && prevRef == idx {
+			// The entry we were going to insert after was removed from the same series.
+			// Recalculate the insertion point in the updated linked list to avoid
+			// creating a self-referencing loop.
+			insertionIndex = ce.findInsertionIndex(e, idx)
 		}
 	}
 
