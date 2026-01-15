@@ -126,9 +126,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			converter.addGaugeNumberDataPoints(
 				context.Background(),
 				metric.Gauge().DataPoints(),
-				resource,
 				settings,
-				tt.scope,
 				Metadata{
 					MetricFamilyName: metric.Name(),
 				},
@@ -362,9 +360,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			converter.addSumNumberDataPoints(
 				context.Background(),
 				metric.Sum().DataPoints(),
-				resource,
 				settings,
-				tt.scope,
 				Metadata{
 					MetricFamilyName: metric.Name(),
 				},

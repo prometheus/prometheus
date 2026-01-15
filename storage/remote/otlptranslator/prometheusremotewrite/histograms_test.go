@@ -873,10 +873,8 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			annots, err := converter.addExponentialHistogramDataPoints(
 				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
-				resource,
 				settings,
 				pmetric.AggregationTemporalityCumulative,
-				tt.scope,
 				Metadata{
 					MetricFamilyName: name,
 				},
@@ -1354,10 +1352,8 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			annots, err := converter.addCustomBucketsHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
-				resource,
 				settings,
 				pmetric.AggregationTemporalityCumulative,
-				tt.scope,
 				Metadata{
 					MetricFamilyName: name,
 				},

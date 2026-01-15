@@ -199,7 +199,7 @@ func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporali
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
+	settings Settings, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -400,8 +400,8 @@ func findMinAndMaxTimestamps(metric pmetric.Metric, minTimestamp, maxTimestamp p
 	return minTimestamp, maxTimestamp
 }
 
-func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, scope scope, meta Metadata,
+func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice,
+	settings Settings, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {

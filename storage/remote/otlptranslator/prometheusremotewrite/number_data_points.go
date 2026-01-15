@@ -21,14 +21,13 @@ import (
 	"math"
 
 	"github.com/prometheus/common/model"
-	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/model/value"
 )
 
 func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
+	settings Settings, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -69,7 +68,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
+	settings Settings, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {

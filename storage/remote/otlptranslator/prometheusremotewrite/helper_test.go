@@ -659,9 +659,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			converter.addSummaryDataPoints(
 				context.Background(),
 				metric.Summary().DataPoints(),
-				resource,
 				settings,
-				tt.scope,
 				Metadata{
 					MetricFamilyName: metric.Name(),
 				},
@@ -828,9 +826,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			converter.addHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
-				resource,
 				settings,
-				tt.scope,
 				Metadata{
 					MetricFamilyName: metric.Name(),
 				},
