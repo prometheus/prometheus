@@ -59,6 +59,7 @@ import (
 	klogv2 "k8s.io/klog/v2"
 
 	"github.com/prometheus/prometheus/config"
+	configmetrics "github.com/prometheus/prometheus/config/semconv"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -128,14 +129,8 @@ func (klogv1Writer) Write(p []byte) (n int, err error) {
 var (
 	appName = "prometheus"
 
-	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_config_last_reload_successful",
-		Help: "Whether the last configuration reload attempt was successful.",
-	})
-	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_config_last_reload_success_timestamp_seconds",
-		Help: "Timestamp of the last successful configuration reload.",
-	})
+	configSuccess     = configmetrics.NewPrometheusConfigLastReloadSuccessful()
+	configSuccessTime = configmetrics.NewPrometheusConfigLastReloadSuccessTimestampSeconds()
 
 	defaultRetentionString   = "15d"
 	defaultRetentionDuration model.Duration
@@ -737,8 +732,8 @@ func main() {
 	// but if we don't do it now, the metrics will stay at zero until the
 	// startup procedure is complete, which might take long enough to
 	// trigger alerts about an invalid config.
-	configSuccess.Set(1)
-	configSuccessTime.SetToCurrentTime()
+	configSuccess.With().Set(1)
+	configSuccessTime.With().SetToCurrentTime()
 
 	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
 	// Default -web.route-prefix to path of -web.external-url.
@@ -1071,8 +1066,8 @@ func main() {
 		},
 	}
 
-	prometheus.MustRegister(configSuccess)
-	prometheus.MustRegister(configSuccessTime)
+	prometheus.MustRegister(configSuccess.GaugeVec)
+	prometheus.MustRegister(configSuccessTime.GaugeVec)
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
@@ -1545,11 +1540,11 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 
 	defer func() {
 		if err == nil {
-			configSuccess.Set(1)
-			configSuccessTime.SetToCurrentTime()
+			configSuccess.With().Set(1)
+			configSuccessTime.With().SetToCurrentTime()
 			callback(true)
 		} else {
-			configSuccess.Set(0)
+			configSuccess.With().Set(0)
 			callback(false)
 		}
 	}()
