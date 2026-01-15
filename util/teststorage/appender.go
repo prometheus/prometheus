@@ -464,13 +464,28 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		}
 	}
 
-	a.a.mtx.Lock()
-	var es []exemplar.Exemplar
+	var (
+		es         []exemplar.Exemplar
+		partialErr error
+	)
+
 	if len(opts.Exemplars) > 0 {
-		// As per AppenderV2 interface, opts.Exemplar slice is unsafe for reuse.
-		es = make([]exemplar.Exemplar, len(opts.Exemplars))
-		copy(es, opts.Exemplars)
+		if a.a.appendExemplarsError != nil {
+			var exErrs []error
+			for range opts.Exemplars {
+				exErrs = append(exErrs, a.a.appendExemplarsError)
+			}
+			if len(exErrs) > 0 {
+				partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
+			}
+		} else {
+			// As per AppenderV2 interface, opts.Exemplar slice is unsafe for reuse.
+			es = make([]exemplar.Exemplar, len(opts.Exemplars))
+			copy(es, opts.Exemplars)
+		}
 	}
+
+	a.a.mtx.Lock()
 	a.a.pendingSamples = append(a.a.pendingSamples, Sample{
 		MF: opts.MetricFamilyName,
 		M:  opts.Metadata,
@@ -480,17 +495,6 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		ES: es,
 	})
 	a.a.mtx.Unlock()
-
-	var partialErr error
-	if a.a.appendExemplarsError != nil {
-		var exErrs []error
-		for range opts.Exemplars {
-			exErrs = append(exErrs, a.a.appendExemplarsError)
-		}
-		if len(exErrs) > 0 {
-			partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
-		}
-	}
 
 	if a.next != nil {
 		ref, err = a.next.Append(ref, ls, st, t, v, h, fh, opts)

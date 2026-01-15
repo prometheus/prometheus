@@ -21,17 +21,14 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/util/testutil"
-
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-
 	"github.com/prometheus/prometheus/model/exemplar"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestFanout_SelectSorted(t *testing.T) {
@@ -416,7 +413,7 @@ func fanoutAppenderTestCases(expected []sample) []fanoutAppenderTestCase {
 		},
 		{
 			name:      "primary errors",
-			primary:   teststorage.NewAppendable().WithErrs(func(ls labels.Labels) error { return appErr }, exErr, commitErr),
+			primary:   teststorage.NewAppendable().WithErrs(func(labels.Labels) error { return appErr }, exErr, commitErr),
 			secondary: teststorage.NewAppendable(),
 
 			expectAppendErr:     true,
@@ -424,9 +421,9 @@ func fanoutAppenderTestCases(expected []sample) []fanoutAppenderTestCase {
 			expectCommitError:   true,
 		},
 		{
-			name:      "primary exemplar errors",
-			primary:   teststorage.NewAppendable().WithErrs(func(ls labels.Labels) error { return nil }, exErr, nil),
-			secondary: teststorage.NewAppendable(),
+			name:      "exemplar errors",
+			primary:   teststorage.NewAppendable().WithErrs(func(labels.Labels) error { return nil }, exErr, nil),
+			secondary: teststorage.NewAppendable().WithErrs(func(labels.Labels) error { return nil }, exErr, nil),
 
 			expectAppendErr:     false,
 			expectExemplarError: true,
@@ -438,7 +435,7 @@ func fanoutAppenderTestCases(expected []sample) []fanoutAppenderTestCase {
 		{
 			name:      "secondary errors",
 			primary:   teststorage.NewAppendable(),
-			secondary: teststorage.NewAppendable().WithErrs(func(ls labels.Labels) error { return appErr }, exErr, commitErr),
+			secondary: teststorage.NewAppendable().WithErrs(func(labels.Labels) error { return appErr }, exErr, commitErr),
 
 			expectAppendErr:     true,
 			expectExemplarError: true,
@@ -533,9 +530,12 @@ func TestFanoutAppenderV2(t *testing.T) {
 			case tt.expectAppendErr:
 				require.Error(t, err)
 			case tt.expectExemplarError:
-				pErr := &storage.AppendPartialError{}
+				var pErr *storage.AppendPartialError
 				require.ErrorAs(t, err, &pErr)
-				require.Len(t, pErr.ExemplarErrors, 1)
+				// One for primary, one for secondary.
+				// This is because in V2 flow we must append sample even when first append partially failed with exemplars.
+				// Filtering out exemplars is neither feasible, nor important.
+				require.Len(t, pErr.ExemplarErrors, 2)
 			default:
 				require.NoError(t, err)
 			}

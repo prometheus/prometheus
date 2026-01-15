@@ -301,16 +301,19 @@ type fanoutAppenderV2 struct {
 
 func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AOptions) (SeriesRef, error) {
 	ref, err := f.primary.Append(ref, l, st, t, v, h, fh, opts)
-	if err != nil {
+	var partialErr AppendPartialError
+	if partialErr.Handle(err) != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
 		if _, err := appender.Append(ref, l, st, t, v, h, fh, opts); err != nil {
-			return 0, err
+			if partialErr.Handle(err) != nil {
+				return ref, err
+			}
 		}
 	}
-	return ref, nil
+	return ref, partialErr.ErrOrNil()
 }
 
 func (f *fanoutAppenderV2) Commit() (err error) {
