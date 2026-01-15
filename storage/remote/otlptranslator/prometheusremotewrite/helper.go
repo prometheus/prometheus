@@ -65,8 +65,8 @@ const (
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 //
-// When c.resourceLabels and c.scopeLabels are set (via setResourceContext/setScopeContext), this function
-// uses cached label values instead of recomputing them for each datapoint, significantly improving performance.
+// When c.resourceLabels and c.scopeLabels are set, this function uses cached label values instead of recomputing them
+// for each datapoint, significantly improving performance.
 func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, meta Metadata, extras ...string,
 ) (labels.Labels, error) {
@@ -86,10 +86,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 	sortedLabels := c.scratchBuilder.Labels()
 
 	// Use cached labelNamer if available, otherwise create one and set it for caching.
-	// The labelNamer must be set on c.labelNamer for buildLabelName to work correctly.
-	if c.resourceLabels != nil {
-		// labelNamer already set in setResourceContext
-	} else {
+	if c.resourceLabels == nil {
 		c.labelNamer = otlptranslator.LabelNamer{
 			UTF8Allowed:                 settings.AllowUTF8,
 			UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
