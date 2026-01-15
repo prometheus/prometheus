@@ -1,0 +1,746 @@
+# Semantic convention registry for Prometheus TSDB metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  # Block metrics
+  - id: metric.prometheus_tsdb_blocks_loaded
+    type: metric
+    stability: development
+    brief: Number of currently loaded data blocks.
+    metric_name: prometheus_tsdb_blocks_loaded
+    instrument: gauge
+    unit: "{block}"
+
+  - id: metric.prometheus_tsdb_storage_blocks_bytes
+    type: metric
+    stability: development
+    brief: The number of bytes that are currently used for local storage by all blocks.
+    metric_name: prometheus_tsdb_storage_blocks_bytes
+    instrument: gauge
+    unit: By
+
+  # Checkpoint metrics
+  - id: metric.prometheus_tsdb_checkpoint_creations_failed_total
+    type: metric
+    stability: development
+    brief: Total number of checkpoint creations that failed.
+    metric_name: prometheus_tsdb_checkpoint_creations_failed_total
+    instrument: counter
+    unit: "{checkpoint}"
+
+  - id: metric.prometheus_tsdb_checkpoint_creations_total
+    type: metric
+    stability: development
+    brief: Total number of checkpoint creations attempted.
+    metric_name: prometheus_tsdb_checkpoint_creations_total
+    instrument: counter
+    unit: "{checkpoint}"
+
+  - id: metric.prometheus_tsdb_checkpoint_deletions_failed_total
+    type: metric
+    stability: development
+    brief: Total number of checkpoint deletions that failed.
+    metric_name: prometheus_tsdb_checkpoint_deletions_failed_total
+    instrument: counter
+    unit: "{checkpoint}"
+
+  - id: metric.prometheus_tsdb_checkpoint_deletions_total
+    type: metric
+    stability: development
+    brief: Total number of checkpoint deletions attempted.
+    metric_name: prometheus_tsdb_checkpoint_deletions_total
+    instrument: counter
+    unit: "{checkpoint}"
+
+  # Compaction metrics
+  - id: metric.prometheus_tsdb_compaction_chunk_range_seconds
+    type: metric
+    stability: development
+    brief: Final time range of chunks on their first compaction.
+    metric_name: prometheus_tsdb_compaction_chunk_range_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_tsdb_compaction_chunk_samples
+    type: metric
+    stability: development
+    brief: Final number of samples on their first compaction.
+    metric_name: prometheus_tsdb_compaction_chunk_samples
+    instrument: histogram
+    unit: "{sample}"
+
+  - id: metric.prometheus_tsdb_compaction_chunk_size_bytes
+    type: metric
+    stability: development
+    brief: Final size of chunks on their first compaction.
+    metric_name: prometheus_tsdb_compaction_chunk_size_bytes
+    instrument: histogram
+    unit: By
+
+  - id: metric.prometheus_tsdb_compaction_duration_seconds
+    type: metric
+    stability: development
+    brief: Duration of compaction runs.
+    metric_name: prometheus_tsdb_compaction_duration_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_tsdb_compaction_populating_block
+    type: metric
+    stability: development
+    brief: Set to 1 when a block is being written to the disk.
+    metric_name: prometheus_tsdb_compaction_populating_block
+    instrument: gauge
+    unit: "1"
+
+  - id: metric.prometheus_tsdb_compactions_failed_total
+    type: metric
+    stability: development
+    brief: Total number of compactions that failed.
+    metric_name: prometheus_tsdb_compactions_failed_total
+    instrument: counter
+    unit: "{compaction}"
+
+  - id: metric.prometheus_tsdb_compactions_skipped_total
+    type: metric
+    stability: development
+    brief: Total number of skipped compactions due to overlap.
+    metric_name: prometheus_tsdb_compactions_skipped_total
+    instrument: counter
+    unit: "{compaction}"
+
+  - id: metric.prometheus_tsdb_compactions_total
+    type: metric
+    stability: development
+    brief: Total number of compactions that were executed.
+    metric_name: prometheus_tsdb_compactions_total
+    instrument: counter
+    unit: "{compaction}"
+
+  - id: metric.prometheus_tsdb_compactions_triggered_total
+    type: metric
+    stability: development
+    brief: Total number of triggered compactions.
+    metric_name: prometheus_tsdb_compactions_triggered_total
+    instrument: counter
+    unit: "{compaction}"
+
+  - id: metric.prometheus_tsdb_vertical_compactions_total
+    type: metric
+    stability: development
+    brief: Total number of compactions done on overlapping blocks.
+    metric_name: prometheus_tsdb_vertical_compactions_total
+    instrument: counter
+    unit: "{compaction}"
+
+  # Data metrics
+  - id: metric.prometheus_tsdb_clean_start
+    type: metric
+    stability: development
+    brief: Set to 1 if the TSDB was clean at startup, 0 otherwise.
+    metric_name: prometheus_tsdb_clean_start
+    instrument: gauge
+    unit: "1"
+
+  - id: metric.prometheus_tsdb_data_replay_duration_seconds
+    type: metric
+    stability: development
+    brief: Time taken to replay the data on disk.
+    metric_name: prometheus_tsdb_data_replay_duration_seconds
+    instrument: gauge
+    unit: s
+
+  - id: metric.prometheus_tsdb_lowest_timestamp
+    type: metric
+    stability: development
+    brief: Lowest timestamp value stored in the database.
+    metric_name: prometheus_tsdb_lowest_timestamp
+    instrument: gauge
+    unit: "1"
+
+  - id: metric.prometheus_tsdb_lowest_timestamp_seconds
+    type: metric
+    stability: development
+    brief: Lowest timestamp value stored in the database in seconds.
+    metric_name: prometheus_tsdb_lowest_timestamp_seconds
+    instrument: gauge
+    unit: s
+
+  # Exemplar metrics
+  - id: metric.prometheus_tsdb_exemplar_exemplars_appended_total
+    type: metric
+    stability: development
+    brief: Total number of appended exemplars.
+    metric_name: prometheus_tsdb_exemplar_exemplars_appended_total
+    instrument: counter
+    unit: "{exemplar}"
+
+  - id: metric.prometheus_tsdb_exemplar_exemplars_in_storage
+    type: metric
+    stability: development
+    brief: Number of exemplars currently in circular storage.
+    metric_name: prometheus_tsdb_exemplar_exemplars_in_storage
+    instrument: gauge
+    unit: "{exemplar}"
+
+  - id: metric.prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds
+    type: metric
+    stability: development
+    brief: The timestamp of the oldest exemplar stored in circular storage.
+    metric_name: prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds
+    instrument: gauge
+    unit: s
+
+  - id: metric.prometheus_tsdb_exemplar_max_exemplars
+    type: metric
+    stability: development
+    brief: Total number of exemplars the exemplar storage can store.
+    metric_name: prometheus_tsdb_exemplar_max_exemplars
+    instrument: gauge
+    unit: "{exemplar}"
+
+  - id: metric.prometheus_tsdb_exemplar_out_of_order_exemplars_total
+    type: metric
+    stability: development
+    brief: Total number of out-of-order exemplar ingestion failed attempts.
+    metric_name: prometheus_tsdb_exemplar_out_of_order_exemplars_total
+    instrument: counter
+    unit: "{exemplar}"
+
+  - id: metric.prometheus_tsdb_exemplar_series_with_exemplars_in_storage
+    type: metric
+    stability: development
+    brief: Number of series with exemplars currently in circular storage.
+    metric_name: prometheus_tsdb_exemplar_series_with_exemplars_in_storage
+    instrument: gauge
+    unit: "{series}"
+
+  # Head metrics
+  - id: metric.prometheus_tsdb_head_active_appenders
+    type: metric
+    stability: development
+    brief: Number of currently active appender transactions.
+    metric_name: prometheus_tsdb_head_active_appenders
+    instrument: gauge
+    unit: "{appender}"
+
+  - id: metric.prometheus_tsdb_head_chunks
+    type: metric
+    stability: development
+    brief: Total number of chunks in the head block.
+    metric_name: prometheus_tsdb_head_chunks
+    instrument: gauge
+    unit: "{chunk}"
+
+  - id: metric.prometheus_tsdb_head_chunks_created_total
+    type: metric
+    stability: development
+    brief: Total number of chunks created in the head block.
+    metric_name: prometheus_tsdb_head_chunks_created_total
+    instrument: counter
+    unit: "{chunk}"
+
+  - id: metric.prometheus_tsdb_head_chunks_removed_total
+    type: metric
+    stability: development
+    brief: Total number of chunks removed from the head block.
+    metric_name: prometheus_tsdb_head_chunks_removed_total
+    instrument: counter
+    unit: "{chunk}"
+
+  - id: metric.prometheus_tsdb_head_chunks_storage_size_bytes
+    type: metric
+    stability: development
+    brief: Size of the chunks_head directory.
+    metric_name: prometheus_tsdb_head_chunks_storage_size_bytes
+    instrument: gauge
+    unit: By
+
+  - id: metric.prometheus_tsdb_head_gc_duration_seconds
+    type: metric
+    stability: development
+    brief: Runtime of garbage collection in the head block.
+    metric_name: prometheus_tsdb_head_gc_duration_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_tsdb_head_max_time
+    type: metric
+    stability: development
+    brief: Maximum timestamp of the head block.
+    metric_name: prometheus_tsdb_head_max_time
+    instrument: gauge
+    unit: "1"
+
+  - id: metric.prometheus_tsdb_head_max_time_seconds
+    type: metric
+    stability: development
+    brief: Maximum timestamp of the head block in seconds.
+    metric_name: prometheus_tsdb_head_max_time_seconds
+    instrument: gauge
+    unit: s
+
+  - id: metric.prometheus_tsdb_head_min_time
+    type: metric
+    stability: development
+    brief: Minimum timestamp of the head block.
+    metric_name: prometheus_tsdb_head_min_time
+    instrument: gauge
+    unit: "1"
+
+  - id: metric.prometheus_tsdb_head_min_time_seconds
+    type: metric
+    stability: development
+    brief: Minimum timestamp of the head block in seconds.
+    metric_name: prometheus_tsdb_head_min_time_seconds
+    instrument: gauge
+    unit: s
+
+  - id: metric.prometheus_tsdb_head_out_of_order_samples_appended_total
+    type: metric
+    stability: development
+    brief: Total number of appended out-of-order samples.
+    metric_name: prometheus_tsdb_head_out_of_order_samples_appended_total
+    instrument: counter
+    unit: "{sample}"
+    attributes:
+      - id: type
+        type: string
+        stability: development
+        brief: The sample type.
+        examples:
+          - float
+          - histogram
+
+  - id: metric.prometheus_tsdb_head_samples_appended_total
+    type: metric
+    stability: development
+    brief: Total number of appended samples.
+    metric_name: prometheus_tsdb_head_samples_appended_total
+    instrument: counter
+    unit: "{sample}"
+    attributes:
+      - id: type
+        type: string
+        stability: development
+        brief: The sample type.
+        examples:
+          - float
+          - histogram
+
+  - id: metric.prometheus_tsdb_head_series
+    type: metric
+    stability: development
+    brief: Total number of series in the head block.
+    metric_name: prometheus_tsdb_head_series
+    instrument: gauge
+    unit: "{series}"
+
+  - id: metric.prometheus_tsdb_head_series_created_total
+    type: metric
+    stability: development
+    brief: Total number of series created in the head block.
+    metric_name: prometheus_tsdb_head_series_created_total
+    instrument: counter
+    unit: "{series}"
+
+  - id: metric.prometheus_tsdb_head_series_not_found_total
+    type: metric
+    stability: development
+    brief: Total number of requests for series that were not found.
+    metric_name: prometheus_tsdb_head_series_not_found_total
+    instrument: counter
+    unit: "{request}"
+
+  - id: metric.prometheus_tsdb_head_series_removed_total
+    type: metric
+    stability: development
+    brief: Total number of series removed from the head block.
+    metric_name: prometheus_tsdb_head_series_removed_total
+    instrument: counter
+    unit: "{series}"
+
+  - id: metric.prometheus_tsdb_head_stale_series
+    type: metric
+    stability: development
+    brief: Number of stale series in the head block.
+    metric_name: prometheus_tsdb_head_stale_series
+    instrument: gauge
+    unit: "{series}"
+
+  - id: metric.prometheus_tsdb_head_truncations_failed_total
+    type: metric
+    stability: development
+    brief: Total number of head truncations that failed.
+    metric_name: prometheus_tsdb_head_truncations_failed_total
+    instrument: counter
+    unit: "{truncation}"
+
+  - id: metric.prometheus_tsdb_head_truncations_total
+    type: metric
+    stability: development
+    brief: Total number of head truncations attempted.
+    metric_name: prometheus_tsdb_head_truncations_total
+    instrument: counter
+    unit: "{truncation}"
+
+  # Isolation metrics
+  - id: metric.prometheus_tsdb_isolation_high_watermark
+    type: metric
+    stability: development
+    brief: The isolation high watermark.
+    metric_name: prometheus_tsdb_isolation_high_watermark
+    instrument: gauge
+    unit: "1"
+
+  - id: metric.prometheus_tsdb_isolation_low_watermark
+    type: metric
+    stability: development
+    brief: The isolation low watermark.
+    metric_name: prometheus_tsdb_isolation_low_watermark
+    instrument: gauge
+    unit: "1"
+
+  # Mmap metrics
+  - id: metric.prometheus_tsdb_mmap_chunk_corruptions_total
+    type: metric
+    stability: development
+    brief: Total number of memory-mapped chunk corruptions.
+    metric_name: prometheus_tsdb_mmap_chunk_corruptions_total
+    instrument: counter
+    unit: "{corruption}"
+
+  - id: metric.prometheus_tsdb_mmap_chunks_total
+    type: metric
+    stability: development
+    brief: Total number of memory-mapped chunks.
+    metric_name: prometheus_tsdb_mmap_chunks_total
+    instrument: counter
+    unit: "{chunk}"
+
+  # Out-of-order sample metrics
+  - id: metric.prometheus_tsdb_out_of_bound_samples_total
+    type: metric
+    stability: development
+    brief: Total number of out-of-bound samples ingestion failed attempts.
+    metric_name: prometheus_tsdb_out_of_bound_samples_total
+    instrument: counter
+    unit: "{sample}"
+    attributes:
+      - id: type
+        type: string
+        stability: development
+        brief: The sample type.
+        examples:
+          - float
+
+  - id: metric.prometheus_tsdb_out_of_order_samples_total
+    type: metric
+    stability: development
+    brief: Total number of out-of-order samples ingestion failed attempts.
+    metric_name: prometheus_tsdb_out_of_order_samples_total
+    instrument: counter
+    unit: "{sample}"
+    attributes:
+      - id: type
+        type: string
+        stability: development
+        brief: The sample type.
+        examples:
+          - float
+          - histogram
+
+  - id: metric.prometheus_tsdb_sample_ooo_delta
+    type: metric
+    stability: development
+    brief: Delta in seconds between the time when an out-of-order sample was ingested and the latest sample in the chunk.
+    metric_name: prometheus_tsdb_sample_ooo_delta
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_tsdb_too_old_samples_total
+    type: metric
+    stability: development
+    brief: Total number of samples that were too old to be ingested.
+    metric_name: prometheus_tsdb_too_old_samples_total
+    instrument: counter
+    unit: "{sample}"
+    attributes:
+      - id: type
+        type: string
+        stability: development
+        brief: The sample type.
+        examples:
+          - float
+
+  # Out-of-order WBL metrics
+  - id: metric.prometheus_tsdb_out_of_order_wbl_completed_pages_total
+    type: metric
+    stability: development
+    brief: Total number of completed WBL pages for out-of-order samples.
+    metric_name: prometheus_tsdb_out_of_order_wbl_completed_pages_total
+    instrument: counter
+    unit: "{page}"
+
+  - id: metric.prometheus_tsdb_out_of_order_wbl_fsync_duration_seconds
+    type: metric
+    stability: development
+    brief: Duration of WBL fsync for out-of-order samples.
+    metric_name: prometheus_tsdb_out_of_order_wbl_fsync_duration_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_tsdb_out_of_order_wbl_page_flushes_total
+    type: metric
+    stability: development
+    brief: Total number of WBL page flushes for out-of-order samples.
+    metric_name: prometheus_tsdb_out_of_order_wbl_page_flushes_total
+    instrument: counter
+    unit: "{flush}"
+
+  - id: metric.prometheus_tsdb_out_of_order_wbl_record_part_writes_total
+    type: metric
+    stability: development
+    brief: Total number of WBL record part writes for out-of-order samples.
+    metric_name: prometheus_tsdb_out_of_order_wbl_record_part_writes_total
+    instrument: counter
+    unit: "{write}"
+
+  - id: metric.prometheus_tsdb_out_of_order_wbl_record_parts_bytes_written_total
+    type: metric
+    stability: development
+    brief: Total bytes written to WBL record parts for out-of-order samples.
+    metric_name: prometheus_tsdb_out_of_order_wbl_record_parts_bytes_written_total
+    instrument: counter
+    unit: By
+
+  - id: metric.prometheus_tsdb_out_of_order_wbl_segment_current
+    type: metric
+    stability: development
+    brief: Current out-of-order WBL segment.
+    metric_name: prometheus_tsdb_out_of_order_wbl_segment_current
+    instrument: gauge
+    unit: "{segment}"
+
+  - id: metric.prometheus_tsdb_out_of_order_wbl_storage_size_bytes
+    type: metric
+    stability: development
+    brief: Size of the out-of-order WBL storage.
+    metric_name: prometheus_tsdb_out_of_order_wbl_storage_size_bytes
+    instrument: gauge
+    unit: By
+
+  - id: metric.prometheus_tsdb_out_of_order_wbl_truncations_failed_total
+    type: metric
+    stability: development
+    brief: Total number of out-of-order WBL truncations that failed.
+    metric_name: prometheus_tsdb_out_of_order_wbl_truncations_failed_total
+    instrument: counter
+    unit: "{truncation}"
+
+  - id: metric.prometheus_tsdb_out_of_order_wbl_truncations_total
+    type: metric
+    stability: development
+    brief: Total number of out-of-order WBL truncations.
+    metric_name: prometheus_tsdb_out_of_order_wbl_truncations_total
+    instrument: counter
+    unit: "{truncation}"
+
+  - id: metric.prometheus_tsdb_out_of_order_wbl_writes_failed_total
+    type: metric
+    stability: development
+    brief: Total number of out-of-order WBL writes that failed.
+    metric_name: prometheus_tsdb_out_of_order_wbl_writes_failed_total
+    instrument: counter
+    unit: "{write}"
+
+  # Reload metrics
+  - id: metric.prometheus_tsdb_reloads_failures_total
+    type: metric
+    stability: development
+    brief: Number of times the database reloads failed.
+    metric_name: prometheus_tsdb_reloads_failures_total
+    instrument: counter
+    unit: "{reload}"
+
+  - id: metric.prometheus_tsdb_reloads_total
+    type: metric
+    stability: development
+    brief: Number of times the database reloads.
+    metric_name: prometheus_tsdb_reloads_total
+    instrument: counter
+    unit: "{reload}"
+
+  # Retention metrics
+  - id: metric.prometheus_tsdb_retention_limit_bytes
+    type: metric
+    stability: development
+    brief: Maximum number of bytes to be retained in the TSDB.
+    metric_name: prometheus_tsdb_retention_limit_bytes
+    instrument: gauge
+    unit: By
+
+  - id: metric.prometheus_tsdb_retention_limit_seconds
+    type: metric
+    stability: development
+    brief: Maximum age in seconds for samples to be retained in the TSDB.
+    metric_name: prometheus_tsdb_retention_limit_seconds
+    instrument: gauge
+    unit: s
+
+  - id: metric.prometheus_tsdb_size_retentions_total
+    type: metric
+    stability: development
+    brief: Number of times that blocks were deleted because the maximum number of bytes was exceeded.
+    metric_name: prometheus_tsdb_size_retentions_total
+    instrument: counter
+    unit: "{retention}"
+
+  - id: metric.prometheus_tsdb_time_retentions_total
+    type: metric
+    stability: development
+    brief: Number of times that blocks were deleted because the maximum time limit was exceeded.
+    metric_name: prometheus_tsdb_time_retentions_total
+    instrument: counter
+    unit: "{retention}"
+
+  # Snapshot metrics
+  - id: metric.prometheus_tsdb_snapshot_replay_error_total
+    type: metric
+    stability: development
+    brief: Total number of snapshot replay errors.
+    metric_name: prometheus_tsdb_snapshot_replay_error_total
+    instrument: counter
+    unit: "{error}"
+
+  # Symbol table metrics
+  - id: metric.prometheus_tsdb_symbol_table_size_bytes
+    type: metric
+    stability: development
+    brief: Size of the symbol table in bytes.
+    metric_name: prometheus_tsdb_symbol_table_size_bytes
+    instrument: gauge
+    unit: By
+
+  # Tombstone metrics
+  - id: metric.prometheus_tsdb_tombstone_cleanup_seconds
+    type: metric
+    stability: development
+    brief: Time taken to clean up tombstones.
+    metric_name: prometheus_tsdb_tombstone_cleanup_seconds
+    instrument: histogram
+    unit: s
+
+  # WAL metrics
+  - id: metric.prometheus_tsdb_wal_completed_pages_total
+    type: metric
+    stability: development
+    brief: Total number of completed WAL pages.
+    metric_name: prometheus_tsdb_wal_completed_pages_total
+    instrument: counter
+    unit: "{page}"
+
+  - id: metric.prometheus_tsdb_wal_corruptions_total
+    type: metric
+    stability: development
+    brief: Total number of WAL corruptions.
+    metric_name: prometheus_tsdb_wal_corruptions_total
+    instrument: counter
+    unit: "{corruption}"
+
+  - id: metric.prometheus_tsdb_wal_fsync_duration_seconds
+    type: metric
+    stability: development
+    brief: Duration of WAL fsync.
+    metric_name: prometheus_tsdb_wal_fsync_duration_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_tsdb_wal_page_flushes_total
+    type: metric
+    stability: development
+    brief: Total number of WAL page flushes.
+    metric_name: prometheus_tsdb_wal_page_flushes_total
+    instrument: counter
+    unit: "{flush}"
+
+  - id: metric.prometheus_tsdb_wal_record_bytes_saved_total
+    type: metric
+    stability: development
+    brief: Total bytes saved by WAL record compression.
+    metric_name: prometheus_tsdb_wal_record_bytes_saved_total
+    instrument: counter
+    unit: By
+    attributes:
+      - id: compression
+        type: string
+        stability: development
+        brief: The compression algorithm.
+        examples:
+          - snappy
+
+  - id: metric.prometheus_tsdb_wal_record_part_writes_total
+    type: metric
+    stability: development
+    brief: Total number of WAL record part writes.
+    metric_name: prometheus_tsdb_wal_record_part_writes_total
+    instrument: counter
+    unit: "{write}"
+
+  - id: metric.prometheus_tsdb_wal_record_parts_bytes_written_total
+    type: metric
+    stability: development
+    brief: Total bytes written to WAL record parts.
+    metric_name: prometheus_tsdb_wal_record_parts_bytes_written_total
+    instrument: counter
+    unit: By
+
+  - id: metric.prometheus_tsdb_wal_segment_current
+    type: metric
+    stability: development
+    brief: Current WAL segment.
+    metric_name: prometheus_tsdb_wal_segment_current
+    instrument: gauge
+    unit: "{segment}"
+
+  - id: metric.prometheus_tsdb_wal_storage_size_bytes
+    type: metric
+    stability: development
+    brief: Size of the WAL storage.
+    metric_name: prometheus_tsdb_wal_storage_size_bytes
+    instrument: gauge
+    unit: By
+
+  - id: metric.prometheus_tsdb_wal_truncate_duration_seconds
+    type: metric
+    stability: development
+    brief: Duration of WAL truncation.
+    metric_name: prometheus_tsdb_wal_truncate_duration_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_tsdb_wal_truncations_failed_total
+    type: metric
+    stability: development
+    brief: Total number of WAL truncations that failed.
+    metric_name: prometheus_tsdb_wal_truncations_failed_total
+    instrument: counter
+    unit: "{truncation}"
+
+  - id: metric.prometheus_tsdb_wal_truncations_total
+    type: metric
+    stability: development
+    brief: Total number of WAL truncations.
+    metric_name: prometheus_tsdb_wal_truncations_total
+    instrument: counter
+    unit: "{truncation}"
+
+  - id: metric.prometheus_tsdb_wal_writes_failed_total
+    type: metric
+    stability: development
+    brief: Total number of WAL writes that failed.
+    metric_name: prometheus_tsdb_wal_writes_failed_total
+    instrument: counter
+    unit: "{write}"

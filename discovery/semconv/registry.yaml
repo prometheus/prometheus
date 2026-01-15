@@ -1,0 +1,328 @@
+# Semantic convention registry for Prometheus service discovery metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  # General SD metrics
+  - id: metric.prometheus_sd_discovered_targets
+    type: metric
+    stability: development
+    brief: Current number of discovered targets.
+    metric_name: prometheus_sd_discovered_targets
+    instrument: gauge
+    unit: "{target}"
+    attributes:
+      - id: config
+        type: string
+        stability: development
+        brief: The scrape config name.
+        examples:
+          - prometheus
+          - node_exporter
+      - id: name
+        type: string
+        stability: development
+        brief: The discovery manager name.
+        examples:
+          - scrape
+          - notify
+
+  - id: metric.prometheus_sd_failed_configs
+    type: metric
+    stability: development
+    brief: Current number of service discovery configurations that failed to load.
+    metric_name: prometheus_sd_failed_configs
+    instrument: gauge
+    unit: "{config}"
+    attributes:
+      - id: name
+        type: string
+        stability: development
+        brief: The discovery manager name.
+        examples:
+          - scrape
+          - notify
+
+  - id: metric.prometheus_sd_received_updates_total
+    type: metric
+    stability: development
+    brief: Total number of update events received from the SD providers.
+    metric_name: prometheus_sd_received_updates_total
+    instrument: counter
+    unit: "{update}"
+    attributes:
+      - id: name
+        type: string
+        stability: development
+        brief: The discovery manager name.
+        examples:
+          - scrape
+          - notify
+
+  - id: metric.prometheus_sd_updates_delayed_total
+    type: metric
+    stability: development
+    brief: Total number of update events that couldn't be sent immediately.
+    metric_name: prometheus_sd_updates_delayed_total
+    instrument: counter
+    unit: "{update}"
+    attributes:
+      - id: name
+        type: string
+        stability: development
+        brief: The discovery manager name.
+        examples:
+          - scrape
+          - notify
+
+  - id: metric.prometheus_sd_updates_total
+    type: metric
+    stability: development
+    brief: Total number of update events sent to the SD consumers.
+    metric_name: prometheus_sd_updates_total
+    instrument: counter
+    unit: "{update}"
+    attributes:
+      - id: name
+        type: string
+        stability: development
+        brief: The discovery manager name.
+        examples:
+          - scrape
+          - notify
+
+  # Refresh metrics
+  - id: metric.prometheus_sd_refresh_duration_seconds
+    type: metric
+    stability: development
+    brief: The duration of a SD refresh cycle.
+    metric_name: prometheus_sd_refresh_duration_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_sd_refresh_duration_histogram_seconds
+    type: metric
+    stability: development
+    brief: The duration of a SD refresh cycle as a histogram.
+    metric_name: prometheus_sd_refresh_duration_histogram_seconds
+    instrument: histogram
+    unit: s
+    attributes:
+      - id: mechanism
+        type: string
+        stability: development
+        brief: The service discovery mechanism.
+        examples:
+          - dns
+          - kubernetes
+          - consul
+
+  - id: metric.prometheus_sd_refresh_failures_total
+    type: metric
+    stability: development
+    brief: Number of SD refresh failures.
+    metric_name: prometheus_sd_refresh_failures_total
+    instrument: counter
+    unit: "{failure}"
+    attributes:
+      - id: mechanism
+        type: string
+        stability: development
+        brief: The service discovery mechanism.
+        examples:
+          - dns
+          - kubernetes
+      - id: config
+        type: string
+        stability: development
+        brief: The scrape config name.
+        examples:
+          - prometheus
+
+  # Provider-specific metrics
+  - id: metric.prometheus_sd_azure_cache_hit_total
+    type: metric
+    stability: development
+    brief: Number of cache hits during Azure SD.
+    metric_name: prometheus_sd_azure_cache_hit_total
+    instrument: counter
+    unit: "{hit}"
+
+  - id: metric.prometheus_sd_azure_failures_total
+    type: metric
+    stability: development
+    brief: Number of Azure SD failures.
+    metric_name: prometheus_sd_azure_failures_total
+    instrument: counter
+    unit: "{failure}"
+
+  - id: metric.prometheus_sd_consul_rpc_duration_seconds
+    type: metric
+    stability: development
+    brief: The duration of a Consul RPC call.
+    metric_name: prometheus_sd_consul_rpc_duration_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_sd_consul_rpc_failures_total
+    type: metric
+    stability: development
+    brief: Number of Consul RPC call failures.
+    metric_name: prometheus_sd_consul_rpc_failures_total
+    instrument: counter
+    unit: "{failure}"
+
+  - id: metric.prometheus_sd_dns_lookup_failures_total
+    type: metric
+    stability: development
+    brief: Number of DNS SD lookup failures.
+    metric_name: prometheus_sd_dns_lookup_failures_total
+    instrument: counter
+    unit: "{failure}"
+
+  - id: metric.prometheus_sd_dns_lookups_total
+    type: metric
+    stability: development
+    brief: Number of DNS SD lookups.
+    metric_name: prometheus_sd_dns_lookups_total
+    instrument: counter
+    unit: "{lookup}"
+
+  - id: metric.prometheus_sd_file_mtime_seconds
+    type: metric
+    stability: development
+    brief: The modification time of the SD file.
+    metric_name: prometheus_sd_file_mtime_seconds
+    instrument: gauge
+    unit: s
+    attributes:
+      - id: filename
+        type: string
+        stability: development
+        brief: The file path.
+        examples:
+          - /etc/prometheus/file_sd/targets.json
+
+  - id: metric.prometheus_sd_file_read_errors_total
+    type: metric
+    stability: development
+    brief: Number of file SD read errors.
+    metric_name: prometheus_sd_file_read_errors_total
+    instrument: counter
+    unit: "{error}"
+
+  - id: metric.prometheus_sd_file_scan_duration_seconds
+    type: metric
+    stability: development
+    brief: The duration of the file SD scan.
+    metric_name: prometheus_sd_file_scan_duration_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_sd_file_watcher_errors_total
+    type: metric
+    stability: development
+    brief: Number of file SD watcher errors.
+    metric_name: prometheus_sd_file_watcher_errors_total
+    instrument: counter
+    unit: "{error}"
+
+  - id: metric.prometheus_sd_http_failures_total
+    type: metric
+    stability: development
+    brief: Number of HTTP SD failures.
+    metric_name: prometheus_sd_http_failures_total
+    instrument: counter
+    unit: "{failure}"
+
+  - id: metric.prometheus_sd_kubernetes_events_total
+    type: metric
+    stability: development
+    brief: Number of Kubernetes events processed.
+    metric_name: prometheus_sd_kubernetes_events_total
+    instrument: counter
+    unit: "{event}"
+    attributes:
+      - id: event
+        type: string
+        stability: development
+        brief: The event type.
+        examples:
+          - add
+          - update
+          - delete
+      - id: role
+        type: string
+        stability: development
+        brief: The Kubernetes role.
+        examples:
+          - pod
+          - node
+          - service
+          - endpoints
+
+  - id: metric.prometheus_sd_kubernetes_failures_total
+    type: metric
+    stability: development
+    brief: Number of Kubernetes SD failures.
+    metric_name: prometheus_sd_kubernetes_failures_total
+    instrument: counter
+    unit: "{failure}"
+
+  - id: metric.prometheus_sd_kuma_fetch_duration_seconds
+    type: metric
+    stability: development
+    brief: The duration of a Kuma MADS fetch call.
+    metric_name: prometheus_sd_kuma_fetch_duration_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_sd_kuma_fetch_failures_total
+    type: metric
+    stability: development
+    brief: Number of Kuma SD fetch failures.
+    metric_name: prometheus_sd_kuma_fetch_failures_total
+    instrument: counter
+    unit: "{failure}"
+
+  - id: metric.prometheus_sd_kuma_fetch_skipped_updates_total
+    type: metric
+    stability: development
+    brief: Number of Kuma SD updates skipped due to no changes.
+    metric_name: prometheus_sd_kuma_fetch_skipped_updates_total
+    instrument: counter
+    unit: "{update}"
+
+  - id: metric.prometheus_sd_linode_failures_total
+    type: metric
+    stability: development
+    brief: Number of Linode SD failures.
+    metric_name: prometheus_sd_linode_failures_total
+    instrument: counter
+    unit: "{failure}"
+
+  - id: metric.prometheus_sd_nomad_failures_total
+    type: metric
+    stability: development
+    brief: Number of Nomad SD failures.
+    metric_name: prometheus_sd_nomad_failures_total
+    instrument: counter
+    unit: "{failure}"
+
+  # Treecache (ZooKeeper) metrics
+  - id: metric.prometheus_treecache_watcher_goroutines
+    type: metric
+    stability: development
+    brief: The current number of treecache watcher goroutines.
+    metric_name: prometheus_treecache_watcher_goroutines
+    instrument: gauge
+    unit: "{goroutine}"
+
+  - id: metric.prometheus_treecache_zookeeper_failures_total
+    type: metric
+    stability: development
+    brief: Total number of ZooKeeper failures.
+    metric_name: prometheus_treecache_zookeeper_failures_total
+    instrument: counter
+    unit: "{failure}"

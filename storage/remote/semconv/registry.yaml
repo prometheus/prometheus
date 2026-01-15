@@ -1,0 +1,53 @@
+# Semantic convention registry for Prometheus remote storage metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_remote_storage_exemplars_in_total
+    type: metric
+    stability: development
+    brief: Exemplars in to remote storage, compare to determine dropped exemplars.
+    metric_name: prometheus_remote_storage_exemplars_in_total
+    instrument: counter
+    unit: "{exemplar}"
+
+  - id: metric.prometheus_remote_storage_highest_timestamp_in_seconds
+    type: metric
+    stability: development
+    brief: Highest timestamp that has come into the remote storage via the Appender interface.
+    metric_name: prometheus_remote_storage_highest_timestamp_in_seconds
+    instrument: gauge
+    unit: s
+
+  - id: metric.prometheus_remote_storage_histograms_in_total
+    type: metric
+    stability: development
+    brief: Histograms in to remote storage, compare to determine dropped histograms.
+    metric_name: prometheus_remote_storage_histograms_in_total
+    instrument: counter
+    unit: "{histogram}"
+
+  - id: metric.prometheus_remote_storage_samples_in_total
+    type: metric
+    stability: development
+    brief: Samples in to remote storage, compare to determine dropped samples.
+    metric_name: prometheus_remote_storage_samples_in_total
+    instrument: counter
+    unit: "{sample}"
+
+  - id: metric.prometheus_remote_storage_string_interner_zero_reference_releases_total
+    type: metric
+    stability: development
+    brief: The number of times release has been called for strings that are not interned.
+    metric_name: prometheus_remote_storage_string_interner_zero_reference_releases_total
+    instrument: counter
+    unit: "{release}"
+
+  - id: metric.prometheus_remote_read_handler_queries
+    type: metric
+    stability: development
+    brief: The number of in-flight remote read queries.
+    metric_name: prometheus_remote_read_handler_queries
+    instrument: gauge
+    unit: "{query}"

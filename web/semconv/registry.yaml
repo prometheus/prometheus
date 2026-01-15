@@ -1,0 +1,120 @@
+# Semantic convention registry for Prometheus web/HTTP metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  # HTTP metrics
+  - id: metric.prometheus_http_request_duration_seconds
+    type: metric
+    stability: development
+    brief: Histogram of latencies for HTTP requests.
+    metric_name: prometheus_http_request_duration_seconds
+    instrument: histogram
+    unit: s
+    attributes:
+      - id: handler
+        type: string
+        stability: development
+        brief: The HTTP handler.
+        examples:
+          - /
+          - /-/healthy
+          - /-/ready
+          - /api/v1/query
+
+  - id: metric.prometheus_http_requests_total
+    type: metric
+    stability: development
+    brief: Counter of HTTP requests.
+    metric_name: prometheus_http_requests_total
+    instrument: counter
+    unit: "{request}"
+    attributes:
+      - id: code
+        type: string
+        stability: development
+        brief: The HTTP response status code.
+        examples:
+          - "200"
+          - "400"
+          - "404"
+          - "500"
+      - id: handler
+        type: string
+        stability: development
+        brief: The HTTP handler.
+        examples:
+          - /
+          - /-/healthy
+          - /-/ready
+          - /api/v1/query
+
+  - id: metric.prometheus_http_response_size_bytes
+    type: metric
+    stability: development
+    brief: Histogram of response size for HTTP requests.
+    metric_name: prometheus_http_response_size_bytes
+    instrument: histogram
+    unit: By
+    attributes:
+      - id: handler
+        type: string
+        stability: development
+        brief: The HTTP handler.
+        examples:
+          - /
+          - /-/healthy
+          - /-/ready
+          - /api/v1/query
+
+  # API notification metrics
+  - id: metric.prometheus_api_notification_active_subscribers
+    type: metric
+    stability: development
+    brief: The current number of active notification subscribers.
+    metric_name: prometheus_api_notification_active_subscribers
+    instrument: gauge
+    unit: "{subscriber}"
+
+  - id: metric.prometheus_api_notification_updates_dropped_total
+    type: metric
+    stability: development
+    brief: Total number of API notification updates that were dropped.
+    metric_name: prometheus_api_notification_updates_dropped_total
+    instrument: counter
+    unit: "{update}"
+
+  - id: metric.prometheus_api_notification_updates_sent_total
+    type: metric
+    stability: development
+    brief: Total number of API notification updates sent.
+    metric_name: prometheus_api_notification_updates_sent_total
+    instrument: counter
+    unit: "{update}"
+
+  # Federation metrics
+  - id: metric.prometheus_web_federation_errors_total
+    type: metric
+    stability: development
+    brief: Total number of errors that occurred while sending federation responses.
+    metric_name: prometheus_web_federation_errors_total
+    instrument: counter
+    unit: "{error}"
+
+  - id: metric.prometheus_web_federation_warnings_total
+    type: metric
+    stability: development
+    brief: Total number of warnings that occurred while sending federation responses.
+    metric_name: prometheus_web_federation_warnings_total
+    instrument: counter
+    unit: "{warning}"
+
+  # Readiness metrics
+  - id: metric.prometheus_ready
+    type: metric
+    stability: development
+    brief: Whether Prometheus startup was fully completed and the server is ready for normal operation.
+    metric_name: prometheus_ready
+    instrument: gauge
+    unit: "1"

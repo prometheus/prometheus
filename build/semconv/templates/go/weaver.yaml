@@ -1,0 +1,65 @@
+# Copyright The Prometheus Authors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Weaver configuration for generating Prometheus instrumentation code
+# from semantic convention registries.
+#
+# Usage:
+#   weaver registry generate \
+#     --registry <path-to-registry-dir> \
+#     --templates <path-to-this-dir> \
+#     go <output-dir> \
+#     --skip-policies
+
+params:
+  included_namespaces: []
+
+templates:
+  - template: metrics.go.j2
+    application_mode: single
+    file_name: "metrics.go"
+    filter: >
+      semconv_grouped_metrics({"exclude_deprecated": true})
+
+  - template: metrics.md.j2
+    application_mode: single
+    file_name: "README.md"
+    filter: >
+      semconv_grouped_metrics({"exclude_deprecated": false})
+
+acronyms: [TLS, RTT, DNS, SHA, TSDB, HTTP, API, SD, WAL, WBL, GC, OOO]
+
+comment_formats:
+  go:
+    format: markdown
+    prefix: "// "
+    indent_first_level_list_items: true
+    shortcut_reference_link: true
+    trim: true
+    remove_trailing_dots: false
+  go_1tab:
+    format: markdown
+    prefix: "	// "
+    indent_first_level_list_items: true
+    shortcut_reference_link: true
+    trim: true
+    word_wrap:
+      line_length: 80
+default_comment_format: go
+
+text_maps:
+  go_instrument_type:
+    counter: Counter
+    histogram: Histogram
+    updowncounter: Gauge
+    gauge: Gauge

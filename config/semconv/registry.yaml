@@ -1,0 +1,21 @@
+# Semantic convention registry for Prometheus configuration metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_config_last_reload_success_timestamp_seconds
+    type: metric
+    stability: development
+    brief: Timestamp of the last successful configuration reload.
+    metric_name: prometheus_config_last_reload_success_timestamp_seconds
+    instrument: gauge
+    unit: s
+
+  - id: metric.prometheus_config_last_reload_successful
+    type: metric
+    stability: development
+    brief: Whether the last configuration reload attempt was successful.
+    metric_name: prometheus_config_last_reload_successful
+    instrument: gauge
+    unit: "1"

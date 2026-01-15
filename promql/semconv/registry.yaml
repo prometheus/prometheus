@@ -1,0 +1,71 @@
+# Semantic convention registry for Prometheus PromQL engine metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_engine_queries
+    type: metric
+    stability: development
+    brief: The current number of queries being executed or waiting.
+    metric_name: prometheus_engine_queries
+    instrument: gauge
+    unit: "{query}"
+
+  - id: metric.prometheus_engine_queries_concurrent_max
+    type: metric
+    stability: development
+    brief: The max number of concurrent queries.
+    metric_name: prometheus_engine_queries_concurrent_max
+    instrument: gauge
+    unit: "{query}"
+
+  - id: metric.prometheus_engine_query_log_enabled
+    type: metric
+    stability: development
+    brief: State of the query log.
+    metric_name: prometheus_engine_query_log_enabled
+    instrument: gauge
+    unit: "1"
+
+  - id: metric.prometheus_engine_query_log_failures_total
+    type: metric
+    stability: development
+    brief: The number of query log failures.
+    metric_name: prometheus_engine_query_log_failures_total
+    instrument: counter
+    unit: "{failure}"
+
+  - id: metric.prometheus_engine_query_samples_total
+    type: metric
+    stability: development
+    brief: The total number of samples loaded by all queries.
+    metric_name: prometheus_engine_query_samples_total
+    instrument: counter
+    unit: "{sample}"
+
+  - id: metric.prometheus_engine_query_duration_seconds
+    type: metric
+    stability: development
+    brief: Query timings.
+    metric_name: prometheus_engine_query_duration_seconds
+    instrument: histogram
+    unit: s
+
+  - id: metric.prometheus_engine_query_duration_histogram_seconds
+    type: metric
+    stability: development
+    brief: Histogram of query timings.
+    metric_name: prometheus_engine_query_duration_histogram_seconds
+    instrument: histogram
+    unit: s
+    attributes:
+      - id: slice
+        type: string
+        stability: development
+        brief: The query execution phase.
+        examples:
+          - inner_eval
+          - prepare_time
+          - queue_time
+          - result_sort

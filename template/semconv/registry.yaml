@@ -1,0 +1,21 @@
+# Semantic convention registry for Prometheus template metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_template_text_expansion_failures_total
+    type: metric
+    stability: development
+    brief: The total number of template text expansion failures.
+    metric_name: prometheus_template_text_expansion_failures_total
+    instrument: counter
+    unit: "{failure}"
+
+  - id: metric.prometheus_template_text_expansions_total
+    type: metric
+    stability: development
+    brief: The total number of template text expansions.
+    metric_name: prometheus_template_text_expansions_total
+    instrument: counter
+    unit: "{expansion}"
