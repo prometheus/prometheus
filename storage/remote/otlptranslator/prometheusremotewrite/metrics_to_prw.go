@@ -111,7 +111,7 @@ func NewPrometheusConverter(appender CombinedAppender) *PrometheusConverter {
 		scratchBuilder:  labels.NewScratchBuilder(0),
 		builder:         labels.NewBuilder(labels.EmptyLabels()),
 		appender:        appender,
-		sanitizedLabels: make(map[string]string, 64), // Pre-size for typical label count
+		sanitizedLabels: make(map[string]string, 64), // Pre-size for typical label count.
 	}
 }
 
@@ -344,9 +344,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				errs = multierr.Append(errs, err)
 			}
 		}
-
-		// Clear cached labels before processing the next ResourceMetrics.
-		c.clearResourceContext()
 	}
 
 	return annots, errs
@@ -367,46 +364,6 @@ func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAtt
 	}
 }
 
-// addPromotedAttributes adds labels for promoted resourceAttributes to the builder.
-func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builder, resourceAttributes pcommon.Map, labelNamer otlptranslator.LabelNamer) error {
-	if s == nil {
-		return nil
-	}
-
-	if s.promoteAll {
-		var err error
-		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
-			if _, exists := s.attrs[name]; !exists {
-				var normalized string
-				normalized, err = labelNamer.Build(name)
-				if err != nil {
-					return false
-				}
-				if builder.Get(normalized) == "" {
-					builder.Set(normalized, value.AsString())
-				}
-			}
-			return true
-		})
-		return err
-	}
-	var err error
-	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
-		if _, exists := s.attrs[name]; exists {
-			var normalized string
-			normalized, err = labelNamer.Build(name)
-			if err != nil {
-				return false
-			}
-			if builder.Get(normalized) == "" {
-				builder.Set(normalized, value.AsString())
-			}
-		}
-		return true
-	})
-	return err
-}
-
 // LabelNameBuilder is a function that builds/sanitizes label names.
 type LabelNameBuilder func(string) (string, error)
 
@@ -421,9 +378,9 @@ func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labe
 		var err error
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
-				normalized, buildErr := buildLabelName(name)
-				if buildErr != nil {
-					err = buildErr
+				var normalized string
+				normalized, err = buildLabelName(name)
+				if err != nil {
 					return false
 				}
 				builder.Add(normalized, value.AsString())
@@ -446,34 +403,6 @@ func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labe
 		return true
 	})
 	return err
-}
-
-// getPromotedAttributeNames returns the names of resource attributes that would be promoted.
-// This is used by addResourceTargetInfo to exclude promoted attributes from target_info,
-// since promoted attributes should only appear on metric labels, not on target_info.
-func (s *PromoteResourceAttributes) getPromotedAttributeNames(resourceAttributes pcommon.Map) []string {
-	if s == nil {
-		return nil
-	}
-
-	var names []string
-	if s.promoteAll {
-		// When promoting all, attrs contains the ignore list
-		resourceAttributes.Range(func(name string, _ pcommon.Value) bool {
-			if _, exists := s.attrs[name]; !exists {
-				names = append(names, name)
-			}
-			return true
-		})
-	} else {
-		// When not promoting all, attrs contains the promote list
-		for name := range s.attrs {
-			if _, exists := resourceAttributes.Get(name); exists {
-				names = append(names, name)
-			}
-		}
-	}
-	return names
 }
 
 // setResourceContext precomputes and caches resource-level labels.
