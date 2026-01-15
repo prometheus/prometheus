@@ -45,6 +45,9 @@ var ExperimentalDurationExpr bool
 // EnableExtendedRangeSelectors is a flag to enable experimental extended range selectors.
 var EnableExtendedRangeSelectors bool
 
+// EnableBinopFillModifiers is a flag to enable experimental fill modifiers for binary operators.
+var EnableBinopFillModifiers bool
+
 type Parser interface {
 	ParseExpr() (Expr, error)
 	Close()
@@ -413,12 +416,17 @@ func (p *parser) InjectItem(typ ItemType) {
 	p.injecting = true
 }
 
-func (*parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
+func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
 	ret := modifiers.(*BinaryExpr)
 
 	ret.LHS = lhs.(Expr)
 	ret.RHS = rhs.(Expr)
 	ret.Op = op.Typ
+
+	if !EnableBinopFillModifiers && (ret.VectorMatching.FillValues.LHS != nil || ret.VectorMatching.FillValues.RHS != nil) {
+		p.addParseErrf(ret.PositionRange(), "binop fill modifiers are experimental and not enabled")
+		return ret
+	}
 
 	return ret
 }

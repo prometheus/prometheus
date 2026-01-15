@@ -120,10 +120,12 @@ func FuzzParseExpr(f *testing.F) {
 	parser.EnableExperimentalFunctions = true
 	parser.ExperimentalDurationExpr = true
 	parser.EnableExtendedRangeSelectors = true
+	parser.EnableBinopFillModifiers = true
 	f.Cleanup(func() {
 		parser.EnableExperimentalFunctions = false
 		parser.ExperimentalDurationExpr = false
 		parser.EnableExtendedRangeSelectors = false
+		parser.EnableBinopFillModifiers = false
 	})
 
 	// Add seed corpus from built-in test expressions

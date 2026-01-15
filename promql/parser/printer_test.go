@@ -23,8 +23,10 @@ import (
 
 func TestExprString(t *testing.T) {
 	ExperimentalDurationExpr = true
+	EnableBinopFillModifiers = true
 	t.Cleanup(func() {
 		ExperimentalDurationExpr = false
+		EnableBinopFillModifiers = false
 	})
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output

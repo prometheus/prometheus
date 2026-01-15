@@ -310,6 +310,8 @@ left:
 
 ### Filling in missing matches
 
+Fill modifiers are **experimental** and must be enabled with `--enable-feature=promql-binop-fill-modifiers`.
+
 By default, vector elements that do not find a match on the other side of a binary operation
 are not included in the result vector. Fill modifiers allow overriding this behavior by filling
 in missing series on either side of a binary operation with a provided default sample value:
