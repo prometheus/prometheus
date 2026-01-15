@@ -332,7 +332,8 @@ func computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesR
 	}
 
 	if storage.SeriesRef(h) != ref {
-		// Check for buggy ref while we at it.
+		// Check for buggy ref while we are at it. This only makes sense for cases without .Then*, because further appendable
+		// might have a different ref computation logic e.g. TSDB uses atomic increments.
 		return 0, errors.New("teststorage.appender: found input ref not matching labels; potential bug in Appendable usage")
 	}
 	return ref, nil
@@ -499,12 +500,13 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	if a.next != nil {
 		ref, err = a.next.Append(ref, ls, st, t, v, h, fh, opts)
 		if err != nil {
+			return 0, err
+		}
+	} else {
+		ref, err = computeOrCheckRef(ref, ls)
+		if err != nil {
 			return ref, err
 		}
-	}
-	ref, err = computeOrCheckRef(ref, ls)
-	if err != nil {
-		return ref, err
 	}
 	return ref, partialErr
 }

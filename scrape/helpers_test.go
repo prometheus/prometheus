@@ -50,13 +50,19 @@ func withAppendable(appendable storage.Appendable) func(sl *scrapeLoop) {
 	}
 }
 
+func withAppendableV2(appendableV2 storage.AppendableV2) func(sl *scrapeLoop) {
+	return func(sl *scrapeLoop) {
+		sl.appendableV2 = appendableV2
+	}
+}
+
 // newTestScrapeLoop is the initial scrape loop for all tests.
 // It returns scrapeLoop and mock scraper you can customize.
 //
 // It's recommended to use withXYZ functions for simple option customizations, e.g:
 //
 //	appTest := teststorage.NewAppendable()
-//	sl, _ := newTestScrapeLoop(t, withAppendable(appTest))
+//	sl, _ := newTestScrapeLoop(t, withAppendableV2(appTest))
 //
 // However, when changing more than one scrapeLoop options it's more readable to have one explicit opt function:
 //
@@ -64,7 +70,7 @@ func withAppendable(appendable storage.Appendable) func(sl *scrapeLoop) {
 //	appTest := teststorage.NewAppendable()
 //	sl, scraper := newTestScrapeLoop(t, func(sl *scrapeLoop) {
 //		sl.ctx = ctx
-//		sl.appendable = appTest
+//		sl.appendableV2 = appTest
 //		// Since we're writing samples directly below we need to provide a protocol fallback.
 //		sl.fallbackScrapeProtocol = "text/plain"
 //	})
@@ -84,8 +90,6 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 		timeout:             1 * time.Hour,
 		sampleMutator:       nopMutator,
 		reportSampleMutator: nopMutator,
-
-		appendable:          teststorage.NewAppendable(),
 		buffers:             pool.New(1e3, 1e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
 		metrics:             metrics,
 		maxSchema:           histogram.ExponentialSchemaMax,
@@ -98,6 +102,7 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 	for _, o := range opts {
 		o(sl)
 	}
+
 	// Validate user opts for convenience.
 	require.Nil(t, sl.parentCtx, "newTestScrapeLoop does not support injecting non-nil parent context")
 	require.Nil(t, sl.appenderCtx, "newTestScrapeLoop does not support injecting non-nil appender context")
