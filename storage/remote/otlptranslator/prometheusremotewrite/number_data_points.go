@@ -37,9 +37,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 
 		pt := dataPoints.At(x)
 		labels, err := c.createAttributes(
-			resource,
 			pt.Attributes(),
-			scope,
 			settings,
 			nil,
 			true,
@@ -80,9 +78,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 
 		pt := dataPoints.At(x)
 		lbls, err := c.createAttributes(
-			resource,
 			pt.Attributes(),
-			scope,
 			settings,
 			nil,
 			true,

@@ -53,9 +53,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 		}
 
 		lbls, err := c.createAttributes(
-			resource,
 			pt.Attributes(),
-			scope,
 			settings,
 			nil,
 			true,
@@ -272,9 +270,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 		}
 
 		lbls, err := c.createAttributes(
-			resource,
 			pt.Attributes(),
-			scope,
 			settings,
 			nil,
 			true,
