@@ -448,7 +448,7 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	}
 }
 
-func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
+func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, prefix string, match func(string) bool) Postings {
 	// We'll take the label values slice and then match over that,
 	// this way we don't need to hold the mutex while we're matching,
 	// which can be slow (seconds) if the match function is a huge regex.

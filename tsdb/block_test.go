@@ -609,7 +609,7 @@ func testPostingsForLabelMatching(t *testing.T, offset storage.SeriesRef, setUp 
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			p := ir.PostingsForLabelMatching(ctx, tc.labelName, tc.match)
+			p := ir.PostingsForLabelMatching(ctx, tc.labelName, "",tc.match)
 			require.NotNil(t, p)
 			srs, err := index.ExpandPostings(p)
 			require.NoError(t, err)
