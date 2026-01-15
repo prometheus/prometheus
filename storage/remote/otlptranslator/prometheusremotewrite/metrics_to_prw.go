@@ -455,7 +455,7 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) er
 		scopeVersion:   scope.version,
 		scopeSchemaURL: scope.schemaURL,
 	}
-	c.scratchBuilder.Reset()
+	c.builder.Reset(labels.EmptyLabels())
 	var err error
 	scope.attributes.Range(func(k string, v pcommon.Value) bool {
 		var name string
@@ -463,7 +463,7 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) er
 		if err != nil {
 			return false
 		}
-		c.scratchBuilder.Add(name, v.AsString())
+		c.builder.Set(name, v.AsString())
 		return true
 	})
 	if err != nil {
@@ -471,7 +471,7 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) er
 		return err
 	}
 
-	c.scopeLabels.scopeAttrs = c.scratchBuilder.Labels()
+	c.scopeLabels.scopeAttrs = c.builder.Labels()
 	return nil
 }
 
