@@ -182,7 +182,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	c.seenTargetInfo = make(map[targetInfoKey]struct{})
 	resourceMetricsSlice := md.ResourceMetrics()
 
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+	for i := range resourceMetricsSlice.Len() {
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
@@ -197,7 +197,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		// use with the "target" info metric
 		earliestTimestamp := pcommon.Timestamp(math.MaxUint64)
 		latestTimestamp := pcommon.Timestamp(0)
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+		for j := range scopeMetricsSlice.Len() {
 			scopeMetrics := scopeMetricsSlice.At(j)
 			scope := newScopeFromScopeMetrics(scopeMetrics)
 
@@ -480,6 +480,7 @@ func (s *PromoteResourceAttributes) getPromotedAttributeNames(resourceAttributes
 
 // setResourceContext precomputes and caches resource-level labels.
 // Called once per ResourceMetrics boundary, before processing any datapoints.
+// If an error is returned, resource level cache is reset.
 func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, settings Settings) error {
 	resourceAttrs := resource.Attributes()
 	c.resourceLabels = &cachedResourceLabels{
@@ -513,6 +514,7 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 	if settings.PromoteResourceAttributes != nil {
 		c.scratchBuilder.Reset()
 		if err := settings.PromoteResourceAttributes.addPromotedAttributesToScratch(&c.scratchBuilder, resourceAttrs, c.buildLabelName); err != nil {
+			c.clearResourceContext()
 			return err
 		}
 		c.resourceLabels.promotedLabels = c.scratchBuilder.Labels()
@@ -522,11 +524,13 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 
 // setScopeContext precomputes and caches scope-level labels.
 // Called once per ScopeMetrics boundary, before processing any metrics.
+// If an error is returned, scope level cache is reset.
 func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) error {
 	if !settings.PromoteScopeMetadata || scope.name == "" {
 		c.scopeLabels = nil
 		return nil
 	}
+
 	c.scopeLabels = &cachedScopeLabels{
 		scopeName:      scope.name,
 		scopeVersion:   scope.version,
@@ -545,6 +549,7 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) er
 		return true
 	})
 	if rangeErr != nil {
+		c.scopeLabels = nil
 		return rangeErr
 	}
 	c.scopeLabels.scopeAttrs = c.scratchBuilder.Labels()
