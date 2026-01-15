@@ -64,8 +64,7 @@ const (
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 //
-// This function requires setResourceContext and setScopeContext to be called first to set up
-// cached resource and scope labels (c.resourceLabels and c.scopeLabels).
+// This function requires for cached resource and scope labels to be set up first.
 func (c *PrometheusConverter) createAttributes(attributes pcommon.Map, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, meta Metadata, extras ...string,
 ) (labels.Labels, error) {

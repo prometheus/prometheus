@@ -120,6 +120,7 @@ func (c *PrometheusConverter) buildLabelName(label string) (string, error) {
 	if sanitized, ok := c.sanitizedLabels[label]; ok {
 		return sanitized, nil
 	}
+
 	sanitized, err := c.labelNamer.Build(label)
 	if err != nil {
 		return "", err
@@ -435,6 +436,7 @@ func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labe
 		})
 		return err
 	}
+
 	var err error
 	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 		if _, exists := s.attrs[name]; exists {
@@ -493,8 +495,6 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 		UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
 		PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
 	}
-	// Clear sanitized labels cache since labelNamer settings may have changed
-	clear(c.sanitizedLabels)
 
 	// Compute job label from service.name + service.namespace
 	if serviceName, ok := resourceAttrs.Get(string(semconv.ServiceNameKey)); ok {
