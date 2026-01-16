@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
+	metrics "github.com/prometheus/prometheus/util/notifications/semconv"
 )
 
 const (
@@ -41,38 +43,23 @@ type Notifications struct {
 	subscribers    map[chan Notification]struct{} // Active subscribers.
 	maxSubscribers int
 
-	subscriberGauge      prometheus.Gauge
-	notificationsSent    prometheus.Counter
-	notificationsDropped prometheus.Counter
+	subscriberGauge      metrics.PrometheusAPINotificationActiveSubscribers
+	notificationsSent    metrics.PrometheusAPINotificationUpdatesSentTotal
+	notificationsDropped metrics.PrometheusAPINotificationUpdatesDroppedTotal
 }
 
 // NewNotifications creates a new Notifications instance.
 func NewNotifications(maxSubscribers int, reg prometheus.Registerer) *Notifications {
 	n := &Notifications{
-		subscribers:    make(map[chan Notification]struct{}),
-		maxSubscribers: maxSubscribers,
-		subscriberGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "notification_active_subscribers",
-			Help:      "The current number of active notification subscribers.",
-		}),
-		notificationsSent: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "notification_updates_sent_total",
-			Help:      "Total number of notification updates sent.",
-		}),
-		notificationsDropped: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "notification_updates_dropped_total",
-			Help:      "Total number of notification updates dropped.",
-		}),
+		subscribers:          make(map[chan Notification]struct{}),
+		maxSubscribers:       maxSubscribers,
+		subscriberGauge:      metrics.NewPrometheusAPINotificationActiveSubscribers(),
+		notificationsSent:    metrics.NewPrometheusAPINotificationUpdatesSentTotal(),
+		notificationsDropped: metrics.NewPrometheusAPINotificationUpdatesDroppedTotal(),
 	}
 
 	if reg != nil {
-		reg.MustRegister(n.subscriberGauge, n.notificationsSent, n.notificationsDropped)
+		reg.MustRegister(n.subscriberGauge.Gauge, n.notificationsSent.Counter, n.notificationsDropped.Counter)
 	}
 
 	return n

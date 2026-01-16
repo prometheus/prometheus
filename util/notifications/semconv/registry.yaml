@@ -1,0 +1,29 @@
+# Semantic convention registry for Prometheus API notification metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_api_notification_active_subscribers
+    type: metric
+    stability: development
+    brief: The current number of active notification subscribers.
+    metric_name: prometheus_api_notification_active_subscribers
+    instrument: gauge
+    unit: "{subscriber}"
+
+  - id: metric.prometheus_api_notification_updates_dropped_total
+    type: metric
+    stability: development
+    brief: Total number of notification updates dropped.
+    metric_name: prometheus_api_notification_updates_dropped_total
+    instrument: counter
+    unit: "{update}"
+
+  - id: metric.prometheus_api_notification_updates_sent_total
+    type: metric
+    stability: development
+    brief: Total number of notification updates sent.
+    metric_name: prometheus_api_notification_updates_sent_total
+    instrument: counter
+    unit: "{update}"
