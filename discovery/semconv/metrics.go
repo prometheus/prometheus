@@ -75,126 +75,62 @@ func (a RoleAttr) Value() string {
 
 // PrometheusSDAzureCacheHitTotal records the number of cache hits during Azure SD.
 type PrometheusSDAzureCacheHitTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDAzureCacheHitTotal returns a new PrometheusSDAzureCacheHitTotal instrument.
 func NewPrometheusSDAzureCacheHitTotal() PrometheusSDAzureCacheHitTotal {
-	labels := []string{}
 	return PrometheusSDAzureCacheHitTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_azure_cache_hit_total",
 			Help: "Number of cache hits during Azure SD.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDAzureCacheHitTotalAttr interface {
-	Attribute
-	implPrometheusSDAzureCacheHitTotal()
-}
-
-func (m PrometheusSDAzureCacheHitTotal) With(
-	extra ...PrometheusSDAzureCacheHitTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDAzureFailuresTotal records the number of Azure SD failures.
 type PrometheusSDAzureFailuresTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDAzureFailuresTotal returns a new PrometheusSDAzureFailuresTotal instrument.
 func NewPrometheusSDAzureFailuresTotal() PrometheusSDAzureFailuresTotal {
-	labels := []string{}
 	return PrometheusSDAzureFailuresTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_azure_failures_total",
 			Help: "Number of Azure SD failures.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDAzureFailuresTotalAttr interface {
-	Attribute
-	implPrometheusSDAzureFailuresTotal()
-}
-
-func (m PrometheusSDAzureFailuresTotal) With(
-	extra ...PrometheusSDAzureFailuresTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDConsulRpcDurationSeconds records the duration of a Consul RPC call.
 type PrometheusSDConsulRpcDurationSeconds struct {
-	*prometheus.HistogramVec
+	prometheus.Histogram
 }
 
 // NewPrometheusSDConsulRpcDurationSeconds returns a new PrometheusSDConsulRpcDurationSeconds instrument.
 func NewPrometheusSDConsulRpcDurationSeconds() PrometheusSDConsulRpcDurationSeconds {
-	labels := []string{}
 	return PrometheusSDConsulRpcDurationSeconds{
-		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_sd_consul_rpc_duration_seconds",
 			Help: "The duration of a Consul RPC call.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDConsulRpcDurationSecondsAttr interface {
-	Attribute
-	implPrometheusSDConsulRpcDurationSeconds()
-}
-
-func (m PrometheusSDConsulRpcDurationSeconds) With(
-	extra ...PrometheusSDConsulRpcDurationSecondsAttr,
-) prometheus.Observer {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.HistogramVec.With(labels)
 }
 
 // PrometheusSDConsulRpcFailuresTotal records the number of Consul RPC call failures.
 type PrometheusSDConsulRpcFailuresTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDConsulRpcFailuresTotal returns a new PrometheusSDConsulRpcFailuresTotal instrument.
 func NewPrometheusSDConsulRpcFailuresTotal() PrometheusSDConsulRpcFailuresTotal {
-	labels := []string{}
 	return PrometheusSDConsulRpcFailuresTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_consul_rpc_failures_total",
 			Help: "Number of Consul RPC call failures.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDConsulRpcFailuresTotalAttr interface {
-	Attribute
-	implPrometheusSDConsulRpcFailuresTotal()
-}
-
-func (m PrometheusSDConsulRpcFailuresTotal) With(
-	extra ...PrometheusSDConsulRpcFailuresTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDDiscoveredTargets records the current number of discovered targets.
@@ -239,64 +175,32 @@ func (m PrometheusSDDiscoveredTargets) With(
 
 // PrometheusSDDNSLookupFailuresTotal records the number of DNS SD lookup failures.
 type PrometheusSDDNSLookupFailuresTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDDNSLookupFailuresTotal returns a new PrometheusSDDNSLookupFailuresTotal instrument.
 func NewPrometheusSDDNSLookupFailuresTotal() PrometheusSDDNSLookupFailuresTotal {
-	labels := []string{}
 	return PrometheusSDDNSLookupFailuresTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_dns_lookup_failures_total",
 			Help: "Number of DNS SD lookup failures.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDDNSLookupFailuresTotalAttr interface {
-	Attribute
-	implPrometheusSDDNSLookupFailuresTotal()
-}
-
-func (m PrometheusSDDNSLookupFailuresTotal) With(
-	extra ...PrometheusSDDNSLookupFailuresTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDDNSLookupsTotal records the number of DNS SD lookups.
 type PrometheusSDDNSLookupsTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDDNSLookupsTotal returns a new PrometheusSDDNSLookupsTotal instrument.
 func NewPrometheusSDDNSLookupsTotal() PrometheusSDDNSLookupsTotal {
-	labels := []string{}
 	return PrometheusSDDNSLookupsTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_dns_lookups_total",
 			Help: "Number of DNS SD lookups.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDDNSLookupsTotalAttr interface {
-	Attribute
-	implPrometheusSDDNSLookupsTotal()
-}
-
-func (m PrometheusSDDNSLookupsTotal) With(
-	extra ...PrometheusSDDNSLookupsTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDFailedConfigs records the current number of service discovery configurations that failed to load.
@@ -375,126 +279,62 @@ func (m PrometheusSDFileMtimeSeconds) With(
 
 // PrometheusSDFileReadErrorsTotal records the number of file SD read errors.
 type PrometheusSDFileReadErrorsTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDFileReadErrorsTotal returns a new PrometheusSDFileReadErrorsTotal instrument.
 func NewPrometheusSDFileReadErrorsTotal() PrometheusSDFileReadErrorsTotal {
-	labels := []string{}
 	return PrometheusSDFileReadErrorsTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_file_read_errors_total",
 			Help: "Number of file SD read errors.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDFileReadErrorsTotalAttr interface {
-	Attribute
-	implPrometheusSDFileReadErrorsTotal()
-}
-
-func (m PrometheusSDFileReadErrorsTotal) With(
-	extra ...PrometheusSDFileReadErrorsTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDFileScanDurationSeconds records the duration of the file SD scan.
 type PrometheusSDFileScanDurationSeconds struct {
-	*prometheus.HistogramVec
+	prometheus.Histogram
 }
 
 // NewPrometheusSDFileScanDurationSeconds returns a new PrometheusSDFileScanDurationSeconds instrument.
 func NewPrometheusSDFileScanDurationSeconds() PrometheusSDFileScanDurationSeconds {
-	labels := []string{}
 	return PrometheusSDFileScanDurationSeconds{
-		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_sd_file_scan_duration_seconds",
 			Help: "The duration of the file SD scan.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDFileScanDurationSecondsAttr interface {
-	Attribute
-	implPrometheusSDFileScanDurationSeconds()
-}
-
-func (m PrometheusSDFileScanDurationSeconds) With(
-	extra ...PrometheusSDFileScanDurationSecondsAttr,
-) prometheus.Observer {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.HistogramVec.With(labels)
 }
 
 // PrometheusSDFileWatcherErrorsTotal records the number of file SD watcher errors.
 type PrometheusSDFileWatcherErrorsTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDFileWatcherErrorsTotal returns a new PrometheusSDFileWatcherErrorsTotal instrument.
 func NewPrometheusSDFileWatcherErrorsTotal() PrometheusSDFileWatcherErrorsTotal {
-	labels := []string{}
 	return PrometheusSDFileWatcherErrorsTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_file_watcher_errors_total",
 			Help: "Number of file SD watcher errors.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDFileWatcherErrorsTotalAttr interface {
-	Attribute
-	implPrometheusSDFileWatcherErrorsTotal()
-}
-
-func (m PrometheusSDFileWatcherErrorsTotal) With(
-	extra ...PrometheusSDFileWatcherErrorsTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDHTTPFailuresTotal records the number of HTTP SD failures.
 type PrometheusSDHTTPFailuresTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDHTTPFailuresTotal returns a new PrometheusSDHTTPFailuresTotal instrument.
 func NewPrometheusSDHTTPFailuresTotal() PrometheusSDHTTPFailuresTotal {
-	labels := []string{}
 	return PrometheusSDHTTPFailuresTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_http_failures_total",
 			Help: "Number of HTTP SD failures.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDHTTPFailuresTotalAttr interface {
-	Attribute
-	implPrometheusSDHTTPFailuresTotal()
-}
-
-func (m PrometheusSDHTTPFailuresTotal) With(
-	extra ...PrometheusSDHTTPFailuresTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDKubernetesEventsTotal records the number of Kubernetes events processed.
@@ -539,188 +379,92 @@ func (m PrometheusSDKubernetesEventsTotal) With(
 
 // PrometheusSDKubernetesFailuresTotal records the number of Kubernetes SD failures.
 type PrometheusSDKubernetesFailuresTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDKubernetesFailuresTotal returns a new PrometheusSDKubernetesFailuresTotal instrument.
 func NewPrometheusSDKubernetesFailuresTotal() PrometheusSDKubernetesFailuresTotal {
-	labels := []string{}
 	return PrometheusSDKubernetesFailuresTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_kubernetes_failures_total",
 			Help: "Number of Kubernetes SD failures.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDKubernetesFailuresTotalAttr interface {
-	Attribute
-	implPrometheusSDKubernetesFailuresTotal()
-}
-
-func (m PrometheusSDKubernetesFailuresTotal) With(
-	extra ...PrometheusSDKubernetesFailuresTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDKumaFetchDurationSeconds records the duration of a Kuma MADS fetch call.
 type PrometheusSDKumaFetchDurationSeconds struct {
-	*prometheus.HistogramVec
+	prometheus.Histogram
 }
 
 // NewPrometheusSDKumaFetchDurationSeconds returns a new PrometheusSDKumaFetchDurationSeconds instrument.
 func NewPrometheusSDKumaFetchDurationSeconds() PrometheusSDKumaFetchDurationSeconds {
-	labels := []string{}
 	return PrometheusSDKumaFetchDurationSeconds{
-		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_sd_kuma_fetch_duration_seconds",
 			Help: "The duration of a Kuma MADS fetch call.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDKumaFetchDurationSecondsAttr interface {
-	Attribute
-	implPrometheusSDKumaFetchDurationSeconds()
-}
-
-func (m PrometheusSDKumaFetchDurationSeconds) With(
-	extra ...PrometheusSDKumaFetchDurationSecondsAttr,
-) prometheus.Observer {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.HistogramVec.With(labels)
 }
 
 // PrometheusSDKumaFetchFailuresTotal records the number of Kuma SD fetch failures.
 type PrometheusSDKumaFetchFailuresTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDKumaFetchFailuresTotal returns a new PrometheusSDKumaFetchFailuresTotal instrument.
 func NewPrometheusSDKumaFetchFailuresTotal() PrometheusSDKumaFetchFailuresTotal {
-	labels := []string{}
 	return PrometheusSDKumaFetchFailuresTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_kuma_fetch_failures_total",
 			Help: "Number of Kuma SD fetch failures.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDKumaFetchFailuresTotalAttr interface {
-	Attribute
-	implPrometheusSDKumaFetchFailuresTotal()
-}
-
-func (m PrometheusSDKumaFetchFailuresTotal) With(
-	extra ...PrometheusSDKumaFetchFailuresTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDKumaFetchSkippedUpdatesTotal records the number of Kuma SD updates skipped due to no changes.
 type PrometheusSDKumaFetchSkippedUpdatesTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDKumaFetchSkippedUpdatesTotal returns a new PrometheusSDKumaFetchSkippedUpdatesTotal instrument.
 func NewPrometheusSDKumaFetchSkippedUpdatesTotal() PrometheusSDKumaFetchSkippedUpdatesTotal {
-	labels := []string{}
 	return PrometheusSDKumaFetchSkippedUpdatesTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_kuma_fetch_skipped_updates_total",
 			Help: "Number of Kuma SD updates skipped due to no changes.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDKumaFetchSkippedUpdatesTotalAttr interface {
-	Attribute
-	implPrometheusSDKumaFetchSkippedUpdatesTotal()
-}
-
-func (m PrometheusSDKumaFetchSkippedUpdatesTotal) With(
-	extra ...PrometheusSDKumaFetchSkippedUpdatesTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDLinodeFailuresTotal records the number of Linode SD failures.
 type PrometheusSDLinodeFailuresTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDLinodeFailuresTotal returns a new PrometheusSDLinodeFailuresTotal instrument.
 func NewPrometheusSDLinodeFailuresTotal() PrometheusSDLinodeFailuresTotal {
-	labels := []string{}
 	return PrometheusSDLinodeFailuresTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_linode_failures_total",
 			Help: "Number of Linode SD failures.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDLinodeFailuresTotalAttr interface {
-	Attribute
-	implPrometheusSDLinodeFailuresTotal()
-}
-
-func (m PrometheusSDLinodeFailuresTotal) With(
-	extra ...PrometheusSDLinodeFailuresTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDNomadFailuresTotal records the number of Nomad SD failures.
 type PrometheusSDNomadFailuresTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusSDNomadFailuresTotal returns a new PrometheusSDNomadFailuresTotal instrument.
 func NewPrometheusSDNomadFailuresTotal() PrometheusSDNomadFailuresTotal {
-	labels := []string{}
 	return PrometheusSDNomadFailuresTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_nomad_failures_total",
 			Help: "Number of Nomad SD failures.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDNomadFailuresTotalAttr interface {
-	Attribute
-	implPrometheusSDNomadFailuresTotal()
-}
-
-func (m PrometheusSDNomadFailuresTotal) With(
-	extra ...PrometheusSDNomadFailuresTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDReceivedUpdatesTotal records the total number of update events received from the SD providers.
@@ -799,33 +543,17 @@ func (m PrometheusSDRefreshDurationHistogramSeconds) With(
 
 // PrometheusSDRefreshDurationSeconds records the duration of a SD refresh cycle.
 type PrometheusSDRefreshDurationSeconds struct {
-	*prometheus.HistogramVec
+	prometheus.Histogram
 }
 
 // NewPrometheusSDRefreshDurationSeconds returns a new PrometheusSDRefreshDurationSeconds instrument.
 func NewPrometheusSDRefreshDurationSeconds() PrometheusSDRefreshDurationSeconds {
-	labels := []string{}
 	return PrometheusSDRefreshDurationSeconds{
-		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_sd_refresh_duration_seconds",
 			Help: "The duration of a SD refresh cycle.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusSDRefreshDurationSecondsAttr interface {
-	Attribute
-	implPrometheusSDRefreshDurationSeconds()
-}
-
-func (m PrometheusSDRefreshDurationSeconds) With(
-	extra ...PrometheusSDRefreshDurationSecondsAttr,
-) prometheus.Observer {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.HistogramVec.With(labels)
 }
 
 // PrometheusSDRefreshFailuresTotal records the number of SD refresh failures.
@@ -944,62 +672,30 @@ func (m PrometheusSDUpdatesTotal) With(
 
 // PrometheusTreecacheWatcherGoroutines records the current number of treecache watcher goroutines.
 type PrometheusTreecacheWatcherGoroutines struct {
-	*prometheus.GaugeVec
+	prometheus.Gauge
 }
 
 // NewPrometheusTreecacheWatcherGoroutines returns a new PrometheusTreecacheWatcherGoroutines instrument.
 func NewPrometheusTreecacheWatcherGoroutines() PrometheusTreecacheWatcherGoroutines {
-	labels := []string{}
 	return PrometheusTreecacheWatcherGoroutines{
-		GaugeVec: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_treecache_watcher_goroutines",
 			Help: "The current number of treecache watcher goroutines.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusTreecacheWatcherGoroutinesAttr interface {
-	Attribute
-	implPrometheusTreecacheWatcherGoroutines()
-}
-
-func (m PrometheusTreecacheWatcherGoroutines) With(
-	extra ...PrometheusTreecacheWatcherGoroutinesAttr,
-) prometheus.Gauge {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.GaugeVec.With(labels)
 }
 
 // PrometheusTreecacheZookeeperFailuresTotal records the total number of ZooKeeper failures.
 type PrometheusTreecacheZookeeperFailuresTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusTreecacheZookeeperFailuresTotal returns a new PrometheusTreecacheZookeeperFailuresTotal instrument.
 func NewPrometheusTreecacheZookeeperFailuresTotal() PrometheusTreecacheZookeeperFailuresTotal {
-	labels := []string{}
 	return PrometheusTreecacheZookeeperFailuresTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_treecache_zookeeper_failures_total",
 			Help: "Total number of ZooKeeper failures.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusTreecacheZookeeperFailuresTotalAttr interface {
-	Attribute
-	implPrometheusTreecacheZookeeperFailuresTotal()
-}
-
-func (m PrometheusTreecacheZookeeperFailuresTotal) With(
-	extra ...PrometheusTreecacheZookeeperFailuresTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }

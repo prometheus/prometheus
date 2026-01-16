@@ -732,8 +732,8 @@ func main() {
 	// but if we don't do it now, the metrics will stay at zero until the
 	// startup procedure is complete, which might take long enough to
 	// trigger alerts about an invalid config.
-	configSuccess.With().Set(1)
-	configSuccessTime.With().SetToCurrentTime()
+	configSuccess.Set(1)
+	configSuccessTime.SetToCurrentTime()
 
 	cfg.web.ReadTimeout = time.Duration(cfg.webTimeout)
 	// Default -web.route-prefix to path of -web.external-url.
@@ -1066,8 +1066,8 @@ func main() {
 		},
 	}
 
-	prometheus.MustRegister(configSuccess.GaugeVec)
-	prometheus.MustRegister(configSuccessTime.GaugeVec)
+	prometheus.MustRegister(configSuccess.Gauge)
+	prometheus.MustRegister(configSuccessTime.Gauge)
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
@@ -1540,11 +1540,11 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 
 	defer func() {
 		if err == nil {
-			configSuccess.With().Set(1)
-			configSuccessTime.With().SetToCurrentTime()
+			configSuccess.Set(1)
+			configSuccessTime.SetToCurrentTime()
 			callback(true)
 		} else {
-			configSuccess.With().Set(0)
+			configSuccess.Set(0)
 			callback(false)
 		}
 	}()

@@ -83,40 +83,49 @@ func (a {{ name }}Attr) Value() string {
 {%- set metric_name = h.to_go_name(metric.metric_name, "") %}
 {%- set metric_inst = (metric.instrument | default("gauge")) | map_text("go_instrument_type") %}
 {%- set metric_attr = metric.attributes | default([]) | sort -%}
+{%- set has_labels = (metric_attr | length) > 0 -%}
 
 {{ h.metric_typedoc(metric, "") | comment | trim }}
 type {{ metric_name }} struct {
+{%- if has_labels %}
 	*prometheus.{{ metric_inst }}Vec
+{%- else %}
+	prometheus.{{ metric_inst }}
+{%- endif %}
 }
 
 {{ ["New" ~ metric_name ~ " returns a new " ~ metric_name ~ " instrument."] | comment }}
 func New{{ metric_name }}() {{ metric_name }} {
-{%- if metric_attr | length > 0 %}
+{%- if has_labels %}
 	labels := []string{
 		{%- call(attr) for_each_attr(metric_attr) %}
 		"{{ attr.id }}",
 		{%- endcall %}
 	}
-{%- else %}
-	labels := []string{}
-{%- endif %}
 	return {{ metric_name }}{
 		{{ metric_inst }}Vec: prometheus.New{{ metric_inst }}Vec(prometheus.{{ metric_inst }}Opts{
 			Name: "{{ metric.metric_name }}",
 			Help: "{{ metric.brief | default("") | trim }}",
 		}, labels),
 	}
+{%- else %}
+	return {{ metric_name }}{
+		{{ metric_inst }}: prometheus.New{{ metric_inst }}(prometheus.{{ metric_inst }}Opts{
+			Name: "{{ metric.metric_name }}",
+			Help: "{{ metric.brief | default("") | trim }}",
+		}),
+	}
+{%- endif %}
 }
+{%- if has_labels %}
 
 type {{ metric_name }}Attr interface {
 	Attribute
 	impl{{ metric_name }}()
 }
-{%- if metric_attr | length > 0 %}
 {% call(attr) for_each_attr(metric_attr) %}
 func (a {{ attr.type }}) impl{{ metric_name }}() {}
 {%- endcall %}
-{%- endif %}
 
 func (m {{ metric_name }}) With(
 {%- call(attr) for_each_attr(metric_attr|required) %}
@@ -124,7 +133,6 @@ func (m {{ metric_name }}) With(
 {%- endcall %}
 	extra ...{{ metric_name }}Attr,
 ) prometheus.{{ metric_inst | replace("Histogram", "Observer") }} {
-{%- if metric_attr | length > 0 %}
 	labels := prometheus.Labels{
 		{%- call(attr) for_each_attr(metric_attr|required) %}
 		"{{ attr.id }}": {{ attr.arg }}.Value(),
@@ -133,14 +141,12 @@ func (m {{ metric_name }}) With(
 		"{{ attr.id }}": "",
 		{%- endcall %}
 	}
-{%- else %}
-	labels := prometheus.Labels{}
-{%- endif %}
 	for _, v := range extra {
 		labels[v.ID()] = v.Value()
 	}
 	return m.{{ metric_inst }}Vec.With(labels)
 }
+{%- endif %}
 {%- if not loop.last %}
 
 {% endif %}

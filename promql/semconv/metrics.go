@@ -25,64 +25,32 @@ func (a SliceAttr) Value() string {
 
 // PrometheusEngineQueries records the current number of queries being executed or waiting.
 type PrometheusEngineQueries struct {
-	*prometheus.GaugeVec
+	prometheus.Gauge
 }
 
 // NewPrometheusEngineQueries returns a new PrometheusEngineQueries instrument.
 func NewPrometheusEngineQueries() PrometheusEngineQueries {
-	labels := []string{}
 	return PrometheusEngineQueries{
-		GaugeVec: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_engine_queries",
 			Help: "The current number of queries being executed or waiting.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusEngineQueriesAttr interface {
-	Attribute
-	implPrometheusEngineQueries()
-}
-
-func (m PrometheusEngineQueries) With(
-	extra ...PrometheusEngineQueriesAttr,
-) prometheus.Gauge {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.GaugeVec.With(labels)
 }
 
 // PrometheusEngineQueriesConcurrentMax records the max number of concurrent queries.
 type PrometheusEngineQueriesConcurrentMax struct {
-	*prometheus.GaugeVec
+	prometheus.Gauge
 }
 
 // NewPrometheusEngineQueriesConcurrentMax returns a new PrometheusEngineQueriesConcurrentMax instrument.
 func NewPrometheusEngineQueriesConcurrentMax() PrometheusEngineQueriesConcurrentMax {
-	labels := []string{}
 	return PrometheusEngineQueriesConcurrentMax{
-		GaugeVec: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_engine_queries_concurrent_max",
 			Help: "The max number of concurrent queries.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusEngineQueriesConcurrentMaxAttr interface {
-	Attribute
-	implPrometheusEngineQueriesConcurrentMax()
-}
-
-func (m PrometheusEngineQueriesConcurrentMax) With(
-	extra ...PrometheusEngineQueriesConcurrentMaxAttr,
-) prometheus.Gauge {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.GaugeVec.With(labels)
 }
 
 // PrometheusEngineQueryDurationHistogramSeconds records the histogram of query timings.
@@ -124,124 +92,60 @@ func (m PrometheusEngineQueryDurationHistogramSeconds) With(
 
 // PrometheusEngineQueryDurationSeconds records the query timings.
 type PrometheusEngineQueryDurationSeconds struct {
-	*prometheus.HistogramVec
+	prometheus.Histogram
 }
 
 // NewPrometheusEngineQueryDurationSeconds returns a new PrometheusEngineQueryDurationSeconds instrument.
 func NewPrometheusEngineQueryDurationSeconds() PrometheusEngineQueryDurationSeconds {
-	labels := []string{}
 	return PrometheusEngineQueryDurationSeconds{
-		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_engine_query_duration_seconds",
 			Help: "Query timings.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusEngineQueryDurationSecondsAttr interface {
-	Attribute
-	implPrometheusEngineQueryDurationSeconds()
-}
-
-func (m PrometheusEngineQueryDurationSeconds) With(
-	extra ...PrometheusEngineQueryDurationSecondsAttr,
-) prometheus.Observer {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.HistogramVec.With(labels)
 }
 
 // PrometheusEngineQueryLogEnabled records the state of the query log.
 type PrometheusEngineQueryLogEnabled struct {
-	*prometheus.GaugeVec
+	prometheus.Gauge
 }
 
 // NewPrometheusEngineQueryLogEnabled returns a new PrometheusEngineQueryLogEnabled instrument.
 func NewPrometheusEngineQueryLogEnabled() PrometheusEngineQueryLogEnabled {
-	labels := []string{}
 	return PrometheusEngineQueryLogEnabled{
-		GaugeVec: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_engine_query_log_enabled",
 			Help: "State of the query log.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusEngineQueryLogEnabledAttr interface {
-	Attribute
-	implPrometheusEngineQueryLogEnabled()
-}
-
-func (m PrometheusEngineQueryLogEnabled) With(
-	extra ...PrometheusEngineQueryLogEnabledAttr,
-) prometheus.Gauge {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.GaugeVec.With(labels)
 }
 
 // PrometheusEngineQueryLogFailuresTotal records the number of query log failures.
 type PrometheusEngineQueryLogFailuresTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusEngineQueryLogFailuresTotal returns a new PrometheusEngineQueryLogFailuresTotal instrument.
 func NewPrometheusEngineQueryLogFailuresTotal() PrometheusEngineQueryLogFailuresTotal {
-	labels := []string{}
 	return PrometheusEngineQueryLogFailuresTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_engine_query_log_failures_total",
 			Help: "The number of query log failures.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusEngineQueryLogFailuresTotalAttr interface {
-	Attribute
-	implPrometheusEngineQueryLogFailuresTotal()
-}
-
-func (m PrometheusEngineQueryLogFailuresTotal) With(
-	extra ...PrometheusEngineQueryLogFailuresTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusEngineQuerySamplesTotal records the total number of samples loaded by all queries.
 type PrometheusEngineQuerySamplesTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusEngineQuerySamplesTotal returns a new PrometheusEngineQuerySamplesTotal instrument.
 func NewPrometheusEngineQuerySamplesTotal() PrometheusEngineQuerySamplesTotal {
-	labels := []string{}
 	return PrometheusEngineQuerySamplesTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_engine_query_samples_total",
 			Help: "The total number of samples loaded by all queries.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusEngineQuerySamplesTotalAttr interface {
-	Attribute
-	implPrometheusEngineQuerySamplesTotal()
-}
-
-func (m PrometheusEngineQuerySamplesTotal) With(
-	extra ...PrometheusEngineQuerySamplesTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }

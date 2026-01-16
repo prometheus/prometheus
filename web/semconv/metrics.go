@@ -35,95 +35,47 @@ func (a HandlerAttr) Value() string {
 
 // PrometheusAPINotificationActiveSubscribers records the current number of active notification subscribers.
 type PrometheusAPINotificationActiveSubscribers struct {
-	*prometheus.GaugeVec
+	prometheus.Gauge
 }
 
 // NewPrometheusAPINotificationActiveSubscribers returns a new PrometheusAPINotificationActiveSubscribers instrument.
 func NewPrometheusAPINotificationActiveSubscribers() PrometheusAPINotificationActiveSubscribers {
-	labels := []string{}
 	return PrometheusAPINotificationActiveSubscribers{
-		GaugeVec: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_api_notification_active_subscribers",
 			Help: "The current number of active notification subscribers.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusAPINotificationActiveSubscribersAttr interface {
-	Attribute
-	implPrometheusAPINotificationActiveSubscribers()
-}
-
-func (m PrometheusAPINotificationActiveSubscribers) With(
-	extra ...PrometheusAPINotificationActiveSubscribersAttr,
-) prometheus.Gauge {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.GaugeVec.With(labels)
 }
 
 // PrometheusAPINotificationUpdatesDroppedTotal records the total number of API notification updates that were dropped.
 type PrometheusAPINotificationUpdatesDroppedTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusAPINotificationUpdatesDroppedTotal returns a new PrometheusAPINotificationUpdatesDroppedTotal instrument.
 func NewPrometheusAPINotificationUpdatesDroppedTotal() PrometheusAPINotificationUpdatesDroppedTotal {
-	labels := []string{}
 	return PrometheusAPINotificationUpdatesDroppedTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_api_notification_updates_dropped_total",
 			Help: "Total number of API notification updates that were dropped.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusAPINotificationUpdatesDroppedTotalAttr interface {
-	Attribute
-	implPrometheusAPINotificationUpdatesDroppedTotal()
-}
-
-func (m PrometheusAPINotificationUpdatesDroppedTotal) With(
-	extra ...PrometheusAPINotificationUpdatesDroppedTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusAPINotificationUpdatesSentTotal records the total number of API notification updates sent.
 type PrometheusAPINotificationUpdatesSentTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusAPINotificationUpdatesSentTotal returns a new PrometheusAPINotificationUpdatesSentTotal instrument.
 func NewPrometheusAPINotificationUpdatesSentTotal() PrometheusAPINotificationUpdatesSentTotal {
-	labels := []string{}
 	return PrometheusAPINotificationUpdatesSentTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_api_notification_updates_sent_total",
 			Help: "Total number of API notification updates sent.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusAPINotificationUpdatesSentTotalAttr interface {
-	Attribute
-	implPrometheusAPINotificationUpdatesSentTotal()
-}
-
-func (m PrometheusAPINotificationUpdatesSentTotal) With(
-	extra ...PrometheusAPINotificationUpdatesSentTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusHTTPRequestDurationSeconds records the histogram of latencies for HTTP requests.
@@ -242,93 +194,45 @@ func (m PrometheusHTTPResponseSizeBytes) With(
 
 // PrometheusReady records the whether Prometheus startup was fully completed and the server is ready for normal operation.
 type PrometheusReady struct {
-	*prometheus.GaugeVec
+	prometheus.Gauge
 }
 
 // NewPrometheusReady returns a new PrometheusReady instrument.
 func NewPrometheusReady() PrometheusReady {
-	labels := []string{}
 	return PrometheusReady{
-		GaugeVec: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_ready",
 			Help: "Whether Prometheus startup was fully completed and the server is ready for normal operation.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusReadyAttr interface {
-	Attribute
-	implPrometheusReady()
-}
-
-func (m PrometheusReady) With(
-	extra ...PrometheusReadyAttr,
-) prometheus.Gauge {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.GaugeVec.With(labels)
 }
 
 // PrometheusWebFederationErrorsTotal records the total number of errors that occurred while sending federation responses.
 type PrometheusWebFederationErrorsTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusWebFederationErrorsTotal returns a new PrometheusWebFederationErrorsTotal instrument.
 func NewPrometheusWebFederationErrorsTotal() PrometheusWebFederationErrorsTotal {
-	labels := []string{}
 	return PrometheusWebFederationErrorsTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_web_federation_errors_total",
 			Help: "Total number of errors that occurred while sending federation responses.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusWebFederationErrorsTotalAttr interface {
-	Attribute
-	implPrometheusWebFederationErrorsTotal()
-}
-
-func (m PrometheusWebFederationErrorsTotal) With(
-	extra ...PrometheusWebFederationErrorsTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusWebFederationWarningsTotal records the total number of warnings that occurred while sending federation responses.
 type PrometheusWebFederationWarningsTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
 // NewPrometheusWebFederationWarningsTotal returns a new PrometheusWebFederationWarningsTotal instrument.
 func NewPrometheusWebFederationWarningsTotal() PrometheusWebFederationWarningsTotal {
-	labels := []string{}
 	return PrometheusWebFederationWarningsTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_web_federation_warnings_total",
 			Help: "Total number of warnings that occurred while sending federation responses.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusWebFederationWarningsTotalAttr interface {
-	Attribute
-	implPrometheusWebFederationWarningsTotal()
-}
-
-func (m PrometheusWebFederationWarningsTotal) With(
-	extra ...PrometheusWebFederationWarningsTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }

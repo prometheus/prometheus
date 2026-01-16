@@ -25,64 +25,32 @@ func (a RuleGroupAttr) Value() string {
 
 // PrometheusRuleEvaluationDurationHistogramSeconds records the duration of rule evaluations as a histogram.
 type PrometheusRuleEvaluationDurationHistogramSeconds struct {
-	*prometheus.HistogramVec
+	prometheus.Histogram
 }
 
 // NewPrometheusRuleEvaluationDurationHistogramSeconds returns a new PrometheusRuleEvaluationDurationHistogramSeconds instrument.
 func NewPrometheusRuleEvaluationDurationHistogramSeconds() PrometheusRuleEvaluationDurationHistogramSeconds {
-	labels := []string{}
 	return PrometheusRuleEvaluationDurationHistogramSeconds{
-		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_rule_evaluation_duration_histogram_seconds",
 			Help: "The duration of rule evaluations as a histogram.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusRuleEvaluationDurationHistogramSecondsAttr interface {
-	Attribute
-	implPrometheusRuleEvaluationDurationHistogramSeconds()
-}
-
-func (m PrometheusRuleEvaluationDurationHistogramSeconds) With(
-	extra ...PrometheusRuleEvaluationDurationHistogramSecondsAttr,
-) prometheus.Observer {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.HistogramVec.With(labels)
 }
 
 // PrometheusRuleEvaluationDurationSeconds records the duration of rule group evaluations.
 type PrometheusRuleEvaluationDurationSeconds struct {
-	*prometheus.HistogramVec
+	prometheus.Histogram
 }
 
 // NewPrometheusRuleEvaluationDurationSeconds returns a new PrometheusRuleEvaluationDurationSeconds instrument.
 func NewPrometheusRuleEvaluationDurationSeconds() PrometheusRuleEvaluationDurationSeconds {
-	labels := []string{}
 	return PrometheusRuleEvaluationDurationSeconds{
-		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_rule_evaluation_duration_seconds",
 			Help: "The duration of rule group evaluations.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusRuleEvaluationDurationSecondsAttr interface {
-	Attribute
-	implPrometheusRuleEvaluationDurationSeconds()
-}
-
-func (m PrometheusRuleEvaluationDurationSeconds) With(
-	extra ...PrometheusRuleEvaluationDurationSecondsAttr,
-) prometheus.Observer {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.HistogramVec.With(labels)
 }
 
 // PrometheusRuleEvaluationFailuresTotal records the total number of rule evaluation failures.
@@ -161,64 +129,32 @@ func (m PrometheusRuleEvaluationsTotal) With(
 
 // PrometheusRuleGroupDurationHistogramSeconds records the duration of rule group evaluations as a histogram.
 type PrometheusRuleGroupDurationHistogramSeconds struct {
-	*prometheus.HistogramVec
+	prometheus.Histogram
 }
 
 // NewPrometheusRuleGroupDurationHistogramSeconds returns a new PrometheusRuleGroupDurationHistogramSeconds instrument.
 func NewPrometheusRuleGroupDurationHistogramSeconds() PrometheusRuleGroupDurationHistogramSeconds {
-	labels := []string{}
 	return PrometheusRuleGroupDurationHistogramSeconds{
-		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_rule_group_duration_histogram_seconds",
 			Help: "The duration of rule group evaluations as a histogram.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusRuleGroupDurationHistogramSecondsAttr interface {
-	Attribute
-	implPrometheusRuleGroupDurationHistogramSeconds()
-}
-
-func (m PrometheusRuleGroupDurationHistogramSeconds) With(
-	extra ...PrometheusRuleGroupDurationHistogramSecondsAttr,
-) prometheus.Observer {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.HistogramVec.With(labels)
 }
 
 // PrometheusRuleGroupDurationSeconds records the duration of rule group evaluations.
 type PrometheusRuleGroupDurationSeconds struct {
-	*prometheus.HistogramVec
+	prometheus.Histogram
 }
 
 // NewPrometheusRuleGroupDurationSeconds returns a new PrometheusRuleGroupDurationSeconds instrument.
 func NewPrometheusRuleGroupDurationSeconds() PrometheusRuleGroupDurationSeconds {
-	labels := []string{}
 	return PrometheusRuleGroupDurationSeconds{
-		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_rule_group_duration_seconds",
 			Help: "The duration of rule group evaluations.",
-		}, labels),
+		}),
 	}
-}
-
-type PrometheusRuleGroupDurationSecondsAttr interface {
-	Attribute
-	implPrometheusRuleGroupDurationSeconds()
-}
-
-func (m PrometheusRuleGroupDurationSeconds) With(
-	extra ...PrometheusRuleGroupDurationSecondsAttr,
-) prometheus.Observer {
-	labels := prometheus.Labels{}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.HistogramVec.With(labels)
 }
 
 // PrometheusRuleGroupIntervalSeconds records the interval of a rule group.
