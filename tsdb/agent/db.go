@@ -722,14 +722,7 @@ func (db *DB) truncate(mint int64) error {
 			DeletedSeries: maps.Keys(db.deleted),
 		})
 	} else {
-		if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint); err != nil {
-			db.metrics.checkpointCreationFail.Inc()
-			var cerr *wlog.CorruptionErr
-			if errors.As(err, &cerr) {
-				db.metrics.walCorruptionsTotal.Inc()
-			}
-			return fmt.Errorf("create checkpoint: %w", err)
-		}
+		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint)
 	}
 	if err != nil {
 		db.metrics.checkpointCreationFail.Inc()
