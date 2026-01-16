@@ -3,6 +3,15 @@
 {%- set all_metrics = ctx | map(attribute="metrics") | flatten | list -%}
 {# Extract all unique attributes from all metrics #}
 {%- set all_attrs = all_metrics | selectattr("attributes") | map(attribute="attributes") | flatten | unique(attribute="name") | sort(attribute="name") -%}
+{# Check if we need time import - look for native/mixed histograms #}
+{%- set ns = namespace(needs_time=false) -%}
+{%- for metric in all_metrics -%}
+{%- if metric.annotations is defined and metric.annotations.prometheus is defined -%}
+{%- if metric.annotations.prometheus.histogram_type in ["native_histogram", "mixed_histogram"] -%}
+{%- set ns.needs_time = true -%}
+{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
 // Code generated from semantic convention specification. DO NOT EDIT.
 
 // Package metrics provides Prometheus instrumentation types for metrics
@@ -12,7 +21,10 @@ package metrics
 import (
 {%- if all_attrs | selectattr("type","!=","string") | list | length > 0 %}
 	"fmt"
-{%- endif %}
+{% endif %}
+{%- if ns.needs_time %}
+	"time"
+{% endif %}
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -81,9 +93,15 @@ func (a {{ name }}Attr) Value() string {
 {% endmacro %}
 {%- for metric in all_metrics %}
 {%- set metric_name = h.to_go_name(metric.metric_name, "") %}
-{%- set metric_inst = (metric.instrument | default("gauge")) | map_text("go_instrument_type") %}
 {%- set metric_attr = metric.attributes | default([]) | sort -%}
 {%- set has_labels = (metric_attr | length) > 0 -%}
+{%- set prom = (metric.annotations | default({})).prometheus | default({}) -%}
+{#- Determine the actual Prometheus type based on instrument and histogram_type -#}
+{%- if metric.instrument == "histogram" and prom.histogram_type == "summary" -%}
+{%- set metric_inst = "Summary" -%}
+{%- else -%}
+{%- set metric_inst = (metric.instrument | default("gauge")) | map_text("go_instrument_type") -%}
+{%- endif -%}
 
 {{ h.metric_typedoc(metric, "") | comment | trim }}
 type {{ metric_name }} struct {
@@ -102,18 +120,95 @@ func New{{ metric_name }}() {{ metric_name }} {
 		"{{ attr.id }}",
 		{%- endcall %}
 	}
+{%- endif %}
+{%- if metric.instrument == "histogram" and prom.histogram_type %}
+{%- if prom.histogram_type == "summary" %}
 	return {{ metric_name }}{
+{%- if has_labels %}
+		SummaryVec: prometheus.NewSummaryVec(prometheus.SummaryOpts{
+{%- else %}
+		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
+{%- endif %}
+			Name: "{{ metric.metric_name }}",
+			Help: "{{ metric.brief | default("") | trim }}",
+			Objectives: map[float64]float64{
+{%- for quantile, error in prom.objectives.items() %}
+				{{ quantile }}: {{ error }},
+{%- endfor %}
+			},
+{%- if has_labels %}
+		}, labels),
+{%- else %}
+		}),
+{%- endif %}
+	}
+{%- elif prom.histogram_type == "classic_histogram" %}
+	return {{ metric_name }}{
+{%- if has_labels %}
+		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+{%- else %}
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+{%- endif %}
+			Name:    "{{ metric.metric_name }}",
+			Help:    "{{ metric.brief | default("") | trim }}",
+			Buckets: []float64{ {{- prom.buckets | join(", ") -}} },
+{%- if has_labels %}
+		}, labels),
+{%- else %}
+		}),
+{%- endif %}
+	}
+{%- elif prom.histogram_type == "native_histogram" %}
+	return {{ metric_name }}{
+{%- if has_labels %}
+		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+{%- else %}
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+{%- endif %}
+			Name:                            "{{ metric.metric_name }}",
+			Help:                            "{{ metric.brief | default("") | trim }}",
+			NativeHistogramBucketFactor:     {{ prom.bucket_factor }},
+			NativeHistogramMaxBucketNumber:  {{ prom.max_bucket_number }},
+			NativeHistogramMinResetDuration: {{ h.duration_to_go(prom.min_reset_duration) }},
+{%- if has_labels %}
+		}, labels),
+{%- else %}
+		}),
+{%- endif %}
+	}
+{%- elif prom.histogram_type == "mixed_histogram" %}
+	return {{ metric_name }}{
+{%- if has_labels %}
+		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+{%- else %}
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+{%- endif %}
+			Name:                            "{{ metric.metric_name }}",
+			Help:                            "{{ metric.brief | default("") | trim }}",
+			Buckets:                         []float64{ {{- prom.buckets | join(", ") -}} },
+			NativeHistogramBucketFactor:     {{ prom.bucket_factor }},
+			NativeHistogramMaxBucketNumber:  {{ prom.max_bucket_number }},
+			NativeHistogramMinResetDuration: {{ h.duration_to_go(prom.min_reset_duration) }},
+{%- if has_labels %}
+		}, labels),
+{%- else %}
+		}),
+{%- endif %}
+	}
+{%- endif %}
+{%- else %}
+	return {{ metric_name }}{
+{%- if has_labels %}
 		{{ metric_inst }}Vec: prometheus.New{{ metric_inst }}Vec(prometheus.{{ metric_inst }}Opts{
 			Name: "{{ metric.metric_name }}",
 			Help: "{{ metric.brief | default("") | trim }}",
 		}, labels),
-	}
 {%- else %}
-	return {{ metric_name }}{
 		{{ metric_inst }}: prometheus.New{{ metric_inst }}(prometheus.{{ metric_inst }}Opts{
 			Name: "{{ metric.metric_name }}",
 			Help: "{{ metric.brief | default("") | trim }}",
 		}),
+{%- endif %}
 	}
 {%- endif %}
 }
@@ -132,7 +227,7 @@ func (m {{ metric_name }}) With(
 	{{ attr.arg }} {{ attr.type }},
 {%- endcall %}
 	extra ...{{ metric_name }}Attr,
-) prometheus.{{ metric_inst | replace("Histogram", "Observer") }} {
+) prometheus.{{ metric_inst | replace("Histogram", "Observer") | replace("Summary", "Observer") }} {
 	labels := prometheus.Labels{
 		{%- call(attr) for_each_attr(metric_attr|required) %}
 		"{{ attr.id }}": {{ attr.arg }}.Value(),

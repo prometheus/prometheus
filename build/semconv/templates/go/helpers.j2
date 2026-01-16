@@ -102,3 +102,22 @@ It {{ brief }}.
 {%- if member.value is int %}int64{%- endif %}
 {%- if member.value is float %}float64{%- endif %}
 {%- endmacro %}
+
+{#- Macro to convert duration string to Go code (e.g., "1h" -> "1 * time.Hour") -#}
+{%- macro duration_to_go(dur_str) -%}
+{%- if dur_str is string -%}
+{%- if dur_str.endswith("h") -%}
+{{ dur_str[:-1] }} * time.Hour
+{%- elif dur_str.endswith("m") -%}
+{{ dur_str[:-1] }} * time.Minute
+{%- elif dur_str.endswith("s") -%}
+{{ dur_str[:-1] }} * time.Second
+{%- elif dur_str.endswith("ms") -%}
+{{ dur_str[:-2] }} * time.Millisecond
+{%- else -%}
+{{ dur_str }}
+{%- endif -%}
+{%- else -%}
+{{ dur_str }}
+{%- endif -%}
+{%- endmacro -%}
