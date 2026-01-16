@@ -29,7 +29,7 @@ jobs:
         if: failure()
         with:
           name: fuzz-artifacts-${{ matrix.fuzz_test }}
-          path: promql/testdata/fuzz/${{ matrix.fuzz_test }}
+          path: util/fuzzing/testdata/fuzz/${{ matrix.fuzz_test }}
   fuzzing_status:
     # This status check aggregates the individual matrix jobs of the fuzzing
     # step into a final status. Fails if a single matrix job fails, succeeds if
