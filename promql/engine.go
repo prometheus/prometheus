@@ -1195,6 +1195,12 @@ type EvalSeriesHelper struct {
 type EvalNodeHelper struct {
 	// Evaluation timestamp.
 	Ts int64
+	// Query step in milliseconds.
+	Interval int64
+	// Query start timestamp in milliseconds.
+	StartTimestamp int64
+	// Query end timestamp in milliseconds.
+	EndTimestamp int64
 	// Vector that can be used for output.
 	Out Vector
 
@@ -1332,7 +1338,7 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 			biggestLen = len(matrixes[i])
 		}
 	}
-	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+	enh := &EvalNodeHelper{Out: make(Vector, 0, biggestLen), enableDelayedNameRemoval: ev.enableDelayedNameRemoval, Interval: ev.interval, StartTimestamp: ev.startTimestamp, EndTimestamp: ev.endTimestamp}
 	type seriesAndTimestamp struct {
 		Series
 		ts int64
@@ -1490,7 +1496,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 
 	var annos annotations.Annotations
 
-	enh := &EvalNodeHelper{enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+	enh := &EvalNodeHelper{enableDelayedNameRemoval: ev.enableDelayedNameRemoval, Interval: ev.interval, StartTimestamp: ev.startTimestamp, EndTimestamp: ev.endTimestamp}
 	tempNumSamples := ev.currentSamples
 
 	// Create a mapping from input series to output groups.
@@ -1981,7 +1987,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		var histograms []HPoint
 		var prevSS *Series
 		inMatrix := make(Matrix, 1)
-		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), enableDelayedNameRemoval: ev.enableDelayedNameRemoval, Interval: ev.interval, StartTimestamp: ev.startTimestamp, EndTimestamp: ev.endTimestamp}
 		// Process all the calls for one time series at a time.
 		// For anchored and smoothed selectors, we need to iterate over a
 		// larger range than the query range to account for the lookback delta.

@@ -65,6 +65,34 @@ func funcTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (
 	}}, nil
 }
 
+// funcStep returns the query step duration in seconds.
+func funcStep(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return Vector{Sample{
+		F: float64(enh.Interval) / 1000,
+	}}, nil
+}
+
+// funcRange returns the query range duration in seconds.
+func funcRange(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return Vector{Sample{
+		F: float64(enh.EndTimestamp-enh.StartTimestamp) / 1000,
+	}}, nil
+}
+
+// funcStart returns the query start timestamp in seconds.
+func funcStart(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return Vector{Sample{
+		F: float64(enh.StartTimestamp) / 1000,
+	}}, nil
+}
+
+// funcEnd returns the query end timestamp in seconds.
+func funcEnd(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return Vector{Sample{
+		F: float64(enh.EndTimestamp) / 1000,
+	}}, nil
+}
+
 // pickOrInterpolateLeft returns the value at the left boundary of the range.
 // If interpolation is needed (when smoothed is true and the first sample is before the range start),
 // it returns the interpolated value at the left boundary; otherwise, it returns the first sample's value.
@@ -2011,6 +2039,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"day_of_year":                  funcDayOfYear,
 	"deg":                          funcDeg,
 	"delta":                        funcDelta,
+	"end":                          funcEnd,
 	"deriv":                        funcDeriv,
 	"exp":                          funcExp,
 	"first_over_time":              funcFirstOverTime,
@@ -2048,6 +2077,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"present_over_time":            funcPresentOverTime,
 	"quantile_over_time":           funcQuantileOverTime,
 	"rad":                          funcRad,
+	"range":                        funcRange,
 	"rate":                         funcRate,
 	"resets":                       funcResets,
 	"round":                        funcRound,
@@ -2060,6 +2090,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"sort_by_label":                funcSortByLabel,
 	"sort_by_label_desc":           funcSortByLabelDesc,
 	"sqrt":                         funcSqrt,
+	"start":                        funcStart,
+	"step":                         funcStep,
 	"stddev_over_time":             funcStddevOverTime,
 	"stdvar_over_time":             funcStdvarOverTime,
 	"sum_over_time":                funcSumOverTime,
@@ -2079,8 +2111,8 @@ var FunctionCalls = map[string]FunctionCall{
 var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Step invariant functions.
 	"days_in_month": {}, "day_of_month": {}, "day_of_week": {}, "day_of_year": {},
-	"hour": {}, "minute": {}, "month": {}, "year": {},
-	"predict_linear": {}, "time": {},
+	"end": {}, "hour": {}, "minute": {}, "month": {}, "year": {},
+	"predict_linear": {}, "range": {}, "start": {}, "step": {}, "time": {},
 	// Uses timestamp of the argument for the result,
 	// hence unsafe to use with @ modifier.
 	"timestamp": {},

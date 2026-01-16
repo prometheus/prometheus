@@ -173,6 +173,18 @@ entirely. For elements that contain a mix of float and histogram samples, only
 the float samples are used as input, which is flagged by an info-level
 annotation.
 
+## `end()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`end()` returns the end timestamp of the current query range evaluation as the
+number of seconds since January 1, 1970 UTC. For instant queries, this is equal
+to the evaluation timestamp. For range queries, this is the end time of the
+query range. Note that this does not return the current time, but the end time
+at which the expression is to be evaluated.
+
 ## `double_exponential_smoothing()`
 
 **This function has to be enabled via the [feature
@@ -701,6 +713,16 @@ ignored entirely. For elements that contain a mix of float and histogram
 samples, only the float samples are used as input, which is flagged by an
 info-level annotation.
 
+## `range()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`range()` returns the range duration of the current query range evaluation in
+seconds. For instant queries, this returns `0`. For range queries, this returns
+the difference between the end and start times (i.e., `end() - start()`).
+
 ## `rate()`
 
 `rate(v range-vector)` calculates the per-second average rate of increase of the
@@ -812,6 +834,28 @@ Same as `sort_by_label`, but sorts in descending order.
 
 `sqrt(v instant-vector)` calculates the square root of all float samples in
 `v`. Histogram samples in the input vector are ignored silently.
+
+## `start()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`start()` returns the start timestamp of the current query range evaluation as the
+number of seconds since January 1, 1970 UTC. For instant queries, this is equal
+to the evaluation timestamp. For range queries, this is the start time of the
+query range. Note that this does not return the current time, but the start time
+at which the expression is to be evaluated.
+
+## `step()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`step()` returns the query resolution step as the number of seconds. For instant
+queries, this returns `0.001` (1 millisecond). For range queries, this returns
+the step interval between evaluation timestamps.
 
 ## `time()`
 

@@ -4210,23 +4210,23 @@ var testExpr = []struct {
 	},
 	{
 		input: `start()`,
-		fail:  true,
-		errors: ParseErrors{
-			ParseErr{
-				PositionRange: posrange.PositionRange{Start: 5, End: 6},
-				Err:           errors.New(`unexpected "("`),
-				Query:         `start()`,
+		expected: &Call{
+			Func: MustGetFunction("start"),
+			Args: Expressions{},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   7,
 			},
 		},
 	},
 	{
 		input: `end()`,
-		fail:  true,
-		errors: ParseErrors{
-			ParseErr{
-				PositionRange: posrange.PositionRange{Start: 3, End: 4},
-				Err:           errors.New(`unexpected "("`),
-				Query:         `end()`,
+		expected: &Call{
+			Func: MustGetFunction("end"),
+			Args: Expressions{},
+			PosRange: posrange.PositionRange{
+				Start: 0,
+				End:   5,
 			},
 		},
 	},

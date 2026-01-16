@@ -2049,3 +2049,141 @@ eval_fail instant at 0 label_replace(overlap, "idx", "same", "idx", ".*")
 
 # Test label_join failure with overlapping timestamps (same labelset at same time).
 eval_fail instant at 0 label_join(overlap, "idx", ",", "label", "label")
+
+# Tests for step() and range() functions.
+clear
+
+# Test step() function in range queries.
+eval range from 0 to 10s step 5s step()
+  {} 5 5 5
+
+eval range from 0 to 20s step 10s step()
+  {} 10 10 10
+
+eval range from 0 to 30s step 15s step()
+  {} 15 15 15
+
+# Test range() function in range queries.
+eval range from 0 to 30s step 10s range()
+  {} 30 30 30 30
+
+eval range from 0s to 60s step 20s range()
+  {} 60 60 60 60
+
+eval range from 10s to 50s step 10s range()
+  {} 40 40 40 40 40
+
+# Test step() function in instant queries.
+eval instant at 0s step()
+  0.001
+
+# Test range() function in instant queries.
+eval instant at 0s range()
+  0
+
+eval instant at 100s range()
+  0
+
+# Test step() and range() in expressions.
+eval range from 0 to 10s step 5s vector(step())
+  {} 5 5 5
+
+eval range from 0 to 20s step 10s vector(range())
+  {} 20 20 20
+
+# Test step() and range() with arithmetic.
+load 1s
+  metric 1 2 3 4 5
+
+eval range from 0s to 4s step 1s metric * step()
+  {} 1 2 3 4 5
+
+eval range from 0s to 2s step 1s metric + range()
+  {} 3 4 5
+
+# Test that step() returns the step value, not evaluation timestamp.
+eval range from 100s to 110s step 5s step()
+  {} 5 5 5
+
+# Test that range() returns the query range, not evaluation timestamp.
+eval range from 100s to 130s step 10s range()
+  {} 30 30 30 30
+
+
+# Tests for start() and end() functions.
+
+# Test start() function in range queries.
+eval range from 0 to 30s step 10s start()
+  {} 0 0 0 0
+
+eval range from 100s to 130s step 10s start()
+  {} 100 100 100 100
+
+eval range from 50s to 60s step 5s start()
+  {} 50 50 50
+
+# Test end() function in range queries.
+eval range from 0 to 30s step 10s end()
+  {} 30 30 30 30
+
+eval range from 100s to 140s step 10s end()
+  {} 140 140 140 140 140
+
+eval range from 20s to 50s step 10s end()
+  {} 50 50 50 50
+
+# Test start() function in instant queries (start == end).
+eval instant at 0s start()
+  0
+
+eval instant at 100s start()
+  100
+
+# Test end() function in instant queries (start == end).
+eval instant at 0s end()
+  0
+
+eval instant at 50s end()
+  50
+
+# Test start() and end() in expressions.
+eval range from 0 to 20s step 10s vector(start())
+  {} 0 0 0
+
+eval range from 10s to 30s step 10s vector(end())
+  {} 30 30 30
+
+# Test that start() and end() return query boundaries, not evaluation timestamps.
+eval range from 100s to 130s step 10s start()
+  {} 100 100 100 100
+
+eval range from 100s to 130s step 10s end()
+  {} 130 130 130 130
+
+# Test start() and end() with arithmetic.
+eval range from 10s to 20s step 5s end() - start()
+  {} 10 10 10
+
+eval range from 0s to 30s step 10s (end() + start()) / 2
+  {} 15 15 15 15
+
+# Test combination with step() and range().
+eval range from 0s to 20s step 10s start() + range()
+  {} 20 20 20
+
+eval range from 10s to 50s step 10s end() - range()
+  {} 10 10 10 10 10
+
+
+# Test start() and end() with @ modifier in selector context.
+# Range queries with @ start() and @ end() work correctly.
+load 1s
+  metric_for_at 1 2 3 4 5 6 7 8 9 10
+
+# For range query from 0s to 9s: start()=0, end()=9
+# metric_for_at @ 0 = 1, metric_for_at @ 9 = 10
+eval range from 0s to 9s step 3s metric_for_at @ start()
+  {__name__="metric_for_at"} 1 1 1 1
+
+eval range from 1s to 9s step 2s metric_for_at @ end()
+  {__name__="metric_for_at"} 10 10 10 10 10
