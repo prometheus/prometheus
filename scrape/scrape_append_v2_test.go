@@ -3940,12 +3940,8 @@ scrape_configs:
 	t.Cleanup(func() { _ = s.Close() })
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, s, reg)
+	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, nil, s, reg)
 	require.NoError(t, err)
-
-	// TODO(bwplotka): Switch public constructor to support AppendableV2 in separate PR.
-	mng.appendable = nil
-	mng.appendableV2 = s
 
 	cfg, err := config.Load(configStr, promslog.NewNopLogger())
 	require.NoError(t, err)

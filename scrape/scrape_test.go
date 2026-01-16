@@ -5252,7 +5252,7 @@ scrape_configs:
 	t.Cleanup(func() { _ = s.Close() })
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, s, reg)
+	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, s, nil, reg)
 	require.NoError(t, err)
 	cfg, err := config.Load(configStr, promslog.NewNopLogger())
 	require.NoError(t, err)
