@@ -49,10 +49,10 @@ deny contains metric_violation(
 }
 
 # =============================================================================
-# Rule 3: classic_histogram and mixed_histogram MUST have buckets
+# Rule 3: classic_histogram and mixed_histogram MUST have buckets or exponential_buckets
 # =============================================================================
 deny contains metric_violation(
-    sprintf("Metric '%s' with histogram_type=%s requires annotations.prometheus.buckets", [group.metric_name, group.annotations.prometheus.histogram_type]),
+    sprintf("Metric '%s' with histogram_type=%s requires either annotations.prometheus.buckets (explicit list) or annotations.prometheus.exponential_buckets (with start, factor, count)", [group.metric_name, group.annotations.prometheus.histogram_type]),
     group.id,
     group.metric_name
 ) if {
@@ -60,7 +60,7 @@ deny contains metric_violation(
     group.type == "metric"
     group.instrument == "histogram"
     requires_buckets(group.annotations.prometheus.histogram_type)
-    not group.annotations.prometheus.buckets
+    not has_bucket_config(group)
 }
 
 # =============================================================================
@@ -141,6 +141,10 @@ valid_histogram_type(t) if t == "summary"
 # Types that require buckets (classic and mixed)
 requires_buckets(t) if t == "classic_histogram"
 requires_buckets(t) if t == "mixed_histogram"
+
+# Check if group has either buckets or exponential_buckets
+has_bucket_config(group) if group.annotations.prometheus.buckets
+has_bucket_config(group) if group.annotations.prometheus.exponential_buckets
 
 # Types that require native histogram options (native and mixed)
 requires_native_opts(t) if t == "native_histogram"

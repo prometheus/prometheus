@@ -151,7 +151,7 @@ func New{{ metric_name }}() {{ metric_name }} {
 {%- endif %}
 			Name:    "{{ metric.metric_name }}",
 			Help:    "{{ metric.brief | default("") | trim }}",
-			Buckets: []float64{ {{- prom.buckets | join(", ") -}} },
+			Buckets: {{ h.buckets_to_go(prom) }},
 {%- if has_labels %}
 		}, labels),
 {%- else %}
@@ -185,7 +185,7 @@ func New{{ metric_name }}() {{ metric_name }} {
 {%- endif %}
 			Name:                            "{{ metric.metric_name }}",
 			Help:                            "{{ metric.brief | default("") | trim }}",
-			Buckets:                         []float64{ {{- prom.buckets | join(", ") -}} },
+			Buckets:                         {{ h.buckets_to_go(prom) }},
 			NativeHistogramBucketFactor:     {{ prom.bucket_factor }},
 			NativeHistogramMaxBucketNumber:  {{ prom.max_bucket_number }},
 			NativeHistogramMinResetDuration: {{ h.duration_to_go(prom.min_reset_duration) }},

@@ -121,3 +121,13 @@ It {{ brief }}.
 {{ dur_str }}
 {%- endif -%}
 {%- endmacro -%}
+
+{#- Macro to generate bucket configuration for histograms -#}
+{#- Supports either explicit buckets array or exponential_buckets config -#}
+{%- macro buckets_to_go(prom) -%}
+{%- if prom.buckets is defined -%}
+[]float64{ {{- prom.buckets | join(", ") -}} }
+{%- elif prom.exponential_buckets is defined -%}
+prometheus.ExponentialBuckets({{ prom.exponential_buckets.start }}, {{ prom.exponential_buckets.factor }}, {{ prom.exponential_buckets.count }})
+{%- endif -%}
+{%- endmacro -%}
