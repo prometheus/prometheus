@@ -100,6 +100,9 @@ type Options struct {
 	// persisted to the WAL for samples that include a non-zero start timestamp in
 	// supported record types.
 	EnableSTStorage bool
+
+	// SkipCurrentCheckpointReRead changes checkpoint implementation to use only in-memory data when building a new checkpoint and skip current checkpoint re-read from disk.
+	SkipCurrentCheckpointReRead bool
 }
 
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
@@ -754,20 +757,24 @@ func (db *DB) truncate(mint int64) error {
 
 	db.metrics.checkpointCreationTotal.Inc()
 
-	// if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage); err != nil {
-	// 	db.metrics.checkpointCreationFail.Inc()
-	// 	var cerr *wlog.CorruptionErr
-	// 	if errors.As(err, &cerr) {
-	// 		db.metrics.walCorruptionsTotal.Inc()
-	// 	}
-	// 	return fmt.Errorf("create checkpoint: %w", err)
-	// }
-	err = Checkpoint(db.logger, db.wal, CheckpointParams{
-		AtIndex:       last, // TODO: is this correct to use last index here?
-		BatchSize:     defaultBatchSize,
-		ActiveSeries:  db.series.Iterate(),
-		DeletedSeries: maps.Keys(db.deleted),
-	})
+	if db.opts.SkipCurrentCheckpointReRead {
+		err = Checkpoint(db.logger, db.wal, CheckpointParams{
+			AtIndex:       last, // TODO: is this correct to use last index here?
+			BatchSize:     defaultBatchSize,
+			ActiveSeries:  db.series.Iterate(),
+			DeletedSeries: maps.Keys(db.deleted),
+		})
+	} else {
+		if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage); err != nil {
+			db.metrics.checkpointCreationFail.Inc()
+			var cerr *wlog.CorruptionErr
+			if errors.As(err, &cerr) {
+				db.metrics.walCorruptionsTotal.Inc()
+			}
+			return fmt.Errorf("create checkpoint: %w", err)
+		}
+	}
+
 	if err != nil {
 		db.metrics.checkpointCreationFail.Inc()
 		var cerr *wlog.CorruptionErr
