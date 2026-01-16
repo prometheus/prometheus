@@ -59,6 +59,13 @@ import (
 // Scalar results should be returned as the value of a sample in a Vector.
 type FunctionCall func(vectorVals []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations)
 
+// funcQueryContext is a placeholder for start(), end(), range(), and step() functions.
+// These are folded into NumberLiteral nodes by foldQueryContextFunctions during query
+// preprocessing and must never reach the evaluator.
+func funcQueryContext(_ []Vector, _ Matrix, _ parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
+	panic("query context functions must be folded during preprocessing and must never be evaluated")
+}
+
 // === time() float64 ===
 func funcTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return Vector{Sample{
@@ -2177,6 +2184,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"day_of_week":                  funcDayOfWeek,
 	"day_of_year":                  funcDayOfYear,
 	"deg":                          funcDeg,
+	"end":                          funcQueryContext,
 	"delta":                        funcDelta,
 	"deriv":                        funcDeriv,
 	"exp":                          funcExp,
@@ -2216,6 +2224,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"present_over_time":            funcPresentOverTime,
 	"quantile_over_time":           funcQuantileOverTime,
 	"rad":                          funcRad,
+	"range":                        funcQueryContext,
 	"rate":                         funcRate,
 	"resets":                       funcResets,
 	"round":                        funcRound,
@@ -2227,6 +2236,8 @@ var FunctionCalls = map[string]FunctionCall{
 	"sort_desc":                    funcSortDesc,
 	"sort_by_label":                funcSortByLabel,
 	"sort_by_label_desc":           funcSortByLabelDesc,
+	"start":                        funcQueryContext,
+	"step":                         funcQueryContext,
 	"sqrt":                         funcSqrt,
 	"stddev_over_time":             funcStddevOverTime,
 	"stdvar_over_time":             funcStdvarOverTime,
@@ -2247,8 +2258,8 @@ var FunctionCalls = map[string]FunctionCall{
 var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Step invariant functions.
 	"days_in_month": {}, "day_of_month": {}, "day_of_week": {}, "day_of_year": {},
-	"hour": {}, "minute": {}, "month": {}, "year": {},
-	"predict_linear": {}, "time": {},
+	"end": {}, "hour": {}, "minute": {}, "month": {}, "year": {},
+	"predict_linear": {}, "range": {}, "start": {}, "step": {}, "time": {},
 	// Uses timestamp of the argument for the result,
 	// hence unsafe to use with @ modifier.
 	"timestamp": {},
