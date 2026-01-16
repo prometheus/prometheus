@@ -17,115 +17,32 @@
 # metrics.go files in the same directories.
 #
 # Usage:
-#   ./build/semconv/generate.sh
+#   WEAVER=/path/to/weaver ./build/semconv/generate.sh
 #
-# Requirements:
-#   - gofmt must be available
-#   - curl or wget for downloading weaver (if not installed)
+# The WEAVER environment variable must be set to the path of the weaver binary.
+# Use 'make generate-semconv' which handles this automatically.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TEMPLATES="${SCRIPT_DIR}/templates"
+POLICIES="${SCRIPT_DIR}/policies"
 
-# Weaver version to use - update this when upgrading
-WEAVER_VERSION="v0.20.0"
+# Check if WEAVER is set
+if [ -z "${WEAVER:-}" ]; then
+    echo "Error: WEAVER environment variable is not set."
+    echo "Please use 'make generate-semconv' or set WEAVER to the path of the weaver binary."
+    exit 1
+fi
 
-# Local bin directory for downloaded tools
-LOCAL_BIN="${REPO_ROOT}/.bin"
-WEAVER_BIN="${LOCAL_BIN}/weaver-${WEAVER_VERSION}"
+# Check if weaver binary exists and is executable
+if ! command -v "${WEAVER}" &> /dev/null && [ ! -x "${WEAVER}" ]; then
+    echo "Error: Weaver binary not found at '${WEAVER}'."
+    echo "Please run 'make install-weaver' first."
+    exit 1
+fi
 
-# Detect OS and architecture for downloading weaver
-detect_platform() {
-    local os arch
-
-    case "$(uname -s)" in
-        Linux*)  os="unknown-linux-gnu" ;;
-        Darwin*) os="apple-darwin" ;;
-        *)       echo "Unsupported OS: $(uname -s)"; exit 1 ;;
-    esac
-
-    case "$(uname -m)" in
-        x86_64)  arch="x86_64" ;;
-        aarch64) arch="aarch64" ;;
-        arm64)   arch="aarch64" ;;
-        *)       echo "Unsupported architecture: $(uname -m)"; exit 1 ;;
-    esac
-
-    echo "${arch}-${os}"
-}
-
-# Download weaver if not present
-install_weaver() {
-    local platform="$1"
-    local tarball="weaver-${platform}.tar.xz"
-    local url="https://github.com/open-telemetry/weaver/releases/download/${WEAVER_VERSION}/${tarball}"
-
-    echo ">> Installing weaver ${WEAVER_VERSION} for ${platform}"
-    mkdir -p "${LOCAL_BIN}"
-
-    # Download using curl or wget
-    if command -v curl &> /dev/null; then
-        if ! curl -sSfL "${url}" -o "${LOCAL_BIN}/${tarball}"; then
-            echo "Error: Failed to download weaver from ${url}"
-            exit 1
-        fi
-    elif command -v wget &> /dev/null; then
-        if ! wget -q "${url}" -O "${LOCAL_BIN}/${tarball}"; then
-            echo "Error: Failed to download weaver from ${url}"
-            exit 1
-        fi
-    else
-        echo "Error: Neither curl nor wget found. Please install one of them."
-        exit 1
-    fi
-
-    # Extract the binary (tar.xz format)
-    # The archive contains a directory like weaver-aarch64-apple-darwin/weaver
-    if ! tar -xJf "${LOCAL_BIN}/${tarball}" -C "${LOCAL_BIN}"; then
-        echo "Error: Failed to extract weaver archive"
-        rm -f "${LOCAL_BIN}/${tarball}"
-        exit 1
-    fi
-    mv "${LOCAL_BIN}/weaver-${platform}/weaver" "${WEAVER_BIN}"
-    chmod +x "${WEAVER_BIN}"
-
-    # Cleanup tarball and extracted directory
-    rm -f "${LOCAL_BIN}/${tarball}"
-    rm -rf "${LOCAL_BIN}/weaver-${platform}"
-
-    echo ">> Installed weaver to ${WEAVER_BIN}"
-}
-
-# Get the weaver binary path, installing if necessary
-get_weaver() {
-    # First check if the pinned version is already downloaded
-    if [ -x "${WEAVER_BIN}" ]; then
-        echo "${WEAVER_BIN}"
-        return
-    fi
-
-    # Check if weaver is in PATH and matches our version
-    if command -v weaver &> /dev/null; then
-        local installed_version
-        installed_version=$(weaver --version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "")
-        if [ "${installed_version}" = "${WEAVER_VERSION}" ]; then
-            echo "weaver"
-            return
-        fi
-        echo ">> System weaver version (${installed_version}) differs from required (${WEAVER_VERSION})" >&2
-    fi
-
-    # Download and install
-    local platform
-    platform=$(detect_platform)
-    install_weaver "${platform}" >&2
-    echo "${WEAVER_BIN}"
-}
-
-# Get weaver binary
-WEAVER=$(get_weaver)
 echo ">> Using weaver: ${WEAVER}"
 
 # Check if gofmt is installed
@@ -158,8 +75,8 @@ for registry in ${REGISTRIES}; do
     "${WEAVER}" registry generate \
         --registry "${dir}" \
         --templates "${TEMPLATES}" \
-        go "${dir}" \
-        --skip-policies
+        --policy "${POLICIES}" \
+        go "${dir}"
 done
 
 # Format all generated files

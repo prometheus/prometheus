@@ -228,6 +228,8 @@ jobs:
           persist-credentials: false
       - name: Set up Weaver
         uses: open-telemetry/weaver/setup-weaver@v0.20.0
+      - name: Check semconv policies
+        run: make check-semconv-policies
       - name: Check semconv code is up-to-date
         run: make check-semconv
   golangci:
