@@ -240,7 +240,8 @@ _Many-to-one and one-to-many matching are advanced use cases that should be care
 Often a proper use of `ignoring(<labels>)` provides the desired outcome._
 
 _Grouping modifiers can only be used for [comparison](#comparison-binary-operators),
-[arithmetic](#arithmetic-binary-operators), and [trigonometric](#trigonometric-binary-operators)operators. Set operators match with all possible entries on either side by default._
+[arithmetic](#arithmetic-binary-operators), and [trigonometric](#trigonometric-binary-operators)
+operators. Set operators match with all possible entries on either side by default._
 
 ### One-to-one vector matches
 
