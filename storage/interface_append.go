@@ -69,6 +69,7 @@ type AppendV2Options struct {
 	// Exemplars (optional) attached to the appended sample.
 	// Exemplar slice MUST be sorted by Exemplar.TS.
 	// Exemplar slice is unsafe for reuse.
+	// Duplicate exemplars errors MUST be ignored by implementations.
 	Exemplars []exemplar.Exemplar
 
 	// RejectOutOfOrder tells implementation that this append should not be out
@@ -94,6 +95,31 @@ func (e *AppendPartialError) Error() string {
 		return ""
 	}
 	return errs.Error()
+}
+
+// ErrOrNil returns AppendPartialError as error, returning nil
+// if there are no errors.
+func (e *AppendPartialError) ErrOrNil() error {
+	if len(e.ExemplarErrors) == 0 {
+		return nil
+	}
+	return e
+}
+
+// Handle handles the given err that may be an AppendPartialError.
+// If the err is nil or not an AppendPartialError it returns err.
+// Otherwise, partial errors are aggregated.
+func (e *AppendPartialError) Handle(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var pErr *AppendPartialError
+	if !errors.As(err, &pErr) {
+		return err
+	}
+	e.ExemplarErrors = append(e.ExemplarErrors, pErr.ExemplarErrors...)
+	return nil
 }
 
 var _ error = &AppendPartialError{}
