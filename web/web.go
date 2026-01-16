@@ -62,6 +62,7 @@ import (
 	"github.com/prometheus/prometheus/util/netconnlimit"
 	"github.com/prometheus/prometheus/util/notifications"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
+	webmetrics "github.com/prometheus/prometheus/web/semconv"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
@@ -132,48 +133,22 @@ func withStackTracer(h http.Handler, l *slog.Logger) http.Handler {
 }
 
 type metrics struct {
-	requestCounter  *prometheus.CounterVec
-	requestDuration *prometheus.HistogramVec
-	responseSize    *prometheus.HistogramVec
-	readyStatus     prometheus.Gauge
+	requestCounter  webmetrics.PrometheusHTTPRequestsTotal
+	requestDuration webmetrics.PrometheusHTTPRequestDurationSeconds
+	responseSize    webmetrics.PrometheusHTTPResponseSizeBytes
+	readyStatus     webmetrics.PrometheusReady
 }
 
 func newMetrics(r prometheus.Registerer) *metrics {
 	m := &metrics{
-		requestCounter: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "prometheus_http_requests_total",
-				Help: "Counter of HTTP requests.",
-			},
-			[]string{"handler", "code"},
-		),
-		requestDuration: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:                            "prometheus_http_request_duration_seconds",
-				Help:                            "Histogram of latencies for HTTP requests.",
-				Buckets:                         []float64{.1, .2, .4, 1, 3, 8, 20, 60, 120},
-				NativeHistogramBucketFactor:     1.1,
-				NativeHistogramMaxBucketNumber:  100,
-				NativeHistogramMinResetDuration: 1 * time.Hour,
-			},
-			[]string{"handler"},
-		),
-		responseSize: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "prometheus_http_response_size_bytes",
-				Help:    "Histogram of response size for HTTP requests.",
-				Buckets: prometheus.ExponentialBuckets(100, 10, 8),
-			},
-			[]string{"handler"},
-		),
-		readyStatus: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_ready",
-			Help: "Whether Prometheus startup was fully completed and the server is ready for normal operation.",
-		}),
+		requestCounter:  webmetrics.NewPrometheusHTTPRequestsTotal(),
+		requestDuration: webmetrics.NewPrometheusHTTPRequestDurationSeconds(),
+		responseSize:    webmetrics.NewPrometheusHTTPResponseSizeBytes(),
+		readyStatus:     webmetrics.NewPrometheusReady(),
 	}
 
 	if r != nil {
-		r.MustRegister(m.requestCounter, m.requestDuration, m.responseSize, m.readyStatus)
+		r.MustRegister(m.requestCounter.CounterVec, m.requestDuration.HistogramVec, m.responseSize.HistogramVec, m.readyStatus.Gauge)
 		registerFederationMetrics(r)
 	}
 	return m
@@ -186,13 +161,13 @@ func (m *metrics) instrumentHandlerWithPrefix(prefix string) func(handlerName st
 }
 
 func (m *metrics) instrumentHandler(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
-	m.requestCounter.WithLabelValues(handlerName, "200")
+	m.requestCounter.CounterVec.WithLabelValues(handlerName, "200")
 	return promhttp.InstrumentHandlerCounter(
-		m.requestCounter.MustCurryWith(prometheus.Labels{"handler": handlerName}),
+		m.requestCounter.CounterVec.MustCurryWith(prometheus.Labels{"handler": handlerName}),
 		promhttp.InstrumentHandlerDuration(
-			m.requestDuration.MustCurryWith(prometheus.Labels{"handler": handlerName}),
+			m.requestDuration.HistogramVec.MustCurryWith(prometheus.Labels{"handler": handlerName}),
 			promhttp.InstrumentHandlerResponseSize(
-				m.responseSize.MustCurryWith(prometheus.Labels{"handler": handlerName}),
+				m.responseSize.HistogramVec.MustCurryWith(prometheus.Labels{"handler": handlerName}),
 				handler,
 			),
 		),

@@ -6,9 +6,6 @@ This document describes the metrics defined in this semantic convention registry
 
 | Metric | Type | Unit | Description |
 |--------|------|------|-------------|
-| `prometheus_api_notification_active_subscribers` | gauge | {subscriber} | The current number of active notification subscribers. |
-| `prometheus_api_notification_updates_dropped_total` | counter | {update} | Total number of API notification updates that were dropped. |
-| `prometheus_api_notification_updates_sent_total` | counter | {update} | Total number of API notification updates sent. |
 | `prometheus_http_request_duration_seconds` | histogram | s | Histogram of latencies for HTTP requests. |
 | `prometheus_http_requests_total` | counter | {request} | Counter of HTTP requests. |
 | `prometheus_http_response_size_bytes` | histogram | By | Histogram of response size for HTTP requests. |
@@ -18,33 +15,6 @@ This document describes the metrics defined in this semantic convention registry
 
 
 ## Metric Details
-
-
-### `prometheus_api_notification_active_subscribers`
-
-The current number of active notification subscribers.
-
-- **Type:** gauge
-- **Unit:** {subscriber}
-- **Stability:** development
-
-
-### `prometheus_api_notification_updates_dropped_total`
-
-Total number of API notification updates that were dropped.
-
-- **Type:** counter
-- **Unit:** {update}
-- **Stability:** development
-
-
-### `prometheus_api_notification_updates_sent_total`
-
-Total number of API notification updates sent.
-
-- **Type:** counter
-- **Unit:** {update}
-- **Stability:** development
 
 
 ### `prometheus_http_request_duration_seconds`
@@ -59,7 +29,7 @@ Histogram of latencies for HTTP requests.
 
 | Attribute | Type | Description | Examples |
 |-----------|------|-------------|----------|
-| `handler` | string | The HTTP handler. | /, /-/healthy, /-/ready, /api/v1/query |
+| `handler` | string | The HTTP handler path. | /, /-/healthy, /-/ready, /api/v1/query |
 
 
 
@@ -76,7 +46,7 @@ Counter of HTTP requests.
 | Attribute | Type | Description | Examples |
 |-----------|------|-------------|----------|
 | `code` | string | The HTTP response status code. | 200, 400, 404, 500 |
-| `handler` | string | The HTTP handler. | /, /-/healthy, /-/ready, /api/v1/query |
+| `handler` | string | The HTTP handler path. | /, /-/healthy, /-/ready, /api/v1/query |
 
 
 
@@ -92,7 +62,7 @@ Histogram of response size for HTTP requests.
 
 | Attribute | Type | Description | Examples |
 |-----------|------|-------------|----------|
-| `handler` | string | The HTTP handler. | /, /-/healthy, /-/ready, /api/v1/query |
+| `handler` | string | The HTTP handler path. | /, /-/healthy, /-/ready, /api/v1/query |
 
 
 

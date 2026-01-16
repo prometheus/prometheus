@@ -5,6 +5,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -33,51 +35,6 @@ func (a HandlerAttr) Value() string {
 	return string(a)
 }
 
-// PrometheusAPINotificationActiveSubscribers records the current number of active notification subscribers.
-type PrometheusAPINotificationActiveSubscribers struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusAPINotificationActiveSubscribers returns a new PrometheusAPINotificationActiveSubscribers instrument.
-func NewPrometheusAPINotificationActiveSubscribers() PrometheusAPINotificationActiveSubscribers {
-	return PrometheusAPINotificationActiveSubscribers{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_api_notification_active_subscribers",
-			Help: "The current number of active notification subscribers.",
-		}),
-	}
-}
-
-// PrometheusAPINotificationUpdatesDroppedTotal records the total number of API notification updates that were dropped.
-type PrometheusAPINotificationUpdatesDroppedTotal struct {
-	prometheus.Counter
-}
-
-// NewPrometheusAPINotificationUpdatesDroppedTotal returns a new PrometheusAPINotificationUpdatesDroppedTotal instrument.
-func NewPrometheusAPINotificationUpdatesDroppedTotal() PrometheusAPINotificationUpdatesDroppedTotal {
-	return PrometheusAPINotificationUpdatesDroppedTotal{
-		Counter: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_api_notification_updates_dropped_total",
-			Help: "Total number of API notification updates that were dropped.",
-		}),
-	}
-}
-
-// PrometheusAPINotificationUpdatesSentTotal records the total number of API notification updates sent.
-type PrometheusAPINotificationUpdatesSentTotal struct {
-	prometheus.Counter
-}
-
-// NewPrometheusAPINotificationUpdatesSentTotal returns a new PrometheusAPINotificationUpdatesSentTotal instrument.
-func NewPrometheusAPINotificationUpdatesSentTotal() PrometheusAPINotificationUpdatesSentTotal {
-	return PrometheusAPINotificationUpdatesSentTotal{
-		Counter: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_api_notification_updates_sent_total",
-			Help: "Total number of API notification updates sent.",
-		}),
-	}
-}
-
 // PrometheusHTTPRequestDurationSeconds records the histogram of latencies for HTTP requests.
 type PrometheusHTTPRequestDurationSeconds struct {
 	*prometheus.HistogramVec
@@ -90,8 +47,12 @@ func NewPrometheusHTTPRequestDurationSeconds() PrometheusHTTPRequestDurationSeco
 	}
 	return PrometheusHTTPRequestDurationSeconds{
 		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "prometheus_http_request_duration_seconds",
-			Help: "Histogram of latencies for HTTP requests.",
+			Name:                            "prometheus_http_request_duration_seconds",
+			Help:                            "Histogram of latencies for HTTP requests.",
+			Buckets:                         []float64{0.1, 0.2, 0.4, 1, 3, 8, 20, 60, 120},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, labels),
 	}
 }
@@ -167,8 +128,9 @@ func NewPrometheusHTTPResponseSizeBytes() PrometheusHTTPResponseSizeBytes {
 	}
 	return PrometheusHTTPResponseSizeBytes{
 		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "prometheus_http_response_size_bytes",
-			Help: "Histogram of response size for HTTP requests.",
+			Name:    "prometheus_http_response_size_bytes",
+			Help:    "Histogram of response size for HTTP requests.",
+			Buckets: prometheus.ExponentialBuckets(100, 10, 8),
 		}, labels),
 	}
 }

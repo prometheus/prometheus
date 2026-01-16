@@ -4,32 +4,24 @@
 # Run `make generate-semconv` to regenerate the Go code.
 
 groups:
-  # HTTP metrics
-  - id: metric.prometheus_http_request_duration_seconds
-    type: metric
-    stability: development
-    brief: Histogram of latencies for HTTP requests.
-    metric_name: prometheus_http_request_duration_seconds
-    instrument: histogram
-    unit: s
+  # Attribute definitions
+  - id: attr.http_handler
+    type: attribute_group
+    brief: HTTP handler attribute.
     attributes:
       - id: handler
         type: string
         stability: development
-        brief: The HTTP handler.
+        brief: The HTTP handler path.
         examples:
           - /
           - /-/healthy
           - /-/ready
           - /api/v1/query
 
-  - id: metric.prometheus_http_requests_total
-    type: metric
-    stability: development
-    brief: Counter of HTTP requests.
-    metric_name: prometheus_http_requests_total
-    instrument: counter
-    unit: "{request}"
+  - id: attr.http_code
+    type: attribute_group
+    brief: HTTP response code attribute.
     attributes:
       - id: code
         type: string
@@ -40,15 +32,35 @@ groups:
           - "400"
           - "404"
           - "500"
-      - id: handler
-        type: string
-        stability: development
-        brief: The HTTP handler.
-        examples:
-          - /
-          - /-/healthy
-          - /-/ready
-          - /api/v1/query
+
+  # HTTP metrics
+  - id: metric.prometheus_http_request_duration_seconds
+    type: metric
+    stability: development
+    brief: Histogram of latencies for HTTP requests.
+    metric_name: prometheus_http_request_duration_seconds
+    instrument: histogram
+    unit: s
+    attributes:
+      - ref: handler
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [0.1, 0.2, 0.4, 1, 3, 8, 20, 60, 120]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
+
+  - id: metric.prometheus_http_requests_total
+    type: metric
+    stability: development
+    brief: Counter of HTTP requests.
+    metric_name: prometheus_http_requests_total
+    instrument: counter
+    unit: "{request}"
+    attributes:
+      - ref: handler
+      - ref: code
 
   - id: metric.prometheus_http_response_size_bytes
     type: metric
@@ -58,40 +70,14 @@ groups:
     instrument: histogram
     unit: By
     attributes:
-      - id: handler
-        type: string
-        stability: development
-        brief: The HTTP handler.
-        examples:
-          - /
-          - /-/healthy
-          - /-/ready
-          - /api/v1/query
-
-  # API notification metrics
-  - id: metric.prometheus_api_notification_active_subscribers
-    type: metric
-    stability: development
-    brief: The current number of active notification subscribers.
-    metric_name: prometheus_api_notification_active_subscribers
-    instrument: gauge
-    unit: "{subscriber}"
-
-  - id: metric.prometheus_api_notification_updates_dropped_total
-    type: metric
-    stability: development
-    brief: Total number of API notification updates that were dropped.
-    metric_name: prometheus_api_notification_updates_dropped_total
-    instrument: counter
-    unit: "{update}"
-
-  - id: metric.prometheus_api_notification_updates_sent_total
-    type: metric
-    stability: development
-    brief: Total number of API notification updates sent.
-    metric_name: prometheus_api_notification_updates_sent_total
-    instrument: counter
-    unit: "{update}"
+      - ref: handler
+    annotations:
+      prometheus:
+        histogram_type: classic_histogram
+        exponential_buckets:
+          start: 100
+          factor: 10
+          count: 8
 
   # Federation metrics
   - id: metric.prometheus_web_federation_errors_total
