@@ -697,12 +697,14 @@ func TestQueryForStateSeries(t *testing.T) {
 		{
 			selectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 				return storage.TestSeriesSet(storage.MockSeries(
+					nil,
 					[]int64{1, 2, 3},
 					[]float64{1, 2, 3},
 					[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
 				))
 			},
 			expectedSeries: storage.MockSeries(
+				nil,
 				[]int64{1, 2, 3},
 				[]float64{1, 2, 3},
 				[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},

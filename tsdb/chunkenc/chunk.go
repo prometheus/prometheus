@@ -99,9 +99,9 @@ type Iterable interface {
 	Iterator(Iterator) Iterator
 }
 
-// Appender adds sample pairs to a chunk.
+// Appender adds sample with start timestamp, timestamp, and value to a chunk.
 type Appender interface {
-	Append(int64, float64)
+	Append(st, t int64, v float64)
 
 	// AppendHistogram and AppendFloatHistogram append a histogram sample to a histogram or float histogram chunk.
 	// Appending a histogram may require creating a completely new chunk or recoding (changing) the current chunk.
@@ -114,8 +114,8 @@ type Appender interface {
 	// The returned bool isRecoded can be used to distinguish between the new Chunk c being a completely new Chunk
 	// or the current Chunk recoded to a new Chunk.
 	// The Appender app that can be used for the next append is always returned.
-	AppendHistogram(prev *HistogramAppender, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
-	AppendFloatHistogram(prev *FloatHistogramAppender, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
+	AppendHistogram(prev *HistogramAppender, st, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
+	AppendFloatHistogram(prev *FloatHistogramAppender, st, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 }
 
 // Iterator is a simple iterator that can only get the next value.
@@ -151,6 +151,10 @@ type Iterator interface {
 	// AtT returns the current timestamp.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	AtT() int64
+	// AtST returns the current start timestamp.
+	// Returns 0 if the start timestamp is not implemented or not set.
+	// Before the iterator has advanced, the behaviour is unspecified.
+	AtST() int64
 	// Err returns the current error. It should be used only after the
 	// iterator is exhausted, i.e. `Next` or `Seek` have returned ValNone.
 	Err() error
@@ -208,25 +212,30 @@ func (v ValueType) NewChunk() (Chunk, error) {
 	}
 }
 
-// MockSeriesIterator returns an iterator for a mock series with custom timeStamps and values.
-func MockSeriesIterator(timestamps []int64, values []float64) Iterator {
+// MockSeriesIterator returns an iterator for a mock series with custom
+// start timestamp, timestamps, and values.
+// Start timestamps is optional, pass nil or empty slice to indicate no start
+// timestamps.
+func MockSeriesIterator(startTimestamps, timestamps []int64, values []float64) Iterator {
 	return &mockSeriesIterator{
-		timeStamps: timestamps,
-		values:     values,
-		currIndex:  -1,
+		startTimestamps: startTimestamps,
+		timestamps:      timestamps,
+		values:          values,
+		currIndex:       -1,
 	}
 }
 
 type mockSeriesIterator struct {
-	timeStamps []int64
-	values     []float64
-	currIndex  int
+	timestamps      []int64
+	startTimestamps []int64
+	values          []float64
+	currIndex       int
 }
 
 func (*mockSeriesIterator) Seek(int64) ValueType { return ValNone }
 
 func (it *mockSeriesIterator) At() (int64, float64) {
-	return it.timeStamps[it.currIndex], it.values[it.currIndex]
+	return it.timestamps[it.currIndex], it.values[it.currIndex]
 }
 
 func (*mockSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
@@ -238,11 +247,18 @@ func (*mockSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *
 }
 
 func (it *mockSeriesIterator) AtT() int64 {
-	return it.timeStamps[it.currIndex]
+	return it.timestamps[it.currIndex]
+}
+
+func (it *mockSeriesIterator) AtST() int64 {
+	if len(it.startTimestamps) == 0 {
+		return 0
+	}
+	return it.startTimestamps[it.currIndex]
 }
 
 func (it *mockSeriesIterator) Next() ValueType {
-	if it.currIndex < len(it.timeStamps)-1 {
+	if it.currIndex < len(it.timestamps)-1 {
 		it.currIndex++
 		return ValFloat
 	}
@@ -268,8 +284,9 @@ func (nopIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogra
 func (nopIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return math.MinInt64, nil
 }
-func (nopIterator) AtT() int64 { return math.MinInt64 }
-func (nopIterator) Err() error { return nil }
+func (nopIterator) AtT() int64  { return math.MinInt64 }
+func (nopIterator) AtST() int64 { return 0 }
+func (nopIterator) Err() error  { return nil }
 
 // Pool is used to create and reuse chunk references to avoid allocations.
 type Pool interface {
