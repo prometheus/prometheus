@@ -63,7 +63,7 @@ func NewManager(
 		logger = promslog.NewNopLogger()
 	}
 	if appendable != nil && appendableV2 != nil {
-		return nil, errors.New("scrape.NewManager: appendableV2 and appendableV2 cannot be provided at the same time")
+		return nil, errors.New("scrape.NewManager: appendable and appendableV2 cannot be provided at the same time")
 	}
 
 	sm, err := newScrapeMetrics(registerer)
