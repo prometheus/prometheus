@@ -341,3 +341,43 @@ eval instant at 0m non_empty + fill(0) nonexistent
 eval instant at 0m nonexistent + fill(0) non_empty
   {label="a"} 10
   {label="b"} 20
+
+# ---------- Metric names that match fill modifier keywords ----------
+
+clear
+
+load 5m
+  fill{label="a"} 1
+  fill{label="b"} 2
+  fill_left{label="a"} 10
+  fill_left{label="c"} 30
+  fill_right{label="b"} 200
+  fill_right{label="d"} 400
+  other{label="a"} 1000
+  other{label="e"} 5000
+
+# Metric named "fill" on the left side.
+eval instant at 0m fill + fill(0) other
+  {label="a"} 1001
+  {label="b"} 2
+  {label="e"} 5000
+
+# Metric named "fill" on the right side without modifier.
+eval instant at 0m other + fill
+  {label="a"} 1001
+
+# Metric named "fill" on the right side with fill() modifier.
+eval instant at 0m other + fill(0) fill
+  {label="a"} 1001
+  {label="b"} 2
+  {label="e"} 5000
+
+# Metric named "fill_left" on the right side with fill_left() modifier.
+eval instant at 0m other + fill_left(0) fill_left
+  {label="a"} 1010
+  {label="c"} 30
+
+# Metric named "fill_right" on the right side with fill_right() modifier.
+eval instant at 0m other + fill_right(0) fill_right
+  {label="a"} 1000
+  {label="e"} 5000
