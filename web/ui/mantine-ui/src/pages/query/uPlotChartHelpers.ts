@@ -1,4 +1,4 @@
-import { RangeSamples } from "../../api/responseTypes/query";
+import { RangeSamples } from '../../api/responseTypes/query';
 import { formatSeries } from "../../lib/formatSeries";
 import { formatTimestamp } from "../../lib/formatTime";
 import { getSeriesColor } from "./colorPool";
@@ -486,3 +486,63 @@ export const getUPlotData = (
 
   return [timeData, ...values];
 };
+
+export const getHeatmapData = (
+  inputData: RangeSamples[],
+  startTime: number,
+  endTime: number,
+  resolution: number
+): uPlot.AlignedData => {
+  const timeData: number[] = [];
+  for (let t = startTime; t <= endTime; t += resolution) {
+    timeData.push(t);
+  }
+
+  const extractHeatmapValues = (
+    inputData: RangeSamples[],
+    startTime: number,
+    endTime: number,
+    resolution: number,
+    type: "lower" | "upper" | "count"
+  ): (number | null)[][] => {
+    return inputData.map(({ histograms }) => {
+      const data: (number | null)[] = [];
+      let histogramPos = 0;
+
+      for (let t = startTime; t <= endTime; t += resolution) {
+        const currentHistogram = histograms && histograms[histogramPos];
+
+        // Allow for floating point inaccuracy.
+        if (
+          currentHistogram &&
+          histograms.length > histogramPos &&
+          currentHistogram[0] < t + resolution / 100 &&
+          currentHistogram[1].buckets
+        ) {
+          switch (type) {
+            case "lower":
+              data.push(parseValue(currentHistogram[1].buckets[0][1]));
+              break;
+            case "upper":
+              data.push(parseValue(currentHistogram[1].buckets[0][2]));
+              break;
+            case "count":
+              data.push(parseValue(currentHistogram[1].buckets[0][3]));
+              break;
+          }
+          histogramPos++;
+        } else {
+          // Insert nulls for all missing steps.
+          data.push(null);
+        }
+      }
+      return data;
+    });
+  };
+
+  const lowerBounds = extractHeatmapValues(inputData, startTime, endTime, resolution, "lower");
+  const upperBounds = extractHeatmapValues(inputData, startTime, endTime, resolution, "upper");
+  const counts = extractHeatmapValues(inputData, startTime, endTime, resolution, "count");
+
+  return [timeData, ...lowerBounds, ...upperBounds, ...counts];
+}
