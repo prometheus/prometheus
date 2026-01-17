@@ -22,13 +22,13 @@ import (
 	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	semconv "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite/semconv"
 )
 
 // Metadata extends metadata.Metadata with the metric family name.
@@ -58,25 +58,22 @@ type CombinedAppender interface {
 // CombinedAppenderMetrics is for the metrics observed by the
 // combinedAppender implementation.
 type CombinedAppenderMetrics struct {
-	samplesAppendedWithoutMetadata prometheus.Counter
-	outOfOrderExemplars            prometheus.Counter
+	samplesAppendedWithoutMetadata semconv.PrometheusAPIOtlpAppendedSamplesWithoutMetadataTotal
+	outOfOrderExemplars            semconv.PrometheusAPIOtlpOutOfOrderExemplarsTotal
 }
 
 func NewCombinedAppenderMetrics(reg prometheus.Registerer) CombinedAppenderMetrics {
-	return CombinedAppenderMetrics{
-		samplesAppendedWithoutMetadata: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "otlp_appended_samples_without_metadata_total",
-			Help:      "The total number of samples ingested from OTLP without corresponding metadata.",
-		}),
-		outOfOrderExemplars: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "prometheus",
-			Subsystem: "api",
-			Name:      "otlp_out_of_order_exemplars_total",
-			Help:      "The total number of received OTLP exemplars which were rejected because they were out of order.",
-		}),
+	m := CombinedAppenderMetrics{
+		samplesAppendedWithoutMetadata: semconv.NewPrometheusAPIOtlpAppendedSamplesWithoutMetadataTotal(),
+		outOfOrderExemplars:            semconv.NewPrometheusAPIOtlpOutOfOrderExemplarsTotal(),
 	}
+	if reg != nil {
+		reg.MustRegister(
+			m.samplesAppendedWithoutMetadata.Counter,
+			m.outOfOrderExemplars.Counter,
+		)
+	}
+	return m
 }
 
 // NewCombinedAppender creates a combined appender that sets start times and

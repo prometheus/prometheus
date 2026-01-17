@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	semconv "github.com/prometheus/prometheus/storage/remote/semconv"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/gate"
 )
@@ -39,7 +40,7 @@ type readHandler struct {
 	remoteReadSampleLimit     int
 	remoteReadMaxBytesInFrame int
 	remoteReadGate            *gate.Gate
-	queries                   prometheus.Gauge
+	queries                   semconv.PrometheusRemoteReadHandlerQueries
 	marshalPool               *sync.Pool
 }
 
@@ -54,16 +55,10 @@ func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable stor
 		remoteReadGate:            gate.New(remoteReadConcurrencyLimit),
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		marshalPool:               &sync.Pool{},
-
-		queries: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: "remote_read_handler",
-			Name:      "queries",
-			Help:      "The current number of remote read queries that are either in execution or queued on the handler.",
-		}),
+		queries:                   semconv.NewPrometheusRemoteReadHandlerQueries(),
 	}
 	if r != nil {
-		r.MustRegister(h.queries)
+		r.MustRegister(h.queries.Gauge)
 	}
 	return h
 }
