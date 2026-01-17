@@ -6,11 +6,11 @@ This document describes the metrics defined in this semantic convention registry
 
 | Metric | Type | Unit | Description |
 |--------|------|------|-------------|
-| `prometheus_rule_evaluation_duration_histogram_seconds` | histogram | s | The duration of rule evaluations as a histogram. |
-| `prometheus_rule_evaluation_duration_seconds` | histogram | s | The duration of rule group evaluations. |
+| `prometheus_rule_evaluation_duration_histogram_seconds` | histogram | s | The duration for a rule to execute. |
+| `prometheus_rule_evaluation_duration_seconds` | histogram | s | The duration for a rule to execute. |
 | `prometheus_rule_evaluation_failures_total` | counter | {failure} | The total number of rule evaluation failures. |
 | `prometheus_rule_evaluations_total` | counter | {evaluation} | The total number of rule evaluations. |
-| `prometheus_rule_group_duration_histogram_seconds` | histogram | s | The duration of rule group evaluations as a histogram. |
+| `prometheus_rule_group_duration_histogram_seconds` | histogram | s | The duration of rule group evaluations. |
 | `prometheus_rule_group_duration_seconds` | histogram | s | The duration of rule group evaluations. |
 | `prometheus_rule_group_interval_seconds` | gauge | s | The interval of a rule group. |
 | `prometheus_rule_group_iterations_missed_total` | counter | {iteration} | The total number of rule group evaluations missed due to slow rule group evaluation. |
@@ -28,7 +28,7 @@ This document describes the metrics defined in this semantic convention registry
 
 ### `prometheus_rule_evaluation_duration_histogram_seconds`
 
-The duration of rule evaluations as a histogram.
+The duration for a rule to execute.
 
 - **Type:** histogram
 - **Unit:** s
@@ -37,7 +37,7 @@ The duration of rule evaluations as a histogram.
 
 ### `prometheus_rule_evaluation_duration_seconds`
 
-The duration of rule group evaluations.
+The duration for a rule to execute.
 
 - **Type:** histogram
 - **Unit:** s
@@ -78,7 +78,7 @@ The total number of rule evaluations.
 
 ### `prometheus_rule_group_duration_histogram_seconds`
 
-The duration of rule group evaluations as a histogram.
+The duration of rule group evaluations.
 
 - **Type:** histogram
 - **Unit:** s

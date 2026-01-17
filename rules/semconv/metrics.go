@@ -5,6 +5,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -23,7 +25,7 @@ func (a RuleGroupAttr) Value() string {
 	return string(a)
 }
 
-// PrometheusRuleEvaluationDurationHistogramSeconds records the duration of rule evaluations as a histogram.
+// PrometheusRuleEvaluationDurationHistogramSeconds records the duration for a rule to execute.
 type PrometheusRuleEvaluationDurationHistogramSeconds struct {
 	prometheus.Histogram
 }
@@ -32,23 +34,32 @@ type PrometheusRuleEvaluationDurationHistogramSeconds struct {
 func NewPrometheusRuleEvaluationDurationHistogramSeconds() PrometheusRuleEvaluationDurationHistogramSeconds {
 	return PrometheusRuleEvaluationDurationHistogramSeconds{
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_rule_evaluation_duration_histogram_seconds",
-			Help: "The duration of rule evaluations as a histogram.",
+			Name:                            "prometheus_rule_evaluation_duration_histogram_seconds",
+			Help:                            "The duration for a rule to execute.",
+			Buckets:                         []float64{0.01, 0.1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
 }
 
-// PrometheusRuleEvaluationDurationSeconds records the duration of rule group evaluations.
+// PrometheusRuleEvaluationDurationSeconds records the duration for a rule to execute.
 type PrometheusRuleEvaluationDurationSeconds struct {
-	prometheus.Histogram
+	prometheus.Summary
 }
 
 // NewPrometheusRuleEvaluationDurationSeconds returns a new PrometheusRuleEvaluationDurationSeconds instrument.
 func NewPrometheusRuleEvaluationDurationSeconds() PrometheusRuleEvaluationDurationSeconds {
 	return PrometheusRuleEvaluationDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
 			Name: "prometheus_rule_evaluation_duration_seconds",
-			Help: "The duration of rule group evaluations.",
+			Help: "The duration for a rule to execute.",
+			Objectives: map[float64]float64{
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
 		}),
 	}
 }
@@ -127,7 +138,7 @@ func (m PrometheusRuleEvaluationsTotal) With(
 	return m.CounterVec.With(labels)
 }
 
-// PrometheusRuleGroupDurationHistogramSeconds records the duration of rule group evaluations as a histogram.
+// PrometheusRuleGroupDurationHistogramSeconds records the duration of rule group evaluations.
 type PrometheusRuleGroupDurationHistogramSeconds struct {
 	prometheus.Histogram
 }
@@ -136,23 +147,34 @@ type PrometheusRuleGroupDurationHistogramSeconds struct {
 func NewPrometheusRuleGroupDurationHistogramSeconds() PrometheusRuleGroupDurationHistogramSeconds {
 	return PrometheusRuleGroupDurationHistogramSeconds{
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_rule_group_duration_histogram_seconds",
-			Help: "The duration of rule group evaluations as a histogram.",
+			Name:                            "prometheus_rule_group_duration_histogram_seconds",
+			Help:                            "The duration of rule group evaluations.",
+			Buckets:                         []float64{0.01, 0.1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
 }
 
 // PrometheusRuleGroupDurationSeconds records the duration of rule group evaluations.
 type PrometheusRuleGroupDurationSeconds struct {
-	prometheus.Histogram
+	prometheus.Summary
 }
 
 // NewPrometheusRuleGroupDurationSeconds returns a new PrometheusRuleGroupDurationSeconds instrument.
 func NewPrometheusRuleGroupDurationSeconds() PrometheusRuleGroupDurationSeconds {
 	return PrometheusRuleGroupDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
 			Name: "prometheus_rule_group_duration_seconds",
 			Help: "The duration of rule group evaluations.",
+			Objectives: map[float64]float64{
+				0.01: 0.001,
+				0.05: 0.005,
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
 		}),
 	}
 }

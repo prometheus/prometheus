@@ -7,18 +7,32 @@ groups:
   - id: metric.prometheus_rule_evaluation_duration_seconds
     type: metric
     stability: development
-    brief: The duration of rule group evaluations.
+    brief: The duration for a rule to execute.
     metric_name: prometheus_rule_evaluation_duration_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
 
   - id: metric.prometheus_rule_evaluation_duration_histogram_seconds
     type: metric
     stability: development
-    brief: The duration of rule evaluations as a histogram.
+    brief: The duration for a rule to execute.
     metric_name: prometheus_rule_evaluation_duration_histogram_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [0.01, 0.1, 1, 10]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
 
   - id: metric.prometheus_rule_evaluation_failures_total
     type: metric
@@ -57,14 +71,30 @@ groups:
     metric_name: prometheus_rule_group_duration_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.01: 0.001
+          0.05: 0.005
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
 
   - id: metric.prometheus_rule_group_duration_histogram_seconds
     type: metric
     stability: development
-    brief: The duration of rule group evaluations as a histogram.
+    brief: The duration of rule group evaluations.
     metric_name: prometheus_rule_group_duration_histogram_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [0.01, 0.1, 1, 10]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
 
   - id: metric.prometheus_rule_group_interval_seconds
     type: metric
