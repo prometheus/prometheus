@@ -60,6 +60,13 @@ Query timings.
 - **Unit:** s
 - **Stability:** development
 
+#### Attributes
+
+| Attribute | Type | Description | Examples |
+|-----------|------|-------------|----------|
+| `slice` | string | The query execution phase. | inner_eval, prepare_time, queue_time, result_sort |
+
+
 
 ### `prometheus_engine_query_log_enabled`
 

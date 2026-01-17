@@ -5,6 +5,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -65,8 +67,12 @@ func NewPrometheusEngineQueryDurationHistogramSeconds() PrometheusEngineQueryDur
 	}
 	return PrometheusEngineQueryDurationHistogramSeconds{
 		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "prometheus_engine_query_duration_histogram_seconds",
-			Help: "Histogram of query timings.",
+			Name:                            "prometheus_engine_query_duration_histogram_seconds",
+			Help:                            "Histogram of query timings.",
+			Buckets:                         []float64{0.01, 0.1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, labels),
 	}
 }
@@ -92,17 +98,44 @@ func (m PrometheusEngineQueryDurationHistogramSeconds) With(
 
 // PrometheusEngineQueryDurationSeconds records the query timings.
 type PrometheusEngineQueryDurationSeconds struct {
-	prometheus.Histogram
+	*prometheus.SummaryVec
 }
 
 // NewPrometheusEngineQueryDurationSeconds returns a new PrometheusEngineQueryDurationSeconds instrument.
 func NewPrometheusEngineQueryDurationSeconds() PrometheusEngineQueryDurationSeconds {
+	labels := []string{
+		"slice",
+	}
 	return PrometheusEngineQueryDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		SummaryVec: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Name: "prometheus_engine_query_duration_seconds",
 			Help: "Query timings.",
-		}),
+			Objectives: map[float64]float64{
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
+		}, labels),
 	}
+}
+
+type PrometheusEngineQueryDurationSecondsAttr interface {
+	Attribute
+	implPrometheusEngineQueryDurationSeconds()
+}
+
+func (a SliceAttr) implPrometheusEngineQueryDurationSeconds() {}
+
+func (m PrometheusEngineQueryDurationSeconds) With(
+	extra ...PrometheusEngineQueryDurationSecondsAttr,
+) prometheus.Observer {
+	labels := prometheus.Labels{
+		"slice": "",
+	}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.SummaryVec.With(labels)
 }
 
 // PrometheusEngineQueryLogEnabled records the state of the query log.
