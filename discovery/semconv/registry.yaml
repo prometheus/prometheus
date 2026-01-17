@@ -100,6 +100,28 @@ groups:
     metric_name: prometheus_sd_refresh_duration_seconds
     instrument: histogram
     unit: s
+    attributes:
+      - id: mechanism
+        type: string
+        stability: development
+        brief: The service discovery mechanism.
+        examples:
+          - dns
+          - kubernetes
+          - consul
+      - id: config
+        type: string
+        stability: development
+        brief: The scrape config name.
+        examples:
+          - prometheus
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
 
   - id: metric.prometheus_sd_refresh_duration_histogram_seconds
     type: metric
@@ -117,6 +139,13 @@ groups:
           - dns
           - kubernetes
           - consul
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [0.01, 0.1, 1, 10]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
 
   - id: metric.prometheus_sd_refresh_failures_total
     type: metric
@@ -164,6 +193,27 @@ groups:
     metric_name: prometheus_sd_consul_rpc_duration_seconds
     instrument: histogram
     unit: s
+    attributes:
+      - id: endpoint
+        type: string
+        stability: development
+        brief: The Consul endpoint.
+        examples:
+          - catalog
+      - id: call
+        type: string
+        stability: development
+        brief: The Consul RPC call type.
+        examples:
+          - services
+          - service
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
 
   - id: metric.prometheus_sd_consul_rpc_failures_total
     type: metric
@@ -219,6 +269,13 @@ groups:
     metric_name: prometheus_sd_file_scan_duration_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
 
   - id: metric.prometheus_sd_file_watcher_errors_total
     type: metric
@@ -277,6 +334,13 @@ groups:
     metric_name: prometheus_sd_kuma_fetch_duration_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
 
   - id: metric.prometheus_sd_kuma_fetch_failures_total
     type: metric

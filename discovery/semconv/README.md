@@ -65,6 +65,14 @@ The duration of a Consul RPC call.
 - **Unit:** s
 - **Stability:** development
 
+#### Attributes
+
+| Attribute | Type | Description | Examples |
+|-----------|------|-------------|----------|
+| `call` | string | The Consul RPC call type. | services, service |
+| `endpoint` | string | The Consul endpoint. | catalog |
+
+
 
 ### `prometheus_sd_consul_rpc_failures_total`
 
@@ -288,6 +296,14 @@ The duration of a SD refresh cycle.
 - **Type:** histogram
 - **Unit:** s
 - **Stability:** development
+
+#### Attributes
+
+| Attribute | Type | Description | Examples |
+|-----------|------|-------------|----------|
+| `config` | string | The scrape config name. | prometheus |
+| `mechanism` | string | The service discovery mechanism. | dns, kubernetes, consul |
+
 
 
 ### `prometheus_sd_refresh_failures_total`

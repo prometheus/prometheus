@@ -5,6 +5,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -13,6 +15,16 @@ type Attribute interface {
 	ID() string
 	Value() string
 }
+type CallAttr string
+
+func (a CallAttr) ID() string {
+	return "call"
+}
+
+func (a CallAttr) Value() string {
+	return string(a)
+}
+
 type ConfigAttr string
 
 func (a ConfigAttr) ID() string {
@@ -20,6 +32,16 @@ func (a ConfigAttr) ID() string {
 }
 
 func (a ConfigAttr) Value() string {
+	return string(a)
+}
+
+type EndpointAttr string
+
+func (a EndpointAttr) ID() string {
+	return "endpoint"
+}
+
+func (a EndpointAttr) Value() string {
 	return string(a)
 }
 
@@ -105,17 +127,47 @@ func NewPrometheusSDAzureFailuresTotal() PrometheusSDAzureFailuresTotal {
 
 // PrometheusSDConsulRpcDurationSeconds records the duration of a Consul RPC call.
 type PrometheusSDConsulRpcDurationSeconds struct {
-	prometheus.Histogram
+	*prometheus.SummaryVec
 }
 
 // NewPrometheusSDConsulRpcDurationSeconds returns a new PrometheusSDConsulRpcDurationSeconds instrument.
 func NewPrometheusSDConsulRpcDurationSeconds() PrometheusSDConsulRpcDurationSeconds {
+	labels := []string{
+		"call",
+		"endpoint",
+	}
 	return PrometheusSDConsulRpcDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		SummaryVec: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Name: "prometheus_sd_consul_rpc_duration_seconds",
 			Help: "The duration of a Consul RPC call.",
-		}),
+			Objectives: map[float64]float64{
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
+		}, labels),
 	}
+}
+
+type PrometheusSDConsulRpcDurationSecondsAttr interface {
+	Attribute
+	implPrometheusSDConsulRpcDurationSeconds()
+}
+
+func (a CallAttr) implPrometheusSDConsulRpcDurationSeconds()     {}
+func (a EndpointAttr) implPrometheusSDConsulRpcDurationSeconds() {}
+
+func (m PrometheusSDConsulRpcDurationSeconds) With(
+	extra ...PrometheusSDConsulRpcDurationSecondsAttr,
+) prometheus.Observer {
+	labels := prometheus.Labels{
+		"call":     "",
+		"endpoint": "",
+	}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.SummaryVec.With(labels)
 }
 
 // PrometheusSDConsulRpcFailuresTotal records the number of Consul RPC call failures.
@@ -294,15 +346,20 @@ func NewPrometheusSDFileReadErrorsTotal() PrometheusSDFileReadErrorsTotal {
 
 // PrometheusSDFileScanDurationSeconds records the duration of the file SD scan.
 type PrometheusSDFileScanDurationSeconds struct {
-	prometheus.Histogram
+	prometheus.Summary
 }
 
 // NewPrometheusSDFileScanDurationSeconds returns a new PrometheusSDFileScanDurationSeconds instrument.
 func NewPrometheusSDFileScanDurationSeconds() PrometheusSDFileScanDurationSeconds {
 	return PrometheusSDFileScanDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
 			Name: "prometheus_sd_file_scan_duration_seconds",
 			Help: "The duration of the file SD scan.",
+			Objectives: map[float64]float64{
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
 		}),
 	}
 }
@@ -394,15 +451,20 @@ func NewPrometheusSDKubernetesFailuresTotal() PrometheusSDKubernetesFailuresTota
 
 // PrometheusSDKumaFetchDurationSeconds records the duration of a Kuma MADS fetch call.
 type PrometheusSDKumaFetchDurationSeconds struct {
-	prometheus.Histogram
+	prometheus.Summary
 }
 
 // NewPrometheusSDKumaFetchDurationSeconds returns a new PrometheusSDKumaFetchDurationSeconds instrument.
 func NewPrometheusSDKumaFetchDurationSeconds() PrometheusSDKumaFetchDurationSeconds {
 	return PrometheusSDKumaFetchDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
 			Name: "prometheus_sd_kuma_fetch_duration_seconds",
 			Help: "The duration of a Kuma MADS fetch call.",
+			Objectives: map[float64]float64{
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
 		}),
 	}
 }
@@ -516,8 +578,12 @@ func NewPrometheusSDRefreshDurationHistogramSeconds() PrometheusSDRefreshDuratio
 	}
 	return PrometheusSDRefreshDurationHistogramSeconds{
 		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "prometheus_sd_refresh_duration_histogram_seconds",
-			Help: "The duration of a SD refresh cycle as a histogram.",
+			Name:                            "prometheus_sd_refresh_duration_histogram_seconds",
+			Help:                            "The duration of a SD refresh cycle as a histogram.",
+			Buckets:                         []float64{0.01, 0.1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, labels),
 	}
 }
@@ -543,17 +609,47 @@ func (m PrometheusSDRefreshDurationHistogramSeconds) With(
 
 // PrometheusSDRefreshDurationSeconds records the duration of a SD refresh cycle.
 type PrometheusSDRefreshDurationSeconds struct {
-	prometheus.Histogram
+	*prometheus.SummaryVec
 }
 
 // NewPrometheusSDRefreshDurationSeconds returns a new PrometheusSDRefreshDurationSeconds instrument.
 func NewPrometheusSDRefreshDurationSeconds() PrometheusSDRefreshDurationSeconds {
+	labels := []string{
+		"config",
+		"mechanism",
+	}
 	return PrometheusSDRefreshDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		SummaryVec: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Name: "prometheus_sd_refresh_duration_seconds",
 			Help: "The duration of a SD refresh cycle.",
-		}),
+			Objectives: map[float64]float64{
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
+		}, labels),
 	}
+}
+
+type PrometheusSDRefreshDurationSecondsAttr interface {
+	Attribute
+	implPrometheusSDRefreshDurationSeconds()
+}
+
+func (a ConfigAttr) implPrometheusSDRefreshDurationSeconds()    {}
+func (a MechanismAttr) implPrometheusSDRefreshDurationSeconds() {}
+
+func (m PrometheusSDRefreshDurationSeconds) With(
+	extra ...PrometheusSDRefreshDurationSecondsAttr,
+) prometheus.Observer {
+	labels := prometheus.Labels{
+		"config":    "",
+		"mechanism": "",
+	}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.SummaryVec.With(labels)
 }
 
 // PrometheusSDRefreshFailuresTotal records the number of SD refresh failures.
