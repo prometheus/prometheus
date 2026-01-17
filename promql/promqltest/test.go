@@ -64,8 +64,25 @@ const (
 )
 
 type TBRun interface {
-	testing.TB
+	testutil.T
 	Run(string, func(*testing.T)) bool
+}
+
+type runWithPrefix struct {
+	prefix string
+	TBRun
+}
+
+func (r *runWithPrefix) Run(name string, t func(*testing.T)) bool {
+	return r.TBRun.Run(fmt.Sprintf("%s/%s", r.prefix, name), t)
+}
+
+type noRun struct {
+	testutil.T
+}
+
+func (r *noRun) Run(_ string, _ func(*testing.T)) bool {
+	return true
 }
 
 var testStartTime = time.Unix(0, 0).UTC()
@@ -73,7 +90,7 @@ var testStartTime = time.Unix(0, 0).UTC()
 // LoadedStorage returns storage with generated data using the provided load statements.
 // Non-load statements will cause test errors.
 func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
-	test, err := newTest(t, input, false, newTestStorage)
+	test, err := newTest(&noRun{t}, input, false, newTestStorage)
 	require.NoError(t, err)
 
 	for _, cmd := range test.cmds {
@@ -166,31 +183,29 @@ func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage f
 	require.NoError(t, err)
 
 	for _, fn := range files {
-		t.Run(fn, func(t *testing.T) {
-			content, err := fs.ReadFile(testsFs, fn)
-			require.NoError(t, err)
-			RunTestWithStorage(t, string(content), engine, newStorage)
-		})
+		content, err := fs.ReadFile(testsFs, fn)
+		require.NoError(t, err)
+		RunTestWithStorage(&runWithPrefix{TBRun: t, prefix: fn}, string(content), engine, newStorage)
 	}
 }
 
 // RunTest parses and runs the test against the provided engine.
-func RunTest(t testutil.T, input string, engine promql.QueryEngine) {
+func RunTest(t TBRun, input string, engine promql.QueryEngine) {
 	RunTestWithStorage(t, input, engine, newTestStorage)
 }
 
 // RunTestWithStorage parses and runs the test against the provided engine and storage.
-func RunTestWithStorage(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
+func RunTestWithStorage(t TBRun, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
 	require.NoError(t, runTest(t, input, engine, newStorage, false))
 }
 
 // testTest allows tests to be run in "test-the-test" mode (true for
 // testingMode). This is a special mode for testing test code execution itself.
-func testTest(t testutil.T, input string, engine promql.QueryEngine) error {
+func testTest(t TBRun, input string, engine promql.QueryEngine) error {
 	return runTest(t, input, engine, newTestStorage, true)
 }
 
-func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage, testingMode bool) error {
+func runTest(t TBRun, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage, testingMode bool) error {
 	test, err := newTest(t, input, testingMode, newStorage)
 
 	// Why do this before checking err? newTest() can create the test storage and then return an error,
@@ -225,7 +240,7 @@ func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage f
 // test is a sequence of read and write commands that are run
 // against a test storage.
 type test struct {
-	testutil.T
+	T TBRun
 	// testingMode distinguishes between normal execution and test-execution mode.
 	testingMode bool
 
@@ -239,7 +254,7 @@ type test struct {
 }
 
 // newTest returns an initialized empty Test.
-func newTest(t testutil.T, input string, testingMode bool, newStorage func(testutil.T) storage.Storage) (*test, error) {
+func newTest(t TBRun, input string, testingMode bool, newStorage func(testutil.T) storage.Storage) (*test, error) {
 	test := &test{
 		T:           t,
 		cmds:        []testCommand{},
@@ -1454,13 +1469,11 @@ func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		return do()
 	}
 
-	if tt, ok := t.T.(*testing.T); ok {
-		tt.Run(fmt.Sprintf("line %d/%s", cmd.line, cmd.expr), func(t *testing.T) {
-			require.NoError(t, do())
-		})
-		return nil
-	}
-	return errors.New("t.T is not testing.T")
+	t.T.Run(fmt.Sprintf("line_%d/%s", cmd.line, cmd.expr), func(t *testing.T) {
+		require.NoError(t, do())
+	})
+
+	return nil
 }
 
 func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
