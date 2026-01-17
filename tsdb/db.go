@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	semconv "github.com/prometheus/prometheus/tsdb/semconv"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -317,22 +318,34 @@ type DB struct {
 type dbMetrics struct {
 	loadedBlocks         prometheus.GaugeFunc
 	symbolTableSize      prometheus.GaugeFunc
-	reloads              prometheus.Counter
-	reloadsFailed        prometheus.Counter
-	compactionsFailed    prometheus.Counter
-	compactionsTriggered prometheus.Counter
-	compactionsSkipped   prometheus.Counter
-	sizeRetentionCount   prometheus.Counter
-	timeRetentionCount   prometheus.Counter
+	reloads              semconv.PrometheusTSDBReloadsTotal
+	reloadsFailed        semconv.PrometheusTSDBReloadsFailuresTotal
+	compactionsFailed    semconv.PrometheusTSDBCompactionsFailedTotal
+	compactionsTriggered semconv.PrometheusTSDBCompactionsTriggeredTotal
+	compactionsSkipped   semconv.PrometheusTSDBCompactionsSkippedTotal
+	sizeRetentionCount   semconv.PrometheusTSDBSizeRetentionsTotal
+	timeRetentionCount   semconv.PrometheusTSDBTimeRetentionsTotal
 	startTime            prometheus.GaugeFunc
-	tombCleanTimer       prometheus.Histogram
-	blocksBytes          prometheus.Gauge
-	maxBytes             prometheus.Gauge
-	retentionDuration    prometheus.Gauge
+	tombCleanTimer       semconv.PrometheusTSDBTombstoneCleanupSeconds
+	blocksBytes          semconv.PrometheusTSDBStorageBlocksBytes
+	maxBytes             semconv.PrometheusTSDBRetentionLimitBytes
+	retentionDuration    semconv.PrometheusTSDBRetentionLimitSeconds
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
-	m := &dbMetrics{}
+	m := &dbMetrics{
+		reloads:              semconv.NewPrometheusTSDBReloadsTotal(),
+		reloadsFailed:        semconv.NewPrometheusTSDBReloadsFailuresTotal(),
+		compactionsFailed:    semconv.NewPrometheusTSDBCompactionsFailedTotal(),
+		compactionsTriggered: semconv.NewPrometheusTSDBCompactionsTriggeredTotal(),
+		compactionsSkipped:   semconv.NewPrometheusTSDBCompactionsSkippedTotal(),
+		sizeRetentionCount:   semconv.NewPrometheusTSDBSizeRetentionsTotal(),
+		timeRetentionCount:   semconv.NewPrometheusTSDBTimeRetentionsTotal(),
+		tombCleanTimer:       semconv.NewPrometheusTSDBTombstoneCleanupSeconds(),
+		blocksBytes:          semconv.NewPrometheusTSDBStorageBlocksBytes(),
+		maxBytes:             semconv.NewPrometheusTSDBRetentionLimitBytes(),
+		retentionDuration:    semconv.NewPrometheusTSDBRetentionLimitSeconds(),
+	}
 
 	m.loadedBlocks = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_blocks_loaded",
@@ -355,30 +368,6 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		}
 		return float64(symTblSize)
 	})
-	m.reloads = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_reloads_total",
-		Help: "Number of times the database reloaded block data from disk.",
-	})
-	m.reloadsFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_reloads_failures_total",
-		Help: "Number of times the database failed to reloadBlocks block data from disk.",
-	})
-	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_triggered_total",
-		Help: "Total number of triggered compactions for the partition.",
-	})
-	m.compactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_failed_total",
-		Help: "Total number of compactions that failed for the partition.",
-	})
-	m.timeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_time_retentions_total",
-		Help: "The number of times that blocks were deleted because the maximum time limit was exceeded.",
-	})
-	m.compactionsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_skipped_total",
-		Help: "Total number of skipped compactions due to disabled auto compaction.",
-	})
 	m.startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_lowest_timestamp",
 		Help: "Lowest timestamp value stored in the database. The unit is decided by the library consumer.",
@@ -390,46 +379,23 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		}
 		return float64(db.blocks[0].meta.MinTime)
 	})
-	m.tombCleanTimer = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:                            "prometheus_tsdb_tombstone_cleanup_seconds",
-		Help:                            "The time taken to recompact blocks to remove tombstones.",
-		NativeHistogramBucketFactor:     1.1,
-		NativeHistogramMaxBucketNumber:  100,
-		NativeHistogramMinResetDuration: 1 * time.Hour,
-	})
-	m.blocksBytes = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_storage_blocks_bytes",
-		Help: "The number of bytes that are currently used for local storage by all blocks.",
-	})
-	m.maxBytes = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_retention_limit_bytes",
-		Help: "Max number of bytes to be retained in the tsdb blocks, configured 0 means disabled",
-	})
-	m.retentionDuration = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_retention_limit_seconds",
-		Help: "How long to retain samples in storage.",
-	})
-	m.sizeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_size_retentions_total",
-		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
-	})
 
 	if r != nil {
 		r.MustRegister(
 			m.loadedBlocks,
 			m.symbolTableSize,
-			m.reloads,
-			m.reloadsFailed,
-			m.compactionsFailed,
-			m.compactionsTriggered,
-			m.compactionsSkipped,
-			m.sizeRetentionCount,
-			m.timeRetentionCount,
+			m.reloads.Counter,
+			m.reloadsFailed.Counter,
+			m.compactionsFailed.Counter,
+			m.compactionsTriggered.Counter,
+			m.compactionsSkipped.Counter,
+			m.sizeRetentionCount.Counter,
+			m.timeRetentionCount.Counter,
 			m.startTime,
-			m.tombCleanTimer,
-			m.blocksBytes,
-			m.maxBytes,
-			m.retentionDuration,
+			m.tombCleanTimer.Histogram,
+			m.blocksBytes.Gauge,
+			m.maxBytes.Gauge,
+			m.retentionDuration.Gauge,
 		)
 	}
 	return m

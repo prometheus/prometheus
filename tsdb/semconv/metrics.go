@@ -5,6 +5,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -132,8 +134,9 @@ type PrometheusTSDBCompactionChunkRangeSeconds struct {
 func NewPrometheusTSDBCompactionChunkRangeSeconds() PrometheusTSDBCompactionChunkRangeSeconds {
 	return PrometheusTSDBCompactionChunkRangeSeconds{
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_compaction_chunk_range_seconds",
-			Help: "Final time range of chunks on their first compaction.",
+			Name:    "prometheus_tsdb_compaction_chunk_range_seconds",
+			Help:    "Final time range of chunks on their first compaction.",
+			Buckets: prometheus.ExponentialBuckets(100, 4, 10),
 		}),
 	}
 }
@@ -147,8 +150,9 @@ type PrometheusTSDBCompactionChunkSamples struct {
 func NewPrometheusTSDBCompactionChunkSamples() PrometheusTSDBCompactionChunkSamples {
 	return PrometheusTSDBCompactionChunkSamples{
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_compaction_chunk_samples",
-			Help: "Final number of samples on their first compaction.",
+			Name:    "prometheus_tsdb_compaction_chunk_samples",
+			Help:    "Final number of samples on their first compaction.",
+			Buckets: prometheus.ExponentialBuckets(4, 1.5, 12),
 		}),
 	}
 }
@@ -162,8 +166,9 @@ type PrometheusTSDBCompactionChunkSizeBytes struct {
 func NewPrometheusTSDBCompactionChunkSizeBytes() PrometheusTSDBCompactionChunkSizeBytes {
 	return PrometheusTSDBCompactionChunkSizeBytes{
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_compaction_chunk_size_bytes",
-			Help: "Final size of chunks on their first compaction.",
+			Name:    "prometheus_tsdb_compaction_chunk_size_bytes",
+			Help:    "Final size of chunks on their first compaction.",
+			Buckets: prometheus.ExponentialBuckets(32, 1.5, 12),
 		}),
 	}
 }
@@ -177,8 +182,12 @@ type PrometheusTSDBCompactionDurationSeconds struct {
 func NewPrometheusTSDBCompactionDurationSeconds() PrometheusTSDBCompactionDurationSeconds {
 	return PrometheusTSDBCompactionDurationSeconds{
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_compaction_duration_seconds",
-			Help: "Duration of compaction runs.",
+			Name:                            "prometheus_tsdb_compaction_duration_seconds",
+			Help:                            "Duration of compaction runs.",
+			Buckets:                         prometheus.ExponentialBuckets(1, 2, 14),
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
 }
@@ -440,15 +449,16 @@ func NewPrometheusTSDBHeadChunksStorageSizeBytes() PrometheusTSDBHeadChunksStora
 
 // PrometheusTSDBHeadGCDurationSeconds records the runtime of garbage collection in the head block.
 type PrometheusTSDBHeadGCDurationSeconds struct {
-	prometheus.Histogram
+	prometheus.Summary
 }
 
 // NewPrometheusTSDBHeadGCDurationSeconds returns a new PrometheusTSDBHeadGCDurationSeconds instrument.
 func NewPrometheusTSDBHeadGCDurationSeconds() PrometheusTSDBHeadGCDurationSeconds {
 	return PrometheusTSDBHeadGCDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_head_gc_duration_seconds",
-			Help: "Runtime of garbage collection in the head block.",
+		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
+			Name:       "prometheus_tsdb_head_gc_duration_seconds",
+			Help:       "Runtime of garbage collection in the head block.",
+			Objectives: map[float64]float64{},
 		}),
 	}
 }
@@ -873,15 +883,20 @@ func NewPrometheusTSDBOutOfOrderWBLCompletedPagesTotal() PrometheusTSDBOutOfOrde
 
 // PrometheusTSDBOutOfOrderWBLFsyncDurationSeconds records the duration of WBL fsync for out-of-order samples.
 type PrometheusTSDBOutOfOrderWBLFsyncDurationSeconds struct {
-	prometheus.Histogram
+	prometheus.Summary
 }
 
 // NewPrometheusTSDBOutOfOrderWBLFsyncDurationSeconds returns a new PrometheusTSDBOutOfOrderWBLFsyncDurationSeconds instrument.
 func NewPrometheusTSDBOutOfOrderWBLFsyncDurationSeconds() PrometheusTSDBOutOfOrderWBLFsyncDurationSeconds {
 	return PrometheusTSDBOutOfOrderWBLFsyncDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
 			Name: "prometheus_tsdb_out_of_order_wbl_fsync_duration_seconds",
 			Help: "Duration of WBL fsync for out-of-order samples.",
+			Objectives: map[float64]float64{
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
 		}),
 	}
 }
@@ -1075,8 +1090,12 @@ type PrometheusTSDBSampleOOODelta struct {
 func NewPrometheusTSDBSampleOOODelta() PrometheusTSDBSampleOOODelta {
 	return PrometheusTSDBSampleOOODelta{
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_sample_ooo_delta",
-			Help: "Delta in seconds between the time when an out-of-order sample was ingested and the latest sample in the chunk.",
+			Name:                            "prometheus_tsdb_sample_ooo_delta",
+			Help:                            "Delta in seconds between the time when an out-of-order sample was ingested and the latest sample in the chunk.",
+			Buckets:                         []float64{600, 1800, 3600, 7200, 10800, 21600, 43200},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
 }
@@ -1165,8 +1184,11 @@ type PrometheusTSDBTombstoneCleanupSeconds struct {
 func NewPrometheusTSDBTombstoneCleanupSeconds() PrometheusTSDBTombstoneCleanupSeconds {
 	return PrometheusTSDBTombstoneCleanupSeconds{
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_tombstone_cleanup_seconds",
-			Help: "Time taken to clean up tombstones.",
+			Name:                            "prometheus_tsdb_tombstone_cleanup_seconds",
+			Help:                            "Time taken to clean up tombstones.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
 }
@@ -1255,15 +1277,20 @@ func NewPrometheusTSDBWALCorruptionsTotal() PrometheusTSDBWALCorruptionsTotal {
 
 // PrometheusTSDBWALFsyncDurationSeconds records the duration of WAL fsync.
 type PrometheusTSDBWALFsyncDurationSeconds struct {
-	prometheus.Histogram
+	prometheus.Summary
 }
 
 // NewPrometheusTSDBWALFsyncDurationSeconds returns a new PrometheusTSDBWALFsyncDurationSeconds instrument.
 func NewPrometheusTSDBWALFsyncDurationSeconds() PrometheusTSDBWALFsyncDurationSeconds {
 	return PrometheusTSDBWALFsyncDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
 			Name: "prometheus_tsdb_wal_fsync_duration_seconds",
 			Help: "Duration of WAL fsync.",
+			Objectives: map[float64]float64{
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
 		}),
 	}
 }
@@ -1350,6 +1377,43 @@ func NewPrometheusTSDBWALRecordPartsBytesWrittenTotal() PrometheusTSDBWALRecordP
 	}
 }
 
+// PrometheusTSDBWALReplayUnknownRefsTotal records the total number of unknown series references encountered during WAL replay.
+type PrometheusTSDBWALReplayUnknownRefsTotal struct {
+	*prometheus.CounterVec
+}
+
+// NewPrometheusTSDBWALReplayUnknownRefsTotal returns a new PrometheusTSDBWALReplayUnknownRefsTotal instrument.
+func NewPrometheusTSDBWALReplayUnknownRefsTotal() PrometheusTSDBWALReplayUnknownRefsTotal {
+	labels := []string{
+		"type",
+	}
+	return PrometheusTSDBWALReplayUnknownRefsTotal{
+		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
+			Help: "Total number of unknown series references encountered during WAL replay.",
+		}, labels),
+	}
+}
+
+type PrometheusTSDBWALReplayUnknownRefsTotalAttr interface {
+	Attribute
+	implPrometheusTSDBWALReplayUnknownRefsTotal()
+}
+
+func (a TypeAttr) implPrometheusTSDBWALReplayUnknownRefsTotal() {}
+
+func (m PrometheusTSDBWALReplayUnknownRefsTotal) With(
+	extra ...PrometheusTSDBWALReplayUnknownRefsTotalAttr,
+) prometheus.Counter {
+	labels := prometheus.Labels{
+		"type": "",
+	}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.CounterVec.With(labels)
+}
+
 // PrometheusTSDBWALSegmentCurrent records the current WAL segment.
 type PrometheusTSDBWALSegmentCurrent struct {
 	prometheus.Gauge
@@ -1382,15 +1446,16 @@ func NewPrometheusTSDBWALStorageSizeBytes() PrometheusTSDBWALStorageSizeBytes {
 
 // PrometheusTSDBWALTruncateDurationSeconds records the duration of WAL truncation.
 type PrometheusTSDBWALTruncateDurationSeconds struct {
-	prometheus.Histogram
+	prometheus.Summary
 }
 
 // NewPrometheusTSDBWALTruncateDurationSeconds returns a new PrometheusTSDBWALTruncateDurationSeconds instrument.
 func NewPrometheusTSDBWALTruncateDurationSeconds() PrometheusTSDBWALTruncateDurationSeconds {
 	return PrometheusTSDBWALTruncateDurationSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_wal_truncate_duration_seconds",
-			Help: "Duration of WAL truncation.",
+		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
+			Name:       "prometheus_tsdb_wal_truncate_duration_seconds",
+			Help:       "Duration of WAL truncation.",
+			Objectives: map[float64]float64{},
 		}),
 	}
 }
@@ -1438,4 +1503,41 @@ func NewPrometheusTSDBWALWritesFailedTotal() PrometheusTSDBWALWritesFailedTotal 
 			Help: "Total number of WAL writes that failed.",
 		}),
 	}
+}
+
+// PrometheusTSDBWBLReplayUnknownRefsTotal records the total number of unknown series references encountered during WBL replay.
+type PrometheusTSDBWBLReplayUnknownRefsTotal struct {
+	*prometheus.CounterVec
+}
+
+// NewPrometheusTSDBWBLReplayUnknownRefsTotal returns a new PrometheusTSDBWBLReplayUnknownRefsTotal instrument.
+func NewPrometheusTSDBWBLReplayUnknownRefsTotal() PrometheusTSDBWBLReplayUnknownRefsTotal {
+	labels := []string{
+		"type",
+	}
+	return PrometheusTSDBWBLReplayUnknownRefsTotal{
+		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
+			Help: "Total number of unknown series references encountered during WBL replay.",
+		}, labels),
+	}
+}
+
+type PrometheusTSDBWBLReplayUnknownRefsTotalAttr interface {
+	Attribute
+	implPrometheusTSDBWBLReplayUnknownRefsTotal()
+}
+
+func (a TypeAttr) implPrometheusTSDBWBLReplayUnknownRefsTotal() {}
+
+func (m PrometheusTSDBWBLReplayUnknownRefsTotal) With(
+	extra ...PrometheusTSDBWBLReplayUnknownRefsTotalAttr,
+) prometheus.Counter {
+	labels := prometheus.Labels{
+		"type": "",
+	}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.CounterVec.With(labels)
 }

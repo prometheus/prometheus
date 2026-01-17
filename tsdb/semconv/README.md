@@ -85,12 +85,14 @@ This document describes the metrics defined in this semantic convention registry
 | `prometheus_tsdb_wal_record_bytes_saved_total` | counter | By | Total bytes saved by WAL record compression. |
 | `prometheus_tsdb_wal_record_part_writes_total` | counter | {write} | Total number of WAL record part writes. |
 | `prometheus_tsdb_wal_record_parts_bytes_written_total` | counter | By | Total bytes written to WAL record parts. |
+| `prometheus_tsdb_wal_replay_unknown_refs_total` | counter | {reference} | Total number of unknown series references encountered during WAL replay. |
 | `prometheus_tsdb_wal_segment_current` | gauge | {segment} | Current WAL segment. |
 | `prometheus_tsdb_wal_storage_size_bytes` | gauge | By | Size of the WAL storage. |
 | `prometheus_tsdb_wal_truncate_duration_seconds` | histogram | s | Duration of WAL truncation. |
 | `prometheus_tsdb_wal_truncations_failed_total` | counter | {truncation} | Total number of WAL truncations that failed. |
 | `prometheus_tsdb_wal_truncations_total` | counter | {truncation} | Total number of WAL truncations. |
 | `prometheus_tsdb_wal_writes_failed_total` | counter | {write} | Total number of WAL writes that failed. |
+| `prometheus_tsdb_wbl_replay_unknown_refs_total` | counter | {reference} | Total number of unknown series references encountered during WBL replay. |
 
 
 ## Metric Details
@@ -849,6 +851,22 @@ Total bytes written to WAL record parts.
 - **Stability:** development
 
 
+### `prometheus_tsdb_wal_replay_unknown_refs_total`
+
+Total number of unknown series references encountered during WAL replay.
+
+- **Type:** counter
+- **Unit:** {reference}
+- **Stability:** development
+
+#### Attributes
+
+| Attribute | Type | Description | Examples |
+|-----------|------|-------------|----------|
+| `type` | string | The type of unknown reference. | float, histogram |
+
+
+
 ### `prometheus_tsdb_wal_segment_current`
 
 Current WAL segment.
@@ -901,3 +919,19 @@ Total number of WAL writes that failed.
 - **Type:** counter
 - **Unit:** {write}
 - **Stability:** development
+
+
+### `prometheus_tsdb_wbl_replay_unknown_refs_total`
+
+Total number of unknown series references encountered during WBL replay.
+
+- **Type:** counter
+- **Unit:** {reference}
+- **Stability:** development
+
+#### Attributes
+
+| Attribute | Type | Description | Examples |
+|-----------|------|-------------|----------|
+| `type` | string | The type of unknown reference. | float, histogram |
+

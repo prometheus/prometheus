@@ -62,6 +62,13 @@ groups:
     metric_name: prometheus_tsdb_compaction_chunk_range_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: classic_histogram
+        exponential_buckets:
+          start: 100
+          factor: 4
+          count: 10
 
   - id: metric.prometheus_tsdb_compaction_chunk_samples
     type: metric
@@ -70,6 +77,13 @@ groups:
     metric_name: prometheus_tsdb_compaction_chunk_samples
     instrument: histogram
     unit: "{sample}"
+    annotations:
+      prometheus:
+        histogram_type: classic_histogram
+        exponential_buckets:
+          start: 4
+          factor: 1.5
+          count: 12
 
   - id: metric.prometheus_tsdb_compaction_chunk_size_bytes
     type: metric
@@ -78,6 +92,13 @@ groups:
     metric_name: prometheus_tsdb_compaction_chunk_size_bytes
     instrument: histogram
     unit: By
+    annotations:
+      prometheus:
+        histogram_type: classic_histogram
+        exponential_buckets:
+          start: 32
+          factor: 1.5
+          count: 12
 
   - id: metric.prometheus_tsdb_compaction_duration_seconds
     type: metric
@@ -86,6 +107,16 @@ groups:
     metric_name: prometheus_tsdb_compaction_duration_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        exponential_buckets:
+          start: 1
+          factor: 2
+          count: 14
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
 
   - id: metric.prometheus_tsdb_compaction_populating_block
     type: metric
@@ -265,6 +296,10 @@ groups:
     metric_name: prometheus_tsdb_head_gc_duration_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives: {}
 
   - id: metric.prometheus_tsdb_head_max_time
     type: metric
@@ -459,6 +494,13 @@ groups:
     metric_name: prometheus_tsdb_sample_ooo_delta
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [600, 1800, 3600, 7200, 10800, 21600, 43200]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
 
   - id: metric.prometheus_tsdb_too_old_samples_total
     type: metric
@@ -491,6 +533,13 @@ groups:
     metric_name: prometheus_tsdb_out_of_order_wbl_fsync_duration_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
 
   - id: metric.prometheus_tsdb_out_of_order_wbl_page_flushes_total
     type: metric
@@ -632,6 +681,12 @@ groups:
     metric_name: prometheus_tsdb_tombstone_cleanup_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: native_histogram
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
 
   # WAL metrics
   - id: metric.prometheus_tsdb_wal_completed_pages_total
@@ -657,6 +712,13 @@ groups:
     metric_name: prometheus_tsdb_wal_fsync_duration_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
 
   - id: metric.prometheus_tsdb_wal_page_flushes_total
     type: metric
@@ -720,6 +782,10 @@ groups:
     metric_name: prometheus_tsdb_wal_truncate_duration_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives: {}
 
   - id: metric.prometheus_tsdb_wal_truncations_failed_total
     type: metric
@@ -744,3 +810,35 @@ groups:
     metric_name: prometheus_tsdb_wal_writes_failed_total
     instrument: counter
     unit: "{write}"
+
+  - id: metric.prometheus_tsdb_wal_replay_unknown_refs_total
+    type: metric
+    stability: development
+    brief: Total number of unknown series references encountered during WAL replay.
+    metric_name: prometheus_tsdb_wal_replay_unknown_refs_total
+    instrument: counter
+    unit: "{reference}"
+    attributes:
+      - id: type
+        type: string
+        stability: development
+        brief: The type of unknown reference.
+        examples:
+          - float
+          - histogram
+
+  - id: metric.prometheus_tsdb_wbl_replay_unknown_refs_total
+    type: metric
+    stability: development
+    brief: Total number of unknown series references encountered during WBL replay.
+    metric_name: prometheus_tsdb_wbl_replay_unknown_refs_total
+    instrument: counter
+    unit: "{reference}"
+    attributes:
+      - id: type
+        type: string
+        stability: development
+        brief: The type of unknown reference.
+        examples:
+          - float
+          - histogram

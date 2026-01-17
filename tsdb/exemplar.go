@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/config"
+	semconv "github.com/prometheus/prometheus/tsdb/semconv"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -61,52 +62,32 @@ type circularBufferEntry struct {
 }
 
 type ExemplarMetrics struct {
-	exemplarsAppended            prometheus.Counter
-	exemplarsInStorage           prometheus.Gauge
-	seriesWithExemplarsInStorage prometheus.Gauge
-	lastExemplarsTs              prometheus.Gauge
-	maxExemplars                 prometheus.Gauge
-	outOfOrderExemplars          prometheus.Counter
+	exemplarsAppended            semconv.PrometheusTSDBExemplarExemplarsAppendedTotal
+	exemplarsInStorage           semconv.PrometheusTSDBExemplarExemplarsInStorage
+	seriesWithExemplarsInStorage semconv.PrometheusTSDBExemplarSeriesWithExemplarsInStorage
+	lastExemplarsTs              semconv.PrometheusTSDBExemplarLastExemplarsTimestampSeconds
+	maxExemplars                 semconv.PrometheusTSDBExemplarMaxExemplars
+	outOfOrderExemplars          semconv.PrometheusTSDBExemplarOutOfOrderExemplarsTotal
 }
 
 func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 	m := ExemplarMetrics{
-		exemplarsAppended: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_exemplar_exemplars_appended_total",
-			Help: "Total number of appended exemplars.",
-		}),
-		exemplarsInStorage: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_exemplar_exemplars_in_storage",
-			Help: "Number of exemplars currently in circular storage.",
-		}),
-		seriesWithExemplarsInStorage: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_exemplar_series_with_exemplars_in_storage",
-			Help: "Number of series with exemplars currently in circular storage.",
-		}),
-		lastExemplarsTs: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds",
-			Help: "The timestamp of the oldest exemplar stored in circular storage. Useful to check for what time" +
-				"range the current exemplar buffer limit allows. This usually means the last timestamp" +
-				"for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.",
-		}),
-		outOfOrderExemplars: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total",
-			Help: "Total number of out of order exemplar ingestion failed attempts.",
-		}),
-		maxExemplars: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_exemplar_max_exemplars",
-			Help: "Total number of exemplars the exemplar storage can store, resizeable.",
-		}),
+		exemplarsAppended:            semconv.NewPrometheusTSDBExemplarExemplarsAppendedTotal(),
+		exemplarsInStorage:           semconv.NewPrometheusTSDBExemplarExemplarsInStorage(),
+		seriesWithExemplarsInStorage: semconv.NewPrometheusTSDBExemplarSeriesWithExemplarsInStorage(),
+		lastExemplarsTs:              semconv.NewPrometheusTSDBExemplarLastExemplarsTimestampSeconds(),
+		maxExemplars:                 semconv.NewPrometheusTSDBExemplarMaxExemplars(),
+		outOfOrderExemplars:          semconv.NewPrometheusTSDBExemplarOutOfOrderExemplarsTotal(),
 	}
 
 	if reg != nil {
 		reg.MustRegister(
-			m.exemplarsAppended,
-			m.exemplarsInStorage,
-			m.seriesWithExemplarsInStorage,
-			m.lastExemplarsTs,
-			m.outOfOrderExemplars,
-			m.maxExemplars,
+			m.exemplarsAppended.Counter,
+			m.exemplarsInStorage.Gauge,
+			m.seriesWithExemplarsInStorage.Gauge,
+			m.lastExemplarsTs.Gauge,
+			m.outOfOrderExemplars.Counter,
+			m.maxExemplars.Gauge,
 		)
 	}
 

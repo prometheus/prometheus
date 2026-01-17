@@ -1,0 +1,23 @@
+# Semantic convention registry for Prometheus TSDB chunks metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_tsdb_chunk_write_queue_operations_total
+    type: metric
+    stability: development
+    brief: Number of operations on the chunk_write_queue.
+    metric_name: prometheus_tsdb_chunk_write_queue_operations_total
+    instrument: counter
+    unit: "{operation}"
+    attributes:
+      - id: operation
+        type: string
+        stability: development
+        brief: The type of operation.
+        examples:
+          - add
+          - get
+          - complete
+          - shrink

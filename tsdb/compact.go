@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/storage"
+	semconv "github.com/prometheus/prometheus/tsdb/semconv"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -94,64 +95,36 @@ type LeveledCompactor struct {
 }
 
 type CompactorMetrics struct {
-	Ran               prometheus.Counter
-	PopulatingBlocks  prometheus.Gauge
-	OverlappingBlocks prometheus.Counter
-	Duration          prometheus.Histogram
-	ChunkSize         prometheus.Histogram
-	ChunkSamples      prometheus.Histogram
-	ChunkRange        prometheus.Histogram
+	Ran               semconv.PrometheusTSDBCompactionsTotal
+	PopulatingBlocks  semconv.PrometheusTSDBCompactionPopulatingBlock
+	OverlappingBlocks semconv.PrometheusTSDBVerticalCompactionsTotal
+	Duration          semconv.PrometheusTSDBCompactionDurationSeconds
+	ChunkSize         semconv.PrometheusTSDBCompactionChunkSizeBytes
+	ChunkSamples      semconv.PrometheusTSDBCompactionChunkSamples
+	ChunkRange        semconv.PrometheusTSDBCompactionChunkRangeSeconds
 }
 
 // NewCompactorMetrics initializes metrics for Compactor.
 func NewCompactorMetrics(r prometheus.Registerer) *CompactorMetrics {
-	m := &CompactorMetrics{}
-
-	m.Ran = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_compactions_total",
-		Help: "Total number of compactions that were executed for the partition.",
-	})
-	m.PopulatingBlocks = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_compaction_populating_block",
-		Help: "Set to 1 when a block is currently being written to the disk.",
-	})
-	m.OverlappingBlocks = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_vertical_compactions_total",
-		Help: "Total number of compactions done on overlapping blocks.",
-	})
-	m.Duration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:                            "prometheus_tsdb_compaction_duration_seconds",
-		Help:                            "Duration of compaction runs",
-		Buckets:                         prometheus.ExponentialBuckets(1, 2, 14),
-		NativeHistogramBucketFactor:     1.1,
-		NativeHistogramMaxBucketNumber:  100,
-		NativeHistogramMinResetDuration: 1 * time.Hour,
-	})
-	m.ChunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_tsdb_compaction_chunk_size_bytes",
-		Help:    "Final size of chunks on their first compaction",
-		Buckets: prometheus.ExponentialBuckets(32, 1.5, 12),
-	})
-	m.ChunkSamples = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_tsdb_compaction_chunk_samples",
-		Help:    "Final number of samples on their first compaction",
-		Buckets: prometheus.ExponentialBuckets(4, 1.5, 12),
-	})
-	m.ChunkRange = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_tsdb_compaction_chunk_range_seconds",
-		Help:    "Final time range of chunks on their first compaction",
-		Buckets: prometheus.ExponentialBuckets(100, 4, 10),
-	})
+	m := &CompactorMetrics{
+		Ran:               semconv.NewPrometheusTSDBCompactionsTotal(),
+		PopulatingBlocks:  semconv.NewPrometheusTSDBCompactionPopulatingBlock(),
+		OverlappingBlocks: semconv.NewPrometheusTSDBVerticalCompactionsTotal(),
+		Duration:          semconv.NewPrometheusTSDBCompactionDurationSeconds(),
+		ChunkSize:         semconv.NewPrometheusTSDBCompactionChunkSizeBytes(),
+		ChunkSamples:      semconv.NewPrometheusTSDBCompactionChunkSamples(),
+		ChunkRange:        semconv.NewPrometheusTSDBCompactionChunkRangeSeconds(),
+	}
 
 	if r != nil {
 		r.MustRegister(
-			m.Ran,
-			m.PopulatingBlocks,
-			m.OverlappingBlocks,
-			m.Duration,
-			m.ChunkRange,
-			m.ChunkSamples,
-			m.ChunkSize,
+			m.Ran.Counter,
+			m.PopulatingBlocks.Gauge,
+			m.OverlappingBlocks.Counter,
+			m.Duration.Histogram,
+			m.ChunkRange.Histogram,
+			m.ChunkSamples.Histogram,
+			m.ChunkSize.Histogram,
 		)
 	}
 	return m
