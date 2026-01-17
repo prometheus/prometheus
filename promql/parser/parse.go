@@ -67,6 +67,8 @@ type parser struct {
 
 	generatedParserResult any
 	parseErrors           ParseErrors
+
+	opts Options
 }
 
 type Opt func(p *parser)
@@ -91,6 +93,13 @@ func NewParser(input string, opts ...Opt) *parser { //nolint:revive // unexporte
 	p.lex = Lexer{
 		input: input,
 		state: lexStatements,
+	}
+
+	// Set default options.
+	p.opts = Options{
+		EnableExperimentalFunctions:  EnableExperimentalFunctions,
+		ExperimentalDurationEnabled:  ExperimentalDurationExpr,
+		EnableExtendedRangeSelectors: EnableExtendedRangeSelectors,
 	}
 
 	// Apply user define options.
@@ -458,7 +467,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (
 
 	desiredArgs := 1
 	if ret.Op.IsAggregatorWithParam() {
-		if !EnableExperimentalFunctions && ret.Op.IsExperimentalAggregator() {
+		if !p.opts.EnableExperimentalFunctions && ret.Op.IsExperimentalAggregator() {
 			p.addParseErrf(ret.PositionRange(), "%s() is experimental and must be enabled with --enable-feature=promql-experimental-functions", ret.Op)
 			return ret
 		}
@@ -1030,7 +1039,7 @@ func (p *parser) addOffsetExpr(e Node, expr *DurationExpr) {
 }
 
 func (p *parser) setAnchored(e Node) {
-	if !EnableExtendedRangeSelectors {
+	if !p.opts.EnableExtendedRangeSelectors {
 		p.addParseErrf(e.PositionRange(), "anchored modifier is experimental and not enabled")
 		return
 	}
@@ -1053,7 +1062,7 @@ func (p *parser) setAnchored(e Node) {
 }
 
 func (p *parser) setSmoothed(e Node) {
-	if !EnableExtendedRangeSelectors {
+	if !p.opts.EnableExtendedRangeSelectors {
 		p.addParseErrf(e.PositionRange(), "smoothed modifier is experimental and not enabled")
 		return
 	}
@@ -1149,7 +1158,7 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 }
 
 func (p *parser) experimentalDurationExpr(e Expr) {
-	if !ExperimentalDurationExpr {
+	if !p.opts.ExperimentalDurationEnabled {
 		p.addParseErrf(e.PositionRange(), "experimental duration expression is not enabled")
 	}
 }
