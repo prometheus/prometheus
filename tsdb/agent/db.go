@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
+	semconv "github.com/prometheus/prometheus/tsdb/agent/semconv"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -112,96 +113,51 @@ func DefaultOptions() *Options {
 type dbMetrics struct {
 	r prometheus.Registerer
 
-	numActiveSeries             prometheus.Gauge
-	numWALSeriesPendingDeletion prometheus.Gauge
-	totalAppendedSamples        *prometheus.CounterVec
-	totalAppendedExemplars      prometheus.Counter
-	totalOutOfOrderSamples      prometheus.Counter
-	walTruncateDuration         prometheus.Summary
-	walCorruptionsTotal         prometheus.Counter
-	walTotalReplayDuration      prometheus.Gauge
-	checkpointDeleteFail        prometheus.Counter
-	checkpointDeleteTotal       prometheus.Counter
-	checkpointCreationFail      prometheus.Counter
-	checkpointCreationTotal     prometheus.Counter
+	numActiveSeries             semconv.PrometheusAgentActiveSeries
+	numWALSeriesPendingDeletion semconv.PrometheusAgentDeletedSeries
+	totalAppendedSamples        semconv.PrometheusAgentSamplesAppendedTotal
+	totalAppendedExemplars      semconv.PrometheusAgentExemplarsAppendedTotal
+	totalOutOfOrderSamples      semconv.PrometheusAgentOutOfOrderSamplesTotal
+	walTruncateDuration         semconv.PrometheusAgentTruncateDurationSeconds
+	walCorruptionsTotal         semconv.PrometheusAgentCorruptionsTotal
+	walTotalReplayDuration      semconv.PrometheusAgentDataReplayDurationSeconds
+	checkpointDeleteFail        semconv.PrometheusAgentCheckpointDeletionsFailedTotal
+	checkpointDeleteTotal       semconv.PrometheusAgentCheckpointDeletionsTotal
+	checkpointCreationFail      semconv.PrometheusAgentCheckpointCreationsFailedTotal
+	checkpointCreationTotal     semconv.PrometheusAgentCheckpointCreationsTotal
 }
 
 func newDBMetrics(r prometheus.Registerer) *dbMetrics {
-	m := dbMetrics{r: r}
-	m.numActiveSeries = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_agent_active_series",
-		Help: "Number of active series being tracked by the WAL storage",
-	})
-
-	m.numWALSeriesPendingDeletion = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_agent_deleted_series",
-		Help: "Number of series pending deletion from the WAL",
-	})
-
-	m.totalAppendedSamples = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "prometheus_agent_samples_appended_total",
-		Help: "Total number of samples appended to the storage",
-	}, []string{"type"})
-
-	m.totalAppendedExemplars = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_agent_exemplars_appended_total",
-		Help: "Total number of exemplars appended to the storage",
-	})
-
-	m.totalOutOfOrderSamples = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_agent_out_of_order_samples_total",
-		Help: "Total number of out of order samples ingestion failed attempts.",
-	})
-
-	m.walTruncateDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name: "prometheus_agent_truncate_duration_seconds",
-		Help: "Duration of WAL truncation.",
-	})
-
-	m.walCorruptionsTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_agent_corruptions_total",
-		Help: "Total number of WAL corruptions.",
-	})
-
-	m.walTotalReplayDuration = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_agent_data_replay_duration_seconds",
-		Help: "Time taken to replay the data on disk.",
-	})
-
-	m.checkpointDeleteFail = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_agent_checkpoint_deletions_failed_total",
-		Help: "Total number of checkpoint deletions that failed.",
-	})
-
-	m.checkpointDeleteTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_agent_checkpoint_deletions_total",
-		Help: "Total number of checkpoint deletions attempted.",
-	})
-
-	m.checkpointCreationFail = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_agent_checkpoint_creations_failed_total",
-		Help: "Total number of checkpoint creations that failed.",
-	})
-
-	m.checkpointCreationTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_agent_checkpoint_creations_total",
-		Help: "Total number of checkpoint creations attempted.",
-	})
+	m := dbMetrics{
+		r:                           r,
+		numActiveSeries:             semconv.NewPrometheusAgentActiveSeries(),
+		numWALSeriesPendingDeletion: semconv.NewPrometheusAgentDeletedSeries(),
+		totalAppendedSamples:        semconv.NewPrometheusAgentSamplesAppendedTotal(),
+		totalAppendedExemplars:      semconv.NewPrometheusAgentExemplarsAppendedTotal(),
+		totalOutOfOrderSamples:      semconv.NewPrometheusAgentOutOfOrderSamplesTotal(),
+		walTruncateDuration:         semconv.NewPrometheusAgentTruncateDurationSeconds(),
+		walCorruptionsTotal:         semconv.NewPrometheusAgentCorruptionsTotal(),
+		walTotalReplayDuration:      semconv.NewPrometheusAgentDataReplayDurationSeconds(),
+		checkpointDeleteFail:        semconv.NewPrometheusAgentCheckpointDeletionsFailedTotal(),
+		checkpointDeleteTotal:       semconv.NewPrometheusAgentCheckpointDeletionsTotal(),
+		checkpointCreationFail:      semconv.NewPrometheusAgentCheckpointCreationsFailedTotal(),
+		checkpointCreationTotal:     semconv.NewPrometheusAgentCheckpointCreationsTotal(),
+	}
 
 	if r != nil {
 		r.MustRegister(
-			m.numActiveSeries,
-			m.numWALSeriesPendingDeletion,
-			m.totalAppendedSamples,
-			m.totalAppendedExemplars,
-			m.totalOutOfOrderSamples,
-			m.walTruncateDuration,
-			m.walCorruptionsTotal,
-			m.walTotalReplayDuration,
-			m.checkpointDeleteFail,
-			m.checkpointDeleteTotal,
-			m.checkpointCreationFail,
-			m.checkpointCreationTotal,
+			m.numActiveSeries.Gauge,
+			m.numWALSeriesPendingDeletion.Gauge,
+			m.totalAppendedSamples.CounterVec,
+			m.totalAppendedExemplars.Counter,
+			m.totalOutOfOrderSamples.Counter,
+			m.walTruncateDuration.Summary,
+			m.walCorruptionsTotal.Counter,
+			m.walTotalReplayDuration.Gauge,
+			m.checkpointDeleteFail.Counter,
+			m.checkpointDeleteTotal.Counter,
+			m.checkpointCreationFail.Counter,
+			m.checkpointCreationTotal.Counter,
 		)
 	}
 
@@ -213,18 +169,18 @@ func (m *dbMetrics) Unregister() {
 		return
 	}
 	cs := []prometheus.Collector{
-		m.numActiveSeries,
-		m.numWALSeriesPendingDeletion,
-		m.totalAppendedSamples,
-		m.totalAppendedExemplars,
-		m.totalOutOfOrderSamples,
-		m.walTruncateDuration,
-		m.walCorruptionsTotal,
-		m.walTotalReplayDuration,
-		m.checkpointDeleteFail,
-		m.checkpointDeleteTotal,
-		m.checkpointCreationFail,
-		m.checkpointCreationTotal,
+		m.numActiveSeries.Gauge,
+		m.numWALSeriesPendingDeletion.Gauge,
+		m.totalAppendedSamples.CounterVec,
+		m.totalAppendedExemplars.Counter,
+		m.totalOutOfOrderSamples.Counter,
+		m.walTruncateDuration.Summary,
+		m.walCorruptionsTotal.Counter,
+		m.walTotalReplayDuration.Gauge,
+		m.checkpointDeleteFail.Counter,
+		m.checkpointDeleteTotal.Counter,
+		m.checkpointCreationFail.Counter,
+		m.checkpointCreationTotal.Counter,
 	}
 	for _, c := range cs {
 		m.r.Unregister(c)
