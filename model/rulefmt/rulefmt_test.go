@@ -126,6 +126,91 @@ func TestParseFileFailure(t *testing.T) {
 	}
 }
 
+func TestParseMultipleDocuments(t *testing.T) {
+	tests := []struct {
+		name           string
+		content        string
+		expectError    bool
+		errorContains  string
+	}{
+		{
+			name:  "single document - valid",
+			content: `
+groups:
+  - name: group1
+    rules:
+      - alert: TestAlert
+        expr: up == 0
+`,
+			expectError: false,
+		},
+		{
+			name: "multiple documents - should warn",
+			content: `
+groups:
+  - name: group1
+    rules:
+      - alert: TestAlert
+        expr: up == 0
+---
+groups:
+  - name:  group2
+    rules:
+      - alert: AnotherAlert
+        expr: up == 1
+`,
+			expectError:   true,
+			errorContains:  "multiple YAML documents",
+		},
+		{
+			name: "multiple documents with empty second - should warn",
+			content: `
+groups:
+  - name:  group1
+    rules:
+      - alert: TestAlert
+        expr: up == 0
+---
+`,
+			expectError:   true,
+			errorContains: "multiple YAML documents",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := Parse([]byte(tt.content), false, model.UTF8Validation)
+			
+			if tt.expectError {
+				require.NotEmpty(t, errs, "expected error for %s, got none", tt.name)
+				
+				foundExpectedError := false
+				for _, err := range errs {
+					if err != nil && len(tt.errorContains) > 0 {
+						errStr := err.Error()
+						if len(errStr) > 0 && len(tt.errorContains) > 0 {
+							// Simple substring check
+							for i := 0; i <= len(errStr)-len(tt.errorContains); i++ {
+								if errStr[i:i+len(tt.errorContains)] == tt.errorContains {
+									foundExpectedError = true
+									break
+								}
+							}
+						}
+					}
+					if foundExpectedError {
+						break
+					}
+				}
+				
+				require.True(t, foundExpectedError, "expected error containing '%s', got errors: %v", tt.errorContains, errs)
+			} else {
+				require.Empty(t, errs, "unexpected errors for %s:  %v", tt.name, errs)
+			}
+		})
+	}
+}
+
 func TestTemplateParsing(t *testing.T) {
 	tests := []struct {
 		ruleString string
