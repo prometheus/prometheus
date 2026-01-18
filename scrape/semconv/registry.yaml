@@ -11,6 +11,23 @@ groups:
     metric_name: prometheus_target_interval_length_seconds
     instrument: histogram
     unit: s
+    attributes:
+      - id: interval
+        type: string
+        stability: development
+        brief: The configured scrape interval.
+        examples:
+          - 15s
+          - 30s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.01: 0.001
+          0.05: 0.005
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
 
   - id: metric.prometheus_target_interval_length_histogram_seconds
     type: metric
@@ -27,6 +44,13 @@ groups:
         examples:
           - 15s
           - 30s
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [0.01, 0.1, 1, 10]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
 
   - id: metric.prometheus_target_metadata_cache_bytes
     type: metric
@@ -60,6 +84,31 @@ groups:
           - prometheus
           - node_exporter
 
+  - id: metric.prometheus_target_reload_length_seconds
+    type: metric
+    stability: development
+    brief: Actual interval to reload the scrape pool with a given configuration.
+    metric_name: prometheus_target_reload_length_seconds
+    instrument: histogram
+    unit: s
+    attributes:
+      - id: interval
+        type: string
+        stability: development
+        brief: The configured scrape interval.
+        examples:
+          - 15s
+          - 30s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.01: 0.001
+          0.05: 0.005
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
+
   - id: metric.prometheus_target_scrape_duration_seconds
     type: metric
     stability: development
@@ -67,6 +116,12 @@ groups:
     metric_name: prometheus_target_scrape_duration_seconds
     instrument: histogram
     unit: s
+    annotations:
+      prometheus:
+        histogram_type: native_histogram
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
 
   - id: metric.prometheus_target_scrape_pool_exceeded_label_limits_total
     type: metric
@@ -267,6 +322,23 @@ groups:
     metric_name: prometheus_target_sync_length_seconds
     instrument: histogram
     unit: s
+    attributes:
+      - id: scrape_job
+        type: string
+        stability: development
+        brief: The scrape job name.
+        examples:
+          - prometheus
+          - node_exporter
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.01: 0.001
+          0.05: 0.005
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
 
   - id: metric.prometheus_target_sync_length_histogram_seconds
     type: metric
@@ -283,3 +355,10 @@ groups:
         examples:
           - prometheus
           - node_exporter
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [0.01, 0.1, 1, 10]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"

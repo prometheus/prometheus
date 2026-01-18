@@ -10,6 +10,7 @@ This document describes the metrics defined in this semantic convention registry
 | `prometheus_target_interval_length_seconds` | histogram | s | Actual intervals between scrapes. |
 | `prometheus_target_metadata_cache_bytes` | gauge | By | The number of bytes that are currently used for storing metric metadata in the cache. |
 | `prometheus_target_metadata_cache_entries` | gauge | {entry} | Total number of metric metadata entries in the cache. |
+| `prometheus_target_reload_length_seconds` | histogram | s | Actual interval to reload the scrape pool with a given configuration. |
 | `prometheus_target_scrape_duration_seconds` | histogram | s | Scrape request latency histogram. |
 | `prometheus_target_scrape_pool_exceeded_label_limits_total` | counter | {occurrence} | Total number of times scrape pools hit the label limits. |
 | `prometheus_target_scrape_pool_exceeded_target_limit_total` | counter | {occurrence} | Total number of times scrape pools hit the target limit. |
@@ -61,6 +62,13 @@ Actual intervals between scrapes.
 - **Unit:** s
 - **Stability:** development
 
+#### Attributes
+
+| Attribute | Type | Description | Examples |
+|-----------|------|-------------|----------|
+| `interval` | string | The configured scrape interval. | 15s, 30s |
+
+
 
 ### `prometheus_target_metadata_cache_bytes`
 
@@ -91,6 +99,22 @@ Total number of metric metadata entries in the cache.
 | Attribute | Type | Description | Examples |
 |-----------|------|-------------|----------|
 | `scrape_job` | string | The scrape job name. | prometheus, node_exporter |
+
+
+
+### `prometheus_target_reload_length_seconds`
+
+Actual interval to reload the scrape pool with a given configuration.
+
+- **Type:** histogram
+- **Unit:** s
+- **Stability:** development
+
+#### Attributes
+
+| Attribute | Type | Description | Examples |
+|-----------|------|-------------|----------|
+| `interval` | string | The configured scrape interval. | 15s, 30s |
 
 
 
@@ -332,3 +356,10 @@ Actual interval to sync the scrape pool.
 - **Type:** histogram
 - **Unit:** s
 - **Stability:** development
+
+#### Attributes
+
+| Attribute | Type | Description | Examples |
+|-----------|------|-------------|----------|
+| `scrape_job` | string | The scrape job name. | prometheus, node_exporter |
+

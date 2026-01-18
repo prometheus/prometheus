@@ -5,6 +5,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -45,8 +47,12 @@ func NewPrometheusTargetIntervalLengthHistogramSeconds() PrometheusTargetInterva
 	}
 	return PrometheusTargetIntervalLengthHistogramSeconds{
 		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "prometheus_target_interval_length_histogram_seconds",
-			Help: "Actual intervals between scrapes as a histogram.",
+			Name:                            "prometheus_target_interval_length_histogram_seconds",
+			Help:                            "Actual intervals between scrapes as a histogram.",
+			Buckets:                         []float64{0.01, 0.1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, labels),
 	}
 }
@@ -72,17 +78,46 @@ func (m PrometheusTargetIntervalLengthHistogramSeconds) With(
 
 // PrometheusTargetIntervalLengthSeconds records the actual intervals between scrapes.
 type PrometheusTargetIntervalLengthSeconds struct {
-	prometheus.Histogram
+	*prometheus.SummaryVec
 }
 
 // NewPrometheusTargetIntervalLengthSeconds returns a new PrometheusTargetIntervalLengthSeconds instrument.
 func NewPrometheusTargetIntervalLengthSeconds() PrometheusTargetIntervalLengthSeconds {
+	labels := []string{
+		"interval",
+	}
 	return PrometheusTargetIntervalLengthSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		SummaryVec: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Name: "prometheus_target_interval_length_seconds",
 			Help: "Actual intervals between scrapes.",
-		}),
+			Objectives: map[float64]float64{
+				0.01: 0.001,
+				0.05: 0.005,
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
+		}, labels),
 	}
+}
+
+type PrometheusTargetIntervalLengthSecondsAttr interface {
+	Attribute
+	implPrometheusTargetIntervalLengthSeconds()
+}
+
+func (a IntervalAttr) implPrometheusTargetIntervalLengthSeconds() {}
+
+func (m PrometheusTargetIntervalLengthSeconds) With(
+	extra ...PrometheusTargetIntervalLengthSecondsAttr,
+) prometheus.Observer {
+	labels := prometheus.Labels{
+		"interval": "",
+	}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.SummaryVec.With(labels)
 }
 
 // PrometheusTargetMetadataCacheBytes records the number of bytes that are currently used for storing metric metadata in the cache.
@@ -159,6 +194,50 @@ func (m PrometheusTargetMetadataCacheEntries) With(
 	return m.GaugeVec.With(labels)
 }
 
+// PrometheusTargetReloadLengthSeconds records the actual interval to reload the scrape pool with a given configuration.
+type PrometheusTargetReloadLengthSeconds struct {
+	*prometheus.SummaryVec
+}
+
+// NewPrometheusTargetReloadLengthSeconds returns a new PrometheusTargetReloadLengthSeconds instrument.
+func NewPrometheusTargetReloadLengthSeconds() PrometheusTargetReloadLengthSeconds {
+	labels := []string{
+		"interval",
+	}
+	return PrometheusTargetReloadLengthSeconds{
+		SummaryVec: prometheus.NewSummaryVec(prometheus.SummaryOpts{
+			Name: "prometheus_target_reload_length_seconds",
+			Help: "Actual interval to reload the scrape pool with a given configuration.",
+			Objectives: map[float64]float64{
+				0.01: 0.001,
+				0.05: 0.005,
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
+		}, labels),
+	}
+}
+
+type PrometheusTargetReloadLengthSecondsAttr interface {
+	Attribute
+	implPrometheusTargetReloadLengthSeconds()
+}
+
+func (a IntervalAttr) implPrometheusTargetReloadLengthSeconds() {}
+
+func (m PrometheusTargetReloadLengthSeconds) With(
+	extra ...PrometheusTargetReloadLengthSecondsAttr,
+) prometheus.Observer {
+	labels := prometheus.Labels{
+		"interval": "",
+	}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.SummaryVec.With(labels)
+}
+
 // PrometheusTargetScrapeDurationSeconds records the scrape request latency histogram.
 type PrometheusTargetScrapeDurationSeconds struct {
 	prometheus.Histogram
@@ -168,8 +247,11 @@ type PrometheusTargetScrapeDurationSeconds struct {
 func NewPrometheusTargetScrapeDurationSeconds() PrometheusTargetScrapeDurationSeconds {
 	return PrometheusTargetScrapeDurationSeconds{
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_target_scrape_duration_seconds",
-			Help: "Scrape request latency histogram.",
+			Name:                            "prometheus_target_scrape_duration_seconds",
+			Help:                            "Scrape request latency histogram.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
 }
@@ -581,8 +663,12 @@ func NewPrometheusTargetSyncLengthHistogramSeconds() PrometheusTargetSyncLengthH
 	}
 	return PrometheusTargetSyncLengthHistogramSeconds{
 		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name: "prometheus_target_sync_length_histogram_seconds",
-			Help: "Actual interval to sync the scrape pool as a histogram.",
+			Name:                            "prometheus_target_sync_length_histogram_seconds",
+			Help:                            "Actual interval to sync the scrape pool as a histogram.",
+			Buckets:                         []float64{0.01, 0.1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, labels),
 	}
 }
@@ -608,15 +694,44 @@ func (m PrometheusTargetSyncLengthHistogramSeconds) With(
 
 // PrometheusTargetSyncLengthSeconds records the actual interval to sync the scrape pool.
 type PrometheusTargetSyncLengthSeconds struct {
-	prometheus.Histogram
+	*prometheus.SummaryVec
 }
 
 // NewPrometheusTargetSyncLengthSeconds returns a new PrometheusTargetSyncLengthSeconds instrument.
 func NewPrometheusTargetSyncLengthSeconds() PrometheusTargetSyncLengthSeconds {
+	labels := []string{
+		"scrape_job",
+	}
 	return PrometheusTargetSyncLengthSeconds{
-		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+		SummaryVec: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Name: "prometheus_target_sync_length_seconds",
 			Help: "Actual interval to sync the scrape pool.",
-		}),
+			Objectives: map[float64]float64{
+				0.01: 0.001,
+				0.05: 0.005,
+				0.5:  0.05,
+				0.9:  0.01,
+				0.99: 0.001,
+			},
+		}, labels),
 	}
+}
+
+type PrometheusTargetSyncLengthSecondsAttr interface {
+	Attribute
+	implPrometheusTargetSyncLengthSeconds()
+}
+
+func (a ScrapeJobAttr) implPrometheusTargetSyncLengthSeconds() {}
+
+func (m PrometheusTargetSyncLengthSeconds) With(
+	extra ...PrometheusTargetSyncLengthSecondsAttr,
+) prometheus.Observer {
+	labels := prometheus.Labels{
+		"scrape_job": "",
+	}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.SummaryVec.With(labels)
 }
