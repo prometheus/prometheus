@@ -356,8 +356,8 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 		errs = append(errs, err)
 	}
 
-	// Checking for additional YAML documents. 
-	var dummy interface{}
+	// Checking for additional YAML documents.
+	var dummy any
 	err = decoder.Decode(&dummy)
 	if err == nil {
 		// Successfully decoded another document, warn the user.
