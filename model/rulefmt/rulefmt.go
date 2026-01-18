@@ -339,7 +339,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 }
 
 // Parse parses and validates a set of rules.
-func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model. ValidationScheme) (*RuleGroups, []error) {
+func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
 		node   ruleGroups
@@ -352,18 +352,18 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 	}
 	err := decoder.Decode(&groups)
 	// Ignore io.EOF which happens with empty input.
-	if err != nil && !errors. Is(err, io.EOF) {
+	if err != nil && !errors.Is(err, io.EOF) {
 		errs = append(errs, err)
 	}
 
-	//checking for additional YAML documents
+	// Checking for additional YAML documents. 
 	var dummy interface{}
 	err = decoder.Decode(&dummy)
 	if err == nil {
-		//successfully decoded another document ----> warn the user
+		// Successfully decoded another document, warn the user.
 		errs = append(errs, errors.New("file contains multiple YAML documents; only the first document will be parsed"))
-	} else if ! errors.Is(err, io. EOF) {
-		//---->error other than EOF occurred
+	} else if !errors.Is(err, io.EOF) {
+		// Error other than EOF occurred.
 		errs = append(errs, fmt.Errorf("error checking for additional YAML documents: %w", err))
 	}
 

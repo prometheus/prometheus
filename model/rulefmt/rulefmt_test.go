@@ -154,7 +154,7 @@ groups:
         expr: up == 0
 ---
 groups:
-  - name:  group2
+  - name: group2
     rules:
       - alert: AnotherAlert
         expr: up == 1
