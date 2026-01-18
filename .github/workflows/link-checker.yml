@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 0 * * *" #Runs once a day
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   linkChecker:
