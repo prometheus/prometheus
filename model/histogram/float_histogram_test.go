@@ -1415,6 +1415,26 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 			},
 			false, // No reset: all mapped buckets increase
 		},
+		{
+			"mismatched custom bounds - precision noise check",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           100,
+				Sum:             500,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{10.000000000001}, // Prev: 10.0...1
+				CustomValues:    []float64{1},
+			},
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           100,
+				Sum:             500,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{10.0}, // Curr: 10.0
+				CustomValues:    []float64{2},    // mismatch bounds
+			},
+			false, // Should be false with fix. True without fix (10.0 < 10.0...1).
+		},
 	}
 
 	for _, c := range cases {

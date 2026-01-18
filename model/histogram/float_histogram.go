@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/prometheus/prometheus/util/almost"
 )
 
 // FloatHistogram is similar to Histogram but uses float64 for all
@@ -1447,7 +1449,7 @@ func (h *FloatHistogram) detectResetWithMismatchedCustomBounds(
 				prevIterStarted = true
 			}
 
-			if currRollupSum < prevRollupSum {
+			if currRollupSum < prevRollupSum && !almost.Equal(currRollupSum, prevRollupSum, 1e-12) {
 				return true
 			}
 
