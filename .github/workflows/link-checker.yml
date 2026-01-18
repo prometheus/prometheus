@@ -1,0 +1,32 @@
+#Broken Link checker
+name: Links Checker
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *" #Runs once a day
+
+jobs:
+  linkChecker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Link Checker (Docs only) #Link checking is intentionally scoped to docs/ and documentation/ to reduce CI runtime and avoid scanning non-documentation files.
+        id: lychee
+        uses: lycheeverse/lychee-action@v2.6.1
+        with:
+          args: >
+            --accept '100..=103,200..=299,403,429'
+            --exclude-all-private
+            --timeout 60
+            docs/
+            documentation/
+
+      - name: Create Issue From File
+        if: env.lychee_exit_code != 0
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: Broken Link Detected in Docs (Help Wanted)
+          content-filepath: ./lychee/out.md
+          labels: report, automated issue, documentation, good first issue
