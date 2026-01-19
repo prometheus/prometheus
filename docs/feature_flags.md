@@ -67,12 +67,12 @@ Currently, Prometheus supports start timestamps on the
 
 * `PrometheusProto`
 * `OpenMetrics1.0.0`
-  
+
 
 From the above, Prometheus recommends `PrometheusProto`. This is because OpenMetrics 1.0 Start Timestamp information is shared as a `<metric>_created` metric and parsing those
 are prone to errors and expensive (thus, adding an overhead). You also need to be careful to not pollute your Prometheus with extra `_created` metrics.
-  
-Therefore, when `created-timestamp-zero-ingestion` is enabled Prometheus changes the global `scrape_protocols` default configuration option to 
+
+Therefore, when `created-timestamp-zero-ingestion` is enabled Prometheus changes the global `scrape_protocols` default configuration option to
 `[ PrometheusProto, OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusText0.0.4 ]`, resulting in negotiating the Prometheus Protobuf protocol first (unless the `scrape_protocols` option is set to a different value explicitly).
 
 Besides enabling this feature in Prometheus, start timestamps need to be exposed by the application being scraped.
@@ -288,8 +288,8 @@ when wrong types are used on wrong functions, automatic renames, delta types and
 
 ### Behavior with metadata records
 
-When this feature is enabled and the metadata WAL records exists, in an unlikely situation when type or unit are different across those, 
-the Prometheus outputs intends to prefer the `__type__` and `__unit__` labels values. For example on Remote Write 2.0, 
+When this feature is enabled and the metadata WAL records exists, in an unlikely situation when type or unit are different across those,
+the Prometheus outputs intends to prefer the `__type__` and `__unit__` labels values. For example on Remote Write 2.0,
 if  the metadata record somehow (e.g. due to bug) says "counter", but `__type__="gauge"` the remote time series will be set to a gauge.
 
 ## Use Uncached IO
@@ -338,9 +338,25 @@ Example query:
 
 > **Note for alerting and recording rules:**
 > The `smoothed` modifier requires samples after the evaluation interval, so using it directly in alerting or recording rules will typically *under-estimate* the result, as future samples are not available at evaluation time.
-> To use `smoothed` safely in rules, you **must** apply a `query_offset` to the rule group (see [documentation](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#rule_group)) to ensure the calculation window is fully in the past and all needed samples are available.  
+> To use `smoothed` safely in rules, you **must** apply a `query_offset` to the rule group (see [documentation](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/#rule_group)) to ensure the calculation window is fully in the past and all needed samples are available.
 > For critical alerting, set the offset to at least one scrape interval; for less critical or more resilient use cases, consider a larger offset (multiple scrape intervals) to tolerate missed scrapes.
 
 For more details, see the [design doc](https://github.com/prometheus/proposals/blob/main/proposals/2025-04-04_extended-range-selectors-semantics.md).
 
 **Note**: Extended Range Selectors are not supported for subqueries.
+
+## Binary operator fill modifiers
+
+`--enable-feature=promql-binop-fill-modifiers`
+
+Enables experimental `fill()`, `fill_left()`, and `fill_right()` modifiers for PromQL binary operators. These modifiers allow filling in missing matches on either side of a binary operation with a provided default sample value.
+
+Example query:
+
+```
+  rate(successful_requests[5m])
++ fill(0)
+  rate(failed_requests[5m])
+```
+
+See [the fill modifiers documentation](querying/operators.md#filling-in-missing-matches) for more details and examples.

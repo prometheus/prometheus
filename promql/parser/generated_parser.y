@@ -139,6 +139,9 @@ BOOL
 BY
 GROUP_LEFT
 GROUP_RIGHT
+FILL
+FILL_LEFT
+FILL_RIGHT
 IGNORING
 OFFSET
 SMOOTHED
@@ -190,7 +193,7 @@ START_METRIC_SELECTOR
 %type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
-%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr anchored_expr smoothed_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr offset_duration_expr
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier fill_modifiers binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers fill_value label_matchers matrix_selector number_duration_literal offset_expr anchored_expr smoothed_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr offset_duration_expr
 
 %start start
 
@@ -302,7 +305,7 @@ binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinar
 
 // Using left recursion for the modifier rules, helps to keep the parser stack small and
 // reduces allocations.
-bin_modifier    : group_modifiers;
+bin_modifier    : fill_modifiers;
 
 bool_modifier   : /* empty */
                         { $$ = &BinaryExpr{
@@ -346,6 +349,47 @@ group_modifiers: bool_modifier /* empty */
                         }
                 ;
 
+fill_modifiers: group_modifiers /* empty */
+                /* Only fill() */
+                | group_modifiers FILL fill_value
+                        {
+                        $$ = $1
+                        fill := $3.(*NumberLiteral).Val
+                        $$.(*BinaryExpr).VectorMatching.FillValues.LHS = &fill
+                        $$.(*BinaryExpr).VectorMatching.FillValues.RHS = &fill
+                        }
+                /* Only fill_left() */
+                | group_modifiers FILL_LEFT fill_value
+                        {
+                        $$ = $1
+                        fill := $3.(*NumberLiteral).Val
+                        $$.(*BinaryExpr).VectorMatching.FillValues.LHS = &fill
+                        }
+                /* Only fill_right() */
+                | group_modifiers FILL_RIGHT fill_value
+                        {
+                        $$ = $1
+                        fill := $3.(*NumberLiteral).Val
+                        $$.(*BinaryExpr).VectorMatching.FillValues.RHS = &fill
+                        }
+                /* fill_left() fill_right() */
+                | group_modifiers FILL_LEFT fill_value FILL_RIGHT fill_value
+                        {
+                        $$ = $1
+                        fill_left := $3.(*NumberLiteral).Val
+                        fill_right := $5.(*NumberLiteral).Val
+                        $$.(*BinaryExpr).VectorMatching.FillValues.LHS = &fill_left
+                        $$.(*BinaryExpr).VectorMatching.FillValues.RHS = &fill_right
+                        }
+                /* fill_right() fill_left() */
+                | group_modifiers FILL_RIGHT fill_value FILL_LEFT fill_value
+                        {
+                        fill_right := $3.(*NumberLiteral).Val
+                        fill_left := $5.(*NumberLiteral).Val
+                        $$.(*BinaryExpr).VectorMatching.FillValues.LHS = &fill_left
+                        $$.(*BinaryExpr).VectorMatching.FillValues.RHS = &fill_right
+                        }
+                ;
 
 grouping_labels : LEFT_PAREN grouping_label_list RIGHT_PAREN
                         { $$ = $2 }
@@ -385,6 +429,21 @@ grouping_label  : maybe_label
                         }
                 | error
                         { yylex.(*parser).unexpected("grouping opts", "label"); $$ = Item{} }
+                ;
+
+fill_value      : LEFT_PAREN number_duration_literal RIGHT_PAREN
+                        {
+                        $$ = $2.(*NumberLiteral)
+                        }
+                | LEFT_PAREN unary_op number_duration_literal RIGHT_PAREN
+                        {
+                        nl := $3.(*NumberLiteral)
+                        if $2.Typ == SUB {
+                          nl.Val *= -1
+                        }
+                        nl.PosRange.Start = $2.Pos
+                        $$ = nl
+                        }
                 ;
 
 /*
@@ -697,7 +756,7 @@ metric          : metric_identifier label_set
                 ;
 
 
-metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED;
+metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | FILL | FILL_LEFT | FILL_RIGHT | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED;
 
 label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
@@ -954,7 +1013,7 @@ counter_reset_hint : UNKNOWN_COUNTER_RESET | COUNTER_RESET | NOT_COUNTER_RESET |
 aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK | LIMITK | LIMIT_RATIO;
 
 // Inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
-maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2 | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED;
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | FILL | FILL_LEFT | FILL_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2 | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED;
 
 unary_op        : ADD | SUB;
 
@@ -1162,7 +1221,7 @@ offset_duration_expr    : number_duration_literal
                                 }
                         | duration_expr
                         ;
-                        
+
 min_max: MIN | MAX ;
 
 duration_expr   : number_duration_literal
@@ -1277,14 +1336,14 @@ duration_expr   : number_duration_literal
                 ;
 
 paren_duration_expr : LEFT_PAREN duration_expr RIGHT_PAREN
-                        { 
+                        {
                             yylex.(*parser).experimentalDurationExpr($2.(Expr))
                             if durationExpr, ok := $2.(*DurationExpr); ok {
                                 durationExpr.Wrapped = true
                                 $$ = durationExpr
                                 break
                             }
-                            $$ = $2 
+                            $$ = $2
                         }
                 ;
 

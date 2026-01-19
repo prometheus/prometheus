@@ -157,10 +157,12 @@ func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage f
 		parser.EnableExperimentalFunctions = false
 		parser.ExperimentalDurationExpr = false
 		parser.EnableExtendedRangeSelectors = false
+		parser.EnableBinopFillModifiers = false
 	})
 	parser.EnableExperimentalFunctions = true
 	parser.ExperimentalDurationExpr = true
 	parser.EnableExtendedRangeSelectors = true
+	parser.EnableBinopFillModifiers = true
 
 	files, err := fs.Glob(testsFs, "*/*.test")
 	require.NoError(t, err)
