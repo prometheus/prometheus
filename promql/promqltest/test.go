@@ -1496,6 +1496,16 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	return nil
 }
 
+// skipRangeQueryTest determines if an instant query should skip range query testing.
+// It returns true if the query contains context-dependent functions that would resolve
+// differently in range mode: range(), step(), start(), and end() all depend on query context.
+func skipRangeQueryTest(expr string) bool {
+	return strings.Contains(expr, "range()") ||
+		strings.Contains(expr, "step()") ||
+		strings.Contains(expr, "start()") ||
+		strings.Contains(expr, "end()")
+}
+
 func (t *test) execInstantEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	queries, err := atModifierTestCases(cmd.expr, cmd.eval)
 	if err != nil {
@@ -1552,8 +1562,8 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 
 	// Check query returns same result in range mode,
 	// by checking against the middle step.
-	// Skip this check for queries containing range() since it would resolve differently.
-	if strings.Contains(iq.expr, "range()") {
+	// Skip this check for queries containing range(), step(), start(), or end() since they would resolve differently.
+	if skipRangeQueryTest(iq.expr) {
 		return nil
 	}
 	q, err = engine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)

@@ -409,6 +409,78 @@ function_call   : IDENTIFIER function_call_body
                                 },
                         }
                         }
+                | STEP function_call_body
+                        {
+                        fn, exist := getFunction($1.Val, yylex.(*parser).functions)
+                        if !exist{
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                        }
+                        if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
+                        }
+                        $$ = &Call{
+                                Func: fn,
+                                Args: $2.(Expressions),
+                                PosRange: posrange.PositionRange{
+                                        Start: $1.PositionRange().Start,
+                                        End:   yylex.(*parser).lastClosing,
+                                },
+                        }
+                        }
+                | RANGE function_call_body
+                        {
+                        fn, exist := getFunction($1.Val, yylex.(*parser).functions)
+                        if !exist{
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                        }
+                        if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
+                        }
+                        $$ = &Call{
+                                Func: fn,
+                                Args: $2.(Expressions),
+                                PosRange: posrange.PositionRange{
+                                        Start: $1.PositionRange().Start,
+                                        End:   yylex.(*parser).lastClosing,
+                                },
+                        }
+                        }
+                | START function_call_body
+                        {
+                        fn, exist := getFunction($1.Val, yylex.(*parser).functions)
+                        if !exist{
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                        }
+                        if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
+                        }
+                        $$ = &Call{
+                                Func: fn,
+                                Args: $2.(Expressions),
+                                PosRange: posrange.PositionRange{
+                                        Start: $1.PositionRange().Start,
+                                        End:   yylex.(*parser).lastClosing,
+                                },
+                        }
+                        }
+                | END function_call_body
+                        {
+                        fn, exist := getFunction($1.Val, yylex.(*parser).functions)
+                        if !exist{
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
+                        }
+                        if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
+                                yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
+                        }
+                        $$ = &Call{
+                                Func: fn,
+                                Args: $2.(Expressions),
+                                PosRange: posrange.PositionRange{
+                                        Start: $1.PositionRange().Start,
+                                        End:   yylex.(*parser).lastClosing,
+                                },
+                        }
+                        }
                 ;
 
 function_call_body: LEFT_PAREN function_call_args RIGHT_PAREN

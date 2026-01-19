@@ -1102,6 +1102,24 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  end: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>end()</code> returns the end timestamp of the current query range evaluation as the number of seconds
+        since January 1, 1970 UTC. For instant queries, this is equal to the evaluation timestamp. For range queries,
+        this is the end time of the query range. Note that this does not return the current time, but the end time at
+        which the expression is to be evaluated.
+      </p>
+    </>
+  ),
   exp: (
     <>
       <p>
@@ -2768,6 +2786,23 @@ const funcDocs: Record<string, React.ReactNode> = {
       </ul>
     </>
   ),
+  range: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>range()</code> returns the range duration of the current query range evaluation in seconds. For instant
+        queries, this returns <code>0</code>. For range queries, this returns the difference between the end and start
+        times (i.e., <code>end() - start()</code>).
+      </p>
+    </>
+  ),
   rate: (
     <>
       <p>
@@ -3070,6 +3105,24 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  start: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>start()</code> returns the start timestamp of the current query range evaluation as the number of seconds
+        since January 1, 1970 UTC. For instant queries, this is equal to the evaluation timestamp. For range queries,
+        this is the start time of the query range. Note that this does not return the current time, but the start time
+        at which the expression is to be evaluated.
+      </p>
+    </>
+  ),
   stddev_over_time: (
     <>
       <p>
@@ -3287,6 +3340,23 @@ const funcDocs: Record<string, React.ReactNode> = {
         useful with <code>first_over_time(m[step()])</code>
         in range queries (available when <code>--enable-feature=promql-duration-expr</code> is set) to ensure that the
         sample selected is within the range step.
+      </p>
+    </>
+  ),
+  step: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>step()</code> returns the query resolution step as the number of seconds. For instant queries, this
+        returns <code>0.001</code> (1 millisecond). For range queries, this returns the step interval between evaluation
+        timestamps.
       </p>
     </>
   ),
