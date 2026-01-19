@@ -260,9 +260,7 @@ func (h *Head) getHistogramBuffer() []record.RefHistogramSample {
 }
 
 func (h *Head) putHistogramBuffer(b []record.RefHistogramSample) {
-	for i := range b { // Zero out to avoid retaining histogram data.
-		b[i].H = nil
-	}
+	clear(b)
 	h.histogramsPool.Put(b[:0])
 }
 
@@ -275,9 +273,7 @@ func (h *Head) getFloatHistogramBuffer() []record.RefFloatHistogramSample {
 }
 
 func (h *Head) putFloatHistogramBuffer(b []record.RefFloatHistogramSample) {
-	for i := range b { // Zero out to avoid retaining float histogram data.
-		b[i].FH = nil
-	}
+	clear(b)
 	h.floatHistogramsPool.Put(b[:0])
 }
 
