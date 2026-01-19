@@ -9,7 +9,8 @@ LABEL org.opencontainers.image.authors="The Prometheus Authors" \
       org.opencontainers.image.source="https://github.com/prometheus/prometheus" \
       org.opencontainers.image.url="https://github.com/prometheus/prometheus" \
       org.opencontainers.image.documentation="https://prometheus.io/docs" \
-      org.opencontainers.image.licenses="Apache License 2.0"
+      org.opencontainers.image.licenses="Apache License 2.0" \
+      io.prometheus.image.variant="busybox"
 
 ARG ARCH="amd64"
 ARG OS="linux"
