@@ -230,7 +230,6 @@ func BenchmarkHeadAppender_AppendCommit(b *testing.B) {
 					opts := newTestHeadDefaultOptions(10000, false)
 					opts.EnableExemplarStorage = true // We benchmark with exemplars, benchmark with them.
 					h, _ := newTestHeadWithOptions(b, compression.None, opts)
-					b.Cleanup(func() { require.NoError(b, h.Close()) })
 
 					ts := int64(1000)
 

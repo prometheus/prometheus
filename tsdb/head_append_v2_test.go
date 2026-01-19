@@ -352,7 +352,6 @@ func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
 
 func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
-	t.Cleanup(func() { _ = head.Close() })
 	require.NoError(t, head.Init(0))
 
 	const totalSeries = 100_000
@@ -395,7 +394,6 @@ func TestHeadAppenderV2_CanGCSeriesCreatedWithoutSamples(t *testing.T) {
 		t.Run(op, func(t *testing.T) {
 			chunkRange := time.Hour.Milliseconds()
 			head, _ := newTestHead(t, chunkRange, compression.None, true)
-			t.Cleanup(func() { _ = head.Close() })
 
 			require.NoError(t, head.Init(0))
 
@@ -1864,7 +1862,8 @@ func TestHeadAppenderV2_Append_Histogram(t *testing.T) {
 func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 	head, _ := newTestHead(t, 3000, compression.None, false)
 	t.Cleanup(func() {
-		require.NoError(t, head.Close())
+		// Captures head by reference, so it closes the final head after restarts.
+		_ = head.Close()
 	})
 	require.NoError(t, head.Init(0))
 
@@ -2011,9 +2010,10 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 	}
 
 	// Restart head.
+	walDir := head.wal.Dir()
 	require.NoError(t, head.Close())
 	startHead := func() {
-		w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, compression.None)
+		w, err := wlog.NewSize(nil, nil, walDir, 32768, compression.None)
 		require.NoError(t, err)
 		head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 		require.NoError(t, err)
@@ -4081,7 +4081,6 @@ func TestWALSampleAndExemplarOrder_AppenderV2(t *testing.T) {
 
 func TestHeadAppenderV2_Append_FloatWithSameTimestampAsPreviousHistogram(t *testing.T) {
 	head, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
-	t.Cleanup(func() { head.Close() })
 
 	ls := labels.FromStrings(labels.MetricName, "test")
 
@@ -4489,7 +4488,8 @@ func testHeadAppenderV2AppendHistogramAndCommitConcurrency(t *testing.T, appendF
 func TestHeadAppenderV2_NumStaleSeries(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	t.Cleanup(func() {
-		require.NoError(t, head.Close())
+		// Captures head by reference, so it closes the final head after restarts.
+		_ = head.Close()
 	})
 	require.NoError(t, head.Init(0))
 
