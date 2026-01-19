@@ -245,6 +245,14 @@ loop:
 		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
+			// Double check we don't append float 0 for
+			// histogram case where parser returns bad data.
+			// This can only happen when parser has a bug.
+			if isHistogram && h == nil && fh == nil {
+				err = fmt.Errorf("parser returned nil histogram/float histogram for a histogram entry type for %v series; parser bug; aborting", lset.String())
+				break loop
+			}
+
 			st := int64(0)
 			if sl.enableSTZeroIngestion {
 				// p.StartTimestamp() tend to be expensive (e.g. OM1). Do it only if we care.
@@ -276,7 +284,6 @@ loop:
 			}
 			if len(exemplars) > 0 {
 				// Sort so that checking for duplicates / out of order is more efficient during validation.
-				// TODO(bwplotka): Double check if this is even true now.
 				slices.SortFunc(exemplars, exemplar.Compare)
 				appOpts.Exemplars = exemplars
 			}

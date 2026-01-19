@@ -21,8 +21,12 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -91,6 +95,26 @@ func (s Sample) Equals(other Sample) bool {
 		slices.EqualFunc(s.ES, other.ES, exemplar.Exemplar.Equals)
 }
 
+var sampleComparer = cmp.Comparer(func(a, b Sample) bool {
+	return a.Equals(b)
+})
+
+// RequireEqual is required for special Nan and labels comparison.
+func RequireEqual(t testing.TB, expected, got []Sample, msgAndArgs ...any) {
+	testutil.RequireEqualWithOptions(t, expected, got, []cmp.Option{sampleComparer}, msgAndArgs...)
+}
+
+// RequireNotEqual is required for special Nan and labels comparison.
+func RequireNotEqual(t testing.TB, expected, got []Sample, msgAndArgs ...any) {
+	t.Helper()
+	if !cmp.Equal(expected, got, cmp.Comparer(labels.Equal), sampleComparer) {
+		return
+	}
+	require.Fail(t, fmt.Sprintf("Equal, but expected not: \n"+
+		"a: %s\n"+
+		"b: %s", expected, got), msgAndArgs...)
+}
+
 // Appendable is a storage.Appendable mock.
 // It allows recording all samples that were added through the appender and injecting errors.
 // Appendable will panic if more than one Appender is open.
@@ -108,8 +132,7 @@ type Appendable struct {
 	rolledbackSamples []Sample
 
 	// Optional chain (Appender will collect samples, then run next).
-	next   storage.Appendable
-	nextV2 storage.AppendableV2
+	next compatAppendable
 }
 
 // NewAppendable returns mock Appendable.
@@ -117,15 +140,14 @@ func NewAppendable() *Appendable {
 	return &Appendable{}
 }
 
-// Then chains another appender from the provided Appendable for the Appender calls.
-func (a *Appendable) Then(appendable storage.Appendable) *Appendable {
-	a.next = appendable
-	return a
+type compatAppendable interface {
+	storage.Appendable
+	storage.AppendableV2
 }
 
-// ThenV2 chains another appenderV2 from the provided AppendableV2 for the AppenderV2 calls.
-func (a *Appendable) ThenV2(appendable storage.AppendableV2) *Appendable {
-	a.nextV2 = appendable
+// Then chains another appender from the provided Appendable for the Appender calls.
+func (a *Appendable) Then(appendable compatAppendable) *Appendable {
+	a.next = appendable
 	return a
 }
 
@@ -289,13 +311,12 @@ func (a *Appendable) Appender(ctx context.Context) storage.Appender {
 	ret := &appender{baseAppender: baseAppender{a: a}}
 	if a.openAppenders.Inc() > 1 {
 		ret.err = errors.New("teststorage.Appendable.Appender() concurrent use is not supported; attempted opening new Appender() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
+		return ret
 	}
 
 	if a.next != nil {
 		app := a.next.Appender(ctx)
 		ret.next, ret.nextTr = app, app
-	} else if a.nextV2 != nil {
-		ret.err = errors.Join(ret.err, errors.New("teststorage.Appendable.Appender() invoked with .ThenV2 but no .Then was supplied; likely bug"))
 	}
 	return ret
 }
@@ -443,13 +464,12 @@ func (a *Appendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	ret := &appenderV2{baseAppender: baseAppender{a: a}}
 	if a.openAppenders.Inc() > 1 {
 		ret.err = errors.New("teststorage.Appendable.AppenderV2() concurrent use is not supported; attempted opening new AppenderV2() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
+		return ret
 	}
 
-	if a.nextV2 != nil {
-		app := a.nextV2.AppenderV2(ctx)
+	if a.next != nil {
+		app := a.next.AppenderV2(ctx)
 		ret.next, ret.nextTr = app, app
-	} else if a.next != nil {
-		ret.err = errors.Join(ret.err, errors.New("teststorage.Appendable.AppenderV2() invoked with .Then but no .ThenV2 was supplied; likely bug"))
 	}
 	return ret
 }
