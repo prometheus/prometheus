@@ -286,10 +286,7 @@ func (h *Head) getMetadataBuffer() []record.RefMetadata {
 }
 
 func (h *Head) putMetadataBuffer(b []record.RefMetadata) {
-	for i := range b { // Zero out to avoid retaining string data.
-		b[i].Unit = ""
-		b[i].Help = ""
-	}
+	clear(b)
 	h.metadataPool.Put(b[:0])
 }
 
