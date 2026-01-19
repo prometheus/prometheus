@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -295,18 +296,16 @@ loop:
 			// When passing metadata now, we no longer need to check if metadata changed as per v2 contract. We could
 			// consider no flag and always attach the metadata. Unfortunately because of the limitation of the OpenMetrics 1.0
 			// (hopefully fixed in OpenMetrics 2.0) there are edge cases for known to unknown metadata series switch that
-			// is expensive to detect. As a result we keep this opt-in for now (could be also scrape option).
+			// is expensive to detect. As a result we keep this opt-in for now.
+			// TODO(bwplotka): Move this to parser as many parser users end up doing this (e.g. ST and NHCB parsing),
+			// plus proto does not have this flaw.
 			if sl.appendMetadataToWAL && lastMeta != nil {
-				if !seriesCached || lastMeta.lastIterChange != sl.cache.iter {
-					// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
-					// However, optional TYPE etc metadata and broken OM text can break this, detect those cases here.
-					// TODO(bwplotka): Consider moving this to parser as many parser users end up doing this (e.g. ST and NHCB parsing).
-					if !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {
-						lastMeta = nil
-					}
-				}
-				if lastMeta != nil {
-					appOpts.Metadata = lastMeta.Metadata
+				appOpts.Metadata = lastMeta.Metadata
+
+				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
+				// However, optional TYPE etc metadata and broken OM text can break this, detect those cases here.
+				if !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {
+					appOpts.Metadata = metadata.Metadata{} // Don't pass knowingly broken metadata.
 				}
 			}
 

@@ -19,12 +19,12 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/value"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -144,8 +144,7 @@ func TestAppendable_Then(t *testing.T) {
 	testAppendableV2(t, nextAppTest, app)
 }
 
-// TestSample_RequireEqual ensures standard testutil.RequireEqual is enough for comparisons.
-// This is thanks to the fact metadata has now Equals method.
+// TestSample_RequireEqual.
 func TestSample_RequireEqual(t *testing.T) {
 	a := []Sample{
 		{},
@@ -199,10 +198,37 @@ func TestSample_RequireEqual(t *testing.T) {
 	a = []Sample{
 		{},
 		{L: labels.FromStrings(model.MetricNameLabel, "test_metric_total"), M: metadata.Metadata{Type: "counter", Unit: "metric", Help: "some help text"}},
-		{L: labels.FromStrings(model.MetricNameLabel, "test_metric2", "foo", "bar"), M: metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}, V: math.Float64frombits(value.NormalNaN)},
+		{L: labels.FromStrings(model.MetricNameLabel, "test_metric2", "foo", "bar"), M: metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}, V: math.Float64frombits(value.StaleNaN)},
 		{ES: []exemplar.Exemplar{{Labels: labels.FromStrings(model.MetricNameLabel, "yolo")}}},
 	}
 	RequireEqual(t, a, a)
+
+	// NaN comparison with different order.
+	a = []Sample{
+		{},
+		{L: labels.FromStrings(model.MetricNameLabel, "test_metric_total"), M: metadata.Metadata{Type: "counter", Unit: "metric", Help: "some help text"}},
+		{L: labels.FromStrings(model.MetricNameLabel, "test_metric10", "foo", "bar"), M: metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}, V: math.Float64frombits(value.StaleNaN)},
+		{L: labels.FromStrings(model.MetricNameLabel, "test_metric2", "foo", "bar"), M: metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}, V: math.Float64frombits(value.StaleNaN)},
+		{ES: []exemplar.Exemplar{{Labels: labels.FromStrings(model.MetricNameLabel, "yolo")}}},
+	}
+	b6 := []Sample{
+		{},
+		{L: labels.FromStrings(model.MetricNameLabel, "test_metric_total"), M: metadata.Metadata{Type: "counter", Unit: "metric", Help: "some help text"}},
+		{L: labels.FromStrings(model.MetricNameLabel, "test_metric2", "foo", "bar"), M: metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}, V: math.Float64frombits(value.StaleNaN)},
+		{L: labels.FromStrings(model.MetricNameLabel, "test_metric10", "foo", "bar"), M: metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}, V: math.Float64frombits(value.StaleNaN)},
+		{ES: []exemplar.Exemplar{{Labels: labels.FromStrings(model.MetricNameLabel, "yolo")}}},
+	}
+	RequireEqual(t, a, b6)
+
+	// Not equal with NaNs.
+	b7 := []Sample{
+		{},
+		{L: labels.FromStrings(model.MetricNameLabel, "test_metric_total"), M: metadata.Metadata{Type: "counter", Unit: "metric", Help: "some help text"}},
+		{L: labels.FromStrings(model.MetricNameLabel, "test_metric10", "foo", "bar"), M: metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}, V: math.Float64frombits(value.StaleNaN)},
+		{L: labels.FromStrings(model.MetricNameLabel, "test_metric2", "foo", "bar"), M: metadata.Metadata{Type: "gauge2", Unit: "", Help: "other help text"}, V: math.Float64frombits(value.StaleNaN)}, // metadata different
+		{ES: []exemplar.Exemplar{{Labels: labels.FromStrings(model.MetricNameLabel, "yolo")}}},
+	}
+	RequireNotEqual(t, a, b7)
 }
 
 func TestConcurrentAppender_ReturnsErrAppender(t *testing.T) {
