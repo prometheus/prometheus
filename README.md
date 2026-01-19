@@ -55,13 +55,66 @@ chapter in the documentation for all the details.
 
 Docker images are available on [Quay.io](https://quay.io/repository/prometheus/prometheus) or [Docker Hub](https://hub.docker.com/r/prom/prometheus/).
 
-You can launch a Prometheus container for trying it out with
+#### Quick Start with Docker
+
+You can launch a Prometheus container for trying it out with:
 
 ```bash
 docker run --name prometheus -d -p 127.0.0.1:9090:9090 prom/prometheus
 ```
 
 Prometheus will now be reachable at <http://localhost:9090/>.
+
+#### Production Docker Setup
+
+For production use, mount a custom configuration file:
+
+```bash
+# Create a prometheus.yml configuration file
+mkdir -p /tmp/prometheus-data
+
+# Run with custom config and persistent storage
+docker run -d \
+  --name prometheus \
+  -p 9090:9090 \
+  -v /path/to/prometheus.yml:/etc/prometheus/prometheus.yml \
+  -v /tmp/prometheus-data:/prometheus \
+  prom/prometheus \
+  --config.file=/etc/prometheus/prometheus.yml \
+  --storage.tsdb.path=/prometheus \
+  --web.console.libraries=/etc/prometheus/console_libraries \
+  --web.console.templates=/etc/prometheus/consoles \
+  --web.enable-lifecycle
+```
+
+#### Docker Compose Setup
+
+For easier management, use Docker Compose:
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+
+volumes:
+  prometheus_data:
+```
+
+Then run: `docker-compose up -d`
 
 ### Building from source
 
