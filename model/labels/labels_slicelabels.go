@@ -233,6 +233,21 @@ func (ls Labels) HasDuplicateLabelNames() (string, bool) {
 	return "", false
 }
 
+// HasAnyDuplicateLabelNames returns whether ls has any duplicate label names,
+// even if they are not consecutive. This is useful for detecting corrupted
+// label sets where the labels may not be properly sorted.
+// The seen map is cleared and reused to reduce allocations when called in a loop.
+func (ls Labels) HasAnyDuplicateLabelNames(seen map[string]struct{}) (string, bool) {
+	clear(seen)
+	for _, l := range ls {
+		if _, exists := seen[l.Name]; exists {
+			return l.Name, true
+		}
+		seen[l.Name] = struct{}{}
+	}
+	return "", false
+}
+
 // WithoutEmpty returns the labelset without empty labels.
 // May return the same labelset.
 func (ls Labels) WithoutEmpty() Labels {

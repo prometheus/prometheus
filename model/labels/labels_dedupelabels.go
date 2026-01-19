@@ -382,6 +382,25 @@ func (ls Labels) HasDuplicateLabelNames() (string, bool) {
 	return "", false
 }
 
+// HasAnyDuplicateLabelNames returns whether ls has any duplicate label names,
+// even if they are not consecutive. This is useful for detecting corrupted
+// label sets where the labels may not be properly sorted.
+// Note: the passed map is ignored; this implementation uses an internal map[int]struct{}
+// for efficiency since it compares symbol IDs rather than strings.
+func (ls Labels) HasAnyDuplicateLabelNames(map[string]struct{}) (string, bool) {
+	seen := make(map[int]struct{}, 32)
+	for i := 0; i < len(ls.data); {
+		var lNum int
+		lNum, i = decodeVarint(ls.data, i)
+		_, i = decodeVarint(ls.data, i)
+		if _, exists := seen[lNum]; exists {
+			return ls.syms.ToName(lNum), true
+		}
+		seen[lNum] = struct{}{}
+	}
+	return "", false
+}
+
 // WithoutEmpty returns the labelset without empty labels.
 // May return the same labelset.
 func (ls Labels) WithoutEmpty() Labels {

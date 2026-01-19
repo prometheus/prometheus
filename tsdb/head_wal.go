@@ -250,11 +250,17 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	// The records are always replayed from the oldest to the newest.
 	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+	dupLabelsSeen := make(map[string]struct{}, 32)
 Outer:
 	for d := range decoded {
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
+				if dupName, hasDup := walSeries.Labels.HasAnyDuplicateLabelNames(dupLabelsSeen); hasDup {
+					h.logger.Warn("skipping series with corrupted labels during WAL replay", "ref", walSeries.Ref, "duplicate_label", dupName)
+					h.metrics.walReplayCorruptedSeriesTotal.Inc()
+					continue
+				}
 				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
 				if err != nil {
 					seriesCreationErr = err
@@ -1615,8 +1621,14 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 
 			shardedRefSeries[idx] = make(map[chunks.HeadSeriesRef]*memSeries)
 			localRefSeries := shardedRefSeries[idx]
+			dupLabelsSeen := make(map[string]struct{}, 32)
 
 			for csr := range rc {
+				if dupName, hasDup := csr.lset.HasAnyDuplicateLabelNames(dupLabelsSeen); hasDup {
+					h.logger.Warn("skipping series with corrupted labels during chunk snapshot replay", "ref", csr.ref, "duplicate_label", dupName)
+					h.metrics.walReplayCorruptedSeriesTotal.Inc()
+					continue
+				}
 				series, _, err := h.getOrCreateWithOptionalID(csr.ref, csr.lset.Hash(), csr.lset, false)
 				if err != nil {
 					errChan <- err

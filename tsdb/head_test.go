@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -2609,6 +2610,176 @@ func TestWalRepair_DecodingError(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestWALReplay_CorruptedSeriesWithDuplicateLabels ensures that series with
+// corrupted labels (containing duplicate label names) are skipped during WAL
+// replay and the corresponding metric is incremented.
+func TestWALReplay_CorruptedSeriesWithDuplicateLabels(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a WAL with a corrupted series record (duplicate labels) and a valid one.
+	{
+		w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+		require.NoError(t, err)
+
+		var enc record.Encoder
+
+		// Write a valid series.
+		validSeries := []record.RefSeries{
+			{Ref: 1, Labels: labels.FromStrings("__name__", "valid_metric", "job", "test")},
+		}
+		require.NoError(t, w.Log(enc.Series(validSeries, nil)))
+
+		// Write a corrupted series with duplicate label names (non-consecutive).
+		// Using FromStrings directly creates labels without validation.
+		corruptedSeries := []record.RefSeries{
+			{Ref: 2, Labels: labels.FromStrings("__name__", "corrupted_metric", "job", "test", "__name__", "duplicate")},
+		}
+		require.NoError(t, w.Log(enc.Series(corruptedSeries, nil)))
+
+		// Write another valid series to ensure replay continues after corrupted one.
+		validSeries2 := []record.RefSeries{
+			{Ref: 3, Labels: labels.FromStrings("__name__", "another_valid", "job", "test")},
+		}
+		require.NoError(t, w.Log(enc.Series(validSeries2, nil)))
+
+		// Write samples for all series to ensure they're not garbage collected.
+		samples := []record.RefSample{
+			{Ref: 1, T: 100, V: 1.0},
+			{Ref: 2, T: 100, V: 2.0}, // This will become an unknown ref since the series was skipped.
+			{Ref: 3, T: 100, V: 3.0},
+		}
+		require.NoError(t, w.Log(enc.Samples(samples, nil)))
+
+		require.NoError(t, w.Close())
+	}
+
+	// Create a head and replay the WAL.
+	{
+		w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+		require.NoError(t, err)
+
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1000
+		opts.ChunkDirRoot = dir
+
+		h, err := NewHead(nil, nil, w, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+		// Verify metric is initially zero.
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walReplayCorruptedSeriesTotal))
+
+		// Replay the WAL - this should skip the corrupted series.
+		require.NoError(t, h.Init(math.MinInt64))
+
+		// Verify the corrupted series metric was incremented.
+		require.Equal(t, 1.0, prom_testutil.ToFloat64(h.metrics.walReplayCorruptedSeriesTotal),
+			"expected walReplayCorruptedSeriesTotal to be 1 after replaying WAL with corrupted series")
+
+		// Verify only the valid series are present (refs 1 and 3, not 2).
+		require.NotNil(t, h.series.getByID(1), "valid series 1 should exist")
+		require.Nil(t, h.series.getByID(2), "corrupted series 2 should not exist")
+		require.NotNil(t, h.series.getByID(3), "valid series 3 should exist")
+
+		// Verify total number of series.
+		require.Equal(t, uint64(2), h.NumSeries(), "expected 2 valid series after replay")
+	}
+}
+
+// TestChunkSnapshotReplay_CorruptedSeriesWithDuplicateLabels ensures that series with
+// corrupted labels (containing duplicate label names) are skipped during chunk snapshot
+// replay and the corresponding metric is incremented.
+func TestChunkSnapshotReplay_CorruptedSeriesWithDuplicateLabels(t *testing.T) {
+	dir := t.TempDir()
+
+	// Helper function to encode a chunk snapshot series record with raw label data.
+	// This allows us to inject corrupted labels (duplicates) that bypass normal validation.
+	encodeSnapshotSeriesRecord := func(ref uint64, labelPairs []string) []byte {
+		var buf encoding.Encbuf
+		buf.PutByte(chunkSnapshotRecordTypeSeries)
+		buf.PutBE64(ref)
+		// Encode labels: count followed by name/value pairs.
+		buf.PutUvarint(len(labelPairs) / 2)
+		for i := 0; i < len(labelPairs); i += 2 {
+			buf.PutUvarintStr(labelPairs[i])
+			buf.PutUvarintStr(labelPairs[i+1])
+		}
+		buf.PutBE64int64(0) // Backwards-compatibility; was chunkRange.
+		buf.PutUvarint(0)   // No head chunk.
+		return buf.Get()
+	}
+
+	// Create chunk snapshot directory with proper naming format (6 + 10 digits).
+	snapshotDir := filepath.Join(dir, "chunk_snapshot.000000.0000000000")
+	require.NoError(t, os.MkdirAll(snapshotDir, 0o777))
+
+	// Write series records to the chunk snapshot.
+	{
+		cp, err := wlog.New(nil, nil, snapshotDir, compression.None)
+		require.NoError(t, err)
+
+		// Write a valid series.
+		validRec1 := encodeSnapshotSeriesRecord(1, []string{"__name__", "valid_metric", "job", "test"})
+		require.NoError(t, cp.Log(validRec1))
+
+		// Write a corrupted series with duplicate label names (non-consecutive).
+		corruptedRec := encodeSnapshotSeriesRecord(2, []string{"__name__", "corrupted_metric", "job", "test", "__name__", "duplicate"})
+		require.NoError(t, cp.Log(corruptedRec))
+
+		// Write another valid series to ensure replay continues after corrupted one.
+		validRec2 := encodeSnapshotSeriesRecord(3, []string{"__name__", "another_valid", "job", "test"})
+		require.NoError(t, cp.Log(validRec2))
+
+		require.NoError(t, cp.Close())
+	}
+
+	// Create a WAL with at least one segment (required for chunk snapshot to be loaded).
+	// The WAL segment index must be >= snapshot index (0), otherwise snapshot is skipped.
+	w, err := wlog.New(nil, nil, filepath.Join(dir, "wal"), compression.None)
+	require.NoError(t, err)
+	// Write samples for the series to ensure they're not garbage collected after replay.
+	// Note: Series 2 (corrupted) will have unknown ref since its series record is skipped.
+	var enc record.Encoder
+	samples := []record.RefSample{
+		{Ref: 1, T: 100, V: 1.0},
+		{Ref: 2, T: 100, V: 2.0}, // Unknown ref since corrupted series is skipped.
+		{Ref: 3, T: 100, V: 3.0},
+	}
+	require.NoError(t, w.Log(enc.Samples(samples, nil)))
+
+	// Create a head and replay the chunk snapshot.
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = dir
+	opts.EnableMemorySnapshotOnShutdown = true
+
+	h, err := NewHead(nil, nil, w, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+	// Verify metric is initially zero.
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walReplayCorruptedSeriesTotal))
+
+	// Replay - this should load the chunk snapshot and skip the corrupted series.
+	require.NoError(t, h.Init(math.MinInt64))
+
+	// Verify no snapshot error occurred (the corrupted series should be skipped, not cause a full error).
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.snapshotReplayErrorTotal),
+		"snapshot replay should not have errored")
+
+	// Verify the corrupted series metric was incremented.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(h.metrics.walReplayCorruptedSeriesTotal),
+		"expected walReplayCorruptedSeriesTotal to be 1 after replaying chunk snapshot with corrupted series")
+
+	// Verify only the valid series are present (refs 1 and 3, not 2).
+	require.NotNil(t, h.series.getByID(1), "valid series 1 should exist")
+	require.Nil(t, h.series.getByID(2), "corrupted series 2 should not exist")
+	require.NotNil(t, h.series.getByID(3), "valid series 3 should exist")
+
+	// Verify total number of series.
+	require.Equal(t, uint64(2), h.NumSeries(), "expected 2 valid series after replay")
 }
 
 // TestWblRepair_DecodingError ensures that a repair is run for an error

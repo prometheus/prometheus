@@ -201,6 +201,47 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 	}
 }
 
+func TestLabels_HasAnyDuplicateLabelNames(t *testing.T) {
+	cases := []struct {
+		name      string
+		input     Labels
+		duplicate bool
+		labelName string
+	}{
+		{
+			name:      "no duplicates",
+			input:     FromMap(map[string]string{"__name__": "up", "hostname": "localhost"}),
+			duplicate: false,
+		},
+		{
+			name:      "consecutive duplicates",
+			input:     FromStrings("__name__", "up", "hostname", "localhost", "hostname", "127.0.0.1"),
+			duplicate: true,
+			labelName: "hostname",
+		},
+		{
+			name:      "non-consecutive duplicates",
+			input:     FromStrings("a", "1", "b", "2", "a", "3"),
+			duplicate: true,
+			labelName: "a",
+		},
+		{
+			name:      "empty labels",
+			input:     EmptyLabels(),
+			duplicate: false,
+		},
+	}
+
+	seen := make(map[string]struct{})
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			l, d := c.input.HasAnyDuplicateLabelNames(seen)
+			require.Equal(t, c.duplicate, d, "incorrect duplicate bool")
+			require.Equal(t, c.labelName, l, "incorrect label name")
+		})
+	}
+}
+
 func TestLabels_WithoutEmpty(t *testing.T) {
 	for _, test := range []struct {
 		input    Labels
