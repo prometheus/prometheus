@@ -250,12 +250,17 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
+		distroless_arch="$*"; \
+		if [ "$*" = "armv7" ]; then \
+			distroless_arch="arm"; \
+		fi; \
 		if [ "$$dockerfile" = "Dockerfile" ]; then \
 			echo "Building default variant ($$variant_name) for linux-$* using $$dockerfile"; \
 			docker build -t "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)" \
 				-f $$dockerfile \
 				--build-arg ARCH="$*" \
 				--build-arg OS="linux" \
+				--build-arg DISTROLESS_ARCH="$$distroless_arch" \
 				$(DOCKERBUILD_CONTEXT); \
 			if [ "$$variant_name" != "default" ]; then \
 				echo "Tagging default variant with $$variant_name suffix"; \
@@ -268,6 +273,7 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 				-f $$dockerfile \
 				--build-arg ARCH="$*" \
 				--build-arg OS="linux" \
+				--build-arg DISTROLESS_ARCH="$$distroless_arch" \
 				$(DOCKERBUILD_CONTEXT); \
 		fi; \
 	done
