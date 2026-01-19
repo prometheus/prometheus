@@ -1416,13 +1416,38 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 			false, // No reset: all mapped buckets increase
 		},
 		{
-			"mismatched custom bounds - precision noise check",
+			"mismatched custom bounds - precision drift from accumulation during reconciliation",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           100,
+				Sum:             500,
+				PositiveSpans:   []Span{{0, 2}},
+				// The sum of 0.1 and 0.2 is slightly larger than 0.3 due to floating point precision.
+				// 0.1 + 0.2 = 0.30000000000000004
+				PositiveBuckets: []float64{0.1, 0.2},
+				CustomValues:    []float64{1, 2},
+			},
 			&FloatHistogram{
 				Schema:          CustomBucketsSchema,
 				Count:           100,
 				Sum:             500,
 				PositiveSpans:   []Span{{0, 1}},
-				PositiveBuckets: []float64{10.000000000001}, // Prev: 10.0...1
+				// This bucket covers the range of the two buckets above.
+				// We expect 0.3 here.
+				// Without almost.Equal, 0.3 < 0.30000000000000004 would trigger a false reset.
+				PositiveBuckets: []float64{0.3},
+				CustomValues:    []float64{2},
+			},
+			false,
+		},
+		{
+			"matching custom bounds - control",
+			&FloatHistogram{
+				Schema:          CustomBucketsSchema,
+				Count:           100,
+				Sum:             500,
+				PositiveSpans:   []Span{{0, 1}},
+				PositiveBuckets: []float64{0.300000000000001},
 				CustomValues:    []float64{1},
 			},
 			&FloatHistogram{
@@ -1430,10 +1455,10 @@ func TestFloatHistogramDetectReset(t *testing.T) {
 				Count:           100,
 				Sum:             500,
 				PositiveSpans:   []Span{{0, 1}},
-				PositiveBuckets: []float64{10.0}, // Curr: 10.0
-				CustomValues:    []float64{2},    // mismatch bounds
+				PositiveBuckets: []float64{0.3},
+				CustomValues:    []float64{1},    // matching bounds
 			},
-			false, // Should be false with fix. True without fix (10.0 < 10.0...1).
+			true, // Should be true (strict check for matching bounds).
 		},
 	}
 
