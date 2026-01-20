@@ -1132,6 +1132,38 @@ alerting:
 	require.Empty(t, n.Alertmanagers())
 }
 
+// TestRunExitsOnChannelClose verifies that when the target channel is closed,
+// the targetUpdateLoop exits promptly without spinning in a busy loop.
+// This is a regression test for https://github.com/prometheus/prometheus/issues/17858.
+func TestRunExitsOnChannelClose(t *testing.T) {
+	m := NewManager(&Options{}, model.UTF8Validation, nil)
+
+	tsets := make(chan map[string][]*targetgroup.Group)
+	runExited := make(chan struct{})
+
+	go func() {
+		m.Run(tsets)
+		close(runExited)
+	}()
+
+	// Send one update to ensure Run is processing.
+	tsets <- map[string][]*targetgroup.Group{}
+
+	// Close the channel to simulate the discovery manager shutting down.
+	close(tsets)
+
+	time.Sleep(10 * time.Millisecond)
+
+	m.Stop()
+
+	// Run should exit promptly after Stop() is called.
+	select {
+	case <-runExited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not exit promptly after Stop was called; possible issue with shutdown")
+	}
+}
+
 // TestAlerstRelabelingIsIsolated ensures that a mutation alerts relabeling in an
 // alertmanagerSet doesn't affect others.
 // See https://github.com/prometheus/prometheus/pull/17063.

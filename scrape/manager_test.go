@@ -575,6 +575,38 @@ scrape_configs:
 	}
 }
 
+// TestRunExitsOnChannelClose verifies that the Run loop exits promptly when
+// the target channel is closed, without spinning in a busy loop.
+// This is a regression test for https://github.com/prometheus/prometheus/issues/17858.
+func TestRunExitsOnChannelClose(t *testing.T) {
+	opts := Options{}
+	testRegistry := prometheus.NewRegistry()
+	m, err := NewManager(&opts, nil, nil, nil, testRegistry)
+	require.NoError(t, err)
+	defer m.Stop()
+
+	tsets := make(chan map[string][]*targetgroup.Group)
+	runExited := make(chan struct{})
+
+	go func() {
+		m.Run(tsets)
+		close(runExited)
+	}()
+
+	// Send one update to ensure Run is processing.
+	tsets <- map[string][]*targetgroup.Group{}
+
+	// Close the channel to simulate shutdown.
+	close(tsets)
+
+	// Run should exit promptly when the channel is closed.
+	select {
+	case <-runExited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not exit promptly after channel was closed; possible CPU spin loop regression")
+	}
+}
+
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
