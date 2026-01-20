@@ -4,7 +4,7 @@ name: Docs Link Checker
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *" #Runs once a day
+    - cron: "29 7 * * *" # Runs once a day.
 permissions:
   contents: read
   issues: write
@@ -13,9 +13,9 @@ jobs:
   linkChecker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
-      - name: Docs Link Checker #Link checking is intentionally scoped to docs/ and documentation/ to reduce CI runtime and avoid scanning non-documentation files.
+      - name: Docs Link Checker
         id: lychee
         uses: lycheeverse/lychee-action@v2.6.1
         with:
@@ -30,6 +30,6 @@ jobs:
         if: env.lychee_exit_code != 0
         uses: peter-evans/create-issue-from-file@v5
         with:
-          title: Broken Link Detected in Docs (Help Wanted)
+          title: docs: Broken Link Detected
           content-filepath: ./lychee/out.md
-          labels: report, automated issue, documentation, good first issue
+          labels: component/documentation, good first issue, help wanted
