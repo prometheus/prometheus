@@ -283,8 +283,75 @@ deny contains metric_violation(
 }
 
 # =============================================================================
+# Rule: const_labels must be an array when present
+# =============================================================================
+deny contains metric_violation(
+    sprintf("Metric '%s': annotations.prometheus.const_labels must be an array, got %v", [group.metric_name, type_name(group.annotations.prometheus.const_labels)]),
+    group.id,
+    group.metric_name
+) if {
+    group := input.groups[_]
+    group.type == "metric"
+    group.annotations.prometheus.const_labels
+    not is_array(group.annotations.prometheus.const_labels)
+}
+
+# =============================================================================
+# Rule: const_labels entries must exist in the metric's attributes
+# =============================================================================
+deny contains metric_violation(
+    sprintf("Metric '%s': const_labels entry '%s' is not defined in the metric's attributes", [group.metric_name, label]),
+    group.id,
+    group.metric_name
+) if {
+    group := input.groups[_]
+    group.type == "metric"
+    is_array(group.annotations.prometheus.const_labels)
+    label := group.annotations.prometheus.const_labels[_]
+    not attribute_exists(group.attributes, label)
+}
+
+# =============================================================================
+# Rule: const_labels entries must be marked as required
+# =============================================================================
+deny contains metric_violation(
+    sprintf("Metric '%s': const_labels entry '%s' must have requirement_level: required", [group.metric_name, label]),
+    group.id,
+    group.metric_name
+) if {
+    group := input.groups[_]
+    group.type == "metric"
+    is_array(group.annotations.prometheus.const_labels)
+    label := group.annotations.prometheus.const_labels[_]
+    attribute_exists(group.attributes, label)
+    not attribute_is_required(group.attributes, label)
+}
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
+
+# Check if an attribute exists by name (handles both inline and ref attributes)
+attribute_exists(attributes, name) if {
+    attr := attributes[_]
+    attr.id == name
+}
+attribute_exists(attributes, name) if {
+    attr := attributes[_]
+    attr.ref == name
+}
+
+# Check if an attribute is required (handles both inline and ref attributes)
+attribute_is_required(attributes, name) if {
+    attr := attributes[_]
+    attr.id == name
+    attr.requirement_level == "required"
+}
+attribute_is_required(attributes, name) if {
+    attr := attributes[_]
+    attr.ref == name
+    attr.requirement_level == "required"
+}
 
 # Check if group has histogram_type annotation
 has_histogram_type(group) if {

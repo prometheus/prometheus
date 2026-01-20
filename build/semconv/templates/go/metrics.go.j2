@@ -94,8 +94,14 @@ func (a {{ name }}Attr) Value() string {
 {%- for metric in all_metrics %}
 {%- set metric_name = h.to_go_name(metric.metric_name, "") %}
 {%- set metric_attr = metric.attributes | default([]) | sort -%}
-{%- set has_labels = (metric_attr | length) > 0 -%}
 {%- set prom = (metric.annotations | default({})).prometheus | default({}) -%}
+{#- Separate const labels from dynamic labels -#}
+{%- set const_label_names = prom.const_labels | default([]) -%}
+{%- set const_attrs = metric_attr | selectattr("name", "in", const_label_names) | list -%}
+{%- set dynamic_attrs = metric_attr | rejectattr("name", "in", const_label_names) | list -%}
+{%- set has_const_labels = (const_attrs | length) > 0 -%}
+{%- set has_dynamic_labels = (dynamic_attrs | length) > 0 -%}
+{%- set has_labels = has_const_labels or has_dynamic_labels -%}
 {#- Determine the actual Prometheus type based on instrument and histogram_type -#}
 {%- if metric.instrument == "histogram" and prom.histogram_type == "summary" -%}
 {%- set metric_inst = "Summary" -%}
@@ -116,26 +122,45 @@ func {{ metric_name }}Opts() prometheus.{{ metric_inst }}Opts {
 
 {{ h.metric_typedoc(metric, "") | comment | trim }}
 type {{ metric_name }} struct {
-{%- if has_labels %}
+{%- if has_dynamic_labels %}
 	*prometheus.{{ metric_inst }}Vec
 {%- else %}
 	prometheus.{{ metric_inst }}
 {%- endif %}
 }
 
+{%- if has_const_labels %}
+{{ ["New" ~ metric_name ~ " returns a new " ~ metric_name ~ " instrument with the given const labels."] | comment }}
+func New{{ metric_name }}(
+{%- call(attr) for_each_attr(const_attrs) %}
+	{{ attr.arg }} {{ attr.type }},
+{%- endcall %}
+) {{ metric_name }} {
+{%- else %}
 {{ ["New" ~ metric_name ~ " returns a new " ~ metric_name ~ " instrument."] | comment }}
 func New{{ metric_name }}() {{ metric_name }} {
-{%- if has_labels %}
+{%- endif %}
+{%- if has_dynamic_labels %}
 	labels := []string{
-		{%- call(attr) for_each_attr(metric_attr) %}
+		{%- call(attr) for_each_attr(dynamic_attrs) %}
 		"{{ attr.id }}",
 		{%- endcall %}
 	}
 {%- endif %}
+{#- Macro to generate ConstLabels block if needed -#}
+{%- macro const_labels_block() -%}
+{%- if has_const_labels %}
+			ConstLabels: prometheus.Labels{
+{%- call(attr) for_each_attr(const_attrs) %}
+				"{{ attr.id }}": {{ attr.arg }}.Value(),
+{%- endcall %}
+			},
+{%- endif %}
+{%- endmacro -%}
 {%- if metric.instrument == "histogram" and prom.histogram_type %}
 {%- if prom.histogram_type == "summary" %}
 	return {{ metric_name }}{
-{%- if has_labels %}
+{%- if has_dynamic_labels %}
 		SummaryVec: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 {%- else %}
 		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
@@ -147,7 +172,8 @@ func New{{ metric_name }}() {{ metric_name }} {
 				{{ quantile }}: {{ error }},
 {%- endfor %}
 			},
-{%- if has_labels %}
+{{ const_labels_block() }}
+{%- if has_dynamic_labels %}
 		}, labels),
 {%- else %}
 		}),
@@ -155,7 +181,7 @@ func New{{ metric_name }}() {{ metric_name }} {
 	}
 {%- elif prom.histogram_type == "classic_histogram" %}
 	return {{ metric_name }}{
-{%- if has_labels %}
+{%- if has_dynamic_labels %}
 		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 {%- else %}
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -163,7 +189,8 @@ func New{{ metric_name }}() {{ metric_name }} {
 			Name:    "{{ metric.metric_name }}",
 			Help:    "{{ metric.brief | default("") | trim }}",
 			Buckets: {{ h.buckets_to_go(prom) }},
-{%- if has_labels %}
+{{ const_labels_block() }}
+{%- if has_dynamic_labels %}
 		}, labels),
 {%- else %}
 		}),
@@ -171,7 +198,7 @@ func New{{ metric_name }}() {{ metric_name }} {
 	}
 {%- elif prom.histogram_type == "native_histogram" %}
 	return {{ metric_name }}{
-{%- if has_labels %}
+{%- if has_dynamic_labels %}
 		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 {%- else %}
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -181,7 +208,8 @@ func New{{ metric_name }}() {{ metric_name }} {
 			NativeHistogramBucketFactor:     {{ prom.bucket_factor }},
 			NativeHistogramMaxBucketNumber:  {{ prom.max_bucket_number }},
 			NativeHistogramMinResetDuration: {{ h.duration_to_go(prom.min_reset_duration) }},
-{%- if has_labels %}
+{{ const_labels_block() }}
+{%- if has_dynamic_labels %}
 		}, labels),
 {%- else %}
 		}),
@@ -189,7 +217,7 @@ func New{{ metric_name }}() {{ metric_name }} {
 	}
 {%- elif prom.histogram_type == "mixed_histogram" %}
 	return {{ metric_name }}{
-{%- if has_labels %}
+{%- if has_dynamic_labels %}
 		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 {%- else %}
 		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -200,7 +228,8 @@ func New{{ metric_name }}() {{ metric_name }} {
 			NativeHistogramBucketFactor:     {{ prom.bucket_factor }},
 			NativeHistogramMaxBucketNumber:  {{ prom.max_bucket_number }},
 			NativeHistogramMinResetDuration: {{ h.duration_to_go(prom.min_reset_duration) }},
-{%- if has_labels %}
+{{ const_labels_block() }}
+{%- if has_dynamic_labels %}
 		}, labels),
 {%- else %}
 		}),
@@ -209,41 +238,43 @@ func New{{ metric_name }}() {{ metric_name }} {
 {%- endif %}
 {%- else %}
 	return {{ metric_name }}{
-{%- if has_labels %}
+{%- if has_dynamic_labels %}
 		{{ metric_inst }}Vec: prometheus.New{{ metric_inst }}Vec(prometheus.{{ metric_inst }}Opts{
 			Name: "{{ metric.metric_name }}",
 			Help: "{{ metric.brief | default("") | trim }}",
+{{ const_labels_block() }}
 		}, labels),
 {%- else %}
 		{{ metric_inst }}: prometheus.New{{ metric_inst }}(prometheus.{{ metric_inst }}Opts{
 			Name: "{{ metric.metric_name }}",
 			Help: "{{ metric.brief | default("") | trim }}",
+{{ const_labels_block() }}
 		}),
 {%- endif %}
 	}
 {%- endif %}
 }
-{%- if has_labels %}
-
+{% if has_dynamic_labels %}
+{#- Only generate .With() method if there are dynamic labels -#}
 type {{ metric_name }}Attr interface {
 	Attribute
 	impl{{ metric_name }}()
 }
-{% call(attr) for_each_attr(metric_attr) %}
+{% call(attr) for_each_attr(dynamic_attrs) %}
 func (a {{ attr.type }}) impl{{ metric_name }}() {}
 {%- endcall %}
 
 func (m {{ metric_name }}) With(
-{%- call(attr) for_each_attr(metric_attr|required) %}
+{%- call(attr) for_each_attr(dynamic_attrs|required) %}
 	{{ attr.arg }} {{ attr.type }},
 {%- endcall %}
 	extra ...{{ metric_name }}Attr,
 ) prometheus.{{ metric_inst | replace("Histogram", "Observer") | replace("Summary", "Observer") }} {
 	labels := prometheus.Labels{
-		{%- call(attr) for_each_attr(metric_attr|required) %}
+		{%- call(attr) for_each_attr(dynamic_attrs|required) %}
 		"{{ attr.id }}": {{ attr.arg }}.Value(),
 		{%- endcall %}
-		{%- call(attr) for_each_attr(metric_attr|not_required) %}
+		{%- call(attr) for_each_attr(dynamic_attrs|not_required) %}
 		"{{ attr.id }}": "",
 		{%- endcall %}
 	}
