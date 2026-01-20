@@ -1,35 +1,150 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 
 	"github.com/prometheus/common/promslog"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
-const checkpointFixturesDir = "./testdata/db-fixtures/"
-
 func BenchmarkCheckpoint(b *testing.B) {
-}
-
-func TestCreateCheckpointFixtures(t *testing.T) {
-	createCheckpointFixtures(t, checkpointFixtureParams{
-		dir:         checkpointFixturesDir,
+	// Prepare initial state with segments
+	testSamplesSrcDir := filepath.Join(b.TempDir(), "samples-src")
+	require.NoError(b, os.Mkdir(testSamplesSrcDir, os.ModePerm))
+	createCheckpointFixtures(b, checkpointFixtureParams{
+		dir:         testSamplesSrcDir,
 		numSegments: 512,
 		numSeries:   32,
 		dtDelta:     10000,
-		segmentSize: 32 << 10, // must be aligned to page size
+		segmentSize: 32 << 10, // must be aligned to the page size
 	})
+
+	cases := []struct {
+		label                       string
+		skipCurrentCheckpointReRead bool
+	}{
+		{
+			label:                       "wlog-checkpoint",
+			skipCurrentCheckpointReRead: false,
+		},
+		{
+			label:                       "new-checkpoint",
+			skipCurrentCheckpointReRead: true,
+		},
+	}
+
+	for _, tc := range cases {
+		// wlog.Open expects to have a "wal" subdirectory
+		wlogDir := filepath.Join(b.TempDir(), tc.label, "wlog")
+		err := os.CopyFS(wlogDir, os.DirFS(testSamplesSrcDir))
+		require.NoErrorf(b, err, "failed to copy test samples from %q to %q", testSamplesSrcDir, wlogDir)
+
+		storageDir := filepath.Dir(wlogDir)
+		b.Run(tc.label, func(b *testing.B) {
+			benchCheckpoint(b, benchCheckpointParams{
+				storageDir:                  storageDir,
+				skipCurrentCheckpointReRead: tc.skipCurrentCheckpointReRead,
+			})
+		})
+	}
 }
+
+type benchCheckpointParams struct {
+	storageDir                  string
+	skipCurrentCheckpointReRead bool
+}
+
+func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
+	const (
+		numDatapoints = 1000
+		numHistograms = 100
+		numSeries     = 8
+	)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	l := promslog.NewNopLogger()
+	rs := remote.NewStorage(
+		promslog.NewNopLogger(), nil,
+		startTime, p.storageDir,
+		30*time.Second, nil, false,
+	)
+
+	b.Cleanup(func() {
+		require.NoError(b, rs.Close())
+	})
+
+	opts := DefaultOptions()
+	opts.SkipCurrentCheckpointReRead = p.skipCurrentCheckpointReRead
+	db, err := Open(l, nil, rs, p.storageDir, opts)
+	require.NoError(b, err, "Open")
+
+	app := db.Appender(b.Context())
+	lbls := labelsForTest(b.Name(), numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+		for i := range numDatapoints {
+			sample := chunks.GenerateSamples(0, 1)
+			ref, err := app.Append(0, lset, sample[0].T(), sample[0].F())
+			require.NoError(b, err)
+
+			e := exemplar.Exemplar{
+				Labels: lset,
+				Ts:     sample[0].T() + int64(i),
+				Value:  sample[0].F(),
+				HasTs:  true,
+			}
+
+			_, err = app.AppendExemplar(ref, lset, e)
+			require.NoError(b, err)
+		}
+	}
+
+	lbls = labelsForTest(b.Name()+"_histogram", numSeries)
+	for _, l := range lbls {
+		lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
+
+		for i := range numHistograms {
+			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
+			require.NoError(b, err)
+		}
+	}
+
+	require.NoError(b, app.Commit())
+
+	err = db.truncate(timestamp.FromTime(time.Now()))
+	require.NoError(b, err, "db.truncate")
+	require.NoError(b, db.Close())
+}
+
+//	func TestCreateCheckpointFixtures(t *testing.T) {
+//		createCheckpointFixtures(t, checkpointFixtureParams{
+//			dir:         "./testdata/db-fixtures/",
+//			numSegments: 512,
+//			numSeries:   32,
+//			dtDelta:     10000,
+//			segmentSize: 32 << 10, // must be aligned to page size
+//		})
+//	}
 
 type checkpointFixtureParams struct {
 	dir         string
