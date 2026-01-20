@@ -102,6 +102,17 @@ func (a {{ name }}Attr) Value() string {
 {%- else -%}
 {%- set metric_inst = (metric.instrument | default("gauge")) | map_text("go_instrument_type") -%}
 {%- endif -%}
+{#- Check if only_opts is set - generate just an Opts function instead of full type -#}
+{%- if prom.only_opts %}
+
+{{ h.metric_typedoc(metric, "") | comment | trim }}
+func {{ metric_name }}Opts() prometheus.{{ metric_inst }}Opts {
+	return prometheus.{{ metric_inst }}Opts{
+		Name: "{{ metric.metric_name }}",
+		Help: "{{ metric.brief | default("") | trim }}",
+	}
+}
+{%- else %}
 
 {{ h.metric_typedoc(metric, "") | comment | trim }}
 type {{ metric_name }} struct {
@@ -242,6 +253,7 @@ func (m {{ metric_name }}) With(
 	return m.{{ metric_inst }}Vec.With(labels)
 }
 {%- endif %}
+{%- endif %}{# end only_opts else block #}
 {%- if not loop.last %}
 
 {% endif %}

@@ -269,6 +269,20 @@ deny contains metric_violation(
 }
 
 # =============================================================================
+# Rule: only_opts must be a boolean when present
+# =============================================================================
+deny contains metric_violation(
+    sprintf("Metric '%s': annotations.prometheus.only_opts must be a boolean, got %v", [group.metric_name, type_name(group.annotations.prometheus.only_opts)]),
+    group.id,
+    group.metric_name
+) if {
+    group := input.groups[_]
+    group.type == "metric"
+    group.annotations.prometheus.only_opts
+    not is_boolean(group.annotations.prometheus.only_opts)
+}
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
