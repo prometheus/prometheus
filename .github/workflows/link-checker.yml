@@ -30,6 +30,6 @@ jobs:
         if: env.lychee_exit_code != 0
         uses: peter-evans/create-issue-from-file@v5
         with:
-          title: Broken Link Detected in Docs (Help Wanted)
+          title: docs: Broken Link Detected
           content-filepath: ./lychee/out.md
           labels: component/documentation, good first issue, help wanted
