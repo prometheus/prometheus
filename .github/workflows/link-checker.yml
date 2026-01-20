@@ -4,7 +4,7 @@ name: Docs Link Checker
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *" #Runs once a day
+    - cron: "29 7 * * *" # Runs once a day.
 permissions:
   contents: read
   issues: write
