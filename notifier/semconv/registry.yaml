@@ -24,7 +24,9 @@ groups:
     metric_name: prometheus_notifications_alertmanagers_discovered
     instrument: gauge
     unit: "{alertmanager}"
-    # Note: This is implemented as GaugeFunc in code (requires callback)
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_notifications_dropped_total
     type: metric
@@ -49,7 +51,9 @@ groups:
     metric_name: prometheus_notifications_queue_length
     instrument: gauge
     unit: "{notification}"
-    # Note: This is implemented as GaugeFunc in code (requires callback)
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   # Metrics with alertmanager label
   - id: metric.prometheus_notifications_errors_total

@@ -26,17 +26,10 @@ func (a AlertmanagerAttr) Value() string {
 }
 
 // PrometheusNotificationsAlertmanagersDiscovered records the number of alertmanagers discovered and active.
-type PrometheusNotificationsAlertmanagersDiscovered struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusNotificationsAlertmanagersDiscovered returns a new PrometheusNotificationsAlertmanagersDiscovered instrument.
-func NewPrometheusNotificationsAlertmanagersDiscovered() PrometheusNotificationsAlertmanagersDiscovered {
-	return PrometheusNotificationsAlertmanagersDiscovered{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_notifications_alertmanagers_discovered",
-			Help: "The number of alertmanagers discovered and active.",
-		}),
+func PrometheusNotificationsAlertmanagersDiscoveredOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_notifications_alertmanagers_discovered",
+		Help: "The number of alertmanagers discovered and active.",
 	}
 }
 
@@ -148,8 +141,8 @@ func NewPrometheusNotificationsLatencySeconds() PrometheusNotificationsLatencySe
 			Name: "prometheus_notifications_latency_seconds",
 			Help: "Latency quantiles for sending alert notifications.",
 			Objectives: map[float64]float64{
-				0.5: 0.05,
-				0.9: 0.01,
+				0.5:  0.05,
+				0.9:  0.01,
 				0.99: 0.001,
 			},
 		}, labels),
@@ -191,17 +184,10 @@ func NewPrometheusNotificationsQueueCapacity() PrometheusNotificationsQueueCapac
 }
 
 // PrometheusNotificationsQueueLength records the number of alert notifications in the queue.
-type PrometheusNotificationsQueueLength struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusNotificationsQueueLength returns a new PrometheusNotificationsQueueLength instrument.
-func NewPrometheusNotificationsQueueLength() PrometheusNotificationsQueueLength {
-	return PrometheusNotificationsQueueLength{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_notifications_queue_length",
-			Help: "The number of alert notifications in the queue.",
-		}),
+func PrometheusNotificationsQueueLengthOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_notifications_queue_length",
+		Help: "The number of alert notifications in the queue.",
 	}
 }
 

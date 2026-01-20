@@ -36,21 +36,14 @@ func newAlertMetrics(
 	queueLen, alertmanagersDiscovered func() float64,
 ) *alertMetrics {
 	m := &alertMetrics{
-		latencySummary:   metrics.NewPrometheusNotificationsLatencySeconds(),
-		latencyHistogram: metrics.NewPrometheusNotificationsLatencyHistogramSeconds(),
-		errors:           metrics.NewPrometheusNotificationsErrorsTotal(),
-		sent:             metrics.NewPrometheusNotificationsSentTotal(),
-		dropped:          metrics.NewPrometheusNotificationsDroppedTotal(),
-		// GaugeFunc metrics require callbacks, so they remain manual
-		queueLength: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_notifications_queue_length",
-			Help: "The number of alert notifications in the queue.",
-		}, queueLen),
-		queueCapacity: metrics.NewPrometheusNotificationsQueueCapacity(),
-		alertmanagersDiscovered: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_notifications_alertmanagers_discovered",
-			Help: "The number of alertmanagers discovered and active.",
-		}, alertmanagersDiscovered),
+		latencySummary:          metrics.NewPrometheusNotificationsLatencySeconds(),
+		latencyHistogram:        metrics.NewPrometheusNotificationsLatencyHistogramSeconds(),
+		errors:                  metrics.NewPrometheusNotificationsErrorsTotal(),
+		sent:                    metrics.NewPrometheusNotificationsSentTotal(),
+		dropped:                 metrics.NewPrometheusNotificationsDroppedTotal(),
+		queueLength:             prometheus.NewGaugeFunc(metrics.PrometheusNotificationsQueueLengthOpts(), queueLen),
+		queueCapacity:           metrics.NewPrometheusNotificationsQueueCapacity(),
+		alertmanagersDiscovered: prometheus.NewGaugeFunc(metrics.PrometheusNotificationsAlertmanagersDiscoveredOpts(), alertmanagersDiscovered),
 	}
 
 	m.queueCapacity.Set(float64(queueCap))
