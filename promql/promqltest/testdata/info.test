@@ -166,3 +166,35 @@ eval range from 0 to 2m step 1m info({job="work"}, {__name__="info_metric"})
 	data_metric{instance="a", job="work", state="running", label="new"} _ _ 30
 	info_metric{instance="b", job="work", state="stopped"} 1 1 1
 	info_metric{instance="a", job="work", state="running"} 1 1 1
+
+clear
+
+load 1m
+	data_metric{} 1 2 3
+
+eval range from 0 to 2m step 1m info(data_metric, {__name__="info_metric"})
+	data_metric{} 1 2 3
+
+clear
+
+load 1m
+	data_metric{} 1 2 3
+	data_metric{instance="a"} 4 5 6
+
+eval range from 0 to 2m step 1m info(data_metric, {__name__="info_metric"})
+	data_metric{} 1 2 3
+	data_metric{instance="a"} 4 5 6
+
+clear
+
+load 1m
+	data_metric{} 1 2 3
+	data_metric{instance="a"} 4 5 6
+	data_metric{job="1"} 7 8 9
+	data_metric{instance="a", job="1"} 10 20 30
+
+eval range from 0 to 2m step 1m info(data_metric, {__name__="info_metric"})
+	data_metric{} 1 2 3
+	data_metric{instance="a"} 4 5 6
+	data_metric{job="1"} 7 8 9
+	data_metric{instance="a", job="1"} 10 20 30
