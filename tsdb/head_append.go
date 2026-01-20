@@ -214,6 +214,9 @@ func (h *Head) getRefSeriesBuffer() []record.RefSeries {
 }
 
 func (h *Head) putRefSeriesBuffer(b []record.RefSeries) {
+	for i := range b { // Zero out to avoid retaining label data.
+		b[i].Labels = labels.EmptyLabels()
+	}
 	h.refSeriesPool.Put(b[:0])
 }
 
@@ -257,6 +260,7 @@ func (h *Head) getHistogramBuffer() []record.RefHistogramSample {
 }
 
 func (h *Head) putHistogramBuffer(b []record.RefHistogramSample) {
+	clear(b)
 	h.histogramsPool.Put(b[:0])
 }
 
@@ -269,6 +273,7 @@ func (h *Head) getFloatHistogramBuffer() []record.RefFloatHistogramSample {
 }
 
 func (h *Head) putFloatHistogramBuffer(b []record.RefFloatHistogramSample) {
+	clear(b)
 	h.floatHistogramsPool.Put(b[:0])
 }
 
@@ -281,6 +286,7 @@ func (h *Head) getMetadataBuffer() []record.RefMetadata {
 }
 
 func (h *Head) putMetadataBuffer(b []record.RefMetadata) {
+	clear(b)
 	h.metadataPool.Put(b[:0])
 }
 

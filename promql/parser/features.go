@@ -26,6 +26,8 @@ func RegisterFeatures(r features.Collector) {
 			switch keyword {
 			case "anchored", "smoothed":
 				r.Set(features.PromQL, keyword, EnableExtendedRangeSelectors)
+			case "fill", "fill_left", "fill_right":
+				r.Set(features.PromQL, keyword, EnableBinopFillModifiers)
 			default:
 				r.Enable(features.PromQL, keyword)
 			}
