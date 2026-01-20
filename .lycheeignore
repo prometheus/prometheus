@@ -1,0 +1,24 @@
+# Ignore local files
+^file://
+
+# Ignore localhost / internal cluster URLs
+^http://0\.0\.0\.0
+^http://localhost
+^https://kubernetes\.default\.svc
+
+# Ignore example domains used in docs
+your\.argoingress\.address
+argocd\.myproject\.com
+example\.com
+
+# Ignore auth-heavy or flaky services
+admin\.google\.com
+containerregistry\.azure\.net
+bugs\.busybox\.net
+lists\.gnu\.org
+www\.gnu\.org
+pthree\.org
+
+# Ignore archived / legacy docs
+docs\.sigstore\.dev
+docs\.mattermost\.com
