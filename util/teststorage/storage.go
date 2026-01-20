@@ -18,12 +18,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -62,20 +58,20 @@ func NewWithError(o ...Option) (*TestStorage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening test storage: %w", err)
 	}
-	reg := prometheus.NewRegistry()
-	eMetrics := tsdb.NewExemplarMetrics(reg)
+	// reg := prometheus.NewRegistry()
+	// eMetrics := tsdb.NewExemplarMetrics(reg)
 
-	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics, opts.OutOfOrderTimeWindow)
-	if err != nil {
-		return nil, fmt.Errorf("opening test exemplar storage: %w", err)
-	}
-	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}, nil
+	//es, err := tsdb.NewCircularExemplarStorage(10, eMetrics, opts.OutOfOrderTimeWindow)
+	//if err != nil {
+	//	return nil, fmt.Errorf("opening test exemplar storage: %w", err)
+	//}
+	return &TestStorage{DB: db, dir: dir}, nil
 }
 
 type TestStorage struct {
 	*tsdb.DB
-	exemplarStorage tsdb.ExemplarStorage
-	dir             string
+	// exemplarStorage tsdb.ExemplarStorage
+	dir string
 }
 
 func (s TestStorage) Close() error {
@@ -85,14 +81,14 @@ func (s TestStorage) Close() error {
 	return os.RemoveAll(s.dir)
 }
 
-func (s TestStorage) ExemplarAppender() storage.ExemplarAppender {
-	return s
-}
-
-func (s TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
-	return s.exemplarStorage
-}
-
-func (s TestStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	return ref, s.exemplarStorage.AddExemplar(l, e)
-}
+//func (s TestStorage) ExemplarAppender() storage.ExemplarAppender {
+//	return s
+//}
+//
+//func (s TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
+//	return s.exemplarStorage
+//}
+//
+//func (s TestStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+//	return ref, s.exemplarStorage.AddExemplar(l, e)
+//}

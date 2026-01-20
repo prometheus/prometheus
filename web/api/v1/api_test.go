@@ -401,7 +401,7 @@ var sampleFlagMap = map[string]string{
 }
 
 func TestEndpoints(t *testing.T) {
-	storage := promqltest.LoadedStorage(t, `
+	s := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
@@ -414,7 +414,7 @@ func TestEndpoints(t *testing.T) {
 			test_metric5{"host.name"="localhost"} 1+0x100
 			test_metric5{"junk\n{},=:  chars"="bar"} 1+0x100
 	`)
-	t.Cleanup(func() { storage.Close() })
+	t.Cleanup(func() { s.Close() })
 
 	start := time.Unix(0, 0)
 	exemplars := []exemplar.QueryResult{
@@ -459,10 +459,13 @@ func TestEndpoints(t *testing.T) {
 			},
 		},
 	}
+
+	app := s.AppenderV2(t.Context())
 	for _, ed := range exemplars {
-		_, err := storage.AppendExemplar(0, ed.SeriesLabels, ed.Exemplars[0])
-		require.NoError(t, err, "failed to add exemplar: %+v", ed.Exemplars[0])
+		_, err := app.Append(0, ed.SeriesLabels, 0, 0, 0, nil, nil, storage.AOptions{Exemplars: ed.Exemplars})
+		require.NoError(t, err)
 	}
+	require.NoError(t, app.Commit())
 
 	now := time.Now()
 
@@ -480,9 +483,9 @@ func TestEndpoints(t *testing.T) {
 		testTargetRetriever := setupTestTargetRetriever(t)
 
 		api := &API{
-			Queryable:             storage,
+			Queryable:             s,
 			QueryEngine:           ng,
-			ExemplarQueryable:     storage.ExemplarQueryable(),
+			ExemplarQueryable:     s,
 			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 			flagsMap:              sampleFlagMap,
@@ -491,14 +494,14 @@ func TestEndpoints(t *testing.T) {
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
 		}
-		testEndpoints(t, api, testTargetRetriever, storage, true)
+		testEndpoints(t, api, testTargetRetriever, s, true)
 	})
 
 	// Run all the API tests against an API that is wired to forward queries via
 	// the remote read client to a test server, which in turn sends them to the
 	// data from the test storage.
 	t.Run("remote", func(t *testing.T) {
-		server := setupRemote(storage)
+		server := setupRemote(s)
 		defer server.Close()
 
 		u, err := url.Parse(server.URL)
@@ -545,7 +548,7 @@ func TestEndpoints(t *testing.T) {
 		api := &API{
 			Queryable:             remote,
 			QueryEngine:           ng,
-			ExemplarQueryable:     storage.ExemplarQueryable(),
+			ExemplarQueryable:     s,
 			targetRetriever:       testTargetRetriever.toFactory(),
 			alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 			flagsMap:              sampleFlagMap,
@@ -554,7 +557,7 @@ func TestEndpoints(t *testing.T) {
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
 		}
-		testEndpoints(t, api, testTargetRetriever, storage, false)
+		testEndpoints(t, api, testTargetRetriever, s, false)
 	})
 }
 
@@ -671,7 +674,7 @@ func TestGetSeries(t *testing.T) {
 
 func TestQueryExemplars(t *testing.T) {
 	start := time.Unix(0, 0)
-	storage := promqltest.LoadedStorage(t, `
+	s := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 			test_metric1{foo="boo"} 1+0x100
@@ -682,12 +685,12 @@ func TestQueryExemplars(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 	`)
-	t.Cleanup(func() { storage.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 
 	api := &API{
-		Queryable:         storage,
+		Queryable:         s,
 		QueryEngine:       testEngine(t),
-		ExemplarQueryable: storage.ExemplarQueryable(),
+		ExemplarQueryable: s,
 	}
 
 	request := func(method string, qs url.Values) (*http.Request, error) {
@@ -765,15 +768,15 @@ func TestQueryExemplars(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			es := storage
+			es := s
 			ctx := context.Background()
 
-			for _, te := range tc.exemplars {
-				for _, e := range te.Exemplars {
-					_, err := es.AppendExemplar(0, te.SeriesLabels, e)
-					require.NoError(t, err)
-				}
+			app := es.AppenderV2(t.Context())
+			for _, ed := range tc.exemplars {
+				_, err := app.Append(0, ed.SeriesLabels, 0, 0, 0, nil, nil, storage.AOptions{Exemplars: ed.Exemplars})
+				require.NoError(t, err)
 			}
+			require.NoError(t, app.Commit())
 
 			req, err := request(http.MethodGet, tc.query)
 			require.NoError(t, err)
@@ -1119,7 +1122,7 @@ func setupRemote(s storage.Storage) *httptest.Server {
 	return httptest.NewServer(handler)
 }
 
-func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.ExemplarStorage, testLabelAPI bool) {
+func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, s *teststorage.TestStorage, testLabelAPI bool) {
 	start := time.Unix(0, 0)
 
 	type targetMetadata struct {
@@ -3762,15 +3765,15 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 
 					tr.ResetMetadataStore()
 					for _, tm := range test.metadata {
-						tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata})
+						require.NoError(t, tr.SetMetadataStoreForTargets(tm.identifier, &testMetaStore{Metadata: tm.metadata}))
 					}
 
-					for _, te := range test.exemplars {
-						for _, e := range te.Exemplars {
-							_, err := es.AppendExemplar(0, te.SeriesLabels, e)
-							require.NoError(t, err)
-						}
+					app := s.AppenderV2(t.Context())
+					for _, ed := range test.exemplars {
+						_, err := app.Append(0, ed.SeriesLabels, 0, 0, 0, nil, nil, storage.AOptions{Exemplars: ed.Exemplars})
+						require.NoError(t, err)
 					}
+					require.NoError(t, app.Commit())
 
 					res := test.endpoint(req.WithContext(ctx))
 					assertAPIError(t, res.err, test.errType)
@@ -4770,13 +4773,11 @@ func TestExtractQueryOpts(t *testing.T) {
 
 // Test query timeout parameter.
 func TestQueryTimeout(t *testing.T) {
-	storage := promqltest.LoadedStorage(t, `
+	s := promqltest.LoadedStorage(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
 	`)
-	t.Cleanup(func() {
-		_ = storage.Close()
-	})
+	t.Cleanup(func() { _ = s.Close() })
 
 	now := time.Now()
 
@@ -4796,9 +4797,9 @@ func TestQueryTimeout(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			engine := &fakeEngine{}
 			api := &API{
-				Queryable:             storage,
+				Queryable:             s,
 				QueryEngine:           engine,
-				ExemplarQueryable:     storage.ExemplarQueryable(),
+				ExemplarQueryable:     s,
 				alertmanagerRetriever: testAlertmanagerRetriever{}.toFactory(),
 				flagsMap:              sampleFlagMap,
 				now:                   func() time.Time { return now },
