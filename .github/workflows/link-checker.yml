@@ -32,4 +32,4 @@ jobs:
         with:
           title: Broken Link Detected in Docs (Help Wanted)
           content-filepath: ./lychee/out.md
-          labels: report, automated issue, documentation, good first issue
+          labels: component/documentation, good first issue, help wanted
