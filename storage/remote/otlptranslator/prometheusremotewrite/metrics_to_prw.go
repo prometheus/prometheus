@@ -27,7 +27,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
-	"go.uber.org/multierr"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -188,7 +187,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		resource := resourceMetrics.Resource()
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
 		if err := c.setResourceContext(resource, settings); err != nil {
-			errs = multierr.Append(errs, err)
+			errs = errors.Join(errs, err)
 			continue
 		}
 
@@ -200,7 +199,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			scopeMetrics := scopeMetricsSlice.At(j)
 			scope := newScopeFromScopeMetrics(scopeMetrics)
 			if err := c.setScopeContext(scope, settings); err != nil {
-				errs = multierr.Append(errs, err)
+				errs = errors.Join(errs, err)
 				continue
 			}
 
@@ -209,7 +208,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			// TODO: decide if instrumentation library information should be exported as labels
 			for k := 0; k < metricSlice.Len(); k++ {
 				if err := c.everyN.checkContext(ctx); err != nil {
-					errs = multierr.Append(errs, err)
+					errs = errors.Join(errs, err)
 					return annots, errs
 				}
 
@@ -217,7 +216,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				earliestTimestamp, latestTimestamp = findMinAndMaxTimestamps(metric, earliestTimestamp, latestTimestamp)
 				temporality, hasTemporality, err := aggregationTemporality(metric)
 				if err != nil {
-					errs = multierr.Append(errs, err)
+					errs = errors.Join(errs, err)
 					continue
 				}
 
@@ -228,13 +227,13 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					//nolint:staticcheck // QF1001 Applying De Morgan’s law would make the conditions harder to read.
 					!(temporality == pmetric.AggregationTemporalityCumulative ||
 						(settings.AllowDeltaTemporality && temporality == pmetric.AggregationTemporalityDelta)) {
-					errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
+					errs = errors.Join(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
 					continue
 				}
 
 				promName, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
 				if err != nil {
-					errs = multierr.Append(errs, err)
+					errs = errors.Join(errs, err)
 					continue
 				}
 				meta := Metadata{
@@ -252,11 +251,11 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeGauge:
 					dataPoints := metric.Gauge().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, settings, meta); err != nil {
-						errs = multierr.Append(errs, err)
+						errs = errors.Join(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return annots, errs
 						}
@@ -264,11 +263,11 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeSum:
 					dataPoints := metric.Sum().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addSumNumberDataPoints(ctx, dataPoints, settings, meta); err != nil {
-						errs = multierr.Append(errs, err)
+						errs = errors.Join(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return annots, errs
 						}
@@ -276,7 +275,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeHistogram:
 					dataPoints := metric.Histogram().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if settings.ConvertHistogramsToNHCB {
@@ -285,14 +284,14 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						)
 						annots.Merge(ws)
 						if err != nil {
-							errs = multierr.Append(errs, err)
+							errs = errors.Join(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return annots, errs
 							}
 						}
 					} else {
 						if err := c.addHistogramDataPoints(ctx, dataPoints, settings, meta); err != nil {
-							errs = multierr.Append(errs, err)
+							errs = errors.Join(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return annots, errs
 							}
@@ -301,7 +300,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeExponentialHistogram:
 					dataPoints := metric.ExponentialHistogram().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					ws, err := c.addExponentialHistogramDataPoints(
@@ -313,7 +312,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					)
 					annots.Merge(ws)
 					if err != nil {
-						errs = multierr.Append(errs, err)
+						errs = errors.Join(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return annots, errs
 						}
@@ -321,17 +320,17 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				case pmetric.MetricTypeSummary:
 					dataPoints := metric.Summary().DataPoints()
 					if dataPoints.Len() == 0 {
-						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
 					if err := c.addSummaryDataPoints(ctx, dataPoints, settings, meta); err != nil {
-						errs = multierr.Append(errs, err)
+						errs = errors.Join(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return annots, errs
 						}
 					}
 				default:
-					errs = multierr.Append(errs, errors.New("unsupported metric type"))
+					errs = errors.Join(errs, errors.New("unsupported metric type"))
 				}
 			}
 		}
@@ -339,7 +338,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 			// We have at least one metric sample for this resource.
 			// Generate a corresponding target_info series.
 			if err := c.addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime()); err != nil {
-				errs = multierr.Append(errs, err)
+				errs = errors.Join(errs, err)
 			}
 		}
 	}
