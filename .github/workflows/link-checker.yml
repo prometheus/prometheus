@@ -4,7 +4,7 @@ name: Docs Link Checker
 on:
   workflow_dispatch:
   schedule:
-    - cron: "29 7 * * *" # Runs once a day
+  - cron: "29 7 * * *" # Runs once a day
 permissions:
   contents: read
   issues: write
@@ -13,24 +13,20 @@ jobs:
   linkChecker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
-      - name: Docs Link Checker
-        id: lychee
-        uses: lycheeverse/lychee-action@v2.6.1
-        with:
-          args: >
-            --accept '100..=103,200..=299,403,429'
-            --exclude-all-private
-            --timeout 60
-            --exclude-file .lycheeignore
-            docs/
-            documentation/
+    - name: Docs Link Checker
+      id: lychee
+      uses: lycheeverse/lychee-action@v2.6.1
+      continue-on-error: true
+      with:
+        args: >
+          --accept '100..=103,200..=299,403,429' --exclude-all-private --timeout 60 --exclude-file .lycheeignore docs/ documentation/
 
-      - name: Create Issue From File
-        if: env.lychee_exit_code != 0
-        uses: peter-evans/create-issue-from-file@v5
-        with:
-          title: docs: Broken Link Detected
-          content-filepath: ./lychee/out.md
-          labels: component/documentation, good first issue, help wanted
+    - name: Create Issue From File
+      if: env.lychee_exit_code != 0
+      uses: peter-evans/create-issue-from-file@v5
+      with:
+        title: Broken Link Detected
+        content-filepath: ./lychee/out.md
+        labels: component/documentation, good first issue, help wanted
