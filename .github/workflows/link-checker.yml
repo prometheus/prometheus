@@ -13,7 +13,7 @@ jobs:
   linkChecker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Docs Link Checker #Link checking is intentionally scoped to docs/ and documentation/ to reduce CI runtime and avoid scanning non-documentation files.
         id: lychee
