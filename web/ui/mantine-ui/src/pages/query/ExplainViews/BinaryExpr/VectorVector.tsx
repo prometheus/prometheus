@@ -8,6 +8,7 @@ import {
   MatchErrorType,
   computeVectorVectorBinOp,
   filteredSampleValue,
+  MaybeFilledInstantSample,
 } from "../../../../promql/binOp";
 import { formatNode, labelNameList } from "../../../../promql/format";
 import {
@@ -177,11 +178,10 @@ const explanationText = (node: BinaryExpr): React.ReactNode => {
           </List.Item>
         ) : (
           <List.Item>
-            <span className="promql-code promql-keyword">
-              group_{manySide}({labelNameList(matching.include)})
-            </span>
-            : {matching.card} match. Each series from the {oneSide}-hand side is
-            allowed to match with multiple series from the {manySide}-hand side.
+            <span className="promql-code promql-keyword">group_{manySide}</span>
+            ({labelNameList(matching.include)}) : {matching.card} match. Each
+            series from the {oneSide}-hand side is allowed to match with
+            multiple series from the {manySide}-hand side.
             {matching.include.length !== 0 && (
               <>
                 {" "}
@@ -192,6 +192,55 @@ const explanationText = (node: BinaryExpr): React.ReactNode => {
             )}
           </List.Item>
         )}
+        {(matching.fillValues.lhs !== null ||
+          matching.fillValues.rhs !== null) &&
+          (matching.fillValues.lhs === matching.fillValues.rhs ? (
+            <List.Item>
+              <span className="promql-code promql-keyword">fill</span>(
+              <span className="promql-code promql-number">
+                {matching.fillValues.lhs}
+              </span>
+              ) : For series on either side missing a match, fill in the sample
+              value{" "}
+              <span className="promql-code promql-number">
+                {matching.fillValues.lhs}
+              </span>
+              .
+            </List.Item>
+          ) : (
+            <>
+              {matching.fillValues.lhs !== null && (
+                <List.Item>
+                  <span className="promql-code promql-keyword">fill_left</span>(
+                  <span className="promql-code promql-number">
+                    {matching.fillValues.lhs}
+                  </span>
+                  ) : For series on the left-hand side missing a match, fill in
+                  the sample value{" "}
+                  <span className="promql-code promql-number">
+                    {matching.fillValues.lhs}
+                  </span>
+                  .
+                </List.Item>
+              )}
+
+              {matching.fillValues.rhs !== null && (
+                <List.Item>
+                  <span className="promql-code promql-keyword">fill_right</span>
+                  (
+                  <span className="promql-code promql-number">
+                    {matching.fillValues.rhs}
+                  </span>
+                  ) : For series on the right-hand side missing a match, fill in
+                  the sample value{" "}
+                  <span className="promql-code promql-number">
+                    {matching.fillValues.rhs}
+                  </span>
+                  .
+                </List.Item>
+              )}
+            </>
+          ))}
         {node.bool && (
           <List.Item>
             <span className="promql-code promql-keyword">bool</span>: Instead of
@@ -239,7 +288,12 @@ const explainError = (
                   matching: {
                     ...(binOp.matching
                       ? binOp.matching
-                      : { labels: [], on: false, include: [] }),
+                      : {
+                          labels: [],
+                          on: false,
+                          include: [],
+                          fillValues: { lhs: null, rhs: null },
+                        }),
                     card:
                       err.dupeSide === "left"
                         ? vectorMatchCardinality.manyToOne
@@ -403,7 +457,7 @@ const VectorVectorBinaryExprExplainView: FC<
             );
 
             const matchGroupTable = (
-              series: InstantSample[],
+              series: MaybeFilledInstantSample[],
               seriesCount: number,
               color: string,
               colorOffset?: number
@@ -458,6 +512,11 @@ const VectorVectorBinaryExprExplainView: FC<
                                     )}
                                     format={true}
                                   />
+                                  {s.filled && (
+                                    <Text size="sm" c="dimmed">
+                                      no match, filling in default value
+                                    </Text>
+                                  )}
                                 </Group>
                               </Table.Td>
                               {showSampleValues && (

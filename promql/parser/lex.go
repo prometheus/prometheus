@@ -137,6 +137,9 @@ var key = map[string]ItemType{
 	"ignoring":    IGNORING,
 	"group_left":  GROUP_LEFT,
 	"group_right": GROUP_RIGHT,
+	"fill":        FILL,
+	"fill_left":   FILL_LEFT,
+	"fill_right":  FILL_RIGHT,
 	"bool":        BOOL,
 
 	// Preprocessors.
@@ -1083,6 +1086,17 @@ Loop:
 			word := l.input[l.start:l.pos]
 			switch kw, ok := key[strings.ToLower(word)]; {
 			case ok:
+				// For fill/fill_left/fill_right, only treat as keyword if followed by '('
+				// This allows using these as metric names (e.g., "fill + fill").
+				// This could be done for other keywords as well, but for the new fill
+				// modifiers this is especially important so we don't break any existing
+				// queries.
+				if kw == FILL || kw == FILL_LEFT || kw == FILL_RIGHT {
+					if !l.peekFollowedByLeftParen() {
+						l.emit(IDENTIFIER)
+						break Loop
+					}
+				}
 				l.emit(kw)
 			case !strings.Contains(word, ":"):
 				l.emit(IDENTIFIER)
@@ -1096,6 +1110,23 @@ Loop:
 		return lexValueSequence
 	}
 	return lexStatements
+}
+
+// peekFollowedByLeftParen checks if the next non-whitespace character is '('.
+// This is used for context-sensitive keywords like fill/fill_left/fill_right
+// that should only be treated as keywords when followed by '('.
+func (l *Lexer) peekFollowedByLeftParen() bool {
+	pos := l.pos
+	for {
+		if int(pos) >= len(l.input) {
+			return false
+		}
+		r, w := utf8.DecodeRuneInString(l.input[pos:])
+		if !isSpace(r) {
+			return r == '('
+		}
+		pos += posrange.Pos(w)
+	}
 }
 
 func isSpace(r rune) bool {

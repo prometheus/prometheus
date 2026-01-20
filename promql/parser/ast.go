@@ -318,6 +318,19 @@ type VectorMatching struct {
 	// Include contains additional labels that should be included in
 	// the result from the side with the lower cardinality.
 	Include []string
+	// Fill-in values to use when a series from one side does not find a match on the other side.
+	FillValues VectorMatchFillValues
+}
+
+// VectorMatchFillValues contains the fill values to use for Vector matching
+// when one side does not find a match on the other side.
+// When a fill value is nil, no fill is applied for that side, and there
+// is no output for the match group if there is no match.
+type VectorMatchFillValues struct {
+	// RHS is the fill value to use for the right-hand side.
+	RHS *float64
+	// LHS is the fill value to use for the left-hand side.
+	LHS *float64
 }
 
 // Visitor allows visiting a Node and its child nodes. The Visit method is

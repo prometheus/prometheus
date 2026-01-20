@@ -985,7 +985,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		return nil
 	}); err != nil {
 		// secondLastRef because the lastRef caused an error.
-		return nil, nil, secondLastRef, fmt.Errorf("iterate on on-disk chunks: %w", err)
+		return nil, nil, secondLastRef, fmt.Errorf("iterate on-disk chunks: %w", err)
 	}
 	return mmappedChunks, oooMmappedChunks, lastRef, nil
 }
