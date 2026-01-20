@@ -576,6 +576,21 @@ groups:
     instrument: counter
     unit: "{flush}"
 
+  - id: metric.prometheus_tsdb_out_of_order_wbl_record_bytes_saved_total
+    type: metric
+    stability: development
+    brief: Total bytes saved by WBL record compression for out-of-order samples.
+    metric_name: prometheus_tsdb_out_of_order_wbl_record_bytes_saved_total
+    instrument: counter
+    unit: By
+    attributes:
+      - id: compression
+        type: string
+        stability: development
+        brief: The compression algorithm.
+        examples:
+          - snappy
+
   - id: metric.prometheus_tsdb_out_of_order_wbl_record_part_writes_total
     type: metric
     stability: development
@@ -607,6 +622,9 @@ groups:
     metric_name: prometheus_tsdb_out_of_order_wbl_storage_size_bytes
     instrument: gauge
     unit: By
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_tsdb_out_of_order_wbl_truncations_failed_total
     type: metric
@@ -804,6 +822,9 @@ groups:
     metric_name: prometheus_tsdb_wal_storage_size_bytes
     instrument: gauge
     unit: By
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_tsdb_wal_truncate_duration_seconds
     type: metric

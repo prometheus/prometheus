@@ -853,6 +853,43 @@ func NewPrometheusTSDBOutOfOrderWBLPageFlushesTotal() PrometheusTSDBOutOfOrderWB
 	}
 }
 
+// PrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal records the total bytes saved by WBL record compression for out-of-order samples.
+type PrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal struct {
+	*prometheus.CounterVec
+}
+
+// NewPrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal returns a new PrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal instrument.
+func NewPrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal() PrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal {
+	labels := []string{
+		"compression",
+	}
+	return PrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal{
+		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_out_of_order_wbl_record_bytes_saved_total",
+			Help: "Total bytes saved by WBL record compression for out-of-order samples.",
+		}, labels),
+	}
+}
+
+type PrometheusTSDBOutOfOrderWBLRecordBytesSavedTotalAttr interface {
+	Attribute
+	implPrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal()
+}
+
+func (a CompressionAttr) implPrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal() {}
+
+func (m PrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal) With(
+	extra ...PrometheusTSDBOutOfOrderWBLRecordBytesSavedTotalAttr,
+) prometheus.Counter {
+	labels := prometheus.Labels{
+		"compression": "",
+	}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.CounterVec.With(labels)
+}
+
 // PrometheusTSDBOutOfOrderWBLRecordPartWritesTotal records the total number of WBL record part writes for out-of-order samples.
 type PrometheusTSDBOutOfOrderWBLRecordPartWritesTotal struct {
 	prometheus.Counter
@@ -899,17 +936,10 @@ func NewPrometheusTSDBOutOfOrderWBLSegmentCurrent() PrometheusTSDBOutOfOrderWBLS
 }
 
 // PrometheusTSDBOutOfOrderWBLStorageSizeBytes records the size of the out-of-order WBL storage.
-type PrometheusTSDBOutOfOrderWBLStorageSizeBytes struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBOutOfOrderWBLStorageSizeBytes returns a new PrometheusTSDBOutOfOrderWBLStorageSizeBytes instrument.
-func NewPrometheusTSDBOutOfOrderWBLStorageSizeBytes() PrometheusTSDBOutOfOrderWBLStorageSizeBytes {
-	return PrometheusTSDBOutOfOrderWBLStorageSizeBytes{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_out_of_order_wbl_storage_size_bytes",
-			Help: "Size of the out-of-order WBL storage.",
-		}),
+func PrometheusTSDBOutOfOrderWBLStorageSizeBytesOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_out_of_order_wbl_storage_size_bytes",
+		Help: "Size of the out-of-order WBL storage.",
 	}
 }
 
@@ -1360,17 +1390,10 @@ func NewPrometheusTSDBWALSegmentCurrent() PrometheusTSDBWALSegmentCurrent {
 }
 
 // PrometheusTSDBWALStorageSizeBytes records the size of the WAL storage.
-type PrometheusTSDBWALStorageSizeBytes struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBWALStorageSizeBytes returns a new PrometheusTSDBWALStorageSizeBytes instrument.
-func NewPrometheusTSDBWALStorageSizeBytes() PrometheusTSDBWALStorageSizeBytes {
-	return PrometheusTSDBWALStorageSizeBytes{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_wal_storage_size_bytes",
-			Help: "Size of the WAL storage.",
-		}),
+func PrometheusTSDBWALStorageSizeBytesOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_wal_storage_size_bytes",
+		Help: "Size of the WAL storage.",
 	}
 }
 

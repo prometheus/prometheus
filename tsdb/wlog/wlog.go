@@ -30,10 +30,10 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	semconv "github.com/prometheus/prometheus/tsdb/semconv"
 	"github.com/prometheus/prometheus/util/compression"
 )
 
@@ -205,13 +205,19 @@ type wlMetrics struct {
 	truncateFail     prometheus.Counter
 	truncateTotal    prometheus.Counter
 	currentSegment   prometheus.Gauge
-	writesFailed     prometheus.Counter
 	walFileSize      prometheus.GaugeFunc
+	writesFailed     prometheus.Counter
 	recordPartWrites prometheus.Counter
 	recordPartBytes  prometheus.Counter
-	recordBytesSaved *prometheus.CounterVec
+	recordBytesSaved recordBytesSavedMetric
 
 	r prometheus.Registerer
+}
+
+// recordBytesSavedMetric abstracts the different CounterVec types for WAL/WBL.
+type recordBytesSavedMetric interface {
+	prometheus.Collector
+	WithLabelValues(lvs ...string) prometheus.Counter
 }
 
 func (w *wlMetrics) Unregister() {
@@ -224,70 +230,71 @@ func (w *wlMetrics) Unregister() {
 	w.r.Unregister(w.truncateFail)
 	w.r.Unregister(w.truncateTotal)
 	w.r.Unregister(w.currentSegment)
-	w.r.Unregister(w.writesFailed)
 	w.r.Unregister(w.walFileSize)
+	w.r.Unregister(w.writesFailed)
 	w.r.Unregister(w.recordPartWrites)
 	w.r.Unregister(w.recordPartBytes)
 	w.r.Unregister(w.recordBytesSaved)
 }
 
-func newWLMetrics(w *WL, r prometheus.Registerer) *wlMetrics {
-	return &wlMetrics{
-		r: r,
-		fsyncDuration: promauto.With(r).NewSummary(prometheus.SummaryOpts{
-			Name:       "fsync_duration_seconds",
-			Help:       "Duration of write log fsync.",
-			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		}),
-		pageFlushes: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "page_flushes_total",
-			Help: "Total number of page flushes.",
-		}),
-		pageCompletions: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "completed_pages_total",
-			Help: "Total number of completed pages.",
-		}),
-		truncateFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "truncations_failed_total",
-			Help: "Total number of write log truncations that failed.",
-		}),
-		truncateTotal: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "truncations_total",
-			Help: "Total number of write log truncations attempted.",
-		}),
-		currentSegment: promauto.With(r).NewGauge(prometheus.GaugeOpts{
-			Name: "segment_current",
-			Help: "Write log segment index that TSDB is currently writing to.",
-		}),
-		writesFailed: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "writes_failed_total",
-			Help: "Total number of write log writes that failed.",
-		}),
-		walFileSize: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "storage_size_bytes",
-			Help: "Size of the write log directory.",
-		}, func() float64 {
+func newWLMetrics(w *WL, r prometheus.Registerer, isWBL bool) *wlMetrics {
+	m := &wlMetrics{r: r}
+
+	if isWBL {
+		m.fsyncDuration = semconv.NewPrometheusTSDBOutOfOrderWBLFsyncDurationSeconds().Summary
+		m.pageFlushes = semconv.NewPrometheusTSDBOutOfOrderWBLPageFlushesTotal().Counter
+		m.pageCompletions = semconv.NewPrometheusTSDBOutOfOrderWBLCompletedPagesTotal().Counter
+		m.truncateFail = semconv.NewPrometheusTSDBOutOfOrderWBLTruncationsFailedTotal().Counter
+		m.truncateTotal = semconv.NewPrometheusTSDBOutOfOrderWBLTruncationsTotal().Counter
+		m.currentSegment = semconv.NewPrometheusTSDBOutOfOrderWBLSegmentCurrent().Gauge
+		m.writesFailed = semconv.NewPrometheusTSDBOutOfOrderWBLWritesFailedTotal().Counter
+		m.walFileSize = prometheus.NewGaugeFunc(semconv.PrometheusTSDBOutOfOrderWBLStorageSizeBytesOpts(), func() float64 {
+			val, err := w.Size()
+			if err != nil {
+				w.logger.Error("Failed to calculate size of \"wbl\" dir", "err", err.Error())
+			}
+			return float64(val)
+		})
+		m.recordPartWrites = semconv.NewPrometheusTSDBOutOfOrderWBLRecordPartWritesTotal().Counter
+		m.recordPartBytes = semconv.NewPrometheusTSDBOutOfOrderWBLRecordPartsBytesWrittenTotal().Counter
+		m.recordBytesSaved = semconv.NewPrometheusTSDBOutOfOrderWBLRecordBytesSavedTotal().CounterVec
+	} else {
+		m.fsyncDuration = semconv.NewPrometheusTSDBWALFsyncDurationSeconds().Summary
+		m.pageFlushes = semconv.NewPrometheusTSDBWALPageFlushesTotal().Counter
+		m.pageCompletions = semconv.NewPrometheusTSDBWALCompletedPagesTotal().Counter
+		m.truncateFail = semconv.NewPrometheusTSDBWALTruncationsFailedTotal().Counter
+		m.truncateTotal = semconv.NewPrometheusTSDBWALTruncationsTotal().Counter
+		m.currentSegment = semconv.NewPrometheusTSDBWALSegmentCurrent().Gauge
+		m.writesFailed = semconv.NewPrometheusTSDBWALWritesFailedTotal().Counter
+		m.walFileSize = prometheus.NewGaugeFunc(semconv.PrometheusTSDBWALStorageSizeBytesOpts(), func() float64 {
 			val, err := w.Size()
 			if err != nil {
 				w.logger.Error("Failed to calculate size of \"wal\" dir", "err", err.Error())
 			}
 			return float64(val)
-		}),
-		recordPartWrites: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "record_part_writes_total",
-			Help: "Total number of record parts written before flushing.",
-		}),
-		recordPartBytes: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "record_parts_bytes_written_total",
-			Help: "Total number of record part bytes written before flushing, including" +
-				" CRC and compression headers.",
-		}),
-		recordBytesSaved: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "record_bytes_saved_total",
-			Help: "Total number of bytes saved by the optional record compression." +
-				" Use this metric to learn about the effectiveness compression.",
-		}, []string{"compression"}),
+		})
+		m.recordPartWrites = semconv.NewPrometheusTSDBWALRecordPartWritesTotal().Counter
+		m.recordPartBytes = semconv.NewPrometheusTSDBWALRecordPartsBytesWrittenTotal().Counter
+		m.recordBytesSaved = semconv.NewPrometheusTSDBWALRecordBytesSavedTotal().CounterVec
 	}
+
+	if r != nil {
+		r.MustRegister(
+			m.fsyncDuration,
+			m.pageFlushes,
+			m.pageCompletions,
+			m.truncateFail,
+			m.truncateTotal,
+			m.currentSegment,
+			m.walFileSize,
+			m.writesFailed,
+			m.recordPartWrites,
+			m.recordPartBytes,
+			m.recordBytesSaved,
+		)
+	}
+
+	return m
 }
 
 // New returns a new WAL over the given directory.
@@ -318,11 +325,8 @@ func NewSize(logger *slog.Logger, reg prometheus.Registerer, dir string, segment
 		compress:    compress,
 		cEnc:        compression.NewSyncEncodeBuffer(),
 	}
-	prefix := "prometheus_tsdb_wal_"
-	if filepath.Base(dir) == WblDirName {
-		prefix = "prometheus_tsdb_out_of_order_wbl_"
-	}
-	w.metrics = newWLMetrics(w, prometheus.WrapRegistererWithPrefix(prefix, reg))
+	isWBL := filepath.Base(dir) == WblDirName
+	w.metrics = newWLMetrics(w, reg, isWBL)
 
 	_, last, err := Segments(w.Dir())
 	if err != nil {

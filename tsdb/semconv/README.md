@@ -58,6 +58,7 @@ This document describes the metrics defined in this semantic convention registry
 | `prometheus_tsdb_out_of_order_wbl_completed_pages_total` | counter | {page} | Total number of completed WBL pages for out-of-order samples. |
 | `prometheus_tsdb_out_of_order_wbl_fsync_duration_seconds` | histogram | s | Duration of WBL fsync for out-of-order samples. |
 | `prometheus_tsdb_out_of_order_wbl_page_flushes_total` | counter | {flush} | Total number of WBL page flushes for out-of-order samples. |
+| `prometheus_tsdb_out_of_order_wbl_record_bytes_saved_total` | counter | By | Total bytes saved by WBL record compression for out-of-order samples. |
 | `prometheus_tsdb_out_of_order_wbl_record_part_writes_total` | counter | {write} | Total number of WBL record part writes for out-of-order samples. |
 | `prometheus_tsdb_out_of_order_wbl_record_parts_bytes_written_total` | counter | By | Total bytes written to WBL record parts for out-of-order samples. |
 | `prometheus_tsdb_out_of_order_wbl_segment_current` | gauge | {segment} | Current out-of-order WBL segment. |
@@ -592,6 +593,22 @@ Total number of WBL page flushes for out-of-order samples.
 - **Type:** counter
 - **Unit:** {flush}
 - **Stability:** development
+
+
+### `prometheus_tsdb_out_of_order_wbl_record_bytes_saved_total`
+
+Total bytes saved by WBL record compression for out-of-order samples.
+
+- **Type:** counter
+- **Unit:** By
+- **Stability:** development
+
+#### Attributes
+
+| Attribute | Type | Description | Examples |
+|-----------|------|-------------|----------|
+| `compression` | string | The compression algorithm. | snappy |
+
 
 
 ### `prometheus_tsdb_out_of_order_wbl_record_part_writes_total`
