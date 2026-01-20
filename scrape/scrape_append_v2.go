@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -280,32 +279,35 @@ loop:
 			}
 
 			// Prepare append call.
-			appOpts := storage.AOptions{
-				MetricFamilyName: yoloString(lastMFName),
-			}
+			appOpts := storage.AOptions{}
 			if len(exemplars) > 0 {
 				// Sort so that checking for duplicates / out of order is more efficient during validation.
 				slices.SortFunc(exemplars, exemplar.Compare)
 				appOpts.Exemplars = exemplars
 			}
 
-			// TODO(bwplotka): This mimicks the scrape appender v1 flow. Once we remove v1
+			// Metadata path mimicks the scrape appender V1 flow. Once we remove v2
 			// flow we should rename "appendMetadataToWAL" flag to "passMetadata" because for v2 flow
-			// the metadata storage detail is behind the appendableV2 contract.
+			// the metadata storage detail is behind the appendableV2 contract. V2 also means we always pass the metadata,
+			// we don't check if it changed (that code can be removed).
 			//
-			// When passing metadata now, we no longer need to check if metadata changed as per v2 contract. We could
-			// consider no flag and always attach the metadata. Unfortunately because of the limitation of the OpenMetrics 1.0
-			// (hopefully fixed in OpenMetrics 2.0) there are edge cases for known to unknown metadata series switch that
-			// is expensive to detect. As a result we keep this opt-in for now.
-			// TODO(bwplotka): Move this to parser as many parser users end up doing this (e.g. ST and NHCB parsing),
-			// plus proto does not have this flaw.
+			// Long term, we should always attach the metadata without any flag. Unfortunately because of the limitation
+			// of the TEXT and OpenMetrics 1.0 (hopefully fixed in OpenMetrics 2.0) there are edge cases around unknown
+			// metadata + suffixes that is expensive (isSeriesPartOfFamily) or in some cases impossible to detect. For this
+			// reason metadata (appendMetadataToWAL=true) appender V2 flow scrape might taking ~3% more CPU in our benchmarks.
+			//
+			// TODO(https://github.com/prometheus/prometheus/issues/17900): Optimize this, notably move this check to parsers that require this (ensuring parser
+			// interface always yields correct metadata), deliver OpenMetrics 2.0 that removes suffixes.
 			if sl.appendMetadataToWAL && lastMeta != nil {
-				appOpts.Metadata = lastMeta.Metadata
-
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
-				// However, optional TYPE etc metadata and broken OM text can break this, detect those cases here.
+				// However, optional TYPE, etc metadata and broken OM text can break this, detect those cases here.
 				if !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {
-					appOpts.Metadata = metadata.Metadata{} // Don't pass knowingly broken metadata.
+					lastMeta = nil // Don't pass knowingly broken metadata, now, nor on the next line.
+				}
+				if lastMeta != nil {
+					// Metric family name has the same source as metadata.
+					appOpts.MetricFamilyName = yoloString(lastMFName)
+					appOpts.Metadata = lastMeta.Metadata
 				}
 			}
 

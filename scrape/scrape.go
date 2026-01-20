@@ -1836,7 +1836,7 @@ loop:
 			if !seriesCached || lastMeta.lastIterChange == sl.cache.iter {
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
 				// However, optional TYPE etc metadata and broken OM text can break this, detect those cases here.
-				// TODO(bwplotka): Consider moving this to parser as many parser users end up doing this (e.g. ST and NHCB parsing).
+				// TODO(https://github.com/prometheus/prometheus/issues/17900): Move this to text and OM parser.
 				if isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {
 					if _, merr := app.UpdateMetadata(ref, lset, lastMeta.Metadata); merr != nil {
 						// No need to fail the scrape on errors appending metadata.
@@ -1878,6 +1878,7 @@ loop:
 	return total, added, seriesAdded, err
 }
 
+// TODO(https://github.com/prometheus/prometheus/issues/17900): Move this to text and OM parser.
 func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) bool {
 	mfNameStr := yoloString(mfName)
 	if !strings.HasPrefix(mName, mfNameStr) { // Fast path.
@@ -1950,7 +1951,6 @@ func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) boo
 // Current case ordering prevents exercising other cases when limits are exceeded.
 // Remaining error cases typically occur only a few times, often during initial setup.
 func (sl *scrapeLoop) checkAddError(met []byte, exemplars []exemplar.Exemplar, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (sampleAdded bool, _ error) {
-	var pErr *storage.AppendPartialError
 	switch {
 	case err == nil:
 		return true, nil
@@ -1981,24 +1981,27 @@ func (sl *scrapeLoop) checkAddError(met []byte, exemplars []exemplar.Exemplar, e
 		return false, nil
 	case errors.Is(err, storage.ErrNotFound):
 		return false, storage.ErrNotFound
-	case errors.As(err, &pErr):
-		outOfOrderExemplars := 0
-		for _, e := range pErr.ExemplarErrors {
-			if errors.Is(e, storage.ErrOutOfOrderExemplar) {
-				outOfOrderExemplars++
-			}
-			// Since exemplar storage is still experimental, we don't fail or check other errors.
-			// Debug log is emitted in TSDB already.
-		}
-		if outOfOrderExemplars > 0 && outOfOrderExemplars == len(exemplars) {
-			// Only report out of order exemplars if all are out of order, otherwise this was a partial update
-			// to some existing set of exemplars.
-			appErrs.numExemplarOutOfOrder += outOfOrderExemplars
-			sl.l.Debug("Out of order exemplars", "count", outOfOrderExemplars, "latest", fmt.Sprintf("%+v", exemplars[len(exemplars)-1]))
-			sl.metrics.targetScrapeExemplarOutOfOrder.Add(float64(outOfOrderExemplars))
-		}
-		return true, nil
 	default:
+		// If nothing from the above, check for partial errors. Do this here to not alloc the pErr on a hot path.
+		var pErr *storage.AppendPartialError
+		if errors.As(err, &pErr) {
+			outOfOrderExemplars := 0
+			for _, e := range pErr.ExemplarErrors {
+				if errors.Is(e, storage.ErrOutOfOrderExemplar) {
+					outOfOrderExemplars++
+				}
+				// Since exemplar storage is still experimental, we don't fail or check other errors.
+				// Debug log is emitted in TSDB already.
+			}
+			if outOfOrderExemplars > 0 && outOfOrderExemplars == len(exemplars) {
+				// Only report out of order exemplars if all are out of order, otherwise this was a partial update
+				// to some existing set of exemplars.
+				appErrs.numExemplarOutOfOrder += outOfOrderExemplars
+				sl.l.Debug("Out of order exemplars", "count", outOfOrderExemplars, "latest", fmt.Sprintf("%+v", exemplars[len(exemplars)-1]))
+				sl.metrics.targetScrapeExemplarOutOfOrder.Add(float64(outOfOrderExemplars))
+			}
+			return true, nil
+		}
 		return false, err
 	}
 }
