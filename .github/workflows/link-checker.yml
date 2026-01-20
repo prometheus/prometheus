@@ -1,10 +1,10 @@
-#Broken Link checker
+# Broken Link checker
 name: Docs Link Checker
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "29 7 * * *" # Runs once a day.
+    - cron: "29 7 * * *" # Runs once a day
 permissions:
   contents: read
   issues: write
@@ -23,6 +23,7 @@ jobs:
             --accept '100..=103,200..=299,403,429'
             --exclude-all-private
             --timeout 60
+            --exclude-file .lycheeignore
             docs/
             documentation/
 
