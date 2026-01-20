@@ -24,7 +24,7 @@ jobs:
           --accept '100..=103,200..=299,403,429' --exclude-all-private --timeout 60 --exclude-file .lycheeignore docs/ documentation/
 
     - name: Create Issue From File
-      if: env.lychee_exit_code != 0
+      if: steps.lychee.outputs.exit_code != '0' && steps.check_issue.outputs.exists == 'false'
       uses: peter-evans/create-issue-from-file@v5
       with:
         title: Broken Link Detected
