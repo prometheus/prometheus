@@ -1384,6 +1384,8 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 						if err != nil {
 							b.Fatal(err)
 						}
+						app.Rollback() // Reset the appender so it doesn't grow indefinitely.
+						app = sl.appender()
 					}
 				})
 			}
