@@ -59,6 +59,7 @@ import (
 	klogv2 "k8s.io/klog/v2"
 
 	"github.com/prometheus/prometheus/config"
+	configmetrics "github.com/prometheus/prometheus/config/semconv"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -128,14 +129,8 @@ func (klogv1Writer) Write(p []byte) (n int, err error) {
 var (
 	appName = "prometheus"
 
-	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_config_last_reload_successful",
-		Help: "Whether the last configuration reload attempt was successful.",
-	})
-	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_config_last_reload_success_timestamp_seconds",
-		Help: "Timestamp of the last successful configuration reload.",
-	})
+	configSuccess     = configmetrics.NewPrometheusConfigLastReloadSuccessful()
+	configSuccessTime = configmetrics.NewPrometheusConfigLastReloadSuccessTimestampSeconds()
 
 	defaultRetentionString   = "15d"
 	defaultRetentionDuration model.Duration
@@ -1074,8 +1069,8 @@ func main() {
 		},
 	}
 
-	prometheus.MustRegister(configSuccess)
-	prometheus.MustRegister(configSuccessTime)
+	prometheus.MustRegister(configSuccess.Gauge)
+	prometheus.MustRegister(configSuccessTime.Gauge)
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.

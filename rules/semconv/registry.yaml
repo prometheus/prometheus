@@ -1,0 +1,232 @@
+# Semantic convention registry for Prometheus rule evaluation metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_rule_evaluation_duration_seconds
+    type: metric
+    stability: development
+    brief: The duration for a rule to execute.
+    metric_name: prometheus_rule_evaluation_duration_seconds
+    instrument: histogram
+    unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
+
+  - id: metric.prometheus_rule_evaluation_duration_histogram_seconds
+    type: metric
+    stability: development
+    brief: The duration for a rule to execute.
+    metric_name: prometheus_rule_evaluation_duration_histogram_seconds
+    instrument: histogram
+    unit: s
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [0.01, 0.1, 1, 10]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
+
+  - id: metric.prometheus_rule_evaluation_failures_total
+    type: metric
+    stability: development
+    brief: The total number of rule evaluation failures.
+    metric_name: prometheus_rule_evaluation_failures_total
+    instrument: counter
+    unit: "{failure}"
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group
+
+  - id: metric.prometheus_rule_evaluations_total
+    type: metric
+    stability: development
+    brief: The total number of rule evaluations.
+    metric_name: prometheus_rule_evaluations_total
+    instrument: counter
+    unit: "{evaluation}"
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group
+
+  - id: metric.prometheus_rule_group_duration_seconds
+    type: metric
+    stability: development
+    brief: The duration of rule group evaluations.
+    metric_name: prometheus_rule_group_duration_seconds
+    instrument: histogram
+    unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.01: 0.001
+          0.05: 0.005
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
+
+  - id: metric.prometheus_rule_group_duration_histogram_seconds
+    type: metric
+    stability: development
+    brief: The duration of rule group evaluations.
+    metric_name: prometheus_rule_group_duration_histogram_seconds
+    instrument: histogram
+    unit: s
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [0.01, 0.1, 1, 10]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
+
+  - id: metric.prometheus_rule_group_interval_seconds
+    type: metric
+    stability: development
+    brief: The interval of a rule group.
+    metric_name: prometheus_rule_group_interval_seconds
+    instrument: gauge
+    unit: s
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group
+
+  - id: metric.prometheus_rule_group_iterations_missed_total
+    type: metric
+    stability: development
+    brief: The total number of rule group evaluations missed due to slow rule group evaluation.
+    metric_name: prometheus_rule_group_iterations_missed_total
+    instrument: counter
+    unit: "{iteration}"
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group
+
+  - id: metric.prometheus_rule_group_iterations_total
+    type: metric
+    stability: development
+    brief: The total number of scheduled rule group evaluations.
+    metric_name: prometheus_rule_group_iterations_total
+    instrument: counter
+    unit: "{iteration}"
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group
+
+  - id: metric.prometheus_rule_group_last_duration_seconds
+    type: metric
+    stability: development
+    brief: The duration of the last rule group evaluation.
+    metric_name: prometheus_rule_group_last_duration_seconds
+    instrument: gauge
+    unit: s
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group
+
+  - id: metric.prometheus_rule_group_last_evaluation_samples
+    type: metric
+    stability: development
+    brief: The number of samples returned during the last rule group evaluation.
+    metric_name: prometheus_rule_group_last_evaluation_samples
+    instrument: gauge
+    unit: "{sample}"
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group
+
+  - id: metric.prometheus_rule_group_last_evaluation_timestamp_seconds
+    type: metric
+    stability: development
+    brief: The timestamp of the last rule group evaluation.
+    metric_name: prometheus_rule_group_last_evaluation_timestamp_seconds
+    instrument: gauge
+    unit: s
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group
+
+  - id: metric.prometheus_rule_group_last_restore_duration_seconds
+    type: metric
+    stability: development
+    brief: The duration of the last alert restoration from the ALERTS_FOR_STATE series.
+    metric_name: prometheus_rule_group_last_restore_duration_seconds
+    instrument: gauge
+    unit: s
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group
+
+  - id: metric.prometheus_rule_group_last_rule_duration_sum_seconds
+    type: metric
+    stability: development
+    brief: The sum of the durations of all rules in the last rule group evaluation.
+    metric_name: prometheus_rule_group_last_rule_duration_sum_seconds
+    instrument: gauge
+    unit: s
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group
+
+  - id: metric.prometheus_rule_group_rules
+    type: metric
+    stability: development
+    brief: The number of rules in a rule group.
+    metric_name: prometheus_rule_group_rules
+    instrument: gauge
+    unit: "{rule}"
+    attributes:
+      - id: rule_group
+        type: string
+        stability: development
+        brief: The rule group name.
+        examples:
+          - alerting_rules.yml;my_group

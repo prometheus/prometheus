@@ -1,0 +1,133 @@
+{#
+Copyright The Prometheus Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+#}
+{%- macro repl(text) -%}
+{#- Copied from semconvgen: https://github.com/open-telemetry/opentelemetry-go-build-tools/blob/3e69152c51c56213b65c0fc6e5954293b522103c/semconvgen/generator.go#L419-L426 -#}
+{{ text | replace("RedisDatabase", "RedisDB") | replace("IPTCP", "TCP") | replace("IPUDP", "UDP") | replace("Lineno", "LineNumber") }}
+{%- endmacro -%}
+
+{%- macro smart_title_case(text) -%}
+{%- for i in range(0, text | length) -%}
+    {%- if i == 0 or text[i-1] in ['.', '_'] -%}
+        {{ text[i] | upper }}
+    {%- elif not text[i] in ['.', '_'] -%}
+        {{ text[i] }}
+    {%- endif -%}
+{%- endfor -%}
+{%- endmacro -%}
+
+{%- macro to_go_name(fqn="", pkg="") -%}
+{%- if pkg != "" and fqn != pkg -%}
+{%- set n = pkg | length -%}
+{%- if pkg == fqn[:n] -%}
+{%- set fqn = fqn[n:] -%}
+{%- if fqn[0] == "." or fqn[0] == "." -%}
+{%- set fqn = fqn[1:] -%}
+{%- endif -%}
+{%- endif -%}
+{%- endif -%}
+{{ repl(smart_title_case(fqn | replace(" ", "") | replace("_", ".") | acronym)) }}
+{%- endmacro -%}
+
+{%- macro lower_first(line) -%}
+{%- if line is string and line | length > 1 -%}
+{%- if line[0] is upper and line[1] is upper -%}
+{#- Assume an acronym -#}
+{{ line }}
+{%- else -%}
+{{ line[0]|lower }}{{ line[1:] }}
+{%- endif -%}
+{%- elif line is not none -%}
+{{ line }}
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro first_word(line, delim=" ") -%}
+{%- for c in line -%}
+{%- if c == delim -%}
+{{ line[:loop.index0] }}
+{%- set line = "" -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endmacro -%}
+
+{%- macro prefix_brief(brief, prefix="") -%}
+{%- set norms = [
+       "MUST", "REQUIRED", "SHALL",
+       "SHOULD", "RECOMMENDED",
+       "MAY", "OPTIONAL"
+] -%}
+{%- set brief = brief | trim() -%}
+{%- if first_word(brief) is in norms -%}
+It {{ brief }}.
+{%- else -%}
+{{ prefix }} {% if brief[:2] == "A " or brief[:3] == "An " or brief[:4] == "The " -%}
+  {{ lower_first(brief) | trim(".") }}.
+{%- else -%}
+  the {{ lower_first(brief) | trim(".") }}.
+{%- endif -%}
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro it_reps(brief) -%}
+{{ prefix_brief(brief, "It represents") }}
+{%- endmacro -%}
+
+{%- macro metric_typedoc(metric, pkg="") -%}
+{%- set name = to_go_name(metric.metric_name, pkg=pkg) -%}
+{%- set brief = metric.brief | default("") | trim | trim(".") -%}
+{%- if not brief -%}
+{{ name }} records the {{ metric.metric_name }} metric.
+{%- elif brief[:2] == "A " or brief[:3] == "An " or brief[:4] == "The " -%}
+{{ name }} records {{ lower_first(brief) }}.
+{%- else -%}
+{{ name }} records the {{ lower_first(brief) }}.
+{%- endif %}
+{%- endmacro -%}
+
+{%- macro member_type(member) %}
+{%- if member.value is string %}string{%- endif %}
+{%- if member.value is boolean %}bool{%- endif %}
+{%- if member.value is int %}int64{%- endif %}
+{%- if member.value is float %}float64{%- endif %}
+{%- endmacro %}
+
+{#- Macro to convert duration string to Go code (e.g., "1h" -> "1 * time.Hour") -#}
+{%- macro duration_to_go(dur_str) -%}
+{%- if dur_str is string -%}
+{%- if dur_str.endswith("h") -%}
+{{ dur_str[:-1] }} * time.Hour
+{%- elif dur_str.endswith("m") -%}
+{{ dur_str[:-1] }} * time.Minute
+{%- elif dur_str.endswith("s") -%}
+{{ dur_str[:-1] }} * time.Second
+{%- elif dur_str.endswith("ms") -%}
+{{ dur_str[:-2] }} * time.Millisecond
+{%- else -%}
+{{ dur_str }}
+{%- endif -%}
+{%- else -%}
+{{ dur_str }}
+{%- endif -%}
+{%- endmacro -%}
+
+{#- Macro to generate bucket configuration for histograms -#}
+{#- Supports either explicit buckets array or exponential_buckets config -#}
+{%- macro buckets_to_go(prom) -%}
+{%- if prom.buckets is defined -%}
+[]float64{ {{- prom.buckets | join(", ") -}} }
+{%- elif prom.exponential_buckets is defined -%}
+prometheus.ExponentialBuckets({{ prom.exponential_buckets.start }}, {{ prom.exponential_buckets.factor }}, {{ prom.exponential_buckets.count }})
+{%- endif -%}
+{%- endmacro -%}

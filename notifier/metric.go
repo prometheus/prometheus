@@ -14,19 +14,19 @@
 package notifier
 
 import (
-	"time"
-
 	"github.com/prometheus/client_golang/prometheus"
+
+	metrics "github.com/prometheus/prometheus/notifier/semconv"
 )
 
 type alertMetrics struct {
-	latencySummary          *prometheus.SummaryVec
-	latencyHistogram        *prometheus.HistogramVec
-	errors                  *prometheus.CounterVec
-	sent                    *prometheus.CounterVec
-	dropped                 prometheus.Counter
+	latencySummary          metrics.PrometheusNotificationsLatencySeconds
+	latencyHistogram        metrics.PrometheusNotificationsLatencyHistogramSeconds
+	errors                  metrics.PrometheusNotificationsErrorsTotal
+	sent                    metrics.PrometheusNotificationsSentTotal
+	dropped                 metrics.PrometheusNotificationsDroppedTotal
 	queueLength             prometheus.GaugeFunc
-	queueCapacity           prometheus.Gauge
+	queueCapacity           metrics.PrometheusNotificationsQueueCapacity
 	alertmanagersDiscovered prometheus.GaugeFunc
 }
 
@@ -36,62 +36,17 @@ func newAlertMetrics(
 	queueLen, alertmanagersDiscovered func() float64,
 ) *alertMetrics {
 	m := &alertMetrics{
-		latencySummary: prometheus.NewSummaryVec(prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Subsystem:  subsystem,
-			Name:       "latency_seconds",
-			Help:       "Latency quantiles for sending alert notifications.",
-			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-		},
-			[]string{alertmanagerLabel},
-		),
-		latencyHistogram: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "latency_histogram_seconds",
-			Help:      "Latency histogram for sending alert notifications.",
-
-			Buckets:                         []float64{.01, .1, 1, 10},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-		},
-			[]string{alertmanagerLabel},
-		),
-		errors: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "errors_total",
-			Help:      "Total number of sent alerts affected by errors.",
-		},
-			[]string{alertmanagerLabel},
-		),
-		sent: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "sent_total",
-			Help:      "Total number of alerts sent.",
-		},
-			[]string{alertmanagerLabel},
-		),
-		dropped: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "dropped_total",
-			Help:      "Total number of alerts dropped due to errors when sending to Alertmanager.",
-		}),
+		latencySummary:   metrics.NewPrometheusNotificationsLatencySeconds(),
+		latencyHistogram: metrics.NewPrometheusNotificationsLatencyHistogramSeconds(),
+		errors:           metrics.NewPrometheusNotificationsErrorsTotal(),
+		sent:             metrics.NewPrometheusNotificationsSentTotal(),
+		dropped:          metrics.NewPrometheusNotificationsDroppedTotal(),
+		// GaugeFunc metrics require callbacks, so they remain manual
 		queueLength: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "queue_length",
-			Help:      "The number of alert notifications in the queue.",
+			Name: "prometheus_notifications_queue_length",
+			Help: "The number of alert notifications in the queue.",
 		}, queueLen),
-		queueCapacity: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "queue_capacity",
-			Help:      "The capacity of the alert notifications queue.",
-		}),
+		queueCapacity: metrics.NewPrometheusNotificationsQueueCapacity(),
 		alertmanagersDiscovered: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "prometheus_notifications_alertmanagers_discovered",
 			Help: "The number of alertmanagers discovered and active.",
@@ -102,13 +57,13 @@ func newAlertMetrics(
 
 	if r != nil {
 		r.MustRegister(
-			m.latencySummary,
-			m.latencyHistogram,
-			m.errors,
-			m.sent,
-			m.dropped,
+			m.latencySummary.SummaryVec,
+			m.latencyHistogram.HistogramVec,
+			m.errors.CounterVec,
+			m.sent.CounterVec,
+			m.dropped.Counter,
 			m.queueLength,
-			m.queueCapacity,
+			m.queueCapacity.Gauge,
 			m.alertmanagersDiscovered,
 		)
 	}

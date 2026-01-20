@@ -25,27 +25,25 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/util/compression"
+	semconv "github.com/prometheus/prometheus/tsdb/wlog/semconv"
 )
 
 // LiveReaderMetrics holds all metrics exposed by the LiveReader.
 type LiveReaderMetrics struct {
 	reg                    prometheus.Registerer
-	readerCorruptionErrors *prometheus.CounterVec
+	readerCorruptionErrors semconv.PrometheusTSDBWALReaderCorruptionErrorsTotal
 }
 
 // NewLiveReaderMetrics instantiates, registers and returns metrics to be injected
 // at LiveReader instantiation.
 func NewLiveReaderMetrics(reg prometheus.Registerer) *LiveReaderMetrics {
 	m := &LiveReaderMetrics{
-		reg: reg,
-		readerCorruptionErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_wal_reader_corruption_errors_total",
-			Help: "Errors encountered when reading the WAL.",
-		}, []string{"error"}),
+		reg:                    reg,
+		readerCorruptionErrors: semconv.NewPrometheusTSDBWALReaderCorruptionErrorsTotal(),
 	}
 
 	if reg != nil {
-		reg.MustRegister(m.readerCorruptionErrors)
+		reg.MustRegister(m.readerCorruptionErrors.CounterVec)
 	}
 
 	return m
@@ -57,7 +55,7 @@ func (m *LiveReaderMetrics) Unregister() {
 		return
 	}
 
-	m.reg.Unregister(m.readerCorruptionErrors)
+	m.reg.Unregister(m.readerCorruptionErrors.CounterVec)
 }
 
 // NewLiveReader returns a new live reader.

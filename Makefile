@@ -25,8 +25,23 @@ TSDB_BENCHMARK_OUTPUT_DIR ?= ./benchout
 
 GOLANGCI_LINT_OPTS ?= --timeout 4m
 GOYACC_VERSION ?= v0.6.0
+WEAVER_VERSION ?= v0.20.0
 
 include Makefile.common
+
+# Weaver binary - check if already in PATH with correct version, otherwise use local
+WEAVER_PATH := $(shell command -v weaver 2>/dev/null)
+WEAVER_LOCAL := .bin/weaver-$(WEAVER_VERSION)
+ifdef WEAVER_PATH
+  WEAVER_INSTALLED_VERSION := $(shell weaver --version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "")
+  ifeq ($(WEAVER_INSTALLED_VERSION),$(WEAVER_VERSION))
+    WEAVER ?= weaver
+  else
+    WEAVER ?= $(WEAVER_LOCAL)
+  endif
+else
+  WEAVER ?= $(WEAVER_LOCAL)
+endif
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
@@ -151,6 +166,35 @@ install-goyacc:
 	@echo ">> installing goyacc $(GOYACC_VERSION)"
 	@go install golang.org/x/tools/cmd/goyacc@$(GOYACC_VERSION)
 
+.PHONY: install-weaver
+install-weaver: $(WEAVER_LOCAL)
+
+$(WEAVER_LOCAL):
+	@echo ">> installing weaver $(WEAVER_VERSION)"
+	@mkdir -p .bin
+	@OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+	ARCH=$$(uname -m); \
+	case "$$OS" in \
+		linux) OS_STR="unknown-linux-gnu" ;; \
+		darwin) OS_STR="apple-darwin" ;; \
+		*) echo "Unsupported OS: $$OS"; exit 1 ;; \
+	esac; \
+	case "$$ARCH" in \
+		x86_64) ARCH_STR="x86_64" ;; \
+		aarch64|arm64) ARCH_STR="aarch64" ;; \
+		*) echo "Unsupported architecture: $$ARCH"; exit 1 ;; \
+	esac; \
+	PLATFORM="$${ARCH_STR}-$${OS_STR}"; \
+	TARBALL="weaver-$${PLATFORM}.tar.xz"; \
+	URL="https://github.com/open-telemetry/weaver/releases/download/$(WEAVER_VERSION)/$${TARBALL}"; \
+	echo ">> downloading weaver from $${URL}"; \
+	curl -sSfL "$${URL}" -o ".bin/$${TARBALL}" && \
+	tar -xJf ".bin/$${TARBALL}" -C .bin && \
+	mv ".bin/weaver-$${PLATFORM}/weaver" "$(WEAVER_LOCAL)" && \
+	chmod +x "$(WEAVER_LOCAL)" && \
+	rm -f ".bin/$${TARBALL}" && \
+	rm -rf ".bin/weaver-$${PLATFORM}"
+
 .PHONY: test
 # If we only want to only test go code we have to change the test target
 # which is called by all.
@@ -225,3 +269,26 @@ bump-go-version:
 generate-fuzzing-seed-corpus:
 	@echo ">> Generating fuzzing seed corpus"
 	@$(GO) generate -tags fuzzing ./util/fuzzing/corpus_gen
+
+.PHONY: generate-semconv
+generate-semconv: $(WEAVER)
+	@echo ">> generating semconv code"
+	@WEAVER=$(WEAVER) ./build/semconv/generate.sh
+
+.PHONY: check-semconv
+check-semconv: generate-semconv
+	@echo ">> checking semconv code is up-to-date"
+	@if ! git diff --exit-code -- '*/semconv/metrics.go' '*/semconv/README.md'; then \
+		echo "Generated semconv code is out of date. Run 'make generate-semconv' and commit the changes."; \
+		exit 1; \
+	fi
+
+.PHONY: check-semconv-policies
+check-semconv-policies: $(WEAVER)
+	@echo ">> validating semconv policies"
+	@for registry in $$(find . -path '*/semconv/registry.yaml' -type f); do \
+		echo "   Checking $$(dirname $$registry)"; \
+		$(WEAVER) registry check --registry $$(dirname $$registry) \
+			--policy ./build/semconv/policies || exit 1; \
+	done
+	@echo ">> all semconv registries passed policy validation"

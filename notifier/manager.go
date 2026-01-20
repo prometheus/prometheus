@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	metrics "github.com/prometheus/prometheus/notifier/semconv"
 )
 
 const (
@@ -493,15 +494,15 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 				err := n.sendOne(ctx, client, url, payload)
 				if err != nil {
 					n.logger.Error("Error sending alerts", "alertmanager", url, "count", count, "err", err)
-					n.metrics.errors.WithLabelValues(url).Add(float64(count))
+					n.metrics.errors.With(metrics.AlertmanagerAttr(url)).Add(float64(count))
 				} else {
 					amSetCovered.CompareAndSwap(k, false, true)
 				}
 
 				durationSeconds := time.Since(begin).Seconds()
-				n.metrics.latencySummary.WithLabelValues(url).Observe(durationSeconds)
-				n.metrics.latencyHistogram.WithLabelValues(url).Observe(durationSeconds)
-				n.metrics.sent.WithLabelValues(url).Add(float64(count))
+				n.metrics.latencySummary.With(metrics.AlertmanagerAttr(url)).Observe(durationSeconds)
+				n.metrics.latencyHistogram.With(metrics.AlertmanagerAttr(url)).Observe(durationSeconds)
+				n.metrics.sent.With(metrics.AlertmanagerAttr(url)).Add(float64(count))
 
 				wg.Done()
 			}(ctx, k, ams.client, am.url().String(), payload, len(amAlerts))

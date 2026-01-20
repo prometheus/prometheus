@@ -1,0 +1,113 @@
+# Semantic convention registry for Prometheus agent metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_agent_active_series
+    type: metric
+    stability: development
+    brief: Number of active series being tracked by the WAL storage.
+    metric_name: prometheus_agent_active_series
+    instrument: gauge
+    unit: "{series}"
+
+  - id: metric.prometheus_agent_deleted_series
+    type: metric
+    stability: development
+    brief: Number of series pending deletion from the WAL.
+    metric_name: prometheus_agent_deleted_series
+    instrument: gauge
+    unit: "{series}"
+
+  - id: metric.prometheus_agent_samples_appended_total
+    type: metric
+    stability: development
+    brief: Total number of samples appended to the storage.
+    metric_name: prometheus_agent_samples_appended_total
+    instrument: counter
+    unit: "{sample}"
+    attributes:
+      - id: type
+        type: string
+        stability: development
+        brief: The type of sample.
+        examples:
+          - float
+          - histogram
+
+  - id: metric.prometheus_agent_exemplars_appended_total
+    type: metric
+    stability: development
+    brief: Total number of exemplars appended to the storage.
+    metric_name: prometheus_agent_exemplars_appended_total
+    instrument: counter
+    unit: "{exemplar}"
+
+  - id: metric.prometheus_agent_out_of_order_samples_total
+    type: metric
+    stability: development
+    brief: Total number of out of order samples ingestion failed attempts.
+    metric_name: prometheus_agent_out_of_order_samples_total
+    instrument: counter
+    unit: "{sample}"
+
+  - id: metric.prometheus_agent_truncate_duration_seconds
+    type: metric
+    stability: development
+    brief: Duration of WAL truncation.
+    metric_name: prometheus_agent_truncate_duration_seconds
+    instrument: histogram
+    unit: s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives: {}
+
+  - id: metric.prometheus_agent_corruptions_total
+    type: metric
+    stability: development
+    brief: Total number of WAL corruptions.
+    metric_name: prometheus_agent_corruptions_total
+    instrument: counter
+    unit: "{corruption}"
+
+  - id: metric.prometheus_agent_data_replay_duration_seconds
+    type: metric
+    stability: development
+    brief: Time taken to replay the data on disk.
+    metric_name: prometheus_agent_data_replay_duration_seconds
+    instrument: gauge
+    unit: s
+
+  - id: metric.prometheus_agent_checkpoint_deletions_failed_total
+    type: metric
+    stability: development
+    brief: Total number of checkpoint deletions that failed.
+    metric_name: prometheus_agent_checkpoint_deletions_failed_total
+    instrument: counter
+    unit: "{deletion}"
+
+  - id: metric.prometheus_agent_checkpoint_deletions_total
+    type: metric
+    stability: development
+    brief: Total number of checkpoint deletions attempted.
+    metric_name: prometheus_agent_checkpoint_deletions_total
+    instrument: counter
+    unit: "{deletion}"
+
+  - id: metric.prometheus_agent_checkpoint_creations_failed_total
+    type: metric
+    stability: development
+    brief: Total number of checkpoint creations that failed.
+    metric_name: prometheus_agent_checkpoint_creations_failed_total
+    instrument: counter
+    unit: "{creation}"
+
+  - id: metric.prometheus_agent_checkpoint_creations_total
+    type: metric
+    stability: development
+    brief: Total number of checkpoint creations attempted.
+    metric_name: prometheus_agent_checkpoint_creations_total
+    instrument: counter
+    unit: "{creation}"

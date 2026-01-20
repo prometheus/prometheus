@@ -43,6 +43,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	semconv "github.com/prometheus/prometheus/tsdb/semconv"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -373,36 +374,36 @@ func (h *Head) resetWLReplayResources() {
 }
 
 type headMetrics struct {
-	activeAppenders           prometheus.Gauge
+	activeAppenders           semconv.PrometheusTSDBHeadActiveAppenders
 	series                    prometheus.GaugeFunc
 	staleSeries               prometheus.GaugeFunc
-	seriesCreated             prometheus.Counter
-	seriesRemoved             prometheus.Counter
-	seriesNotFound            prometheus.Counter
-	chunks                    prometheus.Gauge
-	chunksCreated             prometheus.Counter
-	chunksRemoved             prometheus.Counter
-	gcDuration                prometheus.Summary
-	samplesAppended           *prometheus.CounterVec
-	outOfOrderSamplesAppended *prometheus.CounterVec
-	outOfBoundSamples         *prometheus.CounterVec
-	outOfOrderSamples         *prometheus.CounterVec
-	tooOldSamples             *prometheus.CounterVec
-	walTruncateDuration       prometheus.Summary
-	walCorruptionsTotal       prometheus.Counter
-	dataTotalReplayDuration   prometheus.Gauge
-	headTruncateFail          prometheus.Counter
-	headTruncateTotal         prometheus.Counter
-	checkpointDeleteFail      prometheus.Counter
-	checkpointDeleteTotal     prometheus.Counter
-	checkpointCreationFail    prometheus.Counter
-	checkpointCreationTotal   prometheus.Counter
-	mmapChunkCorruptionTotal  prometheus.Counter
-	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
-	oooHistogram              prometheus.Histogram
-	mmapChunksTotal           prometheus.Counter
-	walReplayUnknownRefsTotal *prometheus.CounterVec
-	wblReplayUnknownRefsTotal *prometheus.CounterVec
+	seriesCreated             semconv.PrometheusTSDBHeadSeriesCreatedTotal
+	seriesRemoved             semconv.PrometheusTSDBHeadSeriesRemovedTotal
+	seriesNotFound            semconv.PrometheusTSDBHeadSeriesNotFoundTotal
+	chunks                    semconv.PrometheusTSDBHeadChunks
+	chunksCreated             semconv.PrometheusTSDBHeadChunksCreatedTotal
+	chunksRemoved             semconv.PrometheusTSDBHeadChunksRemovedTotal
+	gcDuration                semconv.PrometheusTSDBHeadGCDurationSeconds
+	samplesAppended           semconv.PrometheusTSDBHeadSamplesAppendedTotal
+	outOfOrderSamplesAppended semconv.PrometheusTSDBHeadOutOfOrderSamplesAppendedTotal
+	outOfBoundSamples         semconv.PrometheusTSDBOutOfBoundSamplesTotal
+	outOfOrderSamples         semconv.PrometheusTSDBOutOfOrderSamplesTotal
+	tooOldSamples             semconv.PrometheusTSDBTooOldSamplesTotal
+	walTruncateDuration       semconv.PrometheusTSDBWALTruncateDurationSeconds
+	walCorruptionsTotal       semconv.PrometheusTSDBWALCorruptionsTotal
+	dataTotalReplayDuration   semconv.PrometheusTSDBDataReplayDurationSeconds
+	headTruncateFail          semconv.PrometheusTSDBHeadTruncationsFailedTotal
+	headTruncateTotal         semconv.PrometheusTSDBHeadTruncationsTotal
+	checkpointDeleteFail      semconv.PrometheusTSDBCheckpointDeletionsFailedTotal
+	checkpointDeleteTotal     semconv.PrometheusTSDBCheckpointDeletionsTotal
+	checkpointCreationFail    semconv.PrometheusTSDBCheckpointCreationsFailedTotal
+	checkpointCreationTotal   semconv.PrometheusTSDBCheckpointCreationsTotal
+	mmapChunkCorruptionTotal  semconv.PrometheusTSDBMmapChunkCorruptionsTotal
+	snapshotReplayErrorTotal  semconv.PrometheusTSDBSnapshotReplayErrorTotal // Will be either 0 or 1.
+	oooHistogram              semconv.PrometheusTSDBSampleOOODelta
+	mmapChunksTotal           semconv.PrometheusTSDBMmapChunksTotal
+	walReplayUnknownRefsTotal semconv.PrometheusTSDBWALReplayUnknownRefsTotal
+	wblReplayUnknownRefsTotal semconv.PrometheusTSDBWBLReplayUnknownRefsTotal
 }
 
 const (
@@ -412,174 +413,79 @@ const (
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	m := &headMetrics{
-		activeAppenders: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_active_appenders",
-			Help: "Number of currently active appender transactions",
-		}),
-		series: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_series",
-			Help: "Total number of series in the head block.",
-		}, func() float64 {
-			return float64(h.NumSeries())
-		}),
-		staleSeries: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_stale_series",
-			Help: "Total number of stale series in the head block.",
-		}, func() float64 {
-			return float64(h.NumStaleSeries())
-		}),
-		seriesCreated: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_series_created_total",
-			Help: "Total number of series created in the head",
-		}),
-		seriesRemoved: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_series_removed_total",
-			Help: "Total number of series removed in the head",
-		}),
-		seriesNotFound: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_series_not_found_total",
-			Help: "Total number of requests for series that were not found.",
-		}),
-		chunks: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_chunks",
-			Help: "Total number of chunks in the head block.",
-		}),
-		chunksCreated: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_chunks_created_total",
-			Help: "Total number of chunks created in the head",
-		}),
-		chunksRemoved: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_chunks_removed_total",
-			Help: "Total number of chunks removed in the head",
-		}),
-		gcDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name: "prometheus_tsdb_head_gc_duration_seconds",
-			Help: "Runtime of garbage collection in the head block.",
-		}),
-		walTruncateDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name: "prometheus_tsdb_wal_truncate_duration_seconds",
-			Help: "Duration of WAL truncation.",
-		}),
-		walCorruptionsTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_wal_corruptions_total",
-			Help: "Total number of WAL corruptions.",
-		}),
-		dataTotalReplayDuration: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_data_replay_duration_seconds",
-			Help: "Time taken to replay the data on disk.",
-		}),
-		samplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_samples_appended_total",
-			Help: "Total number of appended samples.",
-		}, []string{"type"}),
-		outOfOrderSamplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_out_of_order_samples_appended_total",
-			Help: "Total number of appended out of order samples.",
-		}, []string{"type"}),
-		outOfBoundSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_out_of_bound_samples_total",
-			Help: "Total number of out of bound samples ingestion failed attempts with out of order support disabled.",
-		}, []string{"type"}),
-		outOfOrderSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_out_of_order_samples_total",
-			Help: "Total number of out of order samples ingestion failed attempts due to out of order being disabled.",
-		}, []string{"type"}),
-		tooOldSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_too_old_samples_total",
-			Help: "Total number of out of order samples ingestion failed attempts with out of support enabled, but sample outside of time window.",
-		}, []string{"type"}),
-		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_truncations_failed_total",
-			Help: "Total number of head truncations that failed.",
-		}),
-		headTruncateTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_truncations_total",
-			Help: "Total number of head truncations attempted.",
-		}),
-		checkpointDeleteFail: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_checkpoint_deletions_failed_total",
-			Help: "Total number of checkpoint deletions that failed.",
-		}),
-		checkpointDeleteTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_checkpoint_deletions_total",
-			Help: "Total number of checkpoint deletions attempted.",
-		}),
-		checkpointCreationFail: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_checkpoint_creations_failed_total",
-			Help: "Total number of checkpoint creations that failed.",
-		}),
-		checkpointCreationTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_checkpoint_creations_total",
-			Help: "Total number of checkpoint creations attempted.",
-		}),
-		mmapChunkCorruptionTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_mmap_chunk_corruptions_total",
-			Help: "Total number of memory-mapped chunk corruptions.",
-		}),
-		snapshotReplayErrorTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_snapshot_replay_error_total",
-			Help: "Total number snapshot replays that failed.",
-		}),
-		oooHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_sample_ooo_delta",
-			Help: "Delta in seconds by which a sample is considered out of order (reported regardless of OOO time window and whether sample is accepted or not).",
-			Buckets: []float64{
-				60 * 10,      // 10 min
-				60 * 30,      // 30 min
-				60 * 60,      // 60 min
-				60 * 60 * 2,  // 2h
-				60 * 60 * 3,  // 3h
-				60 * 60 * 6,  // 6h
-				60 * 60 * 12, // 12h
-			},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-		}),
-		mmapChunksTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_mmap_chunks_total",
-			Help: "Total number of chunks that were memory-mapped.",
-		}),
-		walReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
-			Help: "Total number of unknown series references encountered during WAL replay.",
-		}, []string{"type"}),
-		wblReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
-			Help: "Total number of unknown series references encountered during WBL replay.",
-		}, []string{"type"}),
+		activeAppenders:           semconv.NewPrometheusTSDBHeadActiveAppenders(),
+		seriesCreated:             semconv.NewPrometheusTSDBHeadSeriesCreatedTotal(),
+		seriesRemoved:             semconv.NewPrometheusTSDBHeadSeriesRemovedTotal(),
+		seriesNotFound:            semconv.NewPrometheusTSDBHeadSeriesNotFoundTotal(),
+		chunks:                    semconv.NewPrometheusTSDBHeadChunks(),
+		chunksCreated:             semconv.NewPrometheusTSDBHeadChunksCreatedTotal(),
+		chunksRemoved:             semconv.NewPrometheusTSDBHeadChunksRemovedTotal(),
+		gcDuration:                semconv.NewPrometheusTSDBHeadGCDurationSeconds(),
+		walTruncateDuration:       semconv.NewPrometheusTSDBWALTruncateDurationSeconds(),
+		walCorruptionsTotal:       semconv.NewPrometheusTSDBWALCorruptionsTotal(),
+		dataTotalReplayDuration:   semconv.NewPrometheusTSDBDataReplayDurationSeconds(),
+		samplesAppended:           semconv.NewPrometheusTSDBHeadSamplesAppendedTotal(),
+		outOfOrderSamplesAppended: semconv.NewPrometheusTSDBHeadOutOfOrderSamplesAppendedTotal(),
+		outOfBoundSamples:         semconv.NewPrometheusTSDBOutOfBoundSamplesTotal(),
+		outOfOrderSamples:         semconv.NewPrometheusTSDBOutOfOrderSamplesTotal(),
+		tooOldSamples:             semconv.NewPrometheusTSDBTooOldSamplesTotal(),
+		headTruncateFail:          semconv.NewPrometheusTSDBHeadTruncationsFailedTotal(),
+		headTruncateTotal:         semconv.NewPrometheusTSDBHeadTruncationsTotal(),
+		checkpointDeleteFail:      semconv.NewPrometheusTSDBCheckpointDeletionsFailedTotal(),
+		checkpointDeleteTotal:     semconv.NewPrometheusTSDBCheckpointDeletionsTotal(),
+		checkpointCreationFail:    semconv.NewPrometheusTSDBCheckpointCreationsFailedTotal(),
+		checkpointCreationTotal:   semconv.NewPrometheusTSDBCheckpointCreationsTotal(),
+		mmapChunkCorruptionTotal:  semconv.NewPrometheusTSDBMmapChunkCorruptionsTotal(),
+		snapshotReplayErrorTotal:  semconv.NewPrometheusTSDBSnapshotReplayErrorTotal(),
+		oooHistogram:              semconv.NewPrometheusTSDBSampleOOODelta(),
+		mmapChunksTotal:           semconv.NewPrometheusTSDBMmapChunksTotal(),
+		walReplayUnknownRefsTotal: semconv.NewPrometheusTSDBWALReplayUnknownRefsTotal(),
+		wblReplayUnknownRefsTotal: semconv.NewPrometheusTSDBWBLReplayUnknownRefsTotal(),
 	}
+
+	m.series = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_series",
+		Help: "Total number of series in the head block.",
+	}, func() float64 {
+		return float64(h.NumSeries())
+	})
+	m.staleSeries = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_stale_series",
+		Help: "Total number of stale series in the head block.",
+	}, func() float64 {
+		return float64(h.NumStaleSeries())
+	})
 
 	if r != nil {
 		r.MustRegister(
-			m.activeAppenders,
+			m.activeAppenders.Gauge,
 			m.series,
 			m.staleSeries,
-			m.chunks,
-			m.chunksCreated,
-			m.chunksRemoved,
-			m.seriesCreated,
-			m.seriesRemoved,
-			m.seriesNotFound,
-			m.gcDuration,
-			m.walTruncateDuration,
-			m.walCorruptionsTotal,
-			m.dataTotalReplayDuration,
-			m.samplesAppended,
-			m.outOfOrderSamplesAppended,
-			m.outOfBoundSamples,
-			m.outOfOrderSamples,
-			m.tooOldSamples,
-			m.headTruncateFail,
-			m.headTruncateTotal,
-			m.checkpointDeleteFail,
-			m.checkpointDeleteTotal,
-			m.checkpointCreationFail,
-			m.checkpointCreationTotal,
-			m.oooHistogram,
-			m.mmapChunksTotal,
-			m.mmapChunkCorruptionTotal,
-			m.snapshotReplayErrorTotal,
+			m.chunks.Gauge,
+			m.chunksCreated.Counter,
+			m.chunksRemoved.Counter,
+			m.seriesCreated.Counter,
+			m.seriesRemoved.Counter,
+			m.seriesNotFound.Counter,
+			m.gcDuration.Summary,
+			m.walTruncateDuration.Summary,
+			m.walCorruptionsTotal.Counter,
+			m.dataTotalReplayDuration.Gauge,
+			m.samplesAppended.CounterVec,
+			m.outOfOrderSamplesAppended.CounterVec,
+			m.outOfBoundSamples.CounterVec,
+			m.outOfOrderSamples.CounterVec,
+			m.tooOldSamples.CounterVec,
+			m.headTruncateFail.Counter,
+			m.headTruncateTotal.Counter,
+			m.checkpointDeleteFail.Counter,
+			m.checkpointDeleteTotal.Counter,
+			m.checkpointCreationFail.Counter,
+			m.checkpointCreationTotal.Counter,
+			m.oooHistogram.Histogram,
+			m.mmapChunksTotal.Counter,
+			m.mmapChunkCorruptionTotal.Counter,
+			m.snapshotReplayErrorTotal.Counter,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -617,8 +523,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				}
 				return float64(val)
 			}),
-			m.walReplayUnknownRefsTotal,
-			m.wblReplayUnknownRefsTotal,
+			m.walReplayUnknownRefsTotal.CounterVec,
+			m.wblReplayUnknownRefsTotal.CounterVec,
 		)
 	}
 	return m

@@ -36,21 +36,16 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	webmetrics "github.com/prometheus/prometheus/web/semconv"
 )
 
 var (
-	federationErrors = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_web_federation_errors_total",
-		Help: "Total number of errors that occurred while sending federation responses.",
-	})
-	federationWarnings = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_web_federation_warnings_total",
-		Help: "Total number of warnings that occurred while sending federation responses.",
-	})
+	federationErrors   = webmetrics.NewPrometheusWebFederationErrorsTotal()
+	federationWarnings = webmetrics.NewPrometheusWebFederationWarningsTotal()
 )
 
 func registerFederationMetrics(r prometheus.Registerer) {
-	r.MustRegister(federationWarnings, federationErrors)
+	r.MustRegister(federationWarnings.Counter, federationErrors.Counter)
 }
 
 func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {

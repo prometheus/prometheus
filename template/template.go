@@ -36,26 +36,21 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/prometheus/prometheus/promql"
+	semconv "github.com/prometheus/prometheus/template/semconv"
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
 var (
-	templateTextExpansionFailures = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_template_text_expansion_failures_total",
-		Help: "The total number of template text expansion failures.",
-	})
-	templateTextExpansionTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_template_text_expansions_total",
-		Help: "The total number of template text expansions.",
-	})
+	templateTextExpansionFailures = semconv.NewPrometheusTemplateTextExpansionFailuresTotal()
+	templateTextExpansionTotal    = semconv.NewPrometheusTemplateTextExpansionsTotal()
 
 	errNaNOrInf = errors.New("value is NaN or Inf")
 )
 
 func init() {
-	prometheus.MustRegister(templateTextExpansionFailures)
-	prometheus.MustRegister(templateTextExpansionTotal)
+	prometheus.MustRegister(templateTextExpansionFailures.Counter)
+	prometheus.MustRegister(templateTextExpansionTotal.Counter)
 }
 
 // A version of vector that's easier to use from templates.

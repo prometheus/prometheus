@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	semconv "github.com/prometheus/prometheus/tsdb/chunks/semconv"
 )
 
 const (
@@ -70,6 +71,7 @@ type chunkWriteQueue struct {
 
 	// Keeping separate counters instead of only a single CounterVec to improve the performance of the critical
 	// addJob() method which otherwise would need to perform a WithLabelValues call on the CounterVec.
+	counters  semconv.PrometheusTSDBChunkWriteQueueOperationsTotal
 	adds      prometheus.Counter
 	gets      prometheus.Counter
 	completed prometheus.Counter
@@ -80,13 +82,7 @@ type chunkWriteQueue struct {
 type writeChunkF func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error
 
 func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChunkF) *chunkWriteQueue {
-	counters := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "prometheus_tsdb_chunk_write_queue_operations_total",
-			Help: "Number of operations on the chunk_write_queue.",
-		},
-		[]string{"operation"},
-	)
+	counters := semconv.NewPrometheusTSDBChunkWriteQueueOperationsTotal()
 
 	segmentSize := min(size, maxChunkQueueSegmentSize)
 
@@ -96,14 +92,15 @@ func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChu
 		chunkRefMapLastShrink: time.Now(),
 		writeChunk:            writeChunk,
 
-		adds:      counters.WithLabelValues("add"),
-		gets:      counters.WithLabelValues("get"),
-		completed: counters.WithLabelValues("complete"),
-		shrink:    counters.WithLabelValues("shrink"),
+		counters:  counters,
+		adds:      counters.With(semconv.OperationAttr("add")),
+		gets:      counters.With(semconv.OperationAttr("get")),
+		completed: counters.With(semconv.OperationAttr("complete")),
+		shrink:    counters.With(semconv.OperationAttr("shrink")),
 	}
 
 	if reg != nil {
-		reg.MustRegister(counters)
+		reg.MustRegister(counters.CounterVec)
 	}
 
 	q.start()

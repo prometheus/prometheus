@@ -466,12 +466,12 @@ Outer:
 			"tombstones", unknownTombstoneRefs.Load(),
 		)
 
-		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
-		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSampleRefs.Load()), "samples")
-		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownExemplarRefs.Load()), "exemplars")
-		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownHistogramRefs.Load()), "histograms")
-		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownMetadataRefs.Load()), "metadata")
-		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownTombstoneRefs.Load()), "tombstones")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal.CounterVec, float64(unknownSeriesRefs.count()), "series")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal.CounterVec, float64(unknownSampleRefs.Load()), "samples")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal.CounterVec, float64(unknownExemplarRefs.Load()), "exemplars")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal.CounterVec, float64(unknownHistogramRefs.Load()), "histograms")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal.CounterVec, float64(unknownMetadataRefs.Load()), "metadata")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal.CounterVec, float64(unknownTombstoneRefs.Load()), "tombstones")
 	}
 	if count := mmapOverlappingChunks.Load(); count > 0 {
 		h.logger.Info("Overlapping m-map chunks on duplicate series records", "count", count)
@@ -970,10 +970,10 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			"mmap_markers", mmapMarkerUnknownRefs.Load(),
 		)
 
-		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
-		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(unknownSampleRefs.Load()), "samples")
-		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(unknownHistogramRefs.Load()), "histograms")
-		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(mmapMarkerUnknownRefs.Load()), "mmap_markers")
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal.CounterVec, float64(unknownSeriesRefs.count()), "series")
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal.CounterVec, float64(unknownSampleRefs.Load()), "samples")
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal.CounterVec, float64(unknownHistogramRefs.Load()), "histograms")
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal.CounterVec, float64(mmapMarkerUnknownRefs.Load()), "mmap_markers")
 	}
 
 	return nil

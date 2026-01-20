@@ -1,0 +1,364 @@
+# Semantic convention registry for Prometheus scrape/target metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_target_interval_length_seconds
+    type: metric
+    stability: development
+    brief: Actual intervals between scrapes.
+    metric_name: prometheus_target_interval_length_seconds
+    instrument: histogram
+    unit: s
+    attributes:
+      - id: interval
+        type: string
+        stability: development
+        brief: The configured scrape interval.
+        examples:
+          - 15s
+          - 30s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.01: 0.001
+          0.05: 0.005
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
+
+  - id: metric.prometheus_target_interval_length_histogram_seconds
+    type: metric
+    stability: development
+    brief: Actual intervals between scrapes as a histogram.
+    metric_name: prometheus_target_interval_length_histogram_seconds
+    instrument: histogram
+    unit: s
+    attributes:
+      - id: interval
+        type: string
+        stability: development
+        brief: The configured scrape interval.
+        examples:
+          - 15s
+          - 30s
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [0.01, 0.1, 1, 10]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
+
+  - id: metric.prometheus_target_metadata_cache_bytes
+    type: metric
+    stability: development
+    brief: The number of bytes that are currently used for storing metric metadata in the cache.
+    metric_name: prometheus_target_metadata_cache_bytes
+    instrument: gauge
+    unit: By
+    attributes:
+      - id: scrape_job
+        type: string
+        stability: development
+        brief: The scrape job name.
+        examples:
+          - prometheus
+          - node_exporter
+
+  - id: metric.prometheus_target_metadata_cache_entries
+    type: metric
+    stability: development
+    brief: Total number of metric metadata entries in the cache.
+    metric_name: prometheus_target_metadata_cache_entries
+    instrument: gauge
+    unit: "{entry}"
+    attributes:
+      - id: scrape_job
+        type: string
+        stability: development
+        brief: The scrape job name.
+        examples:
+          - prometheus
+          - node_exporter
+
+  - id: metric.prometheus_target_reload_length_seconds
+    type: metric
+    stability: development
+    brief: Actual interval to reload the scrape pool with a given configuration.
+    metric_name: prometheus_target_reload_length_seconds
+    instrument: histogram
+    unit: s
+    attributes:
+      - id: interval
+        type: string
+        stability: development
+        brief: The configured scrape interval.
+        examples:
+          - 15s
+          - 30s
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.01: 0.001
+          0.05: 0.005
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
+
+  - id: metric.prometheus_target_scrape_duration_seconds
+    type: metric
+    stability: development
+    brief: Scrape request latency histogram.
+    metric_name: prometheus_target_scrape_duration_seconds
+    instrument: histogram
+    unit: s
+    annotations:
+      prometheus:
+        histogram_type: native_histogram
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"
+
+  - id: metric.prometheus_target_scrape_pool_exceeded_label_limits_total
+    type: metric
+    stability: development
+    brief: Total number of times scrape pools hit the label limits.
+    metric_name: prometheus_target_scrape_pool_exceeded_label_limits_total
+    instrument: counter
+    unit: "{occurrence}"
+
+  - id: metric.prometheus_target_scrape_pool_exceeded_target_limit_total
+    type: metric
+    stability: development
+    brief: Total number of times scrape pools hit the target limit.
+    metric_name: prometheus_target_scrape_pool_exceeded_target_limit_total
+    instrument: counter
+    unit: "{occurrence}"
+
+  - id: metric.prometheus_target_scrape_pool_reloads_failed_total
+    type: metric
+    stability: development
+    brief: Total number of failed scrape pool reloads.
+    metric_name: prometheus_target_scrape_pool_reloads_failed_total
+    instrument: counter
+    unit: "{reload}"
+
+  - id: metric.prometheus_target_scrape_pool_reloads_total
+    type: metric
+    stability: development
+    brief: Total number of scrape pool reloads.
+    metric_name: prometheus_target_scrape_pool_reloads_total
+    instrument: counter
+    unit: "{reload}"
+
+  - id: metric.prometheus_target_scrape_pool_symboltable_items
+    type: metric
+    stability: development
+    brief: Current number of symbols in the scrape pool symbol table.
+    metric_name: prometheus_target_scrape_pool_symboltable_items
+    instrument: gauge
+    unit: "{symbol}"
+    attributes:
+      - id: scrape_job
+        type: string
+        stability: development
+        brief: The scrape job name.
+        examples:
+          - prometheus
+          - node_exporter
+
+  - id: metric.prometheus_target_scrape_pool_sync_total
+    type: metric
+    stability: development
+    brief: Total number of syncs that were executed on a scrape pool.
+    metric_name: prometheus_target_scrape_pool_sync_total
+    instrument: counter
+    unit: "{sync}"
+    attributes:
+      - id: scrape_job
+        type: string
+        stability: development
+        brief: The scrape job name.
+        examples:
+          - prometheus
+          - node_exporter
+
+  - id: metric.prometheus_target_scrape_pool_target_limit
+    type: metric
+    stability: development
+    brief: Maximum number of targets allowed in this scrape pool.
+    metric_name: prometheus_target_scrape_pool_target_limit
+    instrument: gauge
+    unit: "{target}"
+    attributes:
+      - id: scrape_job
+        type: string
+        stability: development
+        brief: The scrape job name.
+        examples:
+          - prometheus
+          - node_exporter
+
+  - id: metric.prometheus_target_scrape_pool_targets
+    type: metric
+    stability: development
+    brief: Current number of targets in this scrape pool.
+    metric_name: prometheus_target_scrape_pool_targets
+    instrument: gauge
+    unit: "{target}"
+    attributes:
+      - id: scrape_job
+        type: string
+        stability: development
+        brief: The scrape job name.
+        examples:
+          - prometheus
+          - node_exporter
+
+  - id: metric.prometheus_target_scrape_pools_failed_total
+    type: metric
+    stability: development
+    brief: Total number of scrape pool creations that failed.
+    metric_name: prometheus_target_scrape_pools_failed_total
+    instrument: counter
+    unit: "{pool}"
+
+  - id: metric.prometheus_target_scrape_pools_total
+    type: metric
+    stability: development
+    brief: Total number of scrape pool creation attempts.
+    metric_name: prometheus_target_scrape_pools_total
+    instrument: counter
+    unit: "{pool}"
+
+  - id: metric.prometheus_target_scrapes_cache_flush_forced_total
+    type: metric
+    stability: development
+    brief: Total number of scrapes that forced a complete label cache flush.
+    metric_name: prometheus_target_scrapes_cache_flush_forced_total
+    instrument: counter
+    unit: "{scrape}"
+
+  - id: metric.prometheus_target_scrapes_exceeded_body_size_limit_total
+    type: metric
+    stability: development
+    brief: Total number of scrapes that hit the body size limit.
+    metric_name: prometheus_target_scrapes_exceeded_body_size_limit_total
+    instrument: counter
+    unit: "{scrape}"
+
+  - id: metric.prometheus_target_scrapes_exceeded_native_histogram_bucket_limit_total
+    type: metric
+    stability: development
+    brief: Total number of scrapes that hit the native histogram bucket limit.
+    metric_name: prometheus_target_scrapes_exceeded_native_histogram_bucket_limit_total
+    instrument: counter
+    unit: "{scrape}"
+
+  - id: metric.prometheus_target_scrapes_exceeded_sample_limit_total
+    type: metric
+    stability: development
+    brief: Total number of scrapes that hit the sample limit.
+    metric_name: prometheus_target_scrapes_exceeded_sample_limit_total
+    instrument: counter
+    unit: "{scrape}"
+
+  - id: metric.prometheus_target_scrapes_exemplar_out_of_order_total
+    type: metric
+    stability: development
+    brief: Total number of exemplar rejected due to not being out of the expected order.
+    metric_name: prometheus_target_scrapes_exemplar_out_of_order_total
+    instrument: counter
+    unit: "{exemplar}"
+
+  - id: metric.prometheus_target_scrapes_sample_duplicate_timestamp_total
+    type: metric
+    stability: development
+    brief: Total number of samples rejected due to duplicate timestamps but different values.
+    metric_name: prometheus_target_scrapes_sample_duplicate_timestamp_total
+    instrument: counter
+    unit: "{sample}"
+
+  - id: metric.prometheus_target_scrapes_sample_out_of_bounds_total
+    type: metric
+    stability: development
+    brief: Total number of samples rejected due to timestamp falling outside of the time bounds.
+    metric_name: prometheus_target_scrapes_sample_out_of_bounds_total
+    instrument: counter
+    unit: "{sample}"
+
+  - id: metric.prometheus_target_scrapes_sample_out_of_order_total
+    type: metric
+    stability: development
+    brief: Total number of samples rejected due to not being out of the expected order.
+    metric_name: prometheus_target_scrapes_sample_out_of_order_total
+    instrument: counter
+    unit: "{sample}"
+
+  - id: metric.prometheus_target_sync_failed_total
+    type: metric
+    stability: development
+    brief: Total number of target sync failures.
+    metric_name: prometheus_target_sync_failed_total
+    instrument: counter
+    unit: "{sync}"
+    attributes:
+      - id: scrape_job
+        type: string
+        stability: development
+        brief: The scrape job name.
+        examples:
+          - prometheus
+          - node_exporter
+
+  - id: metric.prometheus_target_sync_length_seconds
+    type: metric
+    stability: development
+    brief: Actual interval to sync the scrape pool.
+    metric_name: prometheus_target_sync_length_seconds
+    instrument: histogram
+    unit: s
+    attributes:
+      - id: scrape_job
+        type: string
+        stability: development
+        brief: The scrape job name.
+        examples:
+          - prometheus
+          - node_exporter
+    annotations:
+      prometheus:
+        histogram_type: summary
+        objectives:
+          0.01: 0.001
+          0.05: 0.005
+          0.5: 0.05
+          0.9: 0.01
+          0.99: 0.001
+
+  - id: metric.prometheus_target_sync_length_histogram_seconds
+    type: metric
+    stability: development
+    brief: Actual interval to sync the scrape pool as a histogram.
+    metric_name: prometheus_target_sync_length_histogram_seconds
+    instrument: histogram
+    unit: s
+    attributes:
+      - id: scrape_job
+        type: string
+        stability: development
+        brief: The scrape job name.
+        examples:
+          - prometheus
+          - node_exporter
+    annotations:
+      prometheus:
+        histogram_type: mixed_histogram
+        buckets: [0.01, 0.1, 1, 10]
+        bucket_factor: 1.1
+        max_bucket_number: 100
+        min_reset_duration: "1h"

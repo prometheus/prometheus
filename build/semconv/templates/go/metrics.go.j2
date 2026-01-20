@@ -1,0 +1,249 @@
+{% import 'helpers.j2' as h -%}
+{# Flatten all metrics from all groups into a single list #}
+{%- set all_metrics = ctx | map(attribute="metrics") | flatten | list -%}
+{# Extract all unique attributes from all metrics #}
+{%- set all_attrs = all_metrics | selectattr("attributes") | map(attribute="attributes") | flatten | unique(attribute="name") | sort(attribute="name") -%}
+{# Check if we need time import - look for native/mixed histograms #}
+{%- set ns = namespace(needs_time=false) -%}
+{%- for metric in all_metrics -%}
+{%- if metric.annotations is defined and metric.annotations.prometheus is defined -%}
+{%- if metric.annotations.prometheus.histogram_type in ["native_histogram", "mixed_histogram"] -%}
+{%- set ns.needs_time = true -%}
+{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
+// Code generated from semantic convention specification. DO NOT EDIT.
+
+// Package metrics provides Prometheus instrumentation types for metrics
+// defined in this semantic convention registry.
+package metrics
+
+import (
+{%- if all_attrs | selectattr("type","!=","string") | list | length > 0 %}
+	"fmt"
+{% endif %}
+{%- if ns.needs_time %}
+	"time"
+{% endif %}
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+// Attribute is an interface for metric label attributes.
+type Attribute interface {
+	ID() string
+	Value() string
+}
+{%- for attr in all_attrs %}
+{%- set name = h.to_go_name(attr.name, "") %}
+
+{%- if attr.type.members is not defined %}
+type {{ name }}Attr {{ attr.type }}
+{%- else %}
+type {{ name }}Attr {{ h.member_type(attr.type.members[0]) }}
+
+var (
+{%- for m in attr.type.members %}
+	{%- set m_name = name ~ h.to_go_name(m.id, "") -%}
+	{% if attr.type.members[0].value is string -%}
+	{%- set m_value = '"' + m.value + '"' -%}
+	{%- else -%}
+	{%- set m_value = m.value -%}
+	{%- endif -%}
+	{%- if m.brief is defined %}
+	{%- set m_brief = m.brief -%}
+	{%- else %}
+	{%- set m_brief = "standardized value " + m_value + ' of ' + name + 'Attr.' -%}
+	{%- endif %}
+{{ h.prefix_brief(m_brief, m_name ~ " is ") | comment(format="go_1tab") }}
+	{{ m_name }} {{ name }}Attr = {{ m_value }}
+{%- endfor %}
+)
+{%- endif %}
+
+func (a {{ name }}Attr) ID() string {
+	return "{{ attr.name }}"
+}
+
+func (a {{ name }}Attr) Value() string {
+	{% if attr.type == "string" -%}
+	return string(a)
+	{%- elif attr.type == "int" -%}
+	return fmt.Sprintf("%d", a)
+	{%- else -%}
+	return fmt.Sprintf("%v", a)
+	{%- endif %}
+}
+{%- endfor %}
+
+{% macro for_each_attr(attrs) %}
+{%- for raw in attrs -%}
+{%- set attr = namespace(raw) -%}
+{%- set attr.id = attr.name -%}
+{%- set attr.namespace = attr.name | attribute_namespace -%}
+{%- set attr.name = attr.name | attribute_id | pascal_case -%}
+{%- set attr.arg = attr.name | replace("Type", "Kind") | camel_case -%}
+{%- set attr.fullname = attr.id | pascal_case -%}
+{%- set attr.pkg = "" -%}
+{%- set attr.type = attr.fullname+"Attr" -%}
+{%- set attr.ref = attr.pkg+attr.type -%}
+{%- set attr.getter = attr.id|pascal_case -%}
+{%- set attr.field = "Attr"+attr.fullname -%}
+{{ caller(attr) }}
+{%- endfor -%}
+{% endmacro %}
+{%- for metric in all_metrics %}
+{%- set metric_name = h.to_go_name(metric.metric_name, "") %}
+{%- set metric_attr = metric.attributes | default([]) | sort -%}
+{%- set has_labels = (metric_attr | length) > 0 -%}
+{%- set prom = (metric.annotations | default({})).prometheus | default({}) -%}
+{#- Determine the actual Prometheus type based on instrument and histogram_type -#}
+{%- if metric.instrument == "histogram" and prom.histogram_type == "summary" -%}
+{%- set metric_inst = "Summary" -%}
+{%- else -%}
+{%- set metric_inst = (metric.instrument | default("gauge")) | map_text("go_instrument_type") -%}
+{%- endif -%}
+
+{{ h.metric_typedoc(metric, "") | comment | trim }}
+type {{ metric_name }} struct {
+{%- if has_labels %}
+	*prometheus.{{ metric_inst }}Vec
+{%- else %}
+	prometheus.{{ metric_inst }}
+{%- endif %}
+}
+
+{{ ["New" ~ metric_name ~ " returns a new " ~ metric_name ~ " instrument."] | comment }}
+func New{{ metric_name }}() {{ metric_name }} {
+{%- if has_labels %}
+	labels := []string{
+		{%- call(attr) for_each_attr(metric_attr) %}
+		"{{ attr.id }}",
+		{%- endcall %}
+	}
+{%- endif %}
+{%- if metric.instrument == "histogram" and prom.histogram_type %}
+{%- if prom.histogram_type == "summary" %}
+	return {{ metric_name }}{
+{%- if has_labels %}
+		SummaryVec: prometheus.NewSummaryVec(prometheus.SummaryOpts{
+{%- else %}
+		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
+{%- endif %}
+			Name: "{{ metric.metric_name }}",
+			Help: "{{ metric.brief | default("") | trim }}",
+			Objectives: map[float64]float64{
+{%- for quantile, error in prom.objectives.items() %}
+				{{ quantile }}: {{ error }},
+{%- endfor %}
+			},
+{%- if has_labels %}
+		}, labels),
+{%- else %}
+		}),
+{%- endif %}
+	}
+{%- elif prom.histogram_type == "classic_histogram" %}
+	return {{ metric_name }}{
+{%- if has_labels %}
+		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+{%- else %}
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+{%- endif %}
+			Name:    "{{ metric.metric_name }}",
+			Help:    "{{ metric.brief | default("") | trim }}",
+			Buckets: {{ h.buckets_to_go(prom) }},
+{%- if has_labels %}
+		}, labels),
+{%- else %}
+		}),
+{%- endif %}
+	}
+{%- elif prom.histogram_type == "native_histogram" %}
+	return {{ metric_name }}{
+{%- if has_labels %}
+		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+{%- else %}
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+{%- endif %}
+			Name:                            "{{ metric.metric_name }}",
+			Help:                            "{{ metric.brief | default("") | trim }}",
+			NativeHistogramBucketFactor:     {{ prom.bucket_factor }},
+			NativeHistogramMaxBucketNumber:  {{ prom.max_bucket_number }},
+			NativeHistogramMinResetDuration: {{ h.duration_to_go(prom.min_reset_duration) }},
+{%- if has_labels %}
+		}, labels),
+{%- else %}
+		}),
+{%- endif %}
+	}
+{%- elif prom.histogram_type == "mixed_histogram" %}
+	return {{ metric_name }}{
+{%- if has_labels %}
+		HistogramVec: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+{%- else %}
+		Histogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+{%- endif %}
+			Name:                            "{{ metric.metric_name }}",
+			Help:                            "{{ metric.brief | default("") | trim }}",
+			Buckets:                         {{ h.buckets_to_go(prom) }},
+			NativeHistogramBucketFactor:     {{ prom.bucket_factor }},
+			NativeHistogramMaxBucketNumber:  {{ prom.max_bucket_number }},
+			NativeHistogramMinResetDuration: {{ h.duration_to_go(prom.min_reset_duration) }},
+{%- if has_labels %}
+		}, labels),
+{%- else %}
+		}),
+{%- endif %}
+	}
+{%- endif %}
+{%- else %}
+	return {{ metric_name }}{
+{%- if has_labels %}
+		{{ metric_inst }}Vec: prometheus.New{{ metric_inst }}Vec(prometheus.{{ metric_inst }}Opts{
+			Name: "{{ metric.metric_name }}",
+			Help: "{{ metric.brief | default("") | trim }}",
+		}, labels),
+{%- else %}
+		{{ metric_inst }}: prometheus.New{{ metric_inst }}(prometheus.{{ metric_inst }}Opts{
+			Name: "{{ metric.metric_name }}",
+			Help: "{{ metric.brief | default("") | trim }}",
+		}),
+{%- endif %}
+	}
+{%- endif %}
+}
+{%- if has_labels %}
+
+type {{ metric_name }}Attr interface {
+	Attribute
+	impl{{ metric_name }}()
+}
+{% call(attr) for_each_attr(metric_attr) %}
+func (a {{ attr.type }}) impl{{ metric_name }}() {}
+{%- endcall %}
+
+func (m {{ metric_name }}) With(
+{%- call(attr) for_each_attr(metric_attr|required) %}
+	{{ attr.arg }} {{ attr.type }},
+{%- endcall %}
+	extra ...{{ metric_name }}Attr,
+) prometheus.{{ metric_inst | replace("Histogram", "Observer") | replace("Summary", "Observer") }} {
+	labels := prometheus.Labels{
+		{%- call(attr) for_each_attr(metric_attr|required) %}
+		"{{ attr.id }}": {{ attr.arg }}.Value(),
+		{%- endcall %}
+		{%- call(attr) for_each_attr(metric_attr|not_required) %}
+		"{{ attr.id }}": "",
+		{%- endcall %}
+	}
+	for _, v := range extra {
+		labels[v.ID()] = v.Value()
+	}
+	return m.{{ metric_inst }}Vec.With(labels)
+}
+{%- endif %}
+{%- if not loop.last %}
+
+{% endif %}
+{%- endfor %}
+

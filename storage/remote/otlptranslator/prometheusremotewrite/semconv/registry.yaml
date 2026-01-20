@@ -1,0 +1,21 @@
+# Semantic convention registry for Prometheus OTLP translator metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_api_otlp_appended_samples_without_metadata_total
+    type: metric
+    stability: development
+    brief: The total number of samples ingested from OTLP without corresponding metadata.
+    metric_name: prometheus_api_otlp_appended_samples_without_metadata_total
+    instrument: counter
+    unit: "{sample}"
+
+  - id: metric.prometheus_api_otlp_out_of_order_exemplars_total
+    type: metric
+    stability: development
+    brief: The total number of received OTLP exemplars which were rejected because they were out of order.
+    metric_name: prometheus_api_otlp_out_of_order_exemplars_total
+    instrument: counter
+    unit: "{exemplar}"

@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	semconv "github.com/prometheus/prometheus/promql/semconv"
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -77,10 +78,17 @@ const (
 )
 
 type engineMetrics struct {
-	currentQueries            prometheus.Gauge
-	maxConcurrentQueries      prometheus.Gauge
-	queryLogEnabled           prometheus.Gauge
-	queryLogFailures          prometheus.Counter
+	currentQueries       semconv.PrometheusEngineQueries
+	maxConcurrentQueries semconv.PrometheusEngineQueriesConcurrentMax
+	queryLogEnabled      semconv.PrometheusEngineQueryLogEnabled
+	queryLogFailures     semconv.PrometheusEngineQueryLogFailuresTotal
+	querySamples         semconv.PrometheusEngineQuerySamplesTotal
+
+	// Query duration metrics - store both Vec and pre-labeled observers
+	queryDurationSummary   semconv.PrometheusEngineQueryDurationSeconds
+	queryDurationHistogram semconv.PrometheusEngineQueryDurationHistogramSeconds
+
+	// Pre-labeled observers for each query phase
 	queryQueueTime            prometheus.Observer
 	queryQueueTimeHistogram   prometheus.Observer
 	queryPrepareTime          prometheus.Observer
@@ -89,7 +97,6 @@ type engineMetrics struct {
 	queryInnerEvalHistogram   prometheus.Observer
 	queryResultSort           prometheus.Observer
 	queryResultSortHistogram  prometheus.Observer
-	querySamples              prometheus.Counter
 }
 
 type (
@@ -361,74 +368,32 @@ func NewEngine(opts EngineOpts) *Engine {
 		opts.Logger = promslog.NewNopLogger()
 	}
 
-	queryResultSummary := prometheus.NewSummaryVec(prometheus.SummaryOpts{
-		Namespace:  namespace,
-		Subsystem:  subsystem,
-		Name:       "query_duration_seconds",
-		Help:       "Query timings",
-		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-	},
-		[]string{"slice"},
-	)
+	queryDurationSummary := semconv.NewPrometheusEngineQueryDurationSeconds()
+	queryDurationHistogram := semconv.NewPrometheusEngineQueryDurationHistogramSeconds()
 
-	queryResultHistogram := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:                       namespace,
-		Subsystem:                       subsystem,
-		Name:                            "query_duration_histogram_seconds",
-		Help:                            "The duration of various parts of PromQL query execution.",
-		Buckets:                         []float64{.01, .1, 1, 10},
-		NativeHistogramBucketFactor:     1.1,
-		NativeHistogramMaxBucketNumber:  100,
-		NativeHistogramMinResetDuration: 1 * time.Hour,
-	},
-		[]string{"slice"},
-	)
+	m := &engineMetrics{
+		currentQueries:         semconv.NewPrometheusEngineQueries(),
+		maxConcurrentQueries:   semconv.NewPrometheusEngineQueriesConcurrentMax(),
+		queryLogEnabled:        semconv.NewPrometheusEngineQueryLogEnabled(),
+		queryLogFailures:       semconv.NewPrometheusEngineQueryLogFailuresTotal(),
+		querySamples:           semconv.NewPrometheusEngineQuerySamplesTotal(),
+		queryDurationSummary:   queryDurationSummary,
+		queryDurationHistogram: queryDurationHistogram,
 
-	metrics := &engineMetrics{
-		currentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "queries",
-			Help:      "The current number of queries being executed or waiting.",
-		}),
-		queryLogEnabled: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "query_log_enabled",
-			Help:      "State of the query log.",
-		}),
-		queryLogFailures: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "query_log_failures_total",
-			Help:      "The number of query log failures.",
-		}),
-		maxConcurrentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "queries_concurrent_max",
-			Help:      "The max number of concurrent queries.",
-		}),
-		querySamples: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "query_samples_total",
-			Help:      "The total number of samples loaded by all queries.",
-		}),
-		queryQueueTime:            queryResultSummary.WithLabelValues("queue_time"),
-		queryQueueTimeHistogram:   queryResultHistogram.WithLabelValues("queue_time"),
-		queryPrepareTime:          queryResultSummary.WithLabelValues("prepare_time"),
-		queryPrepareTimeHistogram: queryResultHistogram.WithLabelValues("prepare_time"),
-		queryInnerEval:            queryResultSummary.WithLabelValues("inner_eval"),
-		queryInnerEvalHistogram:   queryResultHistogram.WithLabelValues("inner_eval"),
-		queryResultSort:           queryResultSummary.WithLabelValues("result_sort"),
-		queryResultSortHistogram:  queryResultHistogram.WithLabelValues("result_sort"),
+		queryQueueTime:            queryDurationSummary.With(semconv.SliceAttr("queue_time")),
+		queryQueueTimeHistogram:   queryDurationHistogram.With(semconv.SliceAttr("queue_time")),
+		queryPrepareTime:          queryDurationSummary.With(semconv.SliceAttr("prepare_time")),
+		queryPrepareTimeHistogram: queryDurationHistogram.With(semconv.SliceAttr("prepare_time")),
+		queryInnerEval:            queryDurationSummary.With(semconv.SliceAttr("inner_eval")),
+		queryInnerEvalHistogram:   queryDurationHistogram.With(semconv.SliceAttr("inner_eval")),
+		queryResultSort:           queryDurationSummary.With(semconv.SliceAttr("result_sort")),
+		queryResultSortHistogram:  queryDurationHistogram.With(semconv.SliceAttr("result_sort")),
 	}
 
 	if t := opts.ActiveQueryTracker; t != nil {
-		metrics.maxConcurrentQueries.Set(float64(t.GetMaxConcurrent()))
+		m.maxConcurrentQueries.Set(float64(t.GetMaxConcurrent()))
 	} else {
-		metrics.maxConcurrentQueries.Set(-1)
+		m.maxConcurrentQueries.Set(-1)
 	}
 
 	if opts.LookbackDelta == 0 {
@@ -440,13 +405,13 @@ func NewEngine(opts EngineOpts) *Engine {
 
 	if opts.Reg != nil {
 		opts.Reg.MustRegister(
-			metrics.currentQueries,
-			metrics.maxConcurrentQueries,
-			metrics.queryLogEnabled,
-			metrics.queryLogFailures,
-			metrics.querySamples,
-			queryResultSummary,
-			queryResultHistogram,
+			m.currentQueries.Gauge,
+			m.maxConcurrentQueries.Gauge,
+			m.queryLogEnabled.Gauge,
+			m.queryLogFailures.Counter,
+			m.querySamples.Counter,
+			m.queryDurationSummary.SummaryVec,
+			m.queryDurationHistogram.HistogramVec,
 		)
 	}
 
@@ -465,7 +430,7 @@ func NewEngine(opts EngineOpts) *Engine {
 	return &Engine{
 		timeout:                  opts.Timeout,
 		logger:                   opts.Logger,
-		metrics:                  metrics,
+		metrics:                  m,
 		maxSamplesPerQuery:       opts.MaxSamples,
 		activeQueryTracker:       opts.ActiveQueryTracker,
 		lookbackDelta:            opts.LookbackDelta,

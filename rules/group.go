@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	semconv "github.com/prometheus/prometheus/rules/semconv"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -911,165 +912,61 @@ const namespace = "prometheus"
 
 // Metrics for rule evaluation.
 type Metrics struct {
-	EvalDuration               prometheus.Summary
-	EvalDurationHistogram      prometheus.Histogram
-	IterationDuration          prometheus.Summary
-	IterationDurationHistogram prometheus.Histogram
-	IterationsMissed           *prometheus.CounterVec
-	IterationsScheduled        *prometheus.CounterVec
-	EvalTotal                  *prometheus.CounterVec
-	EvalFailures               *prometheus.CounterVec
-	GroupInterval              *prometheus.GaugeVec
-	GroupLastEvalTime          *prometheus.GaugeVec
-	GroupLastDuration          *prometheus.GaugeVec
-	GroupLastRuleDurationSum   *prometheus.GaugeVec
-	GroupLastRestoreDuration   *prometheus.GaugeVec
-	GroupRules                 *prometheus.GaugeVec
-	GroupSamples               *prometheus.GaugeVec
+	EvalDuration               semconv.PrometheusRuleEvaluationDurationSeconds
+	EvalDurationHistogram      semconv.PrometheusRuleEvaluationDurationHistogramSeconds
+	IterationDuration          semconv.PrometheusRuleGroupDurationSeconds
+	IterationDurationHistogram semconv.PrometheusRuleGroupDurationHistogramSeconds
+	IterationsMissed           semconv.PrometheusRuleGroupIterationsMissedTotal
+	IterationsScheduled        semconv.PrometheusRuleGroupIterationsTotal
+	EvalTotal                  semconv.PrometheusRuleEvaluationsTotal
+	EvalFailures               semconv.PrometheusRuleEvaluationFailuresTotal
+	GroupInterval              semconv.PrometheusRuleGroupIntervalSeconds
+	GroupLastEvalTime          semconv.PrometheusRuleGroupLastEvaluationTimestampSeconds
+	GroupLastDuration          semconv.PrometheusRuleGroupLastDurationSeconds
+	GroupLastRuleDurationSum   semconv.PrometheusRuleGroupLastRuleDurationSumSeconds
+	GroupLastRestoreDuration   semconv.PrometheusRuleGroupLastRestoreDurationSeconds
+	GroupRules                 semconv.PrometheusRuleGroupRules
+	GroupSamples               semconv.PrometheusRuleGroupLastEvaluationSamples
 }
 
 // NewGroupMetrics creates a new instance of Metrics and registers it with the provided registerer,
 // if not nil.
 func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
-		EvalDuration: prometheus.NewSummary(
-			prometheus.SummaryOpts{
-				Namespace:  namespace,
-				Name:       "rule_evaluation_duration_seconds",
-				Help:       "The duration for a rule to execute.",
-				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-			}),
-		EvalDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Namespace:                       namespace,
-			Name:                            "rule_evaluation_duration_histogram_seconds",
-			Help:                            "The duration for a rule to execute.",
-			Buckets:                         []float64{.01, .1, 1, 10},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-		}),
-		IterationDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Namespace:  namespace,
-			Name:       "rule_group_duration_seconds",
-			Help:       "The duration of rule group evaluations.",
-			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
-		}),
-		IterationDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Namespace:                       namespace,
-			Name:                            "rule_group_duration_histogram_seconds",
-			Help:                            "The duration of rule group evaluations.",
-			Buckets:                         []float64{.01, .1, 1, 10},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-		}),
-		IterationsMissed: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: namespace,
-				Name:      "rule_group_iterations_missed_total",
-				Help:      "The total number of rule group evaluations missed due to slow rule group evaluation.",
-			},
-			[]string{"rule_group"},
-		),
-		IterationsScheduled: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: namespace,
-				Name:      "rule_group_iterations_total",
-				Help:      "The total number of scheduled rule group evaluations, whether executed or missed.",
-			},
-			[]string{"rule_group"},
-		),
-		EvalTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: namespace,
-				Name:      "rule_evaluations_total",
-				Help:      "The total number of rule evaluations.",
-			},
-			[]string{"rule_group"},
-		),
-		EvalFailures: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: namespace,
-				Name:      "rule_evaluation_failures_total",
-				Help:      "The total number of rule evaluation failures.",
-			},
-			[]string{"rule_group"},
-		),
-		GroupInterval: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: namespace,
-				Name:      "rule_group_interval_seconds",
-				Help:      "The interval of a rule group.",
-			},
-			[]string{"rule_group"},
-		),
-		GroupLastEvalTime: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: namespace,
-				Name:      "rule_group_last_evaluation_timestamp_seconds",
-				Help:      "The timestamp of the last rule group evaluation in seconds.",
-			},
-			[]string{"rule_group"},
-		),
-		GroupLastDuration: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: namespace,
-				Name:      "rule_group_last_duration_seconds",
-				Help:      "The duration of the last rule group evaluation.",
-			},
-			[]string{"rule_group"},
-		),
-		GroupLastRuleDurationSum: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: namespace,
-				Name:      "rule_group_last_rule_duration_sum_seconds",
-				Help:      "The sum of time in seconds it took to evaluate each rule in the group regardless of concurrency. This should be higher than the group duration if rules are evaluated concurrently.",
-			},
-			[]string{"rule_group"},
-		),
-		GroupLastRestoreDuration: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: namespace,
-				Name:      "rule_group_last_restore_duration_seconds",
-				Help:      "The duration of the last alert rules alerts restoration using the `ALERTS_FOR_STATE` series.",
-			},
-			[]string{"rule_group"},
-		),
-		GroupRules: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: namespace,
-				Name:      "rule_group_rules",
-				Help:      "The number of rules.",
-			},
-			[]string{"rule_group"},
-		),
-		GroupSamples: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: namespace,
-				Name:      "rule_group_last_evaluation_samples",
-				Help:      "The number of samples returned during the last rule group evaluation.",
-			},
-			[]string{"rule_group"},
-		),
+		EvalDuration:               semconv.NewPrometheusRuleEvaluationDurationSeconds(),
+		EvalDurationHistogram:      semconv.NewPrometheusRuleEvaluationDurationHistogramSeconds(),
+		IterationDuration:          semconv.NewPrometheusRuleGroupDurationSeconds(),
+		IterationDurationHistogram: semconv.NewPrometheusRuleGroupDurationHistogramSeconds(),
+		IterationsMissed:           semconv.NewPrometheusRuleGroupIterationsMissedTotal(),
+		IterationsScheduled:        semconv.NewPrometheusRuleGroupIterationsTotal(),
+		EvalTotal:                  semconv.NewPrometheusRuleEvaluationsTotal(),
+		EvalFailures:               semconv.NewPrometheusRuleEvaluationFailuresTotal(),
+		GroupInterval:              semconv.NewPrometheusRuleGroupIntervalSeconds(),
+		GroupLastEvalTime:          semconv.NewPrometheusRuleGroupLastEvaluationTimestampSeconds(),
+		GroupLastDuration:          semconv.NewPrometheusRuleGroupLastDurationSeconds(),
+		GroupLastRuleDurationSum:   semconv.NewPrometheusRuleGroupLastRuleDurationSumSeconds(),
+		GroupLastRestoreDuration:   semconv.NewPrometheusRuleGroupLastRestoreDurationSeconds(),
+		GroupRules:                 semconv.NewPrometheusRuleGroupRules(),
+		GroupSamples:               semconv.NewPrometheusRuleGroupLastEvaluationSamples(),
 	}
 
 	if reg != nil {
 		reg.MustRegister(
-			m.EvalDuration,
-			m.EvalDurationHistogram,
-			m.IterationDuration,
-			m.IterationDurationHistogram,
-			m.IterationsMissed,
-			m.IterationsScheduled,
-			m.EvalTotal,
-			m.EvalFailures,
-			m.GroupInterval,
-			m.GroupLastEvalTime,
-			m.GroupLastDuration,
-			m.GroupLastRuleDurationSum,
-			m.GroupLastRestoreDuration,
-			m.GroupRules,
-			m.GroupSamples,
+			m.EvalDuration.Summary,
+			m.EvalDurationHistogram.Histogram,
+			m.IterationDuration.Summary,
+			m.IterationDurationHistogram.Histogram,
+			m.IterationsMissed.CounterVec,
+			m.IterationsScheduled.CounterVec,
+			m.EvalTotal.CounterVec,
+			m.EvalFailures.CounterVec,
+			m.GroupInterval.GaugeVec,
+			m.GroupLastEvalTime.GaugeVec,
+			m.GroupLastDuration.GaugeVec,
+			m.GroupLastRuleDurationSum.GaugeVec,
+			m.GroupLastRestoreDuration.GaugeVec,
+			m.GroupRules.GaugeVec,
+			m.GroupSamples.GaugeVec,
 		)
 	}
 

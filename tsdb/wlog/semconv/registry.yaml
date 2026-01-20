@@ -1,0 +1,20 @@
+# Semantic convention registry for Prometheus TSDB WAL log metrics.
+#
+# This file is the source of truth for these metrics.
+# Run `make generate-semconv` to regenerate the Go code.
+
+groups:
+  - id: metric.prometheus_tsdb_wal_reader_corruption_errors_total
+    type: metric
+    stability: development
+    brief: Errors encountered when reading the WAL.
+    metric_name: prometheus_tsdb_wal_reader_corruption_errors_total
+    instrument: counter
+    unit: "{error}"
+    attributes:
+      - id: error
+        type: string
+        stability: development
+        brief: The type of error.
+        examples:
+          - invalid

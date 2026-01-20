@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	metrics "github.com/prometheus/prometheus/notifier/semconv"
 )
 
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
@@ -99,8 +100,8 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		}
 
 		// This will initialize the Counters for the AM to 0.
-		s.metrics.sent.WithLabelValues(us)
-		s.metrics.errors.WithLabelValues(us)
+		s.metrics.sent.With(metrics.AlertmanagerAttr(us))
+		s.metrics.errors.With(metrics.AlertmanagerAttr(us))
 
 		seen[us] = struct{}{}
 		s.ams = append(s.ams, am)
@@ -111,10 +112,10 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 		if _, ok := seen[us]; ok {
 			continue
 		}
-		s.metrics.latencySummary.DeleteLabelValues(us)
-		s.metrics.latencyHistogram.DeleteLabelValues(us)
-		s.metrics.sent.DeleteLabelValues(us)
-		s.metrics.errors.DeleteLabelValues(us)
+		s.metrics.latencySummary.SummaryVec.DeleteLabelValues(us)
+		s.metrics.latencyHistogram.HistogramVec.DeleteLabelValues(us)
+		s.metrics.sent.CounterVec.DeleteLabelValues(us)
+		s.metrics.errors.CounterVec.DeleteLabelValues(us)
 		seen[us] = struct{}{}
 	}
 }
