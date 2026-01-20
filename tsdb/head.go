@@ -443,16 +443,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		wblReplayUnknownRefsTotal: semconv.NewPrometheusTSDBWBLReplayUnknownRefsTotal(),
 	}
 
-	m.series = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_head_series",
-		Help: "Total number of series in the head block.",
-	}, func() float64 {
+	m.series = prometheus.NewGaugeFunc(semconv.PrometheusTSDBHeadSeriesOpts(), func() float64 {
 		return float64(h.NumSeries())
 	})
-	m.staleSeries = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_head_stale_series",
-		Help: "Total number of stale series in the head block.",
-	}, func() float64 {
+	m.staleSeries = prometheus.NewGaugeFunc(semconv.PrometheusTSDBHeadStaleSeriesOpts(), func() float64 {
 		return float64(h.NumStaleSeries())
 	})
 
@@ -488,34 +482,19 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.snapshotReplayErrorTotal.Counter,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
-			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-				Name: "prometheus_tsdb_head_max_time",
-				Help: "Maximum timestamp of the head block. The unit is decided by the library consumer.",
-			}, func() float64 {
+			prometheus.NewGaugeFunc(semconv.PrometheusTSDBHeadMaxTimeOpts(), func() float64 {
 				return float64(h.MaxTime())
 			}),
-			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-				Name: "prometheus_tsdb_head_min_time",
-				Help: "Minimum time bound of the head block. The unit is decided by the library consumer.",
-			}, func() float64 {
+			prometheus.NewGaugeFunc(semconv.PrometheusTSDBHeadMinTimeOpts(), func() float64 {
 				return float64(h.MinTime())
 			}),
-			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-				Name: "prometheus_tsdb_isolation_low_watermark",
-				Help: "The lowest TSDB append ID that is still referenced.",
-			}, func() float64 {
+			prometheus.NewGaugeFunc(semconv.PrometheusTSDBIsolationLowWatermarkOpts(), func() float64 {
 				return float64(h.iso.lowWatermark())
 			}),
-			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-				Name: "prometheus_tsdb_isolation_high_watermark",
-				Help: "The highest TSDB append ID that has been given out.",
-			}, func() float64 {
+			prometheus.NewGaugeFunc(semconv.PrometheusTSDBIsolationHighWatermarkOpts(), func() float64 {
 				return float64(h.iso.lastAppendID())
 			}),
-			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-				Name: "prometheus_tsdb_head_chunks_storage_size_bytes",
-				Help: "Size of the chunks_head directory.",
-			}, func() float64 {
+			prometheus.NewGaugeFunc(semconv.PrometheusTSDBHeadChunksStorageSizeBytesOpts(), func() float64 {
 				val, err := h.chunkDiskMapper.Size()
 				if err != nil {
 					h.logger.Error("Failed to calculate size of \"chunks_head\" dir",

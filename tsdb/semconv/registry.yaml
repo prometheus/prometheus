@@ -12,6 +12,9 @@ groups:
     metric_name: prometheus_tsdb_blocks_loaded
     instrument: gauge
     unit: "{block}"
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_tsdb_storage_blocks_bytes
     type: metric
@@ -190,6 +193,9 @@ groups:
     metric_name: prometheus_tsdb_lowest_timestamp
     instrument: gauge
     unit: "1"
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_tsdb_lowest_timestamp_seconds
     type: metric
@@ -288,6 +294,9 @@ groups:
     metric_name: prometheus_tsdb_head_chunks_storage_size_bytes
     instrument: gauge
     unit: By
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_tsdb_head_gc_duration_seconds
     type: metric
@@ -308,6 +317,9 @@ groups:
     metric_name: prometheus_tsdb_head_max_time
     instrument: gauge
     unit: "1"
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_tsdb_head_max_time_seconds
     type: metric
@@ -324,6 +336,9 @@ groups:
     metric_name: prometheus_tsdb_head_min_time
     instrument: gauge
     unit: "1"
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_tsdb_head_min_time_seconds
     type: metric
@@ -372,6 +387,9 @@ groups:
     metric_name: prometheus_tsdb_head_series
     instrument: gauge
     unit: "{series}"
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_tsdb_head_series_created_total
     type: metric
@@ -404,6 +422,9 @@ groups:
     metric_name: prometheus_tsdb_head_stale_series
     instrument: gauge
     unit: "{series}"
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_tsdb_head_truncations_failed_total
     type: metric
@@ -429,6 +450,9 @@ groups:
     metric_name: prometheus_tsdb_isolation_high_watermark
     instrument: gauge
     unit: "1"
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   - id: metric.prometheus_tsdb_isolation_low_watermark
     type: metric
@@ -437,6 +461,9 @@ groups:
     metric_name: prometheus_tsdb_isolation_low_watermark
     instrument: gauge
     unit: "1"
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   # Mmap metrics
   - id: metric.prometheus_tsdb_mmap_chunk_corruptions_total
@@ -672,6 +699,9 @@ groups:
     metric_name: prometheus_tsdb_symbol_table_size_bytes
     instrument: gauge
     unit: By
+    annotations:
+      prometheus:
+        only_opts: true  # Implemented as GaugeFunc
 
   # Tombstone metrics
   - id: metric.prometheus_tsdb_tombstone_cleanup_seconds

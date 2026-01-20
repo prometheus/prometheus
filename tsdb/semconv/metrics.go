@@ -36,17 +36,10 @@ func (a TypeAttr) Value() string {
 }
 
 // PrometheusTSDBBlocksLoaded records the number of currently loaded data blocks.
-type PrometheusTSDBBlocksLoaded struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBBlocksLoaded returns a new PrometheusTSDBBlocksLoaded instrument.
-func NewPrometheusTSDBBlocksLoaded() PrometheusTSDBBlocksLoaded {
-	return PrometheusTSDBBlocksLoaded{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_blocks_loaded",
-			Help: "Number of currently loaded data blocks.",
-		}),
+func PrometheusTSDBBlocksLoadedOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_blocks_loaded",
+		Help: "Number of currently loaded data blocks.",
 	}
 }
 
@@ -433,17 +426,10 @@ func NewPrometheusTSDBHeadChunksRemovedTotal() PrometheusTSDBHeadChunksRemovedTo
 }
 
 // PrometheusTSDBHeadChunksStorageSizeBytes records the size of the chunks_head directory.
-type PrometheusTSDBHeadChunksStorageSizeBytes struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBHeadChunksStorageSizeBytes returns a new PrometheusTSDBHeadChunksStorageSizeBytes instrument.
-func NewPrometheusTSDBHeadChunksStorageSizeBytes() PrometheusTSDBHeadChunksStorageSizeBytes {
-	return PrometheusTSDBHeadChunksStorageSizeBytes{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_chunks_storage_size_bytes",
-			Help: "Size of the chunks_head directory.",
-		}),
+func PrometheusTSDBHeadChunksStorageSizeBytesOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_chunks_storage_size_bytes",
+		Help: "Size of the chunks_head directory.",
 	}
 }
 
@@ -464,17 +450,10 @@ func NewPrometheusTSDBHeadGCDurationSeconds() PrometheusTSDBHeadGCDurationSecond
 }
 
 // PrometheusTSDBHeadMaxTime records the maximum timestamp of the head block.
-type PrometheusTSDBHeadMaxTime struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBHeadMaxTime returns a new PrometheusTSDBHeadMaxTime instrument.
-func NewPrometheusTSDBHeadMaxTime() PrometheusTSDBHeadMaxTime {
-	return PrometheusTSDBHeadMaxTime{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_max_time",
-			Help: "Maximum timestamp of the head block.",
-		}),
+func PrometheusTSDBHeadMaxTimeOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_max_time",
+		Help: "Maximum timestamp of the head block.",
 	}
 }
 
@@ -494,17 +473,10 @@ func NewPrometheusTSDBHeadMaxTimeSeconds() PrometheusTSDBHeadMaxTimeSeconds {
 }
 
 // PrometheusTSDBHeadMinTime records the minimum timestamp of the head block.
-type PrometheusTSDBHeadMinTime struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBHeadMinTime returns a new PrometheusTSDBHeadMinTime instrument.
-func NewPrometheusTSDBHeadMinTime() PrometheusTSDBHeadMinTime {
-	return PrometheusTSDBHeadMinTime{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_min_time",
-			Help: "Minimum timestamp of the head block.",
-		}),
+func PrometheusTSDBHeadMinTimeOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_min_time",
+		Help: "Minimum timestamp of the head block.",
 	}
 }
 
@@ -598,17 +570,10 @@ func (m PrometheusTSDBHeadSamplesAppendedTotal) With(
 }
 
 // PrometheusTSDBHeadSeries records the total number of series in the head block.
-type PrometheusTSDBHeadSeries struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBHeadSeries returns a new PrometheusTSDBHeadSeries instrument.
-func NewPrometheusTSDBHeadSeries() PrometheusTSDBHeadSeries {
-	return PrometheusTSDBHeadSeries{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_series",
-			Help: "Total number of series in the head block.",
-		}),
+func PrometheusTSDBHeadSeriesOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_series",
+		Help: "Total number of series in the head block.",
 	}
 }
 
@@ -658,17 +623,10 @@ func NewPrometheusTSDBHeadSeriesRemovedTotal() PrometheusTSDBHeadSeriesRemovedTo
 }
 
 // PrometheusTSDBHeadStaleSeries records the number of stale series in the head block.
-type PrometheusTSDBHeadStaleSeries struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBHeadStaleSeries returns a new PrometheusTSDBHeadStaleSeries instrument.
-func NewPrometheusTSDBHeadStaleSeries() PrometheusTSDBHeadStaleSeries {
-	return PrometheusTSDBHeadStaleSeries{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_head_stale_series",
-			Help: "Number of stale series in the head block.",
-		}),
+func PrometheusTSDBHeadStaleSeriesOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_head_stale_series",
+		Help: "Number of stale series in the head block.",
 	}
 }
 
@@ -703,47 +661,26 @@ func NewPrometheusTSDBHeadTruncationsTotal() PrometheusTSDBHeadTruncationsTotal 
 }
 
 // PrometheusTSDBIsolationHighWatermark records the isolation high watermark.
-type PrometheusTSDBIsolationHighWatermark struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBIsolationHighWatermark returns a new PrometheusTSDBIsolationHighWatermark instrument.
-func NewPrometheusTSDBIsolationHighWatermark() PrometheusTSDBIsolationHighWatermark {
-	return PrometheusTSDBIsolationHighWatermark{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_isolation_high_watermark",
-			Help: "The isolation high watermark.",
-		}),
+func PrometheusTSDBIsolationHighWatermarkOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_isolation_high_watermark",
+		Help: "The isolation high watermark.",
 	}
 }
 
 // PrometheusTSDBIsolationLowWatermark records the isolation low watermark.
-type PrometheusTSDBIsolationLowWatermark struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBIsolationLowWatermark returns a new PrometheusTSDBIsolationLowWatermark instrument.
-func NewPrometheusTSDBIsolationLowWatermark() PrometheusTSDBIsolationLowWatermark {
-	return PrometheusTSDBIsolationLowWatermark{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_isolation_low_watermark",
-			Help: "The isolation low watermark.",
-		}),
+func PrometheusTSDBIsolationLowWatermarkOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_isolation_low_watermark",
+		Help: "The isolation low watermark.",
 	}
 }
 
 // PrometheusTSDBLowestTimestamp records the lowest timestamp value stored in the database.
-type PrometheusTSDBLowestTimestamp struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBLowestTimestamp returns a new PrometheusTSDBLowestTimestamp instrument.
-func NewPrometheusTSDBLowestTimestamp() PrometheusTSDBLowestTimestamp {
-	return PrometheusTSDBLowestTimestamp{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_lowest_timestamp",
-			Help: "Lowest timestamp value stored in the database.",
-		}),
+func PrometheusTSDBLowestTimestampOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_lowest_timestamp",
+		Help: "Lowest timestamp value stored in the database.",
 	}
 }
 
@@ -1146,17 +1083,10 @@ func NewPrometheusTSDBStorageBlocksBytes() PrometheusTSDBStorageBlocksBytes {
 }
 
 // PrometheusTSDBSymbolTableSizeBytes records the size of the symbol table in bytes.
-type PrometheusTSDBSymbolTableSizeBytes struct {
-	prometheus.Gauge
-}
-
-// NewPrometheusTSDBSymbolTableSizeBytes returns a new PrometheusTSDBSymbolTableSizeBytes instrument.
-func NewPrometheusTSDBSymbolTableSizeBytes() PrometheusTSDBSymbolTableSizeBytes {
-	return PrometheusTSDBSymbolTableSizeBytes{
-		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_symbol_table_size_bytes",
-			Help: "Size of the symbol table in bytes.",
-		}),
+func PrometheusTSDBSymbolTableSizeBytesOpts() prometheus.GaugeOpts {
+	return prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_symbol_table_size_bytes",
+		Help: "Size of the symbol table in bytes.",
 	}
 }
 

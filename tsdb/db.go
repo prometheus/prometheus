@@ -39,12 +39,12 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	semconv "github.com/prometheus/prometheus/tsdb/semconv"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
+	semconv "github.com/prometheus/prometheus/tsdb/semconv"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
@@ -347,18 +347,12 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		retentionDuration:    semconv.NewPrometheusTSDBRetentionLimitSeconds(),
 	}
 
-	m.loadedBlocks = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_blocks_loaded",
-		Help: "Number of currently loaded data blocks",
-	}, func() float64 {
+	m.loadedBlocks = prometheus.NewGaugeFunc(semconv.PrometheusTSDBBlocksLoadedOpts(), func() float64 {
 		db.mtx.RLock()
 		defer db.mtx.RUnlock()
 		return float64(len(db.blocks))
 	})
-	m.symbolTableSize = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_symbol_table_size_bytes",
-		Help: "Size of symbol table in memory for loaded blocks",
-	}, func() float64 {
+	m.symbolTableSize = prometheus.NewGaugeFunc(semconv.PrometheusTSDBSymbolTableSizeBytesOpts(), func() float64 {
 		db.mtx.RLock()
 		blocks := db.blocks
 		db.mtx.RUnlock()
@@ -368,10 +362,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		}
 		return float64(symTblSize)
 	})
-	m.startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_lowest_timestamp",
-		Help: "Lowest timestamp value stored in the database. The unit is decided by the library consumer.",
-	}, func() float64 {
+	m.startTime = prometheus.NewGaugeFunc(semconv.PrometheusTSDBLowestTimestampOpts(), func() float64 {
 		db.mtx.RLock()
 		defer db.mtx.RUnlock()
 		if len(db.blocks) == 0 {

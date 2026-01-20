@@ -219,10 +219,9 @@ type PrometheusAgentTruncateDurationSeconds struct {
 func NewPrometheusAgentTruncateDurationSeconds() PrometheusAgentTruncateDurationSeconds {
 	return PrometheusAgentTruncateDurationSeconds{
 		Summary: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name: "prometheus_agent_truncate_duration_seconds",
-			Help: "Duration of WAL truncation.",
-			Objectives: map[float64]float64{
-			},
+			Name:       "prometheus_agent_truncate_duration_seconds",
+			Help:       "Duration of WAL truncation.",
+			Objectives: map[float64]float64{},
 		}),
 	}
 }
