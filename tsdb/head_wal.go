@@ -271,7 +271,10 @@ Outer:
 				idx := uint64(mSeries.ref) % uint64(concurrency)
 				processors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: walSeries.Ref, existingSeries: mSeries}
 			}
-			h.wlReplaySeriesPool.Put(v)
+			for i := range v { // Zero out to avoid retaining label data.
+				v[i].Labels = labels.EmptyLabels()
+			}
+			h.wlReplaySeriesPool.Put(v[:0])
 		case []record.RefSample:
 			samples := v
 			minValidTime := h.minValidTime.Load()
@@ -348,7 +351,8 @@ Outer:
 				}
 			}
 
-			h.wlReplaytStonesPool.Put(v)
+			clear(v) // Zero out to avoid retaining interval data.
+			h.wlReplaytStonesPool.Put(v[:0])
 		case []record.RefExemplar:
 			for _, e := range v {
 				if e.T < h.minValidTime.Load() {
@@ -361,7 +365,10 @@ Outer:
 				}
 				exemplarsInput <- e
 			}
-			h.wlReplayExemplarsPool.Put(v)
+			for i := range v { // Zero out to avoid retaining label data.
+				v[i].Labels = labels.EmptyLabels()
+			}
+			h.wlReplayExemplarsPool.Put(v[:0])
 		case []record.RefHistogramSample:
 			samples := v
 			minValidTime := h.minValidTime.Load()
@@ -396,7 +403,8 @@ Outer:
 				}
 				samples = samples[m:]
 			}
-			h.wlReplayHistogramsPool.Put(v)
+			clear(v) // Zero out to avoid retaining histogram data.
+			h.wlReplayHistogramsPool.Put(v[:0])
 		case []record.RefFloatHistogramSample:
 			samples := v
 			minValidTime := h.minValidTime.Load()
@@ -431,7 +439,8 @@ Outer:
 				}
 				samples = samples[m:]
 			}
-			h.wlReplayFloatHistogramsPool.Put(v)
+			clear(v) // Zero out to avoid retaining histogram data.
+			h.wlReplayFloatHistogramsPool.Put(v[:0])
 		case []record.RefMetadata:
 			for _, m := range v {
 				if r, ok := multiRef[m.Ref]; ok {
@@ -449,7 +458,8 @@ Outer:
 					Help: m.Help,
 				}
 			}
-			h.wlReplayMetadataPool.Put(v)
+			clear(v) // Zero out to avoid retaining metadata strings.
+			h.wlReplayMetadataPool.Put(v[:0])
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
@@ -938,7 +948,8 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				samples = samples[m:]
 			}
-			h.wlReplayHistogramsPool.Put(v)
+			clear(v) // Zero out to avoid retaining histogram data.
+			h.wlReplayHistogramsPool.Put(v[:0])
 		case []record.RefFloatHistogramSample:
 			samples := v
 			// We split up the samples into chunks of 5000 samples or less.
@@ -967,7 +978,8 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				}
 				samples = samples[m:]
 			}
-			h.wlReplayFloatHistogramsPool.Put(v)
+			clear(v) // Zero out to avoid retaining histogram data.
+			h.wlReplayFloatHistogramsPool.Put(v[:0])
 		default:
 			panic(fmt.Errorf("unexpected decodedCh type: %T", d))
 		}
