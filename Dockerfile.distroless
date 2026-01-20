@@ -1,10 +1,11 @@
-ARG ARCH="amd64"
-ARG OS="linux"
 ARG DISTROLESS_ARCH="amd64"
 
 # Use DISTROLESS_ARCH for base image selection (handles armv7->arm mapping).
 FROM gcr.io/distroless/static-debian13:nonroot-${DISTROLESS_ARCH}
 # Base image sets USER to 65532:65532 (nonroot user).
+
+ARG ARCH="amd64"
+ARG OS="linux"
 
 LABEL org.opencontainers.image.authors="The Prometheus Authors"
 LABEL org.opencontainers.image.vendor="Prometheus"
