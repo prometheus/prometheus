@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/promslog"
 
+	semconv "github.com/prometheus/prometheus/discovery/semconv"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/features"
 )
@@ -232,7 +233,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	for name, scfg := range cfg {
 		failedCount += m.registerProviders(scfg, name)
 	}
-	m.metrics.FailedConfigs.Set(float64(failedCount))
+	m.metrics.FailedConfigs.Gauge.Set(float64(failedCount))
 
 	var (
 		wg           sync.WaitGroup
@@ -266,13 +267,13 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			// Remove obsolete subs' targets.
 			if _, ok := prov.newSubs[s]; !ok {
 				delete(m.targets, poolKey{s, prov.name})
-				m.metrics.DiscoveredTargets.DeleteLabelValues(m.name, s)
+				m.metrics.DiscoveredTargets.GaugeVec.DeleteLabelValues(s)
 			}
 		}
 		// Set metrics and targets for new subs.
 		for s := range prov.newSubs {
 			if _, ok := prov.subs[s]; !ok {
-				m.metrics.DiscoveredTargets.WithLabelValues(s).Set(0)
+				m.metrics.DiscoveredTargets.With(semconv.ConfigAttr(s)).Set(0)
 			}
 			if l := len(refTargets); l > 0 {
 				m.targets[poolKey{s, prov.name}] = make(map[string]*targetgroup.Group, l)
@@ -360,7 +361,7 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 		case <-ctx.Done():
 			return
 		case tgs, ok := <-updates:
-			m.metrics.ReceivedUpdates.Inc()
+			m.metrics.ReceivedUpdates.Counter.Inc()
 			if !ok {
 				m.logger.Debug("Discoverer channel closed", "provider", p.name)
 				// Wait for provider cancellation to ensure targets are cleaned up when expected.
@@ -395,11 +396,11 @@ func (m *Manager) sender() {
 		case <-ticker.C: // Some discoverers send updates too often, so we throttle these with the ticker.
 			select {
 			case <-m.triggerSend:
-				m.metrics.SentUpdates.Inc()
+				m.metrics.SentUpdates.Counter.Inc()
 				select {
 				case m.syncCh <- m.allGroups():
 				default:
-					m.metrics.DelayedUpdates.Inc()
+					m.metrics.DelayedUpdates.Counter.Inc()
 					m.logger.Debug("Discovery receiver's channel was full so will retry the next cycle")
 					select {
 					case m.triggerSend <- struct{}{}:
@@ -474,7 +475,7 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	m.mtx.RUnlock()
 
 	for setName, v := range n {
-		m.metrics.DiscoveredTargets.WithLabelValues(setName).Set(float64(v))
+		m.metrics.DiscoveredTargets.With(semconv.ConfigAttr(setName)).Set(float64(v))
 	}
 
 	return tSets

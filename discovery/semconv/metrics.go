@@ -190,16 +190,21 @@ type PrometheusSDDiscoveredTargets struct {
 	*prometheus.GaugeVec
 }
 
-// NewPrometheusSDDiscoveredTargets returns a new PrometheusSDDiscoveredTargets instrument.
-func NewPrometheusSDDiscoveredTargets() PrometheusSDDiscoveredTargets {
+// NewPrometheusSDDiscoveredTargets returns a new PrometheusSDDiscoveredTargets instrument with the given const labels.
+func NewPrometheusSDDiscoveredTargets(
+	name NameAttr,
+) PrometheusSDDiscoveredTargets {
 	labels := []string{
-		"name",
 		"config",
 	}
 	return PrometheusSDDiscoveredTargets{
 		GaugeVec: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "prometheus_sd_discovered_targets",
 			Help: "Current number of discovered targets.",
+
+			ConstLabels: prometheus.Labels{
+				"name": name.Value(),
+			},
 		}, labels),
 	}
 }
@@ -209,14 +214,12 @@ type PrometheusSDDiscoveredTargetsAttr interface {
 	implPrometheusSDDiscoveredTargets()
 }
 
-func (a NameAttr) implPrometheusSDDiscoveredTargets()   {}
 func (a ConfigAttr) implPrometheusSDDiscoveredTargets() {}
 
 func (m PrometheusSDDiscoveredTargets) With(
 	extra ...PrometheusSDDiscoveredTargetsAttr,
 ) prometheus.Gauge {
 	labels := prometheus.Labels{
-		"name":   "",
 		"config": "",
 	}
 	for _, v := range extra {
@@ -257,39 +260,23 @@ func NewPrometheusSDDNSLookupsTotal() PrometheusSDDNSLookupsTotal {
 
 // PrometheusSDFailedConfigs records the current number of service discovery configurations that failed to load.
 type PrometheusSDFailedConfigs struct {
-	*prometheus.GaugeVec
+	prometheus.Gauge
 }
 
-// NewPrometheusSDFailedConfigs returns a new PrometheusSDFailedConfigs instrument.
-func NewPrometheusSDFailedConfigs() PrometheusSDFailedConfigs {
-	labels := []string{
-		"name",
-	}
+// NewPrometheusSDFailedConfigs returns a new PrometheusSDFailedConfigs instrument with the given const labels.
+func NewPrometheusSDFailedConfigs(
+	name NameAttr,
+) PrometheusSDFailedConfigs {
 	return PrometheusSDFailedConfigs{
-		GaugeVec: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_sd_failed_configs",
 			Help: "Current number of service discovery configurations that failed to load.",
-		}, labels),
-	}
-}
 
-type PrometheusSDFailedConfigsAttr interface {
-	Attribute
-	implPrometheusSDFailedConfigs()
-}
-
-func (a NameAttr) implPrometheusSDFailedConfigs() {}
-
-func (m PrometheusSDFailedConfigs) With(
-	extra ...PrometheusSDFailedConfigsAttr,
-) prometheus.Gauge {
-	labels := prometheus.Labels{
-		"name": "",
+			ConstLabels: prometheus.Labels{
+				"name": name.Value(),
+			},
+		}),
 	}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.GaugeVec.With(labels)
 }
 
 // PrometheusSDFileMtimeSeconds records the modification time of the SD file.
@@ -531,39 +518,23 @@ func NewPrometheusSDNomadFailuresTotal() PrometheusSDNomadFailuresTotal {
 
 // PrometheusSDReceivedUpdatesTotal records the total number of update events received from the SD providers.
 type PrometheusSDReceivedUpdatesTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
-// NewPrometheusSDReceivedUpdatesTotal returns a new PrometheusSDReceivedUpdatesTotal instrument.
-func NewPrometheusSDReceivedUpdatesTotal() PrometheusSDReceivedUpdatesTotal {
-	labels := []string{
-		"name",
-	}
+// NewPrometheusSDReceivedUpdatesTotal returns a new PrometheusSDReceivedUpdatesTotal instrument with the given const labels.
+func NewPrometheusSDReceivedUpdatesTotal(
+	name NameAttr,
+) PrometheusSDReceivedUpdatesTotal {
 	return PrometheusSDReceivedUpdatesTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_received_updates_total",
 			Help: "Total number of update events received from the SD providers.",
-		}, labels),
-	}
-}
 
-type PrometheusSDReceivedUpdatesTotalAttr interface {
-	Attribute
-	implPrometheusSDReceivedUpdatesTotal()
-}
-
-func (a NameAttr) implPrometheusSDReceivedUpdatesTotal() {}
-
-func (m PrometheusSDReceivedUpdatesTotal) With(
-	extra ...PrometheusSDReceivedUpdatesTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{
-		"name": "",
+			ConstLabels: prometheus.Labels{
+				"name": name.Value(),
+			},
+		}),
 	}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDRefreshDurationHistogramSeconds records the duration of a SD refresh cycle as a histogram.
@@ -694,76 +665,44 @@ func (m PrometheusSDRefreshFailuresTotal) With(
 
 // PrometheusSDUpdatesDelayedTotal records the total number of update events that couldn't be sent immediately.
 type PrometheusSDUpdatesDelayedTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
-// NewPrometheusSDUpdatesDelayedTotal returns a new PrometheusSDUpdatesDelayedTotal instrument.
-func NewPrometheusSDUpdatesDelayedTotal() PrometheusSDUpdatesDelayedTotal {
-	labels := []string{
-		"name",
-	}
+// NewPrometheusSDUpdatesDelayedTotal returns a new PrometheusSDUpdatesDelayedTotal instrument with the given const labels.
+func NewPrometheusSDUpdatesDelayedTotal(
+	name NameAttr,
+) PrometheusSDUpdatesDelayedTotal {
 	return PrometheusSDUpdatesDelayedTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_updates_delayed_total",
 			Help: "Total number of update events that couldn't be sent immediately.",
-		}, labels),
-	}
-}
 
-type PrometheusSDUpdatesDelayedTotalAttr interface {
-	Attribute
-	implPrometheusSDUpdatesDelayedTotal()
-}
-
-func (a NameAttr) implPrometheusSDUpdatesDelayedTotal() {}
-
-func (m PrometheusSDUpdatesDelayedTotal) With(
-	extra ...PrometheusSDUpdatesDelayedTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{
-		"name": "",
+			ConstLabels: prometheus.Labels{
+				"name": name.Value(),
+			},
+		}),
 	}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusSDUpdatesTotal records the total number of update events sent to the SD consumers.
 type PrometheusSDUpdatesTotal struct {
-	*prometheus.CounterVec
+	prometheus.Counter
 }
 
-// NewPrometheusSDUpdatesTotal returns a new PrometheusSDUpdatesTotal instrument.
-func NewPrometheusSDUpdatesTotal() PrometheusSDUpdatesTotal {
-	labels := []string{
-		"name",
-	}
+// NewPrometheusSDUpdatesTotal returns a new PrometheusSDUpdatesTotal instrument with the given const labels.
+func NewPrometheusSDUpdatesTotal(
+	name NameAttr,
+) PrometheusSDUpdatesTotal {
 	return PrometheusSDUpdatesTotal{
-		CounterVec: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Counter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_sd_updates_total",
 			Help: "Total number of update events sent to the SD consumers.",
-		}, labels),
-	}
-}
 
-type PrometheusSDUpdatesTotalAttr interface {
-	Attribute
-	implPrometheusSDUpdatesTotal()
-}
-
-func (a NameAttr) implPrometheusSDUpdatesTotal() {}
-
-func (m PrometheusSDUpdatesTotal) With(
-	extra ...PrometheusSDUpdatesTotalAttr,
-) prometheus.Counter {
-	labels := prometheus.Labels{
-		"name": "",
+			ConstLabels: prometheus.Labels{
+				"name": name.Value(),
+			},
+		}),
 	}
-	for _, v := range extra {
-		labels[v.ID()] = v.Value()
-	}
-	return m.CounterVec.With(labels)
 }
 
 // PrometheusTreecacheWatcherGoroutines records the current number of treecache watcher goroutines.

@@ -17,67 +17,35 @@ import (
 	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
+
+	semconv "github.com/prometheus/prometheus/discovery/semconv"
 )
 
 // Metrics to be used with a discovery manager.
 type Metrics struct {
-	FailedConfigs     prometheus.Gauge
-	DiscoveredTargets *prometheus.GaugeVec
-	ReceivedUpdates   prometheus.Counter
-	DelayedUpdates    prometheus.Counter
-	SentUpdates       prometheus.Counter
+	FailedConfigs     semconv.PrometheusSDFailedConfigs
+	DiscoveredTargets semconv.PrometheusSDDiscoveredTargets
+	ReceivedUpdates   semconv.PrometheusSDReceivedUpdatesTotal
+	DelayedUpdates    semconv.PrometheusSDUpdatesDelayedTotal
+	SentUpdates       semconv.PrometheusSDUpdatesTotal
 }
 
 func NewManagerMetrics(registerer prometheus.Registerer, sdManagerName string) (*Metrics, error) {
-	m := &Metrics{}
-
-	m.FailedConfigs = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name:        "prometheus_sd_failed_configs",
-			Help:        "Current number of service discovery configurations that failed to load.",
-			ConstLabels: prometheus.Labels{"name": sdManagerName},
-		},
-	)
-
-	m.DiscoveredTargets = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name:        "prometheus_sd_discovered_targets",
-			Help:        "Current number of discovered targets.",
-			ConstLabels: prometheus.Labels{"name": sdManagerName},
-		},
-		[]string{"config"},
-	)
-
-	m.ReceivedUpdates = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name:        "prometheus_sd_received_updates_total",
-			Help:        "Total number of update events received from the SD providers.",
-			ConstLabels: prometheus.Labels{"name": sdManagerName},
-		},
-	)
-
-	m.DelayedUpdates = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name:        "prometheus_sd_updates_delayed_total",
-			Help:        "Total number of update events that couldn't be sent immediately.",
-			ConstLabels: prometheus.Labels{"name": sdManagerName},
-		},
-	)
-
-	m.SentUpdates = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name:        "prometheus_sd_updates_total",
-			Help:        "Total number of update events sent to the SD consumers.",
-			ConstLabels: prometheus.Labels{"name": sdManagerName},
-		},
-	)
+	name := semconv.NameAttr(sdManagerName)
+	m := &Metrics{
+		FailedConfigs:     semconv.NewPrometheusSDFailedConfigs(name),
+		DiscoveredTargets: semconv.NewPrometheusSDDiscoveredTargets(name),
+		ReceivedUpdates:   semconv.NewPrometheusSDReceivedUpdatesTotal(name),
+		DelayedUpdates:    semconv.NewPrometheusSDUpdatesDelayedTotal(name),
+		SentUpdates:       semconv.NewPrometheusSDUpdatesTotal(name),
+	}
 
 	metrics := []prometheus.Collector{
-		m.FailedConfigs,
-		m.DiscoveredTargets,
-		m.ReceivedUpdates,
-		m.DelayedUpdates,
-		m.SentUpdates,
+		m.FailedConfigs.Gauge,
+		m.DiscoveredTargets.GaugeVec,
+		m.ReceivedUpdates.Counter,
+		m.DelayedUpdates.Counter,
+		m.SentUpdates.Counter,
 	}
 
 	for _, collector := range metrics {
@@ -92,9 +60,9 @@ func NewManagerMetrics(registerer prometheus.Registerer, sdManagerName string) (
 
 // Unregister unregisters all metrics.
 func (m *Metrics) Unregister(registerer prometheus.Registerer) {
-	registerer.Unregister(m.FailedConfigs)
-	registerer.Unregister(m.DiscoveredTargets)
-	registerer.Unregister(m.ReceivedUpdates)
-	registerer.Unregister(m.DelayedUpdates)
-	registerer.Unregister(m.SentUpdates)
+	registerer.Unregister(m.FailedConfigs.Gauge)
+	registerer.Unregister(m.DiscoveredTargets.GaugeVec)
+	registerer.Unregister(m.ReceivedUpdates.Counter)
+	registerer.Unregister(m.DelayedUpdates.Counter)
+	registerer.Unregister(m.SentUpdates.Counter)
 }

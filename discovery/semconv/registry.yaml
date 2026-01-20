@@ -23,10 +23,14 @@ groups:
       - id: name
         type: string
         stability: development
+        requirement_level: required
         brief: The discovery manager name.
         examples:
           - scrape
           - notify
+    annotations:
+      prometheus:
+        const_labels: ["name"]
 
   - id: metric.prometheus_sd_failed_configs
     type: metric
@@ -39,10 +43,14 @@ groups:
       - id: name
         type: string
         stability: development
+        requirement_level: required
         brief: The discovery manager name.
         examples:
           - scrape
           - notify
+    annotations:
+      prometheus:
+        const_labels: ["name"]
 
   - id: metric.prometheus_sd_received_updates_total
     type: metric
@@ -55,10 +63,14 @@ groups:
       - id: name
         type: string
         stability: development
+        requirement_level: required
         brief: The discovery manager name.
         examples:
           - scrape
           - notify
+    annotations:
+      prometheus:
+        const_labels: ["name"]
 
   - id: metric.prometheus_sd_updates_delayed_total
     type: metric
@@ -71,10 +83,14 @@ groups:
       - id: name
         type: string
         stability: development
+        requirement_level: required
         brief: The discovery manager name.
         examples:
           - scrape
           - notify
+    annotations:
+      prometheus:
+        const_labels: ["name"]
 
   - id: metric.prometheus_sd_updates_total
     type: metric
@@ -87,10 +103,14 @@ groups:
       - id: name
         type: string
         stability: development
+        requirement_level: required
         brief: The discovery manager name.
         examples:
           - scrape
           - notify
+    annotations:
+      prometheus:
+        const_labels: ["name"]
 
   # Refresh metrics
   - id: metric.prometheus_sd_refresh_duration_seconds
