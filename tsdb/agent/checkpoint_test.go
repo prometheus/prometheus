@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,21 +45,36 @@ func BenchmarkCheckpoint(b *testing.B) {
 		numSeries:     8,
 	})
 
+	benchstatVal, isBenchStat := os.LookupEnv("TEST_BENCHSTAT")
 	cases := []struct {
 		label                       string
 		skipCurrentCheckpointReRead bool
+		disabled                    bool
 	}{
 		{
 			label:                       "wlog-checkpoint",
 			skipCurrentCheckpointReRead: false,
+			disabled:                    isBenchStat,
 		},
 		{
 			label:                       "new-checkpoint",
 			skipCurrentCheckpointReRead: true,
+			disabled:                    isBenchStat,
+		},
+
+		// Dedicated case for benchstat to diff between old and new checkpoint implementation.
+		{
+			label:                       "checkpoint-diff",
+			skipCurrentCheckpointReRead: benchstatVal == "new-checkpoint",
+			disabled:                    !isBenchStat,
 		},
 	}
 
 	for _, tc := range cases {
+		if tc.disabled {
+			continue
+		}
+
 		// wlog.Open expects to have a "wal" subdirectory
 		wlogDir := filepath.Join(b.TempDir(), tc.label, "wlog")
 		err := os.CopyFS(wlogDir, os.DirFS(testSamplesSrcDir))
@@ -67,11 +83,16 @@ func BenchmarkCheckpoint(b *testing.B) {
 		storageDir := filepath.Dir(wlogDir)
 		// b.Run(tc.label, func(b *testing.T) {
 		b.Run(tc.label, func(b *testing.B) {
-			benchCheckpoint(b, benchCheckpointParams{
-				storageDir:                  storageDir,
-				samples:                     samples,
-				skipCurrentCheckpointReRead: tc.skipCurrentCheckpointReRead,
-			})
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				benchCheckpoint(b, benchCheckpointParams{
+					storageDir:                  storageDir,
+					samples:                     samples,
+					skipCurrentCheckpointReRead: tc.skipCurrentCheckpointReRead,
+				})
+			}
 		})
 	}
 }
@@ -83,33 +104,28 @@ type benchCheckpointParams struct {
 }
 
 func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
-	// const (
-	// 	numDatapoints = 1000
-	// 	numHistograms = 100
-	// 	numSeries     = 8
-	// )
-
-	b.ReportAllocs()
-	b.ResetTimer()
-
 	l := promslog.NewNopLogger()
 	rs := remote.NewStorage(
 		promslog.NewNopLogger(), nil,
 		startTime, p.storageDir,
 		30*time.Second, nil, false,
 	)
+	defer rs.Close()
 
-	b.Cleanup(func() {
-		require.NoError(b, rs.Close())
-	})
+	// b.Cleanup(func() {
+	// 	require.NoError(b, rs.Close())
+	// })
 
 	opts := DefaultOptions()
+
+	// Hack to avoid "out of order sample" error that's happening only in benchmarks.
+	opts.OutOfOrderTimeWindow = math.MaxInt64
+
 	opts.SkipCurrentCheckpointReRead = p.skipCurrentCheckpointReRead
 	db, err := Open(l, nil, rs, p.storageDir, opts)
 	require.NoError(b, err, "Open")
 
 	app := db.Appender(b.Context())
-	// lbls := labelsForTest(b.Name(), numSeries)
 	lbls := p.samples.datapointLabels
 	for i, l := range lbls {
 		lset := labels.New(l...)
@@ -129,23 +145,6 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 			_, err = app.AppendExemplar(ref, lset, e)
 			require.NoError(b, err)
 		}
-		// for j := range numDatapoints {
-		// 	sample := chunks.GenerateSamples(0, 1)
-		// 	st := sample[0].T()
-		// 	sf := sample[0].F()
-		// 	ref, err := app.Append(0, lset, st, sf)
-		// 	require.NoErrorf(b, err, "L: %v; DP: %v", i, j)
-		//
-		// 	e := exemplar.Exemplar{
-		// 		Labels: lset,
-		// 		Ts:     sample[0].T() + int64(j),
-		// 		Value:  sample[0].F(),
-		// 		HasTs:  true,
-		// 	}
-		//
-		// 	_, err = app.AppendExemplar(ref, lset, e)
-		// 	require.NoError(b, err)
-		// }
 	}
 
 	for i, l := range p.samples.histogramLabels {
@@ -156,18 +155,6 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 			require.NoError(b, err)
 		}
 	}
-
-	// lbls = labelsForTest(b.Name()+"_histogram", numSeries)
-	// for _, l := range lbls {
-	// 	lset := labels.New(l...)
-	//
-	// 	histograms := tsdbutil.GenerateTestHistograms(numHistograms)
-	//
-	// 	for i := range numHistograms {
-	// 		_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
-	// 		require.NoError(b, err)
-	// 	}
-	// }
 
 	require.NoError(b, app.Commit())
 
@@ -197,53 +184,19 @@ func genCheckpointTestSamples(p checkpointTestSamplesParams) checkpointTestSampl
 		datapointSamples: make([][]chunks.Sample, 0, p.numSeries),
 		histogramSamples: make([][]*histogram.Histogram, 0, p.numSeries),
 	}
-	// for range out.datapointLabels {
-	// lset := labels.New(l...)
+
 	for range p.numDatapoints {
 		sample := chunks.GenerateSamples(0, 1)
 		out.datapointSamples = append(out.datapointSamples, sample)
-		// st := sample[0].T()
-		// sf := sample[0].F()
-		// ref, err := app.Append(0, lset, st, sf)
-		// require.NoErrorf(b, err, "L: %v; DP: %v", j, i)
-
-		// e := exemplar.Exemplar{
-		// 	Labels: lset,
-		// 	Ts:     sample[0].T() + int64(i),
-		// 	Value:  sample[0].F(),
-		// 	HasTs:  true,
-		// }
-		//
-		// _, err = app.AppendExemplar(ref, lset, e)
-		// require.NoError(b, err)
 	}
-	// }
 
-	// lbls = labelsForTest(b.Name()+"_histogram", numSeries)
 	for range out.histogramLabels {
-		// lset := labels.New(l...)
-
 		histograms := tsdbutil.GenerateTestHistograms(p.numHistograms)
 		out.histogramSamples = append(out.histogramSamples, histograms)
-
-		// for i := range numHistograms {
-		// 	_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
-		// 	require.NoError(b, err)
-		// }
 	}
 
 	return out
 }
-
-//	func TestCreateCheckpointFixtures(t *testing.T) {
-//		createCheckpointFixtures(t, checkpointFixtureParams{
-//			dir:         "./testdata/db-fixtures/",
-//			numSegments: 512,
-//			numSeries:   32,
-//			dtDelta:     10000,
-//			segmentSize: 32 << 10, // must be aligned to page size
-//		})
-//	}
 
 type checkpointFixtureParams struct {
 	dir         string
