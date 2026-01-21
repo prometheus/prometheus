@@ -96,6 +96,8 @@ func (s Sample) Equals(other Sample) bool {
 		slices.EqualFunc(s.ES, other.ES, exemplar.Exemplar.Equals)
 }
 
+// IsStale returns whether the sample represents a stale sample, according to
+// https://prometheus.io/docs/specs/native_histograms/#staleness-markers.
 func (s Sample) IsStale() bool {
 	switch {
 	case s.FH != nil:
