@@ -39,7 +39,7 @@ func TestEvaluations(t *testing.T) {
 // Run a lot of queries at the same time, to check for race conditions.
 func TestConcurrentRangeQueries(t *testing.T) {
 	stor := teststorage.New(t)
-	defer stor.Close()
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
