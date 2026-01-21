@@ -736,7 +736,7 @@ func setupTestServer(t *testing.T, typ string, toWrite []byte) *httptest.Server 
 
 // TestManagerSTZeroIngestion tests scrape manager for various ST cases.
 // NOTE(bwplotka): There is no AppenderV2 test for this STZeroIngestion feature as in V2 flow it's
-// moved to AppenderV2 implementation (e.g. storage).
+// moved to AppenderV2 implementation (e.g. storage) and it's tested there, e.g. tsdb.TestHeadAppenderV2_Append_EnableSTAsZeroSample.
 func TestManagerSTZeroIngestion(t *testing.T) {
 	t.Parallel()
 	const (
@@ -908,7 +908,7 @@ func generateTestHistogram(i int) *dto.Histogram {
 }
 
 // NOTE(bwplotka): There is no AppenderV2 test for this STZeroIngestion feature as in V2 flow it's
-// moved to AppenderV2 implementation (e.g. storage).
+// moved to AppenderV2 implementation (e.g. storage) and it's tested there, e.g. tsdb.TestHeadAppenderV2_Append_EnableSTAsZeroSample.
 func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 	t.Parallel()
 	const mName = "expected_histogram"
@@ -1049,7 +1049,7 @@ func TestUnregisterMetrics(t *testing.T) {
 // although exemplars are not preserved during NHCB conversion (as documented below).
 //
 // NOTE(bwplotka): There is no AppenderV2 test for this STZeroIngestion feature as in V2 flow it's
-// moved to AppenderV2 implementation (e.g. storage).
+// moved to AppenderV2 implementation (e.g. storage) and it's tested there, e.g. tsdb.TestHeadAppenderV2_Append_EnableSTAsZeroSample.
 func TestNHCBAndSTZeroIngestion(t *testing.T) {
 	t.Parallel()
 

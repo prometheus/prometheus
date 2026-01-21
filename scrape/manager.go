@@ -44,7 +44,7 @@ import (
 // If unsure which one to use/implement, implement AppendableV2 as it significantly simplifies implementation and allows more
 // (passing ST, always-on metadata, exemplars per sample).
 //
-// NewManager returns error if both appendable and appendableV2 is specified.
+// NewManager returns error if both appendable and appendableV2 are specified.
 //
 // Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
 // storage.Appendable will be removed soon (ETA: Q2 2026).
