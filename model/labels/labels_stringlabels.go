@@ -256,19 +256,17 @@ func (ls Labels) HasDuplicateLabelNames() (string, bool) {
 	return "", false
 }
 
-// HasAnyDuplicateLabelNames returns whether ls has any duplicate label names,
-// even if they are not consecutive. This is useful for detecting corrupted
-// label sets where the labels may not be properly sorted.
-// The seen map is cleared and reused to reduce allocations when called in a loop.
-func (ls Labels) HasAnyDuplicateLabelNames(seen map[string]struct{}) (string, bool) {
-	clear(seen)
+// HasOutOfOrderLabel checks if labels are not sorted by name (including duplicates).
+// Since labels are expected to be sorted, out-of-order labels indicate corruption.
+func (ls Labels) HasOutOfOrderLabel() (string, bool) {
+	var prev string
 	for i := 0; i < len(ls.data); {
 		lName, newI := decodeString(ls.data, i)
 		_, i = decodeString(ls.data, newI)
-		if _, exists := seen[lName]; exists {
+		if prev != "" && lName <= prev {
 			return lName, true
 		}
-		seen[lName] = struct{}{}
+		prev = lName
 	}
 	return "", false
 }
