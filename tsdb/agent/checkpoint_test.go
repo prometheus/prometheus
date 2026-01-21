@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
+// func TestBenchmarkCheckpoint(b *testing.T) {
 func BenchmarkCheckpoint(b *testing.B) {
 	// Prepare initial state with segments
 	testSamplesSrcDir := filepath.Join(b.TempDir(), "samples-src")
@@ -33,6 +34,14 @@ func BenchmarkCheckpoint(b *testing.B) {
 		numSeries:   32,
 		dtDelta:     10000,
 		segmentSize: 32 << 10, // must be aligned to the page size
+	})
+
+	// prepare data in advance as appender returns "out of order sample" inside benchmarks.
+	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
+		labelPrefix:   b.Name(),
+		numDatapoints: 1000,
+		numHistograms: 100,
+		numSeries:     8,
 	})
 
 	cases := []struct {
@@ -56,9 +65,11 @@ func BenchmarkCheckpoint(b *testing.B) {
 		require.NoErrorf(b, err, "failed to copy test samples from %q to %q", testSamplesSrcDir, wlogDir)
 
 		storageDir := filepath.Dir(wlogDir)
+		// b.Run(tc.label, func(b *testing.T) {
 		b.Run(tc.label, func(b *testing.B) {
 			benchCheckpoint(b, benchCheckpointParams{
 				storageDir:                  storageDir,
+				samples:                     samples,
 				skipCurrentCheckpointReRead: tc.skipCurrentCheckpointReRead,
 			})
 		})
@@ -68,14 +79,15 @@ func BenchmarkCheckpoint(b *testing.B) {
 type benchCheckpointParams struct {
 	storageDir                  string
 	skipCurrentCheckpointReRead bool
+	samples                     checkpointTestSamples
 }
 
 func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
-	const (
-		numDatapoints = 1000
-		numHistograms = 100
-		numSeries     = 8
-	)
+	// const (
+	// 	numDatapoints = 1000
+	// 	numHistograms = 100
+	// 	numSeries     = 8
+	// )
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -97,13 +109,15 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 	require.NoError(b, err, "Open")
 
 	app := db.Appender(b.Context())
-	lbls := labelsForTest(b.Name(), numSeries)
-	for _, l := range lbls {
+	// lbls := labelsForTest(b.Name(), numSeries)
+	lbls := p.samples.datapointLabels
+	for i, l := range lbls {
 		lset := labels.New(l...)
-		for i := range numDatapoints {
-			sample := chunks.GenerateSamples(0, 1)
-			ref, err := app.Append(0, lset, sample[0].T(), sample[0].F())
-			require.NoError(b, err)
+		for j, sample := range p.samples.datapointSamples {
+			st := sample[0].T()
+			sf := sample[0].F()
+			ref, err := app.Append(0, lset, st, sf)
+			require.NoErrorf(b, err, "L: %v; S: %v", i, j)
 
 			e := exemplar.Exemplar{
 				Labels: lset,
@@ -115,25 +129,110 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 			_, err = app.AppendExemplar(ref, lset, e)
 			require.NoError(b, err)
 		}
+		// for j := range numDatapoints {
+		// 	sample := chunks.GenerateSamples(0, 1)
+		// 	st := sample[0].T()
+		// 	sf := sample[0].F()
+		// 	ref, err := app.Append(0, lset, st, sf)
+		// 	require.NoErrorf(b, err, "L: %v; DP: %v", i, j)
+		//
+		// 	e := exemplar.Exemplar{
+		// 		Labels: lset,
+		// 		Ts:     sample[0].T() + int64(j),
+		// 		Value:  sample[0].F(),
+		// 		HasTs:  true,
+		// 	}
+		//
+		// 	_, err = app.AppendExemplar(ref, lset, e)
+		// 	require.NoError(b, err)
+		// }
 	}
 
-	lbls = labelsForTest(b.Name()+"_histogram", numSeries)
-	for _, l := range lbls {
+	for i, l := range p.samples.histogramLabels {
 		lset := labels.New(l...)
-
-		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
-
-		for i := range numHistograms {
-			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
+		histograms := p.samples.histogramSamples[i]
+		for j, sample := range histograms {
+			_, err := app.AppendHistogram(0, lset, int64(j), sample, nil)
 			require.NoError(b, err)
 		}
 	}
+
+	// lbls = labelsForTest(b.Name()+"_histogram", numSeries)
+	// for _, l := range lbls {
+	// 	lset := labels.New(l...)
+	//
+	// 	histograms := tsdbutil.GenerateTestHistograms(numHistograms)
+	//
+	// 	for i := range numHistograms {
+	// 		_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
+	// 		require.NoError(b, err)
+	// 	}
+	// }
 
 	require.NoError(b, app.Commit())
 
 	err = db.truncate(timestamp.FromTime(time.Now()))
 	require.NoError(b, err, "db.truncate")
 	require.NoError(b, db.Close())
+}
+
+type checkpointTestSamplesParams struct {
+	labelPrefix   string
+	numDatapoints int
+	numHistograms int
+	numSeries     int
+}
+
+type checkpointTestSamples struct {
+	datapointLabels  [][]labels.Label
+	histogramLabels  [][]labels.Label
+	datapointSamples [][]chunks.Sample
+	histogramSamples [][]*histogram.Histogram
+}
+
+func genCheckpointTestSamples(p checkpointTestSamplesParams) checkpointTestSamples {
+	out := checkpointTestSamples{
+		datapointLabels:  labelsForTest(p.labelPrefix, p.numSeries),
+		histogramLabels:  labelsForTest(p.labelPrefix+"_histogram", p.numSeries),
+		datapointSamples: make([][]chunks.Sample, 0, p.numSeries),
+		histogramSamples: make([][]*histogram.Histogram, 0, p.numSeries),
+	}
+	// for range out.datapointLabels {
+	// lset := labels.New(l...)
+	for range p.numDatapoints {
+		sample := chunks.GenerateSamples(0, 1)
+		out.datapointSamples = append(out.datapointSamples, sample)
+		// st := sample[0].T()
+		// sf := sample[0].F()
+		// ref, err := app.Append(0, lset, st, sf)
+		// require.NoErrorf(b, err, "L: %v; DP: %v", j, i)
+
+		// e := exemplar.Exemplar{
+		// 	Labels: lset,
+		// 	Ts:     sample[0].T() + int64(i),
+		// 	Value:  sample[0].F(),
+		// 	HasTs:  true,
+		// }
+		//
+		// _, err = app.AppendExemplar(ref, lset, e)
+		// require.NoError(b, err)
+	}
+	// }
+
+	// lbls = labelsForTest(b.Name()+"_histogram", numSeries)
+	for range out.histogramLabels {
+		// lset := labels.New(l...)
+
+		histograms := tsdbutil.GenerateTestHistograms(p.numHistograms)
+		out.histogramSamples = append(out.histogramSamples, histograms)
+
+		// for i := range numHistograms {
+		// 	_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
+		// 	require.NoError(b, err)
+		// }
+	}
+
+	return out
 }
 
 //	func TestCreateCheckpointFixtures(t *testing.T) {
