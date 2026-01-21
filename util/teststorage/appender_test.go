@@ -306,3 +306,108 @@ func TestConcurrentAppenderV2_ReturnsErrAppender(t *testing.T) {
 	require.Error(t, app.Commit())
 	require.Error(t, app.Rollback())
 }
+
+func TestReorderExpectedForStaleness(t *testing.T) {
+	testcases := []struct {
+		name       string
+		inExpected []Sample
+		inGot      []Sample
+		expected   []Sample
+	}{
+		{
+			name: "no staleness markers",
+			inExpected: []Sample{
+				{L: labels.FromStrings("a", "1"), T: 1, V: 1},
+				{L: labels.FromStrings("a", "2"), T: 1, V: 2},
+			},
+			inGot: []Sample{
+				{L: labels.FromStrings("a", "2"), T: 1, V: 2},
+				{L: labels.FromStrings("a", "1"), T: 1, V: 1},
+			},
+		},
+		{
+			name: "with staleness markers",
+			inExpected: []Sample{
+				{L: labels.FromStrings("a", "1"), T: 1, V: 1},
+				{L: labels.FromStrings("a", "2"), T: 2, V: 2},
+				{L: labels.FromStrings("a", "3"), T: 3, V: math.Float64frombits(value.StaleNaN)},
+				{L: labels.FromStrings("a", "4"), T: 4, V: math.Float64frombits(value.StaleNaN)},
+			},
+			inGot: []Sample{
+				{L: labels.FromStrings("a", "1"), T: 1, V: 1},
+				{L: labels.FromStrings("a", "2"), T: 2, V: 2},
+				{L: labels.FromStrings("a", "3"), T: 3, V: math.Float64frombits(value.StaleNaN)},
+				{L: labels.FromStrings("a", "4"), T: 4, V: math.Float64frombits(value.StaleNaN)},
+			},
+		},
+		{
+			name: "with staleness markers wrong order",
+			inExpected: []Sample{
+				{L: labels.FromStrings("a", "1"), T: 1, V: 1},
+				{L: labels.FromStrings("a", "2"), T: 2, V: 2},
+				{L: labels.FromStrings("a", "3"), T: 3, V: math.Float64frombits(value.StaleNaN)},
+				{L: labels.FromStrings("a", "4"), T: 4, V: math.Float64frombits(value.StaleNaN)},
+			},
+			inGot: []Sample{
+				{L: labels.FromStrings("a", "2"), T: 2, V: 2},
+				{L: labels.FromStrings("a", "1"), T: 1, V: 1},
+				{L: labels.FromStrings("a", "4"), T: 4, V: math.Float64frombits(value.StaleNaN)},
+				{L: labels.FromStrings("a", "3"), T: 3, V: math.Float64frombits(value.StaleNaN)},
+			},
+			expected: []Sample{
+				{L: labels.FromStrings("a", "1"), T: 1, V: 1},
+				{L: labels.FromStrings("a", "2"), T: 2, V: 2},
+				{L: labels.FromStrings("a", "4"), T: 4, V: math.Float64frombits(value.StaleNaN)},
+				{L: labels.FromStrings("a", "3"), T: 3, V: math.Float64frombits(value.StaleNaN)},
+			},
+		},
+		{
+			name: "with staleness markers wrong order but not consecutive",
+			inExpected: []Sample{
+				{L: labels.FromStrings("a", "1"), T: 1, V: 1},
+				{L: labels.FromStrings("a", "3"), T: 3, V: math.Float64frombits(value.StaleNaN)},
+				{L: labels.FromStrings("a", "2"), T: 2, V: 2},
+				{L: labels.FromStrings("a", "4"), T: 4, V: math.Float64frombits(value.StaleNaN)},
+			},
+			inGot: []Sample{
+				{L: labels.FromStrings("a", "2"), T: 2, V: 2},
+				{L: labels.FromStrings("a", "1"), T: 1, V: 1},
+				{L: labels.FromStrings("a", "4"), T: 4, V: math.Float64frombits(value.StaleNaN)},
+				{L: labels.FromStrings("a", "3"), T: 3, V: math.Float64frombits(value.StaleNaN)},
+			},
+			expected: []Sample{
+				{L: labels.FromStrings("a", "1"), T: 1, V: 1},
+				{L: labels.FromStrings("a", "3"), T: 3, V: math.Float64frombits(value.StaleNaN)},
+				{L: labels.FromStrings("a", "2"), T: 2, V: 2},
+				{L: labels.FromStrings("a", "4"), T: 4, V: math.Float64frombits(value.StaleNaN)},
+			},
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.expected == nil {
+				tc.expected = tc.inExpected
+			}
+			RequireEqual(t, tc.expected, reorderExpectedForStaleness(tc.inExpected, tc.inGot))
+		})
+	}
+}
+
+func TestSampleIsStale(t *testing.T) {
+	s1 := Sample{V: 1}
+	require.False(t, s1.IsStale())
+	s2 := Sample{V: math.Float64frombits(value.StaleNaN)}
+	require.True(t, s2.IsStale())
+	h := tsdbutil.GenerateTestHistogram(0)
+	h1 := Sample{V: math.Float64frombits(value.StaleNaN), H: h}
+	require.False(t, h1.IsStale()) // Histogram takes precedence over V.
+	h.Sum = math.Float64frombits(value.StaleNaN)
+	h2 := Sample{V: 1, H: h}
+	require.True(t, h2.IsStale())
+	fh := tsdbutil.GenerateTestFloatHistogram(0)
+	fh1 := Sample{V: math.Float64frombits(value.StaleNaN), H: h, FH: fh}
+	require.False(t, fh1.IsStale()) // FloatHistogram takes precedence over all.
+	fh.Sum = math.Float64frombits(value.StaleNaN)
+	fh2 := Sample{V: 1, H: tsdbutil.GenerateTestHistogram(1), FH: fh}
+	require.True(t, fh2.IsStale())
+}
