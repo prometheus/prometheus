@@ -16,36 +16,41 @@ package chunkenc
 import (
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-type pair struct {
-	t int64
-	v float64
+type triple struct {
+	st, t int64
+	v     float64
 }
 
 func TestChunk(t *testing.T) {
-	for enc, nc := range map[Encoding]func() Chunk{
-		EncXOR: func() Chunk { return NewXORChunk() },
-	} {
-		t.Run(fmt.Sprintf("%v", enc), func(t *testing.T) {
+	testcases := []struct {
+		encoding   Encoding
+		supportsST bool
+		factory    func() Chunk
+	}{
+		{encoding: EncXOR, supportsST: false, factory: func() Chunk { return NewXORChunk() }},
+		{encoding: EncXOROptST, supportsST: true, factory: func() Chunk { return NewXOROptSTChunk() }},
+	}
+	for _, tc := range testcases {
+		t.Run(fmt.Sprintf("%v", tc.encoding), func(t *testing.T) {
 			for range make([]struct{}, 1) {
-				c := nc()
-				testChunk(t, c)
+				c := tc.factory()
+				testChunk(t, c, tc.supportsST)
 			}
 		})
 	}
 }
 
-func testChunk(t *testing.T, c Chunk) {
+func testChunk(t *testing.T, c Chunk, supportsST bool) {
 	app, err := c.Appender()
 	require.NoError(t, err)
 
-	var exp []pair
+	var exp []triple
 	var (
 		ts = int64(1234123324)
 		v  = 1243535.123
@@ -65,26 +70,30 @@ func testChunk(t *testing.T, c Chunk) {
 			require.NoError(t, err)
 		}
 
-		app.Append(0, ts, v)
-		exp = append(exp, pair{t: ts, v: v})
+		app.Append(ts-100, ts, v)
+		expST := int64(0)
+		if supportsST {
+			expST = ts - 100
+		}
+		exp = append(exp, triple{st: expST, t: ts, v: v})
 	}
 
 	// 1. Expand iterator in simple case.
 	it1 := c.Iterator(nil)
-	var res1 []pair
+	var res1 []triple
 	for it1.Next() == ValFloat {
 		ts, v := it1.At()
-		res1 = append(res1, pair{t: ts, v: v})
+		res1 = append(res1, triple{st: it1.AtST(), t: ts, v: v})
 	}
 	require.NoError(t, it1.Err())
 	require.Equal(t, exp, res1)
 
 	// 2. Expand second iterator while reusing first one.
 	it2 := c.Iterator(it1)
-	var res2 []pair
+	var res2 []triple
 	for it2.Next() == ValFloat {
 		ts, v := it2.At()
-		res2 = append(res2, pair{t: ts, v: v})
+		res2 = append(res2, triple{st: it2.AtST(), t: ts, v: v})
 	}
 	require.NoError(t, it2.Err())
 	require.Equal(t, exp, res2)
@@ -93,17 +102,17 @@ func testChunk(t *testing.T, c Chunk) {
 	mid := len(exp) / 2
 
 	it3 := c.Iterator(nil)
-	var res3 []pair
+	var res3 []triple
 	require.Equal(t, ValFloat, it3.Seek(exp[mid].t))
 	// Below ones should not matter.
 	require.Equal(t, ValFloat, it3.Seek(exp[mid].t))
 	require.Equal(t, ValFloat, it3.Seek(exp[mid].t))
 	ts, v = it3.At()
-	res3 = append(res3, pair{t: ts, v: v})
+	res3 = append(res3, triple{st: it3.AtST(), t: ts, v: v})
 
 	for it3.Next() == ValFloat {
 		ts, v := it3.At()
-		res3 = append(res3, pair{t: ts, v: v})
+		res3 = append(res3, triple{st: it3.AtST(), t: ts, v: v})
 	}
 	require.NoError(t, it3.Err())
 	require.Equal(t, exp[mid:], res3)
@@ -130,6 +139,10 @@ func TestPool(t *testing.T) {
 			encoding: EncFloatHistogram,
 		},
 		{
+			name:     "xor opt st",
+			encoding: EncXOROptST,
+		},
+		{
 			name:     "invalid encoding",
 			encoding: EncNone,
 			expErr:   errors.New(`invalid chunk encoding "none"`),
@@ -150,6 +163,8 @@ func TestPool(t *testing.T) {
 				b = &c.(*HistogramChunk).b
 			case EncFloatHistogram:
 				b = &c.(*FloatHistogramChunk).b
+			case EncXOROptST:
+				b = &c.(*XorOptSTChunk).b
 			default:
 				b = &c.(*XORChunk).b
 			}
@@ -198,112 +213,4 @@ func (c fakeChunk) Encoding() Encoding {
 
 func (c fakeChunk) Reset([]byte) {
 	c.t.Fatal("Reset should not be called")
-}
-
-func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
-	const samplesPerChunk = 250
-	var (
-		t   = int64(1234123324)
-		v   = 1243535.123
-		exp []pair
-	)
-	for range samplesPerChunk {
-		// t += int64(rand.Intn(10000) + 1)
-		t += int64(1000)
-		// v = rand.Float64()
-		v += float64(100)
-		exp = append(exp, pair{t: t, v: v})
-	}
-
-	chunk := newChunk()
-	{
-		a, err := chunk.Appender()
-		if err != nil {
-			b.Fatalf("get appender: %s", err)
-		}
-		j := 0
-		for _, p := range exp {
-			if j > 250 {
-				break
-			}
-			a.Append(0, p.t, p.v)
-			j++
-		}
-	}
-
-	b.ReportAllocs()
-
-	var res float64
-	var it Iterator
-	for i := 0; b.Loop(); {
-		it := chunk.Iterator(it)
-
-		for it.Next() == ValFloat {
-			_, v := it.At()
-			res = v
-			i++
-		}
-		if err := it.Err(); err != nil && !errors.Is(err, io.EOF) {
-			require.NoError(b, err)
-		}
-		_ = res
-	}
-}
-
-func newXORChunk() Chunk {
-	return NewXORChunk()
-}
-
-func BenchmarkXORIterator(b *testing.B) {
-	benchmarkIterator(b, newXORChunk)
-}
-
-func BenchmarkXORAppender(b *testing.B) {
-	r := rand.New(rand.NewSource(1))
-	b.Run("constant", func(b *testing.B) {
-		benchmarkAppender(b, func() (int64, float64) {
-			return 1000, 0
-		}, newXORChunk)
-	})
-	b.Run("random steps", func(b *testing.B) {
-		benchmarkAppender(b, func() (int64, float64) {
-			return int64(r.Intn(100) - 50 + 15000), // 15 seconds +- up to 100ms of jitter.
-				float64(r.Intn(100) - 50) // Varying from -50 to +50 in 100 discrete steps.
-		}, newXORChunk)
-	})
-	b.Run("random 0-1", func(b *testing.B) {
-		benchmarkAppender(b, func() (int64, float64) {
-			return int64(r.Intn(100) - 50 + 15000), // 15 seconds +- up to 100ms of jitter.
-				r.Float64() // Random between 0 and 1.0.
-		}, newXORChunk)
-	})
-}
-
-func benchmarkAppender(b *testing.B, deltas func() (int64, float64), newChunk func() Chunk) {
-	var (
-		t = int64(1234123324)
-		v = 1243535.123
-	)
-	const nSamples = 120 // Same as tsdb.DefaultSamplesPerChunk.
-	var exp []pair
-	for range nSamples {
-		dt, dv := deltas()
-		t += dt
-		v += dv
-		exp = append(exp, pair{t: t, v: v})
-	}
-
-	b.ReportAllocs()
-
-	for b.Loop() {
-		c := newChunk()
-
-		a, err := c.Appender()
-		if err != nil {
-			b.Fatalf("get appender: %s", err)
-		}
-		for _, p := range exp {
-			a.Append(0, p.t, p.v)
-		}
-	}
 }
