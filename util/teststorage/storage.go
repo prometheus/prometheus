@@ -16,6 +16,7 @@ package teststorage
 import (
 	"fmt"
 	"os"
+	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,14 +26,13 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type Option func(opt *tsdb.Options)
 
 // New returns a new TestStorage for testing purposes
 // that removes all associated files on closing.
-func New(t testutil.T, o ...Option) *TestStorage {
+func New(t testing.TB, o ...Option) *TestStorage {
 	s, err := NewWithError(o...)
 	require.NoError(t, err)
 	return s

@@ -43,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
 	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
@@ -72,7 +71,7 @@ var testStartTime = time.Unix(0, 0).UTC()
 
 // LoadedStorage returns storage with generated data using the provided load statements.
 // Non-load statements will cause test errors.
-func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
+func LoadedStorage(t testing.TB, input string) *teststorage.TestStorage {
 	test, err := newTest(t, input, false, newTestStorage)
 	require.NoError(t, err)
 
@@ -152,7 +151,7 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 }
 
 // RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
-func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
+func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testing.TB) storage.Storage) {
 	t.Cleanup(func() {
 		parser.EnableExperimentalFunctions = false
 		parser.ExperimentalDurationExpr = false
@@ -177,22 +176,22 @@ func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage f
 }
 
 // RunTest parses and runs the test against the provided engine.
-func RunTest(t testutil.T, input string, engine promql.QueryEngine) {
+func RunTest(t testing.TB, input string, engine promql.QueryEngine) {
 	RunTestWithStorage(t, input, engine, newTestStorage)
 }
 
 // RunTestWithStorage parses and runs the test against the provided engine and storage.
-func RunTestWithStorage(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
+func RunTestWithStorage(t testing.TB, input string, engine promql.QueryEngine, newStorage func(testing.TB) storage.Storage) {
 	require.NoError(t, runTest(t, input, engine, newStorage, false))
 }
 
 // testTest allows tests to be run in "test-the-test" mode (true for
 // testingMode). This is a special mode for testing test code execution itself.
-func testTest(t testutil.T, input string, engine promql.QueryEngine) error {
+func testTest(t testing.TB, input string, engine promql.QueryEngine) error {
 	return runTest(t, input, engine, newTestStorage, true)
 }
 
-func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage, testingMode bool) error {
+func runTest(t testing.TB, input string, engine promql.QueryEngine, newStorage func(testing.TB) storage.Storage, testingMode bool) error {
 	test, err := newTest(t, input, testingMode, newStorage)
 
 	// Why do this before checking err? newTest() can create the test storage and then return an error,
@@ -227,13 +226,14 @@ func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage f
 // test is a sequence of read and write commands that are run
 // against a test storage.
 type test struct {
-	testutil.T
+	testing.TB
+
 	// testingMode distinguishes between normal execution and test-execution mode.
 	testingMode bool
 
 	cmds []testCommand
 
-	open    func(testutil.T) storage.Storage
+	open    func(testing.TB) storage.Storage
 	storage storage.Storage
 
 	context   context.Context
@@ -241,9 +241,9 @@ type test struct {
 }
 
 // newTest returns an initialized empty Test.
-func newTest(t testutil.T, input string, testingMode bool, newStorage func(testutil.T) storage.Storage) (*test, error) {
+func newTest(t testing.TB, input string, testingMode bool, newStorage func(testing.TB) storage.Storage) (*test, error) {
 	test := &test{
-		T:           t,
+		TB:          t,
 		cmds:        []testCommand{},
 		testingMode: testingMode,
 		open:        newStorage,
@@ -254,7 +254,7 @@ func newTest(t testutil.T, input string, testingMode bool, newStorage func(testu
 	return test, err
 }
 
-func newTestStorage(t testutil.T) storage.Storage { return teststorage.New(t) }
+func newTestStorage(t testing.TB) storage.Storage { return teststorage.New(t) }
 
 //go:embed testdata
 var testsFs embed.FS
@@ -1456,7 +1456,7 @@ func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		return do()
 	}
 
-	if tt, ok := t.T.(*testing.T); ok {
+	if tt, ok := t.TB.(*testing.T); ok {
 		tt.Run(fmt.Sprintf("line %d/%s", cmd.line, cmd.expr), func(t *testing.T) {
 			require.NoError(t, do())
 		})
@@ -1624,12 +1624,12 @@ func assertMatrixSorted(m promql.Matrix) error {
 func (t *test) clear() {
 	if t.storage != nil {
 		err := t.storage.Close()
-		require.NoError(t.T, err, "Unexpected error while closing test storage.")
+		require.NoError(t.TB, err, "Unexpected error while closing test storage.")
 	}
 	if t.cancelCtx != nil {
 		t.cancelCtx()
 	}
-	t.storage = t.open(t.T)
+	t.storage = t.open(t.TB)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 
