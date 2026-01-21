@@ -111,7 +111,7 @@ var ruleEvalTestScenarios = []struct {
 	},
 }
 
-func setUpRuleEvalTest(t require.TestingT) *teststorage.TestStorage {
+func setUpRuleEvalTest(t testing.TB) *teststorage.TestStorage {
 	return promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label_a="1",label_b="3"} 1
