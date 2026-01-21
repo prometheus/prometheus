@@ -22,6 +22,8 @@ import (
 	"github.com/prometheus/prometheus/web/api/testhelpers"
 )
 
+// TODO: Generate automated tests from OpenAPI spec to validate API responses.
+
 // TestAPIEmpty tests the API with no metrics and no rules.
 func TestAPIEmpty(t *testing.T) {
 	// Create an API with empty defaults (no series, no rules).

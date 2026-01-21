@@ -132,13 +132,11 @@ func TestOpenAPIPathFiltering(t *testing.T) {
 			require.True(t, ok, "paths should be a map")
 
 			for _, want := range tc.wantPaths {
-				_, found := paths[want]
-				require.True(t, found, "expected path %s to be present", want)
+				require.Contains(t, paths, want)
 			}
 
 			for _, exclude := range tc.excludePaths {
-				_, found := paths[exclude]
-				require.False(t, found, "expected path %s to be excluded", exclude)
+				require.NotContains(t, paths, exclude)
 			}
 		})
 	}
@@ -179,10 +177,12 @@ func TestOpenAPISchemaCompleteness(t *testing.T) {
 	}
 
 	for _, schema := range essentialSchemas {
-		_, found := schemas[schema]
-		require.True(t, found, "expected schema %s to be present", schema)
+		require.Contains(t, schemas, schema)
 	}
 }
+
+// TODO: Add test to verify all routes from api.go Register() are covered in OpenAPI spec.
+// Consider wrapping Router to track registered paths and cross-check with OpenAPI paths.
 
 // TestOpenAPIShouldIncludePath verifies the shouldIncludePath method correctly
 // matches paths against the IncludePaths filter configuration.
@@ -279,11 +279,9 @@ func TestOpenAPIVersionConsistency(t *testing.T) {
 	paths31 := spec31["paths"].(map[any]any)
 	paths32 := spec32["paths"].(map[any]any)
 
-	_, found31 := paths31["/notifications/live"]
-	require.False(t, found31, "/notifications/live should not be in OpenAPI 3.1")
+	require.NotContains(t, paths31, "/notifications/live")
 
-	_, found32 := paths32["/notifications/live"]
-	require.True(t, found32, "/notifications/live should be in OpenAPI 3.2")
+	require.Contains(t, paths32, "/notifications/live")
 
 	// Verify 3.2 has exactly one more path than 3.1.
 	require.Len(t, paths32, len(paths31)+1,

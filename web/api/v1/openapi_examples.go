@@ -190,7 +190,7 @@ func queryResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
 
 	examples.Set("vectorResult", &base.Example{
-		Summary: "Successful instant query with vector result",
+		Summary: "Instant vector query: up",
 		Value: createYAMLNode(map[string]any{
 			"status": "success",
 			"data": map[string]any{
@@ -219,7 +219,7 @@ func queryResponseExamples() *orderedmap.Map[string, *base.Example] {
 	})
 
 	examples.Set("scalarResult", &base.Example{
-		Summary: "Query returning a scalar value",
+		Summary: "Scalar query: scalar(42)",
 		Value: createYAMLNode(map[string]any{
 			"status": "success",
 			"data": map[string]any{
@@ -229,6 +229,31 @@ func queryResponseExamples() *orderedmap.Map[string, *base.Example] {
 		}),
 	})
 
+	examples.Set("matrixResult", &base.Example{
+		Summary: "Range vector query: up[5m]",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"resultType": "matrix",
+				"result": []map[string]any{
+					{
+						"metric": map[string]string{
+							"__name__": "up",
+							"job":      "prometheus",
+							"instance": "demo.prometheus.io:9090",
+						},
+						"values": []any{
+							[]any{1767436320, "1"},
+							[]any{1767436620, "1"},
+						},
+					},
+				},
+			},
+		}),
+	})
+
+	// TODO: Add native histogram example.
+
 	return examples
 }
 
@@ -237,7 +262,7 @@ func queryRangeResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
 
 	examples.Set("matrixResult", &base.Example{
-		Summary: "Successful range query with matrix result",
+		Summary: "Range query: rate(prometheus_http_requests_total[5m])",
 		Value: createYAMLNode(map[string]any{
 			"status": "success",
 			"data": map[string]any{
@@ -259,6 +284,8 @@ func queryRangeResponseExamples() *orderedmap.Map[string, *base.Example] {
 			},
 		}),
 	})
+
+	// TODO: Add native histogram example.
 
 	return examples
 }

@@ -25,7 +25,7 @@ paths:
                     type: integer
                     format: int64
                   examples:
-                    default:
+                    example:
                         value: 100
                 - name: time
                   in: query
@@ -42,8 +42,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T13:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
                 - name: query
                   in: query
                   description: The PromQL query to execute.
@@ -52,7 +54,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: up
                 - name: timeout
                   in: query
@@ -62,7 +64,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: 30s
                 - name: lookback_delta
                   in: query
@@ -72,7 +74,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: 5m
                 - name: stats
                   in: query
@@ -82,7 +84,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: all
             responses:
                 "200":
@@ -93,7 +95,7 @@ paths:
                                 $ref: '#/components/schemas/QueryOutputBody'
                             examples:
                                 vectorResult:
-                                    summary: Successful instant query with vector result
+                                    summary: 'Instant vector query: up'
                                     value:
                                         data:
                                             result:
@@ -115,13 +117,29 @@ paths:
                                             resultType: vector
                                         status: success
                                 scalarResult:
-                                    summary: Query returning a scalar value
+                                    summary: 'Scalar query: scalar(42)'
                                     value:
                                         data:
                                             result:
                                                 - 1767436620
                                                 - "42"
                                             resultType: scalar
+                                        status: success
+                                matrixResult:
+                                    summary: 'Range vector query: up[5m]'
+                                    value:
+                                        data:
+                                            result:
+                                                - metric:
+                                                    __name__: up
+                                                    instance: demo.prometheus.io:9090
+                                                    job: prometheus
+                                                  values:
+                                                    - - 1767436320
+                                                      - "1"
+                                                    - - 1767436620
+                                                      - "1"
+                                            resultType: matrix
                                         status: success
                 default:
                     description: Error executing query.
@@ -173,7 +191,7 @@ paths:
                                 $ref: '#/components/schemas/QueryOutputBody'
                             examples:
                                 vectorResult:
-                                    summary: Successful instant query with vector result
+                                    summary: 'Instant vector query: up'
                                     value:
                                         data:
                                             result:
@@ -195,13 +213,29 @@ paths:
                                             resultType: vector
                                         status: success
                                 scalarResult:
-                                    summary: Query returning a scalar value
+                                    summary: 'Scalar query: scalar(42)'
                                     value:
                                         data:
                                             result:
                                                 - 1767436620
                                                 - "42"
                                             resultType: scalar
+                                        status: success
+                                matrixResult:
+                                    summary: 'Range vector query: up[5m]'
+                                    value:
+                                        data:
+                                            result:
+                                                - metric:
+                                                    __name__: up
+                                                    instance: demo.prometheus.io:9090
+                                                    job: prometheus
+                                                  values:
+                                                    - - 1767436320
+                                                      - "1"
+                                                    - - 1767436620
+                                                      - "1"
+                                            resultType: matrix
                                         status: success
                 default:
                     description: Error executing instant query.
@@ -232,7 +266,7 @@ paths:
                     type: integer
                     format: int64
                   examples:
-                    default:
+                    example:
                         value: 100
                 - name: start
                   in: query
@@ -249,8 +283,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T12:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
                 - name: end
                   in: query
                   description: The end time of the query.
@@ -266,8 +302,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T13:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
                 - name: step
                   in: query
                   description: The step size of the query.
@@ -276,7 +314,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: 15s
                 - name: query
                   in: query
@@ -286,7 +324,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: rate(prometheus_http_requests_total{handler="/api/v1/query"}[5m])
                 - name: timeout
                   in: query
@@ -296,7 +334,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: 30s
                 - name: lookback_delta
                   in: query
@@ -306,7 +344,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: 5m
                 - name: stats
                   in: query
@@ -316,7 +354,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: all
             responses:
                 "200":
@@ -327,7 +365,7 @@ paths:
                                 $ref: '#/components/schemas/QueryRangeOutputBody'
                             examples:
                                 matrixResult:
-                                    summary: Successful range query with matrix result
+                                    summary: 'Range query: rate(prometheus_http_requests_total[5m])'
                                     value:
                                         data:
                                             result:
@@ -394,7 +432,7 @@ paths:
                                 $ref: '#/components/schemas/QueryRangeOutputBody'
                             examples:
                                 matrixResult:
-                                    summary: Successful range query with matrix result
+                                    summary: 'Range query: rate(prometheus_http_requests_total[5m])'
                                     value:
                                         data:
                                             result:
@@ -446,8 +484,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T12:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
                 - name: end
                   in: query
                   description: End timestamp for exemplars query.
@@ -463,8 +503,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T13:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
                 - name: query
                   in: query
                   description: PromQL query to extract exemplars for.
@@ -473,7 +515,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: prometheus_http_requests_total
             responses:
                 "200":
@@ -583,7 +625,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: sum(rate(http_requests_total[5m])) by (job)
             responses:
                 "200":
@@ -673,7 +715,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: up{job="prometheus"}
             responses:
                 "200":
@@ -772,8 +814,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T12:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
                 - name: end
                   in: query
                   description: End timestamp for label names query.
@@ -789,8 +833,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T13:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
                 - name: match[]
                   in: query
                   description: Series selector argument.
@@ -801,7 +847,7 @@ paths:
                     items:
                         type: string
                   examples:
-                    default:
+                    example:
                         value:
                             - '{job="prometheus"}'
                 - name: limit
@@ -813,7 +859,7 @@ paths:
                     type: integer
                     format: int64
                   examples:
-                    default:
+                    example:
                         value: 100
             responses:
                 "200":
@@ -966,8 +1012,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T12:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
                 - name: end
                   in: query
                   description: End timestamp for label values query.
@@ -983,8 +1031,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T13:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
                 - name: match[]
                   in: query
                   description: Series selector argument.
@@ -995,7 +1045,7 @@ paths:
                     items:
                         type: string
                   examples:
-                    default:
+                    example:
                         value:
                             - '{job="prometheus"}'
                 - name: limit
@@ -1007,7 +1057,7 @@ paths:
                     type: integer
                     format: int64
                   examples:
-                    default:
+                    example:
                         value: 1000
             responses:
                 "200":
@@ -1065,8 +1115,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T12:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
                 - name: end
                   in: query
                   description: End timestamp for series query.
@@ -1082,8 +1134,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T13:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
                 - name: match[]
                   in: query
                   description: Series selector argument.
@@ -1094,7 +1148,7 @@ paths:
                     items:
                         type: string
                   examples:
-                    default:
+                    example:
                         value:
                             - '{job="prometheus"}'
                 - name: limit
@@ -1106,7 +1160,7 @@ paths:
                     type: integer
                     format: int64
                   examples:
-                    default:
+                    example:
                         value: 100
             responses:
                 "200":
@@ -1269,7 +1323,7 @@ paths:
                     type: integer
                     format: int64
                   examples:
-                    default:
+                    example:
                         value: 100
                 - name: limit_per_metric
                   in: query
@@ -1280,7 +1334,7 @@ paths:
                     type: integer
                     format: int64
                   examples:
-                    default:
+                    example:
                         value: 10
                 - name: metric
                   in: query
@@ -1290,7 +1344,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: http_requests_total
             responses:
                 "200":
@@ -1386,7 +1440,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: prometheus
                 - name: state
                   in: query
@@ -1396,7 +1450,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: active
             responses:
                 "200":
@@ -1470,7 +1524,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: '{job="prometheus"}'
                 - name: metric
                   in: query
@@ -1480,7 +1534,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: http_requests_total
                 - name: limit
                   in: query
@@ -1491,7 +1545,7 @@ paths:
                     type: integer
                     format: int64
                   examples:
-                    default:
+                    example:
                         value: 10
             responses:
                 "200":
@@ -1541,7 +1595,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: prometheus
                 - name: labels
                   in: query
@@ -1551,7 +1605,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: '{"__address__":"localhost:9090","job":"prometheus"}'
             responses:
                 "200":
@@ -1607,7 +1661,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: alert
                 - name: rule_name[]
                   in: query
@@ -1619,7 +1673,7 @@ paths:
                     items:
                         type: string
                   examples:
-                    default:
+                    example:
                         value:
                             - HighErrorRate
                 - name: rule_group[]
@@ -1632,7 +1686,7 @@ paths:
                     items:
                         type: string
                   examples:
-                    default:
+                    example:
                         value:
                             - example_alerts
                 - name: file[]
@@ -1645,7 +1699,7 @@ paths:
                     items:
                         type: string
                   examples:
-                    default:
+                    example:
                         value:
                             - /etc/prometheus/rules.yml
                 - name: match[]
@@ -1658,7 +1712,7 @@ paths:
                     items:
                         type: string
                   examples:
-                    default:
+                    example:
                         value:
                             - '{severity="critical"}'
                 - name: exclude_alerts
@@ -1669,7 +1723,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: "false"
                 - name: group_limit
                   in: query
@@ -1680,7 +1734,7 @@ paths:
                     type: integer
                     format: int64
                   examples:
-                    default:
+                    example:
                         value: 100
                 - name: group_next_token
                   in: query
@@ -1690,7 +1744,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: abc123
             responses:
                 "200":
@@ -2009,7 +2063,7 @@ paths:
                     type: integer
                     format: int64
                   examples:
-                    default:
+                    example:
                         value: 10
             responses:
                 "200":
@@ -2163,7 +2217,7 @@ paths:
                     items:
                         type: string
                   examples:
-                    default:
+                    example:
                         value:
                             - '{__name__=~"test.*"}'
                 - name: start
@@ -2181,8 +2235,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T12:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
                 - name: end
                   in: query
                   description: End timestamp for deletion.
@@ -2198,8 +2254,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T13:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
             responses:
                 "200":
                     description: Series deleted successfully via PUT.
@@ -2242,7 +2300,7 @@ paths:
                     items:
                         type: string
                   examples:
-                    default:
+                    example:
                         value:
                             - '{__name__=~"test.*"}'
                 - name: start
@@ -2260,8 +2318,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T12:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
                 - name: end
                   in: query
                   description: End timestamp for deletion.
@@ -2277,8 +2337,10 @@ paths:
                           description: Unix timestamp in seconds.
                     description: Timestamp in RFC3339 format or Unix timestamp in seconds.
                   examples:
-                    default:
-                        value: "2026-01-02T13:37:00.000Z"
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
             responses:
                 "200":
                     description: Series deleted successfully.
@@ -2383,7 +2445,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: "false"
             responses:
                 "200":
@@ -2427,7 +2489,7 @@ paths:
                   schema:
                     type: string
                   examples:
-                    default:
+                    example:
                         value: "false"
             responses:
                 "200":
@@ -4408,7 +4470,7 @@ tags:
     - name: query
       description: Query and evaluate PromQL expressions.
     - name: metadata
-      description: Retrieve metric metadata and information.
+      description: Retrieve metric metadata such as type and unit.
     - name: labels
       description: Query label names and values.
     - name: series

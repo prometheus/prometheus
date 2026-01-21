@@ -212,7 +212,7 @@ func (*OpenAPIBuilder) buildTags(version string) []*base.Tag {
 		description string
 	}{
 		{"query", "Query", "Query and evaluate PromQL expressions."},
-		{"metadata", "Metadata", "Retrieve metric metadata and information."},
+		{"metadata", "Metadata", "Retrieve metric metadata such as type and unit."},
 		{"labels", "Labels", "Query label names and values."},
 		{"series", "Series", "Query and manage time series."},
 		{"targets", "Targets", "Retrieve target and scrape pool information."},

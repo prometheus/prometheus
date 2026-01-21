@@ -16,6 +16,8 @@
 package v1
 
 import (
+	"time"
+
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 	"github.com/pb33f/libopenapi/orderedmap"
@@ -25,12 +27,12 @@ import (
 
 func (*OpenAPIBuilder) queryPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("limit", "The maximum number of metrics to return.", false, integerSchema(), 100),
-		queryParamWithExample("time", "The evaluation timestamp (optional, defaults to current time).", false, timestampSchema(), "2026-01-02T13:37:00.000Z"),
-		queryParamWithExample("query", "The PromQL query to execute.", true, stringSchema(), "up"),
-		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, stringSchema(), "30s"),
-		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, stringSchema(), "5m"),
-		queryParamWithExample("stats", "When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.", false, stringSchema(), "all"),
+		queryParamWithExample("limit", "The maximum number of metrics to return.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("time", "The evaluation timestamp (optional, defaults to current time).", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("query", "The PromQL query to execute.", true, stringSchema(), []example{{"example", "up"}}),
+		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, stringSchema(), []example{{"example", "30s"}}),
+		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, stringSchema(), []example{{"example", "5m"}}),
+		queryParamWithExample("stats", "When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.", false, stringSchema(), []example{{"example", "all"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -52,14 +54,14 @@ func (*OpenAPIBuilder) queryPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) queryRangePath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("limit", "The maximum number of metrics to return.", false, integerSchema(), 100),
-		queryParamWithExample("start", "The start time of the query.", true, timestampSchema(), "2026-01-02T12:37:00.000Z"),
-		queryParamWithExample("end", "The end time of the query.", true, timestampSchema(), "2026-01-02T13:37:00.000Z"),
-		queryParamWithExample("step", "The step size of the query.", true, stringSchema(), "15s"),
-		queryParamWithExample("query", "The query to execute.", true, stringSchema(), "rate(prometheus_http_requests_total{handler=\"/api/v1/query\"}[5m])"),
-		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, stringSchema(), "30s"),
-		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, stringSchema(), "5m"),
-		queryParamWithExample("stats", "When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.", false, stringSchema(), "all"),
+		queryParamWithExample("limit", "The maximum number of metrics to return.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("start", "The start time of the query.", true, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "The end time of the query.", true, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("step", "The step size of the query.", true, stringSchema(), []example{{"example", "15s"}}),
+		queryParamWithExample("query", "The query to execute.", true, stringSchema(), []example{{"example", "rate(prometheus_http_requests_total{handler=\"/api/v1/query\"}[5m])"}}),
+		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, stringSchema(), []example{{"example", "30s"}}),
+		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, stringSchema(), []example{{"example", "5m"}}),
+		queryParamWithExample("stats", "When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.", false, stringSchema(), []example{{"example", "all"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -81,9 +83,9 @@ func (*OpenAPIBuilder) queryRangePath() *v3.PathItem {
 
 func (*OpenAPIBuilder) queryExemplarsPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("start", "Start timestamp for exemplars query.", false, timestampSchema(), "2026-01-02T12:37:00.000Z"),
-		queryParamWithExample("end", "End timestamp for exemplars query.", false, timestampSchema(), "2026-01-02T13:37:00.000Z"),
-		queryParamWithExample("query", "PromQL query to extract exemplars for.", true, stringSchema(), "prometheus_http_requests_total"),
+		queryParamWithExample("start", "Start timestamp for exemplars query.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp for exemplars query.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("query", "PromQL query to extract exemplars for.", true, stringSchema(), []example{{"example", "prometheus_http_requests_total"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -105,7 +107,7 @@ func (*OpenAPIBuilder) queryExemplarsPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) formatQueryPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("query", "PromQL expression to format.", true, stringSchema(), "sum(rate(http_requests_total[5m])) by (job)"),
+		queryParamWithExample("query", "PromQL expression to format.", true, stringSchema(), []example{{"example", "sum(rate(http_requests_total[5m])) by (job)"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -127,7 +129,7 @@ func (*OpenAPIBuilder) formatQueryPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) parseQueryPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("query", "PromQL expression to parse.", true, stringSchema(), "up{job=\"prometheus\"}"),
+		queryParamWithExample("query", "PromQL expression to parse.", true, stringSchema(), []example{{"example", "up{job=\"prometheus\"}"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -149,13 +151,13 @@ func (*OpenAPIBuilder) parseQueryPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) labelsPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("start", "Start timestamp for label names query.", false, timestampSchema(), "2026-01-02T12:37:00.000Z"),
-		queryParamWithExample("end", "End timestamp for label names query.", false, timestampSchema(), "2026-01-02T13:37:00.000Z"),
+		queryParamWithExample("start", "Start timestamp for label names query.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp for label names query.", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("match[]", "Series selector argument.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []string{"{job=\"prometheus\"}"}),
-		queryParamWithExample("limit", "Maximum number of label names to return.", false, integerSchema(), 100),
+		}), []example{{"example", []string{"{job=\"prometheus\"}"}}}),
+		queryParamWithExample("limit", "Maximum number of label names to return.", false, integerSchema(), []example{{"example", 100}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -178,13 +180,13 @@ func (*OpenAPIBuilder) labelsPath() *v3.PathItem {
 func (*OpenAPIBuilder) labelValuesPath() *v3.PathItem {
 	params := []*v3.Parameter{
 		pathParam("name", "Label name.", stringSchema()),
-		queryParamWithExample("start", "Start timestamp for label values query.", false, timestampSchema(), "2026-01-02T12:37:00.000Z"),
-		queryParamWithExample("end", "End timestamp for label values query.", false, timestampSchema(), "2026-01-02T13:37:00.000Z"),
+		queryParamWithExample("start", "Start timestamp for label values query.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp for label values query.", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("match[]", "Series selector argument.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []string{"{job=\"prometheus\"}"}),
-		queryParamWithExample("limit", "Maximum number of label values to return.", false, integerSchema(), 1000),
+		}), []example{{"example", []string{"{job=\"prometheus\"}"}}}),
+		queryParamWithExample("limit", "Maximum number of label values to return.", false, integerSchema(), []example{{"example", 1000}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -199,13 +201,13 @@ func (*OpenAPIBuilder) labelValuesPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) seriesPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("start", "Start timestamp for series query.", false, timestampSchema(), "2026-01-02T12:37:00.000Z"),
-		queryParamWithExample("end", "End timestamp for series query.", false, timestampSchema(), "2026-01-02T13:37:00.000Z"),
+		queryParamWithExample("start", "Start timestamp for series query.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp for series query.", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("match[]", "Series selector argument.", true, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []string{"{job=\"prometheus\"}"}),
-		queryParamWithExample("limit", "Maximum number of series to return.", false, integerSchema(), 100),
+		}), []example{{"example", []string{"{job=\"prometheus\"}"}}}),
+		queryParamWithExample("limit", "Maximum number of series to return.", false, integerSchema(), []example{{"example", 100}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -234,9 +236,9 @@ func (*OpenAPIBuilder) seriesPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) metadataPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("limit", "The maximum number of metrics to return.", false, integerSchema(), 100),
-		queryParamWithExample("limit_per_metric", "The maximum number of metadata entries per metric.", false, integerSchema(), 10),
-		queryParamWithExample("metric", "A metric name to filter metadata for.", false, stringSchema(), "http_requests_total"),
+		queryParamWithExample("limit", "The maximum number of metrics to return.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("limit_per_metric", "The maximum number of metadata entries per metric.", false, integerSchema(), []example{{"example", 10}}),
+		queryParamWithExample("metric", "A metric name to filter metadata for.", false, stringSchema(), []example{{"example", "http_requests_total"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -262,8 +264,8 @@ func (*OpenAPIBuilder) scrapePoolsPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) targetsPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("scrapePool", "Filter targets by scrape pool name.", false, stringSchema(), "prometheus"),
-		queryParamWithExample("state", "Filter by state: active, dropped, or any.", false, stringSchema(), "active"),
+		queryParamWithExample("scrapePool", "Filter targets by scrape pool name.", false, stringSchema(), []example{{"example", "prometheus"}}),
+		queryParamWithExample("state", "Filter by state: active, dropped, or any.", false, stringSchema(), []example{{"example", "active"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -278,9 +280,9 @@ func (*OpenAPIBuilder) targetsPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) targetsMetadataPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("match_target", "Label selector to filter targets.", false, stringSchema(), "{job=\"prometheus\"}"),
-		queryParamWithExample("metric", "Metric name to retrieve metadata for.", false, stringSchema(), "http_requests_total"),
-		queryParamWithExample("limit", "Maximum number of targets to match.", false, integerSchema(), 10),
+		queryParamWithExample("match_target", "Label selector to filter targets.", false, stringSchema(), []example{{"example", "{job=\"prometheus\"}"}}),
+		queryParamWithExample("metric", "Metric name to retrieve metadata for.", false, stringSchema(), []example{{"example", "http_requests_total"}}),
+		queryParamWithExample("limit", "Maximum number of targets to match.", false, integerSchema(), []example{{"example", 10}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -295,8 +297,8 @@ func (*OpenAPIBuilder) targetsMetadataPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) targetsRelabelStepsPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("scrapePool", "Name of the scrape pool.", true, stringSchema(), "prometheus"),
-		queryParamWithExample("labels", "JSON-encoded labels to apply relabel rules to.", true, stringSchema(), "{\"__address__\":\"localhost:9090\",\"job\":\"prometheus\"}"),
+		queryParamWithExample("scrapePool", "Name of the scrape pool.", true, stringSchema(), []example{{"example", "prometheus"}}),
+		queryParamWithExample("labels", "JSON-encoded labels to apply relabel rules to.", true, stringSchema(), []example{{"example", "{\"__address__\":\"localhost:9090\",\"job\":\"prometheus\"}"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -311,26 +313,26 @@ func (*OpenAPIBuilder) targetsRelabelStepsPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) rulesPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("type", "Filter by rule type: alert or record.", false, stringSchema(), "alert"),
+		queryParamWithExample("type", "Filter by rule type: alert or record.", false, stringSchema(), []example{{"example", "alert"}}),
 		queryParamWithExample("rule_name[]", "Filter by rule name.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []string{"HighErrorRate"}),
+		}), []example{{"example", []string{"HighErrorRate"}}}),
 		queryParamWithExample("rule_group[]", "Filter by rule group name.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []string{"example_alerts"}),
+		}), []example{{"example", []string{"example_alerts"}}}),
 		queryParamWithExample("file[]", "Filter by file path.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []string{"/etc/prometheus/rules.yml"}),
+		}), []example{{"example", []string{"/etc/prometheus/rules.yml"}}}),
 		queryParamWithExample("match[]", "Label matchers to filter rules.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []string{"{severity=\"critical\"}"}),
-		queryParamWithExample("exclude_alerts", "Exclude active alerts from response.", false, stringSchema(), "false"),
-		queryParamWithExample("group_limit", "Maximum number of rule groups to return.", false, integerSchema(), 100),
-		queryParamWithExample("group_next_token", "Pagination token for next page.", false, stringSchema(), "abc123"),
+		}), []example{{"example", []string{"{severity=\"critical\"}"}}}),
+		queryParamWithExample("exclude_alerts", "Exclude active alerts from response.", false, stringSchema(), []example{{"example", "false"}}),
+		queryParamWithExample("group_limit", "Maximum number of rule groups to return.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("group_next_token", "Pagination token for next page.", false, stringSchema(), []example{{"example", "abc123"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -411,7 +413,7 @@ func (*OpenAPIBuilder) statusFlagsPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) statusTSDBPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("limit", "The maximum number of items to return per category.", false, integerSchema(), 10),
+		queryParamWithExample("limit", "The maximum number of items to return per category.", false, integerSchema(), []example{{"example", 10}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -451,9 +453,9 @@ func (*OpenAPIBuilder) adminDeleteSeriesPath() *v3.PathItem {
 		queryParamWithExample("match[]", "Series selectors to identify series to delete.", true, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []string{"{__name__=~\"test.*\"}"}),
-		queryParamWithExample("start", "Start timestamp for deletion.", false, timestampSchema(), "2026-01-02T12:37:00.000Z"),
-		queryParamWithExample("end", "End timestamp for deletion.", false, timestampSchema(), "2026-01-02T13:37:00.000Z"),
+		}), []example{{"example", []string{"{__name__=~\"test.*\"}"}}}),
+		queryParamWithExample("start", "Start timestamp for deletion.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp for deletion.", false, timestampSchema(), timestampExamples(exampleTime)),
 	}
 	return &v3.PathItem{
 		Post: &v3.Operation{
@@ -496,7 +498,7 @@ func (*OpenAPIBuilder) adminCleanTombstonesPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) adminSnapshotPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("skip_head", "If true, do not snapshot data in the head block.", false, stringSchema(), "false"),
+		queryParamWithExample("skip_head", "If true, do not snapshot data in the head block.", false, stringSchema(), []example{{"example", "false"}}),
 	}
 	return &v3.PathItem{
 		Post: &v3.Operation{

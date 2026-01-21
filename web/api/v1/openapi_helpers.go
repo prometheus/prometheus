@@ -14,6 +14,8 @@
 package v1
 
 import (
+	"time"
+
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 	"github.com/pb33f/libopenapi/orderedmap"
@@ -22,12 +24,31 @@ import (
 
 // Helper functions for building common structures.
 
+// exampleTime is a reference time used for timestamp examples.
+var exampleTime = time.Date(2026, 1, 2, 13, 37, 0, 0, time.UTC)
+
 func boolPtr(b bool) *bool {
 	return &b
 }
 
 func int64Ptr(i int64) *int64 {
 	return &i
+}
+
+type example struct {
+	name  string
+	value any
+}
+
+// exampleMap creates an Examples map from the provided examples.
+func exampleMap(exs []example) *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+	for _, ex := range exs {
+		examples.Set(ex.name, &base.Example{
+			Value: createYAMLNode(ex.value),
+		})
+	}
+	return examples
 }
 
 func schemaRef(ref string) *base.SchemaProxy {
@@ -249,8 +270,16 @@ func responsesWithErrorExamples(okSchemaRef string, successExamples, errorExampl
 	return &v3.Responses{Codes: codes}
 }
 
-// queryParamWithExample creates a query parameter with an optional example value.
-func queryParamWithExample(name, description string, required bool, schema *base.SchemaProxy, exampleValue any) *v3.Parameter {
+// timestampExamples returns examples for timestamp parameters (RFC3339 and epoch).
+func timestampExamples(t time.Time) []example {
+	return []example{
+		{"RFC3339", t.Format(time.RFC3339Nano)},
+		{"epoch", t.Unix()},
+	}
+}
+
+// queryParamWithExample creates a query parameter with examples.
+func queryParamWithExample(name, description string, required bool, schema *base.SchemaProxy, examples []example) *v3.Parameter {
 	param := &v3.Parameter{
 		Name:        name,
 		In:          "query",
@@ -259,12 +288,8 @@ func queryParamWithExample(name, description string, required bool, schema *base
 		Explode:     boolPtr(false),
 		Schema:      schema,
 	}
-	if exampleValue != nil {
-		examples := orderedmap.New[string, *base.Example]()
-		examples.Set("default", &base.Example{
-			Value: createYAMLNode(exampleValue),
-		})
-		param.Examples = examples
+	if len(examples) > 0 {
+		param.Examples = exampleMap(examples)
 	}
 	return param
 }
