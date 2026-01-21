@@ -19,6 +19,6 @@ lists\.gnu\.org
 www\.gnu\.org
 pthree\.org
 
-# Ignore archived / legacy docs
+# Ignore archived / Legacy docs
 docs\.sigstore\.dev
 docs\.mattermost\.com
