@@ -114,7 +114,8 @@ type Manager struct {
 	opts   *Options
 	logger *slog.Logger
 
-	appendable storage.Appendable
+	appendable   storage.Appendable
+	appendableV2 storage.AppendableV2
 
 	graceShut chan struct{}
 
@@ -196,7 +197,7 @@ func (m *Manager) reload() {
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
-			sp, err := newScrapePool(scrapeConfig, m.appendable, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
+			sp, err := newScrapePool(scrapeConfig, m.appendable, m.appendableV2, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
 			if err != nil {
 				m.metrics.targetScrapePoolsFailed.Inc()
 				m.logger.Error("error creating new scrape pool", "err", err, "scrape_pool", setName)

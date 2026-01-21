@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -1201,7 +1202,9 @@ func TestRuleMovedBetweenGroups(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	storage := teststorage.New(t, 600000)
+	storage := teststorage.New(t, func(opt *tsdb.Options) {
+		opt.OutOfOrderTimeWindow = 600000
+	})
 	defer storage.Close()
 	opts := promql.EngineOpts{
 		Logger:     nil,

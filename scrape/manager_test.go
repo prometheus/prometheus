@@ -528,7 +528,7 @@ scrape_configs:
 		ch <- struct{}{}
 		return noopLoop()
 	}
-	sp := newTestScrapePool(t, newLoop)
+	sp := newTestScrapePool(t, nil, false, newLoop)
 	sp.activeTargets[1] = &Target{}
 	sp.loops[1] = noopLoop()
 	sp.config = cfg1.ScrapeConfigs[0]
@@ -684,7 +684,7 @@ scrape_configs:
 			_, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			sp := newTestScrapePool(t, newLoop)
+			sp := newTestScrapePool(t, nil, false, newLoop)
 			sp.loops[1] = noopLoop()
 			sp.config = cfg1.ScrapeConfigs[0]
 			sp.metrics = scrapeManager.metrics
