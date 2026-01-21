@@ -2,6 +2,12 @@
 
 ## main / unreleased
 
+## 3.5.1 / 2026-01-07
+
+No code changes, just some dependency updates:
+* Docker library updated from 28.2.2 to 28.5.2. #17821
+* Built with Go 1.24.11.
+
 ## 3.5.0 / 2025-07-14
 
 * [FEATURE] PromQL: Add experimental type and unit metadata labels, behind feature flag `type-and-unit-labels`. #16228 #16632 #16718 #16743
