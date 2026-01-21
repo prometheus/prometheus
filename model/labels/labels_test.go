@@ -201,42 +201,55 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 	}
 }
 
-func TestLabels_HasAnyDuplicateLabelNames(t *testing.T) {
+func TestLabels_HasOutOfOrderLabel(t *testing.T) {
+	// Helper to create unsorted labels using ScratchBuilder without Sort()
+	unsortedLabels := func(ss ...string) Labels {
+		b := NewScratchBuilder(len(ss) / 2)
+		for i := 0; i < len(ss); i += 2 {
+			b.Add(ss[i], ss[i+1])
+		}
+		return b.Labels()
+	}
+
 	cases := []struct {
-		name      string
-		input     Labels
-		duplicate bool
-		labelName string
+		name       string
+		input      Labels
+		outOfOrder bool
+		labelName  string
 	}{
 		{
-			name:      "no duplicates",
-			input:     FromMap(map[string]string{"__name__": "up", "hostname": "localhost"}),
-			duplicate: false,
+			name:       "sorted labels",
+			input:      FromMap(map[string]string{"__name__": "up", "hostname": "localhost"}),
+			outOfOrder: false,
 		},
 		{
-			name:      "consecutive duplicates",
-			input:     FromStrings("__name__", "up", "hostname", "localhost", "hostname", "127.0.0.1"),
-			duplicate: true,
-			labelName: "hostname",
+			name:       "duplicate labels",
+			input:      unsortedLabels("__name__", "up", "hostname", "localhost", "hostname", "127.0.0.1"),
+			outOfOrder: true,
+			labelName:  "hostname",
 		},
 		{
-			name:      "non-consecutive duplicates",
-			input:     FromStrings("a", "1", "b", "2", "a", "3"),
-			duplicate: true,
-			labelName: "a",
+			name:       "out of order labels",
+			input:      unsortedLabels("b", "1", "a", "2"),
+			outOfOrder: true,
+			labelName:  "a",
 		},
 		{
-			name:      "empty labels",
-			input:     EmptyLabels(),
-			duplicate: false,
+			name:       "empty labels",
+			input:      EmptyLabels(),
+			outOfOrder: false,
+		},
+		{
+			name:       "single label",
+			input:      FromStrings("a", "1"),
+			outOfOrder: false,
 		},
 	}
 
-	seen := make(map[string]struct{})
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			l, d := c.input.HasAnyDuplicateLabelNames(seen)
-			require.Equal(t, c.duplicate, d, "incorrect duplicate bool")
+			l, ooo := c.input.HasOutOfOrderLabel()
+			require.Equal(t, c.outOfOrder, ooo, "incorrect out of order bool")
 			require.Equal(t, c.labelName, l, "incorrect label name")
 		})
 	}
