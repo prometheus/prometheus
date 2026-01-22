@@ -101,7 +101,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	switch c.Role {
 	case RoleEC2:
 		if c.EC2SDConfig == nil {
-			c.EC2SDConfig = &DefaultEC2SDConfig
+			ec2Config := DefaultEC2SDConfig
+			c.EC2SDConfig = &ec2Config
 		}
 		c.EC2SDConfig.HTTPClientConfig = c.HTTPClientConfig
 		if c.Region != "" {
@@ -133,7 +134,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 	case RoleECS:
 		if c.ECSSDConfig == nil {
-			c.ECSSDConfig = &DefaultECSSDConfig
+			ecsConfig := DefaultECSSDConfig
+			c.ECSSDConfig = &ecsConfig
 		}
 		c.ECSSDConfig.HTTPClientConfig = c.HTTPClientConfig
 		if c.Region != "" {
@@ -165,7 +167,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 	case RoleLightsail:
 		if c.LightsailSDConfig == nil {
-			c.LightsailSDConfig = &DefaultLightsailSDConfig
+			lightsailConfig := DefaultLightsailSDConfig
+			c.LightsailSDConfig = &lightsailConfig
 		}
 		c.LightsailSDConfig.HTTPClientConfig = c.HTTPClientConfig
 		if c.Region != "" {
