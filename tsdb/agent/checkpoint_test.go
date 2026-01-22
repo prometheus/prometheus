@@ -4,7 +4,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -26,23 +25,23 @@ import (
 
 // func TestBenchmarkCheckpoint(b *testing.T) {
 func BenchmarkCheckpoint(b *testing.B) {
-	// Prepare initial wlog state with segments.
-	testSamplesSrcDir := filepath.Join(b.TempDir(), "samples-src")
-	require.NoError(b, os.Mkdir(testSamplesSrcDir, os.ModePerm))
-	createCheckpointFixtures(b, checkpointFixtureParams{
-		dir:         testSamplesSrcDir,
-		numSegments: 512,
-		numSeries:   32,
-		dtDelta:     10000,
-		segmentSize: 32 << 10, // must be aligned to the page size
-	})
-
 	// Prepare in advance samples and labels that will be written into appender.
 	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
 		labelPrefix:   b.Name(),
 		numDatapoints: 1000,
 		numHistograms: 100,
-		numSeries:     8,
+		numSeries:     360,
+	})
+
+	// Prepare initial wlog state with segments.
+	testSamplesSrcDir := filepath.Join(b.TempDir(), "samples-src")
+	require.NoError(b, os.Mkdir(testSamplesSrcDir, os.ModePerm))
+	createCheckpointFixtures(b, checkpointFixtureParams{
+		dir:          testSamplesSrcDir,
+		numSegments:  512,
+		dtDelta:      10000,
+		segmentSize:  32 << 10, // must be aligned to the page size
+		seriesLabels: samples.datapointLabels,
 	})
 
 	// Check what checkpoint implementation to use from a feature flag.
@@ -132,6 +131,7 @@ func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
 
 	require.NoError(b, app.Commit())
 
+	// Trigger checkpoint call.
 	err = db.truncate(timestamp.FromTime(time.Now()))
 	require.NoError(b, err, "db.truncate")
 	require.NoError(b, db.Close())
@@ -173,11 +173,11 @@ func genCheckpointTestSamples(p checkpointTestSamplesParams) checkpointTestSampl
 }
 
 type checkpointFixtureParams struct {
-	dir         string
-	numSegments int
-	numSeries   int
-	segmentSize int
-	dtDelta     int64
+	dir          string
+	numSegments  int
+	segmentSize  int
+	dtDelta      int64
+	seriesLabels [][]labels.Label
 }
 
 func createCheckpointFixtures(t testing.TB, p checkpointFixtureParams) {
@@ -192,12 +192,12 @@ func createCheckpointFixtures(t testing.TB, p checkpointFixtureParams) {
 	w, err := wlog.NewSize(promslog.NewNopLogger(), nil, p.dir, p.segmentSize, DefaultOptions().WALCompression)
 	require.NoError(t, err)
 
-	series := make([]record.RefSeries, 0, p.numSeries)
-	meta := make([]record.RefMetadata, 0, p.numSeries)
-	for i := range p.numSeries {
+	series := make([]record.RefSeries, 0, len(p.seriesLabels))
+	meta := make([]record.RefMetadata, 0, len(p.seriesLabels))
+	for i, lset := range p.seriesLabels {
 		series = append(series, record.RefSeries{
 			Ref:    chunks.HeadSeriesRef(i),
-			Labels: labels.FromStrings("foo", "bar", "bar", strconv.Itoa(i)),
+			Labels: labels.New(lset...),
 		})
 		meta = append(meta, record.RefMetadata{
 			Ref:  chunks.HeadSeriesRef(i),
