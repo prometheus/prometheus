@@ -70,7 +70,11 @@ eval range from 0m to 10m step 5m info(metric, {__name__=~".+_info"})
     metric{instance="a", job="1", label="value", build_data="build", data="info", another_data="another info"} 0 1 2
 
 # Info metrics themselves are ignored when it comes to enriching with info metric data labels.
-eval range from 0m to 10m step 5m info(build_info, {__name__=~".+_info", build_data=~".+"})
+eval range from 0m to 10m step 5m info(build_info, {__name__=~".+_info", another_data=~".+"})
+    build_info{instance="a", job="1", build_data="build"} 1 1 1
+
+# Info metrics themselves are ignored when it comes to enriching with info metric data labels.
+eval range from 0m to 10m step 5m info(build_info, {__name__=~".+_info"})
     build_info{instance="a", job="1", build_data="build"} 1 1 1
 
 clear
