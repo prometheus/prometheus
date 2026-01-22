@@ -34,4 +34,3 @@ updates:
       interval: "weekly"
     security-updates-only: true
     open-pull-requests-limit: 1
-
