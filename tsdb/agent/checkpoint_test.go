@@ -26,7 +26,7 @@ import (
 
 // func TestBenchmarkCheckpoint(b *testing.T) {
 func BenchmarkCheckpoint(b *testing.B) {
-	// Prepare initial state with segments
+	// Prepare initial wlog state with segments.
 	testSamplesSrcDir := filepath.Join(b.TempDir(), "samples-src")
 	require.NoError(b, os.Mkdir(testSamplesSrcDir, os.ModePerm))
 	createCheckpointFixtures(b, checkpointFixtureParams{
@@ -37,7 +37,7 @@ func BenchmarkCheckpoint(b *testing.B) {
 		segmentSize: 32 << 10, // must be aligned to the page size
 	})
 
-	// prepare data in advance as appender returns "out of order sample" inside benchmarks.
+	// Prepare in advance samples and labels that will be written into appender.
 	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
 		labelPrefix:   b.Name(),
 		numDatapoints: 1000,
@@ -45,56 +45,30 @@ func BenchmarkCheckpoint(b *testing.B) {
 		numSeries:     8,
 	})
 
-	benchstatVal, isBenchStat := os.LookupEnv("TEST_BENCHSTAT")
-	cases := []struct {
-		label                       string
-		skipCurrentCheckpointReRead bool
-		disabled                    bool
-	}{
-		{
-			label:                       "wlog-checkpoint",
-			skipCurrentCheckpointReRead: false,
-			disabled:                    isBenchStat,
-		},
-		{
-			label:                       "new-checkpoint",
-			skipCurrentCheckpointReRead: true,
-			disabled:                    isBenchStat,
-		},
+	// Check what checkpoint implementation to use from a feature flag.
+	checkpointImpl := os.Getenv("TEST_CHECKPOINT_IMPL")
+	isNewCheckpointEnabled := checkpointImpl != "wlog"
 
-		// Dedicated case for benchstat to diff between old and new checkpoint implementation.
-		{
-			label:                       "checkpoint-diff",
-			skipCurrentCheckpointReRead: benchstatVal == "new-checkpoint",
-			disabled:                    !isBenchStat,
-		},
-	}
-
-	for _, tc := range cases {
-		if tc.disabled {
-			continue
-		}
-
+	// Run the bench.
+	b.Run("checkpoint", func(b *testing.B) {
+		// Copy initial wlog state into a scratch directory for test.
 		// wlog.Open expects to have a "wal" subdirectory
-		wlogDir := filepath.Join(b.TempDir(), tc.label, "wlog")
+		wlogDir := filepath.Join(b.TempDir(), "testdata", "wlog")
 		err := os.CopyFS(wlogDir, os.DirFS(testSamplesSrcDir))
 		require.NoErrorf(b, err, "failed to copy test samples from %q to %q", testSamplesSrcDir, wlogDir)
-
 		storageDir := filepath.Dir(wlogDir)
-		// b.Run(tc.label, func(b *testing.T) {
-		b.Run(tc.label, func(b *testing.B) {
-			b.ReportAllocs()
-			b.ResetTimer()
 
-			for b.Loop() {
-				benchCheckpoint(b, benchCheckpointParams{
-					storageDir:                  storageDir,
-					samples:                     samples,
-					skipCurrentCheckpointReRead: tc.skipCurrentCheckpointReRead,
-				})
-			}
-		})
-	}
+		b.ReportAllocs()
+		b.ResetTimer()
+
+		for b.Loop() {
+			benchCheckpoint(b, benchCheckpointParams{
+				storageDir:                  storageDir,
+				samples:                     samples,
+				skipCurrentCheckpointReRead: isNewCheckpointEnabled,
+			})
+		}
+	})
 }
 
 type benchCheckpointParams struct {
