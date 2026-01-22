@@ -850,14 +850,15 @@ series_item     : BLANK
                 // Histogram descriptions (part of unit testing).
                 | histogram_series_value
                         {
-                        $$ = []SequenceValue{{Histogram:$1}}
+                        $$ = []SequenceValue{yylex.(*parser).newHistogramSequenceValue($1)}
                         }
                 | histogram_series_value TIMES uint
                         {
                         $$ = []SequenceValue{}
                         // Add an additional value for time 0, which we ignore in tests.
+                        sv := yylex.(*parser).newHistogramSequenceValue($1)
                         for i:=uint64(0); i <= $3; i++{
-                                $$ = append($$, SequenceValue{Histogram:$1})
+                                $$ = append($$, sv)
                                 //$1 += $2
                         }
                         }
