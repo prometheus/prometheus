@@ -53,7 +53,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 		lbls, err := c.createAttributes(
 			pt.Attributes(),
 			settings,
-			nil,
+			reservedLabelNames,
 			true,
 			meta,
 			model.MetricNameLabel,
@@ -269,7 +269,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 		lbls, err := c.createAttributes(
 			pt.Attributes(),
 			settings,
-			nil,
+			reservedLabelNames,
 			true,
 			meta,
 			model.MetricNameLabel,

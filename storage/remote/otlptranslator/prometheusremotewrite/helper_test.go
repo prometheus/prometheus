@@ -386,6 +386,18 @@ func TestCreateAttributes(t *testing.T) {
 				"metric_multi", "multi metric",
 			),
 		},
+		{
+			name:                      "__name__ attribute is filtered when passed in ignoreAttrs",
+			promoteResourceAttributes: nil,
+			ignoreAttrs:               []string{model.MetricNameLabel},
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+			),
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -871,6 +883,55 @@ func TestGetPromExemplars(t *testing.T) {
 		_, err := c.getPromExemplars(ctx, es)
 		require.Error(t, err)
 	})
+}
+
+// TestOTLPNameAttributeFiltered verifies that __name__ attributes in OTLP data
+// are filtered out to prevent duplicate labels. This is a regression test for
+// the bug where OTLP metrics with a __name__ attribute could create duplicate
+// __name__ labels, causing TSDB compaction failures.
+func TestOTLPNameAttributeFiltered(t *testing.T) {
+	resource := pcommon.NewResource()
+	resource.Attributes().PutStr("service.name", "test-service")
+	resource.Attributes().PutStr("service.instance.id", "test-instance")
+
+	// Create attributes with __name__ to simulate problematic OTLP data.
+	attrsWithNameLabel := pcommon.NewMap()
+	attrsWithNameLabel.PutStr("__name__", "wrong_metric_name")
+	attrsWithNameLabel.PutStr("other_attr", "value")
+
+	mockAppender := &mockCombinedAppender{}
+	c := NewPrometheusConverter(mockAppender)
+	settings := Settings{}
+
+	require.NoError(t, c.setResourceContext(resource, settings))
+	require.NoError(t, c.setScopeContext(scope{}, settings))
+
+	// Call createAttributes with reservedLabelNames to filter __name__.
+	lbls, err := c.createAttributes(
+		attrsWithNameLabel,
+		settings,
+		reservedLabelNames, // This should filter out __name__ from attributes
+		true,
+		Metadata{},
+		model.MetricNameLabel, "correct_metric_name", // This is the correct name
+	)
+	require.NoError(t, err)
+
+	// Verify there's exactly one __name__ label with the correct value.
+	nameCount := 0
+	var nameValue string
+	lbls.Range(func(l labels.Label) {
+		if l.Name == model.MetricNameLabel {
+			nameCount++
+			nameValue = l.Value
+		}
+	})
+
+	require.Equal(t, 1, nameCount, "expected exactly one __name__ label, got %d", nameCount)
+	require.Equal(t, "correct_metric_name", nameValue, "expected __name__ to be 'correct_metric_name', got %q", nameValue)
+
+	// Also verify the other attribute is preserved.
+	require.Equal(t, "value", lbls.Get("other_attr"))
 }
 
 func TestAddTypeAndUnitLabels(t *testing.T) {
