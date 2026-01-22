@@ -151,19 +151,16 @@ func (c *XorOptSTChunk) Iterator(it Iterator) Iterator {
 }
 
 type xorOptSTAppender struct {
-	b        *bstream
-	numTotal uint16
-
-	firstSTKnown    bool
+	b               *bstream
+	numTotal        uint16
 	firstSTChangeOn uint16
-
-	st, t   int64
-	v       float64
-	stDelta int64
-	tDelta  uint64
-
-	leading  uint8
-	trailing uint8
+	leading         uint8
+	trailing        uint8
+	firstSTKnown    bool
+	st, t           int64
+	v               float64
+	stDelta         int64
+	tDelta          uint64
 }
 
 func (a *xorOptSTAppender) writeVDelta(v float64) {
@@ -329,9 +326,8 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 	}
 
 	var (
-		stDelta   int64
-		tDelta    uint64
-		stChanged bool
+		stDelta int64
+		tDelta  uint64
 	)
 
 	// Slow path for ST usage.
@@ -342,8 +338,8 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		for _, b := range buf[:binary.PutVarint(buf, st)] {
 			a.b.writeByte(b)
 		}
-		writeHeaderFirstSTKnown(a.b.bytes()[chunkHeaderSize:])
 		a.firstSTKnown = true
+		writeHeaderFirstSTKnown(a.b.bytes()[chunkHeaderSize:])
 
 		for _, b := range buf[:binary.PutVarint(buf, t)] {
 			a.b.writeByte(b)
@@ -353,7 +349,8 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		buf := make([]byte, binary.MaxVarintLen64)
 		stDelta = st - a.st
 		if stDelta != 0 {
-			stChanged = true
+			a.firstSTChangeOn = 1
+			writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], 1)
 			for _, b := range buf[:binary.PutVarint(buf, stDelta)] {
 				a.b.writeByte(b)
 			}
@@ -365,17 +362,13 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		}
 		a.writeVDelta(v)
 	default:
-		if a.firstSTChangeOn == 0 && a.numTotal == maxFirstSTChangeOn {
-			// We are at the 127th sample. firstSTChangeOn can only fit 7 bits due to a
-			// single byte header constrain, which is fine, given typical 120 sample size.
-			a.firstSTChangeOn = a.numTotal
-			writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.firstSTChangeOn)
-		}
-
 		stDelta = st - a.st
 		sdod := stDelta - a.stDelta
-		if sdod != 0 || a.firstSTChangeOn != 0 {
-			stChanged = true
+		if sdod != 0 {
+			if a.firstSTChangeOn == 0 {
+				a.firstSTChangeOn = a.numTotal
+				writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.numTotal)
+			}
 			// Gorilla has a max resolution of seconds, Prometheus milliseconds.
 			// Thus we use higher value range steps with larger bit size.
 			//
@@ -401,6 +394,19 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 				a.b.writeBits(uint64(sdod), 64)
 			}
 			// 	putClassicVarbitInt(a.b, sdod)
+		} else {
+			if a.firstSTChangeOn == 0 {
+				if a.numTotal == maxFirstSTChangeOn {
+					// We are at the 127th sample. firstSTChangeOn can only fit
+					// 7 bits due to a single byte header constrain, which is fine,
+					// given typical 120 sample size.
+					a.firstSTChangeOn = maxFirstSTChangeOn
+					writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], maxFirstSTChangeOn)
+					a.b.writeBit(zero)
+				}
+			} else {
+				a.b.writeBit(zero)
+			}
 		}
 
 		tDelta = uint64(t - a.t)
@@ -442,14 +448,6 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 
 	a.numTotal++
 	binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
-
-	// firstSTChangeOn == 0 indicates that we have one ST value (zero or not)
-	// for all STs in the appends until now. If we see a first "update"
-	// we are saving this number in the header and continue tracking all DoD (including zeros).
-	if a.firstSTChangeOn == 0 && stChanged {
-		a.firstSTChangeOn = a.numTotal - 1
-		writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.firstSTChangeOn)
-	}
 }
 
 func (it *xorOptSTtIterator) retErr(err error) ValueType {
