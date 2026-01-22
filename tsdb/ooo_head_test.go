@@ -184,7 +184,7 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 			},
 			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset},
 			expectedChunks: []chunkVerify{
-				{encoding: chunkenc.EncXOR, minTime: 1000, maxTime: 1100},
+				{encoding: chunkenc.EncXOROptST, minTime: 1000, maxTime: 1100},
 			},
 		},
 		"mix of floats and histograms": {
@@ -195,9 +195,9 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 			},
 			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset, histogram.UnknownCounterReset},
 			expectedChunks: []chunkVerify{
-				{encoding: chunkenc.EncXOR, minTime: 1000, maxTime: 1000},
+				{encoding: chunkenc.EncXOROptST, minTime: 1000, maxTime: 1000},
 				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},
-				{encoding: chunkenc.EncXOR, minTime: 1200, maxTime: 1200},
+				{encoding: chunkenc.EncXOROptST, minTime: 1200, maxTime: 1200},
 			},
 		},
 		"has an implicit counter reset": {
@@ -241,6 +241,16 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 				{encoding: chunkenc.EncHistogram, minTime: 0, maxTime: 1},
 			},
 		},
+		"float has ST": {
+			samples: []sample{
+				{t: 1000, f: 43.0, st: 900},
+				{t: 1100, f: 42.0, st: 1000},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncXOROptST, minTime: 1000, maxTime: 1100},
+			},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -278,12 +288,17 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 					continue
 				}
 				switch c.chunk.Encoding() {
-				case chunkenc.EncXOR:
+				case chunkenc.EncXOR, chunkenc.EncXOROptST:
 					for j, s := range samples {
 						require.Equal(t, chunkenc.ValFloat, s.Type())
 						// XOR chunks don't have counter reset hints, so we shouldn't expect anything else than UnknownCounterReset.
 						require.Equal(t, histogram.UnknownCounterReset, tc.expectedCounterResets[sampleIndex+j], "sample reset hint %d", sampleIndex+j)
 						require.Equal(t, tc.samples[sampleIndex+j].f, s.F(), "sample %d", sampleIndex+j)
+						if c.chunk.Encoding() == chunkenc.EncXOROptST {
+							// TODO(krajorama): update ST once it's handled.
+							// require.Equal(t, tc.samples[sampleIndex+j].st, s.ST(), "sample %d start timestamp", sampleIndex+j)
+							require.Equal(t, int64(0), s.ST(), "sample %d start timestamp", sampleIndex+j)
+						}
 					}
 				case chunkenc.EncHistogram:
 					for j, s := range samples {
@@ -301,6 +316,8 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 						compareTo.CounterResetHint = tc.expectedCounterResets[sampleIndex+j]
 						require.Equal(t, compareTo, s.FH().Compact(0), "sample %d", sampleIndex+j)
 					}
+				default:
+					t.Fatalf("unexpected chunk encoding %d", c.chunk.Encoding())
 				}
 				sampleIndex += len(samples)
 			}

@@ -4011,7 +4011,7 @@ func TestOOOWALWrite(t *testing.T) {
 					{Ref: 1, T: minutes(35), V: 35},
 				},
 				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-					{Ref: 1, MmapRef: 0x100000000 + 8},
+					{Ref: 1, MmapRef: 0x100000000 + 8 /* segment header size */},
 				},
 				[]record.RefSample{
 					{Ref: 1, T: minutes(36), V: 36},
@@ -4019,7 +4019,7 @@ func TestOOOWALWrite(t *testing.T) {
 				},
 
 				[]record.RefMmapMarker{ // 3rd sample, hence m-mapped.
-					{Ref: 1, MmapRef: 0x100000000 + 58},
+					{Ref: 1, MmapRef: 0x100000000 + 59 /* segment header size + 51 chunk, 51=50 byte chunk data + ST header */},
 				},
 				[]record.RefSample{ // Does not contain the in-order sample here.
 					{Ref: 1, T: minutes(50), V: 50},
@@ -4027,14 +4027,14 @@ func TestOOOWALWrite(t *testing.T) {
 
 				// Single commit but multiple OOO records.
 				[]record.RefMmapMarker{
-					{Ref: 2, MmapRef: 0x100000000 + 107},
+					{Ref: 2, MmapRef: 0x100000000 + 109},
 				},
 				[]record.RefSample{
 					{Ref: 2, T: minutes(50), V: 50},
 					{Ref: 2, T: minutes(51), V: 51},
 				},
 				[]record.RefMmapMarker{
-					{Ref: 2, MmapRef: 0x100000000 + 156},
+					{Ref: 2, MmapRef: 0x100000000 + 159},
 				},
 				[]record.RefSample{
 					{Ref: 2, T: minutes(52), V: 52},

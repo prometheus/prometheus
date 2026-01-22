@@ -6202,8 +6202,8 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 				numSamples int
 				numBytes   int
 			}{
-				{numSamples: 120, numBytes: 46},
-				{numSamples: 60, numBytes: 32},
+				{numSamples: 120, numBytes: 47},
+				{numSamples: 60, numBytes: 33},
 			},
 		},
 		"large float samples": {
@@ -6219,8 +6219,8 @@ func TestCuttingNewHeadChunks(t *testing.T) {
 				numSamples int
 				numBytes   int
 			}{
-				{99, 1008},
-				{21, 219},
+				{99, 1009},
+				{21, 220},
 			},
 		},
 		"small histograms": {

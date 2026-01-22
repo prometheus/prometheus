@@ -1161,7 +1161,8 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 		buf.PutUvarintBytes(s.headChunks.chunk.Bytes())
 
 		switch enc {
-		case chunkenc.EncXOR:
+		case chunkenc.EncXOR, chunkenc.EncXOROptST:
+			// TODO(krajorama): handle EncXOROptST properly once we start using it.
 			// Backwards compatibility for old sampleBuf which had last 4 samples.
 			for range 3 {
 				buf.PutBE64int64(0)
@@ -1214,7 +1215,8 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 	csr.mc.chunk = chk
 
 	switch enc {
-	case chunkenc.EncXOR:
+	case chunkenc.EncXOR, chunkenc.EncXOROptST:
+		// TODO(krajorama): handle EncXOROptST properly once we start using it.
 		// Backwards-compatibility for old sampleBuf which had last 4 samples.
 		for range 3 {
 			_ = dec.Be64int64()
