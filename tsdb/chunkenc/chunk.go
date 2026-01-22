@@ -392,6 +392,8 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 		return &HistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	case EncFloatHistogram:
 		return &FloatHistogramChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOROptST:
+		return &XorOptSTChunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
@@ -405,6 +407,8 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 		return NewHistogramChunk(), nil
 	case EncFloatHistogram:
 		return NewFloatHistogramChunk(), nil
+	case EncXOROptST:
+		return NewXOROptSTChunk(), nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
