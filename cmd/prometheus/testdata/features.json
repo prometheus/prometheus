@@ -142,6 +142,8 @@
     "=~": true,
     ">": true,
     ">=": true,
+    ">/": true,
+    "</": true,
     "@": true,
     "^": true,
     "and": true,
