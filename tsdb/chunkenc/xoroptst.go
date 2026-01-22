@@ -207,7 +207,7 @@ type xorOptSTtIterator struct {
 }
 
 func (it *xorOptSTtIterator) Seek(t int64) ValueType {
-	if it.state == eofState {
+	if it.err != nil {
 		return ValNone
 	}
 

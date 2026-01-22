@@ -110,10 +110,14 @@ func testChunk(t *testing.T, c Chunk, supportsST bool) {
 	ts, v = it3.At()
 	res3 = append(res3, triple{st: it3.AtST(), t: ts, v: v})
 
+	lastTs := ts
 	for it3.Next() == ValFloat {
 		ts, v := it3.At()
+		lastTs = ts
 		res3 = append(res3, triple{st: it3.AtST(), t: ts, v: v})
 	}
+	// Seeking to last timestamp should work and it is a no-op.
+	require.Equal(t, ValFloat, it3.Seek(lastTs))
 	require.NoError(t, it3.Err())
 	require.Equal(t, exp[mid:], res3)
 	require.Equal(t, ValNone, it3.Seek(exp[len(exp)-1].t+1))
