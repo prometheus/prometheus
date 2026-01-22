@@ -163,19 +163,33 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 		if oldAmSet, ok := configToAlertmanagers[hash]; ok {
 			ams.ams = oldAmSet.ams
 			ams.droppedAms = oldAmSet.droppedAms
-			ams.sendLoops = oldAmSet.sendLoops
+			// Only transfer sendLoops to the first new config with this hash.
+			// Subsequent configs with the same hash should not share the sendLoops
+			// map reference, as that would cause shared mutable state between
+			// alertmanagerSets (cleanup in one would affect the other).
+			oldAmSet.mtx.Lock()
+			if oldAmSet.sendLoops != nil {
+				ams.mtx.Lock()
+				ams.sendLoops = oldAmSet.sendLoops
+				oldAmSet.sendLoops = nil
+				ams.mtx.Unlock()
+			}
+			oldAmSet.mtx.Unlock()
 		}
 
 		amSets[k] = ams
 	}
 
-	// Clean up the send loops of sets that don't exist in the new config.
-	for k, oldAmSet := range n.alertmanagers {
-		if _, exists := amSets[k]; !exists {
-			oldAmSet.mtx.Lock()
+	// Clean up sendLoops that weren't transferred to new config.
+	// This happens when: (1) key was removed, or (2) key exists but hash changed.
+	// After the transfer loop above, any oldAmSet with non-nil sendLoops
+	// had its sendLoops NOT transferred (since we set it to nil on transfer).
+	for _, oldAmSet := range n.alertmanagers {
+		oldAmSet.mtx.Lock()
+		if oldAmSet.sendLoops != nil {
 			oldAmSet.cleanSendLoops(oldAmSet.ams...)
-			oldAmSet.mtx.Unlock()
 		}
+		oldAmSet.mtx.Unlock()
 	}
 
 	n.alertmanagers = amSets

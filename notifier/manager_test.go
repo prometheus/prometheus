@@ -1292,6 +1292,281 @@ func TestNotifierQueueIndependentOfFailedAlertmanager(t *testing.T) {
 	}
 }
 
+// TestApplyConfigSendLoopsNotStoppedOnKeyChange reproduces a bug where sendLoops
+// are incorrectly stopped when the alertmanager config key changes but the config
+// content (and thus its hash) remains the same.
+//
+// The bug scenario:
+// 1. Old config has alertmanager set with key "config-0" and config hash X
+// 2. New config has TWO alertmanager sets where the SECOND one ("config-1") has hash X
+// 3. sendLoops are transferred from old "config-0" to new "config-1" (hash match)
+// 4. Cleanup checks if key "config-0" exists in new config — it does (different config)
+// 5. No cleanup happens for old "config-0", sendLoops work correctly
+//
+// However, there's a variant where the key disappears completely:
+// 1. Old config: "config-0" with hash X, "config-1" with hash Y
+// 2. New config: "config-0" with hash Y (was "config-1"), no "config-1"
+// 3. sendLoops from old "config-0" (hash X) have nowhere to go
+// 4. Cleanup sees "config-1" doesn't exist, tries to clean up old "config-1"
+//
+// This test verifies that when config keys change, sendLoops are correctly preserved.
+func TestApplyConfigSendLoopsNotStoppedOnKeyChange(t *testing.T) {
+	alertReceived := make(chan struct{}, 10)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		select {
+		case alertReceived <- struct{}{}:
+		default:
+		}
+	}))
+	defer server.Close()
+
+	targetURL := server.Listener.Addr().String()
+	targetGroup := &targetgroup.Group{
+		Targets: []model.LabelSet{
+			{
+				"__address__": model.LabelValue(targetURL),
+			},
+		},
+	}
+
+	n := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
+	cfg := &config.Config{}
+
+	// Initial config with TWO alertmanager configs.
+	// "config-0" uses file_sd_configs with foo.json (hash X)
+	// "config-1" uses file_sd_configs with bar.json (hash Y)
+	s := `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+  - file_sd_configs:
+    - files:
+      - bar.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	// Reload with target groups to discover alertmanagers.
+	tgs := map[string][]*targetgroup.Group{
+		"config-0": {targetGroup},
+		"config-1": {targetGroup},
+	}
+	n.reload(tgs)
+	require.Len(t, n.Alertmanagers(), 2)
+
+	// Verify sendLoops exist for both configs.
+	require.Len(t, n.alertmanagers["config-0"].sendLoops, 1)
+	require.Len(t, n.alertmanagers["config-1"].sendLoops, 1)
+
+	// Start the send loops.
+	for _, ams := range n.alertmanagers {
+		ams.startSendLoops(ams.ams)
+	}
+	defer func() {
+		for _, ams := range n.alertmanagers {
+			ams.mtx.Lock()
+			ams.cleanSendLoops(ams.ams...)
+			ams.mtx.Unlock()
+		}
+	}()
+
+	// Send an alert and verify it's received (twice, once per alertmanager set).
+	n.Send(&Alert{Labels: labels.FromStrings("alertname", "test1")})
+	for range 2 {
+		select {
+		case <-alertReceived:
+			// Good, alert was sent.
+		case <-time.After(2 * time.Second):
+			require.FailNow(t, "timeout waiting for first alert")
+		}
+	}
+
+	// Apply a new config that REVERSES the order of alertmanager configs.
+	// Now "config-0" has hash Y (was bar.json) and "config-1" has hash X (was foo.json).
+	// The sendLoops should be transferred based on hash matching.
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - bar.json
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	// CRITICAL CHECK: After ApplyConfig but BEFORE reload, the sendLoops should
+	// have been transferred based on hash matching and NOT stopped.
+	// - Old "config-0" (foo.json, hash X) -> New "config-1" (foo.json, hash X)
+	// - Old "config-1" (bar.json, hash Y) -> New "config-0" (bar.json, hash Y)
+	// Both old keys exist in new config, so no cleanup should happen.
+	require.Len(t, n.alertmanagers["config-0"].sendLoops, 1, "sendLoops should be transferred to config-0")
+	require.Len(t, n.alertmanagers["config-1"].sendLoops, 1, "sendLoops should be transferred to config-1")
+
+	// Reload with target groups for the new config.
+	tgs = map[string][]*targetgroup.Group{
+		"config-0": {targetGroup},
+		"config-1": {targetGroup},
+	}
+	n.reload(tgs)
+
+	// The alertmanagers should still be discoverable.
+	require.Len(t, n.Alertmanagers(), 2)
+
+	// The critical test: send another alert and verify it's received by both.
+	n.Send(&Alert{Labels: labels.FromStrings("alertname", "test2")})
+	for range 2 {
+		select {
+		case <-alertReceived:
+			// Good, alert was sent - sendLoops are still working.
+		case <-time.After(2 * time.Second):
+			require.FailNow(t, "timeout waiting for second alert - sendLoops may have been incorrectly stopped")
+		}
+	}
+}
+
+// TestApplyConfigDuplicateHashSharesSendLoops tests a bug where multiple new
+// alertmanager configs with identical content (same hash) all receive the same
+// sendLoops map reference, causing shared mutable state between alertmanagerSets.
+//
+// Bug scenario:
+//  1. Old config: "config-0" with hash X
+//  2. New config: "config-0" AND "config-1" both with hash X (identical configs)
+//  3. Both new sets get `sendLoops = oldAmSet.sendLoops` (same map reference!)
+//  4. Now config-0 and config-1 share the same sendLoops map
+//  5. When config-1's alertmanager is removed via sync(), it cleans up the shared
+//     sendLoops, breaking config-0's ability to send alerts
+func TestApplyConfigDuplicateHashSharesSendLoops(t *testing.T) {
+	n := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
+	cfg := &config.Config{}
+
+	// Initial config with ONE alertmanager.
+	s := `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	targetGroup := &targetgroup.Group{
+		Targets: []model.LabelSet{
+			{"__address__": "alertmanager:9093"},
+		},
+	}
+	tgs := map[string][]*targetgroup.Group{"config-0": {targetGroup}}
+	n.reload(tgs)
+
+	require.Len(t, n.alertmanagers["config-0"].sendLoops, 1)
+
+	// Apply a new config with TWO IDENTICAL alertmanager configs.
+	// Both have the same hash, so both will receive sendLoops from the same old set.
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	// Reload with target groups for both configs - same alertmanager URL for both.
+	tgs = map[string][]*targetgroup.Group{
+		"config-0": {targetGroup},
+		"config-1": {targetGroup},
+	}
+	n.reload(tgs)
+
+	// Both alertmanagerSets should have independent sendLoops.
+	sendLoops0 := n.alertmanagers["config-0"].sendLoops
+	sendLoops1 := n.alertmanagers["config-1"].sendLoops
+
+	require.Len(t, sendLoops0, 1, "config-0 should have sendLoops")
+	require.Len(t, sendLoops1, 1, "config-1 should have sendLoops")
+
+	// Verify that the two alertmanagerSets have INDEPENDENT sendLoops maps.
+	// They should NOT share the same sendLoop objects.
+	for k := range sendLoops0 {
+		if loop1, ok := sendLoops1[k]; ok {
+			require.NotSame(t, sendLoops0[k], loop1,
+				"config-0 and config-1 should have independent sendLoop instances, not shared references")
+		}
+	}
+}
+
+// TestApplyConfigHashChangeLeaksSendLoops tests a bug where sendLoops goroutines
+// are leaked when the config key remains the same but the config hash changes.
+//
+// Bug scenario:
+//  1. Old config has "config-0" with hash H1 and running sendLoops
+//  2. New config has "config-0" with hash H2 (modified config)
+//  3. Since hash differs, sendLoops are NOT transferred to the new alertmanagerSet
+//  4. Cleanup only checks if key exists in amSets - it does, so no cleanup
+//  5. Old sendLoops goroutines continue running and are never stopped
+func TestApplyConfigHashChangeLeaksSendLoops(t *testing.T) {
+	n := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
+	cfg := &config.Config{}
+
+	// Initial config with one alertmanager.
+	s := `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	targetGroup := &targetgroup.Group{
+		Targets: []model.LabelSet{
+			{"__address__": "alertmanager:9093"},
+		},
+	}
+	tgs := map[string][]*targetgroup.Group{"config-0": {targetGroup}}
+	n.reload(tgs)
+
+	// Capture the old sendLoop.
+	oldSendLoops := n.alertmanagers["config-0"].sendLoops
+	require.Len(t, oldSendLoops, 1)
+	var oldSendLoop *sendLoop
+	for _, sl := range oldSendLoops {
+		oldSendLoop = sl
+	}
+
+	// Apply a new config with DIFFERENT hash (added path_prefix).
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+    path_prefix: /changed
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	// The old sendLoop should have been stopped since hash changed.
+	// Check that the stopped channel is closed.
+	select {
+	case <-oldSendLoop.stopped:
+		// Good - sendLoop was properly stopped
+	default:
+		t.Fatal("BUG: old sendLoop was not stopped when config hash changed - goroutine leak")
+	}
+}
+
 func newBlackHoleAlertmanager(stop <-chan struct{}) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Do nothing, wait to be canceled.
