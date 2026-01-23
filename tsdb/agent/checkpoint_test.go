@@ -23,72 +23,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
-func TestBenchCheckpoint(b *testing.T) {
-	// Prepare in advance samples and labels that will be written into appender.
-	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
-		labelPrefix:   b.Name(),
-		numDatapoints: 1000,
-		numHistograms: 100,
-		numSeries:     360,
-	})
+const walSegmentSize = 32 << 10 // must be aligned to the page size
 
-	// Prepare initial wlog state with segments.
-	testSamplesSrcDir := filepath.Join(b.TempDir(), "samples-src")
-	require.NoError(b, os.Mkdir(testSamplesSrcDir, os.ModePerm))
-	createCheckpointFixtures(b, checkpointFixtureParams{
-		dir:          testSamplesSrcDir,
-		numSegments:  512,
-		dtDelta:      10000,
-		segmentSize:  32 << 10, // must be aligned to the page size
-		seriesLabels: samples.datapointLabels,
-	})
-
-	// Check what checkpoint implementation to use from a feature flag.
-	checkpointImpl := os.Getenv("TEST_CHECKPOINT_IMPL")
-	// isNewCheckpointEnabled := checkpointImpl != "wlog"
-	isNewCheckpointEnabled := checkpointImpl == "wlog"
-
-	// Run the bench.
-	fn := func(b *testing.T) {
-		// Copy initial wlog state into a scratch directory for test.
-		// wlog.Open expects to have a "wal" subdirectory
-		wlogDir := filepath.Join(b.TempDir(), "testdata", "wal")
-		b.Log("WlogDir: ", wlogDir)
-		err := os.CopyFS(wlogDir, os.DirFS(testSamplesSrcDir))
-		require.NoErrorf(b, err, "failed to copy test samples from %q to %q", testSamplesSrcDir, wlogDir)
-		storageDir := filepath.Dir(wlogDir)
-
-		// b.ReportAllocs()
-		// b.ResetTimer()
-
-		benchCheckpoint(b, benchCheckpointParams{
-			storageDir:                  storageDir,
-			samples:                     samples,
-			skipCurrentCheckpointReRead: isNewCheckpointEnabled,
-		})
-
-		b.Log("=== STORE DATA ===")
-		b.Log("Dir: ", storageDir)
-		entries, err := os.ReadDir(storageDir)
-		require.NoError(b, err)
-
-		for _, entry := range entries {
-			filePath := filepath.Join(wlogDir, entry.Name())
-			if entry.IsDir() {
-				b.Log("[D] ", filePath)
-				continue
-			}
-
-			fileInfo, err := os.Stat(filePath)
-			require.NoError(b, err)
-			b.Logf("[F] %s (Size: %d bytes)", entry.Name(), fileInfo.Size())
-		}
-		b.Log("END")
-	}
-	fn(b)
-}
-
-// func TestBenchmarkCheckpoint(b *testing.T) {
 func BenchmarkCheckpoint(b *testing.B) {
 	// Prepare in advance samples and labels that will be written into appender.
 	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
@@ -105,7 +41,7 @@ func BenchmarkCheckpoint(b *testing.B) {
 		dir:          testSamplesSrcDir,
 		numSegments:  512,
 		dtDelta:      10000,
-		segmentSize:  32 << 10, // must be aligned to the page size
+		segmentSize:  walSegmentSize, // must be aligned to the page size
 		seriesLabels: samples.datapointLabels,
 	})
 
@@ -153,6 +89,7 @@ func benchCheckpoint(b testing.TB, p benchCheckpointParams) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = math.MaxInt64 // Fixes "out of order sample" in benchmarks
 	opts.SkipCurrentCheckpointReRead = p.skipCurrentCheckpointReRead
+	opts.WALSegmentSize = walSegmentSize // Set minimum size to get more segments for checkpoint.
 
 	db, err := Open(l, nil, rs, p.storageDir, opts)
 	require.NoError(b, err, "Open")
