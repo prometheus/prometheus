@@ -1726,6 +1726,12 @@ eval instant at 11m histogram_count(sum_over_time(mixed[2m]))
   expect no_info
   {} 21
 
+# this query without the histogram_count will fail as no warning is emitted
+eval instant at 11m sum_over_time(mixed[2m])
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} {{count:21 sum:18 buckets:[7 8 6]}}
+
 eval instant at 11m histogram_count(avg_over_time(mixed[2m]))
   expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
   expect no_info
