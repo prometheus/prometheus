@@ -143,6 +143,23 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		}
 	}
 	if len(idLblValues) == 0 {
+		// Even when returning early, we need to remove __name__ from dataLabelMatchers
+		// since it's not a data label selector (it's used to select which info metrics
+		// to consider). Without this, combineWithInfoVector would incorrectly exclude
+		// series when only __name__ is specified in the selector.
+		for name, ms := range dataLabelMatchers {
+			for i, m := range ms {
+				if m.Name == labels.MetricName {
+					ms = slices.Delete(ms, i, i+1)
+					break
+				}
+			}
+			if len(ms) > 0 {
+				dataLabelMatchers[name] = ms
+			} else {
+				delete(dataLabelMatchers, name)
+			}
+		}
 		return nil, nil, nil
 	}
 
@@ -424,9 +441,10 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 		}
 
 		infoLbls := enh.lb.Labels()
-		if infoLbls.Len() == 0 {
-			// If there's at least one data label matcher not matching the empty string,
-			// we have to ignore this series as there are no matching info series.
+		if len(seenInfoMetrics) == 0 {
+			// No info series matched this base series. If there's at least one data
+			// label matcher not matching the empty string, we have to ignore this
+			// series as there are no matching info series.
 			allMatchersMatchEmpty := true
 			for _, ms := range dataLabelMatchers {
 				for _, m := range ms {

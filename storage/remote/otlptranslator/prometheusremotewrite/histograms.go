@@ -22,7 +22,6 @@ import (
 	"math"
 
 	"github.com/prometheus/common/model"
-	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -35,8 +34,7 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, temporality pmetric.AggregationTemporality,
-	scope scope, meta Metadata,
+	settings Settings, temporality pmetric.AggregationTemporality, meta Metadata,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
@@ -53,9 +51,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 		}
 
 		lbls, err := c.createAttributes(
-			resource,
 			pt.Attributes(),
-			scope,
 			settings,
 			nil,
 			true,
@@ -253,8 +249,7 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 }
 
 func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, temporality pmetric.AggregationTemporality,
-	scope scope, meta Metadata,
+	settings Settings, temporality pmetric.AggregationTemporality, meta Metadata,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
@@ -272,9 +267,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 		}
 
 		lbls, err := c.createAttributes(
-			resource,
 			pt.Attributes(),
-			scope,
 			settings,
 			nil,
 			true,

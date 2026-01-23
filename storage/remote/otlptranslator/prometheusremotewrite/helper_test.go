@@ -413,7 +413,11 @@ func TestCreateAttributes(t *testing.T) {
 			if tc.attrs != (pcommon.Map{}) {
 				testAttrs = tc.attrs
 			}
-			lbls, err := c.createAttributes(testResource, testAttrs, tc.scope, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, c.setResourceContext(testResource, settings))
+			require.NoError(t, c.setScopeContext(tc.scope, settings))
+
+			lbls, err := c.createAttributes(testAttrs, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
 			require.NoError(t, err)
 
 			testutil.RequireEqual(t, tc.expectedLabels, lbls)
@@ -643,15 +647,19 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			metric := tt.metric()
 			mockAppender := &mockCombinedAppender{}
 			converter := NewPrometheusConverter(mockAppender)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addSummaryDataPoints(
 				context.Background(),
 				metric.Summary().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
-				},
-				tt.scope,
+				settings,
 				Metadata{
 					MetricFamilyName: metric.Name(),
 				},
@@ -806,15 +814,19 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			metric := tt.metric()
 			mockAppender := &mockCombinedAppender{}
 			converter := NewPrometheusConverter(mockAppender)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
-				},
-				tt.scope,
+				settings,
 				Metadata{
 					MetricFamilyName: metric.Name(),
 				},

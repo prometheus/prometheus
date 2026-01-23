@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"container/heap"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -25,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -269,13 +269,13 @@ func (q *mergeGenericQuerier) LabelNames(ctx context.Context, hints *LabelHints,
 
 // Close releases the resources of the generic querier.
 func (q *mergeGenericQuerier) Close() error {
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, querier := range q.queriers {
 		if err := querier.Close(); err != nil {
-			errs.Add(err)
+			errs = append(errs, err)
 		}
 	}
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 func truncateToLimit(s []string, hints *LabelHints) []string {
@@ -599,6 +599,13 @@ func (c *chainSampleIterator) AtT() int64 {
 	return c.curr.AtT()
 }
 
+func (c *chainSampleIterator) AtST() int64 {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtST called before first .Next or after .Next returned false.")
+	}
+	return c.curr.AtST()
+}
+
 func (c *chainSampleIterator) Next() chunkenc.ValueType {
 	var (
 		currT           int64
@@ -679,11 +686,11 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 }
 
 func (c *chainSampleIterator) Err() error {
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, iter := range c.iterators {
-		errs.Add(iter.Err())
+		errs = append(errs, iter.Err())
 	}
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 type samplesIteratorHeap []chunkenc.Iterator
@@ -821,12 +828,12 @@ func (c *compactChunkIterator) Next() bool {
 }
 
 func (c *compactChunkIterator) Err() error {
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, iter := range c.iterators {
-		errs.Add(iter.Err())
+		errs = append(errs, iter.Err())
 	}
-	errs.Add(c.err)
-	return errs.Err()
+	errs = append(errs, c.err)
+	return errors.Join(errs...)
 }
 
 type chunkIteratorHeap []chunks.Iterator
@@ -904,9 +911,9 @@ func (c *concatenatingChunkIterator) Next() bool {
 }
 
 func (c *concatenatingChunkIterator) Err() error {
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, iter := range c.iterators {
-		errs.Add(iter.Err())
+		errs = append(errs, iter.Err())
 	}
-	return errs.Err()
+	return errors.Join(errs...)
 }

@@ -265,6 +265,7 @@ const formatNodeInternal = (
     case nodeType.binaryExpr: {
       let matching = <></>;
       let grouping = <></>;
+      let fill = <></>;
       const vm = node.matching;
       if (vm !== null) {
         if (
@@ -305,6 +306,45 @@ const formatNodeInternal = (
             </>
           );
         }
+
+        const lfill = vm.fillValues.lhs;
+        const rfill = vm.fillValues.rhs;
+        if (lfill !== null || rfill !== null) {
+          if (lfill === rfill) {
+            fill = (
+              <>
+                {" "}
+                <span className="promql-keyword">fill</span>
+                <span className="promql-paren">(</span>
+                <span className="promql-number">{lfill}</span>
+                <span className="promql-paren">)</span>
+              </>
+            );
+          } else {
+            fill = (
+              <>
+                {lfill !== null && (
+                  <>
+                    {" "}
+                    <span className="promql-keyword">fill_left</span>
+                    <span className="promql-paren">(</span>
+                    <span className="promql-number">{lfill}</span>
+                    <span className="promql-paren">)</span>
+                  </>
+                )}
+                {rfill !== null && (
+                  <>
+                    {" "}
+                    <span className="promql-keyword">fill_right</span>
+                    <span className="promql-paren">(</span>
+                    <span className="promql-number">{rfill}</span>
+                    <span className="promql-paren">)</span>
+                  </>
+                )}
+              </>
+            );
+          }
+        }
       }
 
       return (
@@ -327,7 +367,8 @@ const formatNodeInternal = (
             </>
           )}
           {matching}
-          {grouping}{" "}
+          {grouping}
+          {fill}{" "}
           {showChildren &&
             formatNode(
               maybeParenthesizeBinopChild(node.op, node.rhs),

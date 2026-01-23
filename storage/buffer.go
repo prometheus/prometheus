@@ -119,13 +119,16 @@ func (b *BufferedSeriesIterator) Next() chunkenc.ValueType {
 		return chunkenc.ValNone
 	case chunkenc.ValFloat:
 		t, f := b.it.At()
-		b.buf.addF(fSample{t: t, f: f})
+		st := b.it.AtST()
+		b.buf.addF(fSample{st: st, t: t, f: f})
 	case chunkenc.ValHistogram:
 		t, h := b.it.AtHistogram(&b.hReader)
-		b.buf.addH(hSample{t: t, h: h})
+		st := b.it.AtST()
+		b.buf.addH(hSample{st: st, t: t, h: h})
 	case chunkenc.ValFloatHistogram:
 		t, fh := b.it.AtFloatHistogram(&b.fhReader)
-		b.buf.addFH(fhSample{t: t, fh: fh})
+		st := b.it.AtST()
+		b.buf.addFH(fhSample{st: st, t: t, fh: fh})
 	default:
 		panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
 	}
@@ -157,18 +160,27 @@ func (b *BufferedSeriesIterator) AtT() int64 {
 	return b.it.AtT()
 }
 
+// AtST returns the current sample's start timestamp of the iterator.
+func (b *BufferedSeriesIterator) AtST() int64 {
+	return b.it.AtST()
+}
+
 // Err returns the last encountered error.
 func (b *BufferedSeriesIterator) Err() error {
 	return b.it.Err()
 }
 
 type fSample struct {
-	t int64
-	f float64
+	st, t int64
+	f     float64
 }
 
 func (s fSample) T() int64 {
 	return s.t
+}
+
+func (s fSample) ST() int64 {
+	return s.st
 }
 
 func (s fSample) F() float64 {
@@ -192,12 +204,16 @@ func (s fSample) Copy() chunks.Sample {
 }
 
 type hSample struct {
-	t int64
-	h *histogram.Histogram
+	st, t int64
+	h     *histogram.Histogram
 }
 
 func (s hSample) T() int64 {
 	return s.t
+}
+
+func (s hSample) ST() int64 {
+	return s.st
 }
 
 func (hSample) F() float64 {
@@ -217,16 +233,20 @@ func (hSample) Type() chunkenc.ValueType {
 }
 
 func (s hSample) Copy() chunks.Sample {
-	return hSample{t: s.t, h: s.h.Copy()}
+	return hSample{st: s.st, t: s.t, h: s.h.Copy()}
 }
 
 type fhSample struct {
-	t  int64
-	fh *histogram.FloatHistogram
+	st, t int64
+	fh    *histogram.FloatHistogram
 }
 
 func (s fhSample) T() int64 {
 	return s.t
+}
+
+func (s fhSample) ST() int64 {
+	return s.st
 }
 
 func (fhSample) F() float64 {
@@ -246,7 +266,7 @@ func (fhSample) Type() chunkenc.ValueType {
 }
 
 func (s fhSample) Copy() chunks.Sample {
-	return fhSample{t: s.t, fh: s.fh.Copy()}
+	return fhSample{st: s.st, t: s.t, fh: s.fh.Copy()}
 }
 
 type sampleRing struct {
@@ -329,6 +349,7 @@ func (r *sampleRing) iterator() *SampleRingIterator {
 type SampleRingIterator struct {
 	r  *sampleRing
 	i  int
+	st int64
 	t  int64
 	f  float64
 	h  *histogram.Histogram
@@ -350,21 +371,25 @@ func (it *SampleRingIterator) Next() chunkenc.ValueType {
 	switch it.r.bufInUse {
 	case fBuf:
 		s := it.r.atF(it.i)
+		it.st = s.st
 		it.t = s.t
 		it.f = s.f
 		return chunkenc.ValFloat
 	case hBuf:
 		s := it.r.atH(it.i)
+		it.st = s.st
 		it.t = s.t
 		it.h = s.h
 		return chunkenc.ValHistogram
 	case fhBuf:
 		s := it.r.atFH(it.i)
+		it.st = s.st
 		it.t = s.t
 		it.fh = s.fh
 		return chunkenc.ValFloatHistogram
 	}
 	s := it.r.at(it.i)
+	it.st = s.ST()
 	it.t = s.T()
 	switch s.Type() {
 	case chunkenc.ValHistogram:
@@ -408,6 +433,10 @@ func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (in
 
 func (it *SampleRingIterator) AtT() int64 {
 	return it.t
+}
+
+func (it *SampleRingIterator) AtST() int64 {
+	return it.st
 }
 
 func (r *sampleRing) at(i int) chunks.Sample {
@@ -651,6 +680,7 @@ func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
 	}
 
 	buf[r.i].t = s.t
+	buf[r.i].st = s.st
 	if buf[r.i].h == nil {
 		buf[r.i].h = s.h.Copy()
 	} else {
@@ -695,6 +725,7 @@ func addFH(s fhSample, buf []fhSample, r *sampleRing) []fhSample {
 	}
 
 	buf[r.i].t = s.t
+	buf[r.i].st = s.st
 	if buf[r.i].fh == nil {
 		buf[r.i].fh = s.fh.Copy()
 	} else {

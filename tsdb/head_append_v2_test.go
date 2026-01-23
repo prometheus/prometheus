@@ -312,8 +312,8 @@ func TestHeadAppenderV2_WALMultiRef(t *testing.T) {
 	// The samples before the new ref should be discarded since Head truncation
 	// happens only after compacting the Head.
 	require.Equal(t, map[string][]chunks.Sample{`{foo="bar"}`: {
-		sample{1700, 3, nil, nil},
-		sample{2000, 4, nil, nil},
+		sample{0, 1700, 3, nil, nil},
+		sample{0, 2000, 4, nil, nil},
 	}}, series)
 }
 
@@ -352,7 +352,6 @@ func TestHeadAppenderV2_ActiveAppenders(t *testing.T) {
 
 func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
-	t.Cleanup(func() { _ = head.Close() })
 	require.NoError(t, head.Init(0))
 
 	const totalSeries = 100_000
@@ -395,7 +394,6 @@ func TestHeadAppenderV2_CanGCSeriesCreatedWithoutSamples(t *testing.T) {
 		t.Run(op, func(t *testing.T) {
 			chunkRange := time.Hour.Milliseconds()
 			head, _ := newTestHead(t, chunkRange, compression.None, true)
-			t.Cleanup(func() { _ = head.Close() })
 
 			require.NoError(t, head.Init(0))
 
@@ -605,7 +603,7 @@ func TestHeadAppenderV2_DeleteUntilCurrMax(t *testing.T) {
 	it = exps.Iterator(nil)
 	resSamples, err := storage.ExpandSamples(it, newSample)
 	require.NoError(t, err)
-	require.Equal(t, []chunks.Sample{sample{11, 1, nil, nil}}, resSamples)
+	require.Equal(t, []chunks.Sample{sample{0, 11, 1, nil, nil}}, resSamples)
 	for res.Next() {
 	}
 	require.NoError(t, res.Err())
@@ -722,7 +720,7 @@ func TestHeadAppenderV2_Delete_e2e(t *testing.T) {
 			v := rand.Float64()
 			_, err := app.Append(0, ls, 0, ts, v, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
-			series = append(series, sample{ts, v, nil, nil})
+			series = append(series, sample{0, ts, v, nil, nil})
 			ts += rand.Int63n(timeInterval) + 1
 		}
 		seriesMap[labels.New(l...).String()] = series
@@ -1520,7 +1518,7 @@ func TestDataMissingOnQueryDuringCompaction_AppenderV2(t *testing.T) {
 		ref, err = app.Append(ref, labels.FromStrings("a", "b"), 0, ts, float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		maxt = ts
-		expSamples = append(expSamples, sample{ts, float64(i), nil, nil})
+		expSamples = append(expSamples, sample{0, ts, float64(i), nil, nil})
 	}
 	require.NoError(t, app.Commit())
 
@@ -1864,7 +1862,8 @@ func TestHeadAppenderV2_Append_Histogram(t *testing.T) {
 func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 	head, _ := newTestHead(t, 3000, compression.None, false)
 	t.Cleanup(func() {
-		require.NoError(t, head.Close())
+		// Captures head by reference, so it closes the final head after restarts.
+		_ = head.Close()
 	})
 	require.NoError(t, head.Init(0))
 
@@ -2011,9 +2010,10 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 	}
 
 	// Restart head.
+	walDir := head.wal.Dir()
 	require.NoError(t, head.Close())
 	startHead := func() {
-		w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, compression.None)
+		w, err := wlog.NewSize(nil, nil, walDir, 32768, compression.None)
 		require.NoError(t, err)
 		head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 		require.NoError(t, err)
@@ -2166,17 +2166,17 @@ func TestChunkSnapshot_AppenderV2(t *testing.T) {
 					aOpts.Exemplars = []exemplar.Exemplar{newExemplar(lbls, ts)}
 				}
 				val := rand.Float64()
-				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil, nil})
+				expSeries[lblStr] = append(expSeries[lblStr], sample{0, ts, val, nil, nil})
 				_, err := app.Append(0, lbls, 0, ts, val, nil, nil, aOpts)
 				require.NoError(t, err)
 
 				hist := histograms[int(ts)]
-				expHist[lblsHistStr] = append(expHist[lblsHistStr], sample{ts, 0, hist, nil})
+				expHist[lblsHistStr] = append(expHist[lblsHistStr], sample{0, ts, 0, hist, nil})
 				_, err = app.Append(0, lblsHist, 0, ts, 0, hist, nil, storage.AOptions{})
 				require.NoError(t, err)
 
 				floatHist := floatHistogram[int(ts)]
-				expFloatHist[lblsFloatHistStr] = append(expFloatHist[lblsFloatHistStr], sample{ts, 0, nil, floatHist})
+				expFloatHist[lblsFloatHistStr] = append(expFloatHist[lblsFloatHistStr], sample{0, ts, 0, nil, floatHist})
 				_, err = app.Append(0, lblsFloatHist, 0, ts, 0, nil, floatHist, storage.AOptions{})
 				require.NoError(t, err)
 
@@ -2244,17 +2244,17 @@ func TestChunkSnapshot_AppenderV2(t *testing.T) {
 					aOpts.Exemplars = []exemplar.Exemplar{newExemplar(lbls, ts)}
 				}
 				val := rand.Float64()
-				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil, nil})
+				expSeries[lblStr] = append(expSeries[lblStr], sample{0, ts, val, nil, nil})
 				_, err := app.Append(0, lbls, 0, ts, val, nil, nil, aOpts)
 				require.NoError(t, err)
 
 				hist := histograms[int(ts)]
-				expHist[lblsHistStr] = append(expHist[lblsHistStr], sample{ts, 0, hist, nil})
+				expHist[lblsHistStr] = append(expHist[lblsHistStr], sample{0, ts, 0, hist, nil})
 				_, err = app.Append(0, lblsHist, 0, ts, 0, hist, nil, storage.AOptions{})
 				require.NoError(t, err)
 
 				floatHist := floatHistogram[int(ts)]
-				expFloatHist[lblsFloatHistStr] = append(expFloatHist[lblsFloatHistStr], sample{ts, 0, nil, floatHist})
+				expFloatHist[lblsFloatHistStr] = append(expFloatHist[lblsFloatHistStr], sample{0, ts, 0, nil, floatHist})
 				_, err = app.Append(0, lblsFloatHist, 0, ts, 0, nil, floatHist, storage.AOptions{})
 				require.NoError(t, err)
 
@@ -4081,7 +4081,6 @@ func TestWALSampleAndExemplarOrder_AppenderV2(t *testing.T) {
 
 func TestHeadAppenderV2_Append_FloatWithSameTimestampAsPreviousHistogram(t *testing.T) {
 	head, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
-	t.Cleanup(func() { head.Close() })
 
 	ls := labels.FromStrings(labels.MetricName, "test")
 
@@ -4489,7 +4488,8 @@ func testHeadAppenderV2AppendHistogramAndCommitConcurrency(t *testing.T, appendF
 func TestHeadAppenderV2_NumStaleSeries(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	t.Cleanup(func() {
-		require.NoError(t, head.Close())
+		// Captures head by reference, so it closes the final head after restarts.
+		_ = head.Close()
 	})
 	require.NoError(t, head.Init(0))
 

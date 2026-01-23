@@ -220,3 +220,8 @@ check-node-version:
 bump-go-version:
 	@echo ">> bumping Go minor version"
 	@./scripts/bump_go_version.sh
+
+.PHONY: generate-fuzzing-seed-corpus
+generate-fuzzing-seed-corpus:
+	@echo ">> Generating fuzzing seed corpus"
+	@$(GO) generate -tags fuzzing ./util/fuzzing/corpus_gen

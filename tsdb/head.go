@@ -985,7 +985,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		return nil
 	}); err != nil {
 		// secondLastRef because the lastRef caused an error.
-		return nil, nil, secondLastRef, fmt.Errorf("iterate on on-disk chunks: %w", err)
+		return nil, nil, secondLastRef, fmt.Errorf("iterate on-disk chunks: %w", err)
 	}
 	return mmappedChunks, oooMmappedChunks, lastRef, nil
 }
@@ -2339,17 +2339,20 @@ func (s *stripeSeries) postCreation(lset labels.Labels) {
 }
 
 type sample struct {
+	st int64
 	t  int64
 	f  float64
 	h  *histogram.Histogram
 	fh *histogram.FloatHistogram
 }
 
-func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
-	return sample{t, v, h, fh}
+func newSample(st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
+	return sample{st, t, v, h, fh}
 }
 
-func (s sample) T() int64                      { return s.t }
+func (s sample) T() int64 { return s.t }
+
+func (s sample) ST() int64                     { return s.st }
 func (s sample) F() float64                    { return s.f }
 func (s sample) H() *histogram.Histogram       { return s.h }
 func (s sample) FH() *histogram.FloatHistogram { return s.fh }

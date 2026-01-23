@@ -25,7 +25,6 @@ import (
 	"strconv"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -136,6 +135,7 @@ type Meta struct {
 }
 
 // ChunkFromSamples requires all samples to have the same type.
+// TODO(krajorama): test with ST when chunk formats support it.
 func ChunkFromSamples(s []Sample) (Meta, error) {
 	return ChunkFromSamplesGeneric(SampleSlice(s))
 }
@@ -165,9 +165,9 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	for i := 0; i < s.Len(); i++ {
 		switch sampleType {
 		case chunkenc.ValFloat:
-			ca.Append(s.Get(i).T(), s.Get(i).F())
+			ca.Append(s.Get(i).ST(), s.Get(i).T(), s.Get(i).F())
 		case chunkenc.ValHistogram:
-			newChunk, _, ca, err = ca.AppendHistogram(nil, s.Get(i).T(), s.Get(i).H(), false)
+			newChunk, _, ca, err = ca.AppendHistogram(nil, s.Get(i).ST(), s.Get(i).T(), s.Get(i).H(), false)
 			if err != nil {
 				return emptyChunk, err
 			}
@@ -175,7 +175,7 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 				return emptyChunk, errors.New("did not expect to start a second chunk")
 			}
 		case chunkenc.ValFloatHistogram:
-			newChunk, _, ca, err = ca.AppendFloatHistogram(nil, s.Get(i).T(), s.Get(i).FH(), false)
+			newChunk, _, ca, err = ca.AppendFloatHistogram(nil, s.Get(i).ST(), s.Get(i).T(), s.Get(i).FH(), false)
 			if err != nil {
 				return emptyChunk, err
 			}
@@ -431,13 +431,15 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 	}
 	defer func() {
 		if returnErr != nil {
-			errs := tsdb_errors.NewMulti(returnErr)
+			errs := []error{
+				returnErr,
+			}
 			if f != nil {
-				errs.Add(f.Close())
+				errs = append(errs, f.Close())
 			}
 			// Calling RemoveAll on a non-existent file does not return error.
-			errs.Add(os.RemoveAll(ptmp))
-			returnErr = errs.Err()
+			errs = append(errs, os.RemoveAll(ptmp))
+			returnErr = errors.Join(errs...)
 		}
 	}()
 	if allocSize > 0 {
@@ -665,10 +667,10 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 	for _, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
-			return nil, tsdb_errors.NewMulti(
+			return nil, errors.Join(
 				fmt.Errorf("mmap files: %w", err),
-				tsdb_errors.CloseAll(cs),
-			).Err()
+				closeAll(cs),
+			)
 		}
 		cs = append(cs, f)
 		bs = append(bs, realByteSlice(f.Bytes()))
@@ -676,16 +678,16 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 
 	reader, err := newReader(bs, cs, pool)
 	if err != nil {
-		return nil, tsdb_errors.NewMulti(
+		return nil, errors.Join(
 			err,
-			tsdb_errors.CloseAll(cs),
-		).Err()
+			closeAll(cs),
+		)
 	}
 	return reader, nil
 }
 
 func (s *Reader) Close() error {
-	return tsdb_errors.CloseAll(s.cs)
+	return closeAll(s.cs)
 }
 
 // Size returns the size of the chunks.
@@ -773,4 +775,13 @@ func sequenceFiles(dir string) ([]string, error) {
 		res = append(res, filepath.Join(dir, fi.Name()))
 	}
 	return res, nil
+}
+
+// closeAll closes all given closers while recording error in MultiError.
+func closeAll(cs []io.Closer) error {
+	var errs []error
+	for _, c := range cs {
+		errs = append(errs, c.Close())
+	}
+	return errors.Join(errs...)
 }
