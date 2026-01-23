@@ -410,7 +410,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
           // 			BinaryExpr( ..., Gtr , ... )
           // When the `bool` keyword is present, then the expression looks like this:
           //      BinaryExpr( ..., Gtr , BoolModifier(...), ... )
-          if (containsAtLeastOneChild(parent, Eql, Gte, Gtr, TrimLower, TrimUpper, Lte, Lss, Neq) && !containsAtLeastOneChild(parent, BoolModifier)) {
+          if (containsAtLeastOneChild(parent, Eql, Gte, Gtr, Lte, Lss, Neq) && !containsAtLeastOneChild(parent, BoolModifier)) {
             result.push({ kind: ContextKind.Bool });
           }
         }
