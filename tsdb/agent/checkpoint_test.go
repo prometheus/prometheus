@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -18,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
@@ -29,9 +29,9 @@ func BenchmarkCheckpoint(b *testing.B) {
 	// Prepare in advance samples and labels that will be written into appender.
 	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
 		labelPrefix:   b.Name(),
-		numDatapoints: 1000,
-		numHistograms: 100,
-		numSeries:     360,
+		numDatapoints: 10,
+		numHistograms: 10,
+		numSeries:     3600,
 	})
 
 	// Prepare initial wlog state with segments.
@@ -67,8 +67,34 @@ func BenchmarkCheckpoint(b *testing.B) {
 				samples:                     samples,
 				skipCurrentCheckpointReRead: isNewCheckpointEnabled,
 			})
+
+			// Get the size of the checkpoint directory
+			checkpointSize := getCheckpointSize(b, wlogDir)
+			b.ReportMetric(float64(checkpointSize), "checkpoint_size")
 		}
 	})
+}
+
+func getCheckpointSize(b testing.TB, walDir string) int64 {
+	dirName, _, err := wlog.LastCheckpoint(walDir)
+	require.NoError(b, err, "can't find the last checkpoint")
+	// Walk through a dir and accumulate total size of all files
+	var size int64
+	err = filepath.WalkDir(dirName, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			size += info.Size()
+		}
+		return nil
+	})
+	require.NoError(b, err, "can't walk through the checkpoint dir")
+	return size
 }
 
 type benchCheckpointParams struct {
@@ -128,7 +154,8 @@ func benchCheckpoint(b testing.TB, p benchCheckpointParams) {
 	require.NoError(b, app.Commit())
 
 	// Trigger checkpoint call.
-	err = db.truncate(timestamp.FromTime(time.Now()))
+	// err = db.truncate(timestamp.FromTime(time.Now()))
+	err = db.truncate(-1)
 	require.NoError(b, err, "db.truncate")
 	require.NoError(b, db.Close())
 }
