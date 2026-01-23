@@ -212,7 +212,6 @@ func TestFederation(t *testing.T) {
 			test_metric_stale                       1+10x99 stale
 			test_metric_old                         1+10x98
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	h := &Handler{
 		localStorage:  &dbAdapter{storage.DB},
@@ -303,7 +302,6 @@ func normalizeBody(body *bytes.Buffer) string {
 
 func TestFederationWithNativeHistograms(t *testing.T) {
 	storage := teststorage.New(t)
-	t.Cleanup(func() { storage.Close() })
 
 	var expVec promql.Vector
 

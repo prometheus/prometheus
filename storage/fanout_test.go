@@ -39,7 +39,6 @@ func TestFanout_SelectSorted(t *testing.T) {
 	ctx := context.Background()
 
 	priStorage := teststorage.New(t)
-	defer priStorage.Close()
 	app1 := priStorage.Appender(ctx)
 	app1.Append(0, inputLabel, 0, 0)
 	inputTotalSize++
@@ -51,7 +50,6 @@ func TestFanout_SelectSorted(t *testing.T) {
 	require.NoError(t, err)
 
 	remoteStorage1 := teststorage.New(t)
-	defer remoteStorage1.Close()
 	app2 := remoteStorage1.Appender(ctx)
 	app2.Append(0, inputLabel, 3000, 3)
 	inputTotalSize++
@@ -63,7 +61,6 @@ func TestFanout_SelectSorted(t *testing.T) {
 	require.NoError(t, err)
 
 	remoteStorage2 := teststorage.New(t)
-	defer remoteStorage2.Close()
 
 	app3 := remoteStorage2.Appender(ctx)
 	app3.Append(0, inputLabel, 6000, 6)
@@ -142,7 +139,6 @@ func TestFanout_SelectSorted_AppenderV2(t *testing.T) {
 	inputTotalSize := 0
 
 	priStorage := teststorage.New(t)
-	defer priStorage.Close()
 	app1 := priStorage.AppenderV2(t.Context())
 	_, err := app1.Append(0, inputLabel, 0, 0, 0, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
@@ -156,7 +152,6 @@ func TestFanout_SelectSorted_AppenderV2(t *testing.T) {
 	require.NoError(t, app1.Commit())
 
 	remoteStorage1 := teststorage.New(t)
-	defer remoteStorage1.Close()
 	app2 := remoteStorage1.AppenderV2(t.Context())
 	_, err = app2.Append(0, inputLabel, 0, 3000, 3, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
@@ -170,8 +165,6 @@ func TestFanout_SelectSorted_AppenderV2(t *testing.T) {
 	require.NoError(t, app2.Commit())
 
 	remoteStorage2 := teststorage.New(t)
-	defer remoteStorage2.Close()
-
 	app3 := remoteStorage2.AppenderV2(t.Context())
 	_, err = app3.Append(0, inputLabel, 0, 6000, 6, nil, nil, storage.AOptions{})
 	require.NoError(t, err)
@@ -246,7 +239,6 @@ func TestFanout_SelectSorted_AppenderV2(t *testing.T) {
 
 func TestFanoutErrors(t *testing.T) {
 	workingStorage := teststorage.New(t)
-	defer workingStorage.Close()
 
 	cases := []struct {
 		primary   storage.Storage

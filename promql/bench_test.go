@@ -338,7 +338,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 	})
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
-	defer stor.Close()
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -383,7 +383,6 @@ func BenchmarkRangeQuery(b *testing.B) {
 func BenchmarkJoinQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
-	defer stor.Close()
 
 	opts := promql.EngineOpts{
 		Logger:     nil,
@@ -445,7 +444,6 @@ func BenchmarkJoinQuery(b *testing.B) {
 
 func BenchmarkNativeHistograms(b *testing.B) {
 	testStorage := teststorage.New(b)
-	defer testStorage.Close()
 
 	app := testStorage.Appender(context.TODO())
 	if err := generateNativeHistogramSeries(app, 3000); err != nil {
@@ -523,7 +521,6 @@ func BenchmarkNativeHistograms(b *testing.B) {
 
 func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 	testStorage := teststorage.New(b)
-	defer testStorage.Close()
 
 	app := testStorage.Appender(context.TODO())
 	if err := generateNativeHistogramCustomBucketsSeries(app, 3000); err != nil {
@@ -594,7 +591,6 @@ func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 func BenchmarkInfoFunction(b *testing.B) {
 	// Initialize test storage and generate test series data.
 	testStorage := teststorage.New(b)
-	defer testStorage.Close()
 
 	start := time.Unix(0, 0)
 	end := start.Add(2 * time.Hour)
