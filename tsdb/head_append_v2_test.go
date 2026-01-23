@@ -4340,7 +4340,7 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 			},
 		},
 		{
-			name: "Consecutive appends with newer st do not ignore st/histogram",
+			name: "Consecutive appends with newer st do not ignore st/NHCB",
 			appendableSamples: []appendableSamples{
 				{ts: 100, h: testNHCB, st: 1},
 				{ts: 102, h: testNHCB, st: 101},
@@ -4353,7 +4353,7 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 			},
 		},
 		{
-			name: "Consecutive appends with newer st do not ignore st/floathistogram",
+			name: "Consecutive appends with newer st do not ignore st/floatNHCB",
 			appendableSamples: []appendableSamples{
 				{ts: 100, fh: testFloatNHCB, st: 1},
 				{ts: 102, fh: testFloatNHCB, st: 101},
