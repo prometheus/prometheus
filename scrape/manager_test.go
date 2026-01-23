@@ -522,7 +522,7 @@ scrape_configs:
 	)
 
 	opts := Options{}
-	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
@@ -578,7 +578,7 @@ scrape_configs:
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
-	m, err := NewManager(&opts, nil, nil, nil, testRegistry)
+	m, err := NewManager(&opts, nil, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 
 	ts := make(chan map[string][]*targetgroup.Group)
@@ -631,7 +631,7 @@ global:
 
 	opts := Options{}
 	testRegistry := prometheus.NewRegistry()
-	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 
 	// Load the first config.
@@ -701,7 +701,7 @@ scrape_configs:
 	}
 
 	opts := Options{}
-	scrapeManager, err := NewManager(&opts, nil, nil, nil, testRegistry)
+	scrapeManager, err := NewManager(&opts, nil, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 
 	reload(scrapeManager, cfg1)
@@ -735,6 +735,8 @@ func setupTestServer(t *testing.T, typ string, toWrite []byte) *httptest.Server 
 }
 
 // TestManagerSTZeroIngestion tests scrape manager for various ST cases.
+// NOTE(bwplotka): There is no AppenderV2 test for this STZeroIngestion feature as in V2 flow it's
+// moved to AppenderV2 implementation (e.g. storage) and it's tested there, e.g. tsdb.TestHeadAppenderV2_Append_EnableSTAsZeroSample.
 func TestManagerSTZeroIngestion(t *testing.T) {
 	t.Parallel()
 	const (
@@ -766,7 +768,7 @@ func TestManagerSTZeroIngestion(t *testing.T) {
 							discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 								EnableStartTimestampZeroIngestion: testSTZeroIngest,
 								skipOffsetting:                    true,
-							}, app)
+							}, app, nil)
 							defer scrapeManager.Stop()
 
 							server := setupTestServer(t, config.ScrapeProtocolsHeaders[testFormat], encoded)
@@ -905,6 +907,8 @@ func generateTestHistogram(i int) *dto.Histogram {
 	return h
 }
 
+// NOTE(bwplotka): There is no AppenderV2 test for this STZeroIngestion feature as in V2 flow it's
+// moved to AppenderV2 implementation (e.g. storage) and it's tested there, e.g. tsdb.TestHeadAppenderV2_Append_EnableSTAsZeroSample.
 func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 	t.Parallel()
 	const mName = "expected_histogram"
@@ -950,7 +954,7 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 				EnableStartTimestampZeroIngestion: tc.enableSTZeroIngestion,
 				skipOffsetting:                    true,
-			}, app)
+			}, app, nil)
 			defer scrapeManager.Stop()
 
 			once := sync.Once{}
@@ -1030,7 +1034,7 @@ func TestUnregisterMetrics(t *testing.T) {
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
 	for range 2 {
 		opts := Options{}
-		manager, err := NewManager(&opts, nil, nil, nil, reg)
+		manager, err := NewManager(&opts, nil, nil, nil, nil, reg)
 		require.NotNil(t, manager)
 		require.NoError(t, err)
 		// Unregister all metrics.
@@ -1043,6 +1047,9 @@ func TestUnregisterMetrics(t *testing.T) {
 // This test addresses issue #17216 by ensuring the previously blocking check has been removed.
 // The test verifies that the presence of exemplars in the input does not cause errors,
 // although exemplars are not preserved during NHCB conversion (as documented below).
+//
+// NOTE(bwplotka): There is no AppenderV2 test for this STZeroIngestion feature as in V2 flow it's
+// moved to AppenderV2 implementation (e.g. storage) and it's tested there, e.g. tsdb.TestHeadAppenderV2_Append_EnableSTAsZeroSample.
 func TestNHCBAndSTZeroIngestion(t *testing.T) {
 	t.Parallel()
 
@@ -1059,7 +1066,7 @@ func TestNHCBAndSTZeroIngestion(t *testing.T) {
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 		EnableStartTimestampZeroIngestion: true,
 		skipOffsetting:                    true,
-	}, app)
+	}, app, nil)
 	defer scrapeManager.Stop()
 
 	once := sync.Once{}
@@ -1153,16 +1160,13 @@ func applyConfig(
 	require.NoError(t, discoveryManager.ApplyConfig(c))
 }
 
-func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.Appendable) (*discovery.Manager, *Manager) {
+func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.Appendable, appV2 storage.AppendableV2) (*discovery.Manager, *Manager) {
 	t.Helper()
 
 	if opts == nil {
 		opts = &Options{}
 	}
 	opts.DiscoveryReloadInterval = model.Duration(100 * time.Millisecond)
-	if app == nil {
-		app = teststorage.NewAppendable()
-	}
 
 	reg := prometheus.NewRegistry()
 	sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
@@ -1178,7 +1182,7 @@ func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.A
 		opts,
 		nil,
 		nil,
-		app,
+		app, appV2,
 		prometheus.NewRegistry(),
 	)
 	require.NoError(t, err)
@@ -1251,7 +1255,7 @@ scrape_configs:
   - files: ['%s']
 `
 
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil)
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, nil)
 	defer scrapeManager.Stop()
 
 	applyConfig(
@@ -1350,7 +1354,7 @@ scrape_configs:
   file_sd_configs:
   - files: ['%s', '%s']
 `
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil)
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, nil)
 	defer scrapeManager.Stop()
 
 	applyConfig(
@@ -1409,7 +1413,7 @@ scrape_configs:
   file_sd_configs:
   - files: ['%s']
 `
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil)
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, nil)
 	defer scrapeManager.Stop()
 
 	applyConfig(
@@ -1475,7 +1479,7 @@ scrape_configs:
   - targets: ['%s']
 `
 
-	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil)
+	discoveryManager, scrapeManager := runManagers(t, ctx, nil, nil, nil)
 	defer scrapeManager.Stop()
 
 	// Apply the initial config with an existing file
@@ -1559,7 +1563,7 @@ scrape_configs:
 
 	cfg := loadConfiguration(t, cfgText)
 
-	m, err := NewManager(&Options{}, nil, nil, teststorage.NewAppendable(), prometheus.NewRegistry())
+	m, err := NewManager(&Options{}, nil, nil, nil, nil, prometheus.NewRegistry())
 	require.NoError(t, err)
 	defer m.Stop()
 	require.NoError(t, m.ApplyConfig(cfg))

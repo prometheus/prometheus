@@ -875,7 +875,7 @@ func main() {
 		&cfg.scrape,
 		logger.With("component", "scrape manager"),
 		logging.NewJSONFileLogger,
-		fanoutStorage,
+		fanoutStorage, nil, // TODO(bwplotka): Switch to AppendableV2.
 		prometheus.DefaultRegisterer,
 	)
 	if err != nil {

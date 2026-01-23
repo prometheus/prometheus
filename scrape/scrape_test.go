@@ -5751,13 +5751,9 @@ scrape_configs:
 	s := teststorage.New(t)
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, s, reg)
+	sa := selectAppendable(s, appV2)
+	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, sa.V1(), sa.V2(), reg)
 	require.NoError(t, err)
-
-	if appV2 {
-		mng.appendableV2 = s
-		mng.appendable = nil
-	}
 
 	cfg, err := config.Load(configStr, promslog.NewNopLogger())
 	require.NoError(t, err)

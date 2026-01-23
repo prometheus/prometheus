@@ -39,13 +39,31 @@ import (
 	"github.com/prometheus/prometheus/util/pool"
 )
 
-// NewManager is the Manager constructor using Appendable.
-func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error), appendable storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
+// NewManager is the Manager constructor using storage.Appendable or storage.AppendableV2.
+//
+// If unsure which one to use/implement, implement AppendableV2 as it significantly simplifies implementation and allows more
+// (passing ST, always-on metadata, exemplars per sample).
+//
+// NewManager returns error if both appendable and appendableV2 are specified.
+//
+// Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// storage.Appendable will be removed soon (ETA: Q2 2026).
+func NewManager(
+	o *Options,
+	logger *slog.Logger,
+	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error),
+	appendable storage.Appendable,
+	appendableV2 storage.AppendableV2,
+	registerer prometheus.Registerer,
+) (*Manager, error) {
 	if o == nil {
 		o = &Options{}
 	}
 	if logger == nil {
 		logger = promslog.NewNopLogger()
+	}
+	if appendable != nil && appendableV2 != nil {
+		return nil, errors.New("scrape.NewManager: appendable and appendableV2 cannot be provided at the same time")
 	}
 
 	sm, err := newScrapeMetrics(registerer)
@@ -55,6 +73,7 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 
 	m := &Manager{
 		appendable:             appendable,
+		appendableV2:           appendableV2,
 		opts:                   o,
 		logger:                 logger,
 		newScrapeFailureLogger: newScrapeFailureLogger,
