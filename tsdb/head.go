@@ -161,6 +161,8 @@ type HeadOptions struct {
 	OutOfOrderTimeWindow atomic.Int64
 	OutOfOrderCapMax     atomic.Int64
 
+	HeadCompactionRatio atomic.Float64
+
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string
@@ -208,6 +210,9 @@ const (
 	DefaultOutOfOrderCapMax int64 = 32
 	// DefaultSamplesPerChunk provides a default target number of samples per chunk.
 	DefaultSamplesPerChunk = 120
+
+	DefaultHeadCompactionRatio = 1.5
+	minHeadCompactionRatio     = 1.0
 )
 
 func DefaultHeadOptions() *HeadOptions {
@@ -224,6 +229,7 @@ func DefaultHeadOptions() *HeadOptions {
 		WALReplayConcurrency: defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
+	ho.HeadCompactionRatio.Store(DefaultHeadCompactionRatio)
 	return ho
 }
 
@@ -258,6 +264,11 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	capMax := opts.OutOfOrderCapMax.Load()
 	if capMax <= 0 || capMax > 255 {
 		return nil, fmt.Errorf("OOOCapMax of %d is invalid. must be > 0 and <= 255", capMax)
+	}
+
+	if opts.HeadCompactionRatio.Load() < minHeadCompactionRatio {
+		// TODO(SuperPaintman): shall we return an error here?
+		opts.HeadCompactionRatio.Store(minHeadCompactionRatio)
 	}
 
 	if opts.ChunkRange < 1 {
@@ -1024,14 +1035,24 @@ func (h *Head) removeCorruptedMmappedChunks(err error) (map[chunks.HeadSeriesRef
 
 func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WL) {
 	oooTimeWindow := int64(0)
+	headCompactionRatio := float64(0)
 	if cfg.StorageConfig.TSDBConfig != nil {
 		oooTimeWindow = cfg.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+		headCompactionRatio = cfg.StorageConfig.TSDBConfig.HeadCompactionRatio
 	}
 	if oooTimeWindow < 0 {
 		oooTimeWindow = 0
 	}
+	if headCompactionRatio < 0 {
+		headCompactionRatio = 0
+	} else if headCompactionRatio > 0 && headCompactionRatio < minHeadCompactionRatio {
+		headCompactionRatio = minHeadCompactionRatio
+	}
 
 	h.SetOutOfOrderTimeWindow(oooTimeWindow, wbl)
+	if headCompactionRatio > 0 {
+		h.opts.HeadCompactionRatio.Store(headCompactionRatio)
+	}
 
 	if !h.opts.EnableExemplarStorage {
 		return
@@ -1713,14 +1734,15 @@ func (h *Head) initialized() bool {
 }
 
 // compactable returns whether the head has a compactable range.
-// The head has a compactable range when the head time range is 1.5 times the chunk range.
-// The 0.5 acts as a buffer of the appendable window.
+// The head has a compactable range when the head time range exceeds
+// ChunkRange * HeadCompactionRatio. The extra space (ratio - 1.0) acts
+// as a buffer for the appendable window.
 func (h *Head) compactable() bool {
 	if !h.initialized() {
 		return false
 	}
 
-	return h.MaxTime()-h.MinTime() > h.chunkRange.Load()/2*3
+	return h.MaxTime()-h.MinTime() > int64(float64(h.chunkRange.Load())*h.opts.HeadCompactionRatio.Load())
 }
 
 // Close flushes the WAL and closes the head.

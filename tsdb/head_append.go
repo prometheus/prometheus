@@ -186,7 +186,7 @@ func (h *Head) appender() *headAppender {
 func (h *Head) appendableMinValidTime() int64 {
 	// This boundary ensures that no samples will be added to the compaction window.
 	// This allows race-free, concurrent appending and compaction.
-	cwEnd := h.MaxTime() - h.chunkRange.Load()/2
+	cwEnd := h.MaxTime() - int64(float64(h.chunkRange.Load())*(h.opts.HeadCompactionRatio.Load()-1))
 
 	// This boundary ensures that we avoid overlapping timeframes from one block to the next.
 	// While not necessary for correctness, it means we're not required to use vertical compaction.
