@@ -676,7 +676,6 @@ func TestEngineEvalStmtTimestamps(t *testing.T) {
 load 10s
   metric 1 2
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	cases := []struct {
 		Query       string
@@ -789,7 +788,6 @@ load 10s
   metricWith3SampleEvery10Seconds{a="3",b="2"} 1+1x100
   metricWith1HistogramEvery10Seconds {{schema:1 count:5 sum:20 buckets:[1 2 1 1]}}+{{schema:1 count:10 sum:5 buckets:[1 2 3 4]}}x100
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	cases := []struct {
 		Query               string
@@ -1339,7 +1337,6 @@ load 10s
   bigmetric{a="1"} 1+1x100
   bigmetric{a="2"} 1+1x100
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	// These test cases should be touching the limit exactly (hence no exceeding).
 	// Exceeding the limit will be tested by doing -1 to the MaxSamples.
@@ -1523,7 +1520,6 @@ func TestExtendedRangeSelectors(t *testing.T) {
 		withreset 1+1x4 1+1x5
 		notregular 0 5 100 2 8
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	tc := []struct {
 		query    string
@@ -1677,7 +1673,6 @@ load 10s
 load 1ms
   metric_ms 0+1x10000
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
 	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
@@ -2283,7 +2278,6 @@ func TestSubquerySelector(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			engine := newTestEngine(t)
 			storage := promqltest.LoadedStorage(t, tst.loadString)
-			t.Cleanup(func() { storage.Close() })
 
 			for _, c := range tst.cases {
 				t.Run(c.Query, func(t *testing.T) {
@@ -3410,7 +3404,6 @@ metric 0 1 2
 		t.Run(c.name, func(t *testing.T) {
 			engine := promqltest.NewTestEngine(t, false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
 			storage := promqltest.LoadedStorage(t, load)
-			t.Cleanup(func() { storage.Close() })
 
 			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback)
 			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
@@ -3444,7 +3437,7 @@ func TestHistogramCopyFromIteratorRegression(t *testing.T) {
 histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:1 count:1 buckets:[1]}}
 `
 	storage := promqltest.LoadedStorage(t, load)
-	t.Cleanup(func() { storage.Close() })
+
 	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 	verify := func(t *testing.T, qry promql.Query, expected []histogram.FloatHistogram) {

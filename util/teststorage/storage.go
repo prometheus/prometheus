@@ -32,14 +32,22 @@ type Option func(opt *tsdb.Options)
 
 // New returns a new TestStorage for testing purposes
 // that removes all associated files on closing.
+//
+// Caller does not need to close the TestStorage after use, it's deferred via t.Cleanup.
 func New(t testing.TB, o ...Option) *TestStorage {
 	s, err := NewWithError(o...)
 	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = s.Close() // Ignore errors, as it could be a double close.
+	})
 	return s
 }
 
 // NewWithError returns a new TestStorage for user facing tests, which reports
 // errors directly.
+//
+// It's a caller responsibility to close the TestStorage after use.
 func NewWithError(o ...Option) (*TestStorage, error) {
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.

@@ -131,7 +131,6 @@ func testStorageHandlesOutOfOrderTimestamps(t *testing.T, appV2 bool) {
 	// Test with default OutOfOrderTimeWindow (0)
 	t.Run("Out-Of-Order Sample Disabled", func(t *testing.T) {
 		s := teststorage.New(t)
-		t.Cleanup(func() { _ = s.Close() })
 		runScrapeLoopTest(t, appV2, s, false)
 	})
 
@@ -140,7 +139,6 @@ func testStorageHandlesOutOfOrderTimestamps(t *testing.T, appV2 bool) {
 		s := teststorage.New(t, func(opt *tsdb.Options) {
 			opt.OutOfOrderTimeWindow = 600000
 		})
-		t.Cleanup(func() { _ = s.Close() })
 
 		runScrapeLoopTest(t, appV2, s, true)
 	})
@@ -1610,7 +1608,6 @@ func benchScrapeLoopAppend(
 			opt.MaxExemplars = 1e5
 		}
 	})
-	b.Cleanup(func() { _ = s.Close() })
 
 	sl, _ := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
 		sl.appendMetadataToWAL = appendMetadataToWAL
@@ -1697,7 +1694,6 @@ func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 			parsableText := readTextParseTestMetrics(b)
 
 			s := teststorage.New(b)
-			b.Cleanup(func() { _ = s.Close() })
 
 			sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
 				sl.fallbackScrapeProtocol = "application/openmetrics-text"
@@ -1730,7 +1726,6 @@ func testSetOptionsHandlingStaleness(t *testing.T, appV2 bool) {
 	s := teststorage.New(t, func(opt *tsdb.Options) {
 		opt.OutOfOrderTimeWindow = 600000
 	})
-	t.Cleanup(func() { _ = s.Close() })
 
 	signal := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -2001,7 +1996,6 @@ func TestScrapeLoopCache(t *testing.T) {
 
 func testScrapeLoopCache(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	signal := make(chan struct{}, 1)
 
@@ -2071,7 +2065,6 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 
 func testScrapeLoopCacheMemoryExhaustionProtection(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	signal := make(chan struct{}, 1)
 
@@ -3881,7 +3874,6 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 
 func testScrapeLoopRespectTimestamps(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	appTest := teststorage.NewAppendable().Then(s)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
@@ -3910,7 +3902,6 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 
 func testScrapeLoopDiscardTimestamps(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	appTest := teststorage.NewAppendable().Then(s)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
@@ -3941,7 +3932,6 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 
 func testScrapeLoopDiscardDuplicateLabels(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	appTest := teststorage.NewAppendable().Then(s)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
@@ -3983,7 +3973,6 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 
 func testScrapeLoopDiscardUnnamedMetrics(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	appTest := teststorage.NewAppendable().Then(s)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
@@ -4274,7 +4263,6 @@ func TestScrapeAddFast(t *testing.T) {
 
 func testScrapeAddFast(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	sl, _ := newTestScrapeLoop(t, withAppendable(s, appV2))
 
@@ -4357,7 +4345,6 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 func testScrapeReportSingleAppender(t *testing.T, appV2 bool) {
 	t.Parallel()
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	signal := make(chan struct{}, 1)
 
@@ -4417,7 +4404,6 @@ func TestScrapeReportLimit(t *testing.T) {
 
 func testScrapeReportLimit(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	cfg := &config.ScrapeConfig{
 		JobName:                    "test",
@@ -4480,7 +4466,6 @@ func TestScrapeUTF8(t *testing.T) {
 
 func testScrapeUTF8(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	cfg := &config.ScrapeConfig{
 		JobName:                    "test",
@@ -4678,7 +4663,6 @@ func TestLeQuantileReLabel(t *testing.T) {
 
 func testLeQuantileReLabel(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	cfg := &config.ScrapeConfig{
 		JobName: "test",
@@ -5205,7 +5189,6 @@ metric: <
 			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
 				t.Parallel()
 				s := teststorage.New(t)
-				t.Cleanup(func() { _ = s.Close() })
 
 				sl, _ := newTestScrapeLoop(t, withAppendable(s, appV2), func(sl *scrapeLoop) {
 					sl.alwaysScrapeClassicHist = tc.alwaysScrapeClassicHistograms
@@ -5293,7 +5276,6 @@ func TestTypeUnitReLabel(t *testing.T) {
 
 func testTypeUnitReLabel(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	cfg := &config.ScrapeConfig{
 		JobName: "test",
@@ -5438,7 +5420,6 @@ func TestScrapeLoopCompression(t *testing.T) {
 
 func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	metricsText := makeTestGauges(10)
 
@@ -5768,16 +5749,11 @@ scrape_configs:
 `, minBucketFactor, strings.ReplaceAll(metricsServer.URL, "http://", ""))
 
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, s, reg)
+	sa := selectAppendable(s, appV2)
+	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, sa.V1(), sa.V2(), reg)
 	require.NoError(t, err)
-
-	if appV2 {
-		mng.appendableV2 = s
-		mng.appendable = nil
-	}
 
 	cfg, err := config.Load(configStr, promslog.NewNopLogger())
 	require.NoError(t, err)
@@ -6464,7 +6440,6 @@ func testNewScrapeLoopHonorLabelsWiring(t *testing.T, appV2 bool) {
 			require.NoError(t, err)
 
 			s := teststorage.New(t)
-			defer s.Close()
 
 			cfg := &config.ScrapeConfig{
 				JobName:                    "test",

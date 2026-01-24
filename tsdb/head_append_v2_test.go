@@ -4111,10 +4111,18 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 	// Make sure counter resets hints are non-zero, so we can detect ST histogram samples.
 	testHistogram := tsdbutil.GenerateTestHistogram(1)
 	testHistogram.CounterResetHint = histogram.NotCounterReset
+
 	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
 	testFloatHistogram.CounterResetHint = histogram.NotCounterReset
+
+	testNHCB := tsdbutil.GenerateTestCustomBucketsHistogram(1)
+	testNHCB.CounterResetHint = histogram.NotCounterReset
+
+	testFloatNHCB := tsdbutil.GenerateTestCustomBucketsFloatHistogram(1)
+	testFloatNHCB.CounterResetHint = histogram.NotCounterReset
+
 	// TODO(beorn7): Once issue #15346 is fixed, the CounterResetHint of the
-	// following two zero histograms should be histogram.CounterReset.
+	// following zero histograms should be histogram.CounterReset.
 	testZeroHistogram := &histogram.Histogram{
 		Schema:          testHistogram.Schema,
 		ZeroThreshold:   testHistogram.ZeroThreshold,
@@ -4131,6 +4139,19 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 		PositiveBuckets: []float64{0, 0, 0, 0},
 		NegativeBuckets: []float64{0, 0, 0, 0},
 	}
+	testZeroNHCB := &histogram.Histogram{
+		Schema:          testNHCB.Schema,
+		PositiveSpans:   testNHCB.PositiveSpans,
+		PositiveBuckets: []int64{0, 0, 0, 0},
+		CustomValues:    testNHCB.CustomValues,
+	}
+	testZeroFloatNHCB := &histogram.FloatHistogram{
+		Schema:          testFloatNHCB.Schema,
+		PositiveSpans:   testFloatNHCB.PositiveSpans,
+		PositiveBuckets: []float64{0, 0, 0, 0},
+		CustomValues:    testFloatNHCB.CustomValues,
+	}
+
 	type appendableSamples struct {
 		ts      int64
 		fSample float64
@@ -4184,6 +4205,34 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 			}(),
 		},
 		{
+			name: "In order ct+normal sample/NHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, h: testNHCB, st: 1},
+				{ts: 101, h: testNHCB, st: 1},
+			},
+			expectedSamples: func() []chunks.Sample {
+				return []chunks.Sample{
+					sample{t: 1, h: testZeroNHCB},
+					sample{t: 100, h: testNHCB},
+					sample{t: 101, h: testNHCB},
+				}
+			}(),
+		},
+		{
+			name: "In order ct+normal sample/floatNHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fh: testFloatNHCB, st: 1},
+				{ts: 101, fh: testFloatNHCB, st: 1},
+			},
+			expectedSamples: func() []chunks.Sample {
+				return []chunks.Sample{
+					sample{t: 1, fh: testZeroFloatNHCB},
+					sample{t: 100, fh: testFloatNHCB},
+					sample{t: 101, fh: testFloatNHCB},
+				}
+			}(),
+		},
+		{
 			name: "Consecutive appends with same st ignore st/floatSample",
 			appendableSamples: []appendableSamples{
 				{ts: 100, fSample: 10, st: 1},
@@ -4220,6 +4269,34 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 					sample{t: 1, fh: testZeroFloatHistogram},
 					sample{t: 100, fh: testFloatHistogram},
 					sample{t: 101, fh: testFloatHistogram},
+				}
+			}(),
+		},
+		{
+			name: "Consecutive appends with same st ignore st/NHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, h: testNHCB, st: 1},
+				{ts: 101, h: testNHCB, st: 1},
+			},
+			expectedSamples: func() []chunks.Sample {
+				return []chunks.Sample{
+					sample{t: 1, h: testZeroNHCB},
+					sample{t: 100, h: testNHCB},
+					sample{t: 101, h: testNHCB},
+				}
+			}(),
+		},
+		{
+			name: "Consecutive appends with same st ignore st/floatNHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fh: testFloatNHCB, st: 1},
+				{ts: 101, fh: testFloatNHCB, st: 1},
+			},
+			expectedSamples: func() []chunks.Sample {
+				return []chunks.Sample{
+					sample{t: 1, fh: testZeroFloatNHCB},
+					sample{t: 100, fh: testFloatNHCB},
+					sample{t: 101, fh: testFloatNHCB},
 				}
 			}(),
 		},
@@ -4263,6 +4340,32 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 			},
 		},
 		{
+			name: "Consecutive appends with newer st do not ignore st/NHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, h: testNHCB, st: 1},
+				{ts: 102, h: testNHCB, st: 101},
+			},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, h: testZeroNHCB},
+				sample{t: 100, h: testNHCB},
+				sample{t: 101, h: testZeroNHCB},
+				sample{t: 102, h: testNHCB},
+			},
+		},
+		{
+			name: "Consecutive appends with newer st do not ignore st/floatNHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fh: testFloatNHCB, st: 1},
+				{ts: 102, fh: testFloatNHCB, st: 101},
+			},
+			expectedSamples: []chunks.Sample{
+				sample{t: 1, fh: testZeroFloatNHCB},
+				sample{t: 100, fh: testFloatNHCB},
+				sample{t: 101, fh: testZeroFloatNHCB},
+				sample{t: 102, fh: testFloatNHCB},
+			},
+		},
+		{
 			name: "ST equals to previous sample timestamp is ignored/floatSample",
 			appendableSamples: []appendableSamples{
 				{ts: 100, fSample: 10, st: 1},
@@ -4299,6 +4402,34 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 					sample{t: 1, fh: testZeroFloatHistogram},
 					sample{t: 100, fh: testFloatHistogram},
 					sample{t: 101, fh: testFloatHistogram},
+				}
+			}(),
+		},
+		{
+			name: "ST equals to previous sample timestamp is ignored/NHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, h: testNHCB, st: 1},
+				{ts: 101, h: testNHCB, st: 100},
+			},
+			expectedSamples: func() []chunks.Sample {
+				return []chunks.Sample{
+					sample{t: 1, h: testZeroNHCB},
+					sample{t: 100, h: testNHCB},
+					sample{t: 101, h: testNHCB},
+				}
+			}(),
+		},
+		{
+			name: "ST equals to previous sample timestamp is ignored/floatNHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fh: testFloatNHCB, st: 1},
+				{ts: 101, fh: testFloatNHCB, st: 100},
+			},
+			expectedSamples: func() []chunks.Sample {
+				return []chunks.Sample{
+					sample{t: 1, fh: testZeroFloatNHCB},
+					sample{t: 100, fh: testFloatNHCB},
+					sample{t: 101, fh: testFloatNHCB},
 				}
 			}(),
 		},
@@ -4343,6 +4474,40 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 				// NOTE: Without ST, on query, first histogram sample will get
 				// CounterReset adjusted to 0.
 				firstSample := testFloatHistogram.Copy()
+				firstSample.CounterResetHint = histogram.UnknownCounterReset
+				return []chunks.Sample{
+					sample{t: 100, fh: firstSample},
+				}
+			}(),
+		},
+		{
+			name: "ST lower than minValidTime/NHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, h: testNHCB, st: -1},
+			},
+			// ST results ErrOutOfBounds, but ST append is best effort, so
+			// ST should be ignored, but sample appended.
+			expectedSamples: func() []chunks.Sample {
+				// NOTE: Without ST, on query, first histogram sample will get
+				// CounterReset adjusted to 0.
+				firstSample := testNHCB.Copy()
+				firstSample.CounterResetHint = histogram.UnknownCounterReset
+				return []chunks.Sample{
+					sample{t: 100, h: firstSample},
+				}
+			}(),
+		},
+		{
+			name: "ST lower than minValidTime/floatNHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fh: testFloatNHCB, st: -1},
+			},
+			// ST results ErrOutOfBounds, but ST append is best effort, so
+			// ST should be ignored, but sample appended.
+			expectedSamples: func() []chunks.Sample {
+				// NOTE: Without ST, on query, first histogram sample will get
+				// CounterReset adjusted to 0.
+				firstSample := testFloatNHCB.Copy()
 				firstSample.CounterResetHint = histogram.UnknownCounterReset
 				return []chunks.Sample{
 					sample{t: 100, fh: firstSample},
@@ -4399,6 +4564,44 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 				return []chunks.Sample{
 					sample{t: 100, fh: firstSample},
 					sample{t: 200, fh: testFloatHistogram},
+				}
+			}(),
+		},
+		{
+			name: "ST duplicates an existing sample/NHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, h: testNHCB},
+				{ts: 200, h: testNHCB, st: 100},
+			},
+			// ST results ErrDuplicateSampleForTimestamp, but ST append is best effort, so
+			// ST should be ignored, but sample appended.
+			expectedSamples: func() []chunks.Sample {
+				// NOTE: Without ST, on query, first histogram sample will get
+				// CounterReset adjusted to 0.
+				firstSample := testNHCB.Copy()
+				firstSample.CounterResetHint = histogram.UnknownCounterReset
+				return []chunks.Sample{
+					sample{t: 100, h: firstSample},
+					sample{t: 200, h: testNHCB},
+				}
+			}(),
+		},
+		{
+			name: "ST duplicates an existing sample/floatNHCB",
+			appendableSamples: []appendableSamples{
+				{ts: 100, fh: testFloatNHCB},
+				{ts: 200, fh: testFloatNHCB, st: 100},
+			},
+			// ST results ErrDuplicateSampleForTimestamp, but ST append is best effort, so
+			// ST should ignored, but sample appended.
+			expectedSamples: func() []chunks.Sample {
+				// NOTE: Without ST, on query, first histogram sample will get
+				// CounterReset adjusted to 0.
+				firstSample := testFloatNHCB.Copy()
+				firstSample.CounterResetHint = histogram.UnknownCounterReset
+				return []chunks.Sample{
+					sample{t: 100, fh: firstSample},
+					sample{t: 200, fh: testFloatNHCB},
 				}
 			}(),
 		},
