@@ -313,6 +313,10 @@ type DB struct {
 	// out-of-order compaction and vertical queries.
 	oooWasEnabled atomic.Bool
 
+	// lastHeadCompactionTime is the last wall clock time when the head block compaction was started,
+	// irrespective of success or failure. This does not include out-of-order compaction and stale series compaction.
+	lastHeadCompactionTime time.Time
+
 	writeNotified wlog.WriteNotified
 
 	registerer prometheus.Registerer
@@ -1156,13 +1160,24 @@ func (db *DB) run(ctx context.Context) {
 			}
 			db.cmtx.Unlock()
 
-			// TODO: check if normal compaction is soon, and don't run stale series compaction if it is soon.
 			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
 			staleSeriesRatio := float64(numStaleSeries) / float64(numSeries)
 			if db.autoCompact && db.opts.staleSeriesCompactionThreshold.Load() > 0 &&
 				staleSeriesRatio >= db.opts.staleSeriesCompactionThreshold.Load() {
-				if err := db.CompactStaleHead(); err != nil {
-					db.logger.Error("immediate stale series compaction failed", "err", err)
+				nextCompactionIsSoon := false
+				if !db.lastHeadCompactionTime.IsZero() {
+					compactionInterval := time.Duration(db.head.chunkRange.Load()) * time.Millisecond
+					nextEstimatedCompactionTime := db.lastHeadCompactionTime.Add(compactionInterval)
+					if time.Now().Add(10 * time.Minute).After(nextEstimatedCompactionTime) {
+						// Next compaction is starting within next 10 mins.
+						nextCompactionIsSoon = true
+					}
+				}
+
+				if !nextCompactionIsSoon {
+					if err := db.CompactStaleHead(); err != nil {
+						db.logger.Error("immediate stale series compaction failed", "err", err)
+					}
 				}
 			}
 
@@ -1583,6 +1598,8 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 // compactHead compacts the given RangeHead.
 // The db.cmtx should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) error {
+	db.lastHeadCompactionTime = time.Now()
+
 	uids, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return fmt.Errorf("persist head block: %w", err)
@@ -1635,13 +1652,13 @@ func (db *DB) CompactStaleHead() error {
 		db.logger.Info("Stale series block created", "ulids", fmt.Sprintf("%v", uids), "min_time", mint, "max_time", maxt)
 
 		if err := db.reloadBlocks(); err != nil {
-			multiErr := tsdb_errors.NewMulti(fmt.Errorf("reloadBlocks blocks: %w", err))
+			errs := []error{fmt.Errorf("reloadBlocks blocks: %w", err)}
 			for _, uid := range uids {
 				if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-					multiErr.Add(fmt.Errorf("delete persisted stale head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
+					errs = append(errs, fmt.Errorf("delete persisted stale head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
 				}
 			}
-			return multiErr.Err()
+			return errors.Join(errs...)
 		}
 	}
 
