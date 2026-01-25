@@ -521,6 +521,89 @@ curl http://localhost:9090/api/v1/label/U__http_2e_status_code/values
 }
 ```
 
+### Querying info labels
+
+The following endpoint returns data labels from info metrics (like `target_info`).
+Info metrics are metrics that carry metadata about entities and have a constant
+value of 1. This endpoint is useful for autocomplete suggestions when using the
+`info()` PromQL function.
+
+```
+GET /api/v1/info_labels
+POST /api/v1/info_labels
+```
+
+URL query parameters:
+
+- `metric_match=<matcher>`: Matcher for the info metric name. Default: `target_info` (exact match). Optional.
+  Supports the following formats:
+  - `metric_match=target_info` - exact match (`__name__="target_info"`)
+  - `metric_match=~.*_info` - regex match (`__name__=~".*_info"`)
+  - `metric_match=!=target_info` - negated exact match (`__name__!="target_info"`)
+  - `metric_match=!~build_info` - negated regex match (`__name__!~"build_info"`)
+- `match[]=<series_selector>`: Repeated series selector argument that filters
+  which info metrics are considered based on matching identifying labels.
+  For example, `match[]={job="prometheus"}` returns labels only from info
+  metrics that have `job="prometheus"`. Optional.
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
+- `limit=<number>`: Maximum number of values per label. Optional. 0 means disabled.
+
+The `data` section of the JSON response is an object mapping label names to
+arrays of their unique values. Only data labels (those not present on the base
+metrics that the info metric describes) are returned.
+
+This example queries for info labels from `target_info`:
+
+```bash
+curl 'localhost:9090/api/v1/info_labels'
+```
+
+```json
+{
+    "status": "success",
+    "data": {
+        "version": ["2.0", "2.1"],
+        "env": ["prod", "staging"],
+        "region": ["us-east"]
+    }
+}
+```
+
+This example queries for info labels from all metrics ending in `_info`:
+
+```bash
+curl 'localhost:9090/api/v1/info_labels?metric_match=~.*_info'
+```
+
+```json
+{
+    "status": "success",
+    "data": {
+        "version": ["2.0", "2.1"],
+        "env": ["prod", "staging"],
+        "region": ["us-east"],
+        "custom_label": ["custom_value"]
+    }
+}
+```
+
+This example filters info labels to only those from targets with `job="prometheus"`:
+
+```bash
+curl 'localhost:9090/api/v1/info_labels?match[]={job="prometheus"}'
+```
+
+```json
+{
+    "status": "success",
+    "data": {
+        "version": ["2.0", "2.1"],
+        "env": ["prod", "staging"]
+    }
+}
+```
+
 ## Querying exemplars
 
 This is **experimental** and might change in the future.

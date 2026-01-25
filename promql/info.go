@@ -18,21 +18,13 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
-
-	"github.com/grafana/regexp"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/infohelper"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
-
-const targetInfo = "target_info"
-
-// identifyingLabels are the labels we consider as identifying for info metrics.
-// Currently hard coded, so we don't need knowledge of individual info metrics.
-var identifyingLabels = []string{"instance", "job"}
 
 // evalInfo implements the info PromQL function.
 func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
@@ -51,7 +43,7 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 			}
 		}
 	} else {
-		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, targetInfo)}
+		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, infohelper.DefaultInfoMetricName)}
 	}
 
 	// Don't try to enrich info series.
@@ -130,7 +122,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		}
 
 		// Register relevant values per identifying label for this series.
-		for _, l := range identifyingLabels {
+		for _, l := range infohelper.DefaultIdentifyingLabels {
 			val := s.Metric.Get(l)
 			if val == "" {
 				continue
@@ -164,24 +156,9 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	}
 
 	// Generate regexps for every interesting value per identifying label.
-	var sb strings.Builder
-	idLblRegexps := make(map[string]string, len(idLblValues))
-	for name, vals := range idLblValues {
-		sb.Reset()
-		i := 0
-		for v := range vals {
-			if i > 0 {
-				sb.WriteRune('|')
-			}
-			sb.WriteString(regexp.QuoteMeta(v))
-			i++
-		}
-		idLblRegexps[name] = sb.String()
-	}
-
 	var infoLabelMatchers []*labels.Matcher
-	for name, re := range idLblRegexps {
-		infoLabelMatchers = append(infoLabelMatchers, labels.MustNewMatcher(labels.MatchRegexp, name, re))
+	for name, vals := range idLblValues {
+		infoLabelMatchers = append(infoLabelMatchers, labels.MustNewMatcher(labels.MatchRegexp, name, infohelper.BuildRegexpAlternation(vals)))
 	}
 	var nameMatcher *labels.Matcher
 	for name, ms := range dataLabelMatchers {
@@ -200,7 +177,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	}
 	if nameMatcher == nil {
 		// Default to using the target_info metric.
-		infoLabelMatchers = append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, targetInfo)}, infoLabelMatchers...)
+		infoLabelMatchers = append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, infohelper.DefaultInfoMetricName)}, infoLabelMatchers...)
 	}
 
 	infoIt := ev.querier.Select(ctx, false, &selectHints, infoLabelMatchers...)
@@ -221,7 +198,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 		return func(lset labels.Labels) string {
 			lb.Reset()
 			lb.Add(labels.MetricName, name)
-			lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
+			lset.MatchLabels(true, infohelper.DefaultIdentifyingLabels...).Range(func(l labels.Label) {
 				lb.Add(l.Name, l.Value)
 			})
 			lb.Sort()
