@@ -297,7 +297,9 @@ func (*ChunkDiskMapper) RemoveMasks(sourceEncoding chunkenc.Encoding) chunkenc.E
 	return chunkenc.Encoding(restored)
 }
 
-// openMMapFiles opens all files within dir for mmapping.
+// openMMapFiles opens all files within dir for reading.
+// Despite the name, this function now uses the configured file reading mode
+// (mmap or buffered) based on fileutil.GetFileReaderConfig().
 func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	cdm.mmappedChunkFiles = map[int]*mmappedChunkFile{}
 	cdm.closers = map[int]io.Closer{}
@@ -322,12 +324,12 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 
 	chkFileIndices := make([]int, 0, len(files))
 	for seq, fn := range files {
-		f, err := fileutil.OpenMmapFile(fn)
+		f, err := fileutil.OpenBufferedFileReader(fn)
 		if err != nil {
-			return fmt.Errorf("mmap files, file: %s: %w", fn, err)
+			return fmt.Errorf("open file %s: %w", fn, err)
 		}
 		cdm.closers[seq] = f
-		cdm.mmappedChunkFiles[seq] = &mmappedChunkFile{byteSlice: realByteSlice(f.Bytes())}
+		cdm.mmappedChunkFiles[seq] = &mmappedChunkFile{byteSlice: f}
 		chkFileIndices = append(chkFileIndices, seq)
 	}
 
@@ -596,7 +598,7 @@ func (cdm *ChunkDiskMapper) cutAndExpectRef(chkRef ChunkDiskMapperRef) (err erro
 	return nil
 }
 
-// cut creates a new m-mapped file. The write lock should be held before calling this.
+// cut creates a new chunk file for writing. The write lock should be held before calling this.
 // It returns the file sequence and the offset in that file to start writing chunks.
 func (cdm *ChunkDiskMapper) cut() (seq, offset int, returnErr error) {
 	// Sync current tail to disk and close.
@@ -625,7 +627,9 @@ func (cdm *ChunkDiskMapper) cut() (seq, offset int, returnErr error) {
 		cdm.readPathMtx.Unlock()
 	}
 
-	mmapFile, err := fileutil.OpenMmapFileWithSize(newFile.Name(), MaxHeadChunkFileSize)
+	// Open the file for buffered reading.
+	// We specify the full preallocated size so the reader knows the expected file size.
+	readFile, err := fileutil.OpenBufferedFileReaderWithSize(newFile.Name(), MaxHeadChunkFileSize)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -639,8 +643,8 @@ func (cdm *ChunkDiskMapper) cut() (seq, offset int, returnErr error) {
 		cdm.chkWriter = bufio.NewWriterSize(newFile, cdm.writeBufferSize)
 	}
 
-	cdm.closers[cdm.curFileSequence] = mmapFile
-	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: realByteSlice(mmapFile.Bytes())}
+	cdm.closers[cdm.curFileSequence] = readFile
+	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: readFile}
 	cdm.readPathMtx.Unlock()
 
 	cdm.curFileMaxt = 0

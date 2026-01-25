@@ -1924,7 +1924,7 @@ func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
 func TestDelayedCompaction(t *testing.T) {
 	// The delay is chosen in such a way as to not slow down the tests, but also to make
 	// the effective compaction duration negligible compared to it, so that the duration comparisons make sense.
-	delay := 1000 * time.Millisecond
+	delay := 3000 * time.Millisecond
 
 	waitUntilCompactedAndCheck := func(db *DB) {
 		t.Helper()
