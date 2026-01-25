@@ -707,7 +707,8 @@ func TestHangingNotifier(t *testing.T) {
 		sendTimeout = 100 * time.Millisecond
 		sdUpdatert  = sendTimeout / 2
 
-		done = make(chan struct{})
+		done              = make(chan struct{})
+		releaseFunctional = make(chan struct{})
 	)
 
 	// Set up a faulty Alertmanager.
@@ -719,20 +720,23 @@ func TestHangingNotifier(t *testing.T) {
 		case <-time.After(time.Hour):
 		}
 	}))
-	defer func() {
-		close(done)
-	}()
+	// close(done) runs last to release faulty server handlers.
+	t.Cleanup(func() { close(done) })
 
 	faultyURL, err := url.Parse(faultyServer.URL)
 	require.NoError(t, err)
 	faultyURL.Path = "/api/v2/alerts"
 
-	// Set up a functional Alertmanager.
+	// Set up a functional Alertmanager that blocks until releaseFunctional is closed.
+	// This prevents the queue from draining before we can assert it's not empty.
 	var functionalCalled atomic.Bool
 	functionalServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		functionalCalled.Store(true)
+		<-releaseFunctional
 	}))
-	defer functionalServer.Close()
+	// Register cleanups in LIFO order: close channel first (registered last), then close server.
+	t.Cleanup(func() { functionalServer.Close() })
+	t.Cleanup(func() { close(releaseFunctional) })
 	functionalURL, err := url.Parse(functionalServer.URL)
 	require.NoError(t, err)
 	functionalURL.Path = "/api/v2/alerts"
@@ -741,7 +745,7 @@ func TestHangingNotifier(t *testing.T) {
 	// This is relevant as the updates aren't sent continually in real life, but only each updatert.
 	// The old implementation of TestHangingNotifier didn't take that into account.
 	ctx, cancelSdManager := context.WithCancel(t.Context())
-	defer cancelSdManager()
+	t.Cleanup(cancelSdManager)
 	reg := prometheus.NewRegistry()
 	sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
 	require.NoError(t, err)
@@ -774,7 +778,7 @@ func TestHangingNotifier(t *testing.T) {
 	}
 
 	go notifier.Run(sdManager.SyncCh())
-	defer notifier.Stop()
+	t.Cleanup(func() { notifier.Stop() })
 
 	require.Len(t, notifier.Alertmanagers(), 2)
 
