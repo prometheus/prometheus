@@ -40,6 +40,12 @@ export interface PrometheusClient {
   // flags returns flag values that prometheus was configured with.
   flags(): Promise<Record<string, string>>;
 
+  // infoLabelPairs returns data labels from info metrics (like target_info) and their values.
+  // If metricName is provided, only returns labels from info metrics associated with that metric
+  // via identifying labels (job, instance).
+  // If metricMatch is provided, it specifies which info metrics to query (supports =, =~, !=, !~).
+  infoLabelPairs(metricName?: string, metricMatch?: string): Promise<Record<string, string[]>>;
+
   // destroy is called to release all resources held by this client
   destroy?(): void;
 }
@@ -203,6 +209,28 @@ export class HTTPPrometheusClient implements PrometheusClient {
     });
   }
 
+  infoLabelPairs(metricName?: string, metricMatch?: string): Promise<Record<string, string[]>> {
+    const params: URLSearchParams = new URLSearchParams();
+    if (this.lookbackInterval) {
+      const end = new Date();
+      const start = new Date(end.getTime() - this.lookbackInterval);
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
+    }
+    if (metricName) {
+      params.set('match[]', metricName);
+    }
+    if (metricMatch) {
+      params.set('metric_match', metricMatch);
+    }
+    return this.fetchAPI<Record<string, string[]>>(`${this.infoLabelsEndpoint()}?${params}`).catch((error) => {
+      if (this.errorHandler) {
+        this.errorHandler(error);
+      }
+      return {};
+    });
+  }
+
   destroy(): void {
     for (const controller of this.abortControllers) {
       controller.abort();
@@ -271,6 +299,10 @@ export class HTTPPrometheusClient implements PrometheusClient {
   private flagsEndpoint(): string {
     return `${this.apiPrefix}/status/flags`;
   }
+
+  private infoLabelsEndpoint(): string {
+    return `${this.apiPrefix}/info_labels`;
+  }
 }
 
 class Cache {
@@ -281,6 +313,7 @@ class Cache {
   private labelValues: LRUCache<string, string[]>;
   private labelNames: string[];
   private flags: Record<string, string>;
+  private infoLabelPairs: LRUCache<string, Record<string, string[]>>;
 
   constructor(config?: CacheConfig) {
     const maxAge = {
@@ -292,6 +325,7 @@ class Cache {
     this.labelValues = new LRUCache<string, string[]>(maxAge);
     this.labelNames = [];
     this.flags = {};
+    this.infoLabelPairs = new LRUCache<string, Record<string, string[]>>(maxAge);
     if (config?.initialMetricList) {
       this.setLabelValues('__name__', config.initialMetricList);
     }
@@ -399,6 +433,14 @@ class Cache {
     }
     return [];
   }
+
+  setInfoLabelPairs(cacheKey: string, labels: Record<string, string[]>): void {
+    this.infoLabelPairs.set(cacheKey, labels);
+  }
+
+  getInfoLabelPairs(cacheKey: string): Record<string, string[]> | undefined {
+    return this.infoLabelPairs.get(cacheKey);
+  }
 }
 
 export class CachedPrometheusClient implements PrometheusClient {
@@ -464,6 +506,21 @@ export class CachedPrometheusClient implements PrometheusClient {
     return this.client.flags().then((flags) => {
       this.cache.setFlags(flags);
       return flags;
+    });
+  }
+
+  infoLabelPairs(metricName?: string, metricMatch?: string): Promise<Record<string, string[]>> {
+    // Info labels are expected to be relatively stable, so we cache them.
+    // The cache key includes the metric name and metric match.
+    const cacheKey = `infoLabels_${metricName || ''}_${metricMatch || ''}`;
+    const cached = this.cache.getInfoLabelPairs(cacheKey);
+    if (cached && Object.keys(cached).length > 0) {
+      return Promise.resolve(cached);
+    }
+
+    return this.client.infoLabelPairs(metricName, metricMatch).then((labels) => {
+      this.cache.setInfoLabelPairs(cacheKey, labels);
+      return labels;
     });
   }
 

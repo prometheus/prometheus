@@ -68,7 +68,6 @@ describe('HistogramChart', () => {
     scale: 'linear' as 'linear' | 'exponential',
   };
 
-
   beforeEach(() => {
     mockFormat.mockClear();
     mockResolvedOptions.mockClear();
@@ -163,7 +162,9 @@ describe('HistogramChart', () => {
 
   describe('Exponential Scale', () => {
     beforeEach(() => {
-      wrapper = mount(<HistogramChart {...defaultProps} index={1} histogram={histogramDataExponential} scale="exponential" />);
+      wrapper = mount(
+        <HistogramChart {...defaultProps} index={1} histogram={histogramDataExponential} scale="exponential" />
+      );
     });
 
     it('renders the correct number of buckets', () => {
@@ -225,17 +226,24 @@ describe('HistogramChart', () => {
       expect(b4.find('.histogram-bucket').prop('style')).toHaveProperty('height', `${b4Height}%`);
       expect(parseFloat(b4.prop('style')?.left as string)).toBeGreaterThan(0);
       expect(parseFloat(b4.prop('style')?.width as string)).toBeGreaterThan(0);
-      expect(parseFloat(b4.prop('style')?.left as string) + parseFloat(b4.prop('style')?.width as string)).toBeLessThanOrEqual(100.01);
+      expect(
+        parseFloat(b4.prop('style')?.left as string) + parseFloat(b4.prop('style')?.width as string)
+      ).toBeLessThanOrEqual(100.01);
     });
 
     it('handles zero-crossing bucket correctly in exponential scale', () => {
-      wrapper = mount(<HistogramChart {...defaultProps} index={2} histogram={histogramDataZeroCrossing} scale="exponential" />);
+      wrapper = mount(
+        <HistogramChart {...defaultProps} index={2} histogram={histogramDataZeroCrossing} scale="exponential" />
+      );
       const buckets = wrapper.find('.histogram-bucket-slot');
       const countMax = 15;
 
       const b2 = buckets.at(1);
       const b2Height = (5 / countMax) * 100;
-      expect(b2.find('.histogram-bucket').prop('style')).toHaveProperty('height', expect.stringContaining(b2Height.toFixed(1)));
+      expect(b2.find('.histogram-bucket').prop('style')).toHaveProperty(
+        'height',
+        expect.stringContaining(b2Height.toFixed(1))
+      );
       expect(parseFloat(b2.prop('style')?.left as string)).toBeGreaterThanOrEqual(0);
       expect(parseFloat(b2.prop('style')?.width as string)).toBeGreaterThan(0);
     });
