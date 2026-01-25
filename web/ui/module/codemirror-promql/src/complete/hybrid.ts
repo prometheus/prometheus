@@ -97,6 +97,9 @@ export enum ContextKind {
   MetricName,
   LabelName,
   LabelValue,
+  // info() function data label matchers
+  InfoDataLabelName,
+  InfoDataLabelValue,
   // static autocompletion
   Function,
   Aggregation,
@@ -116,6 +119,137 @@ export interface Context {
   metricName?: string;
   labelName?: string;
   matchers?: Matcher[];
+  // For info() function autocomplete: the __name__ matcher for info metrics
+  infoMetricMatch?: string;
+}
+
+// extractMetricName extracts the metric name from an expression node.
+// It traverses the tree to find an Identifier node and returns its text.
+function extractMetricName(node: SyntaxNode, state: EditorState): string {
+  // Try to find an Identifier node in the subtree using recursive descent
+  function findIdentifier(n: SyntaxNode): string {
+    if (n.type.id === Identifier) {
+      return state.sliceDoc(n.from, n.to);
+    }
+    // Check children
+    for (let child = n.firstChild; child; child = child.nextSibling) {
+      const result = findIdentifier(child);
+      if (result) {
+        return result;
+      }
+    }
+    return '';
+  }
+  return findIdentifier(node);
+}
+
+// InfoFunctionContext contains information about the info() function call context.
+interface InfoFunctionContext {
+  // Whether we're inside the second argument of info()
+  isInSecondArg: boolean;
+  // The metric expression from the first argument (e.g., "http_requests_total")
+  metricName: string;
+  // The __name__ matcher from the second argument, if present (e.g., "~.*_info" for =~, "!=target_info" for !=)
+  // Format matches the API's metric_match parameter
+  infoMetricMatch?: string;
+}
+
+// getInfoFunctionContext checks if we're inside the second argument (data label matchers)
+// of the info() function and extracts the metric name from the first argument.
+function getInfoFunctionContext(node: SyntaxNode, state: EditorState): InfoFunctionContext {
+  const notInInfo: InfoFunctionContext = { isInSecondArg: false, metricName: '' };
+
+  // Walk up to find if we're inside a FunctionCallBody
+  let current: SyntaxNode | null = node;
+  while (current !== null) {
+    if (current.type.id === FunctionCallBody) {
+      // Found a FunctionCallBody, now check if its parent function is "info"
+      const parent = current.parent;
+      if (parent !== null) {
+        // The function name is the first child (FunctionIdentifier node).
+        // Check if the text content is "info".
+        const funcName = parent.firstChild;
+        if (funcName) {
+          const name = state.sliceDoc(funcName.from, funcName.to);
+          if (name === 'info') {
+            // Check if node is in the second argument (after the first child of FunctionCallBody)
+            // The FunctionCallBody structure is: FunctionCallBody(Expr, LabelMatchers)
+            // We're in the second argument if we're not within the first child (which is the expression)
+            const firstArg = current.firstChild;
+            if (firstArg !== null && node.from >= firstArg.to) {
+              // Extract the metric name from the first argument
+              // The first arg is typically a VectorSelector with an Identifier child
+              const metricName = extractMetricName(firstArg, state);
+              // Extract __name__ matcher from the second argument (LabelMatchers)
+              const infoMetricMatch = extractInfoMetricMatch(current, state);
+              return { isInSecondArg: true, metricName, infoMetricMatch };
+            }
+          }
+        }
+      }
+      return notInInfo;
+    }
+    current = current.parent;
+  }
+  return notInInfo;
+}
+
+// extractInfoMetricMatch extracts the __name__ matcher from the LabelMatchers in the second argument
+// of the info() function. Returns a string formatted for the API's metric_match parameter.
+function extractInfoMetricMatch(functionCallBody: SyntaxNode, state: EditorState): string | undefined {
+  // Find the LabelMatchers node in the second argument.
+  // The second argument is typically a VectorSelector containing LabelMatchers,
+  // e.g., info(metric, {__name__=~"target_info"}) parses as:
+  //   FunctionCallBody > VectorSelector > LabelMatchers
+  let labelMatchersNode: SyntaxNode | null = null;
+  let isSecondArg = false;
+  for (let child = functionCallBody.firstChild; child !== null; child = child.nextSibling) {
+    if (isSecondArg) {
+      // Second argument - look for LabelMatchers directly or inside VectorSelector
+      if (child.type.id === LabelMatchers) {
+        labelMatchersNode = child;
+        break;
+      } else if (child.type.id === VectorSelector) {
+        // LabelMatchers is inside VectorSelector
+        labelMatchersNode = child.getChild(LabelMatchers);
+        break;
+      }
+    }
+    // After first non-trivial child, we're in the second argument territory
+    if (child.type.id === VectorSelector || child.type.id === Identifier) {
+      isSecondArg = true;
+    }
+  }
+  if (!labelMatchersNode) {
+    return undefined;
+  }
+
+  // Look for __name__ matchers in the LabelMatchers
+  const labelMatcherOpts = [QuotedLabelMatcher, UnquotedLabelMatcher];
+  for (const opt of labelMatcherOpts) {
+    const matchers = labelMatchersNode.getChildren(opt);
+    for (const matcher of matchers) {
+      const builtMatchers = buildLabelMatchers([matcher], state);
+      for (const m of builtMatchers) {
+        if (m.name === '__name__' && m.value !== '') {
+          // Format for API: value, ~value, !=value, or !~value
+          switch (m.type) {
+            case EqlSingle:
+              return m.value;
+            case EqlRegex:
+              return `~${m.value}`;
+            case Neq:
+              return `!=${m.value}`;
+            case NeqRegex:
+              return `!~${m.value}`;
+            default:
+              return m.value;
+          }
+        }
+      }
+    }
+  }
+  return undefined;
 }
 
 function getMetricNameInGroupBy(tree: SyntaxNode, state: EditorState): string {
@@ -449,6 +583,12 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // so don't offer label-related completions anymore.
         break;
       }
+      // Check if we're in the info() function's second argument
+      const infoCtxLM = getInfoFunctionContext(node, state);
+      if (infoCtxLM.isInSecondArg) {
+        result.push({ kind: ContextKind.InfoDataLabelName, metricName: infoCtxLM.metricName, infoMetricMatch: infoCtxLM.infoMetricMatch });
+        break;
+      }
       // In that case we are in the given situation:
       //       metric_name{} or {}
       // so we have or to autocomplete any kind of labelName or to autocomplete only the labelName associated to the metric
@@ -462,6 +602,12 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         // So we have to continue to autocomplete any kind of labelName
         result.push({ kind: ContextKind.LabelName });
       } else if (node.parent?.type.id === UnquotedLabelMatcher) {
+        // Check if we're in the info() function's second argument
+        const infoCtxLN = getInfoFunctionContext(node, state);
+        if (infoCtxLN.isInSecondArg) {
+          result.push({ kind: ContextKind.InfoDataLabelName, metricName: infoCtxLN.metricName, infoMetricMatch: infoCtxLN.infoMetricMatch });
+          break;
+        }
         // In that case we are in the given situation:
         //       metric_name{myL} or {myL}
         // so we have or to continue to autocomplete any kind of labelName or
@@ -471,6 +617,24 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       break;
     case StringLiteral:
       if (node.parent?.type.id === UnquotedLabelMatcher || node.parent?.type.id === QuotedLabelMatcher) {
+        // Check if we're in the info() function's second argument
+        const infoCtxSL = getInfoFunctionContext(node, state);
+        if (infoCtxSL.isInSecondArg) {
+          // Get the labelName for info() data label value autocomplete
+          let labelName = '';
+          if (node.parent.firstChild?.type.id === LabelName) {
+            labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to);
+          } else if (node.parent.firstChild?.type.id === QuotedLabelName) {
+            labelName = state.sliceDoc(node.parent.firstChild.from, node.parent.firstChild.to).slice(1, -1);
+          }
+          result.push({
+            kind: ContextKind.InfoDataLabelValue,
+            labelName: labelName,
+            metricName: infoCtxSL.metricName,
+            infoMetricMatch: infoCtxSL.infoMetricMatch,
+          });
+          break;
+        }
         // In this case we are in the given situation:
         //      metric_name{labelName=""} or metric_name{"labelName"=""}
         // So we can autocomplete the labelValue
@@ -694,6 +858,17 @@ export class HybridComplete implements CompleteStrategy {
           asyncResult = asyncResult.then((result) => {
             return this.autocompleteLabelValue(result, context);
           });
+          break;
+        case ContextKind.InfoDataLabelName:
+          asyncResult = asyncResult.then((result) => {
+            return this.autocompleteInfoDataLabelName(result, context);
+          });
+          break;
+        case ContextKind.InfoDataLabelValue:
+          asyncResult = asyncResult.then((result) => {
+            return this.autocompleteInfoDataLabelValue(result, context);
+          });
+          break;
       }
     }
     return asyncResult.then((result) => {
@@ -791,6 +966,32 @@ export class HybridComplete implements CompleteStrategy {
     }
     return this.prometheusClient.labelValues(context.labelName, context.metricName, context.matchers).then((labelValues: string[]) => {
       return result.concat(labelValues.map((value) => ({ label: value, type: 'text' })));
+    });
+  }
+
+  private autocompleteInfoDataLabelName(result: Completion[], context: Context): Completion[] | Promise<Completion[]> {
+    if (!this.prometheusClient) {
+      return result;
+    }
+    // Pass metricName to filter labels by resources associated with the metric
+    // Pass infoMetricMatch to filter which info metrics to query
+    return this.prometheusClient.infoLabelPairs(context.metricName, context.infoMetricMatch).then((labels) => {
+      const labelNames = Object.keys(labels);
+      return result.concat(labelNames.map((name: string) => ({ label: name, type: 'constant', detail: 'info label' })));
+    });
+  }
+
+  private autocompleteInfoDataLabelValue(result: Completion[], context: Context): Completion[] | Promise<Completion[]> {
+    if (!this.prometheusClient || !context.labelName) {
+      return result;
+    }
+    // Capture labelName to avoid TypeScript narrowing issues in the callback
+    const labelName = context.labelName;
+    // Pass metricName to filter labels by resources associated with the metric
+    // Pass infoMetricMatch to filter which info metrics to query
+    return this.prometheusClient.infoLabelPairs(context.metricName, context.infoMetricMatch).then((labels) => {
+      const values = labels[labelName] || [];
+      return result.concat(values.map((value: string) => ({ label: value, type: 'text' })));
     });
   }
 }
