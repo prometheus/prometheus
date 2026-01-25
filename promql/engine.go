@@ -3197,15 +3197,15 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
 }
 
-// HandleInfitBuckets handles the special case of infinite buckets.
+// HandleInfiniteBuckets handles the special case of infinite buckets.
 // This function is following a conservative approach, as we don't know the exact distribution of values that belongs to an infinite bucket, the approach is to remove the entire bucket, otherwise we keep the entire bucket.
-func HandleInfitBuckets(h *histogram.Bucket[float64], le float64, isUpperTrim bool) (keptCount, removedCount float64) {
+func HandleInfiniteBuckets(h *histogram.Bucket[float64], le float64, isUpperTrim bool) (keptCount, removedCount float64) {
 	// Case 1: Bucket with lower bound (-Inf, upper]
 	if math.IsInf(h.Lower, -1) {
 		// TRIM_UPPER (</) - remove values greater than le
 		if isUpperTrim {
 			if le >= h.Upper {
-				// As the le is greater than the upper bound(invalid trim), we just return the entire current bucket.
+				// As the le is greater than the upper bound, we keep the entire current bucket.
 				return h.Count, 0
 			}
 			// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
@@ -3225,22 +3225,22 @@ func HandleInfitBuckets(h *histogram.Bucket[float64], le float64, isUpperTrim bo
 		if isUpperTrim {
 			// TRIM_UPPER (</) - remove values greater than le.
 			if le >= h.Lower {
-				// As the le is greater than the lower bound(invalid trim), we just return the entire current bucket.
+				// Since le >= lower and the bucket extends to +Inf, some values in this bucket could be > le, so we conservatively remove the entire bucket.
 				return 0, h.Count
 			}
-			// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
-			return h.Count, 0
+			// le < lower: all values in this bucket are >= lower > le, so all values should be removed.
+			return 0, h.Count
 		}
 		// TRIM_LOWER (>/) - remove values less than le.
 		if le <= h.Lower {
-			// As the le is less than the lower bound(invalid trim), we just return the entire current bucket.
-			return 0, h.Count
+			// le <= lower: all values in this bucket are >= lower >= le, so we keep the entire bucket.
+			return h.Count, 0
 		}
-		// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
-		return h.Count, 0
+		// lower < le: we are inside the infinity bucket, but as we don't know the exact distribution of values, we conservatively remove the entire bucket.
+		return 0, h.Count
 	}
 
-	// Case 3: Bucket with finite bounds
+	// Case 3: Bucket with finites
 	return interpolateBucket(h, le, isUpperTrim)
 }
 

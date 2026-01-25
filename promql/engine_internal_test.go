@@ -16,6 +16,7 @@ package promql
 import (
 	"bytes"
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/prometheus/common/promslog"
@@ -163,6 +164,133 @@ func TestVectorElemBinop_Histograms(t *testing.T) {
 			}
 
 			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestHandleInfiniteBuckets(t *testing.T) {
+	inf := math.Inf(1)
+	negInf := math.Inf(-1)
+
+	testCases := []struct {
+		name                           string
+		bucket                         *histogram.Bucket[float64]
+		le                             float64
+		isUpperTrim                    bool
+		expectedKept, expectedRemoved  float64
+	}{
+		// Case 1: Bucket with lower bound (-Inf, upper]
+		// TRIM_UPPER (</) - remove values greater than le
+		{
+			name:            "(-Inf, 10] trim_upper le >= upper: keep entire bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: negInf, Upper: 10, Count: 5},
+			le:              10,
+			isUpperTrim:     true,
+			expectedKept:    5,
+			expectedRemoved: 0,
+		},
+		{
+			name:            "(-Inf, 10] trim_upper le > upper: keep entire bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: negInf, Upper: 10, Count: 5},
+			le:              15,
+			isUpperTrim:     true,
+			expectedKept:    5,
+			expectedRemoved: 0,
+		},
+		{
+			name:            "(-Inf, 10] trim_upper le < upper: remove entire bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: negInf, Upper: 10, Count: 5},
+			le:              5,
+			isUpperTrim:     true,
+			expectedKept:    0,
+			expectedRemoved: 5,
+		},
+		// TRIM_LOWER (>/) - remove values less than le
+		{
+			name:            "(-Inf, 10] trim_lower le > -Inf: remove entire bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: negInf, Upper: 10, Count: 5},
+			le:              5,
+			isUpperTrim:     false,
+			expectedKept:    0,
+			expectedRemoved: 5,
+		},
+		{
+			name:            "(-Inf, 10] trim_lower le = -Inf (impossible): keep bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: negInf, Upper: 10, Count: 5},
+			le:              negInf,
+			isUpperTrim:     false,
+			expectedKept:    5,
+			expectedRemoved: 0,
+		},
+
+		// Case 2: Bucket with upper bound [lower, +Inf)
+		// TRIM_UPPER (</) - remove values greater than le
+		{
+			name:            "[10, +Inf) trim_upper le >= lower: remove entire bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: 10, Upper: inf, Count: 5},
+			le:              10,
+			isUpperTrim:     true,
+			expectedKept:    0,
+			expectedRemoved: 5,
+		},
+		{
+			name:            "[10, +Inf) trim_upper le > lower: remove entire bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: 10, Upper: inf, Count: 5},
+			le:              15,
+			isUpperTrim:     true,
+			expectedKept:    0,
+			expectedRemoved: 5,
+		},
+		{
+			name:            "[10, +Inf) trim_upper le < lower: remove entire bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: 10, Upper: inf, Count: 5},
+			le:              5,
+			isUpperTrim:     true,
+			expectedKept:    0,
+			expectedRemoved: 5,
+		},
+		// TRIM_LOWER (>/) - remove values less than le
+		{
+			name:            "[10, +Inf) trim_lower le <= lower: keep entire bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: 10, Upper: inf, Count: 5},
+			le:              10,
+			isUpperTrim:     false,
+			expectedKept:    5,
+			expectedRemoved: 0,
+		},
+		{
+			name:            "[10, +Inf) trim_lower le < lower: keep entire bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: 10, Upper: inf, Count: 5},
+			le:              5,
+			isUpperTrim:     false,
+			expectedKept:    5,
+			expectedRemoved: 0,
+		},
+		{
+			name:            "[10, +Inf) trim_lower le > lower: remove entire bucket",
+			bucket:          &histogram.Bucket[float64]{Lower: 10, Upper: inf, Count: 5},
+			le:              15,
+			isUpperTrim:     false,
+			expectedKept:    0,
+			expectedRemoved: 5,
+		},
+
+		// Case 3: Finite bucket [lower, upper] - defers to interpolateBucket
+		{
+			name:            "[5, 10] finite bucket: defers to interpolateBucket",
+			bucket:          &histogram.Bucket[float64]{Lower: 5, Upper: 10, Count: 5},
+			le:              7,
+			isUpperTrim:     true,
+			expectedKept:    0,
+			expectedRemoved: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			keptCount, removedCount := HandleInfiniteBuckets(tc.bucket, tc.le, tc.isUpperTrim)
+			require.Equal(t, tc.expectedKept, keptCount, "unexpected kept count")
+			require.Equal(t, tc.expectedRemoved, removedCount, "unexpected removed count")
 		})
 	}
 }
