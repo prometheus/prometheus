@@ -55,12 +55,15 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 	}
 
 	// Don't try to enrich info series.
+	// Only consider positive matchers (= and =~) to identify info series,
+	// since negated matchers (!=, !~) specify what NOT to match and shouldn't
+	// be used to determine which series are info metrics.
 	ignoreSeries := map[uint64]struct{}{}
 loop:
 	for _, s := range mat {
 		name := s.Metric.Get(labels.MetricName)
 		for _, m := range infoNameMatchers {
-			if m.Matches(name) {
+			if (m.Type == labels.MatchEqual || m.Type == labels.MatchRegexp) && m.Matches(name) {
 				ignoreSeries[s.Metric.Hash()] = struct{}{}
 				continue loop
 			}
@@ -183,12 +186,23 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	for name, re := range idLblRegexps {
 		infoLabelMatchers = append(infoLabelMatchers, labels.MustNewMatcher(labels.MatchRegexp, name, re))
 	}
-	var nameMatcher *labels.Matcher
+	// Collect __name__ matchers separately: positive matchers (=, =~) are used
+	// to select info metrics, while negative matchers (!=, !~) are used to filter.
+	// Only positive matchers can positively identify info metrics; negative matchers
+	// alone would incorrectly select non-info metrics as info sources.
+	var positiveNameMatcher *labels.Matcher
+	var negativeNameMatchers []*labels.Matcher
 	for name, ms := range dataLabelMatchers {
 		for i, m := range ms {
 			if m.Name == labels.MetricName {
-				nameMatcher = m
+				if m.Type == labels.MatchEqual || m.Type == labels.MatchRegexp {
+					positiveNameMatcher = m
+				} else {
+					negativeNameMatchers = append(negativeNameMatchers, m)
+				}
 				ms = slices.Delete(ms, i, i+1)
+				// Don't add __name__ matchers here; they're handled specially below.
+				continue
 			}
 			infoLabelMatchers = append(infoLabelMatchers, m)
 		}
@@ -198,9 +212,18 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 			delete(dataLabelMatchers, name)
 		}
 	}
-	if nameMatcher == nil {
-		// Default to using the target_info metric.
-		infoLabelMatchers = append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, targetInfo)}, infoLabelMatchers...)
+	switch {
+	case positiveNameMatcher != nil:
+		// Use the positive __name__ matcher to select info metrics.
+		infoLabelMatchers = append(infoLabelMatchers, positiveNameMatcher)
+	case len(negativeNameMatchers) > 0:
+		// Only negative matchers: use a broad pattern to match info metrics,
+		// then filter with the negative matchers.
+		infoLabelMatchers = append(infoLabelMatchers, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+_info"))
+		infoLabelMatchers = append(infoLabelMatchers, negativeNameMatchers...)
+	default:
+		// No __name__ matchers at all: default to target_info.
+		infoLabelMatchers = append(infoLabelMatchers, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, targetInfo))
 	}
 
 	infoIt := ev.querier.Select(ctx, false, &selectHints, infoLabelMatchers...)

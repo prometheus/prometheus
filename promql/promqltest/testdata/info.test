@@ -77,6 +77,21 @@ eval range from 0m to 10m step 5m info(build_info, {__name__=~".+_info", another
 eval range from 0m to 10m step 5m info(build_info, {__name__=~".+_info"})
     build_info{instance="a", job="1", build_data="build"} 1 1 1
 
+# Negated __name__ matcher: exclude all *_info metrics.
+# Since no info metrics match, and data=~".+" doesn't match empty string, no results.
+# Regression test for https://github.com/prometheus/prometheus/issues/17931.
+eval range from 0m to 10m step 5m info(metric, {__name__!~".+_info", data=~".+"})
+
+# Negated __name__ matcher with matcher that accepts empty labels.
+# Since data=~".*" matches empty labels, the base metric is returned unchanged.
+eval range from 0m to 10m step 5m info(metric, {__name__!~".+_info", data=~".*"})
+    metric{instance="a", job="1", label="value"} 0 1 2
+
+# Negated exact __name__ matcher.
+# Excludes target_info, but build_info still matches.
+eval range from 0m to 10m step 5m info(metric, {__name__!="target_info"})
+    metric{instance="a", job="1", label="value", build_data="build"} 0 1 2
+
 clear
 
 # Overlapping target_info series.
