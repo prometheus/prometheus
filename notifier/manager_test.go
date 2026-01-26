@@ -916,10 +916,11 @@ func TestStop_DrainingDisabled(t *testing.T) {
 }
 
 func TestStop_DrainingEnabled(t *testing.T) {
-	releaseReceiver := make(chan struct{})
 	receiverReceivedRequest := make(chan struct{}, 2)
 	alertsReceived := atomic.NewInt64(0)
 
+	// Server responds slowly but successfully. This paces request handling so we can
+	// queue alert-2 while alert-1 is still in-flight, then verify draining sends both.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var alerts []*Alert
 
@@ -934,14 +935,12 @@ func TestStop_DrainingEnabled(t *testing.T) {
 
 		alertsReceived.Add(int64(len(alerts)))
 
-		// Wait for the test to release us.
-		<-releaseReceiver
+		// Respond slowly to allow time for alert-2 to be queued while this request is in-flight.
+		time.Sleep(100 * time.Millisecond)
 
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer func() {
-		server.Close()
-	}()
+	t.Cleanup(func() { server.Close() })
 
 	reg := prometheus.NewRegistry()
 	m := NewManager(
@@ -971,7 +970,7 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		m.Run(nil)
 	}()
 
-	// Queue two alerts. The first should be immediately sent to the receiver, which should block until we release it later.
+	// Queue two alerts. The first should be immediately sent to the receiver.
 	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
 
 	select {
@@ -981,17 +980,18 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		require.FailNow(t, "gave up waiting for receiver to receive notification of first alert")
 	}
 
+	// Send second alert while first is still being processed (server has 100ms delay).
 	m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
 
-	// Stop the notification manager and allow the receiver to proceed.
+	// Stop the notification manager. With DrainOnShutdown=true, this should wait
+	// for the queue to drain, ensuring both alerts are sent.
 	m.Stop()
-	close(releaseReceiver)
 
 	// Wait for the notification manager to stop and confirm both notifications were sent.
 	select {
 	case <-notificationManagerStopped:
 		// Nothing more to do.
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(time.Second):
 		require.FailNow(t, "gave up waiting for notification manager to stop")
 	}
 
