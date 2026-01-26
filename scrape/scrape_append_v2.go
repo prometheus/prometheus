@@ -32,6 +32,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+const exemplarsForParsing = 1 // const for readability.
+
 // appenderWithLimits returns an appender with additional validation.
 func appenderV2WithLimits(app storage.AppenderV2, sampleLimit, bucketLimit int, maxSchema int32) storage.AppenderV2 {
 	app = &timeLimitAppenderV2{
@@ -122,17 +124,18 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 			"err", err,
 		)
 	}
+
 	var (
 		appErrs        = appendErrors{}
 		sampleLimitErr error
 		bucketLimitErr error
-		lset           labels.Labels     // Escapes to heap so hoisted out of loop.
-		e              exemplar.Exemplar // Escapes to heap so hoisted out of loop.
 		lastMeta       *metaEntry
 		lastMFName     []byte
-	)
 
-	exemplars := make([]exemplar.Exemplar, 0, 1)
+		// Below escape to heap, so they're hoisted out of loop.
+		lset      labels.Labels
+		exemplars = make([]exemplar.Exemplar, exemplarsForParsing) // First sample is a buffer for parser fetches.
+	)
 
 	// Take an appender with limits.
 	app := appenderV2WithLimits(sl.AppenderV2, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
@@ -240,8 +243,7 @@ loop:
 			}
 		}
 
-		exemplars = exemplars[:0] // Reset and reuse the exemplar slice.
-
+		appOpts := storage.AOptions{}
 		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
@@ -259,8 +261,14 @@ loop:
 				st = p.StartTimestamp()
 			}
 
-			for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
-				if !e.HasTs {
+			// Fetch exemplars from the parser, if any, while using exemplar slice.
+			exemplars = exemplars[:exemplarsForParsing]
+			for {
+				exemplars[0] = exemplar.Exemplar{} // Always reset, before fetching.
+				if !p.Exemplar(&(exemplars[0])) {
+					break
+				}
+				if !exemplars[0].HasTs {
 					if isHistogram {
 						// We drop exemplars for native histograms if they don't have a timestamp.
 						// Missing timestamps are deliberately not supported as we want to start
@@ -269,21 +277,18 @@ loop:
 						// between repeated exemplars and new instances with the same values.
 						// This is done silently without logs as it is not an error but out of spec.
 						// This does not affect classic histograms so that behaviour is unchanged.
-						e = exemplar.Exemplar{} // Reset for the next fetch.
 						continue
 					}
-					e.Ts = t
+					exemplars[0].Ts = t
 				}
-				exemplars = append(exemplars, e)
-				e = exemplar.Exemplar{} // Reset for the next fetch.
+				exemplars = append(exemplars, exemplars[0])
 			}
 
 			// Prepare append call.
-			appOpts := storage.AOptions{}
-			if len(exemplars) > 0 {
+			if len(exemplars) > exemplarsForParsing {
 				// Sort so that checking for duplicates / out of order is more efficient during validation.
-				slices.SortFunc(exemplars, exemplar.Compare)
-				appOpts.Exemplars = exemplars
+				appOpts.Exemplars = exemplars[exemplarsForParsing:]
+				slices.SortFunc(appOpts.Exemplars, exemplar.Compare)
 			}
 
 			// Metadata path mimicks the scrape appender V1 flow. Once we remove v2
@@ -314,7 +319,7 @@ loop:
 			// Append sample to the storage.
 			ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
 		}
-		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
+		sampleAdded, err = sl.checkAddError(met, appOpts.Exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
 				sl.l.Debug("Unexpected error", "series", string(met), "err", err)
