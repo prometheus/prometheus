@@ -927,7 +927,6 @@ func main() {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
 			FeatureRegistry: features.DefaultRegistry,
-			AppendMetadata:  cfg.scrape.AppendMetadata,
 		})
 	}
 

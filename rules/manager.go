@@ -139,10 +139,6 @@ type ManagerOptions struct {
 
 	// FeatureRegistry is used to register rule manager features.
 	FeatureRegistry features.Collector
-
-	// AppendMetadata controls whether recording rule metadata is written to WAL.
-	// Requires the metadata-wal-records feature to be enabled.
-	AppendMetadata bool
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -378,19 +374,16 @@ func (m *Manager) LoadGroups(
 					))
 					continue
 				}
-				var meta metadata.Metadata
+				var m metadata.Metadata
 				if r.Metadata != nil {
-					meta = metadata.Metadata{
-						Type: r.Metadata.Type,
-						Help: r.Metadata.Help,
-						Unit: r.Metadata.Unit,
-					}
+					m = *r.Metadata
 				}
+
 				rules = append(rules, NewRecordingRule(
 					r.Record,
 					expr,
 					mLabels,
-					meta,
+					m,
 				))
 			}
 
