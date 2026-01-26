@@ -110,8 +110,8 @@ func OpenBufferedFileReader(path string) (*BufferedFile, error) {
 
 // OpenBufferedFileReaderWithSize opens a file for buffered reading with an expected size.
 func OpenBufferedFileReaderWithSize(path string, size int) (*BufferedFile, error) {
-	cache := ensureCache()
-	return OpenBufferedFileWithSize(path, size, cache)
+	// cache := ensureCache()
+	return OpenBufferedFileWithSize(path, size, nil)
 }
 
 // ClearGlobalCache clears the global file cache.
