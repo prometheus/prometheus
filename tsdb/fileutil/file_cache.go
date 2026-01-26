@@ -47,6 +47,11 @@ type cacheEntry struct {
 // FileCache is a shared LRU cache for file blocks.
 // It provides configurable memory limits, efficient eviction, and Prometheus metrics.
 type FileCache struct {
+	requests   atomic.Uint64 // Total cache access attempts
+	misses     atomic.Uint64 // Cache misses
+	evictions  atomic.Uint64 // Number of evictions
+	nextFileID atomic.Uint64 // File ID counter for unique identification
+
 	mu          sync.RWMutex
 	maxSize     int64
 	currentSize int64
@@ -58,15 +63,9 @@ type FileCache struct {
 	pool sync.Pool
 
 	// Metrics - all atomic for lock-free reads
-	requests  atomic.Uint64 // Total cache access attempts
-	misses    atomic.Uint64 // Cache misses
-	evictions atomic.Uint64 // Number of evictions
 
 	// Prometheus metrics
 	metrics *fileCacheMetrics
-
-	// File ID counter for unique identification
-	nextFileID atomic.Uint64
 }
 
 // fileCacheMetrics holds Prometheus metrics for the file cache.
