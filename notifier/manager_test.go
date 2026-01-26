@@ -707,8 +707,7 @@ func TestHangingNotifier(t *testing.T) {
 		sendTimeout = 100 * time.Millisecond
 		sdUpdatert  = sendTimeout / 2
 
-		done              = make(chan struct{})
-		releaseFunctional = make(chan struct{})
+		done = make(chan struct{})
 	)
 
 	// Set up a faulty Alertmanager.
@@ -727,16 +726,15 @@ func TestHangingNotifier(t *testing.T) {
 	require.NoError(t, err)
 	faultyURL.Path = "/api/v2/alerts"
 
-	// Set up a functional Alertmanager that blocks until releaseFunctional is closed.
-	// This prevents the queue from draining before we can assert it's not empty.
+	// Set up a functional Alertmanager that responds slowly but successfully.
+	// This paces queue draining so we can assert the queue is not empty.
 	var functionalCalled atomic.Bool
-	functionalServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	functionalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		functionalCalled.Store(true)
-		<-releaseFunctional
+		time.Sleep(sendTimeout / 2) // 50ms - respond slowly but within 100ms timeout
+		w.WriteHeader(http.StatusOK)
 	}))
-	// Register cleanups in LIFO order: close channel first (registered last), then close server.
 	t.Cleanup(func() { functionalServer.Close() })
-	t.Cleanup(func() { close(releaseFunctional) })
 	functionalURL, err := url.Parse(functionalServer.URL)
 	require.NoError(t, err)
 	functionalURL.Path = "/api/v2/alerts"
