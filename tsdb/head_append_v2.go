@@ -109,22 +109,23 @@ type headAppenderV2 struct {
 func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
-		valErr, appErr, partialErr error
-		sampleMetricType           = sampleMetricTypeFloat
-		isStale                    bool
+		appErr, partialErr error
+		sampleMetricType   = sampleMetricTypeFloat
+		isStale            bool
 	)
 	// Fail fast on incorrect histograms.
 
 	switch {
 	case fh != nil:
 		sampleMetricType = sampleMetricTypeHistogram
-		valErr = fh.Validate()
+		if err := fh.Validate(); err != nil {
+			return 0, err
+		}
 	case h != nil:
 		sampleMetricType = sampleMetricTypeHistogram
-		valErr = h.Validate()
-	}
-	if valErr != nil {
-		return 0, valErr
+		if err := h.Validate(); err != nil {
+			return 0, err
+		}
 	}
 
 	// Fail fast if OOO is disabled and the sample is out of bounds.

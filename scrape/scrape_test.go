@@ -1597,7 +1597,7 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 // noopCompactAppendable is a bare minimum appender mock used to isolate scrape performance.
 type noopCompactAppendable struct{}
 
-func (n *noopCompactAppendable) handleRef(ref storage.SeriesRef, l labels.Labels) storage.SeriesRef {
+func (*noopCompactAppendable) handleRef(ref storage.SeriesRef, l labels.Labels) storage.SeriesRef {
 	if ref != 0 {
 		return ref
 	}
