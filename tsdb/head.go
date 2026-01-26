@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -299,6 +300,14 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	if opts.WALReplayConcurrency <= 0 {
 		opts.WALReplayConcurrency = defaultWALReplayConcurrency
 	}
+
+	// Set up the buffered file reader config for head chunk files.
+	// This must be done before NewChunkDiskMapper is called.
+	fileutil.SetBufferedFileReaderConfig(fileutil.BufferedFileReaderConfig{
+		CacheSize: fileutil.DefaultCacheSize,
+		BlockSize: fileutil.DefaultBlockSize,
+		Reg:       r,
+	})
 
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
 		r,

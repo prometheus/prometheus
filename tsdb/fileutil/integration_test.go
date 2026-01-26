@@ -67,9 +67,9 @@ func TestBufferedFileReaderCorrectness(t *testing.T) {
 	}
 
 	// Verify cache was used
-	hits, misses, _, _ := GlobalCacheStats()
-	t.Logf("Cache stats: hits=%d, misses=%d", hits, misses)
-	if hits+misses == 0 {
+	requests, misses, _, _, _, _ := GlobalCacheStats()
+	t.Logf("Cache stats: requests=%d, misses=%d, hits=%d", requests, misses, requests-misses)
+	if requests == 0 {
 		t.Error("expected cache to be used")
 	}
 }

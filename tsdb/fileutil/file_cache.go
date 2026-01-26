@@ -17,6 +17,8 @@ import (
 	"container/list"
 	"sync"
 	"sync/atomic"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -43,7 +45,7 @@ type cacheEntry struct {
 }
 
 // FileCache is a shared LRU cache for file blocks.
-// It provides configurable memory limits and efficient eviction.
+// It provides configurable memory limits, efficient eviction, and Prometheus metrics.
 type FileCache struct {
 	mu          sync.RWMutex
 	maxSize     int64
@@ -55,18 +57,34 @@ type FileCache struct {
 	// Buffer pool for allocating blocks
 	pool sync.Pool
 
-	// Metrics
-	hits   atomic.Uint64
-	misses atomic.Uint64
+	// Metrics - all atomic for lock-free reads
+	requests  atomic.Uint64 // Total cache access attempts
+	misses    atomic.Uint64 // Cache misses
+	evictions atomic.Uint64 // Number of evictions
+
+	// Prometheus metrics
+	metrics *fileCacheMetrics
 
 	// File ID counter for unique identification
 	nextFileID atomic.Uint64
 }
 
+// fileCacheMetrics holds Prometheus metrics for the file cache.
+type fileCacheMetrics struct {
+	cacheRequests   prometheus.CounterFunc
+	cacheMisses     prometheus.CounterFunc
+	cacheEvictions  prometheus.CounterFunc
+	cacheSize       prometheus.GaugeFunc
+	cacheMaxSize    prometheus.GaugeFunc
+	cacheEntries    prometheus.GaugeFunc
+	cacheUsageRatio prometheus.GaugeFunc
+}
+
 // FileCacheOptions configures the file cache.
 type FileCacheOptions struct {
-	MaxSize   int64 // Maximum cache size in bytes
-	BlockSize int   // Size of each cached block
+	MaxSize   int64                // Maximum cache size in bytes
+	BlockSize int                  // Size of each cached block
+	Reg       prometheus.Registerer // Prometheus registerer for metrics (optional)
 }
 
 // DefaultFileCacheOptions returns the default cache configuration.
@@ -99,7 +117,105 @@ func NewFileCache(opts FileCacheOptions) *FileCache {
 		},
 	}
 
+	fc.metrics = fc.newMetrics()
+	if opts.Reg != nil {
+		opts.Reg.MustRegister(fc)
+	}
+
 	return fc
+}
+
+// newMetrics creates the Prometheus metrics for this cache.
+func (fc *FileCache) newMetrics() *fileCacheMetrics {
+	return &fileCacheMetrics{
+		cacheRequests: prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_file_cache_requests_total",
+			Help: "Total number of file cache access requests.",
+		}, func() float64 {
+			return float64(fc.requests.Load())
+		}),
+
+		cacheMisses: prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_file_cache_misses_total",
+			Help: "Total number of file cache misses.",
+		}, func() float64 {
+			return float64(fc.misses.Load())
+		}),
+
+		cacheEvictions: prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_file_cache_evictions_total",
+			Help: "Total number of file cache evictions.",
+		}, func() float64 {
+			return float64(fc.evictions.Load())
+		}),
+
+		cacheSize: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_file_cache_size_bytes",
+			Help: "Current size of the file cache in bytes.",
+		}, func() float64 {
+			fc.mu.RLock()
+			defer fc.mu.RUnlock()
+			return float64(fc.currentSize)
+		}),
+
+		cacheMaxSize: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_file_cache_max_size_bytes",
+			Help: "Maximum configured size of the file cache in bytes.",
+		}, func() float64 {
+			fc.mu.RLock()
+			defer fc.mu.RUnlock()
+			return float64(fc.maxSize)
+		}),
+
+		cacheEntries: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_file_cache_entries",
+			Help: "Current number of entries (blocks) in the file cache.",
+		}, func() float64 {
+			fc.mu.RLock()
+			defer fc.mu.RUnlock()
+			return float64(len(fc.entries))
+		}),
+
+		cacheUsageRatio: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_file_cache_usage_ratio",
+			Help: "Ratio of current cache size to maximum size (0 to 1).",
+		}, func() float64 {
+			fc.mu.RLock()
+			defer fc.mu.RUnlock()
+			if fc.maxSize == 0 {
+				return 0
+			}
+			return float64(fc.currentSize) / float64(fc.maxSize)
+		}),
+	}
+}
+
+// Describe implements prometheus.Collector.
+func (fc *FileCache) Describe(ch chan<- *prometheus.Desc) {
+	if fc.metrics == nil {
+		return
+	}
+	fc.metrics.cacheRequests.Describe(ch)
+	fc.metrics.cacheMisses.Describe(ch)
+	fc.metrics.cacheEvictions.Describe(ch)
+	fc.metrics.cacheSize.Describe(ch)
+	fc.metrics.cacheMaxSize.Describe(ch)
+	fc.metrics.cacheEntries.Describe(ch)
+	fc.metrics.cacheUsageRatio.Describe(ch)
+}
+
+// Collect implements prometheus.Collector.
+func (fc *FileCache) Collect(ch chan<- prometheus.Metric) {
+	if fc.metrics == nil {
+		return
+	}
+	fc.metrics.cacheRequests.Collect(ch)
+	fc.metrics.cacheMisses.Collect(ch)
+	fc.metrics.cacheEvictions.Collect(ch)
+	fc.metrics.cacheSize.Collect(ch)
+	fc.metrics.cacheMaxSize.Collect(ch)
+	fc.metrics.cacheEntries.Collect(ch)
+	fc.metrics.cacheUsageRatio.Collect(ch)
 }
 
 // NextFileID returns a unique file ID for cache key generation.
@@ -115,6 +231,7 @@ func (fc *FileCache) BlockSize() int {
 // Get retrieves a block from the cache.
 // Returns nil if the block is not cached.
 func (fc *FileCache) Get(fileID uint64, block int64) []byte {
+	fc.requests.Add(1)
 	key := cacheKey{fileID: fileID, block: block}
 
 	fc.mu.RLock()
@@ -136,7 +253,6 @@ func (fc *FileCache) Get(fileID uint64, block int64) []byte {
 	fc.mu.Unlock()
 
 	if ok {
-		fc.hits.Add(1)
 		return entry.data[:entry.size]
 	}
 
@@ -197,6 +313,7 @@ func (fc *FileCache) evictLocked() {
 	fc.lru.Remove(elem)
 	delete(fc.entries, entry.key)
 	fc.currentSize -= int64(fc.blockSize)
+	fc.evictions.Add(1)
 
 	// Return buffer to pool
 	fc.pool.Put(entry.data)
@@ -240,11 +357,12 @@ func (fc *FileCache) Clear() {
 }
 
 // Stats returns cache statistics.
-func (fc *FileCache) Stats() (hits, misses uint64, size, maxSize int64) {
+func (fc *FileCache) Stats() (requests, misses, evictions uint64, size, maxSize int64, numEntries int) {
 	fc.mu.RLock()
 	size = fc.currentSize
+	numEntries = len(fc.entries)
 	fc.mu.RUnlock()
-	return fc.hits.Load(), fc.misses.Load(), size, fc.maxSize
+	return fc.requests.Load(), fc.misses.Load(), fc.evictions.Load(), size, fc.maxSize, numEntries
 }
 
 // Size returns the current cache size in bytes.

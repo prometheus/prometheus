@@ -88,9 +88,12 @@ func TestBufferedFile_WithCache(t *testing.T) {
 	}
 
 	// Check cache stats
-	hits, misses, _, _ := cache.Stats()
+	requests, misses, _, _, _, _ := cache.Stats()
 	if misses != 1 {
 		t.Errorf("expected 1 miss, got %d", misses)
+	}
+	if requests != 1 {
+		t.Errorf("expected 1 request, got %d", requests)
 	}
 
 	// Second read from same block - should hit cache
@@ -99,9 +102,13 @@ func TestBufferedFile_WithCache(t *testing.T) {
 		t.Error("second read mismatch")
 	}
 
-	hits, _, _, _ = cache.Stats()
-	if hits != 1 {
-		t.Errorf("expected 1 hit, got %d", hits)
+	requests, misses, _, _, _, _ = cache.Stats()
+	// requests should be 2, misses still 1 (so 1 hit)
+	if requests != 2 {
+		t.Errorf("expected 2 requests, got %d", requests)
+	}
+	if misses != 1 {
+		t.Errorf("expected 1 miss still, got %d", misses)
 	}
 
 	// Read spanning multiple blocks
@@ -244,8 +251,8 @@ func TestBufferedFileReader(t *testing.T) {
 	}
 
 	// Check that we're using the cache
-	hits, misses, size, _ := GlobalCacheStats()
-	if hits+misses == 0 {
+	requests, _, _, size, _, _ := GlobalCacheStats()
+	if requests == 0 {
 		t.Error("expected cache to be used")
 	}
 	if size == 0 {

@@ -15,6 +15,8 @@ package fileutil
 
 import (
 	"sync"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // BufferedFileReaderConfig holds configuration for buffered file reading.
@@ -26,6 +28,10 @@ type BufferedFileReaderConfig struct {
 	// BlockSize is the size of each cached block.
 	// Default is 64KiB.
 	BlockSize int
+
+	// Reg is the Prometheus registerer for metrics.
+	// If nil, metrics will not be registered.
+	Reg prometheus.Registerer
 }
 
 // DefaultBufferedFileReaderConfig returns the default configuration.
@@ -60,6 +66,7 @@ func SetBufferedFileReaderConfig(cfg BufferedFileReaderConfig) {
 		globalManager.cache = NewFileCache(FileCacheOptions{
 			MaxSize:   cfg.CacheSize,
 			BlockSize: cfg.BlockSize,
+			Reg:       cfg.Reg,
 		})
 	} else {
 		// Update cache settings
@@ -121,7 +128,7 @@ func ClearGlobalCache() {
 
 // GlobalCacheStats returns statistics for the global file cache.
 // Returns zeros if cache is not initialized.
-func GlobalCacheStats() (hits, misses uint64, size, maxSize int64) {
+func GlobalCacheStats() (requests, misses, evictions uint64, size, maxSize int64, numEntries int) {
 	globalManager.mu.RLock()
 	cache := globalManager.cache
 	globalManager.mu.RUnlock()
@@ -129,5 +136,5 @@ func GlobalCacheStats() (hits, misses uint64, size, maxSize int64) {
 	if cache != nil {
 		return cache.Stats()
 	}
-	return 0, 0, 0, 0
+	return 0, 0, 0, 0, 0, 0
 }

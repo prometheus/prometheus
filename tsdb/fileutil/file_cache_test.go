@@ -49,9 +49,9 @@ func TestFileCache_BasicOperations(t *testing.T) {
 	}
 
 	// Test stats
-	hits, misses, size, maxSize := cache.Stats()
-	if hits != 1 {
-		t.Errorf("expected 1 hit, got %d", hits)
+	requests, misses, _, size, maxSize, _ := cache.Stats()
+	if requests != 2 {
+		t.Errorf("expected 2 requests, got %d", requests)
 	}
 	if misses != 1 {
 		t.Errorf("expected 1 miss, got %d", misses)
