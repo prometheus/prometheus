@@ -280,6 +280,10 @@ func (f *FakeSeriesIterator) AtT() int64 {
 	return f.samples[f.idx].T
 }
 
+func (*FakeSeriesIterator) AtST() int64 {
+	return 0
+}
+
 func (*FakeSeriesIterator) Err() error {
 	return nil
 }
@@ -337,6 +341,10 @@ func (f *FakeHistogramSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram
 
 func (f *FakeHistogramSeriesIterator) AtT() int64 {
 	return f.histograms[f.idx].T
+}
+
+func (*FakeHistogramSeriesIterator) AtST() int64 {
+	return 0
 }
 
 func (*FakeHistogramSeriesIterator) Err() error {
