@@ -31,11 +31,12 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestCreateAttributes(t *testing.T) {
+func TestPrometheusConverter_createAttributes(t *testing.T) {
 	resourceAttrs := map[string]string{
 		"service.name":        "service name",
 		"service.instance.id": "service ID",
@@ -386,6 +387,18 @@ func TestCreateAttributes(t *testing.T) {
 				"metric_multi", "multi metric",
 			),
 		},
+		{
+			name:                      "__name__ attribute is filtered when passed in ignoreAttrs",
+			promoteResourceAttributes: nil,
+			ignoreAttrs:               []string{model.MetricNameLabel},
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+			),
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -423,6 +436,108 @@ func TestCreateAttributes(t *testing.T) {
 			testutil.RequireEqual(t, tc.expectedLabels, lbls)
 		})
 	}
+
+	// Test that __name__ attributes in OTLP data are filtered out to prevent
+	// duplicate labels.
+	t.Run("__name__ attribute in OTLP data is filtered", func(t *testing.T) {
+		resource := pcommon.NewResource()
+		resource.Attributes().PutStr("service.name", "test-service")
+		resource.Attributes().PutStr("service.instance.id", "test-instance")
+
+		// Create attributes with __name__ to simulate problematic OTLP data.
+		attrsWithNameLabel := pcommon.NewMap()
+		attrsWithNameLabel.PutStr("__name__", "wrong_metric_name")
+		attrsWithNameLabel.PutStr("other_attr", "value")
+
+		mockAppender := &mockCombinedAppender{}
+		c := NewPrometheusConverter(mockAppender)
+		settings := Settings{}
+
+		require.NoError(t, c.setResourceContext(resource, settings))
+		require.NoError(t, c.setScopeContext(scope{}, settings))
+
+		// Call createAttributes with reservedLabelNames to filter __name__.
+		lbls, err := c.createAttributes(
+			attrsWithNameLabel,
+			settings,
+			reservedLabelNames,
+			true,
+			Metadata{},
+			model.MetricNameLabel, "correct_metric_name",
+		)
+		require.NoError(t, err)
+
+		// Verify there's exactly one __name__ label with the correct value.
+		nameCount := 0
+		var nameValue string
+		lbls.Range(func(l labels.Label) {
+			if l.Name == model.MetricNameLabel {
+				nameCount++
+				nameValue = l.Value
+			}
+		})
+
+		require.Equal(t, 1, nameCount)
+		require.Equal(t, "correct_metric_name", nameValue)
+		require.Equal(t, "value", lbls.Get("other_attr"))
+	})
+
+	// Test that __type__ and __unit__ attributes in OTLP data are overwritten
+	// by auto-generated labels from metadata when EnableTypeAndUnitLabels is true.
+	t.Run("__type__ and __unit__ attributes are overwritten by metadata", func(t *testing.T) {
+		resource := pcommon.NewResource()
+		resource.Attributes().PutStr("service.name", "test-service")
+		resource.Attributes().PutStr("service.instance.id", "test-instance")
+
+		// Create attributes with __type__ and __unit__ to simulate problematic OTLP data.
+		attrsWithTypeAndUnit := pcommon.NewMap()
+		attrsWithTypeAndUnit.PutStr(model.MetricTypeLabel, "wrong_type")
+		attrsWithTypeAndUnit.PutStr(model.MetricUnitLabel, "wrong_unit")
+		attrsWithTypeAndUnit.PutStr("other_attr", "value")
+
+		mockAppender := &mockCombinedAppender{}
+		c := NewPrometheusConverter(mockAppender)
+		settings := Settings{EnableTypeAndUnitLabels: true}
+
+		require.NoError(t, c.setResourceContext(resource, settings))
+		require.NoError(t, c.setScopeContext(scope{}, settings))
+
+		// Call createAttributes with Metadata containing correct Type and Unit.
+		lbls, err := c.createAttributes(
+			attrsWithTypeAndUnit,
+			settings,
+			reservedLabelNames,
+			true,
+			Metadata{Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds"}},
+			model.MetricNameLabel, "test_metric",
+		)
+		require.NoError(t, err)
+
+		// Verify there's exactly one __type__ label with the correct value (from metadata).
+		typeCount := 0
+		var typeValue string
+		lbls.Range(func(l labels.Label) {
+			if l.Name == model.MetricTypeLabel {
+				typeCount++
+				typeValue = l.Value
+			}
+		})
+		require.Equal(t, 1, typeCount)
+		require.Equal(t, "gauge", typeValue)
+
+		// Verify there's exactly one __unit__ label with the correct value (from metadata).
+		unitCount := 0
+		var unitValue string
+		lbls.Range(func(l labels.Label) {
+			if l.Name == model.MetricUnitLabel {
+				unitCount++
+				unitValue = l.Value
+			}
+		})
+		require.Equal(t, 1, unitCount)
+		require.Equal(t, "seconds", unitValue)
+		require.Equal(t, "value", lbls.Get("other_attr"))
+	})
 }
 
 func Test_convertTimeStamp(t *testing.T) {
