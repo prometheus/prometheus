@@ -16,6 +16,7 @@ package teststorage
 import (
 	"fmt"
 	"os"
+	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,37 +26,44 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/util/testutil"
 )
+
+type Option func(opt *tsdb.Options)
 
 // New returns a new TestStorage for testing purposes
 // that removes all associated files on closing.
-func New(t testutil.T, outOfOrderTimeWindow ...int64) *TestStorage {
-	stor, err := NewWithError(outOfOrderTimeWindow...)
+//
+// Caller does not need to close the TestStorage after use, it's deferred via t.Cleanup.
+func New(t testing.TB, o ...Option) *TestStorage {
+	s, err := NewWithError(o...)
 	require.NoError(t, err)
-	return stor
+
+	t.Cleanup(func() {
+		_ = s.Close() // Ignore errors, as it could be a double close.
+	})
+	return s
 }
 
 // NewWithError returns a new TestStorage for user facing tests, which reports
 // errors directly.
-func NewWithError(outOfOrderTimeWindow ...int64) (*TestStorage, error) {
-	dir, err := os.MkdirTemp("", "test_storage")
-	if err != nil {
-		return nil, fmt.Errorf("opening test directory: %w", err)
-	}
-
+//
+// It's a caller responsibility to close the TestStorage after use.
+func NewWithError(o ...Option) (*TestStorage, error) {
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
 	opts := tsdb.DefaultOptions()
 	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.RetentionDuration = 0
+	opts.OutOfOrderTimeWindow = 0
 
-	// Set OutOfOrderTimeWindow if provided, otherwise use default (0)
-	if len(outOfOrderTimeWindow) > 0 {
-		opts.OutOfOrderTimeWindow = outOfOrderTimeWindow[0]
-	} else {
-		opts.OutOfOrderTimeWindow = 0 // Default value is zero
+	for _, opt := range o {
+		opt(opts)
+	}
+
+	dir, err := os.MkdirTemp("", "test_storage")
+	if err != nil {
+		return nil, fmt.Errorf("opening test directory: %w", err)
 	}
 
 	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())

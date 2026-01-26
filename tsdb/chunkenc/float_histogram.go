@@ -195,7 +195,7 @@ func (a *FloatHistogramAppender) NumSamples() int {
 
 // Append implements Appender. This implementation panics because normal float
 // samples must never be appended to a histogram chunk.
-func (*FloatHistogramAppender) Append(int64, float64) {
+func (*FloatHistogramAppender) Append(int64, int64, float64) {
 	panic("appended a float sample to a histogram chunk")
 }
 
@@ -682,11 +682,11 @@ func (*FloatHistogramAppender) recodeHistogram(
 	}
 }
 
-func (*FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float histogram chunk")
 }
 
-func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppender, t int64, h *histogram.FloatHistogram, appendOnly bool) (Chunk, bool, Appender, error) {
+func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppender, _, t int64, h *histogram.FloatHistogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	if a.NumSamples() == 0 {
 		a.appendFloatHistogram(t, h)
 		if h.CounterResetHint == histogram.GaugeType {
@@ -936,6 +936,10 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 
 func (it *floatHistogramIterator) AtT() int64 {
 	return it.t
+}
+
+func (*floatHistogramIterator) AtST() int64 {
+	return 0
 }
 
 func (it *floatHistogramIterator) Err() error {

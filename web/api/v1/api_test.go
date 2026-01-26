@@ -324,7 +324,6 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 	m.CreateAlertingRules()
 	arules := m.AlertingRules()
 	storage := teststorage.New(m.testing)
-	defer storage.Close()
 
 	engineOpts := promql.EngineOpts{
 		Logger:     nil,
@@ -429,7 +428,6 @@ func TestEndpoints(t *testing.T) {
 			test_metric5{"host.name"="localhost"} 1+0x100
 			test_metric5{"junk\n{},=:  chars"="bar"} 1+0x100
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	start := time.Unix(0, 0)
 	exemplars := []exemplar.QueryResult{
@@ -590,7 +588,7 @@ func TestGetSeries(t *testing.T) {
 			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
 			test_metric2{foo="baz", abc="qwerty"} 1+0x100
 	`)
-	t.Cleanup(func() { storage.Close() })
+
 	api := &API{
 		Queryable: storage,
 	}
@@ -697,7 +695,6 @@ func TestQueryExemplars(t *testing.T) {
 			test_metric4{foo="boo", dup="1"} 1+0x100
 			test_metric4{foo="boo"} 1+0x100
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	api := &API{
 		Queryable:         storage,
@@ -813,7 +810,7 @@ func TestLabelNames(t *testing.T) {
 			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
 			test_metric2{foo="baz", abc="qwerty"} 1+0x100
 	`)
-	t.Cleanup(func() { storage.Close() })
+
 	api := &API{
 		Queryable: storage,
 	}
@@ -916,7 +913,6 @@ func (testStats) Builtin() (_ stats.BuiltinStats) {
 
 func TestStats(t *testing.T) {
 	storage := teststorage.New(t)
-	t.Cleanup(func() { storage.Close() })
 
 	api := &API{
 		Queryable:   storage,

@@ -159,7 +159,6 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 stale
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
@@ -265,7 +264,6 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
@@ -360,7 +358,6 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
@@ -455,7 +452,6 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
@@ -511,7 +507,6 @@ func TestAlertingRuleQueryInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	70 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`sum(http_requests) < 100`)
 	require.NoError(t, err)
@@ -585,7 +580,6 @@ func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 
 func TestAlertingRuleDuplicate(t *testing.T) {
 	storage := teststorage.New(t)
-	defer storage.Close()
 
 	opts := promql.EngineOpts{
 		Logger:     nil,
@@ -622,7 +616,6 @@ func TestAlertingRuleLimit(t *testing.T) {
 			metric{label="1"} 1
 			metric{label="2"} 1
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	tests := []struct {
 		limit int
@@ -698,12 +691,14 @@ func TestQueryForStateSeries(t *testing.T) {
 		{
 			selectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 				return storage.TestSeriesSet(storage.MockSeries(
+					nil,
 					[]int64{1, 2, 3},
 					[]float64{1, 2, 3},
 					[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
 				))
 			},
 			expectedSeries: storage.MockSeries(
+				nil,
 				[]int64{1, 2, 3},
 				[]float64{1, 2, 3},
 				[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
@@ -804,7 +799,6 @@ func TestKeepFiringFor(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 10x5
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests > 50`)
 	require.NoError(t, err)
@@ -915,7 +909,6 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 10x10
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests > 50`)
 	require.NoError(t, err)

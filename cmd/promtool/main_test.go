@@ -734,7 +734,6 @@ func TestTSDBDumpCommand(t *testing.T) {
 	load 1m
 		metric{foo="bar"} 1 2 3
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	for _, c := range []struct {
 		name           string

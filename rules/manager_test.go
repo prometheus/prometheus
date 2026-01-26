@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -62,7 +63,6 @@ func TestAlertingRule(t *testing.T) {
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 	require.NoError(t, err)
@@ -205,7 +205,6 @@ func TestForStateAddSamples(t *testing.T) {
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
 	`)
-			t.Cleanup(func() { storage.Close() })
 
 			expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 			require.NoError(t, err)
@@ -367,7 +366,6 @@ func TestForStateRestore(t *testing.T) {
 		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50 0 0 25 0 0 40 0 120
 		http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	125 90 60 0 0 25 0 0 40 0 130
 	`)
-			t.Cleanup(func() { storage.Close() })
 
 			expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 			require.NoError(t, err)
@@ -538,7 +536,7 @@ func TestForStateRestore(t *testing.T) {
 func TestStaleness(t *testing.T) {
 	for _, queryOffset := range []time.Duration{0, time.Minute} {
 		st := teststorage.New(t)
-		defer st.Close()
+
 		engineOpts := promql.EngineOpts{
 			Logger:     nil,
 			Reg:        nil,
@@ -726,7 +724,7 @@ func TestCopyState(t *testing.T) {
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
 	st := teststorage.New(t)
-	defer st.Close()
+
 	oldGroup := &Group{
 		rules: []Rule{
 			NewRecordingRule("rule1", nil, labels.FromStrings("l1", "v1"), metadata.Metadata{}),
@@ -772,7 +770,7 @@ func TestUpdate(t *testing.T) {
 		"test": labels.FromStrings("name", "value"),
 	}
 	st := teststorage.New(t)
-	defer st.Close()
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -910,7 +908,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 
 func TestNotify(t *testing.T) {
 	storage := teststorage.New(t)
-	defer storage.Close()
+
 	engineOpts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -984,7 +982,7 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 
 	storage := teststorage.New(t)
-	defer storage.Close()
+
 	registry := prometheus.NewRegistry()
 	opts := promql.EngineOpts{
 		Logger:     nil,
@@ -1057,7 +1055,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 	sameFiles := []string{"fixtures/rules2_copy.yaml"}
 
 	storage := teststorage.New(t)
-	defer storage.Close()
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -1135,7 +1133,7 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 	files := []string{"fixtures/rules2.yaml"}
 
 	storage := teststorage.New(t)
-	defer storage.Close()
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -1202,8 +1200,10 @@ func TestRuleMovedBetweenGroups(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	storage := teststorage.New(t, 600000)
-	defer storage.Close()
+	storage := teststorage.New(t, func(opt *tsdb.Options) {
+		opt.OutOfOrderTimeWindow = 600000
+	})
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -1285,7 +1285,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 
 func TestRuleHealthUpdates(t *testing.T) {
 	st := teststorage.New(t)
-	defer st.Close()
+
 	engineOpts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
@@ -1346,7 +1346,6 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 		load 5m
 		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
 	require.NoError(t, err)
@@ -1461,7 +1460,6 @@ func TestRuleGroupEvalIterationFunc(t *testing.T) {
 
 func TestNativeHistogramsInRecordingRules(t *testing.T) {
 	storage := teststorage.New(t)
-	t.Cleanup(func() { storage.Close() })
 
 	// Add some histograms.
 	db := storage.DB
@@ -1523,9 +1521,6 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 func TestManager_LoadGroups_ShouldCheckWhetherEachRuleHasDependentsAndDependencies(t *testing.T) {
 	storage := teststorage.New(t)
-	t.Cleanup(func() {
-		require.NoError(t, storage.Close())
-	})
 
 	ruleManager := NewManager(&ManagerOptions{
 		Context:    context.Background(),
@@ -2019,7 +2014,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	t.Run("synchronous evaluation with independent rules", func(t *testing.T) {
 		t.Parallel()
 		storage := teststorage.New(t)
-		t.Cleanup(func() { storage.Close() })
+
 		inflightQueries := atomic.Int32{}
 		maxInflight := atomic.Int32{}
 
@@ -2058,7 +2053,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	t.Run("asynchronous evaluation with independent and dependent rules", func(t *testing.T) {
 		t.Parallel()
 		storage := teststorage.New(t)
-		t.Cleanup(func() { storage.Close() })
+
 		inflightQueries := atomic.Int32{}
 		maxInflight := atomic.Int32{}
 
@@ -2097,7 +2092,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	t.Run("asynchronous evaluation of all independent rules, insufficient concurrency", func(t *testing.T) {
 		t.Parallel()
 		storage := teststorage.New(t)
-		t.Cleanup(func() { storage.Close() })
+
 		inflightQueries := atomic.Int32{}
 		maxInflight := atomic.Int32{}
 
@@ -2142,7 +2137,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	t.Run("asynchronous evaluation of all independent rules, sufficient concurrency", func(t *testing.T) {
 		t.Parallel()
 		storage := teststorage.New(t)
-		t.Cleanup(func() { storage.Close() })
+
 		inflightQueries := atomic.Int32{}
 		maxInflight := atomic.Int32{}
 
@@ -2190,7 +2185,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	t.Run("asynchronous evaluation of independent rules, with indeterminate. Should be synchronous", func(t *testing.T) {
 		t.Parallel()
 		storage := teststorage.New(t)
-		t.Cleanup(func() { storage.Close() })
+
 		inflightQueries := atomic.Int32{}
 		maxInflight := atomic.Int32{}
 
@@ -2229,7 +2224,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	t.Run("asynchronous evaluation of rules that benefit from reordering", func(t *testing.T) {
 		t.Parallel()
 		storage := teststorage.New(t)
-		t.Cleanup(func() { storage.Close() })
+
 		inflightQueries := atomic.Int32{}
 		maxInflight := atomic.Int32{}
 
@@ -2275,7 +2270,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 	t.Run("attempted asynchronous evaluation of chained rules", func(t *testing.T) {
 		t.Parallel()
 		storage := teststorage.New(t)
-		t.Cleanup(func() { storage.Close() })
+
 		inflightQueries := atomic.Int32{}
 		maxInflight := atomic.Int32{}
 
@@ -2323,7 +2318,7 @@ func TestAsyncRuleEvaluation(t *testing.T) {
 func TestNewRuleGroupRestoration(t *testing.T) {
 	t.Parallel()
 	store := teststorage.New(t)
-	t.Cleanup(func() { store.Close() })
+
 	var (
 		inflightQueries atomic.Int32
 		maxInflight     atomic.Int32
@@ -2387,7 +2382,7 @@ func TestNewRuleGroupRestoration(t *testing.T) {
 func TestNewRuleGroupRestorationWithRestoreNewGroupOption(t *testing.T) {
 	t.Parallel()
 	store := teststorage.New(t)
-	t.Cleanup(func() { store.Close() })
+
 	var (
 		inflightQueries atomic.Int32
 		maxInflight     atomic.Int32
@@ -2457,7 +2452,6 @@ func TestNewRuleGroupRestorationWithRestoreNewGroupOption(t *testing.T) {
 
 func TestBoundedRuleEvalConcurrency(t *testing.T) {
 	storage := teststorage.New(t)
-	t.Cleanup(func() { storage.Close() })
 
 	var (
 		inflightQueries atomic.Int32
@@ -2512,7 +2506,6 @@ func TestUpdateWhenStopped(t *testing.T) {
 
 func TestGroup_Eval_RaceConditionOnStoppingGroupEvaluationWhileRulesAreEvaluatedConcurrently(t *testing.T) {
 	storage := teststorage.New(t)
-	t.Cleanup(func() { storage.Close() })
 
 	var (
 		inflightQueries atomic.Int32
@@ -2731,7 +2724,6 @@ func TestRuleDependencyController_AnalyseRules(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			storage := teststorage.New(t)
-			t.Cleanup(func() { storage.Close() })
 
 			ruleManager := NewManager(&ManagerOptions{
 				Context:    context.Background(),
@@ -2760,7 +2752,6 @@ func TestRuleDependencyController_AnalyseRules(t *testing.T) {
 
 func BenchmarkRuleDependencyController_AnalyseRules(b *testing.B) {
 	storage := teststorage.New(b)
-	b.Cleanup(func() { storage.Close() })
 
 	ruleManager := NewManager(&ManagerOptions{
 		Context:    context.Background(),

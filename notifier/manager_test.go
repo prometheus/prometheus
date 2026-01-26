@@ -14,11 +14,11 @@
 package notifier
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -41,25 +42,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 )
-
-const maxBatchSize = 256
-
-func TestHandlerNextBatch(t *testing.T) {
-	h := NewManager(&Options{}, model.UTF8Validation, nil)
-
-	for i := range make([]struct{}, 2*maxBatchSize+1) {
-		h.queue = append(h.queue, &Alert{
-			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
-		})
-	}
-
-	expected := append([]*Alert{}, h.queue...)
-
-	require.NoError(t, alertsEqual(expected[0:maxBatchSize], h.nextBatch()))
-	require.NoError(t, alertsEqual(expected[maxBatchSize:2*maxBatchSize], h.nextBatch()))
-	require.NoError(t, alertsEqual(expected[2*maxBatchSize:], h.nextBatch()))
-	require.Empty(t, h.queue, "Expected queue to be empty but got %d alerts", len(h.queue))
-}
 
 func alertsEqual(a, b []*Alert) error {
 	if len(a) != len(b) {
@@ -108,10 +90,37 @@ func newTestHTTPServerBuilder(expected *[]*Alert, errc chan<- error, u, p string
 	}))
 }
 
+func newTestAlertmanagerSet(
+	cfg *config.AlertmanagerConfig,
+	client *http.Client,
+	opts *Options,
+	metrics *alertMetrics,
+	alertmanagerURLs ...string,
+) *alertmanagerSet {
+	ams := make([]alertmanager, len(alertmanagerURLs))
+	for i, am := range alertmanagerURLs {
+		ams[i] = alertmanagerMock{urlf: func() string { return am }}
+	}
+	logger := slog.New(slog.DiscardHandler)
+	sendLoops := make(map[string]*sendLoop)
+	for _, am := range alertmanagerURLs {
+		sendLoops[am] = newSendLoop(am, client, cfg, opts, logger, metrics)
+	}
+	return &alertmanagerSet{
+		ams:       ams,
+		cfg:       cfg,
+		client:    client,
+		logger:    logger,
+		metrics:   metrics,
+		opts:      opts,
+		sendLoops: sendLoops,
+	}
+}
+
 func TestHandlerSendAll(t *testing.T) {
 	var (
 		errc                      = make(chan error, 1)
-		expected                  = make([]*Alert, 0, maxBatchSize)
+		expected                  = make([]*Alert, 0)
 		status1, status2, status3 atomic.Int32
 	)
 	status1.Store(int32(http.StatusOK))
@@ -125,7 +134,8 @@ func TestHandlerSendAll(t *testing.T) {
 	defer server2.Close()
 	defer server3.Close()
 
-	h := NewManager(&Options{}, model.UTF8Validation, nil)
+	reg := prometheus.NewRegistry()
+	h := NewManager(&Options{Registerer: reg}, model.UTF8Validation, nil)
 
 	authClient, _ := config_util.NewClientFromConfig(
 		config_util.HTTPClientConfig{
@@ -146,35 +156,15 @@ func TestHandlerSendAll(t *testing.T) {
 	am3Cfg := config.DefaultAlertmanagerConfig
 	am3Cfg.Timeout = model.Duration(time.Second)
 
-	h.alertmanagers["1"] = &alertmanagerSet{
-		ams: []alertmanager{
-			alertmanagerMock{
-				urlf: func() string { return server1.URL },
-			},
-		},
-		cfg:    &am1Cfg,
-		client: authClient,
-	}
+	opts := &Options{Do: do, QueueCapacity: 10_000, MaxBatchSize: DefaultMaxBatchSize}
 
-	h.alertmanagers["2"] = &alertmanagerSet{
-		ams: []alertmanager{
-			alertmanagerMock{
-				urlf: func() string { return server2.URL },
-			},
-			alertmanagerMock{
-				urlf: func() string { return server3.URL },
-			},
-		},
-		cfg: &am2Cfg,
-	}
+	h.alertmanagers["1"] = newTestAlertmanagerSet(&am1Cfg, authClient, opts, h.metrics, server1.URL)
+	h.alertmanagers["2"] = newTestAlertmanagerSet(&am2Cfg, nil, opts, h.metrics, server2.URL, server3.URL)
+	h.alertmanagers["3"] = newTestAlertmanagerSet(&am3Cfg, nil, opts, h.metrics)
 
-	h.alertmanagers["3"] = &alertmanagerSet{
-		ams: []alertmanager{}, // empty set
-		cfg: &am3Cfg,
-	}
-
-	for i := range make([]struct{}, maxBatchSize) {
-		h.queue = append(h.queue, &Alert{
+	var alerts []*Alert
+	for i := range DefaultMaxBatchSize {
+		alerts = append(alerts, &Alert{
 			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
 		expected = append(expected, &Alert{
@@ -191,34 +181,62 @@ func TestHandlerSendAll(t *testing.T) {
 		}
 	}
 
-	// all ams in all sets are up
-	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	// Start send loops.
+	for _, ams := range h.alertmanagers {
+		ams.startSendLoops(ams.ams)
+	}
+	defer func() {
+		for _, ams := range h.alertmanagers {
+			ams.cleanSendLoops(ams.ams...)
+		}
+	}()
+
+	h.Send(alerts...)
+	require.Eventually(t, func() bool {
+		return prom_testutil.ToFloat64(h.metrics.sent.WithLabelValues(server1.URL)) == DefaultMaxBatchSize
+	}, time.Second*2, time.Millisecond*10)
 	checkNoErr()
 
-	// the only am in set 1 is down
+	// The only am in set 1 is down.
 	status1.Store(int32(http.StatusNotFound))
-	require.False(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	h.Send(alerts...)
+	// Wait for all send loops to process before changing any status.
+	require.Eventually(t, func() bool {
+		return prom_testutil.ToFloat64(h.metrics.errors.WithLabelValues(server1.URL)) == DefaultMaxBatchSize &&
+			prom_testutil.ToFloat64(h.metrics.sent.WithLabelValues(server2.URL)) == DefaultMaxBatchSize*2 &&
+			prom_testutil.ToFloat64(h.metrics.sent.WithLabelValues(server3.URL)) == DefaultMaxBatchSize*2
+	}, time.Second*2, time.Millisecond*10)
 	checkNoErr()
 
-	// reset it
+	// Fix the am.
 	status1.Store(int32(http.StatusOK))
 
-	// only one of the ams in set 2 is down
+	// Only one of the ams in set 2 is down.
 	status2.Store(int32(http.StatusInternalServerError))
-	require.True(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	h.Send(alerts...)
+	// Wait for all send loops to either send or fail with errors depending on their status.
+	require.Eventually(t, func() bool {
+		return prom_testutil.ToFloat64(h.metrics.errors.WithLabelValues(server2.URL)) == DefaultMaxBatchSize &&
+			prom_testutil.ToFloat64(h.metrics.sent.WithLabelValues(server1.URL)) == DefaultMaxBatchSize*2 &&
+			prom_testutil.ToFloat64(h.metrics.sent.WithLabelValues(server3.URL)) == DefaultMaxBatchSize*3
+	}, time.Second*2, time.Millisecond*10)
 	checkNoErr()
 
-	// both ams in set 2 are down
+	// Both ams in set 2 are down.
 	status3.Store(int32(http.StatusInternalServerError))
-	require.False(t, h.sendAll(h.queue...), "all sends succeeded unexpectedly")
+	h.Send(alerts...)
+	require.Eventually(t, func() bool {
+		return prom_testutil.ToFloat64(h.metrics.errors.WithLabelValues(server2.URL)) == DefaultMaxBatchSize*2 &&
+			prom_testutil.ToFloat64(h.metrics.errors.WithLabelValues(server3.URL)) == DefaultMaxBatchSize
+	}, time.Second*2, time.Millisecond*10)
 	checkNoErr()
 }
 
 func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	var (
 		errc      = make(chan error, 1)
-		expected1 = make([]*Alert, 0, maxBatchSize)
-		expected2 = make([]*Alert, 0, maxBatchSize)
+		expected1 = make([]*Alert, 0)
+		expected2 = make([]*Alert, 0)
 		expected3 = make([]*Alert, 0)
 
 		status1, status2, status3 atomic.Int32
@@ -235,7 +253,8 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 	defer server2.Close()
 	defer server3.Close()
 
-	h := NewManager(&Options{}, model.UTF8Validation, nil)
+	reg := prometheus.NewRegistry()
+	h := NewManager(&Options{QueueCapacity: 10_000, Registerer: reg}, model.UTF8Validation, nil)
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
 	am1Cfg := config.DefaultAlertmanagerConfig
@@ -263,43 +282,18 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 		},
 	}
 
-	h.alertmanagers = map[string]*alertmanagerSet{
-		// Drop no alerts.
-		"1": {
-			ams: []alertmanager{
-				alertmanagerMock{
-					urlf: func() string { return server1.URL },
-				},
-			},
-			cfg: &am1Cfg,
-		},
-		// Drop only alerts with the "alertnamedrop" label.
-		"2": {
-			ams: []alertmanager{
-				alertmanagerMock{
-					urlf: func() string { return server2.URL },
-				},
-			},
-			cfg: &am2Cfg,
-		},
-		// Drop all alerts.
-		"3": {
-			ams: []alertmanager{
-				alertmanagerMock{
-					urlf: func() string { return server3.URL },
-				},
-			},
-			cfg: &am3Cfg,
-		},
-		// Empty list of Alertmanager endpoints.
-		"4": {
-			ams: []alertmanager{},
-			cfg: &config.DefaultAlertmanagerConfig,
-		},
-	}
+	// Drop no alerts.
+	h.alertmanagers["1"] = newTestAlertmanagerSet(&am1Cfg, nil, h.opts, h.metrics, server1.URL)
+	// Drop only alerts with the "alertnamedrop" label.
+	h.alertmanagers["2"] = newTestAlertmanagerSet(&am2Cfg, nil, h.opts, h.metrics, server2.URL)
+	// Drop all alerts.
+	h.alertmanagers["3"] = newTestAlertmanagerSet(&am3Cfg, nil, h.opts, h.metrics, server3.URL)
+	// Empty list of Alertmanager endpoints.
+	h.alertmanagers["4"] = newTestAlertmanagerSet(&config.DefaultAlertmanagerConfig, nil, h.opts, h.metrics)
 
-	for i := range make([]struct{}, maxBatchSize/2) {
-		h.queue = append(h.queue,
+	var alerts []*Alert
+	for i := range make([]struct{}, DefaultMaxBatchSize/2) {
+		alerts = append(alerts,
 			&Alert{
 				Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 			},
@@ -330,63 +324,48 @@ func TestHandlerSendAllRemapPerAm(t *testing.T) {
 		}
 	}
 
-	// all ams are up
-	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	// Start send loops.
+	for _, ams := range h.alertmanagers {
+		ams.startSendLoops(ams.ams)
+	}
+	defer func() {
+		// Stop send loops.
+		for _, ams := range h.alertmanagers {
+			ams.cleanSendLoops(ams.ams...)
+		}
+	}()
+
+	// All ams are up.
+	h.Send(alerts...)
+	require.Eventually(t, func() bool {
+		return prom_testutil.ToFloat64(h.metrics.sent.WithLabelValues(server1.URL)) == DefaultMaxBatchSize
+	}, time.Second*2, time.Millisecond*10)
 	checkNoErr()
 
-	// the only am in set 1 goes down
+	// The only am in set 1 goes down.
 	status1.Store(int32(http.StatusInternalServerError))
-	require.False(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	h.Send(alerts...)
+	// Wait for metrics to update.
+	require.Eventually(t, func() bool {
+		return prom_testutil.ToFloat64(h.metrics.errors.WithLabelValues(server1.URL)) == DefaultMaxBatchSize
+	}, time.Second*2, time.Millisecond*10)
 	checkNoErr()
 
-	// reset set 1
+	// Reset set 1.
 	status1.Store(int32(http.StatusOK))
 
-	// set 3 loses its only am, but all alerts were dropped
-	// so there was nothing to send, keeping sendAll true
+	// Set 3 loses its only am, but all alerts were dropped
+	// so there was nothing to send, keeping sendAll true.
 	status3.Store(int32(http.StatusInternalServerError))
-	require.True(t, h.sendAll(h.queue...), "all sends failed unexpectedly")
+	h.Send(alerts...)
 	checkNoErr()
-
-	// Verify that individual locks are released.
-	for k := range h.alertmanagers {
-		h.alertmanagers[k].mtx.Lock()
-		h.alertmanagers[k].ams = nil
-		h.alertmanagers[k].mtx.Unlock()
-	}
-}
-
-func TestCustomDo(t *testing.T) {
-	const testURL = "http://testurl.com/"
-	const testBody = "testbody"
-
-	var received bool
-	h := NewManager(&Options{
-		Do: func(_ context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
-			received = true
-			body, err := io.ReadAll(req.Body)
-
-			require.NoError(t, err)
-
-			require.Equal(t, testBody, string(body))
-
-			require.Equal(t, testURL, req.URL.String())
-
-			return &http.Response{
-				Body: io.NopCloser(bytes.NewBuffer(nil)),
-			}, nil
-		},
-	}, model.UTF8Validation, nil)
-
-	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
-
-	require.True(t, received, "Expected to receive an alert, but didn't")
 }
 
 func TestExternalLabels(t *testing.T) {
+	reg := prometheus.NewRegistry()
 	h := NewManager(&Options{
-		QueueCapacity:  3 * maxBatchSize,
-		MaxBatchSize:   maxBatchSize,
+		QueueCapacity:  3 * DefaultMaxBatchSize,
+		MaxBatchSize:   DefaultMaxBatchSize,
 		ExternalLabels: labels.FromStrings("a", "b"),
 		RelabelConfigs: []*relabel.Config{
 			{
@@ -398,7 +377,13 @@ func TestExternalLabels(t *testing.T) {
 				NameValidationScheme: model.UTF8Validation,
 			},
 		},
+		Registerer: reg,
 	}, model.UTF8Validation, nil)
+
+	cfg := config.DefaultAlertmanagerConfig
+	h.alertmanagers = map[string]*alertmanagerSet{
+		"test": newTestAlertmanagerSet(&cfg, nil, h.opts, h.metrics, "test"),
+	}
 
 	// This alert should get the external label attached.
 	h.Send(&Alert{
@@ -416,13 +401,14 @@ func TestExternalLabels(t *testing.T) {
 		{Labels: labels.FromStrings("alertname", "externalrelabelthis", "a", "c")},
 	}
 
-	require.NoError(t, alertsEqual(expected, h.queue))
+	require.NoError(t, alertsEqual(expected, h.alertmanagers["test"].sendLoops["test"].queue))
 }
 
 func TestHandlerRelabel(t *testing.T) {
+	reg := prometheus.NewRegistry()
 	h := NewManager(&Options{
-		QueueCapacity: 3 * maxBatchSize,
-		MaxBatchSize:  maxBatchSize,
+		QueueCapacity: 3 * DefaultMaxBatchSize,
+		MaxBatchSize:  DefaultMaxBatchSize,
 		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels:         model.LabelNames{"alertname"},
@@ -439,7 +425,13 @@ func TestHandlerRelabel(t *testing.T) {
 				NameValidationScheme: model.UTF8Validation,
 			},
 		},
+		Registerer: reg,
 	}, model.UTF8Validation, nil)
+
+	cfg := config.DefaultAlertmanagerConfig
+	h.alertmanagers = map[string]*alertmanagerSet{
+		"test": newTestAlertmanagerSet(&cfg, nil, h.opts, h.metrics, "test"),
+	}
 
 	// This alert should be dropped due to the configuration
 	h.Send(&Alert{
@@ -455,7 +447,7 @@ func TestHandlerRelabel(t *testing.T) {
 		{Labels: labels.FromStrings("alertname", "renamed")},
 	}
 
-	require.NoError(t, alertsEqual(expected, h.queue))
+	require.NoError(t, alertsEqual(expected, h.alertmanagers["test"].sendLoops["test"].queue))
 }
 
 func TestHandlerQueuing(t *testing.T) {
@@ -500,10 +492,12 @@ func TestHandlerQueuing(t *testing.T) {
 		server.Close()
 	}()
 
+	reg := prometheus.NewRegistry()
 	h := NewManager(
 		&Options{
-			QueueCapacity: 3 * maxBatchSize,
-			MaxBatchSize:  maxBatchSize,
+			QueueCapacity: 3 * DefaultMaxBatchSize,
+			MaxBatchSize:  DefaultMaxBatchSize,
+			Registerer:    reg,
 		},
 		model.UTF8Validation,
 		nil,
@@ -513,20 +507,18 @@ func TestHandlerQueuing(t *testing.T) {
 
 	am1Cfg := config.DefaultAlertmanagerConfig
 	am1Cfg.Timeout = model.Duration(time.Second)
+	h.alertmanagers["1"] = newTestAlertmanagerSet(&am1Cfg, nil, h.opts, h.metrics, server.URL)
 
-	h.alertmanagers["1"] = &alertmanagerSet{
-		ams: []alertmanager{
-			alertmanagerMock{
-				urlf: func() string { return server.URL },
-			},
-		},
-		cfg: &am1Cfg,
-	}
 	go h.Run(nil)
 	defer h.Stop()
 
+	// Start send loops.
+	for _, ams := range h.alertmanagers {
+		ams.startSendLoops(ams.ams)
+	}
+
 	var alerts []*Alert
-	for i := range make([]struct{}, 20*maxBatchSize) {
+	for i := range make([]struct{}, 20*DefaultMaxBatchSize) {
 		alerts = append(alerts, &Alert{
 			Labels: labels.FromStrings("alertname", strconv.Itoa(i)),
 		})
@@ -547,29 +539,22 @@ func TestHandlerQueuing(t *testing.T) {
 		}
 	}
 
-	// If the batch is larger than the queue capacity, it should be truncated
-	// from the front.
-	h.Send(alerts[:4*maxBatchSize]...)
-	for i := 1; i < 4; i++ {
-		assertAlerts(alerts[i*maxBatchSize : (i+1)*maxBatchSize])
-	}
-
 	// Send one batch, wait for it to arrive and block the server so the queue fills up.
-	h.Send(alerts[:maxBatchSize]...)
+	h.Send(alerts[:DefaultMaxBatchSize]...)
 	<-called
 
 	// Send several batches while the server is still blocked so the queue
-	// fills up to its maximum capacity (3*maxBatchSize). Then check that the
+	// fills up to its maximum capacity (3*DefaultMaxBatchSize). Then check that the
 	// queue is truncated in the front.
-	h.Send(alerts[1*maxBatchSize : 2*maxBatchSize]...) // this batch should be dropped.
-	h.Send(alerts[2*maxBatchSize : 3*maxBatchSize]...)
-	h.Send(alerts[3*maxBatchSize : 4*maxBatchSize]...)
+	h.Send(alerts[1*DefaultMaxBatchSize : 2*DefaultMaxBatchSize]...) // This batch should be dropped.
+	h.Send(alerts[2*DefaultMaxBatchSize : 3*DefaultMaxBatchSize]...)
+	h.Send(alerts[3*DefaultMaxBatchSize : 4*DefaultMaxBatchSize]...)
 
 	// Send the batch that drops the first one.
-	h.Send(alerts[4*maxBatchSize : 5*maxBatchSize]...)
+	h.Send(alerts[4*DefaultMaxBatchSize : 5*DefaultMaxBatchSize]...)
 
 	// Unblock the server.
-	expectedc <- alerts[:maxBatchSize]
+	expectedc <- alerts[:DefaultMaxBatchSize]
 	select {
 	case err := <-errc:
 		require.NoError(t, err)
@@ -579,7 +564,7 @@ func TestHandlerQueuing(t *testing.T) {
 
 	// Verify that we receive the last 3 batches.
 	for i := 2; i < 5; i++ {
-		assertAlerts(alerts[i*maxBatchSize : (i+1)*maxBatchSize])
+		assertAlerts(alerts[i*DefaultMaxBatchSize : (i+1)*DefaultMaxBatchSize])
 	}
 }
 
@@ -715,7 +700,7 @@ func makeInputTargetGroup() *targetgroup.Group {
 func TestHangingNotifier(t *testing.T) {
 	const (
 		batches     = 100
-		alertsCount = maxBatchSize * batches
+		alertsCount = DefaultMaxBatchSize * batches
 	)
 
 	var (
@@ -724,10 +709,6 @@ func TestHangingNotifier(t *testing.T) {
 
 		done = make(chan struct{})
 	)
-
-	defer func() {
-		close(done)
-	}()
 
 	// Set up a faulty Alertmanager.
 	var faultyCalled atomic.Bool
@@ -738,21 +719,29 @@ func TestHangingNotifier(t *testing.T) {
 		case <-time.After(time.Hour):
 		}
 	}))
+	defer func() {
+		close(done)
+	}()
+
 	faultyURL, err := url.Parse(faultyServer.URL)
 	require.NoError(t, err)
+	faultyURL.Path = "/api/v2/alerts"
 
 	// Set up a functional Alertmanager.
 	var functionalCalled atomic.Bool
 	functionalServer := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		functionalCalled.Store(true)
 	}))
+	defer functionalServer.Close()
 	functionalURL, err := url.Parse(functionalServer.URL)
 	require.NoError(t, err)
+	functionalURL.Path = "/api/v2/alerts"
 
 	// Initialize the discovery manager
 	// This is relevant as the updates aren't sent continually in real life, but only each updatert.
 	// The old implementation of TestHangingNotifier didn't take that into account.
-	ctx := t.Context()
+	ctx, cancelSdManager := context.WithCancel(t.Context())
+	defer cancelSdManager()
 	reg := prometheus.NewRegistry()
 	sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
 	require.NoError(t, err)
@@ -770,6 +759,7 @@ func TestHangingNotifier(t *testing.T) {
 	notifier := NewManager(
 		&Options{
 			QueueCapacity: alertsCount,
+			Registerer:    reg,
 		},
 		model.UTF8Validation,
 		nil,
@@ -777,18 +767,12 @@ func TestHangingNotifier(t *testing.T) {
 	notifier.alertmanagers = make(map[string]*alertmanagerSet)
 	amCfg := config.DefaultAlertmanagerConfig
 	amCfg.Timeout = model.Duration(sendTimeout)
-	notifier.alertmanagers["config-0"] = &alertmanagerSet{
-		ams: []alertmanager{
-			alertmanagerMock{
-				urlf: func() string { return faultyURL.String() },
-			},
-			alertmanagerMock{
-				urlf: func() string { return functionalURL.String() },
-			},
-		},
-		cfg:     &amCfg,
-		metrics: notifier.metrics,
+	notifier.alertmanagers["config-0"] = newTestAlertmanagerSet(&amCfg, nil, notifier.opts, notifier.metrics, faultyURL.String(), functionalURL.String())
+
+	for _, ams := range notifier.alertmanagers {
+		ams.startSendLoops(ams.ams)
 	}
+
 	go notifier.Run(sdManager.SyncCh())
 	defer notifier.Stop()
 
@@ -834,10 +818,6 @@ loop1:
 	}
 	require.NoError(t, sdManager.ApplyConfig(c))
 
-	// The notifier should not wait until the alerts queue is empty to apply the discovery changes
-	// A faulty Alertmanager could cause each alert sending cycle to take up to AlertmanagerConfig.Timeout
-	// The queue may never be emptied, as the arrival rate could be larger than the departure rate
-	// It could even overflow and alerts could be dropped.
 	timeout = time.After(batches * sendTimeout)
 loop2:
 	for {
@@ -847,11 +827,10 @@ loop2:
 		default:
 			// The faulty alertmanager was dropped.
 			if len(notifier.Alertmanagers()) == 1 {
-				// Prevent from TOCTOU.
-				require.Positive(t, notifier.queueLen())
+				// The notifier should not wait until the alerts queue of the functional am is empty to apply the discovery changes.
+				require.NotZero(t, notifier.alertmanagers["config-0"].sendLoops[functionalURL.String()].queueLen())
 				break loop2
 			}
-			require.Positive(t, notifier.queueLen(), "The faulty alertmanager wasn't dropped before the alerts queue was emptied.")
 		}
 	}
 }
@@ -884,10 +863,12 @@ func TestStop_DrainingDisabled(t *testing.T) {
 		server.Close()
 	}()
 
+	reg := prometheus.NewRegistry()
 	m := NewManager(
 		&Options{
 			QueueCapacity:   10,
 			DrainOnShutdown: false,
+			Registerer:      reg,
 		},
 		model.UTF8Validation,
 		nil,
@@ -897,14 +878,10 @@ func TestStop_DrainingDisabled(t *testing.T) {
 
 	am1Cfg := config.DefaultAlertmanagerConfig
 	am1Cfg.Timeout = model.Duration(time.Second)
+	m.alertmanagers["1"] = newTestAlertmanagerSet(&am1Cfg, nil, m.opts, m.metrics, server.URL)
 
-	m.alertmanagers["1"] = &alertmanagerSet{
-		ams: []alertmanager{
-			alertmanagerMock{
-				urlf: func() string { return server.URL },
-			},
-		},
-		cfg: &am1Cfg,
+	for _, ams := range m.alertmanagers {
+		ams.startSendLoops(ams.ams)
 	}
 
 	notificationManagerStopped := make(chan struct{})
@@ -949,10 +926,10 @@ func TestStop_DrainingEnabled(t *testing.T) {
 	alertsReceived := atomic.NewInt64(0)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var alerts []*Alert
+
 		// Let the test know we've received a request.
 		receiverReceivedRequest <- struct{}{}
-
-		var alerts []*Alert
 
 		b, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
@@ -971,10 +948,12 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		server.Close()
 	}()
 
+	reg := prometheus.NewRegistry()
 	m := NewManager(
 		&Options{
 			QueueCapacity:   10,
 			DrainOnShutdown: true,
+			Registerer:      reg,
 		},
 		model.UTF8Validation,
 		nil,
@@ -984,14 +963,10 @@ func TestStop_DrainingEnabled(t *testing.T) {
 
 	am1Cfg := config.DefaultAlertmanagerConfig
 	am1Cfg.Timeout = model.Duration(time.Second)
+	m.alertmanagers["1"] = newTestAlertmanagerSet(&am1Cfg, nil, m.opts, m.metrics, server.URL)
 
-	m.alertmanagers["1"] = &alertmanagerSet{
-		ams: []alertmanager{
-			alertmanagerMock{
-				urlf: func() string { return server.URL },
-			},
-		},
-		cfg: &am1Cfg,
+	for _, ams := range m.alertmanagers {
+		ams.startSendLoops(ams.ams)
 	}
 
 	notificationManagerStopped := make(chan struct{})
@@ -1026,6 +1001,44 @@ func TestStop_DrainingEnabled(t *testing.T) {
 	}
 
 	require.Equal(t, int64(2), alertsReceived.Load())
+}
+
+// TestQueuesDrainingOnApplyConfig ensures that when an alertmanagerSet disappears after an ApplyConfig(), its
+// sendLoops queues are drained only when DrainOnShutdown is set.
+func TestQueuesDrainingOnApplyConfig(t *testing.T) {
+	for _, drainOnShutDown := range []bool{false, true} {
+		t.Run(strconv.FormatBool(drainOnShutDown), func(t *testing.T) {
+			t.Parallel()
+			alertSent := make(chan struct{})
+
+			server := newImmediateAlertManager(alertSent)
+			defer server.Close()
+
+			h := NewManager(&Options{QueueCapacity: 10, DrainOnShutdown: drainOnShutDown}, model.UTF8Validation, nil)
+			h.alertmanagers = make(map[string]*alertmanagerSet)
+
+			amCfg := config.DefaultAlertmanagerConfig
+			amCfg.Timeout = model.Duration(time.Second)
+			h.alertmanagers["1"] = newTestAlertmanagerSet(&amCfg, nil, h.opts, h.metrics, server.URL)
+
+			// The send loops were not started, nothing will be sent.
+			h.Send([]*Alert{{Labels: labels.FromStrings("alertname", "foo")}}...)
+
+			// Remove the alertmanagerSet.
+			h.ApplyConfig(&config.Config{})
+
+			select {
+			case <-alertSent:
+				if !drainOnShutDown {
+					require.FailNow(t, "no alert should be sent")
+				}
+			case <-time.After(100 * time.Millisecond):
+				if drainOnShutDown {
+					require.FailNow(t, "alert wasn't received")
+				}
+			}
+		})
+	}
 }
 
 func TestApplyConfig(t *testing.T) {
@@ -1152,7 +1165,7 @@ func TestAlerstRelabelingIsIsolated(t *testing.T) {
 	defer server1.Close()
 	defer server2.Close()
 
-	h := NewManager(&Options{}, model.UTF8Validation, nil)
+	h := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
 	am1Cfg := config.DefaultAlertmanagerConfig
@@ -1172,34 +1185,29 @@ func TestAlerstRelabelingIsIsolated(t *testing.T) {
 	am2Cfg.Timeout = model.Duration(time.Second)
 
 	h.alertmanagers = map[string]*alertmanagerSet{
-		"am1": {
-			ams: []alertmanager{
-				alertmanagerMock{
-					urlf: func() string { return server1.URL },
-				},
-			},
-			cfg: &am1Cfg,
-		},
-		"am2": {
-			ams: []alertmanager{
-				alertmanagerMock{
-					urlf: func() string { return server2.URL },
-				},
-			},
-			cfg: &am2Cfg,
-		},
+		"am1": newTestAlertmanagerSet(&am1Cfg, nil, h.opts, h.metrics, server1.URL),
+		"am2": newTestAlertmanagerSet(&am2Cfg, nil, h.opts, h.metrics, server2.URL),
 	}
+
+	// Start send loops.
+	for _, ams := range h.alertmanagers {
+		ams.startSendLoops(ams.ams)
+	}
+	defer func() {
+		for _, ams := range h.alertmanagers {
+			ams.cleanSendLoops(ams.ams...)
+		}
+	}()
 
 	testAlert := &Alert{
 		Labels: labels.FromStrings("alertname", "test"),
 	}
-	h.queue = []*Alert{testAlert}
 
 	expected1 = append(expected1, &Alert{
 		Labels: labels.FromStrings("alertname", "test", "parasite", "yes"),
 	})
 
-	// am2 shouldn't get the parasite label.
+	// Am2 shouldn't get the parasite label.
 	expected2 = append(expected2, &Alert{
 		Labels: labels.FromStrings("alertname", "test"),
 	})
@@ -1213,6 +1221,363 @@ func TestAlerstRelabelingIsIsolated(t *testing.T) {
 		}
 	}
 
-	require.True(t, h.sendAll(h.queue...))
+	h.Send(testAlert)
 	checkNoErr()
+}
+
+// Regression test for https://github.com/prometheus/prometheus/issues/7676
+// The test creates a black hole alertmanager that never responds to any requests.
+// The alertmanager_config.timeout is set to infinite (1 year).
+// We check that the notifier does not hang and throughput is not affected.
+func TestNotifierQueueIndependentOfFailedAlertmanager(t *testing.T) {
+	stopBlackHole := make(chan struct{})
+	blackHoleAM := newBlackHoleAlertmanager(stopBlackHole)
+	defer func() {
+		close(stopBlackHole)
+		blackHoleAM.Close()
+	}()
+
+	doneAlertReceive := make(chan struct{})
+	immediateAM := newImmediateAlertManager(doneAlertReceive)
+	defer immediateAM.Close()
+
+	do := func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
+		return client.Do(req.WithContext(ctx))
+	}
+
+	reg := prometheus.NewRegistry()
+	h := NewManager(&Options{
+		Do:            do,
+		QueueCapacity: 10,
+		MaxBatchSize:  DefaultMaxBatchSize,
+		Registerer:    reg,
+	}, model.UTF8Validation, nil)
+
+	h.alertmanagers = make(map[string]*alertmanagerSet)
+
+	amCfg := config.DefaultAlertmanagerConfig
+	amCfg.Timeout = model.Duration(time.Hour * 24 * 365)
+	h.alertmanagers["1"] = newTestAlertmanagerSet(&amCfg, http.DefaultClient, h.opts, h.metrics, blackHoleAM.URL)
+	h.alertmanagers["2"] = newTestAlertmanagerSet(&amCfg, http.DefaultClient, h.opts, h.metrics, immediateAM.URL)
+
+	doneSendAll := make(chan struct{})
+	for _, ams := range h.alertmanagers {
+		ams.startSendLoops(ams.ams)
+	}
+	defer func() {
+		for _, ams := range h.alertmanagers {
+			ams.cleanSendLoops(ams.ams...)
+		}
+	}()
+
+	go func() {
+		h.Send(&Alert{
+			Labels: labels.FromStrings("alertname", "test"),
+		})
+		close(doneSendAll)
+	}()
+
+	select {
+	case <-doneAlertReceive:
+		// This is the happy case, the alert was received by the immediate alertmanager.
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timeout waiting for alert to be received by immediate alertmanager")
+	}
+
+	select {
+	case <-doneSendAll:
+		// This is the happy case, the sendAll function returned.
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timeout waiting for sendAll to return")
+	}
+}
+
+// TestApplyConfigSendLoopsNotStoppedOnKeyChange reproduces a bug where sendLoops
+// are incorrectly stopped when the alertmanager config key changes but the config
+// content (and thus its hash) remains the same.
+//
+// The bug scenario:
+// 1. Old config has alertmanager set with key "config-0" and config hash X
+// 2. New config has TWO alertmanager sets where the SECOND one ("config-1") has hash X
+// 3. sendLoops are transferred from old "config-0" to new "config-1" (hash match)
+// 4. Cleanup checks if key "config-0" exists in new config — it does (different config)
+// 5. No cleanup happens for old "config-0", sendLoops work correctly
+//
+// However, there's a variant where the key disappears completely:
+// 1. Old config: "config-0" with hash X, "config-1" with hash Y
+// 2. New config: "config-0" with hash Y (was "config-1"), no "config-1"
+// 3. sendLoops from old "config-0" (hash X) have nowhere to go
+// 4. Cleanup sees "config-1" doesn't exist, tries to clean up old "config-1"
+//
+// This test verifies that when config keys change, sendLoops are correctly preserved.
+func TestApplyConfigSendLoopsNotStoppedOnKeyChange(t *testing.T) {
+	alertReceived := make(chan struct{}, 10)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		select {
+		case alertReceived <- struct{}{}:
+		default:
+		}
+	}))
+	defer server.Close()
+
+	targetURL := server.Listener.Addr().String()
+	targetGroup := &targetgroup.Group{
+		Targets: []model.LabelSet{
+			{
+				"__address__": model.LabelValue(targetURL),
+			},
+		},
+	}
+
+	n := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
+	cfg := &config.Config{}
+
+	// Initial config with TWO alertmanager configs.
+	// "config-0" uses file_sd_configs with foo.json (hash X)
+	// "config-1" uses file_sd_configs with bar.json (hash Y)
+	s := `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+  - file_sd_configs:
+    - files:
+      - bar.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	// Reload with target groups to discover alertmanagers.
+	tgs := map[string][]*targetgroup.Group{
+		"config-0": {targetGroup},
+		"config-1": {targetGroup},
+	}
+	n.reload(tgs)
+	require.Len(t, n.Alertmanagers(), 2)
+
+	// Verify sendLoops exist for both configs.
+	require.Len(t, n.alertmanagers["config-0"].sendLoops, 1)
+	require.Len(t, n.alertmanagers["config-1"].sendLoops, 1)
+
+	// Start the send loops.
+	for _, ams := range n.alertmanagers {
+		ams.startSendLoops(ams.ams)
+	}
+	defer func() {
+		for _, ams := range n.alertmanagers {
+			ams.mtx.Lock()
+			ams.cleanSendLoops(ams.ams...)
+			ams.mtx.Unlock()
+		}
+	}()
+
+	// Send an alert and verify it's received (twice, once per alertmanager set).
+	n.Send(&Alert{Labels: labels.FromStrings("alertname", "test1")})
+	for range 2 {
+		select {
+		case <-alertReceived:
+			// Good, alert was sent.
+		case <-time.After(2 * time.Second):
+			require.FailNow(t, "timeout waiting for first alert")
+		}
+	}
+
+	// Apply a new config that REVERSES the order of alertmanager configs.
+	// Now "config-0" has hash Y (was bar.json) and "config-1" has hash X (was foo.json).
+	// The sendLoops should be transferred based on hash matching.
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - bar.json
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	// CRITICAL CHECK: After ApplyConfig but BEFORE reload, the sendLoops should
+	// have been transferred based on hash matching and NOT stopped.
+	// - Old "config-0" (foo.json, hash X) -> New "config-1" (foo.json, hash X)
+	// - Old "config-1" (bar.json, hash Y) -> New "config-0" (bar.json, hash Y)
+	// Both old keys exist in new config, so no cleanup should happen.
+	require.Len(t, n.alertmanagers["config-0"].sendLoops, 1, "sendLoops should be transferred to config-0")
+	require.Len(t, n.alertmanagers["config-1"].sendLoops, 1, "sendLoops should be transferred to config-1")
+
+	// Reload with target groups for the new config.
+	tgs = map[string][]*targetgroup.Group{
+		"config-0": {targetGroup},
+		"config-1": {targetGroup},
+	}
+	n.reload(tgs)
+
+	// The alertmanagers should still be discoverable.
+	require.Len(t, n.Alertmanagers(), 2)
+
+	// The critical test: send another alert and verify it's received by both.
+	n.Send(&Alert{Labels: labels.FromStrings("alertname", "test2")})
+	for range 2 {
+		select {
+		case <-alertReceived:
+			// Good, alert was sent - sendLoops are still working.
+		case <-time.After(2 * time.Second):
+			require.FailNow(t, "timeout waiting for second alert - sendLoops may have been incorrectly stopped")
+		}
+	}
+}
+
+// TestApplyConfigDuplicateHashSharesSendLoops tests a bug where multiple new
+// alertmanager configs with identical content (same hash) all receive the same
+// sendLoops map reference, causing shared mutable state between alertmanagerSets.
+//
+// Bug scenario:
+//  1. Old config: "config-0" with hash X
+//  2. New config: "config-0" AND "config-1" both with hash X (identical configs)
+//  3. Both new sets get `sendLoops = oldAmSet.sendLoops` (same map reference!)
+//  4. Now config-0 and config-1 share the same sendLoops map
+//  5. When config-1's alertmanager is removed via sync(), it cleans up the shared
+//     sendLoops, breaking config-0's ability to send alerts
+func TestApplyConfigDuplicateHashSharesSendLoops(t *testing.T) {
+	n := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
+	cfg := &config.Config{}
+
+	// Initial config with ONE alertmanager.
+	s := `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	targetGroup := &targetgroup.Group{
+		Targets: []model.LabelSet{
+			{"__address__": "alertmanager:9093"},
+		},
+	}
+	tgs := map[string][]*targetgroup.Group{"config-0": {targetGroup}}
+	n.reload(tgs)
+
+	require.Len(t, n.alertmanagers["config-0"].sendLoops, 1)
+
+	// Apply a new config with TWO IDENTICAL alertmanager configs.
+	// Both have the same hash, so both will receive sendLoops from the same old set.
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	// Reload with target groups for both configs - same alertmanager URL for both.
+	tgs = map[string][]*targetgroup.Group{
+		"config-0": {targetGroup},
+		"config-1": {targetGroup},
+	}
+	n.reload(tgs)
+
+	// Both alertmanagerSets should have independent sendLoops.
+	sendLoops0 := n.alertmanagers["config-0"].sendLoops
+	sendLoops1 := n.alertmanagers["config-1"].sendLoops
+
+	require.Len(t, sendLoops0, 1, "config-0 should have sendLoops")
+	require.Len(t, sendLoops1, 1, "config-1 should have sendLoops")
+
+	// Verify that the two alertmanagerSets have INDEPENDENT sendLoops maps.
+	// They should NOT share the same sendLoop objects.
+	for k := range sendLoops0 {
+		if loop1, ok := sendLoops1[k]; ok {
+			require.NotSame(t, sendLoops0[k], loop1,
+				"config-0 and config-1 should have independent sendLoop instances, not shared references")
+		}
+	}
+}
+
+// TestApplyConfigHashChangeLeaksSendLoops tests a bug where sendLoops goroutines
+// are leaked when the config key remains the same but the config hash changes.
+//
+// Bug scenario:
+//  1. Old config has "config-0" with hash H1 and running sendLoops
+//  2. New config has "config-0" with hash H2 (modified config)
+//  3. Since hash differs, sendLoops are NOT transferred to the new alertmanagerSet
+//  4. Cleanup only checks if key exists in amSets - it does, so no cleanup
+//  5. Old sendLoops goroutines continue running and are never stopped
+func TestApplyConfigHashChangeLeaksSendLoops(t *testing.T) {
+	n := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
+	cfg := &config.Config{}
+
+	// Initial config with one alertmanager.
+	s := `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	targetGroup := &targetgroup.Group{
+		Targets: []model.LabelSet{
+			{"__address__": "alertmanager:9093"},
+		},
+	}
+	tgs := map[string][]*targetgroup.Group{"config-0": {targetGroup}}
+	n.reload(tgs)
+
+	// Capture the old sendLoop.
+	oldSendLoops := n.alertmanagers["config-0"].sendLoops
+	require.Len(t, oldSendLoops, 1)
+	var oldSendLoop *sendLoop
+	for _, sl := range oldSendLoops {
+		oldSendLoop = sl
+	}
+
+	// Apply a new config with DIFFERENT hash (added path_prefix).
+	s = `
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+    path_prefix: /changed
+`
+	require.NoError(t, yaml.UnmarshalStrict([]byte(s), cfg))
+	require.NoError(t, n.ApplyConfig(cfg))
+
+	// The old sendLoop should have been stopped since hash changed.
+	// Check that the stopped channel is closed.
+	select {
+	case <-oldSendLoop.stopped:
+		// Good - sendLoop was properly stopped
+	default:
+		t.Fatal("BUG: old sendLoop was not stopped when config hash changed - goroutine leak")
+	}
+}
+
+func newBlackHoleAlertmanager(stop <-chan struct{}) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Do nothing, wait to be canceled.
+		<-stop
+		w.WriteHeader(http.StatusOK)
+	}))
+}
+
+func newImmediateAlertManager(done chan<- struct{}) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		close(done)
+	}))
 }

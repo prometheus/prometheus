@@ -1452,9 +1452,6 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 		t.Run(fmt.Sprintf("float=%t", floatTest), func(t *testing.T) {
 			head, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 			require.NoError(t, head.Init(0))
-			t.Cleanup(func() {
-				require.NoError(t, head.Close())
-			})
 
 			minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 			ctx := context.Background()
@@ -1631,13 +1628,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 			),
 			func(t *testing.T) {
 				oldHead, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
-				t.Cleanup(func() {
-					require.NoError(t, oldHead.Close())
-				})
 				sparseHead, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
-				t.Cleanup(func() {
-					require.NoError(t, sparseHead.Close())
-				})
 
 				var allSparseSeries []struct {
 					baseLabels labels.Labels

@@ -281,6 +281,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-extended-range-selectors":
 				parser.EnableExtendedRangeSelectors = true
 				logger.Info("Experimental PromQL extended range selectors enabled.")
+			case "promql-binop-fill-modifiers":
+				parser.EnableBinopFillModifiers = true
+				logger.Info("Experimental PromQL binary operator fill modifiers enabled.")
 			case "":
 				continue
 			case "old-ui":
@@ -578,7 +581,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors, promql-binop-fill-modifiers. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -689,6 +692,7 @@ func main() {
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+		cfg.tsdb.StaleSeriesCompactionThreshold = cfgFile.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold
 		if cfgFile.StorageConfig.TSDBConfig.Retention != nil {
 			if cfgFile.StorageConfig.TSDBConfig.Retention.Time > 0 {
 				cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
@@ -872,7 +876,7 @@ func main() {
 		&cfg.scrape,
 		logger.With("component", "scrape manager"),
 		logging.NewJSONFileLogger,
-		fanoutStorage,
+		fanoutStorage, nil, // TODO(bwplotka): Switch to AppendableV2.
 		prometheus.DefaultRegisterer,
 	)
 	if err != nil {
@@ -1575,7 +1579,7 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 			logger.Error("Failed to apply configuration", "err", err)
 			failed = true
 		}
-		timingsLogger = timingsLogger.With((rl.name), time.Since(rstart))
+		timingsLogger = timingsLogger.With(rl.name, time.Since(rstart))
 	}
 	if failed {
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
@@ -1749,6 +1753,14 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 	return notReadyAppender{}
 }
 
+// AppenderV2 implements the Storage interface.
+func (s *readyStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	if x := s.get(); x != nil {
+		return x.AppenderV2(ctx)
+	}
+	return notReadyAppenderV2{}
+}
+
 type notReadyAppender struct{}
 
 // SetOptions does nothing in this appender implementation.
@@ -1781,6 +1793,15 @@ func (notReadyAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int
 func (notReadyAppender) Commit() error { return tsdb.ErrNotReady }
 
 func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
+
+type notReadyAppenderV2 struct{}
+
+func (notReadyAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AOptions) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+func (notReadyAppenderV2) Commit() error { return tsdb.ErrNotReady }
+
+func (notReadyAppenderV2) Rollback() error { return tsdb.ErrNotReady }
 
 // Close implements the Storage interface.
 func (s *readyStorage) Close() error {
@@ -1926,6 +1947,7 @@ type tsdbOptions struct {
 	UseUncachedIO                  bool
 	BlockCompactionExcludeFunc     tsdb.BlockExcludeFilterFunc
 	BlockReloadInterval            model.Duration
+	StaleSeriesCompactionThreshold float64
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1952,6 +1974,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
 		BlockReloadInterval:            time.Duration(opts.BlockReloadInterval),
 		FeatureRegistry:                features.DefaultRegistry,
+		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 	}
 }
 
