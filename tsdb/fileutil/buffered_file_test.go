@@ -29,7 +29,7 @@ func TestBufferedFile_BasicRead(t *testing.T) {
 	for i := range data {
 		data[i] = byte(i % 256)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -66,7 +66,7 @@ func TestBufferedFile_WithCache(t *testing.T) {
 	for i := range data {
 		data[i] = byte(i % 256)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -125,7 +125,7 @@ func TestBufferedFile_ReadAt(t *testing.T) {
 	path := filepath.Join(dir, "test.bin")
 
 	data := []byte("Hello, World! This is test data.")
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -153,7 +153,7 @@ func TestBufferedFile_Close(t *testing.T) {
 	path := filepath.Join(dir, "test.bin")
 
 	data := []byte("test data")
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -191,7 +191,7 @@ func TestBufferedFile_EdgeCases(t *testing.T) {
 	path := filepath.Join(dir, "test.bin")
 
 	data := []byte("short")
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -225,7 +225,7 @@ func TestBufferedFileReader(t *testing.T) {
 	path := filepath.Join(dir, "test.bin")
 
 	data := []byte("test data for buffered reader")
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -265,7 +265,7 @@ func TestBufferedFileReaderConfig(t *testing.T) {
 	path := filepath.Join(dir, "test.bin")
 
 	data := []byte("test data")
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 

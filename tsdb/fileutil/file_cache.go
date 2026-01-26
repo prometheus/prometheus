@@ -16,9 +16,9 @@ package fileutil
 import (
 	"container/list"
 	"sync"
-	"sync/atomic"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 )
 
 const (
@@ -82,8 +82,8 @@ type fileCacheMetrics struct {
 
 // FileCacheOptions configures the file cache.
 type FileCacheOptions struct {
-	MaxSize   int64                // Maximum cache size in bytes
-	BlockSize int                  // Size of each cached block
+	MaxSize   int64                 // Maximum cache size in bytes
+	BlockSize int                   // Size of each cached block
 	Reg       prometheus.Registerer // Prometheus registerer for metrics (optional)
 }
 
@@ -112,8 +112,9 @@ func NewFileCache(opts FileCacheOptions) *FileCache {
 	}
 
 	fc.pool = sync.Pool{
-		New: func() interface{} {
-			return make([]byte, fc.blockSize)
+		New: func() any {
+			buf := make([]byte, fc.blockSize)
+			return &buf
 		},
 	}
 
@@ -235,7 +236,7 @@ func (fc *FileCache) Get(fileID uint64, block int64) []byte {
 	key := cacheKey{fileID: fileID, block: block}
 
 	fc.mu.RLock()
-	entry, ok := fc.entries[key]
+	_, ok := fc.entries[key]
 	fc.mu.RUnlock()
 
 	if !ok {
@@ -246,7 +247,7 @@ func (fc *FileCache) Get(fileID uint64, block int64) []byte {
 	// Move to front (most recently used)
 	fc.mu.Lock()
 	// Re-check after acquiring write lock
-	entry, ok = fc.entries[key]
+	entry, ok := fc.entries[key]
 	if ok {
 		fc.lru.MoveToFront(entry.elem)
 	}
@@ -288,7 +289,8 @@ func (fc *FileCache) Put(fileID uint64, block int64, data []byte) {
 	}
 
 	// Allocate from pool
-	buf := fc.pool.Get().([]byte)
+	bufP := fc.pool.Get().(*[]byte)
+	buf := *bufP
 	copy(buf, data)
 
 	entry := &cacheEntry{
@@ -316,7 +318,7 @@ func (fc *FileCache) evictLocked() {
 	fc.evictions.Add(1)
 
 	// Return buffer to pool
-	fc.pool.Put(entry.data)
+	fc.pool.Put(&entry.data)
 }
 
 // InvalidateFile removes all cached blocks for a specific file.
@@ -338,7 +340,7 @@ func (fc *FileCache) InvalidateFile(fileID uint64) {
 		fc.lru.Remove(entry.elem)
 		delete(fc.entries, entry.key)
 		fc.currentSize -= int64(fc.blockSize)
-		fc.pool.Put(entry.data)
+		fc.pool.Put(&entry.data)
 	}
 }
 
@@ -348,7 +350,7 @@ func (fc *FileCache) Clear() {
 	defer fc.mu.Unlock()
 
 	for _, entry := range fc.entries {
-		fc.pool.Put(entry.data)
+		fc.pool.Put(&entry.data)
 	}
 
 	fc.entries = make(map[cacheKey]*cacheEntry)

@@ -143,10 +143,7 @@ func (bf *BufferedFile) readWithCache(offset int, buf []byte) {
 		if available <= 0 {
 			break
 		}
-		toCopy := remaining
-		if toCopy > available {
-			toCopy = available
-		}
+		toCopy := min(remaining, available)
 
 		copy(buf[bufOffset:bufOffset+toCopy], cached[offsetInBlock:offsetInBlock+toCopy])
 
@@ -203,10 +200,7 @@ func (bf *BufferedFile) ReadAt(p []byte, off int64) (n int, err error) {
 		bf.readWithCache(int(off), p)
 		// Determine actual bytes read
 		if off+int64(len(p)) > bf.size {
-			n = int(bf.size - off)
-			if n < 0 {
-				n = 0
-			}
+			n = max(int(bf.size-off), 0)
 			if n < len(p) {
 				return n, io.EOF
 			}

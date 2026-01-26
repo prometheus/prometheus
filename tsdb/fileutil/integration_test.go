@@ -30,7 +30,7 @@ func TestBufferedFileReaderCorrectness(t *testing.T) {
 	for i := range data {
 		data[i] = byte((i * 7) % 256)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,13 +83,13 @@ func TestBufferedReaderMemoryControl(t *testing.T) {
 	fileSize := DefaultBlockSize * 10 // 10 blocks per file
 	paths := make([]string, numFiles)
 
-	for i := 0; i < numFiles; i++ {
+	for i := range numFiles {
 		path := filepath.Join(dir, "test"+string(rune('0'+i))+".bin")
 		data := make([]byte, fileSize)
 		for j := range data {
 			data[j] = byte(i + j%256)
 		}
-		if err := os.WriteFile(path, data, 0644); err != nil {
+		if err := os.WriteFile(path, data, 0o644); err != nil {
 			t.Fatal(err)
 		}
 		paths[i] = path
@@ -139,7 +139,7 @@ func TestCacheInvalidationOnClose(t *testing.T) {
 	for i := range data {
 		data[i] = byte(i % 256)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 

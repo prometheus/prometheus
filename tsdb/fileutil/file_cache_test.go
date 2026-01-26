@@ -75,7 +75,7 @@ func TestFileCache_Eviction(t *testing.T) {
 	data := make([]byte, 1024)
 
 	// Add 3 blocks - should evict the first one
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		for j := range data {
 			data[j] = byte(i)
 		}
@@ -109,7 +109,7 @@ func TestFileCache_LRUOrder(t *testing.T) {
 	data := make([]byte, 1024)
 
 	// Add 3 blocks
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		cache.Put(fileID, int64(i), data)
 	}
 
@@ -192,7 +192,7 @@ func TestFileCache_Clear(t *testing.T) {
 	}
 }
 
-func TestFileCache_ConcurrentAccess(t *testing.T) {
+func TestFileCache_ConcurrentAccess(_ *testing.T) {
 	cache := NewFileCache(FileCacheOptions{
 		MaxSize:   1024 * 1024,
 		BlockSize: 1024,
@@ -206,7 +206,7 @@ func TestFileCache_ConcurrentAccess(t *testing.T) {
 
 	var wg sync.WaitGroup
 	// Concurrent writes
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(block int64) {
 			defer wg.Done()
@@ -215,7 +215,7 @@ func TestFileCache_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Concurrent reads
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(block int64) {
 			defer wg.Done()
@@ -236,7 +236,7 @@ func TestFileCache_SetMaxSize(t *testing.T) {
 	data := make([]byte, 1024)
 
 	// Fill cache with 4 blocks
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		cache.Put(fileID, int64(i), data)
 	}
 
