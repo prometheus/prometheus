@@ -86,23 +86,23 @@ func TestXorOptSTChunk_STHeader(t *testing.T) {
 	writeHeaderFirstSTKnown(b)
 	firstSTKnown, firstSTChangeOn := readSTHeader(b)
 	require.True(t, firstSTKnown)
-	require.Equal(t, uint16(0), firstSTChangeOn)
+	require.Equal(t, uint8(0), firstSTChangeOn)
 
 	b = make([]byte, 1)
 	firstSTKnown, firstSTChangeOn = readSTHeader(b)
 	require.False(t, firstSTKnown)
-	require.Equal(t, uint16(0), firstSTChangeOn)
+	require.Equal(t, uint8(0), firstSTChangeOn)
 
 	b = make([]byte, 1)
 	writeHeaderFirstSTChangeOn(b, 1)
 	firstSTKnown, firstSTChangeOn = readSTHeader(b)
 	require.False(t, firstSTKnown)
-	require.Equal(t, uint16(1), firstSTChangeOn)
+	require.Equal(t, uint8(1), firstSTChangeOn)
 
 	b = make([]byte, 1)
 	writeHeaderFirstSTKnown(b)
 	writeHeaderFirstSTChangeOn(b, 119)
 	firstSTKnown, firstSTChangeOn = readSTHeader(b)
 	require.True(t, firstSTKnown)
-	require.Equal(t, uint16(119), firstSTChangeOn)
+	require.Equal(t, uint8(119), firstSTChangeOn)
 }

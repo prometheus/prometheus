@@ -41,7 +41,7 @@ func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
 	b[0] |= uint8(firstSTChangeOn)
 }
 
-func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint16) {
+func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint8) {
 	if b[0] == 0x00 {
 		return false, 0
 	}
@@ -53,7 +53,7 @@ func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint16) {
 		firstSTKnown = true
 	}
 	mask = 0x7F
-	return firstSTKnown, uint16(b[0] & mask)
+	return firstSTKnown, b[0] & mask
 }
 
 // XorOptSTChunk holds encoded sample data:
@@ -127,7 +127,7 @@ func (c *XorOptSTChunk) Appender() (Appender, error) {
 
 		numTotal:        it.numTotal,
 		firstSTKnown:    it.firstSTKnown,
-		firstSTChangeOn: it.firstSTChangeOn,
+		firstSTChangeOn: uint16(it.firstSTChangeOn),
 	}
 	return a, nil
 }
@@ -175,31 +175,19 @@ func (*xorOptSTAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, in
 	panic("appended a float histogram sample to a float chunk")
 }
 
-const (
-	read0State uint8 = iota
-	read1State
-	readDoDMaybeSTState
-	readDoDNoSTState
-	readDoDState
-
-	eofState uint8 = 1<<8 - 1
-)
-
 type xorOptSTtIterator struct {
 	br       bstreamReader
 	numTotal uint16
 
 	firstSTKnown    bool
-	firstSTChangeOn uint16
+	firstSTChangeOn uint8
+	leading         uint8
+	trailing        uint8
 
-	state   uint8
 	numRead uint16
 
 	st, t int64
 	val   float64
-
-	leading  uint8
-	trailing uint8
 
 	stDelta int64
 	tDelta  uint64
@@ -211,7 +199,7 @@ func (it *xorOptSTtIterator) Seek(t int64) ValueType {
 		return ValNone
 	}
 
-	for t > it.t || it.state == read0State {
+	for t > it.t || it.numRead == 0 {
 		if it.Next() == ValNone {
 			return ValNone
 		}
@@ -257,10 +245,6 @@ func (it *xorOptSTtIterator) Reset(b []byte) {
 	it.stDelta = 0
 	it.tDelta = 0
 	it.err = nil
-	it.state = read0State
-	if it.numRead >= it.numTotal {
-		it.state = eofState
-	}
 }
 
 func (a *xorOptSTAppender) Append(st, t int64, v float64) {
@@ -452,17 +436,15 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 
 func (it *xorOptSTtIterator) retErr(err error) ValueType {
 	it.err = err
-	it.state = eofState
 	return ValNone
 }
 
 func (it *xorOptSTtIterator) Next() ValueType {
-	switch it.state {
-	case eofState:
+	if it.err != nil || it.numRead == it.numTotal {
 		return ValNone
-	case read0State:
-		it.state++
+	}
 
+	if it.numRead == 0 {
 		// Optional ST read.
 		if it.firstSTKnown {
 			st, err := binary.ReadVarint(&it.br)
@@ -471,39 +453,24 @@ func (it *xorOptSTtIterator) Next() ValueType {
 			}
 			it.st = st
 		}
-
-		// TS.
 		t, err := binary.ReadVarint(&it.br)
 		if err != nil {
 			return it.retErr(err)
 		}
-		// Value.
 		v, err := it.br.readBits(64)
 		if err != nil {
 			return it.retErr(err)
 		}
-
 		it.t = t
 		it.val = math.Float64frombits(v)
 
-		// State EOF check.
 		it.numRead++
-		if it.numRead >= it.numTotal {
-			it.state = eofState
-		}
 		return ValFloat
-	case read1State:
-		it.state++
-		switch it.firstSTChangeOn {
-		case 0:
-			// This means we have same (zero or non-zero) ST value for the rest of
-			// chunk. We can simply use ~classic XOR chunk iterations.
-			it.state = readDoDNoSTState
-		case 1:
-			// We got early ST change on the second sample, likely delta.
-			// Continue ST rich flow from the next iteration.
-			it.state = readDoDState
+	}
 
+	if it.numRead == 1 {
+		// Optional ST delta read.
+		if it.firstSTChangeOn == 1 {
 			stDelta, err := binary.ReadVarint(&it.br)
 			if err != nil {
 				return it.retErr(err)
@@ -511,7 +478,6 @@ func (it *xorOptSTtIterator) Next() ValueType {
 			it.stDelta = stDelta
 			it.st += it.stDelta
 		}
-		// TS.
 		tDelta, err := binary.ReadUvarint(&it.br)
 		if err != nil {
 			return it.retErr(err)
@@ -519,35 +485,69 @@ func (it *xorOptSTtIterator) Next() ValueType {
 		it.tDelta = tDelta
 		it.t += int64(it.tDelta)
 
-		// Value.
-		if err := xorRead(&it.br, &it.val, &it.leading, &it.trailing); err != nil {
-			return it.retErr(err)
-		}
-
-		// State EOF check.
-		it.numRead++
-		if it.numRead >= it.numTotal {
-			it.state = eofState
-		}
-		return ValFloat
-	case readDoDMaybeSTState:
-		if it.firstSTChangeOn == it.numRead {
-			// ST changes from this iteration, change state for future.
-			it.state = readDoDState
-			return it.dodNext()
-		}
-		return it.dodNoSTNext()
-	case readDoDState:
-		return it.dodNext()
-	case readDoDNoSTState:
-		return it.dodNoSTNext()
-	default:
-		panic("xorOptSTtIterator: broken machine state")
+		return it.readValue()
 	}
-}
 
-func (it *xorOptSTtIterator) dodNext() ValueType {
-	// Inlined readClassicVarbitInt(&it.br)
+	if it.firstSTChangeOn > 0 && it.numRead >= uint16(it.firstSTChangeOn) {
+		// Inlined readClassicVarbitInt(&it.br)
+		var d byte
+		// read delta-of-delta
+		for range 4 {
+			d <<= 1
+			bit, err := it.br.readBitFast()
+			if err != nil {
+				bit, err = it.br.readBit()
+				if err != nil {
+					return it.retErr(err)
+				}
+			}
+			if bit == zero {
+				break
+			}
+			d |= 1
+		}
+		var sz uint8
+		var sdod int64
+		switch d {
+		case 0b0:
+			// dod == 0
+		case 0b10:
+			sz = 14
+		case 0b110:
+			sz = 17
+		case 0b1110:
+			sz = 20
+		case 0b1111:
+			// Do not use fast because it's very unlikely it will succeed.
+			bits, err := it.br.readBits(64)
+			if err != nil {
+				return it.retErr(err)
+			}
+
+			sdod = int64(bits)
+		}
+
+		if sz != 0 {
+			bits, err := it.br.readBitsFast(sz)
+			if err != nil {
+				bits, err = it.br.readBits(sz)
+				if err != nil {
+					return it.retErr(err)
+				}
+			}
+
+			// Account for negative numbers, which come back as high unsigned numbers.
+			// See docs/bstream.md.
+			if bits > (1 << (sz - 1)) {
+				bits -= 1 << sz
+			}
+			sdod = int64(bits)
+		}
+
+		it.stDelta += sdod
+		it.st += it.stDelta
+	}
+
 	var d byte
 	// read delta-of-delta
 	for range 4 {
@@ -555,70 +555,9 @@ func (it *xorOptSTtIterator) dodNext() ValueType {
 		bit, err := it.br.readBitFast()
 		if err != nil {
 			bit, err = it.br.readBit()
-			if err != nil {
-				return it.retErr(err)
-			}
 		}
-		if bit == zero {
-			break
-		}
-		d |= 1
-	}
-	var sz uint8
-	var sdod int64
-	switch d {
-	case 0b0:
-		// dod == 0
-	case 0b10:
-		sz = 14
-	case 0b110:
-		sz = 17
-	case 0b1110:
-		sz = 20
-	case 0b1111:
-		// Do not use fast because it's very unlikely it will succeed.
-		bits, err := it.br.readBits(64)
 		if err != nil {
 			return it.retErr(err)
-		}
-
-		sdod = int64(bits)
-	}
-
-	if sz != 0 {
-		bits, err := it.br.readBitsFast(sz)
-		if err != nil {
-			bits, err = it.br.readBits(sz)
-			if err != nil {
-				return it.retErr(err)
-			}
-		}
-
-		// Account for negative numbers, which come back as high unsigned numbers.
-		// See docs/bstream.md.
-		if bits > (1 << (sz - 1)) {
-			bits -= 1 << sz
-		}
-		sdod = int64(bits)
-	}
-
-	it.stDelta += sdod
-	it.st += it.stDelta
-	return it.dodNoSTNext()
-}
-
-func (it *xorOptSTtIterator) dodNoSTNext() ValueType {
-	// Inlined readClassicVarbitInt(&it.br)
-	var d byte
-	// read delta-of-delta
-	for range 4 {
-		d <<= 1
-		bit, err := it.br.readBitFast()
-		if err != nil {
-			bit, err = it.br.readBit()
-			if err != nil {
-				return it.retErr(err)
-			}
 		}
 		if bit == zero {
 			break
@@ -650,9 +589,9 @@ func (it *xorOptSTtIterator) dodNoSTNext() ValueType {
 		bits, err := it.br.readBitsFast(sz)
 		if err != nil {
 			bits, err = it.br.readBits(sz)
-			if err != nil {
-				return it.retErr(err)
-			}
+		}
+		if err != nil {
+			return it.retErr(err)
 		}
 
 		// Account for negative numbers, which come back as high unsigned numbers.
@@ -665,15 +604,15 @@ func (it *xorOptSTtIterator) dodNoSTNext() ValueType {
 
 	it.tDelta = uint64(int64(it.tDelta) + dod)
 	it.t += int64(it.tDelta)
-	// Value.
-	if err := xorRead(&it.br, &it.val, &it.leading, &it.trailing); err != nil {
+
+	return it.readValue()
+}
+
+func (it *xorOptSTtIterator) readValue() ValueType {
+	err := xorRead(&it.br, &it.val, &it.leading, &it.trailing)
+	if err != nil {
 		return it.retErr(err)
 	}
-
-	// State EOF check.
 	it.numRead++
-	if it.numRead >= it.numTotal {
-		it.state = eofState
-	}
 	return ValFloat
 }

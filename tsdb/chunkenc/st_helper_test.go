@@ -70,7 +70,7 @@ func testChunkSTHandling(t *testing.T, vt ValueType, chunkFactory func() Chunk) 
 		}
 		it := chunk.Iterator(nil)
 		for i, s := range samples {
-			require.Equal(t, vt, it.Next())
+			require.Equal(t, vt, it.Next(), "%d: value type mismatch", i)
 			st, ts, f := get(it, vt)
 			require.Equal(t, s.t, ts, "%d: timestamp mismatch", i)
 			require.Equal(t, s.st, st, "%d: start time mismatch", i)
