@@ -25,6 +25,88 @@ import (
 
 const walSegmentSize = 32 << 10 // must be aligned to the page size
 
+func TestCheckpointCompat(t *testing.T) {
+	// Prepare in advance samples and labels that will be written into appender.
+	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
+		labelPrefix:   t.Name(),
+		numDatapoints: 3,
+		numHistograms: 3,
+		numSeries:     3,
+	})
+
+	// wlog.Open expects to have a "wal" subdirectory
+	stateRoot := filepath.Join(t.TempDir(), "state")
+	walDir := filepath.Join(stateRoot, "wal")
+	require.NoError(t, os.MkdirAll(walDir, os.ModePerm))
+
+	openDBAndDo := func(newCheckpoint bool, fn func(db *DB)) {
+		l := promslog.NewNopLogger()
+		rs := remote.NewStorage(
+			promslog.NewNopLogger(), nil,
+			startTime, stateRoot,
+			30*time.Second, nil, false,
+		)
+		defer rs.Close()
+
+		opts := DefaultOptions()
+		opts.OutOfOrderTimeWindow = math.MaxInt64 // Fixes "out of order sample" in benchmarks
+		opts.SkipCurrentCheckpointReRead = newCheckpoint
+		opts.WALSegmentSize = walSegmentSize // Set minimum size to get more segments for checkpoint.
+
+		db, err := Open(l, nil, rs, stateRoot, opts)
+		require.NoError(t, err, "Open")
+		fn(db)
+	}
+
+	// Data to compare
+	var (
+		beforeSeries *stripeSeries
+		afterSeries  *stripeSeries
+	)
+
+	// Fill wlog with data and make a checkpoint using the original wlog.Checkpoint().
+	openDBAndDo(false, func(db *DB) {
+		app := db.Appender(t.Context())
+		lbls := samples.datapointLabels
+		for i, l := range lbls {
+			lset := labels.New(l...)
+			for j, sample := range samples.datapointSamples {
+				st := sample[0].T()
+				sf := sample[0].F()
+
+				// replay doesn't include exemplars, thus don't include them to remove them from assertion.
+				_, err := app.Append(0, lset, st, sf)
+				require.NoErrorf(t, err, "L: %v; S: %v", i, j)
+			}
+		}
+
+		for i, l := range samples.histogramLabels {
+			lset := labels.New(l...)
+			histograms := samples.histogramSamples[i]
+			for j, sample := range histograms {
+				_, err := app.AppendHistogram(0, lset, int64(j), sample, nil)
+				require.NoError(t, err)
+			}
+		}
+
+		require.NoError(t, app.Commit())
+
+		// Trigger checkpoint call.
+		err := db.truncate(-1)
+		require.NoError(t, err, "db.truncate")
+		require.NoError(t, db.Close())
+		beforeSeries = db.series
+	})
+
+	// Restore the database from the checkpoint.
+	openDBAndDo(true, func(db *DB) {
+		defer db.Close()
+		afterSeries = db.series
+	})
+
+	require.Equal(t, beforeSeries, afterSeries)
+}
+
 func BenchmarkCheckpoint(b *testing.B) {
 	// Prepare in advance samples and labels that will be written into appender.
 	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
