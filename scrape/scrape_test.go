@@ -1561,55 +1561,119 @@ func TestPromTextToProto(t *testing.T) {
 		| tee ${bench}.txt
 */
 func BenchmarkScrapeLoopAppend(b *testing.B) {
-	for _, appV2 := range []bool{false, true} {
-		for _, appendMetadataToWAL := range []bool{false, true} {
-			for _, data := range []struct {
-				name         string
-				parsableText []byte
-			}{
-				{name: "1Fam1000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
-				{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~185.7 KB, ~70.6 KB in proto.
-			} {
-				b.Run(fmt.Sprintf("appV2=%v/appendMetadataToWAL=%v/data=%v", appV2, appendMetadataToWAL, data.name), func(b *testing.B) {
-					metricsProto := promTextToProto(b, data.parsableText)
+	for _, withStorage := range []bool{false, true} {
+		for _, appV2 := range []bool{false, true} {
+			for _, appendMetadataToWAL := range []bool{false, true} {
+				for _, data := range []struct {
+					name         string
+					parsableText []byte
+				}{
+					{name: "1Fam1000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
+					{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~185.7 KB, ~70.6 KB in proto.
+				} {
+					b.Run(fmt.Sprintf("withStorage=%v/appV2=%v/appendMetadataToWAL=%v/data=%v", withStorage, appV2, appendMetadataToWAL, data.name), func(b *testing.B) {
+						metricsProto := promTextToProto(b, data.parsableText)
 
-					for _, bcase := range []struct {
-						name        string
-						contentType string
-						parsable    []byte
-					}{
-						{name: "PromText", contentType: "text/plain", parsable: data.parsableText},
-						{name: "OMText", contentType: "application/openmetrics-text", parsable: data.parsableText},
-						{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
-					} {
-						b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
-							benchScrapeLoopAppend(b, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false)
-						})
-					}
-				})
+						for _, bcase := range []struct {
+							name        string
+							contentType string
+							parsable    []byte
+						}{
+							{name: "PromText", contentType: "text/plain", parsable: data.parsableText},
+							{name: "OMText", contentType: "application/openmetrics-text", parsable: data.parsableText},
+							{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
+						} {
+							b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
+								benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false)
+							})
+						}
+					})
+				}
 			}
 		}
 	}
 }
 
+// noopCompactAppendable is a bare minimum appender mock used to isolate scrape performance.
+type noopCompactAppendable struct{}
+
+func (n *noopCompactAppendable) handleRef(ref storage.SeriesRef, l labels.Labels) storage.SeriesRef {
+	if ref != 0 {
+		return ref
+	}
+	return storage.SeriesRef(l.Hash())
+}
+
+func (*noopCompactAppendable) Commit() error { return nil }
+
+func (*noopCompactAppendable) Rollback() error { return nil }
+
+type noopAppenderV1 struct {
+	*noopCompactAppendable
+}
+
+func (n *noopCompactAppendable) Appender(context.Context) storage.Appender {
+	return &noopAppenderV1{n}
+}
+
+func (n *noopAppenderV1) Append(ref storage.SeriesRef, l labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
+	return n.handleRef(ref, l), nil
+}
+
+func (*noopAppenderV1) SetOptions(*storage.AppendOptions) {}
+
+func (n *noopAppenderV1) AppendExemplar(ref storage.SeriesRef, l labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
+	return n.handleRef(ref, l), nil
+}
+
+func (n *noopAppenderV1) AppendHistogram(ref storage.SeriesRef, l labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return n.handleRef(ref, l), nil
+}
+
+func (n *noopAppenderV1) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return n.handleRef(ref, l), nil
+}
+
+func (n *noopAppenderV1) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+	return n.handleRef(ref, l), nil
+}
+
+func (n *noopAppenderV1) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return n.handleRef(ref, l), nil
+}
+
+type noopAppenderV2 struct {
+	*noopCompactAppendable
+}
+
+func (n *noopAppenderV2) Append(ref storage.SeriesRef, l labels.Labels, _, _ int64, _ float64, _ *histogram.Histogram, _ *histogram.FloatHistogram, _ storage.AOptions) (storage.SeriesRef, error) {
+	return n.handleRef(ref, l), nil
+}
+
+func (n *noopCompactAppendable) AppenderV2(context.Context) storage.AppenderV2 {
+	return &noopAppenderV2{n}
+}
+
 func benchScrapeLoopAppend(
 	b *testing.B,
+	withStorage bool,
 	appV2 bool,
 	parsable []byte,
 	contentType string,
 	appendMetadataToWAL bool,
 	enableExemplarStorage bool,
 ) {
-	// Need a full storage for correct Add/AddFast semantics.
-	s := teststorage.New(b, func(opt *tsdb.Options) {
-		opt.EnableMetadataWALRecords = appendMetadataToWAL
-		if enableExemplarStorage {
-			opt.EnableExemplarStorage = true
-			opt.MaxExemplars = 1e5
-		}
-	})
-
-	sl, _ := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
+	var a compatAppendable = &noopCompactAppendable{}
+	if withStorage {
+		a = teststorage.New(b, func(opt *tsdb.Options) {
+			opt.EnableMetadataWALRecords = appendMetadataToWAL
+			if enableExemplarStorage {
+				opt.EnableExemplarStorage = true
+				opt.MaxExemplars = 1e5
+			}
+		})
+	}
+	sl, _ := newTestScrapeLoop(b, withAppendable(a, appV2), func(sl *scrapeLoop) {
 		sl.appendMetadataToWAL = appendMetadataToWAL
 	})
 	app := sl.appender()
@@ -1647,7 +1711,7 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
 		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
 			parsable := makeTestHistogramsWithExemplars(100) // ~255.8 KB in OM text.
-			benchScrapeLoopAppend(b, appV2, parsable, "application/openmetrics-text", false, true)
+			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true)
 		})
 	}
 }
