@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -25,7 +26,7 @@ import (
 
 const walSegmentSize = 32 << 10 // must be aligned to the page size
 
-func TestCheckpointCompat(t *testing.T) {
+func TestCheckpointReplay(t *testing.T) {
 	// Prepare in advance samples and labels that will be written into appender.
 	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
 		labelPrefix:   t.Name(),
@@ -34,39 +35,31 @@ func TestCheckpointCompat(t *testing.T) {
 		numSeries:     3,
 	})
 
-	// wlog.Open expects to have a "wal" subdirectory
-	stateRoot := filepath.Join(t.TempDir(), "state")
-	walDir := filepath.Join(stateRoot, "wal")
-	require.NoError(t, os.MkdirAll(walDir, os.ModePerm))
+	type openDBParams struct {
+		isNewCheckpoint bool
+		storageDir      string
+	}
 
-	openDBAndDo := func(newCheckpoint bool, fn func(db *DB)) {
+	openDBAndDo := func(params openDBParams, fn func(db *DB)) {
 		l := promslog.NewNopLogger()
 		rs := remote.NewStorage(
 			promslog.NewNopLogger(), nil,
-			startTime, stateRoot,
+			startTime, params.storageDir,
 			30*time.Second, nil, false,
 		)
 		defer rs.Close()
 
 		opts := DefaultOptions()
 		opts.OutOfOrderTimeWindow = math.MaxInt64 // Fixes "out of order sample" in benchmarks
-		opts.SkipCurrentCheckpointReRead = newCheckpoint
+		opts.SkipCurrentCheckpointReRead = params.isNewCheckpoint
 		opts.WALSegmentSize = walSegmentSize // Set minimum size to get more segments for checkpoint.
 
-		db, err := Open(l, nil, rs, stateRoot, opts)
+		db, err := Open(l, nil, rs, params.storageDir, opts)
 		require.NoError(t, err, "Open")
 		fn(db)
 	}
 
-	// Data to compare
-	var (
-		beforeSeries *stripeSeries
-		afterSeries  *stripeSeries
-	)
-
-	// Fill wlog with data and make a checkpoint using the original wlog.Checkpoint().
-	openDBAndDo(false, func(db *DB) {
-		app := db.Appender(t.Context())
+	appendData := func(app storage.Appender) {
 		lbls := samples.datapointLabels
 		for i, l := range lbls {
 			lset := labels.New(l...)
@@ -90,21 +83,79 @@ func TestCheckpointCompat(t *testing.T) {
 		}
 
 		require.NoError(t, app.Commit())
+	}
+
+	// Data to compare
+	var (
+		oldBeforeSeries *stripeSeries
+		oldAfterSeries  *stripeSeries
+	)
+
+	// wlog.Open expects to have a "wal" subdirectory
+	oldStateRoot := filepath.Join(t.TempDir(), "state-old")
+	oldWalDir := filepath.Join(oldStateRoot, "wal")
+	require.NoError(t, os.MkdirAll(oldWalDir, os.ModePerm))
+
+	// wlog.Checkpoint:
+	// Fill wlog with data and make a checkpoint using the original wlog.Checkpoint().
+	oldParams := openDBParams{
+		isNewCheckpoint: false,
+		storageDir:      oldStateRoot,
+	}
+	openDBAndDo(oldParams, func(db *DB) {
+		app := db.Appender(t.Context())
+		appendData(app)
 
 		// Trigger checkpoint call.
 		err := db.truncate(-1)
 		require.NoError(t, err, "db.truncate")
 		require.NoError(t, db.Close())
-		beforeSeries = db.series
+		oldBeforeSeries = db.series
 	})
 
 	// Restore the database from the checkpoint.
-	openDBAndDo(true, func(db *DB) {
+	oldParams.isNewCheckpoint = true
+	openDBAndDo(oldParams, func(db *DB) {
 		defer db.Close()
-		afterSeries = db.series
+		oldAfterSeries = db.series
 	})
 
-	require.Equal(t, beforeSeries, afterSeries)
+	require.Equal(t, oldBeforeSeries, oldAfterSeries)
+
+	// New checkpoint:
+	var (
+		newBeforeSeries *stripeSeries
+		newAfterSeries  *stripeSeries
+	)
+
+	newStateRoot := filepath.Join(t.TempDir(), "state-new")
+	newWalDir := filepath.Join(newStateRoot, "wal")
+	require.NoError(t, os.MkdirAll(newWalDir, os.ModePerm))
+
+	newParams := openDBParams{
+		isNewCheckpoint: true,
+		storageDir:      newStateRoot,
+	}
+	// Fill wlog with data and make a checkpoint using the original wlog.Checkpoint().
+	openDBAndDo(newParams, func(db *DB) {
+		app := db.Appender(t.Context())
+		appendData(app)
+
+		// Trigger checkpoint call.
+		err := db.truncate(-1)
+		require.NoError(t, err, "db.truncate")
+		require.NoError(t, db.Close())
+		newBeforeSeries = db.series
+	})
+
+	// Restore the database from the checkpoint.
+	openDBAndDo(newParams, func(db *DB) {
+		defer db.Close()
+		newAfterSeries = db.series
+	})
+
+	require.Equal(t, newBeforeSeries, newAfterSeries, "state doesn't match after replay")
+	require.Equal(t, oldAfterSeries, newAfterSeries, "old vs new checkpoint post-replay state doesn't match")
 }
 
 func BenchmarkCheckpoint(b *testing.B) {
