@@ -34,8 +34,9 @@ type sampleCase struct {
 }
 
 type fmtCase struct {
-	name       string
-	newChunkFn func() Chunk
+	name          string
+	newChunkFn    func() Chunk
+	stUnsupported bool
 }
 
 func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampleCase)) {
@@ -315,7 +316,16 @@ func BenchmarkIterator(b *testing.B) {
 		if err := it.Err(); err != nil && !errors.Is(err, io.EOF) {
 			require.NoError(b, err)
 		}
-		if diff := cmp.Diff(s.samples, got, cmp.AllowUnexported(triple{}), cmp.Comparer(floatEquals)); diff != "" {
+		expectedSamples := s.samples
+		if f.stUnsupported {
+			// If the format does not support ST, zero them out for comparison.
+			expectedSamples = make([]triple, len(s.samples))
+			copy(expectedSamples, s.samples)
+			for i := range s.samples {
+				expectedSamples[i].st = 0
+			}
+		}
+		if diff := cmp.Diff(expectedSamples, got, cmp.AllowUnexported(triple{}), cmp.Comparer(floatEquals)); diff != "" {
 			b.Fatalf("mismatch (-want +got):\n%s", diff)
 		}
 
