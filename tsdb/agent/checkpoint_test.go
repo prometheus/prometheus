@@ -21,20 +21,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-
 	"github.com/prometheus/common/promslog"
-
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/stretchr/testify/require"
 )
 
 const walSegmentSize = 32 << 10 // must be aligned to the page size
@@ -391,64 +388,4 @@ func createCheckpointFixtures(t testing.TB, p checkpointFixtureParams) {
 		dt += p.dtDelta
 	}
 	require.NoError(t, w.Close(), "WAL.Close")
-}
-
-func makeHistogram(i int) *histogram.Histogram {
-	return &histogram.Histogram{
-		Count:         5 + uint64(i*4),
-		ZeroCount:     2 + uint64(i),
-		ZeroThreshold: 0.001,
-		Sum:           18.4 * float64(i+1),
-		Schema:        1,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 2},
-			{Offset: 1, Length: 2},
-		},
-		PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
-	}
-}
-
-func makeCustomBucketHistogram(i int) *histogram.Histogram {
-	return &histogram.Histogram{
-		Count:         5 + uint64(i*4),
-		ZeroCount:     2 + uint64(i),
-		ZeroThreshold: 0.001,
-		Sum:           18.4 * float64(i+1),
-		Schema:        -53,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 2},
-			{Offset: 1, Length: 2},
-		},
-		CustomValues: []float64{0, 1, 2, 3, 4},
-	}
-}
-
-func makeFloatHistogram(i int) *histogram.FloatHistogram {
-	return &histogram.FloatHistogram{
-		Count:         5 + float64(i*4),
-		ZeroCount:     2 + float64(i),
-		ZeroThreshold: 0.001,
-		Sum:           18.4 * float64(i+1),
-		Schema:        1,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 2},
-			{Offset: 1, Length: 2},
-		},
-		PositiveBuckets: []float64{float64(i + 1), 1, -1, 0},
-	}
-}
-
-func makeCustomBucketFloatHistogram(i int) *histogram.FloatHistogram {
-	return &histogram.FloatHistogram{
-		Count:         5 + float64(i*4),
-		ZeroCount:     2 + float64(i),
-		ZeroThreshold: 0.001,
-		Sum:           18.4 * float64(i+1),
-		Schema:        -53,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 2},
-			{Offset: 1, Length: 2},
-		},
-		CustomValues: []float64{0, 1, 2, 3, 4},
-	}
 }

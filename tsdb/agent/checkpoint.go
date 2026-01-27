@@ -181,7 +181,7 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 	}
 
 	if err := os.MkdirAll(cpTmpDir, os.ModePerm); err != nil {
-		return fmt.Errorf("create checkpoint dir: %q", err)
+		return fmt.Errorf("create checkpoint dir: %w", err)
 	}
 
 	cp, err := wlog.New(logger, nil, cpTmpDir, w.CompressionType())
