@@ -941,8 +941,9 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 // Query parameters:
 //   - metric_match: Matcher for the info metric name (default: "target_info").
 //     Supports =, =~, !=, !~ operators (e.g., "target_info", "~.*_info", "!=build_info").
-//   - match[]: Optional series selectors to filter info metrics by base metrics' identifying labels.
-//     If provided, only info metrics with matching job/instance values are returned.
+//   - expr: Optional PromQL expression. If provided, the expression is evaluated and
+//     identifying labels (job, instance) are extracted from the result to filter info metrics.
+//     Note that some use cases require for this to be optional, as they want to e.g. get all labels off of target_info.
 //   - start/end: Time range for the query (default: last 12 hours)
 //   - limit: Maximum number of values per label to return
 func (api *API) infoLabels(r *http.Request) (result apiFuncResult) {
@@ -979,12 +980,40 @@ func (api *API) infoLabels(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "end")
 	}
 
-	// Parse match[] for filtering by base metrics
-	var baseMetricMatchers [][]*labels.Matcher
-	if len(r.Form["match[]"]) > 0 {
-		baseMetricMatchers, err = parseMatchersParam(r.Form["match[]"])
+	// Parse expr parameter - if provided, evaluate as PromQL and extract identifying labels
+	var identifyingLabelValues map[string]map[string]struct{}
+	var exprWarnings annotations.Annotations
+	if exprParam := r.FormValue("expr"); exprParam != "" {
+		opts, err := extractQueryOpts(r)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+		qry, err := api.QueryEngine.NewInstantQuery(ctx, api.Queryable, opts, exprParam, end)
+		if err != nil {
+			return invalidParamError(err, "expr")
+		}
+		defer qry.Close()
+
+		res := qry.Exec(ctx)
+		if res.Err != nil {
+			return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, nil}
+		}
+		exprWarnings = res.Warnings
+
+		// Only Vector and Matrix results have labels to extract
+		switch res.Value.Type() {
+		case parser.ValueTypeVector, parser.ValueTypeMatrix:
+			// OK - these have labels
+		default:
+			return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("expr must return series (vector or matrix), got %s", res.Value.Type())}, exprWarnings, nil}
+		}
+
+		// Extract identifying labels from the result
+		identifyingLabelValues = extractIdentifyingLabels(res.Value, extractor.IdentifyingLabels())
+
+		// If no identifying labels were found, return empty result early
+		if len(identifyingLabelValues) == 0 {
+			return apiFuncResult{map[string][]string{}, nil, exprWarnings, nil}
 		}
 	}
 
@@ -1008,7 +1037,8 @@ func (api *API) infoLabels(r *http.Request) (result apiFuncResult) {
 		Func:  "info_labels",
 	}
 
-	dataLabels, warnings, err := extractor.ExtractDataLabels(ctx, q, infoMetricMatcher, baseMetricMatchers, hints)
+	dataLabels, warnings, err := extractor.ExtractDataLabels(ctx, q, infoMetricMatcher, identifyingLabelValues, hints)
+	warnings.Merge(exprWarnings)
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), warnings, closer}
 	}
@@ -1024,6 +1054,39 @@ func (api *API) infoLabels(r *http.Request) (result apiFuncResult) {
 	}
 
 	return apiFuncResult{dataLabels, nil, warnings, closer}
+}
+
+// extractIdentifyingLabels extracts identifying label values from a PromQL query result.
+// It iterates through Vector or Matrix results and collects all unique values for the
+// specified identifying labels (typically "job" and "instance").
+func extractIdentifyingLabels(val parser.Value, identifyingLabels []string) map[string]map[string]struct{} {
+	result := make(map[string]map[string]struct{})
+
+	switch v := val.(type) {
+	case promql.Vector:
+		for _, sample := range v {
+			for _, idLbl := range identifyingLabels {
+				if val := sample.Metric.Get(idLbl); val != "" {
+					if result[idLbl] == nil {
+						result[idLbl] = make(map[string]struct{})
+					}
+					result[idLbl][val] = struct{}{}
+				}
+			}
+		}
+	case promql.Matrix:
+		for _, series := range v {
+			for _, idLbl := range identifyingLabels {
+				if val := series.Metric.Get(idLbl); val != "" {
+					if result[idLbl] == nil {
+						result[idLbl] = make(map[string]struct{})
+					}
+					result[idLbl][val] = struct{}{}
+				}
+			}
+		}
+	}
+	return result
 }
 
 var (
