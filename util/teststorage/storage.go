@@ -19,12 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 )
 
@@ -57,6 +53,10 @@ func NewWithError(o ...Option) (*TestStorage, error) {
 	opts.RetentionDuration = 0
 	opts.OutOfOrderTimeWindow = 0
 
+	// Enable exemplars storage by default.
+	opts.EnableExemplarStorage = true
+	opts.MaxExemplars = 1e5
+
 	for _, opt := range o {
 		opt(opts)
 	}
@@ -70,20 +70,12 @@ func NewWithError(o ...Option) (*TestStorage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening test storage: %w", err)
 	}
-	reg := prometheus.NewRegistry()
-	eMetrics := tsdb.NewExemplarMetrics(reg)
-
-	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics, opts.OutOfOrderTimeWindow)
-	if err != nil {
-		return nil, fmt.Errorf("opening test exemplar storage: %w", err)
-	}
-	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}, nil
+	return &TestStorage{DB: db, dir: dir}, nil
 }
 
 type TestStorage struct {
 	*tsdb.DB
-	exemplarStorage tsdb.ExemplarStorage
-	dir             string
+	dir string
 }
 
 func (s TestStorage) Close() error {
@@ -91,16 +83,4 @@ func (s TestStorage) Close() error {
 		return err
 	}
 	return os.RemoveAll(s.dir)
-}
-
-func (s TestStorage) ExemplarAppender() storage.ExemplarAppender {
-	return s
-}
-
-func (s TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
-	return s.exemplarStorage
-}
-
-func (s TestStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	return ref, s.exemplarStorage.AddExemplar(l, e)
 }
