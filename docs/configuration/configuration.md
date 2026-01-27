@@ -3499,7 +3499,7 @@ with this feature.
 # Configures the trigger point for compacting the stale series from the memory into persistent blocks
 # and remove those stale series from the memory.
 #
-# The threshold is a number between 0.0-1.0 and represents the ratio of stale series in the memory
+# The threshold is a number between 0.0 and 1.0. It represents the ratio of stale series in the memory
 # to the total series in the memory. The stale series compaction is triggered when this ratio crosses
 # the configured threshold. It may not trigger the stale series compaction if the usual head compaction
 # is about to happen soon.
