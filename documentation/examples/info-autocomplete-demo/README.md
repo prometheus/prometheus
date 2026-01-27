@@ -55,11 +55,11 @@ Test the new `/api/v1/info_labels` endpoint:
 # Get all data labels from target_info
 curl 'http://localhost:9090/api/v1/info_labels'
 
-# Filter by base metrics matching job="api-gateway"
-curl 'http://localhost:9090/api/v1/info_labels?match[]={job="api-gateway"}'
+# Filter by expression results
+curl 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{job="api-gateway"}'
 
 # Use a different info metric
-curl 'http://localhost:9090/api/v1/info_labels?metric=build_info'
+curl 'http://localhost:9090/api/v1/info_labels?metric_match=build_info'
 ```
 
 ## Test Data
