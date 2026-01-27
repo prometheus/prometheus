@@ -809,9 +809,9 @@ func (*Encoder) samplesV1(samples []RefSample, b []byte) []byte {
 const (
 	// Start timestamp marker values for indicating trivial cases.
 
-	noST       byte = iota // Sample has no start timestamp.
-	sameST                 // Sample timestamp exists and is the same as the start timestamp of the previous series.
-	explicitST             // Explicit start timestamp value, delta to first timestamp.
+	noST       byte = iota // Sample has no start time.
+	sameST                 // Sample timestamp exists and is the same as the start time of the previous series.
+	explicitST             // Explicit start timestamp value, delta to first start time.
 )
 
 // samplesV2 appends the encoded samples to b and returns the resulting slice
