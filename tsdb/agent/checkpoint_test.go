@@ -26,14 +26,8 @@ import (
 
 const walSegmentSize = 32 << 10 // must be aligned to the page size
 
-func TestCheckpointReplay(t *testing.T) {
-	// Prepare in advance samples and labels that will be written into appender.
-	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
-		labelPrefix:   t.Name(),
-		numDatapoints: 3,
-		numHistograms: 3,
-		numSeries:     3,
-	})
+func TestCheckpointReplayCompatibility(t *testing.T) {
+	// Test to ensure that the checkpoint replay is compatible with the original wlog.Checkpoint.
 
 	type openDBParams struct {
 		isNewCheckpoint bool
@@ -58,6 +52,14 @@ func TestCheckpointReplay(t *testing.T) {
 		require.NoError(t, err, "Open")
 		fn(db)
 	}
+
+	// Prepare samples and labels that will be written into appender.
+	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
+		labelPrefix:   t.Name(),
+		numDatapoints: 3,
+		numHistograms: 3,
+		numSeries:     3,
+	})
 
 	appendData := func(app storage.Appender) {
 		lbls := samples.datapointLabels
@@ -85,7 +87,7 @@ func TestCheckpointReplay(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
-	// Data to compare
+	// Old wlog.Checkpoint:
 	var (
 		oldBeforeSeries *stripeSeries
 		oldAfterSeries  *stripeSeries
@@ -96,12 +98,11 @@ func TestCheckpointReplay(t *testing.T) {
 	oldWalDir := filepath.Join(oldStateRoot, "wal")
 	require.NoError(t, os.MkdirAll(oldWalDir, os.ModePerm))
 
-	// wlog.Checkpoint:
-	// Fill wlog with data and make a checkpoint using the original wlog.Checkpoint().
 	oldParams := openDBParams{
 		isNewCheckpoint: false,
 		storageDir:      oldStateRoot,
 	}
+
 	openDBAndDo(oldParams, func(db *DB) {
 		app := db.Appender(t.Context())
 		appendData(app)
@@ -120,9 +121,9 @@ func TestCheckpointReplay(t *testing.T) {
 		oldAfterSeries = db.series
 	})
 
-	require.Equal(t, oldBeforeSeries, oldAfterSeries)
+	require.Equal(t, oldBeforeSeries, oldAfterSeries, "wlog.Checkpoint: saved and replayed data don't match")
 
-	// New checkpoint:
+	// New agent.Checkpoint:
 	var (
 		newBeforeSeries *stripeSeries
 		newAfterSeries  *stripeSeries
@@ -136,26 +137,24 @@ func TestCheckpointReplay(t *testing.T) {
 		isNewCheckpoint: true,
 		storageDir:      newStateRoot,
 	}
-	// Fill wlog with data and make a checkpoint using the original wlog.Checkpoint().
+
 	openDBAndDo(newParams, func(db *DB) {
 		app := db.Appender(t.Context())
 		appendData(app)
 
-		// Trigger checkpoint call.
 		err := db.truncate(-1)
 		require.NoError(t, err, "db.truncate")
 		require.NoError(t, db.Close())
 		newBeforeSeries = db.series
 	})
 
-	// Restore the database from the checkpoint.
 	openDBAndDo(newParams, func(db *DB) {
 		defer db.Close()
 		newAfterSeries = db.series
 	})
 
-	require.Equal(t, newBeforeSeries, newAfterSeries, "state doesn't match after replay")
-	require.Equal(t, oldAfterSeries, newAfterSeries, "old vs new checkpoint post-replay state doesn't match")
+	require.Equal(t, newBeforeSeries, newAfterSeries, "agent.Checkpoint: saved and replayed data don't match")
+	require.Equal(t, oldAfterSeries, newAfterSeries, "agent.Checkpoint vs wlog.Checkpoint post-replay state doesn't match")
 }
 
 func BenchmarkCheckpoint(b *testing.B) {
