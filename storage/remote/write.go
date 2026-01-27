@@ -145,8 +145,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	externalLabelsUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
 
 	newQueues := make(map[string]*QueueManager)
-	newHashes := []string{}
-	reusedHashes := make(map[string]bool)
+	newHashes := map[string]struct{}{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
 		hash, err := toHash(rwConf)
 		if err != nil {
@@ -187,8 +186,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			// Update the client in case any secret configuration has changed.
 			queue.SetClient(c)
 			newQueues[hash] = queue
-			// The queue for this hash is reused.
-			reusedHashes[hash] = true
 			continue
 		}
 
@@ -218,7 +215,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.ProtobufMessage,
 		)
 		// Keep track of which queues are new so we know which to start.
-		newHashes = append(newHashes, hash)
+		newHashes[hash] = struct{}{}
 	}
 
 	// All validation passed - now safe to modify state.
@@ -227,12 +224,12 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	// Stop queues which config has changed or was removed from the overall
 	// remote write config.
 	for hash, q := range rws.queues {
-		if !reusedHashes[hash] {
+		if _, ok := newHashes[hash]; ok {
 			q.Stop()
 		}
 	}
 
-	for _, hash := range newHashes {
+	for hash := range newHashes {
 		newQueues[hash].Start()
 	}
 
