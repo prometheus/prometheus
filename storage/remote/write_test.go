@@ -460,6 +460,42 @@ func TestWriteStorageApplyConfig_ErrorPreservesState(t *testing.T) {
 	require.Same(t, originalQueue, queue, "Queue pointer should be unchanged after error")
 }
 
+func TestWriteStorageApplyConfig_RemovedQueueStopped(t *testing.T) {
+	dir := t.TempDir()
+
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil, false)
+	defer s.Close()
+
+	// Initial config with one endpoint.
+	conf := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			baseRemoteWriteConfig("http://test-storage.com"),
+		},
+	}
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Len(t, s.queues, 1)
+
+	// Remove the endpoint.
+	conf = &config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{},
+	}
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Empty(t, s.queues)
+
+	// Re-add the same endpoint. If Stop() wasn't called on removal,
+	// this will panic with "duplicate metrics collector registration".
+	conf = &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			baseRemoteWriteConfig("http://test-storage.com"),
+		},
+	}
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Len(t, s.queues, 1)
+}
+
 func TestOTLPWriteHandler(t *testing.T) {
 	timestamp := time.Now()
 	var zeroTime time.Time

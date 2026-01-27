@@ -224,7 +224,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	// Stop queues which config has changed or was removed from the overall
 	// remote write config.
 	for hash, q := range rws.queues {
-		if _, ok := newHashes[hash]; ok {
+		if newQueues[hash] != q {
 			q.Stop()
 		}
 	}
