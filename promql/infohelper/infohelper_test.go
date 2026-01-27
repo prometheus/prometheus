@@ -40,10 +40,10 @@ func TestExtractDataLabels(t *testing.T) {
 	t.Cleanup(func() { testStorage.Close() })
 
 	tests := []struct {
-		name               string
-		infoMetricMatcher  *labels.Matcher
-		baseMetricMatchers [][]*labels.Matcher
-		expectedLabels     map[string][]string
+		name                   string
+		infoMetricMatcher      *labels.Matcher
+		identifyingLabelValues map[string]map[string]struct{}
+		expectedLabels         map[string][]string
 	}{
 		{
 			name:              "all target_info labels without filter",
@@ -57,8 +57,8 @@ func TestExtractDataLabels(t *testing.T) {
 		{
 			name:              "filter by job=prometheus",
 			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
-			baseMetricMatchers: [][]*labels.Matcher{
-				{labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus")},
+			identifyingLabelValues: map[string]map[string]struct{}{
+				"job": {"prometheus": {}},
 			},
 			expectedLabels: map[string][]string{
 				"version": {"2.0", "2.1"},
@@ -68,8 +68,8 @@ func TestExtractDataLabels(t *testing.T) {
 		{
 			name:              "filter by specific instance",
 			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
-			baseMetricMatchers: [][]*labels.Matcher{
-				{labels.MustNewMatcher(labels.MatchEqual, "instance", "localhost:9090")},
+			identifyingLabelValues: map[string]map[string]struct{}{
+				"instance": {"localhost:9090": {}},
 			},
 			expectedLabels: map[string][]string{
 				"version": {"2.0"},
@@ -77,11 +77,11 @@ func TestExtractDataLabels(t *testing.T) {
 			},
 		},
 		{
-			name:              "filter with multiple matcher sets",
+			name:              "filter with multiple identifying values",
 			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
-			baseMetricMatchers: [][]*labels.Matcher{
-				{labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus"), labels.MustNewMatcher(labels.MatchEqual, "instance", "localhost:9090")},
-				{labels.MustNewMatcher(labels.MatchEqual, "job", "node")},
+			identifyingLabelValues: map[string]map[string]struct{}{
+				"job":      {"prometheus": {}, "node": {}},
+				"instance": {"localhost:9090": {}, "node1:9100": {}},
 			},
 			expectedLabels: map[string][]string{
 				"version": {"1.0", "2.0"},
@@ -102,10 +102,10 @@ func TestExtractDataLabels(t *testing.T) {
 			expectedLabels:    map[string][]string{},
 		},
 		{
-			name:              "no matching base metrics",
+			name:              "no matching identifying labels",
 			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
-			baseMetricMatchers: [][]*labels.Matcher{
-				{labels.MustNewMatcher(labels.MatchEqual, "job", "nonexistent")},
+			identifyingLabelValues: map[string]map[string]struct{}{
+				"job": {"nonexistent": {}},
 			},
 			expectedLabels: map[string][]string{},
 		},
@@ -136,7 +136,7 @@ func TestExtractDataLabels(t *testing.T) {
 				Func:  "info_labels",
 			}
 
-			result, _, err := extractor.ExtractDataLabels(ctx, q, tc.infoMetricMatcher, tc.baseMetricMatchers, hints)
+			result, _, err := extractor.ExtractDataLabels(ctx, q, tc.infoMetricMatcher, tc.identifyingLabelValues, hints)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedLabels, result)
 		})
