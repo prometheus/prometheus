@@ -68,3 +68,8 @@ interface JQueryStatic {
     scale: () => Color;
   };
 }
+
+interface Window {
+  jQuery: JQueryStatic;
+  moment: typeof import('moment');
+}
