@@ -901,7 +901,8 @@ func TestInfoLabels(t *testing.T) {
 	`)
 
 	api := &API{
-		Queryable: storage,
+		Queryable:   storage,
+		QueryEngine: testEngine(t),
 	}
 
 	request := func(method string, params map[string][]string) (*http.Request, error) {
@@ -940,8 +941,8 @@ func TestInfoLabels(t *testing.T) {
 			api: api,
 		},
 		{
-			name:   "filter by job=prometheus",
-			params: map[string][]string{"match[]": {`{job="prometheus"}`}, "start": {"0"}, "end": {"100000"}},
+			name:   "filter by job=prometheus using expr",
+			params: map[string][]string{"expr": {`http_requests_total{job="prometheus"}`}, "start": {"0"}, "end": {"120"}},
 			expected: map[string][]string{
 				"version": {"2.0", "2.1"},
 				"env":     {"prod", "staging"},
@@ -949,8 +950,8 @@ func TestInfoLabels(t *testing.T) {
 			api: api,
 		},
 		{
-			name:   "filter by specific instance",
-			params: map[string][]string{"match[]": {`{instance="localhost:9090"}`}, "start": {"0"}, "end": {"100000"}},
+			name:   "filter by specific instance using expr",
+			params: map[string][]string{"expr": {`http_requests_total{instance="localhost:9090"}`}, "start": {"0"}, "end": {"120"}},
 			expected: map[string][]string{
 				"version": {"2.0"},
 				"env":     {"prod"},
@@ -958,8 +959,17 @@ func TestInfoLabels(t *testing.T) {
 			api: api,
 		},
 		{
-			name:   "multiple matchers",
-			params: map[string][]string{"match[]": {`{job="prometheus", instance="localhost:9090"}`, `{job="node"}`}, "start": {"0"}, "end": {"100000"}},
+			name:   "filter with aggregation expression",
+			params: map[string][]string{"expr": {`sum by (job, instance) (http_requests_total{job="prometheus", instance="localhost:9090"})`}, "start": {"0"}, "end": {"120"}},
+			expected: map[string][]string{
+				"version": {"2.0"},
+				"env":     {"prod"},
+			},
+			api: api,
+		},
+		{
+			name:   "filter with regex in expr",
+			params: map[string][]string{"expr": {`http_requests_total{job=~"prometheus|node", instance=~"localhost:9090|node1:9100"}`}, "start": {"0"}, "end": {"120"}},
 			expected: map[string][]string{
 				"version": {"1.0", "2.0"},
 				"env":     {"prod"},
@@ -1014,8 +1024,8 @@ func TestInfoLabels(t *testing.T) {
 			api: api,
 		},
 		{
-			name:     "no matching base metrics",
-			params:   map[string][]string{"match[]": {`{job="nonexistent"}`}, "start": {"0"}, "end": {"100000"}},
+			name:     "no matching expr results",
+			params:   map[string][]string{"expr": {`http_requests_total{job="nonexistent"}`}, "start": {"0"}, "end": {"120"}},
 			expected: map[string][]string{},
 			api:      api,
 		},
@@ -1030,12 +1040,25 @@ func TestInfoLabels(t *testing.T) {
 			api: api,
 		},
 		{
-			name:              "exec error type",
-			params:            map[string][]string{"match[]": {`{foo="boo"}`}},
+			name:              "exec error from queryable",
+			params:            map[string][]string{"start": {"0"}, "end": {"100000"}},
 			expectedErrorType: errorExec,
 			api: &API{
-				Queryable: errorTestQueryable{err: errors.New("generic")},
+				Queryable:   errorTestQueryable{err: errors.New("generic")},
+				QueryEngine: testEngine(t),
 			},
+		},
+		{
+			name:              "invalid expr parameter",
+			params:            map[string][]string{"expr": {`invalid{`}, "start": {"0"}, "end": {"100000"}},
+			expectedErrorType: errorBadData,
+			api:               api,
+		},
+		{
+			name:              "scalar expr returns error",
+			params:            map[string][]string{"expr": {`1+1`}, "start": {"0"}, "end": {"100000"}},
+			expectedErrorType: errorBadData,
+			api:               api,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
