@@ -1344,13 +1344,20 @@ func (api *API) targetRelabelSteps(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error retrieving scrape config: %w", err)}, nil, nil}
 	}
 
+	lb := labels.NewBuilder(lbls)
 	rules := scrapeConfig.RelabelConfigs
 	steps := make([]RelabelStep, len(rules))
 	for i, rule := range rules {
-		outLabels, keep := relabel.Process(lbls, rules[:i+1]...)
+		keep := relabel.ProcessBuilder(lb, rule)
+		if !keep { // For all remaining rules, show blank output and keep=false.
+			for j, rule := range rules[i:] {
+				steps[i+j] = RelabelStep{Rule: rule}
+			}
+			break
+		}
 		steps[i] = RelabelStep{
 			Rule:   rule,
-			Output: outLabels,
+			Output: lb.Labels(),
 			Keep:   keep,
 		}
 	}
