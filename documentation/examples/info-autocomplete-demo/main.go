@@ -231,43 +231,60 @@ func appendTestMetrics(db *tsdb.DB) error {
 	}
 
 	// http_requests_total for api-gateway production
+	// Add multiple data points so rate() works
 	for _, status := range []string{"200", "404", "500"} {
 		for _, method := range []string{"GET", "POST"} {
-			_, err = app.Append(0, labels.FromStrings(
+			lbls := labels.FromStrings(
 				"__name__", "http_requests_total",
 				"job", "api-gateway",
 				"instance", "prod-gateway-1:8080",
 				"method", method,
 				"status", status,
-			), now, 100)
-			if err != nil {
-				return fmt.Errorf("append http_requests_total: %w", err)
+			)
+			// Add 6 data points, 1 minute apart, with increasing values
+			for i := range 6 {
+				ts := now - int64((5-i)*60*1000) // 5 min ago to now, 1 min intervals
+				val := float64(100 + i*10)       // Increasing counter value
+				_, err = app.Append(0, lbls, ts, val)
+				if err != nil {
+					return fmt.Errorf("append http_requests_total: %w", err)
+				}
 			}
 		}
 	}
 
 	// http_requests_total for api-gateway staging
-	_, err = app.Append(0, labels.FromStrings(
+	lbls := labels.FromStrings(
 		"__name__", "http_requests_total",
 		"job", "api-gateway",
 		"instance", "staging-gateway-1:8080",
 		"method", "GET",
 		"status", "200",
-	), now, 50)
-	if err != nil {
-		return fmt.Errorf("append http_requests_total: %w", err)
+	)
+	for i := range 6 {
+		ts := now - int64((5-i)*60*1000)
+		val := float64(50 + i*5)
+		_, err = app.Append(0, lbls, ts, val)
+		if err != nil {
+			return fmt.Errorf("append http_requests_total: %w", err)
+		}
 	}
 
 	// db_queries_total for database
 	for _, op := range []string{"SELECT", "INSERT", "UPDATE"} {
-		_, err = app.Append(0, labels.FromStrings(
+		lbls := labels.FromStrings(
 			"__name__", "db_queries_total",
 			"job", "database",
 			"instance", "prod-db-1:5432",
 			"operation", op,
-		), now, 1000)
-		if err != nil {
-			return fmt.Errorf("append db_queries_total: %w", err)
+		)
+		for i := range 6 {
+			ts := now - int64((5-i)*60*1000)
+			val := float64(1000 + i*100)
+			_, err = app.Append(0, lbls, ts, val)
+			if err != nil {
+				return fmt.Errorf("append db_queries_total: %w", err)
+			}
 		}
 	}
 
@@ -295,7 +312,8 @@ func printInstructions() {
 	fmt.Println()
 	fmt.Println("4. Test the info_labels API endpoint:")
 	fmt.Println("   curl 'http://localhost:9090/api/v1/info_labels'")
-	fmt.Println("   curl 'http://localhost:9090/api/v1/info_labels?match[]={job=\"api-gateway\"}'")
+	fmt.Println("   curl 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{job=\"api-gateway\"}'")
+	fmt.Println("   curl 'http://localhost:9090/api/v1/info_labels?expr=rate(http_requests_total[5m])'")
 	fmt.Println()
 	fmt.Println("Available metrics:")
 	fmt.Println("  - http_requests_total (api-gateway in prod & staging)")
