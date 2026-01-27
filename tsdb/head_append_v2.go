@@ -131,6 +131,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	// Otherwise, a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricType).Inc()
+		fmt.Println("OUT OF BOUNDS 1")
 		return 0, storage.ErrOutOfBounds
 	}
 
@@ -353,6 +354,7 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 	}
 	if st < a.minValidTime {
 		a.head.logger.Debug("Error when appending ST", "series", ls.String(), "st", st, "t", t, "err", storage.ErrOutOfBounds)
+		fmt.Println("OUT OF BOUNDS 2")
 		return
 	}
 

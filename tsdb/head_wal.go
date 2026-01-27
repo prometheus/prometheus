@@ -170,7 +170,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					return
 				}
 				decoded <- series
-			case record.Samples:
+			case record.Samples, record.SamplesV2:
 				samples := h.wlReplaySamplesPool.Get()[:0]
 				samples, err = dec.Samples(r.Record(), samples)
 				if err != nil {
@@ -799,7 +799,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			var err error
 			rec := r.Record()
 			switch dec.Type(rec) {
-			case record.Samples:
+			case record.Samples, record.SamplesV2:
 				samples := h.wlReplaySamplesPool.Get()[:0]
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
@@ -1401,7 +1401,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	// Assuming 100 bytes (overestimate) per exemplar, that's ~1MB.
 	maxExemplarsPerRecord := 10000
 	batch := make([]record.RefExemplar, 0, maxExemplarsPerRecord)
-	enc := record.Encoder{}
+	enc := record.Encoder{EnableSTStorage: h.opts.EnableSTStorage}
 	flushExemplars := func() error {
 		if len(batch) == 0 {
 			return nil
