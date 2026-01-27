@@ -76,8 +76,9 @@ func NewWithDefaults() *InfoLabelExtractor {
 //   - ctx: Context for cancellation
 //   - querier: Storage querier to use for fetching series
 //   - infoMetricMatcher: Matcher for the info metric __name__ (e.g., MatchEqual "target_info" or MatchRegexp ".*_info")
-//   - baseMetricMatchers: If provided, only info metrics matching the same identifying labels
-//     as the base metrics are considered. If nil, all info metrics are returned.
+//   - identifyingLabelValues: If provided, only info metrics matching these identifying label values
+//     are considered. The map keys are identifying label names (e.g., "job", "instance") and values
+//     are sets of label values. If nil or empty, all info metrics are returned.
 //   - hints: Select hints for the storage layer
 //
 // Returns a map where keys are label names and values are slices of unique values for that label.
@@ -85,7 +86,7 @@ func (e *InfoLabelExtractor) ExtractDataLabels(
 	ctx context.Context,
 	querier storage.Querier,
 	infoMetricMatcher *labels.Matcher,
-	baseMetricMatchers [][]*labels.Matcher,
+	identifyingLabelValues map[string]map[string]struct{},
 	hints *storage.SelectHints,
 ) (map[string][]string, annotations.Annotations, error) {
 	var warnings annotations.Annotations
@@ -93,22 +94,10 @@ func (e *InfoLabelExtractor) ExtractDataLabels(
 	// Build matchers for the info metric query
 	infoMatchers := []*labels.Matcher{infoMetricMatcher}
 
-	// If base metric matchers are provided, collect identifying label values from base metrics
-	// and filter info metrics by those values
-	if len(baseMetricMatchers) > 0 {
-		idLblValues, baseWarnings, err := e.collectIdentifyingLabelValues(ctx, querier, baseMetricMatchers, hints)
-		warnings.Merge(baseWarnings)
-		if err != nil {
-			return nil, warnings, err
-		}
-
-		// If no identifying label values found, return empty result
-		if len(idLblValues) == 0 {
-			return map[string][]string{}, warnings, nil
-		}
-
+	// If identifying label values are provided, filter info metrics by those values
+	if len(identifyingLabelValues) > 0 {
 		// Add regex matchers for identifying labels
-		for name, vals := range idLblValues {
+		for name, vals := range identifyingLabelValues {
 			infoMatchers = append(infoMatchers, labels.MustNewMatcher(labels.MatchRegexp, name, BuildRegexpAlternation(vals)))
 		}
 	}
@@ -121,6 +110,11 @@ func (e *InfoLabelExtractor) ExtractDataLabels(
 	dataLabels := make(map[string]map[string]struct{})
 
 	for infoSet.Next() {
+		// Check for context cancellation periodically
+		if ctx.Err() != nil {
+			return nil, warnings, ctx.Err()
+		}
+
 		series := infoSet.At()
 		lbls := series.Labels()
 
@@ -159,45 +153,6 @@ func (e *InfoLabelExtractor) ExtractDataLabels(
 	}
 
 	return result, warnings, nil
-}
-
-// collectIdentifyingLabelValues queries base metrics and extracts values for identifying labels.
-func (e *InfoLabelExtractor) collectIdentifyingLabelValues(
-	ctx context.Context,
-	querier storage.Querier,
-	matcherSets [][]*labels.Matcher,
-	hints *storage.SelectHints,
-) (map[string]map[string]struct{}, annotations.Annotations, error) {
-	idLblValues := make(map[string]map[string]struct{})
-	var warnings annotations.Annotations
-
-	for _, matchers := range matcherSets {
-		set := querier.Select(ctx, false, hints, matchers...)
-		warnings.Merge(set.Warnings())
-
-		for set.Next() {
-			series := set.At()
-			lbls := series.Labels()
-
-			// Extract identifying labels
-			for _, idLbl := range e.config.IdentifyingLabels {
-				val := lbls.Get(idLbl)
-				if val == "" {
-					continue
-				}
-				if idLblValues[idLbl] == nil {
-					idLblValues[idLbl] = make(map[string]struct{})
-				}
-				idLblValues[idLbl][val] = struct{}{}
-			}
-		}
-
-		if err := set.Err(); err != nil {
-			return nil, warnings, err
-		}
-	}
-
-	return idLblValues, warnings, nil
 }
 
 // IdentifyingLabels returns the identifying labels configured for this extractor.

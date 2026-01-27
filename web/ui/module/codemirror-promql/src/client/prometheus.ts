@@ -41,10 +41,10 @@ export interface PrometheusClient {
   flags(): Promise<Record<string, string>>;
 
   // infoLabelPairs returns data labels from info metrics (like target_info) and their values.
-  // If metricName is provided, only returns labels from info metrics associated with that metric
-  // via identifying labels (job, instance).
+  // If expr is provided, the expression is evaluated and identifying labels (job, instance)
+  // are extracted from the result to filter which info metrics are returned.
   // If metricMatch is provided, it specifies which info metrics to query (supports =, =~, !=, !~).
-  infoLabelPairs(metricName?: string, metricMatch?: string): Promise<Record<string, string[]>>;
+  infoLabelPairs(expr?: string, metricMatch?: string): Promise<Record<string, string[]>>;
 
   // destroy is called to release all resources held by this client
   destroy?(): void;
@@ -209,7 +209,7 @@ export class HTTPPrometheusClient implements PrometheusClient {
     });
   }
 
-  infoLabelPairs(metricName?: string, metricMatch?: string): Promise<Record<string, string[]>> {
+  infoLabelPairs(expr?: string, metricMatch?: string): Promise<Record<string, string[]>> {
     const params: URLSearchParams = new URLSearchParams();
     if (this.lookbackInterval) {
       const end = new Date();
@@ -217,18 +217,26 @@ export class HTTPPrometheusClient implements PrometheusClient {
       params.set('start', start.toISOString());
       params.set('end', end.toISOString());
     }
-    if (metricName) {
-      params.set('match[]', metricName);
+    if (expr) {
+      params.set('expr', expr);
     }
     if (metricMatch) {
       params.set('metric_match', metricMatch);
     }
-    return this.fetchAPI<Record<string, string[]>>(`${this.infoLabelsEndpoint()}?${params}`).catch((error) => {
-      if (this.errorHandler) {
-        this.errorHandler(error);
-      }
-      return {};
-    });
+    return this.fetchAPI<Record<string, string[]>>(`${this.infoLabelsEndpoint()}?${params}`)
+      .then((data) => {
+        // Validate response is an object (API could return null or array on error)
+        if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+          return {};
+        }
+        return data;
+      })
+      .catch((error) => {
+        if (this.errorHandler) {
+          this.errorHandler(error);
+        }
+        return {};
+      });
   }
 
   destroy(): void {
@@ -509,16 +517,17 @@ export class CachedPrometheusClient implements PrometheusClient {
     });
   }
 
-  infoLabelPairs(metricName?: string, metricMatch?: string): Promise<Record<string, string[]>> {
+  infoLabelPairs(expr?: string, metricMatch?: string): Promise<Record<string, string[]>> {
     // Info labels are expected to be relatively stable, so we cache them.
-    // The cache key includes the metric name and metric match.
-    const cacheKey = `infoLabels_${metricName || ''}_${metricMatch || ''}`;
+    // The cache key includes the expression and metric match.
+    // Use JSON.stringify to avoid collisions when parameters contain underscores.
+    const cacheKey = JSON.stringify(['infoLabels', expr || '', metricMatch || '']);
     const cached = this.cache.getInfoLabelPairs(cacheKey);
-    if (cached && Object.keys(cached).length > 0) {
+    if (cached !== undefined) {
       return Promise.resolve(cached);
     }
 
-    return this.client.infoLabelPairs(metricName, metricMatch).then((labels) => {
+    return this.client.infoLabelPairs(expr, metricMatch).then((labels) => {
       this.cache.setInfoLabelPairs(cacheKey, labels);
       return labels;
     });

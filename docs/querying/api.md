@@ -541,10 +541,10 @@ URL query parameters:
   - `metric_match=~.*_info` - regex match (`__name__=~".*_info"`)
   - `metric_match=!=target_info` - negated exact match (`__name__!="target_info"`)
   - `metric_match=!~build_info` - negated regex match (`__name__!~"build_info"`)
-- `match[]=<series_selector>`: Repeated series selector argument that filters
-  which info metrics are considered based on matching identifying labels.
-  For example, `match[]={job="prometheus"}` returns labels only from info
-  metrics that have `job="prometheus"`. Optional.
+- `expr=<string>`: PromQL expression. If provided, the expression is evaluated
+  and identifying labels (job, instance) are extracted from the result to filter
+  which info metrics are returned. This allows filtering by complex expressions
+  like `rate(http_requests_total[5m])`. Optional.
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
 - `limit=<number>`: Maximum number of values per label. Optional. 0 means disabled.
@@ -588,10 +588,10 @@ curl 'localhost:9090/api/v1/info_labels?metric_match=~.*_info'
 }
 ```
 
-This example filters info labels to only those from targets with `job="prometheus"`:
+This example filters info labels to only those from targets matching an expression:
 
 ```bash
-curl 'localhost:9090/api/v1/info_labels?match[]={job="prometheus"}'
+curl 'localhost:9090/api/v1/info_labels?expr=http_requests_total{job="prometheus"}'
 ```
 
 ```json
@@ -600,6 +600,24 @@ curl 'localhost:9090/api/v1/info_labels?match[]={job="prometheus"}'
     "data": {
         "version": ["2.0", "2.1"],
         "env": ["prod", "staging"]
+    }
+}
+```
+
+This example uses a complex PromQL expression to filter info labels based on
+the result of a rate query:
+
+```bash
+curl 'localhost:9090/api/v1/info_labels?expr=rate(http_requests_total[5m])'
+```
+
+```json
+{
+    "status": "success",
+    "data": {
+        "version": ["2.0", "2.1"],
+        "env": ["prod", "staging"],
+        "region": ["us-east"]
     }
 }
 ```

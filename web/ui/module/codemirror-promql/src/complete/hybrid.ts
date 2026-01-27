@@ -125,29 +125,19 @@ export interface Context {
 
 // extractMetricName extracts the metric name from an expression node.
 // It traverses the tree to find an Identifier node and returns its text.
-function extractMetricName(node: SyntaxNode, state: EditorState): string {
-  // Try to find an Identifier node in the subtree using recursive descent
-  function findIdentifier(n: SyntaxNode): string {
-    if (n.type.id === Identifier) {
-      return state.sliceDoc(n.from, n.to);
-    }
-    // Check children
-    for (let child = n.firstChild; child; child = child.nextSibling) {
-      const result = findIdentifier(child);
-      if (result) {
-        return result;
-      }
-    }
-    return '';
-  }
-  return findIdentifier(node);
+function extractExpression(node: SyntaxNode, state: EditorState): string {
+  // Extract the full text of the expression node.
+  // This is used to pass the complete expression (e.g., "rate(http_requests_total[5m])")
+  // to the API for evaluating complex PromQL expressions.
+  return state.sliceDoc(node.from, node.to);
 }
 
 // InfoFunctionContext contains information about the info() function call context.
 interface InfoFunctionContext {
   // Whether we're inside the second argument of info()
   isInSecondArg: boolean;
-  // The metric expression from the first argument (e.g., "http_requests_total")
+  // The full expression from the first argument (e.g., "rate(http_requests_total[5m])" or "http_requests_total")
+  // This is passed to the API's expr parameter for evaluation.
   metricName: string;
   // The __name__ matcher from the second argument, if present (e.g., "~.*_info" for =~, "!=target_info" for !=)
   // Format matches the API's metric_match parameter
@@ -155,7 +145,7 @@ interface InfoFunctionContext {
 }
 
 // getInfoFunctionContext checks if we're inside the second argument (data label matchers)
-// of the info() function and extracts the metric name from the first argument.
+// of the info() function and extracts the expression from the first argument.
 function getInfoFunctionContext(node: SyntaxNode, state: EditorState): InfoFunctionContext {
   const notInInfo: InfoFunctionContext = { isInSecondArg: false, metricName: '' };
 
@@ -178,8 +168,8 @@ function getInfoFunctionContext(node: SyntaxNode, state: EditorState): InfoFunct
             const firstArg = current.firstChild;
             if (firstArg !== null && node.from >= firstArg.to) {
               // Extract the metric name from the first argument
-              // The first arg is typically a VectorSelector with an Identifier child
-              const metricName = extractMetricName(firstArg, state);
+              // Extract the full expression from the first argument (e.g., "rate(http_requests_total[5m])")
+              const metricName = extractExpression(firstArg, state);
               // Extract __name__ matcher from the second argument (LabelMatchers)
               const infoMetricMatch = extractInfoMetricMatch(current, state);
               return { isInSecondArg: true, metricName, infoMetricMatch };
@@ -202,10 +192,16 @@ function extractInfoMetricMatch(functionCallBody: SyntaxNode, state: EditorState
   // e.g., info(metric, {__name__=~"target_info"}) parses as:
   //   FunctionCallBody > VectorSelector > LabelMatchers
   let labelMatchersNode: SyntaxNode | null = null;
-  let isSecondArg = false;
+  let argIndex = 0;
   for (let child = functionCallBody.firstChild; child !== null; child = child.nextSibling) {
-    if (isSecondArg) {
-      // Second argument - look for LabelMatchers directly or inside VectorSelector
+    // Skip punctuation nodes (opening paren, comma, closing paren)
+    const nodeText = state.sliceDoc(child.from, child.to);
+    if (nodeText === '(' || nodeText === ')' || nodeText === ',') {
+      continue;
+    }
+    argIndex++;
+    if (argIndex >= 2) {
+      // Second argument or later - look for LabelMatchers directly or inside VectorSelector
       if (child.type.id === LabelMatchers) {
         labelMatchersNode = child;
         break;
@@ -214,10 +210,6 @@ function extractInfoMetricMatch(functionCallBody: SyntaxNode, state: EditorState
         labelMatchersNode = child.getChild(LabelMatchers);
         break;
       }
-    }
-    // After first non-trivial child, we're in the second argument territory
-    if (child.type.id === VectorSelector || child.type.id === Identifier) {
-      isSecondArg = true;
     }
   }
   if (!labelMatchersNode) {
