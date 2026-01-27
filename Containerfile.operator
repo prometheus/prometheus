@@ -38,7 +38,8 @@ CMD        [ "--config.file=/etc/prometheus/prometheus.yml", \
              "--web.console.templates=/usr/share/prometheus/consoles" ]
 
 LABEL com.redhat.component="prometheus" \
-  name="prometheus" \
+  name="rhacm2/prometheus-rhel9" \
+  cpe="cpe:/a:redhat:acm:2.16::el9" \
   summary="prometheus" \
   io.openshift.expose-services="" \
   io.openshift.tags="data,images" \
