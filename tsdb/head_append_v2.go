@@ -232,16 +232,16 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	return storage.SeriesRef(s.ref), partialErr
 }
 
-func (a *headAppenderV2) appendFloat(s *memSeries, t int64, v float64, fastRejectOOO bool) error {
+func (a *headAppenderBase) appendFloat(s *memSeries, t int64, v float64, fastRejectOOO bool) error {
 	s.Lock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
 	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-	if isOOO && fastRejectOOO {
-		s.Unlock()
-		return storage.ErrOutOfOrderSample
-	}
 	if err == nil {
+		if isOOO && fastRejectOOO {
+			s.Unlock()
+			return storage.ErrOutOfOrderSample
+		}
 		s.pendingCommit = true
 	}
 	s.Unlock()
