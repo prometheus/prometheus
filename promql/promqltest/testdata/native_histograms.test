@@ -1881,6 +1881,24 @@ load 1m
   cbh_has_neg {{schema:-53 sum:172.5 count:15 custom_values:[-10 5 10 15 20] buckets:[2 1 6 4 3 1]}}
   zero_bucket {{schema:0 sum:-6.75 z_bucket:5 z_bucket_w:0.01 buckets:[2 3] n_buckets:[1 2 3]}}
 
+eval instant at 1m h_test >/ -Inf
+  h_test {{schema:0 sum:123.75 count:34 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1 2]}}
+
+eval instant at 1m h_test </ +Inf
+  h_test {{schema:0 sum:123.75 count:34 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1 2]}}
+
+eval instant at 1m h_test >/ +Inf
+  h_test {{schema:0 z_bucket_w:0.001}}
+
+eval instant at 1m h_test </ -Inf
+  h_test {{schema:0 z_bucket_w:0.001}}
+
+eval instant at 1m h_test >/ 0
+  h_test {{schema:0 sum:120.21446609406726 count:30.5 z_bucket:0.5 z_bucket_w:0.001 buckets:[2 4 8 16]}}
+
+eval instant at 1m h_test </ 0
+  h_test {{schema:0 sum:3.5418471982869164 count:3.5 z_bucket:0.5 z_bucket_w:0.001 n_buckets:[1 2]}}
+
 # Exponential buckets: trim uses exponential interpolation if cutoff is inside a bucket
 eval instant at 1m h_test_2 </ 1.13
   h_test_2  {{schema:2 count:13.410582181123704 sum:-9.282809901015558 z_bucket:1 z_bucket_w:0.001 buckets:[1 1.410582181123704] n_buckets:[1 5 3 1]}}
