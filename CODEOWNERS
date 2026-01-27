@@ -2,25 +2,29 @@
 # Please keep this file in sync with the MAINTAINERS.md file!
 #
 
+# Prometheus team members are members of the "default maintainers" github team.
+# They are code owners by default for the whole repo.
+* @prometheus/default-maintainers
+
 # Subsystems.
-/Makefile @simonpasquier @SuperQ
-/cmd/promtool @dgl
-/documentation/prometheus-mixin @metalmatze
-/model/histogram @beorn7 @krajorama
-/web/ui @juliusv
-/web/ui/module @juliusv @nexucis
-/promql @roidelapluie
-/storage/remote @cstyan @bwplotka @tomwilkie @npazosmendez @alexgreenbank
-/storage/remote/otlptranslator @aknuds1 @jesusvazquez @ArthurSens
-/tsdb @jesusvazquez @codesome @bwplotka @krajorama
+/Makefile                       @prometheus/default-maintainers @simonpasquier @SuperQ
+/cmd/promtool                   @prometheus/default-maintainers @dgl
+/documentation/prometheus-mixin @prometheus/default-maintainers @metalmatze
+/model/histogram                @prometheus/default-maintainers @beorn7 @krajorama
+/web/ui                         @prometheus/default-maintainers @juliusv
+/web/ui/module                  @prometheus/default-maintainers @juliusv @nexucis
+/promql                         @prometheus/default-maintainers @roidelapluie
+/storage/remote                 @prometheus/default-maintainers @cstyan @bwplotka @tomwilkie @alexgreenbank
+/storage/remote/otlptranslator  @prometheus/default-maintainers @aknuds1 @jesusvazquez @ArthurSens
+/tsdb                           @prometheus/default-maintainers @jesusvazquez @codesome @bwplotka @krajorama
 
 # Service discovery.
-/discovery/kubernetes @brancz
-/discovery/stackit @jkroepke
+/discovery/kubernetes           @prometheus/default-maintainers @brancz
+/discovery/stackit              @prometheus/default-maintainers @jkroepke
 # Pending
 # https://github.com/prometheus/prometheus/pull/17105#issuecomment-3248209452
-# /discovery/aws/ @matt-gp @sysadmind
+# /discovery/aws/                 @prometheus/default-maintainers @matt-gp @sysadmind
 # https://github.com/prometheus/prometheus/pull/15212#issuecomment-3575225179
-# /discovery/aliyun @KeyOfSpectator
+# /discovery/aliyun               @prometheus/default-maintainers @KeyOfSpectator
 # https://github.com/prometheus/prometheus/pull/14108#issuecomment-2639515421
-# /discovery/nomad @jaloren @jrasell
+# /discovery/nomad                @prometheus/default-maintainers @jaloren @jrasell
