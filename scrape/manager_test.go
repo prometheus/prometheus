@@ -581,8 +581,8 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	m, err := NewManager(&opts, nil, nil, nil, nil, testRegistry)
 	require.NoError(t, err)
 
-	ts := make(chan map[string][]*targetgroup.Group)
-	go m.Run(ts)
+	targetSetsCh := make(chan map[string][]*targetgroup.Group)
+	go m.Run(targetSetsCh)
 	defer m.Stop()
 
 	tgSent := make(map[string][]*targetgroup.Group)
@@ -594,7 +594,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 		}
 
 		select {
-		case ts <- tgSent:
+		case targetSetsCh <- tgSent:
 		case <-time.After(10 * time.Millisecond):
 			require.Fail(t, "Scrape manager's channel remained blocked after the set threshold.")
 		}
