@@ -14,7 +14,7 @@
 /web/ui                         @prometheus/default-maintainers @juliusv
 /web/ui/module                  @prometheus/default-maintainers @juliusv @nexucis
 /promql                         @prometheus/default-maintainers @roidelapluie
-/storage/remote                 @prometheus/default-maintainers @cstyan @bwplotka @tomwilkie @npazosmendez @alexgreenbank
+/storage/remote                 @prometheus/default-maintainers @cstyan @bwplotka @tomwilkie @alexgreenbank
 /storage/remote/otlptranslator  @prometheus/default-maintainers @aknuds1 @jesusvazquez @ArthurSens
 /tsdb                           @prometheus/default-maintainers @jesusvazquez @codesome @bwplotka @krajorama
 
