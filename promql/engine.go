@@ -3140,39 +3140,56 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
 }
 
-func handleInfinityBuckets(b histogram.Bucket[float64], le float64) (float64, float64) {
-	var underCount, bucketMidpoint float64
-
+func handleInfinityBuckets(isUpperTrim bool, b histogram.Bucket[float64], rhs float64) (underCount, bucketMidpoint float64) {
+	// Case 1: Bucket with lower bound (-Inf, upper]
 	if math.IsInf(b.Lower, -1) {
-		switch {
-		case le >= b.Upper:
-			// le is greater than or equal to upper bound. Full count applies.
-			underCount = b.Count
-			bucketMidpoint = b.Upper
-		case le < 0:
-			// le is negative and less than zero — nothing to keep.
-			underCount = b.Count * 0.5
-			bucketMidpoint = b.Upper
-		default:
-			// Interpolating with treated lower bound as 0 (linear).
-			fraction := le / b.Upper
-			underCount = b.Count * fraction
-			bucketMidpoint = le / 2
+		// TRIM_UPPER (</) - remove values greater than rhs
+		if isUpperTrim {
+			if rhs >= b.Upper {
+				// As the rhs is greater than the upper bound, we keep the entire current bucket.
+				return b.Count, 0
+			}
+			if rhs >= 0 && b.Upper > rhs && !math.IsInf(b.Upper, 1) {
+				// If upper is finite and positive, we treat lower as 0 (despite it de facto being -Inf).
+				// This is only possible with NHCB, so we can always use linear interpolation.
+				return b.Count * rhs / b.Upper, (rhs + b.Upper) / 2
+			}
+			// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+			return 0, b.Upper
 		}
-		return underCount, bucketMidpoint
+		// TRIM_LOWER (>/) - remove values less than rhs
+		if rhs <= b.Lower {
+			// Impossible to happen because the lower bound is -Inf. Returning the entire current bucket.
+			return b.Count, 0
+		}
+		if rhs >= 0 && b.Upper > rhs && !math.IsInf(b.Upper, 1) {
+			// If upper is finite and positive, we treat lower as 0 (despite it de facto being -Inf).
+			// This is only possible with NHCB, so we can always use linear interpolation.
+			return b.Count * (1 - rhs/b.Upper), rhs / 2
+		}
+		// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+		return 0, b.Upper
 	}
 
+	// Case 2: Bucket with upper bound [lower, +Inf)
 	if math.IsInf(b.Upper, 1) {
-		if le <= b.Lower {
-			underCount = 0
-			bucketMidpoint = b.Lower
-		} else {
-			underCount = b.Count * 0.5
-			bucketMidpoint = b.Lower
+		if isUpperTrim {
+			// TRIM_UPPER (</) - remove values greater than rhs.
+			// We don't care about lower here, because:
+			//   when rhs >= lower and the bucket extends to +Inf, some values in this bucket could be > rhs, so we conservatively remove the entire bucket;
+			//   when rhs < lower, all values in this bucket are >= lower > rhs, so all values should be removed.
+			return 0, b.Lower
 		}
-		return underCount, bucketMidpoint
+		// TRIM_LOWER (>/) - remove values less than rhs.
+		if rhs <= b.Lower {
+			// rhs <= lower: all values in this bucket are >= lower >= rhs, so we keep the entire bucket.
+			return b.Count, 0
+		}
+		// lower < rhs: we are inside the infinity bucket, but as we don't know the exact distribution of values, we conservatively remove the entire bucket.
+		return 0, b.Lower
 	}
-	return underCount, bucketMidpoint
+
+	panic(fmt.Errorf("one of the buckets must be infinite for handleInfinityBuckets, got %v", b))
 }
 
 // computeSplit calculates the portion of the bucket's count <= rhs (trim point).
@@ -3204,14 +3221,14 @@ func computeSplit(b histogram.Bucket[float64], rhs float64, isPositive, isLinear
 	return b.Count * fraction
 }
 
-func computeBucketTrim(op parser.ItemType, b histogram.Bucket[float64], rhs float64, isPositive, isCustomBucket bool) (float64, float64) {
+func computeBucketTrim(b histogram.Bucket[float64], rhs float64, isUpperTrim, isPositive, isCustomBucket bool) (float64, float64) {
 	if math.IsInf(b.Lower, -1) || math.IsInf(b.Upper, 1) {
-		return handleInfinityBuckets(b, rhs)
+		return handleInfinityBuckets(isUpperTrim, b, rhs)
 	}
 
 	underCount := computeSplit(b, rhs, isPositive, isCustomBucket)
 
-	if op == parser.TRIM_UPPER {
+	if isUpperTrim {
 		product := math.Abs(b.Lower) * math.Abs(rhs)
 		return underCount, computeMidpoint(b, product, isCustomBucket, isPositive)
 	}
@@ -3221,15 +3238,15 @@ func computeBucketTrim(op parser.ItemType, b histogram.Bucket[float64], rhs floa
 }
 
 // Helper function to trim native histogram buckets.
-func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser.ItemType) {
+// TODO: move trimHistogram to model/histogram/float_histogram.go (making it a method of FloatHistogram).
+func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTrim bool) {
 	updatedCount := 0.0
 	origSum := trimmedHist.Sum
 	removedSum := 0.0
 	hasPositive, hasNegative := false, false
 	isCustomBucket := trimmedHist.UsesCustomBuckets()
 
-	switch op {
-	case parser.TRIM_UPPER:
+	if isUpperTrim {
 		// Calculate the fraction to keep for buckets that contain the trim value.
 		// For TRIM_UPPER, we keep observations below the trim point (rhs).
 		// Example: histogram </ float.
@@ -3251,7 +3268,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 				hasPositive = true
 			}
 
-			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, true, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, true, isCustomBucket)
 
 			switch {
 			case bucket.Upper <= rhs:
@@ -3281,7 +3298,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 			}
 			hasNegative = true
 
-			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, false, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, false, isCustomBucket)
 
 			switch {
 			case bucket.Upper <= rhs:
@@ -3298,8 +3315,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 				trimmedHist.NegativeBuckets[i] = 0
 			}
 		}
-
-	case parser.TRIM_LOWER:
+	} else { // !isUpperTrim
 		// For TRIM_LOWER, we keep observations above the trim point (rhs).
 		// Example: histogram >/ float.
 		for i, iter := 0, trimmedHist.PositiveBucketIterator(); iter.Next(); i++ {
@@ -3320,7 +3336,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 				hasPositive = true
 			}
 
-			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, true, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, true, isCustomBucket)
 
 			switch {
 			case bucket.Lower >= rhs:
@@ -3347,7 +3363,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 			}
 			hasNegative = true
 
-			keepCount, bucketMidpoint := computeBucketTrim(op, bucket, rhs, false, isCustomBucket)
+			keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, false, isCustomBucket)
 
 			switch {
 			case bucket.Lower >= rhs:
@@ -3369,22 +3385,26 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, op parser
 	// Handle the zero count bucket.
 	if trimmedHist.ZeroCount > 0 {
 		keepCount := computeSplit(trimmedHist.ZeroBucket(), rhs, true, true)
-		if op == parser.TRIM_LOWER {
+		if !isUpperTrim {
 			keepCount = trimmedHist.ZeroCount - keepCount
 		}
 		trimmedHist.ZeroCount = keepCount
 		updatedCount += keepCount
 	}
 
-	// Apply new sum.
-	newSum := origSum - removedSum
+	newSum := 0.0
+	if updatedCount != 0 {
+		// Calculate new sum only when there are at least some observations remaining.
+		// Otherwise, make it zero.
+		newSum = origSum - removedSum
 
-	// Clamp correction.
-	if !hasNegative && newSum < 0 {
-		newSum = 0
-	}
-	if !hasPositive && newSum > 0 {
-		newSum = 0
+		// Clamp correction.
+		if !hasNegative && newSum < 0 {
+			newSum = 0
+		}
+		if !hasPositive && newSum > 0 {
+			newSum = 0
+		}
 	}
 
 	// Update the histogram's count and sum.
@@ -3459,11 +3479,11 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil, nil
 			case parser.TRIM_UPPER:
 				trimmedHist := hlhs.Copy()
-				trimHistogram(trimmedHist, rhs, op)
+				trimHistogram(trimmedHist, rhs, true)
 				return 0, trimmedHist, true, nil, nil
 			case parser.TRIM_LOWER:
 				trimmedHist := hlhs.Copy()
-				trimHistogram(trimmedHist, rhs, op)
+				trimHistogram(trimmedHist, rhs, false)
 				return 0, trimmedHist, true, nil, nil
 			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "float", pos)
