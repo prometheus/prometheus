@@ -21,9 +21,8 @@
 # Service discovery.
 /discovery/kubernetes           @prometheus/default-maintainers @brancz
 /discovery/stackit              @prometheus/default-maintainers @jkroepke
+/discovery/aws/                 @prometheus/default-maintainers @matt-gp @sysadmind
 # Pending
-# https://github.com/prometheus/prometheus/pull/17105#issuecomment-3248209452
-# /discovery/aws/                 @prometheus/default-maintainers @matt-gp @sysadmind
 # https://github.com/prometheus/prometheus/pull/15212#issuecomment-3575225179
 # /discovery/aliyun               @prometheus/default-maintainers @KeyOfSpectator
 # https://github.com/prometheus/prometheus/pull/14108#issuecomment-2639515421
