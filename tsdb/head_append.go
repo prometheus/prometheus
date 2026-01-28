@@ -357,6 +357,18 @@ const (
 	stCustomBucketFloatHistogram                   // Native float histograms with custom bucket boundaries. Goes to `floatHistograms`.
 )
 
+// TypeLabel returns a name to use for instrumentation to reflect histogram vs float operations.
+func (s sampleType) TypeLabel() string {
+	switch s {
+	default:
+		return ""
+	case stFloat:
+		return sampleMetricTypeFloat
+	case stHistogram, stCustomBucketHistogram, stFloatHistogram, stCustomBucketFloatHistogram:
+		return sampleMetricTypeHistogram
+	}
+}
+
 // appendBatch is used to partition all the appended data into batches that are
 // "type clean", i.e. every series receives only samples of one type within the
 // batch. Types in this regard are defined by the sampleType enum above.
