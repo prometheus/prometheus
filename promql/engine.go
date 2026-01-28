@@ -3310,7 +3310,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 				trimmedHist.NegativeBuckets[i] = keepCount
 				updatedCount += keepCount
 			default:
-				bucketMidpoint = math.Sqrt(bucket.Lower * bucket.Upper)
+				bucketMidpoint = -math.Sqrt(bucket.Lower * bucket.Upper)
 				removedSum += bucket.Count * bucketMidpoint
 				trimmedHist.NegativeBuckets[i] = 0
 			}
@@ -3375,7 +3375,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 				trimmedHist.NegativeBuckets[i] = keepCount
 				updatedCount += keepCount
 			default:
-				bucketMidpoint = math.Sqrt(bucket.Lower * bucket.Upper)
+				bucketMidpoint = -math.Sqrt(bucket.Lower * bucket.Upper)
 				removedSum += bucket.Count * bucketMidpoint
 				trimmedHist.NegativeBuckets[i] = 0
 			}

@@ -1875,7 +1875,7 @@ eval instant at 1m irate(nhcb_add_bucket[2m]) * 60
 
 # Test native histogram with trim operators ("</": TRIM_UPPER, ">/": TRIM_LOWER)
 load 1m
-  h_test {{schema:0 sum:123.75 count:34 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1 2]}} 
+  h_test {{schema:0 sum:123.75 count:34 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1 2]}}
   h_test_2 {{schema:2 sum:12.8286080906 count:28 z_bucket:1 z_bucket_w:0.001 buckets:[1 2 4 7 3] n_buckets:[1 5 3 1]}}
   cbh {{schema:-53 sum:172.5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
   cbh_has_neg {{schema:-53 sum:172.5 count:15 custom_values:[-10 5 10 15 20] buckets:[2 1 6 4 3 1]}}
@@ -1894,7 +1894,7 @@ eval instant at 1m h_test </ -Inf
   h_test {{schema:0 z_bucket_w:0.001}}
 
 eval instant at 1m h_test >/ 0
-  h_test {{schema:0 sum:120.21446609406726 count:30.5 z_bucket:0.5 z_bucket_w:0.001 buckets:[2 4 8 16]}}
+  h_test {{schema:0 sum:127.28553390593274 count:30.5 z_bucket:0.5 z_bucket_w:0.001 buckets:[2 4 8 16]}}
 
 eval instant at 1m h_test </ 0
   h_test {{schema:0 sum:3.5418471982869164 count:3.5 z_bucket:0.5 z_bucket_w:0.001 n_buckets:[1 2]}}
@@ -1904,26 +1904,26 @@ eval instant at 1m h_test_2 </ 1.13
   h_test_2  {{schema:2 count:13.410582181123704 sum:-9.282809901015558 z_bucket:1 z_bucket_w:0.001 buckets:[1 1.410582181123704] n_buckets:[1 5 3 1]}}
 
 eval instant at 1m h_test_2 >/ 1.13
-  h_test_2  {{schema:2 count:14.589417818876296 sum:-1.5258511531197865 z_bucket_w:0.001 offset:1 buckets:[0.589417818876296 4 7 3]}}
+  h_test_2  {{schema:2 count:14.589417818876296 sum:22.078693238664073 z_bucket_w:0.001 offset:1 buckets:[0.589417818876296 4 7 3]}}
 
 eval instant at 1m h_test_2 >/ -1.3
-  h_test_2  {{schema:2 count:25.54213947904476 sum:13.099057472672072 z_bucket:1 z_bucket_w:0.001 buckets:[1 2 4 7 3] n_buckets:[1 5 1.54213947904476]}}
+  h_test_2  {{schema:2 count:25.54213947904476 sum:16.183479123487956 z_bucket:1 z_bucket_w:0.001 buckets:[1 2 4 7 3] n_buckets:[1 5 1.54213947904476]}}
 
 eval instant at 1m h_test_2 </ -1.3
-  h_test_2  {{schema:2 count:2.45786052095524 sum:-16.03281816946792 z_bucket_w:0.001 n_offset:2 n_buckets:[1.45786052095524 1]}}
+  h_test_2  {{schema:2 count:2.45786052095524 sum:-3.293732756406005 z_bucket_w:0.001 n_offset:2 n_buckets:[1.45786052095524 1]}}
 
 # Exponential buckets:  trim on bucket boundary uses no interpolation
 eval instant at 1m h_test </ 2
   h_test{}  {{count:10 sum:10.612915010152392 z_bucket:1 z_bucket_w:0.001 buckets:[2 4] n_buckets:[1 2]}}
 
 eval instant at 1m h_test >/ 2
-  h_test{}  {{count:24 sum:113.14339828220179 z_bucket_w:0.001 offset:2 buckets:[8 16]}}
+  h_test{}  {{count:24 sum:120.21446609406726 z_bucket_w:0.001 offset:2 buckets:[8 16]}}
 
 eval instant at 1m h_test >/ -1
-  h_test{} {{count:32 sum:120.92157287525382 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1]}}
+  h_test{} {{count:32 sum:126.57842712474618 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1]}}
 
 eval instant at 1m h_test </ -1
-  h_test{} {{count:2 sum:2.834740417100363 z_bucket_w:0.001 n_offset:1 n_buckets:[2]}}
+  h_test{} {{count:2 sum:4.24895397947347 z_bucket_w:0.001 n_offset:1 n_buckets:[2]}}
 
 # Custom buckets: trim on bucket boundary without interpolation
 eval instant at 1m cbh </ 13
@@ -1979,7 +1979,7 @@ eval instant at 1m zero_bucket </ -0.005
   zero_bucket{} {{count:7.25 sum:-12.40685424949238 z_bucket:1.25 z_bucket_w:0.01 n_buckets:[1 2 3]}}
 
 eval instant at 1m zero_bucket >/ 0
-  zero_bucket{} {{count:7.5 sum:-18.77081528017131 z_bucket:2.5 z_bucket_w:0.01 buckets:[2 3]}}
+  zero_bucket{} {{count:7.5 sum:5.270815280171309 z_bucket:2.5 z_bucket_w:0.01 buckets:[2 3]}}
 
 load 1m
   cbh_one_bucket {{schema:-53 sum:100.0 count:100 buckets:[100]}}
