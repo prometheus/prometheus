@@ -346,6 +346,12 @@ type dbMetrics struct {
 	blocksBytes          prometheus.Gauge
 	maxBytes             prometheus.Gauge
 	retentionDuration    prometheus.Gauge
+
+	// Stale series compaction metrics.
+	staleSeriesCompactionsTriggered prometheus.Counter
+	staleSeriesCompactionsFailed    prometheus.Counter
+	staleSeriesCompactionDuration   prometheus.Histogram
+	staleSeriesCompacted            prometheus.Counter
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -431,6 +437,28 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
 	})
 
+	// Stale series compaction metrics.
+	m.staleSeriesCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_stale_series_compactions_triggered_total",
+		Help: "Total number of triggered stale series compactions.",
+	})
+	m.staleSeriesCompactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_stale_series_compactions_failed_total",
+		Help: "Total number of stale series compactions that failed.",
+	})
+	m.staleSeriesCompactionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:                            "prometheus_tsdb_stale_series_compaction_duration_seconds",
+		Help:                            "Duration of stale series compaction runs.",
+		Buckets:                         prometheus.ExponentialBuckets(1, 2, 14),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	})
+	m.staleSeriesCompacted = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_stale_series_compacted_total",
+		Help: "Total number of series compacted during stale series compaction.",
+	})
+
 	if r != nil {
 		r.MustRegister(
 			m.loadedBlocks,
@@ -447,6 +475,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.blocksBytes,
 			m.maxBytes,
 			m.retentionDuration,
+			m.staleSeriesCompactionsTriggered,
+			m.staleSeriesCompactionsFailed,
+			m.staleSeriesCompactionDuration,
+			m.staleSeriesCompacted,
 		)
 	}
 	return m
@@ -1186,7 +1218,9 @@ func (db *DB) run(ctx context.Context) {
 				}
 
 				if !nextCompactionIsSoon {
+					db.metrics.staleSeriesCompactionsTriggered.Inc()
 					if err := db.CompactStaleHead(); err != nil {
+						db.metrics.staleSeriesCompactionsFailed.Inc()
 						db.logger.Error("immediate stale series compaction failed", "err", err)
 					}
 				}
@@ -1670,7 +1704,10 @@ func (db *DB) CompactStaleHead() error {
 	}
 	db.head.RebuildSymbolTable(db.logger)
 
-	db.logger.Info("Ending stale series compaction", "num_series", meta.Stats.NumSeries, "duration", time.Since(start))
+	elapsed := time.Since(start)
+	db.metrics.staleSeriesCompactionDuration.Observe(elapsed.Seconds())
+	db.metrics.staleSeriesCompacted.Add(float64(len(staleSeriesRefs)))
+	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs), "duration", elapsed)
 	return nil
 }
 
