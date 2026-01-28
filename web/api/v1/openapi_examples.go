@@ -18,6 +18,9 @@ package v1
 import (
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	"github.com/pb33f/libopenapi/orderedmap"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 )
 
 // Example builders for request bodies.
@@ -189,33 +192,22 @@ func seriesPostExamples() *orderedmap.Map[string, *base.Example] {
 func queryResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
 
+	vectorResult := promql.Vector{
+		promql.Sample{
+			Metric: labels.FromStrings("__name__", "up", "job", "prometheus", "instance", "demo.prometheus.io:9090"),
+			T:      1767436620000,
+			F:      1,
+		},
+		promql.Sample{
+			Metric: labels.FromStrings("__name__", "up", "env", "demo", "job", "alertmanager", "instance", "demo.prometheus.io:9093"),
+			T:      1767436620000,
+			F:      1,
+		},
+	}
+
 	examples.Set("vectorResult", &base.Example{
 		Summary: "Instant vector query: up",
-		Value: createYAMLNode(map[string]any{
-			"status": "success",
-			"data": map[string]any{
-				"resultType": "vector",
-				"result": []map[string]any{
-					{
-						"metric": map[string]string{
-							"__name__": "up",
-							"job":      "prometheus",
-							"instance": "demo.prometheus.io:9090",
-						},
-						"value": []any{1767436620, "1"},
-					},
-					{
-						"metric": map[string]string{
-							"__name__": "up",
-							"env":      "demo",
-							"job":      "alertmanager",
-							"instance": "demo.prometheus.io:9093",
-						},
-						"value": []any{1767436620, "1"},
-					},
-				},
-			},
-		}),
+		Value:   vectorExample(vectorResult),
 	})
 
 	examples.Set("scalarResult", &base.Example{
@@ -229,27 +221,19 @@ func queryResponseExamples() *orderedmap.Map[string, *base.Example] {
 		}),
 	})
 
+	matrixResult := promql.Matrix{
+		promql.Series{
+			Metric: labels.FromStrings("__name__", "up", "job", "prometheus", "instance", "demo.prometheus.io:9090"),
+			Floats: []promql.FPoint{
+				{T: 1767436320000, F: 1},
+				{T: 1767436620000, F: 1},
+			},
+		},
+	}
+
 	examples.Set("matrixResult", &base.Example{
 		Summary: "Range vector query: up[5m]",
-		Value: createYAMLNode(map[string]any{
-			"status": "success",
-			"data": map[string]any{
-				"resultType": "matrix",
-				"result": []map[string]any{
-					{
-						"metric": map[string]string{
-							"__name__": "up",
-							"job":      "prometheus",
-							"instance": "demo.prometheus.io:9090",
-						},
-						"values": []any{
-							[]any{1767436320, "1"},
-							[]any{1767436620, "1"},
-						},
-					},
-				},
-			},
-		}),
+		Value:   matrixExample(matrixResult),
 	})
 
 	// TODO: Add native histogram example.
@@ -261,28 +245,20 @@ func queryResponseExamples() *orderedmap.Map[string, *base.Example] {
 func queryRangeResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
 
+	matrixResult := promql.Matrix{
+		promql.Series{
+			Metric: labels.FromStrings("__name__", "up", "job", "prometheus", "instance", "demo.prometheus.io:9090"),
+			Floats: []promql.FPoint{
+				{T: 1767433020000, F: 1},
+				{T: 1767434820000, F: 1},
+				{T: 1767436620000, F: 1},
+			},
+		},
+	}
+
 	examples.Set("matrixResult", &base.Example{
 		Summary: "Range query: rate(prometheus_http_requests_total[5m])",
-		Value: createYAMLNode(map[string]any{
-			"status": "success",
-			"data": map[string]any{
-				"resultType": "matrix",
-				"result": []map[string]any{
-					{
-						"metric": map[string]string{
-							"__name__": "up",
-							"job":      "prometheus",
-							"instance": "demo.prometheus.io:9090",
-						},
-						"values": []any{
-							[]any{1767433020, "1"},
-							[]any{1767434820, "1"},
-							[]any{1767436620, "1"},
-						},
-					},
-				},
-			},
-		}),
+		Value:   matrixExample(matrixResult),
 	})
 
 	// TODO: Add native histogram example.

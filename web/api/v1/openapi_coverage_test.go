@@ -133,13 +133,13 @@ func extractRoutesFromRegister(t *testing.T, source string) []routeInfo {
 }
 
 // normalizePathForOpenAPI converts route paths with colon parameters to OpenAPI format.
-// e.g., "/label/:name/values" -> "/label/{name}/values"
+// e.g., "/label/:name/values" -> "/label/{name}/values".
 func normalizePathForOpenAPI(path string) string {
 	// Replace :param with {param}.
 	parts := strings.Split(path, "/")
 	for i, part := range parts {
-		if strings.HasPrefix(part, ":") {
-			parts[i] = "{" + strings.TrimPrefix(part, ":") + "}"
+		if trimmed, ok := strings.CutPrefix(part, ":"); ok {
+			parts[i] = "{" + trimmed + "}"
 		}
 	}
 	return strings.Join(parts, "/")
@@ -183,9 +183,9 @@ func TestOpenAPICoverage(t *testing.T) {
 
 	// Check coverage for each route.
 	var missingRoutes []string
-	var ignoredRoutes = map[string]bool{
-		"/*path:OPTIONS":        true, // Wildcard OPTIONS handler.
-		"/openapi.yaml:GET":     true, // Self-referential endpoint.
+	ignoredRoutes := map[string]bool{
+		"/*path:OPTIONS":          true, // Wildcard OPTIONS handler.
+		"/openapi.yaml:GET":       true, // Self-referential endpoint.
 		"/notifications/live:GET": true, // SSE endpoint (version-specific).
 	}
 

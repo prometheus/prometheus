@@ -96,26 +96,7 @@ paths:
                             examples:
                                 vectorResult:
                                     summary: 'Instant vector query: up'
-                                    value:
-                                        data:
-                                            result:
-                                                - metric:
-                                                    __name__: up
-                                                    instance: demo.prometheus.io:9090
-                                                    job: prometheus
-                                                  value:
-                                                    - 1767436620
-                                                    - "1"
-                                                - metric:
-                                                    __name__: up
-                                                    env: demo
-                                                    instance: demo.prometheus.io:9093
-                                                    job: alertmanager
-                                                  value:
-                                                    - 1767436620
-                                                    - "1"
-                                            resultType: vector
-                                        status: success
+                                    value: {"status": "success", "data": {"resultType": "vector", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "value": [1767436620, "1"]}, {"metric": {"__name__": "up", "env": "demo", "instance": "demo.prometheus.io:9093", "job": "alertmanager"}, "value": [1767436620, "1"]}]}}
                                 scalarResult:
                                     summary: 'Scalar query: scalar(42)'
                                     value:
@@ -127,20 +108,7 @@ paths:
                                         status: success
                                 matrixResult:
                                     summary: 'Range vector query: up[5m]'
-                                    value:
-                                        data:
-                                            result:
-                                                - metric:
-                                                    __name__: up
-                                                    instance: demo.prometheus.io:9090
-                                                    job: prometheus
-                                                  values:
-                                                    - - 1767436320
-                                                      - "1"
-                                                    - - 1767436620
-                                                      - "1"
-                                            resultType: matrix
-                                        status: success
+                                    value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767436320, "1"], [1767436620, "1"]]}]}}
                 default:
                     description: Error executing query.
                     content:
@@ -192,26 +160,7 @@ paths:
                             examples:
                                 vectorResult:
                                     summary: 'Instant vector query: up'
-                                    value:
-                                        data:
-                                            result:
-                                                - metric:
-                                                    __name__: up
-                                                    instance: demo.prometheus.io:9090
-                                                    job: prometheus
-                                                  value:
-                                                    - 1767436620
-                                                    - "1"
-                                                - metric:
-                                                    __name__: up
-                                                    env: demo
-                                                    instance: demo.prometheus.io:9093
-                                                    job: alertmanager
-                                                  value:
-                                                    - 1767436620
-                                                    - "1"
-                                            resultType: vector
-                                        status: success
+                                    value: {"status": "success", "data": {"resultType": "vector", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "value": [1767436620, "1"]}, {"metric": {"__name__": "up", "env": "demo", "instance": "demo.prometheus.io:9093", "job": "alertmanager"}, "value": [1767436620, "1"]}]}}
                                 scalarResult:
                                     summary: 'Scalar query: scalar(42)'
                                     value:
@@ -223,20 +172,7 @@ paths:
                                         status: success
                                 matrixResult:
                                     summary: 'Range vector query: up[5m]'
-                                    value:
-                                        data:
-                                            result:
-                                                - metric:
-                                                    __name__: up
-                                                    instance: demo.prometheus.io:9090
-                                                    job: prometheus
-                                                  values:
-                                                    - - 1767436320
-                                                      - "1"
-                                                    - - 1767436620
-                                                      - "1"
-                                            resultType: matrix
-                                        status: success
+                                    value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767436320, "1"], [1767436620, "1"]]}]}}
                 default:
                     description: Error executing instant query.
                     content:
@@ -366,22 +302,7 @@ paths:
                             examples:
                                 matrixResult:
                                     summary: 'Range query: rate(prometheus_http_requests_total[5m])'
-                                    value:
-                                        data:
-                                            result:
-                                                - metric:
-                                                    __name__: up
-                                                    instance: demo.prometheus.io:9090
-                                                    job: prometheus
-                                                  values:
-                                                    - - 1767433020
-                                                      - "1"
-                                                    - - 1767434820
-                                                      - "1"
-                                                    - - 1767436620
-                                                      - "1"
-                                            resultType: matrix
-                                        status: success
+                                    value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767433020, "1"], [1767434820, "1"], [1767436620, "1"]]}]}}
                 default:
                     description: Error executing range query.
                     content:
@@ -433,22 +354,7 @@ paths:
                             examples:
                                 matrixResult:
                                     summary: 'Range query: rate(prometheus_http_requests_total[5m])'
-                                    value:
-                                        data:
-                                            result:
-                                                - metric:
-                                                    __name__: up
-                                                    instance: demo.prometheus.io:9090
-                                                    job: prometheus
-                                                  values:
-                                                    - - 1767433020
-                                                      - "1"
-                                                    - - 1767434820
-                                                      - "1"
-                                                    - - 1767436620
-                                                      - "1"
-                                            resultType: matrix
-                                        status: success
+                                    value: {"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "up", "instance": "demo.prometheus.io:9090", "job": "prometheus"}, "values": [[1767433020, "1"], [1767434820, "1"], [1767436620, "1"]]}]}}
                 default:
                     description: Error executing range query.
                     content:

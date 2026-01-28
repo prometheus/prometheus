@@ -16,10 +16,13 @@ package v1
 import (
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 	"github.com/pb33f/libopenapi/orderedmap"
 	yaml "go.yaml.in/yaml/v4"
+
+	"github.com/prometheus/prometheus/promql"
 )
 
 // Helper functions for building common structures.
@@ -292,4 +295,49 @@ func queryParamWithExample(name, description string, required bool, schema *base
 		param.Examples = exampleMap(examples)
 	}
 	return param
+}
+
+// marshalToYAMLNode marshals a value using jsoniter (production marshaling) and converts to yaml.Node.
+// The result is an inline JSON representation that preserves integer types for timestamps.
+func marshalToYAMLNode(v any) *yaml.Node {
+	jsonAPI := jsoniter.ConfigCompatibleWithStandardLibrary
+	jsonBytes, err := jsonAPI.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	node := &yaml.Node{}
+	if err := yaml.Unmarshal(jsonBytes, node); err != nil {
+		panic(err)
+	}
+	return node
+}
+
+// vectorExample creates an example for a vector query response using production marshaling.
+func vectorExample(v promql.Vector) *yaml.Node {
+	type response struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string        `json:"resultType"`
+			Result     promql.Vector `json:"result"`
+		} `json:"data"`
+	}
+	resp := response{Status: "success"}
+	resp.Data.ResultType = "vector"
+	resp.Data.Result = v
+	return marshalToYAMLNode(resp)
+}
+
+// matrixExample creates an example for a matrix query response using production marshaling.
+func matrixExample(m promql.Matrix) *yaml.Node {
+	type response struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string        `json:"resultType"`
+			Result     promql.Matrix `json:"result"`
+		} `json:"data"`
+	}
+	resp := response{Status: "success"}
+	resp.Data.ResultType = "matrix"
+	resp.Data.Result = m
+	return marshalToYAMLNode(resp)
 }
