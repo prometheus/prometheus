@@ -9561,3 +9561,27 @@ func TestStaleSeriesCompaction(t *testing.T) {
 		verifyHeadBlock()
 	}
 }
+
+// TestStaleSeriesCompactionWithZeroSeries verifies that CompactStaleHead handles
+// an empty head (0 series) gracefully without division by zero or incorrectly
+// triggering compaction. This is a regression test for issue #17949.
+func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 1000
+	opts.MaxBlockDuration = 1000
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	// Verify the head is empty.
+	require.Equal(t, uint64(0), db.Head().NumSeries())
+	require.Equal(t, uint64(0), db.Head().NumStaleSeries())
+
+	// CompactStaleHead should handle zero series gracefully (no panic, no error).
+	require.NoError(t, db.CompactStaleHead())
+
+	// Should still have no blocks since there was nothing to compact.
+	require.Empty(t, db.Blocks())
+}
