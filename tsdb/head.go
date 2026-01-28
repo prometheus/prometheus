@@ -2183,8 +2183,16 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
+
+		// Acquire hashShard lock if it differs from refShard to safely access hashes[hashShard].
+		if hashShard != refShard {
+			h.series.locks[hashShard].Lock()
+		}
 		h.series.hashes[hashShard].del(hash, series.ref)
 		delete(h.series.series[refShard], series.ref)
+		if hashShard != refShard {
+			h.series.locks[hashShard].Unlock()
+		}
 
 		h.series.locks[refShard].Unlock()
 	}
