@@ -835,11 +835,10 @@ func TestStop_DrainingDisabled(t *testing.T) {
 		const alertmanagerURL = "http://alertmanager:9093/api/v2/alerts"
 
 		handlerStarted := make(chan struct{})
-		handlerRelease := make(chan struct{})
 		alertsReceived := atomic.NewInt64(0)
 
-		// Fake Do function that simulates alertmanager behavior in-process.
-		fakeDo := func(_ context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
+		// Fake Do function that simulates a hanging alertmanager that times out.
+		fakeDo := func(ctx context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
 			var alerts []*Alert
 			b, err := io.ReadAll(req.Body)
 			if err != nil {
@@ -850,14 +849,11 @@ func TestStop_DrainingDisabled(t *testing.T) {
 			}
 			alertsReceived.Add(int64(len(alerts)))
 
-			// Signal arrival, then block until test releases us.
+			// Signal arrival, then block until context times out.
 			handlerStarted <- struct{}{}
-			<-handlerRelease
+			<-ctx.Done()
 
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(bytes.NewBuffer(nil)),
-			}, nil
+			return nil, ctx.Err()
 		}
 
 		reg := prometheus.NewRegistry()
@@ -893,10 +889,9 @@ func TestStop_DrainingDisabled(t *testing.T) {
 
 		m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
 
-		// Stop the notification manager, pause to allow the shutdown to be observed, and then allow the receiver to proceed.
+		// Stop the notification manager, then advance time to trigger the request timeout.
 		m.Stop()
 		time.Sleep(time.Second)
-		handlerRelease <- struct{}{}
 
 		// Allow goroutines to finish.
 		synctest.Wait()
