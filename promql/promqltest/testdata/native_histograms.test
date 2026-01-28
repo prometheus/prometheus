@@ -1897,7 +1897,7 @@ eval instant at 1m h_test >/ 0
   h_test {{schema:0 sum:127.28553390593274 count:30.5 z_bucket:0.5 z_bucket_w:0.001 buckets:[2 4 8 16]}}
 
 eval instant at 1m h_test </ 0
-  h_test {{schema:0 sum:3.5418471982869164 count:3.5 z_bucket:0.5 z_bucket_w:0.001 n_buckets:[1 2]}}
+  h_test {{schema:0 sum:0.0 count:3.5 z_bucket:0.5 z_bucket_w:0.001 n_buckets:[1 2]}}
 
 # Exponential buckets: trim uses exponential interpolation if cutoff is inside a bucket
 eval instant at 1m h_test_2 </ 1.13
@@ -1923,7 +1923,7 @@ eval instant at 1m h_test >/ -1
   h_test{} {{count:32 sum:126.57842712474618 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1]}}
 
 eval instant at 1m h_test </ -1
-  h_test{} {{count:2 sum:4.24895397947347 z_bucket_w:0.001 n_offset:1 n_buckets:[2]}}
+  h_test{} {{count:2 sum:0.0 z_bucket_w:0.001 n_offset:1 n_buckets:[2]}}
 
 # Custom buckets: trim on bucket boundary without interpolation
 eval instant at 1m cbh </ 13
@@ -2018,7 +2018,7 @@ eval instant at 1m cbh_two_buckets_split_at_zero </ 10.0
 
 # Skip (0; +Inf] bucket (100).
 eval instant at 1m cbh_two_buckets_split_at_zero </ 0.0
-  cbh_two_buckets_split_at_zero {{schema:-53 sum:33.0 count:1 custom_values:[0] buckets:[1 0]}}
+  cbh_two_buckets_split_at_zero {{schema:-53 sum:0.0 count:1 custom_values:[0] buckets:[1 0]}}
 
 # Skip both buckets (1, 100).
 eval instant at 1m cbh_two_buckets_split_at_zero </ -10.0

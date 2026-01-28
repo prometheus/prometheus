@@ -3243,8 +3243,17 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 	updatedCount := 0.0
 	origSum := trimmedHist.Sum
 	removedSum := 0.0
-	hasPositive, hasNegative := false, false
 	isCustomBucket := trimmedHist.UsesCustomBuckets()
+
+	var hasPositive, hasNegative bool
+	trackBucketSigns := func(bucket histogram.Bucket[float64]) {
+		if bucket.Lower < 0 {
+			hasNegative = true
+		}
+		if bucket.Upper > 0 {
+			hasPositive = true
+		}
+	}
 
 	if isUpperTrim {
 		// Calculate the fraction to keep for buckets that contain the trim value.
@@ -3255,18 +3264,6 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 			if bucket.Count == 0 {
 				continue
 			}
-			if isCustomBucket {
-				if bucket.Upper <= 0 {
-					hasNegative = true
-				} else {
-					if bucket.Lower < 0 {
-						hasNegative = true
-					}
-					hasPositive = true
-				}
-			} else {
-				hasPositive = true
-			}
 
 			keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, true, isCustomBucket)
 
@@ -3274,10 +3271,12 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 			case bucket.Upper <= rhs:
 				// Bucket is entirely below the trim point - keep all.
 				updatedCount += bucket.Count
+				trackBucketSigns(bucket)
 			case bucket.Lower < rhs:
 				// Bucket contains the trim point - interpolate.
 				removedCount := bucket.Count - keepCount
 				removedSum += removedCount * bucketMidpoint
+				trackBucketSigns(bucket)
 
 				updatedCount += keepCount
 				trimmedHist.PositiveBuckets[i] = keepCount
@@ -3296,19 +3295,20 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 			if bucket.Count == 0 {
 				continue
 			}
-			hasNegative = true
 
 			keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, false, isCustomBucket)
 
 			switch {
 			case bucket.Upper <= rhs:
 				updatedCount += bucket.Count
+				trackBucketSigns(bucket)
 			case bucket.Lower < rhs:
 				removedCount := bucket.Count - keepCount
 				removedSum += removedCount * bucketMidpoint
 
 				trimmedHist.NegativeBuckets[i] = keepCount
 				updatedCount += keepCount
+				trackBucketSigns(bucket)
 			default:
 				bucketMidpoint = -math.Sqrt(bucket.Lower * bucket.Upper)
 				removedSum += bucket.Count * bucketMidpoint
@@ -3323,30 +3323,20 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 			if bucket.Count == 0 {
 				continue
 			}
-			if isCustomBucket {
-				if bucket.Upper <= 0 {
-					hasNegative = true
-				} else {
-					if bucket.Lower < 0 {
-						hasNegative = true
-					}
-					hasPositive = true
-				}
-			} else {
-				hasPositive = true
-			}
 
 			keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, true, isCustomBucket)
 
 			switch {
 			case bucket.Lower >= rhs:
 				updatedCount += bucket.Count
+				trackBucketSigns(bucket)
 			case bucket.Upper > rhs:
 				removedCount := bucket.Count - keepCount
 				removedSum += removedCount * bucketMidpoint
 
 				trimmedHist.PositiveBuckets[i] = keepCount
 				updatedCount += keepCount
+				trackBucketSigns(bucket)
 			default:
 				if !isCustomBucket {
 					bucketMidpoint = math.Sqrt(bucket.Lower * bucket.Upper)
@@ -3361,19 +3351,20 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 			if bucket.Count == 0 {
 				continue
 			}
-			hasNegative = true
 
 			keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, false, isCustomBucket)
 
 			switch {
 			case bucket.Lower >= rhs:
 				updatedCount += bucket.Count
+				trackBucketSigns(bucket)
 			case bucket.Upper > rhs:
 				removedCount := bucket.Count - keepCount
 				removedSum += removedCount * bucketMidpoint
 
 				trimmedHist.NegativeBuckets[i] = keepCount
 				updatedCount += keepCount
+				trackBucketSigns(bucket)
 			default:
 				bucketMidpoint = -math.Sqrt(bucket.Lower * bucket.Upper)
 				removedSum += bucket.Count * bucketMidpoint
