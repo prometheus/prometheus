@@ -905,11 +905,10 @@ func TestStop_DrainingEnabled(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const alertmanagerURL = "http://alertmanager:9093/api/v2/alerts"
 
-		alertsReceived := atomic.NewInt64(0)
 		handlerStarted := make(chan struct{}, 1)
+		alertsReceived := atomic.NewInt64(0)
 
 		// Fake Do function that simulates alertmanager responding slowly but successfully.
-		// This paces request handling so we can queue alert-2 while alert-1 is still in-flight.
 		fakeDo := func(_ context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
 			var alerts []*Alert
 			b, err := io.ReadAll(req.Body)
@@ -919,13 +918,12 @@ func TestStop_DrainingEnabled(t *testing.T) {
 			if err := json.Unmarshal(b, &alerts); err != nil {
 				return nil, fmt.Errorf("unmarshal request body: %w", err)
 			}
+			alertsReceived.Add(int64(len(alerts)))
 
 			// Signal arrival.
 			handlerStarted <- struct{}{}
 
-			alertsReceived.Add(int64(len(alerts)))
-
-			// Respond slowly to allow time for alert-2 to be queued while this request is in-flight.
+			// Block to allow for alert-2 to be queued while this request is in-flight.
 			time.Sleep(100 * time.Millisecond)
 
 			return &http.Response{
@@ -957,10 +955,6 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		}
 
 		go m.Run(nil)
-		t.Cleanup(func() {
-			// Advance time so in-flight requests complete.
-			time.Sleep(time.Second)
-		})
 
 		// Queue two alerts. The first should be immediately sent to the receiver.
 		m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
@@ -974,6 +968,9 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		// Stop the notification manager. With DrainOnShutdown=true, this should wait
 		// for the queue to drain, ensuring both alerts are sent.
 		m.Stop()
+
+		// Advance time so in-flight requests complete.
+		time.Sleep(time.Second)
 
 		// Allow goroutines to finish.
 		synctest.Wait()
