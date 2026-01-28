@@ -7179,3 +7179,50 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 		})
 	}
 }
+
+// TestHead_RaceDeleteSeriesByID tests for a data race in deleteSeriesByID
+// when hashShard != refShard. The bug is that deleteSeriesByID accesses
+// hashes[hashShard] while only holding locks[refShard]. When these shards
+// differ, this is a data race with concurrent operations on hashes[hashShard].
+// This test should be run with -race to detect the issue.
+func TestHead_RaceDeleteSeriesByID(t *testing.T) {
+	// Use a small stripe size to increase the probability that hashShard != refShard.
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.StripeSize = 2
+
+	head, _ := newTestHeadWithOptions(t, compression.None, opts)
+	require.NoError(t, head.Init(0))
+
+	const numSeries = 1000
+
+	// Pre-create series to delete.
+	refs := make([]chunks.HeadSeriesRef, 0, numSeries)
+	app := head.Appender(t.Context())
+	for i := range numSeries {
+		lset := labels.FromStrings("a", strconv.Itoa(i))
+		ref, err := app.Append(0, lset, 100, float64(i))
+		require.NoError(t, err)
+		refs = append(refs, chunks.HeadSeriesRef(ref))
+	}
+	require.NoError(t, app.Commit())
+
+	// Goroutine creates new series concurrently (accesses hashes[] via getOrCreate).
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		app := head.Appender(t.Context())
+		for i := numSeries; i < numSeries*3; i++ {
+			lset := labels.FromStrings("b", strconv.Itoa(i))
+			_, _ = app.Append(0, lset, 100, float64(i))
+		}
+		_ = app.Commit()
+	}()
+
+	// Delete pre-created series concurrently (accesses hashes[] via del).
+	for _, ref := range refs {
+		head.deleteSeriesByID([]chunks.HeadSeriesRef{ref})
+	}
+
+	wg.Wait()
+}
