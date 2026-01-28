@@ -23,13 +23,11 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/secrets"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
 )
 
 func TestOvhcloudDedicatedServerRefresh(t *testing.T) {
-	var cfg SDConfig
-
 	mock := httptest.NewServer(http.HandlerFunc(MockDedicatedAPI))
 	defer mock.Close()
 	cfgString := fmt.Sprintf(`
@@ -40,8 +38,8 @@ application_key: %s
 application_secret: %s
 consumer_key: %s`, mock.URL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecretTest, ovhcloudConsumerKeyTest)
 
-	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
-	d, err := newRefresher(&cfg, promslog.NewNopLogger())
+	_, cfg, _ := secrets.SetupManagerForTest[SDConfig](t, cfgString, &secrets.MockProvider{})
+	d, err := newRefresher(cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 	ctx := context.Background()
 	targetGroups, err := d.refresh(ctx)

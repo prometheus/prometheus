@@ -40,6 +40,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/secrets"
 	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -104,15 +105,15 @@ func init() {
 
 // SDConfig is the configuration for Azure based service discovery.
 type SDConfig struct {
-	Environment          string             `yaml:"environment,omitempty"`
-	Port                 int                `yaml:"port"`
-	SubscriptionID       string             `yaml:"subscription_id"`
-	TenantID             string             `yaml:"tenant_id,omitempty"`
-	ClientID             string             `yaml:"client_id,omitempty"`
-	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
-	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
-	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
-	ResourceGroup        string             `yaml:"resource_group,omitempty"`
+	Environment          string         `yaml:"environment,omitempty"`
+	Port                 int            `yaml:"port"`
+	SubscriptionID       string         `yaml:"subscription_id"`
+	TenantID             string         `yaml:"tenant_id,omitempty"`
+	ClientID             string         `yaml:"client_id,omitempty"`
+	ClientSecret         secrets.Field  `yaml:"client_secret,omitempty"`
+	RefreshInterval      model.Duration `yaml:"refresh_interval,omitempty"`
+	AuthenticationMethod string         `yaml:"authentication_method,omitempty"`
+	ResourceGroup        string         `yaml:"resource_group,omitempty"`
 
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
@@ -131,7 +132,7 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 }
 
 func validateAuthParam(param, name string) error {
-	if len(param) == 0 {
+	if param == "" {
 		return fmt.Errorf("azure SD configuration requires a %s", name)
 	}
 	return nil
@@ -156,8 +157,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
 			return err
 		}
-		if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
-			return err
+		if c.ClientSecret.IsNil() {
+			return errors.New("azure SD configuration requires a client_secret")
 		}
 	}
 
@@ -298,7 +299,7 @@ func newCredential(cfg SDConfig, policyClientOptions policy.ClientOptions) (azco
 		credential = azcore.TokenCredential(managedIdentityCredential)
 	case authMethodOAuth:
 		options := &azidentity.ClientSecretCredentialOptions{ClientOptions: policyClientOptions}
-		secretCredential, err := azidentity.NewClientSecretCredential(cfg.TenantID, cfg.ClientID, string(cfg.ClientSecret), options)
+		secretCredential, err := azidentity.NewClientSecretCredential(cfg.TenantID, cfg.ClientID, cfg.ClientSecret.Value(), options)
 		if err != nil {
 			return nil, err
 		}

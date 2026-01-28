@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/secrets"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -68,7 +69,7 @@ func init() {
 type SDConfig struct {
 	Server           string                  `yaml:"server"`
 	Username         string                  `yaml:"username"`
-	Password         config.Secret           `yaml:"password"`
+	Password         secrets.Field           `yaml:"password"`
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	Entitlement      string                  `yaml:"entitlement,omitempty"`
 	Separator        string                  `yaml:"separator,omitempty"`
@@ -155,7 +156,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		//nolint:staticcheck // Capitalized first word.
 		return errors.New("Uyuni SD configuration requires a username")
 	}
-	if c.Password == "" {
+	if c.Password.IsNil() {
 		//nolint:staticcheck // Capitalized first word.
 		return errors.New("Uyuni SD configuration requires a password")
 	}
@@ -234,7 +235,7 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 		apiURL:       apiURL,
 		roundTripper: rt,
 		username:     conf.Username,
-		password:     string(conf.Password),
+		password:     conf.Password.Value(),
 		entitlement:  conf.Entitlement,
 		separator:    conf.Separator,
 		interval:     time.Duration(conf.RefreshInterval),

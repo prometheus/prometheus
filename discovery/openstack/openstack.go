@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/secrets"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -49,14 +50,14 @@ type SDConfig struct {
 	IdentityEndpoint            string           `yaml:"identity_endpoint"`
 	Username                    string           `yaml:"username"`
 	UserID                      string           `yaml:"userid"`
-	Password                    config.Secret    `yaml:"password"`
+	Password                    secrets.Field    `yaml:"password"`
 	ProjectName                 string           `yaml:"project_name"`
 	ProjectID                   string           `yaml:"project_id"`
 	DomainName                  string           `yaml:"domain_name"`
 	DomainID                    string           `yaml:"domain_id"`
 	ApplicationCredentialName   string           `yaml:"application_credential_name"`
 	ApplicationCredentialID     string           `yaml:"application_credential_id"`
-	ApplicationCredentialSecret config.Secret    `yaml:"application_credential_secret"`
+	ApplicationCredentialSecret secrets.Field    `yaml:"application_credential_secret"`
 	Role                        Role             `yaml:"role"`
 	Region                      string           `yaml:"region"`
 	RefreshInterval             model.Duration   `yaml:"refresh_interval"`
@@ -180,14 +181,14 @@ func newRefresher(conf *SDConfig, l *slog.Logger) (refresher, error) {
 			IdentityEndpoint:            conf.IdentityEndpoint,
 			Username:                    conf.Username,
 			UserID:                      conf.UserID,
-			Password:                    string(conf.Password),
+			Password:                    conf.Password.Value(),
 			TenantName:                  conf.ProjectName,
 			TenantID:                    conf.ProjectID,
 			DomainName:                  conf.DomainName,
 			DomainID:                    conf.DomainID,
 			ApplicationCredentialID:     conf.ApplicationCredentialID,
 			ApplicationCredentialName:   conf.ApplicationCredentialName,
-			ApplicationCredentialSecret: string(conf.ApplicationCredentialSecret),
+			ApplicationCredentialSecret: conf.ApplicationCredentialSecret.Value(),
 		}
 	}
 	client, err := openstack.NewClient(opts.IdentityEndpoint)

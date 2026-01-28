@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/secrets"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,12 +37,13 @@ func (s *OpenstackSDHypervisorTestSuite) SetupTest(t *testing.T) {
 
 func (s *OpenstackSDHypervisorTestSuite) openstackAuthSuccess() (refresher, error) {
 	conf := SDConfig{
-		IdentityEndpoint: s.Mock.Endpoint(),
-		Password:         "test",
-		Username:         "test",
-		DomainName:       "12345",
-		Region:           "RegionOne",
-		Role:             "hypervisor",
+		IdentityEndpoint:            s.Mock.Endpoint(),
+		ApplicationCredentialSecret: secrets.MockInline(""),
+		Password:                    secrets.MockInline("test"),
+		Username:                    "test",
+		DomainName:                  "12345",
+		Region:                      "RegionOne",
+		Role:                        "hypervisor",
 	}
 	return newRefresher(&conf, nil)
 }

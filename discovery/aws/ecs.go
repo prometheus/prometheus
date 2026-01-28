@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/secrets"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -95,7 +96,7 @@ type ECSSDConfig struct {
 	Region          string         `yaml:"region"`
 	Endpoint        string         `yaml:"endpoint"`
 	AccessKey       string         `yaml:"access_key,omitempty"`
-	SecretKey       config.Secret  `yaml:"secret_key,omitempty"`
+	SecretKey       secrets.Field  `yaml:"secret_key,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
 	RoleARN         string         `yaml:"role_arn,omitempty"`
 	Clusters        []string       `yaml:"clusters,omitempty"`
@@ -226,8 +227,8 @@ func (d *ECSDiscovery) initEcsClient(ctx context.Context) error {
 
 	// Only set static credentials if both access key and secret key are provided
 	// Otherwise, let AWS SDK use its default credential chain
-	if d.cfg.AccessKey != "" && d.cfg.SecretKey != "" {
-		credProvider := credentials.NewStaticCredentialsProvider(d.cfg.AccessKey, string(d.cfg.SecretKey), "")
+	if d.cfg.AccessKey != "" && !d.cfg.SecretKey.IsNil() {
+		credProvider := credentials.NewStaticCredentialsProvider(d.cfg.AccessKey, d.cfg.SecretKey.Value(), "")
 		configOptions = append(configOptions, awsConfig.WithCredentialsProvider(credProvider))
 	}
 
