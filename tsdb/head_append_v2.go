@@ -106,6 +106,10 @@ type headAppenderV2 struct {
 	headAppenderBase
 }
 
+func isFloat(v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
+	return v != 0 || (h == nil && fh == nil)
+}
+
 func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
@@ -113,18 +117,20 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		sampleMetricType   = sampleMetricTypeFloat
 		isStale            bool
 	)
-	// Fail fast on incorrect histograms.
 
-	switch {
-	case fh != nil:
-		sampleMetricType = sampleMetricTypeHistogram
-		if err := fh.Validate(); err != nil {
-			return 0, err
-		}
-	case h != nil:
-		sampleMetricType = sampleMetricTypeHistogram
-		if err := h.Validate(); err != nil {
-			return 0, err
+	if !isFloat(v, h, fh) {
+		// Fail fast on incorrect histograms.
+		switch {
+		case fh != nil:
+			sampleMetricType = sampleMetricTypeHistogram
+			if err := fh.Validate(); err != nil {
+				return 0, err
+			}
+		case h != nil:
+			sampleMetricType = sampleMetricTypeHistogram
+			if err := h.Validate(); err != nil {
+				return 0, err
+			}
 		}
 	}
 
@@ -145,18 +151,20 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	}
 
 	// TODO(bwplotka): Handle ST natively (as per PROM-60).
-	if a.head.opts.EnableSTAsZeroSample && st != 0 {
+	if st != 0 && a.head.opts.EnableSTAsZeroSample {
 		a.bestEffortAppendSTZeroSample(s, ls, st, t, h, fh)
 	}
 
-	switch {
-	case fh != nil:
-		isStale = value.IsStaleNaN(fh.Sum)
-		appErr = a.appendFloatHistogram(s, t, fh, opts.RejectOutOfOrder)
-	case h != nil:
-		isStale = value.IsStaleNaN(h.Sum)
-		appErr = a.appendHistogram(s, t, h, opts.RejectOutOfOrder)
-	default:
+	if !isFloat(v, h, fh) {
+		switch {
+		case fh != nil:
+			isStale = value.IsStaleNaN(fh.Sum)
+			appErr = a.appendFloatHistogram(s, t, fh, opts.RejectOutOfOrder)
+		case h != nil:
+			isStale = value.IsStaleNaN(h.Sum)
+			appErr = a.appendHistogram(s, t, h, opts.RejectOutOfOrder)
+		}
+	} else {
 		isStale = value.IsStaleNaN(v)
 		if isStale {
 			// If we have added a sample before with this same appender, we
@@ -181,6 +189,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// we do not need to check for the difference between "unknown
 			// series" and "known series with stNone".
 		}
+
 		appErr = a.appendFloat(s, t, v, opts.RejectOutOfOrder)
 	}
 	// Handle append error, if any.
