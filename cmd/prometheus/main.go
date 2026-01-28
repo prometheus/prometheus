@@ -265,13 +265,26 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "ooo-native-histograms":
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "created-timestamp-zero-ingestion":
+				// NOTE(bwplotka): Once AppendableV1 is removed, there will be only the TSDB and agent flags.
 				c.scrape.EnableStartTimestampZeroIngestion = true
 				c.web.STZeroIngestionEnabled = true
+				c.tsdb.EnableSTAsZeroSample = true
 				c.agent.EnableSTAsZeroSample = true
+
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
+				// This is to widen the ST support surface.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
-				logger.Info("Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+				logger.Info("Experimental start timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+			case "st-storage":
+				// TODO(bwplotka): Implement ST Storage as per PROM-60 and document this hidden feature flag.
+				c.tsdb.EnableSTStorage = true
+				c.agent.EnableSTStorage = true
+
+				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers. This is to widen the ST support surface.
+				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				logger.Info("Experimental start timestamp storage enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "delayed-compaction":
 				c.tsdb.EnableDelayedCompaction = true
 				logger.Info("Experimental delayed compaction is enabled.")
@@ -872,16 +885,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	scrapeManager, err := scrape.NewManager(
-		&cfg.scrape,
-		logger.With("component", "scrape manager"),
-		logging.NewJSONFileLogger,
-		fanoutStorage, nil, // TODO(bwplotka): Switch to AppendableV2.
-		prometheus.DefaultRegisterer,
-	)
-	if err != nil {
-		logger.Error("failed to create a scrape manager", "err", err)
-		os.Exit(1)
+	var scrapeManager *scrape.Manager
+	{
+		// TODO(bwplotka): Switch to AppendableV2 by default.
+		// See: https://github.com/prometheus/prometheus/issues/17632
+		var (
+			scrapeAppendable   storage.Appendable = fanoutStorage
+			scrapeAppendableV2 storage.AppendableV2
+		)
+		if cfg.tsdb.EnableSTStorage {
+			scrapeAppendable = nil
+			scrapeAppendableV2 = fanoutStorage
+		}
+		scrapeManager, err = scrape.NewManager(
+			&cfg.scrape,
+			logger.With("component", "scrape manager"),
+			logging.NewJSONFileLogger,
+			scrapeAppendable, scrapeAppendableV2,
+			prometheus.DefaultRegisterer,
+		)
+		if err != nil {
+			logger.Error("failed to create a scrape manager", "err", err)
+			os.Exit(1)
+		}
 	}
 
 	var (
@@ -1368,6 +1394,8 @@ func main() {
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
 					"WALCompressionType", cfg.tsdb.WALCompressionType,
 					"BlockReloadInterval", cfg.tsdb.BlockReloadInterval,
+					"EnableSTAsZeroSample", cfg.tsdb.EnableSTAsZeroSample,
+					"EnableSTStorage", cfg.tsdb.EnableSTStorage,
 				)
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
@@ -1425,6 +1453,7 @@ func main() {
 					"MaxWALTime", cfg.agent.MaxWALTime,
 					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
 					"EnableSTAsZeroSample", cfg.agent.EnableSTAsZeroSample,
+					"EnableSTStorage", cfg.tsdb.EnableSTStorage,
 				)
 
 				localStorage.Set(db, 0)
@@ -1944,6 +1973,8 @@ type tsdbOptions struct {
 	UseUncachedIO                  bool
 	BlockCompactionExcludeFunc     tsdb.BlockExcludeFilterFunc
 	BlockReloadInterval            model.Duration
+	EnableSTAsZeroSample           bool
+	EnableSTStorage                bool
 	StaleSeriesCompactionThreshold float64
 }
 
@@ -1971,6 +2002,8 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
 		BlockReloadInterval:            time.Duration(opts.BlockReloadInterval),
 		FeatureRegistry:                features.DefaultRegistry,
+		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
+		EnableSTStorage:                opts.EnableSTStorage,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 	}
 }
@@ -1986,6 +2019,7 @@ type agentOptions struct {
 	NoLockfile             bool
 	OutOfOrderTimeWindow   int64 // TODO(bwplotka): Unused option, fix it or remove.
 	EnableSTAsZeroSample   bool
+	EnableSTStorage        bool
 }
 
 func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Options {
@@ -2002,6 +2036,7 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		NoLockfile:           opts.NoLockfile,
 		OutOfOrderTimeWindow: outOfOrderTimeWindow,
 		EnableSTAsZeroSample: opts.EnableSTAsZeroSample,
+		EnableSTStorage:      opts.EnableSTStorage,
 	}
 }
 

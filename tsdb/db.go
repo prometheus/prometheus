@@ -235,6 +235,11 @@ type Options struct {
 	// is implemented.
 	EnableSTAsZeroSample bool
 
+	// EnableSTStorage determines whether TSDB should write a Start Timestamp (ST)
+	// per sample to WAL.
+	// TODO(bwplotka): Implement this option as per PROM-60, currently it's noop.
+	EnableSTStorage bool
+
 	// EnableMetadataWALRecords represents 'metadata-wal-records' feature flag.
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
