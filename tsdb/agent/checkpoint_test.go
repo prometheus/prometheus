@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/prometheus/common/promslog"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -31,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
-	"github.com/stretchr/testify/require"
 )
 
 const walSegmentSize = 32 << 10 // must be aligned to the page size
@@ -55,7 +56,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 
 		opts := DefaultOptions()
 		opts.OutOfOrderTimeWindow = math.MaxInt64 // Fixes "out of order sample" in benchmarks
-		opts.SkipCurrentCheckpointReRead = params.isNewCheckpoint
+		opts.CheckpointFromInMemorySeries = params.isNewCheckpoint
 		opts.WALSegmentSize = walSegmentSize // Set minimum size to get more segments for checkpoint.
 
 		db, err := Open(l, nil, rs, params.storageDir, opts)
@@ -222,7 +223,7 @@ func getCheckpointSize(b testing.TB, walDir string) int64 {
 	require.NoError(b, err, "can't find the last checkpoint")
 	// Walk through a dir and accumulate total size of all files
 	var size int64
-	err = filepath.WalkDir(dirName, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(dirName, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -256,7 +257,7 @@ func benchCheckpoint(b testing.TB, p benchCheckpointParams) {
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = math.MaxInt64 // Fixes "out of order sample" in benchmarks
-	opts.SkipCurrentCheckpointReRead = p.skipCurrentCheckpointReRead
+	opts.CheckpointFromInMemorySeries = p.skipCurrentCheckpointReRead
 	opts.WALSegmentSize = walSegmentSize // Set minimum size to get more segments for checkpoint.
 
 	db, err := Open(l, nil, rs, p.storageDir, opts)

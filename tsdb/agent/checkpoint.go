@@ -26,105 +26,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
-type checkpointFlusher struct {
-	enc         record.Encoder
-	checkpoint  *wlog.WL
-	seriesBuff  []byte
-	samplesBuff []byte
-
-	seriesRecords []record.RefSeries
-	sampleRecords []record.RefSample
-	offset        int
-	batchSize     int
-}
-
-func newCheckpointFlusher(checkpoint *wlog.WL, batchSize int) *checkpointFlusher {
-	return &checkpointFlusher{
-		batchSize:     batchSize,
-		checkpoint:    checkpoint,
-		seriesRecords: make([]record.RefSeries, batchSize),
-		sampleRecords: make([]record.RefSample, batchSize),
-	}
-}
-
-func (cf *checkpointFlusher) flushRecords(withSamples bool) error {
-	cf.seriesBuff = cf.enc.Series(cf.seriesRecords, cf.seriesBuff)
-
-	var err error
-	if withSamples {
-		cf.samplesBuff = cf.enc.Samples(cf.sampleRecords, cf.samplesBuff)
-		err = cf.checkpoint.Log(cf.seriesBuff, cf.samplesBuff)
-	} else {
-		err = cf.checkpoint.Log(cf.seriesBuff)
-	}
-
-	if err != nil {
-		return fmt.Errorf("flush records: %w", err)
-	}
-
-	cf.seriesBuff = cf.seriesBuff[:0]
-	cf.samplesBuff = cf.samplesBuff[:0]
-	cf.offset = 0
-	return nil
-}
-
-func (cf *checkpointFlusher) writeSeries(seriesIter iter.Seq[ActiveSeries]) error {
-	for series := range seriesIter {
-		// If we filled the buffers, write them out and reset.
-		if cf.offset == cf.batchSize {
-			if err := cf.flushRecords(true); err != nil {
-				return fmt.Errorf("flush active series: %w", err)
-			}
-		}
-
-		cf.seriesRecords[cf.offset] = record.RefSeries{
-			Ref:    series.Ref(),
-			Labels: series.Labels(),
-		}
-
-		// Sample value is irrelevant, we only need the timestamp.
-		cf.sampleRecords[cf.offset] = record.RefSample{
-			Ref: series.Ref(),
-			T:   series.LastSampleTimestamp(),
-			V:   0,
-		}
-
-		cf.offset++
-	}
-
-	// Clear the last batch if we have one
-	if cf.offset != 0 {
-		return cf.flushRecords(true)
-	}
-
-	return nil
-}
-
-func (cf *checkpointFlusher) writeDeletedRecords(seriesRefIter iter.Seq[chunks.HeadSeriesRef]) error {
-	for ref := range seriesRefIter {
-		// If we filled the buffers, write them out and reset.
-		if cf.offset == cf.batchSize {
-			if err := cf.flushRecords(false); err != nil {
-				return fmt.Errorf("flush deleted series: %w", err)
-			}
-		}
-
-		// We don't care about timestamps here, so no samples.
-		cf.seriesRecords[cf.offset] = record.RefSeries{
-			Ref: ref,
-		}
-
-		cf.offset++
-	}
-
-	// Clear the last batch if we have one
-	if cf.offset != 0 {
-		return cf.flushRecords(false)
-	}
-
-	return nil
-}
-
 const defaultBatchSize = 1000
 
 type CheckpointParams struct {
@@ -156,7 +57,7 @@ func (p CheckpointParams) withDefaults() CheckpointParams {
 // and relies on data in memory.
 func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 	p = p.withDefaults()
-	logger.Info("creating checkpoint from WAL", "atIndex", p.AtIndex)
+	logger.Info("Creating checkpoint", "atIndex", p.AtIndex)
 
 	dir, idx, err := wlog.LastCheckpoint(w.Dir())
 	if err != nil && !errors.Is(err, record.ErrNotFound) {
@@ -222,6 +123,106 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 
 	if err := fileutil.Replace(cpTmpDir, cpDir); err != nil {
 		return fmt.Errorf("rename checkpoint directory: %w", err)
+	}
+
+	return nil
+}
+
+type checkpointFlusher struct {
+	enc         record.Encoder
+	checkpoint  *wlog.WL
+	seriesBuff  []byte
+	samplesBuff []byte
+
+	seriesRecords []record.RefSeries
+	sampleRecords []record.RefSample
+	offset        int
+	batchSize     int
+}
+
+func newCheckpointFlusher(checkpoint *wlog.WL, batchSize int) *checkpointFlusher {
+	return &checkpointFlusher{
+		batchSize:     batchSize,
+		checkpoint:    checkpoint,
+		seriesRecords: make([]record.RefSeries, batchSize),
+		sampleRecords: make([]record.RefSample, batchSize),
+	}
+}
+
+func (cf *checkpointFlusher) flushRecords() error {
+	withSamples := len(cf.sampleRecords) > 0
+	cf.seriesBuff = cf.enc.Series(cf.seriesRecords, cf.seriesBuff)
+
+	var err error
+	if withSamples {
+		cf.samplesBuff = cf.enc.Samples(cf.sampleRecords, cf.samplesBuff)
+		err = cf.checkpoint.Log(cf.seriesBuff, cf.samplesBuff)
+	} else {
+		err = cf.checkpoint.Log(cf.seriesBuff)
+	}
+
+	if err != nil {
+		return fmt.Errorf("flush records: %w", err)
+	}
+
+	cf.seriesBuff = cf.seriesBuff[:0]
+	cf.samplesBuff = cf.samplesBuff[:0]
+	cf.offset = 0
+	return nil
+}
+
+func (cf *checkpointFlusher) writeSeries(seriesIter iter.Seq[ActiveSeries]) error {
+	for series := range seriesIter {
+		// If we filled the buffers, write them out and reset.
+		if cf.offset == cf.batchSize {
+			if err := cf.flushRecords(); err != nil {
+				return fmt.Errorf("flush active series: %w", err)
+			}
+		}
+
+		cf.seriesRecords[cf.offset] = record.RefSeries{
+			Ref:    series.Ref(),
+			Labels: series.Labels(),
+		}
+
+		// Sample value is irrelevant, we only need the timestamp.
+		cf.sampleRecords[cf.offset] = record.RefSample{
+			Ref: series.Ref(),
+			T:   series.LastSampleTimestamp(),
+			V:   0,
+		}
+
+		cf.offset++
+	}
+
+	// Clear the last batch if we have one
+	if cf.offset != 0 {
+		return cf.flushRecords()
+	}
+
+	return nil
+}
+
+func (cf *checkpointFlusher) writeDeletedRecords(seriesRefIter iter.Seq[chunks.HeadSeriesRef]) error {
+	for ref := range seriesRefIter {
+		// If we filled the buffers, write them out and reset.
+		if cf.offset == cf.batchSize {
+			if err := cf.flushRecords(); err != nil {
+				return fmt.Errorf("flush deleted series: %w", err)
+			}
+		}
+
+		// We don't care about timestamps here, so no samples.
+		cf.seriesRecords[cf.offset] = record.RefSeries{
+			Ref: ref,
+		}
+
+		cf.offset++
+	}
+
+	// Clear the last batch if we have one
+	if cf.offset != 0 {
+		return cf.flushRecords()
 	}
 
 	return nil
