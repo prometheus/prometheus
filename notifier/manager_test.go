@@ -834,7 +834,8 @@ func TestStop_DrainingDisabled(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const alertmanagerURL = "http://alertmanager:9093/api/v2/alerts"
 
-		handlerSync := make(chan struct{})
+		handlerStarted := make(chan struct{})
+		handlerRelease := make(chan struct{})
 		alertsReceived := atomic.NewInt64(0)
 
 		// Fake Do function that simulates alertmanager behavior in-process.
@@ -850,8 +851,8 @@ func TestStop_DrainingDisabled(t *testing.T) {
 			alertsReceived.Add(int64(len(alerts)))
 
 			// Signal arrival, then block until test releases us.
-			handlerSync <- struct{}{}
-			<-handlerSync
+			handlerStarted <- struct{}{}
+			<-handlerRelease
 
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -888,14 +889,14 @@ func TestStop_DrainingDisabled(t *testing.T) {
 		m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
 
 		// Wait for receiver to get the request.
-		<-handlerSync
+		<-handlerStarted
 
 		m.Send(&Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
 
 		// Stop the notification manager, pause to allow the shutdown to be observed, and then allow the receiver to proceed.
 		m.Stop()
 		time.Sleep(time.Second)
-		handlerSync <- struct{}{}
+		handlerRelease <- struct{}{}
 
 		// Allow goroutines to finish.
 		synctest.Wait()
