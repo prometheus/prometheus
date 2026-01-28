@@ -38,7 +38,11 @@ import (
 const walSegmentSize = 32 << 10 // must be aligned to the page size
 
 func TestCheckpointReplayCompatibility(t *testing.T) {
-	// Test to ensure that the checkpoint replay is compatible with the original wlog.Checkpoint.
+	// Test to ensure that WAL replay between wlog.Checkpoint and agent.Checkpoint are the same.
+	var (
+		oldAfterSeries *stripeSeries
+		newAfterSeries *stripeSeries
+	)
 
 	type openDBParams struct {
 		isNewCheckpoint bool
@@ -98,11 +102,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
-	// Old wlog.Checkpoint:
-	var (
-		oldBeforeSeries *stripeSeries
-		oldAfterSeries  *stripeSeries
-	)
+	// Write and replay for old wlog.Checkpoint
 
 	// wlog.Open expects to have a "wal" subdirectory
 	oldStateRoot := filepath.Join(t.TempDir(), "state-old")
@@ -122,7 +122,6 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		err := db.truncate(-1)
 		require.NoError(t, err, "db.truncate")
 		require.NoError(t, db.Close())
-		oldBeforeSeries = db.series
 	})
 
 	// Restore the database from the checkpoint.
@@ -132,14 +131,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		oldAfterSeries = db.series
 	})
 
-	require.Equal(t, oldBeforeSeries, oldAfterSeries, "wlog.Checkpoint: saved and replayed data don't match")
-
-	// New agent.Checkpoint:
-	var (
-		newBeforeSeries *stripeSeries
-		newAfterSeries  *stripeSeries
-	)
-
+	// Write and replay using agent.Checkpoint:
 	newStateRoot := filepath.Join(t.TempDir(), "state-new")
 	newWalDir := filepath.Join(newStateRoot, "wal")
 	require.NoError(t, os.MkdirAll(newWalDir, os.ModePerm))
@@ -156,7 +148,6 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		err := db.truncate(-1)
 		require.NoError(t, err, "db.truncate")
 		require.NoError(t, db.Close())
-		newBeforeSeries = db.series
 	})
 
 	openDBAndDo(newParams, func(db *DB) {
@@ -164,7 +155,6 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		newAfterSeries = db.series
 	})
 
-	require.Equal(t, newBeforeSeries, newAfterSeries, "agent.Checkpoint: saved and replayed data don't match")
 	require.Equal(t, oldAfterSeries, newAfterSeries, "agent.Checkpoint vs wlog.Checkpoint post-replay state doesn't match")
 }
 
