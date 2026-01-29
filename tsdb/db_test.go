@@ -67,6 +67,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 func TestMain(m *testing.M) {
@@ -3183,6 +3184,79 @@ func TestCompactHead(t *testing.T) {
 	}
 	require.Equal(t, expSamples, actSamples)
 	require.NoError(t, seriesSet.Err())
+}
+
+// TestHeadCompactionWithConcurrentAppends verifies that head compaction works correctly
+// while concurrent appends are happening. This is a deterministic version of the flaky
+// integration test TestHeadCompactionWhileScraping that was in cmd/prometheus/main_test.go.
+// See: https://github.com/prometheus/prometheus/issues/17956
+func TestHeadCompactionWithConcurrentAppends(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			minBlockDuration    = int64(100) // 100ms
+			blockReloadInterval = 100 * time.Millisecond
+			scrapeInterval      = 50 * time.Millisecond
+			numScrapers         = 2
+		)
+
+		opts := DefaultOptions()
+		opts.MinBlockDuration = minBlockDuration
+		opts.MaxBlockDuration = minBlockDuration
+		opts.BlockReloadInterval = blockReloadInterval
+
+		db := newTestDB(t, withOpts(opts))
+		ctx := context.Background()
+
+		// Create metrics for multiple scrapers
+		metrics := make([]labels.Labels, numScrapers)
+		for i := range numScrapers {
+			metrics[i] = labels.FromStrings("__name__", "test_metric", "scraper", strconv.Itoa(i))
+		}
+
+		// Simulate scraping by appending samples at regular intervals while advancing time.
+		// The head becomes compactable after 1.5x the min block duration (150ms).
+		// We run for enough iterations to trigger multiple compactions.
+		ts := int64(0)
+		for iteration := range 50 {
+			// Append samples from all scrapers concurrently
+			var wg sync.WaitGroup
+			for scraperID := range numScrapers {
+				wg.Add(1)
+				go func(id int) {
+					defer wg.Done()
+					app := db.Appender(ctx)
+					_, err := app.Append(0, metrics[id], ts, float64(iteration))
+					if err == nil {
+						_ = app.Commit()
+					} else {
+						_ = app.Rollback()
+					}
+				}(scraperID)
+			}
+			wg.Wait()
+
+			// Advance timestamp and time
+			ts += int64(scrapeInterval / time.Millisecond)
+			time.Sleep(scrapeInterval)
+			synctest.Wait()
+		}
+
+		// Wait for any in-flight compactions to complete
+		synctest.Wait()
+
+		// Verify that compactions ran successfully
+		compactionsRan := prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)
+		compactionsFailed := prom_testutil.ToFloat64(db.metrics.compactionsFailed)
+
+		// We expect at least some compactions to have run (the head becomes compactable
+		// after 1.5x the min block duration, so with 2.5s of simulated time and 100ms blocks,
+		// we should have multiple compaction opportunities)
+		require.GreaterOrEqual(t, compactionsRan, 1.0, "expected at least one compaction to run")
+		require.Zero(t, compactionsFailed, "expected no compaction failures")
+
+		// Verify that samples were actually written (sanity check)
+		require.Positive(t, db.Head().NumSeries(), "expected some series to be created")
+	})
 }
 
 // TestCompactHeadWithDeletion tests https://github.com/prometheus/prometheus/issues/11585.
