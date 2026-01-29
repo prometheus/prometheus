@@ -1172,22 +1172,23 @@ func (db *DB) run(ctx context.Context) {
 			db.head.mmapHeadChunks()
 
 			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
-			staleSeriesRatio := float64(numStaleSeries) / float64(numSeries)
-			if db.autoCompact && db.opts.staleSeriesCompactionThreshold.Load() > 0 &&
-				staleSeriesRatio >= db.opts.staleSeriesCompactionThreshold.Load() {
-				nextCompactionIsSoon := false
-				if !db.lastHeadCompactionTime.IsZero() {
-					compactionInterval := time.Duration(db.head.chunkRange.Load()) * time.Millisecond
-					nextEstimatedCompactionTime := db.lastHeadCompactionTime.Add(compactionInterval)
-					if time.Now().Add(10 * time.Minute).After(nextEstimatedCompactionTime) {
-						// Next compaction is starting within next 10 mins.
-						nextCompactionIsSoon = true
+			if db.autoCompact && numSeries > 0 && db.opts.staleSeriesCompactionThreshold.Load() > 0 {
+				staleSeriesRatio := float64(numStaleSeries) / float64(numSeries)
+				if staleSeriesRatio >= db.opts.staleSeriesCompactionThreshold.Load() {
+					nextCompactionIsSoon := false
+					if !db.lastHeadCompactionTime.IsZero() {
+						compactionInterval := time.Duration(db.head.chunkRange.Load()) * time.Millisecond
+						nextEstimatedCompactionTime := db.lastHeadCompactionTime.Add(compactionInterval)
+						if time.Now().Add(10 * time.Minute).After(nextEstimatedCompactionTime) {
+							// Next compaction is starting within next 10 mins.
+							nextCompactionIsSoon = true
+						}
 					}
-				}
 
-				if !nextCompactionIsSoon {
-					if err := db.CompactStaleHead(); err != nil {
-						db.logger.Error("immediate stale series compaction failed", "err", err)
+					if !nextCompactionIsSoon {
+						if err := db.CompactStaleHead(); err != nil {
+							db.logger.Error("immediate stale series compaction failed", "err", err)
+						}
 					}
 				}
 			}
