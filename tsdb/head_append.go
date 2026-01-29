@@ -116,12 +116,10 @@ func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 // initTime initializes a head with the first timestamp. This only needs to be called
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
-	if !h.minTime.CompareAndSwap(math.MaxInt64, t) {
-		return
-	}
 	// Ensure that max time is initialized to at least the min time we just set.
-	// Concurrent appenders may already have set it to a higher value.
 	h.maxTime.CompareAndSwap(math.MinInt64, t)
+	// Do minTime after maxTime. This avoids potential race if head.initialized() which uses minTime.
+	h.minTime.CompareAndSwap(math.MaxInt64, t)
 }
 
 func (a *initAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
