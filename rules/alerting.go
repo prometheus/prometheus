@@ -655,6 +655,7 @@ func (r *AlertingRule) String() string {
 		Alert:         r.name,
 		Expr:          r.vector.String(),
 		For:           model.Duration(r.holdDuration),
+		MaxFiringFor:  model.Duration(r.maxFiringFor),
 		KeepFiringFor: model.Duration(r.keepFiringFor),
 		Labels:        r.labels.Map(),
 		Annotations:   r.annotations.Map(),
