@@ -58,15 +58,15 @@ const (
 	StateUnknown AlertState = iota
 	// StateInactive is the state of an alert that is neither firing nor pending.
 	StateInactive
+	// StateExpired is the state of an alert that has been firing for longer than
+	// the configured maximum firing duration.
+	StateExpired
 	// StatePending is the state of an alert that has been active for less than
 	// the configured threshold duration.
 	StatePending
 	// StateFiring is the state of an alert that has been active for longer than
 	// the configured threshold duration.
 	StateFiring
-	// StateExpired is the state of an alert that has been active for longer than
-	// the configured threshold duration plus the maximum firing duration.
-	StateExpired
 )
 
 func (s AlertState) String() string {
@@ -558,7 +558,7 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 }
 
 // State returns the maximum state of alert instances for this rule.
-// StateFiring > StatePending > StateInactive > StateUnknown.
+// StateFiring > StatePending > StateExpired > StateInactive > StateUnknown.
 func (r *AlertingRule) State() AlertState {
 	r.activeMtx.Lock()
 	defer r.activeMtx.Unlock()
