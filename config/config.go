@@ -1107,6 +1107,10 @@ type TSDBConfig struct {
 	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
 	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
 
+	// StaleSeriesCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
+	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
+	StaleSeriesCompactionThreshold float64 `yaml:"stale_series_compaction_threshold,omitempty"`
+
 	Retention *TSDBRetentionConfig `yaml:"retention,omitempty"`
 }
 

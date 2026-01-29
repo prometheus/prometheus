@@ -127,6 +127,47 @@ func TestMMapFile(t *testing.T) {
 	require.Equal(t, []byte(data), bytes[:2], "Mmap failed")
 }
 
+func TestTrimStringByBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		input    string
+		size     int
+		expected string
+	}{
+		{
+			name:     "normal ASCII string",
+			input:    "hello",
+			size:     3,
+			expected: "hel",
+		},
+		{
+			name:     "no trimming needed",
+			input:    "hi",
+			size:     10,
+			expected: "hi",
+		},
+		{
+			name:     "UTF-8 multibyte character boundary",
+			input:    "日本", // 6 bytes (3 bytes per character)
+			size:     4,
+			expected: "日", // trims back to complete character boundary
+		},
+		{
+			name:     "invalid UTF-8 continuation-only bytes",
+			input:    string([]byte{0x80, 0x81, 0x82, 0x83, 0x84}), // only continuation bytes
+			size:     4,
+			expected: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				result := trimStringByBytes(tc.input, tc.size)
+				require.Equal(t, tc.expected, result)
+			})
+		})
+	}
+}
+
 func TestParseBrokenJSON(t *testing.T) {
 	for _, tc := range []struct {
 		b []byte

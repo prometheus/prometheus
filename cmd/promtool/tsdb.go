@@ -43,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
@@ -339,7 +338,7 @@ func listBlocks(path string, humanReadable bool) error {
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+		err = errors.Join(err, db.Close())
 	}()
 	blocks, err := db.Blocks()
 	if err != nil {
@@ -425,7 +424,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+		err = errors.Join(err, db.Close())
 	}()
 
 	meta := block.Meta()
@@ -625,7 +624,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, chunkr.Close()).Err()
+		err = errors.Join(err, chunkr.Close())
 	}()
 
 	totalChunks := 0
@@ -713,7 +712,7 @@ func dumpTSDBData(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt 
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+		err = errors.Join(err, db.Close())
 	}()
 	q, err := db.Querier(mint, maxt)
 	if err != nil {
@@ -743,7 +742,7 @@ func dumpTSDBData(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt 
 	}
 
 	if ws := ss.Warnings(); len(ws) > 0 {
-		return tsdb_errors.NewMulti(ws.AsErrors()...).Err()
+		return errors.Join(ws.AsErrors()...)
 	}
 
 	if ss.Err() != nil {

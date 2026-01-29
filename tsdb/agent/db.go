@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -93,6 +92,11 @@ type Options struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableSTAsZeroSample bool
+
+	// EnableSTStorage determines whether agent DB should write a Start Timestamp (ST)
+	// per sample to WAL.
+	// TODO(bwplotka): Implement this option as per PROM-60, currently it's noop.
+	EnableSTStorage bool
 }
 
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
@@ -798,7 +802,7 @@ func (db *DB) Close() error {
 
 	db.metrics.Unregister()
 
-	return tsdb_errors.NewMulti(db.locker.Release(), db.wal.Close()).Err()
+	return errors.Join(db.locker.Release(), db.wal.Close())
 }
 
 type appenderBase struct {
@@ -1124,13 +1128,22 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 }
 
 // Commit submits the collected samples and purges the batch.
-func (a *appenderBase) Commit() error {
+func (a *appender) Commit() error {
+	defer a.appenderPool.Put(a)
+	return a.commit()
+}
+
+func (a *appender) Rollback() error {
+	defer a.appenderPool.Put(a)
+	return a.rollback()
+}
+
+func (a *appenderBase) commit() error {
 	if err := a.log(); err != nil {
 		return err
 	}
 
 	a.clearData()
-	a.appenderPool.Put(a)
 
 	if a.writeNotified != nil {
 		a.writeNotified.Notify()
@@ -1244,7 +1257,7 @@ func (a *appenderBase) clearData() {
 	a.floatHistogramSeries = a.floatHistogramSeries[:0]
 }
 
-func (a *appenderBase) Rollback() error {
+func (a *appenderBase) rollback() error {
 	// Series are created in-memory regardless of rollback. This means we must
 	// log them to the WAL, otherwise subsequent commits may reference a series
 	// which was never written to the WAL.
@@ -1253,7 +1266,6 @@ func (a *appenderBase) Rollback() error {
 	}
 
 	a.clearData()
-	a.appenderPool.Put(a)
 	return nil
 }
 

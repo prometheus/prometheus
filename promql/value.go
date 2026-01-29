@@ -487,6 +487,11 @@ func (ssi *storageSeriesIterator) AtT() int64 {
 	return ssi.currT
 }
 
+// TODO(krajorama): implement AtST.
+func (*storageSeriesIterator) AtST() int64 {
+	return 0
+}
+
 func (ssi *storageSeriesIterator) Next() chunkenc.ValueType {
 	if ssi.currH != nil {
 		ssi.iHistograms++

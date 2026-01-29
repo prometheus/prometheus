@@ -21,15 +21,20 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // Sample represents test, combined sample for mocking storage.AppenderV2.
@@ -65,13 +70,17 @@ func (s Sample) String() string {
 	// Print all value types on purpose, to catch bugs for appending multiple sample types at once.
 	h := ""
 	if s.H != nil {
-		h = s.H.String()
+		h = " " + s.H.String()
 	}
 	fh := ""
 	if s.FH != nil {
-		fh = s.FH.String()
+		fh = " " + s.FH.String()
 	}
-	b.WriteString(fmt.Sprintf("%s %v%v%v st@%v t@%v\n", s.L.String(), s.V, h, fh, s.ST, s.T))
+	b.WriteString(fmt.Sprintf("%s %v%v%v st@%v t@%v", s.L.String(), s.V, h, fh, s.ST, s.T))
+	if len(s.ES) > 0 {
+		b.WriteString(fmt.Sprintf(" %v", s.ES))
+	}
+	b.WriteString("\n")
 	return b.String()
 }
 
@@ -85,6 +94,88 @@ func (s Sample) Equals(other Sample) bool {
 		s.H.Equals(other.H) &&
 		s.FH.Equals(other.FH) &&
 		slices.EqualFunc(s.ES, other.ES, exemplar.Exemplar.Equals)
+}
+
+// IsStale returns whether the sample represents a stale sample, according to
+// https://prometheus.io/docs/specs/native_histograms/#staleness-markers.
+func (s Sample) IsStale() bool {
+	switch {
+	case s.FH != nil:
+		return value.IsStaleNaN(s.FH.Sum)
+	case s.H != nil:
+		return value.IsStaleNaN(s.H.Sum)
+	default:
+		return value.IsStaleNaN(s.V)
+	}
+}
+
+var sampleComparer = cmp.Comparer(func(a, b Sample) bool {
+	return a.Equals(b)
+})
+
+// RequireEqual is a special require equal that correctly compare Prometheus structures.
+//
+// In comparison to testutil.RequireEqual, this function adds special logic for comparing []Samples.
+//
+// It also ignores ordering between consecutive stale samples to avoid false
+// negatives due to map iteration order in staleness tracking.
+func RequireEqual(t testing.TB, expected, got []Sample, msgAndArgs ...any) {
+	opts := []cmp.Option{sampleComparer}
+	expected = reorderExpectedForStaleness(expected, got)
+	testutil.RequireEqualWithOptions(t, expected, got, opts, msgAndArgs...)
+}
+
+// RequireNotEqual is the negation of RequireEqual.
+func RequireNotEqual(t testing.TB, expected, got []Sample, msgAndArgs ...any) {
+	t.Helper()
+
+	opts := []cmp.Option{cmp.Comparer(labels.Equal), sampleComparer}
+	expected = reorderExpectedForStaleness(expected, got)
+	if !cmp.Equal(expected, got, opts...) {
+		return
+	}
+	require.Fail(t, fmt.Sprintf("Equal, but expected not: \n"+
+		"a: %s\n"+
+		"b: %s", expected, got), msgAndArgs...)
+}
+
+func reorderExpectedForStaleness(expected, got []Sample) []Sample {
+	if len(expected) != len(got) || !includeStaleNaNs(expected) {
+		return expected
+	}
+	result := make([]Sample, len(expected))
+	copy(result, expected)
+
+	// Try to reorder only consecutive stale samples to avoid false negatives
+	// due to map iteration order in staleness tracking.
+	for i := range result {
+		if !result[i].IsStale() {
+			continue
+		}
+		if result[i].Equals(got[i]) {
+			continue
+		}
+		for j := i + 1; j < len(result); j++ {
+			if !result[j].IsStale() {
+				break
+			}
+			if result[j].Equals(got[i]) {
+				// Swap.
+				result[i], result[j] = result[j], result[i]
+				break
+			}
+		}
+	}
+	return result
+}
+
+func includeStaleNaNs(s []Sample) bool {
+	for _, e := range s {
+		if e.IsStale() {
+			return true
+		}
+	}
+	return false
 }
 
 // Appendable is a storage.Appendable mock.
@@ -104,7 +195,7 @@ type Appendable struct {
 	rolledbackSamples []Sample
 
 	// Optional chain (Appender will collect samples, then run next).
-	next storage.Appendable
+	next compatAppendable
 }
 
 // NewAppendable returns mock Appendable.
@@ -112,8 +203,13 @@ func NewAppendable() *Appendable {
 	return &Appendable{}
 }
 
-// Then chains another appender from the provided appendable for the Appender calls.
-func (a *Appendable) Then(appendable storage.Appendable) *Appendable {
+type compatAppendable interface {
+	storage.Appendable
+	storage.AppendableV2
+}
+
+// Then chains another appender from the provided Appendable for the Appender calls.
+func (a *Appendable) Then(appendable compatAppendable) *Appendable {
 	a.next = appendable
 	return a
 }
@@ -130,6 +226,9 @@ func (a *Appendable) WithErrs(appendErrFn func(ls labels.Labels) error, appendEx
 func (a *Appendable) PendingSamples() []Sample {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
+	if len(a.pendingSamples) == 0 {
+		return nil
+	}
 
 	ret := make([]Sample, len(a.pendingSamples))
 	copy(ret, a.pendingSamples)
@@ -140,6 +239,9 @@ func (a *Appendable) PendingSamples() []Sample {
 func (a *Appendable) ResultSamples() []Sample {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
+	if len(a.resultSamples) == 0 {
+		return nil
+	}
 
 	ret := make([]Sample, len(a.resultSamples))
 	copy(ret, a.resultSamples)
@@ -150,6 +252,9 @@ func (a *Appendable) ResultSamples() []Sample {
 func (a *Appendable) RolledbackSamples() []Sample {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
+	if len(a.rolledbackSamples) == 0 {
+		return nil
+	}
 
 	ret := make([]Sample, len(a.rolledbackSamples))
 	copy(ret, a.rolledbackSamples)
@@ -205,28 +310,76 @@ func (a *Appendable) String() string {
 
 var errClosedAppender = errors.New("appender was already committed/rolledback")
 
-type appender struct {
-	err  error
-	next storage.Appender
+type baseAppender struct {
+	err error
 
-	a *Appendable
+	nextTr storage.AppenderTransaction
+	a      *Appendable
 }
 
-func (a *appender) checkErr() error {
+func (a *baseAppender) checkErr() error {
 	a.a.mtx.Lock()
 	defer a.a.mtx.Unlock()
 
 	return a.err
 }
 
+func (a *baseAppender) Commit() error {
+	if err := a.checkErr(); err != nil {
+		return err
+	}
+	defer a.a.openAppenders.Dec()
+
+	if a.a.commitErr != nil {
+		return a.a.commitErr
+	}
+
+	a.a.mtx.Lock()
+	a.a.resultSamples = append(a.a.resultSamples, a.a.pendingSamples...)
+	a.a.pendingSamples = a.a.pendingSamples[:0]
+	a.err = errClosedAppender
+	a.a.mtx.Unlock()
+
+	if a.nextTr != nil {
+		return a.nextTr.Commit()
+	}
+	return nil
+}
+
+func (a *baseAppender) Rollback() error {
+	if err := a.checkErr(); err != nil {
+		return err
+	}
+	defer a.a.openAppenders.Dec()
+
+	a.a.mtx.Lock()
+	a.a.rolledbackSamples = append(a.a.rolledbackSamples, a.a.pendingSamples...)
+	a.a.pendingSamples = a.a.pendingSamples[:0]
+	a.err = errClosedAppender
+	a.a.mtx.Unlock()
+
+	if a.nextTr != nil {
+		return a.nextTr.Rollback()
+	}
+	return nil
+}
+
+type appender struct {
+	baseAppender
+
+	next storage.Appender
+}
+
 func (a *Appendable) Appender(ctx context.Context) storage.Appender {
-	ret := &appender{a: a}
+	ret := &appender{baseAppender: baseAppender{a: a}}
 	if a.openAppenders.Inc() > 1 {
 		ret.err = errors.New("teststorage.Appendable.Appender() concurrent use is not supported; attempted opening new Appender() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
+		return ret
 	}
 
 	if a.next != nil {
-		ret.next = a.next.Appender(ctx)
+		app := a.next.Appender(ctx)
+		ret.next, ret.nextTr = app, app
 	}
 	return ret
 }
@@ -263,8 +416,9 @@ func computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesR
 	}
 
 	if storage.SeriesRef(h) != ref {
-		// Check for buggy ref while we at it.
-		return 0, errors.New("teststorage.appender: found input ref not matching labels; potential bug in Appendable user")
+		// Check for buggy ref while we are at it. This only makes sense for cases without .Then*, because further appendable
+		// might have a different ref computation logic e.g. TSDB uses atomic increments.
+		return 0, errors.New("teststorage.appender: found input ref not matching labels; potential bug in Appendable usage")
 	}
 	return ref, nil
 }
@@ -297,6 +451,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	if a.a.appendExemplarsError != nil {
 		return 0, a.a.appendExemplarsError
 	}
+	var appended bool
 
 	a.a.mtx.Lock()
 	// NOTE(bwplotka): Eventually exemplar has to be attached to a series and soon
@@ -304,13 +459,14 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
 	i := len(a.a.pendingSamples) - 1
 	for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
-		if ref == storage.SeriesRef(a.a.pendingSamples[i].L.Hash()) {
+		if labels.Equal(l, a.a.pendingSamples[i].L) {
 			a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, e)
+			appended = true
 			break
 		}
 	}
 	a.a.mtx.Unlock()
-	if i < 0 {
+	if !appended {
 		return 0, fmt.Errorf("teststorage.appender: exemplar appender without series; ref %v; l %v; exemplar: %v", ref, l, e)
 	}
 
@@ -336,19 +492,22 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 		return 0, err
 	}
 
+	var updated bool
+
 	a.a.mtx.Lock()
 	// NOTE(bwplotka): Eventually metadata has to be attached to a series and soon
 	// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
 	// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
 	i := len(a.a.pendingSamples) - 1
 	for ; i >= 0; i-- { // Attach metadata to the last matching sample.
-		if ref == storage.SeriesRef(a.a.pendingSamples[i].L.Hash()) {
+		if labels.Equal(l, a.a.pendingSamples[i].L) {
 			a.a.pendingSamples[i].M = m
+			updated = true
 			break
 		}
 	}
 	a.a.mtx.Unlock()
-	if i < 0 {
+	if !updated {
 		return 0, fmt.Errorf("teststorage.appender: metadata update without series; ref %v; l %v; m: %v", ref, l, m)
 	}
 
@@ -358,42 +517,79 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 	return computeOrCheckRef(ref, l)
 }
 
-func (a *appender) Commit() error {
-	if err := a.checkErr(); err != nil {
-		return err
-	}
-	defer a.a.openAppenders.Dec()
+type appenderV2 struct {
+	baseAppender
 
-	if a.a.commitErr != nil {
-		return a.a.commitErr
-	}
-
-	a.a.mtx.Lock()
-	a.a.resultSamples = append(a.a.resultSamples, a.a.pendingSamples...)
-	a.a.pendingSamples = a.a.pendingSamples[:0]
-	a.err = errClosedAppender
-	a.a.mtx.Unlock()
-
-	if a.a.next != nil {
-		return a.next.Commit()
-	}
-	return nil
+	next storage.AppenderV2
 }
 
-func (a *appender) Rollback() error {
-	if err := a.checkErr(); err != nil {
-		return err
+func (a *Appendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	ret := &appenderV2{baseAppender: baseAppender{a: a}}
+	if a.openAppenders.Inc() > 1 {
+		ret.err = errors.New("teststorage.Appendable.AppenderV2() concurrent use is not supported; attempted opening new AppenderV2() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
+		return ret
 	}
-	defer a.a.openAppenders.Dec()
+
+	if a.next != nil {
+		app := a.next.AppenderV2(ctx)
+		ret.next, ret.nextTr = app, app
+	}
+	return ret
+}
+
+func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
+	if err := a.checkErr(); err != nil {
+		return 0, err
+	}
+
+	if a.a.appendErrFn != nil {
+		if err := a.a.appendErrFn(ls); err != nil {
+			return 0, err
+		}
+	}
+
+	var (
+		es         []exemplar.Exemplar
+		partialErr error
+	)
+
+	if len(opts.Exemplars) > 0 {
+		if a.a.appendExemplarsError != nil {
+			var exErrs []error
+			for range opts.Exemplars {
+				exErrs = append(exErrs, a.a.appendExemplarsError)
+			}
+			if len(exErrs) > 0 {
+				partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
+			}
+		} else {
+			// As per AppenderV2 interface, opts.Exemplar slice is unsafe for reuse.
+			es = make([]exemplar.Exemplar, len(opts.Exemplars))
+			copy(es, opts.Exemplars)
+		}
+	}
 
 	a.a.mtx.Lock()
-	a.a.rolledbackSamples = append(a.a.rolledbackSamples, a.a.pendingSamples...)
-	a.a.pendingSamples = a.a.pendingSamples[:0]
-	a.err = errClosedAppender
+	a.a.pendingSamples = append(a.a.pendingSamples, Sample{
+		MF: opts.MetricFamilyName,
+		M:  opts.Metadata,
+		L:  ls,
+		ST: st, T: t,
+		V: v, H: h, FH: fh,
+		ES: es,
+	})
 	a.a.mtx.Unlock()
 
 	if a.next != nil {
-		return a.next.Rollback()
+		ref, err = a.next.Append(ref, ls, st, t, v, h, fh, opts)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		ref, err = computeOrCheckRef(ref, ls)
+		if err != nil {
+			return ref, err
+		}
 	}
-	return nil
+	return ref, partialErr
 }

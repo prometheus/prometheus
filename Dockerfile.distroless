@@ -1,0 +1,29 @@
+ARG DISTROLESS_ARCH="amd64"
+
+# Use DISTROLESS_ARCH for base image selection (handles armv7->arm mapping).
+FROM gcr.io/distroless/static-debian13:nonroot-${DISTROLESS_ARCH}
+# Base image sets USER to 65532:65532 (nonroot user).
+
+ARG ARCH="amd64"
+ARG OS="linux"
+
+LABEL org.opencontainers.image.authors="The Prometheus Authors"
+LABEL org.opencontainers.image.vendor="Prometheus"
+LABEL org.opencontainers.image.title="Prometheus"
+LABEL org.opencontainers.image.description="The Prometheus monitoring system and time series database"
+LABEL org.opencontainers.image.source="https://github.com/prometheus/prometheus"
+LABEL org.opencontainers.image.url="https://github.com/prometheus/prometheus"
+LABEL org.opencontainers.image.documentation="https://prometheus.io/docs"
+LABEL org.opencontainers.image.licenses="Apache License 2.0"
+LABEL io.prometheus.image.variant="distroless"
+
+COPY documentation/examples/prometheus.yml  /etc/prometheus/prometheus.yml
+COPY LICENSE NOTICE npm_licenses.tar.bz2 /
+COPY .build/${OS}-${ARCH}/prometheus        /bin/prometheus
+COPY .build/${OS}-${ARCH}/promtool          /bin/promtool
+
+WORKDIR /prometheus
+EXPOSE     9090
+ENTRYPOINT [ "/bin/prometheus" ]
+CMD        [ "--config.file=/etc/prometheus/prometheus.yml", \
+             "--storage.tsdb.path=/prometheus" ]

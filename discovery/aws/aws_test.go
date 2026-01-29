@@ -20,7 +20,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestRoleUnmarshalYAML(t *testing.T) {
@@ -174,6 +174,112 @@ port: 9300`,
 			var cfg SDConfig
 			require.NoError(t, yaml.Unmarshal([]byte(tt.yaml), &cfg))
 			tt.validateFunc(t, &cfg)
+		})
+	}
+}
+
+// TestMultipleSDConfigsDoNotShareState verifies that multiple AWS SD configs
+// don't share the same underlying configuration object. This was a bug where
+// all configs pointed to the same global default, causing port and other
+// settings from one job to overwrite settings in another job.
+func TestMultipleSDConfigsDoNotShareState(t *testing.T) {
+	tests := []struct {
+		name         string
+		yaml         string
+		validateFunc func(t *testing.T, cfg1, cfg2 *SDConfig)
+	}{
+		{
+			name: "EC2MultipleJobsDifferentPorts",
+			yaml: `
+- role: ec2
+  region: us-west-2
+  port: 9100
+  filters:
+    - name: tag:Name
+      values: [host-1]
+- role: ec2
+  region: us-west-2
+  port: 9101
+  filters:
+    - name: tag:Name
+      values: [host-2]`,
+			validateFunc: func(t *testing.T, cfg1, cfg2 *SDConfig) {
+				require.Equal(t, RoleEC2, cfg1.Role)
+				require.Equal(t, RoleEC2, cfg2.Role)
+				require.NotNil(t, cfg1.EC2SDConfig)
+				require.NotNil(t, cfg2.EC2SDConfig)
+
+				// Verify ports are different and not shared
+				require.Equal(t, 9100, cfg1.EC2SDConfig.Port)
+				require.Equal(t, 9101, cfg2.EC2SDConfig.Port)
+
+				// Verify filters are different and not shared
+				require.Len(t, cfg1.EC2SDConfig.Filters, 1)
+				require.Len(t, cfg2.EC2SDConfig.Filters, 1)
+				require.Equal(t, []string{"host-1"}, cfg1.EC2SDConfig.Filters[0].Values)
+				require.Equal(t, []string{"host-2"}, cfg2.EC2SDConfig.Filters[0].Values)
+
+				// Most importantly: verify they're not the same pointer
+				require.NotSame(t, cfg1.EC2SDConfig, cfg2.EC2SDConfig,
+					"EC2SDConfig objects should not share the same memory address")
+			},
+		},
+		{
+			name: "ECSMultipleJobsDifferentPorts",
+			yaml: `
+- role: ecs
+  region: us-east-1
+  port: 8080
+  clusters: [cluster-a]
+- role: ecs
+  region: us-east-1
+  port: 8081
+  clusters: [cluster-b]`,
+			validateFunc: func(t *testing.T, cfg1, cfg2 *SDConfig) {
+				require.Equal(t, RoleECS, cfg1.Role)
+				require.Equal(t, RoleECS, cfg2.Role)
+				require.NotNil(t, cfg1.ECSSDConfig)
+				require.NotNil(t, cfg2.ECSSDConfig)
+
+				require.Equal(t, 8080, cfg1.ECSSDConfig.Port)
+				require.Equal(t, 8081, cfg2.ECSSDConfig.Port)
+				require.Equal(t, []string{"cluster-a"}, cfg1.ECSSDConfig.Clusters)
+				require.Equal(t, []string{"cluster-b"}, cfg2.ECSSDConfig.Clusters)
+
+				require.NotSame(t, cfg1.ECSSDConfig, cfg2.ECSSDConfig,
+					"ECSSDConfig objects should not share the same memory address")
+			},
+		},
+		{
+			name: "LightsailMultipleJobsDifferentPorts",
+			yaml: `
+- role: lightsail
+  region: eu-west-1
+  port: 7070
+- role: lightsail
+  region: eu-west-1
+  port: 7071`,
+			validateFunc: func(t *testing.T, cfg1, cfg2 *SDConfig) {
+				require.Equal(t, RoleLightsail, cfg1.Role)
+				require.Equal(t, RoleLightsail, cfg2.Role)
+				require.NotNil(t, cfg1.LightsailSDConfig)
+				require.NotNil(t, cfg2.LightsailSDConfig)
+
+				require.Equal(t, 7070, cfg1.LightsailSDConfig.Port)
+				require.Equal(t, 7071, cfg2.LightsailSDConfig.Port)
+
+				require.NotSame(t, cfg1.LightsailSDConfig, cfg2.LightsailSDConfig,
+					"LightsailSDConfig objects should not share the same memory address")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var configs []SDConfig
+			require.NoError(t, yaml.Unmarshal([]byte(tt.yaml), &configs))
+			require.Len(t, configs, 2)
+			tt.validateFunc(t, &configs[0], &configs[1])
 		})
 	}
 }

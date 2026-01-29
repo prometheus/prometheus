@@ -28,7 +28,6 @@ import (
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -128,7 +127,7 @@ func WriteFile(logger *slog.Logger, dir string, tr Reader) (int64, error) {
 	size += n
 
 	if err := f.Sync(); err != nil {
-		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
+		return 0, errors.Join(err, f.Close())
 	}
 
 	if err = f.Close(); err != nil {

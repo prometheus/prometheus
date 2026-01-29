@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/tsdb"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
 func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
@@ -94,7 +93,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 		return err
 	}
 	defer func() {
-		returnErr = tsdb_errors.NewMulti(returnErr, db.Close()).Err()
+		returnErr = errors.Join(returnErr, db.Close())
 	}()
 
 	var (
@@ -125,7 +124,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				return fmt.Errorf("block writer: %w", err)
 			}
 			defer func() {
-				err = tsdb_errors.NewMulti(err, w.Close()).Err()
+				err = errors.Join(err, w.Close())
 			}()
 
 			ctx := context.Background()

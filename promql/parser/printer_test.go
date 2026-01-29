@@ -23,8 +23,10 @@ import (
 
 func TestExprString(t *testing.T) {
 	ExperimentalDurationExpr = true
+	EnableBinopFillModifiers = true
 	t.Cleanup(func() {
 		ExperimentalDurationExpr = false
+		EnableBinopFillModifiers = false
 	})
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output
@@ -112,6 +114,26 @@ func TestExprString(t *testing.T) {
 		{
 			in:  `a - ignoring() group_left c`,
 			out: `a - ignoring () group_left () c`,
+		},
+		{
+			in:  `a + fill(-23) b`,
+			out: `a + fill (-23) b`,
+		},
+		{
+			in:  `a + fill_left(-23) b`,
+			out: `a + fill_left (-23) b`,
+		},
+		{
+			in:  `a + fill_right(42) b`,
+			out: `a + fill_right (42) b`,
+		},
+		{
+			in:  `a + fill_left(-23) fill_right(42) b`,
+			out: `a + fill_left (-23) fill_right (42) b`,
+		},
+		{
+			in:  `a + on(b) group_left fill(-23) c`,
+			out: `a + on (b) group_left () fill (-23) c`,
 		},
 		{
 			in: `up > bool 0`,

@@ -7,19 +7,20 @@ This page describes the release process and the currently planned schedule for u
 Release cadence of first pre-releases being cut is 6 weeks.
 Please see [the v2.55 RELEASE.md](https://github.com/prometheus/prometheus/blob/release-2.55/RELEASE.md) for the v2 release series schedule.
 
-| release series | date of first pre-release (year-month-day) | release shepherd                   |
-|----------------|--------------------------------------------|------------------------------------|
-| v3.0           | 2024-11-14                                 | Jan Fajerski (GitHub: @jan--f)     |
-| v3.1           | 2024-12-17                                 | Bryan Boreham (GitHub: @bboreham)  |
-| v3.2           | 2025-01-28                                 | Jan Fajerski (GitHub: @jan--f)     |
-| v3.3           | 2025-03-11                                 | Ayoub Mrini (Github: @machine424)  |
-| v3.4           | 2025-04-29                                 | Jan-Otto Kröpke (Github: @jkroepke)|
-| v3.5 LTS       | 2025-06-03                                 | Bryan Boreham (GitHub: @bboreham)  |
-| v3.6           | 2025-08-01                                 | Ayoub Mrini (Github: @machine424)  |
-| v3.7           | 2025-09-25                                 | Arthur Sens and George Krajcsovits (Github: @ArthurSens and @krajorama)|
-| v3.8           | 2025-11-06                                 | Jan Fajerski (GitHub: @jan--f)     |
-| v3.9           | 2025-12-18                                 | Bryan Boreham (GitHub: @bboreham)  |
-| v3.10          | 2026-02-05                                 | **volunteer welcome**              |
+| release series | date of first pre-release (year-month-day) | release shepherd                                                        |
+|----------------|--------------------------------------------|-------------------------------------------------------------------------|
+| v3.0           | 2024-11-14                                 | Jan Fajerski (GitHub: @jan--f)                                          |
+| v3.1           | 2024-12-17                                 | Bryan Boreham (GitHub: @bboreham)                                       |
+| v3.2           | 2025-01-28                                 | Jan Fajerski (GitHub: @jan--f)                                          |
+| v3.3           | 2025-03-11                                 | Ayoub Mrini (Github: @machine424)                                       |
+| v3.4           | 2025-04-29                                 | Jan-Otto Kröpke (Github: @jkroepke)                                     |
+| v3.5 LTS       | 2025-06-03                                 | Bryan Boreham (GitHub: @bboreham)                                       |
+| v3.6           | 2025-08-01                                 | Ayoub Mrini (Github: @machine424)                                       |
+| v3.7           | 2025-09-25                                 | Arthur Sens and George Krajcsovits (Github: @ArthurSens and @krajorama) |
+| v3.8           | 2025-11-06                                 | Jan Fajerski (GitHub: @jan--f)                                          |
+| v3.9           | 2025-12-18                                 | Bryan Boreham (GitHub: @bboreham)                                       |
+| v3.10          | 2026-02-05                                 | Ganesh Vernekar (Github: @codesome)                                     |
+| v3.11          | 2026-03-19                                 | **volunteer welcome**                                                   |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 

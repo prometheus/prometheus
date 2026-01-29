@@ -64,7 +64,7 @@ export const decodePanelOptionsFromURLParams = (query: string): Panel[] => {
         value === "1" ? GraphDisplayMode.Stacked : GraphDisplayMode.Lines;
     });
     decodeSetting("y_axis_min", (value) => {
-      panel.visualizer.yAxisMin = value === null ? null : parseFloat(value);
+      panel.visualizer.yAxisMin = value === "" ? null : parseFloat(value);
     });
     decodeSetting("show_exemplars", (value) => {
       panel.visualizer.showExemplars = value === "1";
@@ -174,11 +174,11 @@ export const encodePanelOptionsToURLParams = (
     }
 
     addParam(idx, "display_mode", p.visualizer.displayMode);
-    addParam(
-      idx,
-      "y_axis_min",
-      p.visualizer.yAxisMin === null ? "" : p.visualizer.yAxisMin.toString()
-    );
+
+    if (p.visualizer.yAxisMin !== null) {
+      addParam(idx, "y_axis_min", p.visualizer.yAxisMin.toString());
+    }
+
     addParam(idx, "show_exemplars", p.visualizer.showExemplars ? "1" : "0");
   });
 
