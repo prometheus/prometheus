@@ -1346,13 +1346,19 @@ func (api *API) targetRelabelSteps(r *http.Request) apiFuncResult {
 
 	rules := scrapeConfig.RelabelConfigs
 	steps := make([]RelabelStep, len(rules))
+	lb := labels.NewBuilder(lbls)
+	keep := true
 	for i, rule := range rules {
-		outLabels, keep := relabel.Process(lbls, rules[:i+1]...)
-		steps[i] = RelabelStep{
-			Rule:   rule,
-			Output: outLabels,
-			Keep:   keep,
+		if keep {
+			keep = relabel.ProcessBuilder(lb, rule)
 		}
+
+		outLabels := labels.EmptyLabels()
+		if keep {
+			outLabels = lb.Labels()
+		}
+
+		steps[i] = RelabelStep{Rule: rule, Output: outLabels, Keep: keep}
 	}
 
 	return apiFuncResult{&RelabelStepsResponse{Steps: steps}, nil, nil, nil}
