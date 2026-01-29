@@ -65,6 +65,9 @@ func NewManager(
 	if appendable != nil && appendableV2 != nil {
 		return nil, errors.New("scrape.NewManager: appendable and appendableV2 cannot be provided at the same time")
 	}
+	if appendable == nil && appendableV2 == nil {
+		return nil, errors.New("scrape.NewManager: provide either appendable or appendableV2")
+	}
 
 	sm, err := newScrapeMetrics(registerer)
 	if err != nil {
