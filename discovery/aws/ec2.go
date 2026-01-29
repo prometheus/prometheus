@@ -27,7 +27,6 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -125,31 +124,16 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
+	// If region is not set, attempt to load it from the AWS SDK.
 	if c.Region == "" {
-		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
+		c.Region, err = loadRegion(context.Background())
 		if err != nil {
-			return err
-		}
-
-		if cfg.Region != "" {
-			// If the region is already set in the config, use it.
-			// This can happen if the user has set the region in the AWS config file or environment variables.
-			c.Region = cfg.Region
+			return fmt.Errorf("could not determine AWS region: %w", err)
 		}
 
 		if c.Region == "" {
-			// Try to get the region from the instance metadata service (IMDS).
-			imdsClient := imds.NewFromConfig(cfg)
-			region, err := imdsClient.GetRegion(context.Background(), &imds.GetRegionInput{})
-			if err != nil {
-				return err
-			}
-			c.Region = region.Region
+			return errors.New("EC2 SD configuration requires a region")
 		}
-	}
-
-	if c.Region == "" {
-		return errors.New("EC2 SD configuration requires a region")
 	}
 
 	for _, f := range c.Filters {

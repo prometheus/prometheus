@@ -14,7 +14,11 @@
 package aws
 
 import (
+	"context"
 	"errors"
+	"math/rand/v2"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -308,4 +312,69 @@ func TestMultipleSDConfigsDoNotShareState(t *testing.T) {
 			tt.validateFunc(t, &configs[0], &configs[1])
 		})
 	}
+}
+
+// getRandomRegion is a helper to return a pseudo-random AWS region for testing.
+func getRandomRegion() string {
+
+	regions := []string{
+		"us-east-1",
+		"us-east-2",
+		"us-west-1",
+		"us-west-2",
+		"eu-west-1",
+		"eu-west-2",
+		"ap-southeast-1",
+		"ap-southeast-2",
+		"ap-northeast-1",
+		"ap-northeast-2",
+	}
+
+	return regions[rand.IntN(len(regions))]
+}
+
+func TestLoadRegion(t *testing.T) {
+	t.Run("with_env_region", func(t *testing.T) {
+		randomRegion := getRandomRegion()
+		t.Setenv("AWS_REGION", randomRegion)
+		t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
+
+		region, err := loadRegion(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, randomRegion, region)
+	})
+
+	t.Run("imds_fallback", func(t *testing.T) {
+
+		randomRegion := getRandomRegion()
+
+		// Mock IMDS server that returns a region
+		mockIMDS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Handle instance identity document (contains region info)
+			if r.URL.Path == "/latest/dynamic/instance-identity/document" {
+				imdsPayload := `{"region": "` + randomRegion + `"}`
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(imdsPayload))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer mockIMDS.Close()
+
+		// Set up environment with no region but valid credentials
+		// This will force fallback to IMDS
+		t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
+		// Unset any existing region
+		t.Setenv("AWS_REGION", "")
+		t.Setenv("AWS_DEFAULT_REGION", "")
+		// Point IMDS to our mock server
+		t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", mockIMDS.URL)
+
+		region, err := loadRegion(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, randomRegion, region)
+	})
 }

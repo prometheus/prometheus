@@ -26,7 +26,6 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/lightsail"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
@@ -106,30 +105,16 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
+	// If region is not set, attempt to load it from the AWS SDK.
 	if c.Region == "" {
-		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
+		c.Region, err = loadRegion(context.Background())
 		if err != nil {
-			return err
-		}
-
-		if cfg.Region != "" {
-			// Use the region from the AWS config. It will load environment variables and shared config files.
-			c.Region = cfg.Region
+			return fmt.Errorf("could not determine AWS region: %w", err)
 		}
 
 		if c.Region == "" {
-			// Try to get the region from the instance metadata service (IMDS).
-			imdsClient := imds.NewFromConfig(cfg)
-			region, err := imdsClient.GetRegion(context.Background(), &imds.GetRegionInput{})
-			if err != nil {
-				return err
-			}
-			c.Region = region.Region
+			return errors.New("Lightsail SD configuration requires a region")
 		}
-	}
-
-	if c.Region == "" {
-		return errors.New("lightsail SD configuration requires a region")
 	}
 
 	return c.HTTPClientConfig.Validate()
