@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -89,8 +88,6 @@ func (h *Head) appenderV2() *headAppenderV2 {
 		headAppenderBase: headAppenderBase{
 			head:                  h,
 			minValidTime:          minValidTime,
-			mint:                  math.MaxInt64,
-			maxt:                  math.MinInt64,
 			headMaxt:              h.MaxTime(),
 			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 			seriesRefs:            h.getRefSeriesBuffer(),
@@ -191,13 +188,6 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricType).Inc()
 		}
 		return 0, appErr
-	}
-
-	if t < a.mint {
-		a.mint = t
-	}
-	if t > a.maxt {
-		a.maxt = t
 	}
 
 	if isStale {
@@ -389,10 +379,6 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 		}
 		a.head.logger.Debug("Error when appending ST", "series", s.lset.String(), "st", st, "t", t, "err", err)
 		return
-	}
-
-	if st > a.maxt {
-		a.maxt = st
 	}
 }
 
