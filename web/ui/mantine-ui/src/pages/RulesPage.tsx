@@ -27,7 +27,7 @@ import {
   IconTimeline,
 } from "@tabler/icons-react";
 import { useSuspenseAPIQuery } from "../api/api";
-import { Rule, RuleGroup, RulesResult } from "../api/responseTypes/rules";
+import { RulesResult } from "../api/responseTypes/rules";
 import badgeClasses from "../Badge.module.css";
 import RuleDefinition from "../components/RuleDefinition";
 import { badgeIconStyle, inputIconStyle } from "../styles";
@@ -39,41 +39,15 @@ import {
   withDefault,
 } from "use-query-params";
 import { useSettings } from "../state/settingsSlice";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
 import classes from "./RulesPage.module.css";
 import { useDebouncedValue, useLocalStorage } from "@mantine/hooks";
-import { KVSearch } from "@nexucis/kvsearch";
+import { buildRulesPageData } from "./rulesPageUtils";
+
 import { StateMultiSelect } from "../components/StateMultiSelect";
 import { Accordion } from "../components/Accordion";
 
-const kvSearch = new KVSearch<Rule>({
-  shouldSort: true,
-  indexedKeys: ["name", "labels", ["labels", /.*/]],
-});
-
-type RulesPageData = {
-  groups: (RuleGroup & { prefilterRulesCount: number })[];
-};
-
-const buildRulesPageData = (
-  data: RulesResult,
-  search: string,
-  healthFilter: (string | null)[]
-): RulesPageData => {
-  const groups = data.groups.map((group) => ({
-    ...group,
-    prefilterRulesCount: group.rules.length,
-    rules: (search === ""
-      ? group.rules
-      : kvSearch.filter(search, group.rules).map((value) => value.original)
-    ).filter(
-      (r) => healthFilter.length === 0 || healthFilter.includes(r.health)
-    ),
-  }));
-
-  return { groups };
-};
 
 const healthBadgeClass = (state: string) => {
   switch (state) {
@@ -106,7 +80,31 @@ export default function RulesPage() {
     "search",
     withDefault(StringParam, "")
   );
-  const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
+
+  // Local state for the input value to allow immediate typing feedback
+  const [inputValue, setInputValue] = useState(searchFilter || "");
+  const [debouncedSearch] = useDebouncedValue(inputValue, 300);
+
+  // Sync debounced value to URL
+  useEffect(() => {
+    setSearchFilter(debouncedSearch || null);
+  }, [debouncedSearch, setSearchFilter]);
+
+  // Sync URL change back to input (e.g. back button)
+  useEffect(() => {
+    if (searchFilter !== debouncedSearch) {
+      // Only update if they differ significantly to avoid loops,
+      // though typically searchFilter update comes from the effect above.
+      // We need to handle the case where the user navigates.
+      if (searchFilter !== inputValue && searchFilter !== null) {
+        setInputValue(searchFilter);
+      } else if (searchFilter === null && inputValue !== "") {
+        setInputValue("");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchFilter]);
+
   const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
     key: "alertsPage.showEmptyGroups",
     defaultValue: false,
@@ -119,6 +117,11 @@ export default function RulesPage() {
   );
 
   // Update the page data whenever the fetched data or filters change.
+  // We use debouncedSearch here (which comes from URL in original code, but now we basically use the same flow
+  // just decoupled via the effect).
+  // Actually, wait, if we use `debouncedSearch` from local state, we render based on that.
+  // `searchFilter` is just for the URL.
+  // So we should use `debouncedSearch` here for filtering.
   const rulesPageData = useMemo(
     () => buildRulesPageData(data.data, debouncedSearch, healthFilter),
     [data, healthFilter, debouncedSearch]
@@ -153,11 +156,7 @@ export default function RulesPage() {
   );
 
   // We memoize the actual rendering of the page items to avoid re-rendering
-  // them on every state change. This is especially important when the user
-  // types into the search box, as the search filter changes on every keystroke,
-  // even before debouncing takes place (extracting the filters and results list
-  // into separate components would be an alternative to this, but it's kinda
-  // convenient to have in the same file IMO).
+  // them on every state change.
   const renderedPageItems = useMemo(
     () =>
       currentPageGroups.map((g) => (
@@ -352,9 +351,9 @@ export default function RulesPage() {
           flex={1}
           leftSection={<IconSearch style={inputIconStyle} />}
           placeholder="Filter by rule name or labels"
-          value={searchFilter || ""}
+          value={inputValue}
           onChange={(event) =>
-            setSearchFilter(event.currentTarget.value || null)
+            setInputValue(event.currentTarget.value)
           }
         ></TextInput>
       </Group>
