@@ -124,6 +124,8 @@ linters:
         # Disable this check for now since it introduces too many changes in our existing codebase.
         # See https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_omitzero for more details.
         - omitzero
+        # Disable waitgroup check until we really move to Go 1.25.
+        - waitgroup
     perfsprint:
       # Optimizes even if it requires an int or uint type cast.
       int-conversion: true
