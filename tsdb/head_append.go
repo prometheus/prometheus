@@ -168,8 +168,6 @@ func (h *Head) appender() *headAppender {
 		headAppenderBase: headAppenderBase{
 			head:                  h,
 			minValidTime:          minValidTime,
-			mint:                  math.MaxInt64,
-			maxt:                  math.MinInt64,
 			headMaxt:              h.MaxTime(),
 			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 			seriesRefs:            h.getRefSeriesBuffer(),
@@ -393,7 +391,6 @@ func (b *appendBatch) close(h *Head) {
 type headAppenderBase struct {
 	head          *Head
 	minValidTime  int64 // No samples below this timestamp are allowed.
-	mint, maxt    int64
 	headMaxt      int64 // We track it here to not take the lock for every sample appended.
 	oooTimeWindow int64 // Use the same for the entire append, and don't load the atomic for each sample.
 
@@ -477,13 +474,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		return 0, err
 	}
 
-	if t < a.mint {
-		a.mint = t
-	}
-	if t > a.maxt {
-		a.maxt = t
-	}
-
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{
 		Ref: s.ref,
@@ -527,9 +517,6 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderST
 	}
 
-	if st > a.maxt {
-		a.maxt = st
-	}
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{Ref: s.ref, T: st, V: 0.0})
 	b.floatSeries = append(b.floatSeries, s)
@@ -903,13 +890,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		b.floatHistogramSeries = append(b.floatHistogramSeries, s)
 	}
 
-	if t < a.mint {
-		a.mint = t
-	}
-	if t > a.maxt {
-		a.maxt = t
-	}
-
 	return storage.SeriesRef(s.ref), nil
 }
 
@@ -1011,10 +991,6 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			FH:  zeroFloatHistogram,
 		})
 		b.floatHistogramSeries = append(b.floatHistogramSeries, s)
-	}
-
-	if st > a.maxt {
-		a.maxt = st
 	}
 
 	return storage.SeriesRef(s.ref), nil
