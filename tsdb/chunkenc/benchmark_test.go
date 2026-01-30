@@ -80,11 +80,25 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 		{
 			// Delta simulates delta type or worst case for cumulatives, where ST
 			// is changing on every sample.
-			name: "vt=constant/st=delta",
+			name: "vt=constant/st=delta-exclusive",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
 				for range nSamples {
 					st := t + 1 // ST is a tight interval after the last t+1ms.
+					t += 15000
+					ret = append(ret, triple{st: st, t: t, v: v})
+				}
+				return ret
+			}(),
+		},
+		{
+			// Delta simulates delta type or worst case for cumulatives, where ST
+			// is changing on every sample.
+			name: "vt=constant/st=delta-inclusive",
+			samples: func() (ret []triple) {
+				t, v := initT, initV
+				for range nSamples {
+					st := t // ST is the same as the previous t.
 					t += 15000
 					ret = append(ret, triple{st: st, t: t, v: v})
 				}
@@ -198,11 +212,24 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			}(),
 		},
 		{
-			name: "vt=random 0-1/st=delta",
+			name: "vt=random 0-1/st=delta-exclusive",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
 				for range nSamples {
 					st := t + 1                          // ST is a tight interval after the last t+1ms.
+					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
+					v += r.Float64()                     // Random between 0 and 1.0.
+					ret = append(ret, triple{st: st, t: t, v: v})
+				}
+				return ret
+			}(),
+		},
+		{
+			name: "vt=random 0-1/st=delta-inclusive",
+			samples: func() (ret []triple) {
+				t, v := initT, initV
+				for range nSamples {
+					st := t                              // ST is the same as the previous t.
 					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
 					v += r.Float64()                     // Random between 0 and 1.0.
 					ret = append(ret, triple{st: st, t: t, v: v})
