@@ -213,7 +213,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 	}
 
 	for _, f := range []fmtCase{
-		{name: "XOR", newChunkFn: func() Chunk { return NewXORChunk() }},
+		{name: "XOR", newChunkFn: func() Chunk { return NewXORChunk() }, stUnsupported: true},
 		{name: "XOR_OPT_ST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
 	} {
 		for _, s := range sampleCases {
