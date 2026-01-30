@@ -46,11 +46,20 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 	require.NoError(b, err)
 
 	var (
-		r      = rand.New(rand.NewSource(1))
-		initST = timestamp.FromTime(d) // Use realistic timestamp.
-		initT  = initST + 15000        // 15s after initST.
-		initV  = 1243535.123
+		r       = rand.New(rand.NewSource(1)) // Fixed seed for reproducibility.
+		initST  = timestamp.FromTime(d)       // Use realistic timestamp.
+		initT   = initST + 15000              // 15s after initST.
+		initV   = 1243535.123
+		rInts   = make([]int64, nSamples)
+		rFloats = make([]float64, nSamples)
 	)
+
+	// Pre-generate random numbers so that adding/removing cases does not change
+	// the generated samples.
+	for i := range nSamples {
+		rInts[i] = int64(r.Intn(100))
+		rFloats[i] = float64(r.Intn(100))
+	}
 
 	sampleCases := []sampleCase{
 		{
@@ -109,9 +118,9 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			name: "vt=random steps/st=0",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
-				for range nSamples {
-					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
-					v += float64(r.Intn(100) - 50)       // Varying from -50 to +50 in 100 discrete steps.
+				for i := range nSamples {
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
 					ret = append(ret, triple{st: 0, t: t, v: v})
 				}
 				return ret
@@ -121,9 +130,9 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			name: "vt=random steps/st=cumulative",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
-				for range nSamples {
-					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
-					v += float64(r.Intn(100) - 50)       // Varying from -50 to +50 in 100 discrete steps.
+				for i := range nSamples {
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
 					ret = append(ret, triple{st: initST, t: t, v: v})
 				}
 				return ret
@@ -133,10 +142,10 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			name: "vt=random steps/st=delta",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
-				for range nSamples {
-					st := t + 1                          // ST is a tight interval after the last t+1ms.
-					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
-					v += float64(r.Intn(100) - 50)       // Varying from -50 to +50 in 100 discrete steps.
+				for i := range nSamples {
+					st := t + 1                // ST is a tight interval after the last t+1ms.
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
 					ret = append(ret, triple{st: st, t: t, v: v})
 				}
 				return ret
@@ -146,9 +155,9 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			name: "vt=random 0-1/st=0",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
-				for range nSamples {
-					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
-					v += r.Float64()                     // Random between 0 and 1.0.
+				for i := range nSamples {
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
 					ret = append(ret, triple{st: 0, t: t, v: v})
 				}
 				return ret
@@ -159,9 +168,9 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			name: "vt=negrandom 0-1/st=0",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
-				for range nSamples {
-					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
-					v -= r.Float64()                     // Random between 0 and 1.0.
+				for i := range nSamples {
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v -= rFloats[i] / 100.0    // Random between 0 and 1.0.
 					ret = append(ret, triple{st: 0, t: t, v: v})
 				}
 				return ret
@@ -171,9 +180,9 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			name: "vt=random 0-1/st=cumulative",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
-				for range nSamples {
-					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
-					v += r.Float64()                     // Random between 0 and 1.0.
+				for i := range nSamples {
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
 					ret = append(ret, triple{st: initST, t: t, v: v})
 				}
 				return ret
@@ -184,8 +193,8 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			samples: func() (ret []triple) {
 				t, v := initT, initV
 				for i := range nSamples {
-					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
-					v += r.Float64()                     // Random between 0 and 1.0.
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
 					st := initST
 					if i%6 == 5 {
 						st = t - 10000 // Reset of 10s before current t.
@@ -200,8 +209,8 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			samples: func() (ret []triple) {
 				t, v := initT, initV
 				for i := range nSamples {
-					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
-					v += r.Float64()                     // Random between 0 and 1.0.
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
 					st := initST
 					if i%6 == 5 {
 						st = 0
@@ -215,10 +224,10 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			name: "vt=random 0-1/st=delta-exclusive",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
-				for range nSamples {
-					st := t + 1                          // ST is a tight interval after the last t+1ms.
-					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
-					v += r.Float64()                     // Random between 0 and 1.0.
+				for i := range nSamples {
+					st := t + 1                // ST is a tight interval after the last t+1ms.
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
 					ret = append(ret, triple{st: st, t: t, v: v})
 				}
 				return ret
@@ -228,10 +237,10 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			name: "vt=random 0-1/st=delta-inclusive",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
-				for range nSamples {
-					st := t                              // ST is the same as the previous t.
-					t += int64(r.Intn(100) - 50 + 15000) // 15 seconds +- up to 100ms of jitter.
-					v += r.Float64()                     // Random between 0 and 1.0.
+				for i := range nSamples {
+					st := t                    // ST is the same as the previous t.
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
 					ret = append(ret, triple{st: st, t: t, v: v})
 				}
 				return ret
