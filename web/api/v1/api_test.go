@@ -166,8 +166,8 @@ func (t testTargetRetriever) TargetsDroppedCounts() map[string]int {
 	return r
 }
 
-func (testTargetRetriever) ScrapePoolConfig(_ string) (*config.ScrapeConfig, error) {
-	return &config.ScrapeConfig{
+func (testTargetRetriever) ScrapePoolConfig(pool string) (*config.ScrapeConfig, error) {
+	cfg := &config.ScrapeConfig{
 		RelabelConfigs: []*relabel.Config{
 			{
 				Action:               relabel.Replace,
@@ -182,7 +182,16 @@ func (testTargetRetriever) ScrapePoolConfig(_ string) (*config.ScrapeConfig, err
 				Regex:        relabel.MustNewRegexp(`example\.com:.*`),
 			},
 		},
-	}, nil
+	}
+	if pool == "testpool3" {
+		cfg.RelabelConfigs = append(cfg.RelabelConfigs, &relabel.Config{
+			Action:      relabel.Replace,
+			TargetLabel: "job",
+			Regex:       relabel.MustNewRegexp(".*"),
+			Replacement: "should_not_apply",
+		})
+	}
+	return cfg, nil
 }
 
 func (t *testTargetRetriever) SetMetadataStoreForTargets(identifier string, metadata scrape.MetricMetadataStore) error {
@@ -1930,6 +1939,47 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 							Action:       relabel.Drop,
 							SourceLabels: []model.LabelName{"__address__"},
 							Regex:        relabel.MustNewRegexp(`example\.com:.*`),
+						},
+						Output: labels.EmptyLabels(),
+						Keep:   false,
+					},
+				},
+			},
+		},
+		{
+			endpoint: api.targetRelabelSteps,
+			query:    url.Values{"scrapePool": []string{"testpool3"}, "labels": []string{`{"job":"test","__address__":"localhost:9090"}`}},
+			response: &RelabelStepsResponse{
+				Steps: []RelabelStep{
+					{
+						Rule: &relabel.Config{
+							Action:               relabel.Replace,
+							Replacement:          "example.com:443",
+							TargetLabel:          "__address__",
+							Regex:                relabel.MustNewRegexp(""),
+							NameValidationScheme: model.LegacyValidation,
+						},
+						Output: labels.FromMap(map[string]string{
+							"job":         "test",
+							"__address__": "example.com:443",
+						}),
+						Keep: true,
+					},
+					{
+						Rule: &relabel.Config{
+							Action:       relabel.Drop,
+							SourceLabels: []model.LabelName{"__address__"},
+							Regex:        relabel.MustNewRegexp(`example\.com:.*`),
+						},
+						Output: labels.EmptyLabels(),
+						Keep:   false,
+					},
+					{
+						Rule: &relabel.Config{
+							Action:      relabel.Replace,
+							TargetLabel: "job",
+							Regex:       relabel.MustNewRegexp(".*"),
+							Replacement: "should_not_apply",
 						},
 						Output: labels.EmptyLabels(),
 						Keep:   false,
