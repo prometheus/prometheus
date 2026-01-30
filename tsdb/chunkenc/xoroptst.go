@@ -56,9 +56,8 @@ func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint8) {
 	return firstSTKnown, b[0] & mask
 }
 
-// XorOptSTChunk holds encoded sample data:
-// 2B(numSamples), 1B(stHeader), ?varint(st), varint(t), xor(v), ?varuint(stDelta), varuint(tDelta), xor(v), ?classicvarbitint(stDod), classicvarbitint(tDod), xor(v), ...
-// stHeader: 1b(firstSTKnown), 7b(firstSTChangeOn).
+// XorOptSTChunk holds XOR enncoded samples with optional start time (ST)
+// per chunk or per sample. See tsdb/docs/format/chunks.md for details.
 type XorOptSTChunk struct {
 	b bstream
 }
