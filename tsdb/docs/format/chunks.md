@@ -71,7 +71,7 @@ This is experimental, related to supporting delta temporality metrics.
 Subject to change.
 
 The format is similar to XOR chunk data, except there's an additional one byte
-start time (ST) header and optional start time values, delta, delta of deltas.
+start time (ST) header and optional start time values.
 
 ```
 ┌──────────────────────┬───────────────────┬────────────────┬───────────────────────────────┬─-
