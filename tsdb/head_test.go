@@ -471,9 +471,9 @@ func BenchmarkLoadRealWLs(b *testing.B) {
 	}
 }
 
-// TestHead_InitAppenderRace_ErrOutOfBands tests against init races with maxTime vs minTime on empty head concurrent appends.
+// TestHead_InitAppenderRace_ErrOutOfBounds tests against init races with maxTime vs minTime on empty head concurrent appends.
 // See: https://github.com/prometheus/prometheus/pull/17963
-func TestHead_InitAppenderRace_ErrOutOfBands(t *testing.T) {
+func TestHead_InitAppenderRace_ErrOutOfBounds(t *testing.T) {
 	head, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 	require.NoError(t, head.Init(0))
 
