@@ -327,8 +327,8 @@ type FileLoader struct {
 	ParserOptions parser.Options
 }
 
-func (FileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme)
+func (fl FileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.ParserOptions)
 }
 
 func (fl FileLoader) Parse(query string) (parser.Expr, error) {
@@ -632,7 +632,7 @@ func ParseFiles(patterns []string, nameValidationScheme model.ValidationScheme) 
 		}
 	}
 	for fn, pat := range files {
-		_, errs := rulefmt.ParseFile(fn, false, nameValidationScheme)
+		_, errs := rulefmt.ParseFile(fn, false, nameValidationScheme, parser.Options{})
 		if len(errs) > 0 {
 			return fmt.Errorf("parse rules from file %q (pattern: %q): %w", fn, pat, errors.Join(errs...))
 		}
