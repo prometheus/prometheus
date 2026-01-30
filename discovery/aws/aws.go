@@ -43,6 +43,7 @@ const (
 	RoleEC2       Role = "ec2"
 	RoleECS       Role = "ecs"
 	RoleLightsail Role = "lightsail"
+	RoleMSK       Role = "msk"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -51,7 +52,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	switch *c {
-	case RoleEC2, RoleECS, RoleLightsail:
+	case RoleEC2, RoleECS, RoleLightsail, RoleMSK:
 		return nil
 	default:
 		return fmt.Errorf("unknown AWS SD role %q", *c)
@@ -78,13 +79,14 @@ type SDConfig struct {
 	// ec2 specific
 	Filters []*EC2Filter `yaml:"filters,omitempty"`
 
-	// ecs specific
+	// ecs, msk specific
 	Clusters []string `yaml:"clusters,omitempty"`
 
 	// Embedded sub-configs (internal use only, not serialized)
 	*EC2SDConfig       `yaml:"-"`
 	*ECSSDConfig       `yaml:"-"`
 	*LightsailSDConfig `yaml:"-"`
+	*MSKSDConfig       `yaml:"-"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for SDConfig.
@@ -195,6 +197,39 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.RefreshInterval != 0 {
 			c.LightsailSDConfig.RefreshInterval = c.RefreshInterval
 		}
+	case RoleMSK:
+		if c.MSKSDConfig == nil {
+			mskConfig := DefaultMSKSDConfig
+			c.MSKSDConfig = &mskConfig
+		}
+		c.MSKSDConfig.HTTPClientConfig = c.HTTPClientConfig
+		if c.Region != "" {
+			c.MSKSDConfig.Region = c.Region
+		}
+		if c.Endpoint != "" {
+			c.MSKSDConfig.Endpoint = c.Endpoint
+		}
+		if c.AccessKey != "" {
+			c.MSKSDConfig.AccessKey = c.AccessKey
+		}
+		if c.SecretKey != "" {
+			c.MSKSDConfig.SecretKey = c.SecretKey
+		}
+		if c.Profile != "" {
+			c.MSKSDConfig.Profile = c.Profile
+		}
+		if c.RoleARN != "" {
+			c.MSKSDConfig.RoleARN = c.RoleARN
+		}
+		if c.Port != 0 {
+			c.MSKSDConfig.Port = c.Port
+		}
+		if c.RefreshInterval != 0 {
+			c.MSKSDConfig.RefreshInterval = c.RefreshInterval
+		}
+		if c.Clusters != nil {
+			c.MSKSDConfig.Clusters = c.Clusters
+		}
 	default:
 		return fmt.Errorf("unknown AWS SD role %q", c.Role)
 	}
@@ -226,6 +261,9 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 	case RoleLightsail:
 		opts.Metrics = &lightsailMetrics{refreshMetrics: awsMetrics.refreshMetrics}
 		return NewLightsailDiscovery(c.LightsailSDConfig, opts)
+	case RoleMSK:
+		opts.Metrics = &mskMetrics{refreshMetrics: awsMetrics.refreshMetrics}
+		return NewMSKDiscovery(c.MSKSDConfig, opts)
 	default:
 		return nil, fmt.Errorf("unknown AWS SD role %q", c.Role)
 	}

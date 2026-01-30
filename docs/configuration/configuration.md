@@ -984,11 +984,56 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ecs_tag_task_<tagkey>`: each task tag value, keyed by tag name
 * `__meta_ecs_tag_ec2_<tagkey>`: each EC2 instance tag value, keyed by tag name (EC2 launch type only)
 
+#### `msk`
+
+The `msk` role discovers targets from AWS MSK (Managed Streaming for Apache Kafka) provisioned clusters.
+
+**Important**: This service discovery only works with **provisioned clusters**. Serverless clusters are not supported as they do not expose individual broker nodes.
+
+Discovery includes:
+- **Broker nodes**: Kafka broker instances (supports both ZooKeeper-based and KRaft-based clusters)
+- **KRaft Controller nodes**: Controller instances (KRaft-based clusters only)
+
+Note: ZooKeeper nodes are not discoverable via the MSK API. For monitoring, MSK provides:
+- **JMX Exporter**: Available on both broker and KRaft controller nodes (when enabled)
+- **Node Exporter**: Available on broker nodes only (when enabled)
+
+The IAM credentials used must have the following permissions to discover
+scrape targets:
+
+- `kafka:DescribeClusterV2`
+- `kafka:ListClustersV2`
+- `kafka:ListNodes`
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_msk_cluster_name`: the name of the MSK cluster
+* `__meta_msk_cluster_arn`: the ARN of the MSK cluster
+* `__meta_msk_cluster_state`: the state of the MSK cluster (e.g., ACTIVE, CREATING, DELETING)
+* `__meta_msk_cluster_type`: the type of the MSK cluster (e.g., PROVISIONED, SERVERLESS)
+* `__meta_msk_cluster_version`: the current version of the MSK cluster
+* `__meta_msk_cluster_kafka_version`: the Kafka version running on the cluster
+* `__meta_msk_cluster_jmx_exporter_enabled`: whether JMX exporter is enabled on the cluster
+* `__meta_msk_cluster_configuration_arn`: the ARN of the MSK configuration
+* `__meta_msk_cluster_configuration_revision`: the revision of the MSK configuration
+* `__meta_msk_cluster_tag_<tagkey>`: each cluster tag value, keyed by tag name
+* `__meta_msk_node_type`: the type of the node (BROKER or CONTROLLER)
+* `__meta_msk_node_arn`: the ARN of the node
+* `__meta_msk_node_added_time`: the time the node was added to the cluster
+* `__meta_msk_node_instance_type`: the instance type of the node
+* `__meta_msk_node_attached_eni`: the ID of the attached ENI
+* `__meta_msk_broker_id`: the broker ID (broker nodes only)
+* `__meta_msk_broker_endpoint_index`: the index of the broker endpoint (broker nodes only)
+* `__meta_msk_broker_client_subnet`: the client subnet of the broker (broker nodes only)
+* `__meta_msk_broker_client_vpc_ip`: the VPC IP address of the broker (broker nodes only)
+* `__meta_msk_broker_node_exporter_enabled`: whether node exporter is enabled on brokers (broker nodes only)
+* `__meta_msk_controller_endpoint_index`: the index of the controller endpoint (controller nodes only)
+
 See below for the configuration options for AWS discovery:
 
 ```yaml
 # The AWS role to use for service discovery.
-# Must be one of: ec2, lightsail, or ecs.
+# Must be one of: ec2, lightsail, ecs, or msk.
 role: <string>
 
 # The AWS region. If blank, the region from the instance metadata is used.
@@ -1024,7 +1069,7 @@ filters:
   [ - name: <string>
       values: <string>, [...] ]
 
-# List of ECS cluster ARNs to discover (ecs role only). If empty, all clusters in the region are discovered.
+# List of ECS or MSK cluster ARNs (ecs and msk roles only) to discover. If empty, all clusters in the region are discovered.
 # This can significantly improve performance when you only need to monitor specific clusters.
 [ clusters: [<string>, ...] ]
 

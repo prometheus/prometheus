@@ -196,6 +196,7 @@
     "lightsail": true,
     "linode": true,
     "marathon": true,
+    "msk": true,
     "nerve": true,
     "nomad": true,
     "openstack": true,
