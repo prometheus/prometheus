@@ -22,11 +22,10 @@ import (
 )
 
 func TestExprString(t *testing.T) {
-	ExperimentalDurationExpr = true
-	EnableBinopFillModifiers = true
-	t.Cleanup(func() {
-		ExperimentalDurationExpr = false
-		EnableBinopFillModifiers = false
+	optsExtended := WithOptions(Options{
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
+		EnableBinopFillModifiers:     true,
 	})
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output
@@ -320,14 +319,9 @@ func TestExprString(t *testing.T) {
 		},
 	}
 
-	EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		EnableExtendedRangeSelectors = false
-	})
-
 	for _, test := range inputs {
 		t.Run(test.in, func(t *testing.T) {
-			expr, err := ParseExpr(test.in)
+			expr, err := ParseExpr(test.in, optsExtended)
 			require.NoError(t, err)
 
 			exp := test.in

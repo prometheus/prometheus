@@ -1459,7 +1459,7 @@ yydefault:
 			if !exist {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "unknown function with name %q", yyDollar[1].item.Val)
 			}
-			if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
+			if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "function %q is not enabled", yyDollar[1].item.Val)
 			}
 			yyVAL.node = &Call{

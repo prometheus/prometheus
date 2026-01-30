@@ -23,9 +23,6 @@ type Function struct {
 	Experimental bool
 }
 
-// EnableExperimentalFunctions controls whether experimentalFunctions are enabled.
-var EnableExperimentalFunctions bool
-
 // Functions is a list of all functions supported by PromQL, including their types.
 var Functions = map[string]*Function{
 	"abs": {
