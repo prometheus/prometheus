@@ -417,3 +417,94 @@ func TestAPIWithNativeHistograms(t *testing.T) {
 			RequireLenAtLeast("$.data", 1)
 	})
 }
+
+// TestAPIWithStats tests the API with the stats query parameter.
+func TestAPIWithStats(t *testing.T) {
+	// Create an API with sample series data.
+	api := newTestAPI(t, testhelpers.APIConfig{
+		Queryable: testhelpers.NewLazyLoader(func() storage.SampleAndChunkQueryable {
+			return testhelpers.NewQueryableWithSeries(testhelpers.FixtureMultipleSeries())
+		}),
+	})
+
+	now := time.Now().Unix()
+
+	// Test combinations of methods, endpoints, and stats values.
+	methods := []string{"GET", "POST"}
+	statsValues := []struct {
+		value       string
+		expectStats bool
+	}{
+		{"true", true},
+		{"all", true},
+		{"1", true},
+		{"", false},
+	}
+
+	for _, method := range methods {
+		for _, stats := range statsValues {
+			t.Run(method+" /api/v1/query with stats="+stats.value, func(t *testing.T) {
+				var params []string
+				if stats.value != "" {
+					params = []string{"query", "up", "stats", stats.value}
+				} else {
+					params = []string{"query", "up"}
+				}
+
+				var resp *testhelpers.Response
+				if method == "GET" {
+					resp = testhelpers.GET(t, api, "/api/v1/query", params...)
+				} else {
+					resp = testhelpers.POST(t, api, "/api/v1/query", params...)
+				}
+
+				resp.RequireSuccess().ValidateOpenAPI()
+
+				if stats.expectStats {
+					resp.RequireJSONPathExists("$.data.stats").
+						RequireJSONPathExists("$.data.stats.timings").
+						RequireJSONPathExists("$.data.stats.samples")
+				} else {
+					resp.RequireJSONPathNotExists("$.data.stats")
+				}
+			})
+
+			t.Run(method+" /api/v1/query_range with stats="+stats.value, func(t *testing.T) {
+				var params []string
+				if stats.value != "" {
+					params = []string{
+						"query", "up",
+						"start", strconv.FormatInt(now-120, 10),
+						"end", strconv.FormatInt(now, 10),
+						"step", "60",
+						"stats", stats.value,
+					}
+				} else {
+					params = []string{
+						"query", "up",
+						"start", strconv.FormatInt(now-120, 10),
+						"end", strconv.FormatInt(now, 10),
+						"step", "60",
+					}
+				}
+
+				var resp *testhelpers.Response
+				if method == "GET" {
+					resp = testhelpers.GET(t, api, "/api/v1/query_range", params...)
+				} else {
+					resp = testhelpers.POST(t, api, "/api/v1/query_range", params...)
+				}
+
+				resp.RequireSuccess().ValidateOpenAPI()
+
+				if stats.expectStats {
+					resp.RequireJSONPathExists("$.data.stats").
+						RequireJSONPathExists("$.data.stats.timings").
+						RequireJSONPathExists("$.data.stats.samples")
+				} else {
+					resp.RequireJSONPathNotExists("$.data.stats")
+				}
+			})
+		}
+	}
+}

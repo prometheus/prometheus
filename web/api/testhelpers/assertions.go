@@ -55,6 +55,16 @@ func (r *Response) RequireJSONPathExists(path string) *Response {
 	return r
 }
 
+// RequireJSONPathNotExists asserts that a JSON path does not exist and returns the response for chaining.
+func (r *Response) RequireJSONPathNotExists(path string) *Response {
+	r.t.Helper()
+	require.NotNil(r.t, r.JSON, "response body is not JSON")
+
+	value := getJSONPath(r.JSON, path)
+	require.Nil(r.t, value, "JSON path %q should not exist but was found", path)
+	return r
+}
+
 // RequireEquals asserts that a JSON path equals the expected value and returns the response for chaining.
 func (r *Response) RequireEquals(path string, expected any) *Response {
 	r.t.Helper()

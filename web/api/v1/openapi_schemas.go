@@ -43,6 +43,7 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("ParseQueryOutputBody", b.simpleResponseBodySchema())
 	schemas.Set("ParseQueryPostInputBody", b.parseQueryPostInputBodySchema())
 	schemas.Set("QueryData", b.queryDataSchema())
+	schemas.Set("QueryStats", b.queryStatsSchema())
 	schemas.Set("FloatSample", b.floatSampleSchema())
 	schemas.Set("HistogramSample", b.histogramSampleSchema())
 	schemas.Set("FloatSeries", b.floatSeriesSchema())
@@ -450,6 +451,7 @@ func (*OpenAPIBuilder) queryDataSchema() *base.SchemaProxy {
 			},
 		})},
 	}))
+	vectorProps.Set("stats", schemaRef("#/components/schemas/QueryStats"))
 
 	// Matrix query result.
 	matrixProps := orderedmap.New[string, *base.SchemaProxy]()
@@ -464,6 +466,7 @@ func (*OpenAPIBuilder) queryDataSchema() *base.SchemaProxy {
 			},
 		})},
 	}))
+	matrixProps.Set("stats", schemaRef("#/components/schemas/QueryStats"))
 
 	// Scalar query result.
 	scalarProps := orderedmap.New[string, *base.SchemaProxy]()
@@ -480,6 +483,7 @@ func (*OpenAPIBuilder) queryDataSchema() *base.SchemaProxy {
 		MinItems: int64Ptr(2),
 		MaxItems: int64Ptr(2),
 	}))
+	scalarProps.Set("stats", schemaRef("#/components/schemas/QueryStats"))
 
 	// String query result.
 	stringResultProps := orderedmap.New[string, *base.SchemaProxy]()
@@ -491,6 +495,7 @@ func (*OpenAPIBuilder) queryDataSchema() *base.SchemaProxy {
 		MinItems:    int64Ptr(2),
 		MaxItems:    int64Ptr(2),
 	}))
+	stringResultProps.Set("stats", schemaRef("#/components/schemas/QueryStats"))
 
 	return base.CreateSchemaProxy(&base.Schema{
 		Description: "Query result data. The structure of 'result' depends on 'resultType'.",
@@ -533,6 +538,74 @@ func (*OpenAPIBuilder) queryDataSchema() *base.SchemaProxy {
 				},
 			},
 		}),
+	})
+}
+
+func (*OpenAPIBuilder) queryStatsSchema() *base.SchemaProxy {
+	// Timings object.
+	timingsProps := orderedmap.New[string, *base.SchemaProxy]()
+	timingsProps.Set("evalTotalTime", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"number"},
+		Description: "Total evaluation time in seconds.",
+	}))
+	timingsProps.Set("resultSortTime", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"number"},
+		Description: "Time spent sorting results in seconds.",
+	}))
+	timingsProps.Set("queryPreparationTime", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"number"},
+		Description: "Query preparation time in seconds.",
+	}))
+	timingsProps.Set("innerEvalTime", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"number"},
+		Description: "Inner evaluation time in seconds.",
+	}))
+	timingsProps.Set("execQueueTime", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"number"},
+		Description: "Execution queue wait time in seconds.",
+	}))
+	timingsProps.Set("execTotalTime", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"number"},
+		Description: "Total execution time in seconds.",
+	}))
+
+	// Samples object.
+	samplesProps := orderedmap.New[string, *base.SchemaProxy]()
+	samplesProps.Set("totalQueryableSamples", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"integer"},
+		Description: "Total number of samples that were queryable.",
+	}))
+	samplesProps.Set("peakSamples", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"integer"},
+		Description: "Peak number of samples in memory.",
+	}))
+	samplesProps.Set("totalQueryableSamplesPerStep", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Description: "Total queryable samples per step (only included with stats=all).",
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
+			Type:        []string{"array"},
+			Description: "Timestamp and sample count as [timestamp, count].",
+			Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{Type: []string{"number"}})},
+			MinItems:    int64Ptr(2),
+			MaxItems:    int64Ptr(2),
+		})},
+	}))
+
+	// Main stats object.
+	statsProps := orderedmap.New[string, *base.SchemaProxy]()
+	statsProps.Set("timings", base.CreateSchemaProxy(&base.Schema{
+		Type:       []string{"object"},
+		Properties: timingsProps,
+	}))
+	statsProps.Set("samples", base.CreateSchemaProxy(&base.Schema{
+		Type:       []string{"object"},
+		Properties: samplesProps,
+	}))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"object"},
+		Description: "Query execution statistics (included when the stats query parameter is provided).",
+		Properties:  statsProps,
 	})
 }
 

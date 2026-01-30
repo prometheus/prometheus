@@ -2881,6 +2881,8 @@ components:
                                 - $ref: '#/components/schemas/FloatSample'
                                 - $ref: '#/components/schemas/HistogramSample'
                         description: Array of samples (either float or histogram).
+                    stats:
+                        $ref: '#/components/schemas/QueryStats'
                   required:
                     - resultType
                     - result
@@ -2898,6 +2900,8 @@ components:
                                 - $ref: '#/components/schemas/FloatSeries'
                                 - $ref: '#/components/schemas/HistogramSeries'
                         description: Array of time series (either float or histogram).
+                    stats:
+                        $ref: '#/components/schemas/QueryStats'
                   required:
                     - resultType
                     - result
@@ -2917,6 +2921,8 @@ components:
                         maxItems: 2
                         minItems: 2
                         description: Scalar value as [timestamp, stringValue].
+                    stats:
+                        $ref: '#/components/schemas/QueryStats'
                   required:
                     - resultType
                     - result
@@ -2934,6 +2940,8 @@ components:
                         maxItems: 2
                         minItems: 2
                         description: String value as [timestamp, stringValue].
+                    stats:
+                        $ref: '#/components/schemas/QueryStats'
                   required:
                     - resultType
                     - result
@@ -2948,6 +2956,50 @@ components:
                         - 1627845600
                         - "1"
                 resultType: vector
+        QueryStats:
+            type: object
+            properties:
+                timings:
+                    type: object
+                    properties:
+                        evalTotalTime:
+                            type: number
+                            description: Total evaluation time in seconds.
+                        resultSortTime:
+                            type: number
+                            description: Time spent sorting results in seconds.
+                        queryPreparationTime:
+                            type: number
+                            description: Query preparation time in seconds.
+                        innerEvalTime:
+                            type: number
+                            description: Inner evaluation time in seconds.
+                        execQueueTime:
+                            type: number
+                            description: Execution queue wait time in seconds.
+                        execTotalTime:
+                            type: number
+                            description: Total execution time in seconds.
+                samples:
+                    type: object
+                    properties:
+                        totalQueryableSamples:
+                            type: integer
+                            description: Total number of samples that were queryable.
+                        peakSamples:
+                            type: integer
+                            description: Peak number of samples in memory.
+                        totalQueryableSamplesPerStep:
+                            type: array
+                            items:
+                                type: array
+                                items:
+                                    type: number
+                                maxItems: 2
+                                minItems: 2
+                                description: Timestamp and sample count as [timestamp, count].
+                            description: Total queryable samples per step (only included with stats=all).
+            description: Query execution statistics (included when the stats query parameter is provided).
         FloatSample:
             type: object
             properties:
