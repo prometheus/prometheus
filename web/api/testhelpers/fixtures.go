@@ -87,6 +87,7 @@ func FixtureRuleGroups() []*rules.Group {
 		alertExpr,
 		time.Minute,
 		0,
+		0,
 		labels.FromStrings("severity", "critical"),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
