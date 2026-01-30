@@ -599,6 +599,13 @@ matrix_selector : expr LEFT_BRACKET positive_duration_expr RIGHT_BRACKET
 
 subquery_expr   : expr LEFT_BRACKET positive_duration_expr COLON positive_duration_expr RIGHT_BRACKET
                         {
+                        // Check if offset/@ modifiers are immediately before the subquery brackets.
+                        hasModifiers, errMsg := yylex.(*parser).hasModifiersBeforeRange($1.(Expr), $2.Pos)
+                        if hasModifiers {
+                                errRange := mergeRanges(&$2, &$6)
+                                yylex.(*parser).addParseErrf(errRange, "%s", errMsg)
+                        }
+
                         var rangeNl time.Duration
                         var stepNl time.Duration
                         if numLit, ok := $3.(*NumberLiteral); ok {
@@ -620,6 +627,13 @@ subquery_expr   : expr LEFT_BRACKET positive_duration_expr COLON positive_durati
                         }
                 | expr LEFT_BRACKET positive_duration_expr COLON RIGHT_BRACKET
                         {
+                        // Check if offset/@ modifiers are immediately before the subquery brackets.
+                        hasModifiers, errMsg := yylex.(*parser).hasModifiersBeforeRange($1.(Expr), $2.Pos)
+                        if hasModifiers {
+                                errRange := mergeRanges(&$2, &$5)
+                                yylex.(*parser).addParseErrf(errRange, "%s", errMsg)
+                        }
+
                         var rangeNl time.Duration
                         if numLit, ok := $3.(*NumberLiteral); ok {
                                 rangeNl = time.Duration(math.Round(numLit.Val*float64(time.Second)))
