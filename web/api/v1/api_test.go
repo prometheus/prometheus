@@ -902,6 +902,194 @@ func TestLabelNames(t *testing.T) {
 	}
 }
 
+func TestInfoLabels(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			target_info{job="prometheus", instance="localhost:9090", version="2.0", env="prod"} 1
+			target_info{job="prometheus", instance="localhost:9091", version="2.1", env="staging"} 1
+			target_info{job="node", instance="node1:9100", version="1.0", region="us-east"} 1
+			http_requests_total{job="prometheus", instance="localhost:9090"} 100
+			http_requests_total{job="prometheus", instance="localhost:9091"} 200
+			http_requests_total{job="node", instance="node1:9100"} 50
+			custom_info{job="app", instance="app1:8080", custom_label="custom_value"} 1
+	`)
+
+	api := &API{
+		Queryable:   storage,
+		QueryEngine: testEngine(t),
+	}
+
+	request := func(method string, params map[string][]string) (*http.Request, error) {
+		u, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		q := u.Query()
+		for key, values := range params {
+			for _, v := range values {
+				q.Add(key, v)
+			}
+		}
+		u.RawQuery = q.Encode()
+
+		r, err := http.NewRequest(method, u.String(), nil)
+		if method == http.MethodPost {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return r, err
+	}
+
+	for _, tc := range []struct {
+		name              string
+		api               *API
+		params            map[string][]string
+		expected          map[string][]string
+		expectedErrorType errorType
+	}{
+		{
+			name:   "all target_info labels without filter",
+			params: map[string][]string{"start": {"0"}, "end": {"100000"}},
+			expected: map[string][]string{
+				"version": {"1.0", "2.0", "2.1"},
+				"env":     {"prod", "staging"},
+				"region":  {"us-east"},
+			},
+			api: api,
+		},
+		{
+			name:   "filter by job=prometheus using expr",
+			params: map[string][]string{"expr": {`http_requests_total{job="prometheus"}`}, "start": {"0"}, "end": {"120"}},
+			expected: map[string][]string{
+				"version": {"2.0", "2.1"},
+				"env":     {"prod", "staging"},
+			},
+			api: api,
+		},
+		{
+			name:   "filter by specific instance using expr",
+			params: map[string][]string{"expr": {`http_requests_total{instance="localhost:9090"}`}, "start": {"0"}, "end": {"120"}},
+			expected: map[string][]string{
+				"version": {"2.0"},
+				"env":     {"prod"},
+			},
+			api: api,
+		},
+		{
+			name:   "filter with aggregation expression",
+			params: map[string][]string{"expr": {`sum by (job, instance) (http_requests_total{job="prometheus", instance="localhost:9090"})`}, "start": {"0"}, "end": {"120"}},
+			expected: map[string][]string{
+				"version": {"2.0"},
+				"env":     {"prod"},
+			},
+			api: api,
+		},
+		{
+			name:   "filter with regex in expr",
+			params: map[string][]string{"expr": {`http_requests_total{job=~"prometheus|node", instance=~"localhost:9090|node1:9100"}`}, "start": {"0"}, "end": {"120"}},
+			expected: map[string][]string{
+				"version": {"1.0", "2.0"},
+				"env":     {"prod"},
+				"region":  {"us-east"},
+			},
+			api: api,
+		},
+		{
+			name:   "custom info metric with metric_match",
+			params: map[string][]string{"metric_match": {"custom_info"}, "start": {"0"}, "end": {"100000"}},
+			expected: map[string][]string{
+				"custom_label": {"custom_value"},
+			},
+			api: api,
+		},
+		{
+			name:     "non-existent info metric",
+			params:   map[string][]string{"metric_match": {"nonexistent_info"}, "start": {"0"}, "end": {"100000"}},
+			expected: map[string][]string{},
+			api:      api,
+		},
+		{
+			name:   "regex match on info metric name",
+			params: map[string][]string{"metric_match": {"~.*_info"}, "start": {"0"}, "end": {"100000"}},
+			expected: map[string][]string{
+				"version":      {"1.0", "2.0", "2.1"},
+				"env":          {"prod", "staging"},
+				"region":       {"us-east"},
+				"custom_label": {"custom_value"},
+			},
+			api: api,
+		},
+		{
+			name:   "regex match with =~ prefix",
+			params: map[string][]string{"metric_match": {"=~.*_info"}, "start": {"0"}, "end": {"100000"}},
+			expected: map[string][]string{
+				"version":      {"1.0", "2.0", "2.1"},
+				"env":          {"prod", "staging"},
+				"region":       {"us-east"},
+				"custom_label": {"custom_value"},
+			},
+			api: api,
+		},
+		{
+			name:   "negated match on info metric",
+			params: map[string][]string{"metric_match": {"!=custom_info"}, "start": {"0"}, "end": {"100000"}},
+			expected: map[string][]string{
+				"version": {"1.0", "2.0", "2.1"},
+				"env":     {"prod", "staging"},
+				"region":  {"us-east"},
+			},
+			api: api,
+		},
+		{
+			name:     "no matching expr results",
+			params:   map[string][]string{"expr": {`http_requests_total{job="nonexistent"}`}, "start": {"0"}, "end": {"120"}},
+			expected: map[string][]string{},
+			api:      api,
+		},
+		{
+			name:   "with limit",
+			params: map[string][]string{"limit": {"2"}, "start": {"0"}, "end": {"100000"}},
+			expected: map[string][]string{
+				"version": {"1.0", "2.0"},
+				"env":     {"prod", "staging"},
+				"region":  {"us-east"},
+			},
+			api: api,
+		},
+		{
+			name:              "exec error from queryable",
+			params:            map[string][]string{"start": {"0"}, "end": {"100000"}},
+			expectedErrorType: errorExec,
+			api: &API{
+				Queryable:   errorTestQueryable{err: errors.New("generic")},
+				QueryEngine: testEngine(t),
+			},
+		},
+		{
+			name:              "invalid expr parameter",
+			params:            map[string][]string{"expr": {`invalid{`}, "start": {"0"}, "end": {"100000"}},
+			expectedErrorType: errorBadData,
+			api:               api,
+		},
+		{
+			name:              "scalar expr returns error",
+			params:            map[string][]string{"expr": {`1+1`}, "start": {"0"}, "end": {"100000"}},
+			expectedErrorType: errorBadData,
+			api:               api,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				ctx := context.Background()
+				req, err := request(method, tc.params)
+				require.NoError(t, err)
+				res := tc.api.infoLabels(req.WithContext(ctx))
+				assertAPIError(t, res.err, tc.expectedErrorType)
+				if tc.expectedErrorType == errorNone {
+					assertAPIResponse(t, res.data, tc.expected)
+				}
+			}
+		})
+	}
+}
+
 type testStats struct {
 	Custom string `json:"custom"`
 }
