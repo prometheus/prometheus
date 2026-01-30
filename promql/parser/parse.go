@@ -1193,7 +1193,7 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 
 // hasModifiersBeforeRange checks if an expression has offset/@ modifiers that are
 // immediately adjacent to a bracket (no space), which should be rejected for subqueries.
-func (p *parser) hasModifiersBeforeRange(expr Expr, bracketPos posrange.Pos) (bool, string) {
+func (*parser) hasModifiersBeforeRange(expr Expr, bracketPos posrange.Pos) (bool, string) {
 	var endPos posrange.Pos
 	var hasOffset bool
 	var hasAtModifier bool
