@@ -300,20 +300,22 @@ type fanoutAppenderV2 struct {
 }
 
 func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AOptions) (SeriesRef, error) {
+	var partialErr *AppendPartialError
+
 	ref, err := f.primary.Append(ref, l, st, t, v, h, fh, opts)
-	var partialErr AppendPartialError
-	if partialErr.Handle(err) != nil {
+	partialErr, err = partialErr.Handle(err)
+	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.Append(ref, l, st, t, v, h, fh, opts); err != nil {
-			if partialErr.Handle(err) != nil {
-				return ref, err
-			}
+		_, serr := appender.Append(ref, l, st, t, v, h, fh, opts)
+		partialErr, serr = partialErr.Handle(serr)
+		if serr != nil {
+			return ref, serr
 		}
 	}
-	return ref, partialErr.ErrOrNil()
+	return ref, partialErr.ToError()
 }
 
 func (f *fanoutAppenderV2) Commit() (err error) {
