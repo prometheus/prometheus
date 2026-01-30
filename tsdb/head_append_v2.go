@@ -200,9 +200,6 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
 	}
-
-	// TODO(bwplotka): Move/reuse metadata tests from scrape, once scrape adopts AppenderV2.
-	// Currently tsdb package does not test metadata.
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
 		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
