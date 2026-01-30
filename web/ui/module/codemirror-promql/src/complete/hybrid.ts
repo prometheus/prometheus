@@ -60,6 +60,8 @@ import {
   LimitK,
   LimitRatio,
   CountValues,
+  TrimLower,
+  TrimUpper,
 } from '@prometheus-io/lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
@@ -579,6 +581,8 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
     case Eql:
     case Gte:
     case Gtr:
+    case TrimLower:
+    case TrimUpper:
     case Lte:
     case Lss:
     case And:

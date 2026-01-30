@@ -88,6 +88,8 @@ BinaryExpr {
   expr !eql Eql    binModifiers expr |
   expr !eql Gte    binModifiers expr |
   expr !eql Gtr    binModifiers expr |
+  expr !eql TrimUpper  binModifiers expr |
+  expr !eql TrimLower  binModifiers expr |
   expr !eql Lte    binModifiers expr |
   expr !eql Lss    binModifiers expr |
   expr !eql Neq    binModifiers expr |
@@ -337,6 +339,8 @@ NumberDurationLiteralInDurationContext {
   Lss { "<" }
   Gte { ">=" }
   Gtr { ">" }
+  TrimUpper { "</" }
+  TrimLower { ">/" }
   EqlRegex { "=~" }
   EqlSingle { "=" }
   NeqRegex { "!~" }
