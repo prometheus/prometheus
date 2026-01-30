@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -117,10 +118,19 @@ func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
 	if !h.minTime.CompareAndSwap(math.MaxInt64, t) {
+		// Concurrent appends that are initializing.
+		// Wait until h.maxTime is swapped to avoid minTime/maxTime races.
+		antiDeadlockTimeout := time.After(500 * time.Millisecond)
+		for h.maxTime.Load() == math.MinInt64 {
+			select {
+			case <-antiDeadlockTimeout:
+				return
+			default:
+			}
+		}
 		return
 	}
 	// Ensure that max time is initialized to at least the min time we just set.
-	// Concurrent appenders may already have set it to a higher value.
 	h.maxTime.CompareAndSwap(math.MinInt64, t)
 }
 
