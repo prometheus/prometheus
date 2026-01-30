@@ -5297,18 +5297,14 @@ func readable(s string) string {
 }
 
 func TestParseExpressions(t *testing.T) {
-	// Enable experimental functions testing.
-	EnableExperimentalFunctions = true
-	// Enable experimental duration expression parsing.
-	ExperimentalDurationExpr = true
-	t.Cleanup(func() {
-		EnableExperimentalFunctions = false
-		ExperimentalDurationExpr = false
+	opts := WithOptions(Options{
+		EnableExperimentalFunctions: true,
+		ExperimentalDurationExpr:    true,
 	})
 
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {
-			expr, err := ParseExpr(test.input)
+			expr, err := ParseExpr(test.input, opts)
 
 			// Unexpected errors are always caused by a bug.
 			require.NotEqual(t, err, errUnexpected, "unexpected error occurred")

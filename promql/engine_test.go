@@ -52,8 +52,6 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	// Enable experimental functions testing
-	parser.EnableExperimentalFunctions = true
 	testutil.TolerantVerifyLeak(m)
 }
 
@@ -1508,11 +1506,6 @@ load 10s
 }
 
 func TestExtendedRangeSelectors(t *testing.T) {
-	parser.EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		parser.EnableExtendedRangeSelectors = false
-	})
-
 	engine := newTestEngine(t)
 	storage := promqltest.LoadedStorage(t, `
 	load 10s
@@ -1658,6 +1651,46 @@ func TestExtendedRangeSelectors(t *testing.T) {
 			require.Equal(t, tc.expected, res.Value)
 		})
 	}
+}
+
+// TestParserConfigIsolation ensures that parser configuration is per-engine and not global.
+func TestParserConfigIsolation(t *testing.T) {
+	ctx := context.Background()
+	storage := promqltest.LoadedStorage(t, `
+		load 10s
+			metric 1+1x10
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	// Engine with extended range selectors disabled: "smoothed" is not valid.
+	optsDisabled := promql.EngineOpts{
+		MaxSamples:    1000,
+		Timeout:       10 * time.Second,
+		ParserOptions: parser.Options{EnableExtendedRangeSelectors: false},
+	}
+	engineDisabled := promql.NewEngine(optsDisabled)
+
+	// Engine with extended range selectors enabled: "smoothed" is valid.
+	optsEnabled := promql.EngineOpts{
+		MaxSamples:    1000,
+		Timeout:       10 * time.Second,
+		ParserOptions: parser.Options{EnableExtendedRangeSelectors: true},
+	}
+	engineEnabled := promql.NewEngine(optsEnabled)
+
+	query := "metric[10s] smoothed"
+	t.Run("engine_with_feature_disabled_rejects", func(t *testing.T) {
+		_, err := engineDisabled.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "parse")
+	})
+	t.Run("engine_with_feature_enabled_accepts", func(t *testing.T) {
+		q, err := engineEnabled.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
+		require.NoError(t, err)
+		defer q.Close()
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+	})
 }
 
 func TestAtModifier(t *testing.T) {
@@ -3842,6 +3875,12 @@ func TestEvaluationWithDelayedNameRemovalDisabled(t *testing.T) {
 		MaxSamples:               10000,
 		Timeout:                  10 * time.Second,
 		EnableDelayedNameRemoval: false,
+		ParserOptions: parser.Options{
+			EnableExperimentalFunctions:  true,
+			ExperimentalDurationExpr:     true,
+			EnableExtendedRangeSelectors: true,
+			EnableBinopFillModifiers:     true,
+		},
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 

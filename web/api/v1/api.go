@@ -257,6 +257,7 @@ type API struct {
 
 	codecs []Codec
 
+	parserOptions   parser.Options
 	featureRegistry features.Collector
 	openAPIBuilder  *OpenAPIBuilder
 }
@@ -299,6 +300,7 @@ func NewAPI(
 	enableTypeAndUnitLabels bool,
 	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
+	parserOptions parser.Options,
 	featureRegistry features.Collector,
 	openAPIOptions OpenAPIOptions,
 ) *API {
@@ -330,6 +332,7 @@ func NewAPI(
 		notificationsGetter: notificationsGetter,
 		notificationsSub:    notificationsSub,
 		overrideErrorCode:   overrideErrorCode,
+		parserOptions:       parserOptions,
 		featureRegistry:     featureRegistry,
 		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
 
@@ -560,8 +563,8 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}, nil, warnings, qry.Close}
 }
 
-func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
-	expr, err := parser.ParseExpr(r.FormValue("query"))
+func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
+	expr, err := parser.ParseExpr(r.FormValue("query"), parser.WithOptions(api.parserOptions))
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -569,8 +572,8 @@ func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{expr.Pretty(0), nil, nil, nil}
 }
 
-func (*API) parseQuery(r *http.Request) apiFuncResult {
-	expr, err := parser.ParseExpr(r.FormValue("query"))
+func (api *API) parseQuery(r *http.Request) apiFuncResult {
+	expr, err := parser.ParseExpr(r.FormValue("query"), parser.WithOptions(api.parserOptions))
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -699,7 +702,7 @@ func (api *API) queryExemplars(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	expr, err := parser.ParseExpr(r.FormValue("query"))
+	expr, err := parser.ParseExpr(r.FormValue("query"), parser.WithOptions(api.parserOptions))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}

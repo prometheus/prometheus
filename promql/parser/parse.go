@@ -39,14 +39,13 @@ var parserPool = sync.Pool{
 	},
 }
 
-// ExperimentalDurationExpr is a flag to enable experimental duration expression parsing.
-var ExperimentalDurationExpr bool
-
-// EnableExtendedRangeSelectors is a flag to enable experimental extended range selectors.
-var EnableExtendedRangeSelectors bool
-
-// EnableBinopFillModifiers is a flag to enable experimental fill modifiers for binary operators.
-var EnableBinopFillModifiers bool
+// Options holds the configuration for the PromQL parser.
+type Options struct {
+	EnableExperimentalFunctions  bool
+	ExperimentalDurationExpr     bool
+	EnableExtendedRangeSelectors bool
+	EnableBinopFillModifiers     bool
+}
 
 type Parser interface {
 	ParseExpr() (Expr, error)
@@ -75,6 +74,8 @@ type parser struct {
 	// built histogram had a counter_reset_hint explicitly specified.
 	// This is used to populate CounterResetHintSet in SequenceValue.
 	lastHistogramCounterResetHintSet bool
+
+	options Options
 }
 
 type Opt func(p *parser)
@@ -82,6 +83,12 @@ type Opt func(p *parser)
 func WithFunctions(functions map[string]*Function) Opt {
 	return func(p *parser) {
 		p.functions = functions
+	}
+}
+
+func WithOptions(opts Options) Opt {
+	return func(p *parser) {
+		p.options = opts
 	}
 }
 
@@ -94,6 +101,7 @@ func NewParser(input string, opts ...Opt) *parser { //nolint:revive // unexporte
 	p.parseErrors = nil
 	p.generatedParserResult = nil
 	p.lastClosing = posrange.Pos(0)
+	p.options = Options{}
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
@@ -180,15 +188,15 @@ func EnrichParseError(err error, enrich func(parseErr *ParseErr)) {
 }
 
 // ParseExpr returns the expression parsed from the input.
-func ParseExpr(input string) (expr Expr, err error) {
-	p := NewParser(input)
+func ParseExpr(input string, opts ...Opt) (expr Expr, err error) {
+	p := NewParser(input, opts...)
 	defer p.Close()
 	return p.ParseExpr()
 }
 
 // ParseMetric parses the input into a metric.
-func ParseMetric(input string) (m labels.Labels, err error) {
-	p := NewParser(input)
+func ParseMetric(input string, opts ...Opt) (m labels.Labels, err error) {
+	p := NewParser(input, opts...)
 	defer p.Close()
 	defer p.recover(&err)
 
@@ -206,8 +214,8 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 
 // ParseMetricSelector parses the provided textual metric selector into a list of
 // label matchers.
-func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
-	p := NewParser(input)
+func ParseMetricSelector(input string, opts ...Opt) (m []*labels.Matcher, err error) {
+	p := NewParser(input, opts...)
 	defer p.Close()
 	defer p.recover(&err)
 
@@ -266,8 +274,8 @@ type seriesDescription struct {
 
 // ParseSeriesDesc parses the description of a time series. It is only used in
 // the PromQL testing framework code.
-func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, err error) {
-	p := NewParser(input)
+func ParseSeriesDesc(input string, opts ...Opt) (labels labels.Labels, values []SequenceValue, err error) {
+	p := NewParser(input, opts...)
 	p.lex.seriesDesc = true
 
 	defer p.Close()
@@ -433,7 +441,7 @@ func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *Bi
 	ret.RHS = rhs.(Expr)
 	ret.Op = op.Typ
 
-	if !EnableBinopFillModifiers && (ret.VectorMatching.FillValues.LHS != nil || ret.VectorMatching.FillValues.RHS != nil) {
+	if !p.options.EnableBinopFillModifiers && (ret.VectorMatching.FillValues.LHS != nil || ret.VectorMatching.FillValues.RHS != nil) {
 		p.addParseErrf(ret.PositionRange(), "binop fill modifiers are experimental and not enabled")
 		return ret
 	}
@@ -476,7 +484,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (
 
 	desiredArgs := 1
 	if ret.Op.IsAggregatorWithParam() {
-		if !EnableExperimentalFunctions && ret.Op.IsExperimentalAggregator() {
+		if !p.options.EnableExperimentalFunctions && ret.Op.IsExperimentalAggregator() {
 			p.addParseErrf(ret.PositionRange(), "%s() is experimental and must be enabled with --enable-feature=promql-experimental-functions", ret.Op)
 			return ret
 		}
@@ -1073,7 +1081,7 @@ func (p *parser) addOffsetExpr(e Node, expr *DurationExpr) {
 }
 
 func (p *parser) setAnchored(e Node) {
-	if !EnableExtendedRangeSelectors {
+	if !p.options.EnableExtendedRangeSelectors {
 		p.addParseErrf(e.PositionRange(), "anchored modifier is experimental and not enabled")
 		return
 	}
@@ -1096,7 +1104,7 @@ func (p *parser) setAnchored(e Node) {
 }
 
 func (p *parser) setSmoothed(e Node) {
-	if !EnableExtendedRangeSelectors {
+	if !p.options.EnableExtendedRangeSelectors {
 		p.addParseErrf(e.PositionRange(), "smoothed modifier is experimental and not enabled")
 		return
 	}
@@ -1192,7 +1200,7 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 }
 
 func (p *parser) experimentalDurationExpr(e Expr) {
-	if !ExperimentalDurationExpr {
+	if !p.options.ExperimentalDurationExpr {
 		p.addParseErrf(e.PositionRange(), "experimental duration expression is not enabled")
 	}
 }

@@ -218,6 +218,8 @@ type flagConfig struct {
 
 	promqlEnableDelayedNameRemoval bool
 
+	parserOpts parser.Options
+
 	promslogConfig promslog.Config
 }
 
@@ -255,10 +257,10 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.enableConcurrentRuleEval = true
 				logger.Info("Experimental concurrent rule evaluation enabled.")
 			case "promql-experimental-functions":
-				parser.EnableExperimentalFunctions = true
+				c.parserOpts.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
 			case "promql-duration-expr":
-				parser.ExperimentalDurationExpr = true
+				c.parserOpts.ExperimentalDurationExpr = true
 				logger.Info("Experimental duration expression parsing enabled.")
 			case "native-histograms":
 				logger.Warn("This option for --enable-feature is a no-op. To scrape native histograms, set the scrape_native_histograms scrape config setting to true.", "option", o)
@@ -292,10 +294,10 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
 			case "promql-extended-range-selectors":
-				parser.EnableExtendedRangeSelectors = true
+				c.parserOpts.EnableExtendedRangeSelectors = true
 				logger.Info("Experimental PromQL extended range selectors enabled.")
 			case "promql-binop-fill-modifiers":
-				parser.EnableBinopFillModifiers = true
+				c.parserOpts.EnableBinopFillModifiers = true
 				logger.Info("Experimental PromQL binary operator fill modifiers enabled.")
 			case "":
 				continue
@@ -920,6 +922,7 @@ func main() {
 			EnablePerStepStats:       cfg.enablePerStepStats,
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
+			ParserOptions:            cfg.parserOpts,
 			FeatureRegistry:          features.DefaultRegistry,
 		}
 
@@ -940,6 +943,7 @@ func main() {
 			ResendDelay:            time.Duration(cfg.resendDelay),
 			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
 			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
+			ParserOptions:          cfg.parserOpts,
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
@@ -957,6 +961,7 @@ func main() {
 	cfg.web.Storage = fanoutStorage
 	cfg.web.ExemplarStorage = localStorage
 	cfg.web.QueryEngine = queryEngine
+	cfg.web.ParserOptions = cfg.parserOpts
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager
