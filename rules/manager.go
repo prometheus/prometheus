@@ -124,6 +124,7 @@ type ManagerOptions struct {
 	ForGracePeriod            time.Duration
 	ResendDelay               time.Duration
 	GroupLoader               GroupLoader
+	ParserOptions             parser.Options
 	DefaultRuleQueryOffset    func() time.Duration
 	MaxConcurrentEvals        int64
 	ConcurrentEvalsEnabled    bool
@@ -159,7 +160,7 @@ func NewManager(o *ManagerOptions) *Manager {
 	}
 
 	if o.GroupLoader == nil {
-		o.GroupLoader = FileLoader{}
+		o.GroupLoader = FileLoader{ParserOptions: o.ParserOptions}
 	}
 
 	if o.RuleConcurrencyController == nil {
@@ -320,14 +321,19 @@ type GroupLoader interface {
 }
 
 // FileLoader is the default GroupLoader implementation. It defers to rulefmt.ParseFile
-// and parser.ParseExpr.
-type FileLoader struct{}
+// and parser.ParseExpr with the configured ParserOptions.
+type FileLoader struct {
+	// ParserOptions is the parser configuration used when parsing rule expressions.
+	ParserOptions parser.Options
+}
 
 func (FileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
 	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme)
 }
 
-func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
+func (fl FileLoader) Parse(query string) (parser.Expr, error) {
+	return parser.ParseExpr(query, parser.WithOptions(fl.ParserOptions))
+}
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(

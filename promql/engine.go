@@ -332,6 +332,9 @@ type EngineOpts struct {
 	// EnableTypeAndUnitLabels will allow PromQL Engine to make decisions based on the type and unit labels.
 	EnableTypeAndUnitLabels bool
 
+	// ParserOptions is the parser configuration used when parsing queries.
+	ParserOptions parser.Options
+
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 }
@@ -353,6 +356,7 @@ type Engine struct {
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
+	parserOptions            parser.Options
 }
 
 // NewEngine returns a new engine.
@@ -459,7 +463,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		r.Enable(features.PromQL, "per_query_lookback_delta")
 		r.Enable(features.PromQL, "subqueries")
 
-		parser.RegisterFeatures(r)
+		parser.RegisterFeatures(r, opts.ParserOptions)
 	}
 
 	return &Engine{
@@ -475,6 +479,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
+		parserOptions:            opts.ParserOptions,
 	}
 }
 
@@ -523,7 +528,7 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 		return nil, err
 	}
 	defer finishQueue()
-	expr, err := parser.ParseExpr(qs)
+	expr, err := parser.ParseExpr(qs, parser.WithOptions(ng.parserOptions))
 	if err != nil {
 		return nil, err
 	}
@@ -544,7 +549,7 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 		return nil, err
 	}
 	defer finishQueue()
-	expr, err := parser.ParseExpr(qs)
+	expr, err := parser.ParseExpr(qs, parser.WithOptions(ng.parserOptions))
 	if err != nil {
 		return nil, err
 	}

@@ -61,7 +61,10 @@ import (
 	"github.com/prometheus/prometheus/util/documentcli"
 )
 
-var promqlEnableDelayedNameRemoval = false
+var (
+	promqlEnableDelayedNameRemoval = false
+	promtoolParserOpts             parser.Options
+)
 
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
@@ -348,7 +351,7 @@ func main() {
 		for o := range strings.SplitSeq(f, ",") {
 			switch o {
 			case "promql-experimental-functions":
-				parser.EnableExperimentalFunctions = true
+				promtoolParserOpts.EnableExperimentalFunctions = true
 			case "promql-delayed-name-removal":
 				promqlEnableDelayedNameRemoval = true
 			case "":
@@ -1342,7 +1345,7 @@ func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *c
 }
 
 func formatPromQL(query string) error {
-	expr, err := parser.ParseExpr(query)
+	expr, err := parser.ParseExpr(query, parser.WithOptions(promtoolParserOpts))
 	if err != nil {
 		return err
 	}
@@ -1352,7 +1355,7 @@ func formatPromQL(query string) error {
 }
 
 func labelsSetPromQL(query, labelMatchType, name, value string) error {
-	expr, err := parser.ParseExpr(query)
+	expr, err := parser.ParseExpr(query, parser.WithOptions(promtoolParserOpts))
 	if err != nil {
 		return err
 	}
@@ -1397,7 +1400,7 @@ func labelsSetPromQL(query, labelMatchType, name, value string) error {
 }
 
 func labelsDeletePromQL(query, name string) error {
-	expr, err := parser.ParseExpr(query)
+	expr, err := parser.ParseExpr(query, parser.WithOptions(promtoolParserOpts))
 	if err != nil {
 		return err
 	}

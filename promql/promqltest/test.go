@@ -99,6 +99,12 @@ func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Du
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 		EnableDelayedNameRemoval: true,
+		ParserOptions: parser.Options{
+			EnableExperimentalFunctions:  true,
+			ExperimentalDurationExpr:     true,
+			EnableExtendedRangeSelectors: true,
+			EnableBinopFillModifiers:     true,
+		},
 	})
 }
 
@@ -151,18 +157,8 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 }
 
 // RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
+// The engine must be created with ParserOptions that enable all experimental features used in the test files.
 func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testing.TB) storage.Storage) {
-	t.Cleanup(func() {
-		parser.EnableExperimentalFunctions = false
-		parser.ExperimentalDurationExpr = false
-		parser.EnableExtendedRangeSelectors = false
-		parser.EnableBinopFillModifiers = false
-	})
-	parser.EnableExperimentalFunctions = true
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExtendedRangeSelectors = true
-	parser.EnableBinopFillModifiers = true
-
 	files, err := fs.Glob(testsFs, "*/*.test")
 	require.NoError(t, err)
 
@@ -427,7 +423,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		expr = rangeParts[5]
 	}
 
-	_, err := parser.ParseExpr(expr)
+	_, err := parser.ParseExpr(expr, parserOptsForBuiltinTests)
 	if err != nil {
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = i
@@ -1363,8 +1359,18 @@ type atModifierTestCase struct {
 	evalTime time.Time
 }
 
+// parserOptsForBuiltinTests is the parser options used when parsing expressions in the
+// built-in test framework (e.g. atModifierTestCases). It must match the ParserOptions
+// used by NewTestEngine so that expressions parse consistently.
+var parserOptsForBuiltinTests = parser.WithOptions(parser.Options{
+	EnableExperimentalFunctions:  true,
+	ExperimentalDurationExpr:     true,
+	EnableExtendedRangeSelectors: true,
+	EnableBinopFillModifiers:     true,
+})
+
 func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCase, error) {
-	expr, err := parser.ParseExpr(exprStr)
+	expr, err := parser.ParseExpr(exprStr, parserOptsForBuiltinTests)
 	if err != nil {
 		return nil, err
 	}

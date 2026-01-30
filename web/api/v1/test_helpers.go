@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/common/route"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/web/api/testhelpers"
 )
 
@@ -101,6 +102,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		false,            // enableTypeAndUnitLabels
 		false,            // appendMetadata
 		nil,              // overrideErrorCode
+		parser.Options{}, // parserOptions
 		nil,              // featureRegistry
 		OpenAPIOptions{}, // openAPIOptions
 	)
