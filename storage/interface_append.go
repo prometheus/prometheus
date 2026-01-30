@@ -110,12 +110,25 @@ func (e *AppendPartialError) ToError() error {
 	return e
 }
 
+// Is implements method that's expected by errors.Is.
+func (*AppendPartialError) Is(target error) bool {
+	// This does not need to handle wrapped errors as AppendPartialError.Is should be used
+	// via errors.Is.
+	_, ok := target.(*AppendPartialError)
+	return ok
+}
+
 // Handle handles the given err that may be an AppendPartialError.
 // If the err is nil or not an AppendPartialError it returns err.
 // Otherwise, partial errors are aggregated.
-func (e *AppendPartialError) Handle(err error) (_ *AppendPartialError, _ error) {
+func (e *AppendPartialError) Handle(err error) (*AppendPartialError, error) {
 	if err == nil {
 		return e, nil
+	}
+
+	// Fast, alloc-free path first for non-partial error cases.
+	if !errors.Is(err, e) {
+		return e, err
 	}
 	var pErr *AppendPartialError
 	if !errors.As(err, &pErr) {
