@@ -70,6 +70,11 @@ type parser struct {
 
 	generatedParserResult any
 	parseErrors           ParseErrors
+
+	// lastHistogramCounterResetHintSet is set to true when the most recently
+	// built histogram had a counter_reset_hint explicitly specified.
+	// This is used to populate CounterResetHintSet in SequenceValue.
+	lastHistogramCounterResetHintSet bool
 }
 
 type Opt func(p *parser)
@@ -237,6 +242,11 @@ type SequenceValue struct {
 	Value     float64
 	Omitted   bool
 	Histogram *histogram.FloatHistogram
+	// CounterResetHintSet is true if the counter reset hint was explicitly
+	// specified in the test file using counter_reset_hint:... syntax.
+	// This allows distinguishing between "no hint specified" (don't care)
+	// vs "counter_reset_hint:unknown" (verify it's unknown).
+	CounterResetHintSet bool
 }
 
 func (v SequenceValue) String() string {
@@ -504,25 +514,30 @@ func (p *parser) mergeMaps(left, right *map[string]any) (ret *map[string]any) {
 }
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
-	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
+	// Capture the hint set flag immediately after inc histogram is built.
+	// The base histogram's hint set flag was already captured.
+	hintSet := p.lastHistogramCounterResetHintSet
+	return p.histogramsSeries(base, inc, times, hintSet, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
 		res, _, _, err := a.Add(b)
 		return res, err
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
-	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
+	// Capture the hint set flag immediately after inc histogram is built.
+	hintSet := p.lastHistogramCounterResetHintSet
+	return p.histogramsSeries(base, inc, times, hintSet, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
 		res, _, _, err := a.Sub(b)
 		return res, err
 	})
 }
 
-func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64,
+func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64, counterResetHintSet bool,
 	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) (*histogram.FloatHistogram, error),
 ) ([]SequenceValue, error) {
 	ret := make([]SequenceValue, times+1)
 	// Add an additional value (the base) for time 0, which we ignore in tests.
-	ret[0] = SequenceValue{Histogram: base}
+	ret[0] = SequenceValue{Histogram: base, CounterResetHintSet: counterResetHintSet}
 	cur := base
 	for i := uint64(1); i <= times; i++ {
 		if cur.Schema > inc.Schema {
@@ -534,7 +549,7 @@ func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint6
 		if err != nil {
 			return ret, err
 		}
-		ret[i] = SequenceValue{Histogram: cur}
+		ret[i] = SequenceValue{Histogram: cur, CounterResetHintSet: counterResetHintSet}
 	}
 
 	return ret, nil
@@ -543,6 +558,8 @@ func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint6
 // buildHistogramFromMap is used in the grammar to take then individual parts of the histogram and complete it.
 func (p *parser) buildHistogramFromMap(desc *map[string]any) *histogram.FloatHistogram {
 	output := &histogram.FloatHistogram{}
+	// Reset the flag for each new histogram being built.
+	p.lastHistogramCounterResetHintSet = false
 
 	val, ok := (*desc)["schema"]
 	if ok {
@@ -603,6 +620,8 @@ func (p *parser) buildHistogramFromMap(desc *map[string]any) *histogram.FloatHis
 
 	val, ok = (*desc)["counter_reset_hint"]
 	if ok {
+		// Mark that the counter reset hint was explicitly specified.
+		p.lastHistogramCounterResetHintSet = true
 		resetHint, ok := val.(Item)
 
 		if ok {
@@ -632,6 +651,16 @@ func (p *parser) buildHistogramFromMap(desc *map[string]any) *histogram.FloatHis
 	output.NegativeSpans = spans
 
 	return output
+}
+
+// newHistogramSequenceValue creates a SequenceValue for a histogram,
+// setting CounterResetHintSet based on whether counter_reset_hint was
+// explicitly specified in the histogram description.
+func (p *parser) newHistogramSequenceValue(h *histogram.FloatHistogram) SequenceValue {
+	return SequenceValue{
+		Histogram:           h,
+		CounterResetHintSet: p.lastHistogramCounterResetHintSet,
+	}
 }
 
 func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]any, bucketsKey, offsetKey string,

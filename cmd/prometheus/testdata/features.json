@@ -4,6 +4,8 @@
     "exclude_alerts": true,
     "label_values_match": true,
     "lifecycle": false,
+    "openapi_3.1": true,
+    "openapi_3.2": true,
     "otlp_write_receiver": false,
     "query_stats": true,
     "query_warnings": true,

@@ -38,7 +38,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		labels, err := c.createAttributes(
 			pt.Attributes(),
 			settings,
-			nil,
+			reservedLabelNames,
 			true,
 			meta,
 			model.MetricNameLabel,
@@ -79,14 +79,14 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		lbls, err := c.createAttributes(
 			pt.Attributes(),
 			settings,
-			nil,
+			reservedLabelNames,
 			true,
 			meta,
 			model.MetricNameLabel,
 			meta.MetricFamilyName,
 		)
 		if err != nil {
-			return nil
+			return err
 		}
 		var val float64
 		switch pt.ValueType() {

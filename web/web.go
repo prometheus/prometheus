@@ -361,6 +361,11 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		app = h.storage
 	}
 
+	version := ""
+	if o.Version != nil {
+		version = o.Version.Version
+	}
+
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
@@ -402,6 +407,10 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.AppendMetadata,
 		nil,
 		o.FeatureRegistry,
+		api_v1.OpenAPIOptions{
+			ExternalURL: o.ExternalURL.String(),
+			Version:     version,
+		},
 	)
 
 	if r := o.FeatureRegistry; r != nil {
@@ -418,6 +427,8 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Enable(features.API, "time_range_series")  // start/end parameters for /series endpoint.
 		r.Enable(features.API, "time_range_labels")  // start/end parameters for /labels endpoints.
 		r.Enable(features.API, "exclude_alerts")     // exclude_alerts parameter for /rules endpoint.
+		r.Enable(features.API, "openapi_3.1")        // OpenAPI 3.1 specification support.
+		r.Enable(features.API, "openapi_3.2")        // OpenAPI 3.2 specification support.
 		r.Set(features.UI, "ui_v3", !o.UseOldUI)
 		r.Set(features.UI, "ui_v2", o.UseOldUI)
 	}

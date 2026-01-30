@@ -1047,7 +1047,12 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			exp := ev.expected[hash]
 
 			var expectedFloats []promql.FPoint
-			var expectedHistograms []promql.HPoint
+			// expectedHPoint wraps HPoint with CounterResetHintSet flag from SequenceValue.
+			type expectedHPoint struct {
+				promql.HPoint
+				CounterResetHintSet bool
+			}
+			var expectedHistograms []expectedHPoint
 
 			for i, e := range exp.vals {
 				ts := ev.start.Add(time.Duration(i) * ev.step)
@@ -1059,7 +1064,10 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 				t := ts.UnixNano() / int64(time.Millisecond/time.Nanosecond)
 
 				if e.Histogram != nil {
-					expectedHistograms = append(expectedHistograms, promql.HPoint{T: t, H: e.Histogram})
+					expectedHistograms = append(expectedHistograms, expectedHPoint{
+						HPoint:              promql.HPoint{T: t, H: e.Histogram},
+						CounterResetHintSet: e.CounterResetHintSet,
+					})
 				} else if !e.Omitted {
 					expectedFloats = append(expectedFloats, promql.FPoint{T: t, F: e.Value})
 				}
@@ -1088,7 +1096,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 					return fmt.Errorf("expected histogram value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
 				}
 
-				if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0)) {
+				if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0), expected.CounterResetHintSet) {
 					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H.TestExpression(), actual.H.TestExpression(), formatSeriesResult(s))
 				}
 			}
@@ -1127,7 +1135,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if expH != nil && v.H == nil {
 				return fmt.Errorf("expected histogram %s for %s but got float value %v", HistogramTestExpression(expH), v.Metric, v.F)
 			}
-			if expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0)) {
+			if expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0), exp0.CounterResetHintSet) {
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
 			if !almost.Equal(exp0.Value, v.F, defaultEpsilon) {
@@ -1165,7 +1173,9 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 
 // compareNativeHistogram is helper function to compare two native histograms
 // which can tolerate some differ in the field of float type, such as Count, Sum.
-func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
+// The counterResetHintSet parameter indicates whether the counter reset hint was
+// explicitly specified in the expected histogram (from the test file).
+func compareNativeHistogram(exp, cur *histogram.FloatHistogram, counterResetHintSet bool) bool {
 	if exp == nil || cur == nil {
 		return false
 	}
@@ -1199,6 +1209,15 @@ func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
 	}
 	if !floatBucketsMatch(exp.PositiveBuckets, cur.PositiveBuckets) {
 		return false
+	}
+
+	// Compare CounterResetHint only if explicitly specified in expected histogram.
+	// When counterResetHintSet is false, no hint was specified, meaning "don't care".
+	// When counterResetHintSet is true, the hint was explicitly specified and must match.
+	if counterResetHintSet {
+		if exp.CounterResetHint != cur.CounterResetHint {
+			return false
+		}
 	}
 
 	return true

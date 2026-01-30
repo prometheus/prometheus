@@ -131,7 +131,6 @@ func testStorageHandlesOutOfOrderTimestamps(t *testing.T, appV2 bool) {
 	// Test with default OutOfOrderTimeWindow (0)
 	t.Run("Out-Of-Order Sample Disabled", func(t *testing.T) {
 		s := teststorage.New(t)
-		t.Cleanup(func() { _ = s.Close() })
 		runScrapeLoopTest(t, appV2, s, false)
 	})
 
@@ -140,7 +139,6 @@ func testStorageHandlesOutOfOrderTimestamps(t *testing.T, appV2 bool) {
 		s := teststorage.New(t, func(opt *tsdb.Options) {
 			opt.OutOfOrderTimeWindow = 600000
 		})
-		t.Cleanup(func() { _ = s.Close() })
 
 		runScrapeLoopTest(t, appV2, s, true)
 	})
@@ -1438,7 +1436,9 @@ func readTextParseTestMetrics(t testing.TB) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return b
+
+	// Replace all Carriage Return chars that appear when testing on windows.
+	return bytes.ReplaceAll(b, []byte{'\r'}, nil)
 }
 
 func makeTestGauges(n int) []byte {
@@ -1545,6 +1545,184 @@ func TestPromTextToProto(t *testing.T) {
 	require.Equal(t, "promhttp_metric_handler_requests_total", got[236])
 }
 
+// TestScrapeLoopAppend_WithStorage tests appends and storage integration for the
+// large input files that are also used in benchmarks.
+func TestScrapeLoopAppend_WithStorage(t *testing.T) {
+	ts := time.Now()
+
+	for _, appV2 := range []bool{false, true} {
+		for _, tc := range []struct {
+			name         string
+			parsableText []byte
+
+			expectedSamplesLen  int
+			testAppendedSamples func(t *testing.T, committed []sample)
+			testExemplars       func(t *testing.T, er []exemplar.QueryResult)
+		}{
+			{
+				name:         "1Fam2000Gauges",
+				parsableText: makeTestGauges(2000),
+
+				expectedSamplesLen: 2000,
+				testAppendedSamples: func(t *testing.T, committed []sample) {
+					var expectedMF string
+					if appV2 {
+						expectedMF = "metric_a" // Only AppenderV2 supports metric family passing.
+					}
+					// Verify a few samples.
+					testutil.RequireEqual(t, sample{
+						MF: expectedMF,
+						M:  metadata.Metadata{Type: model.MetricTypeGauge, Help: "help text"},
+						L:  labels.FromStrings(model.MetricNameLabel, "metric_a", "foo", "0", "bar", "0"), V: 1, T: timestamp.FromTime(ts),
+					}, committed[0])
+					testutil.RequireEqual(t, sample{
+						MF: expectedMF,
+						M:  metadata.Metadata{Type: model.MetricTypeGauge, Help: "help text"},
+						L:  labels.FromStrings(model.MetricNameLabel, "metric_a", "foo", "1245", "bar", "124500"), V: 1, T: timestamp.FromTime(ts),
+					}, committed[1245])
+					testutil.RequireEqual(t, sample{
+						MF: expectedMF,
+						M:  metadata.Metadata{Type: model.MetricTypeGauge, Help: "help text"},
+						L:  labels.FromStrings(model.MetricNameLabel, "metric_a", "foo", "1999", "bar", "199900"), V: 1, T: timestamp.FromTime(ts),
+					}, committed[len(committed)-1])
+				},
+			},
+			{
+				name:         "237FamsAllTypes",
+				parsableText: readTextParseTestMetrics(t),
+
+				expectedSamplesLen: 1857,
+				testAppendedSamples: func(t *testing.T, committed []sample) {
+					// Verify a few samples.
+					testutil.RequireEqual(t, sample{
+						MF: func() string {
+							if !appV2 {
+								return ""
+							}
+							return "go_gc_gomemlimit_bytes"
+						}(),
+						M: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Go runtime memory limit configured by the user, otherwise math.MaxInt64. This value is set by the GOMEMLIMIT environment variable, and the runtime/debug.SetMemoryLimit function. Sourced from /gc/gomemlimit:bytes"},
+						L: labels.FromStrings(model.MetricNameLabel, "go_gc_gomemlimit_bytes"), V: 9.03676723e+08, T: timestamp.FromTime(ts),
+					}, committed[11])
+					testutil.RequireEqual(t, sample{
+						MF: func() string {
+							if !appV2 {
+								return "" // Only AppenderV2 supports metric family passing.
+							}
+							return "prometheus_http_request_duration_seconds"
+						}(),
+						M: metadata.Metadata{Type: model.MetricTypeHistogram, Help: "Histogram of latencies for HTTP requests."},
+						L: labels.FromStrings(model.MetricNameLabel, "prometheus_http_request_duration_seconds_bucket", "handler", "/api/v1/query_range", "le", "120.0"), V: 118157, T: timestamp.FromTime(ts),
+					}, committed[448])
+					testutil.RequireEqual(t, sample{
+						MF: func() string {
+							if !appV2 {
+								return "" // Only AppenderV2 supports metric family passing.
+							}
+							return "promhttp_metric_handler_requests_total"
+						}(),
+						M: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total number of scrapes by HTTP status code."},
+						L: labels.FromStrings(model.MetricNameLabel, "promhttp_metric_handler_requests_total", "code", "503"), V: 0, T: timestamp.FromTime(ts),
+					}, committed[len(committed)-1])
+				},
+			},
+			{
+				name:         "100HistsWithExemplars",
+				parsableText: makeTestHistogramsWithExemplars(100),
+
+				expectedSamplesLen: 24 * 100,
+				testAppendedSamples: func(t *testing.T, committed []sample) {
+					// Verify a few samples.
+					m := metadata.Metadata{Type: model.MetricTypeHistogram, Help: "RPC latency distributions."}
+					testutil.RequireEqual(t, sample{
+						MF: func() string {
+							if !appV2 {
+								return "" // Only AppenderV2 supports metric family passing.
+							}
+							return "rpc_durations_histogram0_seconds"
+						}(),
+						M: m, L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram0_seconds_bucket", "le", "0.0003100000000000002"), V: 15, T: timestamp.FromTime(ts),
+						ES: []exemplar.Exemplar{
+							{Labels: labels.FromStrings("dummyID", "9818"), Value: 0.0002791130914009552, Ts: 1726839814982, HasTs: true},
+						},
+					}, committed[13])
+					testutil.RequireEqual(t, sample{
+						MF: func() string {
+							if !appV2 {
+								return "" // Only AppenderV2 supports metric family passing.
+							}
+							return "rpc_durations_histogram49_seconds"
+						}(),
+						M: m, L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram49_seconds_sum"), V: -8.452185437166741e-05, T: timestamp.FromTime(ts),
+					}, committed[24*50-3])
+
+					// This series does not have metadata, nor metric family, because of isSeriesPartOfFamily bug and OpenMetric 1.0 limitations around _created series.
+					// TODO(bwplotka): Fix with https://github.com/prometheus/prometheus/issues/17900
+					testutil.RequireEqual(t, sample{
+						L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram99_seconds_created"), V: 1.726839813016302e+09, T: timestamp.FromTime(ts),
+					}, committed[len(committed)-1])
+				},
+				testExemplars: func(t *testing.T, er []exemplar.QueryResult) {
+					// 12 out of 24 histogram series have exemplars.
+					require.Len(t, er, 12*100)
+					testutil.RequireEqual(t, exemplar.QueryResult{
+						SeriesLabels: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram0_seconds_bucket", "le", "0.0003100000000000002"),
+						Exemplars: []exemplar.Exemplar{
+							{Labels: labels.FromStrings("dummyID", "9818"), Value: 0.0002791130914009552, Ts: 1726839814982, HasTs: true},
+						},
+					}, er[10])
+					testutil.RequireEqual(t, exemplar.QueryResult{
+						SeriesLabels: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram9_seconds_bucket", "le", "1.0000000000000216e-05"),
+						Exemplars: []exemplar.Exemplar{
+							{Labels: labels.FromStrings("dummyID", "19206"), Value: -4.6156147425468016e-05, Ts: 1726839815133, HasTs: true},
+						},
+					}, er[len(er)-1])
+				},
+			},
+		} {
+			t.Run(fmt.Sprintf("appV2=%v/data=%v", appV2, tc.name), func(t *testing.T) {
+				s := teststorage.New(t, func(opt *tsdb.Options) {
+					opt.EnableMetadataWALRecords = true
+				})
+
+				appTest := teststorage.NewAppendable().Then(s)
+				sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
+				app := sl.appender()
+
+				_, _, _, err := app.append(tc.parsableText, "application/openmetrics-text", ts)
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+
+				// Check the recorded samples on the Appender layer.
+				require.Nil(t, appTest.PendingSamples())
+				require.Nil(t, appTest.RolledbackSamples())
+
+				got := appTest.ResultSamples()
+				require.Len(t, got, tc.expectedSamplesLen)
+				tc.testAppendedSamples(t, got)
+
+				// Check basic storage stats.
+				stats := s.Head().Stats(model.MetricNameLabel, 2000)
+				require.Equal(t, tc.expectedSamplesLen, int(stats.NumSeries))
+
+				// Check exemplars.
+				eq, err := s.ExemplarQuerier(t.Context())
+				require.NoError(t, err)
+
+				er, err := eq.Select(math.MinInt64, math.MaxInt64, nil)
+				require.NoError(t, err)
+
+				if tc.testExemplars != nil {
+					tc.testExemplars(t, er)
+				} else {
+					// Expect no exemplars.
+					require.Empty(t, er, "%v is not empty", er)
+				}
+			})
+		}
+	}
+}
+
 // BenchmarkScrapeLoopAppend benchmarks scrape appends for typical cases.
 //
 // Benchmark compares append function run across 4 dimensions:
@@ -1569,7 +1747,7 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 				name         string
 				parsableText []byte
 			}{
-				{name: "1Fam1000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
+				{name: "1Fam2000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
 				{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~185.7 KB, ~70.6 KB in proto.
 			} {
 				b.Run(fmt.Sprintf("appV2=%v/appendMetadataToWAL=%v/data=%v", appV2, appendMetadataToWAL, data.name), func(b *testing.B) {
@@ -1610,7 +1788,6 @@ func benchScrapeLoopAppend(
 			opt.MaxExemplars = 1e5
 		}
 	})
-	b.Cleanup(func() { _ = s.Close() })
 
 	sl, _ := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
 		sl.appendMetadataToWAL = appendMetadataToWAL
@@ -1697,7 +1874,6 @@ func BenchmarkScrapeLoopScrapeAndReport(b *testing.B) {
 			parsableText := readTextParseTestMetrics(b)
 
 			s := teststorage.New(b)
-			b.Cleanup(func() { _ = s.Close() })
 
 			sl, scraper := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
 				sl.fallbackScrapeProtocol = "application/openmetrics-text"
@@ -1730,7 +1906,6 @@ func testSetOptionsHandlingStaleness(t *testing.T, appV2 bool) {
 	s := teststorage.New(t, func(opt *tsdb.Options) {
 		opt.OutOfOrderTimeWindow = 600000
 	})
-	t.Cleanup(func() { _ = s.Close() })
 
 	signal := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -2001,7 +2176,6 @@ func TestScrapeLoopCache(t *testing.T) {
 
 func testScrapeLoopCache(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	signal := make(chan struct{}, 1)
 
@@ -2071,7 +2245,6 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 
 func testScrapeLoopCacheMemoryExhaustionProtection(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	signal := make(chan struct{}, 1)
 
@@ -3225,9 +3398,7 @@ metric: <
 				}
 				sl.alwaysScrapeClassicHist = test.alwaysScrapeClassicHist
 				// This test does not care about metadata.
-				// Having this true would mean we need to add metadata to sample
-				// expectations.
-				// TODO(bwplotka): Add cases for append metadata to WAL and pass metadata
+				// TODO(bwplotka): Add metadata expectations and turn it on.
 				sl.appendMetadataToWAL = false
 			})
 			app := sl.appender()
@@ -3881,7 +4052,6 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 
 func testScrapeLoopRespectTimestamps(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	appTest := teststorage.NewAppendable().Then(s)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
@@ -3910,7 +4080,6 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 
 func testScrapeLoopDiscardTimestamps(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	appTest := teststorage.NewAppendable().Then(s)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
@@ -3941,7 +4110,6 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 
 func testScrapeLoopDiscardDuplicateLabels(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	appTest := teststorage.NewAppendable().Then(s)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
@@ -3983,7 +4151,6 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 
 func testScrapeLoopDiscardUnnamedMetrics(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	appTest := teststorage.NewAppendable().Then(s)
 	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
@@ -4274,7 +4441,6 @@ func TestScrapeAddFast(t *testing.T) {
 
 func testScrapeAddFast(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	sl, _ := newTestScrapeLoop(t, withAppendable(s, appV2))
 
@@ -4357,7 +4523,6 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 func testScrapeReportSingleAppender(t *testing.T, appV2 bool) {
 	t.Parallel()
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	signal := make(chan struct{}, 1)
 
@@ -4417,7 +4582,6 @@ func TestScrapeReportLimit(t *testing.T) {
 
 func testScrapeReportLimit(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	cfg := &config.ScrapeConfig{
 		JobName:                    "test",
@@ -4480,7 +4644,6 @@ func TestScrapeUTF8(t *testing.T) {
 
 func testScrapeUTF8(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	cfg := &config.ScrapeConfig{
 		JobName:                    "test",
@@ -4678,7 +4841,6 @@ func TestLeQuantileReLabel(t *testing.T) {
 
 func testLeQuantileReLabel(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	cfg := &config.ScrapeConfig{
 		JobName: "test",
@@ -5205,7 +5367,6 @@ metric: <
 			t.Run(fmt.Sprintf("%s with %s", name, metricsTextName), func(t *testing.T) {
 				t.Parallel()
 				s := teststorage.New(t)
-				t.Cleanup(func() { _ = s.Close() })
 
 				sl, _ := newTestScrapeLoop(t, withAppendable(s, appV2), func(sl *scrapeLoop) {
 					sl.alwaysScrapeClassicHist = tc.alwaysScrapeClassicHistograms
@@ -5293,7 +5454,6 @@ func TestTypeUnitReLabel(t *testing.T) {
 
 func testTypeUnitReLabel(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	cfg := &config.ScrapeConfig{
 		JobName: "test",
@@ -5438,7 +5598,6 @@ func TestScrapeLoopCompression(t *testing.T) {
 
 func testScrapeLoopCompression(t *testing.T, appV2 bool) {
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 
 	metricsText := makeTestGauges(10)
 
@@ -5768,16 +5927,11 @@ scrape_configs:
 `, minBucketFactor, strings.ReplaceAll(metricsServer.URL, "http://", ""))
 
 	s := teststorage.New(t)
-	t.Cleanup(func() { _ = s.Close() })
 	reg := prometheus.NewRegistry()
 
-	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, s, reg)
+	sa := selectAppendable(s, appV2)
+	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, sa.V1(), sa.V2(), reg)
 	require.NoError(t, err)
-
-	if appV2 {
-		mng.appendableV2 = s
-		mng.appendable = nil
-	}
 
 	cfg, err := config.Load(configStr, promslog.NewNopLogger())
 	require.NoError(t, err)
@@ -6464,7 +6618,6 @@ func testNewScrapeLoopHonorLabelsWiring(t *testing.T, appV2 bool) {
 			require.NoError(t, err)
 
 			s := teststorage.New(t)
-			defer s.Close()
 
 			cfg := &config.ScrapeConfig{
 				JobName:                    "test",

@@ -19,12 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 )
 
@@ -32,14 +28,22 @@ type Option func(opt *tsdb.Options)
 
 // New returns a new TestStorage for testing purposes
 // that removes all associated files on closing.
+//
+// Caller does not need to close the TestStorage after use, it's deferred via t.Cleanup.
 func New(t testing.TB, o ...Option) *TestStorage {
 	s, err := NewWithError(o...)
 	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = s.Close() // Ignore errors, as it could be a double close.
+	})
 	return s
 }
 
 // NewWithError returns a new TestStorage for user facing tests, which reports
 // errors directly.
+//
+// It's a caller responsibility to close the TestStorage after use.
 func NewWithError(o ...Option) (*TestStorage, error) {
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
@@ -48,6 +52,10 @@ func NewWithError(o ...Option) (*TestStorage, error) {
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.RetentionDuration = 0
 	opts.OutOfOrderTimeWindow = 0
+
+	// Enable exemplars storage by default.
+	opts.EnableExemplarStorage = true
+	opts.MaxExemplars = 1e5
 
 	for _, opt := range o {
 		opt(opts)
@@ -62,20 +70,12 @@ func NewWithError(o ...Option) (*TestStorage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening test storage: %w", err)
 	}
-	reg := prometheus.NewRegistry()
-	eMetrics := tsdb.NewExemplarMetrics(reg)
-
-	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics, opts.OutOfOrderTimeWindow)
-	if err != nil {
-		return nil, fmt.Errorf("opening test exemplar storage: %w", err)
-	}
-	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}, nil
+	return &TestStorage{DB: db, dir: dir}, nil
 }
 
 type TestStorage struct {
 	*tsdb.DB
-	exemplarStorage tsdb.ExemplarStorage
-	dir             string
+	dir string
 }
 
 func (s TestStorage) Close() error {
@@ -83,16 +83,4 @@ func (s TestStorage) Close() error {
 		return err
 	}
 	return os.RemoveAll(s.dir)
-}
-
-func (s TestStorage) ExemplarAppender() storage.ExemplarAppender {
-	return s
-}
-
-func (s TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
-	return s.exemplarStorage
-}
-
-func (s TestStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	return ref, s.exemplarStorage.AddExemplar(l, e)
 }

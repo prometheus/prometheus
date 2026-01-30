@@ -3496,6 +3496,19 @@ with this feature.
 # to the timestamp of the last appended sample for the same series.
 [ out_of_order_time_window: <duration> | default = 0s ]
 
+# Configures the trigger point for compacting the stale series from the memory into persistent blocks
+# and remove those stale series from the memory.
+#
+# The threshold is a number between 0.0 and 1.0. It represents the ratio of stale series in the memory
+# to the total series in the memory. The stale series compaction is triggered when this ratio crosses
+# the configured threshold. It may not trigger the stale series compaction if the usual head compaction
+# is about to happen soon.
+#
+# If set to 0, stale series compaction is disabled.
+#
+# This is an experimental feature, this behaviour could change or be removed in the future.
+[ stale_series_compaction_threshold: <float> | default = 0 ]
+
 
 # Configures data retention settings for TSDB.
 #

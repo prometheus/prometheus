@@ -61,6 +61,13 @@ const (
 	defaultLookbackDelta = 5 * time.Minute
 )
 
+// reservedLabelNames contains label names that should be filtered from
+// OTLP attributes because they are set separately (via extras parameter).
+// Allowing these through could create duplicate labels.
+var reservedLabelNames = []string{
+	model.MetricNameLabel, // "__name__" - set from metric name
+}
+
 // createAttributes creates a slice of Prometheus Labels with OTLP attributes and pairs of string values.
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
@@ -214,7 +221,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestamp := convertTimeStamp(pt.StartTimestamp())
-		baseLabels, err := c.createAttributes(pt.Attributes(), settings, nil, false, meta)
+		baseLabels, err := c.createAttributes(pt.Attributes(), settings, reservedLabelNames, false, meta)
 		if err != nil {
 			return err
 		}
@@ -416,7 +423,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestamp := convertTimeStamp(pt.StartTimestamp())
-		baseLabels, err := c.createAttributes(pt.Attributes(), settings, nil, false, meta)
+		baseLabels, err := c.createAttributes(pt.Attributes(), settings, reservedLabelNames, false, meta)
 		if err != nil {
 			return err
 		}

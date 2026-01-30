@@ -1931,15 +1931,16 @@ yydefault:
 	case 170:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
-			yyVAL.series = []SequenceValue{{Histogram: yyDollar[1].histogram}}
+			yyVAL.series = []SequenceValue{yylex.(*parser).newHistogramSequenceValue(yyDollar[1].histogram)}
 		}
 	case 171:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.series = []SequenceValue{}
 			// Add an additional value for time 0, which we ignore in tests.
+			sv := yylex.(*parser).newHistogramSequenceValue(yyDollar[1].histogram)
 			for i := uint64(0); i <= yyDollar[3].uint; i++ {
-				yyVAL.series = append(yyVAL.series, SequenceValue{Histogram: yyDollar[1].histogram})
+				yyVAL.series = append(yyVAL.series, sv)
 				//$1 += $2
 			}
 		}

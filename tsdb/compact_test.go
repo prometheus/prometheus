@@ -173,214 +173,274 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 	c.plan(metas)
 }
 
-func TestLeveledCompactor_plan(t *testing.T) {
-	// This mimics our default ExponentialBlockRanges with min block size equals to 20.
-	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
-		20,
-		60,
-		180,
-		540,
-		1620,
-	}, nil, nil)
-	require.NoError(t, err)
+func TestLeveledCompactor(t *testing.T) {
+	// Tests for the private plan() method.
+	t.Run("plan", func(t *testing.T) {
+		// This mimics our default ExponentialBlockRanges with min block size equals to 20.
+		compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
+			20,
+			60,
+			180,
+			540,
+			1620,
+		}, nil, nil)
+		require.NoError(t, err)
 
-	cases := map[string]struct {
-		metas    []dirMeta
-		expected []string
-	}{
-		"Outside Range": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
+		cases := map[string]struct {
+			metas    []dirMeta
+			expected []string
+		}{
+			"Outside Range": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		"We should wait for four blocks of size 20 to appear before compacting.": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
+			"We should wait for four blocks of size 20 to appear before compacting.": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		`We should wait for a next block of size 20 to appear before compacting
-		the existing ones. We have three, but we ignore the fresh one from WAl`: {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 40, 60, nil),
+			`We should wait for a next block of size 20 to appear before compacting
+			the existing ones. We have three, but we ignore the fresh one from WAl`: {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 40, 60, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		"Block to fill the entire parent range appeared – should be compacted": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 40, 60, nil),
-				metaRange("4", 60, 80, nil),
+			"Block to fill the entire parent range appeared – should be compacted": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 40, 60, nil),
+					metaRange("4", 60, 80, nil),
+				},
+				expected: []string{"1", "2", "3"},
 			},
-			expected: []string{"1", "2", "3"},
-		},
-		`Block for the next parent range appeared with gap with size 20. Nothing will happen in the first one
-		anymore but we ignore fresh one still, so no compaction`: {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 60, 80, nil),
+			`Block for the next parent range appeared with gap with size 20. Nothing will happen in the first one
+			anymore but we ignore fresh one still, so no compaction`: {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 60, 80, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		`Block for the next parent range appeared, and we have a gap with size 20 between second and third block.
-		We will not get this missed gap anymore and we should compact just these two.`: {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 60, 80, nil),
-				metaRange("4", 80, 100, nil),
+			`Block for the next parent range appeared, and we have a gap with size 20 between second and third block.
+			We will not get this missed gap anymore and we should compact just these two.`: {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 60, 80, nil),
+					metaRange("4", 80, 100, nil),
+				},
+				expected: []string{"1", "2"},
 			},
-			expected: []string{"1", "2"},
-		},
-		"We have 20, 20, 20, 60, 60 range blocks. '5' is marked as fresh one": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 40, 60, nil),
-				metaRange("4", 60, 120, nil),
-				metaRange("5", 120, 180, nil),
+			"We have 20, 20, 20, 60, 60 range blocks. '5' is marked as fresh one": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 40, 60, nil),
+					metaRange("4", 60, 120, nil),
+					metaRange("5", 120, 180, nil),
+				},
+				expected: []string{"1", "2", "3"},
 			},
-			expected: []string{"1", "2", "3"},
-		},
-		"We have 20, 60, 20, 60, 240 range blocks. We can compact 20 + 60 + 60": {
-			metas: []dirMeta{
-				metaRange("2", 20, 40, nil),
-				metaRange("4", 60, 120, nil),
-				metaRange("5", 960, 980, nil), // Fresh one.
-				metaRange("6", 120, 180, nil),
-				metaRange("7", 720, 960, nil),
+			"We have 20, 60, 20, 60, 240 range blocks. We can compact 20 + 60 + 60": {
+				metas: []dirMeta{
+					metaRange("2", 20, 40, nil),
+					metaRange("4", 60, 120, nil),
+					metaRange("5", 960, 980, nil), // Fresh one.
+					metaRange("6", 120, 180, nil),
+					metaRange("7", 720, 960, nil),
+				},
+				expected: []string{"2", "4", "6"},
 			},
-			expected: []string{"2", "4", "6"},
-		},
-		"Do not select large blocks that have many tombstones when there is no fresh block": {
-			metas: []dirMeta{
-				metaRange("1", 0, 540, &BlockStats{
-					NumSeries:     10,
-					NumTombstones: 3,
-				}),
+			"Do not select large blocks that have many tombstones when there is no fresh block": {
+				metas: []dirMeta{
+					metaRange("1", 0, 540, &BlockStats{
+						NumSeries:     10,
+						NumTombstones: 3,
+					}),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		"Select large blocks that have many tombstones when fresh appears": {
-			metas: []dirMeta{
-				metaRange("1", 0, 540, &BlockStats{
-					NumSeries:     10,
-					NumTombstones: 3,
-				}),
-				metaRange("2", 540, 560, nil),
+			"Select large blocks that have many tombstones when fresh appears": {
+				metas: []dirMeta{
+					metaRange("1", 0, 540, &BlockStats{
+						NumSeries:     10,
+						NumTombstones: 3,
+					}),
+					metaRange("2", 540, 560, nil),
+				},
+				expected: []string{"1"},
 			},
-			expected: []string{"1"},
-		},
-		"For small blocks, do not compact tombstones, even when fresh appears.": {
-			metas: []dirMeta{
-				metaRange("1", 0, 60, &BlockStats{
-					NumSeries:     10,
-					NumTombstones: 3,
-				}),
-				metaRange("2", 60, 80, nil),
+			"For small blocks, do not compact tombstones, even when fresh appears.": {
+				metas: []dirMeta{
+					metaRange("1", 0, 60, &BlockStats{
+						NumSeries:     10,
+						NumTombstones: 3,
+					}),
+					metaRange("2", 60, 80, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		`Regression test: we were stuck in a compact loop where we always recompacted
-		the same block when tombstones and series counts were zero`: {
-			metas: []dirMeta{
-				metaRange("1", 0, 540, &BlockStats{
-					NumSeries:     0,
-					NumTombstones: 0,
-				}),
-				metaRange("2", 540, 560, nil),
+			`Regression test: we were stuck in a compact loop where we always recompacted
+			the same block when tombstones and series counts were zero`: {
+				metas: []dirMeta{
+					metaRange("1", 0, 540, &BlockStats{
+						NumSeries:     0,
+						NumTombstones: 0,
+					}),
+					metaRange("2", 540, 560, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		`Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
-		We need to actually look on max time instead.
+			`Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
+			We need to actually look on max time instead.
 
-		With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
-		block overlaps`: {
-			metas: []dirMeta{
-				metaRange("5", 0, 360, nil),
-				metaRange("6", 540, 560, nil), // Fresh one.
-				metaRange("7", 360, 420, nil),
-				metaRange("8", 420, 540, nil),
+			With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
+			block overlaps`: {
+				metas: []dirMeta{
+					metaRange("5", 0, 360, nil),
+					metaRange("6", 540, 560, nil), // Fresh one.
+					metaRange("7", 360, 420, nil),
+					metaRange("8", 420, 540, nil),
+				},
+				expected: []string{"7", "8"},
 			},
-			expected: []string{"7", "8"},
-		},
-		// |--------------|
-		//               |----------------|
-		//                                |--------------|
-		"Overlapping blocks 1": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 19, 40, nil),
-				metaRange("3", 40, 60, nil),
+			// |--------------|
+			//               |----------------|
+			//                                |--------------|
+			"Overlapping blocks 1": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 19, 40, nil),
+					metaRange("3", 40, 60, nil),
+				},
+				expected: []string{"1", "2"},
 			},
-			expected: []string{"1", "2"},
-		},
-		// |--------------|
-		//                |--------------|
-		//                        |--------------|
-		"Overlapping blocks 2": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 30, 50, nil),
+			// |--------------|
+			//                |--------------|
+			//                        |--------------|
+			"Overlapping blocks 2": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 30, 50, nil),
+				},
+				expected: []string{"2", "3"},
 			},
-			expected: []string{"2", "3"},
-		},
-		// |--------------|
-		//         |---------------------|
-		//                       |--------------|
-		"Overlapping blocks 3": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 10, 40, nil),
-				metaRange("3", 30, 50, nil),
+			// |--------------|
+			//         |---------------------|
+			//                       |--------------|
+			"Overlapping blocks 3": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 10, 40, nil),
+					metaRange("3", 30, 50, nil),
+				},
+				expected: []string{"1", "2", "3"},
 			},
-			expected: []string{"1", "2", "3"},
-		},
-		// |--------------|
-		//               |--------------------------------|
-		//                |--------------|
-		//                               |--------------|
-		"Overlapping blocks 4": {
-			metas: []dirMeta{
-				metaRange("5", 0, 360, nil),
-				metaRange("6", 340, 560, nil),
-				metaRange("7", 360, 420, nil),
-				metaRange("8", 420, 540, nil),
+			// |--------------|
+			//               |--------------------------------|
+			//                |--------------|
+			//                               |--------------|
+			"Overlapping blocks 4": {
+				metas: []dirMeta{
+					metaRange("5", 0, 360, nil),
+					metaRange("6", 340, 560, nil),
+					metaRange("7", 360, 420, nil),
+					metaRange("8", 420, 540, nil),
+				},
+				expected: []string{"5", "6", "7", "8"},
 			},
-			expected: []string{"5", "6", "7", "8"},
-		},
-		// |--------------|
-		//               |--------------|
-		//                                            |--------------|
-		//                                                          |--------------|
-		"Overlapping blocks 5": {
-			metas: []dirMeta{
-				metaRange("1", 0, 10, nil),
-				metaRange("2", 9, 20, nil),
-				metaRange("3", 30, 40, nil),
-				metaRange("4", 39, 50, nil),
+			// |--------------|
+			//               |--------------|
+			//                                            |--------------|
+			//                                                          |--------------|
+			"Overlapping blocks 5": {
+				metas: []dirMeta{
+					metaRange("1", 0, 10, nil),
+					metaRange("2", 9, 20, nil),
+					metaRange("3", 30, 40, nil),
+					metaRange("4", 39, 50, nil),
+				},
+				expected: []string{"1", "2"},
 			},
-			expected: []string{"1", "2"},
-		},
-	}
-
-	for title, c := range cases {
-		if !t.Run(title, func(t *testing.T) {
-			res, err := compactor.plan(c.metas)
-			require.NoError(t, err)
-			require.Equal(t, c.expected, res)
-		}) {
-			return
 		}
-	}
+
+		for title, c := range cases {
+			if !t.Run(title, func(t *testing.T) {
+				res, err := compactor.plan(c.metas)
+				require.NoError(t, err)
+				require.Equal(t, c.expected, res)
+			}) {
+				return
+			}
+		}
+	})
+
+	// Tests for the public Plan() method.
+	t.Run("Plan", func(t *testing.T) {
+		// Verify that when a BlockExcludeFilter excludes a block in the middle of
+		// the list, subsequent blocks are not processed.
+		t.Run("BlockExcludeFilter stops iteration", func(t *testing.T) {
+			dir := t.TempDir()
+
+			// Create 4 blocks with sequential ULIDs.
+			block1ULID := ulid.MustNew(1, nil)
+			block2ULID := ulid.MustNew(2, nil)
+			block3ULID := ulid.MustNew(3, nil)
+			block4ULID := ulid.MustNew(4, nil)
+
+			for i, uid := range []ulid.ULID{block1ULID, block2ULID, block3ULID, block4ULID} {
+				blockDir := filepath.Join(dir, uid.String())
+				require.NoError(t, os.MkdirAll(blockDir, 0o777))
+
+				meta := &BlockMeta{
+					ULID:    uid,
+					MinTime: int64(i * 10),
+					MaxTime: int64((i + 1) * 10),
+				}
+				meta.Compaction.Level = 1
+				_, err := writeMetaFile(promslog.NewNopLogger(), blockDir, meta)
+				require.NoError(t, err)
+			}
+
+			// Track which blocks were evaluated by the exclude function.
+			var evaluatedBlocks []ulid.ULID
+			excludeFunc := func(meta *BlockMeta) bool {
+				evaluatedBlocks = append(evaluatedBlocks, meta.ULID)
+				return meta.ULID == block2ULID
+			}
+
+			c, err := NewLeveledCompactorWithOptions(
+				context.Background(),
+				nil,
+				promslog.NewNopLogger(),
+				[]int64{20},
+				chunkenc.NewPool(),
+				LeveledCompactorOptions{
+					BlockExcludeFilter:          excludeFunc,
+					EnableOverlappingCompaction: true,
+				},
+			)
+			require.NoError(t, err)
+
+			// Plan should evaluate all blocks.
+			_, err = c.Plan(dir)
+			require.NoError(t, err)
+
+			require.Len(t, evaluatedBlocks, 2, "Expected only 2 blocks to be evaluated")
+			require.Contains(t, evaluatedBlocks, block1ULID)
+			require.Contains(t, evaluatedBlocks, block2ULID)
+		})
+	})
 }
 
 func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
