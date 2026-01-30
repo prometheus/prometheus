@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -65,7 +65,7 @@ func testChunk(t *testing.T, c Chunk) {
 			require.NoError(t, err)
 		}
 
-		app.Append(ts, v)
+		app.Append(0, ts, v)
 		exp = append(exp, pair{t: ts, v: v})
 	}
 
@@ -226,7 +226,7 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 			if j > 250 {
 				break
 			}
-			a.Append(p.t, p.v)
+			a.Append(0, p.t, p.v)
 			j++
 		}
 	}
@@ -303,7 +303,7 @@ func benchmarkAppender(b *testing.B, deltas func() (int64, float64), newChunk fu
 			b.Fatalf("get appender: %s", err)
 		}
 		for _, p := range exp {
-			a.Append(p.t, p.v)
+			a.Append(0, p.t, p.v)
 		}
 	}
 }

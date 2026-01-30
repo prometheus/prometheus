@@ -47,9 +47,9 @@ special values like `NaN`, `+Inf`, and `-Inf`.
 scalar that is the result of the operator applied to both scalar operands.
 
 **Between an instant vector and a scalar**, the operator is applied to the
-value of every data sample in the vector. 
+value of every data sample in the vector.
 
-If the data sample is a float, the operation is performed between that float and the scalar. 
+If the data sample is a float, the operation is performed between that float and the scalar.
 For example, if an instant vector of float samples is multiplied by 2,
 the result is another vector of float samples in which every sample value of
 the original vector is multiplied by 2.
@@ -81,8 +81,9 @@ following:
 **Between two instant vectors**, a binary arithmetic operator is applied to
 each entry in the LHS vector and its [matching element](#vector-matching) in
 the RHS vector. The result is propagated into the result vector with the
-grouping labels becoming the output label set. Entries for which no matching
-entry in the right-hand vector can be found are not part of the result.
+grouping labels becoming the output label set. By default, series for which
+no matching entry in the opposite vector can be found are not part of the
+result. This behavior can be adjusted using [fill modifiers](#filling-in-missing-matches).
 
 If two float samples are matched, the arithmetic operator is applied to the two
 input values.
@@ -97,7 +98,7 @@ If two histogram samples are matched, only `+` and `-` are valid operations,
 each adding or subtracting all matching bucket populations and the count and
 the sum of observations. All other operations result in the removal of the
 corresponding element from the output vector, flagged by an info-level
-annotation. The `+` and -` operations should generally only be applied to gauge
+annotation. The `+` and `-` operations should generally only be applied to gauge
 histograms, but PromQL allows them for counter histograms, too, to cover
 specific use cases, for which special attention is required to avoid problems
 with unaligned counter resets. (Certain incompatibilities of counter resets can
@@ -106,7 +107,7 @@ two counter histograms results in a counter histogram. All other combination of
 operands and all subtractions result in a gauge histogram.
 
 **In any arithmetic binary operation involving vectors**, the metric name is
-dropped. This occurs even if `__name__` is explicitly mentioned in `on` 
+dropped. This occurs even if `__name__` is explicitly mentioned in `on`
 (see https://github.com/prometheus/prometheus/issues/16631 for further discussion).
 
 **For any arithmetic binary operation that may result in a negative
@@ -156,9 +157,9 @@ info-level annotation.
 applied to matching entries. Vector elements for which the expression is not
 true or which do not find a match on the other side of the expression get
 dropped from the result, while the others are propagated into a result vector
-with the grouping labels becoming the output label set. 
+with the grouping labels becoming the output label set.
 
-Matches between two float samples work as usual. 
+Matches between two float samples work as usual.
 
 Matches between a float sample and a histogram sample are invalid, and the
 corresponding element is removed from the result vector, flagged by an info-level
@@ -171,8 +172,8 @@ comparison binary operations are again invalid.
 modifier changes the behavior in the following ways:
 
 * Vector elements which find a match on the other side of the expression but for
-  which the expression is false instead have the value `0` and vector elements
-  that do find a match and for which the expression is true have the value `1`. 
+  which the expression is false instead have the value `0`, and vector elements
+  that do find a match and for which the expression is true have the value `1`.
   (Note that elements with no match or invalid operations involving histogram
   samples still return no result rather than the value `0`.)
 * The metric name is dropped.
@@ -216,11 +217,10 @@ matching behavior: One-to-one and many-to-one/one-to-many.
 
 ### Vector matching keywords
 
-These vector matching keywords allow for matching between series with different label sets
-providing:
+These vector matching keywords allow for matching between series with different label sets:
 
-* `on`
-* `ignoring`
+* `on(<label list>)`: Only match on provided labels.
+* `ignoring(<label list>)`: Ignore provided labels when matching.
 
 Label lists provided to matching keywords will determine how vectors are combined. Examples
 can be found in [One-to-one vector matches](#one-to-one-vector-matches) and in
@@ -230,8 +230,8 @@ can be found in [One-to-one vector matches](#one-to-one-vector-matches) and in
 
 These group modifiers enable many-to-one/one-to-many vector matching:
 
-* `group_left`
-* `group_right`
+* `group_left`: Allow many-to-one matching, where the left vector has higher cardinality.
+* `group_right`: Allow one-to-many matching, where the right vector has higher cardinality.
 
 Label lists can be provided to the group modifier which contain labels from the "one"-side to
 be included in the result metrics.
@@ -239,11 +239,9 @@ be included in the result metrics.
 _Many-to-one and one-to-many matching are advanced use cases that should be carefully considered.
 Often a proper use of `ignoring(<labels>)` provides the desired outcome._
 
-_Grouping modifiers can only be used for
-[comparison](#comparison-binary-operators) and
-[arithmetic](#arithmetic-binary-operators). Operations as `and`, `unless` and
-`or` operations match with all possible entries in the right vector by
-default._
+_Grouping modifiers can only be used for [comparison](#comparison-binary-operators),
+[arithmetic](#arithmetic-binary-operators), and [trigonometric](#trigonometric-binary-operators)
+operators. Set operators match with all possible entries on either side by default._
 
 ### One-to-one vector matches
 
@@ -311,6 +309,58 @@ left:
     {method="post", code="500"} 0.05            //   6 / 120
     {method="post", code="404"} 0.175           //  21 / 120
 
+### Filling in missing matches
+
+Fill modifiers are **experimental** and must be enabled with `--enable-feature=promql-binop-fill-modifiers`.
+
+By default, vector elements that do not find a match on the other side of a binary operation
+are not included in the result vector. Fill modifiers allow overriding this behavior by filling
+in missing series on either side of a binary operation with a provided default sample value:
+
+* `fill(<value>)`: Fill in missing matches on either side with `value`.
+* `fill_left(<value>)`: Fill in missing matches on the left side with `value`.
+* `fill_right(<value>)`: Fill in missing matches on the right side with `value`.
+
+`value` has to be a numeric literal representing a float sample. Histogram samples are not supported.
+
+Note that these modifiers can only fill in series that are missing on one side of the operation.
+If a series is missing on both sides, it cannot be created by these modifiers.
+
+The fill modifiers can be used in the following combinations:
+
+* `fill(<default>)`
+* `fill_left(<default>)`
+* `fill_right(<default>)`
+* `fill_left(<default>) fill_right(<default>)`
+* `fill_right(<default>) fill_left(<default>)`
+
+If other binary operator modifiers like `bool`, `on`, `ignoring`, `group_left`, or `group_right`
+are used, the fill modifiers must be provided last.
+
+When using fill modifiers in combination with `group_left` or `group_right`, they behave as follows:
+
+* If a fill modifier is used on the "many" side of a match, it will only fill in a single series
+  for the "many" side of each match group, using the group's matching labels as the series identity.
+* If a fill modifier is used on the "one" side of a match and the grouping modifier specifies
+  label names to include from the "one" side (e.g. `left_vector * on(instance, job) group_left(info_label) fill_right(1) right_vector`), those labels will not be filled in for missing
+  series, as there is no source for their values.
+
+Fill modifiers are not supported for set operators (`and`, `or`, `unless`), as the purpose of those
+operators is to filter series based on presence or absence in the other vector.
+
+Example query, filling in missing series on the either side with `0`:
+
+    method_code:http_errors:rate5m{status="500"} / ignoring(code) fill(0) method:http_requests:rate5m
+
+This returns a result vector containing the fraction of HTTP requests with status code
+of 500 for each method, as measured over the last 5 minutes. The entries with methods `put` and `del`
+are now included in the result with a filled-in default sample value of `0`, as they had no matching
+series on the respective other side:
+
+    {method="get"}  0.04            #  24 / 600
+    {method="put"}  +Inf            #   3 /   0 (missing right side filled in)
+    {method="del"}  0               #   0 /  34 (missing left side filled in)
+    {method="post"} 0.05            #   6 / 120
 
 ## Aggregation operators
 
@@ -357,7 +407,7 @@ identical between all elements of the vector.
 #### `sum`
 
 `sum(v)` sums up sample values in `v` in the same way as the `+` binary operator does
-between two values. 
+between two values.
 
 All sample values being aggregated into a single resulting vector element must either be
 float samples or histogram samples. An aggregation of a mix of both is invalid,
@@ -393,7 +443,7 @@ vector, flagged by a warn-level annotation.
 
 #### `min` and `max`
 
-`min(v)` and `max(v)` return the minimum or maximum value, respectively, in `v`. 
+`min(v)` and `max(v)` return the minimum or maximum value, respectively, in `v`.
 
 They only operate on float samples, following IEEE 754 floating
 point arithmetic, which in particular implies that `NaN` is only ever
@@ -403,9 +453,9 @@ samples in the input vector are ignored, flagged by an info-level annotation.
 #### `topk` and `bottomk`
 
 `topk(k, v)` and `bottomk(k, v)` are different from other aggregators in that a subset of
-`k` values from the input samples, including the original labels, are returned in the result vector. 
+`k` values from the input samples, including the original labels, are returned in the result vector.
 
-`by` and `without` are only used to bucket the input vector. 
+`by` and `without` are only used to bucket the input vector.
 
 Similar to `min` and `max`, they only operate on float samples, considering `NaN` values
 to be farthest from the top or bottom, respectively. Histogram samples in the
@@ -415,7 +465,7 @@ If used in an instant query, `topk` and `bottomk` return series ordered by
 value in descending or ascending order, respectively. If used with `by` or
 `without`, then series within each bucket are sorted by value, and series in
 the same bucket are returned consecutively, but there is no guarantee that
-buckets of series will be returned in any particular order. 
+buckets of series will be returned in any particular order.
 
 No sorting applies to range queries.
 
@@ -428,11 +478,11 @@ To get the 5 instances with the highest memory consumption across all instances 
 #### `limitk`
 
 `limitk(k, v)` returns a subset of `k` input samples, including
-the original labels in the result vector. 
+the original labels in the result vector.
 
 The subset is selected in a deterministic pseudo-random way.
-This happens independent of the sample type. 
-Therefore, it works for both float samples and histogram samples. 
+This happens independent of the sample type.
+Therefore, it works for both float samples and histogram samples.
 
 ##### Example
 
@@ -470,8 +520,8 @@ The value may be a float or histogram sample.
 
 #### `count_values`
 
-`count_values(l, v)` outputs one time series per unique sample value in `v`. 
-Each series has an additional label, given by `l`, and the label value is the 
+`count_values(l, v)` outputs one time series per unique sample value in `v`.
+Each series has an additional label, given by `l`, and the label value is the
 unique sample value. The value of each time series is the number of times that sample value was present.
 
 `count_values` works with both float samples and histogram samples. For the
@@ -486,7 +536,7 @@ To count the number of binaries running each build version we could write:
 
 #### `stddev`
 
-`stddev(v)` returns the standard deviation of `v`. 
+`stddev(v)` returns the standard deviation of `v`.
 
 `stddev` only works with float samples, following IEEE 754 floating
 point arithmetic. Histogram samples in the input vector are ignored, flagged by
@@ -494,7 +544,7 @@ an info-level annotation.
 
 #### `stdvar`
 
-`stdvar(v)` returns the standard deviation of `v`. 
+`stdvar(v)` returns the standard deviation of `v`.
 
 `stdvar` only works with float samples, following IEEE 754 floating
 point arithmetic. Histogram samples in the input vector are ignored, flagged by
@@ -510,12 +560,12 @@ are ignored, flagged by an info-level annotation.
 
 `NaN` is considered the smallest possible value.
 
-For example, `quantile(0.5, ...)` calculates the median, `quantile(0.95, ...)` the 95th percentile. 
+For example, `quantile(0.5, ...)` calculates the median, `quantile(0.95, ...)` the 95th percentile.
 
 Special cases:
 
 * For φ = `NaN`, `NaN` is returned.
-* For φ < 0, `-Inf` is returned. 
+* For φ < 0, `-Inf` is returned.
 * For φ > 1, `+Inf` is returned.
 
 ## Binary operator precedence

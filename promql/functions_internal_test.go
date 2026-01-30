@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,9 +18,11 @@ import (
 	"math"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
@@ -29,10 +31,11 @@ func TestHistogramRateCounterResetHint(t *testing.T) {
 		{T: 0, H: &histogram.FloatHistogram{CounterResetHint: histogram.CounterReset, Count: 5, Sum: 5}},
 		{T: 1, H: &histogram.FloatHistogram{CounterResetHint: histogram.UnknownCounterReset, Count: 10, Sum: 10}},
 	}
-	fh, _ := histogramRate(points, false, "foo", posrange.PositionRange{})
+	labels := labels.FromMap(map[string]string{model.MetricNameLabel: "foo"})
+	fh, _ := histogramRate(points, false, labels, posrange.PositionRange{})
 	require.Equal(t, histogram.GaugeType, fh.CounterResetHint)
 
-	fh, _ = histogramRate(points, true, "foo", posrange.PositionRange{})
+	fh, _ = histogramRate(points, true, labels, posrange.PositionRange{})
 	require.Equal(t, histogram.GaugeType, fh.CounterResetHint)
 }
 

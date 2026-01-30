@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -361,6 +361,11 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		app = h.storage
 	}
 
+	version := ""
+	if o.Version != nil {
+		version = o.Version.Version
+	}
+
 	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
@@ -402,6 +407,10 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.AppendMetadata,
 		nil,
 		o.FeatureRegistry,
+		api_v1.OpenAPIOptions{
+			ExternalURL: o.ExternalURL.String(),
+			Version:     version,
+		},
 	)
 
 	if r := o.FeatureRegistry; r != nil {
@@ -418,6 +427,8 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Enable(features.API, "time_range_series")  // start/end parameters for /series endpoint.
 		r.Enable(features.API, "time_range_labels")  // start/end parameters for /labels endpoints.
 		r.Enable(features.API, "exclude_alerts")     // exclude_alerts parameter for /rules endpoint.
+		r.Enable(features.API, "openapi_3.1")        // OpenAPI 3.1 specification support.
+		r.Enable(features.API, "openapi_3.2")        // OpenAPI 3.2 specification support.
 		r.Set(features.UI, "ui_v3", !o.UseOldUI)
 		r.Set(features.UI, "ui_v2", o.UseOldUI)
 	}
@@ -454,13 +465,6 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	if h.options.UseOldUI {
 		reactAssetsRoot = "/static/react-app"
 	}
-
-	// The console library examples at 'console_libraries/prom.lib' still depend on old asset files being served under `classic`.
-	router.Get("/classic/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
-		fs := server.StaticFileServer(ui.Assets)
-		fs.ServeHTTP(w, r)
-	})
 
 	router.Get("/version", h.version)
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
@@ -641,8 +645,8 @@ func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
 		case Ready:
 			f(w, r)
 		case NotReady:
-			w.WriteHeader(http.StatusServiceUnavailable)
 			w.Header().Set("X-Prometheus-Stopping", "false")
+			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, "Service Unavailable")
 		case Stopping:
 			w.Header().Set("X-Prometheus-Stopping", "true")

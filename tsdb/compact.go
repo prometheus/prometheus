@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -263,6 +263,13 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 			return nil, err
 		}
 		if c.blockExcludeFunc != nil && c.blockExcludeFunc(meta) {
+			// Compactions work from oldest to newest, uploads do the same (usually).
+			// If you continue here you'll skip compactions on this one block, but:
+			// * all further blocks are NOT yet uploaded
+			// * some or all further blocks are uploaded
+			//
+			// If we continue and there are newer blocks to pick from,
+			// then you will compact in a non-continuous way, leaving gaps of individual un-compacted blocks.
 			break
 		}
 		dms = append(dms, dirMeta{dir, meta})
@@ -597,6 +604,9 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 		}
 		if base.Compaction.FromOutOfOrder() {
 			meta.Compaction.SetOutOfOrder()
+		}
+		if base.Compaction.FromStaleSeries() {
+			meta.Compaction.SetStaleSeries()
 		}
 	}
 

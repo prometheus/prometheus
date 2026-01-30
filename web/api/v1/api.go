@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -258,6 +258,7 @@ type API struct {
 	codecs []Codec
 
 	featureRegistry features.Collector
+	openAPIBuilder  *OpenAPIBuilder
 }
 
 // NewAPI returns an initialized API type.
@@ -299,6 +300,7 @@ func NewAPI(
 	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
 	featureRegistry features.Collector,
+	openAPIOptions OpenAPIOptions,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -329,6 +331,7 @@ func NewAPI(
 		notificationsSub:    notificationsSub,
 		overrideErrorCode:   overrideErrorCode,
 		featureRegistry:     featureRegistry,
+		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -400,7 +403,7 @@ func (api *API) Register(r *route.Router) {
 			w.WriteHeader(http.StatusNoContent)
 		})
 		return api.ready(httputil.CompressionHandler{
-			Handler: hf,
+			Handler: api.openAPIBuilder.WrapHandler(hf),
 		}.ServeHTTP)
 	}
 
@@ -469,6 +472,9 @@ func (api *API) Register(r *route.Router) {
 	r.Put("/admin/tsdb/delete_series", wrapAgent(api.deleteSeries))
 	r.Put("/admin/tsdb/clean_tombstones", wrapAgent(api.cleanTombstones))
 	r.Put("/admin/tsdb/snapshot", wrapAgent(api.snapshot))
+
+	// OpenAPI endpoint.
+	r.Get("/openapi.yaml", api.ready(api.openAPIBuilder.ServeOpenAPI))
 }
 
 type QueryData struct {
@@ -1346,13 +1352,19 @@ func (api *API) targetRelabelSteps(r *http.Request) apiFuncResult {
 
 	rules := scrapeConfig.RelabelConfigs
 	steps := make([]RelabelStep, len(rules))
+	lb := labels.NewBuilder(lbls)
+	keep := true
 	for i, rule := range rules {
-		outLabels, keep := relabel.Process(lbls, rules[:i+1]...)
-		steps[i] = RelabelStep{
-			Rule:   rule,
-			Output: outLabels,
-			Keep:   keep,
+		if keep {
+			keep = relabel.ProcessBuilder(lb, rule)
 		}
+
+		outLabels := labels.EmptyLabels()
+		if keep {
+			outLabels = lb.Labels()
+		}
+
+		steps[i] = RelabelStep{Rule: rule, Output: outLabels, Keep: keep}
 	}
 
 	return apiFuncResult{&RelabelStepsResponse{Steps: steps}, nil, nil, nil}

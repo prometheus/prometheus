@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,7 +15,6 @@ package remote
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -28,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -64,13 +64,19 @@ func TestSampledReadEndpoint(t *testing.T) {
 	matcher3, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_histogram_metric1")
 	require.NoError(t, err)
 
+	matcher4, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_nhcb_metric1")
+	require.NoError(t, err)
+
 	query1, err := ToQuery(0, 1, []*labels.Matcher{matcher1, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
 	require.NoError(t, err)
 
 	query2, err := ToQuery(0, 1, []*labels.Matcher{matcher3, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
 	require.NoError(t, err)
 
-	req := &prompb.ReadRequest{Queries: []*prompb.Query{query1, query2}}
+	query3, err := ToQuery(0, 1, []*labels.Matcher{matcher4, matcher2}, &storage.SelectHints{Step: 0, Func: "avg"})
+	require.NoError(t, err)
+
+	req := &prompb.ReadRequest{Queries: []*prompb.Query{query1, query2, query3}}
 	data, err := proto.Marshal(req)
 	require.NoError(t, err)
 
@@ -97,7 +103,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	err = proto.Unmarshal(uncompressed, &resp)
 	require.NoError(t, err)
 
-	require.Len(t, resp.Results, 2, "Expected 2 results.")
+	require.Len(t, resp.Results, 3, "Expected 3 results.")
 
 	require.Equal(t, &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
@@ -129,6 +135,33 @@ func TestSampledReadEndpoint(t *testing.T) {
 			},
 		},
 	}, resp.Results[1])
+
+	require.Equal(t, &prompb.QueryResult{
+		Timeseries: []*prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "__name__", Value: "test_nhcb_metric1"},
+					{Name: "b", Value: "c"},
+					{Name: "baz", Value: "qux"},
+					{Name: "d", Value: "e"},
+				},
+				Histograms: []prompb.Histogram{{
+					// We cannot use prompb.FromFloatHistogram as that's one
+					// of the things we are testing here.
+					Schema:    histogram.CustomBucketsSchema,
+					Count:     &prompb.Histogram_CountFloat{CountFloat: 5},
+					Sum:       18.4,
+					ZeroCount: &prompb.Histogram_ZeroCountFloat{},
+					PositiveSpans: []prompb.BucketSpan{
+						{Offset: 0, Length: 2},
+						{Offset: 1, Length: 2},
+					},
+					PositiveCounts: []float64{1, 2, 1, 1},
+					CustomValues:   []float64{0, 1, 2, 3, 4},
+				}},
+			},
+		},
+	}, resp.Results[2])
 }
 
 func BenchmarkStreamReadEndpoint(b *testing.B) {
@@ -433,10 +466,17 @@ func TestStreamReadEndpoint(t *testing.T) {
 func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {
 	lbls := labels.FromStrings("__name__", "test_histogram_metric1", "baz", "qux")
 
-	app := storage.Appender(context.TODO())
+	app := storage.Appender(t.Context())
 	for i, fh := range tsdbutil.GenerateTestFloatHistograms(n) {
 		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
 		require.NoError(t, err)
 	}
+
+	lbls = labels.FromStrings("__name__", "test_nhcb_metric1", "baz", "qux")
+	for i, fh := range tsdbutil.GenerateTestCustomBucketsFloatHistograms(n) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(60*time.Second/time.Millisecond), nil, fh)
+		require.NoError(t, err)
+	}
+
 	require.NoError(t, app.Commit())
 }

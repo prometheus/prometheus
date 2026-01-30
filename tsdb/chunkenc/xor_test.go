@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -24,7 +24,7 @@ func BenchmarkXorRead(b *testing.B) {
 	app, err := c.Appender()
 	require.NoError(b, err)
 	for i := int64(0); i < 120*1000; i += 1000 {
-		app.Append(i, float64(i)+float64(i)/10+float64(i)/100+float64(i)/1000)
+		app.Append(0, i, float64(i)+float64(i)/10+float64(i)/100+float64(i)/1000)
 	}
 
 	b.ReportAllocs()

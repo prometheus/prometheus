@@ -110,6 +110,15 @@ eval range from <start> to <end> step <step> <query>
 * `<expect string> "<string>"` (optional) for matching a string literal
 * `<series>` and `<points>` specify the expected values, and follow the same syntax as for `load` above
 
+### Special handling of counter reset hints in native histograms
+
+Native histograms as part of `<points>` may or may not contain an explicit
+`counter_reset_hint` property. If a `counter_reset_hint` is provided
+explicitly, the counter reset hint of the histogram is tested to have the
+provided value (`unknown`, `reset`, `not_reset`, or `gauge`). However, if no
+`counter_reset_hint` is specified, the `counter_reset_hint` is not tested at
+all (rather than testing for the usual default value `unknown`).
+
 ### `expect string`
 
 This can be used to specify that a string literal is the expected result.

@@ -126,7 +126,7 @@ const matchingCriteriaList = (
 };
 
 const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
-  const baseMetricName = node.name.replace(/(_count|_sum|_bucket)$/, "");
+  const baseMetricName = node.name.replace(/(_count|_sum|_bucket|_total)$/, "");
   const { lookbackDelta } = useSettings();
 
   // Try to get metadata for the full unchanged metric name first.

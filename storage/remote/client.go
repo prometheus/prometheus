@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -301,6 +301,9 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 		_ = httpResp.Body.Close()
 	}()
 
+	// NOTE(bwplotka): Only PRW2 spec defines response HTTP headers. However, spec does not block
+	// PRW1 from sending them too for reliability. Support this case.
+	//
 	// TODO(bwplotka): Pass logger and emit debug on error?
 	// Parsing error means there were some response header values we can't parse,
 	// we can continue handling.

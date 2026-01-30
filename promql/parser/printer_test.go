@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,8 +23,10 @@ import (
 
 func TestExprString(t *testing.T) {
 	ExperimentalDurationExpr = true
+	EnableBinopFillModifiers = true
 	t.Cleanup(func() {
 		ExperimentalDurationExpr = false
+		EnableBinopFillModifiers = false
 	})
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output
@@ -112,6 +114,26 @@ func TestExprString(t *testing.T) {
 		{
 			in:  `a - ignoring() group_left c`,
 			out: `a - ignoring () group_left () c`,
+		},
+		{
+			in:  `a + fill(-23) b`,
+			out: `a + fill (-23) b`,
+		},
+		{
+			in:  `a + fill_left(-23) b`,
+			out: `a + fill_left (-23) b`,
+		},
+		{
+			in:  `a + fill_right(42) b`,
+			out: `a + fill_right (42) b`,
+		},
+		{
+			in:  `a + fill_left(-23) fill_right(42) b`,
+			out: `a + fill_left (-23) fill_right (42) b`,
+		},
+		{
+			in:  `a + on(b) group_left fill(-23) c`,
+			out: `a + on (b) group_left () fill (-23) c`,
 		},
 		{
 			in: `up > bool 0`,
@@ -267,7 +289,34 @@ func TestExprString(t *testing.T) {
 			in: "foo[200 - min(step() + 10s, -max(step() ^ 2, 3))]",
 		},
 		{
+			in: "foo[range()]",
+		},
+		{
+			in: "foo[-range()]",
+		},
+		{
+			in: "foo offset range()",
+		},
+		{
+			in: "foo offset -range()",
+		},
+		{
+			in: "foo[max(range(), 5s)]",
+		},
+		{
 			in: `predict_linear(foo[1h], 3000)`,
+		},
+		{
+			in:  `sum by("üüü") (foo)`,
+			out: `sum by ("üüü") (foo)`,
+		},
+		{
+			in:  `sum without("äää") (foo)`,
+			out: `sum without ("äää") (foo)`,
+		},
+		{
+			in:  `count by("ööö", job) (foo)`,
+			out: `count by ("ööö", job) (foo)`,
 		},
 	}
 
@@ -391,6 +440,58 @@ func TestVectorSelector_String(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.expected, tc.vs.String())
+		})
+	}
+}
+
+func TestBinaryExprUTF8Labels(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "UTF-8 labels in on clause",
+			input:    `foo / on("äää") bar`,
+			expected: `foo / on ("äää") bar`,
+		},
+		{
+			name:     "UTF-8 labels in ignoring clause",
+			input:    `foo / ignoring("üüü") bar`,
+			expected: `foo / ignoring ("üüü") bar`,
+		},
+		{
+			name:     "UTF-8 labels in group_left clause",
+			input:    `foo / on("äää") group_left("ööö") bar`,
+			expected: `foo / on ("äää") group_left ("ööö") bar`,
+		},
+		{
+			name:     "UTF-8 labels in group_right clause",
+			input:    `foo / on("äää") group_right("ööö") bar`,
+			expected: `foo / on ("äää") group_right ("ööö") bar`,
+		},
+		{
+			name:     "Mixed legacy and UTF-8 labels",
+			input:    `foo / on(legacy, "üüü") bar`,
+			expected: `foo / on (legacy, "üüü") bar`,
+		},
+		{
+			name:     "Legacy labels only (should not quote)",
+			input:    `foo / on(job, instance) bar`,
+			expected: `foo / on (job, instance) bar`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := ParseExpr(tc.input)
+			if err != nil {
+				t.Fatalf("Failed to parse: %v", err)
+			}
+			result := expr.String()
+			if result != tc.expected {
+				t.Errorf("Expected: %s\nGot: %s", tc.expected, result)
+			}
 		})
 	}
 }

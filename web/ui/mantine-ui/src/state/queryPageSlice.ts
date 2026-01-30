@@ -115,6 +115,19 @@ export const queryPageSlice = createSlice({
       state.panels.push(newDefaultPanel());
       updateURL(state.panels);
     },
+    duplicatePanel: (
+      state,
+      { payload }: PayloadAction<{ idx: number; expr: string }>
+    ) => {
+      const newPanel = {
+        ...state.panels[payload.idx],
+        id: randomId(),
+        expr: payload.expr,
+      };
+      // Insert the duplicated panel just below the original panel.
+      state.panels.splice(payload.idx + 1, 0, newPanel);
+      updateURL(state.panels);
+    },
     removePanel: (state, { payload }: PayloadAction<number>) => {
       state.panels.splice(payload, 1);
       updateURL(state.panels);
@@ -153,6 +166,7 @@ export const {
   setPanels,
   addPanel,
   removePanel,
+  duplicatePanel,
   setExpr,
   addQueryToHistory,
   setShowTree,

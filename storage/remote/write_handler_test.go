@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -1605,6 +1605,77 @@ func TestHistogramsReduction(t *testing.T) {
 			require.Equal(t, reducedSchemaHistogram, appendable.histograms[0].h)
 			require.Equal(t, int64(2), appendable.histograms[1].t)
 			require.Equal(t, reducedSchemaHistogram.ToFloat(nil), appendable.histograms[1].fh)
+		})
+	}
+}
+
+// Regression test for https://github.com/prometheus/prometheus/issues/17659
+func TestRemoteWriteHandler_ResponseStats(t *testing.T) {
+	payloadV1, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+	payloadV2, _, _, err := buildV2WriteRequest(nil, writeV2RequestFixture.Timeseries, writeV2RequestFixture.Symbols, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		msgType            remoteapi.WriteMessageType
+		payload            []byte
+		forceInjectHeaders bool
+		expectHeaders      bool
+	}{
+		{
+			msgType: remoteapi.WriteV1MessageType,
+			payload: payloadV1,
+		},
+		{
+			msgType:            remoteapi.WriteV1MessageType,
+			payload:            payloadV1,
+			forceInjectHeaders: true,
+			expectHeaders:      true,
+		},
+		{
+			msgType:       remoteapi.WriteV2MessageType,
+			payload:       payloadV2,
+			expectHeaders: true,
+		},
+	} {
+		t.Run(fmt.Sprintf("msg=%v/force-inject-headers=%v", tt.msgType, tt.forceInjectHeaders), func(t *testing.T) {
+			// Setup server side.
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(
+				promslog.NewNopLogger(),
+				nil,
+				appendable,
+				[]remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType},
+				false,
+				false,
+				false,
+			)
+
+			if tt.forceInjectHeaders {
+				base := handler
+				handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// Inject response header. This simulates PRWv1 server that uses PRWv2 response headers
+					// for confirmation of samples. This is not against spec and we support it.
+					w.Header().Set(rw20WrittenSamplesHeader, "2")
+
+					base.ServeHTTP(w, r)
+				})
+			}
+
+			srv := httptest.NewServer(handler)
+
+			// Send message and do the parse response flow.
+			c := &Client{Client: srv.Client(), urlString: srv.URL, timeout: 5 * time.Minute, writeProtoMsg: tt.msgType}
+
+			stats, err := c.Store(t.Context(), tt.payload, 0)
+			require.NoError(t, err)
+
+			if tt.expectHeaders {
+				require.True(t, stats.Confirmed)
+				require.Equal(t, len(appendable.samples), stats.Samples)
+			} else {
+				require.False(t, stats.Confirmed)
+			}
 		})
 	}
 }

@@ -4,6 +4,8 @@
     "exclude_alerts": true,
     "label_values_match": true,
     "lifecycle": false,
+    "openapi_3.1": true,
+    "openapi_3.2": true,
     "otlp_write_receiver": false,
     "query_stats": true,
     "query_warnings": true,
@@ -28,6 +30,9 @@
     "by": true,
     "delayed_name_removal": false,
     "duration_expr": false,
+    "fill": false,
+    "fill_left": false,
+    "fill_right": false,
     "group_left": true,
     "group_right": true,
     "ignoring": true,
@@ -166,7 +171,7 @@
     "query_offset": true
   },
   "scrape": {
-    "extra_scrape_metrics": false,
+    "extra_scrape_metrics": true,
     "start_timestamp_zero_ingestion": false,
     "type_and_unit_labels": false
   },

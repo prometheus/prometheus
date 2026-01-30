@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -89,8 +88,6 @@ func (h *Head) appenderV2() *headAppenderV2 {
 		headAppenderBase: headAppenderBase{
 			head:                  h,
 			minValidTime:          minValidTime,
-			mint:                  math.MaxInt64,
-			maxt:                  math.MinInt64,
 			headMaxt:              h.MaxTime(),
 			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 			seriesRefs:            h.getRefSeriesBuffer(),
@@ -145,7 +142,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 
 	// TODO(bwplotka): Handle ST natively (as per PROM-60).
 	if a.head.opts.EnableSTAsZeroSample && st != 0 {
-		a.bestEffortAppendSTZeroSample(s, st, t, h, fh)
+		a.bestEffortAppendSTZeroSample(s, ls, st, t, h, fh)
 	}
 
 	switch {
@@ -167,11 +164,11 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// an optimization for the more likely case.
 			switch a.typesInBatch[s.ref] {
 			case stHistogram, stCustomBucketHistogram:
-				return a.Append(ref, ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			case stFloatHistogram, stCustomBucketFloatHistogram:
-				return a.Append(ref, ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			}
@@ -193,16 +190,9 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		return 0, appErr
 	}
 
-	if t < a.mint {
-		a.mint = t
-	}
-	if t > a.maxt {
-		a.maxt = t
-	}
-
 	if isStale {
 		// For stale values we never attempt to process metadata/exemplars, claim the success.
-		return ref, nil
+		return storage.SeriesRef(s.ref), nil
 	}
 
 	// Append exemplars if any and if storage was configured for it.
@@ -210,9 +200,6 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		// Currently only exemplars can return partial errors.
 		partialErr = a.appendExemplars(s, opts.Exemplars)
 	}
-
-	// TODO(bwplotka): Move/reuse metadata tests from scrape, once scrape adopts AppenderV2.
-	// Currently tsdb package does not test metadata.
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
 		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
@@ -323,10 +310,12 @@ func (a *headAppenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemp
 		if err := a.head.exemplars.ValidateExemplar(s.labels(), e); err != nil {
 			if !errors.Is(err, storage.ErrDuplicateExemplar) && !errors.Is(err, storage.ErrExemplarsDisabled) {
 				// Except duplicates, return partial errors.
+				// TODO(bwplotka): Add exemplar info into error.
 				errs = append(errs, err)
+				continue
 			}
 			if !errors.Is(err, storage.ErrOutOfOrderExemplar) {
-				a.head.logger.Debug("Error while adding an exemplar on AppendSample", "exemplars", fmt.Sprintf("%+v", e), "err", e)
+				a.head.logger.Debug("Error while adding an exemplar on AppendSample", "exemplars", fmt.Sprintf("%+v", e), "err", err)
 			}
 			continue
 		}
@@ -343,13 +332,14 @@ func (a *headAppenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemp
 // is implemented.
 //
 // ST is an experimental feature, we don't fail the append on errors, just debug log.
-func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, st, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
+func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels, st, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
+	// NOTE: Use lset instead of s.lset to avoid locking memSeries. Using s.ref is acceptable without locking.
 	if st >= t {
-		a.head.logger.Debug("Error when appending ST", "series", s.lset.String(), "st", st, "t", t, "err", storage.ErrSTNewerThanSample)
+		a.head.logger.Debug("Error when appending ST", "series", ls.String(), "st", st, "t", t, "err", storage.ErrSTNewerThanSample)
 		return
 	}
 	if st < a.minValidTime {
-		a.head.logger.Debug("Error when appending ST", "series", s.lset.String(), "st", st, "t", t, "err", storage.ErrOutOfBounds)
+		a.head.logger.Debug("Error when appending ST", "series", ls.String(), "st", st, "t", t, "err", storage.ErrOutOfBounds)
 		return
 	}
 
@@ -386,10 +376,6 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, st, t int64,
 		}
 		a.head.logger.Debug("Error when appending ST", "series", s.lset.String(), "st", st, "t", t, "err", err)
 		return
-	}
-
-	if st > a.maxt {
-		a.maxt = st
 	}
 }
 

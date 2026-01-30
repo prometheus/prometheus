@@ -568,6 +568,8 @@ While `info` normally automatically finds all matching info series, it's possibl
 restrict them by providing a `__name__` label matcher, e.g.
 `{__name__="target_info"}`.
 
+Note that if there are any time series in `v` that match the `data-label-selector` (or the default `target_info` if that argument is not specified), they will be treated as info series and will be returned unchanged.
+
 ### Limitations
 
 In its current iteration, `info` defaults to considering only info series with

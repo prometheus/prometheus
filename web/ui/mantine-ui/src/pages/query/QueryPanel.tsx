@@ -23,6 +23,7 @@ import { FC, Suspense, useCallback, useMemo, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   addQueryToHistory,
+  duplicatePanel,
   GraphDisplayMode,
   GraphResolution,
   removePanel,
@@ -110,6 +111,9 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           if (!showTree) {
             setSelectedNode(null);
           }
+        }}
+        duplicatePanel={(expr: string) => {
+          dispatch(duplicatePanel({ idx, expr }));
         }}
         removePanel={() => {
           dispatch(removePanel(idx));

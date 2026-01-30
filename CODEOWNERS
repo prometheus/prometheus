@@ -1,10 +1,29 @@
+#
+# Please keep this file in sync with the MAINTAINERS.md file!
+#
+
 # Prometheus team members are members of the "default maintainers" github team.
 # They are code owners by default for the whole repo.
 * @prometheus/default-maintainers
 
-# Example adding a dedicated maintainer for AWS SD, and also "default
-# maintainers" so that they do not need to bypass codeowners check to merge
-# something.
-# Example comes from
-# https://github.com/prometheus/prometheus/pull/17105#issuecomment-3248209452
-# /discovery/aws/ @matt-gp @prometheus/default-maintainers
+# Subsystems.
+/Makefile                       @prometheus/default-maintainers @simonpasquier @SuperQ
+/cmd/promtool                   @prometheus/default-maintainers @dgl
+/documentation/prometheus-mixin @prometheus/default-maintainers @metalmatze
+/model/histogram                @prometheus/default-maintainers @beorn7 @krajorama
+/web/ui                         @prometheus/default-maintainers @juliusv
+/web/ui/module                  @prometheus/default-maintainers @juliusv @nexucis
+/promql                         @prometheus/default-maintainers @roidelapluie
+/storage/remote                 @prometheus/default-maintainers @cstyan @bwplotka @tomwilkie @alexgreenbank
+/storage/remote/otlptranslator  @prometheus/default-maintainers @aknuds1 @jesusvazquez @ArthurSens
+/tsdb                           @prometheus/default-maintainers @jesusvazquez @codesome @bwplotka @krajorama
+
+# Service discovery.
+/discovery/kubernetes           @prometheus/default-maintainers @brancz
+/discovery/stackit              @prometheus/default-maintainers @jkroepke
+/discovery/aws/                 @prometheus/default-maintainers @matt-gp @sysadmind
+# Pending
+# https://github.com/prometheus/prometheus/pull/15212#issuecomment-3575225179
+# /discovery/aliyun               @prometheus/default-maintainers @KeyOfSpectator
+# https://github.com/prometheus/prometheus/pull/14108#issuecomment-2639515421
+# /discovery/nomad                @prometheus/default-maintainers @jaloren @jrasell

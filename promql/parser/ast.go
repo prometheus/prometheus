@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -116,8 +116,8 @@ type DurationExpr struct {
 	LHS, RHS Expr     // The operands on the respective sides of the operator.
 	Wrapped  bool     // Set when the duration is wrapped in parentheses.
 
-	StartPos posrange.Pos // For unary operations and step(), the start position of the operator.
-	EndPos   posrange.Pos // For step(), the end position of the operator.
+	StartPos posrange.Pos // For unary operations, step(), and range(), the start position of the operator.
+	EndPos   posrange.Pos // For step() and range(), the end position of the operator.
 }
 
 // Call represents a function call.
@@ -318,6 +318,19 @@ type VectorMatching struct {
 	// Include contains additional labels that should be included in
 	// the result from the side with the lower cardinality.
 	Include []string
+	// Fill-in values to use when a series from one side does not find a match on the other side.
+	FillValues VectorMatchFillValues
+}
+
+// VectorMatchFillValues contains the fill values to use for Vector matching
+// when one side does not find a match on the other side.
+// When a fill value is nil, no fill is applied for that side, and there
+// is no output for the match group if there is no match.
+type VectorMatchFillValues struct {
+	// RHS is the fill value to use for the right-hand side.
+	RHS *float64
+	// LHS is the fill value to use for the left-hand side.
+	LHS *float64
 }
 
 // Visitor allows visiting a Node and its child nodes. The Visit method is
@@ -474,7 +487,7 @@ func (e *BinaryExpr) PositionRange() posrange.PositionRange {
 }
 
 func (e *DurationExpr) PositionRange() posrange.PositionRange {
-	if e.Op == STEP {
+	if e.Op == STEP || e.Op == RANGE {
 		return posrange.PositionRange{
 			Start: e.StartPos,
 			End:   e.EndPos,

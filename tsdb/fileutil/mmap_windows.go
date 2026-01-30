@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,12 +27,13 @@ func mmap(f *os.File, size int) ([]byte, error) {
 	}
 
 	addr, errno := syscall.MapViewOfFile(h, syscall.FILE_MAP_READ, 0, 0, uintptr(size))
-	if addr == 0 {
-		return nil, os.NewSyscallError("MapViewOfFile", errno)
-	}
 
 	if err := syscall.CloseHandle(syscall.Handle(h)); err != nil {
 		return nil, os.NewSyscallError("CloseHandle", err)
+	}
+
+	if addr == 0 {
+		return nil, os.NewSyscallError("MapViewOfFile", errno)
 	}
 
 	return (*[maxMapSize]byte)(unsafe.Pointer(addr))[:size], nil

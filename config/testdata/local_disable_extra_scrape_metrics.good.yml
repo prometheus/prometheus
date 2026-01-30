@@ -1,0 +1,7 @@
+global:
+  extra_scrape_metrics: true
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:8080']
+    extra_scrape_metrics: false

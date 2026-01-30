@@ -1,4 +1,4 @@
-// Copyright 2025 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -28,7 +28,8 @@ import (
 // in OriginalOffsetExpr representing (1h / 2). This visitor evaluates
 // such duration expression, setting OriginalOffset to 30m.
 type durationVisitor struct {
-	step time.Duration
+	step       time.Duration
+	queryRange time.Duration
 }
 
 // Visit finds any duration expressions in AST Nodes and modifies the Node to
@@ -121,6 +122,8 @@ func (v *durationVisitor) evaluateDurationExpr(expr parser.Expr) (float64, error
 		switch n.Op {
 		case parser.STEP:
 			return float64(v.step.Seconds()), nil
+		case parser.RANGE:
+			return float64(v.queryRange.Seconds()), nil
 		case parser.MIN:
 			return math.Min(lhs, rhs), nil
 		case parser.MAX:

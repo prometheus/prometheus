@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -62,6 +62,8 @@ type Storage struct {
 	queryables             []storage.SampleAndChunkQueryable
 	localStartTimeCallback startTimeCallback
 }
+
+var _ storage.Storage = &Storage{}
 
 // NewStorage returns a remote.Storage.
 func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *Storage {
@@ -191,6 +193,11 @@ func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 // Appender implements storage.Storage.
 func (s *Storage) Appender(ctx context.Context) storage.Appender {
 	return s.rws.Appender(ctx)
+}
+
+// AppenderV2 implements storage.Storage.
+func (s *Storage) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return s.rws.AppenderV2(ctx)
 }
 
 // LowestSentTimestamp returns the lowest sent timestamp across all queues.

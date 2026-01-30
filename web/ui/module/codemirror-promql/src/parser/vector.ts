@@ -24,6 +24,11 @@ import {
   On,
   Or,
   Unless,
+  NumberDurationLiteral,
+  FillModifier,
+  FillClause,
+  FillLeftClause,
+  FillRightClause,
 } from '@prometheus-io/lezer-promql';
 import { VectorMatchCardinality, VectorMatching } from '../types';
 import { containsAtLeastOneChild } from './path-finder';
@@ -37,6 +42,10 @@ export function buildVectorMatching(state: EditorState, binaryNode: SyntaxNode):
     matchingLabels: [],
     on: false,
     include: [],
+    fill: {
+      lhs: null,
+      rhs: null,
+    },
   };
   const modifierClause = binaryNode.getChild(MatchingModifierClause);
   if (modifierClause) {
@@ -57,6 +66,32 @@ export function buildVectorMatching(state: EditorState, binaryNode: SyntaxNode):
       for (const label of labels) {
         result.include.push(state.sliceDoc(label.from, label.to));
       }
+    }
+  }
+
+  const fillModifier = binaryNode.getChild(FillModifier);
+  if (fillModifier) {
+    const fill = fillModifier.getChild(FillClause);
+    const fillLeft = fillModifier.getChild(FillLeftClause);
+    const fillRight = fillModifier.getChild(FillRightClause);
+
+    const getFillValue = (node: SyntaxNode) => {
+      const valueNode = node.getChild(NumberDurationLiteral);
+      return valueNode ? parseFloat(state.sliceDoc(valueNode.from, valueNode.to)) : null;
+    };
+
+    if (fill) {
+      const value = getFillValue(fill);
+      result.fill.lhs = value;
+      result.fill.rhs = value;
+    }
+
+    if (fillLeft) {
+      result.fill.lhs = getFillValue(fillLeft);
+    }
+
+    if (fillRight) {
+      result.fill.rhs = getFillValue(fillRight);
     }
   }
 

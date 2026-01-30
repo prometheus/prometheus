@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -485,6 +485,11 @@ func (ssi *storageSeriesIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 
 func (ssi *storageSeriesIterator) AtT() int64 {
 	return ssi.currT
+}
+
+// TODO(krajorama): implement AtST.
+func (*storageSeriesIterator) AtST() int64 {
+	return 0
 }
 
 func (ssi *storageSeriesIterator) Next() chunkenc.ValueType {
