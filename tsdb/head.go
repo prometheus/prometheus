@@ -40,7 +40,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -1812,17 +1811,17 @@ func (h *Head) Close() error {
 	// takes samples from most recent head chunk.
 	h.mmapHeadChunks()
 
-	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
+	errs := h.chunkDiskMapper.Close()
 	if h.wal != nil {
-		errs.Add(h.wal.Close())
+		errs = errors.Join(errs, h.wal.Close())
 	}
 	if h.wbl != nil {
-		errs.Add(h.wbl.Close())
+		errs = errors.Join(errs, h.wbl.Close())
 	}
-	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {
-		errs.Add(h.performChunkSnapshot())
+	if errs == nil && h.opts.EnableMemorySnapshotOnShutdown {
+		errs = errors.Join(errs, h.performChunkSnapshot())
 	}
-	return errs.Err()
+	return errs
 }
 
 // String returns an human readable representation of the TSDB head. It's important to

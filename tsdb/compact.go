@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -572,16 +571,16 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 		return []ulid.ULID{uid}, nil
 	}
 
-	errs := tsdb_errors.NewMulti(err)
+	errs := []error{err}
 	if !errors.Is(err, context.Canceled) {
 		for _, b := range bs {
 			if err := b.setCompactionFailed(); err != nil {
-				errs.Add(fmt.Errorf("setting compaction failed for block: %s: %w", b.Dir(), err))
+				errs = append(errs, fmt.Errorf("setting compaction failed for block: %s: %w", b.Dir(), err))
 			}
 		}
 	}
 
-	return nil, errs.Err()
+	return nil, errors.Join(errs...)
 }
 
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, base *BlockMeta) ([]ulid.ULID, error) {
@@ -661,7 +660,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	tmp := dir + tmpForCreationBlockDirSuffix
 	var closers []io.Closer
 	defer func(t time.Time) {
-		err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
+		err = errors.Join(err, closeAll(closers))
 
 		// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
 		if err := os.RemoveAll(tmp); err != nil {
@@ -718,13 +717,13 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	// though these are covered under defer. This is because in Windows,
 	// you cannot delete these unless they are closed and the defer is to
 	// make sure they are closed if the function exits due to an error above.
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, w := range closers {
-		errs.Add(w.Close())
+		errs = append(errs, w.Close())
 	}
 	closers = closers[:0] // Avoid closing the writers twice in the defer.
-	if errs.Err() != nil {
-		return errs.Err()
+	if err := errors.Join(errs...); err != nil {
+		return err
 	}
 
 	// Populated block is empty, so exit early.
@@ -803,11 +802,9 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 		overlapping bool
 	)
 	defer func() {
-		errs := tsdb_errors.NewMulti(err)
-		if cerr := tsdb_errors.CloseAll(closers); cerr != nil {
-			errs.Add(fmt.Errorf("close: %w", cerr))
+		if cerr := closeAll(closers); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close: %w", cerr))
 		}
-		err = errs.Err()
 		metrics.PopulatingBlocks.Set(0)
 	}()
 	metrics.PopulatingBlocks.Set(1)
