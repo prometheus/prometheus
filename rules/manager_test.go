@@ -38,6 +38,7 @@ import (
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -553,7 +554,7 @@ func TestStaleness(t *testing.T) {
 
 		expr, err := parser.ParseExpr("a + 1")
 		require.NoError(t, err)
-		rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+		rule := NewRecordingRule("a_plus_one", expr, labels.Labels{}, metadata.Metadata{})
 		group := NewGroup(GroupOptions{
 			Name:          "default",
 			Interval:      time.Second,
@@ -670,11 +671,11 @@ func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
 			NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
-			NewRecordingRule("rule2", nil, labels.EmptyLabels()),
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3")),
+			NewRecordingRule("rule1", nil, labels.EmptyLabels(), metadata.Metadata{}),
+			NewRecordingRule("rule2", nil, labels.EmptyLabels(), metadata.Metadata{}),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1"), metadata.Metadata{}),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2"), metadata.Metadata{}),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3"), metadata.Metadata{}),
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
@@ -691,14 +692,14 @@ func TestCopyState(t *testing.T) {
 	oldGroup.rules[0].(*AlertingRule).active[42] = nil
 	newGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v0")),
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
-			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v0"), metadata.Metadata{}),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1"), metadata.Metadata{}),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2"), metadata.Metadata{}),
 			NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
+			NewRecordingRule("rule1", nil, labels.EmptyLabels(), metadata.Metadata{}),
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v0"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-			NewRecordingRule("rule4", nil, labels.EmptyLabels()),
+			NewRecordingRule("rule4", nil, labels.EmptyLabels(), metadata.Metadata{}),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
 	}
@@ -726,7 +727,7 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 
 	oldGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule1", nil, labels.FromStrings("l1", "v1")),
+			NewRecordingRule("rule1", nil, labels.FromStrings("l1", "v1"), metadata.Metadata{}),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{"r1": labels.FromStrings("l1", "v1")},
@@ -1253,7 +1254,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 				name: "HasAlertingRule",
 				rules: []Rule{
 					NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-					NewRecordingRule("record", nil, labels.EmptyLabels()),
+					NewRecordingRule("record", nil, labels.EmptyLabels(), metadata.Metadata{}),
 				},
 			},
 			want: true,
@@ -1269,7 +1270,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			group: &Group{
 				name: "HasOnlyRecordingRule",
 				rules: []Rule{
-					NewRecordingRule("record", nil, labels.EmptyLabels()),
+					NewRecordingRule("record", nil, labels.EmptyLabels(), metadata.Metadata{}),
 				},
 			},
 			want: false,
@@ -1302,7 +1303,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 
 	expr, err := parser.ParseExpr("a + 1")
 	require.NoError(t, err)
-	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{}, metadata.Metadata{})
 	group := NewGroup(GroupOptions{
 		Name:          "default",
 		Interval:      time.Second,
@@ -1483,7 +1484,7 @@ func TestNativeHistogramsInRecordingRules(t *testing.T) {
 
 	expr, err := parser.ParseExpr("sum(histogram_metric)")
 	require.NoError(t, err)
-	rule := NewRecordingRule("sum:histogram_metric", expr, labels.Labels{})
+	rule := NewRecordingRule("sum:histogram_metric", expr, labels.Labels{}, metadata.Metadata{})
 
 	group := NewGroup(GroupOptions{
 		Name:          "default",
@@ -1584,7 +1585,7 @@ func TestDependencyMap(t *testing.T) {
 
 	expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
 	require.NoError(t, err)
-	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{}, metadata.Metadata{})
 
 	expr, err = parser.ParseExpr("user:requests:rate1m <= 0")
 	require.NoError(t, err)
@@ -1592,15 +1593,15 @@ func TestDependencyMap(t *testing.T) {
 
 	expr, err = parser.ParseExpr("sum by (user) (rate(requests[5m]))")
 	require.NoError(t, err)
-	rule3 := NewRecordingRule("user:requests:rate5m", expr, labels.Labels{})
+	rule3 := NewRecordingRule("user:requests:rate5m", expr, labels.Labels{}, metadata.Metadata{})
 
 	expr, err = parser.ParseExpr("increase(user:requests:rate1m[1h])")
 	require.NoError(t, err)
-	rule4 := NewRecordingRule("user:requests:increase1h", expr, labels.Labels{})
+	rule4 := NewRecordingRule("user:requests:increase1h", expr, labels.Labels{}, metadata.Metadata{})
 
 	expr, err = parser.ParseExpr(`sum by (user) ({__name__=~"user:requests.+5m"})`)
 	require.NoError(t, err)
-	rule5 := NewRecordingRule("user:requests:sum5m", expr, labels.Labels{})
+	rule5 := NewRecordingRule("user:requests:sum5m", expr, labels.Labels{}, metadata.Metadata{})
 
 	group := NewGroup(GroupOptions{
 		Name:     "rule_group",
@@ -1642,7 +1643,7 @@ func TestNoDependency(t *testing.T) {
 
 	expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
 	require.NoError(t, err)
-	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{}, metadata.Metadata{})
 
 	group := NewGroup(GroupOptions{
 		Name:     "rule_group",
@@ -1673,7 +1674,7 @@ func TestDependenciesEdgeCases(t *testing.T) {
 
 		expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
 		require.NoError(t, err)
-		rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+		rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{}, metadata.Metadata{})
 
 		depMap := buildDependencyMap(group.rules)
 		// A group with no rules has no dependency map, but doesn't panic if the map is queried.
@@ -1684,11 +1685,11 @@ func TestDependenciesEdgeCases(t *testing.T) {
 	t.Run("rules which reference no series", func(t *testing.T) {
 		expr, err := parser.ParseExpr("one")
 		require.NoError(t, err)
-		rule1 := NewRecordingRule("1", expr, labels.Labels{})
+		rule1 := NewRecordingRule("1", expr, labels.Labels{}, metadata.Metadata{})
 
 		expr, err = parser.ParseExpr("two")
 		require.NoError(t, err)
-		rule2 := NewRecordingRule("2", expr, labels.Labels{})
+		rule2 := NewRecordingRule("2", expr, labels.Labels{}, metadata.Metadata{})
 
 		group := NewGroup(GroupOptions{
 			Name:     "rule_group",
@@ -1706,11 +1707,11 @@ func TestDependenciesEdgeCases(t *testing.T) {
 	t.Run("rule with regexp matcher on metric name", func(t *testing.T) {
 		expr, err := parser.ParseExpr("sum(requests)")
 		require.NoError(t, err)
-		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+		rule1 := NewRecordingRule("first", expr, labels.Labels{}, metadata.Metadata{})
 
 		expr, err = parser.ParseExpr(`sum({__name__=~".+"})`)
 		require.NoError(t, err)
-		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+		rule2 := NewRecordingRule("second", expr, labels.Labels{}, metadata.Metadata{})
 
 		group := NewGroup(GroupOptions{
 			Name:     "rule_group",
@@ -1728,11 +1729,11 @@ func TestDependenciesEdgeCases(t *testing.T) {
 	t.Run("rule with not equal matcher on metric name", func(t *testing.T) {
 		expr, err := parser.ParseExpr("sum(requests)")
 		require.NoError(t, err)
-		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+		rule1 := NewRecordingRule("first", expr, labels.Labels{}, metadata.Metadata{})
 
 		expr, err = parser.ParseExpr(`sum({__name__!="requests", service="app"})`)
 		require.NoError(t, err)
-		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+		rule2 := NewRecordingRule("second", expr, labels.Labels{}, metadata.Metadata{})
 
 		group := NewGroup(GroupOptions{
 			Name:     "rule_group",
@@ -1750,11 +1751,11 @@ func TestDependenciesEdgeCases(t *testing.T) {
 	t.Run("rule with not regexp matcher on metric name", func(t *testing.T) {
 		expr, err := parser.ParseExpr("sum(requests)")
 		require.NoError(t, err)
-		rule1 := NewRecordingRule("first", expr, labels.Labels{})
+		rule1 := NewRecordingRule("first", expr, labels.Labels{}, metadata.Metadata{})
 
 		expr, err = parser.ParseExpr(`sum({__name__!~"requests.+", service="app"})`)
 		require.NoError(t, err)
-		rule2 := NewRecordingRule("second", expr, labels.Labels{})
+		rule2 := NewRecordingRule("second", expr, labels.Labels{}, metadata.Metadata{})
 
 		group := NewGroup(GroupOptions{
 			Name:     "rule_group",
@@ -1790,7 +1791,7 @@ func TestDependenciesEdgeCases(t *testing.T) {
 
 				expr, err = parser.ParseExpr("sum(failures)")
 				require.NoError(t, err)
-				rule5 := NewRecordingRule("fifth", expr, labels.Labels{})
+				rule5 := NewRecordingRule("fifth", expr, labels.Labels{}, metadata.Metadata{})
 
 				expr, err = parser.ParseExpr(fmt.Sprintf(`fifth > 0 and sum(%s{alertname="fourth"}) > 0`, metaMetric))
 				require.NoError(t, err)
@@ -1833,7 +1834,7 @@ func TestDependenciesEdgeCases(t *testing.T) {
 			t.Run("rule querying alerts meta-metric without alertname", func(t *testing.T) {
 				expr, err := parser.ParseExpr("sum(requests)")
 				require.NoError(t, err)
-				rule1 := NewRecordingRule("first", expr, labels.Labels{})
+				rule1 := NewRecordingRule("first", expr, labels.Labels{}, metadata.Metadata{})
 
 				expr, err = parser.ParseExpr(`sum(requests) > 0`)
 				require.NoError(t, err)
@@ -1845,7 +1846,7 @@ func TestDependenciesEdgeCases(t *testing.T) {
 
 				expr, err = parser.ParseExpr("sum(failures)")
 				require.NoError(t, err)
-				rule4 := NewRecordingRule("fourth", expr, labels.Labels{})
+				rule4 := NewRecordingRule("fourth", expr, labels.Labels{}, metadata.Metadata{})
 
 				expr, err = parser.ParseExpr(fmt.Sprintf(`fourth > 0 and sum(%s) > 0`, metaMetric))
 				require.NoError(t, err)
@@ -1893,11 +1894,11 @@ func TestNoMetricSelector(t *testing.T) {
 
 	expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
 	require.NoError(t, err)
-	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{}, metadata.Metadata{})
 
 	expr, err = parser.ParseExpr(`count({user="bob"})`)
 	require.NoError(t, err)
-	rule2 := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+	rule2 := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{}, metadata.Metadata{})
 
 	group := NewGroup(GroupOptions{
 		Name:     "rule_group",
@@ -1922,7 +1923,7 @@ func TestDependentRulesWithNonMetricExpression(t *testing.T) {
 
 	expr, err := parser.ParseExpr("sum by (user) (rate(requests[1m]))")
 	require.NoError(t, err)
-	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{})
+	rule := NewRecordingRule("user:requests:rate1m", expr, labels.Labels{}, metadata.Metadata{})
 
 	expr, err = parser.ParseExpr("user:requests:rate1m <= 0")
 	require.NoError(t, err)
@@ -1930,7 +1931,7 @@ func TestDependentRulesWithNonMetricExpression(t *testing.T) {
 
 	expr, err = parser.ParseExpr("3")
 	require.NoError(t, err)
-	rule3 := NewRecordingRule("three", expr, labels.Labels{})
+	rule3 := NewRecordingRule("three", expr, labels.Labels{}, metadata.Metadata{})
 
 	group := NewGroup(GroupOptions{
 		Name:     "rule_group",

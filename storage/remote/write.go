@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
@@ -70,6 +71,9 @@ type WriteStorage struct {
 	flushDeadline     time.Duration
 	interner          *pool
 	scraper           ReadyScrapeManager
+	rulesManagerMtx   sync.RWMutex
+	rulesManager      *rules.Manager
+	metadataWatchers  []*MetadataWatcher
 	quit              chan struct{}
 
 	// For timestampTracker.
@@ -109,6 +113,32 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 	}
 	go rws.run()
 	return rws
+}
+
+// registerMetadataWatcher registers a metadata watcher so it can be updated when SetRulesManager is called.
+func (rws *WriteStorage) registerMetadataWatcher(mw *MetadataWatcher) {
+	rws.rulesManagerMtx.Lock()
+	defer rws.rulesManagerMtx.Unlock()
+	rws.metadataWatchers = append(rws.metadataWatchers, mw)
+	// If rules manager is already set, update this watcher immediately.
+	if rws.rulesManager != nil {
+		mw.SetRulesManager(rws.rulesManager)
+	}
+}
+
+// SetRulesManager sets the rules manager for all queue managers. The rules manager is created later
+// during initialization (after WriteStorage is created), so this method must be called to provide it
+// once it's available. It can be called at any time to update the rules manager.
+func (rws *WriteStorage) SetRulesManager(rm *rules.Manager) {
+	rws.rulesManagerMtx.Lock()
+	rws.rulesManager = rm
+	watchers := rws.metadataWatchers
+	rws.rulesManagerMtx.Unlock()
+
+	// Update all metadata watchers.
+	for _, mw := range watchers {
+		mw.SetRulesManager(rm)
+	}
 }
 
 func (rws *WriteStorage) run() {
@@ -215,6 +245,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.SendNativeHistograms,
 			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
+			rws,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)

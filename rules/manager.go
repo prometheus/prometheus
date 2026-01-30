@@ -32,6 +32,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
@@ -373,10 +374,16 @@ func (m *Manager) LoadGroups(
 					))
 					continue
 				}
+				var m metadata.Metadata
+				if r.Metadata != nil {
+					m = *r.Metadata
+				}
+
 				rules = append(rules, NewRecordingRule(
 					r.Record,
 					expr,
 					mLabels,
+					m,
 				))
 			}
 
@@ -448,6 +455,21 @@ func (m *Manager) AlertingRules() []*AlertingRule {
 	}
 
 	return alerts
+}
+
+// RecordingRulesMetadata returns metadata for all recording rules that have metadata configured.
+// The returned map is keyed by metric name (rule name).
+func (m *Manager) RecordingRulesMetadata() map[string]metadata.Metadata {
+	result := make(map[string]metadata.Metadata)
+	for _, rule := range m.Rules() {
+		if recordingRule, ok := rule.(*RecordingRule); ok {
+			meta := recordingRule.Metadata()
+			if !meta.IsEmpty() {
+				result[recordingRule.Name()] = meta
+			}
+		}
+	}
+	return result
 }
 
 type Sender interface {
