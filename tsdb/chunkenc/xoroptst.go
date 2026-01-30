@@ -377,7 +377,6 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 				a.b.writeBits(0b1111, 4)
 				a.b.writeBits(uint64(sdod), 64)
 			}
-			// 	putClassicVarbitInt(a.b, sdod)
 		} else {
 			if a.firstSTChangeOn == 0 {
 				if a.numTotal == maxFirstSTChangeOn {
