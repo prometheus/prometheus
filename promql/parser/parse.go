@@ -1191,6 +1191,49 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 	return timestampp, preprocp, endPosp, true
 }
 
+// hasModifiersBeforeRange checks if an expression has offset/@ modifiers that are
+// immediately adjacent to a bracket (no space), which should be rejected for subqueries.
+func (p *parser) hasModifiersBeforeRange(expr Expr, bracketPos posrange.Pos) (bool, string) {
+	var endPos posrange.Pos
+	var hasOffset bool
+	var hasAtModifier bool
+
+	switch e := expr.(type) {
+	case *VectorSelector:
+		endPos = e.PosRange.End
+		hasOffset = e.OriginalOffset != 0 || e.OriginalOffsetExpr != nil
+		hasAtModifier = e.Timestamp != nil
+	case *MatrixSelector:
+		vs, ok := e.VectorSelector.(*VectorSelector)
+		if !ok {
+			return false, ""
+		}
+		endPos = e.EndPos
+		hasOffset = vs.OriginalOffset != 0 || vs.OriginalOffsetExpr != nil
+		hasAtModifier = vs.Timestamp != nil
+	case *SubqueryExpr:
+		endPos = e.EndPos
+		hasOffset = e.OriginalOffset != 0 || e.OriginalOffsetExpr != nil
+		hasAtModifier = e.Timestamp != nil
+	default:
+		// Other expression types (function calls, binary ops, etc.) don't have modifiers
+		// at the selector level, so they're fine.
+		return false, ""
+	}
+
+	// Check if modifiers exist and are adjacent to the bracket (no space)
+	if endPos == bracketPos {
+		if hasOffset {
+			return true, "no offset modifiers allowed before range"
+		}
+		if hasAtModifier {
+			return true, "no @ modifiers allowed before range"
+		}
+	}
+
+	return false, ""
+}
+
 func (p *parser) experimentalDurationExpr(e Expr) {
 	if !ExperimentalDurationExpr {
 		p.addParseErrf(e.PositionRange(), "experimental duration expression is not enabled")

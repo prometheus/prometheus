@@ -2779,6 +2779,75 @@ var testExpr = []struct {
 			},
 		},
 	},
+	// Test subquery: offset/@ modifiers immediately before subquery brackets (should error)
+	{
+		input: `some_metric offset 5m[2m:10s]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 21, End: 29},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric offset 5m[2m:10s]`,
+			},
+		},
+	},
+	{
+		input: `some_metric @ 123[2m:10s]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 17, End: 25},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric @ 123[2m:10s]`,
+			},
+		},
+	},
+	// Test subquery: matrix selector with offset/@ before subquery (should error)
+	{
+		input: `some_metric[5m] offset 1m[2m:10s]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 25, End: 33},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric[5m] offset 1m[2m:10s]`,
+			},
+		},
+	},
+	{
+		input: `some_metric[5m] @ 123[2m:10s]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 21, End: 29},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric[5m] @ 123[2m:10s]`,
+			},
+		},
+	},
+	// Test subquery: nested subquery with offset/@ before outer subquery (should error)
+	{
+		input: `some_metric[2m:10s] offset 1m[5m:1m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 29, End: 36},
+				Err:           errors.New("no offset modifiers allowed before range"),
+				Query:         `some_metric[2m:10s] offset 1m[5m:1m]`,
+			},
+		},
+	},
+	{
+		input: `some_metric[2m:10s] @ 123[5m:1m]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 25, End: 32},
+				Err:           errors.New("no @ modifiers allowed before range"),
+				Query:         `some_metric[2m:10s] @ 123[5m:1m]`,
+			},
+		},
+	},
 	{
 		input: `(foo + bar)[5m]`,
 		fail:  true,
