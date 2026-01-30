@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"path/filepath"
 	"sync"
@@ -97,6 +98,15 @@ type Options struct {
 	// per sample to WAL.
 	// TODO(bwplotka): Implement this option as per PROM-60, currently it's noop.
 	EnableSTStorage bool
+
+	// CheckpointFromInMemorySeries changes checkpoint implementation to use only in-memory series data when building a checkpoint.
+	// This prevents re-reading the previous checkpoint and segments from disk.
+	CheckpointFromInMemorySeries bool
+
+	// CheckpointBatchSize specifies a size of a single WAL log entry chunk to be flushed.
+	//
+	// Has no effect if CheckpointFromInMemorySeries is false.
+	CheckpointBatchSize int
 }
 
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
@@ -710,7 +720,19 @@ func (db *DB) truncate(mint int64) error {
 
 	db.metrics.checkpointCreationTotal.Inc()
 
-	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint); err != nil {
+	if db.opts.CheckpointFromInMemorySeries {
+		err = Checkpoint(db.logger, db.wal, CheckpointParams{
+			// Note: Checkpoint index here is technically correct but not necessarily factual for what the checkpoint represents.
+			// The checkpoint index suggests the index it applies to for the WAL while this one is everything in memory.
+			AtIndex:       last,
+			BatchSize:     db.opts.CheckpointBatchSize,
+			ActiveSeries:  db.series.Iterate(),
+			DeletedSeries: maps.Keys(db.deleted),
+		})
+	} else {
+		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint)
+	}
+	if err != nil {
 		db.metrics.checkpointCreationFail.Inc()
 		var cerr *wlog.CorruptionErr
 		if errors.As(err, &cerr) {

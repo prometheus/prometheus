@@ -537,6 +537,12 @@ func main() {
 		"Maximum age samples may be before being forcibly deleted when the WAL is truncated").
 		SetValue(&cfg.agent.MaxWALTime)
 
+	agentOnlyFlag(a, "storage.agent.checkpoint-from-in-memory-series", "Use only in-memory series data when building a checkpoint.").
+		Default("false").BoolVar(&cfg.agent.CheckpointFromInMemorySeries)
+
+	agentOnlyFlag(a, "storage.agent.checkpoint-batch-size", "Size of a single WAL log entry chunk to be flushed. Has no effect without --storage.agent.checkpoint-from-in-memory-series flag.").
+		Default("1000").IntVar(&cfg.agent.CheckpointBatchSize)
+
 	agentOnlyFlag(a, "storage.agent.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.agent.NoLockfile)
 
@@ -2011,15 +2017,17 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 // agentOptions is a version of agent.Options with defined units. This is required
 // as agent.Option fields are unit agnostic (time).
 type agentOptions struct {
-	WALSegmentSize         units.Base2Bytes
-	WALCompressionType     compression.Type
-	StripeSize             int
-	TruncateFrequency      model.Duration
-	MinWALTime, MaxWALTime model.Duration
-	NoLockfile             bool
-	OutOfOrderTimeWindow   int64 // TODO(bwplotka): Unused option, fix it or remove.
-	EnableSTAsZeroSample   bool
-	EnableSTStorage        bool
+	WALSegmentSize               units.Base2Bytes
+	WALCompressionType           compression.Type
+	StripeSize                   int
+	TruncateFrequency            model.Duration
+	MinWALTime, MaxWALTime       model.Duration
+	NoLockfile                   bool
+	OutOfOrderTimeWindow         int64 // TODO(bwplotka): Unused option, fix it or remove.
+	EnableSTAsZeroSample         bool
+	EnableSTStorage              bool
+	CheckpointFromInMemorySeries bool
+	CheckpointBatchSize          int
 }
 
 func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Options {
@@ -2027,16 +2035,18 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		outOfOrderTimeWindow = 0
 	}
 	return agent.Options{
-		WALSegmentSize:       int(opts.WALSegmentSize),
-		WALCompression:       opts.WALCompressionType,
-		StripeSize:           opts.StripeSize,
-		TruncateFrequency:    time.Duration(opts.TruncateFrequency),
-		MinWALTime:           durationToInt64Millis(time.Duration(opts.MinWALTime)),
-		MaxWALTime:           durationToInt64Millis(time.Duration(opts.MaxWALTime)),
-		NoLockfile:           opts.NoLockfile,
-		OutOfOrderTimeWindow: outOfOrderTimeWindow,
-		EnableSTAsZeroSample: opts.EnableSTAsZeroSample,
-		EnableSTStorage:      opts.EnableSTStorage,
+		WALSegmentSize:               int(opts.WALSegmentSize),
+		WALCompression:               opts.WALCompressionType,
+		StripeSize:                   opts.StripeSize,
+		TruncateFrequency:            time.Duration(opts.TruncateFrequency),
+		MinWALTime:                   durationToInt64Millis(time.Duration(opts.MinWALTime)),
+		MaxWALTime:                   durationToInt64Millis(time.Duration(opts.MaxWALTime)),
+		NoLockfile:                   opts.NoLockfile,
+		OutOfOrderTimeWindow:         outOfOrderTimeWindow,
+		EnableSTAsZeroSample:         opts.EnableSTAsZeroSample,
+		EnableSTStorage:              opts.EnableSTStorage,
+		CheckpointFromInMemorySeries: opts.CheckpointFromInMemorySeries,
+		CheckpointBatchSize:          opts.CheckpointBatchSize,
 	}
 }
 
