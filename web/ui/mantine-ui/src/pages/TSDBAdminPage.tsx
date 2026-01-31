@@ -92,9 +92,8 @@ export default function TSDBAdminPage() {
         }
       );
 
-      const result = await response.json();
-
-      if (result.status === "success") {
+      // Admin endpoints return 204 No Content on success
+      if (response.ok) {
         notifications.show({
           title: "Series deleted",
           message: `Successfully deleted series matching: ${validMatchers.join(", ")}`,
@@ -104,9 +103,10 @@ export default function TSDBAdminPage() {
         setStartTime(null);
         setEndTime(null);
       } else {
+        const result = await response.json().catch(() => ({}));
         notifications.show({
           title: "Failed to delete series",
-          message: result.error || "Unknown error occurred",
+          message: result.error || `Request failed with status ${response.status}`,
           color: "red",
         });
       }
@@ -134,18 +134,18 @@ export default function TSDBAdminPage() {
         }
       );
 
-      const result = await response.json();
-
-      if (result.status === "success") {
+      // Admin endpoints return 204 No Content on success
+      if (response.ok) {
         notifications.show({
           title: "Tombstones cleaned",
           message: "Successfully cleaned tombstones from TSDB",
           color: "green",
         });
       } else {
+        const result = await response.json().catch(() => ({}));
         notifications.show({
           title: "Failed to clean tombstones",
-          message: result.error || "Unknown error occurred",
+          message: result.error || `Request failed with status ${response.status}`,
           color: "red",
         });
       }
