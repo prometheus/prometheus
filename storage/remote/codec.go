@@ -42,6 +42,8 @@ import (
 const (
 	// decodeReadLimit is the maximum size of a read request body in bytes.
 	decodeReadLimit = 32 * 1024 * 1024
+	// decodeWriteLimit is the maximum size of a remote write request body in bytes.
+	decodeWriteLimit = 32 * 1024 * 1024
 
 	pbContentType   = "application/x-protobuf"
 	jsonContentType = "application/json"
@@ -60,14 +62,31 @@ func (e HTTPError) Status() int {
 	return e.status
 }
 
-// DecodeReadRequest reads a remote.Request from a http.Request.
-func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
-	compressed, err := io.ReadAll(io.LimitReader(r.Body, decodeReadLimit))
+// decodeSnappyWithLimit reads and decodes snappy-compressed data enforcing both
+// compressed and decoded size limits.
+func decodeSnappyWithLimit(r io.Reader, limit int, name string) ([]byte, error) {
+	compressed, err := io.ReadAll(io.LimitReader(r, int64(limit)+1))
 	if err != nil {
 		return nil, err
 	}
+	if len(compressed) > limit {
+		return nil, fmt.Errorf("compressed %s too large (%d bytes; limit %d bytes)", name, len(compressed), limit)
+	}
 
-	reqBuf, err := snappy.Decode(nil, compressed)
+	decodedLen, err := snappy.DecodedLen(compressed)
+	if err != nil {
+		return nil, err
+	}
+	if decodedLen > limit {
+		return nil, fmt.Errorf("%s too large (%d bytes; limit %d bytes)", name, decodedLen, limit)
+	}
+
+	return snappy.Decode(nil, compressed)
+}
+
+// DecodeReadRequest reads a remote.Request from a http.Request.
+func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
+	reqBuf, err := decodeSnappyWithLimit(r.Body, decodeReadLimit, "read request")
 	if err != nil {
 		return nil, err
 	}
@@ -923,12 +942,7 @@ func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 // snappy decompression.
 // Used also by documentation/examples/remote_storage.
 func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
-	compressed, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuf, err := snappy.Decode(nil, compressed)
+	reqBuf, err := decodeSnappyWithLimit(r, decodeWriteLimit, "write request")
 	if err != nil {
 		return nil, err
 	}
@@ -945,12 +959,7 @@ func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
 // snappy decompression.
 // Used also by documentation/examples/remote_storage.
 func DecodeWriteV2Request(r io.Reader) (*writev2.Request, error) {
-	compressed, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	reqBuf, err := snappy.Decode(nil, compressed)
+	reqBuf, err := decodeSnappyWithLimit(r, decodeWriteLimit, "write v2 request")
 	if err != nil {
 		return nil, err
 	}
