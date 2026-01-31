@@ -102,6 +102,10 @@ linters:
               desc: "Use github.com/klauspost/compress instead of zlib"
             - pkg: "golang.org/x/exp/slices"
               desc: "Use 'slices' instead."
+            - pkg: "gopkg.in/yaml.v2"
+              desc: "Use go.yaml.in/yaml/v2 instead of gopkg.in/yaml.v2"
+            - pkg: "gopkg.in/yaml.v3"
+              desc: "Use go.yaml.in/yaml/v3 instead of gopkg.in/yaml.v3"
     errcheck:
       exclude-functions:
         # Don't flag lines such as "io.Copy(io.Discard, resp.Body)".
