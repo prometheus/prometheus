@@ -120,6 +120,10 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 		}
 		if err = h.write(r.Context(), &req); err != nil {
 			switch {
+			case errors.Is(err, storage.ErrNativeHistogramsDisabled):
+				// Receiver supports the protocol, but cannot process native histograms.
+				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+				return
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
 				// Indicated an out-of-order sample is a bad request to prevent retries.
 				wr.SetStatusCode(http.StatusBadRequest)
@@ -314,6 +318,7 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	var (
 		badRequestErrs                                   []error
 		outOfOrderExemplarErrs, samplesWithInvalidLabels int
+		nhDisabled                                       bool
 
 		b = labels.NewScratchBuilder(0)
 	)
@@ -415,6 +420,13 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			// Handle append error.
 			// Although AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
 			// a note indicating its inclusion in the future.
+			if errors.Is(err, storage.ErrNativeHistogramsDisabled) {
+				// Receiver supports protocol, but cannot process native histograms.
+				nhDisabled = true
+				h.logger.Debug("Native histograms not enabled", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				continue
+			}
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
 				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
@@ -476,6 +488,9 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		return samplesWithoutMetadata, 0, nil
 	}
 	// TODO(bwplotka): Better concat formatting? Perhaps add size limit?
+	if nhDisabled {
+		return samplesWithoutMetadata, http.StatusUnprocessableEntity, errors.Join(badRequestErrs...)
+	}
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
 }
 
@@ -644,6 +659,10 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case err == nil:
+	case errors.Is(err, storage.ErrNativeHistogramsDisabled):
+		// Receiver supports the protocol, but cannot process native histograms.
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
 	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 		// Indicated an out of order sample is a bad request to prevent retries.
 		http.Error(w, err.Error(), http.StatusBadRequest)
