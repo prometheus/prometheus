@@ -25,7 +25,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -34,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 const (
@@ -629,7 +629,7 @@ func (r *AlertingRule) String() string {
 		Annotations:   r.annotations.Map(),
 	}
 
-	byt, err := yaml.Marshal(ar)
+	byt, err := yamlutil.Marshal(ar)
 	if err != nil {
 		return fmt.Sprintf("error marshaling alerting rule: %s", err.Error())
 	}

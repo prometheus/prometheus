@@ -23,7 +23,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -253,8 +253,10 @@ func replaceYAMLTypeError(err error, oldTyp, newTyp reflect.Type) error {
 	if errors.As(err, &e) {
 		oldStr := oldTyp.String()
 		newStr := newTyp.String()
-		for i, s := range e.Errors {
-			e.Errors[i] = strings.ReplaceAll(s, oldStr, newStr)
+		for _, ue := range e.Errors {
+			if ue.Err != nil {
+				ue.Err = errors.New(strings.ReplaceAll(ue.Err.Error(), oldStr, newStr))
+			}
 		}
 	}
 	return err
