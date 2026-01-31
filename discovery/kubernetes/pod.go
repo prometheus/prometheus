@@ -221,6 +221,8 @@ const (
 	podUID                        = metaLabelPrefix + "pod_uid"
 	podControllerKind             = metaLabelPrefix + "pod_controller_kind"
 	podControllerName             = metaLabelPrefix + "pod_controller_name"
+	podIPv4Label                  = metaLabelPrefix + "pod_ipv4"
+	podIPv6Label                  = metaLabelPrefix + "pod_ipv6"
 )
 
 // GetControllerOf returns a pointer to a copy of the controllerRef if controllee has a controller
@@ -242,6 +244,26 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		podNodeNameLabel: lv(pod.Spec.NodeName),
 		podHostIPLabel:   lv(pod.Status.HostIP),
 		podUID:           lv(string(pod.UID)),
+	}
+
+	// PodIPs contains all the IP addresses of the eth0 network interface in the Pod container.
+	// The specific number of IP addresses depends on the specific cni plugin response, which means there may be more than two IP addresses.
+	// However, in most cases, it is a single IP address or a dual-stack IP address.
+	// If there are multiple IP addresses, use the first IPv4 and IPv6 respectively, this way, it can be consistent with the primary IP address and avoid exposing redundant IP information.
+	// Reference: https://github.com/kubernetes/kubernetes/blob/c8fb7c9174b03ebc9a072913ca12c08ef3ed83c6/pkg/kubelet/kuberuntime/kuberuntime_sandbox.go#L317
+	for _, podIP := range pod.Status.PodIPs {
+		ip := net.ParseIP(podIP.IP)
+		if ip != nil {
+			if ip.To4() != nil {
+				if _, ok := ls[podIPv4Label]; !ok {
+					ls[podIPv4Label] = lv(podIP.IP)
+				}
+			} else if ip.To16() != nil {
+				if _, ok := ls[podIPv6Label]; !ok {
+					ls[podIPv6Label] = lv(podIP.IP)
+				}
+			}
+		}
 	}
 
 	addObjectMetaLabels(ls, pod.ObjectMeta, RolePod)
@@ -310,8 +332,14 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 		if len(c.Ports) == 0 {
 			// We don't have a port so we just set the address label to the pod IP.
 			// The user has to add a port manually.
+			addr := pod.Status.PodIP
+			ip := net.ParseIP(addr)
+			if ip != nil && ip.To4() == nil {
+				// If pod.Status.PodIP is a IPv6 address, addr should be "[pod.Status.PodIP]"
+				addr = "[" + ip.String() + "]"
+			}
 			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel:     lv(pod.Status.PodIP),
+				model.AddressLabel:     lv(addr),
 				podContainerNameLabel:  lv(c.Name),
 				podContainerIDLabel:    lv(cID),
 				podContainerImageLabel: lv(c.Image),
