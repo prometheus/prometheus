@@ -21,7 +21,7 @@ import (
 
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 // TestOpenAPIHTTPHandler verifies that the OpenAPI endpoint serves a valid specification
