@@ -58,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -3930,6 +3931,10 @@ func (*fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr 
 
 func (*fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
+}
+
+func (*fakeDB) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return seriesmetadata.NewMemSeriesMetadata(), nil
 }
 
 func TestAdminEndpoints(t *testing.T) {
