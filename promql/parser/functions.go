@@ -208,6 +208,13 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"histogram_quantiles": {
+		Name:         "histogram_quantiles",
+		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeString, ValueTypeScalar, ValueTypeScalar},
+		Variadic:     10,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"double_exponential_smoothing": {
 		Name:         "double_exponential_smoothing",
 		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
