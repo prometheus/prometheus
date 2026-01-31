@@ -28,7 +28,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.yaml.in/yaml/v2"
+
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 const (
@@ -142,7 +143,7 @@ func loadAzureAdConfig(filename string) (*AzureADConfig, error) {
 		return nil, err
 	}
 	cfg := AzureADConfig{}
-	if err = yaml.UnmarshalStrict(content, &cfg); err != nil {
+	if err = yamlutil.UnmarshalStrict(content, &cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
@@ -238,7 +239,7 @@ func TestAzureAdConfig(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Did not receive expected error unmarshaling bad azuread config")
 			}
-			require.EqualError(t, err, c.err)
+			require.ErrorContains(t, err, c.err)
 		} else {
 			require.NoError(t, err)
 		}

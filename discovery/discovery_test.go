@@ -17,7 +17,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestConfigsCustomUnMarshalMarshal(t *testing.T) {
@@ -27,10 +28,16 @@ func TestConfigsCustomUnMarshalMarshal(t *testing.T) {
   - bar:4321
 `
 	cfg := &Configs{}
-	err := yaml.UnmarshalStrict([]byte(input), cfg)
+	err := yamlutil.UnmarshalStrict([]byte(input), cfg)
 	require.NoError(t, err)
 
-	output, err := yaml.Marshal(cfg)
+	output, err := yamlutil.Marshal(cfg)
 	require.NoError(t, err)
-	require.Equal(t, input, string(output))
+	// yaml/v4 uses different sequence formatting than v2
+	expected := `static_configs:
+  - targets:
+      - foo:1234
+      - bar:4321
+`
+	require.Equal(t, expected, string(output))
 }

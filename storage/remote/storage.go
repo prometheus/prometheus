@@ -25,13 +25,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // String constants for instrumentation.
@@ -227,7 +227,7 @@ func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
 
 // Used for hashing configs and diff'ing hashes in ApplyConfig.
 func toHash(data any) (string, error) {
-	bytes, err := yaml.Marshal(data)
+	bytes, err := yamlutil.Marshal(data)
 	if err != nil {
 		return "", err
 	}
