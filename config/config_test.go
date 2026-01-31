@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/aws"
@@ -64,6 +64,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func mustParseURL(u string) *config.URL {
@@ -1797,7 +1798,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.False(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
@@ -1811,7 +1812,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.False(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
@@ -1832,7 +1833,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 		require.True(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.PromoteResourceAttributes)
 		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
@@ -1845,7 +1846,7 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 		require.True(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.PromoteResourceAttributes)
 		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.IgnoreResourceAttributes)
@@ -1877,7 +1878,7 @@ func TestOTLPAllowServiceNameInTargetInfo(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.KeepIdentifyingResourceAttributes)
 	})
@@ -1891,7 +1892,7 @@ func TestOTLPConvertHistogramsToNHCB(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.ConvertHistogramsToNHCB)
 	})
@@ -1905,7 +1906,7 @@ func TestOTLPPromoteScopeMetadata(t *testing.T) {
 		out, err := yaml.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.PromoteScopeMetadata)
 	})
@@ -1928,7 +1929,7 @@ func TestOTLPLabelUnderscoreSanitization(t *testing.T) {
 		out, err := yaml.Marshal(conf)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.LabelNameUnderscoreSanitization)
 		require.True(t, got.OTLPConfig.LabelNamePreserveMultipleUnderscores)
@@ -2431,7 +2432,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "section_key_dup.bad.yml",
-		errMsg:   "field scrape_configs already set in type config.plain",
+		errMsg:   `mapping key "scrape_configs" already defined at line 1`,
 	},
 	{
 		filename: "azure_client_id_missing.bad.yml",
@@ -2559,7 +2560,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "empty_scrape_config_action.bad.yml",
-		errMsg:   "relabel action cannot be empty",
+		errMsg:   "relabel configuration for replace action requires 'target_label' value",
 	},
 	{
 		filename: "tracing_missing_endpoint.bad.yml",
@@ -2599,19 +2600,19 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "scrape_config_files_glob.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_glob.bad.yml: invalid scrape config file path "scrape_configs/*/*"`,
+		errMsg:   `invalid scrape config file path "scrape_configs/*/*"`,
 	},
 	{
 		filename: "scrape_config_files_scrape_protocols.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols.bad.yml: scrape_protocols: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0] for scrape config with job name "node"`,
+		errMsg:   `scrape_protocols: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0] for scrape config with job name "node"`,
 	},
 	{
 		filename: "scrape_config_files_scrape_protocols2.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols2.bad.yml: duplicated protocol in scrape_protocols, got [OpenMetricsText1.0.0 PrometheusProto OpenMetricsText1.0.0] for scrape config with job name "node"`,
+		errMsg:   `duplicated protocol in scrape_protocols, got [OpenMetricsText1.0.0 PrometheusProto OpenMetricsText1.0.0] for scrape config with job name "node"`,
 	},
 	{
 		filename: "scrape_config_files_fallback_scrape_protocol1.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_fallback_scrape_protocol1.bad.yml: invalid fallback_scrape_protocol for scrape config with job name "node": unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0]`,
+		errMsg:   `invalid fallback_scrape_protocol for scrape config with job name "node": unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0]`,
 	},
 	{
 		filename: "scrape_config_files_fallback_scrape_protocol2.bad.yml",
@@ -2639,7 +2640,7 @@ func TestBadStaticConfigsYML(t *testing.T) {
 	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
-	err = yaml.UnmarshalStrict(content, &tg)
+	err = yamlutil.UnmarshalStrict(content, &tg)
 	require.Error(t, err)
 }
 
@@ -3197,7 +3198,7 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 
 	require.NoError(t, err)
 	got := &Config{}
-	require.NoError(t, yaml.UnmarshalStrict(out, got))
+	require.NoError(t, yamlutil.UnmarshalStrict(out, got))
 
 	require.False(t, got.ScrapeConfigs[0].EnableCompression)
 }
@@ -3250,7 +3251,7 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 
 			require.NoError(t, err)
 			got := &Config{}
-			require.NoError(t, yaml.UnmarshalStrict(out, got))
+			require.NoError(t, yamlutil.UnmarshalStrict(out, got))
 
 			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
 
@@ -3303,7 +3304,7 @@ func TestScrapeConfigNameEscapingSettings(t *testing.T) {
 
 			require.NoError(t, err)
 			got := &Config{}
-			require.NoError(t, yaml.UnmarshalStrict(out, got))
+			require.NoError(t, yamlutil.UnmarshalStrict(out, got))
 
 			require.Equal(t, tc.expectValidationScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
 			require.Equal(t, tc.expectEscapingScheme, got.ScrapeConfigs[0].MetricNameEscapingScheme)

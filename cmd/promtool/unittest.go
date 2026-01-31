@@ -33,7 +33,6 @@ import (
 	"github.com/nsf/jsondiff"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -43,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/junitxml"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
@@ -91,7 +91,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 	}
 
 	var unitTestInp unitTestFile
-	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
+	if err := yamlutil.UnmarshalStrict(b, &unitTestInp); err != nil {
 		ts.Abort(err)
 		return []error{err}
 	}
