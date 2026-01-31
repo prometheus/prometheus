@@ -1159,9 +1159,22 @@ func TestCompaction_populateBlock(t *testing.T) {
 				for _, chk := range series.chunks {
 					s.NumSamples += uint64(len(chk))
 					for _, smpl := range chk {
-						if smpl.h != nil || smpl.fh != nil {
+						switch {
+						case smpl.h != nil:
 							s.NumHistogramSamples++
-						} else {
+							bucketCount := uint64(len(smpl.h.PositiveBuckets) + len(smpl.h.NegativeBuckets))
+							if smpl.h.ZeroCount > 0 {
+								bucketCount++
+							}
+							s.NumHistogramBuckets += bucketCount
+						case smpl.fh != nil:
+							s.NumHistogramSamples++
+							bucketCount := uint64(len(smpl.fh.PositiveBuckets) + len(smpl.fh.NegativeBuckets))
+							if smpl.fh.ZeroCount > 0 {
+								bucketCount++
+							}
+							s.NumHistogramBuckets += bucketCount
+						default:
 							s.NumFloatSamples++
 						}
 					}
