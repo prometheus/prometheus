@@ -25,20 +25,14 @@ import InfoPageCard from "../components/InfoPageCard";
 import { inputIconStyle, buttonIconStyle } from "../styles";
 import dayjs from "dayjs";
 
-interface FeaturesResult {
-  [category: string]: {
-    [feature: string]: boolean;
-  };
-}
-
 export default function TSDBAdminPage() {
   const { pathPrefix } = useSettings();
 
   const {
-    data: { data: features },
-  } = useSuspenseAPIQuery<FeaturesResult>({ path: `/status/features` });
+    data: { data: flags },
+  } = useSuspenseAPIQuery<Record<string, string>>({ path: `/status/flags` });
 
-  const adminAPIEnabled = features?.api?.admin ?? false;
+  const adminAPIEnabled = flags["web.enable-admin-api"] === "true";
 
   const [matchers, setMatchers] = useState<string[]>([""]);
   const [startTime, setStartTime] = useState<string | null>(null);
@@ -50,6 +44,7 @@ export default function TSDBAdminPage() {
     deleteModalOpened,
     { open: openDeleteModal, close: closeDeleteModal },
   ] = useDisclosure(false);
+
   const [
     cleanModalOpened,
     { open: openCleanModal, close: closeCleanModal },
