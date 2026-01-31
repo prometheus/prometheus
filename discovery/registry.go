@@ -14,7 +14,6 @@
 package discovery
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -23,9 +22,9 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 const (
@@ -143,7 +142,7 @@ func UnmarshalYAMLWithInlineConfigs(out any, unmarshal func(any) error) error {
 
 	// Unmarshal into dynamic value.
 	if err := unmarshal(cfgPtr.Interface()); err != nil {
-		return replaceYAMLTypeError(err, cfgTyp, outTyp)
+		return yamlutil.ReplaceTypeNames(err, cfgTyp, outTyp)
 	}
 
 	// Copy shared fields from dynamic value.
@@ -246,17 +245,6 @@ func writeConfigs(structVal reflect.Value, configs Configs) error {
 		field.Set(reflect.Append(field, reflect.ValueOf(c)))
 	}
 	return nil
-}
-
-func replaceYAMLTypeError(err error, oldTyp, newTyp reflect.Type) error {
-	if e, ok := errors.AsType[*yaml.TypeError](err); ok {
-		oldStr := oldTyp.String()
-		newStr := newTyp.String()
-		for i, s := range e.Errors {
-			e.Errors[i] = strings.ReplaceAll(s, oldStr, newStr)
-		}
-	}
-	return err
 }
 
 // RegisterSDMetrics registers the metrics used by service discovery mechanisms.

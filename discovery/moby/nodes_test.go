@@ -22,9 +22,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestDockerSwarmNodesSDRefresh(t *testing.T) {
@@ -40,7 +40,7 @@ role: nodes
 host: %s
 `, url)
 	var cfg DockerSwarmSDConfig
-	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+	require.NoError(t, yamlutil.UnmarshalStrict([]byte(cfgString), &cfg))
 
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)

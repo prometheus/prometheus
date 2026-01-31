@@ -45,7 +45,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"go.yaml.in/yaml/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/prometheus/prometheus/config"
@@ -66,6 +65,7 @@ import (
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/notifications"
 	"github.com/prometheus/prometheus/util/stats"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 type status string
@@ -1813,7 +1813,7 @@ func (api *API) scrapePoolConfig(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error retrieving scrape config: %w", err)}, nil, nil}
 	}
 
-	configYAML, err := yaml.Marshal(scrapeConfig)
+	configYAML, err := yamlutil.Marshal(scrapeConfig)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error marshaling scrape config: %w", err)}, nil, nil}
 	}

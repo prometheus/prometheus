@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -41,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/pool"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // For readability.
@@ -364,7 +364,7 @@ func applyDefaultSynctestConfig(t *testing.T, scrapeManager *Manager, interval t
 		},
 		ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
 	}
-	cfgText, err := yaml.Marshal(*cfg)
+	cfgText, err := yamlutil.Marshal(*cfg)
 	require.NoError(t, err)
 	cfg = loadConfiguration(t, string(cfgText))
 	require.NoError(t, scrapeManager.ApplyConfig(cfg))

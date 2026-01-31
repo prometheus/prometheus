@@ -21,7 +21,8 @@ import (
 	"path/filepath"
 
 	promconfig "github.com/prometheus/common/config"
-	"go.yaml.in/yaml/v2"
+
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 type ExternalFilesConfig struct {
@@ -43,7 +44,7 @@ func GenerateChecksum(yamlFilePath string) (string, error) {
 	}
 
 	var config ExternalFilesConfig
-	if err := yaml.Unmarshal(yamlContent, &config); err != nil {
+	if err := yamlutil.Unmarshal(yamlContent, &config); err != nil {
 		return "", fmt.Errorf("error unmarshalling YAML: %w", err)
 	}
 

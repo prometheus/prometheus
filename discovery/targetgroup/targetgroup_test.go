@@ -19,7 +19,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestTargetGroupStrictJSONUnmarshal(t *testing.T) {
@@ -94,7 +95,7 @@ func TestTargetGroupJSONMarshal(t *testing.T) {
 
 func TestTargetGroupYamlMarshal(t *testing.T) {
 	marshal := func(g any) []byte {
-		d, err := yaml.Marshal(g)
+		d, err := yamlutil.Marshal(g)
 		if err != nil {
 			panic(err)
 		}
@@ -121,7 +122,7 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 				},
 				Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
 			},
-			expectedYaml: "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
+			expectedYaml: "targets:\n  - localhost:9090\n  - localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
 			expectedErr:  nil,
 		},
 	}
@@ -136,13 +137,14 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 func TestTargetGroupYamlUnmarshal(t *testing.T) {
 	unmarshal := func(d []byte) func(any) error {
 		return func(o any) error {
-			return yaml.Unmarshal(d, o)
+			return yamlutil.UnmarshalStrict(d, o)
 		}
 	}
 	tests := []struct {
 		yaml          string
 		expectedGroup Group
 		expectedReply error
+		expectError   bool
 	}{
 		{
 			// empty target group.
@@ -161,15 +163,19 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 		},
 		{
 			// incorrect syntax.
-			yaml:          "labels:\ntargets:\n  'localhost:9090'",
-			expectedReply: &yaml.TypeError{Errors: []string{"line 3: cannot unmarshal !!str `localho...` into []string"}},
+			yaml:        "labels:\ntargets:\n  'localhost:9090'",
+			expectError: true,
 		},
 	}
 
 	for _, test := range tests {
 		tg := Group{}
 		actual := tg.UnmarshalYAML(unmarshal([]byte(test.yaml)))
-		require.Equal(t, test.expectedReply, actual)
+		if test.expectError {
+			require.True(t, yamlutil.IsTypeError(actual))
+		} else {
+			require.Equal(t, test.expectedReply, actual)
+		}
 		require.Equal(t, test.expectedGroup, tg)
 	}
 }

@@ -26,7 +26,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v3"
+
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestRoleUnmarshalYAML(t *testing.T) {
@@ -201,7 +202,7 @@ filters:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var cfg SDConfig
-			require.NoError(t, yaml.Unmarshal([]byte(tt.yaml), &cfg))
+			require.NoError(t, yamlutil.Unmarshal([]byte(tt.yaml), &cfg))
 			tt.validateFunc(t, &cfg)
 		})
 	}
@@ -333,7 +334,7 @@ func TestMultipleSDConfigsDoNotShareState(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var configs []SDConfig
-			require.NoError(t, yaml.Unmarshal([]byte(tt.yaml), &configs))
+			require.NoError(t, yamlutil.Unmarshal([]byte(tt.yaml), &configs))
 			require.Len(t, configs, 2)
 			tt.validateFunc(t, &configs[0], &configs[1])
 		})
@@ -536,7 +537,7 @@ func TestAWSSDConfigUnmarshalYAML_NoRegionResolution(t *testing.T) {
 		t.Run(role, func(t *testing.T) {
 			yamlStr := "role: " + role + "\n" + body + "\n"
 			cfg := SDConfig{}
-			err := yaml.Unmarshal([]byte(yamlStr), &cfg)
+			err := yamlutil.Unmarshal([]byte(yamlStr), &cfg)
 			require.NoError(t, err, "config parsing must not make network calls")
 			require.Empty(t, cfg.Region, "region must remain empty after parse; resolution is deferred to SD init")
 		})
@@ -562,7 +563,7 @@ func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
 			defaultConcurrency: DefaultECSSDConfig.RequestConcurrency,
 			parse: func(s string) (int, error) {
 				var cfg ECSSDConfig
-				err := yaml.Unmarshal([]byte(s), &cfg)
+				err := yamlutil.Unmarshal([]byte(s), &cfg)
 				return cfg.RequestConcurrency, err
 			},
 		},
@@ -571,7 +572,7 @@ func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
 			defaultConcurrency: DefaultElasticacheSDConfig.RequestConcurrency,
 			parse: func(s string) (int, error) {
 				var cfg ElasticacheSDConfig
-				err := yaml.Unmarshal([]byte(s), &cfg)
+				err := yamlutil.Unmarshal([]byte(s), &cfg)
 				return cfg.RequestConcurrency, err
 			},
 		},
@@ -580,7 +581,7 @@ func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
 			defaultConcurrency: DefaultMSKSDConfig.RequestConcurrency,
 			parse: func(s string) (int, error) {
 				var cfg MSKSDConfig
-				err := yaml.Unmarshal([]byte(s), &cfg)
+				err := yamlutil.Unmarshal([]byte(s), &cfg)
 				return cfg.RequestConcurrency, err
 			},
 		},
@@ -589,7 +590,7 @@ func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
 			defaultConcurrency: DefaultRDSSDConfig.RequestConcurrency,
 			parse: func(s string) (int, error) {
 				var cfg RDSSDConfig
-				err := yaml.Unmarshal([]byte(s), &cfg)
+				err := yamlutil.Unmarshal([]byte(s), &cfg)
 				return cfg.RequestConcurrency, err
 			},
 		},
@@ -631,7 +632,9 @@ func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
 				got, err := cfg.parse("region: us-west-2\n" + tt.yaml + "\n")
 
 				if tt.expectedErr != "" {
-					require.EqualError(t, err, cfg.name+": "+tt.expectedErr)
+					// The validation error is wrapped by the YAML decoder, so only the
+					// message we produce is asserted.
+					require.ErrorContains(t, err, cfg.name+": "+tt.expectedErr)
 					return
 				}
 
@@ -708,7 +711,7 @@ region: us-west-1
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var cfg SDConfig
-			err := yaml.Unmarshal([]byte(tt.yaml), &cfg)
+			err := yamlutil.Unmarshal([]byte(tt.yaml), &cfg)
 			require.NoError(t, err)
 			require.Equal(t, tt.role, cfg.Role)
 
