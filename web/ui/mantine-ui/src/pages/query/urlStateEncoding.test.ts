@@ -157,7 +157,7 @@ describe("decodePanelOptionsFromURLParams", () => {
     expect(panels[0].visualizer.yAxisMin).toBe(10.5);
   });
 
-  test("decodes empty y_axis_min as null", () => {
+  test("ignores empty y_axis_min parameter (preserves default)", () => {
     const panels = decodePanelOptionsFromURLParams("g0.expr=up&g0.y_axis_min=");
     expect(panels[0].visualizer.yAxisMin).toBeNull();
   });

@@ -64,7 +64,9 @@ export const decodePanelOptionsFromURLParams = (query: string): Panel[] => {
         value === "1" ? GraphDisplayMode.Stacked : GraphDisplayMode.Lines;
     });
     decodeSetting("y_axis_min", (value) => {
-      panel.visualizer.yAxisMin = value === "" ? null : parseFloat(value);
+      if (value !== "") {
+        panel.visualizer.yAxisMin = parseFloat(value);
+      }
     });
     decodeSetting("show_exemplars", (value) => {
       panel.visualizer.showExemplars = value === "1";
