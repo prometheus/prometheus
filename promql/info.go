@@ -22,6 +22,7 @@ import (
 
 	"github.com/grafana/regexp"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -46,18 +47,18 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 		labelSelector := args[1].(*parser.VectorSelector)
 		for _, m := range labelSelector.LabelMatchers {
 			dataLabelMatchers[m.Name] = append(dataLabelMatchers[m.Name], m)
-			if m.Name == labels.MetricName {
+			if m.Name == model.MetricNameLabel {
 				infoNameMatchers = append(infoNameMatchers, m)
 			}
 		}
 	} else {
-		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, targetInfo)}
+		infoNameMatchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}
 	}
 
 	// Don't try to enrich info series.
 	ignoreSeries := map[uint64]struct{}{}
 	for _, s := range mat {
-		name := s.Metric.Get(labels.MetricName)
+		name := s.Metric.Get(model.MetricNameLabel)
 		if len(infoNameMatchers) > 0 && matchersMatch(infoNameMatchers, name) {
 			ignoreSeries[s.Metric.Hash()] = struct{}{}
 		}
@@ -130,7 +131,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	removeNameFromDataLabelMatchers := func() {
 		for name, ms := range dataLabelMatchers {
 			ms = slices.DeleteFunc(ms, func(m *labels.Matcher) bool {
-				return m.Name == labels.MetricName
+				return m.Name == model.MetricNameLabel
 			})
 			if len(ms) > 0 {
 				dataLabelMatchers[name] = ms
@@ -192,7 +193,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	hasNameMatcher := false
 	for _, ms := range dataLabelMatchers {
 		for _, m := range ms {
-			if m.Name == labels.MetricName {
+			if m.Name == model.MetricNameLabel {
 				hasNameMatcher = true
 			}
 			infoLabelMatchers = append(infoLabelMatchers, m)
@@ -201,7 +202,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	removeNameFromDataLabelMatchers()
 	if !hasNameMatcher {
 		// Default to using the target_info metric.
-		infoLabelMatchers = append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, targetInfo)}, infoLabelMatchers...)
+		infoLabelMatchers = append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, targetInfo)}, infoLabelMatchers...)
 	}
 
 	infoIt := ev.querier.Select(ctx, false, &selectHints, infoLabelMatchers...)
@@ -221,7 +222,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 	sigFunction := func(name string) func(labels.Labels) string {
 		return func(lset labels.Labels) string {
 			lb.Reset()
-			lb.Add(labels.MetricName, name)
+			lb.Add(model.MetricNameLabel, name)
 			lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
 				lb.Add(l.Name, l.Value)
 			})
@@ -233,7 +234,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 	infoMetrics := map[string]struct{}{}
 	for _, is := range infoMat {
 		lblMap := is.Metric.Map()
-		infoMetrics[lblMap[labels.MetricName]] = struct{}{}
+		infoMetrics[lblMap[model.MetricNameLabel]] = struct{}{}
 	}
 	sigfs := make(map[string]func(labels.Labels) string, len(infoMetrics))
 	for name := range infoMetrics {
@@ -278,7 +279,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 
 	infoSigs := make(map[uint64]string, len(infoMat))
 	for _, s := range infoMat {
-		name := s.Metric.Map()[labels.MetricName]
+		name := s.Metric.Map()[model.MetricNameLabel]
 		infoSigs[s.Metric.Hash()] = sigfs[name](s.Metric)
 	}
 
@@ -416,7 +417,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[u
 			}
 
 			err := is.Metric.Validate(func(l labels.Label) error {
-				if l.Name == labels.MetricName {
+				if l.Name == model.MetricNameLabel {
 					return nil
 				}
 				if _, exists := dataLabelMatchers[l.Name]; len(dataLabelMatchers) > 0 && !exists {
