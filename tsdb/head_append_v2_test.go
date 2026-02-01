@@ -765,21 +765,39 @@ func TestHeadAppenderV2_NewWalSegmentOnTruncate(t *testing.T) {
 	require.Equal(t, 2, last)
 }
 
-func TestHeadAppenderV2_Append_DuplicateLabelName(t *testing.T) {
+func TestHeadAppenderV2_Append_OutOfOrderLabelName(t *testing.T) {
 	h, _ := newTestHead(t, 1000, compression.None, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
 
-	add := func(labels labels.Labels, labelName string) {
+	add := func(lbls labels.Labels, labelName string) {
 		app := h.AppenderV2(context.Background())
-		_, err := app.Append(0, labels, 0, 0, 0, nil, nil, storage.AOptions{})
-		require.EqualError(t, err, fmt.Sprintf(`label name "%s" is not unique: invalid sample`, labelName))
+		_, err := app.Append(0, lbls, 0, 0, 0, nil, nil, storage.AOptions{})
+		require.EqualError(t, err, fmt.Sprintf(`label name "%s" is out of order: invalid sample`, labelName))
 	}
 
+	// Test adjacent duplicates (created via FromStrings which sorts).
 	add(labels.FromStrings("a", "c", "a", "b"), "a")
 	add(labels.FromStrings("a", "c", "a", "c"), "a")
 	add(labels.FromStrings("__name__", "up", "job", "prometheus", "le", "500", "le", "400", "unit", "s"), "le")
+
+	// Helper to create unsorted labels using ScratchBuilder without Sort().
+	unsortedLabels := func(ss ...string) labels.Labels {
+		b := labels.NewScratchBuilder(len(ss) / 2)
+		for i := 0; i < len(ss); i += 2 {
+			b.Add(ss[i], ss[i+1])
+		}
+		return b.Labels()
+	}
+
+	// Test non-adjacent duplicates (the bug that was previously missed).
+	// These labels have duplicate __name__ but they're not adjacent because labels are unsorted.
+	add(unsortedLabels("__name__", "up", "job", "prometheus", "__name__", "down"), "__name__")
+
+	// Test purely out-of-order labels (no duplicates, just unsorted).
+	add(unsortedLabels("z", "1", "a", "2"), "a")
+	add(unsortedLabels("b", "1", "a", "2", "c", "3"), "a")
 }
 
 func TestHeadAppenderV2_MemSeriesIsolation(t *testing.T) {
