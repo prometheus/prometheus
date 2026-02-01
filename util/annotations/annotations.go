@@ -42,8 +42,7 @@ func (a *Annotations) Add(err error) Annotations {
 	if *a == nil {
 		*a = Annotations{}
 	}
-	prevErr, exists := (*a)[err.Error()]
-	if exists {
+	if prevErr, exists := (*a)[err.Error()]; exists {
 		var anErr AnnoError
 		if errors.As(err, &anErr) {
 			err = anErr.Merge(prevErr)
@@ -63,8 +62,7 @@ func (a *Annotations) Merge(aa Annotations) Annotations {
 		*a = Annotations{}
 	}
 	for key, val := range aa {
-		prevVal, exists := (*a)[key]
-		if exists {
+		if prevVal, exists := (*a)[key]; exists {
 			var anErr AnnoError
 			if errors.As(val, &anErr) {
 				val = anErr.Merge(prevVal)
