@@ -43,7 +43,7 @@ func (a *Annotations) Add(err error) Annotations {
 		*a = Annotations{}
 	}
 	if prevErr, exists := (*a)[err.Error()]; exists {
-		var anErr AnnoError
+		var anErr annoError
 		if errors.As(err, &anErr) {
 			err = anErr.Merge(prevErr)
 		}
@@ -63,7 +63,7 @@ func (a *Annotations) Merge(aa Annotations) Annotations {
 	}
 	for key, val := range aa {
 		if prevVal, exists := (*a)[key]; exists {
-			var anErr AnnoError
+			var anErr annoError
 			if errors.As(val, &anErr) {
 				val = anErr.Merge(prevVal)
 			}
@@ -94,7 +94,7 @@ func (a Annotations) AsStrings(query string, maxWarnings, maxInfos int) (warning
 	warnSkipped := 0
 	infoSkipped := 0
 	for _, err := range a {
-		var anErr AnnoError
+		var anErr annoError
 		if errors.As(err, &anErr) {
 			anErr.SetQuery(query)
 		}
@@ -169,7 +169,9 @@ var (
 	HistogramCounterResetCollisionWarning   = fmt.Errorf("%w: conflicting counter resets during histogram", PromQLWarning)
 )
 
-type AnnoError interface {
+// annoError extends the standard error interface to provide additional functionality
+// for PromQL annotations, allowing them to be merged with other similar errors.
+type annoError interface {
 	error
 	// Necessary so we can use errors.Is() to disambiguate between warning and info.
 	Unwrap() error
@@ -203,6 +205,8 @@ func (e *annoErr) SetQuery(query string) {
 	e.Query = query
 }
 
+// We do not merge generic annotations, instead we just ignore the provided error
+// and return the original.
 func (e *annoErr) Merge(_ error) error {
 	return e
 }
