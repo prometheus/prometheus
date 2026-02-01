@@ -50,7 +50,7 @@ func TestXorOptSTChunk_MoreThan127Samples(t *testing.T) {
 		require.NoError(t, it.Err())
 	})
 
-	t.Run("non-zero ST after 127", func(t *testing.T) {
+	t.Run("non-zero ST after max encodable", func(t *testing.T) {
 		chunk := NewXORSTChunk()
 		app, err := chunk.Appender()
 		require.NoError(t, err)

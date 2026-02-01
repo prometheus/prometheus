@@ -250,7 +250,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 
 	for _, f := range []fmtCase{
 		{name: "XOR", newChunkFn: func() Chunk { return NewXORChunk() }, stUnsupported: true},
-		{name: "XOR_OPT_ST", newChunkFn: func() Chunk { return NewXORSTChunk() }},
+		{name: "XOR_ST", newChunkFn: func() Chunk { return NewXORSTChunk() }},
 	} {
 		for _, s := range sampleCases {
 			b.Run(fmt.Sprintf("fmt=%s/%s", f.name, s.name), func(b *testing.B) {
