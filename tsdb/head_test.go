@@ -56,6 +56,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 // newTestHeadDefaultOptions returns the HeadOptions that should be used by default in unit tests.
@@ -3861,17 +3862,35 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("mint=%d,maxt=%d,shouldWait=%t", c.mint, c.maxt, c.shouldWait), func(t *testing.T) {
+			// checkWaiting verifies WaitForPendingReadersInTimeRange behavior using synctest
+			// for deterministic time control. The function should block while an overlapping
+			// querier is open and return immediately when there's no overlap.
 			checkWaiting := func(cl io.Closer) {
-				var waitOver atomic.Bool
-				go func() {
-					db.head.WaitForPendingReadersInTimeRange(truncMint, truncMaxt)
-					waitOver.Store(true)
-				}()
-				<-time.After(550 * time.Millisecond)
-				require.Equal(t, !c.shouldWait, waitOver.Load())
-				require.NoError(t, cl.Close())
-				<-time.After(550 * time.Millisecond)
-				require.True(t, waitOver.Load())
+				synctest.Test(t, func(t *testing.T) {
+					var waitOver atomic.Bool
+					go func() {
+						db.head.WaitForPendingReadersInTimeRange(truncMint, truncMaxt)
+						waitOver.Store(true)
+					}()
+
+					// Wait for goroutine to either complete (no overlap) or block on Sleep (overlap).
+					synctest.Wait()
+
+					if c.shouldWait {
+						require.False(t, waitOver.Load(),
+							"WaitForPendingReadersInTimeRange should block while overlapping querier is open")
+						require.NoError(t, cl.Close())
+						// Advance fake time past the 500ms poll interval, then let goroutine process.
+						time.Sleep(time.Second)
+						synctest.Wait()
+						require.True(t, waitOver.Load(),
+							"WaitForPendingReadersInTimeRange should complete after querier is closed")
+					} else {
+						require.True(t, waitOver.Load(),
+							"WaitForPendingReadersInTimeRange should return immediately when no overlap")
+						require.NoError(t, cl.Close())
+					}
+				})
 			}
 
 			q, err := db.Querier(c.mint, c.maxt)
