@@ -50,7 +50,7 @@ func TestDB_InvalidSeries_AppendV2(t *testing.T) {
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
 
 		_, err = app.Append(0, labels.FromStrings("a", "1", "a", "2"), 0, 0, 0, nil, nil, storage.AOptions{})
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
+		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject out of order labels")
 	})
 
 	t.Run("Histograms", func(t *testing.T) {
@@ -58,7 +58,7 @@ func TestDB_InvalidSeries_AppendV2(t *testing.T) {
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
 
 		_, err = app.Append(0, labels.FromStrings("a", "1", "a", "2"), 0, 0, 0, tsdbutil.GenerateTestHistograms(1)[0], nil, storage.AOptions{})
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
+		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject out of order labels")
 	})
 
 	t.Run("Exemplars", func(t *testing.T) {
@@ -69,7 +69,7 @@ func TestDB_InvalidSeries_AppendV2(t *testing.T) {
 		partErr := &storage.AppendPartialError{}
 		require.ErrorAs(t, err, &partErr)
 		require.Len(t, partErr.ExemplarErrors, 1)
-		require.ErrorIs(t, partErr.ExemplarErrors[0], tsdb.ErrInvalidExemplar, "should reject duplicate labels")
+		require.ErrorIs(t, partErr.ExemplarErrors[0], tsdb.ErrInvalidExemplar, "should reject out of order labels")
 
 		e = exemplar.Exemplar{Labels: labels.FromStrings("a_somewhat_long_trace_id", "nYJSNtFrFTY37VR7mHzEE/LIDt7cdAQcuOzFajgmLDAdBSRHYPDzrxhMA4zz7el8naI/AoXFv9/e/G0vcETcIoNUi3OieeLfaIRQci2oa")}
 		_, err = app.Append(0, labels.FromStrings("a", "2"), 0, 0, 0, nil, nil, storage.AOptions{
