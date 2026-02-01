@@ -21,7 +21,7 @@ import (
 
 func TestXorOptSTChunk(t *testing.T) {
 	testChunkSTHandling(t, ValFloat, func() Chunk {
-		return NewXOROptSTChunk()
+		return NewXORSTChunk()
 	},
 	)
 }
@@ -29,7 +29,7 @@ func TestXorOptSTChunk(t *testing.T) {
 func TestXorOptSTChunk_MoreThan127Samples(t *testing.T) {
 	const afterMax = maxFirstSTChangeOn + 3
 	t.Run("zero ST", func(t *testing.T) {
-		chunk := NewXOROptSTChunk()
+		chunk := NewXORSTChunk()
 		app, err := chunk.Appender()
 		require.NoError(t, err)
 		for i := range afterMax {
@@ -51,7 +51,7 @@ func TestXorOptSTChunk_MoreThan127Samples(t *testing.T) {
 	})
 
 	t.Run("non-zero ST after 127", func(t *testing.T) {
-		chunk := NewXOROptSTChunk()
+		chunk := NewXORSTChunk()
 		app, err := chunk.Appender()
 		require.NoError(t, err)
 		for i := range afterMax {
@@ -83,26 +83,16 @@ func TestXorOptSTChunk_MoreThan127Samples(t *testing.T) {
 
 func TestXorOptSTChunk_STHeader(t *testing.T) {
 	b := make([]byte, 1)
-	writeHeaderFirstSTKnown(b)
-	firstSTKnown, firstSTChangeOn := readSTHeader(b)
-	require.True(t, firstSTKnown)
-	require.Equal(t, uint8(0), firstSTChangeOn)
-
-	b = make([]byte, 1)
-	firstSTKnown, firstSTChangeOn = readSTHeader(b)
-	require.False(t, firstSTKnown)
+	firstSTChangeOn := readSTHeader(b)
 	require.Equal(t, uint8(0), firstSTChangeOn)
 
 	b = make([]byte, 1)
 	writeHeaderFirstSTChangeOn(b, 1)
-	firstSTKnown, firstSTChangeOn = readSTHeader(b)
-	require.False(t, firstSTKnown)
+	firstSTChangeOn = readSTHeader(b)
 	require.Equal(t, uint8(1), firstSTChangeOn)
 
 	b = make([]byte, 1)
-	writeHeaderFirstSTKnown(b)
 	writeHeaderFirstSTChangeOn(b, 119)
-	firstSTKnown, firstSTChangeOn = readSTHeader(b)
-	require.True(t, firstSTKnown)
+	firstSTChangeOn = readSTHeader(b)
 	require.Equal(t, uint8(119), firstSTChangeOn)
 }

@@ -34,7 +34,7 @@ func TestChunk(t *testing.T) {
 		factory    func() Chunk
 	}{
 		{encoding: EncXOR, supportsST: false, factory: func() Chunk { return NewXORChunk() }},
-		{encoding: EncXOROptST, supportsST: true, factory: func() Chunk { return NewXOROptSTChunk() }},
+		{encoding: EncXORST, supportsST: true, factory: func() Chunk { return NewXORSTChunk() }},
 	}
 	for _, tc := range testcases {
 		t.Run(fmt.Sprintf("%v", tc.encoding), func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestPool(t *testing.T) {
 		},
 		{
 			name:     "xor opt st",
-			encoding: EncXOROptST,
+			encoding: EncXORST,
 		},
 		{
 			name:     "invalid encoding",
@@ -167,8 +167,8 @@ func TestPool(t *testing.T) {
 				b = &c.(*HistogramChunk).b
 			case EncFloatHistogram:
 				b = &c.(*FloatHistogramChunk).b
-			case EncXOROptST:
-				b = &c.(*XorOptSTChunk).b
+			case EncXORST:
+				b = &c.(*XorSTChunk).b
 			default:
 				b = &c.(*XORChunk).b
 			}
