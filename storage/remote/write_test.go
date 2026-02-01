@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -59,7 +60,7 @@ func testRemoteWriteConfig() *config.RemoteWriteConfig {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 }
 
@@ -75,7 +76,7 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	cfg2 := config.RemoteWriteConfig{
 		Name: "write-2",
@@ -86,7 +87,7 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	cfg3 := config.RemoteWriteConfig{
 		URL: &common_config.URL{
@@ -96,7 +97,7 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 
 	for _, tc := range []struct {
@@ -177,7 +178,7 @@ func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	c2 := &config.RemoteWriteConfig{
 		URL: &common_config.URL{
@@ -187,7 +188,7 @@ func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	conf := &config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
@@ -287,7 +288,7 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 				NameValidationScheme: model.UTF8Validation,
 			},
 		},
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	c1 := &config.RemoteWriteConfig{
 		RemoteTimeout: model.Duration(20 * time.Second),
@@ -295,12 +296,12 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 		HTTPClientConfig: common_config.HTTPClientConfig{
 			BearerToken: "foo",
 		},
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	c2 := &config.RemoteWriteConfig{
 		RemoteTimeout:   model.Duration(30 * time.Second),
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 
 	conf := &config.Config{
@@ -310,9 +311,7 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	// We need to set URL's so that metric creation doesn't panic.
 	for i := range conf.RemoteWriteConfigs {
 		conf.RemoteWriteConfigs[i].URL = &common_config.URL{
-			URL: &url.URL{
-				Host: "http://test-storage.com",
-			},
+			URL: mustURLParse("http://test-storage.com"),
 		}
 	}
 	require.NoError(t, s.ApplyConfig(conf))
@@ -922,6 +921,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			otlpOpts := OTLPOptions{
 				EnableTypeAndUnitLabels: testCase.typeAndUnitLabels,
+				AppendMetadata:          true,
 			}
 			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg, otlpOpts)
 			for _, sample := range testCase.expectedSamples {
@@ -938,7 +938,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 	}
 }
 
-// Check that start time is ingested if ingestCTZeroSample is enabled
+// Check that start time is ingested if ingestSTZeroSample is enabled
 // and the start time is actually set (non-zero).
 func TestOTLPWriteHandler_StartTime(t *testing.T) {
 	timestamp := time.Now()
@@ -1023,72 +1023,72 @@ func TestOTLPWriteHandler_StartTime(t *testing.T) {
 		},
 	}
 
-	expectedSamplesWithCTZero := make([]mockSample, 0, len(expectedSamples)*2-1) // All samples will get CT zero, except target_info.
+	expectedSamplesWithSTZero := make([]mockSample, 0, len(expectedSamples)*2-1) // All samples will get ST zero, except target_info.
 	for _, s := range expectedSamples {
 		if s.l.Get(model.MetricNameLabel) != "target_info" {
-			expectedSamplesWithCTZero = append(expectedSamplesWithCTZero, mockSample{
+			expectedSamplesWithSTZero = append(expectedSamplesWithSTZero, mockSample{
 				l: s.l.Copy(),
 				t: startTime.UnixMilli(),
 				v: 0,
 			})
 		}
-		expectedSamplesWithCTZero = append(expectedSamplesWithCTZero, s)
+		expectedSamplesWithSTZero = append(expectedSamplesWithSTZero, s)
 	}
-	expectedHistogramsWithCTZero := make([]mockHistogram, 0, len(expectedHistograms)*2)
+	expectedHistogramsWithSTZero := make([]mockHistogram, 0, len(expectedHistograms)*2)
 	for _, s := range expectedHistograms {
 		if s.l.Get(model.MetricNameLabel) != "target_info" {
-			expectedHistogramsWithCTZero = append(expectedHistogramsWithCTZero, mockHistogram{
+			expectedHistogramsWithSTZero = append(expectedHistogramsWithSTZero, mockHistogram{
 				l: s.l.Copy(),
 				t: startTime.UnixMilli(),
 				h: &histogram.Histogram{},
 			})
 		}
-		expectedHistogramsWithCTZero = append(expectedHistogramsWithCTZero, s)
+		expectedHistogramsWithSTZero = append(expectedHistogramsWithSTZero, s)
 	}
 
 	for _, testCase := range []struct {
 		name               string
 		otlpOpts           OTLPOptions
 		startTime          time.Time
-		expectCTZero       bool
+		expectSTZero       bool
 		expectedSamples    []mockSample
 		expectedHistograms []mockHistogram
 	}{
 		{
-			name: "IngestCTZero=false/startTime=0",
+			name: "IngestSTZero=false/startTime=0",
 			otlpOpts: OTLPOptions{
-				IngestCTZeroSample: false,
+				IngestSTZeroSample: false,
 			},
 			startTime:          zeroTime,
 			expectedSamples:    expectedSamples,
 			expectedHistograms: expectedHistograms,
 		},
 		{
-			name: "IngestCTZero=true/startTime=0",
+			name: "IngestSTZero=true/startTime=0",
 			otlpOpts: OTLPOptions{
-				IngestCTZeroSample: true,
+				IngestSTZeroSample: true,
 			},
 			startTime:          zeroTime,
 			expectedSamples:    expectedSamples,
 			expectedHistograms: expectedHistograms,
 		},
 		{
-			name: "IngestCTZero=false/startTime=ts-1ms",
+			name: "IngestSTZero=false/startTime=ts-1ms",
 			otlpOpts: OTLPOptions{
-				IngestCTZeroSample: false,
+				IngestSTZeroSample: false,
 			},
 			startTime:          startTime,
 			expectedSamples:    expectedSamples,
 			expectedHistograms: expectedHistograms,
 		},
 		{
-			name: "IngestCTZero=true/startTime=ts-1ms",
+			name: "IngestSTZero=true/startTime=ts-1ms",
 			otlpOpts: OTLPOptions{
-				IngestCTZeroSample: true,
+				IngestSTZeroSample: true,
 			},
 			startTime:          startTime,
-			expectedSamples:    expectedSamplesWithCTZero,
-			expectedHistograms: expectedHistogramsWithCTZero,
+			expectedSamples:    expectedSamplesWithSTZero,
+			expectedHistograms: expectedHistogramsWithSTZero,
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {

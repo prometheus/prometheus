@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -410,7 +410,7 @@ func BenchmarkConvertBucketLayout(b *testing.B) {
 			}
 		}
 		b.Run(fmt.Sprintf("gap %d", scenario.gap), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				convertBucketsLayout(buckets.BucketCounts().AsRaw(), buckets.Offset(), 0, true)
 			}
 		})
@@ -673,7 +673,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
@@ -689,7 +689,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
@@ -746,7 +746,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
@@ -762,7 +762,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
@@ -819,7 +819,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
@@ -835,7 +835,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						ls:               labelsAnother,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
@@ -861,15 +861,20 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			}
 			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
 			require.NoError(t, err)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
+
 			annots, err := converter.addExponentialHistogramDataPoints(
 				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
-				},
+				settings,
 				pmetric.AggregationTemporalityCumulative,
-				tt.scope,
 				Metadata{
 					MetricFamilyName: name,
 				},
@@ -1010,7 +1015,7 @@ func BenchmarkConvertHistogramBucketsToNHCBLayout(b *testing.B) {
 			}
 		}
 		b.Run(fmt.Sprintf("gap %d", scenario.gap), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				offset := getBucketOffset(buckets)
 				convertBucketsLayout(buckets, int32(offset), 0, false)
 			}
@@ -1146,7 +1151,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           3,
 							Sum:             3,
@@ -1162,7 +1167,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           11,
 							Sum:             5,
@@ -1219,7 +1224,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           3,
 							Sum:             3,
@@ -1235,7 +1240,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           11,
 							Sum:             5,
@@ -1292,7 +1297,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           6,
 							Sum:             3,
@@ -1308,7 +1313,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 						ls:               labelsAnother,
 						meta:             metadata.Metadata{},
 						t:                0,
-						ct:               0,
+						st:               0,
 						h: &histogram.Histogram{
 							Count:           11,
 							Sum:             5,
@@ -1334,16 +1339,21 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			}
 			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
 			require.NoError(t, err)
+			settings := Settings{
+				ConvertHistogramsToNHCB: true,
+				PromoteScopeMetadata:    tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
+
 			annots, err := converter.addCustomBucketsHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					ConvertHistogramsToNHCB: true,
-					PromoteScopeMetadata:    tt.promoteScope,
-				},
+				settings,
 				pmetric.AggregationTemporalityCumulative,
-				tt.scope,
 				Metadata{
 					MetricFamilyName: name,
 				},

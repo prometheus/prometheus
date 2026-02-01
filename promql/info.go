@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -55,13 +55,13 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 	}
 
 	// Don't try to enrich info series.
-	ignoreSeries := map[int]struct{}{}
+	ignoreSeries := map[uint64]struct{}{}
 loop:
-	for i, s := range mat {
+	for _, s := range mat {
 		name := s.Metric.Get(labels.MetricName)
 		for _, m := range infoNameMatchers {
 			if m.Matches(name) {
-				ignoreSeries[i] = struct{}{}
+				ignoreSeries[s.Metric.Hash()] = struct{}{}
 				continue loop
 			}
 		}
@@ -121,11 +121,11 @@ func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
 // fetchInfoSeries fetches info series given matching identifying labels in mat.
 // Series in ignoreSeries are not fetched.
 // dataLabelMatchers may be mutated.
-func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[int]struct{}, dataLabelMatchers map[string][]*labels.Matcher, selectHints storage.SelectHints) (Matrix, annotations.Annotations, error) {
+func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[uint64]struct{}, dataLabelMatchers map[string][]*labels.Matcher, selectHints storage.SelectHints) (Matrix, annotations.Annotations, error) {
 	// A map of values for all identifying labels we are interested in.
 	idLblValues := map[string]map[string]struct{}{}
-	for i, s := range mat {
-		if _, exists := ignoreSeries[i]; exists {
+	for _, s := range mat {
+		if _, exists := ignoreSeries[s.Metric.Hash()]; exists {
 			continue
 		}
 
@@ -143,6 +143,23 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		}
 	}
 	if len(idLblValues) == 0 {
+		// Even when returning early, we need to remove __name__ from dataLabelMatchers
+		// since it's not a data label selector (it's used to select which info metrics
+		// to consider). Without this, combineWithInfoVector would incorrectly exclude
+		// series when only __name__ is specified in the selector.
+		for name, ms := range dataLabelMatchers {
+			for i, m := range ms {
+				if m.Name == labels.MetricName {
+					ms = slices.Delete(ms, i, i+1)
+					break
+				}
+			}
+			if len(ms) > 0 {
+				dataLabelMatchers[name] = ms
+			} else {
+				delete(dataLabelMatchers, name)
+			}
+		}
 		return nil, nil, nil
 	}
 
@@ -197,7 +214,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 }
 
 // combineWithInfoSeries combines mat with select data labels from infoMat.
-func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Matrix, ignoreSeries map[int]struct{}, dataLabelMatchers map[string][]*labels.Matcher) (Matrix, annotations.Annotations) {
+func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Matrix, ignoreSeries map[uint64]struct{}, dataLabelMatchers map[string][]*labels.Matcher) (Matrix, annotations.Annotations) {
 	buf := make([]byte, 0, 1024)
 	lb := labels.NewScratchBuilder(0)
 	sigFunction := func(name string) func(labels.Labels) string {
@@ -249,13 +266,13 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 	tempNumSamples := ev.currentSamples
 
 	// For every base series, compute signature per info metric.
-	baseSigs := make([]map[string]string, 0, len(mat))
+	baseSigs := make(map[uint64]map[string]string, len(mat))
 	for _, s := range mat {
 		sigs := make(map[string]string, len(infoMetrics))
 		for infoName := range infoMetrics {
 			sigs[infoName] = sigfs[infoName](s.Metric)
 		}
-		baseSigs = append(baseSigs, sigs)
+		baseSigs[s.Metric.Hash()] = sigs
 	}
 
 	infoSigs := make(map[uint64]string, len(infoMat))
@@ -331,16 +348,16 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 
 // combineWithInfoVector combines base and info Vectors.
 // Base series in ignoreSeries are not combined.
-func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[int]struct{}, baseSigs []map[string]string, infoSigs map[uint64]string, enh *EvalNodeHelper, dataLabelMatchers map[string][]*labels.Matcher) (Vector, error) {
+func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[uint64]struct{}, baseSigs map[uint64]map[string]string, infoSigs map[uint64]string, enh *EvalNodeHelper, dataLabelMatchers map[string][]*labels.Matcher) (Vector, error) {
 	if len(base) == 0 {
 		return nil, nil // Short-circuit: nothing is going to match.
 	}
 
 	// All samples from the info Vector hashed by the matching label/values.
-	if enh.rightSigs == nil {
-		enh.rightSigs = make(map[string]Sample, len(enh.Out))
+	if enh.rightStrSigs == nil {
+		enh.rightStrSigs = make(map[string]Sample, len(enh.Out))
 	} else {
-		clear(enh.rightSigs)
+		clear(enh.rightStrSigs)
 	}
 
 	for _, s := range info {
@@ -351,7 +368,7 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 		origT := int64(s.F)
 
 		sig := infoSigs[s.Metric.Hash()]
-		if existing, exists := enh.rightSigs[sig]; exists {
+		if existing, exists := enh.rightStrSigs[sig]; exists {
 			// We encode original info sample timestamps via the float value.
 			existingOrigT := int64(existing.F)
 			switch {
@@ -359,19 +376,21 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 				// Keep the other info sample, since it's newer.
 			case existingOrigT < origT:
 				// Keep this info sample, since it's newer.
-				enh.rightSigs[sig] = s
+				enh.rightStrSigs[sig] = s
 			default:
 				// The two info samples have the same timestamp - conflict.
 				ev.errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d",
 					existing.Metric.String(), existingOrigT, s.Metric.String(), origT)
 			}
 		} else {
-			enh.rightSigs[sig] = s
+			enh.rightStrSigs[sig] = s
 		}
 	}
 
-	for i, bs := range base {
-		if _, exists := ignoreSeries[i]; exists {
+	for _, bs := range base {
+		hash := bs.Metric.Hash()
+
+		if _, exists := ignoreSeries[hash]; exists {
 			// This series should not be enriched with info metric data labels.
 			enh.Out = append(enh.Out, Sample{
 				Metric: bs.Metric,
@@ -386,8 +405,8 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 
 		// For every info metric name, try to find an info series with the same signature.
 		seenInfoMetrics := map[string]struct{}{}
-		for infoName, sig := range baseSigs[i] {
-			is, exists := enh.rightSigs[sig]
+		for infoName, sig := range baseSigs[hash] {
+			is, exists := enh.rightStrSigs[sig]
 			if !exists {
 				continue
 			}
@@ -422,9 +441,10 @@ func (ev *evaluator) combineWithInfoVector(base, info Vector, ignoreSeries map[i
 		}
 
 		infoLbls := enh.lb.Labels()
-		if infoLbls.Len() == 0 {
-			// If there's at least one data label matcher not matching the empty string,
-			// we have to ignore this series as there are no matching info series.
+		if len(seenInfoMetrics) == 0 {
+			// No info series matched this base series. If there's at least one data
+			// label matcher not matching the empty string, we have to ignore this
+			// series as there are no matching info series.
 			allMatchersMatchEmpty := true
 			for _, ms := range dataLabelMatchers {
 				for _, m := range ms {

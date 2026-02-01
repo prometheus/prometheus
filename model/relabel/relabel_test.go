@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -831,6 +831,22 @@ func TestRelabelValidate(t *testing.T) {
 				NameValidationScheme: model.UTF8Validation,
 			},
 		},
+		{
+			config: Config{
+				Regex:                MustNewRegexp("__meta_kubernetes_pod_label_(strimzi_io_.+)"),
+				Action:               LabelMap,
+				Replacement:          "$1",
+				NameValidationScheme: model.LegacyValidation,
+			},
+		},
+		{
+			config: Config{
+				Regex:                MustNewRegexp("__meta_(.+)"),
+				Action:               LabelMap,
+				Replacement:          "${1}",
+				NameValidationScheme: model.LegacyValidation,
+			},
+		},
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -1049,7 +1065,7 @@ func BenchmarkRelabel(b *testing.B) {
 	}
 	for _, tt := range tests {
 		b.Run(tt.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_, _ = Process(tt.lbls, tt.cfgs...)
 			}
 		})

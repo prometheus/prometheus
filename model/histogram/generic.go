@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -28,33 +28,41 @@ const (
 	CustomBucketsSchema          int32 = -53
 )
 
+type Error struct {
+	error
+}
+
+func (e Error) Unwrap() error {
+	return e.error
+}
+
 var (
-	ErrHistogramCountNotBigEnough       = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
-	ErrHistogramCountMismatch           = errors.New("histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)")
-	ErrHistogramNegativeCount           = errors.New("histogram's observation count is negative")
-	ErrHistogramNegativeBucketCount     = errors.New("histogram has a bucket whose observation count is negative")
-	ErrHistogramSpanNegativeOffset      = errors.New("histogram has a span whose offset is negative")
-	ErrHistogramSpansBucketsMismatch    = errors.New("histogram spans specify different number of buckets than provided")
-	ErrHistogramCustomBucketsMismatch   = errors.New("histogram custom bounds are too few")
-	ErrHistogramCustomBucketsInvalid    = errors.New("histogram custom bounds must be in strictly increasing order")
-	ErrHistogramCustomBucketsInfinite   = errors.New("histogram custom bounds must be finite")
-	ErrHistogramsIncompatibleSchema     = errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")
-	ErrHistogramsIncompatibleBounds     = errors.New("cannot apply this operation on custom buckets histograms with different custom bounds")
-	ErrHistogramCustomBucketsZeroCount  = errors.New("custom buckets: must have zero count of 0")
-	ErrHistogramCustomBucketsZeroThresh = errors.New("custom buckets: must have zero threshold of 0")
-	ErrHistogramCustomBucketsNegSpans   = errors.New("custom buckets: must not have negative spans")
-	ErrHistogramCustomBucketsNegBuckets = errors.New("custom buckets: must not have negative buckets")
-	ErrHistogramExpSchemaCustomBounds   = errors.New("histogram with exponential schema must not have custom bounds")
-	ErrHistogramsInvalidSchema          = fmt.Errorf("histogram has an invalid schema, which must be between %d and %d for exponential buckets, or %d for custom buckets", ExponentialSchemaMin, ExponentialSchemaMax, CustomBucketsSchema)
-	ErrHistogramsUnknownSchema          = fmt.Errorf("histogram has an unknown schema, which must be between %d and %d for exponential buckets, or %d for custom buckets", ExponentialSchemaMinReserved, ExponentialSchemaMaxReserved, CustomBucketsSchema)
+	ErrHistogramCountNotBigEnough       = Error{error: errors.New("histogram's observation count should be at least the number of observations found in the buckets")}
+	ErrHistogramCountMismatch           = Error{error: errors.New("histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)")}
+	ErrHistogramNegativeCount           = Error{error: errors.New("histogram's observation count is negative")}
+	ErrHistogramNegativeBucketCount     = Error{error: errors.New("histogram has a bucket whose observation count is negative")}
+	ErrHistogramSpanNegativeOffset      = Error{error: errors.New("histogram has a span whose offset is negative")}
+	ErrHistogramSpansBucketsMismatch    = Error{error: errors.New("histogram spans specify different number of buckets than provided")}
+	ErrHistogramCustomBucketsMismatch   = Error{error: errors.New("histogram custom bounds are too few")}
+	ErrHistogramCustomBucketsInvalid    = Error{error: errors.New("histogram custom bounds must be in strictly increasing order")}
+	ErrHistogramCustomBucketsInfinite   = Error{error: errors.New("histogram custom bounds must be finite")}
+	ErrHistogramCustomBucketsNaN        = Error{error: errors.New("histogram custom bounds must not be NaN")}
+	ErrHistogramsIncompatibleSchema     = Error{error: errors.New("cannot apply this operation on histograms with a mix of exponential and custom bucket schemas")}
+	ErrHistogramCustomBucketsZeroCount  = Error{error: errors.New("custom buckets: must have zero count of 0")}
+	ErrHistogramCustomBucketsZeroThresh = Error{error: errors.New("custom buckets: must have zero threshold of 0")}
+	ErrHistogramCustomBucketsNegSpans   = Error{error: errors.New("custom buckets: must not have negative spans")}
+	ErrHistogramCustomBucketsNegBuckets = Error{error: errors.New("custom buckets: must not have negative buckets")}
+	ErrHistogramExpSchemaCustomBounds   = Error{error: errors.New("histogram with exponential schema must not have custom bounds")}
+	ErrHistogramsInvalidSchema          = Error{error: fmt.Errorf("histogram has an invalid schema, which must be between %d and %d for exponential buckets, or %d for custom buckets", ExponentialSchemaMin, ExponentialSchemaMax, CustomBucketsSchema)}
+	ErrHistogramsUnknownSchema          = Error{error: fmt.Errorf("histogram has an unknown schema, which must be between %d and %d for exponential buckets, or %d for custom buckets", ExponentialSchemaMinReserved, ExponentialSchemaMaxReserved, CustomBucketsSchema)}
 )
 
 func InvalidSchemaError(s int32) error {
-	return fmt.Errorf("%w, got schema %d", ErrHistogramsInvalidSchema, s)
+	return Error{error: fmt.Errorf("%w, got schema %d", ErrHistogramsInvalidSchema, s)}
 }
 
 func UnknownSchemaError(s int32) error {
-	return fmt.Errorf("%w, got schema %d", ErrHistogramsUnknownSchema, s)
+	return Error{error: fmt.Errorf("%w, got schema %d", ErrHistogramsUnknownSchema, s)}
 }
 
 func IsCustomBucketsSchema(s int32) bool {
@@ -77,6 +85,20 @@ func IsValidSchema(s int32) bool {
 // reduce resolution to the nearest supported schema.
 func IsKnownSchema(s int32) bool {
 	return IsCustomBucketsSchema(s) || IsExponentialSchemaReserved(s)
+}
+
+// CustomBucketBoundsMatch compares histogram custom bucket bounds (CustomValues)
+// and returns true if all values match.
+func CustomBucketBoundsMatch(c1, c2 []float64) bool {
+	if len(c1) != len(c2) {
+		return false
+	}
+	for i, c := range c1 {
+		if c != c2[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // BucketCount is a type constraint for the count in a bucket, which can be
@@ -453,8 +475,11 @@ func checkHistogramBuckets[BC BucketCount, IBC InternalBucketCount](buckets []IB
 
 func checkHistogramCustomBounds(bounds []float64, spans []Span, numBuckets int) error {
 	prev := math.Inf(-1)
-	for _, curr := range bounds {
-		if curr <= prev {
+	for i, curr := range bounds {
+		if math.IsNaN(curr) {
+			return ErrHistogramCustomBucketsNaN
+		}
+		if i > 0 && curr <= prev {
 			return fmt.Errorf("previous bound is %f and current is %f: %w", prev, curr, ErrHistogramCustomBucketsInvalid)
 		}
 		prev = curr
@@ -713,6 +738,8 @@ var exponentialBounds = [][]float64{
 // deltas. Set it to false if the buckets contain absolute counts.
 // Set inplace to true to reuse input slices and avoid allocations (otherwise
 // new slices will be allocated for result).
+// The functions returns an error if there are too many or too few buckets for the spans
+// or if any span except the first has a negative offset.
 func reduceResolution[IBC InternalBucketCount](
 	originSpans []Span,
 	originBuckets []IBC,
@@ -720,7 +747,7 @@ func reduceResolution[IBC InternalBucketCount](
 	targetSchema int32,
 	deltaBuckets bool,
 	inplace bool,
-) ([]Span, []IBC) {
+) ([]Span, []IBC, error) {
 	var (
 		targetSpans           []Span // The spans in the target schema.
 		targetBuckets         []IBC  // The bucket counts in the target schema.
@@ -739,10 +766,18 @@ func reduceResolution[IBC InternalBucketCount](
 		targetBuckets = originBuckets[:0]
 	}
 
-	for _, span := range originSpans {
+	for n, span := range originSpans {
+		if n > 0 && span.Offset < 0 {
+			return nil, nil, fmt.Errorf("span number %d with offset %d: %w", n+1, span.Offset, ErrHistogramSpanNegativeOffset)
+		}
 		// Determine the index of the first bucket in this span.
 		bucketIdx += span.Offset
 		for j := 0; j < int(span.Length); j++ {
+			// Protect against too few buckets in the origin.
+			if bucketCountIdx >= len(originBuckets) {
+				return nil, nil, fmt.Errorf("have %d buckets but spans need more: %w", len(originBuckets), ErrHistogramSpansBucketsMismatch)
+			}
+
 			// Determine the index of the bucket in the target schema from the index in the original schema.
 			targetBucketIdx = targetIdx(bucketIdx, originSchema, targetSchema)
 
@@ -801,12 +836,33 @@ func reduceResolution[IBC InternalBucketCount](
 					targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
 				}
 			}
-
 			bucketIdx++
 			bucketCountIdx++
 		}
 	}
+	if bucketCountIdx != len(originBuckets) {
+		return nil, nil, fmt.Errorf("spans need %d buckets, have %d buckets: %w", bucketCountIdx, len(originBuckets), ErrHistogramSpansBucketsMismatch)
+	}
+	return targetSpans, targetBuckets, nil
+}
 
+// mustReduceResolution works like reduceResolution, but panics instead of
+// returning an error. Use mustReduceResolution if you are sure that the spans
+// and buckets are valid.
+func mustReduceResolution[IBC InternalBucketCount](
+	originSpans []Span,
+	originBuckets []IBC,
+	originSchema,
+	targetSchema int32,
+	deltaBuckets bool,
+	inplace bool,
+) ([]Span, []IBC) {
+	targetSpans, targetBuckets, err := reduceResolution(
+		originSpans, originBuckets, originSchema, targetSchema, deltaBuckets, inplace,
+	)
+	if err != nil {
+		panic(err)
+	}
 	return targetSpans, targetBuckets
 }
 

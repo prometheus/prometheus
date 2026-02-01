@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -83,7 +83,7 @@ func BenchmarkOpenBlock(b *testing.B) {
 	tmpdir := b.TempDir()
 	blockDir := createBlock(b, tmpdir, genSeries(1e6, 20, 0, 10))
 	b.Run("benchmark", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			block, err := OpenBlock(nil, blockDir, nil, nil)
 			require.NoError(b, err)
 			require.NoError(b, block.Close())
@@ -176,7 +176,7 @@ func TestCorruptedChunk(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpdir := t.TempDir()
 
-			series := storage.NewListSeries(labels.FromStrings("a", "b"), []chunks.Sample{sample{1, 1, nil, nil}})
+			series := storage.NewListSeries(labels.FromStrings("a", "b"), []chunks.Sample{sample{0, 1, 1, nil, nil}})
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
 			files, err := sequenceFiles(chunkDir(blockDir))
 			require.NoError(t, err)
@@ -236,7 +236,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
 			"tens", fmt.Sprintf("value%d", i/10),
 			"unique", fmt.Sprintf("value%d", i),
-		), []chunks.Sample{sample{100, 0, nil, nil}}))
+		), []chunks.Sample{sample{0, 100, 0, nil, nil}}))
 	}
 
 	blockDir := createBlock(t, tmpdir, seriesEntries)
@@ -319,7 +319,7 @@ func TestBlockQuerierReturnsSortedLabelValues(t *testing.T) {
 	for i := 100; i > 0; i-- {
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
 			"__name__", fmt.Sprintf("value%d", i),
-		), []chunks.Sample{sample{100, 0, nil, nil}}))
+		), []chunks.Sample{sample{0, 100, 0, nil, nil}}))
 	}
 
 	blockDir := createBlock(t, tmpdir, seriesEntries)
@@ -436,7 +436,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 			"a_unique", fmt.Sprintf("value%d", i),
 			"b_tens", fmt.Sprintf("value%d", i/(metricCount/10)),
 			"c_ninety", fmt.Sprintf("value%d", i/(metricCount/10)/9), // "0" for the first 90%, then "1"
-		), []chunks.Sample{sample{100, 0, nil, nil}}))
+		), []chunks.Sample{sample{0, 100, 0, nil, nil}}))
 	}
 
 	blockDir := createBlock(b, tmpdir, seriesEntries)
@@ -455,10 +455,9 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "c_ninety", "value0")}
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
+	for b.Loop() {
 		actualValues, err := indexReader.LabelValues(ctx, "b_tens", nil, matchers...)
 		require.NoError(b, err)
 		require.Len(b, actualValues, 9)
@@ -473,13 +472,13 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	for i := range 100 {
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
 			"unique", fmt.Sprintf("value%d", i),
-		), []chunks.Sample{sample{100, 0, nil, nil}}))
+		), []chunks.Sample{sample{0, 100, 0, nil, nil}}))
 
 		if i%10 == 0 {
 			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
 				"tens", fmt.Sprintf("value%d", i/10),
 				"unique", fmt.Sprintf("value%d", i),
-			), []chunks.Sample{sample{100, 0, nil, nil}}))
+			), []chunks.Sample{sample{0, 100, 0, nil, nil}}))
 		}
 
 		if i%20 == 0 {
@@ -487,7 +486,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 				"tens", fmt.Sprintf("value%d", i/10),
 				"twenties", fmt.Sprintf("value%d", i/20),
 				"unique", fmt.Sprintf("value%d", i),
-			), []chunks.Sample{sample{100, 0, nil, nil}}))
+			), []chunks.Sample{sample{0, 100, 0, nil, nil}}))
 		}
 	}
 
@@ -543,7 +542,7 @@ func TestBlockIndexReader_PostingsForLabelMatching(t *testing.T) {
 	testPostingsForLabelMatching(t, 2, func(t *testing.T, series []labels.Labels) IndexReader {
 		var seriesEntries []storage.Series
 		for _, s := range series {
-			seriesEntries = append(seriesEntries, storage.NewListSeries(s, []chunks.Sample{sample{100, 0, nil, nil}}))
+			seriesEntries = append(seriesEntries, storage.NewListSeries(s, []chunks.Sample{sample{0, 100, 0, nil, nil}}))
 		}
 
 		blockDir := createBlock(t, t.TempDir(), seriesEntries)

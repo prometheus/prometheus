@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -279,4 +279,14 @@ func RegisterSDMetrics(registerer prometheus.Registerer, rmm RefreshMetricsManag
 		metrics[conf.Name()] = currentSdMetrics
 	}
 	return metrics, nil
+}
+
+// RegisteredConfigNames returns the names of all registered service discovery providers.
+func RegisteredConfigNames() []string {
+	names := make([]string, 0, len(configNames))
+	for name := range configNames {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -59,8 +59,8 @@ func BenchmarkPostingStatsMaxHep(b *testing.B) {
 	stats := &maxHeap{}
 	const maxCount = 9000000
 	const heapLength = 10
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+
+	for b.Loop() {
 		stats.init(heapLength)
 		for i := range maxCount {
 			item := Stat{

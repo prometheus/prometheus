@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -114,15 +114,19 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 			metric := tt.metric()
 			mockAppender := &mockCombinedAppender{}
 			converter := NewPrometheusConverter(mockAppender)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addGaugeNumberDataPoints(
 				context.Background(),
 				metric.Gauge().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
-				},
-				tt.scope,
+				settings,
 				Metadata{
 					MetricFamilyName: metric.Name(),
 				},
@@ -272,7 +276,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 						ls:               lbls,
 						meta:             metadata.Metadata{},
 						t:                convertTimeStamp(ts),
-						ct:               convertTimeStamp(ts),
+						st:               convertTimeStamp(ts),
 						v:                1,
 					},
 				}
@@ -344,15 +348,19 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 			metric := tt.metric()
 			mockAppender := &mockCombinedAppender{}
 			converter := NewPrometheusConverter(mockAppender)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addSumNumberDataPoints(
 				context.Background(),
 				metric.Sum().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
-				},
-				tt.scope,
+				settings,
 				Metadata{
 					MetricFamilyName: metric.Name(),
 				},

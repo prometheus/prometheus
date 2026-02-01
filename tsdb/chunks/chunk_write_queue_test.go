@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -232,7 +232,7 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 					start.Add(1)
 
 					jobs := make(chan chunkWriteJob, b.N)
-					for i := 0; i < b.N; i++ {
+					for i := 0; b.Loop(); i++ {
 						jobs <- chunkWriteJob{
 							seriesRef: HeadSeriesRef(i),
 							ref:       ChunkDiskMapperRef(i),

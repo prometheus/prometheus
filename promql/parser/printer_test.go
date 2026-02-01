@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,8 +23,10 @@ import (
 
 func TestExprString(t *testing.T) {
 	ExperimentalDurationExpr = true
+	EnableBinopFillModifiers = true
 	t.Cleanup(func() {
 		ExperimentalDurationExpr = false
+		EnableBinopFillModifiers = false
 	})
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output
@@ -95,6 +97,45 @@ func TestExprString(t *testing.T) {
 			out: `a - c`,
 		},
 		{
+			// This is a bit of an odd case, but valid. If the user specifies ignoring() with
+			// no labels, it means that both label sets have to be exactly the same on both
+			// sides (except for the metric name). This is the same behavior as specifying
+			// no matching modifier at all, but if the user wants to include the metric name
+			// from either side in the output via group_x(__name__), they have to specify
+			// ignoring() explicitly to be able to do so, since the grammar does not allow
+			// grouping modifiers without either ignoring(...) or on(...). So we need to
+			// preserve the empty ignoring() clause in this case.
+			//
+			//   a - group_left(__name__) c             <--- Parse error
+			//   a - ignoring() group_left(__name__) c  <--- Valid
+			in:  `a - ignoring() group_left(__metric__) c`,
+			out: `a - ignoring () group_left (__metric__) c`,
+		},
+		{
+			in:  `a - ignoring() group_left c`,
+			out: `a - ignoring () group_left () c`,
+		},
+		{
+			in:  `a + fill(-23) b`,
+			out: `a + fill (-23) b`,
+		},
+		{
+			in:  `a + fill_left(-23) b`,
+			out: `a + fill_left (-23) b`,
+		},
+		{
+			in:  `a + fill_right(42) b`,
+			out: `a + fill_right (42) b`,
+		},
+		{
+			in:  `a + fill_left(-23) fill_right(42) b`,
+			out: `a + fill_left (-23) fill_right (42) b`,
+		},
+		{
+			in:  `a + on(b) group_left fill(-23) c`,
+			out: `a + on (b) group_left () fill (-23) c`,
+		},
+		{
 			in: `up > bool 0`,
 		},
 		{
@@ -114,6 +155,36 @@ func TestExprString(t *testing.T) {
 		},
 		{
 			in: `a[1h:5m] offset 1m`,
+		},
+		{
+			in: `a anchored`,
+		},
+		{
+			in: `a[5m] anchored`,
+		},
+		{
+			in: `a{b="c"}[5m] anchored`,
+		},
+		{
+			in: `a{b="c"}[5m] anchored offset 1m`,
+		},
+		{
+			in: `a{b="c"}[5m] anchored @ start() offset 1m`,
+		},
+		{
+			in: `a smoothed`,
+		},
+		{
+			in: `a[5m] smoothed`,
+		},
+		{
+			in: `a{b="c"}[5m] smoothed`,
+		},
+		{
+			in: `a{b="c"}[5m] smoothed offset 1m`,
+		},
+		{
+			in: `a{b="c"}[5m] smoothed @ start() offset 1m`,
 		},
 		{
 			in: `{__name__="a"}`,
@@ -218,9 +289,41 @@ func TestExprString(t *testing.T) {
 			in: "foo[200 - min(step() + 10s, -max(step() ^ 2, 3))]",
 		},
 		{
+			in: "foo[range()]",
+		},
+		{
+			in: "foo[-range()]",
+		},
+		{
+			in: "foo offset range()",
+		},
+		{
+			in: "foo offset -range()",
+		},
+		{
+			in: "foo[max(range(), 5s)]",
+		},
+		{
 			in: `predict_linear(foo[1h], 3000)`,
 		},
+		{
+			in:  `sum by("üüü") (foo)`,
+			out: `sum by ("üüü") (foo)`,
+		},
+		{
+			in:  `sum without("äää") (foo)`,
+			out: `sum without ("äää") (foo)`,
+		},
+		{
+			in:  `count by("ööö", job) (foo)`,
+			out: `count by ("ööö", job) (foo)`,
+		},
 	}
+
+	EnableExtendedRangeSelectors = true
+	t.Cleanup(func() {
+		EnableExtendedRangeSelectors = false
+	})
 
 	for _, test := range inputs {
 		t.Run(test.in, func(t *testing.T) {
@@ -251,7 +354,7 @@ func BenchmarkExprString(b *testing.B) {
 		b.Run(readable(test), func(b *testing.B) {
 			expr, err := ParseExpr(test)
 			require.NoError(b, err)
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_ = expr.String()
 			}
 		})
@@ -337,6 +440,58 @@ func TestVectorSelector_String(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.expected, tc.vs.String())
+		})
+	}
+}
+
+func TestBinaryExprUTF8Labels(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "UTF-8 labels in on clause",
+			input:    `foo / on("äää") bar`,
+			expected: `foo / on ("äää") bar`,
+		},
+		{
+			name:     "UTF-8 labels in ignoring clause",
+			input:    `foo / ignoring("üüü") bar`,
+			expected: `foo / ignoring ("üüü") bar`,
+		},
+		{
+			name:     "UTF-8 labels in group_left clause",
+			input:    `foo / on("äää") group_left("ööö") bar`,
+			expected: `foo / on ("äää") group_left ("ööö") bar`,
+		},
+		{
+			name:     "UTF-8 labels in group_right clause",
+			input:    `foo / on("äää") group_right("ööö") bar`,
+			expected: `foo / on ("äää") group_right ("ööö") bar`,
+		},
+		{
+			name:     "Mixed legacy and UTF-8 labels",
+			input:    `foo / on(legacy, "üüü") bar`,
+			expected: `foo / on (legacy, "üüü") bar`,
+		},
+		{
+			name:     "Legacy labels only (should not quote)",
+			input:    `foo / on(job, instance) bar`,
+			expected: `foo / on (job, instance) bar`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := ParseExpr(tc.input)
+			if err != nil {
+				t.Fatalf("Failed to parse: %v", err)
+			}
+			result := expr.String()
+			if result != tc.expected {
+				t.Errorf("Expected: %s\nGot: %s", tc.expected, result)
+			}
 		})
 	}
 }

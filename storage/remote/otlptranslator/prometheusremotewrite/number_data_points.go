@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -21,14 +21,13 @@ import (
 	"math"
 
 	"github.com/prometheus/common/model"
-	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/model/value"
 )
 
 func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
+	settings Settings, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -37,11 +36,9 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 
 		pt := dataPoints.At(x)
 		labels, err := c.createAttributes(
-			resource,
 			pt.Attributes(),
-			scope,
 			settings,
-			nil,
+			reservedLabelNames,
 			true,
 			meta,
 			model.MetricNameLabel,
@@ -61,8 +58,8 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		ct := convertTimeStamp(pt.StartTimestamp())
-		if err := c.appender.AppendSample(labels, meta, ct, ts, val, nil); err != nil {
+		st := convertTimeStamp(pt.StartTimestamp())
+		if err := c.appender.AppendSample(labels, meta, st, ts, val, nil); err != nil {
 			return err
 		}
 	}
@@ -71,7 +68,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
+	settings Settings, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -80,18 +77,16 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 
 		pt := dataPoints.At(x)
 		lbls, err := c.createAttributes(
-			resource,
 			pt.Attributes(),
-			scope,
 			settings,
-			nil,
+			reservedLabelNames,
 			true,
 			meta,
 			model.MetricNameLabel,
 			meta.MetricFamilyName,
 		)
 		if err != nil {
-			return nil
+			return err
 		}
 		var val float64
 		switch pt.ValueType() {
@@ -104,12 +99,12 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		ct := convertTimeStamp(pt.StartTimestamp())
+		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return err
 		}
-		if err := c.appender.AppendSample(lbls, meta, ct, ts, val, exemplars); err != nil {
+		if err := c.appender.AppendSample(lbls, meta, st, ts, val, exemplars); err != nil {
 			return err
 		}
 	}

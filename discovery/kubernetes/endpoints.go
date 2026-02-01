@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -32,6 +32,7 @@ import (
 )
 
 // Endpoints discovers new endpoint targets.
+//
 // Deprecated: The Endpoints API is deprecated starting in K8s v1.33+. Use EndpointSlice.
 type Endpoints struct {
 	logger *slog.Logger
@@ -52,6 +53,7 @@ type Endpoints struct {
 }
 
 // NewEndpoints returns a new endpoints discovery.
+//
 // Deprecated: The Endpoints API is deprecated starting in K8s v1.33+. Use NewEndpointSlice.
 func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *Endpoints {
 	if l == nil {

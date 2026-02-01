@@ -39,6 +39,10 @@ export const binOpModifierTerms = [
   { label: 'ignoring', info: 'Ignore specified labels for matching', type: 'keyword' },
   { label: 'group_left', info: 'Allow many-to-one matching', type: 'keyword' },
   { label: 'group_right', info: 'Allow one-to-many matching', type: 'keyword' },
+  { label: 'bool', info: 'Return boolean result (0 or 1) instead of filtering', type: 'keyword' },
+  { label: 'fill', info: 'Fill in missing series on both sides', type: 'keyword' },
+  { label: 'fill_left', info: 'Fill in missing series on the left side', type: 'keyword' },
+  { label: 'fill_right', info: 'Fill in missing series on the right side', type: 'keyword' },
 ];
 
 export const atModifierTerms = [
@@ -218,43 +222,43 @@ export const functionIdentifierTerms = [
   {
     label: 'histogram_avg',
     detail: 'function',
-    info: 'Return the average of observations from a native histogram (experimental feature)',
+    info: 'Return the average of observations from a native histogram',
     type: 'function',
   },
   {
     label: 'histogram_count',
     detail: 'function',
-    info: 'Return the count of observations from a native histogram (experimental feature)',
+    info: 'Return the count of observations from a native histogram',
     type: 'function',
   },
   {
     label: 'histogram_fraction',
     detail: 'function',
-    info: 'Calculate fractions of observations within an interval from a native histogram (experimental feature)',
+    info: 'Calculate fractions of observations within an interval from a native histogram',
     type: 'function',
   },
   {
     label: 'histogram_quantile',
     detail: 'function',
-    info: 'Calculate quantiles from native histograms (experimental) and from conventional histogram buckets',
+    info: 'Calculate quantiles from native histograms and from conventional histogram buckets',
     type: 'function',
   },
   {
     label: 'histogram_sum',
     detail: 'function',
-    info: 'Return the sum of observations from a native histogram (experimental feature)',
+    info: 'Return the sum of observations from a native histogram',
     type: 'function',
   },
   {
     label: 'histogram_stddev',
     detail: 'function',
-    info: 'Estimate the standard deviation of observations from a native histogram (experimental feature)',
+    info: 'Estimate the standard deviation of observations from a native histogram',
     type: 'function',
   },
   {
     label: 'histogram_stdvar',
     detail: 'function',
-    info: 'Estimate the standard variance of observations from a native histogram (experimental feature)',
+    info: 'Estimate the standard variance of observations from a native histogram',
     type: 'function',
   },
   {

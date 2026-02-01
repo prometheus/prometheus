@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -173,7 +173,7 @@ func verifyConfigReloadMetric(t *testing.T, baseURL string, expectedValue float6
 	var actualValue float64
 	found := false
 
-	for _, line := range strings.Split(lines, "\n") {
+	for line := range strings.SplitSeq(lines, "\n") {
 		if strings.HasPrefix(line, configReloadMetric) {
 			parts := strings.Fields(line)
 			if len(parts) >= 2 {

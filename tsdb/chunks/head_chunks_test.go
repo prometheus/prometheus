@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -559,7 +559,7 @@ func randomChunk(t *testing.T) chunkenc.Chunk {
 	app, err := chunk.Appender()
 	require.NoError(t, err)
 	for range length {
-		app.Append(rand.Int63(), rand.Float64())
+		app.Append(0, rand.Int63(), rand.Float64())
 	}
 	return chunk
 }
@@ -579,5 +579,5 @@ func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSer
 		close(awaitCb)
 	})
 	<-awaitCb
-	return
+	return seriesRef, chunkRef, mint, maxt, chunk, isOOO
 }

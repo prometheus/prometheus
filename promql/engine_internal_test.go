@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -87,6 +87,7 @@ func TestVectorElemBinop_Histograms(t *testing.T) {
 		hlhs, hrhs *histogram.FloatHistogram
 		want       *histogram.FloatHistogram
 		wantErr    error
+		wantInfo   error
 	}{
 		{
 			name: "ADD with unknown counter reset hints",
@@ -128,15 +129,39 @@ func TestVectorElemBinop_Histograms(t *testing.T) {
 			want:    &histogram.FloatHistogram{},
 			wantErr: annotations.HistogramCounterResetCollisionWarning,
 		},
+		{
+			name:     "ADD with mismatched NHCB bounds",
+			op:       parser.ADD,
+			hlhs:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}, CustomValues: []float64{1}},
+			hrhs:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}, CustomValues: []float64{2}},
+			want:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}},
+			wantInfo: annotations.MismatchedCustomBucketsHistogramsInfo,
+		},
+		{
+			name:     "SUB with mismatched NHCB bounds",
+			op:       parser.SUB,
+			hlhs:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}, CustomValues: []float64{1}},
+			hrhs:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}, CustomValues: []float64{2}},
+			want:     &histogram.FloatHistogram{Schema: histogram.CustomBucketsSchema, PositiveBuckets: []float64{}, CounterResetHint: histogram.GaugeType},
+			wantInfo: annotations.MismatchedCustomBucketsHistogramsInfo,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, got, _, err := vectorElemBinop(tc.op, 0, 0, tc.hlhs, tc.hrhs, posrange.PositionRange{})
+			_, got, _, info, err := vectorElemBinop(tc.op, 0, 0, tc.hlhs, tc.hrhs, posrange.PositionRange{})
+
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
 				return
 			}
 			require.NoError(t, err)
+
+			if tc.wantInfo != nil {
+				require.ErrorIs(t, info, tc.wantInfo)
+			} else {
+				require.NoError(t, info)
+			}
+
 			require.Equal(t, tc.want, got)
 		})
 	}

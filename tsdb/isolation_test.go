@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -94,7 +94,7 @@ func BenchmarkIsolation(b *testing.B) {
 					defer wg.Done()
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -124,7 +124,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 					defer wg.Done()
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
@@ -144,7 +144,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 					defer wg.Done()
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						s := iso.State(math.MinInt64, math.MaxInt64)
 						s.Close()
 					}

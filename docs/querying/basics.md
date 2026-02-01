@@ -21,6 +21,34 @@ Other programs can fetch the result of a PromQL expression via the [HTTP API](ap
 This document is a Prometheus basic language reference. For learning, it may be easier to
 start with a couple of [examples](examples.md).
 
+## Samples
+
+The value of a sample at a given timestamp returned by PromQL may be a float or
+a [native histogram](https://prometheus.io/docs/specs/native_histograms). A
+float sample is a simple floating point number, whereas a native histograms
+sample contains a full histogram including count, sum, and buckets.
+
+Note that the term “histogram sample” in the PromQL documentation always refers
+to a native histogram. The term "classic histogram" refers to a set of time
+series containing float samples with the `_bucket`, `_count`, and `_sum` 
+suffixes that together describe a histogram. From the perspective of PromQL,
+these contain just float samples, there are no “classic histogram samples”.
+
+Both float samples and histogram samples can have a counter or a gauge “flavor”.
+Float samples with a counter or gauge flavor are generally simply called
+“counters” or “gauges”, respectively, while their histogram counterparts are
+called “counter histograms” or “gauge histograms”. Float samples do not store
+their flavor, leaving it to the user to take their flavor into account when
+writing PromQL queries. (By convention, time series containing float counters
+have a name ending on `_total` to help with the distinction.)
+
+Since histogram samples “know” their counter or gauge flavor, this allows
+reliable warnings about mismatched operations. For example, applying the `rate`
+function to gauge floats will most likely produce a
+nonsensical result, but the query will be processed without complains. However,
+if applied to gauge histograms, the result of the query will be
+annotated with a warning.
+
 ## Expression language data types
 
 In Prometheus's expression language, an expression or sub-expression can
@@ -37,32 +65,28 @@ user-specified expression.
 For [instant queries](api.md#instant-queries), any of the above data types are allowed as the root of the expression.
 [Range queries](api.md#range-queries) only support scalar-typed and instant-vector-typed expressions.
 
-_Notes about the experimental native histograms:_
+Both vectors and time series may contain a mix of float samples and histogram
+samples.
 
-* Ingesting native histograms has to be enabled via a [feature
-  flag](../feature_flags.md#native-histograms).
-* Once native histograms have been ingested into the TSDB (and even after
-  disabling the feature flag again), both instant vectors and range vectors may
-  now contain samples that aren't simple floating point numbers (float samples)
-  but complete histograms (histogram samples). A vector may contain a mix of
-  float samples and histogram samples. Note that the term “histogram sample” in
-  the PromQL documentation always refers to a native histogram. Classic
-  histograms are broken up into a number of series of float samples. From the
-  perspective of PromQL, there are no “classic histogram samples”.
-* Like float samples, histogram samples can have a counter or a gauge “flavor”,
-  marking them as counter histograms or gauge histograms, respectively. In
-  contrast to float samples, histogram samples “know” their flavor, allowing
-  reliable warnings about mismatched operations (e.g. applying the `rate`
-  function to a range vector of gauge histograms).
-* Native histograms can have different bucket layouts, but they are generally
-  convertible to compatible versions to apply binary and aggregation operations
-  to them. This is not true for all bucketing schemas. If incompatible
-  histograms are encountered in an operation, the corresponding output vector
-  element is removed from the result, flagged with a warn-level annotation.
-  More details can be found in the [native histogram
-  specification](https://prometheus.io/docs/specs/native_histograms/#compatibility-between-histograms).
+## Reconciliation of histogram bucket layouts
+
+Native histograms can have different bucket layouts, but they are generally
+convertible to compatible versions to apply binary and aggregation operations
+to them. Functions acting on range vectors that are applicable to native
+histograms also perform such reconciliation. In binary operations this
+reconciliation is performed pairwise, in aggregation operations and functions
+all histogram samples are reconciled to one compatible bucket layout.
+
+Not all bucket layouts can be reconciled, if incompatible histograms are
+encountered in an operation, the corresponding output vector element is removed
+from the result, flagged with a warn-level annotation.
+More details can be found in the
+[native histogram specification](https://prometheus.io/docs/specs/native_histograms/#compatibility-between-histograms).
 
 ## Literals
+
+The following section describes literal values of various kinds.
+Note that there is no “histogram literal”.
 
 ### String literals
 

@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -164,8 +164,7 @@ func TestQueryTimeout(t *testing.T) {
 		Timeout:    5 * time.Millisecond,
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	ctx := t.Context()
 
 	query := engine.NewTestQuery(func(ctx context.Context) error {
 		time.Sleep(100 * time.Millisecond)
@@ -189,8 +188,7 @@ func TestQueryCancel(t *testing.T) {
 		Timeout:    10 * time.Second,
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	ctx := t.Context()
 
 	// Cancel a running query before it completes.
 	block := make(chan struct{})
@@ -267,8 +265,7 @@ func TestQueryError(t *testing.T) {
 	queryable := storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
 		return &errQuerier{err: errStorage}, nil
 	})
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	ctx := t.Context()
 
 	vectorQuery, err := engine.NewInstantQuery(ctx, queryable, nil, "foo", time.Unix(1, 0))
 	require.NoError(t, err)
@@ -679,7 +676,6 @@ func TestEngineEvalStmtTimestamps(t *testing.T) {
 load 10s
   metric 1 2
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	cases := []struct {
 		Query       string
@@ -792,7 +788,6 @@ load 10s
   metricWith3SampleEvery10Seconds{a="3",b="2"} 1+1x100
   metricWith1HistogramEvery10Seconds {{schema:1 count:5 sum:20 buckets:[1 2 1 1]}}+{{schema:1 count:10 sum:5 buckets:[1 2 3 4]}}x100
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	cases := []struct {
 		Query               string
@@ -1342,7 +1337,6 @@ load 10s
   bigmetric{a="1"} 1+1x100
   bigmetric{a="2"} 1+1x100
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	// These test cases should be touching the limit exactly (hence no exceeding).
 	// Exceeding the limit will be tested by doing -1 to the MaxSamples.
@@ -1526,7 +1520,6 @@ func TestExtendedRangeSelectors(t *testing.T) {
 		withreset 1+1x4 1+1x5
 		notregular 0 5 100 2 8
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	tc := []struct {
 		query    string
@@ -1680,7 +1673,6 @@ load 10s
 load 1ms
   metric_ms 0+1x10000
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
 	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
@@ -2286,7 +2278,6 @@ func TestSubquerySelector(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			engine := newTestEngine(t)
 			storage := promqltest.LoadedStorage(t, tst.loadString)
-			t.Cleanup(func() { storage.Close() })
 
 			for _, c := range tst.cases {
 				t.Run(c.Query, func(t *testing.T) {
@@ -3413,7 +3404,6 @@ metric 0 1 2
 		t.Run(c.name, func(t *testing.T) {
 			engine := promqltest.NewTestEngine(t, false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
 			storage := promqltest.LoadedStorage(t, load)
-			t.Cleanup(func() { storage.Close() })
 
 			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback)
 			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
@@ -3447,7 +3437,7 @@ func TestHistogramCopyFromIteratorRegression(t *testing.T) {
 histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:1 count:1 buckets:[1]}}
 `
 	storage := promqltest.LoadedStorage(t, load)
-	t.Cleanup(func() { storage.Close() })
+
 	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 	verify := func(t *testing.T, qry promql.Query, expected []histogram.FloatHistogram) {
@@ -3750,12 +3740,12 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 		recoded bool
 	)
 
-	newc, recoded, app, err = app.AppendHistogram(nil, 0, h1.Copy(), false)
+	newc, recoded, app, err = app.AppendHistogram(nil, 0, 0, h1.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
 
-	newc, recoded, _, err = app.AppendHistogram(nil, 10, h1.Copy(), false)
+	newc, recoded, _, err = app.AppendHistogram(nil, 0, 10, h1.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
@@ -3765,7 +3755,7 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	app, err = c2.Appender()
 	require.NoError(t, err)
 
-	app.Append(20, math.Float64frombits(value.StaleNaN))
+	app.Append(0, 20, math.Float64frombits(value.StaleNaN))
 
 	// Make a chunk with two normal histograms that have zero value.
 	h2 := histogram.Histogram{
@@ -3776,12 +3766,12 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	app, err = c3.Appender()
 	require.NoError(t, err)
 
-	newc, recoded, app, err = app.AppendHistogram(nil, 30, h2.Copy(), false)
+	newc, recoded, app, err = app.AppendHistogram(nil, 0, 30, h2.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
 
-	newc, recoded, _, err = app.AppendHistogram(nil, 40, h2.Copy(), false)
+	newc, recoded, _, err = app.AppendHistogram(nil, 0, 40, h2.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
@@ -3949,6 +3939,41 @@ eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.4
 
+# Test unary negation with non-overlapping series that have different metric names.
+# After negation, the __name__ label is dropped, so series with different names
+# but same other labels should merge if they don't overlap in time.
+clear
+load 20m
+  http_requests{job="api"} 2 _
+  http_errors{job="api"} _ 4
+
+eval instant at 0 -{job="api"}
+  {job="api"} -2
+
+eval instant at 20m -{job="api"}
+  {job="api"} -4
+
+eval range from 0 to 20m step 20m -{job="api"}
+  {job="api"} -2 -4
+
+# Test unary negation failure with overlapping timestamps (same labelset at same time).
+clear
+load 1m
+  http_requests{job="api"} 1
+  http_errors{job="api"} 2
+
+eval_fail instant at 0 -{job="api"}
+
+# Test unary negation with "or" operator combining metrics with removed names.
+clear
+load 10m
+    metric_a   1  _
+    metric_b   3  4
+
+# Use "-" unary operator as a simple way to remove the metric name.
+eval range from 0 to 20m step 10m -metric_a or -metric_b
+    {} -1  -4
+
 `, engine)
 }
 
@@ -3960,7 +3985,6 @@ func TestInconsistentHistogramCount(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := tsdb.DefaultHeadOptions()
-	opts.EnableNativeHistograms.Store(true)
 	opts.ChunkDirRoot = dir
 	// We use TSDB head only. By using full TSDB DB, and appending samples to it, closing it would cause unnecessary HEAD compaction, which slows down the test.
 	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)

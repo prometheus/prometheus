@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -26,6 +26,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/regexp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -73,10 +74,6 @@ func mustParseURL(u string) *config.URL {
 	return &config.URL{URL: parsed}
 }
 
-func boolPtr(b bool) *bool {
-	return &b
-}
-
 const (
 	globBodySizeLimit         = 15 * units.MiB
 	globSampleLimit           = 1500
@@ -105,9 +102,10 @@ var expectedConf = &Config{
 		LabelLimit:                     globLabelLimit,
 		LabelNameLengthLimit:           globLabelNameLengthLimit,
 		LabelValueLengthLimit:          globLabelValueLengthLimit,
-		ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+		ScrapeNativeHistograms:         boolPtr(false),
 		AlwaysScrapeClassicHistograms:  false,
 		ConvertClassicHistogramsToNHCB: false,
+		ExtraScrapeMetrics:             boolPtr(false),
 		MetricNameValidationScheme:     model.UTF8Validation,
 	},
 
@@ -123,7 +121,7 @@ var expectedConf = &Config{
 	RemoteWriteConfigs: []*RemoteWriteConfig{
 		{
 			URL:             mustParseURL("http://remote1/push"),
-			ProtobufMessage: RemoteWriteProtoMsgV1,
+			ProtobufMessage: remoteapi.WriteV1MessageType,
 			RemoteTimeout:   model.Duration(30 * time.Second),
 			Name:            "drop_expensive",
 			WriteRelabelConfigs: []*relabel.Config{
@@ -154,7 +152,7 @@ var expectedConf = &Config{
 		},
 		{
 			URL:             mustParseURL("http://remote2/push"),
-			ProtobufMessage: RemoteWriteProtoMsgV2,
+			ProtobufMessage: remoteapi.WriteV2MessageType,
 			RemoteTimeout:   model.Duration(30 * time.Second),
 			QueueConfig:     DefaultQueueConfig,
 			MetadataConfig:  DefaultMetadataConfig,
@@ -175,7 +173,9 @@ var expectedConf = &Config{
 		PromoteResourceAttributes: []string{
 			"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name",
 		},
-		TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+		TranslationStrategy:                  otlptranslator.UnderscoreEscapingWithSuffixes,
+		LabelNameUnderscoreSanitization:      true,
+		LabelNamePreserveMultipleUnderscores: true,
 	},
 
 	RemoteReadConfigs: []*RemoteReadConfig{
@@ -225,13 +225,15 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFallbackProtocol:         PrometheusText0_0_4,
 			ScrapeFailureLogFile:           "testdata/fail_prom.log",
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -353,8 +355,10 @@ var expectedConf = &Config{
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			HTTPClientConfig: config.HTTPClientConfig{
 				BasicAuth: &config.BasicAuth{
@@ -458,12 +462,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -519,12 +525,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath: "/metrics",
 			Scheme:      "http",
@@ -557,12 +565,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -601,12 +611,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
@@ -645,12 +657,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -679,12 +693,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -721,12 +737,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -760,12 +778,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -806,12 +826,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -842,12 +864,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -881,12 +905,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -913,12 +939,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -948,12 +976,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      "/federate",
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -983,12 +1013,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1018,12 +1050,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1050,12 +1084,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1090,12 +1126,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1129,12 +1167,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1165,12 +1205,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1200,12 +1242,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1239,12 +1283,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1281,12 +1327,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultProtoFirstScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(true),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1343,12 +1391,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1375,12 +1425,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1418,12 +1470,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1467,12 +1521,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1506,12 +1562,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1546,12 +1604,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
@@ -1581,12 +1641,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1618,12 +1680,14 @@ var expectedConf = &Config{
 			LabelLimit:                     globLabelLimit,
 			LabelNameLengthLimit:           globLabelNameLengthLimit,
 			LabelValueLengthLimit:          globLabelValueLengthLimit,
-			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:                DefaultScrapeProtocols,
 			ScrapeFailureLogFile:           globScrapeFailureLogFile,
 			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
 			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
 			AlwaysScrapeClassicHistograms:  boolPtr(false),
 			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
 
 			MetricsPath:      DefaultScrapeConfig.MetricsPath,
 			Scheme:           DefaultScrapeConfig.Scheme,
@@ -1669,8 +1733,13 @@ var expectedConf = &Config{
 	},
 	StorageConfig: StorageConfig{
 		TSDBConfig: &TSDBConfig{
-			OutOfOrderTimeWindow:     30 * time.Minute.Milliseconds(),
-			OutOfOrderTimeWindowFlag: model.Duration(30 * time.Minute),
+			OutOfOrderTimeWindow:           30 * time.Minute.Milliseconds(),
+			OutOfOrderTimeWindowFlag:       model.Duration(30 * time.Minute),
+			StaleSeriesCompactionThreshold: 0.5,
+			Retention: &TSDBRetentionConfig{
+				Time: model.Duration(24 * time.Hour),
+				Size: 1 * units.GiB,
+			},
 		},
 	},
 	TracingConfig: TracingConfig{
@@ -1839,6 +1908,48 @@ func TestOTLPPromoteScopeMetadata(t *testing.T) {
 		require.NoError(t, yaml.UnmarshalStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.PromoteScopeMetadata)
+	})
+}
+
+func TestOTLPLabelUnderscoreSanitization(t *testing.T) {
+	t.Run("defaults to true", func(t *testing.T) {
+		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_defaults.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		// Test that default values are true
+		require.True(t, conf.OTLPConfig.LabelNameUnderscoreSanitization)
+		require.True(t, conf.OTLPConfig.LabelNamePreserveMultipleUnderscores)
+	})
+
+	t.Run("explicitly enabled", func(t *testing.T) {
+		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_enabled.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(conf)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.True(t, got.OTLPConfig.LabelNameUnderscoreSanitization)
+		require.True(t, got.OTLPConfig.LabelNamePreserveMultipleUnderscores)
+	})
+
+	t.Run("explicitly disabled", func(t *testing.T) {
+		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_disabled.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		// When explicitly set to false, they should be false
+		require.False(t, conf.OTLPConfig.LabelNameUnderscoreSanitization)
+		require.False(t, conf.OTLPConfig.LabelNamePreserveMultipleUnderscores)
+	})
+
+	t.Run("empty config uses defaults", func(t *testing.T) {
+		conf, err := LoadFile(filepath.Join("testdata", "otlp_empty.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		// Empty config should use default values (true)
+		require.True(t, conf.OTLPConfig.LabelNameUnderscoreSanitization)
+		require.True(t, conf.OTLPConfig.LabelNamePreserveMultipleUnderscores)
 	})
 }
 
@@ -2292,7 +2403,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "remote_write_wrong_msg.bad.yml",
-		errMsg:   `invalid protobuf_message value: unknown remote write protobuf message io.prometheus.writet.v2.Request, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request`,
+		errMsg:   `invalid protobuf_message value: unknown type for remote write protobuf message io.prometheus.writet.v2.Request, supported: prometheus.WriteRequest, io.prometheus.write.v2.Request`,
 	},
 	{
 		filename: "remote_write_url_missing.bad.yml",
@@ -2582,12 +2693,87 @@ func TestAgentMode(t *testing.T) {
 	)
 }
 
-func TestEmptyGlobalBlock(t *testing.T) {
-	c, err := Load("global:\n", promslog.NewNopLogger())
-	require.NoError(t, err)
-	exp := DefaultConfig
-	exp.loaded = true
-	require.Equal(t, exp, *c)
+func TestGlobalConfig(t *testing.T) {
+	t.Run("empty block restores defaults", func(t *testing.T) {
+		c, err := Load("global:\n", promslog.NewNopLogger())
+		require.NoError(t, err)
+		exp := DefaultConfig
+		exp.loaded = true
+		require.Equal(t, exp, *c)
+	})
+
+	// Verify that isZero() correctly identifies non-zero configurations for all
+	// fields in GlobalConfig. This is important because isZero() is used during
+	// YAML unmarshaling to detect empty global blocks that should be replaced
+	// with defaults.
+	t.Run("isZero", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			config     GlobalConfig
+			expectZero bool
+		}{
+			{
+				name:       "empty GlobalConfig",
+				config:     GlobalConfig{},
+				expectZero: true,
+			},
+			{
+				name:       "ScrapeInterval set",
+				config:     GlobalConfig{ScrapeInterval: model.Duration(30 * time.Second)},
+				expectZero: false,
+			},
+			{
+				name:       "BodySizeLimit set",
+				config:     GlobalConfig{BodySizeLimit: 1 * units.MiB},
+				expectZero: false,
+			},
+			{
+				name:       "SampleLimit set",
+				config:     GlobalConfig{SampleLimit: 1000},
+				expectZero: false,
+			},
+			{
+				name:       "TargetLimit set",
+				config:     GlobalConfig{TargetLimit: 500},
+				expectZero: false,
+			},
+			{
+				name:       "LabelLimit set",
+				config:     GlobalConfig{LabelLimit: 100},
+				expectZero: false,
+			},
+			{
+				name:       "LabelNameLengthLimit set",
+				config:     GlobalConfig{LabelNameLengthLimit: 50},
+				expectZero: false,
+			},
+			{
+				name:       "LabelValueLengthLimit set",
+				config:     GlobalConfig{LabelValueLengthLimit: 200},
+				expectZero: false,
+			},
+			{
+				name:       "KeepDroppedTargets set",
+				config:     GlobalConfig{KeepDroppedTargets: 10},
+				expectZero: false,
+			},
+			{
+				name:       "MetricNameValidationScheme set",
+				config:     GlobalConfig{MetricNameValidationScheme: model.LegacyValidation},
+				expectZero: false,
+			},
+			{
+				name:       "MetricNameEscapingScheme set",
+				config:     GlobalConfig{MetricNameEscapingScheme: model.EscapeUnderscores},
+				expectZero: false,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				result := tc.config.isZero()
+				require.Equal(t, tc.expectZero, result)
+			})
+		}
+	})
 }
 
 // ScrapeConfigOptions contains options for creating a scrape config.
@@ -2595,19 +2781,22 @@ type ScrapeConfigOptions struct {
 	JobName                       string
 	ScrapeInterval                model.Duration
 	ScrapeTimeout                 model.Duration
+	ScrapeProtocols               []ScrapeProtocol // Set to DefaultScrapeProtocols by default.
+	ScrapeNativeHistograms        bool
 	AlwaysScrapeClassicHistograms bool
 	ConvertClassicHistToNHCB      bool
+	ExtraScrapeMetrics            bool
 }
 
 func TestGetScrapeConfigs(t *testing.T) {
 	// Helper function to create a scrape config with the given options.
 	sc := func(opts ScrapeConfigOptions) *ScrapeConfig {
-		return &ScrapeConfig{
+		sc := ScrapeConfig{
 			JobName:                    opts.JobName,
 			HonorTimestamps:            true,
 			ScrapeInterval:             opts.ScrapeInterval,
 			ScrapeTimeout:              opts.ScrapeTimeout,
-			ScrapeProtocols:            DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeProtocols:            opts.ScrapeProtocols,
 			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
 
@@ -2627,9 +2816,15 @@ func TestGetScrapeConfigs(t *testing.T) {
 					},
 				},
 			},
+			ScrapeNativeHistograms:         boolPtr(opts.ScrapeNativeHistograms),
 			AlwaysScrapeClassicHistograms:  boolPtr(opts.AlwaysScrapeClassicHistograms),
 			ConvertClassicHistogramsToNHCB: boolPtr(opts.ConvertClassicHistToNHCB),
+			ExtraScrapeMetrics:             boolPtr(opts.ExtraScrapeMetrics),
 		}
+		if opts.ScrapeProtocols == nil {
+			sc.ScrapeProtocols = DefaultScrapeProtocols
+		}
+		return &sc
 	}
 
 	testCases := []struct {
@@ -2639,22 +2834,57 @@ func TestGetScrapeConfigs(t *testing.T) {
 		expectedError  string
 	}{
 		{
-			name:           "An included config file should be a valid global config.",
-			configFile:     "testdata/scrape_config_files.good.yml",
-			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
+			name:       "An included config file should be a valid global config.",
+			configFile: "testdata/scrape_config_files.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{
+				JobName:                       "prometheus",
+				ScrapeInterval:                model.Duration(60 * time.Second),
+				ScrapeTimeout:                 model.Duration(10 * time.Second),
+				ScrapeNativeHistograms:        false,
+				AlwaysScrapeClassicHistograms: false,
+				ConvertClassicHistToNHCB:      false,
+			})},
 		},
 		{
-			name:           "A global config that only include a scrape config file.",
-			configFile:     "testdata/scrape_config_files_only.good.yml",
-			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
+			name:       "A global config that only include a scrape config file.",
+			configFile: "testdata/scrape_config_files_only.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{
+				JobName:                       "prometheus",
+				ScrapeInterval:                model.Duration(60 * time.Second),
+				ScrapeTimeout:                 model.Duration(10 * time.Second),
+				ScrapeNativeHistograms:        false,
+				AlwaysScrapeClassicHistograms: false,
+				ConvertClassicHistToNHCB:      false,
+			})},
 		},
 		{
 			name:       "A global config that combine scrape config files and scrape configs.",
 			configFile: "testdata/scrape_config_files_combined.good.yml",
 			expectedResult: []*ScrapeConfig{
-				sc(ScrapeConfigOptions{JobName: "node", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false}),
-				sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false}),
-				sc(ScrapeConfigOptions{JobName: "alertmanager", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false}),
+				sc(ScrapeConfigOptions{
+					JobName:                       "node",
+					ScrapeInterval:                model.Duration(60 * time.Second),
+					ScrapeTimeout:                 model.Duration(10 * time.Second),
+					ScrapeNativeHistograms:        false,
+					AlwaysScrapeClassicHistograms: false,
+					ConvertClassicHistToNHCB:      false,
+				}),
+				sc(ScrapeConfigOptions{
+					JobName:                       "prometheus",
+					ScrapeInterval:                model.Duration(60 * time.Second),
+					ScrapeTimeout:                 model.Duration(10 * time.Second),
+					ScrapeNativeHistograms:        false,
+					AlwaysScrapeClassicHistograms: false,
+					ConvertClassicHistToNHCB:      false,
+				}),
+				sc(ScrapeConfigOptions{
+					JobName:                       "alertmanager",
+					ScrapeInterval:                model.Duration(60 * time.Second),
+					ScrapeTimeout:                 model.Duration(10 * time.Second),
+					ScrapeNativeHistograms:        false,
+					AlwaysScrapeClassicHistograms: false,
+					ConvertClassicHistToNHCB:      false,
+				}),
 			},
 		},
 		{
@@ -2667,11 +2897,13 @@ func TestGetScrapeConfigs(t *testing.T) {
 					HonorTimestamps:                true,
 					ScrapeInterval:                 model.Duration(60 * time.Second),
 					ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
-					ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+					ScrapeProtocols:                DefaultScrapeProtocols,
 					MetricNameValidationScheme:     model.UTF8Validation,
 					MetricNameEscapingScheme:       model.AllowUTF8,
+					ScrapeNativeHistograms:         boolPtr(false),
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
+					ExtraScrapeMetrics:             boolPtr(false),
 
 					MetricsPath: DefaultScrapeConfig.MetricsPath,
 					Scheme:      DefaultScrapeConfig.Scheme,
@@ -2704,11 +2936,13 @@ func TestGetScrapeConfigs(t *testing.T) {
 					HonorTimestamps:                true,
 					ScrapeInterval:                 model.Duration(15 * time.Second),
 					ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
-					ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+					ScrapeProtocols:                DefaultScrapeProtocols,
 					MetricNameValidationScheme:     model.UTF8Validation,
 					MetricNameEscapingScheme:       model.AllowUTF8,
+					ScrapeNativeHistograms:         boolPtr(false),
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
+					ExtraScrapeMetrics:             boolPtr(false),
 
 					HTTPClientConfig: config.HTTPClientConfig{
 						TLSConfig: config.TLSConfig{
@@ -2791,6 +3025,56 @@ func TestGetScrapeConfigs(t *testing.T) {
 			configFile:     "testdata/local_disable_always_scrape_classic_hist.good.yml",
 			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), AlwaysScrapeClassicHistograms: false, ConvertClassicHistToNHCB: false})},
 		},
+		{
+			name:           "A global config that enables scrape native histograms",
+			configFile:     "testdata/global_enable_scrape_native_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ScrapeNativeHistograms: true, ScrapeProtocols: DefaultProtoFirstScrapeProtocols})},
+		},
+		{
+			name:           "A global config that enables scrape native histograms and sets scrape protocols explicitly",
+			configFile:     "testdata/global_enable_scrape_native_hist_and_scrape_protocols.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ScrapeNativeHistograms: true, ScrapeProtocols: []ScrapeProtocol{PrometheusText0_0_4}})},
+		},
+		{
+			name:           "A local config that enables scrape native histograms",
+			configFile:     "testdata/local_enable_scrape_native_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ScrapeNativeHistograms: true, ScrapeProtocols: DefaultProtoFirstScrapeProtocols})},
+		},
+		{
+			name:           "A local config that enables scrape native histograms and sets scrape protocols explicitly",
+			configFile:     "testdata/local_enable_scrape_native_hist_and_scrape_protocols.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ScrapeNativeHistograms: true, ScrapeProtocols: []ScrapeProtocol{PrometheusText0_0_4}})},
+		},
+		{
+			name:           "A global config that enables scrape native histograms and scrape config that disables it",
+			configFile:     "testdata/local_disable_scrape_native_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ScrapeNativeHistograms: false, ScrapeProtocols: DefaultScrapeProtocols})},
+		},
+		{
+			name:           "A global config that enables scrape native histograms and scrape protocols and scrape config that disables scrape native histograms but does not change scrape protocols",
+			configFile:     "testdata/global_scrape_protocols_and_local_disable_scrape_native_hist.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ScrapeNativeHistograms: false, ScrapeProtocols: []ScrapeProtocol{PrometheusText0_0_4}})},
+		},
+		{
+			name:           "A global config that enables extra scrape metrics",
+			configFile:     "testdata/global_enable_extra_scrape_metrics.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ExtraScrapeMetrics: true})},
+		},
+		{
+			name:           "A global config that disables extra scrape metrics",
+			configFile:     "testdata/global_disable_extra_scrape_metrics.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ExtraScrapeMetrics: false})},
+		},
+		{
+			name:           "A global config that disables extra scrape metrics and scrape config that enables it",
+			configFile:     "testdata/local_enable_extra_scrape_metrics.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ExtraScrapeMetrics: true})},
+		},
+		{
+			name:           "A global config that enables extra scrape metrics and scrape config that disables it",
+			configFile:     "testdata/local_disable_extra_scrape_metrics.good.yml",
+			expectedResult: []*ScrapeConfig{sc(ScrapeConfigOptions{JobName: "prometheus", ScrapeInterval: model.Duration(60 * time.Second), ScrapeTimeout: model.Duration(10 * time.Second), ExtraScrapeMetrics: false})},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -2803,6 +3087,99 @@ func TestGetScrapeConfigs(t *testing.T) {
 				require.ErrorContains(t, err, tc.expectedError)
 			}
 			require.Equal(t, tc.expectedResult, scfgs)
+		})
+	}
+}
+
+func TestExtraScrapeMetrics(t *testing.T) {
+	tests := []struct {
+		name          string
+		config        string
+		expectGlobal  *bool
+		expectEnabled bool
+	}{
+		{
+			name: "default values (not set)",
+			config: `
+scrape_configs:
+  - job_name: test
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectGlobal:  boolPtr(false), // inherits from DefaultGlobalConfig
+			expectEnabled: false,
+		},
+		{
+			name: "global enabled",
+			config: `
+global:
+  extra_scrape_metrics: true
+scrape_configs:
+  - job_name: test
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectGlobal:  boolPtr(true),
+			expectEnabled: true,
+		},
+		{
+			name: "global disabled",
+			config: `
+global:
+  extra_scrape_metrics: false
+scrape_configs:
+  - job_name: test
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectGlobal:  boolPtr(false),
+			expectEnabled: false,
+		},
+		{
+			name: "scrape override enabled",
+			config: `
+global:
+  extra_scrape_metrics: false
+scrape_configs:
+  - job_name: test
+    extra_scrape_metrics: true
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectGlobal:  boolPtr(false),
+			expectEnabled: true,
+		},
+		{
+			name: "scrape override disabled",
+			config: `
+global:
+  extra_scrape_metrics: true
+scrape_configs:
+  - job_name: test
+    extra_scrape_metrics: false
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectGlobal:  boolPtr(true),
+			expectEnabled: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(tc.config, promslog.NewNopLogger())
+			require.NoError(t, err)
+
+			// Check global config
+			require.Equal(t, tc.expectGlobal, cfg.GlobalConfig.ExtraScrapeMetrics)
+
+			// Check scrape config
+			scfgs, err := cfg.GetScrapeConfigs()
+			require.NoError(t, err)
+			require.Len(t, scfgs, 1)
+
+			// Check the effective value via the helper method
+			require.Equal(t, tc.expectEnabled, scfgs[0].ExtraScrapeMetricsEnabled())
 		})
 	}
 }

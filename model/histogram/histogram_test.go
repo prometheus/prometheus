@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -243,6 +243,46 @@ func TestCumulativeBucketIterator(t *testing.T) {
 				{Lower: math.Inf(-1), Upper: math.Inf(1), Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 4},
 			},
 		},
+		{
+			histogram: Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				// One spurious bucket, which we expect to be ignored.
+				PositiveBuckets: []int64{1, 1, -1, 0, 2},
+			},
+			expectedBuckets: []Bucket[uint64]{
+				{Lower: math.Inf(-1), Upper: 1, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
+				{Lower: math.Inf(-1), Upper: 2, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 1},
+
+				{Lower: math.Inf(-1), Upper: 4, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 2},
+
+				{Lower: math.Inf(-1), Upper: 8, Count: 4, LowerInclusive: true, UpperInclusive: true, Index: 3},
+				{Lower: math.Inf(-1), Upper: 16, Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 4},
+			},
+		},
+		{
+			histogram: Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 3},
+				},
+				// One bucket is missing. We expect the iteration to end with the last bucket.
+				PositiveBuckets: []int64{1, 1, -1, 0},
+			},
+			expectedBuckets: []Bucket[uint64]{
+				{Lower: math.Inf(-1), Upper: 1, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
+				{Lower: math.Inf(-1), Upper: 2, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 1},
+
+				{Lower: math.Inf(-1), Upper: 4, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 2},
+
+				{Lower: math.Inf(-1), Upper: 8, Count: 4, LowerInclusive: true, UpperInclusive: true, Index: 3},
+				{Lower: math.Inf(-1), Upper: 16, Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 4},
+			},
+		},
 	}
 
 	for i, c := range cases {
@@ -458,6 +498,46 @@ func TestRegularBucketIterator(t *testing.T) {
 				{Lower: 50, Upper: math.Inf(1), Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 4},
 			},
 			expectedNegativeBuckets: []Bucket[uint64]{},
+		},
+		{
+			histogram: Histogram{
+				Schema: 0,
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 5},
+					{Offset: 1, Length: 1},
+				},
+				// One spurious bucket, which we expect to be ignored.
+				NegativeBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
+			},
+			expectedPositiveBuckets: []Bucket[uint64]{},
+			expectedNegativeBuckets: []Bucket[uint64]{
+				{Lower: -1, Upper: -0.5, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 0},
+				{Lower: -2, Upper: -1, Count: 3, LowerInclusive: true, UpperInclusive: false, Index: 1},
+				{Lower: -4, Upper: -2, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 2},
+				{Lower: -8, Upper: -4, Count: 2, LowerInclusive: true, UpperInclusive: false, Index: 3},
+				{Lower: -16, Upper: -8, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 4},
+
+				{Lower: -64, Upper: -32, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 6},
+			},
+		},
+		{
+			histogram: Histogram{
+				Schema: 0,
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 5},
+					{Offset: 1, Length: 1},
+				},
+				// One bucket is missing. We expect the iteration to end with the last bucket.
+				NegativeBuckets: []int64{1, 2, -2, 1, -1},
+			},
+			expectedPositiveBuckets: []Bucket[uint64]{},
+			expectedNegativeBuckets: []Bucket[uint64]{
+				{Lower: -1, Upper: -0.5, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 0},
+				{Lower: -2, Upper: -1, Count: 3, LowerInclusive: true, UpperInclusive: false, Index: 1},
+				{Lower: -4, Upper: -2, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 2},
+				{Lower: -8, Upper: -4, Count: 2, LowerInclusive: true, UpperInclusive: false, Index: 3},
+				{Lower: -16, Upper: -8, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 4},
+			},
 		},
 	}
 
@@ -1565,6 +1645,33 @@ func TestHistogramValidation(t *testing.T) {
 				CustomValues:    []float64{1, 2, 3, 4, 5, 6, 7, 8},
 			},
 		},
+		"reject custom buckets histogram with non-increasing bound": {
+			h: &Histogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{0, 0},
+			},
+			errMsg: "custom buckets: previous bound is 0.000000 and current is 0.000000: histogram custom bounds must be in strictly increasing order",
+		},
+		"reject custom buckets histogram with explicit +Inf bound": {
+			h: &Histogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{1, math.Inf(1)},
+			},
+			errMsg: "custom buckets: last +Inf bound must not be explicitly defined: histogram custom bounds must be finite",
+		},
+		"valid custom buckets histogram with explicit -Inf bound": {
+			h: &Histogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{math.Inf(-1), 1},
+			},
+		},
+		"reject custom buckets histogram with NaN bound": {
+			h: &Histogram{
+				Schema:       CustomBucketsSchema,
+				CustomValues: []float64{1, math.NaN(), 3},
+			},
+			errMsg: "custom buckets: histogram custom bounds must not be NaN",
+		},
 		"schema too high": {
 			h: &Histogram{
 				Schema: 10,
@@ -1582,6 +1689,7 @@ func TestHistogramValidation(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			if err := tc.h.Validate(); tc.errMsg != "" {
+				require.ErrorAs(t, err, new(Error))
 				require.EqualError(t, err, tc.errMsg)
 			} else {
 				require.NoError(t, err)
@@ -1592,6 +1700,7 @@ func TestHistogramValidation(t *testing.T) {
 
 			fh := tc.h.ToFloat(nil)
 			if err := fh.Validate(); tc.errMsg != "" {
+				require.ErrorAs(t, err, new(Error))
 				require.EqualError(t, err, tc.errMsg)
 			} else {
 				require.NoError(t, err)
@@ -1610,14 +1719,16 @@ func BenchmarkHistogramValidation(b *testing.B) {
 
 func TestHistogramReduceResolution(t *testing.T) {
 	tcs := map[string]struct {
-		origin *Histogram
-		target *Histogram
+		origin       *Histogram
+		targetSchema int32
+		target       *Histogram
+		errorMsg     string
 	}{
 		"valid histogram": {
 			origin: &Histogram{
 				Schema: 0,
 				PositiveSpans: []Span{
-					{Offset: 0, Length: 4},
+					{Offset: -2, Length: 4},
 					{Offset: 0, Length: 0},
 					{Offset: 3, Length: 2},
 				},
@@ -1629,10 +1740,11 @@ func TestHistogramReduceResolution(t *testing.T) {
 				},
 				NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
 			},
+			targetSchema: -1,
 			target: &Histogram{
 				Schema: -1,
 				PositiveSpans: []Span{
-					{Offset: 0, Length: 3},
+					{Offset: -1, Length: 3},
 					{Offset: 1, Length: 1},
 				},
 				PositiveBuckets: []int64{1, 3, -2, 0},
@@ -1643,12 +1755,58 @@ func TestHistogramReduceResolution(t *testing.T) {
 				NegativeBuckets: []int64{1, 3, -2, 0},
 			},
 		},
+		"not enough buckets": {
+			origin: &Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1},
+			},
+			targetSchema: -1,
+			errorMsg:     "have 5 buckets but spans need more: histogram spans specify different number of buckets than provided",
+		},
+		"too many buckets": {
+			origin: &Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
+			},
+			targetSchema: -1,
+			errorMsg:     "spans need 6 buckets, have 7 buckets: histogram spans specify different number of buckets than provided",
+		},
+		"negative offset": {
+			origin: &Histogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 4},
+					{Offset: -1, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0},
+			},
+			targetSchema: -1,
+			errorMsg:     "span number 2 with offset -1: histogram has a span whose offset is negative",
+		},
 	}
 
-	for _, tc := range tcs {
-		target := tc.origin.ReduceResolution(tc.target.Schema)
-		require.Equal(t, tc.target, target)
-		// Check that receiver histogram was mutated:
-		require.Equal(t, tc.target, tc.origin)
+	for tn, tc := range tcs {
+		t.Run(tn, func(t *testing.T) {
+			err := tc.origin.ReduceResolution(tc.targetSchema)
+			if tc.errorMsg != "" {
+				require.Equal(t, tc.errorMsg, err.Error())
+				// The returned error should be a histogram.Error.
+				require.ErrorAs(t, err, &Error{})
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.target, tc.origin)
+		})
 	}
 }

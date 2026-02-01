@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -39,7 +39,7 @@ func TestEvaluations(t *testing.T) {
 // Run a lot of queries at the same time, to check for race conditions.
 func TestConcurrentRangeQueries(t *testing.T) {
 	stor := teststorage.New(t)
-	defer stor.Close()
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,

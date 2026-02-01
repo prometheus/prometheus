@@ -316,6 +316,27 @@ eval instant at 5m http_requests_histogram == http_requests_histogram
 eval instant at 5m http_requests_histogram != http_requests_histogram
     expect no_info
 
+clear
+
+# Check that we track many-to-one vector matching errors even when all but 0 or 1
+# series on the "many" side are filtered away.
+load 5m
+  many_side{label="foo",job="test"} 0
+  many_side{label="bar",job="test"} 1
+  one_side{job="test"} 1
+
+# Check 0 series surviving the filtering producing an error.
+eval instant at 0m many_side > on(job) one_side
+  expect fail
+
+# Check 1 series surviving the filtering producing an error.
+eval instant at 0m many_side >= on(job) one_side
+  expect fail
+
+# Check 2 series surviving the filtering producing an error.
+eval instant at 0m many_side <= on(job) one_side
+  expect fail
+
 # group_left/group_right.
 
 clear
@@ -957,5 +978,42 @@ eval range from 0 to 10m step 5m (testhistogram) and on() (vector(1) == 1)
 eval instant at 10m (testhistogram) and on() (vector(-1) == 1)
 
 eval range from 0 to 10m step 5m (testhistogram) and on() (vector(-1) == 1)
+
+clear
+
+# Test unary negation with non-overlapping series that have different metric names.
+# After negation, the __name__ label is dropped, so series with different names
+# but same other labels should merge if they don't overlap in time.
+load 20m
+  http_requests{job="api"} 2 _
+  http_errors{job="api"} _ 4
+
+eval instant at 0 -{job="api"}
+  {job="api"} -2
+
+eval instant at 20m -{job="api"}
+  {job="api"} -4
+
+eval range from 0 to 20m step 20m -{job="api"}
+  {job="api"} -2 -4
+
+# Test unary negation failure with overlapping timestamps (same labelset at same time).
+clear
+load 1m
+  http_requests{job="api"} 1
+  http_errors{job="api"} 2
+
+eval_fail instant at 0 -{job="api"}
+
+clear
+
+# Test unary negation with "or" operator combining metrics with removed names.
+load 10m
+    metric_a   1  _
+    metric_b   3  4
+
+# Use "-" unary operator as a simple way to remove the metric name.
+eval range from 0 to 20m step 10m -metric_a or -metric_b
+    {} -1  -4
 
 clear

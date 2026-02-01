@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -119,6 +119,8 @@ func (testResourceClient) Close() {
 }
 
 func TestPollingRefreshSkipUpdate(t *testing.T) {
+	t.Parallel()
+
 	rc := &testResourceClient{
 		fetch: func(context.Context) (*v3.DiscoveryResponse, error) {
 			return nil, nil
@@ -162,6 +164,8 @@ func TestPollingRefreshSkipUpdate(t *testing.T) {
 }
 
 func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
+	t.Parallel()
+
 	server := "http://198.161.2.0"
 	source := "test"
 	rc := &testResourceClient{
@@ -218,6 +222,8 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 }
 
 func TestPollingDisappearingTargets(t *testing.T) {
+	t.Parallel()
+
 	server := "http://198.161.2.0"
 	source := "test"
 	rc := &testResourceClient{

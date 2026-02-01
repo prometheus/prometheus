@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
@@ -158,14 +159,17 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		nil,
 		nil,
 		false,
-		config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2},
+		remoteapi.MessageTypes{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType},
 		false,
 		false,
 		false,
 		false,
 		5*time.Minute,
 		false,
+		false,
 		overrideErrorCode,
+		nil,
+		OpenAPIOptions{},
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")
@@ -262,6 +266,10 @@ func (DummyTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 // TargetsDroppedCounts implements targetRetriever.
 func (DummyTargetRetriever) TargetsDroppedCounts() map[string]int {
 	return nil
+}
+
+func (DummyTargetRetriever) ScrapePoolConfig(_ string) (*config.ScrapeConfig, error) {
+	return nil, errors.New("not implemented")
 }
 
 // DummyAlertmanagerRetriever implements AlertmanagerRetriever.

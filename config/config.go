@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -29,6 +29,7 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/grafana/regexp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
@@ -148,6 +149,10 @@ func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, er
 	return cfg, nil
 }
 
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 // The defaults applied before parsing the respective config sections.
 var (
 	// DefaultConfig is the default top-level configuration.
@@ -163,11 +168,18 @@ var (
 		ScrapeTimeout:      model.Duration(10 * time.Second),
 		EvaluationInterval: model.Duration(1 * time.Minute),
 		RuleQueryOffset:    model.Duration(0 * time.Minute),
-		// When native histogram feature flag is enabled, ScrapeProtocols default
-		// changes to DefaultNativeHistogramScrapeProtocols.
-		ScrapeProtocols:                DefaultScrapeProtocols,
+		// This is nil to be able to distinguish between the case when
+		// the normal default should be used and the case when a
+		// new default is needed due to an enabled feature flag.
+		// E.g. set to `DefaultProtoFirstScrapeProtocols` when
+		// the feature flag `created-timestamp-zero-ingestion` is set.
+		ScrapeProtocols: nil,
+		// When the native histogram feature flag is enabled,
+		// ScrapeNativeHistograms default changes to true.
+		ScrapeNativeHistograms:         boolPtr(false),
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
+		ExtraScrapeMetrics:             boolPtr(false),
 		MetricNameValidationScheme:     model.UTF8Validation,
 		MetricNameEscapingScheme:       model.AllowUTF8,
 	}
@@ -207,7 +219,7 @@ var (
 	// DefaultRemoteWriteConfig is the default remote write configuration.
 	DefaultRemoteWriteConfig = RemoteWriteConfig{
 		RemoteTimeout:    model.Duration(30 * time.Second),
-		ProtobufMessage:  RemoteWriteProtoMsgV1,
+		ProtobufMessage:  remoteapi.WriteV1MessageType,
 		QueueConfig:      DefaultQueueConfig,
 		MetadataConfig:   DefaultMetadataConfig,
 		HTTPClientConfig: DefaultRemoteWriteHTTPClientConfig,
@@ -259,6 +271,10 @@ var (
 	// DefaultOTLPConfig is the default OTLP configuration.
 	DefaultOTLPConfig = OTLPConfig{
 		TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+		// For backwards compatibility.
+		LabelNameUnderscoreSanitization: true,
+		// For backwards compatibility.
+		LabelNamePreserveMultipleUnderscores: true,
 	}
 )
 
@@ -455,7 +471,7 @@ type GlobalConfig struct {
 	// The protocols to negotiate during a scrape. It tells clients what
 	// protocol are accepted by Prometheus and with what weight (most wanted is first).
 	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
-	// OpenMetricsText1.0.0, PrometheusText0.0.4.
+	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4
 	ScrapeProtocols []ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
@@ -495,10 +511,16 @@ type GlobalConfig struct {
 	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
+	// Whether to scrape native histograms.
+	ScrapeNativeHistograms *bool `yaml:"scrape_native_histograms,omitempty"`
 	// Whether to convert all scraped classic histograms into native histograms with custom buckets.
 	ConvertClassicHistogramsToNHCB bool `yaml:"convert_classic_histograms_to_nhcb,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
 	AlwaysScrapeClassicHistograms bool `yaml:"always_scrape_classic_histograms,omitempty"`
+	// Whether to enable additional scrape metrics.
+	// When enabled, Prometheus stores samples for scrape_timeout_seconds,
+	// scrape_sample_limit, and scrape_body_size_bytes.
+	ExtraScrapeMetrics *bool `yaml:"extra_scrape_metrics,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -558,8 +580,8 @@ var (
 
 	// DefaultProtoFirstScrapeProtocols is like DefaultScrapeProtocols, but it
 	// favors protobuf Prometheus exposition format.
-	// Used by default for certain feature-flags like
-	// "native-histograms" and "created-timestamp-zero-ingestion".
+	// Used by default by the "scrape_native_histograms" option and for certain
+	// feature-flags like "created-timestamp-zero-ingestion".
 	DefaultProtoFirstScrapeProtocols = []ScrapeProtocol{
 		PrometheusProto,
 		OpenMetricsText1_0_0,
@@ -635,12 +657,29 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if gc.EvaluationInterval == 0 {
 		gc.EvaluationInterval = DefaultGlobalConfig.EvaluationInterval
 	}
-
-	if gc.ScrapeProtocols == nil {
-		gc.ScrapeProtocols = DefaultGlobalConfig.ScrapeProtocols
+	if gc.ScrapeNativeHistograms == nil {
+		gc.ScrapeNativeHistograms = DefaultGlobalConfig.ScrapeNativeHistograms
 	}
-	if err := validateAcceptScrapeProtocols(gc.ScrapeProtocols); err != nil {
-		return fmt.Errorf("%w for global config", err)
+	if gc.ExtraScrapeMetrics == nil {
+		gc.ExtraScrapeMetrics = DefaultGlobalConfig.ExtraScrapeMetrics
+	}
+	if gc.ScrapeProtocols == nil {
+		if DefaultGlobalConfig.ScrapeProtocols != nil {
+			// This is the case where the defaults are set due to a feature flag.
+			// E.g. if the created-timestamp-zero-ingestion feature flag is
+			// used.
+			gc.ScrapeProtocols = DefaultGlobalConfig.ScrapeProtocols
+		}
+		// Otherwise, we leave ScrapeProtocols at nil for now. In the
+		// per-job scrape config, we have to recognize the unset case to
+		// correctly set the default depending on the local value of
+		// ScrapeNativeHistograms.
+	}
+	if gc.ScrapeProtocols != nil {
+		// Only validate if not-nil at this point.
+		if err := validateAcceptScrapeProtocols(gc.ScrapeProtocols); err != nil {
+			return fmt.Errorf("%w for global config", err)
+		}
 	}
 
 	*c = *gc
@@ -657,8 +696,19 @@ func (c *GlobalConfig) isZero() bool {
 		c.QueryLogFile == "" &&
 		c.ScrapeFailureLogFile == "" &&
 		c.ScrapeProtocols == nil &&
+		c.ScrapeNativeHistograms == nil &&
 		!c.ConvertClassicHistogramsToNHCB &&
-		!c.AlwaysScrapeClassicHistograms
+		!c.AlwaysScrapeClassicHistograms &&
+		c.BodySizeLimit == 0 &&
+		c.SampleLimit == 0 &&
+		c.TargetLimit == 0 &&
+		c.LabelLimit == 0 &&
+		c.LabelNameLengthLimit == 0 &&
+		c.LabelValueLengthLimit == 0 &&
+		c.KeepDroppedTargets == 0 &&
+		c.MetricNameValidationScheme == model.UnsetValidation &&
+		c.MetricNameEscapingScheme == "" &&
+		c.ExtraScrapeMetrics == nil
 }
 
 const DefaultGoGCPercentage = 75
@@ -719,6 +769,8 @@ type ScrapeConfig struct {
 	// Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
 	// OpenMetricsText1.0.0, PrometheusText1.0.0, PrometheusText0.0.4.
 	ScrapeFallbackProtocol ScrapeProtocol `yaml:"fallback_scrape_protocol,omitempty"`
+	// Whether to scrape native histograms.
+	ScrapeNativeHistograms *bool `yaml:"scrape_native_histograms,omitempty"`
 	// Whether to scrape a classic histogram, even if it is also exposed as a native histogram.
 	AlwaysScrapeClassicHistograms *bool `yaml:"always_scrape_classic_histograms,omitempty"`
 	// Whether to convert all scraped classic histograms into a native histogram with custom buckets.
@@ -765,6 +817,11 @@ type ScrapeConfig struct {
 	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
 	MetricNameEscapingScheme string `yaml:"metric_name_escaping_scheme,omitempty"`
+	// Whether to enable additional scrape metrics.
+	// When enabled, Prometheus stores samples for scrape_timeout_seconds,
+	// scrape_sample_limit, and scrape_body_size_bytes.
+	// If not set (nil), inherits the value from the global configuration.
+	ExtraScrapeMetrics *bool `yaml:"extra_scrape_metrics,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -863,9 +920,26 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c.ScrapeFailureLogFile == "" {
 		c.ScrapeFailureLogFile = globalConfig.ScrapeFailureLogFile
 	}
+	if c.ScrapeNativeHistograms == nil {
+		c.ScrapeNativeHistograms = globalConfig.ScrapeNativeHistograms
+	}
+	if c.ExtraScrapeMetrics == nil {
+		c.ExtraScrapeMetrics = globalConfig.ExtraScrapeMetrics
+	}
 
 	if c.ScrapeProtocols == nil {
-		c.ScrapeProtocols = globalConfig.ScrapeProtocols
+		switch {
+		case globalConfig.ScrapeProtocols != nil:
+			// global ScrapeProtocols either set explicitly or via a
+			// default triggered by a feature flag. This overrides
+			// the selection based on locally active scraping of
+			// native histograms.
+			c.ScrapeProtocols = globalConfig.ScrapeProtocols
+		case c.ScrapeNativeHistogramsEnabled():
+			c.ScrapeProtocols = DefaultProtoFirstScrapeProtocols
+		default:
+			c.ScrapeProtocols = DefaultScrapeProtocols
+		}
 	}
 	if err := validateAcceptScrapeProtocols(c.ScrapeProtocols); err != nil {
 		return fmt.Errorf("%w for scrape config with job name %q", err, c.JobName)
@@ -977,12 +1051,17 @@ func ToEscapingScheme(s string, v model.ValidationScheme) (model.EscapingScheme,
 		case model.LegacyValidation:
 			return model.UnderscoreEscaping, nil
 		case model.UnsetValidation:
-			return model.NoEscaping, fmt.Errorf("v is unset: %s", v)
+			return model.NoEscaping, fmt.Errorf("ValidationScheme is unset: %s", v)
 		default:
 			panic(fmt.Errorf("unhandled validation scheme: %s", v))
 		}
 	}
 	return model.ToEscapingScheme(s)
+}
+
+// ScrapeNativeHistogramsEnabled returns whether to scrape native histograms.
+func (c *ScrapeConfig) ScrapeNativeHistogramsEnabled() bool {
+	return c.ScrapeNativeHistograms != nil && *c.ScrapeNativeHistograms
 }
 
 // ConvertClassicHistogramsToNHCBEnabled returns whether to convert classic histograms to NHCB.
@@ -995,10 +1074,24 @@ func (c *ScrapeConfig) AlwaysScrapeClassicHistogramsEnabled() bool {
 	return c.AlwaysScrapeClassicHistograms != nil && *c.AlwaysScrapeClassicHistograms
 }
 
+// ExtraScrapeMetricsEnabled returns whether to enable extra scrape metrics.
+func (c *ScrapeConfig) ExtraScrapeMetricsEnabled() bool {
+	return c.ExtraScrapeMetrics != nil && *c.ExtraScrapeMetrics
+}
+
 // StorageConfig configures runtime reloadable configuration options.
 type StorageConfig struct {
 	TSDBConfig      *TSDBConfig      `yaml:"tsdb,omitempty"`
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
+}
+
+// TSDBRetentionConfig holds the configuration retention of data in storage storage.
+type TSDBRetentionConfig struct {
+	// How long to retain samples in storage.
+	Time model.Duration `yaml:"time,omitempty"`
+
+	// Maximum number of bytes that can be stored for blocks.
+	Size units.Base2Bytes `yaml:"size,omitempty"`
 }
 
 // TSDBConfig configures runtime reloadable configuration options.
@@ -1013,6 +1106,12 @@ type TSDBConfig struct {
 	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderTimeWindow.
 	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
 	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
+
+	// StaleSeriesCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
+	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
+	StaleSeriesCompactionThreshold float64 `yaml:"stale_series_compaction_threshold,omitempty"`
+
+	Retention *TSDBRetentionConfig `yaml:"retention,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -1313,50 +1412,6 @@ func CheckTargetAddress(address model.LabelValue) error {
 	return nil
 }
 
-// RemoteWriteProtoMsg represents the known protobuf message for the remote write
-// 1.0 and 2.0 specs.
-type RemoteWriteProtoMsg string
-
-// Validate returns error if the given reference for the protobuf message is not supported.
-func (s RemoteWriteProtoMsg) Validate() error {
-	switch s {
-	case RemoteWriteProtoMsgV1, RemoteWriteProtoMsgV2:
-		return nil
-	default:
-		return fmt.Errorf("unknown remote write protobuf message %v, supported: %v", s, RemoteWriteProtoMsgs{RemoteWriteProtoMsgV1, RemoteWriteProtoMsgV2}.String())
-	}
-}
-
-type RemoteWriteProtoMsgs []RemoteWriteProtoMsg
-
-func (m RemoteWriteProtoMsgs) Strings() []string {
-	ret := make([]string, 0, len(m))
-	for _, typ := range m {
-		ret = append(ret, string(typ))
-	}
-	return ret
-}
-
-func (m RemoteWriteProtoMsgs) String() string {
-	return strings.Join(m.Strings(), ", ")
-}
-
-var (
-	// RemoteWriteProtoMsgV1 represents the `prometheus.WriteRequest` protobuf
-	// message introduced in the https://prometheus.io/docs/specs/remote_write_spec/,
-	// which will eventually be deprecated.
-	//
-	// NOTE: This string is used for both HTTP header values and config value, so don't change
-	// this reference.
-	RemoteWriteProtoMsgV1 RemoteWriteProtoMsg = "prometheus.WriteRequest"
-	// RemoteWriteProtoMsgV2 represents the `io.prometheus.write.v2.Request` protobuf
-	// message introduced in https://prometheus.io/docs/specs/remote_write_spec_2_0/
-	//
-	// NOTE: This string is used for both HTTP header values and config value, so don't change
-	// this reference.
-	RemoteWriteProtoMsgV2 RemoteWriteProtoMsg = "io.prometheus.write.v2.Request"
-)
-
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
 	URL                  *config.URL       `yaml:"url"`
@@ -1369,7 +1424,7 @@ type RemoteWriteConfig struct {
 	RoundRobinDNS        bool              `yaml:"round_robin_dns,omitempty"`
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
-	ProtobufMessage RemoteWriteProtoMsg `yaml:"protobuf_message,omitempty"`
+	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -1609,6 +1664,14 @@ type OTLPConfig struct {
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
 	// As per OTel spec, the aforementioned scope metadata should be identifying, i.e. made into metric labels.
 	PromoteScopeMetadata bool `yaml:"promote_scope_metadata,omitempty"`
+	// LabelNameUnderscoreSanitization controls whether to enable prepending of 'key_' to labels
+	// starting with '_'. Reserved labels starting with `__` are not modified.
+	// This is only relevant when AllowUTF8 is false (i.e., when using underscore escaping).
+	LabelNameUnderscoreSanitization bool `yaml:"label_name_underscore_sanitization,omitempty"`
+	// LabelNamePreserveMultipleUnderscores enables preserving of multiple consecutive underscores
+	// in label names when AllowUTF8 is false. When false, multiple consecutive underscores are
+	// collapsed to a single underscore during label name sanitization.
+	LabelNamePreserveMultipleUnderscores bool `yaml:"label_name_preserve_multiple_underscores,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

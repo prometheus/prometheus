@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -31,11 +31,12 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestCreateAttributes(t *testing.T) {
+func TestPrometheusConverter_createAttributes(t *testing.T) {
 	resourceAttrs := map[string]string{
 		"service.name":        "service name",
 		"service.instance.id": "service ID",
@@ -67,15 +68,35 @@ func TestCreateAttributes(t *testing.T) {
 	attrs.PutStr("metric-attr", "metric value")
 	attrs.PutStr("metric-attr-other", "metric value other")
 
+	// Setup resources with underscores for sanitization tests
+	resourceAttrsWithUnderscores := map[string]string{
+		"service.name":        "service name",
+		"service.instance.id": "service ID",
+		"_private":            "private value",
+		"__reserved__":        "reserved value",
+		"label___multi":       "multi value",
+	}
+	resourceWithUnderscores := pcommon.NewResource()
+	for k, v := range resourceAttrsWithUnderscores {
+		resourceWithUnderscores.Attributes().PutStr(k, v)
+	}
+	attrsWithUnderscores := pcommon.NewMap()
+	attrsWithUnderscores.PutStr("_metric_private", "private metric")
+	attrsWithUnderscores.PutStr("metric___multi", "multi metric")
+
 	testCases := []struct {
-		name                         string
-		scope                        scope
-		promoteAllResourceAttributes bool
-		promoteResourceAttributes    []string
-		promoteScope                 bool
-		ignoreResourceAttributes     []string
-		ignoreAttrs                  []string
-		expectedLabels               labels.Labels
+		name                                 string
+		resource                             pcommon.Resource
+		attrs                                pcommon.Map
+		scope                                scope
+		promoteAllResourceAttributes         bool
+		promoteResourceAttributes            []string
+		promoteScope                         bool
+		ignoreResourceAttributes             []string
+		ignoreAttrs                          []string
+		labelNameUnderscoreSanitization      bool
+		labelNamePreserveMultipleUnderscores bool
+		expectedLabels                       labels.Labels
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion and without scope promotion",
@@ -251,6 +272,133 @@ func TestCreateAttributes(t *testing.T) {
 				"otel_scope_attr2", "value2",
 			),
 		},
+		// Label sanitization test cases
+		{
+			name:                                 "Underscore sanitization enabled - prepends key_ to labels starting with single _",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"_private"},
+			labelNameUnderscoreSanitization:      true,
+			labelNamePreserveMultipleUnderscores: true,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"key_private", "private value",
+				"key_metric_private", "private metric",
+				"metric___multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Underscore sanitization disabled - keeps labels with _ as-is",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"_private"},
+			labelNameUnderscoreSanitization:      false,
+			labelNamePreserveMultipleUnderscores: true,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"_private", "private value",
+				"_metric_private", "private metric",
+				"metric___multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Multiple underscores preserved - keeps consecutive underscores",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"label___multi"},
+			labelNameUnderscoreSanitization:      false,
+			labelNamePreserveMultipleUnderscores: true,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"label___multi", "multi value",
+				"_metric_private", "private metric",
+				"metric___multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Multiple underscores collapsed - collapses to single underscore",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"label___multi"},
+			labelNameUnderscoreSanitization:      false,
+			labelNamePreserveMultipleUnderscores: false,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"label_multi", "multi value",
+				"_metric_private", "private metric",
+				"metric_multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Both sanitization options enabled",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"_private", "label___multi"},
+			labelNameUnderscoreSanitization:      true,
+			labelNamePreserveMultipleUnderscores: true,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"key_private", "private value",
+				"label___multi", "multi value",
+				"key_metric_private", "private metric",
+				"metric___multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Both sanitization options disabled",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"_private", "label___multi"},
+			labelNameUnderscoreSanitization:      false,
+			labelNamePreserveMultipleUnderscores: false,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"_private", "private value",
+				"label_multi", "multi value",
+				"_metric_private", "private metric",
+				"metric_multi", "multi metric",
+			),
+		},
+		{
+			name:                                 "Reserved labels (starting with __) are never modified",
+			resource:                             resourceWithUnderscores,
+			attrs:                                attrsWithUnderscores,
+			promoteResourceAttributes:            []string{"__reserved__"},
+			labelNameUnderscoreSanitization:      true,
+			labelNamePreserveMultipleUnderscores: false,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"__reserved__", "reserved value",
+				"key_metric_private", "private metric",
+				"metric_multi", "multi metric",
+			),
+		},
+		{
+			name:                      "__name__ attribute is filtered when passed in ignoreAttrs",
+			promoteResourceAttributes: nil,
+			ignoreAttrs:               []string{model.MetricNameLabel},
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+			),
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -261,14 +409,135 @@ func TestCreateAttributes(t *testing.T) {
 					PromoteResourceAttributes:    tc.promoteResourceAttributes,
 					IgnoreResourceAttributes:     tc.ignoreResourceAttributes,
 				}),
-				PromoteScopeMetadata: tc.promoteScope,
+				PromoteScopeMetadata:                 tc.promoteScope,
+				LabelNameUnderscoreSanitization:      tc.labelNameUnderscoreSanitization,
+				LabelNamePreserveMultipleUnderscores: tc.labelNamePreserveMultipleUnderscores,
 			}
-			lbls, err := c.createAttributes(resource, attrs, tc.scope, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
+			// Use test case specific resource/attrs if provided, otherwise use defaults
+			// Check if tc.resource is initialized (non-zero) by trying to get its attributes
+			testResource := resource
+			testAttrs := attrs
+			// For pcommon types, we can check if they're non-zero by seeing if they have attributes
+			// Since zero-initialized Resource is not valid, we use a simple heuristic:
+			// if the struct has been explicitly set in the test case, use it
+			if tc.resource != (pcommon.Resource{}) {
+				testResource = tc.resource
+			}
+			if tc.attrs != (pcommon.Map{}) {
+				testAttrs = tc.attrs
+			}
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, c.setResourceContext(testResource, settings))
+			require.NoError(t, c.setScopeContext(tc.scope, settings))
+
+			lbls, err := c.createAttributes(testAttrs, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
 			require.NoError(t, err)
 
-			testutil.RequireEqual(t, lbls, tc.expectedLabels)
+			testutil.RequireEqual(t, tc.expectedLabels, lbls)
 		})
 	}
+
+	// Test that __name__ attributes in OTLP data are filtered out to prevent
+	// duplicate labels.
+	t.Run("__name__ attribute in OTLP data is filtered", func(t *testing.T) {
+		resource := pcommon.NewResource()
+		resource.Attributes().PutStr("service.name", "test-service")
+		resource.Attributes().PutStr("service.instance.id", "test-instance")
+
+		// Create attributes with __name__ to simulate problematic OTLP data.
+		attrsWithNameLabel := pcommon.NewMap()
+		attrsWithNameLabel.PutStr("__name__", "wrong_metric_name")
+		attrsWithNameLabel.PutStr("other_attr", "value")
+
+		mockAppender := &mockCombinedAppender{}
+		c := NewPrometheusConverter(mockAppender)
+		settings := Settings{}
+
+		require.NoError(t, c.setResourceContext(resource, settings))
+		require.NoError(t, c.setScopeContext(scope{}, settings))
+
+		// Call createAttributes with reservedLabelNames to filter __name__.
+		lbls, err := c.createAttributes(
+			attrsWithNameLabel,
+			settings,
+			reservedLabelNames,
+			true,
+			Metadata{},
+			model.MetricNameLabel, "correct_metric_name",
+		)
+		require.NoError(t, err)
+
+		// Verify there's exactly one __name__ label with the correct value.
+		nameCount := 0
+		var nameValue string
+		lbls.Range(func(l labels.Label) {
+			if l.Name == model.MetricNameLabel {
+				nameCount++
+				nameValue = l.Value
+			}
+		})
+
+		require.Equal(t, 1, nameCount)
+		require.Equal(t, "correct_metric_name", nameValue)
+		require.Equal(t, "value", lbls.Get("other_attr"))
+	})
+
+	// Test that __type__ and __unit__ attributes in OTLP data are overwritten
+	// by auto-generated labels from metadata when EnableTypeAndUnitLabels is true.
+	t.Run("__type__ and __unit__ attributes are overwritten by metadata", func(t *testing.T) {
+		resource := pcommon.NewResource()
+		resource.Attributes().PutStr("service.name", "test-service")
+		resource.Attributes().PutStr("service.instance.id", "test-instance")
+
+		// Create attributes with __type__ and __unit__ to simulate problematic OTLP data.
+		attrsWithTypeAndUnit := pcommon.NewMap()
+		attrsWithTypeAndUnit.PutStr(model.MetricTypeLabel, "wrong_type")
+		attrsWithTypeAndUnit.PutStr(model.MetricUnitLabel, "wrong_unit")
+		attrsWithTypeAndUnit.PutStr("other_attr", "value")
+
+		mockAppender := &mockCombinedAppender{}
+		c := NewPrometheusConverter(mockAppender)
+		settings := Settings{EnableTypeAndUnitLabels: true}
+
+		require.NoError(t, c.setResourceContext(resource, settings))
+		require.NoError(t, c.setScopeContext(scope{}, settings))
+
+		// Call createAttributes with Metadata containing correct Type and Unit.
+		lbls, err := c.createAttributes(
+			attrsWithTypeAndUnit,
+			settings,
+			reservedLabelNames,
+			true,
+			Metadata{Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds"}},
+			model.MetricNameLabel, "test_metric",
+		)
+		require.NoError(t, err)
+
+		// Verify there's exactly one __type__ label with the correct value (from metadata).
+		typeCount := 0
+		var typeValue string
+		lbls.Range(func(l labels.Label) {
+			if l.Name == model.MetricTypeLabel {
+				typeCount++
+				typeValue = l.Value
+			}
+		})
+		require.Equal(t, 1, typeCount)
+		require.Equal(t, "gauge", typeValue)
+
+		// Verify there's exactly one __unit__ label with the correct value (from metadata).
+		unitCount := 0
+		var unitValue string
+		lbls.Range(func(l labels.Label) {
+			if l.Name == model.MetricUnitLabel {
+				unitCount++
+				unitValue = l.Value
+			}
+		})
+		require.Equal(t, 1, unitCount)
+		require.Equal(t, "seconds", unitValue)
+		require.Equal(t, "value", lbls.Get("other_attr"))
+	})
 }
 
 func Test_convertTimeStamp(t *testing.T) {
@@ -332,7 +601,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 							model.MetricNameLabel, "test_summary"+sumStr,
 						),
 						t:  convertTimeStamp(ts),
-						ct: convertTimeStamp(ts),
+						st: convertTimeStamp(ts),
 						v:  0,
 					},
 					{
@@ -341,7 +610,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 							model.MetricNameLabel, "test_summary"+countStr,
 						),
 						t:  convertTimeStamp(ts),
-						ct: convertTimeStamp(ts),
+						st: convertTimeStamp(ts),
 						v:  0,
 					},
 				}
@@ -376,7 +645,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						ls: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_summary"+sumStr)...),
 						t:  convertTimeStamp(ts),
-						ct: convertTimeStamp(ts),
+						st: convertTimeStamp(ts),
 						v:  0,
 					},
 					{
@@ -384,7 +653,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 						ls: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_summary"+countStr)...),
 						t:  convertTimeStamp(ts),
-						ct: convertTimeStamp(ts),
+						st: convertTimeStamp(ts),
 						v:  0,
 					},
 				}
@@ -493,15 +762,19 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			metric := tt.metric()
 			mockAppender := &mockCombinedAppender{}
 			converter := NewPrometheusConverter(mockAppender)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addSummaryDataPoints(
 				context.Background(),
 				metric.Summary().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
-				},
-				tt.scope,
+				settings,
 				Metadata{
 					MetricFamilyName: metric.Name(),
 				},
@@ -556,7 +829,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 							model.MetricNameLabel, "test_hist"+countStr,
 						),
 						t:  convertTimeStamp(ts),
-						ct: convertTimeStamp(ts),
+						st: convertTimeStamp(ts),
 						v:  0,
 					},
 					{
@@ -566,7 +839,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 							model.BucketLabel, "+Inf",
 						),
 						t:  convertTimeStamp(ts),
-						ct: convertTimeStamp(ts),
+						st: convertTimeStamp(ts),
 						v:  0,
 					},
 				}
@@ -601,7 +874,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 						ls: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_hist"+countStr)...),
 						t:  convertTimeStamp(ts),
-						ct: convertTimeStamp(ts),
+						st: convertTimeStamp(ts),
 						v:  0,
 					},
 					{
@@ -610,7 +883,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 							model.MetricNameLabel, "test_hist_bucket",
 							model.BucketLabel, "+Inf")...),
 						t:  convertTimeStamp(ts),
-						ct: convertTimeStamp(ts),
+						st: convertTimeStamp(ts),
 						v:  0,
 					},
 				}
@@ -656,15 +929,19 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			metric := tt.metric()
 			mockAppender := &mockCombinedAppender{}
 			converter := NewPrometheusConverter(mockAppender)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
 
 			converter.addHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
-				},
-				tt.scope,
+				settings,
 				Metadata{
 					MetricFamilyName: metric.Name(),
 				},

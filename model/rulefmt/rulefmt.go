@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -100,7 +100,7 @@ type ruleGroups struct {
 func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.ValidationScheme) (errs []error) {
 	if err := namevalidationutil.CheckNameValidationScheme(nameValidationScheme); err != nil {
 		errs = append(errs, err)
-		return
+		return errs
 	}
 
 	set := map[string]struct{}{}
@@ -286,7 +286,7 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 		nodes = append(nodes, WrappedError{err: err})
 	}
 
-	return
+	return nodes
 }
 
 // testTemplateParsing checks if the templates used in labels and annotations

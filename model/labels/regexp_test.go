@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -87,15 +87,24 @@ var (
 		"ſſs",
 		// Concat of literals and wildcards.
 		".*-.*-.*-.*-.*",
+		".+-.*-.*-.*-.+",
+		"-.*-.*-.*-.*",
+		".*-.*-.*-.*-",
 		"(.+)-(.+)-(.+)-(.+)-(.+)",
 		"((.*))(?i:f)((.*))o((.*))o((.*))",
 		"((.*))f((.*))(?i:o)((.*))o((.*))",
+		"(.*0.*)",
 	}
 	values = []string{
 		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
 		"FOO", "Foo", "fOo", "foO", "OO", "Oo", "\nfoo\n", strings.Repeat("f", 20), "prometheus", "prometheus_api_v1", "prometheus_api_v1_foo",
 		"10.0.1.20", "10.0.2.10", "10.0.3.30", "10.0.4.40",
 		"foofoo0", "foofoo", "😀foo0", "ſſs", "ſſS", "AAAAAAAAAAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBBBBBBBBBB", "cccccccccccccccccccccccC", "ſſſſſſſſſſſſſſſſſſſſſſſſS", "SSSSSSSSSSSSSSSSSSSSSSSSſ",
+		"a-b-c-d-e",
+		"aaaaaa-bbbbbb-cccccc-dddddd-eeeeee",
+		"aaaaaa----eeeeee",
+		"----",
+		"-a-a-a-",
 
 		// Values matching / not matching the test regexps on long alternations.
 		"zQPbMkNO", "zQPbMkNo", "jyyfj00j0061", "jyyfj00j006", "jyyfj00j00612", "NNSPdvMi", "NNSPdvMiXXX", "NNSPdvMixxx", "nnSPdvMi", "nnSPdvMiXXX",
@@ -162,6 +171,7 @@ func TestOptimizeConcatRegex(t *testing.T) {
 		{regex: "^5..$", prefix: "5", suffix: "", contains: nil},
 		{regex: "^release.*", prefix: "release", suffix: "", contains: nil},
 		{regex: "^env-[0-9]+laio[1]?[^0-9].*", prefix: "env-", suffix: "", contains: []string{"laio"}},
+		{regex: ".*-.*-.*-.*-.*", prefix: "", suffix: "", contains: []string{"-", "-", "-", "-"}},
 	}
 
 	for _, c := range cases {
@@ -285,7 +295,7 @@ func BenchmarkFastRegexMatcher(b *testing.B) {
 			require.NoError(b, err)
 
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				for _, text := range texts {
 					_ = m.MatchString(text)
 				}
@@ -329,7 +339,7 @@ func BenchmarkToNormalizedLower(b *testing.B) {
 								inputs[i] = benchCase(l, uppercase, asciiOnly, i)
 							}
 							b.ResetTimer()
-							for n := 0; n < b.N; n++ {
+							for n := 0; b.Loop(); n++ {
 								var a [256]byte
 								toNormalisedLower(inputs[n%len(inputs)], a[:])
 							}
@@ -341,7 +351,7 @@ func BenchmarkToNormalizedLower(b *testing.B) {
 	}
 }
 
-func TestStringMatcherFromRegexp(t *testing.T) {
+func TestNewFastRegexMatcher(t *testing.T) {
 	for _, c := range []struct {
 		pattern string
 		exp     StringMatcher
@@ -364,12 +374,12 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{`(?i:((foo1|foo2|bar)))`, orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
 		{"^((?i:foo|oo)|(bar))$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "OO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
 		{"(?i:(foo1|foo2|bar))", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO1", caseSensitive: false}, &equalStringMatcher{s: "FOO2", caseSensitive: false}}), &equalStringMatcher{s: "BAR", caseSensitive: false}})},
-		{".*foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
-		{"(.*)foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
-		{"(.*)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
+		{".*foo.*", trueMatcher{}},     // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
+		{"(.*)foo.*", trueMatcher{}},   // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
+		{"(.*)foo(.*)", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
 		{"(.+)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: trueMatcher{}}},
 		{"^.+foo.+", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
-		{"^(.*)(foo)(.*)$", &containsStringMatcher{substrings: []string{"foo"}, left: trueMatcher{}, right: trueMatcher{}}},
+		{"^(.*)(foo)(.*)$", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
 		{"^(.*)(foo|foobar)(.*)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: trueMatcher{}, right: trueMatcher{}}},
 		{"^(.*)(foo|foobar)(.+)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
 		{"^(.*)(bar|b|buzz)(.+)$", &containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
@@ -388,7 +398,7 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil},
 		{"[a-z][a-z]", nil},
 		{"[1^3]", nil},
-		{".*foo.*bar.*", nil},
+		{".*foo.*bar.*", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
 		{`\d*`, nil},
 		{".", nil},
 		{"/|/bar.*", &literalPrefixSensitiveStringMatcher{prefix: "/", right: orStringMatcher{emptyStringMatcher{}, &literalPrefixSensitiveStringMatcher{prefix: "bar", right: trueMatcher{}}}}},
@@ -415,10 +425,9 @@ func TestStringMatcherFromRegexp(t *testing.T) {
 	} {
 		t.Run(c.pattern, func(t *testing.T) {
 			t.Parallel()
-			parsed, err := syntax.Parse(c.pattern, syntax.Perl|syntax.DotNL)
+			matcher, err := NewFastRegexMatcher(c.pattern)
 			require.NoError(t, err)
-			matches := stringMatcherFromRegexp(parsed)
-			require.Equal(t, c.exp, matches)
+			require.Equal(t, c.exp, matcher.stringMatcher)
 		})
 	}
 }
@@ -988,7 +997,7 @@ func TestFindEqualOrPrefixStringMatchers(t *testing.T) {
 			return true
 		})
 
-		return
+		return matches, ok
 	}
 
 	t.Run("empty matcher", func(t *testing.T) {
@@ -1123,7 +1132,7 @@ func BenchmarkOptimizeEqualOrPrefixStringMatchers(b *testing.B) {
 					}
 
 					b.Run("without optimizeEqualOrPrefixStringMatchers()", func(b *testing.B) {
-						for n := 0; n < b.N; n++ {
+						for b.Loop() {
 							for _, t := range texts {
 								unoptimized.Matches(t)
 							}
@@ -1131,7 +1140,7 @@ func BenchmarkOptimizeEqualOrPrefixStringMatchers(b *testing.B) {
 					})
 
 					b.Run("with optimizeEqualOrPrefixStringMatchers()", func(b *testing.B) {
-						for n := 0; n < b.N; n++ {
+						for b.Loop() {
 							for _, t := range texts {
 								optimized.Matches(t)
 							}
@@ -1220,9 +1229,8 @@ func BenchmarkZeroOrOneCharacterStringMatcher(b *testing.B) {
 	}
 
 	matcher := &zeroOrOneCharacterStringMatcher{matchNL: true}
-	b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
+	for n := 0; b.Loop(); n++ {
 		c := cases[n%len(cases)]
 		got := matcher.Matches(c.str)
 		if got != c.matches {
@@ -1388,5 +1396,44 @@ func TestToNormalisedLower(t *testing.T) {
 	}
 	for input, expectedOutput := range testCases {
 		require.Equal(t, expectedOutput, toNormalisedLower(input, nil))
+	}
+}
+
+func TestIsSimpleConcatenationPattern(t *testing.T) {
+	testCases := map[string]bool{
+		".*-.*-.*-.*-.*": true,
+		".+-.*-.*-.*-.+": false,
+		"-.*-.*-.*-.*":   false,
+		".*-.*-.*-.*-":   false,
+		"-":              false,
+		".*":             false,
+	}
+
+	for testCase, expected := range testCases {
+		t.Run(testCase, func(t *testing.T) {
+			re, err := syntax.Parse(testCase, syntax.Perl|syntax.DotNL)
+			require.NoError(t, err)
+			require.Equal(t, expected, isSimpleConcatenationPattern(re))
+		})
+	}
+}
+
+func BenchmarkFastRegexMatcher_ConcatenatedPattern(b *testing.B) {
+	pattern, err := NewFastRegexMatcher(".*-.*-.*-.*-.*")
+	require.NoError(b, err)
+
+	testCases := []string{
+		"a-b-c-d-e",
+		"aaaaaa-bbbbbb-cccccc-dddddd-eeeeee",
+		"aaaaaa----eeeeee",
+		"----",
+		"-a-a-a-",
+		"abcd",
+	}
+
+	for b.Loop() {
+		for _, s := range testCases {
+			pattern.MatchString(s)
+		}
 	}
 }

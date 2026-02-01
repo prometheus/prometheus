@@ -126,7 +126,7 @@ const matchingCriteriaList = (
 };
 
 const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
-  const baseMetricName = node.name.replace(/(_count|_sum|_bucket)$/, "");
+  const baseMetricName = node.name.replace(/(_count|_sum|_bucket|_total)$/, "");
   const { lookbackDelta } = useSettings();
 
   // Try to get metadata for the full unchanged metric name first.
@@ -171,9 +171,22 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
       <Text fz="sm">
         {node.type === nodeType.vectorSelector ? (
           <>
-            This node selects the latest (non-stale) sample value within the
-            last{" "}
-            <span className="promql-code promql-duration">{lookbackDelta}</span>
+            This node {node.smoothed ? "smooths the value" : "selects the latest"}{" "}
+            {node.anchored || node.smoothed ? "" : "non-stale "}
+            {!node.smoothed && (
+              <>
+                sample value within the last{" "}
+                <span className="promql-code promql-duration">{lookbackDelta}</span>
+              </>
+            )}
+            {node.smoothed && (
+              <>
+                using <code>smoothed</code> mode (linear interpolation with nearest
+                points within{" "}
+                <span className="promql-code promql-duration">{lookbackDelta}</span>{" "}
+                before and after execution timestamp, ignoring staleness markers)
+              </>
+            )}
           </>
         ) : (
           <>
@@ -182,6 +195,21 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
               {formatPrometheusDuration(node.range)}
             </span>{" "}
             of data going backward from the evaluation timestamp
+            {node.anchored && (
+              <>
+                {" "}
+                using <code>anchored</code> mode (includes first sample before or at
+                start boundary, and last sample of the range at end boundary, ignoring staleness markers)
+              </>
+            )}
+            {node.smoothed && (
+              <>
+                {" "}
+                using <code>smoothed</code> mode (applies linear
+                interpolation at the boundaries using nearest samples
+                before and after boundaries, ignoring staleness markers)
+              </>
+            )}
           </>
         )}
         {node.timestamp !== null ? (

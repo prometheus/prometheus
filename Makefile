@@ -1,4 +1,4 @@
-# Copyright 2018 The Prometheus Authors
+# Copyright The Prometheus Authors
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -79,6 +79,20 @@ ui-lint:
 	# new Mantine-based UI is fully integrated and the old app can be removed.
 	cd $(UI_PATH)/react-app && npm run lint
 
+.PHONY: generate-promql-functions
+generate-promql-functions: ui-install
+	@echo ">> generating PromQL function signatures"
+	@cd $(UI_PATH)/mantine-ui/src/promql/tools && $(GO) run ./gen_functions_list > ../functionSignatures.ts
+	@echo ">> generating PromQL function documentation"
+	@cd $(UI_PATH)/mantine-ui/src/promql/tools && $(GO) run ./gen_functions_docs $(CURDIR)/docs/querying/functions.md > ../functionDocs.tsx
+	@echo ">> formatting generated files"
+	@cd $(UI_PATH)/mantine-ui && npx prettier --write --print-width 120 src/promql/functionSignatures.ts src/promql/functionDocs.tsx
+
+.PHONY: check-generated-promql-functions
+check-generated-promql-functions: generate-promql-functions
+	@echo ">> checking generated PromQL functions"
+	@git diff --exit-code -- $(UI_PATH)/mantine-ui/src/promql/functionSignatures.ts $(UI_PATH)/mantine-ui/src/promql/functionDocs.tsx || (echo "Generated PromQL function files are out of date. Please run 'make generate-promql-functions' and commit the changes." && false)
+
 .PHONY: assets
 ifndef SKIP_UI_BUILD
 assets: check-node-version ui-install ui-build
@@ -152,15 +166,8 @@ tarball: npm_licenses common-tarball
 .PHONY: docker
 docker: npm_licenses common-docker
 
-plugins/plugins.go: plugins.yml plugins/generate.go
-	@echo ">> creating plugins list"
-	$(GO) generate -tags plugins ./plugins
-
-.PHONY: plugins
-plugins: plugins/plugins.go
-
 .PHONY: build
-build: assets npm_licenses assets-compress plugins common-build
+build: assets npm_licenses assets-compress common-build
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)
@@ -184,14 +191,26 @@ check-go-mod-version:
 	@echo ">> checking go.mod version matching"
 	@./scripts/check-go-mod-version.sh
 
+.PHONY: update-features-testdata
+update-features-testdata:
+	@echo ">> updating features testdata"
+	@$(GO) test ./cmd/prometheus -run TestFeaturesAPI -update-features
+
+GO_SUBMODULE_DIRS := documentation/examples/remote_storage internal/tools web/ui/mantine-ui/src/promql/tools
+
 .PHONY: update-all-go-deps
-update-all-go-deps:
-	@$(MAKE) update-go-deps
-	@echo ">> updating Go dependencies in ./documentation/examples/remote_storage/"
-	@cd ./documentation/examples/remote_storage/ && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
+update-all-go-deps: update-go-deps
+	$(foreach dir,$(GO_SUBMODULE_DIRS),$(MAKE) update-go-deps-in-dir DIR=$(dir);)
+	@echo ">> syncing Go workspace"
+	@$(GO) work sync
+
+.PHONY: update-go-deps-in-dir
+update-go-deps-in-dir:
+	@echo ">> updating Go dependencies in ./$(DIR)/"
+	@cd ./$(DIR) && for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
 		$(GO) get $$m; \
 	done
-	@cd ./documentation/examples/remote_storage/ && $(GO) mod tidy
+	@cd ./$(DIR) && $(GO) mod tidy
 
 .PHONY: check-node-version
 check-node-version:
@@ -201,3 +220,8 @@ check-node-version:
 bump-go-version:
 	@echo ">> bumping Go minor version"
 	@./scripts/bump_go_version.sh
+
+.PHONY: generate-fuzzing-seed-corpus
+generate-fuzzing-seed-corpus:
+	@echo ">> Generating fuzzing seed corpus"
+	@$(GO) generate -tags fuzzing ./util/fuzzing/corpus_gen

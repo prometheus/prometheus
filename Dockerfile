@@ -2,7 +2,15 @@ ARG ARCH="amd64"
 ARG OS="linux"
 FROM quay.io/prometheus/busybox-${OS}-${ARCH}:latest
 LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com>"
-LABEL org.opencontainers.image.source="https://github.com/prometheus/prometheus"
+LABEL org.opencontainers.image.authors="The Prometheus Authors" \
+      org.opencontainers.image.vendor="Prometheus" \
+      org.opencontainers.image.title="Prometheus" \
+      org.opencontainers.image.description="The Prometheus monitoring system and time series database" \
+      org.opencontainers.image.source="https://github.com/prometheus/prometheus" \
+      org.opencontainers.image.url="https://github.com/prometheus/prometheus" \
+      org.opencontainers.image.documentation="https://prometheus.io/docs" \
+      org.opencontainers.image.licenses="Apache License 2.0" \
+      io.prometheus.image.variant="busybox"
 
 ARG ARCH="amd64"
 ARG OS="linux"

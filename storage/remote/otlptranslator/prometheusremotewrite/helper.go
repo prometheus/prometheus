@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,6 +19,7 @@ package prometheusremotewrite
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -32,7 +33,7 @@ import (
 	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
-	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -60,18 +61,24 @@ const (
 	defaultLookbackDelta = 5 * time.Minute
 )
 
+// reservedLabelNames contains label names that should be filtered from
+// OTLP attributes because they are set separately (via extras parameter).
+// Allowing these through could create duplicate labels.
+var reservedLabelNames = []string{
+	model.MetricNameLabel, // "__name__" - set from metric name
+}
+
 // createAttributes creates a slice of Prometheus Labels with OTLP attributes and pairs of string values.
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
-// If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
-func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
+//
+// This function requires for cached resource and scope labels to be set up first.
+func (c *PrometheusConverter) createAttributes(attributes pcommon.Map, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, meta Metadata, extras ...string,
 ) (labels.Labels, error) {
-	resourceAttrs := resource.Attributes()
-	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
-	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
-
-	promoteScope := settings.PromoteScopeMetadata && scope.name != ""
+	if c.resourceLabels == nil {
+		return labels.EmptyLabels(), errors.New("createAttributes called without initializing resource context")
+	}
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
@@ -88,8 +95,6 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 	c.scratchBuilder.Sort()
 	sortedLabels := c.scratchBuilder.Labels()
 
-	labelNamer := otlptranslator.LabelNamer{UTF8Allowed: settings.AllowUTF8}
-
 	if settings.AllowUTF8 {
 		// UTF8 is allowed, so conflicts aren't possible.
 		c.builder.Reset(sortedLabels)
@@ -102,7 +107,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 			if sortErr != nil {
 				return
 			}
-			finalKey, err := labelNamer.Build(l.Name)
+			finalKey, err := c.buildLabelName(l.Name)
 			if err != nil {
 				sortErr = err
 				return
@@ -118,28 +123,36 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		}
 	}
 
-	err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, settings.AllowUTF8)
-	if err != nil {
-		return labels.EmptyLabels(), err
-	}
-	if promoteScope {
-		var rangeErr error
-		scope.attributes.Range(func(k string, v pcommon.Value) bool {
-			name, err := labelNamer.Build("otel_scope_" + k)
-			if err != nil {
-				rangeErr = err
-				return false
+	if settings.PromoteResourceAttributes != nil {
+		// Merge cached promoted resource labels.
+		c.resourceLabels.promotedLabels.Range(func(l labels.Label) {
+			if c.builder.Get(l.Name) == "" {
+				c.builder.Set(l.Name, l.Value)
 			}
-			c.builder.Set(name, v.AsString())
-			return true
 		})
-		if rangeErr != nil {
-			return labels.EmptyLabels(), rangeErr
+	}
+	// Merge cached job/instance labels.
+	if c.resourceLabels.jobLabel != "" {
+		c.builder.Set(model.JobLabel, c.resourceLabels.jobLabel)
+	}
+	if c.resourceLabels.instanceLabel != "" {
+		c.builder.Set(model.InstanceLabel, c.resourceLabels.instanceLabel)
+	}
+	// Merge cached external labels.
+	for key, value := range c.resourceLabels.externalLabels {
+		if c.builder.Get(key) == "" {
+			c.builder.Set(key, value)
 		}
-		// Scope Name, Version and Schema URL are added after attributes to ensure they are not overwritten by attributes.
-		c.builder.Set("otel_scope_name", scope.name)
-		c.builder.Set("otel_scope_version", scope.version)
-		c.builder.Set("otel_scope_schema_url", scope.schemaURL)
+	}
+
+	if c.scopeLabels != nil {
+		// Merge cached scope labels if scope promotion is enabled.
+		c.scopeLabels.scopeAttrs.Range(func(l labels.Label) {
+			c.builder.Set(l.Name, l.Value)
+		})
+		c.builder.Set("otel_scope_name", c.scopeLabels.scopeName)
+		c.builder.Set("otel_scope_version", c.scopeLabels.scopeVersion)
+		c.builder.Set("otel_scope_schema_url", c.scopeLabels.scopeSchemaURL)
 	}
 
 	if settings.EnableTypeAndUnitLabels {
@@ -150,27 +163,6 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		if meta.Unit != "" {
 			c.builder.Set(model.MetricUnitLabel, unitNamer.Build(meta.Unit))
 		}
-	}
-
-	// Map service.name + service.namespace to job.
-	if haveServiceName {
-		val := serviceName.AsString()
-		if serviceNamespace, ok := resourceAttrs.Get(conventions.AttributeServiceNamespace); ok {
-			val = fmt.Sprintf("%s/%s", serviceNamespace.AsString(), val)
-		}
-		c.builder.Set(model.JobLabel, val)
-	}
-	// Map service.instance.id to instance.
-	if haveInstanceID {
-		c.builder.Set(model.InstanceLabel, instance.AsString())
-	}
-	for key, value := range settings.ExternalLabels {
-		// External labels have already been sanitized.
-		if existingValue := c.builder.Get(key); existingValue != "" {
-			// Skip external labels if they are overridden by metric attributes.
-			continue
-		}
-		c.builder.Set(key, value)
 	}
 
 	for i := 0; i < len(extras); i += 2 {
@@ -185,7 +177,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		// internal labels should be maintained.
 		if len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__" {
 			var err error
-			name, err = labelNamer.Build(name)
+			name, err = c.buildLabelName(name)
 			if err != nil {
 				return labels.EmptyLabels(), err
 			}
@@ -219,7 +211,7 @@ func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporali
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, scope scope, meta Metadata,
+	settings Settings, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -229,7 +221,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(ctx context.Context, dataPo
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestamp := convertTimeStamp(pt.StartTimestamp())
-		baseLabels, err := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false, meta)
+		baseLabels, err := c.createAttributes(pt.Attributes(), settings, reservedLabelNames, false, meta)
 		if err != nil {
 			return err
 		}
@@ -420,8 +412,8 @@ func findMinAndMaxTimestamps(metric pmetric.Metric, minTimestamp, maxTimestamp p
 	return minTimestamp, maxTimestamp
 }
 
-func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, scope scope, meta Metadata,
+func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice,
+	settings Settings, meta Metadata,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -431,7 +423,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(ctx context.Context, dataPoin
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestamp := convertTimeStamp(pt.StartTimestamp())
-		baseLabels, err := c.createAttributes(resource, pt.Attributes(), scope, settings, nil, false, meta)
+		baseLabels, err := c.createAttributes(pt.Attributes(), settings, reservedLabelNames, false, meta)
 		if err != nil {
 			return err
 		}
@@ -500,9 +492,9 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 
 	attributes := resource.Attributes()
 	identifyingAttrs := []string{
-		conventions.AttributeServiceNamespace,
-		conventions.AttributeServiceName,
-		conventions.AttributeServiceInstanceID,
+		string(semconv.ServiceNamespaceKey),
+		string(semconv.ServiceNameKey),
+		string(semconv.ServiceInstanceIDKey),
 	}
 	nonIdentifyingAttrsCount := attributes.Len()
 	for _, a := range identifyingAttrs {
@@ -534,7 +526,12 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		MetricFamilyName: name,
 	}
 	// TODO: should target info have the __type__ metadata label?
-	lbls, err := c.createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, Metadata{}, model.MetricNameLabel, name)
+	// target_info is a resource-level metric and should not include scope labels.
+	// Temporarily clear scope labels for this call.
+	savedScopeLabels := c.scopeLabels
+	c.scopeLabels = nil
+	lbls, err := c.createAttributes(attributes, settings, identifyingAttrs, false, Metadata{}, model.MetricNameLabel, name)
+	c.scopeLabels = savedScopeLabels
 	if err != nil {
 		return err
 	}
@@ -558,12 +555,41 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		settings.LookbackDelta = defaultLookbackDelta
 	}
 	interval := settings.LookbackDelta / 2
+
+	// Deduplicate target_info samples with the same labelset and timestamp across
+	// multiple resources in the same batch.
+	labelsHash := lbls.Hash()
+
+	var key targetInfoKey
 	for timestamp := earliestTimestamp; timestamp.Before(latestTimestamp); timestamp = timestamp.Add(interval) {
-		if err := c.appender.AppendSample(lbls, meta, 0, timestamp.UnixMilli(), float64(1), nil); err != nil {
+		timestampMs := timestamp.UnixMilli()
+		key = targetInfoKey{
+			labelsHash: labelsHash,
+			timestamp:  timestampMs,
+		}
+		if _, exists := c.seenTargetInfo[key]; exists {
+			// Skip duplicate.
+			continue
+		}
+
+		c.seenTargetInfo[key] = struct{}{}
+		if err := c.appender.AppendSample(lbls, meta, 0, timestampMs, float64(1), nil); err != nil {
 			return err
 		}
 	}
-	return c.appender.AppendSample(lbls, meta, 0, latestTimestamp.UnixMilli(), float64(1), nil)
+
+	// Append the final sample at latestTimestamp.
+	finalTimestampMs := latestTimestamp.UnixMilli()
+	key = targetInfoKey{
+		labelsHash: labelsHash,
+		timestamp:  finalTimestampMs,
+	}
+	if _, exists := c.seenTargetInfo[key]; exists {
+		return nil
+	}
+
+	c.seenTargetInfo[key] = struct{}{}
+	return c.appender.AppendSample(lbls, meta, 0, finalTimestampMs, float64(1), nil)
 }
 
 // convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.

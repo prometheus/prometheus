@@ -104,11 +104,16 @@ export interface LabelMatcher {
   value: string;
 }
 
+export interface FillValues {
+  lhs: number | null;
+  rhs: number | null;
+}
 export interface VectorMatching {
   card: vectorMatchCardinality;
   labels: string[];
   on: boolean;
   include: string[];
+  fillValues: FillValues;
 }
 
 export type StartOrEnd = "start" | "end" | null;
@@ -147,6 +152,8 @@ export interface MatrixSelector {
   offset: number;
   timestamp: number | null;
   startOrEnd: StartOrEnd;
+  anchored: boolean;
+  smoothed: boolean;
 }
 
 export interface Subquery {
@@ -187,6 +194,8 @@ export interface VectorSelector {
   offset: number;
   timestamp: number | null;
   startOrEnd: StartOrEnd;
+  anchored: boolean;
+  smoothed: boolean;
 }
 
 export interface Placeholder {

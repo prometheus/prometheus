@@ -18,6 +18,11 @@ export enum VectorMatchCardinality {
   CardManyToMany = 'many-to-many',
 }
 
+export interface FillValues {
+  lhs: number | null;
+  rhs: number | null;
+}
+
 export interface VectorMatching {
   // The cardinality of the two Vectors.
   card: VectorMatchCardinality;
@@ -30,4 +35,6 @@ export interface VectorMatching {
   // Include contains additional labels that should be included in
   // the result from the side with the lower cardinality.
   include: string[];
+  // Fill contains optional fill values for missing elements.
+  fill: FillValues;
 }

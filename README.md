@@ -69,7 +69,7 @@ To build Prometheus from source code, You need:
 
 * Go: Version specified in [go.mod](./go.mod) or greater.
 * NodeJS: Version specified in [.nvmrc](./web/ui/.nvmrc) or greater.
-* npm: Version 8 or greater (check with `npm --version` and [here](https://www.npmjs.com/)).
+* npm: Version 10 or greater (check with `npm --version` and [here](https://www.npmjs.com/)).
 
 Start by cloning the repository:
 
@@ -82,15 +82,15 @@ You can use the `go` tool to build and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:
 
 ```bash
-GO111MODULE=on go install github.com/prometheus/prometheus/cmd/...
+go install github.com/prometheus/prometheus/cmd/...
 prometheus --config.file=your_config.yml
 ```
 
 *However*, when using `go install` to build Prometheus, Prometheus will expect to be able to
-read its web assets from local filesystem directories under `web/ui/static` and
-`web/ui/templates`. In order for these assets to be found, you will have to run Prometheus
-from the root of the cloned repository. Note also that these directories do not include the
-React UI unless it has been built explicitly using `make assets` or `make build`.
+read its web assets from local filesystem directories under `web/ui/static`. In order for
+these assets to be found, you will have to run Prometheus from the root of the cloned
+repository. Note also that this directory does not include the React UI unless it has been
+built explicitly using `make assets` or `make build`.
 
 An example of the above configuration file can be found [here.](https://github.com/prometheus/prometheus/blob/main/documentation/examples/prometheus.yml)
 
@@ -113,16 +113,31 @@ The Makefile provides several targets:
 
 ### Service discovery plugins
 
-Prometheus is bundled with many service discovery plugins.
-When building Prometheus from source, you can edit the [plugins.yml](./plugins.yml)
-file to disable some service discoveries. The file is a yaml-formatted list of go
-import path that will be built into the Prometheus binary.
+Prometheus is bundled with many service discovery plugins. You can customize
+which service discoveries are included in your build using Go build tags.
 
-After you have changed the file, you
-need to run `make build` again.
+To exclude service discoveries when building with `make build`, add the desired
+tags to the `.promu.yml` file under `build.tags.all`:
 
-If you are using another method to compile Prometheus, `make plugins` will
-generate the plugins file accordingly.
+```yaml
+build:
+    tags:
+        all:
+            - netgo
+            - builtinassets
+            - remove_all_sd           # Exclude all optional SDs
+            - enable_kubernetes_sd    # Re-enable only kubernetes
+```
+
+Then run `make build` as usual. Alternatively, when using `go build` directly:
+
+```bash
+go build -tags "remove_all_sd,enable_kubernetes_sd" ./cmd/prometheus
+```
+
+Available build tags:
+* `remove_all_sd` - Exclude all optional service discoveries (keeps file_sd, static_sd, and http_sd)
+* `enable_<name>_sd` - Re-enable a specific SD when using `remove_all_sd`
 
 If you add out-of-tree plugins, which we do not endorse at the moment,
 additional steps might be needed to adjust the `go.mod` and `go.sum` files. As

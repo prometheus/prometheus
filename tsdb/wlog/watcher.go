@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -563,7 +563,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			w.writer.AppendExemplars(exemplars)
 
 		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
-			// Skip if experimental "histograms over remote write" is not enabled.
+			// Skip if "native histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
 			}
@@ -591,7 +591,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 
 		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
-			// Skip if experimental "histograms over remote write" is not enabled.
+			// Skip if "native histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
 			}

@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -518,9 +518,8 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 		})
 	}
 	ir, _, _ := createFileReader(ctx, b, input)
-	b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
+	for n := 0; b.Loop(); n++ {
 		allPostings, err := ir.Postings(ctx, "const", fmt.Sprintf("%10d", 1))
 		require.NoError(b, err)
 

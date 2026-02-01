@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -212,7 +212,6 @@ func TestFederation(t *testing.T) {
 			test_metric_stale                       1+10x99 stale
 			test_metric_old                         1+10x98
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	h := &Handler{
 		localStorage:  &dbAdapter{storage.DB},
@@ -303,7 +302,6 @@ func normalizeBody(body *bytes.Buffer) string {
 
 func TestFederationWithNativeHistograms(t *testing.T) {
 	storage := teststorage.New(t)
-	t.Cleanup(func() { storage.Close() })
 
 	var expVec promql.Vector
 
@@ -453,7 +451,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	require.Equal(t, http.StatusOK, res.Code)
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
-	p := textparse.NewProtobufParser(body, false, false, false, labels.NewSymbolTable())
+	p := textparse.NewProtobufParser(body, false, false, false, false, labels.NewSymbolTable())
 	var actVec promql.Vector
 	metricFamilies := 0
 	l := labels.Labels{}

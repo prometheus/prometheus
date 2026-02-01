@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 
@@ -206,8 +207,10 @@ type Decoder struct {
 	logger  *slog.Logger
 }
 
-func NewDecoder(_ *labels.SymbolTable, logger *slog.Logger) Decoder { // FIXME remove t
-	return Decoder{builder: labels.NewScratchBuilder(0), logger: logger}
+func NewDecoder(_ *labels.SymbolTable, logger *slog.Logger) Decoder { // FIXME remove t (or use scratch builder with symbols)
+	b := labels.NewScratchBuilder(0)
+	b.SetUnsafeAdd(true)
+	return Decoder{builder: b, logger: logger}
 }
 
 // Type returns the type of the record.
@@ -291,6 +294,10 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 	return metadata, nil
 }
 
+func yoloString(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
+
 // DecodeLabels decodes one set of labels from buf.
 func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
 	d.builder.Reset()
@@ -298,7 +305,7 @@ func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
 	for range nLabels {
 		lName := dec.UvarintBytes()
 		lValue := dec.UvarintBytes()
-		d.builder.UnsafeAddBytes(lName, lValue)
+		d.builder.Add(yoloString(lName), yoloString(lValue))
 	}
 	return d.builder.Labels()
 }
@@ -468,7 +475,9 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 			// This is a very slow path, but it should only happen if the
 			// record is from a newer Prometheus version that supports higher
 			// resolution.
-			rh.H.ReduceResolution(histogram.ExponentialSchemaMax)
+			if err := rh.H.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
+			}
 		}
 
 		histograms = append(histograms, rh)
@@ -572,7 +581,9 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 			// This is a very slow path, but it should only happen if the
 			// record is from a newer Prometheus version that supports higher
 			// resolution.
-			rh.FH.ReduceResolution(histogram.ExponentialSchemaMax)
+			if err := rh.FH.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
+			}
 		}
 
 		histograms = append(histograms, rh)

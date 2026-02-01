@@ -1,0 +1,6 @@
+global:
+scrape_configs:
+  - job_name: prometheus
+    scrape_native_histograms: true
+    static_configs:
+      - targets: ['localhost:8080']

@@ -56,13 +56,18 @@ const serializeSelector = (node: VectorSelector | MatrixSelector): string => {
     node.type === nodeType.matrixSelector
       ? `[${formatPrometheusDuration(node.range)}]`
       : "";
+  const extendedAttribute = node.anchored
+    ? " anchored"
+    : node.smoothed
+      ? " smoothed"
+      : "";
   const atAndOffset = serializeAtAndOffset(
     node.timestamp,
     node.startOrEnd,
     node.offset
   );
 
-  return `${!metricExtendedCharset ? metricName : ""}${matchers.length > 0 ? `{${matchers.join(",")}}` : ""}${range}${atAndOffset}`;
+  return `${!metricExtendedCharset ? metricName : ""}${matchers.length > 0 ? `{${matchers.join(",")}}` : ""}${range}${extendedAttribute}${atAndOffset}`;
 };
 
 const serializeNode = (
@@ -130,12 +135,16 @@ const serializeNode = (
     case nodeType.binaryExpr: {
       let matching = "";
       let grouping = "";
+      let fill = "";
       const vm = node.matching;
-      if (vm !== null && (vm.labels.length > 0 || vm.on)) {
-        if (vm.on) {
-          matching = ` on(${labelNameList(vm.labels)})`;
-        } else {
-          matching = ` ignoring(${labelNameList(vm.labels)})`;
+      if (vm !== null) {
+        if (
+          vm.labels.length > 0 ||
+          vm.on ||
+          vm.card === vectorMatchCardinality.manyToOne ||
+          vm.card === vectorMatchCardinality.oneToMany
+        ) {
+          matching = ` ${vm.on ? "on" : "ignoring"}(${labelNameList(vm.labels)})`;
         }
 
         if (
@@ -144,11 +153,26 @@ const serializeNode = (
         ) {
           grouping = ` group_${vm.card === vectorMatchCardinality.manyToOne ? "left" : "right"}(${labelNameList(vm.include)})`;
         }
+
+        const lfill = vm.fillValues.lhs;
+        const rfill = vm.fillValues.rhs;
+        if (lfill !== null || rfill !== null) {
+          if (lfill === rfill) {
+            fill = ` fill(${lfill})`;
+          } else {
+            if (lfill !== null) {
+              fill += ` fill_left(${lfill})`;
+            }
+            if (rfill !== null) {
+              fill += ` fill_right(${rfill})`;
+            }
+          }
+        }
       }
 
       return `${serializeNode(maybeParenthesizeBinopChild(node.op, node.lhs), childIndent, pretty)}${childSeparator}${ind}${
         node.op
-      }${node.bool ? " bool" : ""}${matching}${grouping}${childSeparator}${serializeNode(
+      }${node.bool ? " bool" : ""}${matching}${grouping}${fill}${childSeparator}${serializeNode(
         maybeParenthesizeBinopChild(node.op, node.rhs),
         childIndent,
         pretty

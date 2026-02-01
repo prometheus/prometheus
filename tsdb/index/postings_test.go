@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,9 +63,7 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 
 	for _, e := range p.m {
 		for _, l := range e {
-			ok := sort.SliceIsSorted(l, func(i, j int) bool {
-				return l[i] < l[j]
-			})
+			ok := slices.IsSorted(l)
 			require.True(t, ok, "postings list %v is not sorted", l)
 		}
 	}
@@ -115,7 +114,7 @@ func BenchmarkMemPostings_ensureOrder(b *testing.B) {
 
 			b.ResetTimer()
 
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				p.EnsureOrder(0)
 				p.ordered = false
 			}
@@ -285,92 +284,85 @@ func consumePostings(p Postings) error {
 	return p.Err()
 }
 
+func newListPostings(list ...storage.SeriesRef) *listPostings {
+	if !slices.IsSorted(list) {
+		panic("newListPostings: list is not sorted")
+	}
+	return &listPostings{list: list}
+}
+
+// Create ListPostings for a benchmark, collecting the original sets of references
+// so they can be reset without additional memory allocations.
+func createPostings(lps *[]*listPostings, refs *[][]storage.SeriesRef, params ...storage.SeriesRef) {
+	var temp []storage.SeriesRef
+	for i := 0; i < len(params); i += 3 {
+		for j := params[i]; j < params[i+1]; j += params[i+2] {
+			temp = append(temp, j)
+		}
+	}
+	*lps = append(*lps, newListPostings(temp...))
+	*refs = append(*refs, temp)
+}
+
+// Reset the ListPostings to their original values each time round the benchmark loop.
+func resetPostings(its []Postings, lps []*listPostings, refs [][]storage.SeriesRef) {
+	for j := range refs {
+		lps[j].list = refs[j]
+		its[j] = lps[j]
+	}
+}
+
 func BenchmarkIntersect(t *testing.B) {
 	t.Run("LongPostings1", func(bench *testing.B) {
-		var a, b, c, d []storage.SeriesRef
-
-		for i := 0; i < 10000000; i += 2 {
-			a = append(a, storage.SeriesRef(i))
-		}
-		for i := 5000000; i < 5000100; i += 4 {
-			b = append(b, storage.SeriesRef(i))
-		}
-		for i := 5090000; i < 5090600; i += 4 {
-			b = append(b, storage.SeriesRef(i))
-		}
-		for i := 4990000; i < 5100000; i++ {
-			c = append(c, storage.SeriesRef(i))
-		}
-		for i := 4000000; i < 6000000; i++ {
-			d = append(d, storage.SeriesRef(i))
-		}
+		var lps []*listPostings
+		var refs [][]storage.SeriesRef
+		createPostings(&lps, &refs, 0, 10000000, 2)
+		createPostings(&lps, &refs, 5000000, 5000100, 4, 5090000, 5090600, 4)
+		createPostings(&lps, &refs, 4990000, 5100000, 1)
+		createPostings(&lps, &refs, 4000000, 6000000, 1)
+		its := make([]Postings, len(refs))
 
 		bench.ResetTimer()
 		bench.ReportAllocs()
-		for i := 0; i < bench.N; i++ {
-			i1 := newListPostings(a...)
-			i2 := newListPostings(b...)
-			i3 := newListPostings(c...)
-			i4 := newListPostings(d...)
-			if err := consumePostings(Intersect(i1, i2, i3, i4)); err != nil {
+		for bench.Loop() {
+			resetPostings(its, lps, refs)
+			if err := consumePostings(Intersect(its...)); err != nil {
 				bench.Fatal(err)
 			}
 		}
 	})
 
 	t.Run("LongPostings2", func(bench *testing.B) {
-		var a, b, c, d []storage.SeriesRef
-
-		for i := range 12500000 {
-			a = append(a, storage.SeriesRef(i))
-		}
-		for i := 7500000; i < 12500000; i++ {
-			b = append(b, storage.SeriesRef(i))
-		}
-		for i := 9000000; i < 20000000; i++ {
-			c = append(c, storage.SeriesRef(i))
-		}
-		for i := 10000000; i < 12000000; i++ {
-			d = append(d, storage.SeriesRef(i))
-		}
+		var lps []*listPostings
+		var refs [][]storage.SeriesRef
+		createPostings(&lps, &refs, 0, 12500000, 1)
+		createPostings(&lps, &refs, 7500000, 12500000, 1)
+		createPostings(&lps, &refs, 9000000, 20000000, 1)
+		createPostings(&lps, &refs, 10000000, 12000000, 1)
+		its := make([]Postings, len(refs))
 
 		bench.ResetTimer()
 		bench.ReportAllocs()
-		for i := 0; i < bench.N; i++ {
-			i1 := newListPostings(a...)
-			i2 := newListPostings(b...)
-			i3 := newListPostings(c...)
-			i4 := newListPostings(d...)
-			if err := consumePostings(Intersect(i1, i2, i3, i4)); err != nil {
+		for bench.Loop() {
+			resetPostings(its, lps, refs)
+			if err := consumePostings(Intersect(its...)); err != nil {
 				bench.Fatal(err)
 			}
 		}
 	})
 
-	// Many matchers(k >> n).
 	t.Run("ManyPostings", func(bench *testing.B) {
-		var lps []*ListPostings
+		var lps []*listPostings
 		var refs [][]storage.SeriesRef
-
-		// Create 100000 matchers(k=100000), making sure all memory allocation is done before starting the loop.
-		for range 100000 {
-			var temp []storage.SeriesRef
-			for j := storage.SeriesRef(1); j < 100; j++ {
-				temp = append(temp, j)
-			}
-			lps = append(lps, newListPostings(temp...))
-			refs = append(refs, temp)
+		for range 100 {
+			createPostings(&lps, &refs, 1, 100, 1)
 		}
 
 		its := make([]Postings, len(refs))
 		bench.ResetTimer()
 		bench.ReportAllocs()
-		for i := 0; i < bench.N; i++ {
-			// Reset the ListPostings to their original values each time round the loop.
-			for j := range refs {
-				lps[j].list = refs[j]
-				its[j] = lps[j]
-			}
+		for bench.Loop() {
+			resetPostings(its, lps, refs)
 			if err := consumePostings(Intersect(its...)); err != nil {
 				bench.Fatal(err)
 			}
@@ -379,7 +371,7 @@ func BenchmarkIntersect(t *testing.B) {
 }
 
 func BenchmarkMerge(t *testing.B) {
-	var lps []*ListPostings
+	var lps []*listPostings
 	var refs [][]storage.SeriesRef
 
 	// Create 100000 matchers(k=100000), making sure all memory allocation is done before starting the loop.
@@ -392,11 +384,11 @@ func BenchmarkMerge(t *testing.B) {
 		refs = append(refs, temp)
 	}
 
-	its := make([]*ListPostings, len(refs))
+	its := make([]*listPostings, len(refs))
 	for _, nSeries := range []int{1, 10, 10000, 100000} {
 		t.Run(strconv.Itoa(nSeries), func(bench *testing.B) {
 			ctx := context.Background()
-			for i := 0; i < bench.N; i++ {
+			for bench.Loop() {
 				// Reset the ListPostings to their original values each time round the loop.
 				for j := range refs[:nSeries] {
 					lps[j].list = refs[j]
@@ -936,8 +928,8 @@ func BenchmarkPostings_Stats(b *testing.B) {
 		createPostingsLabelValues(fmt.Sprintf("area-%d", i), "new_area_of_work-", 1e3)
 		createPostingsLabelValues(fmt.Sprintf("request_id-%d", i), "owner_name_work-", 1e3)
 	}
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+
+	for b.Loop() {
 		p.Stats("__name__", 10, labels.SizeOfLabels)
 	}
 }
@@ -1083,7 +1075,7 @@ func BenchmarkMemPostings_Delete(b *testing.B) {
 					})
 
 					b.ResetTimer()
-					for n := 0; n < b.N; n++ {
+					for n := 0; b.Loop(); n++ {
 						deleted := make(map[storage.SeriesRef]struct{}, refs)
 						affected := make(map[labels.Label]struct{}, refs)
 						for i := range refs {
@@ -1243,78 +1235,78 @@ func TestPostingsWithIndexHeap(t *testing.T) {
 func TestListPostings(t *testing.T) {
 	t.Run("empty list", func(t *testing.T) {
 		p := NewListPostings(nil)
-		require.Equal(t, 0, p.(*ListPostings).Len())
+		require.Equal(t, 0, p.(*listPostings).Len())
 		require.False(t, p.Next())
 		require.False(t, p.Seek(10))
 		require.False(t, p.Next())
 		require.NoError(t, p.Err())
-		require.Equal(t, 0, p.(*ListPostings).Len())
+		require.Equal(t, 0, p.(*listPostings).Len())
 	})
 
 	t.Run("one posting", func(t *testing.T) {
 		t.Run("next", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
-			require.Equal(t, 1, p.(*ListPostings).Len())
+			require.Equal(t, 1, p.(*listPostings).Len())
 			require.True(t, p.Next())
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
-			require.Equal(t, 0, p.(*ListPostings).Len())
+			require.Equal(t, 0, p.(*listPostings).Len())
 		})
 		t.Run("seek less", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
-			require.Equal(t, 1, p.(*ListPostings).Len())
+			require.Equal(t, 1, p.(*listPostings).Len())
 			require.True(t, p.Seek(5))
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.True(t, p.Seek(5))
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
-			require.Equal(t, 0, p.(*ListPostings).Len())
+			require.Equal(t, 0, p.(*listPostings).Len())
 		})
 		t.Run("seek equal", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
-			require.Equal(t, 1, p.(*ListPostings).Len())
+			require.Equal(t, 1, p.(*listPostings).Len())
 			require.True(t, p.Seek(10))
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
-			require.Equal(t, 0, p.(*ListPostings).Len())
+			require.Equal(t, 0, p.(*listPostings).Len())
 		})
 		t.Run("seek more", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
-			require.Equal(t, 1, p.(*ListPostings).Len())
+			require.Equal(t, 1, p.(*listPostings).Len())
 			require.False(t, p.Seek(15))
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
-			require.Equal(t, 0, p.(*ListPostings).Len())
+			require.Equal(t, 0, p.(*listPostings).Len())
 		})
 		t.Run("seek after next", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10})
-			require.Equal(t, 1, p.(*ListPostings).Len())
+			require.Equal(t, 1, p.(*listPostings).Len())
 			require.True(t, p.Next())
 			require.False(t, p.Seek(15))
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
-			require.Equal(t, 0, p.(*ListPostings).Len())
+			require.Equal(t, 0, p.(*listPostings).Len())
 		})
 	})
 
 	t.Run("multiple postings", func(t *testing.T) {
 		t.Run("next", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20})
-			require.Equal(t, 2, p.(*ListPostings).Len())
+			require.Equal(t, 2, p.(*listPostings).Len())
 			require.True(t, p.Next())
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.True(t, p.Next())
 			require.Equal(t, storage.SeriesRef(20), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
-			require.Equal(t, 0, p.(*ListPostings).Len())
+			require.Equal(t, 0, p.(*listPostings).Len())
 		})
 		t.Run("seek", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20})
-			require.Equal(t, 2, p.(*ListPostings).Len())
+			require.Equal(t, 2, p.(*listPostings).Len())
 			require.True(t, p.Seek(5))
 			require.Equal(t, storage.SeriesRef(10), p.At())
 			require.True(t, p.Seek(5))
@@ -1329,30 +1321,30 @@ func TestListPostings(t *testing.T) {
 			require.Equal(t, storage.SeriesRef(20), p.At())
 			require.False(t, p.Next())
 			require.NoError(t, p.Err())
-			require.Equal(t, 0, p.(*ListPostings).Len())
+			require.Equal(t, 0, p.(*listPostings).Len())
 		})
 		t.Run("seek lest than last", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
-			require.Equal(t, 5, p.(*ListPostings).Len())
+			require.Equal(t, 5, p.(*listPostings).Len())
 			require.True(t, p.Seek(45))
 			require.Equal(t, storage.SeriesRef(50), p.At())
 			require.False(t, p.Next())
-			require.Equal(t, 0, p.(*ListPostings).Len())
+			require.Equal(t, 0, p.(*listPostings).Len())
 		})
 		t.Run("seek exactly last", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
-			require.Equal(t, 5, p.(*ListPostings).Len())
+			require.Equal(t, 5, p.(*listPostings).Len())
 			require.True(t, p.Seek(50))
 			require.Equal(t, storage.SeriesRef(50), p.At())
 			require.False(t, p.Next())
-			require.Equal(t, 0, p.(*ListPostings).Len())
+			require.Equal(t, 0, p.(*listPostings).Len())
 		})
 		t.Run("seek more than last", func(t *testing.T) {
 			p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50})
-			require.Equal(t, 5, p.(*ListPostings).Len())
+			require.Equal(t, 5, p.(*listPostings).Len())
 			require.False(t, p.Seek(60))
 			require.False(t, p.Next())
-			require.Equal(t, 0, p.(*ListPostings).Len())
+			require.Equal(t, 0, p.(*listPostings).Len())
 		})
 	})
 
@@ -1396,7 +1388,7 @@ func BenchmarkListPostings(b *testing.B) {
 
 	for _, count := range []int{100, 1e3, 10e3, 100e3, maxCount} {
 		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				p := NewListPostings(input[:count])
 				var sum storage.SeriesRef
 				for p.Next() {
@@ -1446,7 +1438,7 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 			require.NoError(b, err)
 			b.Logf("Fast matcher matches %d series", len(fp))
 			b.Run("matcher=fast", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString).Next()
 				}
 			})
@@ -1455,13 +1447,13 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 			require.NoError(b, err)
 			b.Logf("Slow matcher matches %d series", len(sp))
 			b.Run("matcher=slow", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString).Next()
 				}
 			})
 
 			b.Run("matcher=all", func(b *testing.B) {
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					// Match everything.
 					p := mp.PostingsForLabelMatching(context.Background(), "label", func(_ string) bool { return true })
 					var sum storage.SeriesRef

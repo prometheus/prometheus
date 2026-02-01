@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -22,6 +22,9 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 )
+
+// ImplementationName is the name of the labels implementation.
+const ImplementationName = "stringlabels"
 
 // Labels is implemented by a single flat string holding name/value pairs.
 // Each name and value is preceded by its length, encoded as a single byte
@@ -421,6 +424,7 @@ func (ls Labels) Validate(f func(l Label) error) error {
 }
 
 // DropMetricName returns Labels with the "__name__" removed.
+//
 // Deprecated: Use DropReserved instead.
 func (ls Labels) DropMetricName() Labels {
 	return ls.DropReserved(func(n string) bool { return n == MetricName })
@@ -614,14 +618,9 @@ func (b *ScratchBuilder) Reset() {
 
 // Add a name/value pair.
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
+// The values must remain live until Labels() is called.
 func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
-}
-
-// UnsafeAddBytes adds a name/value pair using []byte instead of string to reduce memory allocations.
-// The values must remain live until Labels() is called.
-func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
-	b.add = append(b.add, Label{Name: yoloString(name), Value: yoloString(value)})
 }
 
 // Sort the labels added so far by name.
@@ -679,6 +678,13 @@ func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
 func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 	// no-op
 }
+
+// SetUnsafeAdd allows turning on/off the assumptions that added strings are unsafe
+// for reuse. ScratchBuilder implementations that do reuse strings, must clone
+// the strings.
+//
+// StringLabels implementation copies all strings when Labels() is called, so this operation is noop.
+func (ScratchBuilder) SetUnsafeAdd(bool) {}
 
 // SizeOfLabels returns the approximate space required for n copies of a label.
 func SizeOfLabels(name, value string, n uint64) uint64 {
