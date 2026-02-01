@@ -56,14 +56,10 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 
 	// Don't try to enrich info series.
 	ignoreSeries := map[uint64]struct{}{}
-loop:
 	for _, s := range mat {
 		name := s.Metric.Get(labels.MetricName)
-		for _, m := range infoNameMatchers {
-			if m.Matches(name) {
-				ignoreSeries[s.Metric.Hash()] = struct{}{}
-				continue loop
-			}
+		if len(infoNameMatchers) > 0 && matchersMatch(infoNameMatchers, name) {
+			ignoreSeries[s.Metric.Hash()] = struct{}{}
 		}
 	}
 
@@ -77,6 +73,15 @@ loop:
 	res, ws := ev.combineWithInfoSeries(ctx, mat, infoSeries, ignoreSeries, dataLabelMatchers)
 	annots.Merge(ws)
 	return res, annots
+}
+
+func matchersMatch(matchers []*labels.Matcher, value string) bool {
+	for _, m := range matchers {
+		if !m.Matches(value) {
+			return false
+		}
+	}
+	return true
 }
 
 // infoSelectHints calculates the storage.SelectHints for selecting info series, given expr (first argument to info call).
@@ -122,6 +127,19 @@ func (ev *evaluator) infoSelectHints(expr parser.Expr) storage.SelectHints {
 // Series in ignoreSeries are not fetched.
 // dataLabelMatchers may be mutated.
 func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeries map[uint64]struct{}, dataLabelMatchers map[string][]*labels.Matcher, selectHints storage.SelectHints) (Matrix, annotations.Annotations, error) {
+	removeNameFromDataLabelMatchers := func() {
+		for name, ms := range dataLabelMatchers {
+			ms = slices.DeleteFunc(ms, func(m *labels.Matcher) bool {
+				return m.Name == labels.MetricName
+			})
+			if len(ms) > 0 {
+				dataLabelMatchers[name] = ms
+			} else {
+				delete(dataLabelMatchers, name)
+			}
+		}
+	}
+
 	// A map of values for all identifying labels we are interested in.
 	idLblValues := map[string]map[string]struct{}{}
 	for _, s := range mat {
@@ -147,19 +165,7 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 		// since it's not a data label selector (it's used to select which info metrics
 		// to consider). Without this, combineWithInfoVector would incorrectly exclude
 		// series when only __name__ is specified in the selector.
-		for name, ms := range dataLabelMatchers {
-			for i, m := range ms {
-				if m.Name == labels.MetricName {
-					ms = slices.Delete(ms, i, i+1)
-					break
-				}
-			}
-			if len(ms) > 0 {
-				dataLabelMatchers[name] = ms
-			} else {
-				delete(dataLabelMatchers, name)
-			}
-		}
+		removeNameFromDataLabelMatchers()
 		return nil, nil, nil
 	}
 
@@ -183,22 +189,17 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	for name, re := range idLblRegexps {
 		infoLabelMatchers = append(infoLabelMatchers, labels.MustNewMatcher(labels.MatchRegexp, name, re))
 	}
-	var nameMatcher *labels.Matcher
-	for name, ms := range dataLabelMatchers {
-		for i, m := range ms {
+	hasNameMatcher := false
+	for _, ms := range dataLabelMatchers {
+		for _, m := range ms {
 			if m.Name == labels.MetricName {
-				nameMatcher = m
-				ms = slices.Delete(ms, i, i+1)
+				hasNameMatcher = true
 			}
 			infoLabelMatchers = append(infoLabelMatchers, m)
 		}
-		if len(ms) > 0 {
-			dataLabelMatchers[name] = ms
-		} else {
-			delete(dataLabelMatchers, name)
-		}
 	}
-	if nameMatcher == nil {
+	removeNameFromDataLabelMatchers()
+	if !hasNameMatcher {
 		// Default to using the target_info metric.
 		infoLabelMatchers = append([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, targetInfo)}, infoLabelMatchers...)
 	}
