@@ -6004,6 +6004,28 @@ func TestRecoverParserError(t *testing.T) {
 	panic(e)
 }
 
+func TestRecoverParserString(t *testing.T) {
+	p := NewParser("foo bar")
+	var err error
+
+	defer func() {
+		require.Error(t, err)
+		require.EqualError(t, err, "some string panic")
+	}()
+	defer p.recover(&err)
+
+	panic("some string panic")
+}
+
+func TestParseLabelTooLong(t *testing.T) {
+	const maxLabelSize = 1 << 24
+	longValue := strings.Repeat("a", maxLabelSize+1)
+	input := `{job="` + longValue + `"}`
+
+	_, err := ParseMetric(input)
+	require.Error(t, err)
+}
+
 func TestExtractSelectors(t *testing.T) {
 	for _, tc := range [...]struct {
 		input    string

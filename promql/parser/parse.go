@@ -340,16 +340,23 @@ var errUnexpected = errors.New("unexpected error")
 // recover is the handler that turns panics into returns from the top level of Parse.
 func (*parser) recover(errp *error) {
 	e := recover()
-	switch _, ok := e.(runtime.Error); {
-	case ok:
+	if e == nil {
+		return
+	}
+
+	switch err := e.(type) {
+	case runtime.Error:
 		// Print the stack trace but do not inhibit the running application.
 		buf := make([]byte, 64<<10)
 		buf = buf[:runtime.Stack(buf, false)]
 
 		fmt.Fprintf(os.Stderr, "parser panic: %v\n%s", e, buf)
 		*errp = errUnexpected
-	case e != nil:
-		*errp = e.(error)
+	case error:
+		*errp = err
+	default:
+		// Handle non-error panic values (e.g., strings) gracefully.
+		*errp = fmt.Errorf("%v", e)
 	}
 }
 

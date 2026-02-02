@@ -16,6 +16,7 @@
 package labels
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"unsafe"
@@ -540,13 +541,16 @@ func marshalLabelToSizedBuffer(m *Label, data []byte) int {
 	return len(data) - i
 }
 
+// ErrLabelTooLong is returned when a label name or value exceeds the maximum allowed size.
+var ErrLabelTooLong = errors.New("string too long to encode as label")
+
 func sizeWhenEncoded(x uint64) (n int) {
 	if x < 255 {
 		return 1
 	} else if x <= 1<<24 {
 		return 4
 	}
-	panic("String too long to encode as label.")
+	panic(ErrLabelTooLong)
 }
 
 func encodeSize(data []byte, offset, v int) int {
