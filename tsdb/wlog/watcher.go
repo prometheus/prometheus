@@ -519,7 +519,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			w.writer.StoreSeries(series, segmentNum)
 
-		case record.Samples:
+		case record.Samples, record.SamplesV2:
 			// If we're not tailing a segment we can ignore any samples records we see.
 			// This speeds up replay of the WAL by > 10x.
 			if !tail {

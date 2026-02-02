@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -95,272 +96,275 @@ func TestCommit_AppendV2(t *testing.T) {
 		numHistograms = 100
 		numSeries     = 8
 	)
+	for _, enableStStorage := range []bool{false, true} {
+		t.Run("enableStStorage="+strconv.FormatBool(enableStStorage), func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.EnableSTStorage = enableStStorage
+			s := createTestAgentDB(t, nil, opts)
 
-	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.AppenderV2(context.TODO())
+			app := s.AppenderV2(context.TODO())
 
-	lbls := labelsForTest(t.Name(), numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+			lbls := labelsForTest(t.Name(), numSeries)
+			for _, l := range lbls {
+				lset := labels.New(l...)
 
-		for i := range numDatapoints {
-			sample := chunks.GenerateSamples(0, 1)
-			_, err := app.Append(0, lset, 0, sample[0].T(), sample[0].F(), nil, nil, storage.AOptions{
-				Exemplars: []exemplar.Exemplar{{
-					Labels: lset,
-					Ts:     sample[0].T() + int64(i),
-					Value:  sample[0].F(),
-					HasTs:  true,
-				}},
-			})
+				for i := range numDatapoints {
+					sample := chunks.GenerateSamples(0, 1)
+					_, err := app.Append(0, lset, int64(i), sample[0].T()+2000, sample[0].F(), nil, nil, storage.AOptions{
+						Exemplars: []exemplar.Exemplar{{
+							Labels: lset,
+							Ts:     sample[0].T() + int64(i) + 2000,
+							Value:  sample[0].F(),
+							HasTs:  true,
+						}},
+					})
+					require.NoError(t, err)
+				}
+			}
+
+			lbls = labelsForTest(t.Name()+"_histogram", numSeries)
+			for _, l := range lbls {
+				lset := labels.New(l...)
+
+				histograms := tsdbutil.GenerateTestHistograms(numHistograms)
+
+				for i := range numHistograms {
+					_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, histograms[i], nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+			}
+
+			lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
+			for _, l := range lbls {
+				lset := labels.New(l...)
+
+				customBucketHistograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
+
+				for i := range numHistograms {
+					_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, customBucketHistograms[i], nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+			}
+
+			lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
+			for _, l := range lbls {
+				lset := labels.New(l...)
+
+				floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
+
+				for i := range numHistograms {
+					_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, nil, floatHistograms[i], storage.AOptions{})
+					require.NoError(t, err)
+				}
+			}
+
+			lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
+			for _, l := range lbls {
+				lset := labels.New(l...)
+
+				customBucketFloatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
+
+				for i := range numHistograms {
+					_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, nil, customBucketFloatHistograms[i], storage.AOptions{})
+					require.NoError(t, err)
+				}
+			}
+
+			require.NoError(t, app.Commit())
+			require.NoError(t, s.Close())
+
+			sr, err := wlog.NewSegmentsReader(s.wal.Dir())
 			require.NoError(t, err)
-		}
+			defer func() {
+				require.NoError(t, sr.Close())
+			}()
+
+			// Read records from WAL and check for expected count of series, samples, and exemplars.
+			var (
+				r   = wlog.NewReader(sr)
+				dec = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+
+				walSeriesCount, walSamplesCount, walExemplarsCount, walHistogramCount, walFloatHistogramCount int
+			)
+			for r.Next() {
+				rec := r.Record()
+				switch dec.Type(rec) {
+				case record.Series:
+					var series []record.RefSeries
+					series, err = dec.Series(rec, series)
+					require.NoError(t, err)
+					walSeriesCount += len(series)
+
+				case record.Samples:
+					if enableStStorage {
+						t.Errorf("Got V1 Samples when ST enabled")
+					}
+					var samples []record.RefSample
+					samples, err = dec.Samples(rec, samples)
+					require.NoError(t, err)
+					walSamplesCount += len(samples)
+
+				case record.SamplesV2:
+					if !enableStStorage {
+						t.Errorf("Got V2 Samples when ST disabled")
+					}
+					var samples []record.RefSample
+					samples, err = dec.Samples(rec, samples)
+					require.NoError(t, err)
+					walSamplesCount += len(samples)
+
+				case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+					var histograms []record.RefHistogramSample
+					histograms, err = dec.HistogramSamples(rec, histograms)
+					require.NoError(t, err)
+					walHistogramCount += len(histograms)
+
+				case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+					var floatHistograms []record.RefFloatHistogramSample
+					floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
+					require.NoError(t, err)
+					walFloatHistogramCount += len(floatHistograms)
+
+				case record.Exemplars:
+					var exemplars []record.RefExemplar
+					exemplars, err = dec.Exemplars(rec, exemplars)
+					require.NoError(t, err)
+					walExemplarsCount += len(exemplars)
+
+				default:
+				}
+			}
+
+			// Check that the WAL contained the same number of committed series/samples/exemplars.
+			require.Equal(t, numSeries*5, walSeriesCount, "unexpected number of series")
+			require.Equal(t, numSeries*numDatapoints, walSamplesCount, "unexpected number of samples")
+			require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
+			require.Equal(t, numSeries*numHistograms*2, walHistogramCount, "unexpected number of histograms")
+			require.Equal(t, numSeries*numHistograms*2, walFloatHistogramCount, "unexpected number of float histograms")
+
+			// Check that we can still create both kinds of Appender - see https://github.com/prometheus/prometheus/issues/17800.
+			_ = s.Appender(context.TODO())
+			_ = s.AppenderV2(context.TODO())
+		})
 	}
-
-	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
-
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, int64(i), 0, histograms[i], nil, storage.AOptions{})
-			require.NoError(t, err)
-		}
-	}
-
-	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		customBucketHistograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
-
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, int64(i), 0, customBucketHistograms[i], nil, storage.AOptions{})
-			require.NoError(t, err)
-		}
-	}
-
-	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
-
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, int64(i), 0, nil, floatHistograms[i], storage.AOptions{})
-			require.NoError(t, err)
-		}
-	}
-
-	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		customBucketFloatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
-
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, int64(i), 0, nil, customBucketFloatHistograms[i], storage.AOptions{})
-			require.NoError(t, err)
-		}
-	}
-
-	require.NoError(t, app.Commit())
-	require.NoError(t, s.Close())
-
-	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, sr.Close())
-	}()
-
-	// Read records from WAL and check for expected count of series, samples, and exemplars.
-	var (
-		r   = wlog.NewReader(sr)
-		dec = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
-
-		walSeriesCount, walSamplesCount, walExemplarsCount, walHistogramCount, walFloatHistogramCount int
-	)
-	for r.Next() {
-		rec := r.Record()
-		switch dec.Type(rec) {
-		case record.Series:
-			var series []record.RefSeries
-			series, err = dec.Series(rec, series)
-			require.NoError(t, err)
-			walSeriesCount += len(series)
-
-		case record.Samples:
-			var samples []record.RefSample
-			samples, err = dec.Samples(rec, samples)
-			require.NoError(t, err)
-			walSamplesCount += len(samples)
-
-		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
-			var histograms []record.RefHistogramSample
-			histograms, err = dec.HistogramSamples(rec, histograms)
-			require.NoError(t, err)
-			walHistogramCount += len(histograms)
-
-		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
-			var floatHistograms []record.RefFloatHistogramSample
-			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
-			require.NoError(t, err)
-			walFloatHistogramCount += len(floatHistograms)
-
-		case record.Exemplars:
-			var exemplars []record.RefExemplar
-			exemplars, err = dec.Exemplars(rec, exemplars)
-			require.NoError(t, err)
-			walExemplarsCount += len(exemplars)
-
-		default:
-		}
-	}
-
-	// Check that the WAL contained the same number of committed series/samples/exemplars.
-	require.Equal(t, numSeries*5, walSeriesCount, "unexpected number of series")
-	require.Equal(t, numSeries*numDatapoints, walSamplesCount, "unexpected number of samples")
-	require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
-	require.Equal(t, numSeries*numHistograms*2, walHistogramCount, "unexpected number of histograms")
-	require.Equal(t, numSeries*numHistograms*2, walFloatHistogramCount, "unexpected number of float histograms")
-
-	// Check that we can still create both kinds of Appender - see https://github.com/prometheus/prometheus/issues/17800.
-	_ = s.Appender(context.TODO())
-	_ = s.AppenderV2(context.TODO())
 }
 
-func TestRollback_AppendV2(t *testing.T) {
+func TestRollbackAppendV2(t *testing.T) {
 	const (
 		numDatapoints = 1000
 		numHistograms = 100
 		numSeries     = 8
 	)
 
-	s := createTestAgentDB(t, nil, DefaultOptions())
-	app := s.AppenderV2(context.TODO())
+	for _, enableStStorage := range []bool{false, true} {
+		opts := DefaultOptions()
+		opts.EnableSTStorage = enableStStorage
+		s := createTestAgentDB(t, nil, opts)
+		app := s.AppenderV2(context.TODO())
 
-	lbls := labelsForTest(t.Name(), numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+		lbls := labelsForTest(t.Name(), numSeries)
+		for _, l := range lbls {
+			lset := labels.New(l...)
 
-		for range numDatapoints {
-			sample := chunks.GenerateSamples(0, 1)
-			_, err := app.Append(0, lset, 0, sample[0].T(), sample[0].F(), nil, nil, storage.AOptions{})
-			require.NoError(t, err)
+			for i := range numDatapoints {
+				sample := chunks.GenerateSamples(0, 1)
+				_, err := app.Append(0, lset, int64(i), sample[0].T()+2000, sample[0].F(), nil, nil, storage.AOptions{})
+				require.NoError(t, err)
+			}
 		}
-	}
 
-	lbls = labelsForTest(t.Name()+"_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+		lbls = labelsForTest(t.Name()+"_histogram", numSeries)
+		for _, l := range lbls {
+			lset := labels.New(l...)
 
-		histograms := tsdbutil.GenerateTestHistograms(numHistograms)
+			histograms := tsdbutil.GenerateTestHistograms(numHistograms)
 
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, int64(i), 0, histograms[i], nil, storage.AOptions{})
-			require.NoError(t, err)
+			for i := range numHistograms {
+				_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, histograms[i], nil, storage.AOptions{})
+				require.NoError(t, err)
+			}
 		}
-	}
 
-	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+		lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
+		for _, l := range lbls {
+			lset := labels.New(l...)
 
-		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
+			histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
 
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, int64(i), 0, histograms[i], nil, storage.AOptions{})
-			require.NoError(t, err)
+			for i := range numHistograms {
+				_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, histograms[i], nil, storage.AOptions{})
+				require.NoError(t, err)
+			}
 		}
-	}
 
-	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+		lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
+		for _, l := range lbls {
+			lset := labels.New(l...)
 
-		floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
+			floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
 
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, int64(i), 0, nil, floatHistograms[i], storage.AOptions{})
-			require.NoError(t, err)
+			for i := range numHistograms {
+				_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, nil, floatHistograms[i], storage.AOptions{})
+				require.NoError(t, err)
+			}
 		}
-	}
 
-	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
+		lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
+		for _, l := range lbls {
+			lset := labels.New(l...)
 
-		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
+			floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
-		for i := range numHistograms {
-			_, err := app.Append(0, lset, 0, int64(i), 0, nil, floatHistograms[i], storage.AOptions{})
-			require.NoError(t, err)
+			for i := range numHistograms {
+				_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, nil, floatHistograms[i], storage.AOptions{})
+				require.NoError(t, err)
+			}
 		}
-	}
 
-	// Do a rollback, which should clear uncommitted data. A followup call to
-	// commit should persist nothing to the WAL.
-	require.NoError(t, app.Rollback())
-	require.NoError(t, app.Commit())
-	require.NoError(t, s.Close())
+		// Do a rollback, which should clear uncommitted data. A followup call to
+		// commit should persist nothing to the WAL.
+		require.NoError(t, app.Rollback())
+		require.NoError(t, app.Commit())
+		require.NoError(t, s.Close())
 
-	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, sr.Close())
-	}()
+		sr, err := wlog.NewSegmentsReader(s.wal.Dir())
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, sr.Close())
+		}()
 
-	// Read records from WAL and check for expected count of series and samples.
-	var (
-		r   = wlog.NewReader(sr)
-		dec = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+		// Read records from WAL and check for expected count of series and samples.
+		var (
+			r   = wlog.NewReader(sr)
+			dec = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
-		walSeriesCount, walSamplesCount, walHistogramCount, walFloatHistogramCount, walExemplarsCount int
-	)
-	for r.Next() {
-		rec := r.Record()
-		switch dec.Type(rec) {
-		case record.Series:
-			var series []record.RefSeries
-			series, err = dec.Series(rec, series)
-			require.NoError(t, err)
-			walSeriesCount += len(series)
+			walSeriesCount int
+		)
+		for r.Next() {
+			rec := r.Record()
+			switch dec.Type(rec) {
+			case record.Series:
+				var series []record.RefSeries
+				series, err = dec.Series(rec, series)
+				require.NoError(t, err)
+				walSeriesCount += len(series)
 
-		case record.Samples:
-			var samples []record.RefSample
-			samples, err = dec.Samples(rec, samples)
-			require.NoError(t, err)
-			walSamplesCount += len(samples)
+			case record.Samples, record.SamplesV2:
+				t.Errorf("should not have found samples")
 
-		case record.Exemplars:
-			var exemplars []record.RefExemplar
-			exemplars, err = dec.Exemplars(rec, exemplars)
-			require.NoError(t, err)
-			walExemplarsCount += len(exemplars)
+			case record.Exemplars:
+				t.Errorf("should not have found exemplars")
 
-		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
-			var histograms []record.RefHistogramSample
-			histograms, err = dec.HistogramSamples(rec, histograms)
-			require.NoError(t, err)
-			walHistogramCount += len(histograms)
+			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+				t.Errorf("should not have found histograms")
 
-		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
-			var floatHistograms []record.RefFloatHistogramSample
-			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
-			require.NoError(t, err)
-			walFloatHistogramCount += len(floatHistograms)
-
-		default:
+			default:
+			}
 		}
-	}
 
-	// Check that only series get stored after calling Rollback.
-	require.Equal(t, numSeries*5, walSeriesCount, "series should have been written to WAL")
-	require.Equal(t, 0, walSamplesCount, "samples should not have been written to WAL")
-	require.Equal(t, 0, walExemplarsCount, "exemplars should not have been written to WAL")
-	require.Equal(t, 0, walHistogramCount, "histograms should not have been written to WAL")
-	require.Equal(t, 0, walFloatHistogramCount, "float histograms should not have been written to WAL")
+		// Check that only series get stored after calling Rollback.
+		require.Equal(t, numSeries*5, walSeriesCount, "series should have been written to WAL")
+	}
 }
 
 func TestFullTruncateWAL_AppendV2(t *testing.T) {

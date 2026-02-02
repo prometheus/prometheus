@@ -76,14 +76,62 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, metadata, decMetadata)
 
+	// Without ST.
 	samples := []RefSample{
 		{Ref: 0, T: 12423423, V: 1.2345},
 		{Ref: 123, T: -1231, V: -123},
 		{Ref: 2, T: 0, V: 99999},
 	}
-	decSamples, err := dec.Samples(enc.Samples(samples, nil), nil)
+	encoded := enc.Samples(samples, nil)
+	require.Equal(t, Samples, dec.Type(encoded))
+	decSamples, err := dec.Samples(encoded, nil)
 	require.NoError(t, err)
 	require.Equal(t, samples, decSamples)
+
+	enc = Encoder{EnableSTStorage: true}
+	// Without ST again, but with V1 encoder that enables SamplesV2.
+	samples = []RefSample{
+		{Ref: 0, T: 12423423, V: 1.2345},
+		{Ref: 123, T: -1231, V: -123},
+		{Ref: 2, T: 0, V: 99999},
+	}
+	encoded = enc.Samples(samples, nil)
+	require.Equal(t, SamplesV2, dec.Type(encoded))
+	decSamples, err = dec.Samples(encoded, nil)
+	require.NoError(t, err)
+	require.Equal(t, samples, decSamples)
+
+	// With ST.
+	samplesWithST := []RefSample{
+		{Ref: 0, T: 12423423, ST: 14, V: 1.2345},
+		{Ref: 123, T: -1231, ST: 14, V: -123},
+		{Ref: 2, T: 0, ST: 14, V: 99999},
+	}
+	encoded = enc.Samples(samplesWithST, nil)
+	require.Equal(t, SamplesV2, dec.Type(encoded))
+	decSamples, err = dec.Samples(encoded, nil)
+	require.NoError(t, err)
+	require.Equal(t, samplesWithST, decSamples)
+
+	// With ST (ST[i] == T[i-1]).
+	samplesWithSTDelta := []RefSample{
+		{Ref: 0, T: 12423400, ST: 12423300, V: 1.2345},
+		{Ref: 123, T: 12423500, ST: 12423400, V: -123},
+		{Ref: 2, T: 12423600, ST: 12423500, V: 99999},
+	}
+	decSamples, err = dec.Samples(enc.Samples(samplesWithSTDelta, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, samplesWithSTDelta, decSamples)
+
+	// With ST (ST[i] == ST[i-1]).
+	samplesWithConstST := []RefSample{
+		{Ref: 0, T: 12423400, ST: 12423300, V: 1.2345},
+		{Ref: 123, T: 12423500, ST: 12423300, V: -123},
+		{Ref: 2, T: 12423600, ST: 12423300, V: 99999},
+	}
+	decSamples, err = dec.Samples(enc.Samples(samplesWithConstST, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, samplesWithConstST, decSamples)
 
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
@@ -227,252 +275,262 @@ func TestRecord_EncodeDecode(t *testing.T) {
 }
 
 func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
-	for _, schema := range []int32{-100, 100} {
-		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
-			var enc Encoder
+	for _, enableStStorage := range []bool{false, true} {
+		for _, schema := range []int32{-100, 100} {
+			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableStStorage), func(t *testing.T) {
+				enc := Encoder{EnableSTStorage: enableStStorage}
 
-			var output bytes.Buffer
-			logger := promslog.New(&promslog.Config{Writer: &output})
-			dec := NewDecoder(labels.NewSymbolTable(), logger)
-			histograms := []RefHistogramSample{
-				{
-					Ref: 56,
-					T:   1234,
-					H: &histogram.Histogram{
-						Count:         5,
-						ZeroCount:     2,
-						ZeroThreshold: 0.001,
-						Sum:           18.4 * rand.Float64(),
-						Schema:        schema,
-						PositiveSpans: []histogram.Span{
-							{Offset: 0, Length: 2},
-							{Offset: 1, Length: 2},
+				var output bytes.Buffer
+				logger := promslog.New(&promslog.Config{Writer: &output})
+				dec := NewDecoder(labels.NewSymbolTable(), logger)
+				histograms := []RefHistogramSample{
+					{
+						Ref: 56,
+						T:   1234,
+						H: &histogram.Histogram{
+							Count:         5,
+							ZeroCount:     2,
+							ZeroThreshold: 0.001,
+							Sum:           18.4 * rand.Float64(),
+							Schema:        schema,
+							PositiveSpans: []histogram.Span{
+								{Offset: 0, Length: 2},
+								{Offset: 1, Length: 2},
+							},
+							PositiveBuckets: []int64{1, 1, -1, 0},
 						},
-						PositiveBuckets: []int64{1, 1, -1, 0},
 					},
-				},
-			}
-			histSamples, _ := enc.HistogramSamples(histograms, nil)
-			decHistograms, err := dec.HistogramSamples(histSamples, nil)
-			require.NoError(t, err)
-			require.Empty(t, decHistograms)
-			require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
-		})
+				}
+				histSamples, _ := enc.HistogramSamples(histograms, nil)
+				decHistograms, err := dec.HistogramSamples(histSamples, nil)
+				require.NoError(t, err)
+				require.Empty(t, decHistograms)
+				require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
+			})
+		}
 	}
 }
 
 func TestRecord_DecodeInvalidFloatHistogramSchema(t *testing.T) {
-	for _, schema := range []int32{-100, 100} {
-		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
-			var enc Encoder
+	for _, enableStStorage := range []bool{false, true} {
+		for _, schema := range []int32{-100, 100} {
+			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableStStorage), func(t *testing.T) {
+				enc := Encoder{EnableSTStorage: enableStStorage}
 
-			var output bytes.Buffer
-			logger := promslog.New(&promslog.Config{Writer: &output})
-			dec := NewDecoder(labels.NewSymbolTable(), logger)
-			histograms := []RefFloatHistogramSample{
-				{
-					Ref: 56,
-					T:   1234,
-					FH: &histogram.FloatHistogram{
-						Count:         5,
-						ZeroCount:     2,
-						ZeroThreshold: 0.001,
-						Sum:           18.4 * rand.Float64(),
-						Schema:        schema,
-						PositiveSpans: []histogram.Span{
-							{Offset: 0, Length: 2},
-							{Offset: 1, Length: 2},
+				var output bytes.Buffer
+				logger := promslog.New(&promslog.Config{Writer: &output})
+				dec := NewDecoder(labels.NewSymbolTable(), logger)
+				histograms := []RefFloatHistogramSample{
+					{
+						Ref: 56,
+						T:   1234,
+						FH: &histogram.FloatHistogram{
+							Count:         5,
+							ZeroCount:     2,
+							ZeroThreshold: 0.001,
+							Sum:           18.4 * rand.Float64(),
+							Schema:        schema,
+							PositiveSpans: []histogram.Span{
+								{Offset: 0, Length: 2},
+								{Offset: 1, Length: 2},
+							},
+							PositiveBuckets: []float64{1, 1, -1, 0},
 						},
-						PositiveBuckets: []float64{1, 1, -1, 0},
 					},
-				},
-			}
-			histSamples, _ := enc.FloatHistogramSamples(histograms, nil)
-			decHistograms, err := dec.FloatHistogramSamples(histSamples, nil)
-			require.NoError(t, err)
-			require.Empty(t, decHistograms)
-			require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
-		})
+				}
+				histSamples, _ := enc.FloatHistogramSamples(histograms, nil)
+				decHistograms, err := dec.FloatHistogramSamples(histSamples, nil)
+				require.NoError(t, err)
+				require.Empty(t, decHistograms)
+				require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
+			})
+		}
 	}
 }
 
 func TestRecord_DecodeTooHighResolutionHistogramSchema(t *testing.T) {
-	for _, schema := range []int32{9, 52} {
-		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
-			var enc Encoder
+	for _, enableStStorage := range []bool{false, true} {
+		for _, schema := range []int32{9, 52} {
+			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableStStorage), func(t *testing.T) {
+				enc := Encoder{EnableSTStorage: enableStStorage}
 
-			var output bytes.Buffer
-			logger := promslog.New(&promslog.Config{Writer: &output})
-			dec := NewDecoder(labels.NewSymbolTable(), logger)
-			histograms := []RefHistogramSample{
-				{
-					Ref: 56,
-					T:   1234,
-					H: &histogram.Histogram{
-						Count:         5,
-						ZeroCount:     2,
-						ZeroThreshold: 0.001,
-						Sum:           18.4 * rand.Float64(),
-						Schema:        schema,
-						PositiveSpans: []histogram.Span{
-							{Offset: 0, Length: 2},
-							{Offset: 1, Length: 2},
+				var output bytes.Buffer
+				logger := promslog.New(&promslog.Config{Writer: &output})
+				dec := NewDecoder(labels.NewSymbolTable(), logger)
+				histograms := []RefHistogramSample{
+					{
+						Ref: 56,
+						T:   1234,
+						H: &histogram.Histogram{
+							Count:         5,
+							ZeroCount:     2,
+							ZeroThreshold: 0.001,
+							Sum:           18.4 * rand.Float64(),
+							Schema:        schema,
+							PositiveSpans: []histogram.Span{
+								{Offset: 0, Length: 2},
+								{Offset: 1, Length: 2},
+							},
+							PositiveBuckets: []int64{1, 1, -1, 0},
 						},
-						PositiveBuckets: []int64{1, 1, -1, 0},
 					},
-				},
-			}
-			histSamples, _ := enc.HistogramSamples(histograms, nil)
-			decHistograms, err := dec.HistogramSamples(histSamples, nil)
-			require.NoError(t, err)
-			require.Len(t, decHistograms, 1)
-			require.Equal(t, histogram.ExponentialSchemaMax, decHistograms[0].H.Schema)
-		})
+				}
+				histSamples, _ := enc.HistogramSamples(histograms, nil)
+				decHistograms, err := dec.HistogramSamples(histSamples, nil)
+				require.NoError(t, err)
+				require.Len(t, decHistograms, 1)
+				require.Equal(t, histogram.ExponentialSchemaMax, decHistograms[0].H.Schema)
+			})
+		}
 	}
 }
 
 func TestRecord_DecodeTooHighResolutionFloatHistogramSchema(t *testing.T) {
-	for _, schema := range []int32{9, 52} {
-		t.Run(fmt.Sprintf("schema=%d", schema), func(t *testing.T) {
-			var enc Encoder
+	for _, enableStStorage := range []bool{false, true} {
+		for _, schema := range []int32{9, 52} {
+			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableStStorage), func(t *testing.T) {
+				enc := Encoder{EnableSTStorage: enableStStorage}
 
-			var output bytes.Buffer
-			logger := promslog.New(&promslog.Config{Writer: &output})
-			dec := NewDecoder(labels.NewSymbolTable(), logger)
-			histograms := []RefFloatHistogramSample{
-				{
-					Ref: 56,
-					T:   1234,
-					FH: &histogram.FloatHistogram{
-						Count:         5,
-						ZeroCount:     2,
-						ZeroThreshold: 0.001,
-						Sum:           18.4 * rand.Float64(),
-						Schema:        schema,
-						PositiveSpans: []histogram.Span{
-							{Offset: 0, Length: 2},
-							{Offset: 1, Length: 2},
+				var output bytes.Buffer
+				logger := promslog.New(&promslog.Config{Writer: &output})
+				dec := NewDecoder(labels.NewSymbolTable(), logger)
+				histograms := []RefFloatHistogramSample{
+					{
+						Ref: 56,
+						T:   1234,
+						FH: &histogram.FloatHistogram{
+							Count:         5,
+							ZeroCount:     2,
+							ZeroThreshold: 0.001,
+							Sum:           18.4 * rand.Float64(),
+							Schema:        schema,
+							PositiveSpans: []histogram.Span{
+								{Offset: 0, Length: 2},
+								{Offset: 1, Length: 2},
+							},
+							PositiveBuckets: []float64{1, 1, -1, 0},
 						},
-						PositiveBuckets: []float64{1, 1, -1, 0},
 					},
-				},
-			}
-			histSamples, _ := enc.FloatHistogramSamples(histograms, nil)
-			decHistograms, err := dec.FloatHistogramSamples(histSamples, nil)
-			require.NoError(t, err)
-			require.Len(t, decHistograms, 1)
-			require.Equal(t, histogram.ExponentialSchemaMax, decHistograms[0].FH.Schema)
-		})
+				}
+				histSamples, _ := enc.FloatHistogramSamples(histograms, nil)
+				decHistograms, err := dec.FloatHistogramSamples(histSamples, nil)
+				require.NoError(t, err)
+				require.Len(t, decHistograms, 1)
+				require.Equal(t, histogram.ExponentialSchemaMax, decHistograms[0].FH.Schema)
+			})
+		}
 	}
 }
 
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
 // Bugfix check for pull/521 and pull/523.
 func TestRecord_Corrupted(t *testing.T) {
-	var enc Encoder
-	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	for _, enableStStorage := range []bool{false, true} {
+		enc := Encoder{EnableSTStorage: enableStStorage}
+		dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
-	t.Run("Test corrupted series record", func(t *testing.T) {
-		series := []RefSeries{
-			{
-				Ref:    100,
-				Labels: labels.FromStrings("abc", "def", "123", "456"),
-			},
-		}
-
-		corrupted := enc.Series(series, nil)[:8]
-		_, err := dec.Series(corrupted, nil)
-		require.Equal(t, err, encoding.ErrInvalidSize)
-	})
-
-	t.Run("Test corrupted sample record", func(t *testing.T) {
-		samples := []RefSample{
-			{Ref: 0, T: 12423423, V: 1.2345},
-		}
-
-		corrupted := enc.Samples(samples, nil)[:8]
-		_, err := dec.Samples(corrupted, nil)
-		require.ErrorIs(t, err, encoding.ErrInvalidSize)
-	})
-
-	t.Run("Test corrupted tombstone record", func(t *testing.T) {
-		tstones := []tombstones.Stone{
-			{Ref: 123, Intervals: tombstones.Intervals{
-				{Mint: -1000, Maxt: 1231231},
-				{Mint: 5000, Maxt: 0},
-			}},
-		}
-
-		corrupted := enc.Tombstones(tstones, nil)[:8]
-		_, err := dec.Tombstones(corrupted, nil)
-		require.Equal(t, err, encoding.ErrInvalidSize)
-	})
-
-	t.Run("Test corrupted exemplar record", func(t *testing.T) {
-		exemplars := []RefExemplar{
-			{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("trace_id", "asdf")},
-		}
-
-		corrupted := enc.Exemplars(exemplars, nil)[:8]
-		_, err := dec.Exemplars(corrupted, nil)
-		require.ErrorIs(t, err, encoding.ErrInvalidSize)
-	})
-
-	t.Run("Test corrupted metadata record", func(t *testing.T) {
-		meta := []RefMetadata{
-			{Ref: 147, Type: uint8(Counter), Unit: "unit", Help: "help"},
-		}
-
-		corrupted := enc.Metadata(meta, nil)[:8]
-		_, err := dec.Metadata(corrupted, nil)
-		require.ErrorIs(t, err, encoding.ErrInvalidSize)
-	})
-
-	t.Run("Test corrupted histogram record", func(t *testing.T) {
-		histograms := []RefHistogramSample{
-			{
-				Ref: 56,
-				T:   1234,
-				H: &histogram.Histogram{
-					Count:         5,
-					ZeroCount:     2,
-					ZeroThreshold: 0.001,
-					Sum:           18.4 * rand.Float64(),
-					Schema:        1,
-					PositiveSpans: []histogram.Span{
-						{Offset: 0, Length: 2},
-						{Offset: 1, Length: 2},
-					},
-					PositiveBuckets: []int64{1, 1, -1, 0},
+		t.Run("Test corrupted series record", func(t *testing.T) {
+			series := []RefSeries{
+				{
+					Ref:    100,
+					Labels: labels.FromStrings("abc", "def", "123", "456"),
 				},
-			},
-			{
-				Ref: 67,
-				T:   5678,
-				H: &histogram.Histogram{
-					Count:         8,
-					ZeroThreshold: 0.001,
-					Sum:           35.5,
-					Schema:        -53,
-					PositiveSpans: []histogram.Span{
-						{Offset: 0, Length: 2},
-						{Offset: 2, Length: 2},
-					},
-					PositiveBuckets: []int64{2, -1, 2, 0},
-					CustomValues:    []float64{0, 2, 4, 6, 8},
-				},
-			},
-		}
+			}
 
-		corruptedHists, customBucketsHists := enc.HistogramSamples(histograms, nil)
-		corruptedHists = corruptedHists[:8]
-		corruptedCustomBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHists, nil)
-		corruptedCustomBucketsHists = corruptedCustomBucketsHists[:8]
-		_, err := dec.HistogramSamples(corruptedHists, nil)
-		require.ErrorIs(t, err, encoding.ErrInvalidSize)
-		_, err = dec.HistogramSamples(corruptedCustomBucketsHists, nil)
-		require.ErrorIs(t, err, encoding.ErrInvalidSize)
-	})
+			corrupted := enc.Series(series, nil)[:8]
+			_, err := dec.Series(corrupted, nil)
+			require.Equal(t, err, encoding.ErrInvalidSize)
+		})
+
+		t.Run("Test corrupted sample record", func(t *testing.T) {
+			samples := []RefSample{
+				{Ref: 0, T: 12423423, V: 1.2345},
+			}
+
+			corrupted := enc.Samples(samples, nil)[:8]
+			_, err := dec.Samples(corrupted, nil)
+			require.ErrorIs(t, err, encoding.ErrInvalidSize)
+		})
+
+		t.Run("Test corrupted tombstone record", func(t *testing.T) {
+			tstones := []tombstones.Stone{
+				{Ref: 123, Intervals: tombstones.Intervals{
+					{Mint: -1000, Maxt: 1231231},
+					{Mint: 5000, Maxt: 0},
+				}},
+			}
+
+			corrupted := enc.Tombstones(tstones, nil)[:8]
+			_, err := dec.Tombstones(corrupted, nil)
+			require.Equal(t, err, encoding.ErrInvalidSize)
+		})
+
+		t.Run("Test corrupted exemplar record", func(t *testing.T) {
+			exemplars := []RefExemplar{
+				{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("trace_id", "asdf")},
+			}
+
+			corrupted := enc.Exemplars(exemplars, nil)[:8]
+			_, err := dec.Exemplars(corrupted, nil)
+			require.ErrorIs(t, err, encoding.ErrInvalidSize)
+		})
+
+		t.Run("Test corrupted metadata record", func(t *testing.T) {
+			meta := []RefMetadata{
+				{Ref: 147, Type: uint8(Counter), Unit: "unit", Help: "help"},
+			}
+
+			corrupted := enc.Metadata(meta, nil)[:8]
+			_, err := dec.Metadata(corrupted, nil)
+			require.ErrorIs(t, err, encoding.ErrInvalidSize)
+		})
+
+		t.Run("Test corrupted histogram record", func(t *testing.T) {
+			histograms := []RefHistogramSample{
+				{
+					Ref: 56,
+					T:   1234,
+					H: &histogram.Histogram{
+						Count:         5,
+						ZeroCount:     2,
+						ZeroThreshold: 0.001,
+						Sum:           18.4 * rand.Float64(),
+						Schema:        1,
+						PositiveSpans: []histogram.Span{
+							{Offset: 0, Length: 2},
+							{Offset: 1, Length: 2},
+						},
+						PositiveBuckets: []int64{1, 1, -1, 0},
+					},
+				},
+				{
+					Ref: 67,
+					T:   5678,
+					H: &histogram.Histogram{
+						Count:         8,
+						ZeroThreshold: 0.001,
+						Sum:           35.5,
+						Schema:        -53,
+						PositiveSpans: []histogram.Span{
+							{Offset: 0, Length: 2},
+							{Offset: 2, Length: 2},
+						},
+						PositiveBuckets: []int64{2, -1, 2, 0},
+						CustomValues:    []float64{0, 2, 4, 6, 8},
+					},
+				},
+			}
+
+			corruptedHists, customBucketsHists := enc.HistogramSamples(histograms, nil)
+			corruptedHists = corruptedHists[:8]
+			corruptedCustomBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHists, nil)
+			corruptedCustomBucketsHists = corruptedCustomBucketsHists[:8]
+			_, err := dec.HistogramSamples(corruptedHists, nil)
+			require.ErrorIs(t, err, encoding.ErrInvalidSize)
+			_, err = dec.HistogramSamples(corruptedCustomBucketsHists, nil)
+			require.ErrorIs(t, err, encoding.ErrInvalidSize)
+		})
+	}
 }
 
 func TestRecord_Type(t *testing.T) {
@@ -486,6 +544,16 @@ func TestRecord_Type(t *testing.T) {
 	samples := []RefSample{{Ref: 123, T: 12345, V: 1.2345}}
 	recordType = dec.Type(enc.Samples(samples, nil))
 	require.Equal(t, Samples, recordType)
+
+	// With EnableSTStorage set, all Samples are V2
+	enc = Encoder{EnableSTStorage: true}
+	samples = []RefSample{{Ref: 123, T: 12345, V: 1.2345}}
+	recordType = dec.Type(enc.Samples(samples, nil))
+	require.Equal(t, SamplesV2, recordType)
+
+	samplesST := []RefSample{{Ref: 123, ST: 1, T: 12345, V: 1.2345}}
+	recordType = dec.Type(enc.Samples(samplesST, nil))
+	require.Equal(t, SamplesV2, recordType)
 
 	tstones := []tombstones.Stone{{Ref: 1, Intervals: tombstones.Intervals{{Mint: 1, Maxt: 2}}}}
 	recordType = dec.Type(enc.Tombstones(tstones, nil))
@@ -716,24 +784,26 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			make: initNHCBRefs,
 		},
 	} {
-		for _, labelCount := range []int{0, 10, 50} {
-			for _, histograms := range []int{10, 100, 1000} {
-				for _, buckets := range []int{0, 1, 10, 100} {
-					b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
-						series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
-						enc := Encoder{}
-						for b.Loop() {
-							var buf []byte
-							enc.Series(series, buf)
-							enc.Samples(samples, buf)
-							var leftOver []RefHistogramSample
-							_, leftOver = enc.HistogramSamples(nhcbs, buf)
-							if len(leftOver) > 0 {
-								enc.CustomBucketsHistogramSamples(leftOver, buf)
+		for _, enableStStorage := range []bool{false, true} {
+			for _, labelCount := range []int{0, 10, 50} {
+				for _, histograms := range []int{10, 100, 1000} {
+					for _, buckets := range []int{0, 1, 10, 100} {
+						b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
+							series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
+							enc := Encoder{EnableSTStorage: enableStStorage}
+							for b.Loop() {
+								var buf []byte
+								enc.Series(series, buf)
+								enc.Samples(samples, buf)
+								var leftOver []RefHistogramSample
+								_, leftOver = enc.HistogramSamples(nhcbs, buf)
+								if len(leftOver) > 0 {
+									enc.CustomBucketsHistogramSamples(leftOver, buf)
+								}
+								b.ReportMetric(float64(len(buf)), "recordBytes/ops")
 							}
-							b.ReportMetric(float64(len(buf)), "recordBytes/ops")
-						}
-					})
+						})
+					}
 				}
 			}
 		}
