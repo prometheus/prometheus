@@ -483,6 +483,8 @@ func (*writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage
 	return ref, err
 }
 
+// TODO(bwplotka): Consider exposing timeLimitAppender and bucketLimitAppender appenders from scrape/target.go
+// to DRY, they do the same.
 type remoteWriteAppender struct {
 	storage.Appender
 
