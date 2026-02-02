@@ -90,6 +90,10 @@ type AppendPartialError struct {
 
 // Error returns combined error string.
 func (e *AppendPartialError) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+
 	errs := errors.Join(e.ExemplarErrors...)
 	if errs == nil {
 		return ""
@@ -97,29 +101,46 @@ func (e *AppendPartialError) Error() string {
 	return errs.Error()
 }
 
-// ErrOrNil returns AppendPartialError as error, returning nil
+// ToError returns AppendPartialError as error, returning nil
 // if there are no errors.
-func (e *AppendPartialError) ErrOrNil() error {
-	if len(e.ExemplarErrors) == 0 {
+func (e *AppendPartialError) ToError() error {
+	if e == nil {
 		return nil
 	}
 	return e
 }
 
+// Is implements method that's expected by errors.Is.
+func (*AppendPartialError) Is(target error) bool {
+	// This does not need to handle wrapped errors as AppendPartialError.Is should be used
+	// via errors.Is.
+	_, ok := target.(*AppendPartialError)
+	return ok
+}
+
 // Handle handles the given err that may be an AppendPartialError.
 // If the err is nil or not an AppendPartialError it returns err.
 // Otherwise, partial errors are aggregated.
-func (e *AppendPartialError) Handle(err error) error {
+func (e *AppendPartialError) Handle(err error) (*AppendPartialError, error) {
 	if err == nil {
-		return nil
+		return e, nil
 	}
 
+	// Fast, alloc-free path first for non-partial error cases.
+	if !errors.Is(err, e) {
+		return e, err
+	}
 	var pErr *AppendPartialError
 	if !errors.As(err, &pErr) {
-		return err
+		return e, err
+	}
+
+	if e == nil {
+		// Lazy allocation.
+		e = &AppendPartialError{}
 	}
 	e.ExemplarErrors = append(e.ExemplarErrors, pErr.ExemplarErrors...)
-	return nil
+	return e, nil
 }
 
 var _ error = &AppendPartialError{}

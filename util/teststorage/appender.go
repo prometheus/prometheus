@@ -185,6 +185,7 @@ type Appendable struct {
 	appendErrFn          func(ls labels.Labels) error // If non-nil, inject appender error on every Append, AppendHistogram and ST zero calls.
 	appendExemplarsError error                        // If non-nil, inject exemplar error.
 	commitErr            error                        // If non-nil, inject commit error.
+	skipRecording        bool                         // If true, Appendable won't record samples, useful for benchmarks.
 
 	mtx           sync.Mutex
 	openAppenders atomic.Int32 // Guard against multi-appender use.
@@ -219,6 +220,13 @@ func (a *Appendable) WithErrs(appendErrFn func(ls labels.Labels) error, appendEx
 	a.appendErrFn = appendErrFn
 	a.appendExemplarsError = appendExemplarsError
 	a.commitErr = commitErr
+	return a
+}
+
+// SkipRecording enables or disables recording appended samples.
+// If skipped, Appendable allocs less, but Result*() methods will give always empty results. This is useful for benchmarking.
+func (a *Appendable) SkipRecording(skipRecording bool) *Appendable {
+	a.skipRecording = skipRecording
 	return a
 }
 
@@ -335,8 +343,10 @@ func (a *baseAppender) Commit() error {
 	}
 
 	a.a.mtx.Lock()
-	a.a.resultSamples = append(a.a.resultSamples, a.a.pendingSamples...)
-	a.a.pendingSamples = a.a.pendingSamples[:0]
+	if !a.a.skipRecording {
+		a.a.resultSamples = append(a.a.resultSamples, a.a.pendingSamples...)
+		a.a.pendingSamples = a.a.pendingSamples[:0]
+	}
 	a.err = errClosedAppender
 	a.a.mtx.Unlock()
 
@@ -353,8 +363,10 @@ func (a *baseAppender) Rollback() error {
 	defer a.a.openAppenders.Dec()
 
 	a.a.mtx.Lock()
-	a.a.rolledbackSamples = append(a.a.rolledbackSamples, a.a.pendingSamples...)
-	a.a.pendingSamples = a.a.pendingSamples[:0]
+	if !a.a.skipRecording {
+		a.a.rolledbackSamples = append(a.a.rolledbackSamples, a.a.pendingSamples...)
+		a.a.pendingSamples = a.a.pendingSamples[:0]
+	}
 	a.err = errClosedAppender
 	a.a.mtx.Unlock()
 
@@ -548,37 +560,37 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		}
 	}
 
-	var (
-		es         []exemplar.Exemplar
-		partialErr error
-	)
+	var partialErr error
+	if !a.a.skipRecording {
+		var es []exemplar.Exemplar
 
-	if len(opts.Exemplars) > 0 {
-		if a.a.appendExemplarsError != nil {
-			var exErrs []error
-			for range opts.Exemplars {
-				exErrs = append(exErrs, a.a.appendExemplarsError)
+		if len(opts.Exemplars) > 0 {
+			if a.a.appendExemplarsError != nil {
+				var exErrs []error
+				for range opts.Exemplars {
+					exErrs = append(exErrs, a.a.appendExemplarsError)
+				}
+				if len(exErrs) > 0 {
+					partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
+				}
+			} else {
+				// As per AppenderV2 interface, opts.Exemplar slice is unsafe for reuse.
+				es = make([]exemplar.Exemplar, len(opts.Exemplars))
+				copy(es, opts.Exemplars)
 			}
-			if len(exErrs) > 0 {
-				partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
-			}
-		} else {
-			// As per AppenderV2 interface, opts.Exemplar slice is unsafe for reuse.
-			es = make([]exemplar.Exemplar, len(opts.Exemplars))
-			copy(es, opts.Exemplars)
 		}
-	}
 
-	a.a.mtx.Lock()
-	a.a.pendingSamples = append(a.a.pendingSamples, Sample{
-		MF: opts.MetricFamilyName,
-		M:  opts.Metadata,
-		L:  ls,
-		ST: st, T: t,
-		V: v, H: h, FH: fh,
-		ES: es,
-	})
-	a.a.mtx.Unlock()
+		a.a.mtx.Lock()
+		a.a.pendingSamples = append(a.a.pendingSamples, Sample{
+			MF: opts.MetricFamilyName,
+			M:  opts.Metadata,
+			L:  ls,
+			ST: st, T: t,
+			V: v, H: h, FH: fh,
+			ES: es,
+		})
+		a.a.mtx.Unlock()
+	}
 
 	if a.next != nil {
 		ref, err = a.next.Append(ref, ls, st, t, v, h, fh, opts)
