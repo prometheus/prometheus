@@ -265,7 +265,7 @@ type API struct {
 func NewAPI(
 	qe promql.QueryEngine,
 	q storage.SampleAndChunkQueryable,
-	ap storage.Appendable,
+	ap storage.Appendable, apV2 storage.AppendableV2,
 	eq storage.ExemplarQueryable,
 	spsr func(context.Context) ScrapePoolsRetriever,
 	tr func(context.Context) TargetRetriever,
@@ -342,7 +342,7 @@ func NewAPI(
 		a.statsRenderer = statsRenderer
 	}
 
-	if ap == nil && (rwEnabled || otlpEnabled) {
+	if (ap == nil || apV2 == nil) && (rwEnabled || otlpEnabled) {
 		panic("remote write or otlp write enabled, but no appender passed in.")
 	}
 
@@ -350,13 +350,11 @@ func NewAPI(
 		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, stZeroIngestionEnabled, enableTypeAndUnitLabels, appendMetadata)
 	}
 	if otlpEnabled {
-		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{
+		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, apV2, configFunc, remote.OTLPOptions{
 			ConvertDelta:            otlpDeltaToCumulative,
 			NativeDelta:             otlpNativeDeltaIngestion,
 			LookbackDelta:           lookbackDelta,
-			IngestSTZeroSample:      stZeroIngestionEnabled,
 			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
-			AppendMetadata:          appendMetadata,
 		})
 	}
 

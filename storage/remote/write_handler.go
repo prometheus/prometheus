@@ -537,3 +537,27 @@ func (app *remoteWriteAppender) AppendExemplar(ref storage.SeriesRef, l labels.L
 	}
 	return ref, nil
 }
+
+type remoteWriteAppenderV2 struct {
+	storage.AppenderV2
+
+	maxTime int64
+}
+
+func (app *remoteWriteAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	if t > app.maxTime {
+		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+
+	if h != nil && histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > histogram.ExponentialSchemaMax {
+		if err := h.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return 0, err
+		}
+	}
+	if fh != nil && histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > histogram.ExponentialSchemaMax {
+		if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return 0, err
+		}
+	}
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+}
