@@ -1667,7 +1667,7 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 				// Interpolate between prev and next.
 				// TODO: detect if the sample is a counter, based on __type__ or metadata.
 				prev, next := floats[i-1], floats[i]
-				val := interpolate(prev, next, ts, false, false)
+				val := interpolate(prev, next, ts, false)
 				ss.Floats = append(ss.Floats, FPoint{F: val, T: ts})
 
 			case i > 0:
