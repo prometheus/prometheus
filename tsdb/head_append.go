@@ -357,6 +357,18 @@ const (
 	stCustomBucketFloatHistogram                   // Native float histograms with custom bucket boundaries. Goes to `floatHistograms`.
 )
 
+// TypeLabel returns a name to use for instrumentation to reflect histogram vs float operations.
+func (s sampleType) TypeLabel() string {
+	switch s {
+	default:
+		return ""
+	case stFloat:
+		return sampleMetricTypeFloat
+	case stHistogram, stCustomBucketHistogram, stFloatHistogram, stCustomBucketFloatHistogram:
+		return sampleMetricTypeHistogram
+	}
+}
+
 // appendBatch is used to partition all the appended data into batches that are
 // "type clean", i.e. every series receives only samples of one type within the
 // batch. Types in this regard are defined by the sampleType enum above.
@@ -458,23 +470,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		// we do not need to check for the difference between "unknown
 		// series" and "known series with stNone".
 	}
-
-	s.Lock()
-	defer s.Unlock()
-	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
-	// to skip that sample from the WAL and write only in the WBL.
-	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-	if err == nil {
-		if isOOO && a.hints != nil && a.hints.DiscardOutOfOrder {
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
-			return 0, storage.ErrOutOfOrderSample
-		}
-		s.pendingCommit = true
-	}
-	if delta > 0 {
-		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
-	}
-	if err != nil {
+	if err := a.appendFloat(s, t, v, a.hints != nil && a.hints.DiscardOutOfOrder); err != nil {
 		switch {
 		case errors.Is(err, storage.ErrOutOfOrderSample):
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()

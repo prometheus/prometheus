@@ -103,31 +103,43 @@ type headAppenderV2 struct {
 	headAppenderBase
 }
 
+// toBasicSampleType detects sample type based on a typical multi sample Append API.
+// Basic because this does not detect some details like custom bucket histogram or native.
+// TODO: Improve with https://github.com/prometheus/prometheus/issues/17925
+func toBasicSampleType(v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) sampleType {
+	if v != 0 || (h == nil && fh == nil) {
+		return stFloat // Fast path.
+	}
+	if fh != nil {
+		return stFloatHistogram
+	}
+	return stHistogram
+}
+
 func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
+		sTyp    = toBasicSampleType(v, h, fh)
+		isStale bool
 		// Avoid shadowing err variables for reliability.
-		valErr, appErr, partialErr error
-		sampleMetricType           = sampleMetricTypeFloat
-		isStale                    bool
+		appErr, partialErr error
 	)
-	// Fail fast on incorrect histograms.
 
-	switch {
-	case fh != nil:
-		sampleMetricType = sampleMetricTypeHistogram
-		valErr = fh.Validate()
-	case h != nil:
-		sampleMetricType = sampleMetricTypeHistogram
-		valErr = h.Validate()
-	}
-	if valErr != nil {
-		return 0, valErr
+	switch sTyp {
+	default:
+	case stFloatHistogram:
+		if err := fh.Validate(); err != nil {
+			return 0, err
+		}
+	case stHistogram:
+		if err := h.Validate(); err != nil {
+			return 0, err
+		}
 	}
 
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise, a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricType).Inc()
+		a.head.metrics.outOfBoundSamples.WithLabelValues(sTyp.TypeLabel()).Inc()
 		return 0, storage.ErrOutOfBounds
 	}
 
@@ -141,15 +153,15 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	}
 
 	// TODO(bwplotka): Handle ST natively (as per PROM-60).
-	if a.head.opts.EnableSTAsZeroSample && st != 0 {
+	if st != 0 && a.head.opts.EnableSTAsZeroSample {
 		a.bestEffortAppendSTZeroSample(s, ls, st, t, h, fh)
 	}
 
-	switch {
-	case fh != nil:
+	switch sTyp {
+	case stFloatHistogram:
 		isStale = value.IsStaleNaN(fh.Sum)
 		appErr = a.appendFloatHistogram(s, t, fh, opts.RejectOutOfOrder)
-	case h != nil:
+	case stHistogram:
 		isStale = value.IsStaleNaN(h.Sum)
 		appErr = a.appendHistogram(s, t, h, opts.RejectOutOfOrder)
 	default:
@@ -171,6 +183,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
+			default:
 			}
 			// Note that a series reference not yet in the map will come out
 			// as stNone, but since we do not handle that case separately,
@@ -179,13 +192,14 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		}
 		appErr = a.appendFloat(s, t, v, opts.RejectOutOfOrder)
 	}
+
 	// Handle append error, if any.
 	if appErr != nil {
 		switch {
 		case errors.Is(appErr, storage.ErrOutOfOrderSample):
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricType).Inc()
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sTyp.TypeLabel()).Inc()
 		case errors.Is(appErr, storage.ErrTooOldSample):
-			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricType).Inc()
+			a.head.metrics.tooOldSamples.WithLabelValues(sTyp.TypeLabel()).Inc()
 		}
 		return 0, appErr
 	}
@@ -218,16 +232,16 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	return storage.SeriesRef(s.ref), partialErr
 }
 
-func (a *headAppenderV2) appendFloat(s *memSeries, t int64, v float64, fastRejectOOO bool) error {
+func (a *headAppenderBase) appendFloat(s *memSeries, t int64, v float64, fastRejectOOO bool) error {
 	s.Lock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
 	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-	if isOOO && fastRejectOOO {
-		s.Unlock()
-		return storage.ErrOutOfOrderSample
-	}
 	if err == nil {
+		if isOOO && fastRejectOOO {
+			s.Unlock()
+			return storage.ErrOutOfOrderSample
+		}
 		s.pendingCommit = true
 	}
 	s.Unlock()
