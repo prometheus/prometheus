@@ -1725,7 +1725,7 @@ func TestScrapeLoopAppend_WithStorage(t *testing.T) {
 
 // BenchmarkScrapeLoopAppend benchmarks scrape appends for typical cases.
 //
-// Benchmark compares append function run across 4 dimensions:
+// Benchmark compares append function run across 5 dimensions:
 // * `withStorage`: without storage isolates the benchmark to the scrape loop append code. With storage is an
 // integration benchmark with the TSDB head appender code. For acceptance criteria run with storage, without for debugging.
 // * `appV2`: appender V1 or V2.
@@ -1737,7 +1737,7 @@ func TestScrapeLoopAppend_WithStorage(t *testing.T) {
 //  promtext, omtext and promproto.
 //
 // NOTE: withStorage=true uses sync.Pool buffers which is heavily non-deterministic and shared across go routines.
-// As a results, it's recommended to run dimensions you want to compare with in separate go tool invocations e.g.
+// As a result, it's recommended to run dimensions you want to compare with in e.g. separate go tool invocations.
 // Recommended CLI invocation(s):
 /*
 	# Acceptance: With storage with V1 and V2 in separate process:
