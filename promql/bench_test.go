@@ -335,14 +335,12 @@ func BenchmarkRangeQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
 
+	parser.SetDefaultOptions(parser.Options{EnableExtendedRangeSelectors: true})
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
-		ParserOptions: parser.Options{
-			EnableExtendedRangeSelectors: true,
-		},
 	}
 	engine := promqltest.NewTestEngineWithOpts(b, opts)
 

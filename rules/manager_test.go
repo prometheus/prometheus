@@ -809,7 +809,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	// Groups will be recreated if updated.
-	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml", false, model.UTF8Validation, parser.Options{})
+	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml", false, model.UTF8Validation)
 	require.Empty(t, errs, "file parsing failures")
 
 	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")

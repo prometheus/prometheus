@@ -124,7 +124,6 @@ type ManagerOptions struct {
 	ForGracePeriod            time.Duration
 	ResendDelay               time.Duration
 	GroupLoader               GroupLoader
-	ParserOptions             parser.Options
 	DefaultRuleQueryOffset    func() time.Duration
 	MaxConcurrentEvals        int64
 	ConcurrentEvalsEnabled    bool
@@ -160,7 +159,7 @@ func NewManager(o *ManagerOptions) *Manager {
 	}
 
 	if o.GroupLoader == nil {
-		o.GroupLoader = FileLoader{ParserOptions: o.ParserOptions}
+		o.GroupLoader = FileLoader{}
 	}
 
 	if o.RuleConcurrencyController == nil {
@@ -321,18 +320,15 @@ type GroupLoader interface {
 }
 
 // FileLoader is the default GroupLoader implementation. It defers to rulefmt.ParseFile
-// and parser.ParseExpr with the configured ParserOptions.
-type FileLoader struct {
-	// ParserOptions is the parser configuration used when parsing rule expressions.
-	ParserOptions parser.Options
+// and parser.ParseExpr and parser.DefaultOptions.
+type FileLoader struct{}
+
+func (FileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme)
 }
 
-func (fl FileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.ParserOptions)
-}
-
-func (fl FileLoader) Parse(query string) (parser.Expr, error) {
-	return parser.ParseExpr(query, parser.WithOptions(fl.ParserOptions))
+func (FileLoader) Parse(query string) (parser.Expr, error) {
+	return parser.ParseExpr(query)
 }
 
 // LoadGroups reads groups from a list of files.
@@ -632,7 +628,7 @@ func ParseFiles(patterns []string, nameValidationScheme model.ValidationScheme) 
 		}
 	}
 	for fn, pat := range files {
-		_, errs := rulefmt.ParseFile(fn, false, nameValidationScheme, parser.Options{})
+		_, errs := rulefmt.ParseFile(fn, false, nameValidationScheme)
 		if len(errs) > 0 {
 			return fmt.Errorf("parse rules from file %q (pattern: %q): %w", fn, pat, errors.Join(errs...))
 		}

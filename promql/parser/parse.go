@@ -39,6 +39,20 @@ var parserPool = sync.Pool{
 	},
 }
 
+// defaultOptions is the default parser configuration.
+var defaultOptions Options
+
+// SetDefaultOptions sets the default parser configuration.
+// It should be called once at startup before any parsing; after that, the value must not be modified.
+func SetDefaultOptions(opts Options) {
+	defaultOptions = opts
+}
+
+// DefaultOptions returns the default parser configuration.
+func DefaultOptions() Options {
+	return defaultOptions
+}
+
 // Options holds the configuration for the PromQL parser.
 type Options struct {
 	EnableExperimentalFunctions  bool
@@ -101,7 +115,7 @@ func NewParser(input string, opts ...Opt) *parser { //nolint:revive // unexporte
 	p.parseErrors = nil
 	p.generatedParserResult = nil
 	p.lastClosing = posrange.Pos(0)
-	p.options = Options{}
+	p.options = DefaultOptions()
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{

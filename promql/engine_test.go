@@ -1653,7 +1653,7 @@ func TestExtendedRangeSelectors(t *testing.T) {
 	}
 }
 
-// TestParserConfigIsolation ensures that parser configuration is per-engine and not global.
+// TestParserConfigIsolation ensures the default parser configuration is respected.
 func TestParserConfigIsolation(t *testing.T) {
 	ctx := context.Background()
 	storage := promqltest.LoadedStorage(t, `
@@ -1662,30 +1662,20 @@ func TestParserConfigIsolation(t *testing.T) {
 	`)
 	t.Cleanup(func() { storage.Close() })
 
-	// Engine with extended range selectors disabled: "smoothed" is not valid.
-	optsDisabled := promql.EngineOpts{
-		MaxSamples:    1000,
-		Timeout:       10 * time.Second,
-		ParserOptions: parser.Options{EnableExtendedRangeSelectors: false},
-	}
-	engineDisabled := promql.NewEngine(optsDisabled)
-
-	// Engine with extended range selectors enabled: "smoothed" is valid.
-	optsEnabled := promql.EngineOpts{
-		MaxSamples:    1000,
-		Timeout:       10 * time.Second,
-		ParserOptions: parser.Options{EnableExtendedRangeSelectors: true},
-	}
-	engineEnabled := promql.NewEngine(optsEnabled)
-
 	query := "metric[10s] smoothed"
 	t.Run("engine_with_feature_disabled_rejects", func(t *testing.T) {
-		_, err := engineDisabled.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
+		parser.SetDefaultOptions(parser.Options{EnableExtendedRangeSelectors: false})
+		engine := promql.NewEngine(promql.EngineOpts{MaxSamples: 1000, Timeout: 10 * time.Second})
+		t.Cleanup(func() { _ = engine.Close() })
+		_, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "parse")
 	})
 	t.Run("engine_with_feature_enabled_accepts", func(t *testing.T) {
-		q, err := engineEnabled.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
+		parser.SetDefaultOptions(parser.Options{EnableExtendedRangeSelectors: true})
+		engine := promql.NewEngine(promql.EngineOpts{MaxSamples: 1000, Timeout: 10 * time.Second})
+		t.Cleanup(func() { _ = engine.Close() })
+		q, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
 		require.NoError(t, err)
 		defer q.Close()
 		res := q.Exec(ctx)
@@ -3868,6 +3858,12 @@ func (s mockSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 }
 
 func TestEvaluationWithDelayedNameRemovalDisabled(t *testing.T) {
+	parser.SetDefaultOptions(parser.Options{
+		EnableExperimentalFunctions:  true,
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
+		EnableBinopFillModifiers:     true,
+	})
 	opts := promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
@@ -3875,12 +3871,6 @@ func TestEvaluationWithDelayedNameRemovalDisabled(t *testing.T) {
 		MaxSamples:               10000,
 		Timeout:                  10 * time.Second,
 		EnableDelayedNameRemoval: false,
-		ParserOptions: parser.Options{
-			EnableExperimentalFunctions:  true,
-			ExperimentalDurationExpr:     true,
-			EnableExtendedRangeSelectors: true,
-			EnableBinopFillModifiers:     true,
-		},
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 

@@ -361,6 +361,7 @@ func main() {
 			}
 		}
 	}
+	parser.SetDefaultOptions(promtoolParserOpts)
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():
@@ -869,7 +870,7 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
-	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme, promtoolParserOpts)
+	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme)
 	if errs != nil {
 		failed = true
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -903,7 +904,7 @@ func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme, promtoolParserOpts)
+		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme)
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -1345,7 +1346,7 @@ func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *c
 }
 
 func formatPromQL(query string) error {
-	expr, err := parser.ParseExpr(query, parser.WithOptions(promtoolParserOpts))
+	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return err
 	}
@@ -1355,7 +1356,7 @@ func formatPromQL(query string) error {
 }
 
 func labelsSetPromQL(query, labelMatchType, name, value string) error {
-	expr, err := parser.ParseExpr(query, parser.WithOptions(promtoolParserOpts))
+	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return err
 	}
@@ -1400,7 +1401,7 @@ func labelsSetPromQL(query, labelMatchType, name, value string) error {
 }
 
 func labelsDeletePromQL(query, name string) error {
-	expr, err := parser.ParseExpr(query, parser.WithOptions(promtoolParserOpts))
+	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return err
 	}

@@ -247,12 +247,11 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 
 	// Load the rule files.
 	opts := &rules.ManagerOptions{
-		QueryFunc:     rules.EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
-		Appendable:    suite.Storage(),
-		Context:       context.Background(),
-		NotifyFunc:    func(context.Context, string, ...*rules.Alert) {},
-		Logger:        promslog.NewNopLogger(),
-		ParserOptions: promtoolParserOpts,
+		QueryFunc:  rules.EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+		Appendable: suite.Storage(),
+		Context:    context.Background(),
+		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
+		Logger:     promslog.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
 	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, nil, ignoreUnknownFields, ruleFiles...)
