@@ -70,7 +70,7 @@ func funcTime(_ []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (
 // it returns the interpolated value at the left boundary; otherwise, it returns the first sample's value.
 func pickOrInterpolateLeft(floats []FPoint, first int, rangeStart int64, smoothed, isCounter bool) float64 {
 	if smoothed && floats[first].T < rangeStart {
-		return interpolate(floats[first], floats[first+1], rangeStart, isCounter, true)
+		return interpolate(floats[first], floats[first+1], rangeStart, isCounter)
 	}
 	return floats[first].F
 }
@@ -80,25 +80,20 @@ func pickOrInterpolateLeft(floats []FPoint, first int, rangeStart int64, smoothe
 // it returns the interpolated value at the right boundary; otherwise, it returns the last sample's value.
 func pickOrInterpolateRight(floats []FPoint, last int, rangeEnd int64, smoothed, isCounter bool) float64 {
 	if smoothed && last > 0 && floats[last].T > rangeEnd {
-		return interpolate(floats[last-1], floats[last], rangeEnd, isCounter, false)
+		return interpolate(floats[last-1], floats[last], rangeEnd, isCounter)
 	}
 	return floats[last].F
 }
 
 // interpolate performs linear interpolation between two points.
-// If isCounter is true and there is a counter reset:
-// - on the left edge, it sets the value to 0.
-// - on the right edge, it adds the left value to the right value.
+// If isCounter is true and there is a counter reset, it models the counter
+// as starting from 0 (post-reset) by setting y1 to 0.
 // It then calculates the interpolated value at the given timestamp.
-func interpolate(p1, p2 FPoint, t int64, isCounter, leftEdge bool) float64 {
+func interpolate(p1, p2 FPoint, t int64, isCounter bool) float64 {
 	y1 := p1.F
 	y2 := p2.F
 	if isCounter && y2 < y1 {
-		if leftEdge {
-			y1 = 0
-		} else {
-			y2 += y1
-		}
+		y1 = 0
 	}
 
 	return y1 + (y2-y1)*float64(t-p1.T)/float64(p2.T-p1.T)
