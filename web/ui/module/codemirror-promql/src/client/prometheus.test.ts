@@ -87,6 +87,7 @@ describe('CachedPrometheusClient destroy', () => {
       series: () => Promise.resolve([]),
       metricNames: () => Promise.resolve([]),
       flags: () => Promise.resolve({}),
+      resourceAttributePairs: () => Promise.resolve({}),
     };
 
     const cachedClient = new CachedPrometheusClient(minimalClient);
