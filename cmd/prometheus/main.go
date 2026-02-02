@@ -632,6 +632,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Set the process-wide parser configuration. All components (engine, rules, web) use this.
+	parser.SetDefaultOptions(cfg.parserOpts)
+
 	if agentMode && len(serverOnlyFlags) > 0 {
 		fmt.Fprintf(os.Stderr, "The following flag(s) can not be used in agent mode: %q", serverOnlyFlags)
 		os.Exit(3)
@@ -922,7 +925,6 @@ func main() {
 			EnablePerStepStats:       cfg.enablePerStepStats,
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
-			ParserOptions:            cfg.parserOpts,
 			FeatureRegistry:          features.DefaultRegistry,
 		}
 
@@ -943,7 +945,6 @@ func main() {
 			ResendDelay:            time.Duration(cfg.resendDelay),
 			MaxConcurrentEvals:     cfg.maxConcurrentEvals,
 			ConcurrentEvalsEnabled: cfg.enableConcurrentRuleEval,
-			ParserOptions:          cfg.parserOpts,
 			DefaultRuleQueryOffset: func() time.Duration {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
@@ -961,7 +962,6 @@ func main() {
 	cfg.web.Storage = fanoutStorage
 	cfg.web.ExemplarStorage = localStorage
 	cfg.web.QueryEngine = queryEngine
-	cfg.web.ParserOptions = cfg.parserOpts
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
 	cfg.web.Notifier = notifierManager

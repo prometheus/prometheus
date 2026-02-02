@@ -66,7 +66,6 @@ func newRuleImporter(logger *slog.Logger, config ruleImporterConfig, apiClient q
 		apiClient: apiClient,
 		ruleManager: rules.NewManager(&rules.ManagerOptions{
 			NameValidationScheme: config.nameValidationScheme,
-			ParserOptions:        promtoolParserOpts,
 		}),
 	}
 }

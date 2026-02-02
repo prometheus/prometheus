@@ -54,7 +54,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -307,7 +306,6 @@ type Options struct {
 
 	Gatherer        prometheus.Gatherer
 	Registerer      prometheus.Registerer
-	ParserOptions   parser.Options
 	FeatureRegistry features.Collector
 }
 
@@ -414,7 +412,6 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableTypeAndUnitLabels,
 		o.AppendMetadata,
 		nil,
-		o.ParserOptions,
 		o.FeatureRegistry,
 		api_v1.OpenAPIOptions{
 			ExternalURL: o.ExternalURL.String(),

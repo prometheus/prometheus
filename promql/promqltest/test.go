@@ -88,6 +88,12 @@ func LoadedStorage(t testing.TB, input string) *teststorage.TestStorage {
 
 // NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.
 func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
+	parser.SetDefaultOptions(parser.Options{
+		EnableExperimentalFunctions:  true,
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
+		EnableBinopFillModifiers:     true,
+	})
 	return NewTestEngineWithOpts(tb, promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
@@ -99,12 +105,6 @@ func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Du
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 		EnableDelayedNameRemoval: true,
-		ParserOptions: parser.Options{
-			EnableExperimentalFunctions:  true,
-			ExperimentalDurationExpr:     true,
-			EnableExtendedRangeSelectors: true,
-			EnableBinopFillModifiers:     true,
-		},
 	})
 }
 
