@@ -5041,7 +5041,8 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 				appendHistogram(h)
 			}
 
-			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
+			// There is no check for implicit counter reset between chunks.
+			checkExpCounterResetHeader(chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset)
 
 			// Changing schema will cut a new chunk with unknown counter reset.
 			h.Schema++
@@ -5069,7 +5070,8 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			for range 2000 {
 				appendHistogram(h)
 			}
-			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
+			// There is no check for implicit counter reset between chunks.
+			checkExpCounterResetHeader(chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset)
 
 			// Counter reset with counter reset in a positive bucket.
 			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
