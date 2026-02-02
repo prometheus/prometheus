@@ -158,7 +158,18 @@ type xorAppender struct {
 	trailing uint8
 }
 
-func (a *xorAppender) Append(_, t int64, v float64) {
+func (a *xorAppender) Append(st, t int64, v float64) (Chunk, Appender) {
+	if st != 0 {
+		c := NewXORSTChunk()
+		app, err := c.Appender()
+		if err != nil {
+			// This should never happen, we just created the chunk.
+			panic("unexpected error creating XORST appender: " + err.Error())
+		}
+		app.Append(st, t, v)
+		return c, app
+	}
+
 	var tDelta uint64
 	num := binary.BigEndian.Uint16(a.b.bytes())
 	switch num {
@@ -213,6 +224,7 @@ func (a *xorAppender) Append(_, t int64, v float64) {
 	a.v = v
 	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
 	a.tDelta = tDelta
+	return nil, a
 }
 
 // bitRange returns whether the given integer can be represented by nbits.

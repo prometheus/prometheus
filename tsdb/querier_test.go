@@ -160,7 +160,8 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 				for _, smpl := range chk {
 					require.Nil(t, smpl.h, "chunk can only contain one type of sample")
 					require.Nil(t, smpl.fh, "chunk can only contain one type of sample")
-					app.Append(0, smpl.t, smpl.f)
+					// Not checking for new chunk as we supply ST==0 always.
+					_, _ = app.Append(0, smpl.t, smpl.f)
 				}
 				chkReader[chunkRef] = chunk
 			}
@@ -2100,7 +2101,8 @@ func TestDeletedIterator(t *testing.T) {
 	for i := range 1000 {
 		act[i].t = int64(i)
 		act[i].f = rand.Float64()
-		app.Append(0, act[i].t, act[i].f)
+		// Not checking for new chunk as we supply ST==0 always.
+		_, _ = app.Append(0, act[i].t, act[i].f)
 	}
 
 	cases := []struct {
@@ -2160,7 +2162,8 @@ func TestDeletedIterator_WithSeek(t *testing.T) {
 	for i := range 1000 {
 		act[i].t = int64(i)
 		act[i].f = float64(i)
-		app.Append(0, act[i].t, act[i].f)
+		// Not checking for new chunk as we supply ST==0 always.
+		_, _ = app.Append(0, act[i].t, act[i].f)
 	}
 
 	cases := []struct {

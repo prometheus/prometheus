@@ -70,11 +70,13 @@ func testChunk(t *testing.T, c Chunk, supportsST bool) {
 			require.NoError(t, err)
 		}
 
-		app.Append(ts-100, ts, v)
 		expST := int64(0)
 		if supportsST {
 			expST = ts - 100
 		}
+		newChunk, _ := app.Append(expST, ts, v)
+		require.Nil(t, newChunk, "unexpected new chunk allocation")
+
 		exp = append(exp, triple{st: expST, t: ts, v: v})
 	}
 

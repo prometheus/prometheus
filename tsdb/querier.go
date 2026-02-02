@@ -867,7 +867,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 
 // populateCurrForSingleChunk sets the fields within p.currMetaWithChunk. This
 // should be called if the samples in p.currDelIter only form one chunk.
-// TODO(krajorama): test ST when chunks support it.
 func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 	valueType := p.currDelIter.Next()
 	if valueType == chunkenc.ValNone {
@@ -906,7 +905,11 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			}
 		}
 	case chunkenc.ValFloat:
-		newChunk = chunkenc.NewXORChunk()
+		if p.currMeta.Chunk.Encoding() == chunkenc.EncXOR {
+			newChunk = chunkenc.NewXORChunk()
+		} else {
+			newChunk = chunkenc.NewXORSTChunk()
+		}
 		if app, err = newChunk.Appender(); err != nil {
 			break
 		}
@@ -918,7 +921,11 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			var v float64
 			t, v = p.currDelIter.At()
 			st = p.currDelIter.AtST()
-			app.Append(st, t, v)
+			newNewChunk, _ := app.Append(st, t, v)
+			if newNewChunk != nil {
+				err = errors.New("unexpected chunk split when re-encoding float chunk")
+				break
+			}
 		}
 	case chunkenc.ValFloatHistogram:
 		newChunk = chunkenc.NewFloatHistogramChunk()
@@ -959,7 +966,6 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 // populateChunksFromIterable reads the samples from currDelIter to create
 // chunks for chunksFromIterable. It also sets p.currMetaWithChunk to the first
 // chunk.
-// TODO(krajorama): test ST when chunks support it.
 func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 	p.chunksFromIterable = p.chunksFromIterable[:0]
 	p.chunksFromIterableIdx = -1
@@ -983,15 +989,17 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 
 		app chunkenc.Appender
 
-		newChunk chunkenc.Chunk
-		recoded  bool
-
 		err error
 	)
 
 	prevValueType := chunkenc.ValNone
 
 	for currentValueType := firstValueType; currentValueType != chunkenc.ValNone; currentValueType = p.currDelIter.Next() {
+		var (
+			newChunk chunkenc.Chunk
+			recoded  bool
+		)
+
 		// Check if the encoding has changed (i.e. we need to create a new
 		// chunk as chunks can't have multiple encoding types).
 		// For the first sample, the following condition will always be true as
@@ -1015,7 +1023,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 				var v float64
 				t, v = p.currDelIter.At()
 				st = p.currDelIter.AtST()
-				app.Append(st, t, v)
+				newChunk, app = app.Append(st, t, v)
 			}
 		case chunkenc.ValHistogram:
 			{

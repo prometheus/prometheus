@@ -33,7 +33,8 @@ func TestXorOptSTChunk_MoreThan127Samples(t *testing.T) {
 		app, err := chunk.Appender()
 		require.NoError(t, err)
 		for i := range afterMax {
-			app.Append(0, int64(i*10+1), float64(i)*1.5)
+			newChunk, _ := app.Append(0, int64(i*10+1), float64(i)*1.5)
+			require.Nil(t, newChunk)
 		}
 
 		it := chunk.Iterator(nil)
@@ -59,7 +60,8 @@ func TestXorOptSTChunk_MoreThan127Samples(t *testing.T) {
 			if i == afterMax-1 {
 				st = int64((afterMax - 1) * 10)
 			}
-			app.Append(st, int64(i*10+1), float64(i)*1.5)
+			newChunk, _ := app.Append(st, int64(i*10+1), float64(i)*1.5)
+			require.Nil(t, newChunk)
 		}
 
 		it := chunk.Iterator(nil)

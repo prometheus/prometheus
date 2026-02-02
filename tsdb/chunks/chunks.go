@@ -135,12 +135,12 @@ type Meta struct {
 }
 
 // ChunkFromSamples requires all samples to have the same type.
-// TODO(krajorama): test with ST when chunk formats support it.
 func ChunkFromSamples(s []Sample) (Meta, error) {
 	return ChunkFromSamplesGeneric(SampleSlice(s))
 }
 
 // ChunkFromSamplesGeneric requires all samples to have the same type.
+// Should only be used in tests.
 func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	emptyChunk := Meta{Chunk: chunkenc.NewXORChunk()}
 	mint, maxt := int64(0), int64(0)
@@ -153,8 +153,17 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 		return emptyChunk, nil
 	}
 
+	// Check if any sample has a non-zero start time (ST).
+	storeST := false
+	for i := 0; i < s.Len(); i++ {
+		if s.Get(i).ST() != 0 {
+			storeST = true
+			break
+		}
+	}
+
 	sampleType := s.Get(0).Type()
-	c, err := chunkenc.NewEmptyChunk(sampleType.ChunkEncoding())
+	c, err := chunkenc.NewEmptyChunk(sampleType.ChunkEncoding(storeST))
 	if err != nil {
 		return Meta{}, err
 	}
@@ -165,7 +174,10 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	for i := 0; i < s.Len(); i++ {
 		switch sampleType {
 		case chunkenc.ValFloat:
-			ca.Append(s.Get(i).ST(), s.Get(i).T(), s.Get(i).F())
+			newChunk, ca = ca.Append(s.Get(i).ST(), s.Get(i).T(), s.Get(i).F())
+			if newChunk != nil {
+				return emptyChunk, errors.New("did not expect to start a second chunk")
+			}
 		case chunkenc.ValHistogram:
 			newChunk, _, ca, err = ca.AppendHistogram(nil, s.Get(i).ST(), s.Get(i).T(), s.Get(i).H(), false)
 			if err != nil {

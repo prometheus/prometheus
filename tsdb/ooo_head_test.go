@@ -85,7 +85,7 @@ func testOOOInsert(t *testing.T,
 			chunk.samples = make([]sample, numPreExisting)
 			chunk.samples = makeEvenSampleSlice(numPreExisting, sampleFunc)
 			newSample := sampleFunc(valOdd(insertPos))
-			chunk.Insert(newSample.t, newSample.f, newSample.h, newSample.fh)
+			chunk.Insert(0, newSample.t, newSample.f, newSample.h, newSample.fh)
 
 			var expSamples []sample
 			// Our expected new samples slice, will be first the original samples.
@@ -131,6 +131,13 @@ func TestOOOInsertDuplicate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			testOOOInsertDuplicate(t, scenario.sampleFunc)
 		})
+		t.Run(name+"_with_ST", func(t *testing.T) {
+			testOOOInsertDuplicate(t, func(ts int64) sample {
+				s := scenario.sampleFunc(ts)
+				s.st = ts + 1000 // Arbitrary ST to differ from t.
+				return s
+			})
+		})
 	}
 }
 
@@ -144,8 +151,9 @@ func testOOOInsertDuplicate(t *testing.T,
 
 			dupSample := chunk.samples[dupPos]
 			dupSample.f = 0.123
+			dupSample.st += 10 // Change ST to ensure we are only testing timestamp duplication.
 
-			ok := chunk.Insert(dupSample.t, dupSample.f, dupSample.h, dupSample.fh)
+			ok := chunk.Insert(dupSample.st, dupSample.t, dupSample.f, dupSample.h, dupSample.fh)
 
 			expSamples := makeEvenSampleSlice(num, sampleFunc) // We expect no change.
 			require.False(t, ok)
@@ -241,6 +249,75 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 				{encoding: chunkenc.EncHistogram, minTime: 0, maxTime: 1},
 			},
 		},
+		"floats with ST": {
+			samples: []sample{
+				{st: 5, t: 1000, f: 43.0},
+				{st: 1005, t: 1100, f: 42.0},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncXORST, minTime: 1000, maxTime: 1100},
+			},
+		},
+		"histograms with ST": {
+			samples: []sample{
+				{st: 5, t: 1000, h: h1},
+				{st: 1005, t: 1100, h: h2},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset},
+			expectedChunks: []chunkVerify{
+				// TODO(krajorama): Change when ST encoding for histograms is implemented.
+				{encoding: chunkenc.EncHistogram, minTime: 1000, maxTime: 1100},
+			},
+		},
+		"float histograms with ST": {
+			samples: []sample{
+				{st: 5, t: 1000, fh: tsdbutil.GenerateTestFloatHistogram(1)},
+				{st: 1005, t: 1100, fh: tsdbutil.GenerateTestFloatHistogram(2)},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset},
+			expectedChunks: []chunkVerify{
+				// TODO(krajorama): Change when ST encoding for float histograms is implemented.
+				{encoding: chunkenc.EncFloatHistogram, minTime: 1000, maxTime: 1100},
+			},
+		},
+		"floats with mixed ST": {
+			samples: []sample{
+				{t: 1000, f: 43.0},
+				{st: 1005, t: 1100, f: 42.0},
+				{t: 1200, f: 41.0},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset, histogram.UnknownCounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncXOR, minTime: 1000, maxTime: 1000},
+				// Once we switched to XORST encoding, we stay on it.
+				{encoding: chunkenc.EncXORST, minTime: 1100, maxTime: 1200},
+			},
+		},
+		"histograms with mixed ST": {
+			samples: []sample{
+				{t: 1000, h: tsdbutil.GenerateTestHistogram(1)},
+				{st: 1005, t: 1100, h: tsdbutil.GenerateTestHistogram(2)},
+				{t: 1200, h: tsdbutil.GenerateTestHistogram(3)},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+			expectedChunks: []chunkVerify{
+				// TODO(krajorama): Change when ST encoding for histograms is implemented.
+				{encoding: chunkenc.EncHistogram, minTime: 1000, maxTime: 1200},
+			},
+		},
+		"float histograms with mixed ST": {
+			samples: []sample{
+				{t: 1000, fh: tsdbutil.GenerateTestFloatHistogram(1)},
+				{st: 1005, t: 1100, fh: tsdbutil.GenerateTestFloatHistogram(2)},
+				{t: 1200, fh: tsdbutil.GenerateTestFloatHistogram(3)},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.NotCounterReset, histogram.NotCounterReset},
+			expectedChunks: []chunkVerify{
+				// TODO(krajorama): Change when ST encoding for float histograms is implemented.
+				{encoding: chunkenc.EncFloatHistogram, minTime: 1000, maxTime: 1200},
+			},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -252,11 +329,11 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 			for _, s := range tc.samples {
 				switch s.Type() {
 				case chunkenc.ValFloat:
-					oooChunk.Insert(s.t, s.f, nil, nil)
+					oooChunk.Insert(s.st, s.t, s.f, nil, nil)
 				case chunkenc.ValHistogram:
-					oooChunk.Insert(s.t, 0, s.h.Copy(), nil)
+					oooChunk.Insert(s.st, s.t, 0, s.h.Copy(), nil)
 				case chunkenc.ValFloatHistogram:
-					oooChunk.Insert(s.t, 0, nil, s.fh.Copy())
+					oooChunk.Insert(s.st, s.t, 0, nil, s.fh.Copy())
 				default:
 					t.Fatalf("unexpected sample type %d", s.Type())
 				}
@@ -284,6 +361,15 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 						// XOR chunks don't have counter reset hints, so we shouldn't expect anything else than UnknownCounterReset.
 						require.Equal(t, histogram.UnknownCounterReset, tc.expectedCounterResets[sampleIndex+j], "sample reset hint %d", sampleIndex+j)
 						require.Equal(t, tc.samples[sampleIndex+j].f, s.F(), "sample %d", sampleIndex+j)
+						require.Equal(t, int64(0), s.ST(), "sample ST %d", sampleIndex+j)
+					}
+				case chunkenc.EncXORST:
+					for j, s := range samples {
+						require.Equal(t, chunkenc.ValFloat, s.Type())
+						// XOR chunks don't have counter reset hints, so we shouldn't expect anything else than UnknownCounterReset.
+						require.Equal(t, histogram.UnknownCounterReset, tc.expectedCounterResets[sampleIndex+j], "sample reset hint %d", sampleIndex+j)
+						require.Equal(t, tc.samples[sampleIndex+j].f, s.F(), "sample %d", sampleIndex+j)
+						require.Equal(t, tc.samples[sampleIndex+j].st, s.ST(), "sample ST %d", sampleIndex+j)
 					}
 				case chunkenc.EncHistogram:
 					for j, s := range samples {

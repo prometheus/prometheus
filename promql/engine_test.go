@@ -3755,7 +3755,8 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	app, err = c2.Appender()
 	require.NoError(t, err)
 
-	app.Append(0, 20, math.Float64frombits(value.StaleNaN))
+	newChunk, _ := app.Append(0, 20, math.Float64frombits(value.StaleNaN))
+	require.Nil(t, newChunk)
 
 	// Make a chunk with two normal histograms that have zero value.
 	h2 := histogram.Histogram{
