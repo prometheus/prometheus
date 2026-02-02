@@ -49,6 +49,14 @@ func (e Encoding) String() string {
 	return "<unknown>"
 }
 
+// Compatible reports whether next encoding is compatible with the current
+// encoding e. It's true if they are the same or the current encoding supports
+// start timestamps and the next encoding is the same encoding without start
+// timestamps.
+func (e Encoding) Compatible(next Encoding) bool {
+	return e == next || (e == EncXORST && next == EncXOR)
+}
+
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
 	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXORST
@@ -104,7 +112,10 @@ type Iterable interface {
 
 // Appender adds sample with start timestamp, timestamp, and value to a chunk.
 type Appender interface {
-	Append(st, t int64, v float64)
+	// Append appends a sample with start timestamp st, timestamp t, and value v to the chunk.
+	// Returns a new Chunk if the sample could not be appended to the current
+	// chunk because ST storage is required but not supported by the current chunk.
+	Append(st, t int64, v float64) (c Chunk, app Appender)
 
 	// AppendHistogram and AppendFloatHistogram append a histogram sample to a histogram or float histogram chunk.
 	// Appending a histogram may require creating a completely new chunk or recoding (changing) the current chunk.
@@ -189,9 +200,12 @@ func (v ValueType) String() string {
 	}
 }
 
-func (v ValueType) ChunkEncoding() Encoding {
+func (v ValueType) ChunkEncoding(storeST bool) Encoding {
 	switch v {
 	case ValFloat:
+		if storeST {
+			return EncXORST
+		}
 		return EncXOR
 	case ValHistogram:
 		return EncHistogram

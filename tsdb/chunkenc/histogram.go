@@ -219,7 +219,7 @@ func (a *HistogramAppender) NumSamples() int {
 
 // Append implements Appender. This implementation panics because normal float
 // samples must never be appended to a histogram chunk.
-func (*HistogramAppender) Append(int64, int64, float64) {
+func (*HistogramAppender) Append(int64, int64, float64) (Chunk, Appender) {
 	panic("appended a float sample to a histogram chunk")
 }
 

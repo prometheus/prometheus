@@ -30,7 +30,8 @@ func testChunkSTHandling(t *testing.T, vt ValueType, chunkFactory func() Chunk) 
 	sampleAppend := func(app Appender, vt ValueType, st, ts int64, v float64) {
 		switch vt {
 		case ValFloat:
-			app.Append(st, ts, v)
+			newChunk, _ := app.Append(st, ts, v)
+			require.Nil(t, newChunk)
 		case ValHistogram:
 			_, recoded, _, err := app.AppendHistogram(nil, st, ts, &histogram.Histogram{Sum: v, Count: uint64(v * 10)}, false)
 			require.NoError(t, err)

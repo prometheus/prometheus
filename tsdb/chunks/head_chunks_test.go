@@ -559,7 +559,8 @@ func randomChunk(t *testing.T) chunkenc.Chunk {
 	app, err := chunk.Appender()
 	require.NoError(t, err)
 	for range length {
-		app.Append(0, rand.Int63(), rand.Float64())
+		// Not checking for new chunk as we supply ST==0 always.
+		_, _ = app.Append(0, rand.Int63(), rand.Float64())
 	}
 	return chunk
 }

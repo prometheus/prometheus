@@ -228,7 +228,7 @@ func (it *xorSTIterator) Reset(b []byte) {
 	it.err = nil
 }
 
-func (a *xorSTAppender) Append(st, t int64, v float64) {
+func (a *xorSTAppender) Append(st, t int64, v float64) (Chunk, Appender) {
 	var (
 		stDelta int64
 		tDelta  uint64
@@ -348,6 +348,7 @@ func (a *xorSTAppender) Append(st, t int64, v float64) {
 
 	a.numTotal++
 	binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
+	return nil, a
 }
 
 func (it *xorSTIterator) retErr(err error) ValueType {

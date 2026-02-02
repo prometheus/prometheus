@@ -1146,7 +1146,8 @@ func buildTestChunks(t *testing.T) []prompb.Chunk {
 		minTimeMs := time
 
 		for j := range numSamplesPerTestChunk {
-			a.Append(0, time, float64(i+j))
+			newChunk, _ := a.Append(0, time, float64(i+j))
+			require.Nil(t, newChunk)
 			time += int64(1000)
 		}
 

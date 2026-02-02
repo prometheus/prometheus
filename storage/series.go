@@ -342,10 +342,11 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	seriesIter := s.Series.Iterator(nil)
 	lastType := chunkenc.ValNone
 	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
+		st := seriesIter.AtST()
 		if typ != lastType || i >= seriesToChunkEncoderSplit {
 			// Create a new chunk if the sample type changed or too many samples in the current one.
 			chks = appendChunk(chks, mint, maxt, chk)
-			chk, err = chunkenc.NewEmptyChunk(typ.ChunkEncoding())
+			chk, err = chunkenc.NewEmptyChunk(typ.ChunkEncoding(st != 0))
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
@@ -360,19 +361,24 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		lastType = typ
 
 		var (
-			st, t int64
-			v     float64
-			h     *histogram.Histogram
-			fh    *histogram.FloatHistogram
+			t  int64
+			v  float64
+			h  *histogram.Histogram
+			fh *histogram.FloatHistogram
 		)
 		switch typ {
 		case chunkenc.ValFloat:
 			t, v = seriesIter.At()
-			st = seriesIter.AtST()
-			app.Append(st, t, v)
+			newChk, app = app.Append(st, t, v)
+			if newChk != nil {
+				chks = appendChunk(chks, mint, maxt, chk)
+				mint = int64(math.MaxInt64)
+				// maxt is immediately overwritten below which is why setting it here won't make a difference.
+				i = 0
+				chk = newChk
+			}
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram(nil)
-			st = seriesIter.AtST()
 			newChk, recoded, app, err = app.AppendHistogram(nil, st, t, h, false)
 			if err != nil {
 				return errChunksIterator{err: err}
@@ -388,7 +394,6 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram(nil)
-			st = seriesIter.AtST()
 			newChk, recoded, app, err = app.AppendFloatHistogram(nil, st, t, fh, false)
 			if err != nil {
 				return errChunksIterator{err: err}

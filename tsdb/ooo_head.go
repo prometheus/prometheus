@@ -34,14 +34,13 @@ func NewOOOChunk() *OOOChunk {
 
 // Insert inserts the sample such that order is maintained.
 // Returns false if insert was not possible due to the same timestamp already existing.
-func (o *OOOChunk) Insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
+func (o *OOOChunk) Insert(st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
 	// Although out-of-order samples can be out-of-order amongst themselves, we
 	// are opinionated and expect them to be usually in-order meaning we could
 	// try to append at the end first if the new timestamp is higher than the
 	// last known timestamp.
 	if len(o.samples) == 0 || t > o.samples[len(o.samples)-1].t {
-		// TODO(krajorama): pass ST.
-		o.samples = append(o.samples, sample{0, t, v, h, fh})
+		o.samples = append(o.samples, sample{st, t, v, h, fh})
 		return true
 	}
 
@@ -50,8 +49,7 @@ func (o *OOOChunk) Insert(t int64, v float64, h *histogram.Histogram, fh *histog
 
 	if i >= len(o.samples) {
 		// none found. append it at the end
-		// TODO(krajorama): pass ST.
-		o.samples = append(o.samples, sample{0, t, v, h, fh})
+		o.samples = append(o.samples, sample{st, t, v, h, fh})
 		return true
 	}
 
@@ -63,8 +61,7 @@ func (o *OOOChunk) Insert(t int64, v float64, h *histogram.Histogram, fh *histog
 	// Expand length by 1 to make room. use a zero sample, we will overwrite it anyway.
 	o.samples = append(o.samples, sample{})
 	copy(o.samples[i+1:], o.samples[i:])
-	// TODO(krajorama): pass ST.
-	o.samples[i] = sample{0, t, v, h, fh}
+	o.samples[i] = sample{st, t, v, h, fh}
 
 	return true
 }
@@ -97,29 +94,26 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			break
 		}
 		encoding := chunkenc.EncXOR
-		if s.h != nil {
-			encoding = chunkenc.EncHistogram
-		} else if s.fh != nil {
+		switch {
+		case s.fh != nil:
 			encoding = chunkenc.EncFloatHistogram
+		case s.h != nil:
+			encoding = chunkenc.EncHistogram
+		case s.st != 0:
+			encoding = chunkenc.EncXORST
 		}
 
 		// prevApp is the appender for the previous sample.
 		prevApp := app
 
-		if encoding != prevEncoding { // For the first sample, this will always be true as EncNone != EncXOR | EncHistogram | EncFloatHistogram
+		if !prevEncoding.Compatible(encoding) { // For the first sample, this will always be true as EncNone != anything.
 			if prevEncoding != chunkenc.EncNone {
 				chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
 			}
 			cmint = s.t
-			switch encoding {
-			case chunkenc.EncXOR:
-				chunk = chunkenc.NewXORChunk()
-			case chunkenc.EncHistogram:
-				chunk = chunkenc.NewHistogramChunk()
-			case chunkenc.EncFloatHistogram:
-				chunk = chunkenc.NewFloatHistogramChunk()
-			default:
-				chunk = chunkenc.NewXORChunk()
+			chunk, err = chunkenc.NewEmptyChunk(encoding)
+			if err != nil {
+				return chks, err
 			}
 			app, err = chunk.Appender()
 			if err != nil {
@@ -127,9 +121,14 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			}
 		}
 		switch encoding {
-		case chunkenc.EncXOR:
-			// TODO(krajorama): pass ST.
-			app.Append(0, s.t, s.f)
+		case chunkenc.EncXOR, chunkenc.EncXORST:
+			var newChunk chunkenc.Chunk
+			newChunk, app = app.Append(s.st, s.t, s.f)
+			if newChunk != nil { // A new chunk was allocated.
+				chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+				cmint = s.t
+				chunk = newChunk
+			}
 		case chunkenc.EncHistogram:
 			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 			prevHApp, _ := prevApp.(*chunkenc.HistogramAppender)
@@ -137,8 +136,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 				newChunk chunkenc.Chunk
 				recoded  bool
 			)
-			// TODO(krajorama): pass ST.
-			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, 0, s.t, s.h, false)
+			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, s.st, s.t, s.h, false)
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
@@ -153,8 +151,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 				newChunk chunkenc.Chunk
 				recoded  bool
 			)
-			// TODO(krajorama): pass ST.
-			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, 0, s.t, s.fh, false)
+			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, s.st, s.t, s.fh, false)
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})

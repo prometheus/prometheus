@@ -276,6 +276,15 @@ For profiles:
 */
 func BenchmarkAppender(b *testing.B) {
 	foreachFmtSampleCase(b, func(b *testing.B, f fmtCase, s sampleCase) {
+		samples := make([]triple, len(s.samples))
+		copy(samples, s.samples)
+		if f.stUnsupported {
+			// If the format does not support ST, zero them out for appending.
+			for i := range samples {
+				samples[i].st = 0
+			}
+		}
+
 		b.ReportAllocs()
 
 		for b.Loop() {
@@ -285,8 +294,10 @@ func BenchmarkAppender(b *testing.B) {
 			if err != nil {
 				b.Fatalf("get appender: %s", err)
 			}
-			for _, p := range s.samples {
-				a.Append(p.st, p.t, p.v)
+			for _, p := range samples {
+				// We are ignoring potential new chunk return here, as we'll
+				// check the number of samples in the chunk after all appends.
+				_, _ = a.Append(p.st, p.t, p.v)
 			}
 			// NOTE: Some buffered implementations only encode on Bytes().
 			b.ReportMetric(float64(len(c.Bytes())), "B/chunk")
@@ -317,6 +328,15 @@ For profiles:
 */
 func BenchmarkIterator(b *testing.B) {
 	foreachFmtSampleCase(b, func(b *testing.B, f fmtCase, s sampleCase) {
+		samples := make([]triple, len(s.samples))
+		copy(samples, s.samples)
+		if f.stUnsupported {
+			// If the format does not support ST, zero them out for appending.
+			for i := range samples {
+				samples[i].st = 0
+			}
+		}
+
 		floatEquals := func(a, b float64) bool {
 			return a == b
 		}
@@ -333,8 +353,11 @@ func BenchmarkIterator(b *testing.B) {
 		if err != nil {
 			b.Fatalf("get appender: %s", err)
 		}
-		for _, p := range s.samples {
-			a.Append(p.st, p.t, p.v)
+		for _, p := range samples {
+			newChunk, _ := a.Append(p.st, p.t, p.v)
+			if newChunk != nil {
+				b.Fatalf("unexpected new chunk allocation")
+			}
 		}
 
 		// Some chunk implementations might be buffered. Reset to ensure we don't reuse
@@ -352,16 +375,8 @@ func BenchmarkIterator(b *testing.B) {
 		if err := it.Err(); err != nil && !errors.Is(err, io.EOF) {
 			require.NoError(b, err)
 		}
-		expectedSamples := s.samples
-		if f.stUnsupported {
-			// If the format does not support ST, zero them out for comparison.
-			expectedSamples = make([]triple, len(s.samples))
-			copy(expectedSamples, s.samples)
-			for i := range s.samples {
-				expectedSamples[i].st = 0
-			}
-		}
-		if diff := cmp.Diff(expectedSamples, got, cmp.AllowUnexported(triple{}), cmp.Comparer(floatEquals)); diff != "" {
+
+		if diff := cmp.Diff(samples, got, cmp.AllowUnexported(triple{}), cmp.Comparer(floatEquals)); diff != "" {
 			b.Fatalf("mismatch (-want +got):\n%s", diff)
 		}
 
