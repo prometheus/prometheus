@@ -409,9 +409,11 @@ func (a *appender) Append(ref storage.SeriesRef, ls labels.Labels, t int64, v fl
 		}
 	}
 
-	a.a.mtx.Lock()
-	a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: ls, T: t, V: v})
-	a.a.mtx.Unlock()
+	if !a.a.skipRecording {
+		a.a.mtx.Lock()
+		a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: ls, T: t, V: v})
+		a.a.mtx.Unlock()
+	}
 
 	if a.next != nil {
 		return a.next.Append(ref, ls, t, v)
@@ -445,9 +447,11 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, ls labels.Labels, t in
 		}
 	}
 
-	a.a.mtx.Lock()
-	a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: ls, T: t, H: h, FH: fh})
-	a.a.mtx.Unlock()
+	if !a.a.skipRecording {
+		a.a.mtx.Lock()
+		a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: ls, T: t, H: h, FH: fh})
+		a.a.mtx.Unlock()
+	}
 
 	if a.next != nil {
 		return a.next.AppendHistogram(ref, ls, t, h, fh)
@@ -463,23 +467,26 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	if a.a.appendExemplarsError != nil {
 		return 0, a.a.appendExemplarsError
 	}
-	var appended bool
 
-	a.a.mtx.Lock()
-	// NOTE(bwplotka): Eventually exemplar has to be attached to a series and soon
-	// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
-	// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
-	i := len(a.a.pendingSamples) - 1
-	for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
-		if labels.Equal(l, a.a.pendingSamples[i].L) {
-			a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, e)
-			appended = true
-			break
+	if !a.a.skipRecording {
+		var appended bool
+
+		a.a.mtx.Lock()
+		// NOTE(bwplotka): Eventually exemplar has to be attached to a series and soon
+		// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
+		// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
+		i := len(a.a.pendingSamples) - 1
+		for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
+			if labels.Equal(l, a.a.pendingSamples[i].L) {
+				a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, e)
+				appended = true
+				break
+			}
 		}
-	}
-	a.a.mtx.Unlock()
-	if !appended {
-		return 0, fmt.Errorf("teststorage.appender: exemplar appender without series; ref %v; l %v; exemplar: %v", ref, l, e)
+		a.a.mtx.Unlock()
+		if !appended {
+			return 0, fmt.Errorf("teststorage.appender: exemplar appender without series; ref %v; l %v; exemplar: %v", ref, l, e)
+		}
 	}
 
 	if a.next != nil {
@@ -504,23 +511,25 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 		return 0, err
 	}
 
-	var updated bool
+	if !a.a.skipRecording {
+		var updated bool
 
-	a.a.mtx.Lock()
-	// NOTE(bwplotka): Eventually metadata has to be attached to a series and soon
-	// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
-	// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
-	i := len(a.a.pendingSamples) - 1
-	for ; i >= 0; i-- { // Attach metadata to the last matching sample.
-		if labels.Equal(l, a.a.pendingSamples[i].L) {
-			a.a.pendingSamples[i].M = m
-			updated = true
-			break
+		a.a.mtx.Lock()
+		// NOTE(bwplotka): Eventually metadata has to be attached to a series and soon
+		// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
+		// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
+		i := len(a.a.pendingSamples) - 1
+		for ; i >= 0; i-- { // Attach metadata to the last matching sample.
+			if labels.Equal(l, a.a.pendingSamples[i].L) {
+				a.a.pendingSamples[i].M = m
+				updated = true
+				break
+			}
 		}
-	}
-	a.a.mtx.Unlock()
-	if !updated {
-		return 0, fmt.Errorf("teststorage.appender: metadata update without series; ref %v; l %v; m: %v", ref, l, m)
+		a.a.mtx.Unlock()
+		if !updated {
+			return 0, fmt.Errorf("teststorage.appender: metadata update without series; ref %v; l %v; m: %v", ref, l, m)
+		}
 	}
 
 	if a.next != nil {

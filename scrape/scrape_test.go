@@ -1725,48 +1725,67 @@ func TestScrapeLoopAppend_WithStorage(t *testing.T) {
 
 // BenchmarkScrapeLoopAppend benchmarks scrape appends for typical cases.
 //
-// Benchmark compares append function run across 4 dimensions:
-// * `appV2`: appender V1 or V2
-// * `appendMetadataToWAL`: metadata-wal-records feature enabled or not
-// *`data`: different sizes of metrics scraped e.g. one big gauge metric family
+// Benchmark compares append function run across 5 dimensions:
+// * `withStorage`: without storage isolates the benchmark to the scrape loop append code. With storage is an
+// integration benchmark with the TSDB head appender code. For acceptance criteria run with storage, without for debugging.
+// * `appV2`: appender V1 or V2.
+// * `appendMetadataToWAL`: metadata-wal-records feature enabled or not (problematic feature we might need to change
+// soon, see https://github.com/prometheus/prometheus/issues/15911.
+// * `data`: different sizes of metrics scraped e.g. one big gauge metric family
 //  with a thousand series and more realistic scenario with common types.
-// *`fmt`: different scrape formats which will benchmark different parsers e.g.
+// * `fmt`: different scrape formats which will benchmark different parsers e.g.
 //  promtext, omtext and promproto.
 //
-// Recommended CLI invocation:
+// NOTE: withStorage=true uses sync.Pool buffers which is heavily non-deterministic and shared across go routines.
+// As a result, it's recommended to run dimensions you want to compare with in e.g. separate go tool invocations.
+// Recommended CLI invocation(s):
 /*
-	export bench=append && go test ./scrape/... \
-		-run '^$' -bench '^BenchmarkScrapeLoopAppend$' \
+	# Acceptance: With storage with V1 and V2 in separate process:
+	export bench=appendV1 && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/appV2=false/$' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+
+	export bench=appendV2 && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=true/appV2=true/$' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+
+	# For debugging scrape overheads:
+	export bench=appendNoStorage && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend/withStorage=false/$' \
 		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
 		| tee ${bench}.txt
 */
 func BenchmarkScrapeLoopAppend(b *testing.B) {
-	for _, appV2 := range []bool{false, true} {
-		for _, appendMetadataToWAL := range []bool{false, true} {
-			for _, data := range []struct {
-				name         string
-				parsableText []byte
-			}{
-				{name: "1Fam2000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
-				{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~185.7 KB, ~70.6 KB in proto.
-			} {
-				b.Run(fmt.Sprintf("appV2=%v/appendMetadataToWAL=%v/data=%v", appV2, appendMetadataToWAL, data.name), func(b *testing.B) {
-					metricsProto := promTextToProto(b, data.parsableText)
+	for _, withStorage := range []bool{false, true} {
+		for _, appV2 := range []bool{false, true} {
+			for _, appendMetadataToWAL := range []bool{false, true} {
+				for _, data := range []struct {
+					name         string
+					parsableText []byte
+				}{
+					{name: "1Fam2000Gauges", parsableText: makeTestGauges(2000)},         // ~68.1 KB, ~77.9 KB in proto.
+					{name: "237FamsAllTypes", parsableText: readTextParseTestMetrics(b)}, // ~185.7 KB, ~70.6 KB in proto.
+				} {
+					b.Run(fmt.Sprintf("withStorage=%v/appV2=%v/appendMetadataToWAL=%v/data=%v", withStorage, appV2, appendMetadataToWAL, data.name), func(b *testing.B) {
+						metricsProto := promTextToProto(b, data.parsableText)
 
-					for _, bcase := range []struct {
-						name        string
-						contentType string
-						parsable    []byte
-					}{
-						{name: "PromText", contentType: "text/plain", parsable: data.parsableText},
-						{name: "OMText", contentType: "application/openmetrics-text", parsable: data.parsableText},
-						{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
-					} {
-						b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
-							benchScrapeLoopAppend(b, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false)
-						})
-					}
-				})
+						for _, bcase := range []struct {
+							name        string
+							contentType string
+							parsable    []byte
+						}{
+							{name: "PromText", contentType: "text/plain", parsable: data.parsableText},
+							{name: "OMText", contentType: "application/openmetrics-text", parsable: data.parsableText},
+							{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
+						} {
+							b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
+								benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false)
+							})
+						}
+					})
+				}
 			}
 		}
 	}
@@ -1774,30 +1793,32 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 
 func benchScrapeLoopAppend(
 	b *testing.B,
+	withStorage bool,
 	appV2 bool,
 	parsable []byte,
 	contentType string,
 	appendMetadataToWAL bool,
 	enableExemplarStorage bool,
 ) {
-	// Need a full storage for correct Add/AddFast semantics.
-	s := teststorage.New(b, func(opt *tsdb.Options) {
-		opt.EnableMetadataWALRecords = appendMetadataToWAL
-		if enableExemplarStorage {
-			opt.EnableExemplarStorage = true
-			opt.MaxExemplars = 1e5
-		}
-	})
-
-	sl, _ := newTestScrapeLoop(b, withAppendable(s, appV2), func(sl *scrapeLoop) {
+	var a compatAppendable = teststorage.NewAppendable().SkipRecording(true) // Make it noop for benchmark purposes.
+	if withStorage {
+		a = teststorage.New(b, func(opt *tsdb.Options) {
+			opt.EnableMetadataWALRecords = appendMetadataToWAL
+			if enableExemplarStorage {
+				opt.EnableExemplarStorage = true
+				opt.MaxExemplars = 1e5
+			}
+		})
+	}
+	sl, _ := newTestScrapeLoop(b, withAppendable(a, appV2), func(sl *scrapeLoop) {
 		sl.appendMetadataToWAL = appendMetadataToWAL
 	})
-	app := sl.appender()
 	ts := time.Time{}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
+		app := sl.appender()
 		ts = ts.Add(time.Second)
 		_, _, _, err := app.append(parsable, contentType, ts)
 		if err != nil {
@@ -1808,7 +1829,6 @@ func benchScrapeLoopAppend(
 		if err := app.Rollback(); err != nil {
 			b.Fatal(err)
 		}
-		app = sl.appender()
 	}
 }
 
@@ -1827,7 +1847,7 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
 		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
 			parsable := makeTestHistogramsWithExemplars(100) // ~255.8 KB in OM text.
-			benchScrapeLoopAppend(b, appV2, parsable, "application/openmetrics-text", false, true)
+			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true)
 		})
 	}
 }
@@ -3398,7 +3418,9 @@ metric: <
 				}
 				sl.alwaysScrapeClassicHist = test.alwaysScrapeClassicHist
 				// This test does not care about metadata.
-				// TODO(bwplotka): Add metadata expectations and turn it on.
+				// Having this true would mean we need to add metadata to sample
+				// expectations.
+				// TODO(bwplotka): Add cases for append metadata to WAL and pass metadata
 				sl.appendMetadataToWAL = false
 			})
 			app := sl.appender()
