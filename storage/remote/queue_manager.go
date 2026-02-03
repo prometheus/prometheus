@@ -724,6 +724,8 @@ func isV2TimeSeriesOldFilter(metrics *queueManagerMetrics, baseTime time.Time, s
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
 	currentTime := time.Now()
+	var tseries timeSeries
+	var meta *metadata.Metadata
 outer:
 	for _, s := range samples {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), s.T) {
@@ -745,26 +747,28 @@ outer:
 		}
 		// TODO(cstyan): Handle or at least log an error if no metadata is found.
 		// See https://github.com/prometheus/prometheus/issues/14405
-		meta := t.seriesMetadata[s.Ref]
+		meta = t.seriesMetadata[s.Ref]
 		t.seriesMtx.Unlock()
 		// Start with a very small backoff. This should not be t.cfg.MinBackoff
 		// as it can happen without errors, and we want to pickup work after
 		// filling a queue/resharding as quickly as possible.
 		// TODO: Consider using the average duration of a request as the backoff.
 		backoff := model.Duration(5 * time.Millisecond)
+
 		for {
 			select {
 			case <-t.quit:
 				return false
 			default:
 			}
-			if t.shards.enqueue(s.Ref, timeSeries{
+			tseries = timeSeries{
 				seriesLabels: lbls,
 				metadata:     meta,
 				timestamp:    s.T,
 				value:        s.V,
 				sType:        tSample,
-			}) {
+			}
+			if t.shards.enqueue(s.Ref, tseries) {
 				continue outer
 			}
 
