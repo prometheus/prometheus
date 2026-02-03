@@ -221,6 +221,8 @@ type otlpInstrumentedAppendable struct {
 	outOfOrderExemplars            prometheus.Counter
 }
 
+// newOTLPInstrumentedAppendable instruments some OTLP metrics per append and
+// handles partial errors, so the caller does not need to.
 func newOTLPInstrumentedAppendable(reg prometheus.Registerer, app storage.AppendableV2) *otlpInstrumentedAppendable {
 	return &otlpInstrumentedAppendable{
 		AppendableV2: app,
@@ -259,13 +261,13 @@ func (app *otlpInstrumentedAppender) Append(ref storage.SeriesRef, ls labels.Lab
 	ref, err := app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 	if err != nil {
 		var partialErr *storage.AppendPartialError
-		partialErr, err = partialErr.Handle(err)
-		if err != nil {
-			// Not a partial error.
-			return ref, err
+		partialErr, hErr := partialErr.Handle(err)
+		if hErr != nil {
+			// Not a partial error, return err.
+			return 0, err
 		}
 		app.outOfOrderExemplars.Add(float64(len(partialErr.ExemplarErrors)))
-		return ref, err
+		// Hide the partial error as otlp converter does not handle it.
 	}
 	if opts.Metadata.IsEmpty() {
 		app.samplesAppendedWithoutMetadata.Inc()

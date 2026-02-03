@@ -15,6 +15,7 @@ package remote
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -28,6 +29,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
@@ -41,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -700,4 +704,56 @@ func sampleCount(md pmetric.Metrics) int {
 		}
 	}
 	return total
+}
+
+func TestOTLPInstrumentedAppendable(t *testing.T) {
+	t.Run("no problems", func(t *testing.T) {
+		appTest := teststorage.NewAppendable()
+		oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), appTest)
+
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
+
+		app := oa.AppenderV2(t.Context())
+		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{Metadata: metadata.Metadata{Help: "yo"}})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Len(t, appTest.ResultSamples(), 1)
+
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
+	})
+	t.Run("without metadata", func(t *testing.T) {
+		appTest := teststorage.NewAppendable()
+		oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), appTest)
+
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
+
+		app := oa.AppenderV2(t.Context())
+		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Len(t, appTest.ResultSamples(), 1)
+
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
+		require.Equal(t, 1.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
+	})
+	t.Run("without metadata; 2 exemplar OOO errors", func(t *testing.T) {
+		appTest := teststorage.NewAppendable().WithErrs(nil, errors.New("exemplar error"), nil)
+		oa := newOTLPInstrumentedAppendable(prometheus.NewRegistry(), appTest)
+
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.outOfOrderExemplars))
+		require.Equal(t, 0.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
+
+		app := oa.AppenderV2(t.Context())
+		_, err := app.Append(0, labels.EmptyLabels(), -1, 1, 2, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{{}, {}}})
+		// Partial errors should be handled in the middleware, OTLP converter does not handle it.
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.Len(t, appTest.ResultSamples(), 1)
+
+		require.Equal(t, 2.0, testutil.ToFloat64(oa.outOfOrderExemplars))
+		require.Equal(t, 1.0, testutil.ToFloat64(oa.samplesAppendedWithoutMetadata))
+	})
 }

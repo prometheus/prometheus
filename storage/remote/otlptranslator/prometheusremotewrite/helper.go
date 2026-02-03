@@ -238,7 +238,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
 		if pt.HasSum() {
-			// treat sum as a sample in an individual TimeSeries
+			// Treat sum as a sample in an individual TimeSeries.
 			val := pt.Sum()
 			if pt.Flags().NoRecordedValue() {
 				val = math.Float64frombits(value.StaleNaN)
@@ -249,7 +249,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 			}
 		}
 
-		// treat count as a sample in an individual TimeSeries
+		// Treat count as a sample in an individual TimeSeries.
 		val := float64(pt.Count())
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
@@ -264,10 +264,10 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		}
 		nextExemplarIdx := 0
 
-		// cumulative count for conversion to cumulative histogram
+		// Cumulative count for conversion to cumulative histogram.
 		var cumulativeCount uint64
 
-		// process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1
+		// Process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1.
 		for i := 0; i < pt.ExplicitBounds().Len() && i < pt.BucketCounts().Len(); i++ {
 			if err := c.everyN.checkContext(ctx); err != nil {
 				return err
@@ -299,8 +299,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		}
 
 		appOpts.Exemplars = exemplars[nextExemplarIdx:]
-		// add
-		// le=+Inf bucket
+		// Add le=+Inf bucket.
 		val = float64(pt.Count())
 		if pt.Flags().NoRecordedValue() {
 			val = math.Float64frombits(value.StaleNaN)
