@@ -318,33 +318,96 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 	case 0:
 		buf := make([]byte, binary.MaxVarintLen64)
 
+		// Write T.
+		for _, b := range buf[:binary.PutVarint(buf, t)] {
+			a.b.writeByte(b)
+		}
+
+		// Write V.
+		a.b.writeBits(math.Float64bits(v), 64)
+
+		// Write ST.
 		for _, b := range buf[:binary.PutVarint(buf, st)] {
 			a.b.writeByte(b)
 		}
 		a.firstSTKnown = true
 		writeHeaderFirstSTKnown(a.b.bytes()[chunkHeaderSize:])
 
-		for _, b := range buf[:binary.PutVarint(buf, t)] {
-			a.b.writeByte(b)
-		}
-		a.b.writeBits(math.Float64bits(v), 64)
 	case 1:
 		buf := make([]byte, binary.MaxVarintLen64)
-		if st != a.st {
-			stDiff = a.t - st
-			a.firstSTChangeOn = 1
-			writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], 1)
-			for _, b := range buf[:binary.PutVarint(buf, stDiff)] {
-				a.b.writeByte(b)
-			}
-		}
-
 		tDelta = uint64(t - a.t)
 		for _, b := range buf[:binary.PutUvarint(buf, tDelta)] {
 			a.b.writeByte(b)
 		}
 		a.writeVDelta(v)
+
+		if st == a.st {
+			break
+		}
+
+		stDiff = a.t - st
+		a.firstSTChangeOn = 1
+		writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], 1)
+		// for _, b := range buf[:binary.PutVarint(buf, stDiff)] {
+		// 	a.b.writeByte(b)
+		// }
+		sdod := stDiff
+		// Gorilla has a max resolution of seconds, Prometheus milliseconds.
+		// Thus we use higher value range steps with larger bit size.
+		//
+		// TODO(beorn7): This seems to needlessly jump to large bit
+		// sizes even for very small deviations from zero. Timestamp
+		// compression can probably benefit from some smaller bit
+		// buckets. See also what was done for histogram encoding in
+		// varbit.go.
+		switch {
+		case sdod == 0:
+			a.b.writeBit(zero)
+		case bitRange(sdod, 14):
+			a.b.writeByte(0b10<<6 | (uint8(sdod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
+			a.b.writeByte(uint8(sdod))                             // Bottom 8 bits of dod.
+		case bitRange(sdod, 17):
+			a.b.writeBits(0b110, 3)
+			a.b.writeBits(uint64(sdod), 17)
+		case bitRange(sdod, 20):
+			a.b.writeBits(0b1110, 4)
+			a.b.writeBits(uint64(sdod), 20)
+		default:
+			a.b.writeBits(0b1111, 4)
+			a.b.writeBits(uint64(sdod), 64)
+		}
+
 	default:
+		tDelta = uint64(t - a.t)
+		dod := int64(tDelta - a.tDelta)
+
+		// Gorilla has a max resolution of seconds, Prometheus milliseconds.
+		// Thus we use higher value range steps with larger bit size.
+		//
+		// TODO(beorn7): This seems to needlessly jump to large bit
+		// sizes even for very small deviations from zero. Timestamp
+		// compression can probably benefit from some smaller bit
+		// buckets. See also what was done for histogram encoding in
+		// varbit.go.
+		switch {
+		case dod == 0:
+			a.b.writeBit(zero)
+		case bitRange(dod, 14):
+			a.b.writeByte(0b10<<6 | (uint8(dod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
+			a.b.writeByte(uint8(dod))                             // Bottom 8 bits of dod.
+		case bitRange(dod, 17):
+			a.b.writeBits(0b110, 3)
+			a.b.writeBits(uint64(dod), 17)
+		case bitRange(dod, 20):
+			a.b.writeBits(0b1110, 4)
+			a.b.writeBits(uint64(dod), 20)
+		default:
+			a.b.writeBits(0b1111, 4)
+			a.b.writeBits(uint64(dod), 64)
+		}
+
+		a.writeVDelta(v)
+
 		if a.firstSTChangeOn == 0 {
 			if st != a.st || a.numTotal == maxFirstSTChangeOn {
 				stDiff = a.t - st
@@ -404,36 +467,6 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 				a.b.writeBits(uint64(sdod), 64)
 			}
 		}
-
-		tDelta = uint64(t - a.t)
-		dod := int64(tDelta - a.tDelta)
-
-		// Gorilla has a max resolution of seconds, Prometheus milliseconds.
-		// Thus we use higher value range steps with larger bit size.
-		//
-		// TODO(beorn7): This seems to needlessly jump to large bit
-		// sizes even for very small deviations from zero. Timestamp
-		// compression can probably benefit from some smaller bit
-		// buckets. See also what was done for histogram encoding in
-		// varbit.go.
-		switch {
-		case dod == 0:
-			a.b.writeBit(zero)
-		case bitRange(dod, 14):
-			a.b.writeByte(0b10<<6 | (uint8(dod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
-			a.b.writeByte(uint8(dod))                             // Bottom 8 bits of dod.
-		case bitRange(dod, 17):
-			a.b.writeBits(0b110, 3)
-			a.b.writeBits(uint64(dod), 17)
-		case bitRange(dod, 20):
-			a.b.writeBits(0b1110, 4)
-			a.b.writeBits(uint64(dod), 20)
-		default:
-			a.b.writeBits(0b1111, 4)
-			a.b.writeBits(uint64(dod), 64)
-		}
-
-		a.writeVDelta(v)
 	}
 
 	a.st = st
@@ -457,6 +490,18 @@ func (it *xorOptSTtIterator) Next() ValueType {
 	}
 
 	if it.numRead == 0 {
+		t, err := binary.ReadVarint(&it.br)
+		if err != nil {
+			return it.retErr(err)
+		}
+
+		v, err := it.br.readBits(64)
+		if err != nil {
+			return it.retErr(err)
+		}
+		it.t = t
+		it.val = math.Float64frombits(v)
+
 		// Optional ST read.
 		if it.firstSTKnown {
 			st, err := binary.ReadVarint(&it.br)
@@ -465,39 +510,150 @@ func (it *xorOptSTtIterator) Next() ValueType {
 			}
 			it.st = st
 		}
-		t, err := binary.ReadVarint(&it.br)
-		if err != nil {
-			return it.retErr(err)
-		}
-		v, err := it.br.readBits(64)
-		if err != nil {
-			return it.retErr(err)
-		}
-		it.t = t
-		it.val = math.Float64frombits(v)
 
 		it.numRead++
 		return ValFloat
 	}
 
 	if it.numRead == 1 {
-		// Optional ST delta read.
-		if it.firstSTChangeOn == 1 {
-			stDiff, err := binary.ReadVarint(&it.br)
-			if err != nil {
-				return it.retErr(err)
-			}
-			it.stDiff = stDiff
-			it.st = it.t - stDiff
-		}
 		tDelta, err := binary.ReadUvarint(&it.br)
 		if err != nil {
 			return it.retErr(err)
 		}
 		it.tDelta = tDelta
-		it.t += int64(it.tDelta)
 
-		return it.readValue()
+		if err := xorRead(&it.br, &it.val, &it.leading, &it.trailing); err != nil {
+			return it.retErr(err)
+		}
+
+		// Optional ST delta read.
+		if it.firstSTChangeOn == 1 {
+			// stDiff, err := binary.ReadVarint(&it.br)
+			// if err != nil {
+			// 	return it.retErr(err)
+			// }
+			// it.stDiff = stDiff
+			// it.st = it.t - stDiff
+			var d byte
+			// read delta-of-delta
+			for range 4 {
+				d <<= 1
+				bit, err := it.br.readBitFast()
+				if err != nil {
+					bit, err = it.br.readBit()
+					if err != nil {
+						return it.retErr(err)
+					}
+				}
+				if bit == zero {
+					break
+				}
+				d |= 1
+			}
+			var sz uint8
+			var sdod int64
+			switch d {
+			case 0b0:
+				// dod == 0
+			case 0b10:
+				sz = 14
+			case 0b110:
+				sz = 17
+			case 0b1110:
+				sz = 20
+			case 0b1111:
+				// Do not use fast because it's very unlikely it will succeed.
+				bits, err := it.br.readBits(64)
+				if err != nil {
+					return it.retErr(err)
+				}
+
+				sdod = int64(bits)
+			}
+
+			if sz != 0 {
+				bits, err := it.br.readBitsFast(sz)
+				if err != nil {
+					bits, err = it.br.readBits(sz)
+					if err != nil {
+						return it.retErr(err)
+					}
+				}
+
+				// Account for negative numbers, which come back as high unsigned numbers.
+				// See docs/bstream.md.
+				if bits > (1 << (sz - 1)) {
+					bits -= 1 << sz
+				}
+				sdod = int64(bits)
+			}
+			it.stDiff = sdod
+			it.st = it.t - sdod
+		}
+
+		it.t += int64(it.tDelta)
+		it.numRead++
+		return ValFloat
+	}
+
+	var d byte
+	// read delta-of-delta
+	for range 4 {
+		d <<= 1
+		bit, err := it.br.readBitFast()
+		if err != nil {
+			bit, err = it.br.readBit()
+		}
+		if err != nil {
+			return it.retErr(err)
+		}
+		if bit == zero {
+			break
+		}
+		d |= 1
+	}
+	var sz uint8
+	var dod int64
+	switch d {
+	case 0b0:
+		// dod == 0
+	case 0b10:
+		sz = 14
+	case 0b110:
+		sz = 17
+	case 0b1110:
+		sz = 20
+	case 0b1111:
+		// Do not use fast because it's very unlikely it will succeed.
+		bits, err := it.br.readBits(64)
+		if err != nil {
+			return it.retErr(err)
+		}
+
+		dod = int64(bits)
+	}
+
+	if sz != 0 {
+		bits, err := it.br.readBitsFast(sz)
+		if err != nil {
+			bits, err = it.br.readBits(sz)
+		}
+		if err != nil {
+			return it.retErr(err)
+		}
+
+		// Account for negative numbers, which come back as high unsigned numbers.
+		// See docs/bstream.md.
+		if bits > (1 << (sz - 1)) {
+			bits -= 1 << sz
+		}
+		dod = int64(bits)
+	}
+
+	it.tDelta = uint64(int64(it.tDelta) + dod)
+
+	if err := xorRead(&it.br, &it.val, &it.leading, &it.trailing); err != nil {
+		return it.retErr(err)
 	}
 
 	if it.firstSTChangeOn > 0 && it.numRead >= uint16(it.firstSTChangeOn) {
@@ -562,71 +718,8 @@ func (it *xorOptSTtIterator) Next() ValueType {
 		it.st = it.t - it.stDiff
 	}
 
-	var d byte
-	// read delta-of-delta
-	for range 4 {
-		d <<= 1
-		bit, err := it.br.readBitFast()
-		if err != nil {
-			bit, err = it.br.readBit()
-		}
-		if err != nil {
-			return it.retErr(err)
-		}
-		if bit == zero {
-			break
-		}
-		d |= 1
-	}
-	var sz uint8
-	var dod int64
-	switch d {
-	case 0b0:
-		// dod == 0
-	case 0b10:
-		sz = 14
-	case 0b110:
-		sz = 17
-	case 0b1110:
-		sz = 20
-	case 0b1111:
-		// Do not use fast because it's very unlikely it will succeed.
-		bits, err := it.br.readBits(64)
-		if err != nil {
-			return it.retErr(err)
-		}
-
-		dod = int64(bits)
-	}
-
-	if sz != 0 {
-		bits, err := it.br.readBitsFast(sz)
-		if err != nil {
-			bits, err = it.br.readBits(sz)
-		}
-		if err != nil {
-			return it.retErr(err)
-		}
-
-		// Account for negative numbers, which come back as high unsigned numbers.
-		// See docs/bstream.md.
-		if bits > (1 << (sz - 1)) {
-			bits -= 1 << sz
-		}
-		dod = int64(bits)
-	}
-
-	it.tDelta = uint64(int64(it.tDelta) + dod)
 	it.t += int64(it.tDelta)
 
-	return it.readValue()
-}
-
-func (it *xorOptSTtIterator) readValue() ValueType {
-	err := xorRead(&it.br, &it.val, &it.leading, &it.trailing)
-	if err != nil {
-		return it.retErr(err)
-	}
 	it.numRead++
 	return ValFloat
 }
