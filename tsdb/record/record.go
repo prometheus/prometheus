@@ -160,9 +160,9 @@ type RefSeries struct {
 // RefSample is a timestamp/value pair associated with a reference to a series.
 // TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
-	Ref chunks.HeadSeriesRef
-	ST, T   int64
-	V   float64
+	Ref   chunks.HeadSeriesRef
+	ST, T int64
+	V     float64
 }
 
 // RefMetadata is the metadata associated with a series ID.
