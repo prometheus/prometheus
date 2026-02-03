@@ -321,21 +321,21 @@ func NewPossibleNonCounterLabelInfo(metricName, typeLabel string, pos posrange.P
 }
 
 type histogramQuantileForcedMonotonicityErr struct {
-	PositionRange posrange.PositionRange
-	Err           error
-	Query         string
-	Min           []float64
-	Max           []float64
-	Count         int
+	PositionRange                                                              posrange.PositionRange
+	Err                                                                        error
+	Query                                                                      string
+	minTs, maxTs                                                               int64
+	forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff float64
+	count                                                                      int
 }
 
 func (e *histogramQuantileForcedMonotonicityErr) Error() string {
 	if e.Query == "" {
 		return e.Err.Error()
 	}
-	startTime := time.Unix(int64(e.Min[0]/1000), 0).UTC().Format(time.RFC3339)
-	endTime := time.Unix(int64(e.Max[0]/1000), 0).UTC().Format(time.RFC3339)
-	return fmt.Sprintf("%s, from buckets %g to %g, with a max diff of %.2g, over %d samples from %s to %s (%s)", e.Err, e.Min[1], e.Max[1], e.Max[2], e.Count+1, startTime, endTime, e.PositionRange.StartPosInput(e.Query, 0))
+	startTime := time.Unix(e.minTs/1000, 0).UTC().Format(time.RFC3339)
+	endTime := time.Unix(e.maxTs/1000, 0).UTC().Format(time.RFC3339)
+	return fmt.Sprintf("%s, from buckets %g to %g, with a max diff of %.2g, over %d samples from %s to %s (%s)", e.Err, e.forcedMonotonicMinBucket, e.forcedMonotonicMaxBucket, e.forcedMonotonicMaxDiff, e.count+1, startTime, endTime, e.PositionRange.StartPosInput(e.Query, 0))
 }
 
 func (e *histogramQuantileForcedMonotonicityErr) Unwrap() error {
@@ -352,32 +352,39 @@ func (e *histogramQuantileForcedMonotonicityErr) Merge(other error) error {
 	if !ok {
 		return e
 	}
-	if e.Err.Error() != o.Err.Error() || len(e.Min) != len(o.Min) || len(e.Max) != len(o.Max) {
+	if e.Err.Error() != o.Err.Error() {
 		return e
 	}
-	for i, aMin := range e.Min {
-		if aMin < o.Min[i] {
-			o.Min[i] = aMin
-		}
+	if e.minTs < o.minTs {
+		o.minTs = e.minTs
 	}
-	for i, aMax := range e.Max {
-		if aMax > o.Max[i] {
-			o.Max[i] = aMax
-		}
+	if e.maxTs > o.maxTs {
+		o.maxTs = e.maxTs
 	}
-	o.Count += e.Count + 1
+	if e.forcedMonotonicMinBucket < o.forcedMonotonicMinBucket {
+		o.forcedMonotonicMinBucket = e.forcedMonotonicMinBucket
+	}
+	if e.forcedMonotonicMaxBucket > o.forcedMonotonicMaxBucket {
+		o.forcedMonotonicMaxBucket = e.forcedMonotonicMaxBucket
+	}
+	if e.forcedMonotonicMaxDiff > o.forcedMonotonicMaxDiff {
+		o.forcedMonotonicMaxDiff = e.forcedMonotonicMaxDiff
+	}
+	o.count += e.count + 1
 	return o
 }
 
 // NewHistogramQuantileForcedMonotonicityInfo is used when the input (classic histograms) to
 // histogram_quantile needs to be forced to be monotonic.
 func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange, ts int64, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff float64) error {
-	floatTs := float64(ts)
 	return &histogramQuantileForcedMonotonicityErr{
-		PositionRange: pos,
-		Err:           maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName),
-		Min:           []float64{floatTs, forcedMonotonicMinBucket},
-		Max:           []float64{floatTs, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff},
+		PositionRange:            pos,
+		Err:                      maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName),
+		minTs:                    ts,
+		maxTs:                    ts,
+		forcedMonotonicMinBucket: forcedMonotonicMinBucket,
+		forcedMonotonicMaxBucket: forcedMonotonicMaxBucket,
+		forcedMonotonicMaxDiff:   forcedMonotonicMaxDiff,
 	}
 }
 
