@@ -105,15 +105,15 @@ type metricWithBuckets struct {
 func BucketQuantile(q float64, buckets Buckets) (res, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff float64, forcedMonotonic, fixedPrecision bool) {
 	if math.IsNaN(q) {
 		res = math.NaN()
-		return
+		return res, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision
 	}
 	if q < 0 {
 		res = math.Inf(-1)
-		return
+		return res, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision
 	}
 	if q > 1 {
 		res = math.Inf(+1)
-		return
+		return res, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision
 	}
 	slices.SortFunc(buckets, func(a, b Bucket) int {
 		// We don't expect the bucket boundary to be a NaN.
@@ -127,7 +127,7 @@ func BucketQuantile(q float64, buckets Buckets) (res, forcedMonotonicMinBucket, 
 	})
 	if !math.IsInf(buckets[len(buckets)-1].UpperBound, +1) {
 		res = math.NaN()
-		return
+		return res, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision
 	}
 
 	buckets = coalesceBuckets(buckets)
@@ -135,12 +135,12 @@ func BucketQuantile(q float64, buckets Buckets) (res, forcedMonotonicMinBucket, 
 
 	if len(buckets) < 2 {
 		res = math.NaN()
-		return
+		return res, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision
 	}
 	observations := buckets[len(buckets)-1].Count
 	if observations == 0 {
 		res = math.NaN()
-		return
+		return res, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision
 	}
 	rank := q * observations
 	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].Count >= rank })
@@ -163,7 +163,7 @@ func BucketQuantile(q float64, buckets Buckets) (res, forcedMonotonicMinBucket, 
 		}
 		res = bucketStart + (bucketEnd-bucketStart)*(rank/count)
 	}
-	return
+	return res, forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision
 }
 
 // HistogramQuantile calculates the quantile 'q' based on the given histogram.
@@ -704,7 +704,7 @@ func ensureMonotonicAndIgnoreSmallDeltas(buckets Buckets, tolerance float64) (fo
 		}
 		prev = curr
 	}
-	return
+	return forcedMonotonicMinBucket, forcedMonotonicMaxBucket, forcedMonotonicMaxDiff, forcedMonotonic, fixedPrecision
 }
 
 // quantile calculates the given quantile of a vector of samples.
