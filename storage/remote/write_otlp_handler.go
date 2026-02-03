@@ -23,6 +23,7 @@ import (
 
 	deltatocumulative "github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -30,6 +31,8 @@ import (
 	"go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
@@ -47,16 +50,11 @@ type OTLPOptions struct {
 	LookbackDelta time.Duration
 	// Add type and unit labels to the metrics.
 	EnableTypeAndUnitLabels bool
-	// IngestSTZeroSample enables writing zero samples based on the start time
-	// of metrics.
-	IngestSTZeroSample bool
-	// AppendMetadata enables writing metadata to WAL when metadata-wal-records feature is enabled.
-	AppendMetadata bool
 }
 
 // NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
 // writes them to the provided appendable.
-func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
+func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.AppendableV2, configFunc func() config.Config, opts OTLPOptions) http.Handler {
 	if opts.NativeDelta && opts.ConvertDelta {
 		// This should be validated when iterating through feature flags, so not expected to fail here.
 		panic("cannot enable native delta ingestion and delta2cumulative conversion at the same time")
@@ -64,15 +62,11 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 
 	ex := &rwExporter{
 		logger:                  logger,
-		appendable:              appendable,
+		appendable:              newOTLPInstrumentedAppendable(reg, appendable),
 		config:                  configFunc,
 		allowDeltaTemporality:   opts.NativeDelta,
 		lookbackDelta:           opts.LookbackDelta,
-		ingestSTZeroSample:      opts.IngestSTZeroSample,
 		enableTypeAndUnitLabels: opts.EnableTypeAndUnitLabels,
-		appendMetadata:          opts.AppendMetadata,
-		// Register metrics.
-		metrics: otlptranslator.NewCombinedAppenderMetrics(reg),
 	}
 
 	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
@@ -107,26 +101,20 @@ func NewOTLPWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appenda
 
 type rwExporter struct {
 	logger                  *slog.Logger
-	appendable              storage.Appendable
+	appendable              storage.AppendableV2
 	config                  func() config.Config
 	allowDeltaTemporality   bool
 	lookbackDelta           time.Duration
-	ingestSTZeroSample      bool
 	enableTypeAndUnitLabels bool
-	appendMetadata          bool
-
-	// Metrics.
-	metrics otlptranslator.CombinedAppenderMetrics
 }
 
 func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
 	otlpCfg := rw.config().OTLPConfig
-	app := &remoteWriteAppender{
-		Appender: rw.appendable.Appender(ctx),
-		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
+	app := &remoteWriteAppenderV2{
+		AppenderV2: rw.appendable.AppenderV2(ctx),
+		maxTime:    timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
-	combinedAppender := otlptranslator.NewCombinedAppender(app, rw.logger, rw.ingestSTZeroSample, rw.appendMetadata, rw.metrics)
-	converter := otlptranslator.NewPrometheusConverter(combinedAppender)
+	converter := otlptranslator.NewPrometheusConverter(app)
 	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
 		AddMetricSuffixes:                    otlpCfg.TranslationStrategy.ShouldAddSuffixes(),
 		AllowUTF8:                            !otlpCfg.TranslationStrategy.ShouldEscape(),
@@ -224,4 +212,65 @@ func hasDelta(md pmetric.Metrics) bool {
 		}
 	}
 	return false
+}
+
+type otlpInstrumentedAppendable struct {
+	storage.AppendableV2
+
+	samplesAppendedWithoutMetadata prometheus.Counter
+	outOfOrderExemplars            prometheus.Counter
+}
+
+// newOTLPInstrumentedAppendable instruments some OTLP metrics per append and
+// handles partial errors, so the caller does not need to.
+func newOTLPInstrumentedAppendable(reg prometheus.Registerer, app storage.AppendableV2) *otlpInstrumentedAppendable {
+	return &otlpInstrumentedAppendable{
+		AppendableV2: app,
+		samplesAppendedWithoutMetadata: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "otlp_appended_samples_without_metadata_total",
+			Help:      "The total number of samples ingested from OTLP without corresponding metadata.",
+		}),
+		outOfOrderExemplars: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "otlp_out_of_order_exemplars_total",
+			Help:      "The total number of received OTLP exemplars which were rejected because they were out of order.",
+		}),
+	}
+}
+
+func (a *otlpInstrumentedAppendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return &otlpInstrumentedAppender{
+		AppenderV2: a.AppendableV2.AppenderV2(ctx),
+
+		samplesAppendedWithoutMetadata: a.samplesAppendedWithoutMetadata,
+		outOfOrderExemplars:            a.outOfOrderExemplars,
+	}
+}
+
+type otlpInstrumentedAppender struct {
+	storage.AppenderV2
+
+	samplesAppendedWithoutMetadata prometheus.Counter
+	outOfOrderExemplars            prometheus.Counter
+}
+
+func (app *otlpInstrumentedAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	ref, err := app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+	if err != nil {
+		var partialErr *storage.AppendPartialError
+		partialErr, hErr := partialErr.Handle(err)
+		if hErr != nil {
+			// Not a partial error, return err.
+			return 0, err
+		}
+		app.outOfOrderExemplars.Add(float64(len(partialErr.ExemplarErrors)))
+		// Hide the partial error as otlp converter does not handle it.
+	}
+	if opts.Metadata.IsEmpty() {
+		app.samplesAppendedWithoutMetadata.Inc()
+	}
+	return ref, nil
 }

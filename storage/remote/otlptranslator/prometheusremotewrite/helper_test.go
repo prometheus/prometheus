@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -430,7 +431,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 			require.NoError(t, c.setResourceContext(testResource, settings))
 			require.NoError(t, c.setScopeContext(tc.scope, settings))
 
-			lbls, err := c.createAttributes(testAttrs, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
+			lbls, err := c.createAttributes(testAttrs, settings, tc.ignoreAttrs, false, metadata.Metadata{}, model.MetricNameLabel, "test_metric")
 			require.NoError(t, err)
 
 			testutil.RequireEqual(t, tc.expectedLabels, lbls)
@@ -462,7 +463,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 			settings,
 			reservedLabelNames,
 			true,
-			Metadata{},
+			metadata.Metadata{},
 			model.MetricNameLabel, "correct_metric_name",
 		)
 		require.NoError(t, err)
@@ -508,7 +509,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 			settings,
 			reservedLabelNames,
 			true,
-			Metadata{Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds"}},
+			metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds"},
 			model.MetricNameLabel, "test_metric",
 		)
 		require.NoError(t, err)
@@ -775,7 +776,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 				context.Background(),
 				metric.Summary().DataPoints(),
 				settings,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: metric.Name(),
 				},
 			)
@@ -942,7 +943,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 				context.Background(),
 				metric.Histogram().DataPoints(),
 				settings,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: metric.Name(),
 				},
 			)

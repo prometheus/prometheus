@@ -24,10 +24,14 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/storage"
 )
 
-func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	settings Settings, meta Metadata,
+func (c *PrometheusConverter) addGaugeNumberDataPoints(
+	ctx context.Context,
+	dataPoints pmetric.NumberDataPointSlice,
+	settings Settings,
+	appOpts storage.AOptions,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -40,9 +44,9 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			settings,
 			reservedLabelNames,
 			true,
-			meta,
+			appOpts.Metadata,
 			model.MetricNameLabel,
-			meta.MetricFamilyName,
+			appOpts.MetricFamilyName,
 		)
 		if err != nil {
 			return err
@@ -59,7 +63,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		}
 		ts := convertTimeStamp(pt.Timestamp())
 		st := convertTimeStamp(pt.StartTimestamp())
-		if err := c.appender.AppendSample(labels, meta, st, ts, val, nil); err != nil {
+		if _, err = c.appender.Append(0, labels, st, ts, val, nil, nil, appOpts); err != nil {
 			return err
 		}
 	}
@@ -67,8 +71,11 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 	return nil
 }
 
-func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	settings Settings, meta Metadata,
+func (c *PrometheusConverter) addSumNumberDataPoints(
+	ctx context.Context,
+	dataPoints pmetric.NumberDataPointSlice,
+	settings Settings,
+	appOpts storage.AOptions,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -81,9 +88,9 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			settings,
 			reservedLabelNames,
 			true,
-			meta,
+			appOpts.Metadata,
 			model.MetricNameLabel,
-			meta.MetricFamilyName,
+			appOpts.MetricFamilyName,
 		)
 		if err != nil {
 			return err
@@ -104,7 +111,9 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		if err != nil {
 			return err
 		}
-		if err := c.appender.AppendSample(lbls, meta, st, ts, val, exemplars); err != nil {
+
+		appOpts.Exemplars = exemplars
+		if _, err = c.appender.Append(0, lbls, st, ts, val, nil, nil, appOpts); err != nil {
 			return err
 		}
 	}

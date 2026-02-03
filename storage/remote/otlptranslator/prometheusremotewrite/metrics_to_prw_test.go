@@ -22,9 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -32,7 +30,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -1239,54 +1236,57 @@ func createOTelEmptyMetricForTranslator(name string) pmetric.Metric {
 	return m
 }
 
+// Recommended CLI invocation(s):
+/*
+	export bench=fromMetrics && go test ./storage/remote/otlptranslator/prometheusremotewrite/... \
+		-run '^$' -bench '^BenchmarkPrometheusConverter_FromMetrics' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
 func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 	for _, resourceAttributeCount := range []int{0, 5, 50} {
 		b.Run(fmt.Sprintf("resource attribute count: %v", resourceAttributeCount), func(b *testing.B) {
-			for _, histogramCount := range []int{0, 1000} {
-				b.Run(fmt.Sprintf("histogram count: %v", histogramCount), func(b *testing.B) {
-					nonHistogramCounts := []int{0, 1000}
+			for _, metricCount := range []struct {
+				histogramCount    int
+				nonHistogramCount int
+			}{
+				{histogramCount: 0, nonHistogramCount: 1000},
+				{histogramCount: 1000, nonHistogramCount: 0},
+				{histogramCount: 1000, nonHistogramCount: 1000},
+			} {
+				b.Run(fmt.Sprintf("histogram count: %v/non-histogram count: %v", metricCount.histogramCount, metricCount.nonHistogramCount), func(b *testing.B) {
+					for _, labelsPerMetric := range []int{2, 20} {
+						b.Run(fmt.Sprintf("labels per metric: %v", labelsPerMetric), func(b *testing.B) {
+							for _, exemplarsPerSeries := range []int{0, 5, 10} {
+								b.Run(fmt.Sprintf("exemplars per series: %v", exemplarsPerSeries), func(b *testing.B) {
+									settings := Settings{}
+									payload, _ := createExportRequest(
+										resourceAttributeCount,
+										metricCount.histogramCount,
+										metricCount.nonHistogramCount,
+										labelsPerMetric,
+										exemplarsPerSeries,
+										settings,
+										pmetric.AggregationTemporalityCumulative,
+									)
 
-					if resourceAttributeCount == 0 && histogramCount == 0 {
-						// Don't bother running a scenario where we'll generate no series.
-						nonHistogramCounts = []int{1000}
-					}
+									b.ResetTimer()
+									for b.Loop() {
+										app := &noOpAppender{}
+										converter := NewPrometheusConverter(app)
+										annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+										require.NoError(b, err)
+										require.Empty(b, annots)
 
-					for _, nonHistogramCount := range nonHistogramCounts {
-						b.Run(fmt.Sprintf("non-histogram count: %v", nonHistogramCount), func(b *testing.B) {
-							for _, labelsPerMetric := range []int{2, 20} {
-								b.Run(fmt.Sprintf("labels per metric: %v", labelsPerMetric), func(b *testing.B) {
-									for _, exemplarsPerSeries := range []int{0, 5, 10} {
-										b.Run(fmt.Sprintf("exemplars per series: %v", exemplarsPerSeries), func(b *testing.B) {
-											settings := Settings{}
-											payload, _ := createExportRequest(
-												resourceAttributeCount,
-												histogramCount,
-												nonHistogramCount,
-												labelsPerMetric,
-												exemplarsPerSeries,
-												settings,
-												pmetric.AggregationTemporalityCumulative,
-											)
-											appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
-											noOpLogger := promslog.NewNopLogger()
-											b.ResetTimer()
-
-											for b.Loop() {
-												app := &noOpAppender{}
-												mockAppender := NewCombinedAppender(app, noOpLogger, false, true, appMetrics)
-												converter := NewPrometheusConverter(mockAppender)
-												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
-												require.NoError(b, err)
-												require.Empty(b, annots)
-												if histogramCount+nonHistogramCount > 0 {
-													require.Positive(b, app.samples+app.histograms)
-													require.Positive(b, app.metadata)
-												} else {
-													require.Zero(b, app.samples+app.histograms)
-													require.Zero(b, app.metadata)
-												}
-											}
-										})
+										// TODO(bwplotka): This should be tested somewhere else, otherwise we benchmark
+										// mock too.
+										if metricCount.histogramCount+metricCount.nonHistogramCount > 0 {
+											require.Positive(b, app.samples+app.histograms)
+											require.Positive(b, app.metadata)
+										} else {
+											require.Zero(b, app.samples+app.histograms)
+											require.Zero(b, app.metadata)
+										}
 									}
 								})
 							}
@@ -1304,32 +1304,17 @@ type noOpAppender struct {
 	metadata   int
 }
 
-var _ storage.Appender = &noOpAppender{}
+var _ storage.AppenderV2 = &noOpAppender{}
 
-func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
+func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ float64, h *histogram.Histogram, _ *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
+	if !opts.Metadata.IsEmpty() {
+		a.metadata++
+	}
+	if h != nil {
+		a.histograms++
+		return 1, nil
+	}
 	a.samples++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 1, nil
-}
-
-func (a *noOpAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	a.histograms++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 1, nil
-}
-
-func (a *noOpAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
-	a.metadata++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
 	return 1, nil
 }
 
@@ -1339,10 +1324,6 @@ func (*noOpAppender) Commit() error {
 
 func (*noOpAppender) Rollback() error {
 	return nil
-}
-
-func (*noOpAppender) SetOptions(_ *storage.AppendOptions) {
-	panic("not implemented")
 }
 
 type wantPrometheusMetric struct {
@@ -1677,15 +1658,12 @@ func BenchmarkFromMetrics_LabelCaching_MultipleDatapointsPerResource(b *testing.
 						labelsPerMetric,
 						scopeAttributeCount,
 					)
-					appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
-					noOpLogger := promslog.NewNopLogger()
 					b.ReportAllocs()
 					b.ResetTimer()
 
 					for b.Loop() {
 						app := &noOpAppender{}
-						mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
-						converter := NewPrometheusConverter(mockAppender)
+						converter := NewPrometheusConverter(app)
 						_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 						require.NoError(b, err)
 					}
@@ -1709,15 +1687,12 @@ func BenchmarkFromMetrics_LabelCaching_RepeatedLabelNames(b *testing.B) {
 					datapoints,
 					labelsPerDatapoint,
 				)
-				appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
-				noOpLogger := promslog.NewNopLogger()
 				b.ReportAllocs()
 				b.ResetTimer()
 
 				for b.Loop() {
 					app := &noOpAppender{}
-					mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
-					converter := NewPrometheusConverter(mockAppender)
+					converter := NewPrometheusConverter(app)
 					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 					require.NoError(b, err)
 				}
@@ -1747,15 +1722,12 @@ func BenchmarkFromMetrics_LabelCaching_ScopeMetadata(b *testing.B) {
 					labelsPerMetric,
 					scopeAttrs,
 				)
-				appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
-				noOpLogger := promslog.NewNopLogger()
 				b.ReportAllocs()
 				b.ResetTimer()
 
 				for b.Loop() {
 					app := &noOpAppender{}
-					mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
-					converter := NewPrometheusConverter(mockAppender)
+					converter := NewPrometheusConverter(app)
 					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 					require.NoError(b, err)
 				}
@@ -1786,15 +1758,12 @@ func BenchmarkFromMetrics_LabelCaching_MultipleResources(b *testing.B) {
 					metricsPerResource,
 					labelsPerMetric,
 				)
-				appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
-				noOpLogger := promslog.NewNopLogger()
 				b.ReportAllocs()
 				b.ResetTimer()
 
 				for b.Loop() {
 					app := &noOpAppender{}
-					mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
-					converter := NewPrometheusConverter(mockAppender)
+					converter := NewPrometheusConverter(app)
 					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
 					require.NoError(b, err)
 				}
