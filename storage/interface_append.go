@@ -104,7 +104,7 @@ func (e *AppendPartialError) Error() string {
 // ToError returns AppendPartialError as error, returning nil
 // if there are no errors.
 func (e *AppendPartialError) ToError() error {
-	if e == nil {
+	if e == nil || len(e.ExemplarErrors) == 0 {
 		return nil
 	}
 	return e
