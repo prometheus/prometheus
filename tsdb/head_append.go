@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"runtime"
 	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -126,12 +127,18 @@ func (h *Head) initTime(t int64) {
 		// Another goroutine already won the init race. Wait until it also sets
 		// minTime, so callers that next read initialized() can rely on both
 		// bounds being valid.
-		antiDeadlockTimeout := time.After(500 * time.Millisecond)
+		// This should complete in microseconds under normal operation.
+		antiDeadlockTimeout := time.After(100 * time.Millisecond)
 		for h.minTime.Load() == math.MaxInt64 {
 			select {
 			case <-antiDeadlockTimeout:
+				// This should never happen in normal operation.
+				// If it does, there may be a bug or the system is severely overloaded.
+				h.logger.Warn("initTime timeout waiting for minTime initialization")
 				return
 			default:
+				// Yield to allow the initializing goroutine to complete.
+				runtime.Gosched()
 			}
 		}
 		return
