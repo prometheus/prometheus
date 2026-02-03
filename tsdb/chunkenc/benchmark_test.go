@@ -139,11 +139,24 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			}(),
 		},
 		{
-			name: "vt=random steps/st=delta",
+			name: "vt=random steps/st=delta-exclusive",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
 				for i := range nSamples {
 					st := t + 1                // ST is a tight interval after the last t+1ms.
+					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
+					ret = append(ret, triple{st: st, t: t, v: v})
+				}
+				return ret
+			}(),
+		},
+		{
+			name: "vt=random steps/st=delta-inclusive",
+			samples: func() (ret []triple) {
+				t, v := initT, initV
+				for i := range nSamples {
+					st := t                    // ST is equal to the previous t.
 					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
 					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
 					ret = append(ret, triple{st: st, t: t, v: v})
