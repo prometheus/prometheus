@@ -6,3 +6,6 @@ scrape_configs:
           - role: "node"
             label: "foo=bar"
             field: "metadata.status=Running"
+          - role: "service"
+            label: "baz=que"
+            field: "metadata.status=Running"

@@ -627,3 +627,74 @@ func TestPodDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
 		},
 	}.Run(t)
 }
+
+func TestPodDiscoveryWithNodeSelector(t *testing.T) {
+	t.Parallel()
+
+	workerNode := makeNode("worker-node", "10.0.0.1", "", map[string]string{"node-type": "worker"}, nil)
+	filteredNode := makeNode("filtered-node", "10.0.0.2", "", map[string]string{"node-type": "master"}, nil)
+
+	attachMetadata := AttachMetadataConfig{
+		Node: true, // necessary for node role selectos to work for pod role
+	}
+	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, attachMetadata, workerNode, filteredNode)
+	n.selectors = roleSelector{
+		node: resourceSelector{
+			label: "node-type=worker",
+		},
+	}
+
+	podOnWorker := makePods("default")
+	podOnWorker.Name = "pod-on-worker"
+	podOnWorker.UID = types.UID("worker-pod-123")
+	podOnWorker.Spec.NodeName = "worker-node"
+	podOnWorker.Status.PodIP = "192.168.1.1"
+
+	podOnFilteredNode := makePods("default")
+	podOnFilteredNode.Name = "pod-on-filtered-node"
+	podOnFilteredNode.UID = types.UID("filtered-pod-456")
+	podOnFilteredNode.Spec.NodeName = "filtered-node"
+	podOnFilteredNode.Status.PodIP = "192.168.1.2"
+
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			c.CoreV1().Pods("default").Create(context.Background(), podOnWorker, metav1.CreateOptions{})
+			c.CoreV1().Pods("default").Create(context.Background(), podOnFilteredNode, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes: map[string]*targetgroup.Group{
+			"pod/default/pod-on-worker": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "192.168.1.1:9000",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":                   "default",
+					"__meta_kubernetes_pod_name":                    "pod-on-worker",
+					"__meta_kubernetes_pod_ip":                      "192.168.1.1",
+					"__meta_kubernetes_pod_ready":                   "true",
+					"__meta_kubernetes_pod_phase":                   "Running",
+					"__meta_kubernetes_pod_node_name":               "worker-node",
+					"__meta_kubernetes_pod_host_ip":                 "2.3.4.5",
+					"__meta_kubernetes_pod_uid":                     "worker-pod-123",
+					"__meta_kubernetes_node_name":                   "worker-node",
+					"__meta_kubernetes_node_label_node_type":        "worker",
+					"__meta_kubernetes_node_labelpresent_node_type": "true",
+				},
+				Source: "pod/default/pod-on-worker",
+			},
+			"pod/default/pod-on-filtered-node": {
+				Source: "pod/default/pod-on-filtered-node",
+			},
+		},
+	}.Run(t)
+}
