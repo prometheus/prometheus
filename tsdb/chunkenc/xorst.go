@@ -104,7 +104,7 @@ func (c *XorSTChunk) Appender() (Appender, error) {
 		st:       it.st,
 		t:        it.t,
 		v:        it.val,
-		stDelta:  it.stDelta,
+		stDiff:   it.stDiff,
 		tDelta:   it.tDelta,
 		leading:  it.leading,
 		trailing: it.trailing,
@@ -141,7 +141,7 @@ type xorSTAppender struct {
 	trailing        uint8
 	st, t           int64
 	v               float64
-	stDelta         int64
+	stDiff          int64
 	tDelta          uint64
 }
 
@@ -170,9 +170,9 @@ type xorSTIterator struct {
 	st, t int64
 	val   float64
 
-	stDelta int64
-	tDelta  uint64
-	err     error
+	stDiff int64
+	tDelta uint64
+	err    error
 }
 
 func (it *xorSTIterator) Seek(t int64) ValueType {
@@ -223,15 +223,15 @@ func (it *xorSTIterator) Reset(b []byte) {
 	it.val = 0
 	it.leading = 0
 	it.trailing = 0
-	it.stDelta = 0
+	it.stDiff = 0
 	it.tDelta = 0
 	it.err = nil
 }
 
 func (a *xorSTAppender) Append(st, t int64, v float64) {
 	var (
-		stDelta int64
-		tDelta  uint64
+		stDiff int64
+		tDelta uint64
 	)
 
 	switch a.numTotal {
@@ -248,11 +248,11 @@ func (a *xorSTAppender) Append(st, t int64, v float64) {
 		a.b.writeBits(math.Float64bits(v), 64)
 	case 1:
 		buf := make([]byte, binary.MaxVarintLen64)
-		stDelta = st - a.st
-		if stDelta != 0 {
+		if st != a.st {
+			stDiff = a.t - st
 			a.firstSTChangeOn = 1
 			writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], 1)
-			for _, b := range buf[:binary.PutVarint(buf, stDelta)] {
+			for _, b := range buf[:binary.PutVarint(buf, stDiff)] {
 				a.b.writeByte(b)
 			}
 		}
@@ -263,13 +263,40 @@ func (a *xorSTAppender) Append(st, t int64, v float64) {
 		}
 		a.writeVDelta(v)
 	default:
-		stDelta = st - a.st
-		sdod := stDelta - a.stDelta
-		if sdod != 0 {
-			if a.firstSTChangeOn == 0 {
+		if a.firstSTChangeOn == 0 {
+			if st != a.st || a.numTotal == maxFirstSTChangeOn {
+				stDiff = a.t - st
 				a.firstSTChangeOn = a.numTotal
 				writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.numTotal)
+				sdod := stDiff
+				// Gorilla has a max resolution of seconds, Prometheus milliseconds.
+				// Thus we use higher value range steps with larger bit size.
+				//
+				// TODO(beorn7): This seems to needlessly jump to large bit
+				// sizes even for very small deviations from zero. Timestamp
+				// compression can probably benefit from some smaller bit
+				// buckets. See also what was done for histogram encoding in
+				// varbit.go.
+				switch {
+				case sdod == 0:
+					a.b.writeBit(zero)
+				case bitRange(sdod, 14):
+					a.b.writeByte(0b10<<6 | (uint8(sdod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
+					a.b.writeByte(uint8(sdod))                             // Bottom 8 bits of dod.
+				case bitRange(sdod, 17):
+					a.b.writeBits(0b110, 3)
+					a.b.writeBits(uint64(sdod), 17)
+				case bitRange(sdod, 20):
+					a.b.writeBits(0b1110, 4)
+					a.b.writeBits(uint64(sdod), 20)
+				default:
+					a.b.writeBits(0b1111, 4)
+					a.b.writeBits(uint64(sdod), 64)
+				}
 			}
+		} else {
+			stDiff = a.t - st
+			sdod := stDiff - a.stDiff
 			// Gorilla has a max resolution of seconds, Prometheus milliseconds.
 			// Thus we use higher value range steps with larger bit size.
 			//
@@ -293,19 +320,6 @@ func (a *xorSTAppender) Append(st, t int64, v float64) {
 			default:
 				a.b.writeBits(0b1111, 4)
 				a.b.writeBits(uint64(sdod), 64)
-			}
-		} else {
-			if a.firstSTChangeOn == 0 {
-				if a.numTotal == maxFirstSTChangeOn {
-					// We are at the 127th sample. firstSTChangeOn can only fit
-					// 7 bits due to a single byte header constrain, which is fine,
-					// given typical 120 sample size.
-					a.firstSTChangeOn = maxFirstSTChangeOn
-					writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], maxFirstSTChangeOn)
-					a.b.writeBit(zero)
-				}
-			} else {
-				a.b.writeBit(zero)
 			}
 		}
 
@@ -344,7 +358,7 @@ func (a *xorSTAppender) Append(st, t int64, v float64) {
 	a.t = t
 	a.v = v
 	a.tDelta = tDelta
-	a.stDelta = stDelta
+	a.stDiff = stDiff
 
 	a.numTotal++
 	binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
@@ -385,12 +399,12 @@ func (it *xorSTIterator) Next() ValueType {
 	if it.numRead == 1 {
 		// Optional ST delta read.
 		if it.firstSTChangeOn == 1 {
-			stDelta, err := binary.ReadVarint(&it.br)
+			stDiff, err := binary.ReadVarint(&it.br)
 			if err != nil {
 				return it.retErr(err)
 			}
-			it.stDelta = stDelta
-			it.st += it.stDelta
+			it.stDiff = stDiff
+			it.st = it.t - stDiff
 		}
 		tDelta, err := binary.ReadUvarint(&it.br)
 		if err != nil {
@@ -456,9 +470,12 @@ func (it *xorSTIterator) Next() ValueType {
 			}
 			sdod = int64(bits)
 		}
-
-		it.stDelta += sdod
-		it.st += it.stDelta
+		if it.numRead == it.firstSTChangeOn {
+			it.stDiff = sdod
+		} else {
+			it.stDiff += sdod
+		}
+		it.st = it.t - it.stDiff
 	}
 
 	var d byte
