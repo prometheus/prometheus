@@ -138,7 +138,7 @@ func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 
 	if c.Region == "" {
-		cfg, err := awsConfig.LoadDefaultConfig(context.TODO())
+		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
 		if err != nil {
 			return err
 		}
