@@ -302,6 +302,7 @@ type Options struct {
 	EnableTypeAndUnitLabels    bool
 	AppendMetadata             bool
 	AppName                    string
+	EnableHTTP3                bool // Enable HTTP/3 QUIC server (requires TLS)
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
 
@@ -748,8 +749,31 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 	})
 
+	handler := withStackTracer(otelhttp.NewHandler(mux, "", spanNameFormatter), h.logger)
+
+	// Set up HTTP/3 server if enabled.
+	var h3Server *http3Server
+	if h.options.EnableHTTP3 {
+		tlsConfig, err := getTLSConfigFromWebConfig(webConfig)
+		if err != nil {
+			h.logger.Warn("HTTP/3 disabled: failed to load TLS config", "err", err)
+		} else if tlsConfig == nil {
+			h.logger.Warn("HTTP/3 disabled: TLS configuration is required")
+		} else {
+			// Use the first listener's address for HTTP/3.
+			addr := listeners[0].Addr().String()
+			h3Server, err = newHTTP3Server(addr, handler, tlsConfig, h.logger)
+			if err != nil {
+				h.logger.Warn("HTTP/3 disabled: failed to create server", "err", err)
+			} else {
+				// Wrap handler to add Alt-Svc headers.
+				handler = wrapHandlerWithAltSvc(handler, h3Server)
+			}
+		}
+	}
+
 	httpSrv := &http.Server{
-		Handler:     withStackTracer(otelhttp.NewHandler(mux, "", spanNameFormatter), h.logger),
+		Handler:     handler,
 		ErrorLog:    errlog,
 		ReadTimeout: h.options.ReadTimeout,
 	}
@@ -759,10 +783,25 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 		errCh <- toolkit_web.ServeMultiple(listeners, httpSrv, &toolkit_web.FlagConfig{WebConfigFile: &webConfig}, h.logger)
 	}()
 
+	// Start HTTP/3 server if configured.
+	if h3Server != nil {
+		go func() {
+			if err := h3Server.ListenAndServe(); err != nil {
+				h.logger.Error("HTTP/3 server error", "err", err)
+			}
+		}()
+	}
+
 	select {
 	case e := <-errCh:
+		if h3Server != nil {
+			h3Server.Close()
+		}
 		return e
 	case <-ctx.Done():
+		if h3Server != nil {
+			h3Server.Close()
+		}
 		httpSrv.Shutdown(ctx)
 		return nil
 	}

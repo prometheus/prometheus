@@ -66,6 +66,7 @@ require (
 	github.com/prometheus/common/assets v0.2.0
 	github.com/prometheus/exporter-toolkit v0.15.1
 	github.com/prometheus/sigv4 v0.4.1
+	github.com/quic-go/quic-go v0.48.2
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.36
 	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c
 	github.com/stackitcloud/stackit-sdk-go/core v0.21.1
@@ -106,6 +107,7 @@ require (
 )
 
 require (
+	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.5 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/basgys/goxml2json v1.1.1-0.20231018121955-e66ee54ceaad // indirect
@@ -121,11 +123,15 @@ require (
 	github.com/go-openapi/swag/stringutils v0.25.4 // indirect
 	github.com/go-openapi/swag/typeutils v0.25.4 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.4 // indirect
+	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
+	github.com/onsi/ginkgo/v2 v2.27.2 // indirect
 	github.com/pb33f/jsonpath v0.7.1 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.0 // indirect
+	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	go.opentelemetry.io/collector/internal/componentalias v0.145.0 // indirect
+	go.uber.org/mock v0.4.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
