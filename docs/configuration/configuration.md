@@ -2973,6 +2973,11 @@ labels:
   [ <labelname>: <labelvalue> ... ]
 ```
 
+The special labels mentioned in the [relabeling](#relabel_config) section can also be
+used here to override the respective settings in the scrape configuration. This is
+especially useful when combined with any of the service discovery mechanisms that do not
+support these settings directly.
+
 ### `<relabel_config>`
 
 Relabeling is a powerful tool to dynamically rewrite the label set of a target before
@@ -2982,6 +2987,11 @@ in the configuration file.
 
 Initially, aside from the configured per-target labels, a target's `job`
 label is set to the `job_name` value of the respective scrape configuration.
+
+You can also use special labels like `__address__`, `__scheme__`, `__metrics_path__`,
+`__scrape_interval__`, `__scrape_timeout__` to customize the defined targets. These will
+override the respective settings in the scrape configuration.
+
 The `__address__` label is set to the `<host>:<port>` address of the target.
 After relabeling, the `instance` label is set to the value of `__address__` by default if
 it was not set during relabeling.
