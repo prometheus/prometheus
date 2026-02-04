@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,7 +37,6 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -166,7 +166,7 @@ func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 	for i := range totalSeries {
 		series[i] = labels.FromStrings("foo", strconv.Itoa(i))
 	}
-	done := atomic.NewBool(false)
+	var done atomic.Bool
 
 	go func() {
 		defer done.Store(true)

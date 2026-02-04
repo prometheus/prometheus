@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -281,7 +281,7 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			i := count.Inc()
+			i := count.Add(1)
 			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))), false)
 		}
 	})

@@ -15,9 +15,8 @@ package remote
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
-
-	"go.uber.org/atomic"
 )
 
 // ewmaRate tracks an exponentially weighted moving average of a per-second rate.

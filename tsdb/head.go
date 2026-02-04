@@ -24,12 +24,12 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -1707,8 +1707,8 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.numSeries.Sub(uint64(seriesRemoved))
-	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
+	subFromAtomicUint64(&h.numSeries, uint64(seriesRemoved))
+	subFromAtomicUint64(&h.numStaleSeries, uint64(staleSeriesDeleted))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -1730,6 +1730,21 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	}
 
 	return actualInOrderMint, minOOOTime, minMmapFile
+}
+
+func subFromAtomicUint64(atomicValue *atomic.Uint64, val uint64) {
+	for {
+		old := atomicValue.Load()
+		if old < val {
+			if atomicValue.CompareAndSwap(old, 0) {
+				return
+			}
+		} else {
+			if atomicValue.CompareAndSwap(old, old-val) {
+				return
+			}
+		}
+	}
 }
 
 // Tombstones returns a new reader over the head's tombstones.
@@ -1847,7 +1862,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 	if id == 0 {
 		// Note this id is wasted in the case where a concurrent operation creates the same series first.
-		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+		id = chunks.HeadSeriesRef(h.lastSeriesID.Add(1))
 	}
 
 	shardHash := uint64(0)
@@ -1862,7 +1877,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 
 	h.metrics.seriesCreated.Inc()
-	h.numSeries.Inc()
+	h.numSeries.Add(1)
 
 	h.postings.Add(storage.SeriesRef(id), lset)
 
@@ -2118,8 +2133,8 @@ func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) map[sto
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.numSeries.Sub(uint64(seriesRemoved))
-	h.numStaleSeries.Sub(uint64(seriesRemoved))
+	subFromAtomicUint64(&h.numSeries, uint64(seriesRemoved))
+	subFromAtomicUint64(&h.numStaleSeries, uint64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -2191,8 +2206,8 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	h.metrics.seriesRemoved.Add(float64(len(deleted)))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.numSeries.Sub(uint64(len(deleted)))
-	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
+	subFromAtomicUint64(&h.numSeries, uint64(len(deleted)))
+	subFromAtomicUint64(&h.numStaleSeries, uint64(staleSeriesDeleted))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)

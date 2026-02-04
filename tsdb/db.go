@@ -28,12 +28,12 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
@@ -101,7 +101,7 @@ func DefaultOptions() *Options {
 type Options struct {
 	// staleSeriesCompactionThreshold is same as below option with same name, but is atomic so that we can do live updates without locks.
 	// This is the one that must be used by the code.
-	staleSeriesCompactionThreshold atomic.Float64
+	staleSeriesCompactionThreshold atomic.Uint64
 
 	// Segments (wal files) max size.
 	// WALSegmentSize = 0, segment size is default size.
@@ -872,7 +872,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 		rngs = ExponentialBlockRanges(opts.MinBlockDuration, 10, 3)
 	}
 
-	opts.staleSeriesCompactionThreshold.Store(opts.StaleSeriesCompactionThreshold)
+	opts.staleSeriesCompactionThreshold.Store(math.Float64bits(opts.StaleSeriesCompactionThreshold))
 	return opts, rngs
 }
 
@@ -1169,7 +1169,7 @@ func (db *DB) run(ctx context.Context) {
 			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
 			if db.autoCompact && numSeries > 0 && db.opts.staleSeriesCompactionThreshold.Load() > 0 {
 				staleSeriesRatio := float64(numStaleSeries) / float64(numSeries)
-				if staleSeriesRatio >= db.opts.staleSeriesCompactionThreshold.Load() {
+				if staleSeriesRatio >= math.Float64frombits(db.opts.staleSeriesCompactionThreshold.Load()) {
 					nextCompactionIsSoon := false
 					if !db.lastHeadCompactionTime.IsZero() {
 						compactionInterval := time.Duration(db.head.chunkRange.Load()) * time.Millisecond
@@ -1240,7 +1240,7 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	oooTimeWindow := int64(0)
 	if conf.StorageConfig.TSDBConfig != nil {
 		oooTimeWindow = conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
-		db.opts.staleSeriesCompactionThreshold.Store(conf.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold)
+		db.opts.staleSeriesCompactionThreshold.Store(math.Float64bits(conf.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold))
 		// Update retention configuration if provided.
 		if conf.StorageConfig.TSDBConfig.Retention != nil {
 			db.retentionMtx.Lock()

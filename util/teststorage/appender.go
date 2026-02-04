@@ -21,12 +21,12 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -336,7 +336,7 @@ func (a *baseAppender) Commit() error {
 	if err := a.checkErr(); err != nil {
 		return err
 	}
-	defer a.a.openAppenders.Dec()
+	defer a.a.openAppenders.Add(-1)
 
 	if a.a.commitErr != nil {
 		return a.a.commitErr
@@ -360,7 +360,7 @@ func (a *baseAppender) Rollback() error {
 	if err := a.checkErr(); err != nil {
 		return err
 	}
-	defer a.a.openAppenders.Dec()
+	defer a.a.openAppenders.Add(-1)
 
 	a.a.mtx.Lock()
 	if !a.a.skipRecording {
@@ -384,7 +384,7 @@ type appender struct {
 
 func (a *Appendable) Appender(ctx context.Context) storage.Appender {
 	ret := &appender{baseAppender: baseAppender{a: a}}
-	if a.openAppenders.Inc() > 1 {
+	if a.openAppenders.Add(1) > 1 {
 		ret.err = errors.New("teststorage.Appendable.Appender() concurrent use is not supported; attempted opening new Appender() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
 		return ret
 	}
@@ -546,7 +546,7 @@ type appenderV2 struct {
 
 func (a *Appendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	ret := &appenderV2{baseAppender: baseAppender{a: a}}
-	if a.openAppenders.Inc() > 1 {
+	if a.openAppenders.Add(1) > 1 {
 		ret.err = errors.New("teststorage.Appendable.AppenderV2() concurrent use is not supported; attempted opening new AppenderV2() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
 		return ret
 	}

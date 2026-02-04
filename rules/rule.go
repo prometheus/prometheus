@@ -24,6 +24,7 @@ import (
 )
 
 // RuleHealth describes the health state of a rule.
+
 type RuleHealth string
 
 // The possible health states of a rule based on the last execution.

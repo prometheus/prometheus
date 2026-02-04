@@ -16,11 +16,11 @@ package chunks
 import (
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 )
 
 func (q *writeJobQueue) assertInvariants(t *testing.T) {
@@ -292,7 +292,7 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 			defer writersWG.Done()
 
 			for range writes {
-				ref := id.Inc()
+				ref := id.Add(1)
 
 				require.True(t, queue.push(chunkWriteJob{seriesRef: HeadSeriesRef(ref)}))
 			}

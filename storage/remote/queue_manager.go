@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -33,7 +34,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -1337,14 +1337,14 @@ func (s *shards) stop() {
 	<-s.done
 
 	// Log error for any dropped samples, exemplars, or histograms.
-	logDroppedError := func(t string, counter atomic.Uint32) {
+	logDroppedError := func(t string, counter *atomic.Uint32) {
 		if dropped := counter.Load(); dropped > 0 {
 			s.qm.logger.Error(fmt.Sprintf("Failed to flush all %s on shutdown", t), "count", dropped)
 		}
 	}
-	logDroppedError("samples", s.samplesDroppedOnHardShutdown)
-	logDroppedError("exemplars", s.exemplarsDroppedOnHardShutdown)
-	logDroppedError("histograms", s.histogramsDroppedOnHardShutdown)
+	logDroppedError("samples", &s.samplesDroppedOnHardShutdown)
+	logDroppedError("exemplars", &s.exemplarsDroppedOnHardShutdown)
+	logDroppedError("histograms", &s.histogramsDroppedOnHardShutdown)
 }
 
 // enqueue data (sample or exemplar). If the shard is full, shutting down, or
@@ -1367,13 +1367,13 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 		switch data.sType {
 		case tSample:
 			s.qm.metrics.pendingSamples.Inc()
-			s.enqueuedSamples.Inc()
+			s.enqueuedSamples.Add(1)
 		case tExemplar:
 			s.qm.metrics.pendingExemplars.Inc()
-			s.enqueuedExemplars.Inc()
+			s.enqueuedExemplars.Add(1)
 		case tHistogram, tFloatHistogram:
 			s.qm.metrics.pendingHistograms.Inc()
-			s.enqueuedHistograms.Inc()
+			s.enqueuedHistograms.Add(1)
 		default:
 			return true
 		}
@@ -1538,7 +1538,7 @@ func (q *queue) newBatch(capacity int) []timeSeries {
 
 func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	defer func() {
-		if s.running.Dec() == 0 {
+		if s.running.Add(-1) == 0 {
 			close(s.done)
 		}
 	}()
@@ -1737,9 +1737,9 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	s.qm.metrics.pendingSamples.Sub(float64(sampleCount))
 	s.qm.metrics.pendingExemplars.Sub(float64(exemplarCount))
 	s.qm.metrics.pendingHistograms.Sub(float64(histogramCount))
-	s.enqueuedSamples.Sub(int64(sampleCount))
-	s.enqueuedExemplars.Sub(int64(exemplarCount))
-	s.enqueuedHistograms.Sub(int64(histogramCount))
+	s.enqueuedSamples.Add(-int64(sampleCount))
+	s.enqueuedExemplars.Add(-int64(exemplarCount))
+	s.enqueuedHistograms.Add(-int64(histogramCount))
 }
 
 // sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.

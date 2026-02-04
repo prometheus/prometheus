@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"text/template"
 	"time"
@@ -48,7 +49,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.uber.org/atomic"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/config"
@@ -6525,7 +6525,7 @@ func TestScrapeLoopDisableStalenessMarkerInjection(t *testing.T) {
 }
 
 func testScrapeLoopDisableStalenessMarkerInjection(t *testing.T, appV2 bool) {
-	loopDone := atomic.NewBool(false)
+	var loopDone atomic.Bool
 
 	appTest := teststorage.NewAppendable()
 	sl, scraper := newTestScrapeLoop(t, withAppendable(appTest, appV2))
@@ -6550,9 +6550,7 @@ func testScrapeLoopDisableStalenessMarkerInjection(t *testing.T, appV2 bool) {
 	// Disable end of run staleness markers and stop the loop.
 	sl.disableEndOfRunStalenessMarkers()
 	sl.stop()
-	require.Eventually(t, func() bool {
-		return loopDone.Load()
-	}, 5*time.Second, 100*time.Millisecond, "Scrape loop didn't stop.")
+	require.Eventually(t, loopDone.Load, 5*time.Second, 100*time.Millisecond, "Scrape loop didn't stop.")
 
 	// No stale markers should be appended, since they were disabled.
 	for _, s := range appTest.ResultSamples() {
