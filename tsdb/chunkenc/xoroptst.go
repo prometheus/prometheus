@@ -21,39 +21,52 @@ import (
 )
 
 const (
-	chunkSTHeaderSize  = 1
-	maxFirstSTChangeOn = 0x7F
+	chunkSTHeaderSize = 1
 )
 
 func writeHeaderFirstSTKnown(b []byte) {
-	b[0] = 0x80
+	b[0] |= 0x80
 }
 
+func writeHeaderFirstSTDiffKnown(b []byte) {
+	b[0] |= 0x40
+}
+
+// writeHeaderFirstSTChangeOn writes the position of the first ST change to the header.
+// Assumes zero bits before.
 func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
-	// First bit indicates the initial ST value.
-	// Here we save the sample number from where the first change occurs in the
-	// rest of the byte (7 bits)
-
-	if firstSTChangeOn > maxFirstSTChangeOn {
-		// This should never happen, would cause corruption (ST already skipped but shouldn't).
-		return
-	}
-	b[0] |= uint8(firstSTChangeOn)
+	b[2] |= uint8(firstSTChangeOn)
+	b[0] |= uint8(firstSTChangeOn>>8) << 3
 }
 
-func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint8) {
-	if b[0] == 0x00 {
-		return false, 0
-	}
-	if b[0] == 0x80 {
-		return true, 0
-	}
-	mask := byte(0x80)
-	if b[0]&mask != 0 {
-		firstSTKnown = true
-	}
-	mask = 0x7F
-	return firstSTKnown, b[0] & mask
+// writeHeaderNumSamples overwrites the current number of samples in the header.
+func writeHeaderNumSamples(b []byte, numSamples uint16) {
+	b[0] = (b[0] & 0xF8) | uint8(numSamples>>8)
+	b[1] = uint8(numSamples)
+}
+
+func readHeaders(b []byte) (stHeader, numSamples uint16) {
+	v := b[0]
+	numSamples = uint16(v&0x07)<<8 | uint16(b[1])
+	stHeader = (uint16(v>>3))<<8 | uint16(b[2])
+	return stHeader, numSamples
+}
+
+func readNumSamples(b []byte) uint16 {
+	v := b[0]
+	return uint16(v&0x07)<<8 | uint16(b[1])
+}
+
+func headerHasFirstSTKnown(stHeader uint16) bool {
+	return (stHeader & 0x1000) != 0
+}
+
+func headerHasFirstSTDiffKnown(stHeader uint16) bool {
+	return (stHeader & 0x800) != 0
+}
+
+func headerFirstSTChangeOn(stHeader uint16) uint16 {
+	return stHeader & 0x7FF
 }
 
 // XorOptSTChunk holds XOR enncoded samples with optional start time (ST)
@@ -84,7 +97,7 @@ func (c *XorOptSTChunk) Bytes() []byte {
 
 // NumSamples returns the number of samples in the chunk.
 func (c *XorOptSTChunk) NumSamples() int {
-	return int(binary.BigEndian.Uint16(c.Bytes()))
+	return int(readNumSamples(c.b.bytes()))
 }
 
 // Compact implements the Chunk interface.
@@ -128,9 +141,10 @@ func (c *XorOptSTChunk) Appender() (Appender, error) {
 		leading:  it.leading,
 		trailing: it.trailing,
 
-		numTotal:        it.numTotal,
-		firstSTKnown:    it.firstSTKnown,
-		firstSTChangeOn: uint16(it.firstSTChangeOn),
+		numTotal:         it.numTotal,
+		firstSTKnown:     headerHasFirstSTKnown(it.stHeader),
+		firstSTDiffKnown: headerHasFirstSTDiffKnown(it.stHeader),
+		firstSTChangeOn:  headerFirstSTChangeOn(it.stHeader),
 	}
 	return a, nil
 }
@@ -154,16 +168,17 @@ func (c *XorOptSTChunk) Iterator(it Iterator) Iterator {
 }
 
 type xorOptSTAppender struct {
-	b               *bstream
-	numTotal        uint16
-	firstSTChangeOn uint16
-	leading         uint8
-	trailing        uint8
-	firstSTKnown    bool
-	st, t           int64
-	v               float64
-	stDiff          int64  // Difference between current ST and previous T. Undefined for first sample.
-	tDelta          uint64 // Difference between current T and previous T. Undefined for first sample.
+	b                *bstream
+	numTotal         uint16
+	firstSTChangeOn  uint16
+	firstSTKnown     bool
+	firstSTDiffKnown bool
+	leading          uint8
+	trailing         uint8
+	st, t            int64
+	v                float64
+	stDiff           int64  // Difference between current ST and previous T. Undefined for first sample.
+	tDelta           uint64 // Difference between current T and previous T. Undefined for first sample.
 }
 
 func (a *xorOptSTAppender) writeVDelta(v float64) {
@@ -182,10 +197,9 @@ type xorOptSTtIterator struct {
 	br       bstreamReader
 	numTotal uint16
 
-	firstSTKnown    bool
-	firstSTChangeOn uint8
-	leading         uint8
-	trailing        uint8
+	stHeader uint16
+	leading  uint8
+	trailing uint8
 
 	numRead uint16
 
@@ -237,8 +251,7 @@ func (it *xorOptSTtIterator) Err() error {
 func (it *xorOptSTtIterator) Reset(b []byte) {
 	// We skip initial headers for actual samples.
 	it.br = newBReader(b[chunkHeaderSize+chunkSTHeaderSize:])
-	it.numTotal = binary.BigEndian.Uint16(b)
-	it.firstSTKnown, it.firstSTChangeOn = readSTHeader(b[chunkHeaderSize:])
+	it.stHeader, it.numTotal = readHeaders(b)
 	it.numRead = 0
 	it.st = 0
 	it.t = 0
@@ -251,7 +264,7 @@ func (it *xorOptSTtIterator) Reset(b []byte) {
 }
 
 func (a *xorOptSTAppender) Append(st, t int64, v float64) {
-	if st == 0 && a.numTotal != maxFirstSTChangeOn && a.firstSTChangeOn == 0 && !a.firstSTKnown {
+	if st == 0 && a.firstSTChangeOn == 0 && !a.firstSTKnown && !a.firstSTDiffKnown {
 		// Fast path for no ST usage at all.
 		// Same as classic XOR chunk appender.
 
@@ -335,7 +348,7 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 			a.b.writeByte(b)
 		}
 		a.firstSTKnown = true
-		writeHeaderFirstSTKnown(a.b.bytes()[chunkHeaderSize:])
+		writeHeaderFirstSTKnown(a.b.bytes())
 
 	case 1:
 		buf := make([]byte, binary.MaxVarintLen64)
@@ -344,17 +357,19 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 			a.b.writeByte(b)
 		}
 		a.writeVDelta(v)
-
-		if st == a.st {
+		if a.firstSTKnown && st != 0 && st != a.st {
+			a.firstSTDiffKnown = true
+			writeHeaderFirstSTDiffKnown(a.b.bytes())
+		}
+		if (a.firstSTKnown && st == 0) || (!a.firstSTKnown && st != 0) {
+			a.firstSTChangeOn = 1
+			writeHeaderFirstSTChangeOn(a.b.bytes(), a.firstSTChangeOn)
+		}
+		if !a.firstSTDiffKnown && a.firstSTChangeOn != 1 {
 			break
 		}
-
+		// Initialize double delta of st - prev_t.
 		stDiff = a.t - st
-		a.firstSTChangeOn = 1
-		writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], 1)
-		// for _, b := range buf[:binary.PutVarint(buf, stDiff)] {
-		// 	a.b.writeByte(b)
-		// }
 		sdod := stDiff
 		// Gorilla has a max resolution of seconds, Prometheus milliseconds.
 		// Thus we use higher value range steps with larger bit size.
@@ -409,67 +424,56 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 			a.b.writeBits(0b1111, 4)
 			a.b.writeBits(uint64(dod), 64)
 		}
-
 		a.writeVDelta(v)
 
+		stDiff = a.t - st
 		if a.firstSTChangeOn == 0 {
-			if st != a.st || a.numTotal == maxFirstSTChangeOn {
-				stDiff = a.t - st
-				a.firstSTChangeOn = a.numTotal
-				writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.numTotal)
-				sdod := stDiff
-				// Gorilla has a max resolution of seconds, Prometheus milliseconds.
-				// Thus we use higher value range steps with larger bit size.
-				//
-				// TODO(beorn7): This seems to needlessly jump to large bit
-				// sizes even for very small deviations from zero. Timestamp
-				// compression can probably benefit from some smaller bit
-				// buckets. See also what was done for histogram encoding in
-				// varbit.go.
-				switch {
-				case sdod == 0:
-					a.b.writeBit(zero)
-				case bitRange(sdod, 14):
-					a.b.writeByte(0b10<<6 | (uint8(sdod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
-					a.b.writeByte(uint8(sdod))                             // Bottom 8 bits of dod.
-				case bitRange(sdod, 17):
-					a.b.writeBits(0b110, 3)
-					a.b.writeBits(uint64(sdod), 17)
-				case bitRange(sdod, 20):
-					a.b.writeBits(0b1110, 4)
-					a.b.writeBits(uint64(sdod), 20)
-				default:
-					a.b.writeBits(0b1111, 4)
-					a.b.writeBits(uint64(sdod), 64)
+			if a.firstSTKnown {
+				if a.firstSTDiffKnown && stDiff == a.stDiff {
+					// No stDiff change.
+					break
 				}
+				if !a.firstSTDiffKnown {
+					if st == a.st {
+						// No st change.
+						break
+					}
+					// This is the first ST diff change, reset the baseline.
+					a.stDiff = 0
+				}
+				a.firstSTChangeOn = a.numTotal
+				writeHeaderFirstSTChangeOn(a.b.bytes(), a.numTotal)
+			} else if st != 0 {
+				// First ST change.
+				a.firstSTChangeOn = a.numTotal
+				writeHeaderFirstSTChangeOn(a.b.bytes(), a.numTotal)
 			}
-		} else {
-			stDiff = a.t - st
-			sdod := stDiff - a.stDiff
-			// Gorilla has a max resolution of seconds, Prometheus milliseconds.
-			// Thus we use higher value range steps with larger bit size.
-			//
-			// TODO(beorn7): This seems to needlessly jump to large bit
-			// sizes even for very small deviations from zero. Timestamp
-			// compression can probably benefit from some smaller bit
-			// buckets. See also what was done for histogram encoding in
-			// varbit.go.
-			switch {
-			case sdod == 0:
-				a.b.writeBit(zero)
-			case bitRange(sdod, 14):
-				a.b.writeByte(0b10<<6 | (uint8(sdod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
-				a.b.writeByte(uint8(sdod))                             // Bottom 8 bits of dod.
-			case bitRange(sdod, 17):
-				a.b.writeBits(0b110, 3)
-				a.b.writeBits(uint64(sdod), 17)
-			case bitRange(sdod, 20):
-				a.b.writeBits(0b1110, 4)
-				a.b.writeBits(uint64(sdod), 20)
-			default:
-				a.b.writeBits(0b1111, 4)
-				a.b.writeBits(uint64(sdod), 64)
-			}
+		}
+
+		// Gorilla has a max resolution of seconds, Prometheus milliseconds.
+		// Thus we use higher value range steps with larger bit size.
+		//
+		// TODO(beorn7): This seems to needlessly jump to large bit
+		// sizes even for very small deviations from zero. Timestamp
+		// compression can probably benefit from some smaller bit
+		// buckets. See also what was done for histogram encoding in
+		// varbit.go.
+		sdod := stDiff - a.stDiff
+		switch {
+		case sdod == 0:
+			a.b.writeBit(zero)
+		case bitRange(sdod, 14):
+			a.b.writeByte(0b10<<6 | (uint8(sdod>>8) & (1<<6 - 1))) // 0b10 size code combined with 6 bits of dod.
+			a.b.writeByte(uint8(sdod))                             // Bottom 8 bits of dod.
+		case bitRange(sdod, 17):
+			a.b.writeBits(0b110, 3)
+			a.b.writeBits(uint64(sdod), 17)
+		case bitRange(sdod, 20):
+			a.b.writeBits(0b1110, 4)
+			a.b.writeBits(uint64(sdod), 20)
+		default:
+			a.b.writeBits(0b1111, 4)
+			a.b.writeBits(uint64(sdod), 64)
 		}
 	}
 
@@ -480,7 +484,8 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 	a.stDiff = stDiff
 
 	a.numTotal++
-	binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
+	// binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
+	writeHeaderNumSamples(a.b.bytes(), a.numTotal)
 }
 
 func (it *xorOptSTtIterator) retErr(err error) ValueType {
@@ -507,7 +512,7 @@ func (it *xorOptSTtIterator) Next() ValueType {
 		it.val = math.Float64frombits(v)
 
 		// Optional ST read.
-		if it.firstSTKnown {
+		if headerHasFirstSTKnown(it.stHeader) {
 			st, err := binary.ReadVarint(&it.br)
 			if err != nil {
 				return it.retErr(err)
@@ -530,14 +535,7 @@ func (it *xorOptSTtIterator) Next() ValueType {
 			return it.retErr(err)
 		}
 
-		// Optional ST delta read.
-		if it.firstSTChangeOn == 1 {
-			// stDiff, err := binary.ReadVarint(&it.br)
-			// if err != nil {
-			// 	return it.retErr(err)
-			// }
-			// it.stDiff = stDiff
-			// it.st = it.t - stDiff
+		if headerHasFirstSTDiffKnown(it.stHeader) || headerFirstSTChangeOn(it.stHeader) == 1 {
 			var d byte
 			// read delta-of-delta
 			for range 4 {
@@ -660,7 +658,20 @@ func (it *xorOptSTtIterator) Next() ValueType {
 		return it.retErr(err)
 	}
 
-	if it.firstSTChangeOn > 0 && it.numRead >= uint16(it.firstSTChangeOn) {
+	stChangeOn := headerFirstSTChangeOn(it.stHeader)
+	if stChangeOn == 0 || it.numRead < stChangeOn {
+		// No ST change recorded.
+		if headerHasFirstSTKnown(it.stHeader) {
+			if headerHasFirstSTDiffKnown(it.stHeader) {
+				// First ST diff was known and hasn't changed.
+				it.st = it.t - it.stDiff
+			}
+			// Otherwise first ST was known and hasn't changed.
+			// Do nothing.
+		}
+	} else {
+		// if it.numRead > stChangeOn {
+		// Double delta of t - st continues.
 		var d byte
 		// read delta-of-delta
 		for range 4 {
@@ -714,14 +725,9 @@ func (it *xorOptSTtIterator) Next() ValueType {
 			}
 			sdod = int64(bits)
 		}
-		if it.numRead == uint16(it.firstSTChangeOn) {
-			it.stDiff = sdod
-		} else {
-			it.stDiff += sdod
-		}
+		it.stDiff += sdod
 		it.st = it.t - it.stDiff
 	}
-
 	it.t += int64(it.tDelta)
 
 	it.numRead++
