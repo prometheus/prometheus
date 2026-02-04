@@ -2231,6 +2231,9 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 	return count
 }
 
+// TODO(bwplotka): Propagate errors correctly, even when they are async. Panicking here do occurs from time to time
+// and cause flaky tests with hidden root cause (unlocked mutexes when deferred closing).
+// We didn't have evidences of prod impact though, yet.
 func handleChunkWriteError(err error) {
 	if err != nil && !errors.Is(err, chunks.ErrChunkDiskMapperClosed) {
 		panic(err)

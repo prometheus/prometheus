@@ -206,6 +206,8 @@ type AppenderTransaction interface {
 // This is to support migration to AppenderV2.
 // TODO(bwplotka): Remove once migration to AppenderV2 is fully complete.
 type LimitedAppenderV1 interface {
+	AppenderTransaction
+
 	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
 	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }
