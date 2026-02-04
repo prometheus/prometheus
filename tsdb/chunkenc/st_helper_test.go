@@ -68,6 +68,7 @@ func testChunkSTHandling(t *testing.T, vt ValueType, chunkFactory func() Chunk) 
 		for _, s := range samples {
 			sampleAppend(app, vt, s.st, s.t, s.v)
 		}
+		require.Equal(t, len(samples), chunk.NumSamples())
 		it := chunk.Iterator(nil)
 		for i, s := range samples {
 			require.Equal(t, vt, it.Next(), "%d: value type mismatch", i)
