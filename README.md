@@ -159,6 +159,15 @@ produce a fully working image when run locally.
 
 ## Using Prometheus as a Go Library
 
+Within the Prometheus project, repositories such as [prometheus/common](https://github.com/prometheus/common) and
+[prometheus/client-golang](https://github.com/prometheus/client-golang) are designed as re-usable libraries.
+
+The [prometheus/prometheus](https://github.com/prometheus/prometheus) repository builds a stand-alone program and is not
+designed for use as a library. We are aware that people do use parts as such,
+and we do not put any deliberate inconvenience in the way, but we want you to be
+aware that no care has been taken to make it work well as a library. For instance,
+you may encounter errors that only surface when used as a library.
+
 ### Remote Write
 
 We are publishing our Remote Write protobuf independently at
