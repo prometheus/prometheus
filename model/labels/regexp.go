@@ -347,11 +347,7 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 
 	multiMatcher := newEqualMultiStringMatcher(true, estimatedAlternates, 0, 0)
 
-	for end := strings.IndexByte(s, '|'); end > -1; end = strings.IndexByte(s, '|') {
-		// Split the string into the next literal and the remainder
-		subMatch := s[:end]
-		s = s[end+1:]
-
+	for subMatch := range strings.SplitSeq(s, "|") {
 		// break if any of the submatches are not literals
 		if regexp.QuoteMeta(subMatch) != subMatch {
 			return nil, nil
@@ -359,12 +355,6 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 
 		multiMatcher.add(subMatch)
 	}
-
-	// break if the remainder is not a literal
-	if regexp.QuoteMeta(s) != s {
-		return nil, nil
-	}
-	multiMatcher.add(s)
 
 	return multiMatcher, multiMatcher.setMatches()
 }
