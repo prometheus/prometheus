@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage"
 )
 
 func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
@@ -127,7 +128,7 @@ func TestPrometheusConverter_addGaugeNumberDataPoints(t *testing.T) {
 				context.Background(),
 				metric.Gauge().DataPoints(),
 				settings,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: metric.Name(),
 				},
 			)
@@ -361,7 +362,7 @@ func TestPrometheusConverter_addSumNumberDataPoints(t *testing.T) {
 				context.Background(),
 				metric.Sum().DataPoints(),
 				settings,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: metric.Name(),
 				},
 			)

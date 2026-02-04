@@ -185,6 +185,7 @@ type Appendable struct {
 	appendErrFn          func(ls labels.Labels) error // If non-nil, inject appender error on every Append, AppendHistogram and ST zero calls.
 	appendExemplarsError error                        // If non-nil, inject exemplar error.
 	commitErr            error                        // If non-nil, inject commit error.
+	skipRecording        bool                         // If true, Appendable won't record samples, useful for benchmarks.
 
 	mtx           sync.Mutex
 	openAppenders atomic.Int32 // Guard against multi-appender use.
@@ -219,6 +220,13 @@ func (a *Appendable) WithErrs(appendErrFn func(ls labels.Labels) error, appendEx
 	a.appendErrFn = appendErrFn
 	a.appendExemplarsError = appendExemplarsError
 	a.commitErr = commitErr
+	return a
+}
+
+// SkipRecording enables or disables recording appended samples.
+// If skipped, Appendable allocs less, but Result*() methods will give always empty results. This is useful for benchmarking.
+func (a *Appendable) SkipRecording(skipRecording bool) *Appendable {
+	a.skipRecording = skipRecording
 	return a
 }
 
@@ -335,8 +343,10 @@ func (a *baseAppender) Commit() error {
 	}
 
 	a.a.mtx.Lock()
-	a.a.resultSamples = append(a.a.resultSamples, a.a.pendingSamples...)
-	a.a.pendingSamples = a.a.pendingSamples[:0]
+	if !a.a.skipRecording {
+		a.a.resultSamples = append(a.a.resultSamples, a.a.pendingSamples...)
+		a.a.pendingSamples = a.a.pendingSamples[:0]
+	}
 	a.err = errClosedAppender
 	a.a.mtx.Unlock()
 
@@ -353,8 +363,10 @@ func (a *baseAppender) Rollback() error {
 	defer a.a.openAppenders.Dec()
 
 	a.a.mtx.Lock()
-	a.a.rolledbackSamples = append(a.a.rolledbackSamples, a.a.pendingSamples...)
-	a.a.pendingSamples = a.a.pendingSamples[:0]
+	if !a.a.skipRecording {
+		a.a.rolledbackSamples = append(a.a.rolledbackSamples, a.a.pendingSamples...)
+		a.a.pendingSamples = a.a.pendingSamples[:0]
+	}
 	a.err = errClosedAppender
 	a.a.mtx.Unlock()
 
@@ -397,9 +409,11 @@ func (a *appender) Append(ref storage.SeriesRef, ls labels.Labels, t int64, v fl
 		}
 	}
 
-	a.a.mtx.Lock()
-	a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: ls, T: t, V: v})
-	a.a.mtx.Unlock()
+	if !a.a.skipRecording {
+		a.a.mtx.Lock()
+		a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: ls, T: t, V: v})
+		a.a.mtx.Unlock()
+	}
 
 	if a.next != nil {
 		return a.next.Append(ref, ls, t, v)
@@ -433,9 +447,11 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, ls labels.Labels, t in
 		}
 	}
 
-	a.a.mtx.Lock()
-	a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: ls, T: t, H: h, FH: fh})
-	a.a.mtx.Unlock()
+	if !a.a.skipRecording {
+		a.a.mtx.Lock()
+		a.a.pendingSamples = append(a.a.pendingSamples, Sample{L: ls, T: t, H: h, FH: fh})
+		a.a.mtx.Unlock()
+	}
 
 	if a.next != nil {
 		return a.next.AppendHistogram(ref, ls, t, h, fh)
@@ -451,23 +467,26 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	if a.a.appendExemplarsError != nil {
 		return 0, a.a.appendExemplarsError
 	}
-	var appended bool
 
-	a.a.mtx.Lock()
-	// NOTE(bwplotka): Eventually exemplar has to be attached to a series and soon
-	// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
-	// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
-	i := len(a.a.pendingSamples) - 1
-	for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
-		if labels.Equal(l, a.a.pendingSamples[i].L) {
-			a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, e)
-			appended = true
-			break
+	if !a.a.skipRecording {
+		var appended bool
+
+		a.a.mtx.Lock()
+		// NOTE(bwplotka): Eventually exemplar has to be attached to a series and soon
+		// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
+		// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
+		i := len(a.a.pendingSamples) - 1
+		for ; i >= 0; i-- { // Attach exemplars to the last matching sample.
+			if labels.Equal(l, a.a.pendingSamples[i].L) {
+				a.a.pendingSamples[i].ES = append(a.a.pendingSamples[i].ES, e)
+				appended = true
+				break
+			}
 		}
-	}
-	a.a.mtx.Unlock()
-	if !appended {
-		return 0, fmt.Errorf("teststorage.appender: exemplar appender without series; ref %v; l %v; exemplar: %v", ref, l, e)
+		a.a.mtx.Unlock()
+		if !appended {
+			return 0, fmt.Errorf("teststorage.appender: exemplar appender without series; ref %v; l %v; exemplar: %v", ref, l, e)
+		}
 	}
 
 	if a.next != nil {
@@ -492,23 +511,25 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 		return 0, err
 	}
 
-	var updated bool
+	if !a.a.skipRecording {
+		var updated bool
 
-	a.a.mtx.Lock()
-	// NOTE(bwplotka): Eventually metadata has to be attached to a series and soon
-	// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
-	// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
-	i := len(a.a.pendingSamples) - 1
-	for ; i >= 0; i-- { // Attach metadata to the last matching sample.
-		if labels.Equal(l, a.a.pendingSamples[i].L) {
-			a.a.pendingSamples[i].M = m
-			updated = true
-			break
+		a.a.mtx.Lock()
+		// NOTE(bwplotka): Eventually metadata has to be attached to a series and soon
+		// the AppenderV2 will guarantee that for TSDB. Assume this from the mock perspective
+		// with the naive attaching. See: https://github.com/prometheus/prometheus/issues/17632
+		i := len(a.a.pendingSamples) - 1
+		for ; i >= 0; i-- { // Attach metadata to the last matching sample.
+			if labels.Equal(l, a.a.pendingSamples[i].L) {
+				a.a.pendingSamples[i].M = m
+				updated = true
+				break
+			}
 		}
-	}
-	a.a.mtx.Unlock()
-	if !updated {
-		return 0, fmt.Errorf("teststorage.appender: metadata update without series; ref %v; l %v; m: %v", ref, l, m)
+		a.a.mtx.Unlock()
+		if !updated {
+			return 0, fmt.Errorf("teststorage.appender: metadata update without series; ref %v; l %v; m: %v", ref, l, m)
+		}
 	}
 
 	if a.next != nil {
@@ -548,37 +569,37 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		}
 	}
 
-	var (
-		es         []exemplar.Exemplar
-		partialErr error
-	)
+	var partialErr error
+	if !a.a.skipRecording {
+		var es []exemplar.Exemplar
 
-	if len(opts.Exemplars) > 0 {
-		if a.a.appendExemplarsError != nil {
-			var exErrs []error
-			for range opts.Exemplars {
-				exErrs = append(exErrs, a.a.appendExemplarsError)
+		if len(opts.Exemplars) > 0 {
+			if a.a.appendExemplarsError != nil {
+				var exErrs []error
+				for range opts.Exemplars {
+					exErrs = append(exErrs, a.a.appendExemplarsError)
+				}
+				if len(exErrs) > 0 {
+					partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
+				}
+			} else {
+				// As per AppenderV2 interface, opts.Exemplar slice is unsafe for reuse.
+				es = make([]exemplar.Exemplar, len(opts.Exemplars))
+				copy(es, opts.Exemplars)
 			}
-			if len(exErrs) > 0 {
-				partialErr = &storage.AppendPartialError{ExemplarErrors: exErrs}
-			}
-		} else {
-			// As per AppenderV2 interface, opts.Exemplar slice is unsafe for reuse.
-			es = make([]exemplar.Exemplar, len(opts.Exemplars))
-			copy(es, opts.Exemplars)
 		}
-	}
 
-	a.a.mtx.Lock()
-	a.a.pendingSamples = append(a.a.pendingSamples, Sample{
-		MF: opts.MetricFamilyName,
-		M:  opts.Metadata,
-		L:  ls,
-		ST: st, T: t,
-		V: v, H: h, FH: fh,
-		ES: es,
-	})
-	a.a.mtx.Unlock()
+		a.a.mtx.Lock()
+		a.a.pendingSamples = append(a.a.pendingSamples, Sample{
+			MF: opts.MetricFamilyName,
+			M:  opts.Metadata,
+			L:  ls,
+			ST: st, T: t,
+			V: v, H: h, FH: fh,
+			ES: es,
+		})
+		a.a.mtx.Unlock()
+	}
 
 	if a.next != nil {
 		ref, err = a.next.Append(ref, ls, st, t, v, h, fh, opts)

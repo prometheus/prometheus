@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -85,7 +86,7 @@ type PrometheusConverter struct {
 	everyN         everyNTimes
 	scratchBuilder labels.ScratchBuilder
 	builder        *labels.Builder
-	appender       CombinedAppender
+	appender       storage.AppenderV2
 	// seenTargetInfo tracks target_info samples within a batch to prevent duplicates.
 	seenTargetInfo map[targetInfoKey]struct{}
 
@@ -105,7 +106,7 @@ type targetInfoKey struct {
 	timestamp  int64
 }
 
-func NewPrometheusConverter(appender CombinedAppender) *PrometheusConverter {
+func NewPrometheusConverter(appender storage.AppenderV2) *PrometheusConverter {
 	return &PrometheusConverter{
 		scratchBuilder:  labels.NewScratchBuilder(0),
 		builder:         labels.NewBuilder(labels.EmptyLabels()),
@@ -170,7 +171,7 @@ func newScopeFromScopeMetrics(scopeMetrics pmetric.ScopeMetrics) scope {
 	}
 }
 
-// FromMetrics converts pmetric.Metrics to Prometheus remote write format.
+// FromMetrics appends pmetric.Metrics to storage.AppenderV2.
 func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (annots annotations.Annotations, errs error) {
 	namer := otlptranslator.MetricNamer{
 		Namespace:          settings.Namespace,
@@ -236,7 +237,8 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					errs = errors.Join(errs, err)
 					continue
 				}
-				meta := Metadata{
+
+				appOpts := storage.AOptions{
 					Metadata: metadata.Metadata{
 						Type: otelMetricTypeToPromMetricType(metric),
 						Unit: unitNamer.Build(metric.Unit()),
@@ -254,7 +256,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, settings, meta); err != nil {
+					if err := c.addGaugeNumberDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
 						errs = errors.Join(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return annots, errs
@@ -266,7 +268,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, settings, meta); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
 						errs = errors.Join(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return annots, errs
@@ -280,7 +282,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					}
 					if settings.ConvertHistogramsToNHCB {
 						ws, err := c.addCustomBucketsHistogramDataPoints(
-							ctx, dataPoints, settings, temporality, meta,
+							ctx, dataPoints, settings, temporality, appOpts,
 						)
 						annots.Merge(ws)
 						if err != nil {
@@ -290,7 +292,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 							}
 						}
 					} else {
-						if err := c.addHistogramDataPoints(ctx, dataPoints, settings, meta); err != nil {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
 							errs = errors.Join(errs, err)
 							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 								return annots, errs
@@ -308,7 +310,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						dataPoints,
 						settings,
 						temporality,
-						meta,
+						appOpts,
 					)
 					annots.Merge(ws)
 					if err != nil {
@@ -323,7 +325,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = errors.Join(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, settings, meta); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, settings, appOpts); err != nil {
 						errs = errors.Join(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return annots, errs

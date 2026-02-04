@@ -16,6 +16,7 @@ package storage_test
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -560,6 +561,44 @@ func TestFanoutAppenderV2(t *testing.T) {
 			require.Nil(t, tt.secondary.PendingSamples())
 			testutil.RequireEqual(t, tt.expectSecondarySamples, tt.secondary.ResultSamples())
 			require.Nil(t, tt.secondary.RolledbackSamples())
+		})
+	}
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=fanoutAppender && go test ./storage/... \
+		-run '^$' -bench '^BenchmarkFanoutAppenderV2' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+*/
+func BenchmarkFanoutAppenderV2(b *testing.B) {
+	ex := []exemplar.Exemplar{{Value: 1}}
+
+	var series []labels.Labels
+	for i := range 1000 {
+		series = append(series, labels.FromStrings(model.MetricNameLabel, "metric1", "i", strconv.Itoa(i)))
+	}
+	for _, tt := range fanoutAppenderTestCases(nil) {
+		// Turn our mock appender into ~noop for no allocs.
+		tt.primary.SkipRecording(true)
+		tt.secondary.SkipRecording(true)
+
+		b.Run(tt.name, func(b *testing.B) {
+			f := storage.NewFanout(nil, mockStorage{appV2: tt.primary}, mockStorage{appV2: tt.secondary})
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				app := f.AppenderV2(b.Context())
+				for _, s := range series {
+					// Purposefully skip errors as we want to benchmark error cases too (majority of the fanout logic).
+					_, _ = app.Append(0, s, 0, 0, 1, nil, nil, storage.AOptions{
+						Exemplars: ex,
+					})
+				}
+				require.NoError(b, app.Rollback())
+			}
 		})
 	}
 }

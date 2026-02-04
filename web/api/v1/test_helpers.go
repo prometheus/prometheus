@@ -33,7 +33,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 	api := NewAPI(
 		params.QueryEngine,
 		params.Queryable,
-		nil, // appendable
+		nil, nil, // appendables
 		params.ExemplarQueryable,
 		func(ctx context.Context) ScrapePoolsRetriever {
 			return adaptScrapePoolsRetriever(params.ScrapePoolsRetriever(ctx))

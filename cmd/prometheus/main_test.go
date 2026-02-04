@@ -395,6 +395,7 @@ func TestTimeMetrics(t *testing.T) {
 }
 
 func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames ...string) map[string]float64 {
+	t.Helper()
 	f, err := reg.Gather()
 	require.NoError(t, err)
 
@@ -426,7 +427,7 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 	go func() { done <- prom.Wait() }()
 	select {
 	case err := <-done:
-		t.Logf("prometheus agent should be still running: %v", err)
+		t.Logf("prometheus agent exited early: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
 	case <-time.After(startupTime):
 		prom.Process.Kill()
@@ -571,12 +572,7 @@ func TestDocumentation(t *testing.T) {
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
-	if err := cmd.Run(); err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) && exitError.ExitCode() != 0 {
-			fmt.Println("Command failed with non-zero exit code")
-		}
-	}
+	require.NoError(t, cmd.Run(), "failed to generate CLI documentation via --write-documentation")
 
 	generatedContent := strings.ReplaceAll(stdout.String(), filepath.Base(promPath), strings.TrimSuffix(filepath.Base(promPath), ".test"))
 
@@ -753,7 +749,7 @@ global:
 			configFile := filepath.Join(tmpDir, "prometheus.yml")
 
 			port := testutil.RandomUnprivilegedPort(t)
-			os.WriteFile(configFile, []byte(tc.config), 0o777)
+			require.NoError(t, os.WriteFile(configFile, []byte(tc.config), 0o777))
 			prom := prometheusCommandWithLogging(
 				t,
 				configFile,
@@ -801,7 +797,7 @@ global:
 			newConfig := `
 runtime:
   gogc: 99`
-			os.WriteFile(configFile, []byte(newConfig), 0o777)
+			require.NoError(t, os.WriteFile(configFile, []byte(newConfig), 0o777))
 			reloadPrometheusConfig(t, reloadURL)
 			ensureGOGCValue(99.0)
 		})
@@ -834,7 +830,7 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:%d']
 `, port, port)
-			os.WriteFile(configFile, []byte(config), 0o777)
+			require.NoError(t, os.WriteFile(configFile, []byte(config), 0o777))
 
 			prom := prometheusCommandWithLogging(
 				t,
@@ -995,7 +991,7 @@ func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
 	config := fmt.Sprintf(`
 global:
   # Using a smaller interval may cause the scrape to time out.
-  scrape_interval: 1s  
+  scrape_interval: 1s
 scrape_configs:
   - job_name: 'self'
     static_configs:

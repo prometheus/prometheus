@@ -885,29 +885,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	var scrapeManager *scrape.Manager
-	{
-		// TODO(bwplotka): Switch to AppendableV2 by default.
-		// See: https://github.com/prometheus/prometheus/issues/17632
-		var (
-			scrapeAppendable   storage.Appendable = fanoutStorage
-			scrapeAppendableV2 storage.AppendableV2
-		)
-		if cfg.tsdb.EnableSTStorage {
-			scrapeAppendable = nil
-			scrapeAppendableV2 = fanoutStorage
-		}
-		scrapeManager, err = scrape.NewManager(
-			&cfg.scrape,
-			logger.With("component", "scrape manager"),
-			logging.NewJSONFileLogger,
-			scrapeAppendable, scrapeAppendableV2,
-			prometheus.DefaultRegisterer,
-		)
-		if err != nil {
-			logger.Error("failed to create a scrape manager", "err", err)
-			os.Exit(1)
-		}
+	scrapeManager, err := scrape.NewManager(
+		&cfg.scrape,
+		logger.With("component", "scrape manager"),
+		logging.NewJSONFileLogger,
+		nil, fanoutStorage,
+		prometheus.DefaultRegisterer,
+	)
+	if err != nil {
+		logger.Error("failed to create a scrape manager", "err", err)
+		os.Exit(1)
 	}
 
 	var (

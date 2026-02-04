@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -538,11 +537,9 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 		return err
 	}
 	defer func() {
-		errs := tsdb_errors.NewMulti(returnErr)
 		if err := head.Close(); err != nil {
-			errs.Add(fmt.Errorf("closing Head: %w", err))
+			returnErr = errors.Join(returnErr, fmt.Errorf("closing Head: %w", err))
 		}
-		returnErr = errs.Err()
 	}()
 	// Set the min valid time for the ingested wal samples
 	// to be no lower than the maxt of the last block.
@@ -697,13 +694,13 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 				db.logger.Warn("Closing block failed", "err", err, "block", b)
 			}
 		}
-		errs := tsdb_errors.NewMulti()
+		var errs []error
 		for ulid, err := range corrupted {
 			if err != nil {
-				errs.Add(fmt.Errorf("corrupted block %s: %w", ulid.String(), err))
+				errs = append(errs, fmt.Errorf("corrupted block %s: %w", ulid.String(), err))
 			}
 		}
-		return nil, errs.Err()
+		return nil, errors.Join(errs...)
 	}
 
 	if len(loadable) == 0 {
@@ -814,7 +811,7 @@ func (db *DBReadOnly) Close() error {
 	}
 	close(db.closed)
 
-	return tsdb_errors.CloseAll(db.closers)
+	return closeAll(db.closers)
 }
 
 // Open returns a new DB in the given directory. If options are empty, DefaultOptions will be used.
@@ -934,11 +931,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		}
 
 		close(db.donec) // DB is never run if it was an error, so close this channel here.
-		errs := tsdb_errors.NewMulti(returnedErr)
 		if err := db.Close(); err != nil {
-			errs.Add(fmt.Errorf("close DB after failed startup: %w", err))
+			returnedErr = errors.Join(returnedErr, fmt.Errorf("close DB after failed startup: %w", err))
 		}
-		returnedErr = errs.Err()
 	}()
 
 	if db.blocksToDelete == nil {
@@ -1392,11 +1387,9 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 
 	lastBlockMaxt := int64(math.MinInt64)
 	defer func() {
-		errs := tsdb_errors.NewMulti(returnErr)
 		if err := db.head.truncateWAL(lastBlockMaxt); err != nil {
-			errs.Add(fmt.Errorf("WAL truncation in Compact defer: %w", err))
+			returnErr = errors.Join(returnErr, fmt.Errorf("WAL truncation in Compact defer: %w", err))
 		}
-		returnErr = errs.Err()
 	}()
 
 	start := time.Now()
@@ -1521,13 +1514,13 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 		return fmt.Errorf("compact ooo head: %w", err)
 	}
 	if err := db.reloadBlocks(); err != nil {
-		errs := tsdb_errors.NewMulti(err)
+		errs := []error{err}
 		for _, uid := range ulids {
 			if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-				errs.Add(errRemoveAll)
+				errs = append(errs, errRemoveAll)
 			}
 		}
-		return fmt.Errorf("reloadBlocks blocks after failed compact ooo head: %w", errs.Err())
+		return fmt.Errorf("reloadBlocks blocks after failed compact ooo head: %w", errors.Join(errs...))
 	}
 
 	lastWBLFile, minOOOMmapRef := oooHead.LastWBLFile(), oooHead.LastMmapRef()
@@ -1612,13 +1605,15 @@ func (db *DB) compactHead(head *RangeHead) error {
 	}
 
 	if err := db.reloadBlocks(); err != nil {
-		multiErr := tsdb_errors.NewMulti(fmt.Errorf("reloadBlocks blocks: %w", err))
+		errs := []error{
+			fmt.Errorf("reloadBlocks blocks: %w", err),
+		}
 		for _, uid := range uids {
 			if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-				multiErr.Add(fmt.Errorf("delete persisted head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
+				errs = append(errs, fmt.Errorf("delete persisted head block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
 			}
 		}
-		return multiErr.Err()
+		return errors.Join(errs...)
 	}
 	if err = db.head.truncateMemory(head.BlockMaxTime()); err != nil {
 		return fmt.Errorf("head memory truncate: %w", err)
@@ -1708,13 +1703,13 @@ func (db *DB) compactBlocks() (err error) {
 		}
 
 		if err := db.reloadBlocks(); err != nil {
-			errs := tsdb_errors.NewMulti(fmt.Errorf("reloadBlocks blocks: %w", err))
+			errs := []error{fmt.Errorf("reloadBlocks blocks: %w", err)}
 			for _, uid := range uids {
 				if errRemoveAll := os.RemoveAll(filepath.Join(db.dir, uid.String())); errRemoveAll != nil {
-					errs.Add(fmt.Errorf("delete persisted block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
+					errs = append(errs, fmt.Errorf("delete persisted block after failed db reloadBlocks:%s: %w", uid, errRemoveAll))
 				}
 			}
-			return errs.Err()
+			return errors.Join(errs...)
 		}
 	}
 
@@ -1794,13 +1789,13 @@ func (db *DB) reloadBlocks() (err error) {
 			}
 		}
 		db.mtx.RUnlock()
-		errs := tsdb_errors.NewMulti()
+		var errs []error
 		for ulid, err := range corrupted {
 			if err != nil {
-				errs.Add(fmt.Errorf("corrupted block %s: %w", ulid.String(), err))
+				errs = append(errs, fmt.Errorf("corrupted block %s: %w", ulid.String(), err))
 			}
 		}
-		return errs.Err()
+		return errors.Join(errs...)
 	}
 
 	var (
@@ -2172,11 +2167,14 @@ func (db *DB) Close() error {
 		g.Go(pb.Close)
 	}
 
-	errs := tsdb_errors.NewMulti(g.Wait(), db.locker.Release())
-	if db.head != nil {
-		errs.Add(db.head.Close())
+	errs := []error{
+		g.Wait(),
+		db.locker.Release(),
 	}
-	return errs.Err()
+	if db.head != nil {
+		errs = append(errs, db.head.Close())
+	}
+	return errors.Join(errs...)
 }
 
 // DisableCompactions disables auto compactions.
@@ -2556,4 +2554,13 @@ func exponential(d, minD, maxD time.Duration) time.Duration {
 		d = maxD
 	}
 	return d
+}
+
+// closeAll closes all given closers while recording all errors.
+func closeAll(cs []io.Closer) error {
+	var errs []error
+	for _, c := range cs {
+		errs = append(errs, c.Close())
+	}
+	return errors.Join(errs...)
 }

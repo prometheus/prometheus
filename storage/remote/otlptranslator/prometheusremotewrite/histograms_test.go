@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage"
 )
 
 type expectedBucketLayout struct {
@@ -875,7 +876,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 				metric.ExponentialHistogram().DataPoints(),
 				settings,
 				pmetric.AggregationTemporalityCumulative,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: name,
 				},
 			)
@@ -1354,7 +1355,7 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 				metric.Histogram().DataPoints(),
 				settings,
 				pmetric.AggregationTemporalityCumulative,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: name,
 				},
 			)

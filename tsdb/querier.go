@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -92,13 +91,13 @@ func (q *blockBaseQuerier) Close() error {
 		return errors.New("block querier already closed")
 	}
 
-	errs := tsdb_errors.NewMulti(
+	errs := []error{
 		q.index.Close(),
 		q.chunks.Close(),
 		q.tombstones.Close(),
-	)
+	}
 	q.closed = true
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 type blockQuerier struct {
