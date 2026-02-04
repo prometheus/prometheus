@@ -54,7 +54,7 @@ func newHTTP3Server(addr string, handler http.Handler, tlsConfig *tls.Config, lo
 // ListenAndServe starts the HTTP/3 server.
 func (s *http3Server) ListenAndServe() error {
 	s.logger.Info("Starting HTTP/3 server", "addr", s.server.Addr)
-	return s.server.ListenAndServeTLS("", "")
+	return s.server.ListenAndServe()
 }
 
 // Close shuts down the HTTP/3 server.
