@@ -26,9 +26,11 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"testing"
 
 	"github.com/dennwc/varint"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -209,6 +211,9 @@ type ChunkDiskMapper struct {
 	chkWriter    *bufio.Writer              // Writer for the current open file.
 	crc32        hash.Hash
 	writePathMtx sync.Mutex
+	// asyncWrites is useful for tests to synchronize queue-based async writes.
+	// Locked with writePathMtx.
+	asyncWrites int64
 
 	// Reader.
 	// The int key in the map is the file number on the disk.
@@ -228,7 +233,10 @@ type ChunkDiskMapper struct {
 
 	writeQueue *chunkWriteQueue
 
-	closed bool
+	// TODO(bwplotka): async err handling for queued writes. Consider better error handling.
+	// Current prod async handleAsyncErr panics on errors other than closed.
+	testAsyncHandleWriteChunkErr func(error)
+	closed                       bool
 }
 
 // mmappedChunkFile provides mmap access to an entire head chunks file that holds many chunks.
@@ -267,7 +275,19 @@ func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Poo
 	}
 
 	if writeQueueSize > 0 {
-		m.writeQueue = newChunkWriteQueue(reg, writeQueueSize, m.writeChunk)
+		m.writeQueue = newChunkWriteQueue(reg, writeQueueSize, func(
+			seriesRef HeadSeriesRef,
+			mint int64,
+			maxt int64,
+			chk chunkenc.Chunk,
+			ref ChunkDiskMapperRef,
+			isOOO bool,
+			cutFile bool,
+		) {
+			if err := m.writeChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile); err != nil {
+				m.asyncHandleWriteChunkErr(err)
+			}
+		})
 	}
 
 	if m.pool == nil {
@@ -275,6 +295,36 @@ func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Poo
 	}
 
 	return m, m.openMMapFiles()
+}
+
+func (cdm *ChunkDiskMapper) SetTestAsyncHandleWriteChunkErr(fn func(error)) {
+	cdm.testAsyncHandleWriteChunkErr = fn
+}
+
+func (cdm *ChunkDiskMapper) getAsyncWrites() int64 {
+	cdm.writePathMtx.Lock()
+	defer cdm.writePathMtx.Unlock()
+	return cdm.asyncWrites
+}
+
+// asyncHandleWriteChunkErr allows async custom error handling for chunk write errors. It's async because
+// some work is queued and done asynchronously.
+//
+// TODO(bwplotka): Don't be lazy. Propagate errors properly and return in some way (e.g. error channel),
+// don't panic. We see those panics in tests on slow CIs and especially in tests, the panic then deadlocks DB closes
+// (various locks are unlocked).
+func (cdm *ChunkDiskMapper) asyncHandleWriteChunkErr(err error) {
+	if cdm.testAsyncHandleWriteChunkErr != nil {
+		cdm.testAsyncHandleWriteChunkErr(err)
+		return
+	}
+	if testing.Testing() {
+		panic("ensure testAsyncHandleWriteChunkErr is always mocked for clean test failures")
+	}
+	if errors.Is(err, ErrChunkDiskMapperClosed) {
+		return
+	}
+	panic(err)
 }
 
 // Chunk encodings for out-of-order chunks.
@@ -454,33 +504,29 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 
 // WriteChunk writes the chunk to disk.
 // The returned chunk ref is the reference from where the chunk encoding starts for the chunk.
-func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, isOOO bool, callback func(err error)) (chkRef ChunkDiskMapperRef) {
+func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, isOOO bool) (chkRef ChunkDiskMapperRef) {
 	// cdm.evtlPosMtx must be held to serialize the calls to cdm.evtlPos.getNextChunkRef() and the writing of the chunk (either with or without queue).
 	cdm.evtlPosMtx.Lock()
 	defer cdm.evtlPosMtx.Unlock()
 	ref, cutFile := cdm.evtlPos.getNextChunkRef(chk)
 
 	if cdm.writeQueue != nil {
-		return cdm.writeChunkViaQueue(ref, isOOO, cutFile, seriesRef, mint, maxt, chk, callback)
+		return cdm.writeChunkViaQueue(ref, isOOO, cutFile, seriesRef, mint, maxt, chk)
 	}
 
-	err := cdm.writeChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile)
-	if callback != nil {
-		callback(err)
+	if err := cdm.writeChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile); err != nil {
+		cdm.asyncHandleWriteChunkErr(err)
 	}
-
 	return ref
 }
 
-func (cdm *ChunkDiskMapper) writeChunkViaQueue(ref ChunkDiskMapperRef, isOOO, cutFile bool, seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, callback func(err error)) (chkRef ChunkDiskMapperRef) {
+func (cdm *ChunkDiskMapper) writeChunkViaQueue(ref ChunkDiskMapperRef, isOOO, cutFile bool, seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk) (chkRef ChunkDiskMapperRef) {
 	var err error
-	if callback != nil {
-		defer func() {
-			if err != nil {
-				callback(err)
-			}
-		}()
-	}
+	defer func() {
+		if err != nil {
+			cdm.asyncHandleWriteChunkErr(err)
+		}
+	}()
 
 	err = cdm.writeQueue.addJob(chunkWriteJob{
 		cutFile:   cutFile,
@@ -490,7 +536,6 @@ func (cdm *ChunkDiskMapper) writeChunkViaQueue(ref ChunkDiskMapperRef, isOOO, cu
 		chk:       chk,
 		ref:       ref,
 		isOOO:     isOOO,
-		callback:  callback,
 	})
 
 	return ref
@@ -560,7 +605,7 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 			return err
 		}
 	}
-
+	cdm.asyncWrites++
 	return nil
 }
 
@@ -1155,4 +1200,29 @@ func (cb *chunkBuffer) clear() {
 		cb.inBufferChunks[i] = make(map[ChunkDiskMapperRef]chunkenc.Chunk)
 		cb.inBufferChunksMtxs[i].Unlock()
 	}
+}
+
+// NewTestChunkDiskMapper returns new chunk mapper for testing purposes.
+// This is mostly needed for rigorous async error handling until we get rid of panics.
+func NewTestChunkDiskMapper(t testing.TB, dir string, writeQueueSize int) *ChunkDiskMapper {
+	hrw, err := NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, writeQueueSize)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, hrw.Close())
+	})
+
+	// TODO(bwplotka): At the moment normal async handling panics. This can get the tests stuck (recovery + further close
+	// with unlocked mutexes). Replace panics with something more robust, but for now handle those (expect no error)
+	// in tests.
+	hrw.testAsyncHandleWriteChunkErr = func(err error) {
+		t.Helper()
+		t.Error(err)
+	}
+
+	require.False(t, hrw.fileMaxtSet)
+	require.NoError(t, hrw.IterateAllChunks(func(HeadSeriesRef, ChunkDiskMapperRef, int64, int64, uint16, chunkenc.Encoding, bool) error {
+		return nil
+	}))
+	require.True(t, hrw.fileMaxtSet)
+	return hrw
 }

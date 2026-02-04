@@ -2181,8 +2181,8 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	}
 	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64)
 	if err != nil {
-		handleChunkWriteError(err)
-		return nil
+		// TODO(bwplotka): Propagate error correctly.
+		panic(err)
 	}
 	chunkRefs := make([]chunks.ChunkDiskMapperRef, 0, len(chks))
 	for _, memchunk := range chks {
@@ -2190,7 +2190,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 			logger.Error("Too many OOO chunks, dropping data", "series", s.lset.String())
 			break
 		}
-		chunkRef := chunkDiskMapper.WriteChunk(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true, handleChunkWriteError)
+		chunkRef := chunkDiskMapper.WriteChunk(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true)
 		chunkRefs = append(chunkRefs, chunkRef)
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
@@ -2215,7 +2215,7 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 	// then we need to write chunks t0 to t3, but skip s.headChunks.
 	for i := s.headChunks.len() - 1; i > 0; i-- {
 		chk := s.headChunks.atOffset(i)
-		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false, handleChunkWriteError)
+		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false)
 		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			numSamples: uint16(chk.chunk.NumSamples()),
@@ -2229,12 +2229,6 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 	s.headChunks.prev = nil
 
 	return count
-}
-
-func handleChunkWriteError(err error) {
-	if err != nil && !errors.Is(err, chunks.ErrChunkDiskMapperClosed) {
-		panic(err)
-	}
 }
 
 // Rollback removes the samples and exemplars from headAppender and writes any series to WAL.

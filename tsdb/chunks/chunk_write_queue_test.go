@@ -14,7 +14,6 @@
 package chunks
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -31,9 +30,8 @@ func TestChunkWriteQueue_GettingChunkFromQueue(t *testing.T) {
 	blockWriterWg.Add(1)
 
 	// blockingChunkWriter blocks until blockWriterWg is done.
-	blockingChunkWriter := func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error {
+	blockingChunkWriter := func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) {
 		blockWriterWg.Wait()
-		return nil
 	}
 
 	q := newChunkWriteQueue(nil, 1000, blockingChunkWriter)
@@ -63,14 +61,15 @@ func TestChunkWriteQueue_WritingThroughQueue(t *testing.T) {
 		gotCutFile       bool
 	)
 
-	blockingChunkWriter := func(seriesRef HeadSeriesRef, mint, maxt int64, chunk chunkenc.Chunk, ref ChunkDiskMapperRef, _, cutFile bool) error {
+	awaitCb := make(chan struct{})
+	blockingChunkWriter := func(seriesRef HeadSeriesRef, mint, maxt int64, chunk chunkenc.Chunk, ref ChunkDiskMapperRef, _, cutFile bool) {
 		gotSeriesRef = seriesRef
 		gotMint = mint
 		gotMaxt = maxt
 		gotChunk = chunk
 		gotRef = ref
 		gotCutFile = cutFile
-		return nil
+		close(awaitCb)
 	}
 
 	q := newChunkWriteQueue(nil, 1000, blockingChunkWriter)
@@ -81,10 +80,7 @@ func TestChunkWriteQueue_WritingThroughQueue(t *testing.T) {
 	chunk := chunkenc.NewXORChunk()
 	ref := newChunkDiskMapperRef(321, 123)
 	cutFile := true
-	awaitCb := make(chan struct{})
-	require.NoError(t, q.addJob(chunkWriteJob{seriesRef: seriesRef, mint: mint, maxt: maxt, chk: chunk, ref: ref, cutFile: cutFile, callback: func(error) {
-		close(awaitCb)
-	}}))
+	require.NoError(t, q.addJob(chunkWriteJob{seriesRef: seriesRef, mint: mint, maxt: maxt, chk: chunk, ref: ref, cutFile: cutFile}))
 	<-awaitCb
 
 	// Compare whether the write function has received all job attributes correctly.
@@ -100,27 +96,24 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	sizeLimit := 100
 	unblockChunkWriterCh := make(chan struct{}, sizeLimit)
 
+	var callbackWg sync.WaitGroup
+
 	// blockingChunkWriter blocks until the unblockChunkWriterCh channel returns a value.
-	blockingChunkWriter := func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error {
+	blockingChunkWriter := func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) {
 		<-unblockChunkWriterCh
-		return nil
+		callbackWg.Done()
 	}
 
 	q := newChunkWriteQueue(nil, sizeLimit, blockingChunkWriter)
+
 	defer q.stop()
 	// Unblock writers when shutting down.
 	defer close(unblockChunkWriterCh)
-
 	var chunkRef ChunkDiskMapperRef
-	var callbackWg sync.WaitGroup
+
 	addChunk := func() {
 		callbackWg.Add(1)
-		require.NoError(t, q.addJob(chunkWriteJob{
-			ref: chunkRef,
-			callback: func(error) {
-				callbackWg.Done()
-			},
-		}))
+		require.NoError(t, q.addJob(chunkWriteJob{ref: chunkRef}))
 		chunkRef++
 	}
 
@@ -182,37 +175,13 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	require.Eventually(t, q.queueIsEmpty, 500*time.Millisecond, 50*time.Millisecond)
 }
 
-func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
-	testError := errors.New("test error")
-	chunkWriter := func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error {
-		return testError
-	}
-
-	awaitCb := make(chan struct{})
-	var gotError error
-	callback := func(err error) {
-		gotError = err
-		close(awaitCb)
-	}
-
-	q := newChunkWriteQueue(nil, 1, chunkWriter)
-	defer q.stop()
-
-	job := chunkWriteJob{callback: callback}
-	require.NoError(t, q.addJob(job))
-
-	<-awaitCb
-
-	require.Equal(t, testError, gotError)
-}
-
 func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 	for _, withReads := range []bool{false, true} {
 		b.Run(fmt.Sprintf("with reads %t", withReads), func(b *testing.B) {
 			for _, concurrentWrites := range []int{1, 10, 100, 1000} {
 				b.Run(fmt.Sprintf("%d concurrent writes", concurrentWrites), func(b *testing.B) {
 					issueReadSignal := make(chan struct{})
-					q := newChunkWriteQueue(nil, 1000, func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error {
+					q := newChunkWriteQueue(nil, 1000, func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) {
 						if withReads {
 							select {
 							case issueReadSignal <- struct{}{}:
@@ -220,7 +189,6 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 								// Can't write to issueReadSignal, don't block but omit read instead.
 							}
 						}
-						return nil
 					})
 					b.Cleanup(func() {
 						// Stopped already, so no more writes will happen.

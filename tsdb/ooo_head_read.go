@@ -108,8 +108,8 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 			if len(c.chunk.samples) > 0 { // Empty samples happens in tests, at least.
 				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(c.minTime, c.maxTime)
 				if err != nil {
-					handleChunkWriteError(err)
-					return nil
+					// TODO(bwplotka): Propagate error correctly.
+					panic(err)
 				}
 				for _, chk := range chks {
 					addChunk(chk.minTime, chk.maxTime, ref, chk.chunk)

@@ -93,6 +93,13 @@ func newTestHeadWithOptions(t testing.TB, compressWAL compression.Type, opts *He
 		_ = h.Close()
 	})
 
+	// TODO(bwplotka): At the moment normal async handling panics. This can get the tests stuck (recovery + further close
+	// with unlocked mutexes). Replace panics with something more robust, but for now handle those.
+	h.chunkDiskMapper.SetTestAsyncHandleWriteChunkErr(func(err error) {
+		t.Helper()
+		t.Error(err)
+	})
+
 	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(chunks.HeadSeriesRef, chunks.ChunkDiskMapperRef, int64, int64, uint16, chunkenc.Encoding, bool) error {
 		return nil
 	}))
@@ -338,8 +345,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 
 						// Write mmapped chunks.
 						if c.mmappedChunkT != 0 {
-							chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, mmappedChunksDir(dir), chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-							require.NoError(b, err)
+							chunkDiskMapper := chunks.NewTestChunkDiskMapper(b, mmappedChunksDir(dir), chunks.DefaultWriteQueueSize)
 							cOpts := chunkOpts{
 								chunkDiskMapper: chunkDiskMapper,
 								chunkRange:      c.mmappedChunkT,
@@ -1467,11 +1473,8 @@ func TestHead_Truncate(t *testing.T) {
 func TestMemSeries_truncateChunks(t *testing.T) {
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, chunkDiskMapper.Close())
-	}()
+	chunkDiskMapper := chunks.NewTestChunkDiskMapper(t, dir, chunks.DefaultWriteQueueSize)
+
 	cOpts := chunkOpts{
 		chunkDiskMapper: chunkDiskMapper,
 		chunkRange:      2000,
@@ -1618,12 +1621,7 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, chunkDiskMapper.Close())
-			}()
+			chunkDiskMapper := chunks.NewTestChunkDiskMapper(t, t.TempDir(), chunks.DefaultWriteQueueSize)
 
 			series := newMemSeries(labels.EmptyLabels(), 1, 0, true, false)
 
@@ -2179,11 +2177,8 @@ func TestComputeChunkEndTime(t *testing.T) {
 func TestMemSeries_append(t *testing.T) {
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, chunkDiskMapper.Close())
-	}()
+	chunkDiskMapper := chunks.NewTestChunkDiskMapper(t, dir, chunks.DefaultWriteQueueSize)
+
 	cOpts := chunkOpts{
 		chunkDiskMapper: chunkDiskMapper,
 		chunkRange:      500,
@@ -2240,11 +2235,8 @@ func TestMemSeries_append(t *testing.T) {
 func TestMemSeries_appendHistogram(t *testing.T) {
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, chunkDiskMapper.Close())
-	}()
+	chunkDiskMapper := chunks.NewTestChunkDiskMapper(t, dir, chunks.DefaultWriteQueueSize)
+
 	cOpts := chunkOpts{
 		chunkDiskMapper: chunkDiskMapper,
 		chunkRange:      int64(1000),
@@ -2302,11 +2294,8 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 	const samplesPerChunk = 120
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, chunkDiskMapper.Close())
-	})
+	chunkDiskMapper := chunks.NewTestChunkDiskMapper(t, dir, chunks.DefaultWriteQueueSize)
+
 	cOpts := chunkOpts{
 		chunkDiskMapper: chunkDiskMapper,
 		chunkRange:      DefaultBlockDuration,
@@ -3651,11 +3640,8 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 func TestIteratorSeekIntoBuffer(t *testing.T) {
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, chunkDiskMapper.Close())
-	}()
+	chunkDiskMapper := chunks.NewTestChunkDiskMapper(t, dir, chunks.DefaultWriteQueueSize)
+
 	cOpts := chunkOpts{
 		chunkDiskMapper: chunkDiskMapper,
 		chunkRange:      500,
@@ -5680,7 +5666,7 @@ func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 
 	uc := newUnsupportedChunk()
 	// Make this chunk not overlap with the previous and the next
-	h.chunkDiskMapper.WriteChunk(chunks.HeadSeriesRef(seriesRef), 500, 600, uc, false, func(err error) { require.NoError(t, err) })
+	h.chunkDiskMapper.WriteChunk(chunks.HeadSeriesRef(seriesRef), 500, 600, uc, false)
 
 	app = h.Appender(ctx)
 	for i := 700; i < 1200; i++ {

@@ -3124,7 +3124,7 @@ func TestHead_Init_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 
 	uc := newUnsupportedChunk()
 	// Make this chunk not overlap with the previous and the next
-	h.chunkDiskMapper.WriteChunk(chunks.HeadSeriesRef(seriesRef), 500, 600, uc, false, func(err error) { require.NoError(t, err) })
+	h.chunkDiskMapper.WriteChunk(chunks.HeadSeriesRef(seriesRef), 500, 600, uc, false)
 
 	app = h.AppenderV2(ctx)
 	for i := 700; i < 1200; i++ {
