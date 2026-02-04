@@ -327,7 +327,7 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		a.b.writeBits(math.Float64bits(v), 64)
 
 		// Write ST.
-		for _, b := range buf[:binary.PutVarint(buf, st)] {
+		for _, b := range buf[:binary.PutVarint(buf, t-st)] {
 			a.b.writeByte(b)
 		}
 		a.firstSTKnown = true
@@ -508,7 +508,7 @@ func (it *xorOptSTtIterator) Next() ValueType {
 			if err != nil {
 				return it.retErr(err)
 			}
-			it.st = st
+			it.st = t - st
 		}
 
 		it.numRead++
