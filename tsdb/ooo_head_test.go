@@ -85,7 +85,7 @@ func testOOOInsert(t *testing.T,
 			chunk.samples = make([]sample, numPreExisting)
 			chunk.samples = makeEvenSampleSlice(numPreExisting, sampleFunc)
 			newSample := sampleFunc(valOdd(insertPos))
-			chunk.Insert(newSample.t, newSample.f, newSample.h, newSample.fh)
+			chunk.Insert(newSample.st, newSample.t, newSample.f, newSample.h, newSample.fh)
 
 			var expSamples []sample
 			// Our expected new samples slice, will be first the original samples.
@@ -145,7 +145,7 @@ func testOOOInsertDuplicate(t *testing.T,
 			dupSample := chunk.samples[dupPos]
 			dupSample.f = 0.123
 
-			ok := chunk.Insert(dupSample.t, dupSample.f, dupSample.h, dupSample.fh)
+			ok := chunk.Insert(dupSample.st, dupSample.t, dupSample.f, dupSample.h, dupSample.fh)
 
 			expSamples := makeEvenSampleSlice(num, sampleFunc) // We expect no change.
 			require.False(t, ok)
@@ -252,17 +252,17 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 			for _, s := range tc.samples {
 				switch s.Type() {
 				case chunkenc.ValFloat:
-					oooChunk.Insert(s.t, s.f, nil, nil)
+					oooChunk.Insert(s.st, s.t, s.f, nil, nil)
 				case chunkenc.ValHistogram:
-					oooChunk.Insert(s.t, 0, s.h.Copy(), nil)
+					oooChunk.Insert(s.st, s.t, 0, s.h.Copy(), nil)
 				case chunkenc.ValFloatHistogram:
-					oooChunk.Insert(s.t, 0, nil, s.fh.Copy())
+					oooChunk.Insert(s.st, s.t, 0, nil, s.fh.Copy())
 				default:
 					t.Fatalf("unexpected sample type %d", s.Type())
 				}
 			}
 
-			chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64)
+			chunks, err := oooChunk.ToEncodedChunks(false, math.MinInt64, math.MaxInt64)
 			require.NoError(t, err)
 			require.Len(t, chunks, len(tc.expectedChunks), "number of chunks")
 			sampleIndex := 0
