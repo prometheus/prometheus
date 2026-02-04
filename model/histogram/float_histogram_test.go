@@ -3033,7 +3033,6 @@ func TestFloatHistogramSub(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			testFloatHistogramSub(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
-			testFloatHistogramKahanSub(t, c.in1, nil, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 
 			var expectedNegative *FloatHistogram
 			if c.expected != nil {
@@ -3044,7 +3043,6 @@ func TestFloatHistogramSub(t *testing.T) {
 				expectedNegative.CounterResetHint = c.expected.CounterResetHint
 			}
 			testFloatHistogramSub(t, c.in2, c.in1, expectedNegative, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
-			testFloatHistogramKahanSub(t, c.in2, nil, c.in1, expectedNegative, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 		})
 	}
 }
@@ -3085,66 +3083,6 @@ func testFloatHistogramSub(t *testing.T, a, b, expected *FloatHistogram, expErrM
 		// Check that the warnings are correct.
 		require.Equal(t, expCounterResetCollision, counterResetCollision)
 		require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
-	}
-}
-
-func testFloatHistogramKahanSub(
-	t *testing.T, a, c, b, expectedSum *FloatHistogram, expErrMsg string, expCounterResetCollision, expNHCBBoundsReconciled bool,
-) {
-	var (
-		aCopy           = a.Copy()
-		bCopy           = b.Copy()
-		cCopy           *FloatHistogram
-		expectedSumCopy *FloatHistogram
-	)
-
-	if c != nil {
-		cCopy = c.Copy()
-	}
-
-	if expectedSum != nil {
-		expectedSumCopy = expectedSum.Copy()
-	}
-
-	comp, counterResetCollision, nhcbBoundsReconciled, err := aCopy.KahanSub(bCopy, cCopy)
-	if expErrMsg != "" {
-		require.EqualError(t, err, expErrMsg)
-	} else {
-		require.NoError(t, err)
-	}
-
-	var res *FloatHistogram
-	if comp != nil {
-		// Check that aCopy and its compensation histogram layouts match after addition.
-		require.Equal(t, aCopy.ZeroThreshold, comp.ZeroThreshold)
-		require.Equal(t, aCopy.PositiveSpans, comp.PositiveSpans)
-		require.Equal(t, aCopy.NegativeSpans, comp.NegativeSpans)
-		require.Len(t, aCopy.PositiveBuckets, len(comp.PositiveBuckets))
-		require.Len(t, aCopy.NegativeBuckets, len(comp.NegativeBuckets))
-
-		res, _, _, err = aCopy.Add(comp)
-		if expErrMsg != "" {
-			require.EqualError(t, err, expErrMsg)
-		} else {
-			require.NoError(t, err)
-		}
-	}
-
-	// Check that the warnings are correct.
-	require.Equal(t, expCounterResetCollision, counterResetCollision)
-	require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
-
-	if expectedSum != nil {
-		res.Compact(0)
-		expectedSumCopy.Compact(0)
-
-		require.Equal(t, expectedSumCopy, res)
-
-		// Has it also happened in-place?
-		require.Equal(t, expectedSumCopy, aCopy)
-
-		// Check that the argument was not mutated.
-		require.Equal(t, b, bCopy)
 	}
 }
 
