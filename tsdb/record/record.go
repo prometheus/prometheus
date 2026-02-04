@@ -161,7 +161,7 @@ type RefSeries struct {
 // TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
 	Ref   chunks.HeadSeriesRef
-	ST, T int64
+	ST, ST2, ST3, ST4, T int64
 	V     float64
 }
 
