@@ -22,16 +22,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
-	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -455,6 +453,211 @@ func TestFromMetrics(t *testing.T) {
 				meta:             targetInfoMeta,
 			},
 		}, targetInfoSamples)
+	})
+
+	t.Run("target_info should not include scope labels when PromoteScopeMetadata is enabled", func(t *testing.T) {
+		// Regression test: When PromoteScopeMetadata is enabled and a scope has a non-empty name,
+		// the cached scopeLabels should NOT be merged into target_info.
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+
+		// Set up resource attributes for job/instance labels.
+		rm.Resource().Attributes().PutStr("service.name", "test-service")
+		rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
+		generateAttributes(rm.Resource().Attributes(), "resource", 2)
+
+		// Create a scope with a non-empty name (this triggers scope label caching).
+		scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+		scope := scopeMetrics.Scope()
+		scope.SetName("my-scope")
+		scope.SetVersion("1.0.0")
+		scope.Attributes().PutStr("scope-attr", "scope-value")
+
+		// Add a metric.
+		ts := pcommon.NewTimestampFromTime(time.Now())
+		m := scopeMetrics.Metrics().AppendEmpty()
+		m.SetEmptyGauge()
+		m.SetName("test_gauge")
+		m.SetDescription("test gauge")
+		point := m.Gauge().DataPoints().AppendEmpty()
+		point.SetTimestamp(ts)
+		point.SetDoubleValue(1.0)
+
+		mockAppender := &mockCombinedAppender{}
+		converter := NewPrometheusConverter(mockAppender)
+		annots, err := converter.FromMetrics(
+			context.Background(),
+			request.Metrics(),
+			Settings{
+				PromoteScopeMetadata: true,
+				LookbackDelta:        defaultLookbackDelta,
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, annots)
+		require.NoError(t, mockAppender.Commit())
+
+		// Find target_info samples.
+		var targetInfoSamples []combinedSample
+		for _, s := range mockAppender.samples {
+			if s.ls.Get(labels.MetricName) == "target_info" {
+				targetInfoSamples = append(targetInfoSamples, s)
+			}
+		}
+		require.NotEmpty(t, targetInfoSamples, "expected target_info samples")
+
+		// Verify target_info does NOT have scope labels.
+		for _, s := range targetInfoSamples {
+			require.Empty(t, s.ls.Get("otel_scope_name"), "target_info should not have otel_scope_name")
+			require.Empty(t, s.ls.Get("otel_scope_version"), "target_info should not have otel_scope_version")
+			require.Empty(t, s.ls.Get("otel_scope_schema_url"), "target_info should not have otel_scope_schema_url")
+			require.Empty(t, s.ls.Get("otel_scope_scope_attr"), "target_info should not have scope attributes")
+		}
+
+		// Verify the metric itself DOES have scope labels.
+		var metricSamples []combinedSample
+		for _, s := range mockAppender.samples {
+			if s.ls.Get(labels.MetricName) == "test_gauge" {
+				metricSamples = append(metricSamples, s)
+			}
+		}
+		require.NotEmpty(t, metricSamples, "expected metric samples")
+		require.Equal(t, "my-scope", metricSamples[0].ls.Get("otel_scope_name"), "metric should have otel_scope_name")
+		require.Equal(t, "1.0.0", metricSamples[0].ls.Get("otel_scope_version"), "metric should have otel_scope_version")
+	})
+
+	t.Run("target_info should include promoted resource attributes", func(t *testing.T) {
+		// Promoted resource attributes should appear on both metrics and target_info.
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+
+		// Set up resource attributes.
+		rm.Resource().Attributes().PutStr("service.name", "test-service")
+		rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
+		rm.Resource().Attributes().PutStr("custom.promoted.attr", "promoted-value")
+		rm.Resource().Attributes().PutStr("another.resource.attr", "another-value")
+
+		// Add a metric.
+		ts := pcommon.NewTimestampFromTime(time.Now())
+		scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+		m := scopeMetrics.Metrics().AppendEmpty()
+		m.SetEmptyGauge()
+		m.SetName("test_gauge")
+		m.SetDescription("test gauge")
+		point := m.Gauge().DataPoints().AppendEmpty()
+		point.SetTimestamp(ts)
+		point.SetDoubleValue(1.0)
+
+		mockAppender := &mockCombinedAppender{}
+		converter := NewPrometheusConverter(mockAppender)
+		annots, err := converter.FromMetrics(
+			context.Background(),
+			request.Metrics(),
+			Settings{
+				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+					PromoteResourceAttributes: []string{"custom.promoted.attr"},
+				}),
+				LookbackDelta: defaultLookbackDelta,
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, annots)
+		require.NoError(t, mockAppender.Commit())
+
+		// Find target_info samples.
+		var targetInfoSamples []combinedSample
+		for _, s := range mockAppender.samples {
+			if s.ls.Get(labels.MetricName) == "target_info" {
+				targetInfoSamples = append(targetInfoSamples, s)
+			}
+		}
+		require.NotEmpty(t, targetInfoSamples, "expected target_info samples")
+
+		// Verify target_info has the promoted resource attribute.
+		for _, s := range targetInfoSamples {
+			require.Equal(t, "promoted-value", s.ls.Get("custom_promoted_attr"), "target_info should have promoted resource attributes")
+			require.Equal(t, "another-value", s.ls.Get("another_resource_attr"), "target_info should have non-promoted resource attributes")
+		}
+
+		// Verify the metric also has the promoted resource attribute.
+		var metricSamples []combinedSample
+		for _, s := range mockAppender.samples {
+			if s.ls.Get(labels.MetricName) == "test_gauge" {
+				metricSamples = append(metricSamples, s)
+			}
+		}
+		require.NotEmpty(t, metricSamples, "expected metric samples")
+		require.Equal(t, "promoted-value", metricSamples[0].ls.Get("custom_promoted_attr"), "metric should have promoted resource attribute")
+	})
+
+	t.Run("target_info should include promoted attributes when KeepIdentifyingResourceAttributes is enabled", func(t *testing.T) {
+		// When both PromoteResourceAttributes and KeepIdentifyingResourceAttributes are configured,
+		// target_info should include both the promoted attributes and the identifying attributes.
+		request := pmetricotlp.NewExportRequest()
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+
+		rm.Resource().Attributes().PutStr("service.name", "test-service")
+		rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
+		rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
+		rm.Resource().Attributes().PutStr("custom.promoted.attr", "promoted-value")
+		rm.Resource().Attributes().PutStr("another.resource.attr", "another-value")
+
+		// Add a metric.
+		ts := pcommon.NewTimestampFromTime(time.Now())
+		scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+		m := scopeMetrics.Metrics().AppendEmpty()
+		m.SetEmptyGauge()
+		m.SetName("test_gauge")
+		m.SetDescription("test gauge")
+		point := m.Gauge().DataPoints().AppendEmpty()
+		point.SetTimestamp(ts)
+		point.SetDoubleValue(1.0)
+
+		mockAppender := &mockCombinedAppender{}
+		converter := NewPrometheusConverter(mockAppender)
+		annots, err := converter.FromMetrics(
+			context.Background(),
+			request.Metrics(),
+			Settings{
+				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+					PromoteResourceAttributes: []string{"custom.promoted.attr"},
+				}),
+				KeepIdentifyingResourceAttributes: true,
+				LookbackDelta:                     defaultLookbackDelta,
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, annots)
+		require.NoError(t, mockAppender.Commit())
+
+		var targetInfoSamples []combinedSample
+		for _, s := range mockAppender.samples {
+			if s.ls.Get(labels.MetricName) == "target_info" {
+				targetInfoSamples = append(targetInfoSamples, s)
+			}
+		}
+		require.NotEmpty(t, targetInfoSamples, "expected target_info samples")
+
+		// Verify target_info has the promoted resource attribute.
+		for _, s := range targetInfoSamples {
+			require.Equal(t, "promoted-value", s.ls.Get("custom_promoted_attr"), "target_info should have promoted resource attributes")
+			// And it should have the identifying attributes (since KeepIdentifyingResourceAttributes is true).
+			require.Equal(t, "test-service", s.ls.Get("service_name"), "target_info should have service.name when KeepIdentifyingResourceAttributes is true")
+			require.Equal(t, "test-namespace", s.ls.Get("service_namespace"), "target_info should have service.namespace when KeepIdentifyingResourceAttributes is true")
+			require.Equal(t, "instance-1", s.ls.Get("service_instance_id"), "target_info should have service.instance.id when KeepIdentifyingResourceAttributes is true")
+			// And the non-promoted resource attribute.
+			require.Equal(t, "another-value", s.ls.Get("another_resource_attr"), "target_info should have non-promoted resource attributes")
+		}
+
+		// Verify the metric also has the promoted resource attribute.
+		var metricSamples []combinedSample
+		for _, s := range mockAppender.samples {
+			if s.ls.Get(labels.MetricName) == "test_gauge" {
+				metricSamples = append(metricSamples, s)
+			}
+		}
+		require.NotEmpty(t, metricSamples, "expected metric samples")
+		require.Equal(t, "promoted-value", metricSamples[0].ls.Get("custom_promoted_attr"), "metric should have promoted resource attribute")
 	})
 }
 
@@ -1033,54 +1236,57 @@ func createOTelEmptyMetricForTranslator(name string) pmetric.Metric {
 	return m
 }
 
+// Recommended CLI invocation(s):
+/*
+	export bench=fromMetrics && go test ./storage/remote/otlptranslator/prometheusremotewrite/... \
+		-run '^$' -bench '^BenchmarkPrometheusConverter_FromMetrics' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
 func BenchmarkPrometheusConverter_FromMetrics(b *testing.B) {
 	for _, resourceAttributeCount := range []int{0, 5, 50} {
 		b.Run(fmt.Sprintf("resource attribute count: %v", resourceAttributeCount), func(b *testing.B) {
-			for _, histogramCount := range []int{0, 1000} {
-				b.Run(fmt.Sprintf("histogram count: %v", histogramCount), func(b *testing.B) {
-					nonHistogramCounts := []int{0, 1000}
+			for _, metricCount := range []struct {
+				histogramCount    int
+				nonHistogramCount int
+			}{
+				{histogramCount: 0, nonHistogramCount: 1000},
+				{histogramCount: 1000, nonHistogramCount: 0},
+				{histogramCount: 1000, nonHistogramCount: 1000},
+			} {
+				b.Run(fmt.Sprintf("histogram count: %v/non-histogram count: %v", metricCount.histogramCount, metricCount.nonHistogramCount), func(b *testing.B) {
+					for _, labelsPerMetric := range []int{2, 20} {
+						b.Run(fmt.Sprintf("labels per metric: %v", labelsPerMetric), func(b *testing.B) {
+							for _, exemplarsPerSeries := range []int{0, 5, 10} {
+								b.Run(fmt.Sprintf("exemplars per series: %v", exemplarsPerSeries), func(b *testing.B) {
+									settings := Settings{}
+									payload, _ := createExportRequest(
+										resourceAttributeCount,
+										metricCount.histogramCount,
+										metricCount.nonHistogramCount,
+										labelsPerMetric,
+										exemplarsPerSeries,
+										settings,
+										pmetric.AggregationTemporalityCumulative,
+									)
 
-					if resourceAttributeCount == 0 && histogramCount == 0 {
-						// Don't bother running a scenario where we'll generate no series.
-						nonHistogramCounts = []int{1000}
-					}
+									b.ResetTimer()
+									for b.Loop() {
+										app := &noOpAppender{}
+										converter := NewPrometheusConverter(app)
+										annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+										require.NoError(b, err)
+										require.Empty(b, annots)
 
-					for _, nonHistogramCount := range nonHistogramCounts {
-						b.Run(fmt.Sprintf("non-histogram count: %v", nonHistogramCount), func(b *testing.B) {
-							for _, labelsPerMetric := range []int{2, 20} {
-								b.Run(fmt.Sprintf("labels per metric: %v", labelsPerMetric), func(b *testing.B) {
-									for _, exemplarsPerSeries := range []int{0, 5, 10} {
-										b.Run(fmt.Sprintf("exemplars per series: %v", exemplarsPerSeries), func(b *testing.B) {
-											settings := Settings{}
-											payload, _ := createExportRequest(
-												resourceAttributeCount,
-												histogramCount,
-												nonHistogramCount,
-												labelsPerMetric,
-												exemplarsPerSeries,
-												settings,
-												pmetric.AggregationTemporalityCumulative,
-											)
-											appMetrics := NewCombinedAppenderMetrics(prometheus.NewRegistry())
-											noOpLogger := promslog.NewNopLogger()
-											b.ResetTimer()
-
-											for b.Loop() {
-												app := &noOpAppender{}
-												mockAppender := NewCombinedAppender(app, noOpLogger, false, false, appMetrics)
-												converter := NewPrometheusConverter(mockAppender)
-												annots, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
-												require.NoError(b, err)
-												require.Empty(b, annots)
-												if histogramCount+nonHistogramCount > 0 {
-													require.Positive(b, app.samples+app.histograms)
-													require.Positive(b, app.metadata)
-												} else {
-													require.Zero(b, app.samples+app.histograms)
-													require.Zero(b, app.metadata)
-												}
-											}
-										})
+										// TODO(bwplotka): This should be tested somewhere else, otherwise we benchmark
+										// mock too.
+										if metricCount.histogramCount+metricCount.nonHistogramCount > 0 {
+											require.Positive(b, app.samples+app.histograms)
+											require.Positive(b, app.metadata)
+										} else {
+											require.Zero(b, app.samples+app.histograms)
+											require.Zero(b, app.metadata)
+										}
 									}
 								})
 							}
@@ -1098,32 +1304,17 @@ type noOpAppender struct {
 	metadata   int
 }
 
-var _ storage.Appender = &noOpAppender{}
+var _ storage.AppenderV2 = &noOpAppender{}
 
-func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _ int64, _ float64) (storage.SeriesRef, error) {
+func (a *noOpAppender) Append(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ float64, h *histogram.Histogram, _ *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
+	if !opts.Metadata.IsEmpty() {
+		a.metadata++
+	}
+	if h != nil {
+		a.histograms++
+		return 1, nil
+	}
 	a.samples++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 1, nil
-}
-
-func (a *noOpAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	a.histograms++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendHistogramSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64, _ *histogram.Histogram, _ *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 1, nil
-}
-
-func (a *noOpAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
-	a.metadata++
-	return 1, nil
-}
-
-func (*noOpAppender) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
 	return 1, nil
 }
 
@@ -1133,10 +1324,6 @@ func (*noOpAppender) Commit() error {
 
 func (*noOpAppender) Rollback() error {
 	return nil
-}
-
-func (*noOpAppender) SetOptions(_ *storage.AppendOptions) {
-	panic("not implemented")
 }
 
 type wantPrometheusMetric struct {
@@ -1321,5 +1508,266 @@ func generateExemplars(exemplars pmetric.ExemplarSlice, count int, ts pcommon.Ti
 		e.SetDoubleValue(2.22)
 		e.SetSpanID(pcommon.SpanID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08})
 		e.SetTraceID(pcommon.TraceID{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f})
+	}
+}
+
+// createMultiScopeExportRequest creates an export request with multiple scopes per resource.
+// This is useful for benchmarking resource-level label caching, where cached resource labels
+// (job, instance, promoted attributes) should be computed once and reused across all scopes.
+func createMultiScopeExportRequest(
+	resourceAttributeCount int,
+	scopeCount int,
+	metricsPerScope int,
+	labelsPerMetric int,
+	scopeAttributeCount int,
+) pmetricotlp.ExportRequest {
+	request := pmetricotlp.NewExportRequest()
+	ts := pcommon.NewTimestampFromTime(time.Now())
+
+	rm := request.Metrics().ResourceMetrics().AppendEmpty()
+	generateAttributes(rm.Resource().Attributes(), "resource", resourceAttributeCount)
+
+	// Set service attributes for job/instance label generation
+	rm.Resource().Attributes().PutStr("service.name", "test-service")
+	rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
+	rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
+
+	for s := range scopeCount {
+		scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+		scope := scopeMetrics.Scope()
+		scope.SetName(fmt.Sprintf("scope-%d", s))
+		scope.SetVersion("1.0.0")
+		generateAttributes(scope.Attributes(), "scope", scopeAttributeCount)
+
+		metrics := scopeMetrics.Metrics()
+		for m := range metricsPerScope {
+			metric := metrics.AppendEmpty()
+			metric.SetName(fmt.Sprintf("gauge_s%d_m%d", s, m))
+			metric.SetDescription("gauge metric")
+			metric.SetUnit("unit")
+			point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+			point.SetTimestamp(ts)
+			point.SetDoubleValue(float64(m))
+			generateAttributes(point.Attributes(), "series", labelsPerMetric)
+		}
+	}
+
+	return request
+}
+
+// createRepeatedLabelsExportRequest creates an export request where the same label names
+// appear repeatedly across many datapoints. This is useful for benchmarking the label
+// sanitization cache, which should reduce allocations when the same label names are seen multiple times.
+func createRepeatedLabelsExportRequest(
+	uniqueLabelNames int,
+	datapointCount int,
+	labelsPerDatapoint int,
+) pmetricotlp.ExportRequest {
+	request := pmetricotlp.NewExportRequest()
+	ts := pcommon.NewTimestampFromTime(time.Now())
+
+	rm := request.Metrics().ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "test-service")
+	rm.Resource().Attributes().PutStr("service.instance.id", "instance-1")
+
+	metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
+
+	// Pre-generate label names that will be reused.
+	labelNames := make([]string, uniqueLabelNames)
+	for i := range uniqueLabelNames {
+		labelNames[i] = fmt.Sprintf("label.name.%d", i)
+	}
+
+	for d := range datapointCount {
+		metric := metrics.AppendEmpty()
+		metric.SetName(fmt.Sprintf("gauge_%d", d))
+		metric.SetDescription("gauge metric")
+		metric.SetUnit("unit")
+		point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+		point.SetTimestamp(ts)
+		point.SetDoubleValue(float64(d))
+
+		// Add labels using the same label names (cycling through them).
+		for l := range labelsPerDatapoint {
+			labelName := labelNames[l%uniqueLabelNames]
+			point.Attributes().PutStr(labelName, fmt.Sprintf("value-%d-%d", d, l))
+		}
+	}
+
+	return request
+}
+
+// createMultiResourceExportRequest creates an export request with multiple ResourceMetrics.
+// This is useful for benchmarking the overhead of cache clearing between resources and
+// verifying that caching still helps within each resource.
+func createMultiResourceExportRequest(
+	resourceCount int,
+	resourceAttributeCount int,
+	metricsPerResource int,
+	labelsPerMetric int,
+) pmetricotlp.ExportRequest {
+	request := pmetricotlp.NewExportRequest()
+	ts := pcommon.NewTimestampFromTime(time.Now())
+
+	for r := range resourceCount {
+		rm := request.Metrics().ResourceMetrics().AppendEmpty()
+		generateAttributes(rm.Resource().Attributes(), "resource", resourceAttributeCount)
+
+		// Set unique service attributes per resource for job/instance label generation.
+		rm.Resource().Attributes().PutStr("service.name", fmt.Sprintf("service-%d", r))
+		rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
+		rm.Resource().Attributes().PutStr("service.instance.id", fmt.Sprintf("instance-%d", r))
+
+		metrics := rm.ScopeMetrics().AppendEmpty().Metrics()
+		for m := range metricsPerResource {
+			metric := metrics.AppendEmpty()
+			metric.SetName(fmt.Sprintf("gauge_r%d_m%d", r, m))
+			metric.SetDescription("gauge metric")
+			metric.SetUnit("unit")
+			point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+			point.SetTimestamp(ts)
+			point.SetDoubleValue(float64(m))
+			generateAttributes(point.Attributes(), "series", labelsPerMetric)
+		}
+	}
+
+	return request
+}
+
+// BenchmarkFromMetrics_LabelCaching_MultipleDatapointsPerResource benchmarks the resource-level
+// label caching optimization. With caching, resource labels (job, instance, promoted
+// attributes) should be computed once per ResourceMetrics and reused for all datapoints.
+func BenchmarkFromMetrics_LabelCaching_MultipleDatapointsPerResource(b *testing.B) {
+	const (
+		labelsPerMetric     = 5
+		scopeAttributeCount = 3
+	)
+	for _, resourceAttrs := range []int{5, 50} {
+		for _, scopeCount := range []int{1, 10} {
+			for _, metricsPerScope := range []int{10, 100} {
+				b.Run(fmt.Sprintf("res_attrs=%d/scopes=%d/metrics=%d", resourceAttrs, scopeCount, metricsPerScope), func(b *testing.B) {
+					settings := Settings{
+						PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+							PromoteAllResourceAttributes: true,
+						}),
+					}
+					payload := createMultiScopeExportRequest(
+						resourceAttrs,
+						scopeCount,
+						metricsPerScope,
+						labelsPerMetric,
+						scopeAttributeCount,
+					)
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					for b.Loop() {
+						app := &noOpAppender{}
+						converter := NewPrometheusConverter(app)
+						_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+						require.NoError(b, err)
+					}
+				})
+			}
+		}
+	}
+}
+
+// BenchmarkFromMetrics_LabelCaching_RepeatedLabelNames benchmarks the label sanitization cache.
+// When the same label names appear across many datapoints, the sanitization should
+// only happen once per unique label name within a ResourceMetrics.
+func BenchmarkFromMetrics_LabelCaching_RepeatedLabelNames(b *testing.B) {
+	const labelsPerDatapoint = 20
+	for _, uniqueLabels := range []int{5, 50} {
+		for _, datapoints := range []int{100, 1000} {
+			b.Run(fmt.Sprintf("unique_labels=%d/datapoints=%d", uniqueLabels, datapoints), func(b *testing.B) {
+				settings := Settings{}
+				payload := createRepeatedLabelsExportRequest(
+					uniqueLabels,
+					datapoints,
+					labelsPerDatapoint,
+				)
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for b.Loop() {
+					app := &noOpAppender{}
+					converter := NewPrometheusConverter(app)
+					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+					require.NoError(b, err)
+				}
+			})
+		}
+	}
+}
+
+// BenchmarkFromMetrics_LabelCaching_ScopeMetadata benchmarks scope-level label caching when
+// PromoteScopeMetadata is enabled. Scope metadata labels (otel_scope_name, version, etc.)
+// should be computed once per ScopeMetrics and reused for all metrics within that scope.
+func BenchmarkFromMetrics_LabelCaching_ScopeMetadata(b *testing.B) {
+	const (
+		resourceAttributeCount = 5
+		labelsPerMetric        = 5
+	)
+	for _, scopeAttrs := range []int{0, 10} {
+		for _, metricsPerScope := range []int{10, 100} {
+			b.Run(fmt.Sprintf("scope_attrs=%d/metrics=%d", scopeAttrs, metricsPerScope), func(b *testing.B) {
+				settings := Settings{
+					PromoteScopeMetadata: true,
+				}
+				payload := createMultiScopeExportRequest(
+					resourceAttributeCount,
+					1, // single scope to isolate scope caching benefit
+					metricsPerScope,
+					labelsPerMetric,
+					scopeAttrs,
+				)
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for b.Loop() {
+					app := &noOpAppender{}
+					converter := NewPrometheusConverter(app)
+					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+					require.NoError(b, err)
+				}
+			})
+		}
+	}
+}
+
+// BenchmarkFromMetrics_LabelCaching_MultipleResources benchmarks requests with multiple
+// ResourceMetrics. The label sanitization cache is cleared between resources, so this
+// measures the overhead of cache clearing and verifies caching helps within each resource.
+func BenchmarkFromMetrics_LabelCaching_MultipleResources(b *testing.B) {
+	const (
+		resourceAttributeCount = 10
+		labelsPerMetric        = 10
+	)
+	for _, resourceCount := range []int{1, 10, 50} {
+		for _, metricsPerResource := range []int{10, 100} {
+			b.Run(fmt.Sprintf("resources=%d/metrics=%d", resourceCount, metricsPerResource), func(b *testing.B) {
+				settings := Settings{
+					PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
+						PromoteAllResourceAttributes: true,
+					}),
+				}
+				payload := createMultiResourceExportRequest(
+					resourceCount,
+					resourceAttributeCount,
+					metricsPerResource,
+					labelsPerMetric,
+				)
+				b.ReportAllocs()
+				b.ResetTimer()
+
+				for b.Loop() {
+					app := &noOpAppender{}
+					converter := NewPrometheusConverter(app)
+					_, err := converter.FromMetrics(context.Background(), payload.Metrics(), settings)
+					require.NoError(b, err)
+				}
+			})
+		}
 	}
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage"
 )
 
 type expectedBucketLayout struct {
@@ -861,16 +862,21 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 			}
 			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
 			require.NoError(t, err)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
+
 			annots, err := converter.addExponentialHistogramDataPoints(
 				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
-				},
+				settings,
 				pmetric.AggregationTemporalityCumulative,
-				tt.scope,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: name,
 				},
 			)
@@ -1334,17 +1340,22 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 			}
 			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
 			require.NoError(t, err)
+			settings := Settings{
+				ConvertHistogramsToNHCB: true,
+				PromoteScopeMetadata:    tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
+
 			annots, err := converter.addCustomBucketsHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					ConvertHistogramsToNHCB: true,
-					PromoteScopeMetadata:    tt.promoteScope,
-				},
+				settings,
 				pmetric.AggregationTemporalityCumulative,
-				tt.scope,
-				Metadata{
+				storage.AOptions{
 					MetricFamilyName: name,
 				},
 			)

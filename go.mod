@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
@@ -54,6 +54,8 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.142.0
 	github.com/ovh/go-ovh v1.9.0
+	github.com/pb33f/libopenapi v0.31.1
+	github.com/pb33f/libopenapi-validator v0.10.0
 	github.com/prometheus/alertmanager v0.30.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_golang/exp v0.0.0-20260101091701-2cd067eb23c9
@@ -71,7 +73,6 @@ require (
 	go.opentelemetry.io/collector/consumer v1.48.0
 	go.opentelemetry.io/collector/pdata v1.48.0
 	go.opentelemetry.io/collector/processor v1.48.0
-	go.opentelemetry.io/collector/semconv v0.128.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.64.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.64.0
 	go.opentelemetry.io/otel v1.39.0
@@ -84,8 +85,9 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/goleak v1.3.0
-	go.uber.org/multierr v1.11.0
 	go.yaml.in/yaml/v2 v2.4.3
+	go.yaml.in/yaml/v3 v3.0.4
+	go.yaml.in/yaml/v4 v4.0.0-rc.3
 	golang.org/x/oauth2 v0.34.0
 	golang.org/x/sync v0.19.0
 	golang.org/x/sys v0.39.0
@@ -94,7 +96,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20251222181119-0a764e51fe1b
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
-	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.34.3
 	k8s.io/apimachinery v0.34.3
 	k8s.io/client-go v0.34.3
@@ -104,6 +105,9 @@ require (
 
 require (
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.4 // indirect
+	github.com/bahlo/generic-list-go v0.2.0 // indirect
+	github.com/basgys/goxml2json v1.1.1-0.20231018121955-e66ee54ceaad // indirect
+	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/go-openapi/swag/cmdutils v0.25.4 // indirect
 	github.com/go-openapi/swag/conv v0.25.4 // indirect
 	github.com/go-openapi/swag/fileutils v0.25.4 // indirect
@@ -115,7 +119,12 @@ require (
 	github.com/go-openapi/swag/stringutils v0.25.4 // indirect
 	github.com/go-openapi/swag/typeutils v0.25.4 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.4 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	github.com/pb33f/jsonpath v0.7.0 // indirect
+	github.com/pb33f/ordered-map/v2 v2.3.0 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
 
@@ -238,7 +247,6 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gotest.tools/v3 v3.0.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20250710124328-f3f2b991d03b // indirect
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect

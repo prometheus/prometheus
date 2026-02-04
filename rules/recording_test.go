@@ -111,7 +111,7 @@ var ruleEvalTestScenarios = []struct {
 	},
 }
 
-func setUpRuleEvalTest(t require.TestingT) *teststorage.TestStorage {
+func setUpRuleEvalTest(t testing.TB) *teststorage.TestStorage {
 	return promqltest.LoadedStorage(t, `
 		load 1m
 			metric{label_a="1",label_b="3"} 1
@@ -121,7 +121,6 @@ func setUpRuleEvalTest(t require.TestingT) *teststorage.TestStorage {
 
 func TestRuleEval(t *testing.T) {
 	storage := setUpRuleEvalTest(t)
-	t.Cleanup(func() { storage.Close() })
 
 	ng := testEngine(t)
 	for _, scenario := range ruleEvalTestScenarios {
@@ -158,7 +157,6 @@ func BenchmarkRuleEval(b *testing.B) {
 // TestRuleEvalDuplicate tests for duplicate labels in recorded metrics, see #5529.
 func TestRuleEvalDuplicate(t *testing.T) {
 	storage := teststorage.New(t)
-	defer storage.Close()
 
 	opts := promql.EngineOpts{
 		Logger:     nil,
@@ -185,7 +183,6 @@ func TestRecordingRuleLimit(t *testing.T) {
 			metric{label="1"} 1
 			metric{label="2"} 1
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	tests := []struct {
 		limit int

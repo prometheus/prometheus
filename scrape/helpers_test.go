@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -38,15 +39,22 @@ import (
 // For readability.
 type sample = teststorage.Sample
 
+type compatAppendable interface {
+	storage.Appendable
+	storage.AppendableV2
+}
+
 func withCtx(ctx context.Context) func(sl *scrapeLoop) {
 	return func(sl *scrapeLoop) {
 		sl.ctx = ctx
 	}
 }
 
-func withAppendable(appendable storage.Appendable) func(sl *scrapeLoop) {
+func withAppendable(app compatAppendable, appV2 bool) func(sl *scrapeLoop) {
 	return func(sl *scrapeLoop) {
-		sl.appendable = appendable
+		sa := selectAppendable(app, appV2)
+		sl.appendable = sa.V1()
+		sl.appendableV2 = sa.V2()
 	}
 }
 
@@ -55,8 +63,7 @@ func withAppendable(appendable storage.Appendable) func(sl *scrapeLoop) {
 //
 // It's recommended to use withXYZ functions for simple option customizations, e.g:
 //
-//	appTest := teststorage.NewAppendable()
-//	sl, _ := newTestScrapeLoop(t, withAppendable(appTest))
+//	sl, _ := newTestScrapeLoop(t, withCtx(customCtx))
 //
 // However, when changing more than one scrapeLoop options it's more readable to have one explicit opt function:
 //
@@ -64,7 +71,7 @@ func withAppendable(appendable storage.Appendable) func(sl *scrapeLoop) {
 //	appTest := teststorage.NewAppendable()
 //	sl, scraper := newTestScrapeLoop(t, func(sl *scrapeLoop) {
 //		sl.ctx = ctx
-//		sl.appendable = appTest
+//		sl.appendableV2 = appTest
 //		// Since we're writing samples directly below we need to provide a protocol fallback.
 //		sl.fallbackScrapeProtocol = "text/plain"
 //	})
@@ -84,8 +91,6 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 		timeout:             1 * time.Hour,
 		sampleMutator:       nopMutator,
 		reportSampleMutator: nopMutator,
-
-		appendable:          teststorage.NewAppendable(),
 		buffers:             pool.New(1e3, 1e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
 		metrics:             metrics,
 		maxSchema:           histogram.ExponentialSchemaMax,
@@ -98,6 +103,11 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 	for _, o := range opts {
 		o(sl)
 	}
+
+	if sl.appendable != nil && sl.appendableV2 != nil {
+		t.Fatal("select the appendable to use, both were passed, likely a bug")
+	}
+
 	// Validate user opts for convenience.
 	require.Nil(t, sl.parentCtx, "newTestScrapeLoop does not support injecting non-nil parent context")
 	require.Nil(t, sl.appenderCtx, "newTestScrapeLoop does not support injecting non-nil appender context")
@@ -121,7 +131,8 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 	return sl, scraper
 }
 
-func newTestScrapePool(t *testing.T, injectNewLoop func(options scrapeLoopOptions) loop) *scrapePool {
+func newTestScrapePool(t *testing.T, app compatAppendable, appV2 bool, injectNewLoop func(options scrapeLoopOptions) loop) *scrapePool {
+	sa := selectAppendable(app, appV2)
 	return &scrapePool{
 		ctx:     t.Context(),
 		cancel:  func() {},
@@ -134,7 +145,8 @@ func newTestScrapePool(t *testing.T, injectNewLoop func(options scrapeLoopOption
 		loops:             map[uint64]loop{},
 		injectTestNewLoop: injectNewLoop,
 
-		appendable:  teststorage.NewAppendable(),
+		appendable: sa.V1(), appendableV2: sa.V2(),
+
 		symbolTable: labels.NewSymbolTable(),
 		metrics:     newTestScrapeMetrics(t),
 	}
@@ -157,4 +169,67 @@ func protoMarshalDelimited(t *testing.T, mf *dto.MetricFamily) []byte {
 	buf.Write(varintBuf[:varintLength])
 	buf.Write(protoBuf)
 	return buf.Bytes()
+}
+
+type selectedAppendable struct {
+	useV2 bool
+	app   compatAppendable
+}
+
+// V1 returns Appendable if V1 is selected, otherwise nil.
+func (s selectedAppendable) V1() storage.Appendable {
+	if s.useV2 {
+		return nil
+	}
+	return s.app
+}
+
+// V2 returns AppendableV2 if V2 is selected, otherwise nil.
+func (s selectedAppendable) V2() storage.AppendableV2 {
+	if !s.useV2 {
+		return nil
+	}
+	return s.app
+}
+
+// selectAppendable allows to specify which appendable callers should use when the struct
+// implements both. This is how all callers are making the decision - if one appendable is nil, they
+// take another. selectAppendable allows to inject nil to e.g. storage.AppendableV2 when appV2 is false.
+func selectAppendable(app compatAppendable, appV2 bool) selectedAppendable {
+	s := selectedAppendable{
+		app:   app,
+		useV2: appV2,
+	}
+	return s
+}
+
+func foreachAppendable(t *testing.T, f func(t *testing.T, appV2 bool)) {
+	for _, appV2 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appV2=%v", appV2), func(t *testing.T) {
+			f(t, appV2)
+		})
+	}
+}
+
+func TestSelectAppendable(t *testing.T) {
+	var i int
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		defer func() { i++ }()
+		switch i {
+		case 0:
+			require.False(t, appV2)
+
+			s := selectAppendable(teststorage.NewAppendable(), appV2)
+			require.NotNil(t, s.V1())
+			require.Nil(t, s.V2())
+		case 1:
+			require.True(t, appV2)
+
+			s := selectAppendable(teststorage.NewAppendable(), appV2)
+			require.Nil(t, s.V1())
+			require.NotNil(t, s.V2())
+		default:
+			t.Fatal("too many iterations")
+		}
+	})
 }

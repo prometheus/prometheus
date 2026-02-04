@@ -265,13 +265,26 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "ooo-native-histograms":
 				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			case "created-timestamp-zero-ingestion":
+				// NOTE(bwplotka): Once AppendableV1 is removed, there will be only the TSDB and agent flags.
 				c.scrape.EnableStartTimestampZeroIngestion = true
 				c.web.STZeroIngestionEnabled = true
+				c.tsdb.EnableSTAsZeroSample = true
 				c.agent.EnableSTAsZeroSample = true
+
 				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers.
+				// This is to widen the ST support surface.
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
-				logger.Info("Experimental created timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+				logger.Info("Experimental start timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+			case "st-storage":
+				// TODO(bwplotka): Implement ST Storage as per PROM-60 and document this hidden feature flag.
+				c.tsdb.EnableSTStorage = true
+				c.agent.EnableSTStorage = true
+
+				// Change relevant global variables. Hacky, but it's hard to pass a new option or default to unmarshallers. This is to widen the ST support surface.
+				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
+				logger.Info("Experimental start timestamp storage enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "delayed-compaction":
 				c.tsdb.EnableDelayedCompaction = true
 				logger.Info("Experimental delayed compaction is enabled.")
@@ -281,6 +294,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-extended-range-selectors":
 				parser.EnableExtendedRangeSelectors = true
 				logger.Info("Experimental PromQL extended range selectors enabled.")
+			case "promql-binop-fill-modifiers":
+				parser.EnableBinopFillModifiers = true
+				logger.Info("Experimental PromQL binary operator fill modifiers enabled.")
 			case "":
 				continue
 			case "old-ui":
@@ -578,7 +594,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors, promql-binop-fill-modifiers. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -689,6 +705,7 @@ func main() {
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+		cfg.tsdb.StaleSeriesCompactionThreshold = cfgFile.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold
 		if cfgFile.StorageConfig.TSDBConfig.Retention != nil {
 			if cfgFile.StorageConfig.TSDBConfig.Retention.Time > 0 {
 				cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
@@ -872,7 +889,7 @@ func main() {
 		&cfg.scrape,
 		logger.With("component", "scrape manager"),
 		logging.NewJSONFileLogger,
-		fanoutStorage,
+		nil, fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
 	if err != nil {
@@ -1364,6 +1381,8 @@ func main() {
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
 					"WALCompressionType", cfg.tsdb.WALCompressionType,
 					"BlockReloadInterval", cfg.tsdb.BlockReloadInterval,
+					"EnableSTAsZeroSample", cfg.tsdb.EnableSTAsZeroSample,
+					"EnableSTStorage", cfg.tsdb.EnableSTStorage,
 				)
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
@@ -1421,6 +1440,7 @@ func main() {
 					"MaxWALTime", cfg.agent.MaxWALTime,
 					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
 					"EnableSTAsZeroSample", cfg.agent.EnableSTAsZeroSample,
+					"EnableSTStorage", cfg.tsdb.EnableSTStorage,
 				)
 
 				localStorage.Set(db, 0)
@@ -1572,7 +1592,7 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 			logger.Error("Failed to apply configuration", "err", err)
 			failed = true
 		}
-		timingsLogger = timingsLogger.With((rl.name), time.Since(rstart))
+		timingsLogger = timingsLogger.With(rl.name, time.Since(rstart))
 	}
 	if failed {
 		return fmt.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
@@ -1746,6 +1766,14 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 	return notReadyAppender{}
 }
 
+// AppenderV2 implements the Storage interface.
+func (s *readyStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	if x := s.get(); x != nil {
+		return x.AppenderV2(ctx)
+	}
+	return notReadyAppenderV2{}
+}
+
 type notReadyAppender struct{}
 
 // SetOptions does nothing in this appender implementation.
@@ -1778,6 +1806,15 @@ func (notReadyAppender) AppendSTZeroSample(storage.SeriesRef, labels.Labels, int
 func (notReadyAppender) Commit() error { return tsdb.ErrNotReady }
 
 func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
+
+type notReadyAppenderV2 struct{}
+
+func (notReadyAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AOptions) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+func (notReadyAppenderV2) Commit() error { return tsdb.ErrNotReady }
+
+func (notReadyAppenderV2) Rollback() error { return tsdb.ErrNotReady }
 
 // Close implements the Storage interface.
 func (s *readyStorage) Close() error {
@@ -1923,6 +1960,9 @@ type tsdbOptions struct {
 	UseUncachedIO                  bool
 	BlockCompactionExcludeFunc     tsdb.BlockExcludeFilterFunc
 	BlockReloadInterval            model.Duration
+	EnableSTAsZeroSample           bool
+	EnableSTStorage                bool
+	StaleSeriesCompactionThreshold float64
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1949,6 +1989,9 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
 		BlockReloadInterval:            time.Duration(opts.BlockReloadInterval),
 		FeatureRegistry:                features.DefaultRegistry,
+		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
+		EnableSTStorage:                opts.EnableSTStorage,
+		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 	}
 }
 
@@ -1963,6 +2006,7 @@ type agentOptions struct {
 	NoLockfile             bool
 	OutOfOrderTimeWindow   int64 // TODO(bwplotka): Unused option, fix it or remove.
 	EnableSTAsZeroSample   bool
+	EnableSTStorage        bool
 }
 
 func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Options {
@@ -1979,6 +2023,7 @@ func (opts agentOptions) ToAgentOptions(outOfOrderTimeWindow int64) agent.Option
 		NoLockfile:           opts.NoLockfile,
 		OutOfOrderTimeWindow: outOfOrderTimeWindow,
 		EnableSTAsZeroSample: opts.EnableSTAsZeroSample,
+		EnableSTStorage:      opts.EnableSTStorage,
 	}
 }
 

@@ -327,9 +327,10 @@ func (ce *CircularExemplarStorage) grow(l int64) int {
 		{from: ce.nextIndex, to: oldSize},
 		{from: 0, to: ce.nextIndex},
 	}
-	ce.nextIndex = copyExemplarRanges(ce.index, newSlice, ce.exemplars, ranges)
+	totalCopied, migrated := copyExemplarRanges(ce.index, newSlice, ce.exemplars, ranges)
+	ce.nextIndex = totalCopied
 	ce.exemplars = newSlice
-	return oldSize
+	return migrated
 }
 
 // shrink the circular buffer by either trimming from the right or deleting the
@@ -353,6 +354,7 @@ func (ce *CircularExemplarStorage) shrink(l int64) (migrated int) {
 
 	newSlice := make([]circularBufferEntry, int(l))
 
+	var totalCopied int
 	switch {
 	case deleteStart == deleteEnd:
 		// The entire buffer was cleared (shrink to zero). Note that we don't have to
@@ -363,18 +365,18 @@ func (ce *CircularExemplarStorage) shrink(l int64) (migrated int) {
 		return 0
 	case deleteStart < deleteEnd:
 		// We delete an "inner" section of the circular buffer.
-		migrated = copyExemplarRanges(ce.index, newSlice, ce.exemplars, []intRange{
+		totalCopied, migrated = copyExemplarRanges(ce.index, newSlice, ce.exemplars, []intRange{
 			{from: deleteEnd, to: oldSize},
 			{from: 0, to: deleteStart},
 		})
 	case deleteStart > deleteEnd:
 		// We keep an "inner" section of the circular buffer.
-		migrated = copyExemplarRanges(ce.index, newSlice, ce.exemplars, []intRange{
+		totalCopied, migrated = copyExemplarRanges(ce.index, newSlice, ce.exemplars, []intRange{
 			{from: deleteEnd, to: deleteStart},
 		})
 	}
 
-	ce.nextIndex = migrated % int(l)
+	ce.nextIndex = totalCopied % int(l)
 	ce.exemplars = newSlice
 	return migrated
 }
@@ -405,8 +407,9 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	// If we insert an out-of-order exemplar, we preemptively find the insertion
 	// index to check for duplicates.
 	var insertionIndex int
+	var outOfOrder bool
 	if indexExists {
-		outOfOrder := e.Ts >= ce.exemplars[idx.oldest].exemplar.Ts && e.Ts < ce.exemplars[idx.newest].exemplar.Ts
+		outOfOrder = e.Ts >= ce.exemplars[idx.oldest].exemplar.Ts && e.Ts < ce.exemplars[idx.newest].exemplar.Ts
 		if outOfOrder {
 			insertionIndex = ce.findInsertionIndex(e, idx)
 			if ce.exemplars[insertionIndex].exemplar.Ts == e.Ts {
@@ -425,8 +428,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		ce.index[string(seriesLabels)] = idx
 	}
 
-	// Remove entries if the buffer is full. Note that this doesn't invalidate the
-	// insertion index since out-of-order exemplars cannot be the oldest exemplar.
+	// Remove entries if the buffer is full.
 	if prev := &ce.exemplars[ce.nextIndex]; prev.ref != nil {
 		prevRef := prev.ref
 		if ce.removeExemplar(prev) {
@@ -436,6 +438,11 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 			} else {
 				ce.removeIndex(prevRef)
 			}
+		} else if outOfOrder && insertionIndex == ce.nextIndex && prevRef == idx {
+			// The entry we were going to insert after was removed from the same series.
+			// Recalculate the insertion point in the updated linked list to avoid
+			// creating a self-referencing loop.
+			insertionIndex = ce.findInsertionIndex(e, idx)
 		}
 	}
 
@@ -582,20 +589,21 @@ func (e intRange) contains(i int) bool {
 }
 
 // copyExemplarRanges copies non-overlapping ranges from src into dest and
-// adjusts list pointers in dest and index accordingly. Returns the number of
-// copied items.
+// adjusts list pointers in dest and index accordingly. Returns the total
+// number of slots copied (for nextIndex) and the number of non-empty entries
+// migrated.
 func copyExemplarRanges(
 	index map[string]*indexEntry,
 	dest, src []circularBufferEntry,
 	ranges []intRange,
-) int {
+) (totalCopied, migratedEntries int) {
 	offsets := make([]int, len(ranges))
 	n := 0
 	for i, rng := range ranges {
 		offsets[i] = n - rng.from
 		n += copy(dest[n:], src[rng.from:rng.to])
 	}
-	migratedEntries := n
+	migratedEntries = n
 	for di := range n {
 		e := &dest[di]
 		if e.ref == nil {
@@ -631,5 +639,5 @@ func copyExemplarRanges(
 			}
 		}
 	}
-	return migratedEntries
+	return n, migratedEntries
 }
