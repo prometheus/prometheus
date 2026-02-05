@@ -1280,6 +1280,42 @@ const funcDocs: Record<string, React.ReactNode> = {
       </pre>
     </>
   ),
+  histogram_buckets: (
+    <>
+      <p>
+        <code>histogram_buckets(v instant-vector)</code> converts Native Histogram Custom Buckets (NHCB) to classic
+        histogram bucket format. For each NHCB histogram sample in
+        <code>v</code>, it returns multiple series (one per bucket) with the <code>_bucket</code> suffix appended to the
+        metric name and an <code>le</code> label indicating the bucket boundary. Non-NHCB histograms (exponential
+        schema) and float samples are ignored and do not show up in the returned vector.
+      </p>
+
+      <p>
+        Use <code>histogram_buckets</code> to convert NHCB histograms to classic histogram format for compatibility with
+        existing queries:
+      </p>
+
+      <pre>
+        <code>histogram_buckets(http_request_duration_seconds)</code>
+      </pre>
+
+      <p>
+        This returns series like: -{" "}
+        <code>
+          http_request_duration_seconds_bucket{"{"}le=&quot;0.1&quot;{"}"}
+        </code>{" "}
+        with cumulative count up to 0.1 -{" "}
+        <code>
+          http_request_duration_seconds_bucket{"{"}le=&quot;0.5&quot;{"}"}
+        </code>{" "}
+        with cumulative count up to 0.5 -{" "}
+        <code>
+          http_request_duration_seconds_bucket{"{"}le=&quot;+Inf&quot;{"}"}
+        </code>{" "}
+        with total count
+      </p>
+    </>
+  ),
   histogram_count: (
     <>
       <p>

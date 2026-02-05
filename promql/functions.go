@@ -1540,7 +1540,6 @@ func funcHistogramBuckets(vectorVals []Vector, _ Matrix, _ parser.Expressions, e
 			continue
 		}
 
-
 		// Only process NHCB
 		if !histogram.IsCustomBucketsSchema(el.H.Schema) {
 			continue

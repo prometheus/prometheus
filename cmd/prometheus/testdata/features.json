@@ -72,6 +72,7 @@
     "first_over_time": false,
     "floor": true,
     "histogram_avg": true,
+    "histogram_buckets": true,
     "histogram_count": true,
     "histogram_fraction": true,
     "histogram_quantile": true,
