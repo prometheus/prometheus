@@ -11,15 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { FetchFn } from './index';
-import { Matcher } from '../types';
-import { labelMatchersToString } from '../parser';
+import { FetchFn, Matcher, MetricMetadata, labelMatchersToString } from './types';
 import { LRUCache } from 'lru-cache';
-
-export interface MetricMetadata {
-  type: string;
-  help: string;
-}
 
 export interface PrometheusClient {
   labelNames(metricName?: string): Promise<string[]>;
@@ -87,7 +80,7 @@ const serviceUnavailable = 503;
 
 // HTTPPrometheusClient is the HTTP client that should be used to get some information from the different endpoint provided by prometheus.
 export class HTTPPrometheusClient implements PrometheusClient {
-  private readonly lookbackInterval: undefined | number; //12 hours
+  private readonly lookbackInterval: undefined | number;
   private readonly url: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly errorHandler?: (error: any) => void;
