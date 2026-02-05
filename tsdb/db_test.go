@@ -8386,7 +8386,7 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
 
-	// NOTE: We are investigating flaky errors from this compaction on x383 architecture. Compaction panics due to chunk
+	// NOTE: We are investigating flaky errors from this compaction on i386 architecture. Compaction panics due to chunk
 	// mapper fatal error. Recover here to understand the error cause. Leaving panic recovery to test causes deadlock
 	// as t.Cleanup tries to close DB with open locks.
 	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
@@ -8400,7 +8400,14 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 	addSamples(501, 650)
 	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
-	require.NoError(t, db.Compact(ctx))
+
+	// NOTE: We are investigating flaky errors from this compaction on i386 architecture. Compaction panics due to chunk
+	// mapper fatal error. Recover here to understand the error cause. Leaving panic recovery to test causes deadlock
+	// as t.Cleanup tries to close DB with open locks.
+	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
+	require.NotPanics(t, func() {
+		require.NoError(t, db.Compact(ctx))
+	})
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
 
 	// Verify that WBL is empty.
