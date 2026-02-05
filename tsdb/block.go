@@ -425,6 +425,13 @@ func (pb *Block) Size() int64 {
 	return pb.numBytesChunks + pb.numBytesIndex + pb.numBytesTombstone + pb.numBytesMeta
 }
 
+// SetSTStorageEnabled sets whether ST storage is enabled on the block's chunk reader.
+func (pb *Block) SetSTStorageEnabled(enabled bool) {
+	if cr, ok := pb.chunkr.(*chunks.Reader); ok {
+		cr.SetSTStorageEnabled(enabled)
+	}
+}
+
 // ErrClosing is returned when a block is in the process of being closed.
 var ErrClosing = errors.New("block is closing")
 

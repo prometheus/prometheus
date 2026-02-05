@@ -230,6 +230,11 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 	return c, it, err
 }
 
+// STStorageEnabled returns whether ST storage is enabled in the Head.
+func (cr *HeadAndOOOChunkReader) STStorageEnabled() bool {
+	return cr.head.opts.EnableSTStorage.Load()
+}
+
 // ChunkOrIterableWithCopy implements ChunkReaderWithCopy. The special Copy
 // behaviour is only implemented for the in-order head chunk.
 func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {

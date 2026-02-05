@@ -639,6 +639,8 @@ type Reader struct {
 	cs   []io.Closer // Closers for resources behind the byte slices.
 	size int64       // The total size of bytes in the reader.
 	pool chunkenc.Pool
+
+	stStorageEnabled bool
 }
 
 func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
@@ -705,6 +707,16 @@ func (s *Reader) Close() error {
 // Size returns the size of the chunks.
 func (s *Reader) Size() int64 {
 	return s.size
+}
+
+// SetSTStorageEnabled sets whether ST storage is enabled for this reader.
+func (s *Reader) SetSTStorageEnabled(enabled bool) {
+	s.stStorageEnabled = enabled
+}
+
+// STStorageEnabled returns whether ST storage is enabled for this reader.
+func (s *Reader) STStorageEnabled() bool {
+	return s.stStorageEnabled
 }
 
 // ChunkOrIterable returns a chunk from a given reference.

@@ -472,15 +472,17 @@ var ErrClosed = errors.New("db already closed")
 // Current implementation doesn't support concurrency so
 // all API calls should happen in the same go routine.
 type DBReadOnly struct {
-	logger     *slog.Logger
-	dir        string
-	sandboxDir string
-	closers    []io.Closer
-	closed     chan struct{}
+	logger           *slog.Logger
+	dir              string
+	sandboxDir       string
+	closers          []io.Closer
+	closed           chan struct{}
+	stStorageEnabled bool
 }
 
 // OpenDBReadOnly opens DB in the given directory for read only operations.
-func OpenDBReadOnly(dir, sandboxDirRoot string, l *slog.Logger) (*DBReadOnly, error) {
+// stStorageEnabled should be true when reading blocks that may contain ST data.
+func OpenDBReadOnly(dir, sandboxDirRoot string, l *slog.Logger, stStorageEnabled bool) (*DBReadOnly, error) {
 	if _, err := os.Stat(dir); err != nil {
 		return nil, fmt.Errorf("opening the db dir: %w", err)
 	}
@@ -498,10 +500,11 @@ func OpenDBReadOnly(dir, sandboxDirRoot string, l *slog.Logger) (*DBReadOnly, er
 	}
 
 	return &DBReadOnly{
-		logger:     l,
-		dir:        dir,
-		sandboxDir: sandboxDir,
-		closed:     make(chan struct{}),
+		logger:           l,
+		dir:              dir,
+		sandboxDir:       sandboxDir,
+		closed:           make(chan struct{}),
+		stStorageEnabled: stStorageEnabled,
 	}, nil
 }
 
@@ -677,7 +680,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, db.stStorageEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -791,6 +794,7 @@ func (db *DBReadOnly) Block(blockID string, postingsDecoderFactory PostingsDecod
 	if err != nil {
 		return nil, err
 	}
+	block.SetSTStorageEnabled(db.stStorageEnabled)
 	db.closers = append(db.closers, block)
 
 	return block, nil
@@ -1022,6 +1026,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
+	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
@@ -1755,7 +1760,7 @@ func (db *DB) reloadBlocks() (err error) {
 	}()
 
 	db.mtx.RLock()
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.EnableSTStorage)
 	db.mtx.RUnlock()
 	if err != nil {
 		return err
@@ -1855,7 +1860,7 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, stStorageEnabled bool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("find blocks: %w", err)
@@ -1877,6 +1882,7 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 				corrupted[meta.ULID] = err
 				continue
 			}
+			block.SetSTStorageEnabled(stStorageEnabled)
 		}
 		blocks = append(blocks, block)
 	}

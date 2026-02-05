@@ -333,7 +333,7 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 }
 
 func listBlocks(path string, humanReadable bool) error {
-	db, err := tsdb.OpenDBReadOnly(path, "", nil)
+	db, err := tsdb.OpenDBReadOnly(path, "", nil, true)
 	if err != nil {
 		return err
 	}
@@ -388,7 +388,7 @@ func getFormattedBytes(bytes int64, humanReadable bool) string {
 }
 
 func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error) {
-	db, err := tsdb.OpenDBReadOnly(path, "", nil)
+	db, err := tsdb.OpenDBReadOnly(path, "", nil, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -707,7 +707,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 type SeriesSetFormatter func(series storage.SeriesSet) error
 
 func dumpTSDBData(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
-	db, err := tsdb.OpenDBReadOnly(dbDir, sandboxDirRoot, nil)
+	db, err := tsdb.OpenDBReadOnly(dbDir, sandboxDirRoot, nil, true)
 	if err != nil {
 		return err
 	}
@@ -845,7 +845,7 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) int {
+func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string, stStorageEnabled bool) int {
 	var buf []byte
 	info, err := os.Stat(path)
 	if err != nil {
@@ -870,7 +870,7 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 		return checkErr(fmt.Errorf("create output dir: %w", err))
 	}
 
-	return checkErr(backfill(5000, buf, outputDir, humanReadable, quiet, maxBlockDuration, customLabels))
+	return checkErr(backfill(5000, buf, outputDir, humanReadable, quiet, maxBlockDuration, customLabels, stStorageEnabled))
 }
 
 func displayHistogram(dataType string, datas []int, total int) {
