@@ -92,6 +92,11 @@ func testChunkSTHandling(t *testing.T, vt ValueType, chunkFactory func() Chunk) 
 	})
 
 	stTimes := []int64{0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000}
+
+	ts := func(j int) int64 {
+		return int64(1000 * (j + 1))
+	}
+
 	for numberOfSamples := range 5 {
 		samples := make([]triple, numberOfSamples)
 		sampleSTidx := make([]int, numberOfSamples)
@@ -99,7 +104,7 @@ func testChunkSTHandling(t *testing.T, vt ValueType, chunkFactory func() Chunk) 
 			for j := range numberOfSamples {
 				samples[j] = triple{
 					st: stTimes[sampleSTidx[j]],
-					t:  int64(1000 * (j + 1)),
+					t:  ts(j),
 					v:  float64(j) + 0.5,
 				}
 			}
@@ -110,7 +115,7 @@ func testChunkSTHandling(t *testing.T, vt ValueType, chunkFactory func() Chunk) 
 
 			exhausted := true
 			for j := numberOfSamples - 1; j >= 0; j-- {
-				if sampleSTidx[j] < j+2 {
+				if stTimes[sampleSTidx[j]] < ts(j) {
 					sampleSTidx[j]++
 					exhausted = false
 					break
