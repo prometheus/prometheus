@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { HTTPPrometheusClient, CachedPrometheusClient } from './prometheus';
+import { HTTPPrometheusClient, CachedPrometheusClient } from '.';
 
 describe('HTTPPrometheusClient destroy', () => {
   it('should be safe to call destroy multiple times', () => {
