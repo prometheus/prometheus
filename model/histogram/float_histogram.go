@@ -1637,7 +1637,6 @@ func kahanAddBuckets(
 						iSpan--
 						iInSpan = int32(spansA[iSpan].Length)
 						spansA[iSpan].Length++
-						// spansC[iSpan].Length++
 						goto nextLoop
 					case iSpan < len(spansA) && deltaIndex == spansA[iSpan].Offset-1:
 						// Directly before next span, extend next span.
