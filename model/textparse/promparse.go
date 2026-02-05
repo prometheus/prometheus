@@ -228,7 +228,7 @@ func (p *PromParser) Type() ([]byte, model.MetricType) {
 // Unit returns the metric name and unit in the current entry.
 // Must only be called after Next returned a unit entry.
 // The returned byte slices become invalid after the next call to Next.
-func (p *PromParser) Unit() ([]byte, []byte) {
+func (*PromParser) Unit() ([]byte, []byte) {
 	// The Prometheus format does not have units.
 	// Note: This method exists for interface compatibility but is not used in Prometheus text format.
 	return nil, nil

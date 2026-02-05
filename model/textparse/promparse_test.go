@@ -47,21 +47,6 @@ func typeAndUnitLabels(typeAndUnitEnabled bool, enabled, disabled labels.Labels)
 //
 // This problem is elevated for PROM-39 feature.
 //
-// Current metadata handling is semi broken here for this as the (a) is expensive and currently not fully accurate
-// see: https://github.com/prometheus/prometheus/blob/dbf5d01a62249eddcd202303069f6cf7dd3c4a73/scrape/scrape.go#L1916
-//
-// To iterate, we keep it "knowingly" broken behind the feature flag.
-// TODO(bwplotka): Remove this once we fix the problematic case e.g.
-//   - introduce more accurate isSeriesPartOfFamily shared helper or even parser method that tells when new metric family starts
-func todoDetectFamilySwitch(typeAndUnitEnabled bool, expected labels.Labels, brokenTypeInherited model.MetricType) labels.Labels {
-	if typeAndUnitEnabled && brokenTypeInherited != model.MetricTypeUnknown {
-		// Hack for now.
-		b := labels.NewBuilder(expected)
-		b.Set("__type__", string(brokenTypeInherited))
-		return b.Labels()
-	}
-	return expected
-}
 
 func TestPromParse(t *testing.T) {
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
