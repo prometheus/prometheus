@@ -225,6 +225,22 @@ func (v ValueType) ChunkEncodingWithST(st int64) Encoding {
 	}
 }
 
+func (v ValueType) ChunkEncodingWithStoreST(storeST bool) Encoding {
+	switch v {
+	case ValFloat:
+		if storeST {
+			return EncXOROptST
+		}
+		return EncXOR
+	case ValHistogram:
+		return EncHistogram
+	case ValFloatHistogram:
+		return EncFloatHistogram
+	default:
+		return EncNone
+	}
+}
+
 func (v ValueType) NewChunk(storeST bool) (Chunk, error) {
 	switch v {
 	case ValFloat:
