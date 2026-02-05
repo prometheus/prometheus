@@ -31,10 +31,11 @@ const testMaxSize int = 32
 func valEven(pos int) int64 { return int64(pos*2 + 2) } // s[0]=2, s[1]=4, s[2]=6, ..., s[31]=64 - Predictable pre-existing values
 func valOdd(pos int) int64  { return int64(pos*2 + 1) } // s[0]=1, s[1]=3, s[2]=5, ..., s[31]=63 - New values will interject at chosen position because they sort before the pre-existing vals.
 
-func makeEvenSampleSlice(n int, sampleFunc func(ts int64) sample) []sample {
+func makeEvenSampleSlice(n int, sampleFunc func(st, ts int64) sample) []sample {
 	s := make([]sample, n)
 	for i := range n {
-		s[i] = sampleFunc(valEven(i))
+		ts := valEven(i)
+		s[i] = sampleFunc(ts, ts) // Use ts as st for consistency
 	}
 	return s
 }
@@ -43,23 +44,50 @@ func makeEvenSampleSlice(n int, sampleFunc func(ts int64) sample) []sample {
 // - Number of pre-existing samples anywhere from 0 to testMaxSize-1.
 // - Insert new sample before first pre-existing samples, after the last, and anywhere in between.
 // - With a chunk initial capacity of testMaxSize/8 and testMaxSize, which lets us test non-full and full chunks, and chunks that need to expand themselves.
+// - With st=0 and st!=0 to verify ordering is based on sample.t, not sample.st.
 func TestOOOInsert(t *testing.T) {
 	scenarios := map[string]struct {
-		sampleFunc func(ts int64) sample
+		sampleFunc func(st, ts int64) sample
 	}{
-		"float": {
-			sampleFunc: func(ts int64) sample {
-				return sample{t: ts, f: float64(ts)}
+		"float st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, f: float64(ts)}
 			},
 		},
-		"integer histogram": {
-			sampleFunc: func(ts int64) sample {
-				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
+		"float st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, f: float64(ts)}
 			},
 		},
-		"float histogram": {
-			sampleFunc: func(ts int64) sample {
-				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
+		"float st=ts-100": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts - 100, t: ts, f: float64(ts)}
+			},
+		},
+		"float st descending while t ascending": {
+			// st values go in opposite direction of t to ensure ordering is by t
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 1000 - ts, t: ts, f: float64(ts)}
+			},
+		},
+		"integer histogram st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
+			},
+		},
+		"integer histogram st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
+			},
+		},
+		"float histogram st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
+			},
+		},
+		"float histogram st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
 			},
 		},
 	}
@@ -71,7 +99,7 @@ func TestOOOInsert(t *testing.T) {
 }
 
 func testOOOInsert(t *testing.T,
-	sampleFunc func(ts int64) sample,
+	sampleFunc func(st, ts int64) sample,
 ) {
 	for numPreExisting := 0; numPreExisting <= testMaxSize; numPreExisting++ {
 		// For example, if we have numPreExisting 2, then:
@@ -84,19 +112,22 @@ func testOOOInsert(t *testing.T,
 			chunk := NewOOOChunk()
 			chunk.samples = make([]sample, numPreExisting)
 			chunk.samples = makeEvenSampleSlice(numPreExisting, sampleFunc)
-			newSample := sampleFunc(valOdd(insertPos))
+			ts := valOdd(insertPos)
+			newSample := sampleFunc(ts, ts) // Use ts as st for consistency
 			chunk.Insert(newSample.st, newSample.t, newSample.f, newSample.h, newSample.fh)
 
 			var expSamples []sample
 			// Our expected new samples slice, will be first the original samples.
 			for i := 0; i < insertPos; i++ {
-				expSamples = append(expSamples, sampleFunc(valEven(i)))
+				ts := valEven(i)
+				expSamples = append(expSamples, sampleFunc(ts, ts))
 			}
 			// Then the new sample.
 			expSamples = append(expSamples, newSample)
 			// Followed by any original samples that were pushed back by the new one.
 			for i := insertPos; i < numPreExisting; i++ {
-				expSamples = append(expSamples, sampleFunc(valEven(i)))
+				ts := valEven(i)
+				expSamples = append(expSamples, sampleFunc(ts, ts))
 			}
 
 			require.Equal(t, expSamples, chunk.samples, "numPreExisting %d, insertPos %d", numPreExisting, insertPos)
@@ -107,23 +138,50 @@ func testOOOInsert(t *testing.T,
 // TestOOOInsertDuplicate tests the correct behavior when inserting a sample that is a duplicate of any
 // pre-existing samples, with between 1 and testMaxSize pre-existing samples and
 // with a chunk initial capacity of testMaxSize/8 and testMaxSize, which lets us test non-full and full chunks, and chunks that need to expand themselves.
+// With st=0 and st!=0 to verify duplicate detection is based on sample.t, not sample.st.
 func TestOOOInsertDuplicate(t *testing.T) {
 	scenarios := map[string]struct {
-		sampleFunc func(ts int64) sample
+		sampleFunc func(st, ts int64) sample
 	}{
-		"float": {
-			sampleFunc: func(ts int64) sample {
-				return sample{t: ts, f: float64(ts)}
+		"float st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, f: float64(ts)}
 			},
 		},
-		"integer histogram": {
-			sampleFunc: func(ts int64) sample {
-				return sample{t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
+		"float st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, f: float64(ts)}
 			},
 		},
-		"float histogram": {
-			sampleFunc: func(ts int64) sample {
-				return sample{t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
+		"float st=ts-100": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts - 100, t: ts, f: float64(ts)}
+			},
+		},
+		"float st descending while t ascending": {
+			// st values go in opposite direction of t to ensure duplicate detection is by t
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 1000 - ts, t: ts, f: float64(ts)}
+			},
+		},
+		"integer histogram st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
+			},
+		},
+		"integer histogram st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
+			},
+		},
+		"float histogram st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
+			},
+		},
+		"float histogram st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
 			},
 		},
 	}
@@ -135,7 +193,7 @@ func TestOOOInsertDuplicate(t *testing.T) {
 }
 
 func testOOOInsertDuplicate(t *testing.T,
-	sampleFunc func(ts int64) sample,
+	sampleFunc func(st, ts int64) sample,
 ) {
 	for num := 1; num <= testMaxSize; num++ {
 		for dupPos := 0; dupPos < num; dupPos++ {
