@@ -2031,12 +2031,13 @@ func kahanReduceResolution(
 // histogram. However, the bucket values in the compensation histogram are initialized to zero.
 func (h *FloatHistogram) newCompensationHistogram() *FloatHistogram {
 	c := &FloatHistogram{
-		Schema:          h.Schema,
-		ZeroThreshold:   h.ZeroThreshold,
-		CustomValues:    h.CustomValues,
-		PositiveBuckets: make([]float64, len(h.PositiveBuckets)),
-		PositiveSpans:   h.PositiveSpans,
-		NegativeSpans:   h.NegativeSpans,
+		CounterResetHint: h.CounterResetHint,
+		Schema:           h.Schema,
+		ZeroThreshold:    h.ZeroThreshold,
+		CustomValues:     h.CustomValues,
+		PositiveBuckets:  make([]float64, len(h.PositiveBuckets)),
+		PositiveSpans:    h.PositiveSpans,
+		NegativeSpans:    h.NegativeSpans,
 	}
 	if !h.UsesCustomBuckets() {
 		c.NegativeBuckets = make([]float64, len(h.NegativeBuckets))
