@@ -215,3 +215,43 @@ eval instant at 0s sum_over_time(timestamp(timestamp(metric{job="1"} @ 999))[10s
 
 
 clear
+
+# Tests for @ modifier with empty data.
+# Data only at 0s, 10s, 20s. Eval at timestamp with no data.
+load 10s
+  up 1 2 3
+
+# Functions that should return empty results when @ modifier points to timestamp with no data.
+# These were panicking before the fix.
+
+eval instant at 1111111s quantile_over_time(scalar(up) + 1, {__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s predict_linear({__name__="up"}[1h:1m] @ 1111111, 0.1)
+
+eval instant at 1111111s deriv({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s changes({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s resets({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s first_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s last_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s sum_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s avg_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s min_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s max_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s count_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s stddev_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s stdvar_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+eval instant at 1111111s mad_over_time({__name__="up"}[1h:1m] @ 1111111)
+
+clear
