@@ -87,6 +87,9 @@ func (we *WrappedError) Unwrap() error {
 	return we.err
 }
 
+// ErrMultiDoc is returned when a rule file contains multiple YAML documents.
+var ErrMultiDoc = errors.New("multi-document YAML")
+
 // RuleGroups is a set of rule groups that are typically exposed in a file.
 type RuleGroups struct {
 	Groups []RuleGroup `yaml:"groups"`
@@ -355,6 +358,19 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 	if err != nil && !errors.Is(err, io.EOF) {
 		errs = append(errs, err)
 	}
+
+	// Check for additional YAML documents before checking for critical errors.
+	// We need to do this before the early return so we can track if multi-doc is the only issue.
+	var discard any
+	var multiDocErr error
+	err = decoder.Decode(&discard)
+	if err == nil {
+		// Successfully decoded a second document - this is a multi-doc file.
+		multiDocErr = ErrMultiDoc
+	}
+	// If err is io.EOF, there's only one document (expected case).
+	// If err is something else, we ignore it as it's just for detection.
+
 	err = yaml.Unmarshal(content, &node)
 	if err != nil {
 		errs = append(errs, err)
@@ -364,7 +380,12 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 		return nil, errs
 	}
 
-	return &groups, groups.Validate(node, nameValidationScheme)
+	validationErrs := groups.Validate(node, nameValidationScheme)
+	if multiDocErr != nil {
+		validationErrs = append(validationErrs, multiDocErr)
+	}
+
+	return &groups, validationErrs
 }
 
 // ParseFile reads and parses rules from a file.
