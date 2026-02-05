@@ -16,6 +16,7 @@ package annotations
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -319,12 +320,71 @@ func NewPossibleNonCounterLabelInfo(metricName, typeLabel string, pos posrange.P
 	}
 }
 
+type histogramQuantileForcedMonotonicityErr struct {
+	PositionRange                 posrange.PositionRange
+	Err                           error
+	Query                         string
+	minTs, maxTs                  int64
+	minBucket, maxBucket, maxDiff float64
+	count                         int
+}
+
+func (e *histogramQuantileForcedMonotonicityErr) Error() string {
+	if e.Query == "" {
+		return e.Err.Error()
+	}
+	startTime := time.Unix(e.minTs/1000, 0).UTC().Format(time.RFC3339)
+	endTime := time.Unix(e.maxTs/1000, 0).UTC().Format(time.RFC3339)
+	return fmt.Sprintf("%s, from buckets %g to %g, with a max diff of %.2g, over %d samples from %s to %s (%s)", e.Err, e.minBucket, e.maxBucket, e.maxDiff, e.count+1, startTime, endTime, e.PositionRange.StartPosInput(e.Query, 0))
+}
+
+func (e *histogramQuantileForcedMonotonicityErr) Unwrap() error {
+	return e.Err
+}
+
+func (e *histogramQuantileForcedMonotonicityErr) SetQuery(query string) {
+	e.Query = query
+}
+
+func (e *histogramQuantileForcedMonotonicityErr) Merge(other error) error {
+	o := &histogramQuantileForcedMonotonicityErr{}
+	ok := errors.As(other, &o)
+	if !ok {
+		return e
+	}
+	if e.Err.Error() != o.Err.Error() {
+		return e
+	}
+	if e.minTs < o.minTs {
+		o.minTs = e.minTs
+	}
+	if e.maxTs > o.maxTs {
+		o.maxTs = e.maxTs
+	}
+	if e.minBucket < o.minBucket {
+		o.minBucket = e.minBucket
+	}
+	if e.maxBucket > o.maxBucket {
+		o.maxBucket = e.maxBucket
+	}
+	if e.maxDiff > o.maxDiff {
+		o.maxDiff = e.maxDiff
+	}
+	o.count += e.count + 1
+	return o
+}
+
 // NewHistogramQuantileForcedMonotonicityInfo is used when the input (classic histograms) to
 // histogram_quantile needs to be forced to be monotonic.
-func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange) error {
-	return &annoErr{
+func NewHistogramQuantileForcedMonotonicityInfo(metricName string, pos posrange.PositionRange, ts int64, minBucket, maxBucket, maxDiff float64) error {
+	return &histogramQuantileForcedMonotonicityErr{
 		PositionRange: pos,
 		Err:           maybeAddMetricName(HistogramQuantileForcedMonotonicityInfo, metricName),
+		minTs:         ts,
+		maxTs:         ts,
+		minBucket:     minBucket,
+		maxBucket:     maxBucket,
+		maxDiff:       maxDiff,
 	}
 }
 
