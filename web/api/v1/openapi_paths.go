@@ -199,6 +199,34 @@ func (*OpenAPIBuilder) labelValuesPath() *v3.PathItem {
 	}
 }
 
+func (*OpenAPIBuilder) infoLabelsPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("start", "Start timestamp for info labels query.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp for info labels query.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("expr", "PromQL expression to extract identifying labels from.", false, stringSchema(), []example{{"example", "up{job=\"prometheus\"}"}}),
+		queryParamWithExample("metric_match", "Matcher for the info metric name (default: target_info).", false, stringSchema(), []example{{"example", "target_info"}}),
+		queryParamWithExample("limit", "Maximum number of values per label to return.", false, integerSchema(), []example{{"example", 100}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "info-labels",
+			Summary:     "Get info metric labels",
+			Description: "Returns a map of data label names to their values from info metrics.",
+			Tags:        []string{"labels"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("InfoLabelsOutputBody", infoLabelsResponseExamples(), errorResponseExamples(), "Info labels retrieved successfully.", "Error retrieving info labels."),
+		},
+		Post: &v3.Operation{
+			OperationId: "info-labels-post",
+			Summary:     "Get info metric labels",
+			Description: "Returns a map of data label names to their values from info metrics.",
+			Tags:        []string{"labels"},
+			RequestBody: formRequestBodyWithExamples("InfoLabelsPostInputBody", infoLabelsPostExamples(), "Submit an info labels query."),
+			Responses:   responsesWithErrorExamples("InfoLabelsOutputBody", infoLabelsResponseExamples(), errorResponseExamples(), "Info labels retrieved successfully via POST.", "Error retrieving info labels via POST."),
+		},
+	}
+}
+
 func (*OpenAPIBuilder) seriesPath() *v3.PathItem {
 	params := []*v3.Parameter{
 		queryParamWithExample("start", "Start timestamp for series query.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
