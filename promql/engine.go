@@ -3560,7 +3560,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				if aggr.histogramIncrementalMean {
 					if aggr.histogramKahanC != nil {
 						aggr.histogramValue, _, _, _ = aggr.histogramMean.Add(aggr.histogramKahanC)
-						// TODO(crush-on-anechka): handle error returned by Add
+						// Add can theoretically return ErrHistogramsIncompatibleSchema, but at
+						// this stage errors should not occur if earlier KahanAdd calls succeeded.
 					} else {
 						aggr.histogramValue = aggr.histogramMean
 					}
@@ -3568,7 +3569,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					aggr.histogramValue.Div(aggr.groupCount)
 					if aggr.histogramKahanC != nil {
 						aggr.histogramValue, _, _, _ = aggr.histogramValue.Add(aggr.histogramKahanC.Div(aggr.groupCount))
-						// TODO(crush-on-anechka): handle error returned by Add
+						// Add can theoretically return ErrHistogramsIncompatibleSchema, but at
+						// this stage errors should not occur if earlier KahanAdd calls succeeded.
 					}
 				}
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
@@ -3602,7 +3604,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.hasHistogram:
 				if aggr.histogramKahanC != nil {
 					aggr.histogramValue, _, _, _ = aggr.histogramValue.Add(aggr.histogramKahanC)
-					// TODO(crush-on-anechka): handle error returned by Add
+					// Add can theoretically return ErrHistogramsIncompatibleSchema, but at
+					// this stage errors should not occur if earlier KahanAdd calls succeeded.
 				}
 				aggr.histogramValue.Compact(0)
 			default:
