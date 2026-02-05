@@ -54,6 +54,8 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("LabelsOutputBody", b.stringArrayResponseBodySchema())
 	schemas.Set("LabelsPostInputBody", b.labelsPostInputBodySchema())
 	schemas.Set("LabelValuesOutputBody", b.stringArrayResponseBodySchema())
+	schemas.Set("InfoLabelsOutputBody", b.infoLabelsOutputBodySchema())
+	schemas.Set("InfoLabelsPostInputBody", b.infoLabelsPostInputBodySchema())
 
 	// Series schemas.
 	schemas.Set("SeriesOutputBody", b.labelsArrayResponseBodySchema())
@@ -714,6 +716,47 @@ func (*OpenAPIBuilder) labelsPostInputBodySchema() *base.SchemaProxy {
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
 		Description:          "POST request body for labels query.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) infoLabelsOutputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"object"},
+		Description: "Map of label names to their possible values from info metrics.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
+			A: base.CreateSchemaProxy(&base.Schema{
+				Type:  []string{"array"},
+				Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+			}),
+		},
+	}))
+	props.Set("warnings", warningsSchema())
+	props.Set("infos", infosSchema())
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Response body for info labels endpoint.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"status", "data"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) infoLabelsPostInputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2023-07-21T20:00:00.000Z"))
+	props.Set("end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2023-07-21T21:00:00.000Z"))
+	props.Set("expr", stringSchemaWithDescriptionAndExample("Form field: PromQL expression to extract identifying labels from.", "up{job=\"prometheus\"}"))
+	props.Set("metric_match", stringSchemaWithDescriptionAndExample("Form field: Matcher for the info metric name (default: target_info).", "target_info"))
+	props.Set("limit", integerSchemaWithDescriptionAndExample("Form field: Maximum number of values per label to return.", 100))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for info labels query.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Properties:           props,
 	})
