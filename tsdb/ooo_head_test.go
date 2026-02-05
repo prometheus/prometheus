@@ -366,3 +366,87 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 		})
 	}
 }
+
+// TestOOOChunks_ToEncodedChunks_WithST tests ToEncodedChunks with storeST=true and storeST=false for float samples.
+// When storeST=true, st values are preserved; when storeST=false, AtST() returns 0.
+// TODO(@krajorama): Add histogram test cases once ST storage is implemented for histograms.
+func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
+	testCases := map[string]struct {
+		samples []sample
+	}{
+		"floats with st=0": {
+			samples: []sample{
+				{st: 0, t: 1000, f: 43.0},
+				{st: 0, t: 1100, f: 42.0},
+			},
+		},
+		"floats with st=t": {
+			samples: []sample{
+				{st: 1000, t: 1000, f: 43.0},
+				{st: 1100, t: 1100, f: 42.0},
+			},
+		},
+		"floats with st=t-100": {
+			samples: []sample{
+				{st: 900, t: 1000, f: 43.0},
+				{st: 1000, t: 1100, f: 42.0},
+			},
+		},
+		"floats with varying st": {
+			samples: []sample{
+				{st: 500, t: 1000, f: 43.0},
+				{st: 1100, t: 1100, f: 42.0}, // st == t
+				{st: 0, t: 1200, f: 41.0},    // st == 0
+			},
+		},
+	}
+
+	storageScenarios := []struct {
+		name             string
+		storeST          bool
+		expectedEncoding chunkenc.Encoding
+	}{
+		{"storeST=true", true, chunkenc.EncXOROptST},
+		{"storeST=false", false, chunkenc.EncXOR},
+	}
+
+	for name, tc := range testCases {
+		for _, ss := range storageScenarios {
+			t.Run(name+"/"+ss.name, func(t *testing.T) {
+				oooChunk := OOOChunk{}
+				for _, s := range tc.samples {
+					oooChunk.Insert(s.st, s.t, s.f, nil, nil)
+				}
+
+				chunks, err := oooChunk.ToEncodedChunks(ss.storeST, math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				require.Len(t, chunks, 1, "number of chunks")
+
+				c := chunks[0]
+				require.Equal(t, ss.expectedEncoding, c.chunk.Encoding(), "chunk encoding")
+				require.Equal(t, tc.samples[0].t, c.minTime, "chunk minTime")
+				require.Equal(t, tc.samples[len(tc.samples)-1].t, c.maxTime, "chunk maxTime")
+
+				// Verify samples can be read back with correct st and t values.
+				it := c.chunk.Iterator(nil)
+				sampleIndex := 0
+				for it.Next() == chunkenc.ValFloat {
+					gotT, gotF := it.At()
+					gotST := it.AtST()
+
+					if ss.storeST {
+						// When storeST=true, st values should be preserved.
+						require.Equal(t, tc.samples[sampleIndex].st, gotST, "sample %d st", sampleIndex)
+					} else {
+						// When storeST=false, AtST() should return 0.
+						require.Equal(t, int64(0), gotST, "sample %d st should be 0 when storeST=false", sampleIndex)
+					}
+					require.Equal(t, tc.samples[sampleIndex].t, gotT, "sample %d t", sampleIndex)
+					require.Equal(t, tc.samples[sampleIndex].f, gotF, "sample %d f", sampleIndex)
+					sampleIndex++
+				}
+				require.Equal(t, len(tc.samples), sampleIndex, "number of samples")
+			})
+		}
+	}
+}
