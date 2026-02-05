@@ -341,13 +341,14 @@ func TestLoadRegion(t *testing.T) {
 		t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
 		t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
 		t.Setenv("AWS_CONFIG_FILE", "") // Ensure no config file is used
+		t.Setenv("AWS_PROFILE", "")     // Ensure no profile file is used
 
-		region, err := loadRegion(context.Background())
+		region, err := loadRegion(context.Background(), "")
 		require.NoError(t, err)
 		require.Equal(t, randomRegion, region)
 	})
 
-	t.Run("with_config_file", func(t *testing.T) {
+	t.Run("with_config_file_default_profile", func(t *testing.T) {
 		randomRegion := getRandomRegion()
 
 		// Create a temporary AWS config file
@@ -356,11 +357,11 @@ func TestLoadRegion(t *testing.T) {
 
 		configContent := `[default]
 region = ` + randomRegion + `
-output = json
 `
 
-		err := os.WriteFile(configFile, []byte(configContent), 0644)
+		err := os.WriteFile(configFile, []byte(configContent), 0o644)
 		require.NoError(t, err)
+		defer os.Remove(configFile)
 
 		// Set up environment to use the config file
 		t.Setenv("AWS_CONFIG_FILE", configFile)
@@ -368,11 +369,57 @@ output = json
 		t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
 		// Clear any region environment variables to force config file usage
 		t.Setenv("AWS_REGION", "")
+		t.Setenv("AWS_PROFILE", "") // Ensure no profile file is used
 		t.Setenv("AWS_DEFAULT_REGION", "")
 
-		region, err := loadRegion(context.Background())
+		region, err := loadRegion(context.Background(), "")
 		require.NoError(t, err)
 		require.Equal(t, randomRegion, region)
+	})
+
+	t.Run("with_config_file_named_profile", func(t *testing.T) {
+		randomRegion := getRandomRegion()
+
+		// Create a temporary AWS config file
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "config")
+
+		configContent := `[default]
+region = ` + getRandomRegion() + `
+
+[profile ` + randomRegion + `-profile]
+region = ` + randomRegion + `
+`
+
+		err := os.WriteFile(configFile, []byte(configContent), 0o644)
+		require.NoError(t, err)
+		defer os.Remove(configFile)
+
+		// Set up environment to use the config file
+		t.Setenv("AWS_CONFIG_FILE", configFile)
+		t.Setenv("AWS_PROFILE", randomRegion+"-profile")
+		t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
+		// Clear any region environment variables to force config file usage
+		t.Setenv("AWS_REGION", "")
+		t.Setenv("AWS_DEFAULT_REGION", "")
+
+		region, err := loadRegion(context.Background(), "")
+		require.NoError(t, err)
+		require.Equal(t, randomRegion, region)
+	})
+
+	t.Run("with_specified_region", func(t *testing.T) {
+		specifiedRegion := getRandomRegion()
+
+		// Even with environment region set differently, specified region should take precedence
+		t.Setenv("AWS_REGION", getRandomRegion())
+		t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
+
+		region, err := loadRegion(context.Background(), specifiedRegion)
+		require.NoError(t, err)
+		require.Equal(t, specifiedRegion, region)
 	})
 
 	t.Run("imds_fallback", func(t *testing.T) {
@@ -400,11 +447,43 @@ output = json
 		t.Setenv("AWS_REGION", "")
 		t.Setenv("AWS_DEFAULT_REGION", "")
 		t.Setenv("AWS_CONFIG_FILE", "") // Ensure no config file is used
+		t.Setenv("AWS_PROFILE", "")     // Ensure no profile file is used
 		// Point IMDS to our mock server
 		t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", mockIMDS.URL)
 
-		region, err := loadRegion(context.Background())
+		region, err := loadRegion(context.Background(), "")
 		require.NoError(t, err)
 		require.Equal(t, randomRegion, region)
+	})
+
+	t.Run("imds_empty_region", func(t *testing.T) {
+		// Mock IMDS server that returns empty region
+		mockIMDS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Handle instance identity document with empty region
+			if r.URL.Path == "/latest/dynamic/instance-identity/document" {
+				imdsPayload := `{"region": ""}`
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(imdsPayload))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer mockIMDS.Close()
+
+		// Set up environment with no region but valid credentials
+		t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
+		// Unset any existing region
+		t.Setenv("AWS_REGION", "")
+		t.Setenv("AWS_DEFAULT_REGION", "")
+		t.Setenv("AWS_CONFIG_FILE", "") // Ensure no config file is used
+		t.Setenv("AWS_PROFILE", "")     // Ensure no profile file is used
+		// Point IMDS to our mock server
+		t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", mockIMDS.URL)
+
+		_, err := loadRegion(context.Background(), "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get region from IMDS")
 	})
 }

@@ -124,16 +124,10 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	// If region is not set, attempt to load it from the AWS SDK.
-	if c.Region == "" {
-		c.Region, err = loadRegion(context.Background())
-		if err != nil {
-			return fmt.Errorf("could not determine AWS region: %w", err)
-		}
-
-		if c.Region == "" {
-			return errors.New("ec2 sd configuration requires a region")
-		}
+	// Check if the region is set, if not attempt to load it from the AWS SDK.
+	c.Region, err = loadRegion(context.Background(), c.Region)
+	if err != nil {
+		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	for _, f := range c.Filters {

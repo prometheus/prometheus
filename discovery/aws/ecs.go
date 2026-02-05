@@ -136,16 +136,9 @@ func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	// If region is not set, attempt to load it from the AWS SDK.
-	if c.Region == "" {
-		c.Region, err = loadRegion(context.Background())
-		if err != nil {
-			return fmt.Errorf("could not determine AWS region: %w", err)
-		}
-
-		if c.Region == "" {
-			return errors.New("ecs sd configuration requires a region")
-		}
+	c.Region, err = loadRegion(context.Background(), c.Region)
+	if err != nil {
+		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()

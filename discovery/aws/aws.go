@@ -103,17 +103,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 	*c = SDConfig(aux)
 
-	// If region is not set, attempt to load it from the AWS SDK.
 	var err error
-	if c.Region == "" {
-		c.Region, err = loadRegion(context.Background())
-		if err != nil {
-			return fmt.Errorf("could not determine AWS region: %w", err)
-		}
-
-		if c.Region == "" {
-			return errors.New("aws sd configuration requires a region")
-		}
+	c.Region, err = loadRegion(context.Background(), c.Region)
+	if err != nil {
+		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	switch c.Role {
@@ -278,7 +271,11 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 }
 
 // loadRegion finds the region in order: AWS config/env vars ->IMDS.
-func loadRegion(ctx context.Context) (string, error) {
+func loadRegion(ctx context.Context, specifiedRegion string) (string, error) {
+	if specifiedRegion != "" {
+		return specifiedRegion, nil
+	}
+
 	cfg, err := awsConfig.LoadDefaultConfig(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to load AWS config: %w", err)
@@ -293,6 +290,10 @@ func loadRegion(ctx context.Context) (string, error) {
 	region, err := imdsClient.GetRegion(ctx, &imds.GetRegionInput{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get region from IMDS: %w", err)
+	}
+
+	if region.Region == "" {
+		return "", errors.New("region not found in AWS config or IMDS")
 	}
 
 	return region.Region, nil
