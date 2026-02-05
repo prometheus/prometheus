@@ -2183,7 +2183,41 @@ func TestComputeChunkEndTime(t *testing.T) {
 	}
 }
 
+// TestMemSeries_append tests float appending with various storeST/st combinations.
 func TestMemSeries_append(t *testing.T) {
+	scenarios := map[string]struct {
+		storeST bool
+		stFunc  func(ts int64) int64 // Function to compute st from ts
+	}{
+		"storeST=false st=0": {
+			storeST: false,
+			stFunc:  func(_ int64) int64 { return 0 },
+		},
+		"storeST=true st=0": {
+			storeST: true,
+			stFunc:  func(_ int64) int64 { return 0 },
+		},
+		"storeST=true st=ts": {
+			storeST: true,
+			stFunc:  func(ts int64) int64 { return ts },
+		},
+		"storeST=true st=ts-100": {
+			storeST: true,
+			stFunc:  func(ts int64) int64 { return ts - 100 },
+		},
+		"storeST=false st=ts (st ignored)": {
+			storeST: false,
+			stFunc:  func(ts int64) int64 { return ts },
+		},
+	}
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			testMemSeriesAppend(t, scenario.storeST, scenario.stFunc)
+		})
+	}
+}
+
+func testMemSeriesAppend(t *testing.T, storeST bool, stFunc func(ts int64) int64) {
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
@@ -2202,20 +2236,20 @@ func TestMemSeries_append(t *testing.T) {
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
 	// New chunk must correctly be cut at 1000.
-	ok, chunkCreated := s.append(false, 0, 998, 1, 0, cOpts)
+	ok, chunkCreated := s.append(storeST, stFunc(998), 998, 1, 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.True(t, chunkCreated, "first sample created chunk")
 
-	ok, chunkCreated = s.append(false, 0, 999, 2, 0, cOpts)
+	ok, chunkCreated = s.append(storeST, stFunc(999), 999, 2, 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 	s.mmapChunks(chunkDiskMapper)
 
-	ok, chunkCreated = s.append(false, 0, 1000, 3, 0, cOpts)
+	ok, chunkCreated = s.append(storeST, stFunc(1000), 1000, 3, 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.True(t, chunkCreated, "expected new chunk on boundary")
 
-	ok, chunkCreated = s.append(false, 0, 1001, 4, 0, cOpts)
+	ok, chunkCreated = s.append(storeST, stFunc(1001), 1001, 4, 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
@@ -2229,7 +2263,8 @@ func TestMemSeries_append(t *testing.T) {
 	// Fill the range [1000,2000) with many samples. Intermediate chunks should be cut
 	// at approximately 120 samples per chunk.
 	for i := 1; i < 1000; i++ {
-		ok, _ := s.append(false, 0, 1001+int64(i), float64(i), 0, cOpts)
+		ts := 1001 + int64(i)
+		ok, _ := s.append(storeST, stFunc(ts), ts, float64(i), 0, cOpts)
 		require.True(t, ok, "append failed")
 	}
 	s.mmapChunks(chunkDiskMapper)
@@ -2244,7 +2279,41 @@ func TestMemSeries_append(t *testing.T) {
 	}
 }
 
+// TestMemSeries_appendHistogram tests histogram appending with various storeST/st combinations.
 func TestMemSeries_appendHistogram(t *testing.T) {
+	scenarios := map[string]struct {
+		storeST bool
+		stFunc  func(ts int64) int64 // Function to compute st from ts
+	}{
+		"storeST=false st=0": {
+			storeST: false,
+			stFunc:  func(_ int64) int64 { return 0 },
+		},
+		"storeST=true st=0": {
+			storeST: true,
+			stFunc:  func(_ int64) int64 { return 0 },
+		},
+		"storeST=true st=ts": {
+			storeST: true,
+			stFunc:  func(ts int64) int64 { return ts },
+		},
+		"storeST=true st=ts-100": {
+			storeST: true,
+			stFunc:  func(ts int64) int64 { return ts - 100 },
+		},
+		"storeST=false st=ts (st ignored)": {
+			storeST: false,
+			stFunc:  func(ts int64) int64 { return ts },
+		},
+	}
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			testMemSeriesAppendHistogram(t, scenario.storeST, scenario.stFunc)
+		})
+	}
+}
+
+func testMemSeriesAppendHistogram(t *testing.T, storeST bool, stFunc func(ts int64) int64) {
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
@@ -2270,19 +2339,19 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
 	// New chunk must correctly be cut at 1000.
-	ok, chunkCreated := s.appendHistogram(false, 0, 998, histograms[0], 0, cOpts)
+	ok, chunkCreated := s.appendHistogram(storeST, stFunc(998), 998, histograms[0], 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.True(t, chunkCreated, "first sample created chunk")
 
-	ok, chunkCreated = s.appendHistogram(false, 0, 999, histograms[1], 0, cOpts)
+	ok, chunkCreated = s.appendHistogram(storeST, stFunc(999), 999, histograms[1], 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
-	ok, chunkCreated = s.appendHistogram(false, 0, 1000, histograms[2], 0, cOpts)
+	ok, chunkCreated = s.appendHistogram(storeST, stFunc(1000), 1000, histograms[2], 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.True(t, chunkCreated, "expected new chunk on boundary")
 
-	ok, chunkCreated = s.appendHistogram(false, 0, 1001, histograms[3], 0, cOpts)
+	ok, chunkCreated = s.appendHistogram(storeST, stFunc(1001), 1001, histograms[3], 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
@@ -2293,7 +2362,7 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	require.Equal(t, int64(1000), s.headChunks.minTime, "wrong chunk range")
 	require.Equal(t, int64(1001), s.headChunks.maxTime, "wrong chunk range")
 
-	ok, chunkCreated = s.appendHistogram(false, 0, 1002, histogramWithOneMoreBucket, 0, cOpts)
+	ok, chunkCreated = s.appendHistogram(storeST, stFunc(1002), 1002, histogramWithOneMoreBucket, 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "third sample should trigger a re-encoded chunk")
 
