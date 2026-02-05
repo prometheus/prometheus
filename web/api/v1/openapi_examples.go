@@ -534,6 +534,47 @@ func labelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// infoLabelsResponseExamples returns examples for /info_labels response.
+func infoLabelsResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("infoLabels", &base.Example{
+		Summary: "Map of label names to values from info metrics",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string][]string{
+				"version":    {"1.0.0", "2.0.0"},
+				"commit":     {"abc123"},
+				"go_version": {"go1.21.0"},
+			},
+		}),
+	})
+
+	return examples
+}
+
+// infoLabelsPostExamples returns examples for POST /info_labels endpoint.
+func infoLabelsPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("simpleQuery", &base.Example{
+		Summary: "Simple info labels query",
+		Value: createYAMLNode(map[string]any{
+			"metric_match": "target_info",
+		}),
+	})
+
+	examples.Set("queryWithExpr", &base.Example{
+		Summary: "Info labels query with expression",
+		Value: createYAMLNode(map[string]any{
+			"expr":         "up{job=\"prometheus\"}",
+			"metric_match": "target_info",
+		}),
+	})
+
+	return examples
+}
+
 // metadataResponseExamples returns examples for /metadata response.
 func metadataResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
