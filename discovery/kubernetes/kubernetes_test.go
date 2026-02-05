@@ -52,6 +52,7 @@ func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime
 
 // makeDiscoveryWithVersion creates a kubernetes.Discovery instance with the specified kubernetes version for testing.
 func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer string, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
+	//nolint:staticcheck
 	clientset := fake.NewSimpleClientset(objects...)
 	fakeDiscovery, _ := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	fakeDiscovery.FakedServerVersion = &version.Info{GitVersion: k8sVer}
