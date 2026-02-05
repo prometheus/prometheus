@@ -126,6 +126,7 @@ func newTestDB(t testing.TB, opts ...testDBOpt) (db *DB) {
 		db, err = open(o.dir, nil, nil, o.opts, o.rngs, nil)
 	}
 	require.NoError(t, err)
+
 	t.Cleanup(func() {
 		// Always close. DB is safe for close-after-close.
 		require.NoError(t, db.Close())
@@ -8304,16 +8305,22 @@ func testPanicOnApplyConfig(t *testing.T, scenario sampleTypeScenario) {
 
 func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 	t.Parallel()
-	for name, scenario := range sampleTypeScenarios {
-		t.Run(name, func(t *testing.T) {
-			testDiskFillingUpAfterDisablingOOO(t, scenario)
-		})
+	for _, appV2 := range []bool{true, false} {
+		for name, scenario := range sampleTypeScenarios {
+			t.Run(fmt.Sprintf("sample=%v/appV2=%v", name, appV2), func(t *testing.T) {
+				testDiskFillingUpAfterDisablingOOO(t, scenario, func(db *DB, ctx context.Context) storage.LimitedAppenderV1 {
+					if appV2 {
+						return storage.AppenderV2AsLimitedV1(db.AppenderV2(ctx))
+					}
+					return db.Appender(ctx)
+				})
+			})
+		}
 	}
 }
 
-func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenario) {
+func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenario, appenderFn func(db *DB, ctx context.Context) storage.LimitedAppenderV1) {
 	t.Parallel()
-	ctx := context.Background()
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
@@ -8321,10 +8328,14 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()
 
-	series1 := labels.FromStrings("foo", "bar1")
-	var allSamples []chunks.Sample
+	var (
+		ctx        = t.Context()
+		series1    = labels.FromStrings("foo", "bar1")
+		allSamples []chunks.Sample
+	)
+
 	addSamples := func(fromMins, toMins int64) {
-		app := db.Appender(context.Background())
+		app := appenderFn(db, ctx)
 		for m := fromMins; m <= toMins; m++ {
 			ts := m * time.Minute.Milliseconds()
 			_, s, err := scenario.appendFunc(app, series1, ts, ts)
@@ -8367,21 +8378,36 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 		}
 	}
 
-	// Add in-order samples until ready for compaction..
+	// Add in-order samples until ready for compaction.
 	addSamples(301, 500)
 
 	// Check that m-map files gets deleted properly after compactions.
 
 	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
-	require.NoError(t, db.Compact(ctx))
+
+	// NOTE: We are investigating flaky errors from this compaction on i386 architecture. Compaction panics due to chunk
+	// mapper fatal error. Recover here to understand the error cause. Leaving panic recovery to test causes deadlock
+	// as t.Cleanup tries to close DB with open locks.
+	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
+	require.NotPanics(t, func() {
+		require.NoError(t, db.Compact(ctx))
+	})
+
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
 	require.Nil(t, ms.ooo, "OOO mmap chunk was not compacted")
 
 	addSamples(501, 650)
 	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
-	require.NoError(t, db.Compact(ctx))
+
+	// NOTE: We are investigating flaky errors from this compaction on i386 architecture. Compaction panics due to chunk
+	// mapper fatal error. Recover here to understand the error cause. Leaving panic recovery to test causes deadlock
+	// as t.Cleanup tries to close DB with open locks.
+	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
+	require.NotPanics(t, func() {
+		require.NoError(t, db.Compact(ctx))
+	})
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
 
 	// Verify that WBL is empty.
