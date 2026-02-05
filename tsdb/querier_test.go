@@ -764,6 +764,10 @@ type mockSampleIterator struct {
 	idx int
 }
 
+func (it *mockSampleIterator) Encoding() chunkenc.Encoding {
+	return it.s[it.idx].Type().ChunkEncodingWithST(it.s[it.idx].ST())
+}
+
 func (it *mockSampleIterator) Seek(t int64) chunkenc.ValueType {
 	for ; it.idx < len(it.s); it.idx++ {
 		if it.idx != -1 && it.s[it.idx].T() >= t {
