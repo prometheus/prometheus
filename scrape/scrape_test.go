@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/procfs"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -1850,6 +1851,46 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true)
 		})
 	}
+}
+
+/*
+	export bench=appendRefSample && go test ./scrape/... \
+		-run '^$' -bench '^BenchmarkScrapeLoopAppend_RefSampleST$' \
+		-benchtime 2s -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+*/
+func BenchmarkScrapeLoopAppend_RefSampleST(b *testing.B) {
+	parsableText := readTextParseTestMetrics(b) // "237FamsAllTypes"
+	metricsProto := promTextToProto(b, parsableText)
+	contentType := "application/vnd.google.protobuf"
+
+	s := teststorage.New(b, func(opt *tsdb.Options) { opt.EnableMetadataWALRecords = false })
+	sl, _ := newTestScrapeLoop(b, withAppendable(s, true), func(sl *scrapeLoop) { sl.appendMetadataToWAL = false })
+
+	p, err := procfs.Self() // Works only on linux.
+	require.NoError(b, err)
+
+	stat, err := p.Stat()
+	require.NoError(b, err)
+
+	ts := time.Time{}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		app := sl.appender()
+		ts = ts.Add(time.Second)
+		_, _, _, err := app.append(metricsProto, contentType, ts)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := app.Commit(); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	stat2, err := p.Stat()
+	require.NoError(b, err)
+	b.ReportMetric(stat2.CPUTime()-stat.CPUTime(), "procfscpu")
 }
 
 func TestScrapeLoopScrapeAndReport(t *testing.T) {
