@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -25,6 +26,8 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	"github.com/stackitcloud/stackit-sdk-go/core/auth"
+	stackitconfig "github.com/stackitcloud/stackit-sdk-go/core/config"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -34,6 +37,7 @@ import (
 const (
 	stackitLabelPrefix           = model.MetaLabelPrefix + "stackit_"
 	stackitLabelProject          = stackitLabelPrefix + "project"
+	stackitLabelRole             = stackitLabelPrefix + "role"
 	stackitLabelID               = stackitLabelPrefix + "id"
 	stackitLabelName             = stackitLabelPrefix + "name"
 	stackitLabelStatus           = stackitLabelPrefix + "status"
@@ -56,6 +60,12 @@ func init() {
 	discovery.RegisterConfig(&SDConfig{})
 }
 
+// discoveryBase holds shared fields used by different service discovery implementations.
+type discoveryBase struct {
+	httpClient  *http.Client
+	apiEndpoint string
+}
+
 // SDConfig is the configuration for STACKIT based service discovery.
 type SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
@@ -63,6 +73,7 @@ type SDConfig struct {
 	Project               string         `yaml:"project"`
 	RefreshInterval       model.Duration `yaml:"refresh_interval,omitempty"`
 	Port                  int            `yaml:"port,omitempty"`
+	Role                  Role           `yaml:"role"`
 	Region                string         `yaml:"region,omitempty"`
 	Endpoint              string         `yaml:"endpoint,omitempty"`
 	ServiceAccountKey     string         `yaml:"service_account_key,omitempty"`
@@ -73,6 +84,30 @@ type SDConfig struct {
 
 	// For testing only
 	tokenURL string
+}
+
+// Role is the Role of the target resource within the STACKIT Ecosystem.
+type Role string
+
+// The valid options for role.
+const (
+	RoleServer       Role = "server"
+	RolePostgresFlex Role = "postgres_flex"
+)
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	if err := unmarshal((*string)(c)); err != nil {
+		return err
+	}
+	switch *c {
+	case RoleServer:
+		return nil
+	case RolePostgresFlex:
+		return nil
+	default:
+		return fmt.Errorf("unknown role %q", *c)
+	}
 }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -150,5 +185,68 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*refresh.Di
 }
 
 func newRefresher(conf *SDConfig, l *slog.Logger) (refresher, error) {
-	return newServerDiscovery(conf, l)
+	if conf.Role == RoleServer {
+		return newServerDiscovery(conf, l)
+	}
+
+	if conf.Role == RolePostgresFlex {
+		return newPostgresFlexDiscovery(conf, l)
+	}
+
+	return nil, errors.New("unknown STACKIT discovery role")
+}
+
+// setupDiscoveryBase initializes the common components used by service discovery types.
+// It returns a shared discoveryBase struct with the configured HTTP client and API endpoint.
+func setupDiscoveryBase(conf *SDConfig, discoveryDescription string, defaultEndpointFunc func(*SDConfig) string) (*discoveryBase, error) {
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "stackit_sd")
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := conf.Endpoint
+	if endpoint == "" {
+		endpoint = defaultEndpointFunc(conf)
+	}
+
+	servers := stackitconfig.ServerConfigurations{
+		{
+			URL:         endpoint,
+			Description: discoveryDescription,
+		},
+	}
+
+	httpClient := &http.Client{
+		Timeout:   time.Duration(conf.RefreshInterval),
+		Transport: rt,
+	}
+
+	stackitConfiguration := &stackitconfig.Configuration{
+		UserAgent:  userAgent,
+		HTTPClient: httpClient,
+		Servers:    servers,
+		NoAuth:     conf.ServiceAccountKey == "" && conf.ServiceAccountKeyPath == "",
+
+		ServiceAccountKey:     conf.ServiceAccountKey,
+		PrivateKey:            conf.PrivateKey,
+		ServiceAccountKeyPath: conf.ServiceAccountKeyPath,
+		PrivateKeyPath:        conf.PrivateKeyPath,
+		CredentialsFilePath:   conf.CredentialsFilePath,
+	}
+
+	if conf.tokenURL != "" {
+		stackitConfiguration.TokenCustomUrl = conf.tokenURL
+	}
+
+	authRoundTripper, err := auth.SetupAuth(stackitConfiguration)
+	if err != nil {
+		return nil, fmt.Errorf("setting up authentication: %w", err)
+	}
+
+	httpClient.Transport = authRoundTripper
+
+	return &discoveryBase{
+		httpClient:  httpClient,
+		apiEndpoint: conf.Endpoint,
+	}, nil
 }
