@@ -839,6 +839,10 @@ type floatHistogramIterator struct {
 	atFloatHistogramCalled bool
 }
 
+func (*floatHistogramIterator) Encoding() Encoding {
+	return EncFloatHistogram
+}
+
 func (it *floatHistogramIterator) Seek(t int64) ValueType {
 	if it.err != nil {
 		return ValNone

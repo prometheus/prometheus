@@ -416,6 +416,7 @@ type mockSeriesIterator struct {
 	err  func() error
 }
 
+func (*mockSeriesIterator) Encoding() chunkenc.Encoding       { return chunkenc.EncXOR }
 func (m *mockSeriesIterator) Seek(t int64) chunkenc.ValueType { return m.seek(t) }
 func (m *mockSeriesIterator) At() (int64, float64)            { return m.at() }
 func (m *mockSeriesIterator) Next() chunkenc.ValueType        { return m.next() }
@@ -465,6 +466,10 @@ func (it *fakeSeriesIterator) AtT() int64 {
 
 func (*fakeSeriesIterator) AtST() int64 {
 	return 0 // No start timestamps in this fake iterator.
+}
+
+func (*fakeSeriesIterator) Encoding() chunkenc.Encoding {
+	return chunkenc.EncXOR
 }
 
 func (it *fakeSeriesIterator) Next() chunkenc.ValueType {
