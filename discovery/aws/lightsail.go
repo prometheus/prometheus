@@ -113,7 +113,7 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 
 		if c.Region == "" {
-			return errors.New("Lightsail SD configuration requires a region")
+			return errors.New("lightsail sd configuration requires a region")
 		}
 	}
 

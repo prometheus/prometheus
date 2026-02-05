@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery"
 )
 
@@ -111,7 +112,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 
 		if c.Region == "" {
-			return errors.New("AWS SD configuration requires a region")
+			return errors.New("aws sd configuration requires a region")
 		}
 	}
 
@@ -278,7 +279,6 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 
 // loadRegion finds the region in order: AWS config/env vars ->IMDS.
 func loadRegion(ctx context.Context) (string, error) {
-
 	cfg, err := awsConfig.LoadDefaultConfig(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to load AWS config: %w", err)

@@ -143,7 +143,7 @@ func (c *MSKSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 
 		if c.Region == "" {
-			return errors.New("MSK SD configuration requires a region")
+			return errors.New("msk sd configuration requires a region")
 		}
 	}
 

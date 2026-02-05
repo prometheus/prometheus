@@ -316,7 +316,6 @@ func TestMultipleSDConfigsDoNotShareState(t *testing.T) {
 
 // getRandomRegion is a helper to return a pseudo-random AWS region for testing.
 func getRandomRegion() string {
-
 	regions := []string{
 		"us-east-1",
 		"us-east-2",
@@ -346,7 +345,6 @@ func TestLoadRegion(t *testing.T) {
 	})
 
 	t.Run("imds_fallback", func(t *testing.T) {
-
 		randomRegion := getRandomRegion()
 
 		// Mock IMDS server that returns a region

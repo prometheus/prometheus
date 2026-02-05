@@ -132,7 +132,7 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 
 		if c.Region == "" {
-			return errors.New("EC2 SD configuration requires a region")
+			return errors.New("ec2 sd configuration requires a region")
 		}
 	}
 

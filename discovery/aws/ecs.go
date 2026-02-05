@@ -144,7 +144,7 @@ func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 
 		if c.Region == "" {
-			return errors.New("ECS SD configuration requires a region")
+			return errors.New("ecs sd configuration requires a region")
 		}
 	}
 
