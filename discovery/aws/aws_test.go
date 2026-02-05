@@ -19,6 +19,8 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -338,6 +340,35 @@ func TestLoadRegion(t *testing.T) {
 		t.Setenv("AWS_REGION", randomRegion)
 		t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
 		t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
+		t.Setenv("AWS_CONFIG_FILE", "") // Ensure no config file is used
+
+		region, err := loadRegion(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, randomRegion, region)
+	})
+
+	t.Run("with_config_file", func(t *testing.T) {
+		randomRegion := getRandomRegion()
+
+		// Create a temporary AWS config file
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "config")
+
+		configContent := `[default]
+region = ` + randomRegion + `
+output = json
+`
+
+		err := os.WriteFile(configFile, []byte(configContent), 0644)
+		require.NoError(t, err)
+
+		// Set up environment to use the config file
+		t.Setenv("AWS_CONFIG_FILE", configFile)
+		t.Setenv("AWS_ACCESS_KEY_ID", "dummy")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "dummy")
+		// Clear any region environment variables to force config file usage
+		t.Setenv("AWS_REGION", "")
+		t.Setenv("AWS_DEFAULT_REGION", "")
 
 		region, err := loadRegion(context.Background())
 		require.NoError(t, err)
@@ -368,6 +399,7 @@ func TestLoadRegion(t *testing.T) {
 		// Unset any existing region
 		t.Setenv("AWS_REGION", "")
 		t.Setenv("AWS_DEFAULT_REGION", "")
+		t.Setenv("AWS_CONFIG_FILE", "") // Ensure no config file is used
 		// Point IMDS to our mock server
 		t.Setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", mockIMDS.URL)
 
