@@ -459,7 +459,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		r.Enable(features.PromQL, "per_query_lookback_delta")
 		r.Enable(features.PromQL, "subqueries")
 
-		parser.RegisterFeatures(r)
+		parser.RegisterFeatures(r, parser.DefaultOptions())
 	}
 
 	return &Engine{

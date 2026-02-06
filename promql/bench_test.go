@@ -332,13 +332,10 @@ func rangeQueryCases() []benchCase {
 }
 
 func BenchmarkRangeQuery(b *testing.B) {
-	parser.EnableExtendedRangeSelectors = true
-	b.Cleanup(func() {
-		parser.EnableExtendedRangeSelectors = false
-	})
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
 
+	parser.SetDefaultOptions(parser.Options{EnableExtendedRangeSelectors: true})
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,

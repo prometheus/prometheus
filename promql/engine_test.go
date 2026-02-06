@@ -52,8 +52,6 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	// Enable experimental functions testing
-	parser.EnableExperimentalFunctions = true
 	testutil.TolerantVerifyLeak(m)
 }
 
@@ -1508,11 +1506,6 @@ load 10s
 }
 
 func TestExtendedRangeSelectors(t *testing.T) {
-	parser.EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		parser.EnableExtendedRangeSelectors = false
-	})
-
 	engine := newTestEngine(t)
 	storage := promqltest.LoadedStorage(t, `
 	load 10s
@@ -1658,6 +1651,36 @@ func TestExtendedRangeSelectors(t *testing.T) {
 			require.Equal(t, tc.expected, res.Value)
 		})
 	}
+}
+
+// TestParserConfigIsolation ensures the default parser configuration is respected.
+func TestParserConfigIsolation(t *testing.T) {
+	ctx := context.Background()
+	storage := promqltest.LoadedStorage(t, `
+		load 10s
+			metric 1+1x10
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	query := "metric[10s] smoothed"
+	t.Run("engine_with_feature_disabled_rejects", func(t *testing.T) {
+		parser.SetDefaultOptions(parser.Options{EnableExtendedRangeSelectors: false})
+		engine := promql.NewEngine(promql.EngineOpts{MaxSamples: 1000, Timeout: 10 * time.Second})
+		t.Cleanup(func() { _ = engine.Close() })
+		_, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "parse")
+	})
+	t.Run("engine_with_feature_enabled_accepts", func(t *testing.T) {
+		parser.SetDefaultOptions(parser.Options{EnableExtendedRangeSelectors: true})
+		engine := promql.NewEngine(promql.EngineOpts{MaxSamples: 1000, Timeout: 10 * time.Second})
+		t.Cleanup(func() { _ = engine.Close() })
+		q, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
+		require.NoError(t, err)
+		defer q.Close()
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+	})
 }
 
 func TestAtModifier(t *testing.T) {
@@ -3835,6 +3858,12 @@ func (s mockSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 }
 
 func TestEvaluationWithDelayedNameRemovalDisabled(t *testing.T) {
+	parser.SetDefaultOptions(parser.Options{
+		EnableExperimentalFunctions:  true,
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
+		EnableBinopFillModifiers:     true,
+	})
 	opts := promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,

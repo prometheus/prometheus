@@ -320,14 +320,16 @@ type GroupLoader interface {
 }
 
 // FileLoader is the default GroupLoader implementation. It defers to rulefmt.ParseFile
-// and parser.ParseExpr.
+// and parser.ParseExpr and parser.DefaultOptions.
 type FileLoader struct{}
 
 func (FileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
 	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme)
 }
 
-func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
+func (FileLoader) Parse(query string) (parser.Expr, error) {
+	return parser.ParseExpr(query)
+}
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(

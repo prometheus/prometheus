@@ -61,7 +61,10 @@ import (
 	"github.com/prometheus/prometheus/util/documentcli"
 )
 
-var promqlEnableDelayedNameRemoval = false
+var (
+	promqlEnableDelayedNameRemoval = false
+	promtoolParserOpts             parser.Options
+)
 
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
@@ -348,7 +351,7 @@ func main() {
 		for o := range strings.SplitSeq(f, ",") {
 			switch o {
 			case "promql-experimental-functions":
-				parser.EnableExperimentalFunctions = true
+				promtoolParserOpts.EnableExperimentalFunctions = true
 			case "promql-delayed-name-removal":
 				promqlEnableDelayedNameRemoval = true
 			case "":
@@ -358,6 +361,7 @@ func main() {
 			}
 		}
 	}
+	parser.SetDefaultOptions(promtoolParserOpts)
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():

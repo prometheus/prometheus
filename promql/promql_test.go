@@ -40,19 +40,16 @@ func TestEvaluations(t *testing.T) {
 func TestConcurrentRangeQueries(t *testing.T) {
 	stor := teststorage.New(t)
 
+	parser.SetDefaultOptions(parser.Options{
+		EnableExperimentalFunctions:  true,
+		EnableExtendedRangeSelectors: true,
+	})
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
 	}
-	// Enable experimental functions testing
-	parser.EnableExperimentalFunctions = true
-	parser.EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		parser.EnableExperimentalFunctions = false
-		parser.EnableExtendedRangeSelectors = false
-	})
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
 	const interval = 10000 // 10s interval.
