@@ -2542,7 +2542,7 @@ func TestDBReadOnly(t *testing.T) {
 	}
 
 	// Open a read only db and ensure that the API returns the same result as the normal DB.
-	dbReadOnly, err := OpenDBReadOnly(dbDir, "", nil)
+	dbReadOnly, err := OpenDBReadOnly(dbDir, "", nil, false)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, dbReadOnly.Close()) }()
 
@@ -2598,7 +2598,7 @@ func TestDBReadOnly(t *testing.T) {
 func TestDBReadOnlyClosing(t *testing.T) {
 	t.Parallel()
 	sandboxDir := t.TempDir()
-	db, err := OpenDBReadOnly(t.TempDir(), sandboxDir, promslog.New(&promslog.Config{}))
+	db, err := OpenDBReadOnly(t.TempDir(), sandboxDir, promslog.New(&promslog.Config{}), false)
 	require.NoError(t, err)
 	// The sandboxDir was there.
 	require.DirExists(t, db.sandboxDir)
@@ -2637,7 +2637,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	}
 
 	// Flush WAL.
-	db, err := OpenDBReadOnly(dbDir, "", nil)
+	db, err := OpenDBReadOnly(dbDir, "", nil, false)
 	require.NoError(t, err)
 
 	flush := t.TempDir()
@@ -2645,7 +2645,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// Reopen the DB from the flushed WAL block.
-	db, err = OpenDBReadOnly(flush, "", nil)
+	db, err = OpenDBReadOnly(flush, "", nil, false)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 	blocks, err := db.Blocks()
@@ -2693,7 +2693,7 @@ func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
 	spinUpQuerierAndCheck := func(dir, sandboxDir string, chunksCount int) {
 		dBDirHash := dirHash(dir)
 		// Bootstrap a RO db from the same dir and set up a querier.
-		dbReadOnly, err := OpenDBReadOnly(dir, sandboxDir, nil)
+		dbReadOnly, err := OpenDBReadOnly(dir, sandboxDir, nil, false)
 		require.NoError(t, err)
 		require.Equal(t, chunksCount, countChunks(dir))
 		q, err := dbReadOnly.Querier(math.MinInt, math.MaxInt)

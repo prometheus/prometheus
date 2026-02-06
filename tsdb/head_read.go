@@ -444,6 +444,17 @@ type ChunkReaderWithCopy interface {
 	ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error)
 }
 
+// ChunkReaderWithSTStorage is an optional interface that ChunkReaders can
+// implement to indicate whether ST (start time) storage is enabled.
+type ChunkReaderWithSTStorage interface {
+	STStorageEnabled() bool
+}
+
+// STStorageEnabled returns whether ST storage is enabled in the Head.
+func (h *headChunkReader) STStorageEnabled() bool {
+	return h.head.opts.EnableSTStorage.Load()
+}
+
 // ChunkOrIterableWithCopy returns the chunk for the reference number.
 // If the chunk is the in-memory chunk, then it makes a copy and returns the copied chunk, plus the max time of the chunk.
 func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {

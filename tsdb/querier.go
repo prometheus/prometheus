@@ -695,6 +695,15 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 
 func (p *populateWithDelGenericSeriesIterator) Err() error { return p.err }
 
+// stStorageEnabled returns whether ST storage is enabled in the ChunkReader.
+// Returns false if the ChunkReader doesn't implement ChunkReaderWithSTStorage.
+func (p *populateWithDelGenericSeriesIterator) stStorageEnabled() bool {
+	if cr, ok := p.cr.(ChunkReaderWithSTStorage); ok {
+		return cr.STStorageEnabled()
+	}
+	return false
+}
+
 type blockSeriesEntry struct {
 	chunks  ChunkReader
 	blockID ulid.ULID
@@ -885,12 +894,17 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 		st, t    int64
 		err      error
 	)
+	newChunk, err = valueType.NewChunk(p.stStorageEnabled())
+	if err != nil {
+		p.err = fmt.Errorf("create new chunk while re-encoding: %w", err)
+		return false
+	}
+	if app, err = newChunk.Appender(); err != nil {
+		p.err = fmt.Errorf("get chunk appender while re-encoding: %w", err)
+		return false
+	}
 	switch valueType {
 	case chunkenc.ValHistogram:
-		newChunk = chunkenc.NewHistogramChunk()
-		if app, err = newChunk.Appender(); err != nil {
-			break
-		}
 		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
@@ -905,10 +919,6 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			}
 		}
 	case chunkenc.ValFloat:
-		newChunk = chunkenc.NewXORChunk()
-		if app, err = newChunk.Appender(); err != nil {
-			break
-		}
 		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValFloat {
 				err = fmt.Errorf("found value type %v in float chunk", vt)
@@ -920,10 +930,6 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			app.Append(st, t, v)
 		}
 	case chunkenc.ValFloatHistogram:
-		newChunk = chunkenc.NewFloatHistogramChunk()
-		if app, err = newChunk.Appender(); err != nil {
-			break
-		}
 		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValFloatHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
@@ -1000,7 +1006,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
 			cmint = p.currDelIter.AtT()
-			if currentChunk, err = currentValueType.NewChunk(); err != nil {
+			if currentChunk, err = currentValueType.NewChunk(p.stStorageEnabled()); err != nil {
 				break
 			}
 			if app, err = currentChunk.Appender(); err != nil {

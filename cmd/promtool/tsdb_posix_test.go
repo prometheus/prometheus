@@ -53,7 +53,7 @@ func TestTSDBDumpOpenMetricsRoundTripPipe(t *testing.T) {
 	}()
 
 	// Import samples from OM format
-	code := backfillOpenMetrics(pipe, dbDir, false, false, 2*time.Hour, map[string]string{})
+	code := backfillOpenMetrics(pipe, dbDir, false, false, 2*time.Hour, map[string]string{}, false)
 	require.Equal(t, 0, code)
 	db, err := tsdb.Open(dbDir, nil, nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)
