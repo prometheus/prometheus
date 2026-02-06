@@ -557,6 +557,9 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 // trend factor increases the influence. of trends. Algorithm taken from
 // https://en.wikipedia.org/wiki/Exponential_smoothing .
 func funcDoubleExponentialSmoothing(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) < 2 || len(vectorVals[0]) == 0 || len(vectorVals[1]) == 0 || len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 	// The smoothing factor argument.
 	sf := vectorVals[0][0].F
@@ -771,12 +774,18 @@ func funcScalar(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNo
 }
 
 func aggrOverTime(matrixVal Matrix, enh *EvalNodeHelper, aggrFn func(Series) float64) Vector {
+	if len(matrixVal) == 0 {
+		return enh.Out
+	}
 	el := matrixVal[0]
 
 	return append(enh.Out, Sample{F: aggrFn(el)})
 }
 
 func aggrHistOverTime(matrixVal Matrix, enh *EvalNodeHelper, aggrFn func(Series) (*histogram.FloatHistogram, error)) (Vector, error) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	el := matrixVal[0]
 	res, err := aggrFn(el)
 
@@ -785,6 +794,9 @@ func aggrHistOverTime(matrixVal Matrix, enh *EvalNodeHelper, aggrFn func(Series)
 
 // === avg_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations)  ===
 func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	firstSeries := matrixVal[0]
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(getMetricName(firstSeries.Metric), args[0].PositionRange()))
@@ -910,6 +922,9 @@ func funcCountOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, enh 
 
 // === first_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	el := matrixVal[0]
 
 	var f FPoint
@@ -938,6 +953,9 @@ func funcFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *
 
 // === last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	el := matrixVal[0]
 
 	var f FPoint
@@ -964,6 +982,9 @@ func funcLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *E
 
 // === mad_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
@@ -988,6 +1009,9 @@ func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 
 // === ts_of_first_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcTsOfFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	el := matrixVal[0]
 
 	var tf int64 = math.MaxInt64
@@ -1008,6 +1032,9 @@ func funcTsOfFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, e
 
 // === ts_of_last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcTsOfLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	el := matrixVal[0]
 
 	var tf int64
@@ -1042,6 +1069,9 @@ func funcTsOfMinOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions,
 
 // compareOverTime is a helper used by funcMaxOverTime and funcMinOverTime.
 func compareOverTime(matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper, compareFn func(float64, float64) bool, returnTimestamp bool) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
@@ -1082,6 +1112,9 @@ func funcMinOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions, enh
 
 // === sum_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	firstSeries := matrixVal[0]
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(getMetricName(firstSeries.Metric), args[0].PositionRange()))
@@ -1145,6 +1178,9 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 
 // === quantile_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcQuantileOverTime(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) == 0 || len(vectorVals[0]) == 0 || len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	q := vectorVals[0][0].F
 	el := matrixVal[0]
 	if len(el.Floats) == 0 {
@@ -1166,6 +1202,9 @@ func funcQuantileOverTime(vectorVals []Vector, matrixVal Matrix, args parser.Exp
 }
 
 func varianceOverTime(matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
@@ -1461,6 +1500,9 @@ func linearRegression(samples []FPoint, interceptTime int64) (slope, intercept f
 
 // === deriv(node parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcDeriv(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 
 	// No sense in trying to compute a derivative without at least two float points.
@@ -1485,6 +1527,9 @@ func funcDeriv(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalN
 
 // === predict_linear(node parser.ValueTypeMatrix, k parser.ValueTypeScalar) (Vector, Annotations) ===
 func funcPredictLinear(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) == 0 || len(vectorVals[0]) == 0 || len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 	duration := vectorVals[0][0].F
 
@@ -1591,6 +1636,9 @@ func funcHistogramStdVar(vectorVals []Vector, _ Matrix, _ parser.Expressions, en
 
 // === histogram_fraction(lower, upper parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcHistogramFraction(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) < 3 || len(vectorVals[0]) == 0 || len(vectorVals[1]) == 0 {
+		return enh.Out, nil
+	}
 	lower := vectorVals[0][0].F
 	upper := vectorVals[1][0].F
 	inVec := vectorVals[2]
@@ -1636,6 +1684,9 @@ func funcHistogramFraction(vectorVals []Vector, _ Matrix, args parser.Expression
 
 // === histogram_quantile(k parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) < 2 || len(vectorVals[0]) == 0 {
+		return enh.Out, nil
+	}
 	q := vectorVals[0][0].F
 	inVec := vectorVals[1]
 	var annos annotations.Annotations
@@ -1709,6 +1760,9 @@ func pickFirstSampleIndex(floats []FPoint, args parser.Expressions, enh *EvalNod
 
 // === resets(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	floats := matrixVal[0].Floats
 	histograms := matrixVal[0].Histograms
 	resets := 0
@@ -1758,6 +1812,9 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 
 // === changes(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcChanges(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	floats := matrixVal[0].Floats
 	histograms := matrixVal[0].Histograms
 	changes := 0
