@@ -1,5 +1,9 @@
 # Changelog
 
+## main / Unreleased
+
+* [CHANGE] API: Remove deprecated DELETE /api/v1/series endpoint. #17955
+
 ## 3.9.1 / 2026-01-07
 
  - [BUGFIX] Agent: fix crash shortly after startup from invalid type of object. #17802
