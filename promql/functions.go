@@ -1545,14 +1545,22 @@ func funcHistogramBuckets(vectorVals []Vector, _ Matrix, _ parser.Expressions, e
 			continue
 		}
 
+		customValues := el.H.CustomValues
+		if len(customValues) == 0 {
+			continue
+		}
+
 		baseName := el.Metric.Get(model.MetricNameLabel)
 		if baseName == "" {
 			continue
 		}
-
-		customValues := el.H.CustomValues
-		if len(customValues) == 0 {
-			continue
+		if enh.metricsNameWithSuffix == nil {
+			enh.metricsNameWithSuffix = make(map[string]string)
+		}
+		metricNameWithSuffix, ok := enh.metricsNameWithSuffix[baseName]
+		if !ok {
+			metricNameWithSuffix = baseName + "_bucket"
+			enh.metricsNameWithSuffix[baseName] = metricNameWithSuffix
 		}
 
 		positiveBuckets := make([]float64, len(customValues)+1)
@@ -1561,7 +1569,7 @@ func funcHistogramBuckets(vectorVals []Vector, _ Matrix, _ parser.Expressions, e
 
 		for _, span := range el.H.PositiveSpans {
 			idx += int(span.Offset)
-			for i := 0; i < int(span.Length); i++ {
+			for range span.Length {
 				if idx < len(positiveBuckets) {
 					positiveBuckets[idx] = el.H.PositiveBuckets[currIdx]
 					idx++
@@ -1574,7 +1582,7 @@ func funcHistogramBuckets(vectorVals []Vector, _ Matrix, _ parser.Expressions, e
 		for i, val := range customValues {
 			currCount += positiveBuckets[i]
 			builder := labels.NewBuilder(el.Metric)
-			builder.Set(model.MetricNameLabel, baseName+"_bucket")
+			builder.Set(model.MetricNameLabel, metricNameWithSuffix)
 			builder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(val))
 			enh.Out = append(enh.Out, Sample{
 				Metric:   builder.Labels(),
@@ -1586,7 +1594,7 @@ func funcHistogramBuckets(vectorVals []Vector, _ Matrix, _ parser.Expressions, e
 		// Add +Inf bucket with the overflow bucket
 		currCount += positiveBuckets[len(positiveBuckets)-1]
 		builder := labels.NewBuilder(el.Metric)
-		builder.Set(model.MetricNameLabel, baseName+"_bucket")
+		builder.Set(model.MetricNameLabel, metricNameWithSuffix)
 		builder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(math.Inf(1)))
 
 		enh.Out = append(enh.Out, Sample{
