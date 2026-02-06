@@ -61,11 +61,6 @@ func (h *stHeader) setFirstSTChangeOn(pos uint16) {
 	*h |= stHeader(pos & 0x7FF)
 }
 
-func (h stHeader) write(b []byte) {
-	b[2] |= uint8(h)
-	b[0] |= uint8(h>>8) << 3
-}
-
 // nsHeader is a 16 bit header for number of sample (NS) in chunks.
 // Maximum number of samples is 0x7FF (2047).
 type nsHeader uint16
@@ -363,7 +358,6 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 			a.b.writeByte(b)
 		}
 		a.stHeader.setFirstSTKnown()
-		a.stHeader.write(a.b.bytes())
 
 	case 1:
 		buf := make([]byte, binary.MaxVarintLen64)
