@@ -378,7 +378,7 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 			break
 		}
 		// Initialize double delta of st - prev_t.
-		stDiff = a.t - st
+		stDiff = st - a.t
 		sdod := stDiff
 		// Gorilla has a max resolution of seconds, Prometheus milliseconds.
 		// Thus we use higher value range steps with larger bit size.
@@ -435,7 +435,7 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		}
 		a.writeVDelta(v)
 
-		stDiff = a.t - st
+		stDiff = st - a.t
 		if a.stHeader.firstSTChangeOn() == 0 {
 			if a.stHeader.firstSTKnown() {
 				if stDiff == a.stDiff && a.stHeader.firstSTDiffKnown() || st == t && a.stHeader.stEqualsT() {
@@ -598,7 +598,7 @@ func (it *xorOptSTtIterator) Next() ValueType {
 				sdod = int64(bits)
 			}
 			it.stDiff = sdod
-			it.st = it.t - sdod
+			it.st = it.t + sdod
 		}
 
 		it.t += int64(it.tDelta)
@@ -675,7 +675,7 @@ func (it *xorOptSTtIterator) Next() ValueType {
 				it.st = it.t + int64(it.tDelta)
 			} else if it.stHeader.firstSTDiffKnown() {
 				// First ST diff was known and hasn't changed.
-				it.st = it.t - it.stDiff
+				it.st = it.t + it.stDiff
 			}
 			// Otherwise first ST was known and hasn't changed.
 			// Do nothing.
@@ -737,7 +737,7 @@ func (it *xorOptSTtIterator) Next() ValueType {
 			sdod = int64(bits)
 		}
 		it.stDiff += sdod
-		it.st = it.t - it.stDiff
+		it.st = it.t + it.stDiff
 	}
 	it.t += int64(it.tDelta)
 
