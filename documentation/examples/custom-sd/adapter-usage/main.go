@@ -275,13 +275,17 @@ func main() {
 
 	reg := prometheus.NewRegistry()
 	refreshMetrics := prom_discovery.NewRefreshMetrics(reg)
-	metrics, err := prom_discovery.RegisterSDMetrics(reg, refreshMetrics)
+	mechanismMetrics, err := prom_discovery.RegisterSDMetrics(reg, refreshMetrics)
 	if err != nil {
 		logger.Error("failed to register service discovery metrics", "err", err)
 		os.Exit(1)
 	}
+	sdMetrics := &prom_discovery.SDMetrics{
+		MechanismMetrics: mechanismMetrics,
+		RefreshManager:   refreshMetrics,
+	}
 
-	sdAdapter := adapter.NewAdapter(ctx, *outputFile, "exampleSD", disc, logger, metrics, refreshMetrics, reg)
+	sdAdapter := adapter.NewAdapter(ctx, *outputFile, "exampleSD", disc, logger, sdMetrics, reg)
 	sdAdapter.Run()
 
 	<-ctx.Done()

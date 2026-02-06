@@ -746,14 +746,17 @@ func TestHangingNotifier(t *testing.T) {
 		defer cancelSdManager()
 		reg := prometheus.NewRegistry()
 		refreshMetrics := discovery.NewRefreshMetrics(reg)
-		sdMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
+		mechanismMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
 		require.NoError(t, err)
+		sdMetrics := &discovery.SDMetrics{
+			MechanismMetrics: mechanismMetrics,
+			RefreshManager:   refreshMetrics,
+		}
 		sdManager := discovery.NewManager(
 			ctx,
 			promslog.NewNopLogger(),
 			reg,
 			sdMetrics,
-			refreshMetrics,
 			discovery.Name("sd-manager"),
 			discovery.Updatert(sdUpdatert),
 		)

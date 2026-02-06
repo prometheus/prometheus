@@ -70,34 +70,36 @@ func (p *Provider) Config() any {
 
 // CreateAndRegisterSDMetrics registers the metrics needed for SD mechanisms.
 // Does not register the metrics for the Discovery Manager.
-func CreateAndRegisterSDMetrics(reg prometheus.Registerer) (map[string]DiscovererMetrics, RefreshMetricsManager, error) {
+func CreateAndRegisterSDMetrics(reg prometheus.Registerer) (*SDMetrics, error) {
 	// Some SD mechanisms use the "refresh" package, which has its own metrics.
 	refreshSdMetrics := NewRefreshMetrics(reg)
 
 	// Register the metrics specific for each SD mechanism, and the ones for the refresh package.
-	sdMetrics, err := RegisterSDMetrics(reg, refreshSdMetrics)
+	mechanismMetrics, err := RegisterSDMetrics(reg, refreshSdMetrics)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to register service discovery metrics: %w", err)
+		return nil, fmt.Errorf("failed to register service discovery metrics: %w", err)
 	}
 
-	return sdMetrics, refreshSdMetrics, nil
+	return &SDMetrics{
+		MechanismMetrics: mechanismMetrics,
+		RefreshManager:   refreshSdMetrics,
+	}, nil
 }
 
 // NewManager is the Discovery Manager constructor.
-func NewManager(ctx context.Context, logger *slog.Logger, registerer prometheus.Registerer, sdMetrics map[string]DiscovererMetrics, refreshMetrics RefreshMetricsManager, options ...func(*Manager)) *Manager {
+func NewManager(ctx context.Context, logger *slog.Logger, registerer prometheus.Registerer, sdMetrics *SDMetrics, options ...func(*Manager)) *Manager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
 	mgr := &Manager{
-		logger:         logger,
-		syncCh:         make(chan map[string][]*targetgroup.Group),
-		targets:        make(map[poolKey]map[string]*targetgroup.Group),
-		ctx:            ctx,
-		updatert:       5 * time.Second,
-		triggerSend:    make(chan struct{}, 1),
-		registerer:     registerer,
-		sdMetrics:      sdMetrics,
-		refreshMetrics: refreshMetrics,
+		logger:      logger,
+		syncCh:      make(chan map[string][]*targetgroup.Group),
+		targets:     make(map[poolKey]map[string]*targetgroup.Group),
+		ctx:         ctx,
+		updatert:    5 * time.Second,
+		triggerSend: make(chan struct{}, 1),
+		registerer:  registerer,
+		sdMetrics:   sdMetrics,
 	}
 	for _, option := range options {
 		option(mgr)
@@ -190,9 +192,8 @@ type Manager struct {
 	// A registerer for all service discovery metrics.
 	registerer prometheus.Registerer
 
-	metrics        *Metrics
-	sdMetrics      map[string]DiscovererMetrics
-	refreshMetrics RefreshMetricsManager
+	metrics   *Metrics
+	sdMetrics *SDMetrics
 
 	// featureRegistry is used to track which service discovery providers are configured.
 	featureRegistry features.Collector
@@ -260,9 +261,9 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 
-				if m.refreshMetrics != nil {
+				if m.sdMetrics.RefreshManager != nil {
 					if cfg, ok := prov.config.(Config); ok {
-						m.refreshMetrics.DeleteLabelValues(cfg.Name(), s)
+						m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
 					}
 				}
 			}
@@ -285,10 +286,10 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 
 				// Clean up refresh metrics again for subs that are being removed from a provider that is still running.
-				if m.refreshMetrics != nil {
+				if m.sdMetrics.RefreshManager != nil {
 					cfg, ok := prov.config.(Config)
 					if ok {
-						m.refreshMetrics.DeleteLabelValues(cfg.Name(), s)
+						m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
 					}
 				}
 			}
@@ -522,7 +523,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
 			Logger:            m.logger.With("discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
-			Metrics:           m.sdMetrics[typ],
+			Metrics:           m.sdMetrics.MechanismMetrics[typ],
 			SetName:           setName,
 		})
 		if err != nil {

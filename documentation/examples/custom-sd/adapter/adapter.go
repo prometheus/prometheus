@@ -162,12 +162,12 @@ func (a *Adapter) Run() {
 }
 
 // NewAdapter creates a new instance of Adapter.
-func NewAdapter(ctx context.Context, file, name string, d discovery.Discoverer, logger *slog.Logger, sdMetrics map[string]discovery.DiscovererMetrics, refreshMetrics discovery.RefreshMetricsManager, registerer prometheus.Registerer) *Adapter {
+func NewAdapter(ctx context.Context, file, name string, d discovery.Discoverer, logger *slog.Logger, sdMetrics *discovery.SDMetrics, registerer prometheus.Registerer) *Adapter {
 	return &Adapter{
 		ctx:     ctx,
 		disc:    d,
 		groups:  make(map[string]*customSD),
-		manager: discovery.NewManager(ctx, logger, registerer, sdMetrics, refreshMetrics),
+		manager: discovery.NewManager(ctx, logger, registerer, sdMetrics),
 		output:  file,
 		name:    name,
 		logger:  logger,

@@ -232,9 +232,13 @@ func TestWriteOutput(t *testing.T) {
 
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	sdMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
+	mechanismMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
+	sdMetrics := &discovery.SDMetrics{
+		MechanismMetrics: mechanismMetrics,
+		RefreshManager:   refreshMetrics,
+	}
 
-	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil, sdMetrics, refreshMetrics, reg)
+	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil, sdMetrics, reg)
 	require.NoError(t, adapter.writeOutput())
 }
