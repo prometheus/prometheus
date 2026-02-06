@@ -153,6 +153,7 @@ type PromParser struct {
 	builder labels.ScratchBuilder
 	series  []byte
 	text    []byte
+	mfName  []byte // metric family name from TYPE/HELP/UNIT metadata
 	mtype   model.MetricType
 	val     float64
 	ts      int64
@@ -235,6 +236,12 @@ func (p *PromParser) Labels(l *labels.Labels) {
 	s := string(p.series)
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+
+	// Validate that the series belongs to the metric family before using its type.
+	// If the series doesn't belong, reset type to unknown.
+	if len(p.mfName) > 0 && !isSeriesPartOfFamily(metricName, p.mfName, p.mtype) {
+		p.mtype = model.MetricTypeUnknown
+	}
 
 	m := schema.Metadata{
 		Name: metricName,
@@ -335,6 +342,7 @@ func (p *PromParser) Next() (Entry, error) {
 		}
 		switch t {
 		case tType:
+			p.mfName = p.l.b[p.offsets[len(p.offsets)-2]:p.offsets[len(p.offsets)-1]]
 			switch s := yoloString(p.text); s {
 			case "counter":
 				p.mtype = model.MetricTypeCounter
@@ -350,6 +358,7 @@ func (p *PromParser) Next() (Entry, error) {
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
 			}
 		case tHelp:
+			p.mfName = p.l.b[p.offsets[len(p.offsets)-2]:p.offsets[len(p.offsets)-1]]
 			if !utf8.Valid(p.text) {
 				return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
 			}
