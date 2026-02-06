@@ -1654,6 +1654,14 @@ endpoint is `/api/v1/write`. Find more details [here](../storage.md#overview).
 
 *New in v2.33*
 
+## Remote Read
+
+POST /api/v1/read
+
+Prometheus exposes a remote read endpoint that allows external systems (like Thanos or the OpenTelemetry Collector) to read data from the TSDB. The endpoint accepts a Snappy-compressed protocol buffer message.
+
+This endpoint is enabled by default.
+
 ## OTLP Receiver
 
 Prometheus can be configured as a receiver for the OTLP Metrics protocol. This
