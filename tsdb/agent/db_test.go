@@ -225,7 +225,7 @@ func TestCommit(t *testing.T) {
 			require.NoError(t, err)
 			walSeriesCount += len(series)
 
-		case record.Samples:
+		case record.Samples, record.SamplesV2:
 			var samples []record.RefSample
 			samples, err = dec.Samples(rec, samples)
 			require.NoError(t, err)
@@ -361,7 +361,7 @@ func TestRollback(t *testing.T) {
 			require.NoError(t, err)
 			walSeriesCount += len(series)
 
-		case record.Samples:
+		case record.Samples, record.SamplesV2:
 			var samples []record.RefSample
 			samples, err = dec.Samples(rec, samples)
 			require.NoError(t, err)
@@ -1344,7 +1344,7 @@ func readWALSamples(t *testing.T, walDir string) []walSample {
 			series, err := dec.Series(rec, nil)
 			require.NoError(t, err)
 			lastSeries = series[0]
-		case record.Samples:
+		case record.Samples, record.SamplesV2:
 			samples, err = dec.Samples(rec, samples[:0])
 			require.NoError(t, err)
 			for _, s := range samples {
