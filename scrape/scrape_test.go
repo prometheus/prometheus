@@ -4640,22 +4640,25 @@ func testScrapeReportLimit(t *testing.T, appV2 bool) {
 	}
 
 	ctx := t.Context()
-	q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = q.Close() })
-	series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "up"))
+	require.Eventually(t, func() bool {
+		q, err := s.Querier(time.Time{}.UnixNano(), time.Now().UnixNano())
+		require.NoError(t, err)
+		defer q.Close()
+		series := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "up"))
 
-	var found bool
-	for series.Next() {
-		i := series.At().Iterator(nil)
-		for i.Next() == chunkenc.ValFloat {
-			_, v := i.At()
-			require.Equal(t, 1.0, v)
-			found = true
+		var found bool
+		for series.Next() {
+			i := series.At().Iterator(nil)
+			for i.Next() == chunkenc.ValFloat {
+				_, v := i.At()
+				if v != 1.0 {
+					return false
+				}
+				found = true
+			}
 		}
-	}
-
-	require.True(t, found)
+		return found
+	}, 5*time.Second, 100*time.Millisecond, "up metric with value 1.0 not found or contains non-1.0 values")
 }
 
 func TestScrapeUTF8(t *testing.T) {
