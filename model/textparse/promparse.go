@@ -237,12 +237,6 @@ func (p *PromParser) Labels(l *labels.Labels) {
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 
-	// Validate that the series belongs to the metric family before using its type.
-	// If the series doesn't belong, reset type to unknown.
-	if len(p.mfName) > 0 && !isSeriesPartOfFamily(metricName, p.mfName, p.mtype) {
-		p.mtype = model.MetricTypeUnknown
-	}
-
 	m := schema.Metadata{
 		Name: metricName,
 		// NOTE(bwplotka): There is a known case where the type is wrong on a broken exposition
@@ -300,6 +294,22 @@ func (p *PromParser) nextToken() token {
 func (p *PromParser) parseError(exp string, got token) error {
 	e := min(len(p.l.b), p.l.i+1)
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
+}
+
+// validateSeriesBelongsToFamily checks if the current series belongs to the metric family.
+// If not, it resets the type and metric family name to prevent incorrect metadata inheritance.
+func (p *PromParser) validateSeriesBelongsToFamily() bool {
+	if len(p.mfName) == 0 {
+		return true
+	}
+	s := string(p.series)
+	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+	if !isSeriesPartOfFamily(metricName, p.mfName, p.mtype) {
+		p.mtype = model.MetricTypeUnknown
+		p.mfName = nil
+		return false
+	}
+	return true
 }
 
 // Next advances the parser to the next sample.
@@ -390,6 +400,7 @@ func (p *PromParser) Next() (Entry, error) {
 		}
 
 		p.series = p.l.b[p.start:p.l.i]
+		p.validateSeriesBelongsToFamily()
 		return p.parseMetricSuffix(p.nextToken())
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
@@ -403,6 +414,7 @@ func (p *PromParser) Next() (Entry, error) {
 			p.series = p.l.b[p.start:p.l.i]
 			t2 = p.nextToken()
 		}
+		p.validateSeriesBelongsToFamily()
 		return p.parseMetricSuffix(t2)
 
 	default:
