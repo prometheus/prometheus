@@ -24,49 +24,67 @@ const (
 	chunkSTHeaderSize = 1
 )
 
-func writeHeaderFirstSTKnown(b []byte) {
-	b[0] |= 0x80
+// stHeader is a 16 bit header for start time (ST) in chunks.
+// If can store a maximum of 0x7FF (2047) samples before the first ST change.
+type stHeader uint16
+
+// Reserved.
+// func (h stHeader) stEqualsT() bool {
+// 	return (h & 0x8000) != 0
+// }
+// Reserved.
+// func (h *stHeader) setSTEqualsT() {
+// 	*h |= 0x8000
+// }
+
+func (h stHeader) firstSTKnown() bool {
+	return (h & 0x1000) != 0
 }
 
-func writeHeaderFirstSTDiffKnown(b []byte) {
-	b[0] |= 0x40
+func (h *stHeader) setFirstSTKnown() {
+	*h |= 0x1000
 }
 
-// writeHeaderFirstSTChangeOn writes the position of the first ST change to the header.
-// Assumes zero bits before.
-func writeHeaderFirstSTChangeOn(b []byte, firstSTChangeOn uint16) {
-	b[2] |= uint8(firstSTChangeOn)
-	b[0] |= uint8(firstSTChangeOn>>8) << 3
+func (h stHeader) firstSTDiffKnown() bool {
+	return (h & 0x800) != 0
 }
 
-// writeHeaderNumSamples overwrites the current number of samples in the header.
-func writeHeaderNumSamples(b []byte, numSamples uint16) {
-	b[0] = (b[0] & 0xF8) | uint8(numSamples>>8)
-	b[1] = uint8(numSamples)
+func (h *stHeader) setFirstSTDiffKnown() {
+	*h |= 0x800
 }
 
-func readHeaders(b []byte) (stHeader, numSamples uint16) {
+func (h stHeader) firstSTChangeOn() uint16 {
+	return uint16(h) & 0x7FF
+}
+
+func (h *stHeader) setFirstSTChangeOn(pos uint16) {
+	*h |= stHeader(pos & 0x7FF)
+}
+
+func (h stHeader) write(b []byte) {
+	b[2] |= uint8(h)
+	b[0] |= uint8(h>>8) << 3
+}
+
+// nsHeader is a 16 bit header for number of sample (NS) in chunks.
+// Maximum number of samples is 0x7FF (2047).
+type nsHeader uint16
+
+func readNSHeader(b []byte) nsHeader {
+	return nsHeader(b[1]) | nsHeader(b[0]&0x07)<<8
+}
+
+func readHeaders(b []byte) (stHeader, nsHeader) {
 	v := b[0]
-	numSamples = uint16(v&0x07)<<8 | uint16(b[1])
-	stHeader = (uint16(v>>3))<<8 | uint16(b[2])
+	numSamples := nsHeader(v&0x07)<<8 | nsHeader(b[1])
+	stHeader := (stHeader(v>>3))<<8 | stHeader(b[2])
 	return stHeader, numSamples
 }
 
-func readNumSamples(b []byte) uint16 {
-	v := b[0]
-	return uint16(v&0x07)<<8 | uint16(b[1])
-}
-
-func headerHasFirstSTKnown(stHeader uint16) bool {
-	return (stHeader & 0x1000) != 0
-}
-
-func headerHasFirstSTDiffKnown(stHeader uint16) bool {
-	return (stHeader & 0x800) != 0
-}
-
-func headerFirstSTChangeOn(stHeader uint16) uint16 {
-	return stHeader & 0x7FF
+func writeHeaders(b []byte, stHeader stHeader, nsHeader nsHeader) {
+	b[0] = (uint8(stHeader>>8) << 3) | (uint8(nsHeader>>8) & 0x07)
+	b[1] = uint8(nsHeader)
+	b[2] = uint8(stHeader)
 }
 
 // XorOptSTChunk holds XOR enncoded samples with optional start time (ST)
@@ -97,7 +115,7 @@ func (c *XorOptSTChunk) Bytes() []byte {
 
 // NumSamples returns the number of samples in the chunk.
 func (c *XorOptSTChunk) NumSamples() int {
-	return int(readNumSamples(c.b.bytes()))
+	return int(readNSHeader(c.b.bytes()))
 }
 
 // Compact implements the Chunk interface.
@@ -141,10 +159,8 @@ func (c *XorOptSTChunk) Appender() (Appender, error) {
 		leading:  it.leading,
 		trailing: it.trailing,
 
-		numTotal:         it.numTotal,
-		firstSTKnown:     headerHasFirstSTKnown(it.stHeader),
-		firstSTDiffKnown: headerHasFirstSTDiffKnown(it.stHeader),
-		firstSTChangeOn:  headerFirstSTChangeOn(it.stHeader),
+		numTotal: it.numTotal,
+		stHeader: it.stHeader,
 	}
 	return a, nil
 }
@@ -168,17 +184,17 @@ func (c *XorOptSTChunk) Iterator(it Iterator) Iterator {
 }
 
 type xorOptSTAppender struct {
-	b                *bstream
-	numTotal         uint16
-	firstSTChangeOn  uint16
-	firstSTKnown     bool
-	firstSTDiffKnown bool
-	leading          uint8
-	trailing         uint8
-	st, t            int64
-	v                float64
-	stDiff           int64  // Difference between current ST and previous T. Undefined for first sample.
-	tDelta           uint64 // Difference between current T and previous T. Undefined for first sample.
+	b *bstream
+
+	st, t int64
+	v     float64
+
+	stDiff   int64  // Difference between current ST and previous T. Undefined for first sample.
+	tDelta   uint64 // Difference between current T and previous T. Undefined for first sample.
+	numTotal nsHeader
+	stHeader stHeader
+	leading  uint8
+	trailing uint8
 }
 
 func (a *xorOptSTAppender) writeVDelta(v float64) {
@@ -195,9 +211,9 @@ func (*xorOptSTAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, in
 
 type xorOptSTtIterator struct {
 	br       bstreamReader
-	numTotal uint16
+	numTotal nsHeader
 
-	stHeader uint16
+	stHeader stHeader
 	leading  uint8
 	trailing uint8
 
@@ -264,7 +280,7 @@ func (it *xorOptSTtIterator) Reset(b []byte) {
 }
 
 func (a *xorOptSTAppender) Append(st, t int64, v float64) {
-	if st == 0 && a.firstSTChangeOn == 0 && !a.firstSTKnown && !a.firstSTDiffKnown {
+	if st == 0 && a.stHeader == 0 {
 		// Fast path for no ST usage at all.
 		// Same as classic XOR chunk appender.
 
@@ -320,8 +336,7 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		a.v = v
 		a.tDelta = tDelta
 		a.numTotal++
-		binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
-
+		writeHeaders(a.b.bytes(), a.stHeader, a.numTotal)
 		return
 	}
 
@@ -347,8 +362,8 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		for _, b := range buf[:binary.PutVarint(buf, t-st)] {
 			a.b.writeByte(b)
 		}
-		a.firstSTKnown = true
-		writeHeaderFirstSTKnown(a.b.bytes())
+		a.stHeader.setFirstSTKnown()
+		a.stHeader.write(a.b.bytes())
 
 	case 1:
 		buf := make([]byte, binary.MaxVarintLen64)
@@ -357,15 +372,13 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 			a.b.writeByte(b)
 		}
 		a.writeVDelta(v)
-		if a.firstSTKnown && st != 0 && st != a.st {
-			a.firstSTDiffKnown = true
-			writeHeaderFirstSTDiffKnown(a.b.bytes())
+		if st != 0 && st != a.st && a.stHeader.firstSTKnown() {
+			a.stHeader.setFirstSTDiffKnown()
 		}
-		if (a.firstSTKnown && st == 0) || (!a.firstSTKnown && st != 0) {
-			a.firstSTChangeOn = 1
-			writeHeaderFirstSTChangeOn(a.b.bytes(), a.firstSTChangeOn)
+		if (st == 0 && a.stHeader.firstSTKnown()) || (st != 0 && !a.stHeader.firstSTKnown()) {
+			a.stHeader.setFirstSTChangeOn(1)
 		}
-		if !a.firstSTDiffKnown && a.firstSTChangeOn != 1 {
+		if !a.stHeader.firstSTDiffKnown() && a.stHeader.firstSTChangeOn() == 0 {
 			break
 		}
 		// Initialize double delta of st - prev_t.
@@ -427,13 +440,13 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		a.writeVDelta(v)
 
 		stDiff = a.t - st
-		if a.firstSTChangeOn == 0 {
-			if a.firstSTKnown {
-				if a.firstSTDiffKnown && stDiff == a.stDiff {
+		if a.stHeader.firstSTChangeOn() == 0 {
+			if a.stHeader.firstSTKnown() {
+				if stDiff == a.stDiff && a.stHeader.firstSTDiffKnown() {
 					// No stDiff change.
 					break
 				}
-				if !a.firstSTDiffKnown {
+				if !a.stHeader.firstSTDiffKnown() {
 					if st == a.st {
 						// No st change.
 						break
@@ -441,12 +454,10 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 					// This is the first ST diff change, reset the baseline.
 					a.stDiff = 0
 				}
-				a.firstSTChangeOn = a.numTotal
-				writeHeaderFirstSTChangeOn(a.b.bytes(), a.numTotal)
+				a.stHeader.setFirstSTChangeOn(uint16(a.numTotal))
 			} else if st != 0 {
 				// First ST change.
-				a.firstSTChangeOn = a.numTotal
-				writeHeaderFirstSTChangeOn(a.b.bytes(), a.numTotal)
+				a.stHeader.setFirstSTChangeOn(uint16(a.numTotal))
 			}
 		}
 
@@ -482,10 +493,8 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 	a.v = v
 	a.tDelta = tDelta
 	a.stDiff = stDiff
-
 	a.numTotal++
-	// binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
-	writeHeaderNumSamples(a.b.bytes(), a.numTotal)
+	writeHeaders(a.b.bytes(), a.stHeader, a.numTotal)
 }
 
 func (it *xorOptSTtIterator) retErr(err error) ValueType {
@@ -494,7 +503,7 @@ func (it *xorOptSTtIterator) retErr(err error) ValueType {
 }
 
 func (it *xorOptSTtIterator) Next() ValueType {
-	if it.err != nil || it.numRead == it.numTotal {
+	if it.err != nil || it.numRead == uint16(it.numTotal) {
 		return ValNone
 	}
 
@@ -512,7 +521,7 @@ func (it *xorOptSTtIterator) Next() ValueType {
 		it.val = math.Float64frombits(v)
 
 		// Optional ST read.
-		if headerHasFirstSTKnown(it.stHeader) {
+		if it.stHeader.firstSTKnown() {
 			st, err := binary.ReadVarint(&it.br)
 			if err != nil {
 				return it.retErr(err)
@@ -535,7 +544,7 @@ func (it *xorOptSTtIterator) Next() ValueType {
 			return it.retErr(err)
 		}
 
-		if headerHasFirstSTDiffKnown(it.stHeader) || headerFirstSTChangeOn(it.stHeader) == 1 {
+		if it.stHeader.firstSTDiffKnown() || it.stHeader.firstSTChangeOn() == 1 {
 			var d byte
 			// read delta-of-delta
 			for range 4 {
@@ -658,11 +667,11 @@ func (it *xorOptSTtIterator) Next() ValueType {
 		return it.retErr(err)
 	}
 
-	stChangeOn := headerFirstSTChangeOn(it.stHeader)
+	stChangeOn := it.stHeader.firstSTChangeOn()
 	if stChangeOn == 0 || it.numRead < stChangeOn {
 		// No ST change recorded.
-		if headerHasFirstSTKnown(it.stHeader) {
-			if headerHasFirstSTDiffKnown(it.stHeader) {
+		if it.stHeader.firstSTKnown() {
+			if it.stHeader.firstSTDiffKnown() {
 				// First ST diff was known and hasn't changed.
 				it.st = it.t - it.stDiff
 			}
