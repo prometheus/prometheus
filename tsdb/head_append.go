@@ -1860,9 +1860,6 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
-	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
-
 	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.EncHistogram, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
@@ -1873,13 +1870,8 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		recoded  bool
 	)
 
-	if !chunkCreated {
-		// Ignore the previous appender if we continue the current chunk.
-		prevApp = nil
-	}
-
 	// TODO(krajorama): pass ST.
-	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, 0, t, h, false) // false=request a new chunk if needed
+	newChunk, recoded, s.app, _ = s.app.AppendHistogram(0, t, h, false) // false=request a new chunk if needed
 
 	s.lastHistogramValue = h
 	s.lastFloatHistogramValue = nil
@@ -1918,9 +1910,6 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
-	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
-	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
-
 	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.EncFloatHistogram, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
@@ -1931,13 +1920,8 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		recoded  bool
 	)
 
-	if !chunkCreated {
-		// Ignore the previous appender if we continue the current chunk.
-		prevApp = nil
-	}
-
 	// TODO(krajorama): pass ST.
-	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, 0, t, fh, false) // False means request a new chunk if needed.
+	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(0, t, fh, false) // False means request a new chunk if needed.
 
 	s.lastHistogramValue = nil
 	s.lastFloatHistogramValue = fh
