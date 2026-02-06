@@ -331,20 +331,23 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	loadedBlocks         prometheus.GaugeFunc
-	symbolTableSize      prometheus.GaugeFunc
-	reloads              prometheus.Counter
-	reloadsFailed        prometheus.Counter
-	compactionsFailed    prometheus.Counter
-	compactionsTriggered prometheus.Counter
-	compactionsSkipped   prometheus.Counter
-	sizeRetentionCount   prometheus.Counter
-	timeRetentionCount   prometheus.Counter
-	startTime            prometheus.GaugeFunc
-	tombCleanTimer       prometheus.Histogram
-	blocksBytes          prometheus.Gauge
-	maxBytes             prometheus.Gauge
-	retentionDuration    prometheus.Gauge
+	loadedBlocks                    prometheus.GaugeFunc
+	symbolTableSize                 prometheus.GaugeFunc
+	reloads                         prometheus.Counter
+	reloadsFailed                   prometheus.Counter
+	compactionsFailed               prometheus.Counter
+	compactionsTriggered            prometheus.Counter
+	compactionsSkipped              prometheus.Counter
+	sizeRetentionCount              prometheus.Counter
+	timeRetentionCount              prometheus.Counter
+	startTime                       prometheus.GaugeFunc
+	tombCleanTimer                  prometheus.Histogram
+	blocksBytes                     prometheus.Gauge
+	maxBytes                        prometheus.Gauge
+	retentionDuration               prometheus.Gauge
+	staleSeriesCompactionsTriggered prometheus.Counter
+	staleSeriesCompactionsFailed    prometheus.Counter
+	staleSeriesCompactionDuration   prometheus.Histogram
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -429,6 +432,22 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_size_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
 	})
+	m.staleSeriesCompactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_stale_series_compactions_triggered_total",
+		Help: "Total number of triggered stale series compactions.",
+	})
+	m.staleSeriesCompactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_stale_series_compactions_failed_total",
+		Help: "Total number of stale series compactions that failed.",
+	})
+	m.staleSeriesCompactionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:                            "prometheus_tsdb_stale_series_compaction_duration_seconds",
+		Help:                            "Duration of stale series compaction runs.",
+		Buckets:                         prometheus.ExponentialBuckets(1, 2, 14),
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -446,6 +465,9 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.blocksBytes,
 			m.maxBytes,
 			m.retentionDuration,
+			m.staleSeriesCompactionsTriggered,
+			m.staleSeriesCompactionsFailed,
+			m.staleSeriesCompactionDuration,
 		)
 	}
 	return m
@@ -1624,9 +1646,16 @@ func (db *DB) compactHead(head *RangeHead) error {
 	return nil
 }
 
-func (db *DB) CompactStaleHead() error {
+func (db *DB) CompactStaleHead() (err error) {
 	db.cmtx.Lock()
-	defer db.cmtx.Unlock()
+	defer func() {
+		db.cmtx.Unlock()
+		if err != nil {
+			db.metrics.staleSeriesCompactionsFailed.Inc()
+		}
+	}()
+
+	db.metrics.staleSeriesCompactionsTriggered.Inc()
 
 	db.logger.Info("Starting stale series compaction")
 	start := time.Now()
@@ -1666,7 +1695,9 @@ func (db *DB) CompactStaleHead() error {
 	}
 	db.head.RebuildSymbolTable(db.logger)
 
-	db.logger.Info("Ending stale series compaction", "num_series", meta.Stats.NumSeries, "duration", time.Since(start))
+	elapsed := time.Since(start)
+	db.metrics.staleSeriesCompactionDuration.Observe(elapsed.Seconds())
+	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs), "duration", elapsed)
 	return nil
 }
 
