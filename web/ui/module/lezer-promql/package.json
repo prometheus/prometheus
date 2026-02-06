@@ -33,7 +33,7 @@
   "devDependencies": {
     "@lezer/generator": "^1.8.0",
     "@lezer/highlight": "^1.2.3",
-    "@lezer/lr": "^1.4.3",
+    "@lezer/lr": "^1.4.8",
     "@rollup/plugin-node-resolve": "^16.0.3"
   },
   "peerDependencies": {
