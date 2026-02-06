@@ -160,9 +160,13 @@ type RefSeries struct {
 // RefSample is a timestamp/value pair associated with a reference to a series.
 // TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
-	Ref chunks.HeadSeriesRef
-	T   int64
-	V   float64
+	Ref   chunks.HeadSeriesRef
+	ST, T int64
+	V     float64
+
+	// Exaggerated extension of the core struct to debug
+	// https://github.com/prometheus/prometheus/issues/18022#issuecomment-3858987142
+	SomeOtherField1, SomeOtherField2, SomeOtherField3, SomeOtherField4, SomeOtherField5, SomeOtherField6, SomeOtherField7 int64
 }
 
 // RefMetadata is the metadata associated with a series ID.
