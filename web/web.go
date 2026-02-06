@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/felixge/fgprof"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
@@ -111,6 +112,8 @@ const (
 	Ready
 	Stopping
 )
+
+var fgprofHandler = fgprof.Handler()
 
 // withStackTracer logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
@@ -618,6 +621,8 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 		pprof.Symbol(w, req)
 	case "trace":
 		pprof.Trace(w, req)
+	case "fgprof":
+		fgprofHandler.ServeHTTP(w, req)
 	default:
 		req.URL.Path = "/debug/pprof/" + subpath
 		pprof.Index(w, req)
