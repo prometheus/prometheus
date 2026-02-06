@@ -330,7 +330,7 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		a.v = v
 		a.tDelta = tDelta
 		a.numTotal++
-		writeHeaders(a.b.bytes(), a.stHeader, a.numTotal)
+		binary.BigEndian.PutUint16(a.b.bytes(), uint16(a.numTotal))
 		return
 	}
 
