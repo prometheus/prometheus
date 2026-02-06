@@ -248,6 +248,10 @@ type xorIterator struct {
 	err    error
 }
 
+func (*xorIterator) Encoding() Encoding {
+	return EncXOR
+}
+
 func (it *xorIterator) Seek(t int64) ValueType {
 	if it.err != nil {
 		return ValNone

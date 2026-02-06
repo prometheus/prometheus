@@ -76,6 +76,8 @@ type Chunk interface {
 	Bytes() []byte
 
 	// Encoding returns the encoding type of the chunk.
+	// If the chunk is capable of storing ST (start timestamps), it should
+	// return the appropriate encoding type (e.g., EncXOROptST).
 	Encoding() Encoding
 
 	// Appender returns an appender to append samples to the chunk.
@@ -158,6 +160,11 @@ type Iterator interface {
 	// Returns 0 if the start timestamp is not implemented or not set.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	AtST() int64
+	// Encoding returns what encoding to use for storing the current sample.
+	// Only call this as last resort if the encoding is really needed, and
+	// the current chunk isn't accessible otherwise.
+	// Before the iterator has advanced, the behaviour is unspecified.
+	Encoding() Encoding
 	// Err returns the current error. It should be used only after the
 	// iterator is exhausted, i.e. `Next` or `Seek` have returned ValNone.
 	Err() error
@@ -202,13 +209,50 @@ func (v ValueType) ChunkEncoding() Encoding {
 	}
 }
 
-func (v ValueType) NewChunk() (Chunk, error) {
+func (v ValueType) ChunkEncodingWithST(st int64) Encoding {
 	switch v {
 	case ValFloat:
+		if st != 0 {
+			return EncXOROptST
+		}
+		return EncXOR
+	case ValHistogram:
+		return EncHistogram
+	case ValFloatHistogram:
+		return EncFloatHistogram
+	default:
+		return EncNone
+	}
+}
+
+func (v ValueType) ChunkEncodingWithStoreST(storeST bool) Encoding {
+	switch v {
+	case ValFloat:
+		if storeST {
+			return EncXOROptST
+		}
+		return EncXOR
+	case ValHistogram:
+		return EncHistogram
+	case ValFloatHistogram:
+		return EncFloatHistogram
+	default:
+		return EncNone
+	}
+}
+
+func (v ValueType) NewChunk(storeST bool) (Chunk, error) {
+	switch v {
+	case ValFloat:
+		if storeST {
+			return NewXOROptSTChunk(), nil
+		}
 		return NewXORChunk(), nil
 	case ValHistogram:
+		// TODO(krajorama): return a ST capable histogram chunk when they are supported.
 		return NewHistogramChunk(), nil
 	case ValFloatHistogram:
+		// TODO(krajorama): return a ST capable float histogram chunk when they are supported.
 		return NewFloatHistogramChunk(), nil
 	default:
 		return nil, fmt.Errorf("value type %v unsupported", v)
@@ -233,6 +277,13 @@ type mockSeriesIterator struct {
 	startTimestamps []int64
 	values          []float64
 	currIndex       int
+}
+
+func (it *mockSeriesIterator) Encoding() Encoding {
+	if it.AtST() != 0 {
+		return EncXOROptST
+	}
+	return EncXOR
 }
 
 func (*mockSeriesIterator) Seek(int64) ValueType { return ValNone }
@@ -277,6 +328,7 @@ func NewNopIterator() Iterator {
 
 type nopIterator struct{}
 
+func (nopIterator) Encoding() Encoding   { return EncNone }
 func (nopIterator) Next() ValueType      { return ValNone }
 func (nopIterator) Seek(int64) ValueType { return ValNone }
 func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
@@ -399,9 +451,12 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 }
 
 // NewEmptyChunk returns an empty chunk for the given encoding.
-func NewEmptyChunk(e Encoding) (Chunk, error) {
+func NewEmptyChunk(e Encoding, storeST bool) (Chunk, error) {
 	switch e {
 	case EncXOR:
+		if storeST {
+			return NewXOROptSTChunk(), nil
+		}
 		return NewXORChunk(), nil
 	case EncHistogram:
 		return NewHistogramChunk(), nil

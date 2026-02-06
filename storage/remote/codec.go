@@ -564,6 +564,22 @@ func (c *concreteSeriesIterator) AtT() int64 {
 	return c.series.floats[c.floatsCur].Timestamp
 }
 
+// TODO(krajorama): implement Encoding() with ST. Maybe. concreteSeriesIterator
+// is used for turning query results into an iterable, but query results do not
+// have ST.
+func (c *concreteSeriesIterator) Encoding() chunkenc.Encoding {
+	switch c.curValType {
+	case chunkenc.ValFloat:
+		return chunkenc.EncXOR
+	case chunkenc.ValHistogram:
+		return chunkenc.EncHistogram
+	case chunkenc.ValFloatHistogram:
+		return chunkenc.EncFloatHistogram
+	default:
+		return chunkenc.EncNone
+	}
+}
+
 // TODO(krajorama): implement AtST. Maybe. concreteSeriesIterator is used
 // for turning query results into an iterable, but query results do not have ST.
 func (*concreteSeriesIterator) AtST() int64 {
@@ -820,6 +836,10 @@ func (it *chunkedSeriesIterator) reset(chunks []prompb.Chunk, mint, maxt int64) 
 	if len(chunks) > 0 {
 		it.resetIterator()
 	}
+}
+
+func (it *chunkedSeriesIterator) Encoding() chunkenc.Encoding {
+	return it.cur.Encoding()
 }
 
 func (it *chunkedSeriesIterator) At() (ts int64, v float64) {

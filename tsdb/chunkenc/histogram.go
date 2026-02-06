@@ -898,6 +898,10 @@ type histogramIterator struct {
 	err error
 }
 
+func (*histogramIterator) Encoding() Encoding {
+	return EncHistogram
+}
+
 func (it *histogramIterator) Seek(t int64) ValueType {
 	if it.err != nil {
 		return ValNone

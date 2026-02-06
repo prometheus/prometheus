@@ -115,8 +115,9 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	}()
 
 	wg.Add(concurrency)
+	storeST := h.opts.EnableSTStorage.Load()
 	for i := range concurrency {
-		processors[i].setup()
+		processors[i].setup(storeST)
 
 		go func(wp *walSubsetProcessor) {
 			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
@@ -576,6 +577,7 @@ type walSubsetProcessor struct {
 	input            chan walSubsetProcessorInputItem
 	output           chan []record.RefSample
 	histogramsOutput chan []histogramRecord
+	storeST          bool
 }
 
 type walSubsetProcessorInputItem struct {
@@ -586,10 +588,11 @@ type walSubsetProcessorInputItem struct {
 	deletedSeriesRefs []chunks.HeadSeriesRef
 }
 
-func (wp *walSubsetProcessor) setup() {
+func (wp *walSubsetProcessor) setup(storeST bool) {
 	wp.input = make(chan walSubsetProcessorInputItem, 300)
 	wp.output = make(chan []record.RefSample, 300)
 	wp.histogramsOutput = make(chan []histogramRecord, 300)
+	wp.storeST = storeST
 }
 
 func (wp *walSubsetProcessor) closeAndDrain() {
@@ -666,7 +669,8 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				h.numStaleSeries.Dec()
 			}
 
-			if _, chunkCreated := ms.append(s.T, s.V, 0, appendChunkOpts); chunkCreated {
+			// TODO(krajorama,ywwg): Pass ST when available in WBL.
+			if _, chunkCreated := ms.append(wp.storeST, 0, s.T, s.V, 0, appendChunkOpts); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
 				_ = ms.mmapChunks(h.chunkDiskMapper)
@@ -703,14 +707,16 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastHistogramValue.Sum)
 					staleToNonStale = value.IsStaleNaN(ms.lastHistogramValue.Sum) && !value.IsStaleNaN(s.h.Sum)
 				}
-				_, chunkCreated = ms.appendHistogram(s.t, s.h, 0, appendChunkOpts)
+				// TODO(krajorama,ywwg): Pass ST when available in WBL.
+				_, chunkCreated = ms.appendHistogram(wp.storeST, 0, s.t, s.h, 0, appendChunkOpts)
 			} else {
 				newlyStale = value.IsStaleNaN(s.fh.Sum)
 				if ms.lastFloatHistogramValue != nil {
 					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastFloatHistogramValue.Sum)
 					staleToNonStale = value.IsStaleNaN(ms.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.fh.Sum)
 				}
-				_, chunkCreated = ms.appendFloatHistogram(s.t, s.fh, 0, appendChunkOpts)
+				// TODO(krajorama,ywwg): Pass ST when available in WBL.
+				_, chunkCreated = ms.appendFloatHistogram(wp.storeST, 0, s.t, s.fh, 0, appendChunkOpts)
 			}
 			if newlyStale {
 				h.numStaleSeries.Inc()
@@ -779,8 +785,9 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	}()
 
 	wg.Add(concurrency)
+	storeST := h.opts.EnableSTStorage.Load()
 	for i := range concurrency {
-		processors[i].setup()
+		processors[i].setup(storeST)
 
 		go func(wp *wblSubsetProcessor) {
 			missingSeries, unknownSamples, unknownHistograms := wp.processWBLSamples(h)
@@ -1025,6 +1032,7 @@ type wblSubsetProcessor struct {
 	input            chan wblSubsetProcessorInputItem
 	output           chan []record.RefSample
 	histogramsOutput chan []histogramRecord
+	storeST          bool
 }
 
 type wblSubsetProcessorInputItem struct {
@@ -1033,10 +1041,11 @@ type wblSubsetProcessorInputItem struct {
 	histogramSamples []histogramRecord
 }
 
-func (wp *wblSubsetProcessor) setup() {
+func (wp *wblSubsetProcessor) setup(storeST bool) {
 	wp.output = make(chan []record.RefSample, 300)
 	wp.histogramsOutput = make(chan []histogramRecord, 300)
 	wp.input = make(chan wblSubsetProcessorInputItem, 300)
+	wp.storeST = storeST
 }
 
 func (wp *wblSubsetProcessor) closeAndDrain() {
@@ -1096,7 +1105,8 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 				missingSeries[s.Ref] = struct{}{}
 				continue
 			}
-			ok, chunkCreated, _ := ms.insert(s.T, s.V, nil, nil, h.chunkDiskMapper, oooCapMax, h.logger)
+			// TODO(krajorama,ywwg): Pass ST when available in WBL.
+			ok, chunkCreated, _ := ms.insert(wp.storeST, 0, s.T, s.V, nil, nil, h.chunkDiskMapper, oooCapMax, h.logger)
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
@@ -1124,9 +1134,11 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 			var chunkCreated bool
 			var ok bool
 			if s.h != nil {
-				ok, chunkCreated, _ = ms.insert(s.t, 0, s.h, nil, h.chunkDiskMapper, oooCapMax, h.logger)
+				// TODO(krajorama,ywwg): Pass ST when available in WBL.
+				ok, chunkCreated, _ = ms.insert(wp.storeST, 0, s.t, 0, s.h, nil, h.chunkDiskMapper, oooCapMax, h.logger)
 			} else {
-				ok, chunkCreated, _ = ms.insert(s.t, 0, nil, s.fh, h.chunkDiskMapper, oooCapMax, h.logger)
+				// TODO(krajorama,ywwg): Pass ST when available in WBL.
+				ok, chunkCreated, _ = ms.insert(wp.storeST, 0, s.t, 0, nil, s.fh, h.chunkDiskMapper, oooCapMax, h.logger)
 			}
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
