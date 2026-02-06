@@ -262,6 +262,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'histogram_buckets',
+    detail: 'function',
+    info: 'Convert a native histogram with custom buckets (NHCB) to classic histogram bucket series',
+    type: 'function',
+  },
+  {
     label: 'double_exponential_smoothing',
     detail: 'function',
     info: 'Calculate smoothed value of input series',

@@ -47,6 +47,7 @@ import {
   HistogramStdDev,
   HistogramStdVar,
   HistogramSum,
+  HistogramBuckets,
   DoubleExponentialSmoothing,
   Hour,
   Idelta,
@@ -320,6 +321,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [HistogramSum]: {
     name: 'histogram_sum',
+    argTypes: [ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [HistogramBuckets]: {
+    name: 'histogram_buckets',
     argTypes: [ValueType.vector],
     variadic: 0,
     returnType: ValueType.vector,

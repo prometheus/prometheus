@@ -56,6 +56,12 @@ export const functionSignatures: Record<string, Func> = {
   first_over_time: { name: "first_over_time", argTypes: [valueType.matrix], variadic: 0, returnType: valueType.vector },
   floor: { name: "floor", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   histogram_avg: { name: "histogram_avg", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
+  histogram_buckets: {
+    name: "histogram_buckets",
+    argTypes: [valueType.vector],
+    variadic: 0,
+    returnType: valueType.vector,
+  },
   histogram_count: { name: "histogram_count", argTypes: [valueType.vector], variadic: 0, returnType: valueType.vector },
   histogram_fraction: {
     name: "histogram_fraction",

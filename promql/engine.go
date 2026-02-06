@@ -1202,6 +1202,7 @@ type EvalNodeHelper struct {
 	// funcHistogramQuantile and funcHistogramFraction for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
 	nativeHistogramSamples       []Sample
+	metricsNameWithSuffix        map[string]string
 
 	lb           *labels.Builder
 	lblBuf       []byte

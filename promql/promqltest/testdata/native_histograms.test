@@ -1872,3 +1872,65 @@ eval instant at 1m irate(nhcb_add_bucket[2m]) * 60
     expect no_warn
     expect no_info
     {} {{schema:-53 sum:56 count:15 custom_values:[2 3 4 6] buckets:[1 0 1 5 8] counter_reset_hint:gauge}}
+
+clear
+
+# Test histogram_buckets function with NHCB
+load 1m
+	nhcb_metric {{schema:-53 sum:55 count:15 custom_values:[2 4 6] buckets:[1 2 5 7]}}
+
+eval instant at 1m histogram_buckets(nhcb_metric)
+	expect no_warn
+	nhcb_metric_bucket{le="2.0"} 1
+    nhcb_metric_bucket{le="4.0"} 3
+	nhcb_metric_bucket{le="6.0"} 8
+	nhcb_metric_bucket{le="+Inf"} 15
+
+clear
+
+# Test histogram_buckets function with NHCB and empty buckets
+load 1m
+	nhcb_metric {{schema:-53 sum:2 count:2 custom_values:[2 4 6] buckets:[1 0 0 1]}}
+
+eval instant at 1m histogram_buckets(nhcb_metric)
+	expect no_warn
+	nhcb_metric_bucket{le="2.0"} 1
+    nhcb_metric_bucket{le="4.0"} 1
+	nhcb_metric_bucket{le="6.0"} 1
+	nhcb_metric_bucket{le="+Inf"} 2
+
+clear
+
+# Test histogram_buckets with multiple NHCB series
+load 1m
+	nhcb_metric1 {{schema:-53 sum:10 count:5 custom_values:[1 2] buckets:[2 1 2]}}
+	nhcb_metric2 {{schema:-53 sum:20 count:10 custom_values:[5 10] buckets:[3 4 3]}}
+
+eval instant at 1m histogram_buckets(nhcb_metric1)
+	expect no_warn
+	nhcb_metric1_bucket{le="1.0"} 2
+	nhcb_metric1_bucket{le="2.0"} 3
+	nhcb_metric1_bucket{le="+Inf"} 5
+
+eval instant at 1m histogram_buckets(nhcb_metric2)
+	expect no_warn
+	nhcb_metric2_bucket{le="5.0"} 3
+	nhcb_metric2_bucket{le="10.0"} 7
+	nhcb_metric2_bucket{le="+Inf"} 10
+
+clear
+
+# Test histogram_buckets ignores non-NHCB histograms
+load 1m
+	nhcb_metric {{schema:-53 sum:10 count:5 custom_values:[1 2] buckets:[2 1 2]}}
+	regular_histogram {{schema:0 sum:10 count:5 buckets:[1 2 2]}}
+
+eval instant at 1m histogram_buckets(nhcb_metric)
+	expect no_warn
+	nhcb_metric_bucket{le="1.0"} 2
+	nhcb_metric_bucket{le="2.0"} 3
+    nhcb_metric_bucket{le="+Inf"} 5
+
+eval instant at 1m histogram_buckets(regular_histogram)
+	expect no_warn
+
