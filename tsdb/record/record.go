@@ -163,6 +163,13 @@ type RefSample struct {
 	Ref chunks.HeadSeriesRef
 	T   int64
 	V   float64
+
+	// Exaggerated extension of the core struct to debug
+	// https://github.com/prometheus/prometheus/issues/18022#issuecomment-3858987142
+	//
+	// This time, moving to the end of the struct, would it make a difference?
+	ST                                                int64
+	SomeOtherField1, SomeOtherField2, SomeOtherField3 int64
 }
 
 // RefMetadata is the metadata associated with a series ID.
