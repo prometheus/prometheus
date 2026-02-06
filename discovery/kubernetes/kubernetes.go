@@ -194,7 +194,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 	foundSelectorRoles := make(map[Role]struct{})
 	allowedSelectors := map[Role][]string{
-		RolePod:           {string(RolePod)},
+		RolePod:           {string(RolePod), string(RoleNode)},
 		RoleService:       {string(RoleService)},
 		RoleEndpointSlice: {string(RolePod), string(RoleService), string(RoleEndpointSlice)},
 		RoleEndpoint:      {string(RolePod), string(RoleService), string(RoleEndpoint)},
