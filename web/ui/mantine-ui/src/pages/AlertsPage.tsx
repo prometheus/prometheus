@@ -20,7 +20,7 @@ import badgeClasses from "../Badge.module.css";
 import panelClasses from "../Panel.module.css";
 import RuleDefinition from "../components/RuleDefinition";
 import { humanizeDurationRelative, now } from "../lib/formatTime";
-import { Fragment, useEffect, useMemo } from "react";
+import { ChangeEvent, Fragment, useEffect, useMemo, useState } from "react";
 import { StateMultiSelect } from "../components/StateMultiSelect";
 import { IconInfoCircle, IconSearch } from "@tabler/icons-react";
 import { LabelBadges } from "../components/LabelBadges";
@@ -29,7 +29,6 @@ import { useSettings } from "../state/settingsSlice";
 import {
   ArrayParam,
   NumberParam,
-  StringParam,
   useQueryParam,
   withDefault,
 } from "use-query-params";
@@ -39,6 +38,7 @@ import { inputIconStyle } from "../styles";
 import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
 import classes from "./AlertsPage.module.css";
 import { Accordion } from "../components/Accordion";
+import { useSearchParams } from "react-router-dom";
 
 type AlertsPageData = {
   // How many rules are in each state across all groups.
@@ -168,10 +168,34 @@ export default function AlertsPage() {
     "state",
     withDefault(ArrayParam, emptyStateFilter)
   );
-  const [searchFilter, setSearchFilter] = useQueryParam(
-    "search",
-    withDefault(StringParam, "")
-  );
+  const [search, setSearch] = useState("");
+
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const searchFilter = useMemo(() => {
+    return searchParams.get("search") || "";
+  }, [searchParams]);
+
+  const setSearchFilter = (value: string) => {
+    setSearchParams((prev) => {
+      prev.set("search", value || "");
+      return prev;
+    });
+  };
+
+  useEffect(() => {
+    if (searchFilter !== search) {
+      setSearch(searchFilter);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchFilter]);
+
+  const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const value = event.currentTarget.value || "";
+    setSearch(value);
+    setSearchFilter(value);
+  };
+
   const [debouncedSearch] = useDebouncedValue<string>(searchFilter.trim(), 250);
   const [showEmptyGroups, setShowEmptyGroups] = useLocalStorage<boolean>({
     key: "alertsPage.showEmptyGroups",
@@ -449,10 +473,8 @@ export default function AlertsPage() {
           flex={1}
           leftSection={<IconSearch style={inputIconStyle} />}
           placeholder="Filter by rule name or labels"
-          value={searchFilter || ""}
-          onChange={(event) =>
-            setSearchFilter(event.currentTarget.value || null)
-          }
+          value={search}
+          onChange={handleSearchChange}
         ></TextInput>
       </Group>
       {alertsPageData.groups.length === 0 ? (
