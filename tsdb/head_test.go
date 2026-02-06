@@ -7246,3 +7246,46 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 		})
 	}
 }
+
+func TestXOR2ChunkEncodingFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		enableXOR2       bool
+		expectedEncoding chunkenc.Encoding
+	}{
+		{
+			name:             "XOR2 enabled",
+			enableXOR2:       true,
+			expectedEncoding: chunkenc.EncXOR2,
+		},
+		{
+			name:             "XOR2 disabled (default XOR)",
+			enableXOR2:       false,
+			expectedEncoding: chunkenc.EncXOR,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+			opts.EnableXOR2Encoding = tc.enableXOR2
+			h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+			app := h.Appender(context.Background())
+			lbls := labels.FromStrings("foo", "bar")
+			for i := int64(0); i < 120; i++ {
+				_, err := app.Append(0, lbls, 1000+i*15000, float64(i))
+				require.NoError(t, err)
+			}
+			require.NoError(t, app.Commit())
+
+			// Check the encoding of the head chunk.
+			ms, _, err := h.getOrCreate(lbls.Hash(), lbls, false)
+			require.NoError(t, err)
+
+			ms.Lock()
+			require.NotNil(t, ms.headChunks, "head chunk should exist")
+			require.Equal(t, tc.expectedEncoding, ms.headChunks.chunk.Encoding(),
+				"head chunk encoding mismatch")
+			ms.Unlock()
+		})
+	}
+}

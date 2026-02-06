@@ -319,6 +319,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "use-uncached-io":
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
+			case "tsdb-chunks-encoding-xor2":
+				c.tsdb.EnableXOR2Encoding = true
+				logger.Info("Experimental XOR2 chunk encoding enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -328,6 +331,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 	if c.web.ConvertOTLPDelta && c.web.NativeOTLPDeltaIngestion {
 		return errors.New("cannot enable otlp-deltatocumulative and otlp-native-delta-ingestion features at the same time")
 	}
+
+	features.Set(features.TSDB, "chunk_encoding_xor2", c.tsdb.EnableXOR2Encoding)
 
 	return nil
 }
@@ -594,7 +599,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors, promql-binop-fill-modifiers. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, created-timestamp-zero-ingestion, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors, promql-binop-fill-modifiers, tsdb-chunks-encoding-xor2. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -1958,6 +1963,7 @@ type tsdbOptions struct {
 	CompactionDelayMaxPercent      int
 	EnableOverlappingCompaction    bool
 	UseUncachedIO                  bool
+	EnableXOR2Encoding             bool
 	BlockCompactionExcludeFunc     tsdb.BlockExcludeFilterFunc
 	BlockReloadInterval            model.Duration
 	EnableSTAsZeroSample           bool
@@ -1986,6 +1992,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		CompactionDelayMaxPercent:      opts.CompactionDelayMaxPercent,
 		EnableOverlappingCompaction:    opts.EnableOverlappingCompaction,
 		UseUncachedIO:                  opts.UseUncachedIO,
+		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
 		BlockCompactionExcludeFunc:     opts.BlockCompactionExcludeFunc,
 		BlockReloadInterval:            time.Duration(opts.BlockReloadInterval),
 		FeatureRegistry:                features.DefaultRegistry,

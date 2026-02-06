@@ -242,6 +242,7 @@
     "value": true
   },
   "tsdb": {
+    "chunk_encoding_xor2": false,
     "delayed_compaction": false,
     "exemplar_storage": false,
     "isolation": true,
