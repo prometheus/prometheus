@@ -28,14 +28,13 @@ const (
 // If can store a maximum of 0x7FF (2047) samples before the first ST change.
 type stHeader uint16
 
-// Reserved.
-// func (h stHeader) stEqualsT() bool {
-// 	return (h & 0x8000) != 0
-// }
-// Reserved.
-// func (h *stHeader) setSTEqualsT() {
-// 	*h |= 0x8000
-// }
+func (h stHeader) stEqualsT() bool {
+	return (h & 0x8000) != 0
+}
+
+func (h *stHeader) setSTEqualsT() {
+	*h |= 0x8000
+}
 
 func (h stHeader) firstSTKnown() bool {
 	return (h & 0x1000) != 0
@@ -358,6 +357,9 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 			a.b.writeByte(b)
 		}
 		a.stHeader.setFirstSTKnown()
+		if st == t {
+			a.stHeader.setSTEqualsT()
+		}
 
 	case 1:
 		buf := make([]byte, binary.MaxVarintLen64)
@@ -369,7 +371,7 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		if st != 0 && st != a.st && a.stHeader.firstSTKnown() {
 			a.stHeader.setFirstSTDiffKnown()
 		}
-		if (st == 0 && a.stHeader.firstSTKnown()) || (st != 0 && !a.stHeader.firstSTKnown()) {
+		if (st == 0 && a.stHeader.firstSTKnown()) || (st != t && a.stHeader.stEqualsT()) || (st != 0 && !a.stHeader.firstSTKnown()) {
 			a.stHeader.setFirstSTChangeOn(1)
 		}
 		if !a.stHeader.firstSTDiffKnown() && a.stHeader.firstSTChangeOn() == 0 {
@@ -436,7 +438,7 @@ func (a *xorOptSTAppender) Append(st, t int64, v float64) {
 		stDiff = a.t - st
 		if a.stHeader.firstSTChangeOn() == 0 {
 			if a.stHeader.firstSTKnown() {
-				if stDiff == a.stDiff && a.stHeader.firstSTDiffKnown() {
+				if stDiff == a.stDiff && a.stHeader.firstSTDiffKnown() || st == t && a.stHeader.stEqualsT() {
 					// No stDiff change.
 					break
 				}
@@ -521,6 +523,9 @@ func (it *xorOptSTtIterator) Next() ValueType {
 				return it.retErr(err)
 			}
 			it.st = t - st
+			if st == 0 {
+				it.stHeader.setSTEqualsT()
+			}
 		}
 
 		it.numRead++
@@ -665,7 +670,10 @@ func (it *xorOptSTtIterator) Next() ValueType {
 	if stChangeOn == 0 || it.numRead < stChangeOn {
 		// No ST change recorded.
 		if it.stHeader.firstSTKnown() {
-			if it.stHeader.firstSTDiffKnown() {
+			if it.stHeader.stEqualsT() {
+				// ST equals T.
+				it.st = it.t + int64(it.tDelta)
+			} else if it.stHeader.firstSTDiffKnown() {
 				// First ST diff was known and hasn't changed.
 				it.st = it.t - it.stDiff
 			}
