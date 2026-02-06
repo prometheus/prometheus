@@ -21,9 +21,9 @@ import (
 
 // Metadata stores a series' metadata information.
 type Metadata struct {
-	Type model.MetricType `json:"type"`
-	Unit string           `json:"unit"`
-	Help string           `json:"help"`
+	Type model.MetricType `json:"type,omitempty" yaml:"type,omitempty"`
+	Help string           `json:"help,omitempty" yaml:"help,omitempty"`
+	Unit string           `json:"unit" yaml:"unit"`
 }
 
 // IsEmpty returns true if metadata structure is empty, including unknown type case.

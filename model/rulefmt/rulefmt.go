@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -177,24 +178,26 @@ type RuleGroupNode struct {
 
 // Rule describes an alerting or recording rule.
 type Rule struct {
-	Record        string            `yaml:"record,omitempty"`
-	Alert         string            `yaml:"alert,omitempty"`
-	Expr          string            `yaml:"expr"`
-	For           model.Duration    `yaml:"for,omitempty"`
-	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
-	Labels        map[string]string `yaml:"labels,omitempty"`
-	Annotations   map[string]string `yaml:"annotations,omitempty"`
+	Record        string             `yaml:"record,omitempty"`
+	Alert         string             `yaml:"alert,omitempty"`
+	Expr          string             `yaml:"expr"`
+	For           model.Duration     `yaml:"for,omitempty"`
+	KeepFiringFor model.Duration     `yaml:"keep_firing_for,omitempty"`
+	Labels        map[string]string  `yaml:"labels,omitempty"`
+	Annotations   map[string]string  `yaml:"annotations,omitempty"`
+	Metadata      *metadata.Metadata `yaml:"metadata,omitempty"`
 }
 
 // RuleNode adds yaml.v3 layer to support line and column outputs for invalid rules.
 type RuleNode struct {
-	Record        yaml.Node         `yaml:"record,omitempty"`
-	Alert         yaml.Node         `yaml:"alert,omitempty"`
-	Expr          yaml.Node         `yaml:"expr"`
-	For           model.Duration    `yaml:"for,omitempty"`
-	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
-	Labels        map[string]string `yaml:"labels,omitempty"`
-	Annotations   map[string]string `yaml:"annotations,omitempty"`
+	Record        yaml.Node          `yaml:"record,omitempty"`
+	Alert         yaml.Node          `yaml:"alert,omitempty"`
+	Expr          yaml.Node          `yaml:"expr"`
+	For           model.Duration     `yaml:"for,omitempty"`
+	KeepFiringFor model.Duration     `yaml:"keep_firing_for,omitempty"`
+	Labels        map[string]string  `yaml:"labels,omitempty"`
+	Annotations   map[string]string  `yaml:"annotations,omitempty"`
+	Metadata      *metadata.Metadata `yaml:"metadata,omitempty"`
 }
 
 // Validate the rule and return a list of encountered errors.
@@ -258,6 +261,14 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 				node: &node.Record,
 			})
 		}
+	}
+
+	// Metadata is only valid for recording rules, not alerting rules.
+	if r.Alert != "" && r.Metadata != nil {
+		nodes = append(nodes, WrappedError{
+			err:  errors.New("invalid field 'metadata' in alerting rule"),
+			node: &node.Alert,
+		})
 	}
 
 	for k, v := range r.Labels {

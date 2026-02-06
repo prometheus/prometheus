@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -72,7 +73,7 @@ func TestFromOriginContext(t *testing.T) {
 
 func TestNewRuleDetail(t *testing.T) {
 	t.Run("should populate NoDependentRules and NoDependencyRules for a RecordingRule", func(t *testing.T) {
-		rule := NewRecordingRule("test", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels())
+		rule := NewRecordingRule("test", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels(), metadata.Metadata{})
 		detail := NewRuleDetail(rule)
 		require.False(t, detail.NoDependentRules)
 		require.False(t, detail.NoDependencyRules)

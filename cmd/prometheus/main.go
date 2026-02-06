@@ -948,6 +948,9 @@ func main() {
 	}
 
 	scraper.Set(scrapeManager)
+	if ruleManager != nil {
+		remoteStorage.SetRulesManager(ruleManager)
+	}
 
 	cfg.web.Context = ctxWeb
 	cfg.web.TSDBRetentionDuration = cfg.tsdb.RetentionDuration
