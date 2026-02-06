@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"strconv"
 	"testing"
 
@@ -594,7 +595,7 @@ func TestReader_PostingsForLabelMatching(t *testing.T) {
 	}
 	ir, _, _ := createFileReader(context.Background(), t, input)
 
-	p := ir.PostingsForLabelMatching(context.Background(), "__name__", func(v string) bool {
+	p := ir.PostingsForLabelMatching(context.Background(), "__name__", "", func(v string) bool {
 		iv, err := strconv.Atoi(v)
 		if err != nil {
 			panic(err)
@@ -642,7 +643,7 @@ func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 
 	failAfter := uint64(seriesCount / 2) // Fail after processing half of the series.
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
-	p := ir.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
+	p := ir.PostingsForLabelMatching(ctx, "__name__", "",func(string) bool {
 		return true
 	})
 	require.Error(t, p.Err())
@@ -711,4 +712,37 @@ func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSerie
 		require.NoError(tb, ir.Close())
 	})
 	return ir, fn, symbols
+}
+
+func TestReader_PostingsForLabelMatching_Prefix(t *testing.T) {
+	const seriesCount = 100
+	var input indexWriterSeriesSlice
+
+	values := []string{}
+	for i := 1; i <= 50; i++ {
+		values = append(values, fmt.Sprintf("a%03d", i))
+	}
+	for i := 1; i <= 50; i++ {
+		values = append(values, fmt.Sprintf("b%03d", i))
+	}
+
+	for i, val := range values {
+		input = append(input, &indexWriterSeries{
+			labels: labels.FromStrings("env", val),
+			chunks: []chunks.Meta{
+				{Ref: chunks.ChunkRef(i + 1), MinTime: 0, MaxTime: 10},
+			},
+		})
+	}
+
+	ir, _, _ := createFileReader(context.Background(), t, input)
+	p := ir.PostingsForLabelMatching(context.Background(), "env", "a", func(v string) bool {
+		return strings.HasPrefix(v, "a")
+	})
+
+	require.NoError(t, p.Err())
+
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	require.Len(t, refs, 50, "expected 50 series starting with 'a'")
 }

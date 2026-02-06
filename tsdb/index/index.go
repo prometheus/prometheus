@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -1595,16 +1596,16 @@ func (r *Reader) Postings(ctx context.Context, name string, values ...string) (P
 	return Merge(ctx, res...), nil
 }
 
-func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
-	return r.postingsForLabelMatching(ctx, name, match)
+func (r *Reader) PostingsForLabelMatching(ctx context.Context, name string, prefix string, match func(string) bool) Postings {
+	return r.postingsForLabelMatching(ctx, name, prefix, match)
 }
 
 func (r *Reader) PostingsForAllLabelValues(ctx context.Context, name string) Postings {
-	return r.postingsForLabelMatching(ctx, name, nil)
+	return r.postingsForLabelMatching(ctx, name, "", nil)
 }
 
 // postingsForLabelMatching implements PostingsForLabelMatching if match is non-nil, and PostingsForAllLabelValues otherwise.
-func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
+func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, prefix string, match func(string) bool) Postings {
 	if r.version == FormatV1 {
 		return r.postingsForLabelMatchingV1(ctx, name, match)
 	}
@@ -1622,7 +1623,22 @@ func (r *Reader) postingsForLabelMatching(ctx context.Context, name string, matc
 
 	lastVal := e[len(e)-1].value
 	its := make([]Postings, 0, postingsEstimate)
-	if err := r.traversePostingOffsets(ctx, e[0].off, func(val string, postingsOff uint64) (bool, error) {
+	startOff := e[0].off
+	if prefix != "" && len(e) > 0 {
+		idx := sort.Search(len(e), func(i int) bool {
+			return e[i].value >= prefix
+		})
+
+		if idx == len(e) {
+			return EmptyPostings()
+		}
+
+		startOff = e[idx].off
+	}
+	if err := r.traversePostingOffsets(ctx, startOff, func(val string, postingsOff uint64) (bool, error) {
+		if prefix != "" && !strings.HasPrefix(val, prefix) {
+			return false, nil
+		}
 		if match == nil || match(val) {
 			// We want this postings iterator since the value is a match.
 			postingsDec := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
