@@ -65,20 +65,46 @@ func testChunkSTHandling(t *testing.T, vt ValueType, chunkFactory func() Chunk) 
 		chunk := chunkFactory()
 		app, err := chunk.Appender()
 		require.NoError(t, err)
-		for _, s := range samples {
+		var clone []byte
+		for i, s := range samples {
+			if i == len(samples)-1 {
+				clone = append(clone, chunk.Bytes()...)
+			}
 			sampleAppend(app, vt, s.st, s.t, s.v)
 		}
-		require.Equal(t, len(samples), chunk.NumSamples())
-		it := chunk.Iterator(nil)
-		for i, s := range samples {
-			require.Equal(t, vt, it.Next(), "%d: value type mismatch", i)
-			st, ts, f := get(it, vt)
-			require.Equal(t, s.t, ts, "%d: timestamp mismatch", i)
-			require.Equal(t, s.st, st, "%d: start time mismatch", i)
-			require.InDelta(t, s.v, f, 1e-9, "%d: value mismatch", i)
+		chunksToTest := []Chunk{chunk}
+
+		if len(samples) > 0 {
+			// If there are samples, also test that appending to a chunk cloned from the original chunk works correctly.
+			// This tests resuming the appender from a previous chunk.
+			cloneChunk := chunkFactory()
+			cloneChunk.Reset(clone)
+			cloneApp, err := cloneChunk.Appender()
+			require.NoError(t, err)
+			sampleAppend(cloneApp, vt, samples[len(samples)-1].st, samples[len(samples)-1].t, samples[len(samples)-1].v)
+			chunksToTest = append(chunksToTest, cloneChunk)
 		}
-		require.Equal(t, ValNone, it.Next())
-		require.NoError(t, it.Err())
+
+		printChunkName := func(i int) string {
+			if i == 0 {
+				return "original"
+			}
+			return "cloned"
+		}
+
+		for ci, chk := range chunksToTest {
+			require.Equal(t, len(samples), chk.NumSamples(), "%s chunk: number of samples mismatch", printChunkName(ci))
+			it := chk.Iterator(nil)
+			for i, s := range samples {
+				require.Equal(t, vt, it.Next(), "%s[%d]: value type mismatch", printChunkName(ci), i)
+				st, ts, f := get(it, vt)
+				require.Equal(t, s.t, ts, "%s[%d]: timestamp mismatch", printChunkName(ci), i)
+				require.Equal(t, s.st, st, "%s[%d]: start time mismatch", printChunkName(ci), i)
+				require.InDelta(t, s.v, f, 1e-9, "%s[%d]: value mismatch", printChunkName(ci), i)
+			}
+			require.Equal(t, ValNone, it.Next())
+			require.NoError(t, it.Err())
+		}
 	}
 
 	t.Run("manual for debugging", func(t *testing.T) {
