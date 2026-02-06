@@ -114,6 +114,10 @@ func (c *XorOptSTChunk) Appender() (Appender, error) {
 		return nil, err
 	}
 
+	// Set the bit position for continuing writes.
+	// The iterator's reader tracks how many bits remain unread in the last byte.
+	c.b.count = it.br.valid
+
 	a := &xorOptSTAppender{
 		b:        &c.b,
 		st:       it.st,
