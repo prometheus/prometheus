@@ -225,6 +225,11 @@ type Options struct {
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
 
+	// EnableXOR2Encoding enables the experimental XOR2 chunk encoding which
+	// uses varbit_int for timestamp delta-of-delta instead of the coarse
+	// 4-bucket encoding used by XOR.
+	EnableXOR2Encoding bool
+
 	// EnableSTAsZeroSample represents 'created-timestamp-zero-ingestion' feature flag.
 	// If true, ST, if non-zero and earlier than sample timestamp, will be stored
 	// as a zero sample before the actual sample.
@@ -1023,6 +1028,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
+	headOpts.EnableXOR2Encoding = opts.EnableXOR2Encoding
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
