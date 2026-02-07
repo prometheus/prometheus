@@ -50,6 +50,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/features"
+	"github.com/prometheus/prometheus/util/kahansum"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -3239,23 +3240,26 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 }
 
 type groupedAggregation struct {
-	floatValue     float64
-	histogramValue *histogram.FloatHistogram
-	floatMean      float64
-	floatKahanC    float64 // "Compensating value" for Kahan summation.
-	groupCount     float64
-	heap           vectorByValueHeap
+	floatValue      float64
+	floatMean       float64
+	floatKahanC     float64 // Compensation float for Kahan summation.
+	histogramValue  *histogram.FloatHistogram
+	histogramMean   *histogram.FloatHistogram
+	histogramKahanC *histogram.FloatHistogram // Compensation histogram for Kahan summation.
+	groupCount      float64
+	heap            vectorByValueHeap
 
 	// All bools together for better packing within the struct.
-	seen                   bool // Was this output groups seen in the input at this timestamp.
-	hasFloat               bool // Has at least 1 float64 sample aggregated.
-	hasHistogram           bool // Has at least 1 histogram sample aggregated.
-	incompatibleHistograms bool // If true, group has seen mixed exponential and custom buckets.
-	groupAggrComplete      bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
-	incrementalMean        bool // True after reverting to incremental calculation of the mean value.
-	counterResetSeen       bool // Counter reset hint CounterReset seen. Currently only used for histogram samples.
-	notCounterResetSeen    bool // Counter reset hint NotCounterReset seen. Currently only used for histogram samples.
-	dropName               bool // True if any sample in this group has DropName set.
+	seen                     bool // Was this output groups seen in the input at this timestamp.
+	hasFloat                 bool // Has at least 1 float64 sample aggregated.
+	hasHistogram             bool // Has at least 1 histogram sample aggregated.
+	incompatibleHistograms   bool // If true, group has seen mixed exponential and custom buckets.
+	groupAggrComplete        bool // Used by LIMITK to short-cut series loop when we've reached K elem on every group.
+	floatIncrementalMean     bool // True after reverting to incremental calculation for float-based mean value.
+	histogramIncrementalMean bool // True after reverting to incremental calculation for histogram-based mean value.
+	counterResetSeen         bool // Counter reset hint CounterReset seen. Currently only used for histogram samples.
+	notCounterResetSeen      bool // Counter reset hint NotCounterReset seen. Currently only used for histogram samples.
+	dropName                 bool // True if any sample in this group has DropName set.
 }
 
 // aggregation evaluates sum, avg, count, stdvar, stddev or quantile at one timestep on inputMatrix.
@@ -3345,6 +3349,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			group.dropName = true
 		}
 
+		var (
+			nhcbBoundsReconciled bool
+			err                  error
+		)
+
 		switch op {
 		case parser.SUM:
 			if h != nil {
@@ -3356,7 +3365,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					case histogram.NotCounterReset:
 						group.notCounterResetSeen = true
 					}
-					_, _, nhcbBoundsReconciled, err := group.histogramValue.Add(h)
+					group.histogramKahanC, _, nhcbBoundsReconciled, err = group.histogramValue.KahanAdd(h, group.histogramKahanC)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
@@ -3370,18 +3379,13 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				group.floatValue, group.floatKahanC = kahanSumInc(f, group.floatValue, group.floatKahanC)
+				group.floatValue, group.floatKahanC = kahansum.Inc(f, group.floatValue, group.floatKahanC)
 			}
 
 		case parser.AVG:
-			// For the average calculation of histograms, we use
-			// incremental mean calculation without the help of
-			// Kahan summation (but this should change, see
-			// https://github.com/prometheus/prometheus/issues/14105
-			// ). For floats, we improve the accuracy with the help
-			// of Kahan summation. For a while, we assumed that
-			// incremental mean calculation combined with Kahan
-			// summation (see
+			// We improve the accuracy with the help of Kahan summation.
+			// For a while, we assumed that incremental mean calculation
+			// combined with Kahan summation (see
 			// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
 			// for inspiration) is generally the preferred solution.
 			// However, it then turned out that direct mean
@@ -3416,20 +3420,37 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					case histogram.NotCounterReset:
 						group.notCounterResetSeen = true
 					}
-					left := h.Copy().Div(group.groupCount)
-					right := group.histogramValue.Copy().Div(group.groupCount)
-
-					toAdd, _, nhcbBoundsReconciled, err := left.Sub(right)
-					if err != nil {
-						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
-						group.incompatibleHistograms = true
-						continue
+					if !group.histogramIncrementalMean {
+						v := group.histogramValue.Copy()
+						var c *histogram.FloatHistogram
+						if group.histogramKahanC != nil {
+							c = group.histogramKahanC.Copy()
+						}
+						c, _, nhcbBoundsReconciled, err = v.KahanAdd(h, c)
+						if err != nil {
+							handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
+							group.incompatibleHistograms = true
+							continue
+						}
+						if nhcbBoundsReconciled {
+							annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
+						}
+						if !v.HasOverflow() {
+							group.histogramValue, group.histogramKahanC = v, c
+							break
+						}
+						group.histogramIncrementalMean = true
+						group.histogramMean = group.histogramValue.Copy().Div(group.groupCount - 1)
+						if group.histogramKahanC != nil {
+							group.histogramKahanC.Div(group.groupCount - 1)
+						}
 					}
-					if nhcbBoundsReconciled {
-						annos.Add(annotations.NewMismatchedCustomBucketsHistogramsInfo(e.Expr.PositionRange(), annotations.HistogramAgg))
+					q := (group.groupCount - 1) / group.groupCount
+					if group.histogramKahanC != nil {
+						group.histogramKahanC.Mul(q)
 					}
-
-					_, _, nhcbBoundsReconciled, err = group.histogramValue.Add(toAdd)
+					toAdd := h.Copy().Div(group.groupCount)
+					group.histogramKahanC, _, nhcbBoundsReconciled, err = group.histogramMean.Mul(q).KahanAdd(toAdd, group.histogramKahanC)
 					if err != nil {
 						handleAggregationError(err, e, inputMatrix[si].Metric.Get(model.MetricNameLabel), &annos)
 						group.incompatibleHistograms = true
@@ -3444,8 +3465,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
-				if !group.incrementalMean {
-					newV, newC := kahanSumInc(f, group.floatValue, group.floatKahanC)
+				if !group.floatIncrementalMean {
+					newV, newC := kahansum.Inc(f, group.floatValue, group.floatKahanC)
 					if !math.IsInf(newV, 0) {
 						// The sum doesn't overflow, so we propagate it to the
 						// group struct and continue with the regular
@@ -3456,12 +3477,12 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					// If we are here, we know that the sum _would_ overflow. So
 					// instead of continue to sum up, we revert to incremental
 					// calculation of the mean value from here on.
-					group.incrementalMean = true
+					group.floatIncrementalMean = true
 					group.floatMean = group.floatValue / (group.groupCount - 1)
 					group.floatKahanC /= group.groupCount - 1
 				}
 				q := (group.groupCount - 1) / group.groupCount
-				group.floatMean, group.floatKahanC = kahanSumInc(
+				group.floatMean, group.floatKahanC = kahansum.Inc(
 					f/group.groupCount,
 					q*group.floatMean,
 					q*group.floatKahanC,
@@ -3536,8 +3557,24 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.incompatibleHistograms:
 				continue
 			case aggr.hasHistogram:
+				if aggr.histogramIncrementalMean {
+					if aggr.histogramKahanC != nil {
+						aggr.histogramValue, _, _, _ = aggr.histogramMean.Add(aggr.histogramKahanC)
+						// Add can theoretically return ErrHistogramsIncompatibleSchema, but at
+						// this stage errors should not occur if earlier KahanAdd calls succeeded.
+					} else {
+						aggr.histogramValue = aggr.histogramMean
+					}
+				} else {
+					aggr.histogramValue.Div(aggr.groupCount)
+					if aggr.histogramKahanC != nil {
+						aggr.histogramValue, _, _, _ = aggr.histogramValue.Add(aggr.histogramKahanC.Div(aggr.groupCount))
+						// Add can theoretically return ErrHistogramsIncompatibleSchema, but at
+						// this stage errors should not occur if earlier KahanAdd calls succeeded.
+					}
+				}
 				aggr.histogramValue = aggr.histogramValue.Compact(0)
-			case aggr.incrementalMean:
+			case aggr.floatIncrementalMean:
 				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
 			default:
 				aggr.floatValue = aggr.floatValue/aggr.groupCount + aggr.floatKahanC/aggr.groupCount
@@ -3565,6 +3602,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.incompatibleHistograms:
 				continue
 			case aggr.hasHistogram:
+				if aggr.histogramKahanC != nil {
+					aggr.histogramValue, _, _, _ = aggr.histogramValue.Add(aggr.histogramKahanC)
+					// Add can theoretically return ErrHistogramsIncompatibleSchema, but at
+					// this stage errors should not occur if earlier KahanAdd calls succeeded.
+				}
 				aggr.histogramValue.Compact(0)
 			default:
 				aggr.floatValue += aggr.floatKahanC
