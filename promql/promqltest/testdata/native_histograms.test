@@ -1432,6 +1432,12 @@ load 10m
     histogram_avg_incremental{idx="5"} {{schema:0 count:1e-6 sum:0.951811357687154 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[458.90154 458.90154 7.69805412 2178.35] n_buckets:[2054.92644438789 844.560108898123]}}x1
     histogram_avg_incremental{idx="6"} {{schema:0 count:1e-6 sum:0 z_bucket:5 z_bucket_w:0.001 buckets:[0 0 1.78264E+219 376.770478890989]}}x1
     histogram_avg_incremental{idx="7"} {{schema:0 count:1e-6 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 458.90154 250325.5] n_buckets:[0 0.0000000011353 0 608.697257]}}x1
+#     This test fails due to float64 rounding in the incremental average calculation.
+#     For large intermediate means (e.g. ~1e99), multiplying by a fractional weight like (n-1)/n
+#     produces values such as 2.0000000000000002e99 instead of the mathematically exact 2e99.
+#     While the relative error is tiny, subtracting nearly equal high-magnitude values later
+#     result in a large absolute error. The outcome also depends on the (effectively random) order
+#     in which input series are processed which makes the test flaky.
 #     histogram_avg_incremental_2{idx="0"} {{schema:0 count:1.7976931348623157e+308 sum:5.3 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[1.78264E+50 1.78264E+215 1.78264E+219 3363.5121756487] n_buckets:[1178.20696291113 731.697776280323 715.201503759399 1386.11378876781 855.572553278132]}}x1
 #     histogram_avg_incremental_2{idx="1"} {{schema:0 count:1e308 sum:1e100 z_bucket:0.76342771 z_bucket_w:0.001 buckets:[0.76342771 0.76342771 0.76342771 195.70084087969] n_buckets:[421.30382970055 0 450441.779]}}x1
 #     histogram_avg_incremental_2{idx="2"} {{schema:0 count:1e-6 sum:1 z_bucket:1.9592258 z_bucket_w:0.001 buckets:[1.9592258 1.9592258 1.9592258 1135.74692279] n_buckets:[0 4504.41779 588.599358265103 40.3760942760943]}}x1
@@ -1444,12 +1450,7 @@ load 10m
 eval instant at 10m avg(histogram_avg_incremental)
     {} {{schema:0 count:3.497116418577895e+307 sum:1.2539005843658437 z_bucket:4.4566e49 z_bucket_w:0.001 buckets:[2.8225e+219 2.822522283e+219 3.271129711125e+219 32728.442914086805] n_buckets:[500.5428151288539 760.0844593974477 56468.19748275306 254.4185391888429 180.5214889097665]}}
 
-# This test fails due to float64 rounding in the incremental average calculation.
-# For large intermediate means (e.g. ~1e99), multiplying by a fractional weight like (n-1)/n
-# produces values such as 2.0000000000000002e99 instead of the mathematically exact 2e99.
-# While the relative error is tiny, subtracting nearly equal high-magnitude values later
-# result in a large absolute error. The outcome also depends on the (effectively random) order
-# in which input series are processed which makes the test flaky.
+# This test doesn't work, see the load section above for reasoning.
 # eval instant at 10m avg(histogram_avg_incremental_2)
 #     {} {{schema:0 count:3.497116418577895e+307 sum:1.0375 z_bucket:4.4566e49 z_bucket_w:0.001 buckets:[2.8225e+219 2.822522283e+219 3.271129711125e+219 32728.442914086805] n_buckets:[500.5428151288539 760.0844593974477 56468.19748275306 254.4185391888429 180.5214889097665]}}
 
@@ -1498,6 +1499,7 @@ eval instant at 6m sum_over_time(histogram_sum_over_time_4[7m:1m])
 eval instant at 6m avg_over_time(histogram_sum_over_time_4[7m:1m])
     {} {{schema:0 count:4 sum:1.1857142857142857}}
 
+# These tests don't work, see the load section above for reasoning.
 # eval instant at 6m sum_over_time(histogram_sum_over_time_5[7m:1m])
 #     {} {{schema:0 count:28 sum:8.3}}
 # 
@@ -1528,6 +1530,7 @@ eval instant at 6m sum_over_time(histogram_sum_over_time_incremental_4[7m:1m])
 eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_4[7m:1m])
     {} {{schema:0 count:3.9967044783747367e+307 sum:0.9}}
 
+# These tests don't work, see the load section above for reasoning.
 # eval instant at 6m sum_over_time(histogram_sum_over_time_incremental_5[7m:1m])
 #     {} {{schema:0 count:Inf sum:6.3}}
 # 
