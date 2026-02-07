@@ -50,7 +50,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 		initST  = timestamp.FromTime(d)       // Use realistic timestamp.
 		initT   = initST + 15000              // 15s after initST.
 		initV   = 1243535.123
-		rInts   = make([]int64, nSamples)
+		rInts   = make([]int64, 2*nSamples) // Random ints for timestamps and STs.
 		rFloats = make([]float64, nSamples)
 	)
 
@@ -58,6 +58,7 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 	// the generated samples.
 	for i := range nSamples {
 		rInts[i] = int64(r.Intn(100))
+		rInts[nSamples+i] = int64(r.Intn(100))
 		rFloats[i] = float64(r.Intn(100))
 	}
 
@@ -126,6 +127,20 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			}(),
 		},
 		{
+			// Delta simulates delta type or worst case for cumulatives, where ST
+			// is changing on every sample.
+			name: "vt=constant/st=delta-jitter",
+			samples: func() (ret []triple) {
+				t, v := initT, initV
+				for i := range nSamples {
+					st := t + rInts[nSamples+i] // ST is the same as the previous t + jitter of up to 100ms.
+					t += 15000
+					ret = append(ret, triple{st: st, t: t, v: v})
+				}
+				return ret
+			}(),
+		},
+		{
 			name: "vt=random steps/st=0",
 			samples: func() (ret []triple) {
 				t, v := initT, initV
@@ -183,6 +198,19 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
 					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
 					ret = append(ret, triple{st: t, t: t, v: v})
+				}
+				return ret
+			}(),
+		},
+		{
+			name: "vt=random steps/st=delta-jittery",
+			samples: func() (ret []triple) {
+				t, v := initT, initV
+				for i := range nSamples {
+					st := t + rInts[nSamples+i] // ST is equal to the previous t + jitter of up to 100ms.
+					t += rInts[i] - 50 + 15000  // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] - 50        // Varying from -50 to +50 in 100 discrete steps.
+					ret = append(ret, triple{st: st, t: t, v: v})
 				}
 				return ret
 			}(),
@@ -290,6 +318,19 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
 					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
 					ret = append(ret, triple{st: t, t: t, v: v})
+				}
+				return ret
+			}(),
+		},
+		{
+			name: "vt=random 0-1/st=delta-jittery",
+			samples: func() (ret []triple) {
+				t, v := initT, initV
+				for i := range nSamples {
+					st := t + rInts[nSamples+i] // ST is equal to the previous t + jitter of up to 100ms.
+					t += rInts[i] - 50 + 15000  // 15 seconds +- up to 100ms of jitter.
+					v += rFloats[i] / 100.0     // Random between 0 and 1.0.
+					ret = append(ret, triple{st: st, t: t, v: v})
 				}
 				return ret
 			}(),
