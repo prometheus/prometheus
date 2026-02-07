@@ -55,7 +55,7 @@ func TestDB_InvalidSeries(t *testing.T) {
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
 
 		_, err = app.Append(0, labels.FromStrings("a", "1", "a", "2"), 0, 0)
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
+		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject out of order labels")
 	})
 
 	t.Run("Histograms", func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestDB_InvalidSeries(t *testing.T) {
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
 
 		_, err = app.AppendHistogram(0, labels.FromStrings("a", "1", "a", "2"), 0, tsdbutil.GenerateTestHistograms(1)[0], nil)
-		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
+		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject out of order labels")
 	})
 
 	t.Run("Exemplars", func(t *testing.T) {
@@ -75,7 +75,7 @@ func TestDB_InvalidSeries(t *testing.T) {
 
 		e := exemplar.Exemplar{Labels: labels.FromStrings("a", "1", "a", "2")}
 		_, err = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
-		require.ErrorIs(t, err, tsdb.ErrInvalidExemplar, "should reject duplicate labels")
+		require.ErrorIs(t, err, tsdb.ErrInvalidExemplar, "should reject out of order labels")
 
 		e = exemplar.Exemplar{Labels: labels.FromStrings("a_somewhat_long_trace_id", "nYJSNtFrFTY37VR7mHzEE/LIDt7cdAQcuOzFajgmLDAdBSRHYPDzrxhMA4zz7el8naI/AoXFv9/e/G0vcETcIoNUi3OieeLfaIRQci2oa")}
 		_, err = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
