@@ -619,10 +619,10 @@ func isCaseSensitiveLiteral(re *syntax.Regexp) bool {
 }
 
 // acThreshold is the minimum number of alternates above which we use Aho-Corasick
-// instead of repeated strings.Index. Chosen to avoid AC overhead for small pattern sets.
-// Case-insensitive matching always uses AC regardless of pattern count, as it's the only
-// way to support this functionality efficiently.
-const acThreshold = 5
+// instead of repeated strings.Index. Set to 21 so that 20 alternations stay on the
+// strings.Index path (no regression vs main). Case-insensitive matching always
+// uses AC regardless of pattern count, as it's the only way to support it efficiently.
+const acThreshold = 21
 
 // containsStringMatcher matches a string if it contains any of the substrings.
 // If left and right are not nil, it's a contains operation where left and right must match.
@@ -638,15 +638,25 @@ type containsStringMatcher struct {
 	// The matcher that must match the right side. Can be nil.
 	right StringMatcher
 
-	// ac is set when we use Aho-Corasick for 5+ patterns or case-insensitive matching.
+	// ac is set when we use Aho-Corasick for acThreshold+ patterns or case-insensitive matching.
 	// nil means use the strings.Index fallback.
 	ac *ahocorasick.AhoCorasick
 }
 
-// newContainsStringMatcher builds a containsStringMatcher. For 5+ patterns or
+// newContainsStringMatcher builds a containsStringMatcher. For acThreshold+ patterns or
 // case-insensitive matching we use Aho-Corasick; otherwise we use strings.Index.
 // Empty string in substrings is not supported with AC and forces the fallback path.
 func newContainsStringMatcher(substrings []string, caseSensitive bool, left, right StringMatcher) *containsStringMatcher {
+	// When both sides are trueMatcher (match everything), set both to nil so the
+	// zero-alloc fast path in matchesWithAhoCorasick is used. Only when both are
+	// trivial; if only one is trueMatcher the other constrains position and we
+	// need the full search (prefix/suffix-only paths would be wrong).
+	if _, lok := left.(trueMatcher); lok {
+		if _, rok := right.(trueMatcher); rok {
+			left = nil
+			right = nil
+		}
+	}
 	m := &containsStringMatcher{
 		substrings: substrings,
 		left:       left,
