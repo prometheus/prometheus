@@ -787,6 +787,13 @@ func (it *xor2stIterator) Next() ValueType {
 	return it.readValue()
 }
 
+func (it *xor2stIterator) Reset(b []byte) {
+	it.xorIterator.Reset(b)
+
+	it.st = 0
+	it.stDelta = 0
+}
+
 func (it *xor2stIterator) Seek(t int64) ValueType {
 	if it.err != nil {
 		return ValNone
@@ -801,6 +808,323 @@ func (it *xor2stIterator) Seek(t int64) ValueType {
 }
 
 func (it *xor2stIterator) AtST() int64 {
+	return it.st
+}
+
+// XOR2STotelChunk holds XOR2 encoded sample data with start timestamp.
+// It uses varbit_int encoding for timestamp and start timestamp delta-of-delta
+// instead of the coarse 4-bucket encoding used by XORChunk.
+type XOR2STotelChunk struct {
+	XORChunk
+}
+
+// NewXOR2STotelChunk returns a new chunk with XOR2 encoding.
+func NewXOR2STotelChunk() *XOR2STotelChunk {
+	b := make([]byte, chunkHeaderSize, chunkAllocationSize)
+	return &XOR2STotelChunk{XORChunk: XORChunk{b: bstream{stream: b, count: 0}}}
+}
+
+// Encoding returns the encoding type.
+func (*XOR2STotelChunk) Encoding() Encoding {
+	return EncXOR2STotel
+}
+
+// Appender implements the Chunk interface.
+func (c *XOR2STotelChunk) Appender() (Appender, error) {
+	if len(c.b.stream) == chunkHeaderSize {
+		return &xor2stOtelAppender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
+	}
+	it := c.iterator(nil)
+
+	// To get an appender we must know the state it would have if we had
+	// appended all existing data from scratch.
+	// We iterate through the end and populate via the iterator's state.
+	for it.Next() != ValNone {
+	}
+	if err := it.Err(); err != nil {
+		return nil, err
+	}
+
+	// Set the bit position for continuing writes.
+	// The iterator's reader tracks how many bits remain unread in the last byte.
+	c.b.count = it.br.valid
+
+	a := &xor2stOtelAppender{
+		b:        &c.b,
+		t:        it.t,
+		st:       it.st,
+		v:        it.val,
+		tDelta:   it.tDelta,
+		stDelta:  it.stDelta,
+		leading:  it.leading,
+		trailing: it.trailing,
+		state:    it.state,
+	}
+	return a, nil
+}
+
+func (c *XOR2STotelChunk) iterator(it Iterator) *xor2stOtelIterator {
+	if xor2Iter, ok := it.(*xor2stOtelIterator); ok {
+		xor2Iter.Reset(c.b.bytes())
+		return xor2Iter
+	}
+	return &xor2stOtelIterator{
+		xorIterator: xorIterator{
+			br:       newBReader(c.b.bytes()[chunkHeaderSize:]),
+			numTotal: binary.BigEndian.Uint16(c.b.bytes()),
+			t:        math.MinInt64,
+		},
+	}
+}
+
+// Iterator implements the Chunk interface.
+func (c *XOR2STotelChunk) Iterator(it Iterator) Iterator {
+	return c.iterator(it)
+}
+
+const (
+	otelSTrandom    = iota // Samples have no particular relationship between timestamp and start timestamp (including ST==0 and constant case).
+	otelSTequalT           // Leading samples have start timestamp equal to their timestamp.
+	otelSTdiffConst        // Leading samples (except first) have the same delta between timestamp and start timestamp.
+)
+
+// xor2Appender uses varbit_int encoding for timestamp delta-of-delta.
+type xor2stOtelAppender struct {
+	b *bstream
+
+	t       int64
+	st      int64
+	v       float64
+	tDelta  uint64
+	stDelta int64
+
+	leading  uint8
+	trailing uint8
+	state    uint8
+}
+
+func (a *xor2stOtelAppender) writeVDelta(v float64) {
+	xorWrite(a.b, v, a.v, &a.leading, &a.trailing)
+}
+
+func (*xor2stOtelAppender) AppendHistogram(*HistogramAppender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+	panic("appended a histogram sample to a float chunk")
+}
+
+func (*xor2stOtelAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+	panic("appended a float histogram sample to a float chunk")
+}
+
+func (a *xor2stOtelAppender) Append(st, t int64, v float64) {
+	var (
+		tDelta  uint64
+		stDelta int64
+	)
+	num := binary.BigEndian.Uint16(a.b.bytes())
+	switch num {
+	case 0:
+		buf := make([]byte, binary.MaxVarintLen64)
+		for _, b := range buf[:binary.PutVarint(buf, t)] {
+			a.b.writeByte(b)
+		}
+
+		for _, b := range buf[:binary.PutVarint(buf, st)] {
+			a.b.writeByte(b)
+		}
+
+		a.b.writeBits(math.Float64bits(v), 64)
+	case 1:
+		tDelta = uint64(t - a.t)
+
+		buf := make([]byte, binary.MaxVarintLen64)
+		for _, b := range buf[:binary.PutUvarint(buf, tDelta)] {
+			a.b.writeByte(b)
+		}
+
+		stDelta = st - a.st
+		for _, b := range buf[:binary.PutVarint(buf, stDelta)] {
+			a.b.writeByte(b)
+		}
+		if st == t {
+			a.state = otelSTequalT
+		} else if st != a.st {
+			a.state = otelSTdiffConst
+		}
+
+		a.writeVDelta(v)
+	default:
+		tDelta = uint64(t - a.t)
+		dod := int64(tDelta - a.tDelta)
+
+		putVarbitInt(a.b, dod)
+
+		stDelta = st - a.st
+
+		state := a.state
+		switch {
+		case state == otelSTrandom:
+			stDod := stDelta - a.stDelta
+
+			putVarbitInt(a.b, stDod)
+		case state == otelSTequalT && st == t || state == otelSTdiffConst && t-st == a.t-a.st:
+			a.b.writeBit(zero) // Indicate that there is no state change.
+		default:
+			a.b.writeBit(one) // Indicate that there is a state change.
+			a.state = otelSTrandom
+			stDod := stDelta - a.stDelta
+
+			putVarbitInt(a.b, stDod)
+		}
+
+		a.writeVDelta(v)
+	}
+
+	a.t = t
+	a.v = v
+	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
+	a.tDelta = tDelta
+	a.st = st
+	a.stDelta = stDelta
+}
+
+// xor2Iterator uses varbit_int decoding for timestamp delta-of-delta.
+type xor2stOtelIterator struct {
+	xorIterator
+	st      int64
+	stDelta int64
+	state   uint8
+}
+
+func (it *xor2stOtelIterator) Next() ValueType {
+	if it.err != nil || it.numRead == it.numTotal {
+		return ValNone
+	}
+
+	if it.numRead == 0 {
+		t, err := binary.ReadVarint(&it.br)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		it.t = t
+
+		st, err := binary.ReadVarint(&it.br)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		it.st = st
+
+		v, err := it.br.readBits(64)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		it.val = math.Float64frombits(v)
+
+		it.numRead++
+		return ValFloat
+	}
+	if it.numRead == 1 {
+		tDelta, err := binary.ReadUvarint(&it.br)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		it.tDelta = tDelta
+		it.t += int64(it.tDelta)
+
+		stDelta, err := binary.ReadVarint(&it.br)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		it.stDelta = stDelta
+		prevSt := it.st
+		it.st += it.stDelta
+
+		if it.st == it.t {
+			it.state = otelSTequalT
+		} else if it.st != prevSt {
+			it.state = otelSTdiffConst
+		}
+
+		return it.readValue()
+	}
+
+	// Note the previous timestamp.
+	t := it.t
+
+	// Read delta-of-delta using varbit_int encoding.
+	dod, err := readVarbitInt(&it.br)
+	if err != nil {
+		it.err = err
+		return ValNone
+	}
+
+	it.tDelta = uint64(int64(it.tDelta) + dod)
+	it.t += int64(it.tDelta)
+
+	if it.state == otelSTrandom {
+		stDod, err := readVarbitInt(&it.br)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		it.stDelta += stDod
+		it.st += it.stDelta
+	} else {
+		stateChange, err := it.br.readBit()
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		if stateChange == zero {
+			if it.state == otelSTequalT {
+				it.stDelta = it.t - it.st
+				it.st = it.t
+			} else {
+				st := it.t + it.st - t
+				it.stDelta = st - it.st
+				it.st = st
+			}
+		} else {
+			it.state = otelSTrandom
+			stDod, err := readVarbitInt(&it.br)
+			if err != nil {
+				it.err = err
+				return ValNone
+			}
+			it.stDelta += stDod
+			it.st += it.stDelta
+		}
+	}
+
+	return it.readValue()
+}
+
+func (it *xor2stOtelIterator) Reset(b []byte) {
+	it.xorIterator.Reset(b)
+
+	it.st = 0
+	it.stDelta = 0
+	it.state = otelSTrandom
+}
+
+func (it *xor2stOtelIterator) Seek(t int64) ValueType {
+	if it.err != nil {
+		return ValNone
+	}
+
+	for t > it.t || it.numRead == 0 {
+		if it.Next() == ValNone {
+			return ValNone
+		}
+	}
+	return ValFloat
+}
+
+func (it *xor2stOtelIterator) AtST() int64 {
 	return it.st
 }
 
