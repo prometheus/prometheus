@@ -201,10 +201,11 @@ type HeadOptions struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
-	// IgnoreOldCorruptedWAL, if set to true, allows compaction to continue
-	// even if WAL segments are corrupted, as long as the corrupted segments
-	// are older than the retention window. This prevents unbounded disk growth
-	// when old corrupted WAL segments block checkpoint creation.
+	// IgnoreOldCorruptedWAL, if set to true, allows compaction/checkpointing to
+	// continue even if corrupted WAL segments are encountered, by truncating the
+	// WAL at the point of corruption. This can discard all data after the
+	// corruption point, regardless of retention, but prevents unbounded disk
+	// growth when corrupted WAL segments block checkpoint creation.
 	IgnoreOldCorruptedWAL bool
 }
 
@@ -1390,29 +1391,23 @@ func (h *Head) truncateWAL(mint int64) error {
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 
-		// Check for both types of corruption errors
+		// Check for WAL corruption errors
 		var walCorr *wlog.CorruptionErr
-		var chunkCorr *chunks.CorruptionErr
-
-		if errors.As(err, &walCorr) || errors.As(err, &chunkCorr) {
+		if errors.As(err, &walCorr) {
 			h.metrics.walCorruptionsTotal.Inc()
-			// If IgnoreOldCorruptedWAL is enabled, attempt to repair the WAL and allow
-			// compaction to continue. This prevents unbounded disk growth when old
-			// corrupted WAL segments block checkpoint creation indefinitely.
+			// If IgnoreOldCorruptedWAL is enabled, attempt to repair the WAL.
+			// The repair discards data after the corruption point, allowing
+			// compaction to proceed and preventing unbounded disk growth.
 			if h.opts.IgnoreOldCorruptedWAL {
-				if walCorr != nil {
-					h.logger.Warn("WAL corruption detected during checkpointing, attempting repair",
-						"dir", walCorr.Dir, "segment", walCorr.Segment, "offset", walCorr.Offset, "err", walCorr.Err)
-				} else {
-					h.logger.Warn("Chunk corruption detected during checkpointing, attempting repair",
-						"dir", chunkCorr.Dir, "file_index", chunkCorr.FileIndex, "err", chunkCorr.Err)
-				}
+				h.logger.Warn("WAL corruption detected during checkpointing, attempting repair",
+					"dir", walCorr.Dir, "segment", walCorr.Segment, "offset", walCorr.Offset, "err", walCorr.Err)
 
 				if repairErr := h.wal.Repair(err); repairErr != nil {
 					return fmt.Errorf("repair WAL after checkpoint corruption: %w", repairErr)
 				}
-				h.logger.Info("WAL repaired successfully, continuing compaction")
-				// Don't return error - allow compaction to proceed with repaired WAL
+				h.logger.Warn("WAL repaired, data after corruption point discarded")
+				// After repair, retry the checkpoint creation on the next compaction cycle.
+				// Don't fail this compaction - just skip WAL truncation for now.
 				return nil
 			}
 		}

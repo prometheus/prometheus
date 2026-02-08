@@ -259,11 +259,12 @@ type Options struct {
 	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
 	StaleSeriesCompactionThreshold float64
 
-	// IgnoreOldCorruptedWAL allows skipping corrupted WAL segments that are older than the retention window
-	// during checkpoint creation and WAL truncation. This prevents unbounded disk growth when corruption
-	// occurs in old segments that are no longer needed.
-	// When enabled, corrupted segments older than (current time - RetentionDuration) will be skipped
-	// instead of blocking compaction indefinitely.
+	// IgnoreOldCorruptedWAL, if set to true, allows compaction/checkpointing to
+	// continue even if corrupted WAL segments are encountered during checkpoint
+	// creation, by truncating the WAL at the point of corruption. This can discard
+	// all data after the corruption point, regardless of retention, but prevents
+	// unbounded disk growth when corrupted WAL segments block checkpoint creation.
+	// Default: false (fail on any corruption for safety).
 	IgnoreOldCorruptedWAL bool
 }
 
