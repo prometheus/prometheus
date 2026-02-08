@@ -1389,11 +1389,11 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		
+
 		// Check for both types of corruption errors
 		var walCorr *wlog.CorruptionErr
 		var chunkCorr *chunks.CorruptionErr
-		
+
 		if errors.As(err, &walCorr) || errors.As(err, &chunkCorr) {
 			h.metrics.walCorruptionsTotal.Inc()
 			// If IgnoreOldCorruptedWAL is enabled, attempt to repair the WAL and allow
@@ -1407,7 +1407,7 @@ func (h *Head) truncateWAL(mint int64) error {
 					h.logger.Warn("Chunk corruption detected during checkpointing, attempting repair",
 						"dir", chunkCorr.Dir, "file_index", chunkCorr.FileIndex, "err", chunkCorr.Err)
 				}
-				
+
 				if repairErr := h.wal.Repair(err); repairErr != nil {
 					return fmt.Errorf("repair WAL after checkpoint corruption: %w", repairErr)
 				}

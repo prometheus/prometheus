@@ -28,14 +28,14 @@ func TestIgnoreOldCorruptedWAL_Compaction(t *testing.T) {
 	// This is a basic integration test to verify the option is respected.
 	// The detailed corruption handling during checkpointing is covered by the implementation
 	// which reuses the existing WAL repair mechanism.
-	
+
 	dir := t.TempDir()
 	ctx := context.Background()
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = int64(48 * 60 * 60 * 1000) // 48 hours
 	opts.IgnoreOldCorruptedWAL = true
-	
+
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 	defer func() {
@@ -65,25 +65,25 @@ func TestIgnoreOldCorruptedWAL_Compaction(t *testing.T) {
 func TestIgnoreOldCorruptedWAL_Checkpoint(t *testing.T) {
 	// This test verifies that the option propagates correctly and the repair mechanism is triggered.
 	// The actual corruption repair is tested extensively in existing tests (TestWalRepair_DecodingError).
-	
+
 	dir := t.TempDir()
 
 	// Create a DB with the option enabled
 	opts := DefaultOptions()
 	opts.IgnoreOldCorruptedWAL = true
-	
+
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
-	
+
 	// Verify the option was propagated to head
 	require.True(t, db.head.opts.IgnoreOldCorruptedWAL, "IgnoreOldCorruptedWAL should be set in head options")
-	
+
 	require.NoError(t, db.Close())
-	
+
 	// Create a DB with the option disabled (default)
 	opts2 := DefaultOptions()
 	require.False(t, opts2.IgnoreOldCorruptedWAL, "IgnoreOldCorruptedWAL should default to false")
-	
+
 	db2, err := Open(t.TempDir(), nil, nil, opts2, nil)
 	require.NoError(t, err)
 	require.False(t, db2.head.opts.IgnoreOldCorruptedWAL, "IgnoreOldCorruptedWAL should be false by default")
@@ -94,7 +94,7 @@ func TestIgnoreOldCorruptedWAL_Checkpoint(t *testing.T) {
 func TestIgnoreOldCorruptedWAL_OptionDefault(t *testing.T) {
 	opts := DefaultOptions()
 	require.False(t, opts.IgnoreOldCorruptedWAL, "IgnoreOldCorruptedWAL should default to false for backward compatibility")
-	
+
 	headOpts := DefaultHeadOptions()
 	require.False(t, headOpts.IgnoreOldCorruptedWAL, "IgnoreOldCorruptedWAL should default to false in HeadOptions")
 }
