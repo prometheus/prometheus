@@ -94,6 +94,7 @@ func DefaultOptions() *Options {
 		CompactionDelay:             time.Duration(0),
 		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
 		BlockReloadInterval:         1 * time.Minute,
+		IgnoreOldCorruptedWAL:       false,
 	}
 }
 
@@ -257,6 +258,13 @@ type Options struct {
 	// StaleSeriesCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
 	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
 	StaleSeriesCompactionThreshold float64
+
+	// IgnoreOldCorruptedWAL allows skipping corrupted WAL segments that are older than the retention window
+	// during checkpoint creation and WAL truncation. This prevents unbounded disk growth when corruption
+	// occurs in old segments that are no longer needed.
+	// When enabled, corrupted segments older than (current time - RetentionDuration) will be skipped
+	// instead of blocking compaction indefinitely.
+	IgnoreOldCorruptedWAL bool
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -1045,6 +1053,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
+	headOpts.IgnoreOldCorruptedWAL = opts.IgnoreOldCorruptedWAL
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}

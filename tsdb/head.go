@@ -200,6 +200,12 @@ type HeadOptions struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableMetadataWALRecords bool
+
+	// IgnoreOldCorruptedWAL, if set to true, allows compaction to continue
+	// even if WAL segments are corrupted, as long as the corrupted segments
+	// are older than the retention window. This prevents unbounded disk growth
+	// when old corrupted WAL segments block checkpoint creation.
+	IgnoreOldCorruptedWAL bool
 }
 
 const (
@@ -1383,9 +1389,32 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		var cerr *chunks.CorruptionErr
-		if errors.As(err, &cerr) {
+		
+		// Check for both types of corruption errors
+		var walCorr *wlog.CorruptionErr
+		var chunkCorr *chunks.CorruptionErr
+		
+		if errors.As(err, &walCorr) || errors.As(err, &chunkCorr) {
 			h.metrics.walCorruptionsTotal.Inc()
+			// If IgnoreOldCorruptedWAL is enabled, attempt to repair the WAL and allow
+			// compaction to continue. This prevents unbounded disk growth when old
+			// corrupted WAL segments block checkpoint creation indefinitely.
+			if h.opts.IgnoreOldCorruptedWAL {
+				if walCorr != nil {
+					h.logger.Warn("WAL corruption detected during checkpointing, attempting repair",
+						"dir", walCorr.Dir, "segment", walCorr.Segment, "offset", walCorr.Offset, "err", walCorr.Err)
+				} else {
+					h.logger.Warn("Chunk corruption detected during checkpointing, attempting repair",
+						"dir", chunkCorr.Dir, "file_index", chunkCorr.FileIndex, "err", chunkCorr.Err)
+				}
+				
+				if repairErr := h.wal.Repair(err); repairErr != nil {
+					return fmt.Errorf("repair WAL after checkpoint corruption: %w", repairErr)
+				}
+				h.logger.Info("WAL repaired successfully, continuing compaction")
+				// Don't return error - allow compaction to proceed with repaired WAL
+				return nil
+			}
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
 	}
