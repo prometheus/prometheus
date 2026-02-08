@@ -153,6 +153,7 @@ type PromParser struct {
 	builder labels.ScratchBuilder
 	series  []byte
 	text    []byte
+	mfName  []byte // metric family name from TYPE/HELP/UNIT metadata
 	mtype   model.MetricType
 	val     float64
 	ts      int64
@@ -295,6 +296,22 @@ func (p *PromParser) parseError(exp string, got token) error {
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
+// validateSeriesBelongsToFamily checks if the current series belongs to the metric family.
+// If not, it resets the type and metric family name to prevent incorrect metadata inheritance.
+func (p *PromParser) validateSeriesBelongsToFamily() bool {
+	if len(p.mfName) == 0 {
+		return true
+	}
+	s := string(p.series)
+	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
+	if !isSeriesPartOfFamily(metricName, p.mfName, p.mtype) {
+		p.mtype = model.MetricTypeUnknown
+		p.mfName = nil
+		return false
+	}
+	return true
+}
+
 // Next advances the parser to the next sample.
 // It returns (EntryInvalid, io.EOF) if no samples were read.
 func (p *PromParser) Next() (Entry, error) {
@@ -335,6 +352,7 @@ func (p *PromParser) Next() (Entry, error) {
 		}
 		switch t {
 		case tType:
+			p.mfName = p.l.b[p.offsets[len(p.offsets)-2]:p.offsets[len(p.offsets)-1]]
 			switch s := yoloString(p.text); s {
 			case "counter":
 				p.mtype = model.MetricTypeCounter
@@ -350,6 +368,7 @@ func (p *PromParser) Next() (Entry, error) {
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
 			}
 		case tHelp:
+			p.mfName = p.l.b[p.offsets[len(p.offsets)-2]:p.offsets[len(p.offsets)-1]]
 			if !utf8.Valid(p.text) {
 				return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
 			}
@@ -381,6 +400,7 @@ func (p *PromParser) Next() (Entry, error) {
 		}
 
 		p.series = p.l.b[p.start:p.l.i]
+		p.validateSeriesBelongsToFamily()
 		return p.parseMetricSuffix(p.nextToken())
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
@@ -394,6 +414,7 @@ func (p *PromParser) Next() (Entry, error) {
 			p.series = p.l.b[p.start:p.l.i]
 			t2 = p.nextToken()
 		}
+		p.validateSeriesBelongsToFamily()
 		return p.parseMetricSuffix(t2)
 
 	default:
