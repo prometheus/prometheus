@@ -31,8 +31,10 @@ const (
 	EncHistogram
 	EncFloatHistogram
 	EncXOROptST
+	EncXOROptOtelST
 	EncXOR2
 	EncXOR2ST
+	EncXOR2STotel
 )
 
 func (e Encoding) String() string {
