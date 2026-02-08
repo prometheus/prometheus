@@ -407,6 +407,175 @@ func (it *xorIterator) readValue() ValueType {
 	return ValFloat
 }
 
+// XOR2Chunk holds XOR2 encoded sample data. It uses varbit_int encoding for
+// timestamp delta-of-delta instead of the coarse 4-bucket encoding used by XORChunk.
+type XOR2Chunk struct {
+	XORChunk
+}
+
+// NewXOR2Chunk returns a new chunk with XOR2 encoding.
+func NewXOR2Chunk() *XOR2Chunk {
+	b := make([]byte, chunkHeaderSize, chunkAllocationSize)
+	return &XOR2Chunk{XORChunk: XORChunk{b: bstream{stream: b, count: 0}}}
+}
+
+// Encoding returns the encoding type.
+func (*XOR2Chunk) Encoding() Encoding {
+	return EncXOR2
+}
+
+// Appender implements the Chunk interface.
+func (c *XOR2Chunk) Appender() (Appender, error) {
+	if len(c.b.stream) == chunkHeaderSize {
+		return &xor2Appender{xorAppender: xorAppender{b: &c.b, t: math.MinInt64, leading: 0xff}}, nil
+	}
+	it := c.iterator(nil)
+
+	// To get an appender we must know the state it would have if we had
+	// appended all existing data from scratch.
+	// We iterate through the end and populate via the iterator's state.
+	for it.Next() != ValNone {
+	}
+	if err := it.Err(); err != nil {
+		return nil, err
+	}
+
+	a := &xor2Appender{
+		xorAppender: xorAppender{
+			b:        &c.b,
+			t:        it.t,
+			v:        it.val,
+			tDelta:   it.tDelta,
+			leading:  it.leading,
+			trailing: it.trailing,
+		},
+	}
+	return a, nil
+}
+
+func (c *XOR2Chunk) iterator(it Iterator) *xor2Iterator {
+	if xor2Iter, ok := it.(*xor2Iterator); ok {
+		xor2Iter.Reset(c.b.bytes())
+		return xor2Iter
+	}
+	return &xor2Iterator{
+		xorIterator: xorIterator{
+			br:       newBReader(c.b.bytes()[chunkHeaderSize:]),
+			numTotal: binary.BigEndian.Uint16(c.b.bytes()),
+			t:        math.MinInt64,
+		},
+	}
+}
+
+// Iterator implements the Chunk interface.
+func (c *XOR2Chunk) Iterator(it Iterator) Iterator {
+	return c.iterator(it)
+}
+
+// xor2Appender uses varbit_int encoding for timestamp delta-of-delta.
+type xor2Appender struct {
+	xorAppender
+}
+
+func (a *xor2Appender) Append(_, t int64, v float64) {
+	var tDelta uint64
+	num := binary.BigEndian.Uint16(a.b.bytes())
+	switch num {
+	case 0:
+		buf := make([]byte, binary.MaxVarintLen64)
+		for _, b := range buf[:binary.PutVarint(buf, t)] {
+			a.b.writeByte(b)
+		}
+		a.b.writeBits(math.Float64bits(v), 64)
+	case 1:
+		tDelta = uint64(t - a.t)
+
+		buf := make([]byte, binary.MaxVarintLen64)
+		for _, b := range buf[:binary.PutUvarint(buf, tDelta)] {
+			a.b.writeByte(b)
+		}
+
+		a.writeVDelta(v)
+	default:
+		tDelta = uint64(t - a.t)
+		dod := int64(tDelta - a.tDelta)
+
+		putVarbitInt(a.b, dod)
+
+		a.writeVDelta(v)
+	}
+
+	a.t = t
+	a.v = v
+	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
+	a.tDelta = tDelta
+}
+
+// xor2Iterator uses varbit_int decoding for timestamp delta-of-delta.
+type xor2Iterator struct {
+	xorIterator
+}
+
+func (it *xor2Iterator) Next() ValueType {
+	if it.err != nil || it.numRead == it.numTotal {
+		return ValNone
+	}
+
+	if it.numRead == 0 {
+		t, err := binary.ReadVarint(&it.br)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		v, err := it.br.readBits(64)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		it.t = t
+		it.val = math.Float64frombits(v)
+
+		it.numRead++
+		return ValFloat
+	}
+	if it.numRead == 1 {
+		tDelta, err := binary.ReadUvarint(&it.br)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		it.tDelta = tDelta
+		it.t += int64(it.tDelta)
+
+		return it.readValue()
+	}
+
+	// Read delta-of-delta using varbit_int encoding.
+	dod, err := readVarbitInt(&it.br)
+	if err != nil {
+		it.err = err
+		return ValNone
+	}
+
+	it.tDelta = uint64(int64(it.tDelta) + dod)
+	it.t += int64(it.tDelta)
+
+	return it.readValue()
+}
+
+func (it *xor2Iterator) Seek(t int64) ValueType {
+	if it.err != nil {
+		return ValNone
+	}
+
+	for t > it.t || it.numRead == 0 {
+		if it.Next() == ValNone {
+			return ValNone
+		}
+	}
+	return ValFloat
+}
+
 func xorWrite(b *bstream, newValue, currentValue float64, leading, trailing *uint8) {
 	delta := math.Float64bits(newValue) ^ math.Float64bits(currentValue)
 
