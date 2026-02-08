@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
+	ahocorasick "github.com/pgavlin/aho-corasick"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -567,15 +568,17 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 				suffixCaseSensitive: matchesCaseSensitive,
 			}
 
-		// We found literals in the middle. We can trigger the fast path only if
-		// the matches are case sensitive because containsStringMatcher doesn't
-		// support case insensitive.
+		// We found literals in the middle. Use containsStringMatcher for both
+		// case-sensitive and case-insensitive (Aho-Corasick enables the latter).
 		case matchesCaseSensitive:
-			return &containsStringMatcher{
-				substrings: matches,
-				left:       left,
-				right:      right,
+			return newContainsStringMatcher(matches, true, left, right)
+		default:
+			// Case-insensitive: normalize to uppercase for AC matching.
+			normalized := make([]string, len(matches))
+			for i, m := range matches {
+				normalized[i] = strings.ToUpper(m)
 			}
+			return newContainsStringMatcher(normalized, false, left, right)
 		}
 	}
 	return nil
@@ -615,6 +618,12 @@ func isCaseSensitiveLiteral(re *syntax.Regexp) bool {
 	return re.Op == syntax.OpLiteral && isCaseSensitive(re)
 }
 
+// acThreshold is the minimum number of alternates above which we use Aho-Corasick
+// instead of repeated strings.Index. Set to 21 so that 20 alternations stay on the
+// strings.Index path (no regression vs main). Case-insensitive matching always
+// uses AC regardless of pattern count, as it's the only way to support it efficiently.
+const acThreshold = 21
+
 // containsStringMatcher matches a string if it contains any of the substrings.
 // If left and right are not nil, it's a contains operation where left and right must match.
 // If left is nil, it's a hasPrefix operation and right must match.
@@ -628,9 +637,86 @@ type containsStringMatcher struct {
 
 	// The matcher that must match the right side. Can be nil.
 	right StringMatcher
+
+	// ac is set when we use Aho-Corasick for acThreshold+ patterns or case-insensitive matching.
+	// nil means use the strings.Index fallback.
+	ac *ahocorasick.AhoCorasick
+}
+
+// newContainsStringMatcher builds a containsStringMatcher. For acThreshold+ patterns or
+// case-insensitive matching we use Aho-Corasick; otherwise we use strings.Index.
+// Empty string in substrings is not supported with AC and forces the fallback path.
+func newContainsStringMatcher(substrings []string, caseSensitive bool, left, right StringMatcher) *containsStringMatcher {
+	// When both sides are trueMatcher (match everything), set both to nil so the
+	// zero-alloc fast path in matchesWithAhoCorasick is used. Only when both are
+	// trivial; if only one is trueMatcher the other constrains position and we
+	// need the full search (prefix/suffix-only paths would be wrong).
+	if _, lok := left.(trueMatcher); lok {
+		if _, rok := right.(trueMatcher); rok {
+			left = nil
+			right = nil
+		}
+	}
+	m := &containsStringMatcher{
+		substrings: substrings,
+		left:       left,
+		right:      right,
+	}
+	useAC := len(substrings) >= acThreshold || !caseSensitive
+	if useAC {
+		// Don't build AC if any pattern is empty; the fallback handles it correctly.
+		if slices.Contains(substrings, "") {
+			useAC = false
+		}
+	}
+	if useAC {
+		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{
+			AsciiCaseInsensitive: !caseSensitive,
+			DFA:                  false, // NFA for lower memory
+		})
+		built := builder.Build(substrings)
+		m.ac = &built
+	}
+	return m
 }
 
 func (m *containsStringMatcher) Matches(s string) bool {
+	if m.ac != nil {
+		return m.matchesWithAhoCorasick(s)
+	}
+	return m.matchesWithStringsIndex(s)
+}
+
+func (m *containsStringMatcher) matchesWithAhoCorasick(s string) bool {
+	// Fast path: no context matchers, just check if any pattern exists (no slice alloc).
+	if m.left == nil && m.right == nil {
+		iter := m.ac.Iter(s)
+		return iter.Next() != nil
+	}
+	// Slow path: need all matches for context checking.
+	matches := m.ac.FindAll(s)
+	for _, match := range matches {
+		start := match.Start()
+		end := match.End()
+		switch {
+		case m.right != nil && m.left != nil:
+			if m.left.Matches(s[:start]) && m.right.Matches(s[end:]) {
+				return true
+			}
+		case m.left != nil:
+			if m.left.Matches(s[:start]) {
+				return true
+			}
+		case m.right != nil:
+			if m.right.Matches(s[end:]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (m *containsStringMatcher) matchesWithStringsIndex(s string) bool {
 	for _, substr := range m.substrings {
 		switch {
 		case m.right != nil && m.left != nil:
@@ -662,6 +748,10 @@ func (m *containsStringMatcher) Matches(s string) bool {
 			}
 		case m.right != nil:
 			if strings.HasPrefix(s, substr) && m.right.Matches(s[len(substr):]) {
+				return true
+			}
+		default:
+			if strings.Contains(s, substr) {
 				return true
 			}
 		}
