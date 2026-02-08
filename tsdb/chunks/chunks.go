@@ -166,7 +166,7 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	}
 
 	// Request storing ST in the chunk if available.
-	c, err := chunkenc.NewEmptyChunk(sampleType.ChunkEncoding(), hasST)
+	c, err := sampleType.NewChunk(hasST)
 	if err != nil {
 		return Meta{}, err
 	}

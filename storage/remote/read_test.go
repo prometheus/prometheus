@@ -527,6 +527,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				tc.requiredMatchers,
 				tc.readRecent,
 				tc.callback,
+				false,
 			)
 			q, err := c.Querier(tc.mint, tc.maxt)
 			require.NoError(t, err)

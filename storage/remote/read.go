@@ -29,6 +29,7 @@ type sampleAndChunkQueryableClient struct {
 	requiredMatchers []*labels.Matcher
 	readRecent       bool
 	callback         startTimeCallback
+	storeST          bool
 }
 
 // NewSampleAndChunkQueryableClient returns a storage.SampleAndChunkQueryable which queries the given client to select series sets.
@@ -38,6 +39,7 @@ func NewSampleAndChunkQueryableClient(
 	requiredMatchers []*labels.Matcher,
 	readRecent bool,
 	callback startTimeCallback,
+	storeST bool,
 ) storage.SampleAndChunkQueryable {
 	return &sampleAndChunkQueryableClient{
 		client: c,
@@ -46,6 +48,7 @@ func NewSampleAndChunkQueryableClient(
 		requiredMatchers: requiredMatchers,
 		readRecent:       readRecent,
 		callback:         callback,
+		storeST:          storeST,
 	}
 }
 
@@ -84,6 +87,7 @@ func (c *sampleAndChunkQueryableClient) ChunkQuerier(mint, maxt int64) (storage.
 			externalLabels:   c.externalLabels,
 			requiredMatchers: c.requiredMatchers,
 		},
+		storeST: c.storeST,
 	}
 	if c.readRecent {
 		return cq, nil
@@ -229,13 +233,14 @@ func (*querier) Close() error {
 // chunkQuerier is an adapter to make a client usable as a storage.ChunkQuerier.
 type chunkQuerier struct {
 	querier
+	storeST bool
 }
 
 // Select implements storage.ChunkQuerier and uses the given matchers to read chunk series sets from the client.
 // It uses remote.querier.Select so it supports external labels and required matchers if specified.
 func (q *chunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
 	// TODO(bwplotka) Support remote read chunked and allow returning chunks directly (TODO ticket).
-	return storage.NewSeriesSetToChunkSet(q.querier.Select(ctx, sortSeries, hints, matchers...))
+	return storage.NewSeriesSetToChunkSet(q.querier.Select(ctx, sortSeries, hints, matchers...), q.storeST)
 }
 
 // Note strings in toFilter must be sorted.

@@ -722,6 +722,11 @@ func (h *samplesIteratorHeap) Pop() any {
 // NOTE: Use the returned merge function only when you see potentially overlapping series, as this introduces small a overhead
 // to handle overlaps between series.
 func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalChunkSeriesMergeFunc {
+	return NewCompactingChunkSeriesMergerWithStoreST(mergeFunc, false)
+}
+
+// NewCompactingChunkSeriesMergerWithStoreST is like NewCompactingChunkSeriesMerger, but uses storeST when re-encoding.
+func NewCompactingChunkSeriesMergerWithStoreST(mergeFunc VerticalSeriesMergeFunc, storeST bool) VerticalChunkSeriesMergeFunc {
 	return func(series ...ChunkSeries) ChunkSeries {
 		if len(series) == 0 {
 			return nil
@@ -736,6 +741,7 @@ func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalC
 				return &compactChunkIterator{
 					mergeFunc: mergeFunc,
 					iterators: iterators,
+					storeST:   storeST,
 				}
 			},
 		}
@@ -748,6 +754,7 @@ func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalC
 type compactChunkIterator struct {
 	mergeFunc VerticalSeriesMergeFunc
 	iterators []chunks.Iterator
+	storeST   bool
 
 	h chunkIteratorHeap
 
@@ -813,7 +820,7 @@ func (c *compactChunkIterator) Next() bool {
 	}
 
 	// Add last as it's not yet included in overlap. We operate on same series, so labels does not matter here.
-	iter = NewSeriesToChunkEncoder(c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(labels.EmptyLabels(), c.curr))...)).Iterator(nil)
+	iter = NewSeriesToChunkEncoder(c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(labels.EmptyLabels(), c.curr))...), c.storeST).Iterator(nil)
 	if !iter.Next() {
 		if c.err = iter.Err(); c.err != nil {
 			return false

@@ -56,7 +56,8 @@ type Storage struct {
 	logger  *slog.Logger
 	mtx     sync.Mutex
 
-	rws *WriteStorage
+	rws     *WriteStorage
+	storeST bool
 
 	// For reads.
 	queryables             []storage.SampleAndChunkQueryable
@@ -67,6 +68,11 @@ var _ storage.Storage = &Storage{}
 
 // NewStorage returns a remote.Storage.
 func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *Storage {
+	return NewStorageWithStoreST(l, reg, stCallback, walDir, flushDeadline, sm, enableTypeAndUnitLabels, false)
+}
+
+// NewStorageWithStoreST returns a remote.Storage with start timestamp storage enabled or disabled.
+func NewStorageWithStoreST(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels, storeST bool) *Storage {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -77,6 +83,7 @@ func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeC
 		logger:                 logger,
 		deduper:                deduper,
 		localStartTimeCallback: stCallback,
+		storeST:                storeST,
 	}
 	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, enableTypeAndUnitLabels)
 	return s
@@ -139,6 +146,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			labelsToEqualityMatchers(rrConf.RequiredMatchers),
 			rrConf.ReadRecent,
 			s.localStartTimeCallback,
+			s.storeST,
 		))
 	}
 	s.queryables = queryables
@@ -187,7 +195,7 @@ func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 		}
 		queriers = append(queriers, q)
 	}
-	return storage.NewMergeChunkQuerier(nil, queriers, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
+	return storage.NewMergeChunkQuerier(nil, queriers, storage.NewCompactingChunkSeriesMergerWithStoreST(storage.ChainedSeriesMerge, s.storeST)), nil
 }
 
 // Appender implements storage.Storage.
