@@ -40,3 +40,10 @@ func BenchmarkXorRead(b *testing.B) {
 		_, _ = ts, v
 	}
 }
+
+func TestXor2STChunk(t *testing.T) {
+	testChunkSTHandling(t, ValFloat, func() Chunk {
+		return NewXOR2STChunk()
+	},
+	)
+}
