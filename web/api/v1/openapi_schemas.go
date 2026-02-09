@@ -590,6 +590,21 @@ func (*OpenAPIBuilder) queryStatsSchema() *base.SchemaProxy {
 			MaxItems:    int64Ptr(2),
 		})},
 	}))
+	samplesProps.Set("samplesRead", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"integer"},
+		Description: "Total number of samples read (I/O). For range-vector in range queries, only new points per step.",
+	}))
+	samplesProps.Set("samplesReadPerStep", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Description: "Samples read per step (only included with stats=all when per-step stats enabled).",
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
+			Type:        []string{"array"},
+			Description: "Timestamp and sample count as [timestamp, count].",
+			Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{Type: []string{"number"}})},
+			MinItems:    int64Ptr(2),
+			MaxItems:    int64Ptr(2),
+		})},
+	}))
 
 	// Main stats object.
 	statsProps := orderedmap.New[string, *base.SchemaProxy]()

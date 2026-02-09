@@ -102,7 +102,7 @@ URL query parameters:
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Doesn't affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 - `lookback_delta=<number>`: Override the the [lookback period](#staleness) just for this query. Optional.
-- `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics. Optional.
+- `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics (timings and sample counts). Optional. See [Query statistics](#query-statistics).
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -176,7 +176,7 @@ URL query parameters:
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 - `lookback_delta=<number>`: Override the the [lookback period](#staleness) just for this query. Optional.
-- `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics. Optional.
+- `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics (timings and sample counts). Optional. See [Query statistics](#query-statistics).
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -235,6 +235,20 @@ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10:3
    }
 }
 ```
+
+### Query statistics
+
+When the `stats` parameter is set (e.g. `stats=all`), the response `data` includes a `stats` object with the following structure:
+
+- **timings**: Durations (in seconds) for different phases of query execution (e.g. `evalTotalTime`, `execQueueTime`).
+- **samples**:
+  - **totalQueryableSamples**: Total number of samples *loaded* during the query. For range-vector functions over multiple steps, each step counts the full window.
+  - **totalQueryableSamplesPerStep**: (Only with `stats=all` and when per-step stats are enabled.) Per-step count of samples loaded; same semantics as `totalQueryableSamples` per step.
+  - **samplesRead**: Total number of samples *read* (I/O). For range-vector functions in range queries, only new points per step are counted; for other queries this equals `totalQueryableSamples`.
+  - **samplesReadPerStep**: (Only with `stats=all` and when per-step stats are enabled.) Per-step count of samples read (delta semantics for range-vector).
+  - **peakSamples**: Peak number of samples in memory during evaluation.
+
+The server also exposes two Prometheus metrics: `prometheus_engine_query_samples_total` (samples loaded) and `prometheus_engine_query_samples_read_total` (samples read). See [Per-step stats](../feature_flags.md#per-step-stats) for the `promql-per-step-stats` feature flag.
 
 ## Formatting query expressions
 

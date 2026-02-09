@@ -2999,6 +2999,19 @@ components:
                                 minItems: 2
                                 description: Timestamp and sample count as [timestamp, count].
                             description: Total queryable samples per step (only included with stats=all).
+                        samplesRead:
+                            type: integer
+                            description: Total number of samples read (I/O). For range-vector in range queries, only new points per step.
+                        samplesReadPerStep:
+                            type: array
+                            items:
+                                type: array
+                                items:
+                                    type: number
+                                maxItems: 2
+                                minItems: 2
+                                description: Timestamp and sample count as [timestamp, count].
+                            description: Samples read per step (only included with stats=all when per-step stats enabled).
             description: Query execution statistics (included when the stats query parameter is provided).
         FloatSample:
             type: object
