@@ -212,6 +212,7 @@ type flagConfig struct {
 	// for ease of use.
 	enablePerStepStats       bool
 	enableConcurrentRuleEval bool
+	enableNHCBasClassic      bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -303,6 +304,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "use-uncached-io":
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
+			case "promq-nhcb-as-classic":
+				c.enableNHCBasClassic = true
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -819,12 +822,18 @@ func main() {
 	features.Set(features.Prometheus, "auto_reload_config", cfg.enableAutoReload)
 	features.Enable(features.Prometheus, labels.ImplementationName)
 	template.RegisterFeatures(features.DefaultRegistry)
+	var (
+		localStorage                   = &readyStorage{stats: tsdb.NewDBStats()}
+		wrappedStorage storage.Storage = localStorage
+	)
+	if cfg.enableNHCBasClassic {
+		wrappedStorage = storage.NewNHCBAsClassicStorage(localStorage)
+	}
 
 	var (
-		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
+		fanoutStorage = storage.NewFanout(logger, wrappedStorage, remoteStorage)
 	)
 
 	var (
