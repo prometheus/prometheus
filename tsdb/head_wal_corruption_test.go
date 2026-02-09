@@ -49,7 +49,7 @@ func TestIgnoreOldCorruptedWAL_Compaction(t *testing.T) {
 	// Append some samples
 	app := db.Appender(ctx)
 	lbls := labels.FromStrings("foo", "bar")
-	for i := int64(0); i < 100; i++ {
+	for i := range int64(100) {
 		_, err := app.Append(0, lbls, i*1000, float64(i))
 		require.NoError(t, err)
 	}
