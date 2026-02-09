@@ -201,11 +201,10 @@ type HeadOptions struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
-	// IgnoreOldCorruptedWAL, if set to true, allows compaction/checkpointing to
-	// continue even if corrupted WAL segments are encountered, by truncating the
-	// WAL at the point of corruption. This can discard all data after the
-	// corruption point, regardless of retention, but prevents unbounded disk
-	// growth when corrupted WAL segments block checkpoint creation.
+	// IgnoreOldCorruptedWAL, if set to true, allows compaction to continue even if
+	// checkpoint creation encounters corrupted WAL segments, by skipping the failed
+	// checkpoint attempt instead of blocking indefinitely. This prevents unbounded
+	// disk growth when corruption blocks the checkpoint process.
 	IgnoreOldCorruptedWAL bool
 }
 
@@ -1395,19 +1394,16 @@ func (h *Head) truncateWAL(mint int64) error {
 		var walCorr *wlog.CorruptionErr
 		if errors.As(err, &walCorr) {
 			h.metrics.walCorruptionsTotal.Inc()
-			// If IgnoreOldCorruptedWAL is enabled, attempt to repair the WAL.
-			// The repair discards data after the corruption point, allowing
-			// compaction to proceed and preventing unbounded disk growth.
+			// If IgnoreOldCorruptedWAL is enabled, skip this checkpoint attempt instead of
+			// blocking compaction indefinitely. This allows the TSDB to continue operating
+			// and prevents unbounded disk growth. The corrupted data will remain in the WAL
+			// until it can be addressed (e.g., via offline repair or when old enough to be
+			// beyond the retention window in future checkpoints).
 			if h.opts.IgnoreOldCorruptedWAL {
-				h.logger.Warn("WAL corruption detected during checkpointing, attempting repair",
+				h.logger.Warn("WAL corruption detected during checkpointing, skipping checkpoint to allow compaction to continue",
 					"dir", walCorr.Dir, "segment", walCorr.Segment, "offset", walCorr.Offset, "err", walCorr.Err)
-
-				if repairErr := h.wal.Repair(err); repairErr != nil {
-					return fmt.Errorf("repair WAL after checkpoint corruption: %w", repairErr)
-				}
-				h.logger.Warn("WAL repaired, data after corruption point discarded")
-				// After repair, retry the checkpoint creation on the next compaction cycle.
-				// Don't fail this compaction - just skip WAL truncation for now.
+				// Return nil to allow compaction to proceed without blocking on this checkpoint.
+				// The next compaction cycle will retry checkpointing.
 				return nil
 			}
 		}
