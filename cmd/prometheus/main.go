@@ -217,6 +217,7 @@ type flagConfig struct {
 	enablePerStepStats       bool
 	enableConcurrentRuleEval bool
 	useStartTimestamps       bool
+	enableNHCBasClassic      bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -352,6 +353,8 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
+			case "promq-nhcb-as-classic":
+				c.enableNHCBasClassic = true
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -944,12 +947,18 @@ func main() {
 	features.Set(features.Prometheus, "auto_reload_config", cfg.enableAutoReload)
 	features.Enable(features.Prometheus, labels.ImplementationName)
 	template.RegisterFeatures(features.DefaultRegistry)
+	var (
+		localStorage                   = &readyStorage{stats: tsdb.NewDBStats()}
+		wrappedStorage storage.Storage = localStorage
+	)
+	if cfg.enableNHCBasClassic {
+		wrappedStorage = storage.NewNHCBAsClassicStorage(localStorage)
+	}
 
 	var (
-		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
+		fanoutStorage = storage.NewFanout(logger, wrappedStorage, remoteStorage)
 	)
 
 	var (
