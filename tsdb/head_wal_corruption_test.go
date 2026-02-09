@@ -60,11 +60,12 @@ func TestIgnoreOldCorruptedWAL_Compaction(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestIgnoreOldCorruptedWAL_Checkpoint tests that truncateWAL can handle corruption
-// when the IgnoreOldCorruptedWAL option is enabled.
-func TestIgnoreOldCorruptedWAL_Checkpoint(t *testing.T) {
-	// This test verifies that the option propagates correctly and the repair mechanism is triggered.
-	// The actual corruption repair is tested extensively in existing tests (TestWalRepair_DecodingError).
+// TestIgnoreOldCorruptedWAL_Propagation tests that the IgnoreOldCorruptedWAL
+// option is correctly propagated to the Head options when opening a DB.
+func TestIgnoreOldCorruptedWAL_Propagation(t *testing.T) {
+	// This test only verifies option propagation for enabled/disabled configurations.
+	// The actual corruption repair behavior is covered by existing WAL repair tests
+	// such as TestWalRepair_DecodingError.
 
 	dir := t.TempDir()
 
