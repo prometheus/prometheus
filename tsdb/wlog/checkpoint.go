@@ -86,6 +86,14 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 // checkpointTempFileSuffix is the suffix used when creating temporary checkpoint files.
 const checkpointTempFileSuffix = ".tmp"
 
+// DeleteTempCheckpoints deletes all temporary checkpoint directories in the given directory.
+func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
+	if err := tsdbutil.RemoveTmpDirs(logger, dir, isTempDir); err != nil {
+		return fmt.Errorf("remove previous temporary checkpoint dirs: %w", err)
+	}
+	return nil
+}
+
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
 // All series not satisfying keep, samples/tombstones/exemplars below mint and
@@ -126,8 +134,8 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		defer sgmReader.Close()
 	}
 
-	if err := tsdbutil.RemoveTmpDirs(logger, w.Dir(), isTempDir); err != nil {
-		return nil, fmt.Errorf("remove previous temporary checkpoint dirs: %w", err)
+	if err := DeleteTempCheckpoints(logger, w.Dir()); err != nil {
+		return nil, err
 	}
 
 	cpdir := checkpointDir(w.Dir(), to)

@@ -856,6 +856,10 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		if err := tsdbutil.RemoveTmpDirs(l, tmpDir, isTmpDir); err != nil {
 			return nil, fmt.Errorf("remove tmp dirs: %w", err)
 		}
+		// Remove any temporary checkpoints that might have been interrupted during creation.
+		if err := wlog.DeleteTempCheckpoints(l, tmpDir); err != nil {
+			return nil, fmt.Errorf("delete temp checkpoints: %w", err)
+		}
 	}
 
 	db := &DB{
