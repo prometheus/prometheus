@@ -1891,10 +1891,10 @@ eval instant at 1m h_test </ -Inf
   h_test {{schema:0 z_bucket_w:0.001}}
 
 eval instant at 1m h_test >/ 0
-  h_test {{schema:0 sum:120.20815280171308 count:30.5 z_bucket:0.5 z_bucket_w:0.001 buckets:[2 4 8 16]}}
+  h_test {{schema:0 sum:120.20840280171308 count:30.5 z_bucket:0.5 z_bucket_w:0.001 buckets:[2 4 8 16]}}
 
 eval instant at 1m h_test </ 0
-  h_test {{schema:0 sum:-3.5355339059327378 count:3.5 z_bucket:0.5 z_bucket_w:0.001 n_buckets:[1 2]}}
+  h_test {{schema:0 sum:-3.53578390593273768 count:3.5 z_bucket:0.5 z_bucket_w:0.001 n_buckets:[1 2]}}
 
 # Exponential buckets: trim uses exponential interpolation if cutoff is inside a bucket
 # Trim at sqrt(2) yields half the area between 1 and 2 boundaries.
@@ -1997,10 +1997,10 @@ load 1m
 
 # Zero Bucket Edge Case: Interpolation Around Zero
 eval instant at 1m zero_bucket </ -0.005
-  zero_bucket{} {{count:7.25 sum:-12.020815280171309 z_bucket:1.25 z_bucket_w:0.01 n_buckets:[1 2 3]}}
+  zero_bucket{} {{count:7.25 sum:-12.03019028017131 z_bucket:1.25 z_bucket_w:0.01 n_buckets:[1 2 3]}}
 
 eval instant at 1m zero_bucket >/ 0
-  zero_bucket{} {{count:7.5 sum:5.656854249492381 z_bucket:2.5 z_bucket_w:0.01 buckets:[2 3]}}
+  zero_bucket{} {{count:7.5 sum:5.669354249492381 z_bucket:2.5 z_bucket_w:0.01 buckets:[2 3]}}
 
 
 load 1m

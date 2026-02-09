@@ -3228,6 +3228,45 @@ func computeSplit(b histogram.Bucket[float64], rhs float64, isPositive, isLinear
 	return b.Count * fraction
 }
 
+func computeZeroBucketTrim(zeroBucket histogram.Bucket[float64], rhs float64, hasNegative, hasPositive, isUpperTrim bool) (float64, float64) {
+	var (
+		lower = zeroBucket.Lower
+		upper = zeroBucket.Upper
+	)
+	if !hasPositive {
+		upper = 0
+	}
+	if !hasNegative {
+		lower = 0
+	}
+
+	var fraction, midpoint float64
+
+	if isUpperTrim {
+		if rhs <= lower {
+			return 0, 0
+		}
+		if rhs >= upper {
+			return zeroBucket.Count, (lower + upper) / 2
+		}
+
+		fraction = (rhs - lower) / (upper - lower)
+		midpoint = (lower + rhs) / 2
+	} else { // lower trim
+		if rhs <= lower {
+			return zeroBucket.Count, (lower + upper) / 2
+		}
+		if rhs >= upper {
+			return 0, 0
+		}
+
+		fraction = (upper - rhs) / (upper - lower)
+		midpoint = (rhs + upper) / 2
+	}
+
+	return zeroBucket.Count * fraction, midpoint
+}
+
 func computeBucketTrim(b histogram.Bucket[float64], rhs float64, isUpperTrim, isPositive, isCustomBucket bool) (float64, float64) {
 	if math.IsInf(b.Lower, -1) || math.IsInf(b.Upper, 1) {
 		return handleInfinityBuckets(isUpperTrim, b, rhs)
@@ -3249,6 +3288,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 		updatedCount, updatedSum float64
 		trimmedBuckets           bool
 		isCustomBucket           = trimmedHist.UsesCustomBuckets()
+		hasPositive, hasNegative bool
 	)
 
 	if isUpperTrim {
@@ -3260,6 +3300,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 			if bucket.Count == 0 {
 				continue
 			}
+			hasPositive = true
 
 			switch {
 			case bucket.Upper <= rhs:
@@ -3289,6 +3330,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 			if bucket.Count == 0 {
 				continue
 			}
+			hasNegative = true
 
 			switch {
 			case bucket.Upper <= rhs:
@@ -3319,6 +3361,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 			if bucket.Count == 0 {
 				continue
 			}
+			hasPositive = true
 
 			switch {
 			case bucket.Lower >= rhs:
@@ -3347,6 +3390,7 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 			if bucket.Count == 0 {
 				continue
 			}
+			hasNegative = true
 
 			switch {
 			case bucket.Lower >= rhs:
@@ -3373,14 +3417,13 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 
 	// Handle the zero count bucket.
 	if trimmedHist.ZeroCount > 0 {
-		keepCount := computeSplit(trimmedHist.ZeroBucket(), rhs, true, true)
-		if !isUpperTrim {
-			keepCount = trimmedHist.ZeroCount - keepCount
-		}
+		keepCount, bucketMidpoint := computeZeroBucketTrim(trimmedHist.ZeroBucket(), rhs, hasNegative, hasPositive, isUpperTrim)
+
 		if trimmedHist.ZeroCount != keepCount {
 			trimmedHist.ZeroCount = keepCount
 			trimmedBuckets = true
 		}
+		updatedSum += bucketMidpoint * keepCount
 		updatedCount += keepCount
 	}
 
