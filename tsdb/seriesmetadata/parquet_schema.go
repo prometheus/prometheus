@@ -21,6 +21,20 @@ const (
 	NamespaceResource = "resource"
 	// NamespaceScope indicates a row contains OTel InstrumentationScope data.
 	NamespaceScope = "scope"
+
+	// NamespaceResourceTable indicates a content-addressed resource table row.
+	// Contains the full resource content (identifying/descriptive attrs, entities)
+	// keyed by ContentHash. No LabelsHash or time range.
+	NamespaceResourceTable = "resource_table"
+	// NamespaceResourceMapping maps a series (LabelsHash) to a resource (ContentHash)
+	// at a specific time range (MinTime/MaxTime).
+	NamespaceResourceMapping = "resource_mapping"
+	// NamespaceScopeTable indicates a content-addressed scope table row.
+	// Contains the full scope content keyed by ContentHash.
+	NamespaceScopeTable = "scope_table"
+	// NamespaceScopeMapping maps a series (LabelsHash) to a scope (ContentHash)
+	// at a specific time range (MinTime/MaxTime).
+	NamespaceScopeMapping = "scope_mapping"
 )
 
 // Identifying attribute keys per OTel semantic conventions.
@@ -85,8 +99,10 @@ type metadataRow struct {
 	// Optional for metric metadata, required for resources.
 	MaxTime int64 `parquet:"maxt,optional"`
 
-	// ContentHash is used by content-addressed metadata_table/metadata_mapping rows.
-	// It's the xxhash of the metadata content (type+unit+help) for deduplication.
+	// ContentHash is the xxhash of content for content-addressed rows.
+	// Used for metadata_table/metadata_mapping (metric metadata deduplication),
+	// resource_table/resource_mapping, and scope_table/scope_mapping rows.
+	// Zero for plain metric rows.
 	ContentHash uint64 `parquet:"content_hash,optional"`
 
 	// --- Metric metadata fields (namespace="metric") ---
