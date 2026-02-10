@@ -3159,7 +3159,7 @@ func handleInfinityBuckets(isUpperTrim bool, b histogram.Bucket[float64], rhs fl
 			if rhs >= 0 && b.Upper > rhs && !math.IsInf(b.Upper, 1) {
 				// If upper is finite and positive, we treat lower as 0 (despite it de facto being -Inf).
 				// This is only possible with NHCB, so we can always use linear interpolation.
-				return b.Count * rhs / b.Upper, (rhs + b.Upper) / 2
+				return b.Count * rhs / b.Upper, rhs / 2
 			}
 			// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
 			return 0, zeroIfInf(b.Upper)
@@ -3172,7 +3172,7 @@ func handleInfinityBuckets(isUpperTrim bool, b histogram.Bucket[float64], rhs fl
 		if rhs >= 0 && b.Upper > rhs && !math.IsInf(b.Upper, 1) {
 			// If upper is finite and positive, we treat lower as 0 (despite it de facto being -Inf).
 			// This is only possible with NHCB, so we can always use linear interpolation.
-			return b.Count * (1 - rhs/b.Upper), rhs / 2
+			return b.Count * (1 - rhs/b.Upper), (rhs + b.Upper) / 2
 		}
 		// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
 		return 0, zeroIfInf(b.Upper)
