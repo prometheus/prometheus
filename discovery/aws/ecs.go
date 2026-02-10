@@ -27,7 +27,6 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
@@ -137,17 +136,9 @@ func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	if c.Region == "" {
-		cfg, err := awsConfig.LoadDefaultConfig(context.TODO())
-		if err != nil {
-			return err
-		}
-		client := imds.NewFromConfig(cfg)
-		result, err := client.GetRegion(context.Background(), &imds.GetRegionInput{})
-		if err != nil {
-			return fmt.Errorf("ECS SD configuration requires a region. Tried to fetch it from the instance metadata: %w", err)
-		}
-		c.Region = result.Region
+	c.Region, err = loadRegion(context.Background(), c.Region)
+	if err != nil {
+		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()

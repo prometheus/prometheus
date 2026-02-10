@@ -27,7 +27,6 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/kafka"
 	"github.com/aws/aws-sdk-go-v2/service/kafka/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -136,29 +135,9 @@ func (c *MSKSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	if c.Region == "" {
-		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
-		if err != nil {
-			return err
-		}
-		if cfg.Region != "" {
-			// If the region is already set in the config, use it (env vars).
-			c.Region = cfg.Region
-		}
-
-		if c.Region == "" {
-			// Try to get the region from IMDS.
-			imdsClient := imds.NewFromConfig(cfg)
-			region, err := imdsClient.GetRegion(context.Background(), &imds.GetRegionInput{})
-			if err != nil {
-				return err
-			}
-			c.Region = region.Region
-		}
-	}
-
-	if c.Region == "" {
-		return errors.New("MSK SD configuration requires a region")
+	c.Region, err = loadRegion(context.Background(), c.Region)
+	if err != nil {
+		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()
