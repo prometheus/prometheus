@@ -756,17 +756,18 @@ func formatSeriesSet(ss storage.SeriesSet) error {
 		series := ss.At()
 		lbs := series.Labels()
 		it := series.Iterator(nil)
-		for it.Next() == chunkenc.ValFloat {
-			ts, val := it.At()
-			fmt.Printf("%s %g %d\n", lbs, val, ts)
-		}
-		for it.Next() == chunkenc.ValFloatHistogram {
-			ts, fh := it.AtFloatHistogram(nil)
-			fmt.Printf("%s %s %d\n", lbs, fh.String(), ts)
-		}
-		for it.Next() == chunkenc.ValHistogram {
-			ts, h := it.AtHistogram(nil)
-			fmt.Printf("%s %s %d\n", lbs, h.String(), ts)
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			switch valType {
+			case chunkenc.ValFloat:
+				ts, val := it.At()
+				fmt.Printf("%s %g %d\n", lbs, val, ts)
+			case chunkenc.ValFloatHistogram:
+				ts, fh := it.AtFloatHistogram(nil)
+				fmt.Printf("%s %s %d\n", lbs, fh.String(), ts)
+			case chunkenc.ValHistogram:
+				ts, h := it.AtHistogram(nil)
+				fmt.Printf("%s %s %d\n", lbs, h.String(), ts)
+			}
 		}
 		if it.Err() != nil {
 			return ss.Err()
