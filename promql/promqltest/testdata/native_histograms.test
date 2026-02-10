@@ -1545,6 +1545,21 @@ eval instant at 3m avg_over_time(histogram_sum_over_time_incremental_6[4m:1m])
 
 clear
 
+# Test avg_over_time with a single histogram sample (regression test for division by zero bug).
+load 1m
+    single_histogram_sample {{schema:3 sum:5 count:4 buckets:[1 2 1]}}
+    single_nhcb_sample {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}}
+
+# avg_over_time should return the histogram unchanged when there's only one sample, not Inf/NaN.
+eval instant at 0m avg_over_time(single_histogram_sample[1m])
+    {} {{schema:3 sum:5 count:4 buckets:[1 2 1]}}
+
+# Test with native histogram with custom buckets (NHCB).
+eval instant at 0m avg_over_time(single_nhcb_sample[1m])
+    {} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}}
+
+clear
+
 # Test native histograms with sub operator.
 load 10m
     histogram_sub_1{idx="0"} {{schema:0 count:41 sum:2345.6 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
