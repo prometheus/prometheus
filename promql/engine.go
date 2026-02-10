@@ -3315,8 +3315,10 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 
 				updatedCount += keepCount
 				updatedSum += bucketMidpoint * keepCount
-				trimmedHist.PositiveBuckets[i] = keepCount
-				trimmedBuckets = true
+				if trimmedHist.PositiveBuckets[i] != keepCount {
+					trimmedHist.PositiveBuckets[i] = keepCount
+					trimmedBuckets = true
+				}
 
 			default:
 				// Bucket is entirely above the trim point - discard.
@@ -3345,8 +3347,10 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 
 				updatedCount += keepCount
 				updatedSum += bucketMidpoint * keepCount
-				trimmedHist.NegativeBuckets[i] = keepCount
-				trimmedBuckets = true
+				if trimmedHist.NegativeBuckets[i] != keepCount {
+					trimmedHist.NegativeBuckets[i] = keepCount
+					trimmedBuckets = true
+				}
 
 			default:
 				trimmedHist.NegativeBuckets[i] = 0
@@ -3376,8 +3380,10 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 
 				updatedCount += keepCount
 				updatedSum += bucketMidpoint * keepCount
-				trimmedHist.PositiveBuckets[i] = keepCount
-				trimmedBuckets = true
+				if trimmedHist.PositiveBuckets[i] != keepCount {
+					trimmedHist.PositiveBuckets[i] = keepCount
+					trimmedBuckets = true
+				}
 
 			default:
 				trimmedHist.PositiveBuckets[i] = 0
@@ -3405,8 +3411,10 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 
 				updatedCount += keepCount
 				updatedSum += bucketMidpoint * keepCount
-				trimmedHist.NegativeBuckets[i] = keepCount
-				trimmedBuckets = true
+				if trimmedHist.NegativeBuckets[i] != keepCount {
+					trimmedHist.NegativeBuckets[i] = keepCount
+					trimmedBuckets = true
+				}
 
 			default:
 				trimmedHist.NegativeBuckets[i] = 0

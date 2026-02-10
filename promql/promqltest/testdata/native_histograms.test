@@ -2016,9 +2016,9 @@ eval instant at 1m cbh </ +Inf
 eval instant at 1m cbh >/ -Inf
   cbh {{schema:-53 sum:172.5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
 
-# Use trimming value (0) as a midpoint of lowest bucket when recomputing the sum.
+# Noop
 eval instant at 1m cbh >/ 0
-  cbh {{schema:-53 sum:167.5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
+  cbh {{schema:-53 sum:172.5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
 
 eval instant at 1m cbh </ 0
   cbh {{schema:-53 custom_values:[5 10 15 20]}}
@@ -2128,11 +2128,11 @@ eval instant at 1m cbh_two_buckets_split_at_positive </ -10.0
 eval instant at 1m cbh_two_buckets_split_at_positive >/ -10.0
   cbh_two_buckets_split_at_positive {{schema:-53 sum:500.0 count:100 custom_values:[5] buckets:[0 100]}}
 
-# Keep both buckets (1 and 100).
+# Noop.
 eval instant at 1m cbh_two_buckets_split_at_positive >/ 0.0
-  cbh_two_buckets_split_at_positive {{schema:-53 sum:500.0 count:101 custom_values:[5] buckets:[1 100]}}
+  cbh_two_buckets_split_at_positive {{schema:-53 sum:33.0 count:101 custom_values:[5] buckets:[1 100]}}
 
-# Keep (5, 100] bucket (100) and 3/5 of [-Inf, 5] bucket (0.6 * 1).
+# Keep (5, +Inf] bucket (100) and 3/5 of [-Inf, 5] bucket (0.6 * 1).
 eval instant at 1m cbh_two_buckets_split_at_positive >/ 2.0
   cbh_two_buckets_split_at_positive {{schema:-53 sum:500.6 count:100.6 custom_values:[5] buckets:[0.6 100]}}
 
