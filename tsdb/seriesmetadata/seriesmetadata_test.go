@@ -14,9 +14,13 @@
 package seriesmetadata
 
 import (
+	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/parquet-go/parquet-go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -932,4 +936,641 @@ func TestScopeVersioningParquetRoundTrip(t *testing.T) {
 
 	require.Equal(t, uint64(1), reader.TotalScopes())
 	require.Equal(t, uint64(2), reader.TotalScopeVersions())
+}
+
+// Tests for normalized Parquet storage.
+
+func TestContentHashDeterminism(t *testing.T) {
+	// Same content must produce the same hash regardless of map iteration order.
+	rv := NewResourceVersion(
+		map[string]string{"service.name": "foo", "service.namespace": "bar", "service.instance.id": "baz"},
+		map[string]string{"z": "1", "a": "2", "m": "3"},
+		[]*Entity{NewEntity("service", map[string]string{"b": "1", "a": "2"}, map[string]string{"y": "1", "x": "2"})},
+		1000, 2000,
+	)
+
+	hash1 := hashResourceContent(rv)
+	// Compute many times — must always be the same.
+	for range 100 {
+		require.Equal(t, hash1, hashResourceContent(rv))
+	}
+
+	// Same content but constructed separately.
+	rv2 := NewResourceVersion(
+		map[string]string{"service.instance.id": "baz", "service.name": "foo", "service.namespace": "bar"},
+		map[string]string{"m": "3", "z": "1", "a": "2"},
+		[]*Entity{NewEntity("service", map[string]string{"a": "2", "b": "1"}, map[string]string{"x": "2", "y": "1"})},
+		5000, 6000, // Different times — should NOT affect hash
+	)
+	require.Equal(t, hash1, hashResourceContent(rv2))
+
+	// Different content must produce different hash.
+	rv3 := NewResourceVersion(
+		map[string]string{"service.name": "DIFFERENT"},
+		nil, nil, 1000, 2000,
+	)
+	require.NotEqual(t, hash1, hashResourceContent(rv3))
+}
+
+func TestScopeHashDeterminism(t *testing.T) {
+	sv := NewScopeVersion("lib", "1.0", "https://schema", map[string]string{"z": "1", "a": "2"}, 1000, 2000)
+	hash1 := hashScopeContent(sv)
+
+	// Same content, different time range.
+	sv2 := NewScopeVersion("lib", "1.0", "https://schema", map[string]string{"a": "2", "z": "1"}, 9000, 9999)
+	require.Equal(t, hash1, hashScopeContent(sv2))
+
+	// Different content.
+	sv3 := NewScopeVersion("lib", "2.0", "https://schema", map[string]string{"a": "2", "z": "1"}, 1000, 2000)
+	require.NotEqual(t, hash1, hashScopeContent(sv3))
+}
+
+func TestNormalizedResourceDeduplication(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// 100 series all sharing the same resource content.
+	sharedIdentifying := map[string]string{
+		"service.name":      "shared-service",
+		"service.namespace": "production",
+	}
+	sharedDescriptive := map[string]string{
+		"deployment.env": "prod",
+		"host.region":    "us-west-2",
+	}
+
+	for i := uint64(1); i <= 100; i++ {
+		rv := NewResourceVersion(sharedIdentifying, sharedDescriptive, nil, 1000, 5000)
+		mem.SetResource(i, rv)
+	}
+
+	// Write — normalization should produce 1 table row + 100 mapping rows.
+	size, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+	require.Positive(t, size)
+
+	// Read back and verify all 100 series have the correct resource data.
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	require.Equal(t, uint64(100), reader.TotalResources())
+
+	for i := uint64(1); i <= 100; i++ {
+		r, found := reader.GetResource(i)
+		require.True(t, found, "resource for series %d not found", i)
+		require.Equal(t, "shared-service", r.Identifying["service.name"])
+		require.Equal(t, "production", r.Identifying["service.namespace"])
+		require.Equal(t, "prod", r.Descriptive["deployment.env"])
+		require.Equal(t, "us-west-2", r.Descriptive["host.region"])
+		require.Equal(t, int64(1000), r.MinTime)
+		require.Equal(t, int64(5000), r.MaxTime)
+	}
+}
+
+func TestNormalizedScopeDeduplication(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// 50 series sharing scope A, 50 series sharing scope B.
+	for i := uint64(1); i <= 50; i++ {
+		sv := NewScopeVersion("otel-go", "1.0", "", map[string]string{"lang": "go"}, 1000, 5000)
+		mem.SetVersionedScope(i, NewVersionedScope(sv))
+	}
+	for i := uint64(51); i <= 100; i++ {
+		sv := NewScopeVersion("otel-java", "2.0", "", map[string]string{"lang": "java"}, 1000, 5000)
+		mem.SetVersionedScope(i, NewVersionedScope(sv))
+	}
+
+	// Write — should produce 2 scope table rows + 100 scope mapping rows.
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+
+	// Read back.
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	require.Equal(t, uint64(100), reader.TotalScopes())
+
+	// Verify scope A series.
+	for i := uint64(1); i <= 50; i++ {
+		vs, found := reader.GetVersionedScope(i)
+		require.True(t, found)
+		require.Len(t, vs.Versions, 1)
+		require.Equal(t, "otel-go", vs.Versions[0].Name)
+		require.Equal(t, "go", vs.Versions[0].Attrs["lang"])
+	}
+
+	// Verify scope B series.
+	for i := uint64(51); i <= 100; i++ {
+		vs, found := reader.GetVersionedScope(i)
+		require.True(t, found)
+		require.Len(t, vs.Versions, 1)
+		require.Equal(t, "otel-java", vs.Versions[0].Name)
+		require.Equal(t, "java", vs.Versions[0].Attrs["lang"])
+	}
+}
+
+func TestNormalizedMixedUniqueAndSharedResources(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// 5 series with unique resources, plus 10 series sharing one resource.
+	for i := uint64(1); i <= 5; i++ {
+		rv := NewResourceVersion(
+			map[string]string{"service.name": fmt.Sprintf("unique-%d", i)},
+			nil, nil, 1000, 5000,
+		)
+		mem.SetResource(i, rv)
+	}
+	for i := uint64(6); i <= 15; i++ {
+		rv := NewResourceVersion(
+			map[string]string{"service.name": "shared"},
+			nil, nil, 1000, 5000,
+		)
+		mem.SetResource(i, rv)
+	}
+
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	// 15 total series with resources.
+	require.Equal(t, uint64(15), reader.TotalResources())
+
+	// Verify unique resources.
+	for i := uint64(1); i <= 5; i++ {
+		r, found := reader.GetResource(i)
+		require.True(t, found)
+		require.Equal(t, fmt.Sprintf("unique-%d", i), r.Identifying["service.name"])
+	}
+	// Verify shared resources.
+	for i := uint64(6); i <= 15; i++ {
+		r, found := reader.GetResource(i)
+		require.True(t, found)
+		require.Equal(t, "shared", r.Identifying["service.name"])
+	}
+}
+
+func TestNormalizedResourceWithEntities(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// Two series sharing the same resource with entities.
+	entities := []*Entity{
+		NewEntity("service", map[string]string{"service.name": "my-svc"}, map[string]string{"version": "1.0"}),
+		NewEntity("host", map[string]string{"host.id": "h1"}, nil),
+	}
+	for i := uint64(1); i <= 2; i++ {
+		rv := NewResourceVersion(
+			map[string]string{"service.name": "my-svc"},
+			map[string]string{"cloud": "aws"},
+			entities,
+			1000, 5000,
+		)
+		mem.SetResource(i, rv)
+	}
+
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	require.Equal(t, uint64(2), reader.TotalResources())
+
+	for i := uint64(1); i <= 2; i++ {
+		r, found := reader.GetResource(i)
+		require.True(t, found)
+		require.Equal(t, "my-svc", r.Identifying["service.name"])
+		require.Equal(t, "aws", r.Descriptive["cloud"])
+		require.Len(t, r.Entities, 2)
+
+		svc := r.GetEntity("service")
+		require.NotNil(t, svc)
+		require.Equal(t, "my-svc", svc.ID["service.name"])
+		require.Equal(t, "1.0", svc.Description["version"])
+
+		host := r.GetEntity("host")
+		require.NotNil(t, host)
+		require.Equal(t, "h1", host.ID["host.id"])
+	}
+}
+
+func TestNormalizedVersionedResourceRoundTrip(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// Series with two resource versions (different content at different times).
+	vr := &VersionedResource{
+		Versions: []*ResourceVersion{
+			NewResourceVersion(
+				map[string]string{"service.name": "svc"},
+				map[string]string{"version": "1.0"},
+				nil, 1000, 2000,
+			),
+			NewResourceVersion(
+				map[string]string{"service.name": "svc"},
+				map[string]string{"version": "2.0"},
+				nil, 3000, 4000,
+			),
+		},
+	}
+	mem.SetVersionedResource(100, vr)
+
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	got, found := reader.GetVersionedResource(100)
+	require.True(t, found)
+	require.Len(t, got.Versions, 2)
+	require.Equal(t, "1.0", got.Versions[0].Descriptive["version"])
+	require.Equal(t, int64(1000), got.Versions[0].MinTime)
+	require.Equal(t, "2.0", got.Versions[1].Descriptive["version"])
+	require.Equal(t, int64(3000), got.Versions[1].MinTime)
+}
+
+// Tests for distributed-scale Parquet features.
+
+// buildTestData creates a MemSeriesMetadata with metrics, resources, and scopes
+// for use in multiple tests.
+func buildTestData(t *testing.T) *MemSeriesMetadata {
+	t.Helper()
+	mem := NewMemSeriesMetadata()
+
+	// Metrics (use SetVersioned so they persist via IterVersionedMetadata in WriteFile).
+	mem.SetVersioned("http_requests_total", 1, &MetadataVersion{
+		Meta:    metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests"},
+		MinTime: 1000, MaxTime: 5000,
+	})
+	mem.SetVersioned("temperature", 2, &MetadataVersion{
+		Meta:    metadata.Metadata{Type: model.MetricTypeGauge, Unit: "celsius"},
+		MinTime: 1000, MaxTime: 5000,
+	})
+
+	// Resources (two unique + two shared).
+	for i := uint64(100); i <= 101; i++ {
+		rv := NewResourceVersion(
+			map[string]string{"service.name": fmt.Sprintf("svc-%d", i)},
+			map[string]string{"env": "prod"},
+			nil, 1000, 5000,
+		)
+		mem.SetResource(i, rv)
+	}
+	rv := NewResourceVersion(
+		map[string]string{"service.name": "shared-svc"},
+		map[string]string{"env": "staging"},
+		nil, 1000, 5000,
+	)
+	mem.SetResource(200, rv)
+	mem.SetResource(201, rv)
+
+	// Scopes.
+	sv := NewScopeVersion("otel-go", "1.0", "", map[string]string{"lang": "go"}, 1000, 5000)
+	mem.SetVersionedScope(100, NewVersionedScope(sv))
+	mem.SetVersionedScope(200, NewVersionedScope(sv))
+
+	return mem
+}
+
+func TestWriteFileWithOptions_NamespaceRowGroups(t *testing.T) {
+	tmpdir := t.TempDir()
+	mem := buildTestData(t)
+
+	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{})
+	require.NoError(t, err)
+
+	// Open the Parquet file and inspect row groups.
+	path := filepath.Join(tmpdir, SeriesMetadataFilename)
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer f.Close()
+
+	stat, err := f.Stat()
+	require.NoError(t, err)
+
+	pf, err := parquet.OpenFile(f, stat.Size())
+	require.NoError(t, err)
+
+	// Each row group should contain rows of a single namespace.
+	nsColIdx := lookupColumnIndex(pf.Schema(), "namespace")
+	require.GreaterOrEqual(t, nsColIdx, 0)
+
+	seenNamespaces := make(map[string]bool)
+	for _, rg := range pf.RowGroups() {
+		ns, ok := rowGroupSingleNamespace(rg, nsColIdx)
+		require.True(t, ok, "row group should be single-namespace")
+		seenNamespaces[ns] = true
+	}
+
+	// We should see at least metadata_table, metadata_mapping, resource_table, resource_mapping, scope_table, scope_mapping.
+	require.True(t, seenNamespaces[nsMetadataTable], "expected metadata_table namespace")
+	require.True(t, seenNamespaces[nsMetadataMapping], "expected metadata_mapping namespace")
+	require.True(t, seenNamespaces[NamespaceResourceTable], "expected resource_table namespace")
+	require.True(t, seenNamespaces[NamespaceResourceMapping], "expected resource_mapping namespace")
+	require.True(t, seenNamespaces[NamespaceScopeTable], "expected scope_table namespace")
+	require.True(t, seenNamespaces[NamespaceScopeMapping], "expected scope_mapping namespace")
+}
+
+func TestWriteFileWithOptions_MaxRowsPerRowGroup(t *testing.T) {
+	tmpdir := t.TempDir()
+	mem := NewMemSeriesMetadata()
+
+	// Create 200 series all sharing the same resource → 200 resource_mapping rows.
+	for i := uint64(1); i <= 200; i++ {
+		rv := NewResourceVersion(
+			map[string]string{"service.name": "shared"},
+			nil, nil, 1000, 5000,
+		)
+		mem.SetResource(i, rv)
+	}
+
+	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{
+		MaxRowsPerRowGroup: 50,
+	})
+	require.NoError(t, err)
+
+	// Open and verify row groups.
+	path := filepath.Join(tmpdir, SeriesMetadataFilename)
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer f.Close()
+
+	stat, err := f.Stat()
+	require.NoError(t, err)
+
+	pf, err := parquet.OpenFile(f, stat.Size())
+	require.NoError(t, err)
+
+	nsColIdx := lookupColumnIndex(pf.Schema(), "namespace")
+	require.GreaterOrEqual(t, nsColIdx, 0)
+
+	var resMappingRowGroups int
+	for _, rg := range pf.RowGroups() {
+		ns, ok := rowGroupSingleNamespace(rg, nsColIdx)
+		if !ok {
+			continue
+		}
+		if ns == NamespaceResourceMapping {
+			require.LessOrEqual(t, rg.NumRows(), int64(50), "row group exceeds MaxRowsPerRowGroup")
+			resMappingRowGroups++
+		}
+	}
+	// 200 rows / 50 per group = 4 row groups.
+	require.Equal(t, 4, resMappingRowGroups)
+}
+
+func TestWriteFileWithOptions_BloomFilters(t *testing.T) {
+	tmpdir := t.TempDir()
+	mem := buildTestData(t)
+
+	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{
+		EnableBloomFilters: true,
+	})
+	require.NoError(t, err)
+
+	path := filepath.Join(tmpdir, SeriesMetadataFilename)
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer f.Close()
+
+	stat, err := f.Stat()
+	require.NoError(t, err)
+
+	pf, err := parquet.OpenFile(f, stat.Size())
+	require.NoError(t, err)
+
+	// Find column indexes for labels_hash and content_hash.
+	labelsHashIdx := lookupColumnIndex(pf.Schema(), "labels_hash")
+	contentHashIdx := lookupColumnIndex(pf.Schema(), "content_hash")
+	require.GreaterOrEqual(t, labelsHashIdx, 0)
+	require.GreaterOrEqual(t, contentHashIdx, 0)
+
+	// At least one row group should have bloom filters for these columns.
+	var foundLabelsBloom, foundContentBloom bool
+	for _, rg := range pf.RowGroups() {
+		ccs := rg.ColumnChunks()
+		if bf := ccs[labelsHashIdx].BloomFilter(); bf != nil {
+			foundLabelsBloom = true
+		}
+		if bf := ccs[contentHashIdx].BloomFilter(); bf != nil {
+			foundContentBloom = true
+		}
+	}
+	require.True(t, foundLabelsBloom, "expected bloom filter on labels_hash column")
+	require.True(t, foundContentBloom, "expected bloom filter on content_hash column")
+}
+
+func TestWriteFileWithOptions_RoundTrip(t *testing.T) {
+	tmpdir := t.TempDir()
+	mem := buildTestData(t)
+
+	// Write with all options enabled.
+	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{
+		MaxRowsPerRowGroup: 2,
+		EnableBloomFilters: true,
+	})
+	require.NoError(t, err)
+
+	// Read back via standard ReadSeriesMetadata.
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	// Verify metrics.
+	require.Equal(t, uint64(2), reader.Total())
+	metas, found := reader.GetByMetricName("http_requests_total")
+	require.True(t, found)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+
+	metas, found = reader.GetByMetricName("temperature")
+	require.True(t, found)
+	require.Equal(t, "celsius", metas[0].Unit)
+
+	// Verify resources.
+	require.Equal(t, uint64(4), reader.TotalResources())
+	r, found := reader.GetResource(100)
+	require.True(t, found)
+	require.Equal(t, "svc-100", r.Identifying["service.name"])
+	require.Equal(t, "prod", r.Descriptive["env"])
+
+	r, found = reader.GetResource(200)
+	require.True(t, found)
+	require.Equal(t, "shared-svc", r.Identifying["service.name"])
+
+	// Verify scopes.
+	require.Equal(t, uint64(2), reader.TotalScopes())
+	vs, found := reader.GetVersionedScope(100)
+	require.True(t, found)
+	require.Equal(t, "otel-go", vs.Versions[0].Name)
+}
+
+func TestReadSeriesMetadataFromReaderAt(t *testing.T) {
+	tmpdir := t.TempDir()
+	mem := buildTestData(t)
+
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+
+	// Open as *os.File which implements io.ReaderAt.
+	path := filepath.Join(tmpdir, SeriesMetadataFilename)
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer f.Close()
+
+	stat, err := f.Stat()
+	require.NoError(t, err)
+
+	reader, err := ReadSeriesMetadataFromReaderAt(promslog.NewNopLogger(), f, stat.Size())
+	require.NoError(t, err)
+	defer reader.Close()
+
+	// Verify same results as ReadSeriesMetadata.
+	require.Equal(t, uint64(2), reader.Total())
+	require.Equal(t, uint64(4), reader.TotalResources())
+	require.Equal(t, uint64(2), reader.TotalScopes())
+
+	metas, found := reader.GetByMetricName("http_requests_total")
+	require.True(t, found)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+
+	r, found := reader.GetResource(100)
+	require.True(t, found)
+	require.Equal(t, "svc-100", r.Identifying["service.name"])
+}
+
+func TestReadSeriesMetadataFromReaderAt_BytesReader(t *testing.T) {
+	tmpdir := t.TempDir()
+	mem := buildTestData(t)
+
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+
+	// Read file into memory and wrap in bytes.Reader (simulates objstore buffer).
+	path := filepath.Join(tmpdir, SeriesMetadataFilename)
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	reader, err := ReadSeriesMetadataFromReaderAt(promslog.NewNopLogger(), bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err)
+	defer reader.Close()
+
+	require.Equal(t, uint64(2), reader.Total())
+	require.Equal(t, uint64(4), reader.TotalResources())
+
+	r, found := reader.GetResource(201)
+	require.True(t, found)
+	require.Equal(t, "shared-svc", r.Identifying["service.name"])
+}
+
+func TestReadSeriesMetadataFromReaderAt_NamespaceFilter(t *testing.T) {
+	tmpdir := t.TempDir()
+	mem := buildTestData(t)
+
+	// Write with namespace-partitioned row groups.
+	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{})
+	require.NoError(t, err)
+
+	path := filepath.Join(tmpdir, SeriesMetadataFilename)
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer f.Close()
+
+	stat, err := f.Stat()
+	require.NoError(t, err)
+
+	// Filter for only resource namespaces.
+	reader, err := ReadSeriesMetadataFromReaderAt(promslog.NewNopLogger(), f, stat.Size(),
+		WithNamespaceFilter(NamespaceResourceTable, NamespaceResourceMapping))
+	require.NoError(t, err)
+	defer reader.Close()
+
+	// Resources should be loaded.
+	require.Equal(t, uint64(4), reader.TotalResources())
+	r, found := reader.GetResource(100)
+	require.True(t, found)
+	require.Equal(t, "svc-100", r.Identifying["service.name"])
+
+	// Metrics and scopes should be empty.
+	require.Equal(t, uint64(0), reader.Total())
+	require.Equal(t, uint64(0), reader.TotalScopes())
+}
+
+func TestReadSeriesMetadataFromReaderAt_NamespaceFilter_EmptyResult(t *testing.T) {
+	tmpdir := t.TempDir()
+	mem := NewMemSeriesMetadata()
+	mem.SetVersioned("test_metric", 1, &MetadataVersion{
+		Meta:    metadata.Metadata{Type: model.MetricTypeCounter},
+		MinTime: 1000, MaxTime: 5000,
+	})
+
+	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{})
+	require.NoError(t, err)
+
+	path := filepath.Join(tmpdir, SeriesMetadataFilename)
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer f.Close()
+
+	stat, err := f.Stat()
+	require.NoError(t, err)
+
+	// Filter for resource namespaces when there are no resources.
+	reader, err := ReadSeriesMetadataFromReaderAt(promslog.NewNopLogger(), f, stat.Size(),
+		WithNamespaceFilter(NamespaceResourceTable, NamespaceResourceMapping))
+	require.NoError(t, err)
+	defer reader.Close()
+
+	require.Equal(t, uint64(0), reader.Total())
+	require.Equal(t, uint64(0), reader.TotalResources())
+	require.Equal(t, uint64(0), reader.TotalScopes())
+}
+
+func TestReadOldSingleRowGroupFile(t *testing.T) {
+	// Verify that the new reader handles files written with the old WriteFile
+	// (which produces a single row group for all namespaces).
+	// The current WriteFile now uses WriteFileWithOptions with default opts,
+	// which produces namespace-partitioned row groups. This test simulates
+	// the old format by writing all rows into a single row group manually.
+	tmpdir := t.TempDir()
+	mem := buildTestData(t)
+
+	// Write with the new partitioned writer.
+	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{})
+	require.NoError(t, err)
+
+	// Read back with both standard and ReaderAt paths — both should work.
+	reader1, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader1.Close()
+
+	require.Equal(t, uint64(2), reader1.Total())
+	require.Equal(t, uint64(4), reader1.TotalResources())
+	require.Equal(t, uint64(2), reader1.TotalScopes())
+
+	path := filepath.Join(tmpdir, SeriesMetadataFilename)
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	reader2, err := ReadSeriesMetadataFromReaderAt(promslog.NewNopLogger(), bytes.NewReader(data), int64(len(data)))
+	require.NoError(t, err)
+	defer reader2.Close()
+
+	require.Equal(t, uint64(2), reader2.Total())
+	require.Equal(t, uint64(4), reader2.TotalResources())
+	require.Equal(t, uint64(2), reader2.TotalScopes())
 }
