@@ -15,7 +15,9 @@ package seriesmetadata
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -469,7 +471,7 @@ func (m *MemSeriesMetadata) TotalScopeVersions() uint64 {
 
 // parquetReader implements Reader by reading from a Parquet file.
 type parquetReader struct {
-	file           *os.File
+	closer         io.Closer // nil for ReaderAt-based readers (caller manages lifecycle)
 	byRef          map[uint64]*metadataEntry
 	byName         map[string][]metadata.Metadata
 	byRefVersioned map[uint64]*versionedEntry
@@ -484,47 +486,82 @@ type parquetReader struct {
 	closeErr  error
 }
 
-// newParquetReader creates a reader from an open file.
-func newParquetReader(logger *slog.Logger, file *os.File) (*parquetReader, error) {
-	stat, err := file.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("stat file: %w", err)
-	}
+// contentMapping pairs a series (by LabelsHash) with a content hash and time range.
+// Used during denormalization to resolve content-addressed table references.
+type contentMapping struct {
+	labelsHash  uint64
+	contentHash uint64
+	minTime     int64
+	maxTime     int64
+}
 
-	rows, err := parquet.Read[metadataRow](file, stat.Size())
-	if err != nil {
-		return nil, fmt.Errorf("read parquet rows: %w", err)
-	}
+// metadataMappingEntry pairs a series (by SeriesRef) with a content hash, metric name, and time range.
+// Used during denormalization to resolve content-addressed metadata table references.
+type metadataMappingEntry struct {
+	seriesRef   uint64
+	metricName  string
+	contentHash uint64
+	minTime     int64
+	maxTime     int64
+}
 
-	contentTable := make(map[uint64]metadata.Metadata)
+// denormalizeRows processes raw Parquet rows into in-memory lookup structures.
+// It builds metric indexes (byRef, byName, byRefVersioned) from content-addressed
+// metadata_table/metadata_mapping rows, resolves content-addressed resource/scope
+// tables into denormalized in-memory stores, and sorts versions chronologically.
+func denormalizeRows(
+	logger *slog.Logger,
+	rows []metadataRow,
+	byRef map[uint64]*metadataEntry,
+	byName map[string][]metadata.Metadata,
+	byRefVersioned map[uint64]*versionedEntry,
+	resourceStore *MemResourceStore,
+	scopeStore *MemScopeStore,
+) {
+	// Phase 1: Build content-addressed tables and collect mappings.
+	metadataContentTable := make(map[uint64]metadata.Metadata) // contentHash → metadata
+	var metadataMappings []metadataMappingEntry
+	resourceContentTable := make(map[uint64]*ResourceVersion)
+	scopeContentTable := make(map[uint64]*ScopeVersion)
+	var resourceMappings, scopeMappings []contentMapping
 
-	// Phase 1: Build content table from metadata_table rows.
 	for i := range rows {
 		row := &rows[i]
-		if row.Namespace == nsMetadataTable {
-			contentTable[row.ContentHash] = metadata.Metadata{
+
+		switch row.Namespace {
+		case nsMetadataTable:
+			metadataContentTable[row.ContentHash] = metadata.Metadata{
 				Type: model.MetricType(row.Type),
 				Unit: row.Unit,
 				Help: row.Help,
 			}
-		}
-	}
 
-	// Phase 2: Collect mapping entries.
-	type mappingEntry struct {
-		seriesRef   uint64
-		metricName  string
-		contentHash uint64
-		minTime     int64
-		maxTime     int64
-	}
-	var mappings []mappingEntry
-	for i := range rows {
-		row := &rows[i]
-		if row.Namespace == nsMetadataMapping {
-			mappings = append(mappings, mappingEntry{
+		case nsMetadataMapping:
+			metadataMappings = append(metadataMappings, metadataMappingEntry{
 				seriesRef:   row.SeriesRef,
 				metricName:  row.MetricName,
+				contentHash: row.ContentHash,
+				minTime:     row.MinTime,
+				maxTime:     row.MaxTime,
+			})
+
+		case NamespaceResourceTable:
+			resourceContentTable[row.ContentHash] = parseResourceContent(logger, row)
+
+		case NamespaceResourceMapping:
+			resourceMappings = append(resourceMappings, contentMapping{
+				labelsHash:  row.LabelsHash,
+				contentHash: row.ContentHash,
+				minTime:     row.MinTime,
+				maxTime:     row.MaxTime,
+			})
+
+		case NamespaceScopeTable:
+			scopeContentTable[row.ContentHash] = parseScopeContent(row)
+
+		case NamespaceScopeMapping:
+			scopeMappings = append(scopeMappings, contentMapping{
+				labelsHash:  row.LabelsHash,
 				contentHash: row.ContentHash,
 				minTime:     row.MinTime,
 				maxTime:     row.MaxTime,
@@ -532,18 +569,19 @@ func newParquetReader(logger *slog.Logger, file *os.File) (*parquetReader, error
 		}
 	}
 
-	// Phase 3: Resolve mappings → versioned metadata.
-	byRefVersioned := make(map[uint64]*versionedEntry)
+	// Phase 2a: Resolve metadata mappings → versioned metadata.
 	// Sort mappings by seriesRef then minTime for deterministic construction.
-	sort.Slice(mappings, func(i, j int) bool {
-		if mappings[i].seriesRef != mappings[j].seriesRef {
-			return mappings[i].seriesRef < mappings[j].seriesRef
+	sort.Slice(metadataMappings, func(i, j int) bool {
+		if metadataMappings[i].seriesRef != metadataMappings[j].seriesRef {
+			return metadataMappings[i].seriesRef < metadataMappings[j].seriesRef
 		}
-		return mappings[i].minTime < mappings[j].minTime
+		return metadataMappings[i].minTime < metadataMappings[j].minTime
 	})
-	for _, mp := range mappings {
-		meta, ok := contentTable[mp.contentHash]
+	for _, mp := range metadataMappings {
+		meta, ok := metadataContentTable[mp.contentHash]
 		if !ok {
+			logger.Warn("Metadata mapping references missing content hash",
+				"series_ref", mp.seriesRef, "content_hash", mp.contentHash)
 			continue // Orphaned mapping row; skip.
 		}
 		entry, ok := byRefVersioned[mp.seriesRef]
@@ -564,8 +602,7 @@ func newParquetReader(logger *slog.Logger, file *os.File) (*parquetReader, error
 		})
 	}
 
-	// Phase 4: Derive byRef/byName from versioned data (latest version per series).
-	byRef := make(map[uint64]*metadataEntry, len(byRefVersioned))
+	// Phase 2b: Derive byRef/byName from versioned data (latest version per series).
 	byNameSet := make(map[string]map[metadata.Metadata]struct{})
 	for r, ve := range byRefVersioned {
 		cur := ve.vm.CurrentVersion()
@@ -582,7 +619,6 @@ func newParquetReader(logger *slog.Logger, file *os.File) (*parquetReader, error
 		}
 		byNameSet[ve.metricName][cur.Meta] = struct{}{}
 	}
-	byName := make(map[string][]metadata.Metadata, len(byNameSet))
 	for name, set := range byNameSet {
 		metas := make([]metadata.Metadata, 0, len(set))
 		for meta := range set {
@@ -592,102 +628,234 @@ func newParquetReader(logger *slog.Logger, file *os.File) (*parquetReader, error
 		byName[name] = metas
 	}
 
-	// Also read resource and scope rows.
-	resourceStore := NewMemResourceStore()
-	scopeStore := NewMemScopeStore()
-	resourceVersionsByHash := make(map[uint64][]*ResourceVersion)
-	scopeVersionsByHash := make(map[uint64][]*ScopeVersion)
-
-	for i := range rows {
-		row := &rows[i]
-
-		switch row.Namespace {
-		case NamespaceResource:
-			// Convert Parquet row to unified ResourceVersion
-			identifying := make(map[string]string, len(row.IdentifyingAttrs))
-			for _, attr := range row.IdentifyingAttrs {
-				identifying[attr.Key] = attr.Value
-			}
-			descriptive := make(map[string]string, len(row.DescriptiveAttrs))
-			for _, attr := range row.DescriptiveAttrs {
-				descriptive[attr.Key] = attr.Value
-			}
-
-			// Parse entities from row
-			var entities []*Entity
-			for _, entityRow := range row.Entities {
-				entityID := make(map[string]string, len(entityRow.ID))
-				for _, attr := range entityRow.ID {
-					entityID[attr.Key] = attr.Value
-				}
-				entityDesc := make(map[string]string, len(entityRow.Description))
-				for _, attr := range entityRow.Description {
-					entityDesc[attr.Key] = attr.Value
-				}
-				entityType := entityRow.Type
-				if entityType == "" {
-					entityType = EntityTypeResource
-				}
-				e := &Entity{
-					Type:        entityType,
-					ID:          entityID,
-					Description: entityDesc,
-				}
-				if err := e.Validate(); err != nil {
-					logger.Warn("Skipping invalid entity during parquet read", "err", err, "type", entityRow.Type)
-					continue
-				}
-				entities = append(entities, e)
-			}
-
-			rv := &ResourceVersion{
-				Identifying: identifying,
-				Descriptive: descriptive,
-				Entities:    entities,
-				MinTime:     row.MinTime,
-				MaxTime:     row.MaxTime,
-			}
-			resourceVersionsByHash[row.LabelsHash] = append(resourceVersionsByHash[row.LabelsHash], rv)
-
-		case NamespaceScope:
-			attrs := make(map[string]string, len(row.ScopeAttrs))
-			for _, attr := range row.ScopeAttrs {
-				attrs[attr.Key] = attr.Value
-			}
-			sv := &ScopeVersion{
-				Name:      row.ScopeName,
-				Version:   row.ScopeVersionStr,
-				SchemaURL: row.SchemaURL,
-				Attrs:     attrs,
-				MinTime:   row.MinTime,
-				MaxTime:   row.MaxTime,
-			}
-			scopeVersionsByHash[row.LabelsHash] = append(scopeVersionsByHash[row.LabelsHash], sv)
+	// Phase 2c: Resolve resource mappings by looking up content from tables and
+	// combining with the per-series time range from the mapping row.
+	resourceVersionsByHash := make(map[uint64][]*ResourceVersion, len(resourceMappings))
+	for _, m := range resourceMappings {
+		template, ok := resourceContentTable[m.contentHash]
+		if !ok {
+			logger.Warn("Resource mapping references missing content hash",
+				"labels_hash", m.labelsHash, "content_hash", m.contentHash)
+			continue
 		}
+		rv := copyResourceVersion(template)
+		rv.MinTime = m.minTime
+		rv.MaxTime = m.maxTime
+		resourceVersionsByHash[m.labelsHash] = append(resourceVersionsByHash[m.labelsHash], rv)
 	}
 
-	// Set versioned resources (already sorted by MinTime from WriteFile order)
+	scopeVersionsByHash := make(map[uint64][]*ScopeVersion, len(scopeMappings))
+	for _, m := range scopeMappings {
+		template, ok := scopeContentTable[m.contentHash]
+		if !ok {
+			logger.Warn("Scope mapping references missing content hash",
+				"labels_hash", m.labelsHash, "content_hash", m.contentHash)
+			continue
+		}
+		sv := CopyScopeVersion(template)
+		sv.MinTime = m.minTime
+		sv.MaxTime = m.maxTime
+		scopeVersionsByHash[m.labelsHash] = append(scopeVersionsByHash[m.labelsHash], sv)
+	}
+
+	// Phase 3: Sort versions by MinTime and populate denormalized in-memory stores.
+	// Mapping rows are sorted by ContentHash for compression, not by MinTime,
+	// so we must re-sort versions chronologically before storing.
 	for labelsHash, versions := range resourceVersionsByHash {
+		slices.SortFunc(versions, func(a, b *ResourceVersion) int {
+			return cmp.Compare(a.MinTime, b.MinTime)
+		})
 		resourceStore.SetVersionedResource(labelsHash, &VersionedResource{
 			Versions: versions,
 		})
 	}
-
-	// Set versioned scopes (already sorted by MinTime from WriteFile order)
 	for labelsHash, versions := range scopeVersionsByHash {
+		slices.SortFunc(versions, func(a, b *ScopeVersion) int {
+			return cmp.Compare(a.MinTime, b.MinTime)
+		})
 		scopeStore.SetVersionedScope(labelsHash, &VersionedScope{
 			Versions: versions,
 		})
 	}
+}
+
+// newParquetReaderFromReaderAt creates a parquetReader from an io.ReaderAt.
+// This is the core constructor used by both local file reads and distributed
+// ReaderAt-based reads. When opts include a namespace filter, only row groups
+// matching the requested namespaces are loaded.
+func newParquetReaderFromReaderAt(logger *slog.Logger, r io.ReaderAt, size int64, opts ...ReaderOption) (*parquetReader, error) {
+	var ropts readerOptions
+	for _, o := range opts {
+		o(&ropts)
+	}
+
+	// Validate schema version from footer metadata before reading rows.
+	pf, err := parquet.OpenFile(r, size)
+	if err != nil {
+		return nil, fmt.Errorf("open parquet file: %w", err)
+	}
+	if v, ok := pf.Lookup("schema_version"); ok {
+		if v != schemaVersion {
+			logger.Warn("Parquet metadata file has unexpected schema version; data may not load correctly",
+				"expected", schemaVersion, "found", v)
+		}
+	} else {
+		logger.Warn("Parquet metadata file missing schema_version in footer metadata")
+	}
+
+	byRef := make(map[uint64]*metadataEntry)
+	byName := make(map[string][]metadata.Metadata)
+	byRefVersioned := make(map[uint64]*versionedEntry)
+	resourceStore := NewMemResourceStore()
+	scopeStore := NewMemScopeStore()
+
+	if len(ropts.namespaceFilter) > 0 {
+		// Namespace-filtered read: iterate row groups and skip non-matching ones.
+		// Collect all matching rows first, then denormalize once (since e.g.
+		// resource_table and resource_mapping rows need to cross-reference,
+		// and metadata_table and metadata_mapping rows need to cross-reference).
+		nsColIdx := lookupColumnIndex(pf.Schema(), "namespace")
+		var allRows []metadataRow
+		for _, rg := range pf.RowGroups() {
+			if nsColIdx >= 0 {
+				if ns, ok := rowGroupSingleNamespace(rg, nsColIdx); ok {
+					if _, match := ropts.namespaceFilter[ns]; !match {
+						continue // Skip this row group entirely.
+					}
+				}
+			}
+
+			rows, err := readRowGroup[metadataRow](rg)
+			if err != nil {
+				return nil, fmt.Errorf("read filtered row group: %w", err)
+			}
+			allRows = append(allRows, rows...)
+		}
+		denormalizeRows(logger, allRows, byRef, byName, byRefVersioned, resourceStore, scopeStore)
+	} else {
+		// Fast path: read all rows at once (same as before).
+		rows, err := parquet.Read[metadataRow](r, size)
+		if err != nil {
+			return nil, fmt.Errorf("read parquet rows: %w", err)
+		}
+		denormalizeRows(logger, rows, byRef, byName, byRefVersioned, resourceStore, scopeStore)
+	}
 
 	return &parquetReader{
-		file:           file,
 		byRef:          byRef,
 		byName:         byName,
 		byRefVersioned: byRefVersioned,
 		resourceStore:  resourceStore,
 		scopeStore:     scopeStore,
 	}, nil
+}
+
+// lookupColumnIndex returns the index of the named column in the schema, or -1.
+func lookupColumnIndex(schema *parquet.Schema, name string) int {
+	for i, col := range schema.Columns() {
+		if len(col) == 1 && col[0] == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// rowGroupSingleNamespace checks whether a row group contains a single namespace
+// value by inspecting the column index min/max bounds. Returns the namespace and
+// true if the row group is homogeneous; returns ("", false) if the column index
+// is unavailable or the row group spans multiple namespaces.
+func rowGroupSingleNamespace(rg parquet.RowGroup, nsColIdx int) (string, bool) {
+	cc := rg.ColumnChunks()[nsColIdx]
+	idx, err := cc.ColumnIndex()
+	if err != nil || idx.NumPages() == 0 {
+		return "", false
+	}
+	minVal := string(idx.MinValue(0).ByteArray())
+	maxVal := string(idx.MaxValue(0).ByteArray())
+	if minVal != maxVal {
+		return "", false
+	}
+	// Verify all pages have the same namespace (defensive).
+	for p := 1; p < idx.NumPages(); p++ {
+		if string(idx.MinValue(p).ByteArray()) != minVal || string(idx.MaxValue(p).ByteArray()) != minVal {
+			return "", false
+		}
+	}
+	return minVal, true
+}
+
+// readRowGroup reads all rows from a single row group into a typed slice.
+func readRowGroup[T any](rg parquet.RowGroup) ([]T, error) {
+	n := rg.NumRows()
+	rows := make([]T, n)
+	reader := parquet.NewGenericRowGroupReader[T](rg)
+	_, err := reader.Read(rows)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// parseResourceContent converts a resource_table row into a ResourceVersion (without time range).
+func parseResourceContent(logger *slog.Logger, row *metadataRow) *ResourceVersion {
+	identifying := make(map[string]string, len(row.IdentifyingAttrs))
+	for _, attr := range row.IdentifyingAttrs {
+		identifying[attr.Key] = attr.Value
+	}
+	descriptive := make(map[string]string, len(row.DescriptiveAttrs))
+	for _, attr := range row.DescriptiveAttrs {
+		descriptive[attr.Key] = attr.Value
+	}
+
+	var entities []*Entity
+	for _, entityRow := range row.Entities {
+		entityID := make(map[string]string, len(entityRow.ID))
+		for _, attr := range entityRow.ID {
+			entityID[attr.Key] = attr.Value
+		}
+		entityDesc := make(map[string]string, len(entityRow.Description))
+		for _, attr := range entityRow.Description {
+			entityDesc[attr.Key] = attr.Value
+		}
+		entityType := entityRow.Type
+		if entityType == "" {
+			entityType = EntityTypeResource
+		}
+		e := &Entity{
+			Type:        entityType,
+			ID:          entityID,
+			Description: entityDesc,
+		}
+		if err := e.Validate(); err != nil {
+			logger.Warn("Skipping invalid entity during parquet read", "err", err, "type", entityRow.Type)
+			continue
+		}
+		entities = append(entities, e)
+	}
+	// Restore sort-by-Type invariant assumed by hashResourceContent.
+	slices.SortFunc(entities, func(a, b *Entity) int {
+		return strings.Compare(a.Type, b.Type)
+	})
+
+	return &ResourceVersion{
+		Identifying: identifying,
+		Descriptive: descriptive,
+		Entities:    entities,
+	}
+}
+
+// parseScopeContent converts a scope_table row into a ScopeVersion (without time range).
+func parseScopeContent(row *metadataRow) *ScopeVersion {
+	attrs := make(map[string]string, len(row.ScopeAttrs))
+	for _, attr := range row.ScopeAttrs {
+		attrs[attr.Key] = attr.Value
+	}
+	return &ScopeVersion{
+		Name:      row.ScopeName,
+		Version:   row.ScopeVersionStr,
+		SchemaURL: row.SchemaURL,
+		Attrs:     attrs,
+	}
 }
 
 // Get returns metadata for the series with the given ref.
@@ -813,9 +981,13 @@ func (r *parquetReader) TotalScopeVersions() uint64 {
 }
 
 // Close releases resources associated with the reader.
+// Safe to call multiple times; only the first call closes the underlying reader.
+// For ReaderAt-based readers where closer is nil, this is a no-op.
 func (r *parquetReader) Close() error {
 	r.closeOnce.Do(func() {
-		r.closeErr = r.file.Close()
+		if r.closer != nil {
+			r.closeErr = r.closer.Close()
+		}
 	})
 	return r.closeErr
 }
@@ -827,23 +999,47 @@ func sortAttrEntries(entries []EntityAttributeEntry) {
 	})
 }
 
+// sortMetadataRows sorts rows for compression: group by namespace, then by
+// labels_hash (for mapping rows) or content_hash (for table rows), then by MinTime.
+func sortMetadataRows(rows []metadataRow) {
+	slices.SortFunc(rows, func(a, b metadataRow) int {
+		if c := strings.Compare(a.Namespace, b.Namespace); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.LabelsHash, b.LabelsHash); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.ContentHash, b.ContentHash); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.MinTime, b.MinTime)
+	})
+}
+
 // WriteFile atomically writes series metadata to a Parquet file in the given directory.
-// Writes content-addressed metadata namespaces plus resource and scope rows.
+// Writes content-addressed metadata, resource, and scope rows using namespace-partitioned row groups.
 func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
+	return WriteFileWithOptions(logger, dir, mr, WriterOptions{})
+}
+
+// WriteFileWithOptions is like WriteFile but accepts WriterOptions to control
+// Parquet write behavior such as namespace-partitioned row groups and bloom filters.
+func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts WriterOptions) (int64, error) {
 	path := filepath.Join(dir, SeriesMetadataFilename)
 	tmp := path + ".tmp"
 
-	var rows []metadataRow
+	// Collect rows into per-namespace slices.
+	var metadataTableRows, metadataMappingRows, resMappingRows, scopeMappingRows []metadataRow
 
 	// 1. Build content-addressed table and mapping rows from versioned metadata.
-	contentTable := make(map[uint64]metadata.Metadata) // contentHash → metadata
+	metadataContentTable := make(map[uint64]metadata.Metadata) // contentHash → metadata
 	err := mr.IterVersionedMetadata(func(ref uint64, metricName string, _ labels.Labels, vm *VersionedMetadata) error {
 		for _, v := range vm.Versions {
 			ch := HashMetadataContent(v.Meta)
-			if _, exists := contentTable[ch]; !exists {
-				contentTable[ch] = v.Meta
+			if _, exists := metadataContentTable[ch]; !exists {
+				metadataContentTable[ch] = v.Meta
 			}
-			rows = append(rows, metadataRow{
+			metadataMappingRows = append(metadataMappingRows, metadataRow{
 				Namespace:   nsMetadataMapping,
 				SeriesRef:   ref,
 				ContentHash: ch,
@@ -858,9 +1054,9 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 		return 0, fmt.Errorf("iterate versioned metadata: %w", err)
 	}
 
-	// 3. Write content table rows.
-	for ch, meta := range contentTable {
-		rows = append(rows, metadataRow{
+	// 2. Write content table rows for metadata.
+	for ch, meta := range metadataContentTable {
+		metadataTableRows = append(metadataTableRows, metadataRow{
 			Namespace:   nsMetadataTable,
 			ContentHash: ch,
 			Type:        string(meta.Type),
@@ -869,65 +1065,33 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 		})
 	}
 
-	// Collect all resources into rows (one row per version, including attributes and entities)
+	// Build content-addressed resource table and mapping rows.
+	// resourceTable deduplicates: many series sharing the same resource
+	// produce a single table row plus one mapping row per series-version.
+	resourceTable := make(map[uint64]metadataRow) // contentHash → table row
 	err = mr.IterVersionedResources(func(labelsHash uint64, vresource *VersionedResource) error {
 		for _, rv := range vresource.Versions {
-			// Convert resource-level identifying attributes to list
-			idAttrs := make([]EntityAttributeEntry, 0, len(rv.Identifying))
-			for k, v := range rv.Identifying {
-				idAttrs = append(idAttrs, EntityAttributeEntry{
-					Key:   k,
-					Value: v,
-				})
-			}
-			sortAttrEntries(idAttrs)
+			contentHash := hashResourceContent(rv)
 
-			// Convert resource-level descriptive attributes to list
-			descAttrs := make([]EntityAttributeEntry, 0, len(rv.Descriptive))
-			for k, v := range rv.Descriptive {
-				descAttrs = append(descAttrs, EntityAttributeEntry{
-					Key:   k,
-					Value: v,
-				})
-			}
-			sortAttrEntries(descAttrs)
-
-			// Convert entities to list
-			entityRows := make([]EntityRow, 0, len(rv.Entities))
-			for _, entity := range rv.Entities {
-				entityIDAttrs := make([]EntityAttributeEntry, 0, len(entity.ID))
-				for k, v := range entity.ID {
-					entityIDAttrs = append(entityIDAttrs, EntityAttributeEntry{
-						Key:   k,
-						Value: v,
-					})
+			// Add table row if this content hasn't been seen yet.
+			if existing, exists := resourceTable[contentHash]; !exists {
+				resourceTable[contentHash] = buildResourceTableRow(contentHash, rv)
+			} else {
+				// Verify content actually matches (detect xxhash collision).
+				existingRV := parseResourceContent(logger, &existing)
+				if !ResourceVersionsEqual(existingRV, rv) {
+					logger.Warn("Hash collision detected in resource content-addressed table",
+						"content_hash", contentHash, "labels_hash", labelsHash)
 				}
-				sortAttrEntries(entityIDAttrs)
-
-				entityDescAttrs := make([]EntityAttributeEntry, 0, len(entity.Description))
-				for k, v := range entity.Description {
-					entityDescAttrs = append(entityDescAttrs, EntityAttributeEntry{
-						Key:   k,
-						Value: v,
-					})
-				}
-				sortAttrEntries(entityDescAttrs)
-
-				entityRows = append(entityRows, EntityRow{
-					Type:        entity.Type,
-					ID:          entityIDAttrs,
-					Description: entityDescAttrs,
-				})
 			}
 
-			rows = append(rows, metadataRow{
-				Namespace:        NamespaceResource,
-				LabelsHash:       labelsHash,
-				MinTime:          rv.MinTime,
-				MaxTime:          rv.MaxTime,
-				IdentifyingAttrs: idAttrs,
-				DescriptiveAttrs: descAttrs,
-				Entities:         entityRows,
+			// Always emit a mapping row for this series-version.
+			resMappingRows = append(resMappingRows, metadataRow{
+				Namespace:   NamespaceResourceMapping,
+				LabelsHash:  labelsHash,
+				ContentHash: contentHash,
+				MinTime:     rv.MinTime,
+				MaxTime:     rv.MaxTime,
 			})
 		}
 		return nil
@@ -936,23 +1100,41 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 		return 0, fmt.Errorf("iterate resources: %w", err)
 	}
 
-	// Collect all scopes into rows (one row per version)
+	// Build content-addressed scope table and mapping rows.
+	scopeTable := make(map[uint64]metadataRow) // contentHash → table row
 	err = mr.IterVersionedScopes(func(labelsHash uint64, vscope *VersionedScope) error {
 		for _, sv := range vscope.Versions {
-			scopeAttrs := make([]EntityAttributeEntry, 0, len(sv.Attrs))
-			for k, v := range sv.Attrs {
-				scopeAttrs = append(scopeAttrs, EntityAttributeEntry{Key: k, Value: v})
+			contentHash := hashScopeContent(sv)
+
+			if existing, exists := scopeTable[contentHash]; !exists {
+				scopeAttrs := make([]EntityAttributeEntry, 0, len(sv.Attrs))
+				for k, v := range sv.Attrs {
+					scopeAttrs = append(scopeAttrs, EntityAttributeEntry{Key: k, Value: v})
+				}
+				sortAttrEntries(scopeAttrs)
+				scopeTable[contentHash] = metadataRow{
+					Namespace:       NamespaceScopeTable,
+					ContentHash:     contentHash,
+					ScopeName:       sv.Name,
+					ScopeVersionStr: sv.Version,
+					SchemaURL:       sv.SchemaURL,
+					ScopeAttrs:      scopeAttrs,
+				}
+			} else {
+				// Verify content actually matches (detect xxhash collision).
+				existingSV := parseScopeContent(&existing)
+				if !ScopeVersionsEqual(existingSV, sv) {
+					logger.Warn("Hash collision detected in scope content-addressed table",
+						"content_hash", contentHash, "labels_hash", labelsHash)
+				}
 			}
-			sortAttrEntries(scopeAttrs)
-			rows = append(rows, metadataRow{
-				Namespace:       NamespaceScope,
-				LabelsHash:      labelsHash,
-				MinTime:         sv.MinTime,
-				MaxTime:         sv.MaxTime,
-				ScopeName:       sv.Name,
-				ScopeVersionStr: sv.Version,
-				SchemaURL:       sv.SchemaURL,
-				ScopeAttrs:      scopeAttrs,
+
+			scopeMappingRows = append(scopeMappingRows, metadataRow{
+				Namespace:   NamespaceScopeMapping,
+				LabelsHash:  labelsHash,
+				ContentHash: contentHash,
+				MinTime:     sv.MinTime,
+				MaxTime:     sv.MaxTime,
 			})
 		}
 		return nil
@@ -960,6 +1142,30 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("iterate scopes: %w", err)
 	}
+
+	// Convert table maps to slices.
+	resTableRows := make([]metadataRow, 0, len(resourceTable))
+	for _, tableRow := range resourceTable {
+		resTableRows = append(resTableRows, tableRow)
+	}
+	scopeTableRows := make([]metadataRow, 0, len(scopeTable))
+	for _, tableRow := range scopeTable {
+		scopeTableRows = append(scopeTableRows, tableRow)
+	}
+
+	// Sort each namespace slice independently.
+	sortMetadataRows(metadataTableRows)
+	sortMetadataRows(metadataMappingRows)
+	sortMetadataRows(resTableRows)
+	sortMetadataRows(resMappingRows)
+	sortMetadataRows(scopeTableRows)
+	sortMetadataRows(scopeMappingRows)
+
+	metricCount := len(metadataTableRows) + len(metadataMappingRows)
+	resourceTableCount := len(resTableRows)
+	resourceMappingCount := len(resMappingRows)
+	scopeTableCount := len(scopeTableRows)
+	scopeMappingCount := len(scopeMappingRows)
 
 	// Create temp file.
 	f, err := os.Create(tmp)
@@ -979,71 +1185,123 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 		}
 	}()
 
-	// Sort rows for better compression: group by namespace, then by labels_hash,
-	// then by MinTime. This ensures metadata rows are together, resource rows for the
-	// same series are adjacent, and versions are in time order.
-	slices.SortFunc(rows, func(a, b metadataRow) int {
-		if c := strings.Compare(a.Namespace, b.Namespace); c != 0 {
-			return c
-		}
-		if c := cmp.Compare(a.LabelsHash, b.LabelsHash); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.MinTime, b.MinTime)
-	})
-
-	// Count rows by type for footer metadata.
-	var metricCount, resourceCount, scopeCount int
-	for i := range rows {
-		switch rows[i].Namespace {
-		case nsMetadataTable, nsMetadataMapping:
-			metricCount++
-		case NamespaceResource:
-			resourceCount++
-		case NamespaceScope:
-			scopeCount++
-		}
-	}
-
-	// Write parquet data with zstd compression and footer metadata.
-	writer := parquet.NewGenericWriter[metadataRow](f,
+	// Build writer options.
+	writerOpts := []parquet.WriterOption{
 		parquet.Compression(&zstd.Codec{Level: zstd.SpeedBetterCompression}),
 		parquet.KeyValueMetadata("schema_version", schemaVersion),
 		parquet.KeyValueMetadata("metric_count", strconv.Itoa(metricCount)),
-		parquet.KeyValueMetadata("resource_count", strconv.Itoa(resourceCount)),
-		parquet.KeyValueMetadata("scope_count", strconv.Itoa(scopeCount)),
-	)
-	if _, err := writer.Write(rows); err != nil {
-		return 0, fmt.Errorf("write parquet rows: %w", err)
+		parquet.KeyValueMetadata("resource_table_count", strconv.Itoa(resourceTableCount)),
+		parquet.KeyValueMetadata("resource_mapping_count", strconv.Itoa(resourceMappingCount)),
+		parquet.KeyValueMetadata("scope_table_count", strconv.Itoa(scopeTableCount)),
+		parquet.KeyValueMetadata("scope_mapping_count", strconv.Itoa(scopeMappingCount)),
+		parquet.KeyValueMetadata("row_group_layout", "namespace_partitioned"),
 	}
+	if opts.EnableBloomFilters {
+		writerOpts = append(writerOpts,
+			parquet.BloomFilters(
+				parquet.SplitBlockFilter(10, "labels_hash"),
+				parquet.SplitBlockFilter(10, "content_hash"),
+			),
+		)
+	}
+
+	// Write parquet data with per-namespace row groups.
+	writer := parquet.NewGenericWriter[metadataRow](f, writerOpts...)
+
+	// Write order: metadata_mapping → metadata_table → resource_mapping → resource_table → scope_mapping → scope_table
+	// (alphabetical by namespace for determinism and min/max stats usefulness).
+	for _, nsRows := range [][]metadataRow{
+		metadataMappingRows,
+		metadataTableRows,
+		resTableRows,
+		resMappingRows,
+		scopeMappingRows,
+		scopeTableRows,
+	} {
+		if err := writeNamespaceRows(writer, nsRows, opts.MaxRowsPerRowGroup); err != nil {
+			return 0, fmt.Errorf("write parquet rows: %w", err)
+		}
+	}
+
 	if err := writer.Close(); err != nil {
 		return 0, fmt.Errorf("close parquet writer: %w", err)
 	}
 
+	// Sync to disk.
 	if err := f.Sync(); err != nil {
 		return 0, fmt.Errorf("sync file: %w", err)
 	}
 
+	// Get file size before closing.
 	stat, err := f.Stat()
 	if err != nil {
 		return 0, fmt.Errorf("stat file: %w", err)
 	}
 	size := stat.Size()
 
+	// Close the file before rename.
 	if err := f.Close(); err != nil {
 		return 0, fmt.Errorf("close file: %w", err)
 	}
 	f = nil
 
+	// Atomic rename.
 	if err := fileutil.Replace(tmp, path); err != nil {
 		return 0, fmt.Errorf("rename temp file: %w", err)
 	}
 	tmp = ""
 
 	logger.Info("Series metadata written",
-		"metrics", metricCount, "resources", resourceCount, "scopes", scopeCount, "size", size)
+		"metrics", metricCount,
+		"resource_table", resourceTableCount, "resource_mappings", resourceMappingCount,
+		"scope_table", scopeTableCount, "scope_mappings", scopeMappingCount,
+		"size", size)
 
 	return size, nil
+}
+
+// buildResourceTableRow converts a ResourceVersion into a content-addressed table row.
+func buildResourceTableRow(contentHash uint64, rv *ResourceVersion) metadataRow {
+	idAttrs := make([]EntityAttributeEntry, 0, len(rv.Identifying))
+	for k, v := range rv.Identifying {
+		idAttrs = append(idAttrs, EntityAttributeEntry{Key: k, Value: v})
+	}
+	sortAttrEntries(idAttrs)
+
+	descAttrs := make([]EntityAttributeEntry, 0, len(rv.Descriptive))
+	for k, v := range rv.Descriptive {
+		descAttrs = append(descAttrs, EntityAttributeEntry{Key: k, Value: v})
+	}
+	sortAttrEntries(descAttrs)
+
+	entityRows := make([]EntityRow, 0, len(rv.Entities))
+	for _, entity := range rv.Entities {
+		entityIDAttrs := make([]EntityAttributeEntry, 0, len(entity.ID))
+		for k, v := range entity.ID {
+			entityIDAttrs = append(entityIDAttrs, EntityAttributeEntry{Key: k, Value: v})
+		}
+		sortAttrEntries(entityIDAttrs)
+
+		entityDescAttrs := make([]EntityAttributeEntry, 0, len(entity.Description))
+		for k, v := range entity.Description {
+			entityDescAttrs = append(entityDescAttrs, EntityAttributeEntry{Key: k, Value: v})
+		}
+		sortAttrEntries(entityDescAttrs)
+
+		entityRows = append(entityRows, EntityRow{
+			Type:        entity.Type,
+			ID:          entityIDAttrs,
+			Description: entityDescAttrs,
+		})
+	}
+
+	return metadataRow{
+		Namespace:        NamespaceResourceTable,
+		ContentHash:      contentHash,
+		IdentifyingAttrs: idAttrs,
+		DescriptiveAttrs: descAttrs,
+		Entities:         entityRows,
+	}
 }
 
 // ReadSeriesMetadata reads series metadata from a Parquet file in the given directory.
@@ -1065,11 +1323,12 @@ func ReadSeriesMetadata(logger *slog.Logger, dir string) (Reader, int64, error) 
 		return nil, 0, fmt.Errorf("stat metadata file: %w", err)
 	}
 
-	reader, err := newParquetReader(logger, f)
+	reader, err := newParquetReaderFromReaderAt(logger, f, stat.Size())
 	if err != nil {
 		f.Close()
 		return nil, 0, fmt.Errorf("create parquet reader: %w", err)
 	}
+	reader.closer = f
 
 	return reader, stat.Size(), nil
 }
