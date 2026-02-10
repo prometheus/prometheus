@@ -129,14 +129,19 @@ These two systems both use `parquet-go` but solve different problems and should 
 
 **Techniques ported from parquet-common to seriesmetadata**:
 - Explicit zstd compression (`zstd.SpeedBetterCompression`) instead of parquet-go defaults
-- Row sorting before write (by namespace, labels_hash, MinTime) for better compression
-- Footer key-value metadata (`schema_version`, `metric_count`, `resource_count`, `scope_count`) for schema evolution
+- Row sorting before write (by namespace, labels_hash, content_hash, MinTime) for better compression
+- Footer key-value metadata for schema evolution and row counts
+- Namespace-partitioned row groups: each namespace written as separate row group(s) via `WriteFileWithOptions`, enabling selective reads
+- Optional bloom filters on `labels_hash` and `content_hash` columns (`WriterOptions.EnableBloomFilters`). Write-only in this package; querying is done by the consumer (e.g., Mimir store-gateway)
+- Configurable row group size limits (`WriterOptions.MaxRowsPerRowGroup`) for bounded memory on read
+- `io.ReaderAt` read API (`ReadSeriesMetadataFromReaderAt`) decouples from `*os.File`, enabling `objstore.Bucket`-backed readers
+- Namespace filtering on read (`WithNamespaceFilter`) skips non-matching row groups using Parquet column index min/max bounds
 
-**Not worth porting**: Bloom filters, two-file projections, page-level I/O, row group tuning, sharding, `objstore.Bucket` integration — all designed for cloud-scale data that doesn't apply to a small local metadata file.
+**Not ported** (inapplicable to this schema): Column projections (fixed ~15 column schema, not 500+ dynamic columns), two-file projections, page-level I/O (row groups are KB-to-MB, not GB), sharding.
 
-**seriesmetadata Storage Model**: Fully denormalized — one Parquet row per resource version per series. Each `metadataRow` embeds all attributes inline (`IdentifyingAttrs`, `DescriptiveAttrs`, `Entities` as nested lists); there is no resource ID table or foreign-key reference. N series sharing the same OTel resource produce N copies of all attributes in the file. The in-memory model mirrors this: `MemResourceStore` is `map[uint64]*versionedResourceEntry` keyed by series `labelsHash`, with independent attribute maps per series. Deduplication is temporal only — `AddOrExtend()` extends time ranges when attributes are unchanged; `MergeVersionedResources()` merges during compaction. No cross-series deduplication exists; Parquet columnar encoding + row sorting (by namespace, labels_hash, MinTime) + zstd compression absorb the redundancy. This works because files are typically KB-sized for single-node Prometheus.
+**Normalized Parquet Storage**: The Parquet file uses content-addressed tables to eliminate cross-series duplication of resources and scopes. Five namespace types: `metric` (unchanged), `resource_table` (unique resource content keyed by xxhash `ContentHash`), `resource_mapping` (series `LabelsHash` → `ContentHash` + time range), `scope_table`, `scope_mapping`. N series sharing the same OTel resource produce 1 table row + N mapping rows instead of N full copies. The in-memory model remains denormalized (`MemResourceStore`, `MemScopeStore` unchanged) — normalization happens only during `WriteFile()` and is reversed during read. Content hashing uses `xxhash.Sum64` with sorted keys for determinism. Footer metadata tracks `resource_table_count`, `resource_mapping_count`, `scope_table_count`, `scope_mapping_count`.
 
-**Distributed-Scale Considerations**: The denormalized model becomes costly at millions of series in clustered HA implementations (e.g., Grafana Mimir) — object storage costs and transfer overhead scale with series count times attribute count. A normalized design would use a content-addressed resource table plus a series-to-resource mapping table to eliminate cross-series duplication. Advanced Parquet techniques (column projections, bloom filters, page-level I/O, row group tuning) become essential for object-storage access patterns. Versioned resources add further complexity: time-range-aware joins, and the compactor must understand version merge semantics. These are forward-looking design notes, not planned work for single-node Prometheus.
+**Distributed-Scale Considerations**: The namespace-partitioned row groups, bloom filters, `io.ReaderAt` API, and namespace filtering are designed for object-storage access patterns in clustered HA implementations (e.g., Grafana Mimir store-gateway). A Mimir integration would wrap `objstore.Bucket` as `io.ReaderAt`, use `WithNamespaceFilter` to read only the needed namespaces, and query bloom filters at the store-gateway layer to skip row groups before deserialization.
 
 ### Build Tags
 
