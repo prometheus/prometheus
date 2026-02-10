@@ -1980,6 +1980,41 @@ eval instant at 1m h_negative_buckets >/ 0
   h_negative_buckets {{schema:0 z_bucket_w:0.5}}
 
 
+# Exponential buckets: trim zero bucket when there are no other buckets.
+load 1m
+  zero_bucket_only {{schema:0 count:5 sum:0 z_bucket:5 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only >/ 0.1
+  zero_bucket_only {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only </ 0.1
+  zero_bucket_only {{schema:0 count:5 sum:0 z_bucket:5 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only >/ 0.05
+  zero_bucket_only {{schema:0 count:1.25 sum:0.09375000000000001 z_bucket:1.25 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only </ 0.05
+  zero_bucket_only {{schema:0 count:3.75 sum:-0.09375000000000001 z_bucket:3.75 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only >/ 0
+  zero_bucket_only {{schema:0 count:2.5 sum:0.125 z_bucket:2.5 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only </ 0
+  zero_bucket_only {{schema:0 count:2.5 sum:-0.125 z_bucket:2.5 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only >/ -0.05
+  zero_bucket_only {{schema:0 count:3.75 sum:0.09375000000000001 z_bucket:3.75 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only </ -0.05
+  zero_bucket_only {{schema:0 count:1.25 sum:-0.09375000000000001 z_bucket:1.25 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only </ -0.1
+  zero_bucket_only {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only >/ -0.1
+  zero_bucket_only {{schema:0 count:5 sum:0 z_bucket:5 z_bucket_w:0.1 }}
+
+
 load 1m
   cbh {{schema:-53 sum:172.5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
 

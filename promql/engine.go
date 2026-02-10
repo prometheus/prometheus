@@ -3233,10 +3233,10 @@ func computeZeroBucketTrim(zeroBucket histogram.Bucket[float64], rhs float64, ha
 		lower = zeroBucket.Lower
 		upper = zeroBucket.Upper
 	)
-	if !hasPositive {
+	if hasNegative && !hasPositive {
 		upper = 0
 	}
-	if !hasNegative {
+	if hasPositive && !hasNegative {
 		lower = 0
 	}
 
