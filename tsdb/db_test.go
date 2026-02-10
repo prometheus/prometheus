@@ -9791,12 +9791,13 @@ func TestBlockSizeIncludesSeriesMetadata(t *testing.T) {
 
 	b, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
 	require.NoError(t, err)
-	defer b.Close()
 
 	// Metadata is eagerly loaded in OpenBlock, so Size() should include it immediately.
 	blockSize := b.Size()
 
-	// Open the same block dir without a metadata file to get the base size.
+	// Close the block before removing the metadata file; on Windows,
+	// open file handles prevent deletion.
+	require.NoError(t, b.Close())
 	require.NoError(t, os.Remove(filepath.Join(blockDir, "series_metadata.parquet")))
 	bNoMeta, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
 	require.NoError(t, err)
