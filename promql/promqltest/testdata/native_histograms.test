@@ -1934,6 +1934,52 @@ eval instant at 1m h_test </ -1
   h_test{} {{count:2 sum:-2.8284271247461903 z_bucket_w:0.001 n_offset:1 n_buckets:[2]}}
 
 
+# Exponential buckets: trim zero bucket that is positive-biased (because of the presence of positive buckets).
+load 1m
+  h_positive_buckets {{schema:0 sum:8.0210678118654755 count:12 z_bucket:2 z_bucket_w:0.5 buckets:[10]}}
+
+eval instant at 1m h_positive_buckets >/ 0.5
+  h_positive_buckets {{schema:0 count:10 sum:7.0710678118654755 z_bucket:0 z_bucket_w:0.5 buckets:[10]}}
+
+eval instant at 1m h_positive_buckets >/ 0.1
+  h_positive_buckets {{schema:0 count:11.6 sum:7.551067811865476 z_bucket:1.6 z_bucket_w:0.5 buckets:[10]}}
+
+eval instant at 1m h_positive_buckets >/ 0
+  h_positive_buckets {{schema:0 sum:8.0210678118654755 count:12 z_bucket:2 z_bucket_w:0.5 buckets:[10]}}
+
+eval instant at 1m h_positive_buckets </ 0.5
+  h_positive_buckets {{schema:0 count:2 sum:0.5 z_bucket:2 z_bucket_w:0.5}}
+
+eval instant at 1m h_positive_buckets </ 0.1
+  h_positive_buckets {{schema:0 count:0.4 sum:0.020000000000000004 z_bucket:0.4 z_bucket_w:0.5}}
+
+eval instant at 1m h_positive_buckets </ 0
+  h_positive_buckets {{schema:0 z_bucket_w:0.5}}
+
+
+# Exponential buckets: trim zero bucket that is negative-biased (because of the presence of negative buckets).
+load 1m
+  h_negative_buckets {{schema:0 sum:-8.0210678118654755 count:12 z_bucket:2 z_bucket_w:0.5 n_buckets:[10]}}
+
+eval instant at 1m h_negative_buckets </ -0.5
+  h_negative_buckets {{schema:0 count:10 sum:-7.0710678118654755 z_bucket:0 z_bucket_w:0.5 n_buckets:[10]}}
+
+eval instant at 1m h_negative_buckets </ -0.1
+  h_negative_buckets {{schema:0 count:11.6 sum:-7.551067811865476 z_bucket:1.6 z_bucket_w:0.5 n_buckets:[10]}}
+
+eval instant at 1m h_negative_buckets </ 0
+  h_negative_buckets {{schema:0 sum:-8.0210678118654755 count:12 z_bucket:2 z_bucket_w:0.5 n_buckets:[10]}}
+
+eval instant at 1m h_negative_buckets >/ -0.5
+  h_negative_buckets {{schema:0 count:2 sum:-0.5 z_bucket:2 z_bucket_w:0.5}}
+
+eval instant at 1m h_negative_buckets >/ -0.1
+  h_negative_buckets {{schema:0 count:0.4 sum:-0.020000000000000004 z_bucket:0.4 z_bucket_w:0.5}}
+
+eval instant at 1m h_negative_buckets >/ 0
+  h_negative_buckets {{schema:0 z_bucket_w:0.5}}
+
+
 load 1m
   cbh {{schema:-53 sum:172.5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
 
