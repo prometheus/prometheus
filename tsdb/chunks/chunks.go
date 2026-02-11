@@ -20,9 +20,11 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -627,6 +629,10 @@ type Reader struct {
 	cs   []io.Closer // Closers for resources behind the byte slices.
 	size int64       // The total size of bytes in the reader.
 	pool chunkenc.Pool
+
+	logger         *slog.Logger
+	enableXOR2     bool
+	xor2WarnedOnce sync.Once
 }
 
 func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, error) {
@@ -652,6 +658,12 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 // NewDirReader returns a new Reader against sequentially numbered files in the
 // given directory.
 func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
+	return NewDirReaderWithOptions(dir, pool, nil, false)
+}
+
+// NewDirReaderWithOptions returns a new Reader with additional options for
+// logging and XOR2 encoding awareness.
+func NewDirReaderWithOptions(dir string, pool chunkenc.Pool, logger *slog.Logger, enableXOR2 bool) (*Reader, error) {
 	files, err := sequenceFiles(dir)
 	if err != nil {
 		return nil, err
@@ -683,6 +695,8 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 			closeAll(cs),
 		)
 	}
+	reader.logger = logger
+	reader.enableXOR2 = enableXOR2
 	return reader, nil
 }
 
@@ -732,6 +746,15 @@ func (s *Reader) ChunkOrIterable(meta Meta) (chunkenc.Chunk, chunkenc.Iterable, 
 
 	chkData := sgmBytes.Range(chkDataStart, chkDataEnd)
 	chkEnc := sgmBytes.Range(chkEncStart, chkEncStart+ChunkEncodingSize)[0]
+
+	if chunkenc.Encoding(chkEnc) == chunkenc.EncXOR2 && !s.enableXOR2 {
+		s.xor2WarnedOnce.Do(func() {
+			if s.logger != nil {
+				s.logger.Warn("Reading XOR2 encoded chunks but tsdb-chunks-encoding-xor2 feature flag is not enabled. New chunks will use XOR encoding.")
+			}
+		})
+	}
+
 	chk, err := s.pool.Get(chunkenc.Encoding(chkEnc), chkData)
 	return chk, nil, err
 }

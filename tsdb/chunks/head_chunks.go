@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -229,6 +230,10 @@ type ChunkDiskMapper struct {
 	writeQueue *chunkWriteQueue
 
 	closed bool
+
+	logger         *slog.Logger
+	enableXOR2     bool
+	xor2WarnedOnce sync.Once
 }
 
 // mmappedChunkFile provides mmap access to an entire head chunks file that holds many chunks.
@@ -275,6 +280,13 @@ func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Poo
 	}
 
 	return m, m.openMMapFiles()
+}
+
+// SetXOR2Options configures the ChunkDiskMapper with XOR2 encoding awareness
+// and a logger for warning when XOR2 chunks are read without the flag.
+func (cdm *ChunkDiskMapper) SetXOR2Options(logger *slog.Logger, enableXOR2 bool) {
+	cdm.logger = logger
+	cdm.enableXOR2 = enableXOR2
 }
 
 // Chunk encodings for out-of-order chunks.
@@ -813,6 +825,14 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 	// function returns but while the chunk is still in use.
 	chkDataCopy := make([]byte, len(chkData))
 	copy(chkDataCopy, chkData)
+
+	if chunkenc.Encoding(chkEnc) == chunkenc.EncXOR2 && !cdm.enableXOR2 {
+		cdm.xor2WarnedOnce.Do(func() {
+			if cdm.logger != nil {
+				cdm.logger.Warn("Reading XOR2 encoded chunks but tsdb-chunks-encoding-xor2 feature flag is not enabled. New chunks will use XOR encoding.")
+			}
+		})
+	}
 
 	chk, err := cdm.pool.Get(chunkenc.Encoding(chkEnc), chkDataCopy)
 	if err != nil {

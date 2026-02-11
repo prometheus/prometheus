@@ -200,6 +200,10 @@ type HeadOptions struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableMetadataWALRecords bool
+
+	// EnableXOR2Encoding enables the experimental XOR2 chunk encoding for
+	// new float chunks.
+	EnableXOR2Encoding bool
 }
 
 const (
@@ -309,6 +313,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 	if err != nil {
 		return nil, err
 	}
+	h.chunkDiskMapper.SetXOR2Options(l, opts.EnableXOR2Encoding)
 	h.metrics = newHeadMetrics(h, r)
 
 	return h, nil
@@ -1798,6 +1803,14 @@ func (h *Head) compactable() bool {
 	}
 
 	return h.MaxTime()-h.MinTime() > h.chunkRange.Load()/2*3
+}
+
+// floatChunkEncoding returns the encoding to use for new float chunks.
+func (h *Head) floatChunkEncoding() chunkenc.Encoding {
+	if h.opts.EnableXOR2Encoding {
+		return chunkenc.EncXOR2
+	}
+	return chunkenc.EncXOR
 }
 
 // Close flushes the WAL and closes the head.

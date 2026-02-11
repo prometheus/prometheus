@@ -408,6 +408,20 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, b, nil
 }
 
+func rewriteBlock(dbPath, blockID, floatChunkEncoding string) error {
+	logger := promslog.New(&promslog.Config{})
+	var targetEncoding chunkenc.Encoding
+	switch floatChunkEncoding {
+	case "xor":
+		targetEncoding = chunkenc.EncXOR
+	case "xor2":
+		targetEncoding = chunkenc.EncXOR2
+	default:
+		return fmt.Errorf("unsupported float chunk encoding: %s", floatChunkEncoding)
+	}
+	return tsdb.RewriteBlock(logger, dbPath, blockID, targetEncoding)
+}
+
 func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExtended bool, matchers string) error {
 	var (
 		selectors []*labels.Matcher
@@ -652,7 +666,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				return errors.New("ChunkOrIterable should not return an iterable when reading a block")
 			}
 			switch chk.Encoding() {
-			case chunkenc.EncXOR:
+			case chunkenc.EncXOR, chunkenc.EncXOR2:
 				floatChunkSamplesCount = append(floatChunkSamplesCount, chk.NumSamples())
 				floatChunkSize = append(floatChunkSize, len(chk.Bytes()))
 			case chunkenc.EncFloatHistogram:

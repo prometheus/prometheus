@@ -1738,9 +1738,10 @@ func (a *headAppenderBase) Commit() (err error) {
 		oooMaxT:     math.MinInt64,
 		oooCapMax:   h.opts.OutOfOrderCapMax.Load(),
 		appendChunkOpts: chunkOpts{
-			chunkDiskMapper: h.chunkDiskMapper,
-			chunkRange:      h.chunkRange.Load(),
-			samplesPerChunk: h.opts.SamplesPerChunk,
+			chunkDiskMapper:    h.chunkDiskMapper,
+			chunkRange:         h.chunkRange.Load(),
+			samplesPerChunk:    h.opts.SamplesPerChunk,
+			floatChunkEncoding: h.floatChunkEncoding(),
 		},
 	}
 
@@ -1821,9 +1822,10 @@ func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histo
 
 // chunkOpts are chunk-level options that are passed when appending to a memSeries.
 type chunkOpts struct {
-	chunkDiskMapper *chunks.ChunkDiskMapper
-	chunkRange      int64
-	samplesPerChunk int
+	chunkDiskMapper    *chunks.ChunkDiskMapper
+	chunkRange         int64
+	samplesPerChunk    int
+	floatChunkEncoding chunkenc.Encoding
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
@@ -1831,7 +1833,7 @@ type chunkOpts struct {
 // isolation for this append.)
 // Series lock must be held when calling.
 func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o)
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, o.floatChunkEncoding, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}

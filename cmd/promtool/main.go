@@ -298,6 +298,10 @@ func main() {
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
 
+	tsdbRewriteBlockCmd := tsdbCmd.Command("rewrite-block", "[Experimental] Rewrite a block with a different float chunk encoding.")
+	rewriteBlockPath := tsdbRewriteBlockCmd.Arg("block path", "Path to the block directory to rewrite.").Required().String()
+	rewriteBlockFloatEncoding := tsdbRewriteBlockCmd.Flag("float-chunk-encoding", "Target float chunk encoding.").Required().Enum("xor", "xor2")
+
 	promQLCmd := app.Command("promql", "PromQL formatting and editing. Requires the --experimental flag.")
 
 	promQLFormatCmd := promQLCmd.Command("format", "Format PromQL query to pretty printed form.")
@@ -451,6 +455,12 @@ func main() {
 
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(serverURL, httpRoundTripper, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, model.UTF8Validation, *importRulesFiles...)))
+
+	case tsdbRewriteBlockCmd.FullCommand():
+		blockPath := filepath.Clean(*rewriteBlockPath)
+		blockID := filepath.Base(blockPath)
+		dbPath := filepath.Dir(blockPath)
+		os.Exit(checkErr(rewriteBlock(dbPath, blockID, *rewriteBlockFloatEncoding)))
 
 	case queryAnalyzeCmd.FullCommand():
 		os.Exit(checkErr(queryAnalyzeCfg.run(serverURL, httpRoundTripper)))
