@@ -502,6 +502,59 @@ func TestContainsStringMatcherWithContextMatchers(t *testing.T) {
 	require.False(t, m2.Matches("baz"))
 }
 
+func TestNewFastRegexMatcher_CaseInsensitiveAlternation(t *testing.T) {
+	matcher, err := NewFastRegexMatcher("^(.*)((?i)foo|foobar)(.*)$")
+	require.NoError(t, err)
+
+	require.IsType(t, (*containsStringMatcher)(nil), matcher.stringMatcher)
+	m := matcher.stringMatcher.(*containsStringMatcher)
+	require.NotNil(t, m.ac, "case-insensitive should use Aho-Corasick")
+
+	require.True(t, m.Matches("prefix foo suffix"))
+	require.True(t, m.Matches("prefix FOO suffix"))
+	require.True(t, m.Matches("prefix FoO suffix"))
+	require.True(t, m.Matches("prefix foobar suffix"))
+	require.True(t, m.Matches("prefix FOOBAR suffix"))
+	require.False(t, m.Matches("prefix bar suffix"))
+}
+
+func TestContainsStringMatcher_NilOptimization(t *testing.T) {
+	patterns := []string{"foo", "bar"}
+	left := trueMatcher{}
+	right := trueMatcher{}
+
+	m := newContainsStringMatcher(patterns, true, left, right)
+	require.Nil(t, m.left, "left should be nil when both are trueMatcher")
+	require.Nil(t, m.right, "right should be nil when both are trueMatcher")
+	require.True(t, m.Matches("testing foo here"))
+}
+
+func TestContainsStringMatcher_EmptyPatternForcesFallback(t *testing.T) {
+	m := newContainsStringMatcher([]string{"foo", "", "bar"}, true, nil, nil)
+	require.Nil(t, m.ac, "empty pattern should force fallback")
+	require.True(t, m.Matches("anything"))
+}
+
+func TestContainsStringMatcher_HighPatternCount(t *testing.T) {
+	t.Run("at_threshold_20", func(t *testing.T) {
+		patterns := make([]string, 20)
+		for i := range patterns {
+			patterns[i] = fmt.Sprintf("p%d", i)
+		}
+		m := newContainsStringMatcher(patterns, true, nil, nil)
+		require.Nil(t, m.ac, "20 patterns should use strings.Index fallback")
+	})
+
+	t.Run("above_threshold_21", func(t *testing.T) {
+		patterns := make([]string, 21)
+		for i := range patterns {
+			patterns[i] = fmt.Sprintf("p%d", i)
+		}
+		m := newContainsStringMatcher(patterns, true, nil, nil)
+		require.NotNil(t, m.ac, "21 patterns should use Aho-Corasick")
+	})
+}
+
 func BenchmarkContainsStringMatcher(b *testing.B) {
 	patterns := make([]string, 20)
 	for i := range patterns {

@@ -22,6 +22,7 @@ require (
 	github.com/aws/smithy-go v1.24.0
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396
 	github.com/dennwc/varint v1.0.0
 	github.com/digitalocean/godo v1.173.0
 	github.com/docker/docker v28.5.2+incompatible
@@ -58,7 +59,6 @@ require (
 	github.com/ovh/go-ovh v1.9.0
 	github.com/pb33f/libopenapi v0.31.1
 	github.com/pb33f/libopenapi-validator v0.10.0
-	github.com/pgavlin/aho-corasick v0.5.0
 	github.com/prometheus/alertmanager v0.30.0
 	github.com/pb33f/libopenapi v0.33.4
 	github.com/pb33f/libopenapi-validator v0.11.1

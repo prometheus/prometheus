@@ -18,10 +18,11 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 
+	ahocorasick "github.com/cloudflare/ahocorasick"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
-	ahocorasick "github.com/pgavlin/aho-corasick"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -640,7 +641,12 @@ type containsStringMatcher struct {
 
 	// ac is set when we use Aho-Corasick for acThreshold+ patterns or case-insensitive matching.
 	// nil means use the strings.Index fallback.
-	ac *ahocorasick.AhoCorasick
+	ac *ahocorasick.Matcher
+
+	// caseInsensitive controls whether matching uses case-insensitive semantics.
+	// Case-insensitive matching is ASCII-only and implemented by uppercasing both
+	// patterns and haystack before matching.
+	caseInsensitive bool
 }
 
 // newContainsStringMatcher builds a containsStringMatcher. For acThreshold+ patterns or
@@ -657,10 +663,23 @@ func newContainsStringMatcher(substrings []string, caseSensitive bool, left, rig
 			right = nil
 		}
 	}
+
+	// Normalize patterns for case-insensitive matching (ASCII-only).
+	// This normalization is idempotent and also covers direct calls to
+	// newContainsStringMatcher from tests/benchmarks.
+	if !caseSensitive {
+		normalized := make([]string, len(substrings))
+		for i, s := range substrings {
+			normalized[i] = strings.ToUpper(s)
+		}
+		substrings = normalized
+	}
+
 	m := &containsStringMatcher{
-		substrings: substrings,
-		left:       left,
-		right:      right,
+		substrings:      substrings,
+		left:            left,
+		right:           right,
+		caseInsensitive: !caseSensitive,
 	}
 	useAC := len(substrings) >= acThreshold || !caseSensitive
 	if useAC {
@@ -669,13 +688,10 @@ func newContainsStringMatcher(substrings []string, caseSensitive bool, left, rig
 			useAC = false
 		}
 	}
-	if useAC {
-		builder := ahocorasick.NewAhoCorasickBuilder(ahocorasick.Opts{
-			AsciiCaseInsensitive: !caseSensitive,
-			DFA:                  false, // NFA for lower memory
-		})
-		built := builder.Build(substrings)
-		m.ac = &built
+	// Cloudflare's matcher does not provide match positions. Therefore we only use
+	// Aho-Corasick when there are no context matchers.
+	if useAC && left == nil && right == nil {
+		m.ac = ahocorasick.NewStringMatcher(substrings)
 	}
 	return m
 }
@@ -688,42 +704,27 @@ func (m *containsStringMatcher) Matches(s string) bool {
 }
 
 func (m *containsStringMatcher) matchesWithAhoCorasick(s string) bool {
-	// Fast path: no context matchers, just check if any pattern exists (no slice alloc).
-	if m.left == nil && m.right == nil {
-		iter := m.ac.Iter(s)
-		return iter.Next() != nil
+	haystack := s
+	if m.caseInsensitive {
+		haystack = strings.ToUpper(s)
 	}
-	// Slow path: need all matches for context checking.
-	matches := m.ac.FindAll(s)
-	for _, match := range matches {
-		start := match.Start()
-		end := match.End()
-		switch {
-		case m.right != nil && m.left != nil:
-			if m.left.Matches(s[:start]) && m.right.Matches(s[end:]) {
-				return true
-			}
-		case m.left != nil:
-			if m.left.Matches(s[:start]) {
-				return true
-			}
-		case m.right != nil:
-			if m.right.Matches(s[end:]) {
-				return true
-			}
-		}
-	}
-	return false
+	// m.ac is only set when there are no context matchers.
+	return m.ac.Contains(unsafeStringToBytes(haystack))
 }
 
 func (m *containsStringMatcher) matchesWithStringsIndex(s string) bool {
+	haystack := s
+	if m.caseInsensitive {
+		haystack = strings.ToUpper(s)
+	}
+
 	for _, substr := range m.substrings {
 		switch {
 		case m.right != nil && m.left != nil:
 			searchStartPos := 0
 
 			for {
-				pos := strings.Index(s[searchStartPos:], substr)
+				pos := strings.Index(haystack[searchStartPos:], substr)
 				if pos < 0 {
 					break
 				}
@@ -743,20 +744,25 @@ func (m *containsStringMatcher) matchesWithStringsIndex(s string) bool {
 			}
 		case m.left != nil:
 			// If we have to check for characters on the left then we need to match a suffix.
-			if strings.HasSuffix(s, substr) && m.left.Matches(s[:len(s)-len(substr)]) {
+			if strings.HasSuffix(haystack, substr) && m.left.Matches(s[:len(s)-len(substr)]) {
 				return true
 			}
 		case m.right != nil:
-			if strings.HasPrefix(s, substr) && m.right.Matches(s[len(substr):]) {
+			if strings.HasPrefix(haystack, substr) && m.right.Matches(s[len(substr):]) {
 				return true
 			}
 		default:
-			if strings.Contains(s, substr) {
+			if strings.Contains(haystack, substr) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func unsafeStringToBytes(s string) []byte {
+	// Prometheus treats inputs as immutable. This avoids allocating in hot paths.
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
 func newLiteralPrefixStringMatcher(prefix string, prefixCaseSensitive bool, right StringMatcher) StringMatcher {
