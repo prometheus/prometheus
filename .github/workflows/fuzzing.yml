@@ -19,7 +19,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
         with:
-          go-version: 1.25.x
+          go-version: 1.26.x
       - name: Run Fuzzing
         run: go test -fuzz=${{ matrix.fuzz_test }}$ -fuzztime=5m ./util/fuzzing
         continue-on-error: true
