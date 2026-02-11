@@ -99,7 +99,7 @@ func main() {
 	db, err := tsdb.Open(tsdbDir, logger, nil, tsdb.DefaultOptions(), nil)
 	if err != nil {
 		fmt.Printf("Failed to open TSDB: %v\n", err)
-		os.Exit(1)
+		return
 	}
 	defer db.Close()
 
@@ -137,7 +137,7 @@ func main() {
 		_, err = app.Append(0, lbls, t.UnixMilli(), value)
 		if err != nil {
 			fmt.Printf("Failed to append: %v\n", err)
-			os.Exit(1)
+			return
 		}
 
 		// Also write a 404 series with lower values.
@@ -149,13 +149,13 @@ func main() {
 		_, err = app.Append(0, lbls404, t.UnixMilli(), value*0.1)
 		if err != nil {
 			fmt.Printf("Failed to append: %v\n", err)
-			os.Exit(1)
+			return
 		}
 	}
 
 	if err := app.Commit(); err != nil {
 		fmt.Printf("Failed to commit: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	fmt.Printf("  %s[Written]%s %d samples for test_bytes_total{http_response_status_code=\"200\", instance=\"myapp:8080\"}\n", colorGreen, colorReset, int(time.Hour/interval))
@@ -187,7 +187,7 @@ func main() {
 		_, err = app.Append(0, lbls, t.UnixMilli(), value)
 		if err != nil {
 			fmt.Printf("Failed to append: %v\n", err)
-			os.Exit(1)
+			return
 		}
 
 		// Same 404 series, continuing after migration.
@@ -199,13 +199,13 @@ func main() {
 		_, err = app.Append(0, lbls404, t.UnixMilli(), value*0.1)
 		if err != nil {
 			fmt.Printf("Failed to append: %v\n", err)
-			os.Exit(1)
+			return
 		}
 	}
 
 	if err := app.Commit(); err != nil {
 		fmt.Printf("Failed to commit: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	fmt.Printf("  %s[Written]%s %d samples for test{http.response.status_code=\"200\", instance=\"myapp:8080\"}\n", colorGreen, colorReset, int(time.Hour/interval))
@@ -246,11 +246,11 @@ func main() {
 	fmt.Printf("After migrating to native OTel naming, queries using old names miss new data:\n\n")
 
 	// Query 1: Old metric name - only returns pre-migration data
-	runRangeQueryWithDetails(engine, db, ctx, now, "test_bytes_total",
+	runRangeQueryWithDetails(ctx, engine, db, now, "test_bytes_total",
 		"Old metric name - only has data from BEFORE migration")
 
 	// Query 2: New metric name - only returns post-migration data
-	runRangeQueryWithDetails(engine, db, ctx, now, "test",
+	runRangeQueryWithDetails(ctx, engine, db, now, "test",
 		"New metric name - only has data from AFTER migration")
 
 	fmt.Printf("  %s=> Neither query alone shows the complete picture!%s\n\n", colorYellow, colorReset)
@@ -264,7 +264,7 @@ func main() {
 	fmt.Printf("  3. Merge results with canonical OTel names\n\n")
 
 	// Query 3: Semconv-aware query - returns ALL data with unified naming
-	runRangeQueryWithDetails(engine, semconvStorage, ctx, now, `test{__semconv_url__="registry/1.1.0"}`,
+	runRangeQueryWithDetails(ctx, engine, semconvStorage, now, `test{__semconv_url__="registry/1.1.0"}`,
 		"Semconv query - returns ALL data with unified OTel naming!")
 
 	fmt.Printf("  %s=> Complete data coverage across the migration boundary!%s\n\n", colorGreen, colorReset)
@@ -274,7 +274,7 @@ func main() {
 
 	fmt.Printf("Aggregations like sum() work seamlessly across different naming conventions:\n\n")
 
-	runRangeQuery(engine, semconvStorage, ctx, now, `sum(test{__semconv_url__="registry/1.1.0"})`,
+	runRangeQuery(ctx, engine, semconvStorage, now, `sum(test{__semconv_url__="registry/1.1.0"})`,
 		"sum() aggregates data from both naming conventions into one continuous series")
 
 	// ===== Phase 6: Rate calculation across the migration boundary =====
@@ -282,7 +282,7 @@ func main() {
 
 	fmt.Printf("Even rate() calculations work across the naming change:\n\n")
 
-	runRangeQuery(engine, semconvStorage, ctx, now, `sum(rate(test{__semconv_url__="registry/1.1.0"}[5m]))`,
+	runRangeQuery(ctx, engine, semconvStorage, now, `sum(rate(test{__semconv_url__="registry/1.1.0"}[5m]))`,
 		"rate() computes correctly across the migration point")
 
 	// ===== Summary =====
@@ -307,7 +307,7 @@ func printPhase(n int, description string) {
 }
 
 // runRangeQuery executes a range query over the last 2.5 hours and displays results.
-func runRangeQuery(engine *promql.Engine, storage storage.Queryable, ctx context.Context, now time.Time, query, description string) {
+func runRangeQuery(ctx context.Context, engine *promql.Engine, storage storage.Queryable, now time.Time, query, description string) {
 	fmt.Printf("  Query: %s%s%s\n", colorMagenta, query, colorReset)
 	fmt.Printf("  %s\n", description)
 
@@ -341,7 +341,7 @@ func runRangeQuery(engine *promql.Engine, storage storage.Queryable, ctx context
 }
 
 // runRangeQueryWithDetails executes a range query and shows time coverage details.
-func runRangeQueryWithDetails(engine *promql.Engine, storage storage.Queryable, ctx context.Context, now time.Time, query, description string) {
+func runRangeQueryWithDetails(ctx context.Context, engine *promql.Engine, storage storage.Queryable, now time.Time, query, description string) {
 	fmt.Printf("  Query: %s%s%s\n", colorMagenta, query, colorReset)
 	fmt.Printf("  %s\n", description)
 
@@ -392,11 +392,12 @@ func runRangeQueryWithDetails(engine *promql.Engine, storage storage.Queryable, 
 
 	// Determine coverage description.
 	var coverage string
-	if minTime < migrationPoint && maxTime > migrationPoint {
+	switch {
+	case minTime < migrationPoint && maxTime > migrationPoint:
 		coverage = fmt.Sprintf("%s[FULL]%s %s to %s (spans migration at %s)", colorGreen, colorReset, minTimeStr, maxTimeStr, migrationStr)
-	} else if maxTime <= migrationPoint {
+	case maxTime <= migrationPoint:
 		coverage = fmt.Sprintf("%s[PARTIAL]%s %s to %s (only pre-migration, ends before %s)", colorYellow, colorReset, minTimeStr, maxTimeStr, migrationStr)
-	} else {
+	default:
 		coverage = fmt.Sprintf("%s[PARTIAL]%s %s to %s (only post-migration, starts after %s)", colorYellow, colorReset, minTimeStr, maxTimeStr, migrationStr)
 	}
 
