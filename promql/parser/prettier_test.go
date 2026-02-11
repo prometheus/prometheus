@@ -114,7 +114,7 @@ task:errors:rate10s{job="s"}))`,
 		},
 	}
 	for _, test := range inputs {
-		expr, err := ParseExpr(test.in)
+		expr, err := testParser.ParseExpr(test.in)
 		require.NoError(t, err)
 
 		require.Equal(t, test.out, Prettify(expr))
@@ -185,7 +185,7 @@ func TestBinaryExprPretty(t *testing.T) {
 	}
 	for _, test := range inputs {
 		t.Run(test.in, func(t *testing.T) {
-			expr, err := ParseExpr(test.in)
+			expr, err := testParser.ParseExpr(test.in)
 			require.NoError(t, err)
 
 			require.Equal(t, test.out, Prettify(expr))
@@ -261,7 +261,7 @@ func TestCallExprPretty(t *testing.T) {
 		},
 	}
 	for _, test := range inputs {
-		expr, err := ParseExpr(test.in)
+		expr, err := testParser.ParseExpr(test.in)
 		require.NoError(t, err)
 
 		fmt.Println("=>", expr.String())
@@ -308,7 +308,7 @@ func TestParenExprPretty(t *testing.T) {
 		},
 	}
 	for _, test := range inputs {
-		expr, err := ParseExpr(test.in)
+		expr, err := testParser.ParseExpr(test.in)
 		require.NoError(t, err)
 
 		require.Equal(t, test.out, Prettify(expr))
@@ -334,7 +334,7 @@ func TestStepInvariantExpr(t *testing.T) {
 		},
 	}
 	for _, test := range inputs {
-		expr, err := ParseExpr(test.in)
+		expr, err := testParser.ParseExpr(test.in)
 		require.NoError(t, err)
 
 		require.Equal(t, test.out, Prettify(expr))
@@ -594,7 +594,7 @@ or
 		},
 	}
 	for _, test := range inputs {
-		expr, err := ParseExpr(test.in)
+		expr, err := testParser.ParseExpr(test.in)
 		require.NoError(t, err)
 		require.Equal(t, test.out, Prettify(expr))
 	}
@@ -662,7 +662,7 @@ func TestUnaryPretty(t *testing.T) {
 	}
 	for _, test := range inputs {
 		t.Run(test.in, func(t *testing.T) {
-			expr, err := ParseExpr(test.in)
+			expr, err := testParser.ParseExpr(test.in)
 			require.NoError(t, err)
 			require.Equal(t, test.out, Prettify(expr))
 		})
@@ -670,11 +670,7 @@ func TestUnaryPretty(t *testing.T) {
 }
 
 func TestDurationExprPretty(t *testing.T) {
-	// Enable experimental duration expression parsing.
-	ExperimentalDurationExpr = true
-	t.Cleanup(func() {
-		ExperimentalDurationExpr = false
-	})
+	optsParser := NewParser(Options{ExperimentalDurationExpr: true})
 	maxCharactersPerLine = 10
 	inputs := []struct {
 		in, out string
@@ -700,7 +696,7 @@ func TestDurationExprPretty(t *testing.T) {
 	}
 	for _, test := range inputs {
 		t.Run(test.in, func(t *testing.T) {
-			expr, err := ParseExpr(test.in)
+			expr, err := optsParser.ParseExpr(test.in)
 			require.NoError(t, err)
 			require.Equal(t, test.out, Prettify(expr))
 		})

@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -307,12 +308,18 @@ type Options struct {
 	Gatherer        prometheus.Gatherer
 	Registerer      prometheus.Registerer
 	FeatureRegistry features.Collector
+
+	// Parser is the PromQL parser used for parsing query expressions.
+	Parser parser.Parser
 }
 
 // New initializes a new web Handler.
 func New(logger *slog.Logger, o *Options) *Handler {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
+	}
+	if o.Parser == nil {
+		o.Parser = parser.NewParser(parser.Options{})
 	}
 
 	m := newMetrics(o.Registerer)
@@ -417,6 +424,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 			ExternalURL: o.ExternalURL.String(),
 			Version:     version,
 		},
+		o.Parser,
 	)
 
 	if r := o.FeatureRegistry; r != nil {

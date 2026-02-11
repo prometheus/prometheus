@@ -335,6 +335,9 @@ type EngineOpts struct {
 
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
+
+	// Parser is the PromQL parser instance used for parsing expressions.
+	Parser parser.Parser
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -354,6 +357,7 @@ type Engine struct {
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
+	parser                   parser.Parser
 }
 
 // NewEngine returns a new engine.
@@ -432,6 +436,10 @@ func NewEngine(opts EngineOpts) *Engine {
 		metrics.maxConcurrentQueries.Set(-1)
 	}
 
+	if opts.Parser == nil {
+		opts.Parser = parser.NewParser(parser.Options{})
+	}
+
 	if opts.LookbackDelta == 0 {
 		opts.LookbackDelta = defaultLookbackDelta
 		if l := opts.Logger; l != nil {
@@ -460,7 +468,9 @@ func NewEngine(opts EngineOpts) *Engine {
 		r.Enable(features.PromQL, "per_query_lookback_delta")
 		r.Enable(features.PromQL, "subqueries")
 
-		parser.RegisterFeatures(r)
+		if opts.Parser != nil {
+			opts.Parser.RegisterFeatures(r)
+		}
 	}
 
 	return &Engine{
@@ -476,6 +486,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
+		parser:                   opts.Parser,
 	}
 }
 
@@ -524,7 +535,7 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 		return nil, err
 	}
 	defer finishQueue()
-	expr, err := parser.ParseExpr(qs)
+	expr, err := ng.parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +556,7 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 		return nil, err
 	}
 	defer finishQueue()
-	expr, err := parser.ParseExpr(qs)
+	expr, err := ng.parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}

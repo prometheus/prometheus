@@ -63,6 +63,8 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+var testParser = parser.NewParser(parser.Options{})
+
 func testEngine(t *testing.T) *promql.Engine {
 	t.Helper()
 	return promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
@@ -250,11 +252,11 @@ type rulesRetrieverMock struct {
 }
 
 func (m *rulesRetrieverMock) CreateAlertingRules() {
-	expr1, err := parser.ParseExpr(`absent(test_metric3) != 1`)
+	expr1, err := testParser.ParseExpr(`absent(test_metric3) != 1`)
 	require.NoError(m.testing, err)
-	expr2, err := parser.ParseExpr(`up == 1`)
+	expr2, err := testParser.ParseExpr(`up == 1`)
 	require.NoError(m.testing, err)
-	expr3, err := parser.ParseExpr(`vector(1)`)
+	expr3, err := testParser.ParseExpr(`vector(1)`)
 	require.NoError(m.testing, err)
 
 	rule1 := rules.NewAlertingRule(
@@ -353,7 +355,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		r = append(r, alertrule)
 	}
 
-	recordingExpr, err := parser.ParseExpr(`vector(1)`)
+	recordingExpr, err := testParser.ParseExpr(`vector(1)`)
 	require.NoError(m.testing, err, "unable to parse alert expression")
 	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
 	recordingRule2 := rules.NewRecordingRule("recording-rule-2", recordingExpr, labels.FromStrings("testlabel", "rule"))
@@ -506,6 +508,7 @@ func TestEndpoints(t *testing.T) {
 			config:                func() config.Config { return samplePrometheusCfg },
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
+			parser:                testParser,
 		}
 		testEndpoints(t, api, testTargetRetriever, true)
 	})
@@ -570,6 +573,7 @@ func TestEndpoints(t *testing.T) {
 			config:                func() config.Config { return samplePrometheusCfg },
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
+			parser:                testParser,
 		}
 		testEndpoints(t, api, testTargetRetriever, false)
 	})
@@ -595,6 +599,7 @@ func TestGetSeries(t *testing.T) {
 
 	api := &API{
 		Queryable: s,
+		parser:    testParser,
 	}
 	request := func(method string, matchers ...string) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
@@ -659,6 +664,7 @@ func TestGetSeries(t *testing.T) {
 			expectedErrorType: errorExec,
 			api: &API{
 				Queryable: errorTestQueryable{err: errors.New("generic")},
+				parser:    testParser,
 			},
 		},
 		{
@@ -667,6 +673,7 @@ func TestGetSeries(t *testing.T) {
 			expectedErrorType: errorInternal,
 			api: &API{
 				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
+				parser:    testParser,
 			},
 		},
 	} {
@@ -704,6 +711,7 @@ func TestQueryExemplars(t *testing.T) {
 		Queryable:         s,
 		QueryEngine:       testEngine(t),
 		ExemplarQueryable: s,
+		parser:            testParser,
 	}
 
 	request := func(method string, qs url.Values) (*http.Request, error) {
@@ -760,6 +768,7 @@ func TestQueryExemplars(t *testing.T) {
 			expectedErrorType: errorExec,
 			api: &API{
 				ExemplarQueryable: errorTestQueryable{err: errors.New("generic")},
+				parser:            testParser,
 			},
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -772,6 +781,7 @@ func TestQueryExemplars(t *testing.T) {
 			expectedErrorType: errorInternal,
 			api: &API{
 				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
+				parser:            testParser,
 			},
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -812,6 +822,7 @@ func TestLabelNames(t *testing.T) {
 
 	api := &API{
 		Queryable: s,
+		parser:    testParser,
 	}
 	request := func(method, limit string, matchers ...string) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
@@ -876,6 +887,7 @@ func TestLabelNames(t *testing.T) {
 			expectedErrorType: errorExec,
 			api: &API{
 				Queryable: errorTestQueryable{err: errors.New("generic")},
+				parser:    testParser,
 			},
 		},
 		{
@@ -884,6 +896,7 @@ func TestLabelNames(t *testing.T) {
 			expectedErrorType: errorInternal,
 			api: &API{
 				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
+				parser:    testParser,
 			},
 		},
 	} {
@@ -916,6 +929,7 @@ func TestStats(t *testing.T) {
 	api := &API{
 		Queryable:   s,
 		QueryEngine: testEngine(t),
+		parser:      testParser,
 		now: func() time.Time {
 			return time.Unix(123, 0)
 		},
@@ -4101,6 +4115,7 @@ func TestAdminEndpoints(t *testing.T) {
 				dbDir:       dir,
 				ready:       func(f http.HandlerFunc) http.HandlerFunc { return f },
 				enableAdmin: tc.enableAdmin,
+				parser:      testParser,
 			}
 
 			endpoint := tc.endpoint(api)
@@ -4850,6 +4865,7 @@ func TestQueryTimeout(t *testing.T) {
 				now:                   func() time.Time { return now },
 				config:                func() config.Config { return samplePrometheusCfg },
 				ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+				parser:                testParser,
 			}
 
 			query := url.Values{

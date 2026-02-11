@@ -218,6 +218,8 @@ type flagConfig struct {
 
 	promqlEnableDelayedNameRemoval bool
 
+	parserOpts parser.Options
+
 	promslogConfig promslog.Config
 }
 
@@ -255,10 +257,10 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.enableConcurrentRuleEval = true
 				logger.Info("Experimental concurrent rule evaluation enabled.")
 			case "promql-experimental-functions":
-				parser.EnableExperimentalFunctions = true
+				c.parserOpts.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
 			case "promql-duration-expr":
-				parser.ExperimentalDurationExpr = true
+				c.parserOpts.ExperimentalDurationExpr = true
 				logger.Info("Experimental duration expression parsing enabled.")
 			case "native-histograms":
 				logger.Warn("This option for --enable-feature is a no-op. To scrape native histograms, set the scrape_native_histograms scrape config setting to true.", "option", o)
@@ -292,10 +294,10 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
 			case "promql-extended-range-selectors":
-				parser.EnableExtendedRangeSelectors = true
+				c.parserOpts.EnableExtendedRangeSelectors = true
 				logger.Info("Experimental PromQL extended range selectors enabled.")
 			case "promql-binop-fill-modifiers":
-				parser.EnableBinopFillModifiers = true
+				c.parserOpts.EnableBinopFillModifiers = true
 				logger.Info("Experimental PromQL binary operator fill modifiers enabled.")
 			case "":
 				continue
@@ -630,6 +632,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	promqlParser := parser.NewParser(cfg.parserOpts)
+
 	if agentMode && len(serverOnlyFlags) > 0 {
 		fmt.Fprintf(os.Stderr, "The following flag(s) can not be used in agent mode: %q", serverOnlyFlags)
 		os.Exit(3)
@@ -684,7 +688,7 @@ func main() {
 	}
 
 	// Parse rule files to verify they exist and contain valid rules.
-	if err := rules.ParseFiles(cfgFile.RuleFiles, cfgFile.GlobalConfig.MetricNameValidationScheme); err != nil {
+	if err := rules.ParseFiles(cfgFile.RuleFiles, cfgFile.GlobalConfig.MetricNameValidationScheme, promqlParser); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
@@ -921,6 +925,7 @@ func main() {
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
 			FeatureRegistry:          features.DefaultRegistry,
+			Parser:                   promqlParser,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -944,6 +949,7 @@ func main() {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
 			FeatureRegistry: features.DefaultRegistry,
+			Parser:          promqlParser,
 		})
 	}
 
@@ -963,6 +969,7 @@ func main() {
 	cfg.web.LookbackDelta = time.Duration(cfg.lookbackDelta)
 	cfg.web.IsAgent = agentMode
 	cfg.web.AppName = modeAppName
+	cfg.web.Parser = promqlParser
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,

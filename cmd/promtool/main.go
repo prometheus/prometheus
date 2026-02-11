@@ -61,7 +61,10 @@ import (
 	"github.com/prometheus/prometheus/util/documentcli"
 )
 
-var promqlEnableDelayedNameRemoval = false
+var (
+	promqlEnableDelayedNameRemoval = false
+	promtoolParserOpts             parser.Options
+)
 
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
@@ -348,13 +351,13 @@ func main() {
 		for o := range strings.SplitSeq(f, ",") {
 			switch o {
 			case "promql-experimental-functions":
-				parser.EnableExperimentalFunctions = true
+				promtoolParserOpts.EnableExperimentalFunctions = true
 			case "promql-delayed-name-removal":
 				promqlEnableDelayedNameRemoval = true
 			case "promql-duration-expr":
-				parser.ExperimentalDurationExpr = true
+				promtoolParserOpts.ExperimentalDurationExpr = true
 			case "promql-extended-range-selectors":
-				parser.EnableExtendedRangeSelectors = true
+				promtoolParserOpts.EnableExtendedRangeSelectors = true
 			case "":
 				continue
 			default:
@@ -362,6 +365,7 @@ func main() {
 			}
 		}
 	}
+	promtoolParser := parser.NewParser(promtoolParserOpts)
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():
@@ -380,7 +384,7 @@ func main() {
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), *ruleFiles...))
+		os.Exit(CheckRules(newRulesLintConfig(*checkRulesLint, *checkRulesLintFatal, *checkRulesIgnoreUnknownFields, model.UTF8Validation), promtoolParser, *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended, *checkMetricsLint))
@@ -420,6 +424,7 @@ func main() {
 				EnableNegativeOffset:     true,
 				EnableDelayedNameRemoval: promqlEnableDelayedNameRemoval,
 			},
+			promtoolParser,
 			*testRulesRun,
 			*testRulesDiff,
 			*testRulesDebug,
@@ -431,7 +436,7 @@ func main() {
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
 
 	case tsdbAnalyzeCmd.FullCommand():
-		os.Exit(checkErr(analyzeBlock(ctx, *analyzePath, *analyzeBlockID, *analyzeLimit, *analyzeRunExtended, *analyzeMatchers)))
+		os.Exit(checkErr(analyzeBlock(ctx, *analyzePath, *analyzeBlockID, *analyzeLimit, *analyzeRunExtended, *analyzeMatchers, promtoolParser)))
 
 	case tsdbListCmd.FullCommand():
 		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
@@ -441,10 +446,10 @@ func main() {
 		if *dumpFormat == "seriesjson" {
 			format = formatSeriesSetLabelsToJSON
 		}
-		os.Exit(checkErr(dumpTSDBData(ctx, *dumpPath, *dumpSandboxDirRoot, *dumpMinTime, *dumpMaxTime, *dumpMatch, format)))
+		os.Exit(checkErr(dumpTSDBData(ctx, *dumpPath, *dumpSandboxDirRoot, *dumpMinTime, *dumpMaxTime, *dumpMatch, format, promtoolParser)))
 
 	case tsdbDumpOpenMetricsCmd.FullCommand():
-		os.Exit(checkErr(dumpTSDBData(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics)))
+		os.Exit(checkErr(dumpTSDBData(ctx, *dumpOpenMetricsPath, *dumpOpenMetricsSandboxDirRoot, *dumpOpenMetricsMinTime, *dumpOpenMetricsMaxTime, *dumpOpenMetricsMatch, formatSeriesSetOpenMetrics, promtoolParser)))
 	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration, *openMetricsLabels))
@@ -460,15 +465,15 @@ func main() {
 
 	case promQLFormatCmd.FullCommand():
 		checkExperimental(*experimental)
-		os.Exit(checkErr(formatPromQL(*promQLFormatQuery)))
+		os.Exit(checkErr(formatPromQL(*promQLFormatQuery, promtoolParser)))
 
 	case promQLLabelsSetCmd.FullCommand():
 		checkExperimental(*experimental)
-		os.Exit(checkErr(labelsSetPromQL(*promQLLabelsSetQuery, *promQLLabelsSetType, *promQLLabelsSetName, *promQLLabelsSetValue)))
+		os.Exit(checkErr(labelsSetPromQL(*promQLLabelsSetQuery, *promQLLabelsSetType, *promQLLabelsSetName, *promQLLabelsSetValue, promtoolParser)))
 
 	case promQLLabelsDeleteCmd.FullCommand():
 		checkExperimental(*experimental)
-		os.Exit(checkErr(labelsDeletePromQL(*promQLLabelsDeleteQuery, *promQLLabelsDeleteName)))
+		os.Exit(checkErr(labelsDeletePromQL(*promQLLabelsDeleteQuery, *promQLLabelsDeleteName, promtoolParser)))
 	}
 }
 
@@ -614,7 +619,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig,
 		if !checkSyntaxOnly {
 			scrapeConfigsFailed := lintScrapeConfigs(scrapeConfigs, lintSettings)
 			failed = failed || scrapeConfigsFailed
-			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig)
+			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig, parser.NewParser(parser.Options{}))
 			failed = failed || rulesFailed
 			hasErrors = hasErrors || rulesHaveErrors
 		}
@@ -841,13 +846,13 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 }
 
 // CheckRules validates rule files.
-func CheckRules(ls rulesLintConfig, files ...string) int {
+func CheckRules(ls rulesLintConfig, p parser.Parser, files ...string) int {
 	failed := false
 	hasErrors := false
 	if len(files) == 0 {
-		failed, hasErrors = checkRulesFromStdin(ls)
+		failed, hasErrors = checkRulesFromStdin(ls, p)
 	} else {
-		failed, hasErrors = checkRules(files, ls)
+		failed, hasErrors = checkRules(files, ls, p)
 	}
 
 	if failed && hasErrors {
@@ -861,7 +866,7 @@ func CheckRules(ls rulesLintConfig, files ...string) int {
 }
 
 // checkRulesFromStdin validates rule from stdin.
-func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
+func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser) (bool, bool) {
 	failed := false
 	hasErrors := false
 	fmt.Println("Checking standard input")
@@ -870,7 +875,7 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
-	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme)
+	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme, p)
 	if errs != nil {
 		failed = true
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -899,12 +904,12 @@ func checkRulesFromStdin(ls rulesLintConfig) (bool, bool) {
 }
 
 // checkRules validates rule files.
-func checkRules(files []string, ls rulesLintConfig) (bool, bool) {
+func checkRules(files []string, ls rulesLintConfig, p parser.Parser) (bool, bool) {
 	failed := false
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme)
+		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme, p)
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -1345,8 +1350,8 @@ func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *c
 	return nil
 }
 
-func formatPromQL(query string) error {
-	expr, err := parser.ParseExpr(query)
+func formatPromQL(query string, p parser.Parser) error {
+	expr, err := p.ParseExpr(query)
 	if err != nil {
 		return err
 	}
@@ -1355,8 +1360,8 @@ func formatPromQL(query string) error {
 	return nil
 }
 
-func labelsSetPromQL(query, labelMatchType, name, value string) error {
-	expr, err := parser.ParseExpr(query)
+func labelsSetPromQL(query, labelMatchType, name, value string, p parser.Parser) error {
+	expr, err := p.ParseExpr(query)
 	if err != nil {
 		return err
 	}
@@ -1400,8 +1405,8 @@ func labelsSetPromQL(query, labelMatchType, name, value string) error {
 	return nil
 }
 
-func labelsDeletePromQL(query, name string) error {
-	expr, err := parser.ParseExpr(query)
+func labelsDeletePromQL(query, name string, p parser.Parser) error {
+	expr, err := p.ParseExpr(query)
 	if err != nil {
 		return err
 	}
