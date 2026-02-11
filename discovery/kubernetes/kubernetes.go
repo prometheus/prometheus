@@ -159,7 +159,7 @@ type resourceSelector struct {
 type AttachMetadataConfig struct {
 	Node      bool `yaml:"node"`
 	Namespace bool `yaml:"namespace"`
-	PodMetadataConfig
+	PodMetadataConfig `yaml:",inline"`
 }
 
 // PodMetadataConfig allows configuring which pod-related metadata to attach.
@@ -446,12 +446,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				namespaceInf = d.newNamespaceInformer(context.Background())
 				go namespaceInf.Run(ctx.Done())
 			}
-			var deploymentInformer, replicaSetInformer cache.SharedInformer
+			var deploymentInf, replicaSetInf cache.SharedInformer
 			if d.attachMetadata.Deployment {
-				replicaSetInformer = d.newReplicaSetInformer(ctx, namespace)
-				deploymentInformer = d.newDeploymentInformer(ctx, namespace)
-				go replicaSetInformer.Run(ctx.Done())
-				go deploymentInformer.Run(ctx.Done())
+				replicaSetInf = d.newReplicaSetInformer(ctx, namespace)
+				deploymentInf = d.newDeploymentInformer(ctx, namespace)
+				go replicaSetInf.Run(ctx.Done())
+				go deploymentInf.Run(ctx.Done())
 			}
 			var jobInformer cache.SharedInformer
 			if d.attachMetadata.Job {
@@ -474,7 +474,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
 				namespaceInf,
-				replicaSetInformer,
+				replicaSetInf,
 				jobInformer,
 				d.attachMetadata.Deployment,
 				d.attachMetadata.Job,
@@ -538,12 +538,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				go namespaceInf.Run(ctx.Done())
 			}
 
-			var deploymentInformer, replicaSetInformer cache.SharedInformer
+			var deploymentInf, replicaSetInf cache.SharedInformer
 			if d.attachMetadata.Deployment {
-				replicaSetInformer = d.newReplicaSetInformer(ctx, namespace)
-				deploymentInformer = d.newDeploymentInformer(ctx, namespace)
-				go replicaSetInformer.Run(ctx.Done())
-				go deploymentInformer.Run(ctx.Done())
+				replicaSetInf = d.newReplicaSetInformer(ctx, namespace)
+				deploymentInf = d.newDeploymentInformer(ctx, namespace)
+				go replicaSetInf.Run(ctx.Done())
+				go deploymentInf.Run(ctx.Done())
 			}
 
 			var jobInformer cache.SharedInformer
@@ -569,7 +569,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				d.mustNewSharedInformer(plw, &apiv1.Pod{}, resyncDisabled),
 				nodeInf,
 				namespaceInf,
-				replicaSetInformer,
+				replicaSetInf,
 				jobInformer,
 				d.attachMetadata.Deployment,
 				d.attachMetadata.Job,
