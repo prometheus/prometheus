@@ -34,6 +34,32 @@ func TestParseFileSuccess(t *testing.T) {
 	require.Empty(t, errs, "unexpected errors parsing file")
 	_, errs = ParseFile("testdata/legacy_validation_annotation.good.yaml", false, model.LegacyValidation)
 	require.Empty(t, errs, "unexpected errors parsing file")
+	_, errs = ParseFile("testdata/recording_rule_metadata.good.yaml", false, model.UTF8Validation)
+	require.Empty(t, errs, "unexpected errors parsing file with recording rule metadata")
+}
+
+func TestRecordingRuleMetadataParsing(t *testing.T) {
+	rgs, errs := ParseFile("testdata/recording_rule_metadata.good.yaml", false, model.UTF8Validation)
+	require.Empty(t, errs, "unexpected errors parsing file")
+	require.Len(t, rgs.Groups, 1)
+
+	rules := rgs.Groups[0].Rules
+	require.Len(t, rules, 3)
+
+	// First rule has full metadata.
+	require.NotNil(t, rules[0].Metadata)
+	require.Equal(t, model.MetricTypeGauge, rules[0].Metadata.Type)
+	require.Equal(t, "Rate of HTTP requests per job over 5 minutes", rules[0].Metadata.Help)
+	require.Equal(t, "requests/second", rules[0].Metadata.Unit)
+
+	// Second rule has partial metadata (only help).
+	require.NotNil(t, rules[1].Metadata)
+	require.Equal(t, model.MetricType(""), rules[1].Metadata.Type)
+	require.Equal(t, "Rate of HTTP errors per job", rules[1].Metadata.Help)
+	require.Empty(t, rules[1].Metadata.Unit)
+
+	// Third rule has no metadata.
+	require.Nil(t, rules[2].Metadata)
 }
 
 func TestParseFileSuccessWithAliases(t *testing.T) {
@@ -113,6 +139,10 @@ func TestParseFileFailure(t *testing.T) {
 			filename:             "legacy_validation_annotation.bad.yaml",
 			nameValidationScheme: model.LegacyValidation,
 			errMsg:               "invalid annotation name: ins-tance",
+		},
+		{
+			filename: "alert_metadata.bad.yaml",
+			errMsg:   "invalid field 'metadata' in alerting rule",
 		},
 	} {
 		t.Run(c.filename, func(t *testing.T) {

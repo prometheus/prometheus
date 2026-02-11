@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/notifier"
@@ -994,7 +995,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 }
 
 func TestAlertingRule_SetDependentRules(t *testing.T) {
-	dependentRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+	dependentRule := NewRecordingRule("test1", nil, labels.EmptyLabels(), metadata.Metadata{})
 
 	rule := NewAlertingRule(
 		"test",
@@ -1019,7 +1020,7 @@ func TestAlertingRule_SetDependentRules(t *testing.T) {
 }
 
 func TestAlertingRule_SetDependencyRules(t *testing.T) {
-	dependencyRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+	dependencyRule := NewRecordingRule("test1", nil, labels.EmptyLabels(), metadata.Metadata{})
 
 	rule := NewAlertingRule(
 		"test",

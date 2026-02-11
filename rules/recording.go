@@ -25,6 +25,7 @@ import (
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -36,9 +37,10 @@ var ErrDuplicateRecordingLabelSet = errors.New("vector contains metrics with the
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
-	name   string
-	vector parser.Expr
-	labels labels.Labels
+	name     string
+	vector   parser.Expr
+	labels   labels.Labels
+	metadata metadata.Metadata
 	// The health of the recording rule.
 	health *atomic.String
 	// Timestamp of last evaluation of the recording rule.
@@ -54,11 +56,12 @@ type RecordingRule struct {
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
+func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels, meta metadata.Metadata) *RecordingRule {
 	return &RecordingRule{
 		name:                name,
 		vector:              vector,
 		labels:              lset,
+		metadata:            meta,
 		health:              atomic.NewString(string(HealthUnknown)),
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
@@ -79,6 +82,11 @@ func (rule *RecordingRule) Query() parser.Expr {
 // Labels returns the rule labels.
 func (rule *RecordingRule) Labels() labels.Labels {
 	return rule.labels
+}
+
+// Metadata returns the rule metadata.
+func (rule *RecordingRule) Metadata() metadata.Metadata {
+	return rule.metadata
 }
 
 // Eval evaluates the rule and then overrides the metric names and labels accordingly.

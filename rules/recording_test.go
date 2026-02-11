@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -125,7 +126,7 @@ func TestRuleEval(t *testing.T) {
 	ng := testEngine(t)
 	for _, scenario := range ruleEvalTestScenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels, metadata.Metadata{})
 			result, err := rule.Eval(context.TODO(), 0, ruleEvaluationTime, EngineQueryFunc(ng, storage), nil, 0)
 			require.NoError(t, err)
 			testutil.RequireEqual(t, scenario.expected, result)
@@ -140,7 +141,7 @@ func BenchmarkRuleEval(b *testing.B) {
 	ng := testEngine(b)
 	for _, scenario := range ruleEvalTestScenarios {
 		b.Run(scenario.name, func(b *testing.B) {
-			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels)
+			rule := NewRecordingRule("test_rule", scenario.expr, scenario.ruleLabels, metadata.Metadata{})
 
 			b.ResetTimer()
 
@@ -171,7 +172,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 	now := time.Now()
 
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
-	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
+	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"), metadata.Metadata{})
 	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrDuplicateRecordingLabelSet)
@@ -208,6 +209,7 @@ func TestRecordingRuleLimit(t *testing.T) {
 		"foo",
 		expr,
 		labels.FromStrings("test", "test"),
+		metadata.Metadata{},
 	)
 
 	ng := testEngine(t)
@@ -241,7 +243,7 @@ func TestRecordingEvalWithOrigin(t *testing.T) {
 	expr, err := parser.ParseExpr(query)
 	require.NoError(t, err)
 
-	rule := NewRecordingRule(name, expr, lbs)
+	rule := NewRecordingRule(name, expr, lbs, metadata.Metadata{})
 	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, _ string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil
@@ -252,9 +254,9 @@ func TestRecordingEvalWithOrigin(t *testing.T) {
 }
 
 func TestRecordingRule_SetDependentRules(t *testing.T) {
-	dependentRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+	dependentRule := NewRecordingRule("test1", nil, labels.EmptyLabels(), metadata.Metadata{})
 
-	rule := NewRecordingRule("1", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels())
+	rule := NewRecordingRule("1", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels(), metadata.Metadata{})
 	require.False(t, rule.NoDependentRules())
 
 	rule.SetDependentRules([]Rule{dependentRule})
@@ -267,9 +269,9 @@ func TestRecordingRule_SetDependentRules(t *testing.T) {
 }
 
 func TestRecordingRule_SetDependencyRules(t *testing.T) {
-	dependencyRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+	dependencyRule := NewRecordingRule("test1", nil, labels.EmptyLabels(), metadata.Metadata{})
 
-	rule := NewRecordingRule("1", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels())
+	rule := NewRecordingRule("1", &parser.NumberLiteral{Val: 1}, labels.EmptyLabels(), metadata.Metadata{})
 	require.False(t, rule.NoDependencyRules())
 
 	rule.SetDependencyRules([]Rule{dependencyRule})

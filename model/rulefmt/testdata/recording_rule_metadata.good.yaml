@@ -1,0 +1,15 @@
+groups:
+  - name: recording-rules-with-metadata
+    rules:
+      - record: job:http_requests_total:rate5m
+        expr: sum(rate(http_requests_total[5m])) by (job)
+        metadata:
+          type: gauge
+          help: "Rate of HTTP requests per job over 5 minutes"
+          unit: "requests/second"
+      - record: job:http_errors_total:rate5m
+        expr: sum(rate(http_errors_total[5m])) by (job)
+        metadata:
+          help: "Rate of HTTP errors per job"
+      - record: simple_recording_rule
+        expr: up
