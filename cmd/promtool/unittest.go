@@ -52,6 +52,12 @@ func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, dif
 }
 
 func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+	// Use the new coverage-aware function with coverage disabled
+	return RulesUnitTestWithCoverage(results, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, nil, nil, files...)
+}
+
+// RulesUnitTestWithCoverage performs unit testing with optional coverage tracking.
+func RulesUnitTestWithCoverage(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, coverageConfig *CoverageConfig, ruleFiles []string, testFiles ...string) int {
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -60,8 +66,20 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		run = regexp.MustCompile(strings.Join(runStrings, "|"))
 	}
 
-	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
+	// Initialize coverage tracker if enabled
+	var coverageTracker *RuleCoverageTracker
+	if coverageConfig != nil {
+		coverageTracker = NewRuleCoverageTracker(coverageConfig)
+		if len(ruleFiles) > 0 {
+			if err := coverageTracker.LoadRulesFromFiles(ruleFiles); err != nil {
+				fmt.Fprintf(os.Stderr, "Error loading rules for coverage: %v\n", err)
+				return failureExitCode
+			}
+		}
+	}
+
+	for _, f := range testFiles {
+		if errs := ruleUnitTestWithCoverage(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f), coverageTracker); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -73,17 +91,46 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 		}
 		fmt.Println()
 	}
+
+	// Write JUnit XML results
 	err := junit.WriteXML(results)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to write JUnit XML: %s\n", err)
 	}
+
+	// Generate and output coverage report if enabled
+	if coverageTracker != nil {
+		report := coverageTracker.GenerateReport()
+
+		// Write coverage report
+		if err := coverageTracker.WriteReport(report); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing coverage report: %v\n", err)
+			failed = true
+		}
+
+		// Check coverage threshold
+		if err := coverageTracker.CheckCoverageThreshold(report); err != nil {
+			fmt.Fprintf(os.Stderr, "Coverage check failed: %v\n", err)
+			failed = true
+		}
+
+		// If JUnit output is requested and coverage is enabled, append coverage to JUnit
+		if coverageConfig.OutputFormat == "junit" && results != nil {
+			// Append coverage information to existing JUnit XML
+			coverageXML, err := coverageTracker.formatJUnitXML(report)
+			if err == nil {
+				fmt.Fprint(results, coverageXML)
+			}
+		}
+	}
+
 	if failed {
 		return failureExitCode
 	}
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTestWithCoverage(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite, coverageTracker *RuleCoverageTracker) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -132,7 +179,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
-		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, unitTestInp.RuleFiles...)
+		ers := t.testWithCoverage(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, coverageTracker, filename, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
 				tc.Fail(e.Error())
@@ -221,8 +268,8 @@ type testGroup struct {
 	StartTimestamp  testStartTimestamp `yaml:"start_timestamp,omitempty"`
 }
 
-// test performs the unit tests.
-func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare bool, ruleFiles ...string) (outErr []error) {
+// testWithCoverage performs the unit tests with optional coverage tracking.
+func (tg *testGroup) testWithCoverage(testname string, evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promqltest.LazyLoaderOpts, diffFlag, debug, ignoreUnknownFields, fuzzyCompare bool, coverageTracker *RuleCoverageTracker, testFile string, ruleFiles ...string) (outErr []error) {
 	if debug {
 		testStart := time.Now()
 		fmt.Printf("DEBUG: Starting test %s\n", testname)
@@ -387,6 +434,11 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 			}
 
 			for _, testcase := range alertTests[t] {
+				// Track coverage for alert tests
+				if coverageTracker != nil {
+					coverageTracker.MarkRuleTested(testcase.Alertname, testFile, true)
+				}
+
 				// Checking alerts.
 				gotAlerts := got[testcase.Alertname]
 
@@ -463,6 +515,11 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	// Checking promql expressions.
 Outer:
 	for _, testCase := range tg.PromqlExprTests {
+		// Track coverage for expression tests
+		if coverageTracker != nil {
+			coverageTracker.MarkExpressionTested(testCase.Expr, testFile)
+		}
+
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(time.Duration(testCase.EvalTime)),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {

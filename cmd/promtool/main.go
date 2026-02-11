@@ -240,6 +240,17 @@ func main() {
 	testRulesDiff := testRulesCmd.Flag("diff", "[Experimental] Print colored differential output between expected & received output.").Default("false").Bool()
 	testRulesIgnoreUnknownFields := testRulesCmd.Flag("ignore-unknown-fields", "Ignore unknown fields in the test files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default.").Default("false").Bool()
 
+	// Coverage flags
+	testRulesCoverage := testRulesCmd.Flag("coverage", "Enable test coverage reporting for rules.").Default("false").Bool()
+	testRulesRuleFiles := testRulesCmd.Flag("rule-files", "Rule files to calculate coverage for (comma-separated or multiple flags).").Strings()
+	testRulesCoverageFormat := testRulesCmd.Flag("coverage-format", "Output format for coverage report: text, json, junit.").Default("text").Enum("text", "json", "junit")
+	testRulesCoverageOutput := testRulesCmd.Flag("coverage-output", "File path to write coverage report (default: stdout).").String()
+	testRulesMinCoverage := testRulesCmd.Flag("min-coverage", "Minimum required coverage percentage (0-100). Exit with error if not met.").Default("0").Float64()
+	testRulesFailOnUntested := testRulesCmd.Flag("fail-on-untested", "Exit with error if any rule is untested.").Default("false").Bool()
+	testRulesCoverageByGroup := testRulesCmd.Flag("coverage-by-group", "Report coverage statistics by rule group.").Default("false").Bool()
+	testRulesTrackDependencies := testRulesCmd.Flag("track-dependencies", "Track transitive coverage through rule dependencies.").Default("false").Bool()
+	testRulesIgnorePattern := testRulesCmd.Flag("ignore-pattern", "Glob pattern for rules to ignore in coverage calculation.").String()
+
 	defaultDBPath := "data/"
 	tsdbCmd := app.Command("tsdb", "Run tsdb commands.")
 
@@ -413,6 +424,48 @@ func main() {
 		results := io.Discard
 		if *junitOutFile != nil {
 			results = *junitOutFile
+		}
+
+		// Check if coverage is enabled
+		if *testRulesCoverage {
+			// Prepare coverage configuration
+			var ignorePatterns []string
+			if *testRulesIgnorePattern != "" {
+				ignorePatterns = []string{*testRulesIgnorePattern}
+			}
+
+			coverageConfig := &CoverageConfig{
+				EnableDependencyAnalysis: *testRulesTrackDependencies,
+				MinCoverage:              *testRulesMinCoverage,
+				FailOnUntested:           *testRulesFailOnUntested,
+				IgnorePatterns:           ignorePatterns,
+				OutputFormat:             *testRulesCoverageFormat,
+				OutputFile:               *testRulesCoverageOutput,
+				ByGroup:                  *testRulesCoverageByGroup,
+			}
+
+			// Get rule files
+			ruleFiles := *testRulesRuleFiles
+			if len(ruleFiles) == 0 {
+				// If no rule files specified, try to extract from test files
+				// This is a simple heuristic - might need improvement
+				fmt.Fprintln(os.Stderr, "Warning: --rule-files not specified. Please specify rule files for accurate coverage.")
+			}
+
+			os.Exit(RulesUnitTestWithCoverage(results,
+				promqltest.LazyLoaderOpts{
+					EnableAtModifier:         true,
+					EnableNegativeOffset:     true,
+					EnableDelayedNameRemoval: promqlEnableDelayedNameRemoval,
+				},
+				*testRulesRun,
+				*testRulesDiff,
+				*testRulesDebug,
+				*testRulesIgnoreUnknownFields,
+				coverageConfig,
+				ruleFiles,
+				*testRulesFiles...),
+			)
 		}
 		os.Exit(RulesUnitTestResult(results,
 			promqltest.LazyLoaderOpts{

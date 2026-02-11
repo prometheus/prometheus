@@ -477,6 +477,15 @@ Unit tests for rules.
 | <code class="text-nowrap">--debug</code> | Enable unit test debugging. | `false` |
 | <code class="text-nowrap">--diff</code> | [Experimental] Print colored differential output between expected & received output. | `false` |
 | <code class="text-nowrap">--ignore-unknown-fields</code> | Ignore unknown fields in the test files. This is useful when you want to extend rule files with custom metadata. Ensure that those fields are removed before loading them into the Prometheus server as it performs strict checks by default. | `false` |
+| <code class="text-nowrap">--coverage</code> | Enable test coverage reporting for rules. | `false` |
+| <code class="text-nowrap">--rule-files</code> <code class="text-nowrap">...<code class="text-nowrap"> | Rule files to calculate coverage for (comma-separated or multiple flags). |  |
+| <code class="text-nowrap">--coverage-format</code> | Output format for coverage report: text, json, junit. | `text` |
+| <code class="text-nowrap">--coverage-output</code> | File path to write coverage report (default: stdout). |  |
+| <code class="text-nowrap">--min-coverage</code> | Minimum required coverage percentage (0-100). Exit with error if not met. | `0` |
+| <code class="text-nowrap">--fail-on-untested</code> | Exit with error if any rule is untested. | `false` |
+| <code class="text-nowrap">--coverage-by-group</code> | Report coverage statistics by rule group. | `false` |
+| <code class="text-nowrap">--track-dependencies</code> | Track transitive coverage through rule dependencies. | `false` |
+| <code class="text-nowrap">--ignore-pattern</code> | Glob pattern for rules to ignore in coverage calculation. |  |
 
 
 
