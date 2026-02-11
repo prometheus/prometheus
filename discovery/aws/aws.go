@@ -14,10 +14,13 @@
 package aws
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -100,6 +103,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 	*c = SDConfig(aux)
 
+	var err error
+	c.Region, err = loadRegion(context.Background(), c.Region)
+	if err != nil {
+		return fmt.Errorf("could not determine AWS region: %w", err)
+	}
+
 	switch c.Role {
 	case RoleEC2:
 		if c.EC2SDConfig == nil {
@@ -107,9 +116,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 			c.EC2SDConfig = &ec2Config
 		}
 		c.EC2SDConfig.HTTPClientConfig = c.HTTPClientConfig
-		if c.Region != "" {
-			c.EC2SDConfig.Region = c.Region
-		}
+		c.EC2SDConfig.Region = c.Region
 		if c.Endpoint != "" {
 			c.EC2SDConfig.Endpoint = c.Endpoint
 		}
@@ -140,9 +147,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 			c.ECSSDConfig = &ecsConfig
 		}
 		c.ECSSDConfig.HTTPClientConfig = c.HTTPClientConfig
-		if c.Region != "" {
-			c.ECSSDConfig.Region = c.Region
-		}
+		c.ECSSDConfig.Region = c.Region
 		if c.Endpoint != "" {
 			c.ECSSDConfig.Endpoint = c.Endpoint
 		}
@@ -173,9 +178,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 			c.LightsailSDConfig = &lightsailConfig
 		}
 		c.LightsailSDConfig.HTTPClientConfig = c.HTTPClientConfig
-		if c.Region != "" {
-			c.LightsailSDConfig.Region = c.Region
-		}
+		c.LightsailSDConfig.Region = c.Region
 		if c.Endpoint != "" {
 			c.LightsailSDConfig.Endpoint = c.Endpoint
 		}
@@ -203,9 +206,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 			c.MSKSDConfig = &mskConfig
 		}
 		c.MSKSDConfig.HTTPClientConfig = c.HTTPClientConfig
-		if c.Region != "" {
-			c.MSKSDConfig.Region = c.Region
-		}
+		c.MSKSDConfig.Region = c.Region
 		if c.Endpoint != "" {
 			c.MSKSDConfig.Endpoint = c.Endpoint
 		}
@@ -267,4 +268,33 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 	default:
 		return nil, fmt.Errorf("unknown AWS SD role %q", c.Role)
 	}
+}
+
+// loadRegion finds the region in order: AWS config/env vars ->IMDS.
+func loadRegion(ctx context.Context, specifiedRegion string) (string, error) {
+	if specifiedRegion != "" {
+		return specifiedRegion, nil
+	}
+
+	cfg, err := awsConfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	if cfg.Region != "" {
+		return cfg.Region, nil
+	}
+
+	// Fallback (may fail in non-AWS environments)
+	imdsClient := imds.NewFromConfig(cfg)
+	region, err := imdsClient.GetRegion(ctx, &imds.GetRegionInput{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get region from IMDS: %w", err)
+	}
+
+	if region.Region == "" {
+		return "", errors.New("region not found in AWS config or IMDS")
+	}
+
+	return region.Region, nil
 }

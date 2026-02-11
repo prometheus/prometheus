@@ -9,11 +9,13 @@
     "gomodTidy",
     "gomodUpdateImportPaths"
   ],
-  "schedule": ["* 11 21 * *"],
+  "schedule": ["* * 21 * *"],
   "timezone": "UTC",
   "github-actions": {
     "managerFilePatterns": ["scripts/**"]
   },
+  "prConcurrentLimit": 20,
+  "prHourlyLimit": 5,
   "packageRules": [
     {
       "description": "Don't update replace directives",

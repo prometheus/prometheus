@@ -12,7 +12,7 @@
 # limitations under the License.
 
 # Needs to be defined before including Makefile.common to auto-generate targets
-DOCKER_ARCHS ?= amd64 armv7 arm64 ppc64le s390x
+DOCKER_ARCHS ?= amd64 armv7 arm64 ppc64le riscv64 s390x
 
 UI_PATH = web/ui
 UI_NODE_MODULES_PATH = $(UI_PATH)/node_modules
