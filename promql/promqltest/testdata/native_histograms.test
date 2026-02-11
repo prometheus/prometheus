@@ -1388,22 +1388,28 @@ clear
 
 # Test native histograms with sum, count, avg.
 load 10m
-    histogram_sum{idx="0"} {{schema:0 count:25 sum:1234.5 z_bucket:4 z_bucket_w:0.001 buckets:[1 2 0 1 1] n_buckets:[2 4 0 0 1 9]}}x1
-    histogram_sum{idx="1"} {{schema:0 count:41 sum:2345.6 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
-    histogram_sum{idx="2"} {{schema:0 count:41 sum:1111.1 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
-    histogram_sum{idx="3"} {{schema:1 count:0}}x1
+    histogram_sum{idx="0"} {{schema:0 count:25 sum:3.1 z_bucket:4 z_bucket_w:0.001 buckets:[1 2 0 1 1] n_buckets:[2 4 0 0 1 9]}}x1
+    histogram_sum{idx="1"} {{schema:0 count:41 sum:1e100 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
+    histogram_sum{idx="2"} {{schema:0 count:41 sum:-1e100 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
+    histogram_sum{idx="3"} {{schema:1 count:0 sum:1.3 z_bucket:3 z_bucket_w:0.001 buckets:[2 4 2 3 2 2] n_buckets:[1 2 5 3 8 1 1 1 1 6 3]}}x1
     histogram_sum_float{idx="0"} 42.0x1
 
 eval instant at 10m sum(histogram_sum)
     expect no_warn
-    {} {{schema:0 count:107 sum:4691.2 z_bucket:14 z_bucket_w:0.001 buckets:[3 8 2 5 3 2 2] n_buckets:[2 6 8 4 15 9 0 0 0 10 10 4]}}
+    {} {{schema:0 count:107 sum:4.4 z_bucket:17 z_bucket_w:0.001 buckets:[5 14 7 7 3 2 2] n_buckets:[3 13 19 6 17 18 0 0 0 10 10 4]}}
 
 eval instant at 10m sum({idx="0"})
   expect warn
 
-eval instant at 10m sum(histogram_sum{idx="0"} + ignoring(idx) histogram_sum{idx="1"} + ignoring(idx) histogram_sum{idx="2"} + ignoring(idx) histogram_sum{idx="3"})
+eval instant at 10m sum(histogram_sum{idx="0"} + ignoring(idx) histogram_sum{idx="3"})
     expect no_warn
-    {} {{schema:0 count:107 sum:4691.2 z_bucket:14 z_bucket_w:0.001 buckets:[3 8 2 5 3 2 2] n_buckets:[2 6 8 4 15 9 0 0 0 10 10 4]}}
+    {} {{schema:0 count:25 sum:4.4 z_bucket:7 z_bucket_w:0.001 buckets:[3 8 5 3 1] n_buckets:[3 11 11 2 3 18]}}
+
+# Plain addition doesn't use Kahan summation, so operations involving very large magnitudes
+# (±1e+100) lose precision. The smaller values are absorbed, leading to an incorrect result.
+# eval instant at 10m sum(histogram_sum{idx="0"} + ignoring(idx) histogram_sum{idx="1"} + ignoring(idx) histogram_sum{idx="2"} + ignoring(idx) histogram_sum{idx="3"})
+#     expect no_warn
+#     {} {{schema:0 count:107 sum:4.4 z_bucket:14 z_bucket_w:0.001 buckets:[3 8 2 5 3 2 2] n_buckets:[2 6 8 4 15 9 0 0 0 10 10 4]}}
 
 eval instant at 10m count(histogram_sum)
     expect no_warn
@@ -1411,19 +1417,131 @@ eval instant at 10m count(histogram_sum)
 
 eval instant at 10m avg(histogram_sum)
     expect no_warn
-    {} {{schema:0 count:26.75 sum:1172.8 z_bucket:3.5 z_bucket_w:0.001 buckets:[0.75 2 0.5 1.25 0.75 0.5 0.5] n_buckets:[0.5 1.5 2 1 3.75 2.25 0 0 0 2.5 2.5 1]}}
+    {} {{schema:0 count:26.75 sum:1.1 z_bucket:4.25 z_bucket_w:0.001 buckets:[1.25 3.5 1.75 1.75 0.75 0.5 0.5] n_buckets:[0.75 3.25 4.75 1.5 4.25 4.5 0 0 0 2.5 2.5 1]}}
+
+clear
+
+# Test native histograms with incremental avg calulation.
+# Very large floats involved trigger incremental avg calculation, as direct avg calculation would overflow float64.
+load 10m
+    histogram_avg_incremental{idx="0"} {{schema:0 count:1.7976931348623157e+308 sum:5.30921651659898 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[1.78264E+50 1.78264E+215 1.78264E+219 3363.5121756487] n_buckets:[1178.20696291113 731.697776280323 715.201503759399 1386.11378876781 855.572553278132]}}x1
+    histogram_avg_incremental{idx="1"} {{schema:0 count:1e308 sum:0.961118537914768 z_bucket:0.76342771 z_bucket_w:0.001 buckets:[0.76342771 0.76342771 0.76342771 195.70084087969] n_buckets:[421.30382970055 0 450441.779]}}x1
+    histogram_avg_incremental{idx="2"} {{schema:0 count:1e-6 sum:1.62091361305318 z_bucket:1.9592258 z_bucket_w:0.001 buckets:[1.9592258 1.9592258 1.9592258 1135.74692279] n_buckets:[0 4504.41779 588.599358265103 40.3760942760943]}}x1
+    histogram_avg_incremental{idx="3"} {{schema:0 count:1e-6 sum:0.865089463758091 z_bucket:7.69805412 z_bucket_w:0.001 buckets:[2.258E+220 2.258E+220 2.3757689E+217 1078.68071312804] n_buckets:[349.905284031261 0 0 0.161173466838949 588.599358]}}x1
+    histogram_avg_incremental{idx="4"} {{schema:0 count:1e-6 sum:0.323055185914577 z_bucket:458.90154 z_bucket_w:0.001 buckets:[7.69805412 7.69805412 2.258E+220 3173.28218135701]}}x1
+    histogram_avg_incremental{idx="5"} {{schema:0 count:1e-6 sum:0.951811357687154 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[458.90154 458.90154 7.69805412 2178.35] n_buckets:[2054.92644438789 844.560108898123]}}x1
+    histogram_avg_incremental{idx="6"} {{schema:0 count:1e-6 sum:0 z_bucket:5 z_bucket_w:0.001 buckets:[0 0 1.78264E+219 376.770478890989]}}x1
+    histogram_avg_incremental{idx="7"} {{schema:0 count:1e-6 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 458.90154 250325.5] n_buckets:[0 0.0000000011353 0 608.697257]}}x1
+#     This test fails due to float64 rounding in the incremental average calculation.
+#     For large intermediate means (e.g. ~1e99), multiplying by a fractional weight like (n-1)/n
+#     produces values such as 2.0000000000000002e99 instead of the mathematically exact 2e99.
+#     While the relative error is tiny, subtracting nearly equal high-magnitude values later
+#     result in a large absolute error. The outcome also depends on the (effectively random) order
+#     in which input series are processed which makes the test flaky.
+#     histogram_avg_incremental_2{idx="0"} {{schema:0 count:1.7976931348623157e+308 sum:5.3 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[1.78264E+50 1.78264E+215 1.78264E+219 3363.5121756487] n_buckets:[1178.20696291113 731.697776280323 715.201503759399 1386.11378876781 855.572553278132]}}x1
+#     histogram_avg_incremental_2{idx="1"} {{schema:0 count:1e308 sum:1e100 z_bucket:0.76342771 z_bucket_w:0.001 buckets:[0.76342771 0.76342771 0.76342771 195.70084087969] n_buckets:[421.30382970055 0 450441.779]}}x1
+#     histogram_avg_incremental_2{idx="2"} {{schema:0 count:1e-6 sum:1 z_bucket:1.9592258 z_bucket_w:0.001 buckets:[1.9592258 1.9592258 1.9592258 1135.74692279] n_buckets:[0 4504.41779 588.599358265103 40.3760942760943]}}x1
+#     histogram_avg_incremental_2{idx="3"} {{schema:0 count:1e-6 sum:-1e100 z_bucket:7.69805412 z_bucket_w:0.001 buckets:[2.258E+220 2.258E+220 2.3757689E+217 1078.68071312804] n_buckets:[349.905284031261 0 0 0.161173466838949 588.599358]}}x1
+#     histogram_avg_incremental_2{idx="4"} {{schema:0 count:1e-6 sum:1 z_bucket:458.90154 z_bucket_w:0.001 buckets:[7.69805412 7.69805412 2.258E+220 3173.28218135701]}}x1
+#     histogram_avg_incremental_2{idx="5"} {{schema:0 count:1e-6 sum:1 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[458.90154 458.90154 7.69805412 2178.35] n_buckets:[2054.92644438789 844.560108898123]}}x1
+#     histogram_avg_incremental_2{idx="6"} {{schema:0 count:1e-6 sum:0 z_bucket:5 z_bucket_w:0.001 buckets:[0 0 1.78264E+219 376.770478890989]}}x1
+#     histogram_avg_incremental_2{idx="7"} {{schema:0 count:1e-6 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 458.90154 250325.5] n_buckets:[0 0.0000000011353 0 608.697257]}}x1
+
+eval instant at 10m avg(histogram_avg_incremental)
+    {} {{schema:0 count:3.497116418577895e+307 sum:1.2539005843658437 z_bucket:4.4566e49 z_bucket_w:0.001 buckets:[2.8225e+219 2.822522283e+219 3.271129711125e+219 32728.442914086805] n_buckets:[500.5428151288539 760.0844593974477 56468.19748275306 254.4185391888429 180.5214889097665]}}
+
+# This test doesn't work, see the load section above for reasoning.
+# eval instant at 10m avg(histogram_avg_incremental_2)
+#     {} {{schema:0 count:3.497116418577895e+307 sum:1.0375 z_bucket:4.4566e49 z_bucket_w:0.001 buckets:[2.8225e+219 2.822522283e+219 3.271129711125e+219 32728.442914086805] n_buckets:[500.5428151288539 760.0844593974477 56468.19748275306 254.4185391888429 180.5214889097665]}}
 
 clear
 
 # Test native histograms with sum_over_time, avg_over_time.
 load 1m
     histogram_sum_over_time {{schema:0 count:25 sum:1234.5 z_bucket:4 z_bucket_w:0.001 buckets:[1 2 0 1 1] n_buckets:[2 4 0 0 1 9]}} {{schema:0 count:41 sum:2345.6 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}} {{schema:0 count:41 sum:1111.1 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}} {{schema:1 count:0}}
+    histogram_sum_over_time_2 {{schema:0 count:1e10 sum:5.30921651659898 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[1.78264E+50 1.78264E+215 1.78264E+219 3363.5121756487] n_buckets:[1178.20696291113 731.697776280323 715.201503759399 1386.11378876781 855.572553278132]}} {{schema:0 count:1e-6 sum:0.961118537914768 z_bucket:0.76342771 z_bucket_w:0.001 buckets:[0.76342771 0.76342771 0.76342771 195.70084087969] n_buckets:[421.30382970055 0 450441.779]}} {{schema:0 count:1e-6 sum:1.62091361305318 z_bucket:1.9592258 z_bucket_w:0.001 buckets:[1.9592258 1.9592258 1.9592258 1135.74692279] n_buckets:[0 4504.41779 588.599358265103 40.3760942760943]}} {{schema:0 count:1e-6 sum:0.865089463758091 z_bucket:7.69805412 z_bucket_w:0.001 buckets:[2.258E+220 2.258E+220 2.3757689E+217 1078.68071312804] n_buckets:[349.905284031261 0 0 0.161173466838949 588.599358]}} {{schema:0 count:1e-6 sum:0.323055185914577 z_bucket:458.90154 z_bucket_w:0.001 buckets:[7.69805412 7.69805412 2.258E+220 3173.28218135701]}} {{schema:0 count:1e-6 sum:0.951811357687154 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[458.90154 458.90154 7.69805412 2178.35] n_buckets:[2054.92644438789 844.560108898123]}} {{schema:0 count:1e-6 sum:0 z_bucket:5 z_bucket_w:0.001 buckets:[0 0 1.78264E+219 376.770478890989]}} {{schema:0 count:1e-6 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 458.90154 250325.5] n_buckets:[0 0.0000000011353 0 608.697257]}}
+    histogram_sum_over_time_3 {{schema:0 count:1 sum:1}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:-1e100}}
+    histogram_sum_over_time_4 {{schema:0 count:1 sum:5.3}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:-1e100}} {{schema:0 count:5 sum:2}} {{schema:0 count:6 sum:1e50}} {{schema:0 count:7 sum:-1e50}}
+    histogram_sum_over_time_incremental {{schema:0 count:1.7976931348623157e+308 sum:5.30921651659898 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[1.78264E+50 1.78264E+215 1.78264E+219 3363.5121756487] n_buckets:[1178.20696291113 731.697776280323 715.201503759399 1386.11378876781 855.572553278132]}} {{schema:0 count:1e308 sum:0.961118537914768 z_bucket:0.76342771 z_bucket_w:0.001 buckets:[0.76342771 0.76342771 0.76342771 195.70084087969] n_buckets:[421.30382970055 0 450441.779]}} {{schema:0 count:1e-6 sum:1.62091361305318 z_bucket:1.9592258 z_bucket_w:0.001 buckets:[1.9592258 1.9592258 1.9592258 1135.74692279] n_buckets:[0 4504.41779 588.599358265103 40.3760942760943]}} {{schema:0 count:1e-6 sum:0.865089463758091 z_bucket:7.69805412 z_bucket_w:0.001 buckets:[2.258E+220 2.258E+220 2.3757689E+217 1078.68071312804] n_buckets:[349.905284031261 0 0 0.161173466838949 588.599358]}} {{schema:0 count:1e-6 sum:0.323055185914577 z_bucket:458.90154 z_bucket_w:0.001 buckets:[7.69805412 7.69805412 2.258E+220 3173.28218135701]}} {{schema:0 count:1e-6 sum:0.951811357687154 z_bucket:1.78264e50 z_bucket_w:0.001 buckets:[458.90154 458.90154 7.69805412 2178.35] n_buckets:[2054.92644438789 844.560108898123]}} {{schema:0 count:1e-6 sum:0 z_bucket:5 z_bucket_w:0.001 buckets:[0 0 1.78264E+219 376.770478890989]}} {{schema:0 count:1e-6 sum:0 z_bucket:0 z_bucket_w:0.001 buckets:[0 0 458.90154 250325.5] n_buckets:[0 0.0000000011353 0 608.697257]}}
+    histogram_sum_over_time_incremental_2 {{schema:0 count:1.7976931348623157e+308 sum:5.3}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:2}} {{schema:0 count:1e-6 sum:0}} {{schema:0 count:1e-6 sum:0}}
+    histogram_sum_over_time_incremental_3 {{schema:0 count:1.7976931348623157e+308 sum:5.3}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:1e100}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:0}}
+    histogram_sum_over_time_incremental_4 {{schema:0 count:1.7976931348623157e+308 sum:5.3}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:1e50}} {{schema:0 count:1e-6 sum:-1e50}} {{schema:0 count:1e-6 sum:0}}
+    histogram_sum_over_time_incremental_6 {{schema:0 count:1.7976931348623157e+308 sum:1}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:-1e100}}
+# Kahan summation only compensates reliably across two magnitude scales. In following inputs, the
+# series contains three distinct magnitude groups (≈1, ≈1e50, and ≈1e100). When these magnitudes
+# are interleaved, rounding error can't be fully compensated, causing smaller values to be lost.
+# However, when values are ordered so that cancellation within one magnitude group
+# occurs first, followed by cancellation of the next group, the outcome remains accurate.
+#     histogram_sum_over_time_5 {{schema:0 count:1 sum:5.3}} {{schema:0 count:2 sum:1e100}} {{schema:0 count:3 sum:1}} {{schema:0 count:4 sum:1e50}} {{schema:0 count:5 sum:2}} {{schema:0 count:6 sum:-1e100}} {{schema:0 count:7 sum:-1e50}}
+#     histogram_sum_over_time_incremental_5 {{schema:0 count:1.7976931348623157e+308 sum:5.3}} {{schema:0 count:1e308 sum:1e100}} {{schema:0 count:1e-6 sum:1e50}} {{schema:0 count:1e-6 sum:1}} {{schema:0 count:1e-6 sum:-1e100}} {{schema:0 count:1e-6 sum:-1e50}} {{schema:0 count:1e-6 sum:0}}
 
 eval instant at 3m sum_over_time(histogram_sum_over_time[4m:1m])
     {} {{schema:0 count:107 sum:4691.2 z_bucket:14 z_bucket_w:0.001 buckets:[3 8 2 5 3 2 2] n_buckets:[2 6 8 4 15 9 0 0 0 10 10 4]}}
 
 eval instant at 3m avg_over_time(histogram_sum_over_time[4m:1m])
     {} {{schema:0 count:26.75 sum:1172.8 z_bucket:3.5 z_bucket_w:0.001 buckets:[0.75 2 0.5 1.25 0.75 0.5 0.5] n_buckets:[0.5 1.5 2 1 3.75 2.25 0 0 0 2.5 2.5 1]}}
+
+eval instant at 7m sum_over_time(histogram_sum_over_time_2[8m:1m])
+    {} {{schema:0 count:10000000000.000008 sum:10.03120467492675 z_bucket:3.56528e+50 z_bucket_w:0.001 buckets:[2.258e+220 2.2580178264e+220 2.6169037689e+220 261827.54331269444] n_buckets:[4004.342521030831 6080.675675179582 451745.57986202446 2035.3483135107433 1444.171911278132]}}
+
+eval instant at 7m avg_over_time(histogram_sum_over_time_2[8m:1m])
+    {} {{schema:0 count:1250000000.000001 sum:1.2539005843658437 z_bucket:4.4566e49 z_bucket_w:0.001 buckets:[2.8225e+219 2.822522283e+219 3.271129711125e+219 32728.442914086805] n_buckets:[500.5428151288539 760.0844593974477 56468.19748275306 254.4185391888429 180.5214889097665]}}
+
+eval instant at 3m sum_over_time(histogram_sum_over_time_3[4m:1m])
+    {} {{schema:0 count:10 sum:2}}
+
+eval instant at 3m avg_over_time(histogram_sum_over_time_3[4m:1m])
+    {} {{schema:0 count:2.5 sum:0.5}}
+
+eval instant at 6m sum_over_time(histogram_sum_over_time_4[7m:1m])
+    {} {{schema:0 count:28 sum:8.3}}
+
+eval instant at 6m avg_over_time(histogram_sum_over_time_4[7m:1m])
+    {} {{schema:0 count:4 sum:1.1857142857142857}}
+
+# These tests don't work, see the load section above for reasoning.
+# eval instant at 6m sum_over_time(histogram_sum_over_time_5[7m:1m])
+#     {} {{schema:0 count:28 sum:8.3}}
+# 
+# eval instant at 6m avg_over_time(histogram_sum_over_time_5[7m:1m])
+#     {} {{schema:0 count:4 sum:1.1857142857142857}}
+
+eval instant at 7m sum_over_time(histogram_sum_over_time_incremental[8m:1m])
+    {} {{schema:0 count:Inf sum:10.03120467492675 z_bucket:3.56528e+50 z_bucket_w:0.001 buckets:[2.258e+220 2.2580178264e+220 2.6169037689e+220 261827.54331269444] n_buckets:[4004.342521030831 6080.675675179582 451745.57986202446 2035.3483135107433 1444.171911278132]}}
+
+eval instant at 7m avg_over_time(histogram_sum_over_time_incremental[8m:1m])
+    {} {{schema:0 count:3.497116418577895e+307 sum:1.2539005843658437 z_bucket:4.4566e49 z_bucket_w:0.001 buckets:[2.8225e+219 2.822522283e+219 3.271129711125e+219 32728.442914086805] n_buckets:[500.5428151288539 760.0844593974477 56468.19748275306 254.4185391888429 180.5214889097665]}}
+
+eval instant at 6m sum_over_time(histogram_sum_over_time_incremental_2[7m:1m])
+    {} {{schema:0 count:Inf sum:8.3}}
+
+eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_2[7m:1m])
+    {} {{schema:0 count:3.9967044783747367e+307 sum:1.1857142857142857}}
+
+eval instant at 6m sum_over_time(histogram_sum_over_time_incremental_3[7m:1m])
+    {} {{schema:0 count:Inf sum:6.3}}
+
+eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_3[7m:1m])
+    {} {{schema:0 count:3.9967044783747367e+307 sum:0.9}}
+
+eval instant at 6m sum_over_time(histogram_sum_over_time_incremental_4[7m:1m])
+    {} {{schema:0 count:Inf sum:6.3}}
+
+eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_4[7m:1m])
+    {} {{schema:0 count:3.9967044783747367e+307 sum:0.9}}
+
+# These tests don't work, see the load section above for reasoning.
+# eval instant at 6m sum_over_time(histogram_sum_over_time_incremental_5[7m:1m])
+#     {} {{schema:0 count:Inf sum:6.3}}
+# 
+# eval instant at 6m avg_over_time(histogram_sum_over_time_incremental_5[7m:1m])
+#     {} {{schema:0 count:3.9967044783747367e+307 sum:0.9}}
+
+eval instant at 3m sum_over_time(histogram_sum_over_time_incremental_6[4m:1m])
+    {} {{schema:0 count:Inf sum:2}}
+
+eval instant at 3m avg_over_time(histogram_sum_over_time_incremental_6[4m:1m])
+    {} {{schema:0 count:6.99423283715579e+307 sum:0.5}}
 
 clear
 

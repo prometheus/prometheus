@@ -27,7 +27,6 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/kafka"
 	"github.com/aws/aws-sdk-go-v2/service/kafka/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -35,6 +34,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -88,9 +88,10 @@ const (
 
 // DefaultMSKSDConfig is the default MSK SD configuration.
 var DefaultMSKSDConfig = MSKSDConfig{
-	Port:             80,
-	RefreshInterval:  model.Duration(60 * time.Second),
-	HTTPClientConfig: config.DefaultHTTPClientConfig,
+	Port:               80,
+	RefreshInterval:    model.Duration(60 * time.Second),
+	RequestConcurrency: 10,
+	HTTPClientConfig:   config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -109,7 +110,8 @@ type MSKSDConfig struct {
 	Port            int            `yaml:"port"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 
-	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
+	RequestConcurrency int                     `yaml:"request_concurrency,omitempty"`
+	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
 }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -136,29 +138,9 @@ func (c *MSKSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	if c.Region == "" {
-		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
-		if err != nil {
-			return err
-		}
-		if cfg.Region != "" {
-			// If the region is already set in the config, use it (env vars).
-			c.Region = cfg.Region
-		}
-
-		if c.Region == "" {
-			// Try to get the region from IMDS.
-			imdsClient := imds.NewFromConfig(cfg)
-			region, err := imdsClient.GetRegion(context.Background(), &imds.GetRegionInput{})
-			if err != nil {
-				return err
-			}
-			c.Region = region.Region
-		}
-	}
-
-	if c.Region == "" {
-		return errors.New("MSK SD configuration requires a region")
+	c.Region, err = loadRegion(context.Background(), c.Region)
+	if err != nil {
+		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -268,39 +250,33 @@ func (d *MSKDiscovery) initMskClient(ctx context.Context) error {
 	return nil
 }
 
+// describeClusters describes the clusters with the given ARNs and returns their details.
 func (d *MSKDiscovery) describeClusters(ctx context.Context, clusterARNs []string) ([]types.Cluster, error) {
 	var (
 		clusters []types.Cluster
-		wg       sync.WaitGroup
 		mu       sync.Mutex
-		errs     []error
 	)
+	errg, ectx := errgroup.WithContext(ctx)
+	errg.SetLimit(d.cfg.RequestConcurrency)
 	for _, clusterARN := range clusterARNs {
-		wg.Add(1)
-		go func(clusterARN string) {
-			defer wg.Done()
-			cluster, err := d.msk.DescribeClusterV2(ctx, &kafka.DescribeClusterV2Input{
+		errg.Go(func() error {
+			cluster, err := d.msk.DescribeClusterV2(ectx, &kafka.DescribeClusterV2Input{
 				ClusterArn: aws.String(clusterARN),
 			})
 			if err != nil {
-				mu.Lock()
-				errs = append(errs, fmt.Errorf("could not describe cluster %v: %w", clusterARN, err))
-				mu.Unlock()
-				return
+				return fmt.Errorf("could not describe cluster %v: %w", clusterARN, err)
 			}
 			mu.Lock()
 			clusters = append(clusters, *cluster.ClusterInfo)
 			mu.Unlock()
-		}(clusterARN)
-	}
-	wg.Wait()
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("errors occurred while describing clusters: %v", errs)
+			return nil
+		})
 	}
 
-	return clusters, nil
+	return clusters, errg.Wait()
 }
 
+// listClusters lists all MSK clusters in the configured region and returns their details.
 func (d *MSKDiscovery) listClusters(ctx context.Context) ([]types.Cluster, error) {
 	var (
 		clusters  []types.Cluster
@@ -328,29 +304,42 @@ func (d *MSKDiscovery) listClusters(ctx context.Context) ([]types.Cluster, error
 	return clusters, nil
 }
 
-func (d *MSKDiscovery) listNodes(ctx context.Context, clusterARN string) ([]types.NodeInfo, error) {
-	var (
-		nodes     []types.NodeInfo
-		nextToken *string
-	)
-	for {
-		resp, err := d.msk.ListNodes(ctx, &kafka.ListNodesInput{
-			ClusterArn: aws.String(clusterARN),
-			MaxResults: aws.Int32(100),
-			NextToken:  nextToken,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("could not list nodes for cluster %v: %w", clusterARN, err)
-		}
+// listNodes lists all nodes for the given clusters and returns a map of cluster ARN to its nodes.
+func (d *MSKDiscovery) listNodes(ctx context.Context, clusters []types.Cluster) (map[string][]types.NodeInfo, error) {
+	clusterNodeMap := make(map[string][]types.NodeInfo)
+	mu := sync.Mutex{}
+	errg, ectx := errgroup.WithContext(ctx)
+	errg.SetLimit(d.cfg.RequestConcurrency)
+	for _, cluster := range clusters {
+		clusterARN := aws.ToString(cluster.ClusterArn)
+		errg.Go(func() error {
+			var clusterNodes []types.NodeInfo
+			var nextToken *string
+			for {
+				resp, err := d.msk.ListNodes(ectx, &kafka.ListNodesInput{
+					ClusterArn: aws.String(clusterARN),
+					MaxResults: aws.Int32(100),
+					NextToken:  nextToken,
+				})
+				if err != nil {
+					return fmt.Errorf("could not list nodes for cluster %v: %w", clusterARN, err)
+				}
 
-		nodes = append(nodes, resp.NodeInfoList...)
-		if resp.NextToken == nil {
-			break
-		}
-		nextToken = resp.NextToken
+				clusterNodes = append(clusterNodes, resp.NodeInfoList...)
+				if resp.NextToken == nil {
+					break
+				}
+				nextToken = resp.NextToken
+			}
+
+			mu.Lock()
+			clusterNodeMap[clusterARN] = clusterNodes
+			mu.Unlock()
+			return nil
+		})
 	}
 
-	return nodes, nil
+	return clusterNodeMap, errg.Wait()
 }
 
 func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -376,21 +365,20 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		}
 	}
 
+	clusterNodeMap, err := d.listNodes(ctx, clusters)
+	if err != nil {
+		return nil, err
+	}
+
 	var (
 		targetsMu sync.Mutex
 		wg        sync.WaitGroup
 	)
 	for _, cluster := range clusters {
 		wg.Add(1)
-		go func(cluster types.Cluster) {
+
+		go func(cluster types.Cluster, nodes []types.NodeInfo) {
 			defer wg.Done()
-
-			nodes, err := d.listNodes(ctx, aws.ToString(cluster.ClusterArn))
-			if err != nil {
-				d.logger.Error("Failed to list nodes", "cluster", aws.ToString(cluster.ClusterName), "error", err)
-				return
-			}
-
 			for _, node := range nodes {
 				labels := model.LabelSet{
 					mskLabelClusterName:                  model.LabelValue(aws.ToString(cluster.ClusterName)),
@@ -446,7 +434,7 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					continue
 				}
 			}
-		}(cluster)
+		}(cluster, clusterNodeMap[aws.ToString(cluster.ClusterArn)])
 	}
 	wg.Wait()
 

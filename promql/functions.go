@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/kahansum"
 )
 
 // FunctionCall is the type of a PromQL function implementation
@@ -801,10 +802,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(getMetricName(firstSeries.Metric), args[0].PositionRange()))
 	}
-	// For the average calculation of histograms, we use incremental mean
-	// calculation without the help of Kahan summation (but this should
-	// change, see https://github.com/prometheus/prometheus/issues/14105 ).
-	// For floats, we improve the accuracy with the help of Kahan summation.
+	// We improve the accuracy with the help of Kahan summation.
 	// For a while, we assumed that incremental mean calculation combined
 	// with Kahan summation (see
 	// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
@@ -847,23 +845,47 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				}
 			}()
 
-			mean := s.Histograms[0].H.Copy()
-			trackCounterReset(mean)
+			var (
+				sum                  = s.Histograms[0].H.Copy()
+				mean, kahanC         *histogram.FloatHistogram
+				count                float64
+				incrementalMean      bool
+				nhcbBoundsReconciled bool
+				err                  error
+			)
+			trackCounterReset(sum)
 			for i, h := range s.Histograms[1:] {
 				trackCounterReset(h.H)
-				count := float64(i + 2)
-				left := h.H.Copy().Div(count)
-				right := mean.Copy().Div(count)
-
-				toAdd, _, nhcbBoundsReconciled, err := left.Sub(right)
-				if err != nil {
-					return mean, err
+				count = float64(i + 2)
+				if !incrementalMean {
+					sumCopy := sum.Copy()
+					var cCopy *histogram.FloatHistogram
+					if kahanC != nil {
+						cCopy = kahanC.Copy()
+					}
+					cCopy, _, nhcbBoundsReconciled, err = sumCopy.KahanAdd(h.H, cCopy)
+					if err != nil {
+						return sumCopy.Div(count), err
+					}
+					if nhcbBoundsReconciled {
+						nhcbBoundsReconciledSeen = true
+					}
+					if !sumCopy.HasOverflow() {
+						sum, kahanC = sumCopy, cCopy
+						continue
+					}
+					incrementalMean = true
+					mean = sum.Copy().Div(count - 1)
+					if kahanC != nil {
+						kahanC.Div(count - 1)
+					}
 				}
-				if nhcbBoundsReconciled {
-					nhcbBoundsReconciledSeen = true
+				q := (count - 1) / count
+				if kahanC != nil {
+					kahanC.Mul(q)
 				}
-
-				_, _, nhcbBoundsReconciled, err = mean.Add(toAdd)
+				toAdd := h.H.Copy().Div(count)
+				kahanC, _, nhcbBoundsReconciled, err = mean.Mul(q).KahanAdd(toAdd, kahanC)
 				if err != nil {
 					return mean, err
 				}
@@ -871,7 +893,18 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					nhcbBoundsReconciledSeen = true
 				}
 			}
-			return mean, nil
+			if incrementalMean {
+				if kahanC != nil {
+					_, _, _, err := mean.Add(kahanC)
+					return mean, err
+				}
+				return mean, nil
+			}
+			if kahanC != nil {
+				_, _, _, err := sum.Div(count).Add(kahanC.Div(count))
+				return sum, err
+			}
+			return sum.Div(count), nil
 		})
 		if err != nil {
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
@@ -890,7 +923,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		for i, f := range s.Floats[1:] {
 			count = float64(i + 2)
 			if !incrementalMean {
-				newSum, newC := kahanSumInc(f.F, sum, kahanC)
+				newSum, newC := kahansum.Inc(f.F, sum, kahanC)
 				// Perform regular mean calculation as long as
 				// the sum doesn't overflow.
 				if !math.IsInf(newSum, 0) {
@@ -904,7 +937,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				kahanC /= (count - 1)
 			}
 			q := (count - 1) / count
-			mean, kahanC = kahanSumInc(f.F/count, q*mean, q*kahanC)
+			mean, kahanC = kahansum.Inc(f.F/count, q*mean, q*kahanC)
 		}
 		if incrementalMean {
 			return mean + kahanC
@@ -1145,9 +1178,14 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 
 			sum := s.Histograms[0].H.Copy()
 			trackCounterReset(sum)
+			var (
+				comp                 *histogram.FloatHistogram
+				nhcbBoundsReconciled bool
+				err                  error
+			)
 			for _, h := range s.Histograms[1:] {
 				trackCounterReset(h.H)
-				_, _, nhcbBoundsReconciled, err := sum.Add(h.H)
+				comp, _, nhcbBoundsReconciled, err = sum.KahanAdd(h.H, comp)
 				if err != nil {
 					return sum, err
 				}
@@ -1155,7 +1193,16 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					nhcbBoundsReconciledSeen = true
 				}
 			}
-			return sum, nil
+			if comp != nil {
+				sum, _, nhcbBoundsReconciled, err = sum.Add(comp)
+				if err != nil {
+					return sum, err
+				}
+				if nhcbBoundsReconciled {
+					nhcbBoundsReconciledSeen = true
+				}
+			}
+			return sum, err
 		})
 		if err != nil {
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
@@ -1167,7 +1214,7 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		var sum, c float64
 		for _, f := range s.Floats {
-			sum, c = kahanSumInc(f.F, sum, c)
+			sum, c = kahansum.Inc(f.F, sum, c)
 		}
 		if math.IsInf(sum, 0) {
 			return sum
@@ -1220,8 +1267,8 @@ func varianceOverTime(matrixVal Matrix, args parser.Expressions, enh *EvalNodeHe
 		for _, f := range s.Floats {
 			count++
 			delta := f.F - (mean + cMean)
-			mean, cMean = kahanSumInc(delta/count, mean, cMean)
-			aux, cAux = kahanSumInc(delta*(f.F-(mean+cMean)), aux, cAux)
+			mean, cMean = kahansum.Inc(delta/count, mean, cMean)
+			aux, cAux = kahansum.Inc(delta*(f.F-(mean+cMean)), aux, cAux)
 		}
 		variance := (aux + cAux) / count
 		if varianceToResult == nil {
@@ -1434,24 +1481,6 @@ func funcTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *Eva
 	return enh.Out, nil
 }
 
-// We get incorrect results if this function is inlined; see https://github.com/prometheus/prometheus/issues/16714.
-//
-//go:noinline
-func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
-	t := sum + inc
-	switch {
-	case math.IsInf(t, 0):
-		c = 0
-
-	// Using Neumaier improvement, swap if next term larger than sum.
-	case math.Abs(sum) >= math.Abs(inc):
-		c += (sum - t) + inc
-	default:
-		c += (inc - t) + sum
-	}
-	return t, c
-}
-
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
@@ -1474,10 +1503,10 @@ func linearRegression(samples []FPoint, interceptTime int64) (slope, intercept f
 		}
 		n += 1.0
 		x := float64(sample.T-interceptTime) / 1e3
-		sumX, cX = kahanSumInc(x, sumX, cX)
-		sumY, cY = kahanSumInc(sample.F, sumY, cY)
-		sumXY, cXY = kahanSumInc(x*sample.F, sumXY, cXY)
-		sumX2, cX2 = kahanSumInc(x*x, sumX2, cX2)
+		sumX, cX = kahansum.Inc(x, sumX, cX)
+		sumY, cY = kahansum.Inc(sample.F, sumY, cY)
+		sumXY, cXY = kahansum.Inc(x*sample.F, sumXY, cXY)
+		sumX2, cX2 = kahansum.Inc(x*x, sumX2, cX2)
 	}
 	if constY {
 		if math.IsInf(initY, 0) {
@@ -1613,7 +1642,7 @@ func histogramVariance(vectorVals []Vector, enh *EvalNodeHelper, varianceToResul
 				}
 			}
 			delta := val - mean
-			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
+			variance, cVariance = kahansum.Inc(bucket.Count*delta*delta, variance, cVariance)
 		}
 		variance += cVariance
 		variance /= h.Count
