@@ -47,3 +47,25 @@ if [[ "${matches}" -ne 1 ]]; then
   echo 'Not all go.mod/go.work files have matching go versions'
   exit 1
 fi
+
+ci_workflow=".github/workflows/ci.yml"
+if [[ -f "${ci_workflow}" ]] && yq -e '.jobs.test_go_oldest' "${ci_workflow}" > /dev/null 2>&1; then
+  echo "Checking CI workflow test_go_oldest uses N-1 Go version"
+
+  # Extract Go version from test_go_oldest job.
+  get_test_go_oldest_version() {
+    yq '.jobs.test_go_oldest.container.image' "${ci_workflow}" \
+      | grep -oP 'golang-builder:1\.\K[0-9]+'
+  }
+
+  test_go_oldest_version="$(get_test_go_oldest_version)"
+  if [[ -z "${test_go_oldest_version}" || "${test_go_oldest_version}" -le 0 ]]; then
+    echo "Error: Could not extract Go version from test_go_oldest job in ${ci_workflow}"
+    exit 1
+  fi
+
+  if [[ "${test_go_oldest_version}" -ne "${supported_version}" ]]; then
+    echo "Error: test_go_oldest uses Go 1.${test_go_oldest_version}, but should use Go 1.${supported_version} (oldest supported version)"
+    exit 1
+  fi
+fi
