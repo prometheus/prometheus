@@ -527,12 +527,22 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	}
 
 	h.metrics.chunksCreated.Add(float64(len(mmc) + len(oooMmc)))
-	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
-	h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc) - len(mSeries.mmappedChunks)))
 
-	if mSeries.ooo != nil {
-		h.metrics.chunksRemoved.Add(float64(len(mSeries.ooo.oooMmappedChunks)))
-		h.metrics.chunks.Sub(float64(len(mSeries.ooo.oooMmappedChunks)))
+	// During WAL replay with duplicate series records (mSeries.ref != walSeriesRef),
+	// the old chunks in mSeries may not have been added to the gauge yet,
+	// so subtracting them would cause the gauge to go negative.
+	// Only count chunks as removed when we're certain they were previously added.
+	if mSeries.ref == walSeriesRef {
+		// Same series ref - old chunks were definitely counted, safe to subtract
+		h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
+		h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc) - len(mSeries.mmappedChunks)))
+		if mSeries.ooo != nil {
+			h.metrics.chunksRemoved.Add(float64(len(mSeries.ooo.oooMmappedChunks)))
+			h.metrics.chunks.Sub(float64(len(mSeries.ooo.oooMmappedChunks)))
+		}
+	} else {
+		// Duplicate series with different ref - old chunks may not have been counted
+		h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc)))
 	}
 
 	mSeries.mmappedChunks = mmc
