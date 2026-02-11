@@ -741,11 +741,11 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 		}
 	}
 
-	if chkStart+MaxChunkLengthFieldSize > mmapFile.byteSlice.Len() {
+	if int(chkStart)+ChunkEncodingSize > mmapFile.byteSlice.Len() {
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
 			FileIndex: sgmIndex,
-			Err:       fmt.Errorf("head chunk file doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, mmapFile.byteSlice.Len()),
+			Err:       fmt.Errorf("chunk reference %d is out of bounds: offset %d, file length %d", ref, chkStart, mmapFile.byteSlice.Len()),
 		}
 	}
 
