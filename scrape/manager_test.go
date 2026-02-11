@@ -1596,3 +1596,99 @@ scrape_configs:
 		}
 	}
 }
+
+func TestManagerStopAfterScrapeAttempt(t *testing.T) {
+	interval := 10 * time.Second
+	for _, tcase := range []struct {
+		name             string
+		scrapeOnShutdown bool
+		stopDelay        time.Duration
+		expectedSamples  int
+	}{
+		{
+			name:             "no scrape on shutdown before next interval",
+			stopDelay:        5 * time.Second,
+			expectedSamples:  1,
+			scrapeOnShutdown: false,
+		},
+		{
+			name:             "no scrape on shutdown before next interval",
+			stopDelay:        11 * time.Second,
+			expectedSamples:  2,
+			scrapeOnShutdown: false,
+		},
+		{
+			name:             "no scrape on shutdown before next interval",
+			stopDelay:        5 * time.Second,
+			expectedSamples:  2,
+			scrapeOnShutdown: true,
+		},
+		{
+			name:             "scrape on shutdown after next interval",
+			stopDelay:        11 * time.Second,
+			expectedSamples:  3,
+			scrapeOnShutdown: true,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			t.Parallel()
+			app := teststorage.NewAppendable()
+			// Setup scrape manager.
+			scrapeManager, err := NewManager(
+				&Options{
+					ScrapeOnShutdown: tcase.scrapeOnShutdown,
+					skipOffsetting:   true,
+				},
+				promslog.New(&promslog.Config{}),
+				nil,
+				nil,
+				app,
+				prometheus.NewRegistry(),
+			)
+			require.NoError(t, err)
+			cfg := &config.Config{
+				GlobalConfig: config.GlobalConfig{
+					ScrapeInterval:  model.Duration(interval),
+					ScrapeTimeout:   model.Duration(interval),
+					ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0},
+				},
+				ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+			}
+			cfgText, err := yaml.Marshal(*cfg)
+			require.NoError(t, err)
+			cfg = loadConfiguration(t, string(cfgText))
+			require.NoError(t, scrapeManager.ApplyConfig(cfg))
+
+			// Start fake HTTP target to scrape returning a single metric.
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+					w.Write([]byte("expected_metric 1\n"))
+				}),
+			)
+			defer server.Close()
+			serverURL, err := url.Parse(server.URL)
+			require.NoError(t, err)
+			// Add fake target directly into tsets + reload. Normally users would use
+			// Manager.Run and wait for minimum 5s refresh interval.
+			scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+				"test": {
+					{
+						Targets: []model.LabelSet{{
+							model.SchemeLabel:  model.LabelValue(serverURL.Scheme),
+							model.AddressLabel: model.LabelValue(serverURL.Host),
+						}},
+					},
+				},
+			})
+			scrapeManager.reload()
+
+			// Wait for the defined stop delay, before stopping.
+			time.Sleep(tcase.stopDelay)
+			scrapeManager.Stop()
+
+			// Verify results.
+			require.Len(t, findSamplesForMetric(app.ResultSamples(), "expected_metric"), tcase.expectedSamples)
+		})
+	}
+}

@@ -248,7 +248,6 @@ func (sp *scrapePool) getScrapeFailureLogger() FailureLogger {
 func (sp *scrapePool) stop() {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
-	sp.cancel()
 	var wg sync.WaitGroup
 
 	sp.targetMtx.Lock()
@@ -268,6 +267,7 @@ func (sp *scrapePool) stop() {
 	sp.targetMtx.Unlock()
 
 	wg.Wait()
+	sp.cancel()
 	sp.client.CloseIdleConnections()
 
 	if sp.config != nil {
@@ -830,13 +830,14 @@ type cacheEntry struct {
 
 type scrapeLoop struct {
 	// Parameters.
-	ctx         context.Context
-	cancel      func()
-	stopped     chan struct{}
-	parentCtx   context.Context
-	appenderCtx context.Context
-	l           *slog.Logger
-	cache       *scrapeCache
+	ctx            context.Context
+	cancel         func()
+	stopped        chan struct{}
+	shutdownScrape chan struct{}
+	parentCtx      context.Context
+	appenderCtx    context.Context
+	l              *slog.Logger
+	cache          *scrapeCache
 
 	interval            time.Duration
 	timeout             time.Duration
@@ -874,8 +875,8 @@ type scrapeLoop struct {
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
+	scrapeOnShutdown        bool
 	skipOffsetting          bool // For testability.
-
 	// error injection through setForcedError.
 	forcedErr    error
 	forcedErrMtx sync.Mutex
@@ -1177,13 +1178,14 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 
 	ctx, cancel := context.WithCancel(opts.sp.ctx)
 	return &scrapeLoop{
-		ctx:         ctx,
-		cancel:      cancel,
-		stopped:     make(chan struct{}),
-		parentCtx:   opts.sp.ctx,
-		appenderCtx: appenderCtx,
-		l:           opts.sp.logger.With("target", opts.target),
-		cache:       opts.cache,
+		ctx:            ctx,
+		cancel:         cancel,
+		stopped:        make(chan struct{}),
+		shutdownScrape: make(chan struct{}),
+		parentCtx:      opts.sp.ctx,
+		appenderCtx:    appenderCtx,
+		l:              opts.sp.logger.With("target", opts.target),
+		cache:          opts.cache,
 
 		interval: opts.interval,
 		timeout:  opts.timeout,
@@ -1227,6 +1229,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
+		scrapeOnShutdown:        opts.sp.options.ScrapeOnShutdown,
 		skipOffsetting:          opts.sp.options.skipOffsetting,
 	}
 }
@@ -1245,6 +1248,8 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 		select {
 		case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
 			// Continue after a scraping offset.
+		case <-sl.shutdownScrape:
+			sl.cancel()
 		case <-sl.ctx.Done():
 			close(sl.stopped)
 			return
@@ -1259,15 +1264,6 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 
 mainLoop:
 	for {
-		select {
-		case <-sl.parentCtx.Done():
-			close(sl.stopped)
-			return
-		case <-sl.ctx.Done():
-			break mainLoop
-		default:
-		}
-
 		// Temporary workaround for a jitter in go timers that causes disk space
 		// increase in TSDB.
 		// See https://github.com/prometheus/prometheus/issues/7846
@@ -1296,6 +1292,8 @@ mainLoop:
 			return
 		case <-sl.ctx.Done():
 			break mainLoop
+		case <-sl.shutdownScrape:
+			sl.cancel()
 		case <-ticker.C:
 		}
 	}
@@ -1523,7 +1521,11 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 // Stop the scraping. May still write data and stale markers after it has
 // returned. Cancel the context to stop all writes.
 func (sl *scrapeLoop) stop() {
-	sl.cancel()
+	if sl.scrapeOnShutdown {
+		sl.shutdownScrape <- struct{}{}
+	} else {
+		sl.cancel()
+	}
 	<-sl.stopped
 }
 

@@ -126,6 +126,11 @@ type Options struct {
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 
+	// Option to allow a final scrape before the manager is shutdown.  Useful
+	// for serverless flavours of OTel's prometheusreceiver which might require
+	// a final scrape of targets before the instance is shutdown.
+	ScrapeOnShutdown bool
+
 	// private option for testability.
 	skipOffsetting bool
 }
