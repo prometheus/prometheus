@@ -33,6 +33,8 @@ const (
 // Use package-scope symbol table to avoid memory allocation on every fuzzing operation.
 var symbolTable = labels.NewSymbolTable()
 
+var fuzzParser = parser.NewParser(parser.Options{})
+
 // FuzzParseMetricText fuzzes the metric parser with "text/plain" content type.
 //
 // Note that this is not the parser for the text-based exposition-format; that
@@ -109,7 +111,7 @@ func FuzzParseMetricSelector(f *testing.F) {
 		if len(in) > maxInputSize {
 			t.Skip()
 		}
-		_, err := parser.ParseMetricSelector(in)
+		_, err := fuzzParser.ParseMetricSelector(in)
 		// We don't care about errors, just that we don't panic.
 		_ = err
 	})
@@ -130,7 +132,7 @@ func FuzzParseExpr(f *testing.F) {
 		f.Add(expr)
 	}
 
-	parserOpts := parser.WithOptions(parser.Options{
+	p := parser.NewParser(parser.Options{
 		EnableExperimentalFunctions:  true,
 		ExperimentalDurationExpr:     true,
 		EnableExtendedRangeSelectors: true,
@@ -140,7 +142,7 @@ func FuzzParseExpr(f *testing.F) {
 		if len(in) > maxInputSize {
 			t.Skip()
 		}
-		_, err := parser.ParseExpr(in, parserOpts)
+		_, err := p.ParseExpr(in)
 		// We don't care about errors, just that we don't panic.
 		_ = err
 	})

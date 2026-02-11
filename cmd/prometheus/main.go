@@ -632,8 +632,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set the process-wide parser configuration. All components (engine, rules, web) use this.
-	parser.SetDefaultOptions(cfg.parserOpts)
+	promqlParser := parser.NewParser(cfg.parserOpts)
 
 	if agentMode && len(serverOnlyFlags) > 0 {
 		fmt.Fprintf(os.Stderr, "The following flag(s) can not be used in agent mode: %q", serverOnlyFlags)
@@ -689,7 +688,7 @@ func main() {
 	}
 
 	// Parse rule files to verify they exist and contain valid rules.
-	if err := rules.ParseFiles(cfgFile.RuleFiles, cfgFile.GlobalConfig.MetricNameValidationScheme); err != nil {
+	if err := rules.ParseFiles(cfgFile.RuleFiles, cfgFile.GlobalConfig.MetricNameValidationScheme, promqlParser); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
@@ -926,6 +925,7 @@ func main() {
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
 			FeatureRegistry:          features.DefaultRegistry,
+			Parser:                   promqlParser,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -949,6 +949,7 @@ func main() {
 				return time.Duration(cfgFile.GlobalConfig.RuleQueryOffset)
 			},
 			FeatureRegistry: features.DefaultRegistry,
+			Parser:          promqlParser,
 		})
 	}
 
@@ -968,6 +969,7 @@ func main() {
 	cfg.web.LookbackDelta = time.Duration(cfg.lookbackDelta)
 	cfg.web.IsAgent = agentMode
 	cfg.web.AppName = modeAppName
+	cfg.web.Parser = promqlParser
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,

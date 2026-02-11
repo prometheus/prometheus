@@ -86,14 +86,16 @@ func LoadedStorage(t testing.TB, input string) *teststorage.TestStorage {
 	return test.storage.(*teststorage.TestStorage)
 }
 
+// TestParserOpts are the parser options used for all built-in test engines.
+var TestParserOpts = parser.Options{
+	EnableExperimentalFunctions:  true,
+	ExperimentalDurationExpr:     true,
+	EnableExtendedRangeSelectors: true,
+	EnableBinopFillModifiers:     true,
+}
+
 // NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.
 func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Duration, maxSamples int) *promql.Engine {
-	parser.SetDefaultOptions(parser.Options{
-		EnableExperimentalFunctions:  true,
-		ExperimentalDurationExpr:     true,
-		EnableExtendedRangeSelectors: true,
-		EnableBinopFillModifiers:     true,
-	})
 	return NewTestEngineWithOpts(tb, promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
@@ -105,6 +107,7 @@ func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Du
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 		EnableDelayedNameRemoval: true,
+		Parser:                   parser.NewParser(TestParserOpts),
 	})
 }
 
@@ -294,7 +297,8 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 }
 
 func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
-	metric, vals, err := parser.ParseSeriesDesc(defLine)
+	testParser := parser.NewParser(TestParserOpts)
+	metric, vals, err := testParser.ParseSeriesDesc(defLine)
 	if err != nil {
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = line
@@ -423,7 +427,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		expr = rangeParts[5]
 	}
 
-	_, err := parser.ParseExpr(expr, parserOptsForBuiltinTests)
+	_, err := parserForBuiltinTests.ParseExpr(expr)
 	if err != nil {
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = i
@@ -1359,18 +1363,13 @@ type atModifierTestCase struct {
 	evalTime time.Time
 }
 
-// parserOptsForBuiltinTests is the parser options used when parsing expressions in the
-// built-in test framework (e.g. atModifierTestCases). It must match the ParserOptions
+// parserForBuiltinTests is the parser used when parsing expressions in the
+// built-in test framework (e.g. atModifierTestCases). It must match the Parser
 // used by NewTestEngine so that expressions parse consistently.
-var parserOptsForBuiltinTests = parser.WithOptions(parser.Options{
-	EnableExperimentalFunctions:  true,
-	ExperimentalDurationExpr:     true,
-	EnableExtendedRangeSelectors: true,
-	EnableBinopFillModifiers:     true,
-})
+var parserForBuiltinTests = parser.NewParser(TestParserOpts)
 
 func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCase, error) {
-	expr, err := parser.ParseExpr(exprStr, parserOptsForBuiltinTests)
+	expr, err := parserForBuiltinTests.ParseExpr(exprStr)
 	if err != nil {
 		return nil, err
 	}
