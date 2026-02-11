@@ -241,8 +241,7 @@ jobs:
       - name: Lint with slicelabels
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
-          # goexperiment.synctest to ensure we don't miss files that depend on it.
-          args: --verbose --build-tags=slicelabels,goexperiment.synctest
+          args: --verbose --build-tags=slicelabels
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint with dedupelabels
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
