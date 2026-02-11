@@ -14,12 +14,19 @@
 package agent
 
 import (
+	"iter"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
+
+type ActiveSeries interface {
+	Ref() chunks.HeadSeriesRef
+	Labels() labels.Labels
+	LastSampleTimestamp() int64
+}
 
 // memSeries is a chunkless version of tsdb.memSeries.
 type memSeries struct {
@@ -43,6 +50,18 @@ func (m *memSeries) updateTimestamp(newTs int64) bool {
 		return true
 	}
 	return false
+}
+
+func (m *memSeries) Ref() chunks.HeadSeriesRef {
+	return m.ref
+}
+
+func (m *memSeries) Labels() labels.Labels {
+	return m.lset
+}
+
+func (m *memSeries) LastSampleTimestamp() int64 {
+	return m.lastTs
 }
 
 // seriesHashmap lets agent find a memSeries by its label set, via a 64-bit hash.
@@ -220,14 +239,14 @@ func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
 }
 
 func (s *stripeSeries) GetByID(id chunks.HeadSeriesRef) *memSeries {
-	refLock := uint64(id) & uint64(s.size-1)
+	refLock := s.getHashLock(uint64(id))
 	s.locks[refLock].RLock()
 	defer s.locks[refLock].RUnlock()
 	return s.series[refLock][id]
 }
 
 func (s *stripeSeries) GetByHash(hash uint64, lset labels.Labels) *memSeries {
-	hashLock := hash & uint64(s.size-1)
+	hashLock := s.getHashLock(hash)
 
 	s.locks[hashLock].RLock()
 	defer s.locks[hashLock].RUnlock()
@@ -235,10 +254,8 @@ func (s *stripeSeries) GetByHash(hash uint64, lset labels.Labels) *memSeries {
 }
 
 func (s *stripeSeries) Set(hash uint64, series *memSeries) {
-	var (
-		hashLock = hash & uint64(s.size-1)
-		refLock  = uint64(series.ref) & uint64(s.size-1)
-	)
+	hashLock := s.getHashLock(hash)
+	refLock := s.getHashLock(uint64(series.ref))
 
 	// We can't hold both locks at once otherwise we might deadlock with a
 	// simultaneous call to GC.
@@ -273,4 +290,44 @@ func (s *stripeSeries) SetLatestExemplar(ref chunks.HeadSeriesRef, exemplar *exe
 		s.exemplars[i][ref] = exemplar
 	}
 	s.locks[i].Unlock()
+}
+
+func (s *stripeSeries) getHashLock(hash uint64) uint64 {
+	return hash & uint64(s.size-1)
+}
+
+func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
+	return func(yield func(ActiveSeries) bool) {
+		stop := false
+		for i := 0; i < s.size; i++ {
+			s.locks[i].RLock()
+
+			for _, series := range s.series[i] {
+				series.Lock()
+
+				j := int(s.getHashLock(series.lset.Hash()))
+				if i != j {
+					s.locks[j].RLock()
+				}
+
+				if !yield(series) {
+					stop = true
+				}
+
+				if i != j {
+					s.locks[j].RUnlock()
+				}
+				series.Unlock()
+
+				if stop {
+					break
+				}
+			}
+
+			s.locks[i].RUnlock()
+			if stop {
+				return
+			}
+		}
+	}
 }
