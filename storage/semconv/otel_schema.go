@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // TODO: Remove me after done testing.

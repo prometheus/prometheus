@@ -51,10 +51,10 @@ func TestGenerateOTLPVariants(t *testing.T) {
 		}
 
 		// Check expected translations based on strategies.
-		require.Contains(t, names, "http.server.duration")            // Identity
-		require.Contains(t, names, "http_server_duration_seconds")    // UnderscoreEscaping + Suffixes
-		require.Contains(t, names, "http_server_duration")            // UnderscoreEscaping, no Suffixes
-		require.Contains(t, names, "http.server.duration_seconds")    // NoUTF8Escaping + Suffixes
+		require.Contains(t, names, "http.server.duration")         // Identity
+		require.Contains(t, names, "http_server_duration_seconds") // UnderscoreEscaping + Suffixes
+		require.Contains(t, names, "http_server_duration")         // UnderscoreEscaping, no Suffixes
+		require.Contains(t, names, "http.server.duration_seconds") // NoUTF8Escaping + Suffixes
 	})
 
 	t.Run("translates label names", func(t *testing.T) {
