@@ -57,9 +57,6 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.145.0
 	github.com/ovh/go-ovh v1.9.0
-	github.com/pb33f/libopenapi v0.31.1
-	github.com/pb33f/libopenapi-validator v0.10.0
-	github.com/prometheus/alertmanager v0.30.0
 	github.com/pb33f/libopenapi v0.33.4
 	github.com/pb33f/libopenapi-validator v0.11.1
 	github.com/prometheus/alertmanager v0.31.0
