@@ -83,7 +83,27 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 // CheckpointPrefix is the prefix used for checkpoint files.
 const CheckpointPrefix = "checkpoint."
 
-// Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
+type Checkpoint struct {
+	stats  *CheckpointStats
+	logger *slog.Logger
+	w      *WL
+}
+
+// NewCheckpoint creates a new Checkpoint object with the associated WAL.
+func NewCheckpoint(logger *slog.Logger, w *WL) *Checkpoint {
+	return &Checkpoint{
+		logger: logger,
+		w:      w,
+	}
+}
+
+// Stats returns the statistics from the most recent checkpoint run. The value
+// is reset after every run.
+func (c *Checkpoint) Stats() *CheckpointStats {
+	return c.stats
+}
+
+// Create creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
 // All series not satisfying keep, samples/tombstones/exemplars below mint and
 // metadata that are not the latest are dropped.
@@ -92,22 +112,22 @@ const CheckpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64) (*CheckpointStats, error) {
-	stats := &CheckpointStats{}
+func (c *Checkpoint) Create(from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64) error {
+	c.stats = &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
-	logger.Info("Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
+	c.logger.Info("Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
 
 	{
 		var sgmRange []SegmentRange
-		dir, idx, err := LastCheckpoint(w.Dir())
+		dir, idx, err := LastCheckpoint(c.w.Dir())
 		if err != nil && !errors.Is(err, record.ErrNotFound) {
-			return nil, fmt.Errorf("find last checkpoint: %w", err)
+			return fmt.Errorf("find last checkpoint: %w", err)
 		}
 		last := idx + 1
 		if err == nil {
 			if from > last {
-				return nil, fmt.Errorf("unexpected gap to last checkpoint. expected:%v, requested:%v", last, from)
+				return fmt.Errorf("unexpected gap to last checkpoint. expected:%v, requested:%v", last, from)
 			}
 			// Ignore WAL files below the checkpoint. They shouldn't exist to begin with.
 			from = last
@@ -115,27 +135,27 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			sgmRange = append(sgmRange, SegmentRange{Dir: dir, Last: math.MaxInt32})
 		}
 
-		sgmRange = append(sgmRange, SegmentRange{Dir: w.Dir(), First: from, Last: to})
+		sgmRange = append(sgmRange, SegmentRange{Dir: c.w.Dir(), First: from, Last: to})
 		sgmReader, err = NewSegmentsRangeReader(sgmRange...)
 		if err != nil {
-			return nil, fmt.Errorf("create segment reader: %w", err)
+			return fmt.Errorf("create segment reader: %w", err)
 		}
 		defer sgmReader.Close()
 	}
 
-	cpdir := checkpointDir(w.Dir(), to)
+	cpdir := checkpointDir(c.w.Dir(), to)
 	cpdirtmp := cpdir + ".tmp"
 
 	if err := os.RemoveAll(cpdirtmp); err != nil {
-		return nil, fmt.Errorf("remove previous temporary checkpoint dir: %w", err)
+		return fmt.Errorf("remove previous temporary checkpoint dir: %w", err)
 	}
 
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
-		return nil, fmt.Errorf("create checkpoint dir: %w", err)
+		return fmt.Errorf("create checkpoint dir: %w", err)
 	}
-	cp, err := New(nil, nil, cpdirtmp, w.CompressionType())
+	cp, err := New(nil, nil, cpdirtmp, c.w.CompressionType())
 	if err != nil {
-		return nil, fmt.Errorf("open checkpoint: %w", err)
+		return fmt.Errorf("open checkpoint: %w", err)
 	}
 
 	// Ensures that an early return caused by an error doesn't leave any tmp files.
@@ -155,7 +175,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		exemplars             []record.RefExemplar
 		metadata              []record.RefMetadata
 		st                    = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
-		dec                   = record.NewDecoder(st, logger)
+		dec                   = record.NewDecoder(st, c.logger)
 		enc                   record.Encoder
 		buf                   []byte
 		recs                  [][]byte
@@ -175,7 +195,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		case record.Series:
 			series, err = dec.Series(rec, series)
 			if err != nil {
-				return nil, fmt.Errorf("decode series: %w", err)
+				return fmt.Errorf("decode series: %w", err)
 			}
 			// Drop irrelevant series in place.
 			repl := series[:0]
@@ -187,13 +207,13 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if len(repl) > 0 {
 				buf = enc.Series(repl, buf)
 			}
-			stats.TotalSeries += len(series)
-			stats.DroppedSeries += len(series) - len(repl)
+			c.stats.TotalSeries += len(series)
+			c.stats.DroppedSeries += len(series) - len(repl)
 
 		case record.Samples:
 			samples, err = dec.Samples(rec, samples)
 			if err != nil {
-				return nil, fmt.Errorf("decode samples: %w", err)
+				return fmt.Errorf("decode samples: %w", err)
 			}
 			// Drop irrelevant samples in place.
 			repl := samples[:0]
@@ -205,13 +225,13 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if len(repl) > 0 {
 				buf = enc.Samples(repl, buf)
 			}
-			stats.TotalSamples += len(samples)
-			stats.DroppedSamples += len(samples) - len(repl)
+			c.stats.TotalSamples += len(samples)
+			c.stats.DroppedSamples += len(samples) - len(repl)
 
 		case record.HistogramSamples:
 			histogramSamples, err = dec.HistogramSamples(rec, histogramSamples)
 			if err != nil {
-				return nil, fmt.Errorf("decode histogram samples: %w", err)
+				return fmt.Errorf("decode histogram samples: %w", err)
 			}
 			// Drop irrelevant histogramSamples in place.
 			repl := histogramSamples[:0]
@@ -223,12 +243,12 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if len(repl) > 0 {
 				buf, _ = enc.HistogramSamples(repl, buf)
 			}
-			stats.TotalSamples += len(histogramSamples)
-			stats.DroppedSamples += len(histogramSamples) - len(repl)
+			c.stats.TotalSamples += len(histogramSamples)
+			c.stats.DroppedSamples += len(histogramSamples) - len(repl)
 		case record.CustomBucketsHistogramSamples:
 			histogramSamples, err = dec.HistogramSamples(rec, histogramSamples)
 			if err != nil {
-				return nil, fmt.Errorf("decode histogram samples: %w", err)
+				return fmt.Errorf("decode histogram samples: %w", err)
 			}
 			// Drop irrelevant histogramSamples in place.
 			repl := histogramSamples[:0]
@@ -240,12 +260,12 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if len(repl) > 0 {
 				buf = enc.CustomBucketsHistogramSamples(repl, buf)
 			}
-			stats.TotalSamples += len(histogramSamples)
-			stats.DroppedSamples += len(histogramSamples) - len(repl)
+			c.stats.TotalSamples += len(histogramSamples)
+			c.stats.DroppedSamples += len(histogramSamples) - len(repl)
 		case record.FloatHistogramSamples:
 			floatHistogramSamples, err = dec.FloatHistogramSamples(rec, floatHistogramSamples)
 			if err != nil {
-				return nil, fmt.Errorf("decode float histogram samples: %w", err)
+				return fmt.Errorf("decode float histogram samples: %w", err)
 			}
 			// Drop irrelevant floatHistogramSamples in place.
 			repl := floatHistogramSamples[:0]
@@ -257,12 +277,12 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if len(repl) > 0 {
 				buf, _ = enc.FloatHistogramSamples(repl, buf)
 			}
-			stats.TotalSamples += len(floatHistogramSamples)
-			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
+			c.stats.TotalSamples += len(floatHistogramSamples)
+			c.stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
 		case record.CustomBucketsFloatHistogramSamples:
 			floatHistogramSamples, err = dec.FloatHistogramSamples(rec, floatHistogramSamples)
 			if err != nil {
-				return nil, fmt.Errorf("decode float histogram samples: %w", err)
+				return fmt.Errorf("decode float histogram samples: %w", err)
 			}
 			// Drop irrelevant floatHistogramSamples in place.
 			repl := floatHistogramSamples[:0]
@@ -274,12 +294,12 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if len(repl) > 0 {
 				buf = enc.CustomBucketsFloatHistogramSamples(repl, buf)
 			}
-			stats.TotalSamples += len(floatHistogramSamples)
-			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
+			c.stats.TotalSamples += len(floatHistogramSamples)
+			c.stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
 		case record.Tombstones:
 			tstones, err = dec.Tombstones(rec, tstones)
 			if err != nil {
-				return nil, fmt.Errorf("decode deletes: %w", err)
+				return fmt.Errorf("decode deletes: %w", err)
 			}
 			// Drop irrelevant tombstones in place.
 			repl := tstones[:0]
@@ -294,13 +314,13 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if len(repl) > 0 {
 				buf = enc.Tombstones(repl, buf)
 			}
-			stats.TotalTombstones += len(tstones)
-			stats.DroppedTombstones += len(tstones) - len(repl)
+			c.stats.TotalTombstones += len(tstones)
+			c.stats.DroppedTombstones += len(tstones) - len(repl)
 
 		case record.Exemplars:
 			exemplars, err = dec.Exemplars(rec, exemplars)
 			if err != nil {
-				return nil, fmt.Errorf("decode exemplars: %w", err)
+				return fmt.Errorf("decode exemplars: %w", err)
 			}
 			// Drop irrelevant exemplars in place.
 			repl := exemplars[:0]
@@ -312,12 +332,12 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if len(repl) > 0 {
 				buf = enc.Exemplars(repl, buf)
 			}
-			stats.TotalExemplars += len(exemplars)
-			stats.DroppedExemplars += len(exemplars) - len(repl)
+			c.stats.TotalExemplars += len(exemplars)
+			c.stats.DroppedExemplars += len(exemplars) - len(repl)
 		case record.Metadata:
 			metadata, err := dec.Metadata(rec, metadata)
 			if err != nil {
-				return nil, fmt.Errorf("decode metadata: %w", err)
+				return fmt.Errorf("decode metadata: %w", err)
 			}
 			// Only keep reference to the latest found metadata for each refID.
 			repl := 0
@@ -329,8 +349,8 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 					latestMetadataMap[m.Ref] = m
 				}
 			}
-			stats.TotalMetadata += len(metadata)
-			stats.DroppedMetadata += len(metadata) - repl
+			c.stats.TotalMetadata += len(metadata)
+			c.stats.DroppedMetadata += len(metadata) - repl
 		default:
 			// Unknown record type, probably from a future Prometheus version.
 			continue
@@ -343,7 +363,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		// Flush records in 1 MB increments.
 		if len(buf) > 1*1024*1024 {
 			if err := cp.Log(recs...); err != nil {
-				return nil, fmt.Errorf("flush records: %w", err)
+				return fmt.Errorf("flush records: %w", err)
 			}
 			buf, recs = buf[:0], recs[:0]
 		}
@@ -351,12 +371,12 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 	// If we hit any corruption during checkpointing, repairing is not an option.
 	// The head won't know which series records are lost.
 	if r.Err() != nil {
-		return nil, fmt.Errorf("read segments: %w", r.Err())
+		return fmt.Errorf("read segments: %w", r.Err())
 	}
 
 	// Flush remaining records.
 	if err := cp.Log(recs...); err != nil {
-		return nil, fmt.Errorf("flush records: %w", err)
+		return fmt.Errorf("flush records: %w", err)
 	}
 
 	// Flush latest metadata records for each series.
@@ -366,32 +386,32 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			latestMetadata = append(latestMetadata, m)
 		}
 		if err := cp.Log(enc.Metadata(latestMetadata, buf[:0])); err != nil {
-			return nil, fmt.Errorf("flush metadata records: %w", err)
+			return fmt.Errorf("flush metadata records: %w", err)
 		}
 	}
 
 	if err := cp.Close(); err != nil {
-		return nil, fmt.Errorf("close checkpoint: %w", err)
+		return fmt.Errorf("close checkpoint: %w", err)
 	}
 
 	// Sync temporary directory before rename.
 	df, err := fileutil.OpenDir(cpdirtmp)
 	if err != nil {
-		return nil, fmt.Errorf("open temporary checkpoint directory: %w", err)
+		return fmt.Errorf("open temporary checkpoint directory: %w", err)
 	}
 	if err := df.Sync(); err != nil {
 		df.Close()
-		return nil, fmt.Errorf("sync temporary checkpoint directory: %w", err)
+		return fmt.Errorf("sync temporary checkpoint directory: %w", err)
 	}
 	if err = df.Close(); err != nil {
-		return nil, fmt.Errorf("close temporary checkpoint directory: %w", err)
+		return fmt.Errorf("close temporary checkpoint directory: %w", err)
 	}
 
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
-		return nil, fmt.Errorf("rename checkpoint directory: %w", err)
+		return fmt.Errorf("rename checkpoint directory: %w", err)
 	}
 
-	return stats, nil
+	return nil
 }
 
 func checkpointDir(dir string, i int) string {
