@@ -200,7 +200,6 @@ func TestBasicContentNegotiation(t *testing.T) {
 }
 
 func TestSampleDelivery(t *testing.T) {
-	t.Parallel()
 	// Let's create an even number of send batches, so we don't run into the
 	// batch timeout case.
 	n := 3
@@ -409,7 +408,6 @@ func TestWALMetadataDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
-	t.Parallel()
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			// Let's send one less sample than batch size, and wait the timeout duration
@@ -2038,7 +2036,6 @@ func TestIsSampleOld(t *testing.T) {
 
 // Simulates scenario in which remote write endpoint is down and a subset of samples is dropped due to age limit while backoffing.
 func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
-	t.Parallel()
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			maxSamplesPerSend := 10

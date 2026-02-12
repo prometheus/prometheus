@@ -1742,6 +1742,9 @@ func (a *headAppenderBase) Commit() (err error) {
 			chunkRange:      h.chunkRange.Load(),
 			samplesPerChunk: h.opts.SamplesPerChunk,
 		},
+		enc: record.Encoder{
+			EnableSTStorage: false,
+		},
 	}
 
 	for _, b := range a.batches {
