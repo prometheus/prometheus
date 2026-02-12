@@ -755,18 +755,20 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 	var h3Server *http3Server
 	if h.options.EnableHTTP3 {
 		tlsConfig, err := getTLSConfigFromWebConfig(webConfig)
-		if err != nil {
+		switch {
+		case err != nil:
 			h.logger.Warn("HTTP/3 disabled: failed to load TLS config", "err", err)
-		} else if tlsConfig == nil {
+		case tlsConfig == nil:
 			h.logger.Warn("HTTP/3 disabled: TLS configuration is required")
-		} else {
+		default:
 			// Use the first listener's address for HTTP/3.
 			addr := listeners[0].Addr().String()
 			h3Server, err = newHTTP3Server(addr, handler, tlsConfig, h.logger)
 			if err != nil {
 				h.logger.Warn("HTTP/3 disabled: failed to create server", "err", err)
 			} else {
-				// Wrap handler to add Alt-Svc headers.
+				// Wrap handler to add Alt-Svc headers. Headers are only
+				// injected once the HTTP/3 server reports itself as ready.
 				handler = wrapHandlerWithAltSvc(handler, h3Server)
 			}
 		}
@@ -778,12 +780,10 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 		ReadTimeout: h.options.ReadTimeout,
 	}
 
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- toolkit_web.ServeMultiple(listeners, httpSrv, &toolkit_web.FlagConfig{WebConfigFile: &webConfig}, h.logger)
-	}()
-
-	// Start HTTP/3 server if configured.
+	// Start HTTP/3 server before the HTTP/1.1+HTTP/2 server so the QUIC
+	// listener is ready to accept connections before Alt-Svc headers are
+	// served to browsers. The ready flag inside h3Server gates header
+	// injection, so even if there is a brief window the headers are safe.
 	if h3Server != nil {
 		go func() {
 			if err := h3Server.ListenAndServe(); err != nil {
@@ -791,6 +791,11 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 			}
 		}()
 	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- toolkit_web.ServeMultiple(listeners, httpSrv, &toolkit_web.FlagConfig{WebConfigFile: &webConfig}, h.logger)
+	}()
 
 	select {
 	case e := <-errCh:

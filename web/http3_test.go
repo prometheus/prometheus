@@ -72,7 +72,7 @@ func generateTestCert(t *testing.T, certPath, keyPath string) {
 
 func TestNewHTTP3ServerRequiresTLS(t *testing.T) {
 	logger := slog.Default()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
 
 	// Should fail without TLS config.
 	_, err := newHTTP3Server(":9090", handler, nil, logger)
@@ -91,7 +91,7 @@ func TestNewHTTP3ServerRequiresTLS(t *testing.T) {
 func TestWrapHandlerWithAltSvc(t *testing.T) {
 	logger := slog.Default()
 	handlerCalled := false
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		handlerCalled = true
 		w.WriteHeader(http.StatusOK)
 	})
