@@ -49,6 +49,14 @@ func (e Encoding) String() string {
 		return "floathistogram"
 	case EncXOROptST:
 		return "XOR-start-timestamp"
+	case EncXOROptOtelST:
+		return "XOR-opt-otel-start-timestamp"
+	case EncXOR2:
+		return "XOR2"
+	case EncXOR2ST:
+		return "XOR2-start-timestamp"
+	case EncXOR2STotel:
+		return "XOR2-otel-start-timestamp"
 	}
 	return "<unknown>"
 }
@@ -305,6 +313,10 @@ type pool struct {
 	histogram      sync.Pool
 	floatHistogram sync.Pool
 	xoroptst       sync.Pool
+	xoroptOtelst   sync.Pool
+	xor2           sync.Pool
+	xor2st         sync.Pool
+	xor2stOtel     sync.Pool
 }
 
 // NewPool returns a new pool.
@@ -330,6 +342,26 @@ func NewPool() Pool {
 				return &XorOptSTChunk{b: bstream{}}
 			},
 		},
+		xoroptOtelst: sync.Pool{
+			New: func() any {
+				return &XorOptSTotelChunk{b: bstream{}}
+			},
+		},
+		xor2: sync.Pool{
+			New: func() any {
+				return &XOR2Chunk{XORChunk: XORChunk{b: bstream{}}}
+			},
+		},
+		xor2st: sync.Pool{
+			New: func() any {
+				return &XOR2STChunk{XORChunk: XORChunk{b: bstream{}}}
+			},
+		},
+		xor2stOtel: sync.Pool{
+			New: func() any {
+				return &XOR2STotelChunk{XORChunk: XORChunk{b: bstream{}}}
+			},
+		},
 	}
 }
 
@@ -344,6 +376,14 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c = p.floatHistogram.Get().(*FloatHistogramChunk)
 	case EncXOROptST:
 		c = p.xoroptst.Get().(*XorOptSTChunk)
+	case EncXOROptOtelST:
+		c = p.xoroptOtelst.Get().(*XorOptSTotelChunk)
+	case EncXOR2:
+		c = p.xor2.Get().(*XOR2Chunk)
+	case EncXOR2ST:
+		c = p.xor2st.Get().(*XOR2STChunk)
+	case EncXOR2STotel:
+		c = p.xor2stOtel.Get().(*XOR2STotelChunk)
 	default:
 		return nil, fmt.Errorf("invalid chunk encoding %q", e)
 	}
@@ -368,6 +408,18 @@ func (p *pool) Put(c Chunk) error {
 	case EncXOROptST:
 		_, ok = c.(*XorOptSTChunk)
 		sp = &p.xoroptst
+	case EncXOROptOtelST:
+		_, ok = c.(*XorOptSTotelChunk)
+		sp = &p.xoroptOtelst
+	case EncXOR2:
+		_, ok = c.(*XOR2Chunk)
+		sp = &p.xor2
+	case EncXOR2ST:
+		_, ok = c.(*XOR2STChunk)
+		sp = &p.xor2st
+	case EncXOR2STotel:
+		_, ok = c.(*XOR2STotelChunk)
+		sp = &p.xor2stOtel
 	default:
 		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
@@ -396,6 +448,14 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 		return &FloatHistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	case EncXOROptST:
 		return &XorOptSTChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOROptOtelST:
+		return &XorOptSTotelChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR2:
+		return &XOR2Chunk{XORChunk: XORChunk{b: bstream{count: 0, stream: d}}}, nil
+	case EncXOR2ST:
+		return &XOR2STChunk{XORChunk: XORChunk{b: bstream{count: 0, stream: d}}}, nil
+	case EncXOR2STotel:
+		return &XOR2STotelChunk{XORChunk: XORChunk{b: bstream{count: 0, stream: d}}}, nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
@@ -411,6 +471,14 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 		return NewFloatHistogramChunk(), nil
 	case EncXOROptST:
 		return NewXOROptSTChunk(), nil
+	case EncXOROptOtelST:
+		return NewXOROptSTotelChunk(), nil
+	case EncXOR2:
+		return NewXOR2Chunk(), nil
+	case EncXOR2ST:
+		return NewXOR2STChunk(), nil
+	case EncXOR2STotel:
+		return NewXOR2STotelChunk(), nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
@@ -419,6 +487,12 @@ func newEmptyChunkWithST(e Encoding) Chunk {
 	switch e {
 	case EncXOROptST:
 		return NewXOROptSTChunk()
+	case EncXOROptOtelST:
+		return NewXOROptSTotelChunk()
+	case EncXOR2ST:
+		return NewXOR2STChunk()
+	case EncXOR2STotel:
+		return NewXOR2STotelChunk()
 	default:
 		// The caller code is literally right above this function.
 		panic(fmt.Sprintf("invalid chunk encoding %q", e))
