@@ -1594,6 +1594,13 @@ yydefault:
 	case 90:
 		yyDollar = yyS[yypt-6 : yypt+1]
 		{
+			// Check if offset/@ modifiers are immediately before the subquery brackets.
+			hasModifiers, errMsg := yylex.(*parser).hasModifiersBeforeRange(yyDollar[1].node.(Expr), yyDollar[2].item.Pos)
+			if hasModifiers {
+				errRange := mergeRanges(&yyDollar[2].item, &yyDollar[6].item)
+				yylex.(*parser).addParseErrf(errRange, "%s", errMsg)
+			}
+
 			var rangeNl time.Duration
 			var stepNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
@@ -1616,6 +1623,13 @@ yydefault:
 	case 91:
 		yyDollar = yyS[yypt-5 : yypt+1]
 		{
+			// Check if offset/@ modifiers are immediately before the subquery brackets.
+			hasModifiers, errMsg := yylex.(*parser).hasModifiersBeforeRange(yyDollar[1].node.(Expr), yyDollar[2].item.Pos)
+			if hasModifiers {
+				errRange := mergeRanges(&yyDollar[2].item, &yyDollar[5].item)
+				yylex.(*parser).addParseErrf(errRange, "%s", errMsg)
+			}
+
 			var rangeNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
 				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
