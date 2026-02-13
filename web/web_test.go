@@ -587,7 +587,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 	for path, methods := range map[string][]string{
 		"/labels":                      {http.MethodGet, http.MethodPost},
 		"/label/:name/values":          {http.MethodGet},
-		"/series":                      {http.MethodGet, http.MethodPost, http.MethodDelete},
+		"/series":                      {http.MethodGet, http.MethodPost},
 		"/alertmanagers":               {http.MethodGet},
 		"/query":                       {http.MethodGet, http.MethodPost},
 		"/query_range":                 {http.MethodGet, http.MethodPost},
