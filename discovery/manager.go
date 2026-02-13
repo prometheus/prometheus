@@ -91,6 +91,10 @@ func NewManager(ctx context.Context, logger *slog.Logger, registerer prometheus.
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
+	if sdMetrics == nil || sdMetrics.RefreshManager == nil {
+		logger.Error("Failed to create discovery manager: sdMetrics.RefreshManager must be set")
+		return nil
+	}
 	mgr := &Manager{
 		logger:      logger,
 		syncCh:      make(chan map[string][]*targetgroup.Group),
@@ -261,10 +265,8 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 
-				if m.sdMetrics.RefreshManager != nil {
-					if cfg, ok := prov.config.(Config); ok {
-						m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
-					}
+				if cfg, ok := prov.config.(Config); ok {
+					m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
 				}
 			}
 			m.targetsMtx.Unlock()
@@ -286,11 +288,9 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 
 				// Also clean up refresh metrics for subs that are being removed from a provider that is still running.
-				if m.sdMetrics.RefreshManager != nil {
-					cfg, ok := prov.config.(Config)
-					if ok {
-						m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
-					}
+				cfg, ok := prov.config.(Config)
+				if ok {
+					m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
 				}
 			}
 		}
