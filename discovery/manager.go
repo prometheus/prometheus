@@ -285,7 +285,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				delete(m.targets, poolKey{s, prov.name})
 				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
 
-				// Clean up refresh metrics again for subs that are being removed from a provider that is still running.
+				// Also clean up refresh metrics for subs that are being removed from a provider that is still running.
 				if m.sdMetrics.RefreshManager != nil {
 					cfg, ok := prov.config.(Config)
 					if ok {
