@@ -717,6 +717,9 @@ func main() {
 			if cfgFile.StorageConfig.TSDBConfig.Retention.Size > 0 {
 				cfg.tsdb.MaxBytes = cfgFile.StorageConfig.TSDBConfig.Retention.Size
 			}
+			if cfgFile.StorageConfig.TSDBConfig.Retention.Percentage > 0 {
+				cfg.tsdb.MaxPercentage = cfgFile.StorageConfig.TSDBConfig.Retention.Percentage
+			}
 		}
 	}
 
@@ -790,6 +793,9 @@ func main() {
 			logger.Warn("Percentage retention value is too high. Limiting to: 100%")
 		}
 		if cfg.tsdb.MaxPercentage > 0 {
+			if cfg.tsdb.MaxBytes > 0 {
+				logger.Warn("storage.tsdb.retention.size is ignored, because storage.tsdb.retention.percentage is specified")
+			}
 			if prom_runtime.FsSize(localStoragePath) == 0 {
 				fmt.Fprintln(os.Stderr, fmt.Errorf("unable to detect total capacity of metric storage at %s, please disable retention percentage (%d%%)", localStoragePath, cfg.tsdb.MaxPercentage))
 				os.Exit(2)

@@ -350,6 +350,7 @@ type dbMetrics struct {
 	tombCleanTimer                  prometheus.Histogram
 	blocksBytes                     prometheus.Gauge
 	maxBytes                        prometheus.Gauge
+	maxPercentage                   prometheus.Gauge
 	retentionDuration               prometheus.Gauge
 	staleSeriesCompactionsTriggered prometheus.Counter
 	staleSeriesCompactionsFailed    prometheus.Counter
@@ -430,6 +431,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_retention_limit_bytes",
 		Help: "Max number of bytes to be retained in the tsdb blocks, configured 0 means disabled",
 	})
+	m.maxPercentage = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_retention_limit_percentage",
+		Help: "Max percentage of total storage space to be retained in the tsdb blocks, configured 0 means disabled",
+	})
 	m.retentionDuration = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_retention_limit_seconds",
 		Help: "How long to retain samples in storage.",
@@ -470,6 +475,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.tombCleanTimer,
 			m.blocksBytes,
 			m.maxBytes,
+			m.maxPercentage,
 			m.retentionDuration,
 			m.staleSeriesCompactionsTriggered,
 			m.staleSeriesCompactionsFailed,
@@ -1068,6 +1074,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	db.metrics = newDBMetrics(db, r)
 	maxBytes := max(opts.MaxBytes, 0)
 	db.metrics.maxBytes.Set(float64(maxBytes))
+	db.metrics.maxPercentage.Set(float64(max(opts.MaxPercentage, 0)))
 	db.metrics.retentionDuration.Set((time.Duration(opts.RetentionDuration) * time.Millisecond).Seconds())
 
 	// Calling db.reload() calls db.reloadBlocks() which requires cmtx to be locked.
@@ -1280,6 +1287,10 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 				db.opts.MaxBytes = int64(conf.StorageConfig.TSDBConfig.Retention.Size)
 				db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
 			}
+			if conf.StorageConfig.TSDBConfig.Retention.Percentage > 0 {
+				db.opts.MaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
+				db.metrics.maxPercentage.Set(float64(db.opts.MaxPercentage))
+			}
 			db.retentionMtx.Unlock()
 		}
 	} else {
@@ -1325,11 +1336,11 @@ func (db *DB) getRetentionDuration() int64 {
 	return db.opts.RetentionDuration
 }
 
-// getMaxBytes returns the current max bytes setting in a thread-safe manner.
-func (db *DB) getMaxBytes() int64 {
+// getRetentionSettings returns max bytes and max percentage settings in a thread-safe manner.
+func (db *DB) getRetentionSettings() (int64, uint) {
 	db.retentionMtx.RLock()
 	defer db.retentionMtx.RUnlock()
-	return db.opts.MaxBytes
+	return db.opts.MaxBytes, db.opts.MaxPercentage
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
@@ -1994,15 +2005,15 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 		return deletable
 	}
 
-	maxBytes := db.getMaxBytes()
+	maxBytes, maxPercentage := db.getRetentionSettings()
 
 	// Max percentage prevails over max size.
-	if db.opts.MaxPercentage > 0 {
+	if maxPercentage > 0 {
 		diskSize := prom_runtime.FsSize(db.dir)
 		if diskSize <= 0 {
 			db.logger.Warn("Unable to retrieve filesystem size of database directory, skip percentage limitation and default to fixed size limitation", "dir", db.dir)
 		} else {
-			maxBytes = int64(uint64(db.opts.MaxPercentage) * diskSize / 100)
+			maxBytes = int64(uint64(maxPercentage) * diskSize / 100)
 		}
 	}
 
@@ -2010,8 +2021,6 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 	if maxBytes <= 0 {
 		return deletable
 	}
-	// update MaxBytes gauge
-	db.metrics.maxBytes.Set(float64(maxBytes))
 
 	deletable = make(map[ulid.ULID]struct{})
 
