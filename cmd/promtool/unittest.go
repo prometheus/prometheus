@@ -47,11 +47,11 @@ import (
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
+func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+	return RulesUnitTestResult(io.Discard, queryOpts, p, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -61,7 +61,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	}
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -83,7 +83,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -132,6 +132,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
+		t.parser = p
 		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
@@ -219,6 +220,8 @@ type testGroup struct {
 	ExternalURL     string             `yaml:"external_url,omitempty"`
 	TestGroupName   string             `yaml:"name,omitempty"`
 	StartTimestamp  testStartTimestamp `yaml:"start_timestamp,omitempty"`
+
+	parser parser.Parser `yaml:"-"`
 }
 
 // test performs the unit tests.
@@ -482,10 +485,10 @@ Outer:
 
 		var expSamples []parsedSample
 		for _, s := range testCase.ExpSamples {
-			lb, err := parser.ParseMetric(s.Labels)
+			lb, err := tg.parser.ParseMetric(s.Labels)
 			var hist *histogram.FloatHistogram
 			if err == nil && s.Histogram != "" {
-				_, values, parseErr := parser.ParseSeriesDesc("{} " + s.Histogram)
+				_, values, parseErr := tg.parser.ParseSeriesDesc("{} " + s.Histogram)
 				switch {
 				case parseErr != nil:
 					err = parseErr

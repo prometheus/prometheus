@@ -456,7 +456,7 @@ function_call   : IDENTIFIER function_call_body
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
                         }
-                        if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
+                        if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
                         }
                         $$ = &Call{

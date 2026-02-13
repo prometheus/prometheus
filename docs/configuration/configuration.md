@@ -2528,8 +2528,7 @@ in the configuration file), which can also be changed using relabeling.
 
 ### `<nerve_sd_config>`
 
-Nerve SD configurations allow retrieving scrape targets from [AirBnB's Nerve]
-(https://github.com/airbnb/nerve) which are stored in
+Nerve SD configurations allow retrieving scrape targets from [AirBnB's Nerve](https://github.com/airbnb/nerve) which are stored in
 [Zookeeper](https://zookeeper.apache.org/).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -2583,8 +2582,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 ### `<serverset_sd_config>`
 
-Serverset SD configurations allow retrieving scrape targets from [Serversets]
-(https://github.com/twitter/finagle/tree/develop/finagle-serversets) which are
+Serverset SD configurations allow retrieving scrape targets from [Serversets](https://github.com/twitter/finagle/tree/develop/finagle-serversets) which are
 stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are commonly
 used by [Finagle](https://twitter.github.io/finagle/) and
 [Aurora](https://aurora.apache.org/).
