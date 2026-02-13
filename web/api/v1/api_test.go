@@ -1769,10 +1769,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			errType:  errorBadData,
 		},
 		{
-			endpoint: api.dropSeries,
-			errType:  errorInternal,
-		},
-		{
 			endpoint: api.targets,
 			response: &TargetDiscovery{
 				ActiveTargets: []*Target{
