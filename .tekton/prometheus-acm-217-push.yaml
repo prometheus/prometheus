@@ -4,18 +4,17 @@ metadata:
   annotations:
     build.appstudio.openshift.io/repo: https://github.com/stolostron/prometheus?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
-    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
-    pipelinesascode.tekton.dev/cancel-in-progress: "true"
+    pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
-      == "release-2.16"
+    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
+      == "release-2.17"
   creationTimestamp: null
   labels:
-    appstudio.openshift.io/application: release-acm-216
-    appstudio.openshift.io/component: prometheus-acm-216
+    appstudio.openshift.io/application: release-acm-217
+    appstudio.openshift.io/component: prometheus-acm-217
     pipelines.appstudio.openshift.io/type: build
-  name: prometheus-acm-216-on-pull-request
+  name: prometheus-acm-217-on-push
   namespace: crt-redhat-acm-tenant
 spec:
   params:
@@ -24,12 +23,13 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/prometheus-acm-216:on-pr-{{revision}}
-  - name: image-expires-after
-    value: 5d
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/prometheus-acm-217:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
+    - linux/ppc64le
+    - linux/s390x
+    - linux/arm64
   - name: dockerfile
     value: Containerfile.operator
   - name: path-context
@@ -50,7 +50,7 @@ spec:
       - name: pathInRepo
         value: pipelines/common.yaml
   taskRunTemplate:
-    serviceAccountName: build-pipeline-prometheus-acm-216
+    serviceAccountName: build-pipeline-prometheus-acm-217
   workspaces:
   - name: git-auth
     secret:
