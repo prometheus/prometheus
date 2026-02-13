@@ -1737,8 +1737,9 @@ var expectedConf = &Config{
 			OutOfOrderTimeWindowFlag:       model.Duration(30 * time.Minute),
 			StaleSeriesCompactionThreshold: 0.5,
 			Retention: &TSDBRetentionConfig{
-				Time: model.Duration(24 * time.Hour),
-				Size: 1 * units.GiB,
+				Time:       model.Duration(24 * time.Hour),
+				Size:       1 * units.GiB,
+				Percentage: 28,
 			},
 		},
 	},
