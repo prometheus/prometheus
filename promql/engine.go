@@ -3444,21 +3444,24 @@ func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTr
 	}
 }
 
-func computeMidpoint(survivingIntervalBoundA, survivingIntervalBoundB float64, isPositive, isLinear bool) float64 {
-	if math.IsInf(survivingIntervalBoundA, 0) {
-		if math.IsInf(survivingIntervalBoundB, 0) {
+func computeMidpoint(survivingIntervalLowerBound, survivingIntervalUpperBound float64, isPositive, isLinear bool) float64 {
+	if math.IsInf(survivingIntervalLowerBound, 0) {
+		if math.IsInf(survivingIntervalUpperBound, 0) {
 			return 0
 		}
-		return survivingIntervalBoundB
-	} else if math.IsInf(survivingIntervalBoundB, 0) {
-		return survivingIntervalBoundA
+		if survivingIntervalUpperBound > 0 {
+			return survivingIntervalUpperBound / 2
+		}
+		return survivingIntervalUpperBound
+	} else if math.IsInf(survivingIntervalUpperBound, 0) {
+		return survivingIntervalLowerBound
 	}
 
 	if isLinear {
-		return (survivingIntervalBoundA + survivingIntervalBoundB) / 2
+		return (survivingIntervalLowerBound + survivingIntervalUpperBound) / 2
 	}
 
-	geoMean := math.Sqrt(math.Abs(survivingIntervalBoundA * survivingIntervalBoundB))
+	geoMean := math.Sqrt(math.Abs(survivingIntervalLowerBound * survivingIntervalUpperBound))
 
 	if isPositive {
 		return geoMean
