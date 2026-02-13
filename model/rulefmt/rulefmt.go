@@ -97,7 +97,7 @@ type ruleGroups struct {
 }
 
 // Validate validates all rules in the rule groups.
-func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.ValidationScheme) (errs []error) {
+func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.ValidationScheme, p parser.Parser) (errs []error) {
 	if err := namevalidationutil.CheckNameValidationScheme(nameValidationScheme); err != nil {
 		errs = append(errs, err)
 		return errs
@@ -134,7 +134,7 @@ func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.Valida
 		set[g.Name] = struct{}{}
 
 		for i, r := range g.Rules {
-			for _, node := range r.Validate(node.Groups[j].Rules[i], nameValidationScheme) {
+			for _, node := range r.Validate(node.Groups[j].Rules[i], nameValidationScheme, p) {
 				var ruleName string
 				if r.Alert != "" {
 					ruleName = r.Alert
@@ -198,7 +198,7 @@ type RuleNode struct {
 }
 
 // Validate the rule and return a list of encountered errors.
-func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationScheme) (nodes []WrappedError) {
+func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationScheme, p parser.Parser) (nodes []WrappedError) {
 	if r.Record != "" && r.Alert != "" {
 		nodes = append(nodes, WrappedError{
 			err:     errors.New("only one of 'record' and 'alert' must be set"),
@@ -219,7 +219,7 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 			err:  errors.New("field 'expr' must be set in rule"),
 			node: &node.Expr,
 		})
-	} else if _, err := parser.ParseExpr(r.Expr); err != nil {
+	} else if _, err := p.ParseExpr(r.Expr); err != nil {
 		nodes = append(nodes, WrappedError{
 			err:  fmt.Errorf("could not parse expression: %w", err),
 			node: &node.Expr,
@@ -339,7 +339,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 }
 
 // Parse parses and validates a set of rules.
-func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*RuleGroups, []error) {
+func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, p parser.Parser) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
 		node   ruleGroups
@@ -364,16 +364,16 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 		return nil, errs
 	}
 
-	return &groups, groups.Validate(node, nameValidationScheme)
+	return &groups, groups.Validate(node, nameValidationScheme, p)
 }
 
 // ParseFile reads and parses rules from a file.
-func ParseFile(file string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*RuleGroups, []error) {
+func ParseFile(file string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, p parser.Parser) (*RuleGroups, []error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
-	rgs, errs := Parse(b, ignoreUnknownFields, nameValidationScheme)
+	rgs, errs := Parse(b, ignoreUnknownFields, nameValidationScheme, p)
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}

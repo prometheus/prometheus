@@ -14,7 +14,6 @@
 package fuzzing
 
 import (
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 )
 
@@ -58,18 +57,6 @@ func GetCorpusForFuzzParseMetricSelector() []string {
 
 // GetCorpusForFuzzParseExpr returns the seed corpus for FuzzParseExpr.
 func GetCorpusForFuzzParseExpr() ([]string, error) {
-	// Save original values and restore them after parsing test expressions.
-	defer func(funcs, durationExpr, rangeSelectors bool) {
-		parser.EnableExperimentalFunctions = funcs
-		parser.ExperimentalDurationExpr = durationExpr
-		parser.EnableExtendedRangeSelectors = rangeSelectors
-	}(parser.EnableExperimentalFunctions, parser.ExperimentalDurationExpr, parser.EnableExtendedRangeSelectors)
-
-	// Enable experimental features to parse all test expressions.
-	parser.EnableExperimentalFunctions = true
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExtendedRangeSelectors = true
-
 	// Get built-in test expressions.
 	builtInExprs, err := promqltest.GetBuiltInExprs()
 	if err != nil {

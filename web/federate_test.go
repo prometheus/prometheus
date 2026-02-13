@@ -35,12 +35,15 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+var testParser = parser.NewParser(parser.Options{})
 
 var scenarios = map[string]struct {
 	params         string
@@ -220,6 +223,7 @@ func TestFederation(t *testing.T) {
 		config: &config.Config{
 			GlobalConfig: config.GlobalConfig{},
 		},
+		options: &Options{Parser: testParser},
 	}
 
 	for name, scenario := range scenarios {
@@ -264,6 +268,7 @@ func TestFederation_NotReady(t *testing.T) {
 						ExternalLabels: scenario.externalLabels,
 					},
 				},
+				options: &Options{Parser: testParser},
 			}
 
 			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, nil)
@@ -440,6 +445,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		config: &config.Config{
 			GlobalConfig: config.GlobalConfig{},
 		},
+		options: &Options{Parser: testParser},
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?match[]=test_metric", nil)

@@ -15,8 +15,6 @@ Maintainers for specific parts of the codebase:
   * `stackit`: Jan-Otto Kröpke (<mail@jkroepke.de> / @jkroepke)
 * `documentation`
   * `prometheus-mixin`: Matthias Loibl (<mail@matthiasloibl.com> / @metalmatze)
-* `model/histogram` and other code related to native histograms: Björn Rabenstein (<beorn@grafana.com> / @beorn7),
-George Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
 * `storage`
   * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (tom.wilkie@gmail.com / @tomwilkie), Alex Greenbank (<alexgreenbank@yahoo.com> / @alexgreenbank)
     * `otlptranslator`: Arthur Silva Sens (<arthursens2005@gmail.com> / @ArthurSens), Arve Knudsen (<arve.knudsen@gmail.com> / @aknuds1), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
