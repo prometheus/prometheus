@@ -3148,7 +3148,7 @@ func handleInfinityBuckets(isUpperTrim bool, b histogram.Bucket[float64], rhs fl
 		return x
 	}
 
-	// Case 1: Bucket with lower bound (-Inf, upper]
+	// Case 1: Bucket with lower bound -Inf.
 	if math.IsInf(b.Lower, -1) {
 		// TRIM_UPPER (</) - remove values greater than rhs
 		if isUpperTrim {
@@ -3181,7 +3181,7 @@ func handleInfinityBuckets(isUpperTrim bool, b histogram.Bucket[float64], rhs fl
 		return 0, zeroIfInf(b.Upper)
 	}
 
-	// Case 2: Bucket with upper bound [lower, +Inf)
+	// Case 2: Bucket with upper bound +Inf.
 	if math.IsInf(b.Upper, 1) {
 		if isUpperTrim {
 			// TRIM_UPPER (</) - remove values greater than rhs.
@@ -3191,15 +3191,14 @@ func handleInfinityBuckets(isUpperTrim bool, b histogram.Bucket[float64], rhs fl
 			return 0, zeroIfInf(b.Lower)
 		}
 		// TRIM_LOWER (>/) - remove values less than rhs.
-		if rhs <= b.Lower {
-			// rhs <= lower: all values in this bucket are >= lower >= rhs, so we keep the entire bucket.
-			return b.Count, 0
+		if rhs >= b.Lower {
+			return b.Count, rhs
 		}
 		// lower < rhs: we are inside the infinity bucket, but as we don't know the exact distribution of values, we conservatively remove the entire bucket.
 		return 0, zeroIfInf(b.Lower)
 	}
 
-	panic(fmt.Errorf("one of the buckets must be infinite for handleInfinityBuckets, got %v", b))
+	panic(fmt.Errorf("one of the bounds must be infinite for handleInfinityBuckets, got %v", b))
 }
 
 // computeSplit calculates the portion of the bucket's count <= rhs (trim point).
