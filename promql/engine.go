@@ -1853,7 +1853,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		slices.Sort(sortedGrouping)
 
 		if e.Op == parser.COUNT_VALUES {
-			valueLabel := e.Param.(*parser.StringLiteral)
+			valueLabel := peekExpr(e.Param).(*parser.StringLiteral)
 			if !model.UTF8Validation.IsValidLabelName(valueLabel.Val) {
 				ev.errorf("invalid label name %s", valueLabel)
 			}
@@ -1890,7 +1890,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			// so this function needs special handling when given
 			// a vector selector.
 			arg := unwrapStepInvariantExpr(e.Args[0])
-			vs, ok := arg.(*parser.VectorSelector)
+			vs, ok := peekExpr(arg).(*parser.VectorSelector)
 			if ok {
 				return ev.rangeEvalTimestampFunctionOverVectorSelector(ctx, vs, call, e)
 			}
@@ -1903,7 +1903,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			warnings       annotations.Annotations
 		)
 		for i := range e.Args {
-			a := e.Args[i]
+			a := peekExpr(e.Args[i])
 			if _, ok := a.(*parser.MatrixSelector); ok {
 				matrixArgIndex = i
 				matrixArg = true
@@ -1954,7 +1954,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}
 		}
 
-		arg := e.Args[matrixArgIndex]
+		arg := peekExpr(e.Args[matrixArgIndex])
 		sel := arg.(*parser.MatrixSelector)
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
@@ -2341,7 +2341,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			step++
 			ev.samplesStats.IncrementSamplesAtStep(step, newEv.samplesStats.TotalSamples)
 		}
-		switch e.Expr.(type) {
+		switch peekExpr(e.Expr).(type) {
 		case *parser.MatrixSelector, *parser.SubqueryExpr:
 			// We do not duplicate results for range selectors since result is a matrix
 			// with their unique timestamps which does not depend on the step.
@@ -4116,14 +4116,14 @@ func formatDate(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }
 
-// unwrapParenExpr does the AST equivalent of removing parentheses around a expression.
-func unwrapParenExpr(e *parser.Expr) {
+// peekExpr returns the innermost non-ParenExpr expression without modifying the tree.
+func peekExpr(e parser.Expr) parser.Expr {
 	for {
-		p, ok := (*e).(*parser.ParenExpr)
+		p, ok := e.(*parser.ParenExpr)
 		if !ok {
-			break
+			return e
 		}
-		*e = p.Expr
+		e = p.Expr
 	}
 }
 
@@ -4135,8 +4135,8 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 }
 
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
-// StepInvariantExpr. It also resolves the preprocessors, evaluates duration expressions
-// into their numeric values and removes superfluous parenthesis on parameters to functions and aggregations.
+// StepInvariantExpr. It also resolves the preprocessors and evaluates duration expressions
+// into their numeric values.
 func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
@@ -4154,7 +4154,6 @@ func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) 
 // preprocessExprHelper wraps child nodes of expr with a StepInvariantExpr,
 // at the highest level within the tree that is step-invariant.
 // Also resolves start() and end() on selector and subquery nodes.
-// Also remove superfluous parenthesis on parameters to functions and aggregations.
 // Return isStepInvariant is true when the whole subexpression is step invariant.
 // Return shoudlWrap is false for cases like MatrixSelector and StringLiteral that never need to be wrapped.
 func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvariant, shouldWrap bool) {
@@ -4169,8 +4168,6 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		return n.Timestamp != nil, n.Timestamp != nil
 
 	case *parser.AggregateExpr:
-		unwrapParenExpr(&n.Expr)
-		unwrapParenExpr(&n.Param)
 		return preprocessExprHelper(n.Expr, start, end)
 
 	case *parser.BinaryExpr:
@@ -4194,7 +4191,6 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 		isStepInvariant := !ok
 		shouldWrap := make([]bool, len(n.Args))
 		for i := range n.Args {
-			unwrapParenExpr(&n.Args[i])
 			var argIsStepInvariant bool
 			argIsStepInvariant, shouldWrap[i] = preprocessExprHelper(n.Args[i], start, end)
 			isStepInvariant = isStepInvariant && argIsStepInvariant

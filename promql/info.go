@@ -44,7 +44,7 @@ func (ev *evaluator) evalInfo(ctx context.Context, args parser.Expressions) (par
 	var infoNameMatchers []*labels.Matcher
 	if len(args) > 1 {
 		// TODO: Introduce a dedicated LabelSelector type.
-		labelSelector := args[1].(*parser.VectorSelector)
+		labelSelector := peekExpr(args[1]).(*parser.VectorSelector)
 		for _, m := range labelSelector.LabelMatchers {
 			dataLabelMatchers[m.Name] = append(dataLabelMatchers[m.Name], m)
 			if m.Name == model.MetricNameLabel {

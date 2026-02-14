@@ -560,7 +560,7 @@ func newFParams(ctx context.Context, ev *evaluator, expr parser.Expr) (*fParams,
 		return &fParams{}, nil
 	}
 	var constParam bool
-	if _, ok := expr.(*parser.NumberLiteral); ok {
+	if _, ok := peekExpr(expr).(*parser.NumberLiteral); ok {
 		constParam = true
 	}
 	val, ws := ev.eval(ctx, expr)
