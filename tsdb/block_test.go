@@ -921,13 +921,15 @@ func TestBlockSeriesMetadataConcurrentReaders(t *testing.T) {
 	require.NoError(t, reader1.Close())
 
 	// The second reader must still work after the first is closed.
-	meta, found := reader2.GetByMetricName("http_requests_total")
+	metas, found := reader2.GetByMetricName("http_requests_total")
 	require.True(t, found)
-	require.Equal(t, model.MetricTypeCounter, meta.Type)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
 
 	collected := make(map[string]metadata.Metadata)
-	err = reader2.IterByMetricName(func(name string, meta metadata.Metadata) error {
-		collected[name] = meta
+	err = reader2.IterByMetricName(func(name string, ms []metadata.Metadata) error {
+		require.NotEmpty(t, ms)
+		collected[name] = ms[0]
 		return nil
 	})
 	require.NoError(t, err)

@@ -1783,6 +1783,51 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 	return mem, nil
 }
 
+// SeriesMetadataForMatchers returns metadata for series matching the given label matchers.
+// It queries the head's postings index and reads memSeries.meta for matching series.
+// Multiple unique metadata entries per metric name are collected (set semantics).
+func (h *Head) SeriesMetadataForMatchers(ctx context.Context, matchers ...*labels.Matcher) (seriesmetadata.Reader, error) {
+	ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+	p, err := PostingsForMatchers(ctx, ir, matchers...)
+	if err != nil {
+		return nil, fmt.Errorf("select series for metadata: %w", err)
+	}
+
+	mem := seriesmetadata.NewMemSeriesMetadata()
+	for p.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("context cancelled during metadata collection: %w", err)
+		}
+
+		s := h.series.getByID(chunks.HeadSeriesRef(p.At()))
+		if s == nil {
+			continue
+		}
+
+		s.Lock()
+		meta := s.meta
+		s.Unlock()
+		if meta == nil {
+			continue
+		}
+
+		// s.lset is immutable after creation, safe to read without lock.
+		metricName := s.lset.Get(labels.MetricName)
+		if metricName == "" {
+			continue
+		}
+
+		hash := labels.StableHash(s.lset)
+		mem.Set(metricName, hash, *meta)
+	}
+	if p.Err() != nil {
+		return nil, p.Err()
+	}
+
+	return mem, nil
+}
+
 // NumSeries returns the number of series tracked in the head.
 func (h *Head) NumSeries() uint64 {
 	return h.numSeries.Load()

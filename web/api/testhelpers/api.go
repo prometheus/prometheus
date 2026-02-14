@@ -72,6 +72,7 @@ type TSDBAdminStats interface {
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 	BlockMetas() ([]tsdb.BlockMeta, error)
 	SeriesMetadata() (seriesmetadata.Reader, error)
+	SeriesMetadataForMatchers(ctx context.Context, matchers ...*labels.Matcher) (seriesmetadata.Reader, error)
 }
 
 // APIConfig holds configuration for creating a test API instance.

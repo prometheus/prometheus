@@ -324,6 +324,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental Uncached IO is enabled.")
 			case "native-metadata":
 				c.tsdb.EnableNativeMetadata = true
+				c.web.EnableNativeMetadata = true
 				features.Enable(features.TSDB, "native_metadata")
 				logger.Info("Experimental native series metadata persistence enabled.")
 			default:
@@ -1406,6 +1407,28 @@ func main() {
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
 				db.SetWriteNotified(remoteStorage)
+				if cfg.tsdb.EnableNativeMetadata {
+					remoteStorage.SetMetadataReader(db)
+					scrapeManager.SetMetadataCountForJob(func(job string) (entries, bytes int) {
+						reader, err := db.Head().SeriesMetadataForMatchers(
+							context.Background(),
+							labels.MustNewMatcher(labels.MatchEqual, "job", job),
+						)
+						if err != nil {
+							return 0, 0
+						}
+						defer reader.Close()
+						var totalBytes int
+						_ = reader.IterByMetricName(func(_ string, metas []metadata.Metadata) error {
+							entries += len(metas)
+							for _, m := range metas {
+								totalBytes += len(m.Help) + len(m.Unit) + len(string(m.Type))
+							}
+							return nil
+						})
+						return entries, totalBytes
+					})
+				}
 				close(dbOpen)
 				<-cancel
 				logger.Info("TSDB stopped")
@@ -1885,6 +1908,21 @@ func (s *readyStorage) SeriesMetadata() (seriesmetadata.Reader, error) {
 		switch db := x.(type) {
 		case *tsdb.DB:
 			return db.SeriesMetadata()
+		case *agent.DB:
+			return nil, agent.ErrUnsupported
+		default:
+			panic(fmt.Sprintf("unknown storage type %T", db))
+		}
+	}
+	return nil, tsdb.ErrNotReady
+}
+
+// SeriesMetadataForMatchers implements the api_v1.TSDBAdminStats interface.
+func (s *readyStorage) SeriesMetadataForMatchers(ctx context.Context, matchers ...*labels.Matcher) (seriesmetadata.Reader, error) {
+	if x := s.get(); x != nil {
+		switch db := x.(type) {
+		case *tsdb.DB:
+			return db.SeriesMetadataForMatchers(ctx, matchers...)
 		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		default:

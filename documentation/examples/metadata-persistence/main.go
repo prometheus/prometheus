@@ -431,7 +431,11 @@ func printSeriesMetadata(title string, reader seriesmetadata.Reader) {
 
 	// Collect and deduplicate by base metric name
 	seen := make(map[string]metadata.Metadata)
-	_ = reader.IterByMetricName(func(name string, meta metadata.Metadata) error {
+	_ = reader.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+		if len(metas) == 0 {
+			return nil
+		}
+		meta := metas[0]
 		baseName := stripMetricSuffix(name)
 		// Prefer the base name entry, or first seen
 		if _, exists := seen[baseName]; !exists || name == baseName {
@@ -477,7 +481,11 @@ func buildAPIResponse(db *tsdb.DB) map[string]any {
 
 	// Collect and deduplicate by base metric name
 	seen := make(map[string]metadata.Metadata)
-	_ = reader.IterByMetricName(func(name string, meta metadata.Metadata) error {
+	_ = reader.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+		if len(metas) == 0 {
+			return nil
+		}
+		meta := metas[0]
 		baseName := stripMetricSuffix(name)
 		// Prefer the base name entry, or first seen
 		if _, exists := seen[baseName]; !exists || name == baseName {

@@ -1168,8 +1168,10 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 		if err != nil {
 			return nil, fmt.Errorf("get block series metadata: %w", err)
 		}
-		err = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
-			merged.Set(name, 0, meta)
+		err = mr.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+			for _, meta := range metas {
+				merged.Set(name, 0, meta)
+			}
 			return nil
 		})
 		mr.Close()
@@ -1178,13 +1180,15 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 		}
 	}
 
-	// Collect metadata from head (most recent data, overwrites block metadata)
+	// Collect metadata from head (most recent data supplements block metadata)
 	headMeta, err := db.head.SeriesMetadata()
 	if err != nil {
 		return nil, fmt.Errorf("get head series metadata: %w", err)
 	}
-	err = headMeta.IterByMetricName(func(name string, meta metadata.Metadata) error {
-		merged.Set(name, 0, meta)
+	err = headMeta.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+		for _, meta := range metas {
+			merged.Set(name, 0, meta)
+		}
 		return nil
 	})
 	headMeta.Close()
@@ -1193,6 +1197,15 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 	}
 
 	return merged, nil
+}
+
+// SeriesMetadataForMatchers returns metadata for series matching the given label matchers.
+// Delegates to the head. Returns an empty reader when native metadata is not enabled.
+func (db *DB) SeriesMetadataForMatchers(ctx context.Context, matchers ...*labels.Matcher) (seriesmetadata.Reader, error) {
+	if !db.opts.EnableNativeMetadata {
+		return seriesmetadata.NewMemSeriesMetadata(), nil
+	}
+	return db.head.SeriesMetadataForMatchers(ctx, matchers...)
 }
 
 func (db *DB) run(ctx context.Context) {

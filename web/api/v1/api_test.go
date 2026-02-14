@@ -3955,6 +3955,10 @@ func (f *fakeDB) SeriesMetadata() (seriesmetadata.Reader, error) {
 	return seriesmetadata.NewMemSeriesMetadata(), nil
 }
 
+func (*fakeDB) SeriesMetadataForMatchers(_ context.Context, _ ...*labels.Matcher) (seriesmetadata.Reader, error) {
+	return seriesmetadata.NewMemSeriesMetadata(), nil
+}
+
 func TestMetricMetadataTSDBSupplementation(t *testing.T) {
 	// Set up TSDB metadata with pre-populated entries.
 	tsdbMeta := seriesmetadata.NewMemSeriesMetadata()

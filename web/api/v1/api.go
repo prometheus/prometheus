@@ -214,6 +214,7 @@ type TSDBAdminStats interface {
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 	BlockMetas() ([]tsdb.BlockMeta, error)
 	SeriesMetadata() (seriesmetadata.Reader, error)
+	SeriesMetadataForMatchers(ctx context.Context, matchers ...*labels.Matcher) (seriesmetadata.Reader, error)
 }
 
 type QueryOpts interface {
@@ -238,18 +239,19 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db                  TSDBAdminStats
-	dbDir               string
-	enableAdmin         bool
-	logger              *slog.Logger
-	CORSOrigin          *regexp.Regexp
-	buildInfo           *PrometheusVersion
-	runtimeInfo         func() (RuntimeInfo, error)
-	gatherer            prometheus.Gatherer
-	isAgent             bool
-	statsRenderer       StatsRenderer
-	notificationsGetter func() []notifications.Notification
-	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+	db                   TSDBAdminStats
+	dbDir                string
+	enableAdmin          bool
+	enableNativeMetadata bool
+	logger               *slog.Logger
+	CORSOrigin           *regexp.Regexp
+	buildInfo            *PrometheusVersion
+	runtimeInfo          func() (RuntimeInfo, error)
+	gatherer             prometheus.Gatherer
+	isAgent              bool
+	statsRenderer        StatsRenderer
+	notificationsGetter  func() []notifications.Notification
+	notificationsSub     func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
 	overrideErrorCode OverrideErrorCode
 
@@ -303,6 +305,7 @@ func NewAPI(
 	enableTypeAndUnitLabels bool,
 	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
+	enableNativeMetadata bool,
 	featureRegistry features.Collector,
 	openAPIOptions OpenAPIOptions,
 	promqlParser parser.Parser,
@@ -316,28 +319,29 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                 time.Now,
-		config:              configFunc,
-		flagsMap:            flagsMap,
-		ready:               readyFunc,
-		globalURLOptions:    globalURLOptions,
-		db:                  db,
-		dbDir:               dbDir,
-		enableAdmin:         enableAdmin,
-		rulesRetriever:      rr,
-		logger:              logger,
-		CORSOrigin:          corsOrigin,
-		runtimeInfo:         runtimeInfo,
-		buildInfo:           buildInfo,
-		gatherer:            gatherer,
-		isAgent:             isAgent,
-		statsRenderer:       DefaultStatsRenderer,
-		notificationsGetter: notificationsGetter,
-		notificationsSub:    notificationsSub,
-		overrideErrorCode:   overrideErrorCode,
-		featureRegistry:     featureRegistry,
-		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
-		parser:              promqlParser,
+		now:                  time.Now,
+		config:               configFunc,
+		flagsMap:             flagsMap,
+		ready:                readyFunc,
+		globalURLOptions:     globalURLOptions,
+		db:                   db,
+		dbDir:                dbDir,
+		enableAdmin:          enableAdmin,
+		enableNativeMetadata: enableNativeMetadata,
+		rulesRetriever:       rr,
+		logger:               logger,
+		CORSOrigin:           corsOrigin,
+		runtimeInfo:          runtimeInfo,
+		buildInfo:            buildInfo,
+		gatherer:             gatherer,
+		isAgent:              isAgent,
+		statsRenderer:        DefaultStatsRenderer,
+		notificationsGetter:  notificationsGetter,
+		notificationsSub:     notificationsSub,
+		overrideErrorCode:    overrideErrorCode,
+		featureRegistry:      featureRegistry,
+		openAPIBuilder:       NewOpenAPIBuilder(openAPIOptions, logger),
+		parser:               promqlParser,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -1283,37 +1287,106 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	builder := labels.NewBuilder(labels.EmptyLabels())
 	metric := r.FormValue("metric")
 	res := []metricMetadata{}
-	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
-		for _, t := range tt {
-			if limit >= 0 && len(res) >= limit {
-				break
+
+	if api.enableNativeMetadata && api.db != nil {
+		// When native metadata is enabled, query TSDB head for per-target metadata.
+		// Cache results by (job, instance) to avoid redundant postings queries.
+		type targetKey struct{ job, instance string }
+		metadataCache := map[targetKey]seriesmetadata.Reader{}
+		defer func() {
+			for _, mr := range metadataCache {
+				mr.Close()
 			}
-			targetLabels := t.Labels(builder)
-			// Filter targets that don't satisfy the label matchers.
-			if matchTarget != "" && !matchLabels(targetLabels, matchers) {
-				continue
+		}()
+
+		for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
+			for _, t := range tt {
+				if limit >= 0 && len(res) >= limit {
+					break
+				}
+				targetLabels := t.Labels(builder)
+				if matchTarget != "" && !matchLabels(targetLabels, matchers) {
+					continue
+				}
+
+				key := targetKey{
+					job:      targetLabels.Get("job"),
+					instance: targetLabels.Get("instance"),
+				}
+				mr, ok := metadataCache[key]
+				if !ok {
+					targetMatchers := targetToMatchers(targetLabels)
+					var err error
+					mr, err = api.db.SeriesMetadataForMatchers(r.Context(), targetMatchers...)
+					if err != nil {
+						api.logger.Error("error reading target metadata from TSDB", "err", err)
+						continue
+					}
+					metadataCache[key] = mr
+				}
+
+				if metric == "" {
+					_ = mr.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+						if limit >= 0 && len(res) >= limit {
+							return errors.New("limit reached")
+						}
+						if len(metas) > 0 {
+							m := metas[0]
+							res = append(res, metricMetadata{
+								Target:       targetLabels,
+								MetricFamily: name,
+								Type:         m.Type,
+								Help:         m.Help,
+								Unit:         m.Unit,
+							})
+						}
+						return nil
+					})
+				} else {
+					if metas, ok := mr.GetByMetricName(metric); ok && len(metas) > 0 {
+						m := metas[0]
+						res = append(res, metricMetadata{
+							Target:       targetLabels,
+							MetricFamily: metric,
+							Type:         m.Type,
+							Help:         m.Help,
+							Unit:         m.Unit,
+						})
+					}
+				}
 			}
-			// If no metric is specified, get the full list for the target.
-			if metric == "" {
-				for _, md := range t.ListMetadata() {
+		}
+	} else {
+		// Use scrape cache metadata.
+		for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
+			for _, t := range tt {
+				if limit >= 0 && len(res) >= limit {
+					break
+				}
+				targetLabels := t.Labels(builder)
+				if matchTarget != "" && !matchLabels(targetLabels, matchers) {
+					continue
+				}
+				if metric == "" {
+					for _, md := range t.ListMetadata() {
+						res = append(res, metricMetadata{
+							Target:       targetLabels,
+							MetricFamily: md.MetricFamily,
+							Type:         md.Type,
+							Help:         md.Help,
+							Unit:         md.Unit,
+						})
+					}
+					continue
+				}
+				if md, ok := t.GetMetadata(metric); ok {
 					res = append(res, metricMetadata{
-						Target:       targetLabels,
-						MetricFamily: md.MetricFamily,
-						Type:         md.Type,
-						Help:         md.Help,
-						Unit:         md.Unit,
+						Target: targetLabels,
+						Type:   md.Type,
+						Help:   md.Help,
+						Unit:   md.Unit,
 					})
 				}
-				continue
-			}
-			// Get metadata for the specified metric.
-			if md, ok := t.GetMetadata(metric); ok {
-				res = append(res, metricMetadata{
-					Target: targetLabels,
-					Type:   md.Type,
-					Help:   md.Help,
-					Unit:   md.Unit,
-				})
 			}
 		}
 	}
@@ -1327,6 +1400,21 @@ type metricMetadata struct {
 	Type         model.MetricType `json:"type"`
 	Help         string           `json:"help"`
 	Unit         string           `json:"unit"`
+}
+
+// targetToMatchers builds label matchers from a target's labels to identify
+// its series in the TSDB index. Uses the "job" and "instance" labels.
+func targetToMatchers(targetLabels labels.Labels) []*labels.Matcher {
+	var ms []*labels.Matcher
+	job := targetLabels.Get("job")
+	if job != "" {
+		ms = append(ms, labels.MustNewMatcher(labels.MatchEqual, "job", job))
+	}
+	instance := targetLabels.Get("instance")
+	if instance != "" {
+		ms = append(ms, labels.MustNewMatcher(labels.MatchEqual, "instance", instance))
+	}
+	return ms
 }
 
 type RelabelStep struct {
@@ -1471,13 +1559,65 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 	metric := r.FormValue("metric")
 
-	// First, collect metadata from active scrape targets (takes precedence)
-	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
-		for _, t := range tt {
+	if api.enableNativeMetadata && api.db != nil {
+		// When native metadata is enabled, TSDB is the sole metadata source.
+		mr, err := api.db.SeriesMetadata()
+		if err != nil {
+			api.logger.Error("error reading series metadata from TSDB", "err", err)
+		} else if mr != nil {
+			defer mr.Close()
 			if metric == "" {
-				for _, mm := range t.ListMetadata() {
-					m := metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
-					ms, ok := metrics[mm.MetricFamily]
+				if err := mr.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+					if limitPerMetric > 0 && len(metas) > limitPerMetric {
+						metas = metas[:limitPerMetric]
+					}
+					set := make(map[metadata.Metadata]struct{}, len(metas))
+					for _, m := range metas {
+						set[m] = struct{}{}
+					}
+					metrics[name] = set
+					return nil
+				}); err != nil {
+					api.logger.Error("error iterating series metadata from TSDB", "err", err)
+				}
+			} else {
+				if metas, ok := mr.GetByMetricName(metric); ok {
+					if limitPerMetric > 0 && len(metas) > limitPerMetric {
+						metas = metas[:limitPerMetric]
+					}
+					set := make(map[metadata.Metadata]struct{}, len(metas))
+					for _, m := range metas {
+						set[m] = struct{}{}
+					}
+					metrics[metric] = set
+				}
+			}
+		}
+	} else {
+		// Collect metadata from active scrape targets (takes precedence).
+		for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
+			for _, t := range tt {
+				if metric == "" {
+					for _, mm := range t.ListMetadata() {
+						m := metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
+						ms, ok := metrics[mm.MetricFamily]
+
+						if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+							continue
+						}
+
+						if !ok {
+							ms = map[metadata.Metadata]struct{}{}
+							metrics[mm.MetricFamily] = ms
+						}
+						ms[m] = struct{}{}
+					}
+					continue
+				}
+
+				if md, ok := t.GetMetadata(metric); ok {
+					m := metadata.Metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
+					ms, ok := metrics[md.MetricFamily]
 
 					if limitPerMetric > 0 && len(ms) >= limitPerMetric {
 						continue
@@ -1485,50 +1625,40 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 					if !ok {
 						ms = map[metadata.Metadata]struct{}{}
-						metrics[mm.MetricFamily] = ms
+						metrics[md.MetricFamily] = ms
 					}
 					ms[m] = struct{}{}
 				}
-				continue
-			}
-
-			if md, ok := t.GetMetadata(metric); ok {
-				m := metadata.Metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
-				ms, ok := metrics[md.MetricFamily]
-
-				if limitPerMetric > 0 && len(ms) >= limitPerMetric {
-					continue
-				}
-
-				if !ok {
-					ms = map[metadata.Metadata]struct{}{}
-					metrics[md.MetricFamily] = ms
-				}
-				ms[m] = struct{}{}
 			}
 		}
-	}
 
-	// Supplement with persisted TSDB metadata for metrics not found in active targets
-	if api.db != nil {
-		mr, err := api.db.SeriesMetadata()
-		if err != nil {
-			api.logger.Error("error reading persisted series metadata", "err", err)
-		} else if mr != nil {
-			defer mr.Close()
-			if metric == "" {
-				// List all metadata - add entries not already present from scrape targets
-				_ = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
-					if _, exists := metrics[name]; !exists {
-						metrics[name] = map[metadata.Metadata]struct{}{meta: {}}
-					}
-					return nil
-				})
-			} else {
-				// Get specific metric - add if not already present from scrape targets
-				if _, exists := metrics[metric]; !exists {
-					if meta, ok := mr.GetByMetricName(metric); ok {
-						metrics[metric] = map[metadata.Metadata]struct{}{meta: {}}
+		// Supplement with persisted TSDB metadata for metrics not found in active targets.
+		if api.db != nil {
+			mr, err := api.db.SeriesMetadata()
+			if err != nil {
+				api.logger.Error("error reading persisted series metadata", "err", err)
+			} else if mr != nil {
+				defer mr.Close()
+				if metric == "" {
+					_ = mr.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+						if _, exists := metrics[name]; !exists {
+							set := map[metadata.Metadata]struct{}{}
+							for _, m := range metas {
+								set[m] = struct{}{}
+							}
+							metrics[name] = set
+						}
+						return nil
+					})
+				} else {
+					if _, exists := metrics[metric]; !exists {
+						if metas, ok := mr.GetByMetricName(metric); ok {
+							set := map[metadata.Metadata]struct{}{}
+							for _, m := range metas {
+								set[m] = struct{}{}
+							}
+							metrics[metric] = set
+						}
 					}
 				}
 			}

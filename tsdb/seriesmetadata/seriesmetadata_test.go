@@ -63,11 +63,12 @@ func TestWriteAndReadbackSeriesMetadata(t *testing.T) {
 
 	// Verify all metadata was read back correctly by metric name
 	for name, entry := range testData {
-		meta, found := reader.GetByMetricName(name)
+		metas, found := reader.GetByMetricName(name)
 		require.True(t, found, "metadata for metric %s not found", name)
-		require.Equal(t, entry.meta.Type, meta.Type)
-		require.Equal(t, entry.meta.Unit, meta.Unit)
-		require.Equal(t, entry.meta.Help, meta.Help)
+		require.Len(t, metas, 1)
+		require.Equal(t, entry.meta.Type, metas[0].Type)
+		require.Equal(t, entry.meta.Unit, metas[0].Unit)
+		require.Equal(t, entry.meta.Help, metas[0].Help)
 	}
 
 	// Verify total count
@@ -121,12 +122,13 @@ func TestMemSeriesMetadataBasicOperations(t *testing.T) {
 
 	got, found := mem.GetByMetricName("test_metric")
 	require.True(t, found)
-	require.Equal(t, meta, got)
+	require.Len(t, got, 1)
+	require.Equal(t, meta, got[0])
 
 	// Also verify Get by hash works
-	got, found = mem.Get(123)
+	gotSingle, found := mem.Get(123)
 	require.True(t, found)
-	require.Equal(t, meta, got)
+	require.Equal(t, meta, gotSingle)
 
 	// Test Get non-existent
 	_, found = mem.GetByMetricName("nonexistent")
@@ -168,8 +170,9 @@ func TestMemSeriesMetadataIter(t *testing.T) {
 
 	// Iterate by metric name and collect
 	collected := make(map[string]metadata.Metadata)
-	err := mem.IterByMetricName(func(name string, meta metadata.Metadata) error {
-		collected[name] = meta
+	err := mem.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+		require.Len(t, metas, 1)
+		collected[name] = metas[0]
 		return nil
 	})
 	require.NoError(t, err)
@@ -195,21 +198,23 @@ func TestSeriesMetadataOverwrite(t *testing.T) {
 	// Set initial value
 	mem.Set("test_metric", 100, meta1)
 	got, _ := mem.GetByMetricName("test_metric")
-	require.Equal(t, meta1, got)
+	require.Len(t, got, 1)
+	require.Equal(t, meta1, got[0])
 
-	// Overwrite with same metric name but different hash
+	// Set with same metric name but different hash and different metadata adds to set
 	mem.Set("test_metric", 200, meta2)
 	got, _ = mem.GetByMetricName("test_metric")
-	require.Equal(t, meta2, got)
+	require.Len(t, got, 2)
 
-	// Old hash should be gone, new hash should work
-	_, found := mem.Get(100)
-	require.False(t, found, "old hash should be removed")
-	got, found = mem.Get(200)
+	// Both hashes should work
+	gotSingle, found := mem.Get(100)
 	require.True(t, found)
-	require.Equal(t, meta2, got)
+	require.Equal(t, meta1, gotSingle)
+	gotSingle, found = mem.Get(200)
+	require.True(t, found)
+	require.Equal(t, meta2, gotSingle)
 
-	// Write and read back - verify overwrite persisted
+	// Write and read back - Parquet stores one entry per metric name (the first)
 	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
 	require.NoError(t, err)
 
@@ -217,9 +222,66 @@ func TestSeriesMetadataOverwrite(t *testing.T) {
 	require.NoError(t, err)
 	defer reader.Close()
 
-	got, found = reader.GetByMetricName("test_metric")
+	metas, found := reader.GetByMetricName("test_metric")
 	require.True(t, found)
-	require.Equal(t, meta2, got)
+	require.Len(t, metas, 1)
+}
+
+func TestSetSameHashDifferentMetadata(t *testing.T) {
+	mem := NewMemSeriesMetadata()
+	meta1 := metadata.Metadata{Type: model.MetricTypeCounter, Help: "Version 1"}
+	meta2 := metadata.Metadata{Type: model.MetricTypeCounter, Help: "Version 2"}
+
+	// Set initial metadata for a series.
+	mem.Set("test_metric", 100, meta1)
+	got, _ := mem.GetByMetricName("test_metric")
+	require.Len(t, got, 1)
+	require.Equal(t, meta1, got[0])
+
+	// Update the same series (same hash) with different metadata.
+	// The old metadata should be replaced, not accumulated.
+	mem.Set("test_metric", 100, meta2)
+	got, _ = mem.GetByMetricName("test_metric")
+	require.Len(t, got, 1, "same hash with updated metadata should replace, not accumulate")
+	require.Equal(t, meta2, got[0])
+
+	// Verify the hash still resolves correctly.
+	gotSingle, found := mem.Get(100)
+	require.True(t, found)
+	require.Equal(t, meta2, gotSingle)
+
+	// Delete should clean up completely.
+	mem.Delete(100)
+	_, found = mem.GetByMetricName("test_metric")
+	require.False(t, found, "byName should be empty after deleting the only entry")
+	_, found = mem.Get(100)
+	require.False(t, found)
+}
+
+func TestSetSameHashSameMetaDifferentName(t *testing.T) {
+	mem := NewMemSeriesMetadata()
+	meta := metadata.Metadata{Type: model.MetricTypeCounter, Help: "Same help"}
+
+	// Set hash=100 under "old_metric".
+	mem.Set("old_metric", 100, meta)
+	got, found := mem.GetByMetricName("old_metric")
+	require.True(t, found)
+	require.Len(t, got, 1)
+
+	// Re-set the same hash with identical metadata but a different metric name.
+	// The old byName entry should be cleaned up.
+	mem.Set("new_metric", 100, meta)
+
+	_, found = mem.GetByMetricName("old_metric")
+	require.False(t, found, "old_metric should be removed after metric name change")
+
+	got, found = mem.GetByMetricName("new_metric")
+	require.True(t, found)
+	require.Len(t, got, 1)
+	require.Equal(t, meta, got[0])
+
+	// Only the new metric name should be present.
+	require.Equal(t, uint64(1), mem.Total())
 }
 
 func TestSetWithZeroHash(t *testing.T) {
@@ -236,8 +298,9 @@ func TestSetWithZeroHash(t *testing.T) {
 
 	// All entries should be accessible via IterByMetricName
 	collected := make(map[string]metadata.Metadata)
-	err := mem.IterByMetricName(func(name string, meta metadata.Metadata) error {
-		collected[name] = meta
+	err := mem.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+		require.Len(t, metas, 1)
+		collected[name] = metas[0]
 		return nil
 	})
 	require.NoError(t, err)
@@ -280,8 +343,9 @@ func TestWriteAndReadbackZeroHash(t *testing.T) {
 
 	// All entries should be readable by metric name
 	collected := make(map[string]metadata.Metadata)
-	err = reader.IterByMetricName(func(name string, meta metadata.Metadata) error {
-		collected[name] = meta
+	err = reader.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+		require.Len(t, metas, 1)
+		collected[name] = metas[0]
 		return nil
 	})
 	require.NoError(t, err)
@@ -318,8 +382,9 @@ func TestLargeMetadata(t *testing.T) {
 
 	// Spot check a few entries by metric name
 	for _, i := range []uint64{0, 100, 5000, numEntries - 1} {
-		meta, found := reader.GetByMetricName(fmt.Sprintf("metric_%d", i))
+		metas, found := reader.GetByMetricName(fmt.Sprintf("metric_%d", i))
 		require.True(t, found, "entry metric_%d not found", i)
-		require.Equal(t, model.MetricTypeCounter, meta.Type)
+		require.Len(t, metas, 1)
+		require.Equal(t, model.MetricTypeCounter, metas[0].Type)
 	}
 }

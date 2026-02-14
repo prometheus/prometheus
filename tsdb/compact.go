@@ -756,9 +756,10 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 			if err != nil {
 				return fmt.Errorf("get series metadata from block: %w", err)
 			}
-			err = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
-				// Use 0 for hash since we're deduplicating by name only
-				mergedMeta.Set(name, 0, meta)
+			err = mr.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+				for _, meta := range metas {
+					mergedMeta.Set(name, 0, meta)
+				}
 				return nil
 			})
 			mr.Close() // Must close to release pending readers

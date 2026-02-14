@@ -9642,14 +9642,16 @@ func TestDBSeriesMetadata(t *testing.T) {
 	mr, err := db.SeriesMetadata()
 	require.NoError(t, err)
 
-	meta, ok := mr.GetByMetricName("http_requests_total")
+	metas, ok := mr.GetByMetricName("http_requests_total")
 	require.True(t, ok)
-	require.Equal(t, model.MetricTypeCounter, meta.Type)
-	require.Equal(t, "Total HTTP requests", meta.Help)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+	require.Equal(t, "Total HTTP requests", metas[0].Help)
 
-	meta, ok = mr.GetByMetricName("go_goroutines")
+	metas, ok = mr.GetByMetricName("go_goroutines")
 	require.True(t, ok)
-	require.Equal(t, model.MetricTypeGauge, meta.Type)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeGauge, metas[0].Type)
 	mr.Close()
 
 	require.NoError(t, db.Compact(ctx))
@@ -9674,21 +9676,32 @@ func TestDBSeriesMetadata(t *testing.T) {
 	require.NoError(t, err)
 	defer mr.Close()
 
-	// http_requests_total: head metadata should overwrite block's.
-	meta, ok = mr.GetByMetricName("http_requests_total")
+	// http_requests_total: both block and head metadata entries present.
+	metas, ok = mr.GetByMetricName("http_requests_total")
 	require.True(t, ok)
-	require.Equal(t, "Total HTTP requests (updated)", meta.Help)
+	// Head added updated help text, so we should have both original and updated entries.
+	require.NotEmpty(t, metas)
+	// Verify the updated help text is present among the entries.
+	var foundUpdated bool
+	for _, m := range metas {
+		if m.Help == "Total HTTP requests (updated)" {
+			foundUpdated = true
+		}
+	}
+	require.True(t, foundUpdated, "expected updated help text in metadata entries")
 
 	// go_goroutines: still available from block.
-	meta, ok = mr.GetByMetricName("go_goroutines")
+	metas, ok = mr.GetByMetricName("go_goroutines")
 	require.True(t, ok)
-	require.Equal(t, model.MetricTypeGauge, meta.Type)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeGauge, metas[0].Type)
 
 	// cpu_seconds_total: only in head.
-	meta, ok = mr.GetByMetricName("cpu_seconds_total")
+	metas, ok = mr.GetByMetricName("cpu_seconds_total")
 	require.True(t, ok)
-	require.Equal(t, "CPU seconds used", meta.Help)
-	require.Equal(t, "seconds", meta.Unit)
+	require.Len(t, metas, 1)
+	require.Equal(t, "CPU seconds used", metas[0].Help)
+	require.Equal(t, "seconds", metas[0].Unit)
 }
 
 func TestDBSeriesMetadataDisabled(t *testing.T) {
@@ -9783,13 +9796,15 @@ func TestWALReplayPreservesMetadata(t *testing.T) {
 
 	require.Equal(t, uint64(2), mr.Total())
 
-	meta, ok := mr.GetByMetricName("http_requests_total")
+	metas, ok := mr.GetByMetricName("http_requests_total")
 	require.True(t, ok)
-	require.Equal(t, model.MetricTypeCounter, meta.Type)
-	require.Equal(t, "Total HTTP requests", meta.Help)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+	require.Equal(t, "Total HTTP requests", metas[0].Help)
 
-	meta, ok = mr.GetByMetricName("go_goroutines")
+	metas, ok = mr.GetByMetricName("go_goroutines")
 	require.True(t, ok)
-	require.Equal(t, model.MetricTypeGauge, meta.Type)
-	require.Equal(t, "Number of goroutines", meta.Help)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeGauge, metas[0].Type)
+	require.Equal(t, "Number of goroutines", metas[0].Help)
 }
