@@ -38,9 +38,8 @@ import (
 const (
 	nodeIndex       = "node"
 	podIndex        = "pod"
-	deploymentIndex = "deployment"
+	replicaSetIndex = "replicaset"
 	jobIndex        = "job"
-	cronJobIndex    = "cronjob"
 )
 
 // Pod discovers new pod targets.
@@ -51,11 +50,9 @@ type Pod struct {
 	namespaceInf           cache.SharedInformer
 	withNamespaceMetadata  bool
 	replicaSetInf          cache.SharedInformer
-	deploymentInf          cache.SharedInformer
 	withDeploymentMetadata bool
 	jobInf                 cache.SharedInformer
 	withJobMetadata        bool
-	cronJobInf             cache.SharedInformer
 	withCronJobMetadata    bool
 	store                  cache.Store
 	logger                 *slog.Logger
@@ -63,7 +60,7 @@ type Pod struct {
 }
 
 // NewPod creates a new pod discovery.
-func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace, replicaSets, deployments, jobs, cronJobs cache.SharedInformer, withDeploymentMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *Pod {
+func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace, replicaSets, jobs cache.SharedInformer, withDeploymentMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *Pod {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -79,11 +76,9 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace, re
 		namespaceInf:           namespace,
 		withNamespaceMetadata:  namespace != nil,
 		replicaSetInf:          replicaSets,
-		deploymentInf:          deployments,
 		withDeploymentMetadata: withDeploymentMetadata,
 		jobInf:                 jobs,
 		withJobMetadata:        withJobMetadata,
-		cronJobInf:             cronJobs,
 		withCronJobMetadata:    withCronJobMetadata,
 		store:                  pods.GetStore(),
 		logger:                 l,
@@ -146,23 +141,23 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace, re
 		}
 	}
 
-	if p.withDeploymentMetadata {
+	if p.withDeploymentMetadata && p.replicaSetInf != nil {
 		fn := func(o any) {
-			deployment := o.(*appsv1.Deployment)
-			deploymentName := namespacedName(deployment.Namespace, deployment.Name)
-			p.enqueuePodsForDeployment(deploymentName)
+			rs := o.(*appsv1.ReplicaSet)
+			rsName := namespacedName(rs.Namespace, rs.Name)
+			p.enqueuePodsForReplicaSet(rsName)
 		}
-		_, err = p.deploymentInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		_, err = p.replicaSetInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc:    func(o any) { fn(o) },
 			UpdateFunc: func(_, o any) { fn(o) },
 			DeleteFunc: func(o any) { fn(o) },
 		})
 		if err != nil {
-			l.Error("Error adding deployments event handler.", "err", err)
+			l.Error("Error adding replicasets event handler.", "err", err)
 		}
 	}
 
-	if p.withJobMetadata {
+	if (p.withJobMetadata || p.withCronJobMetadata) && p.jobInf != nil {
 		fn := func(o any) {
 			job := o.(*batchv1.Job)
 			jobName := namespacedName(job.Namespace, job.Name)
@@ -175,22 +170,6 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace, re
 		})
 		if err != nil {
 			l.Error("Error adding jobs event handler.", "err", err)
-		}
-	}
-
-	if p.withCronJobMetadata {
-		fn := func(o any) {
-			cronJob := o.(*batchv1.CronJob)
-			cronJobName := namespacedName(cronJob.Namespace, cronJob.Name)
-			p.enqueuePodsForCronJob(cronJobName)
-		}
-		_, err = p.cronJobInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    func(o any) { fn(o) },
-			UpdateFunc: func(_, o any) { fn(o) },
-			DeleteFunc: func(o any) { fn(o) },
-		})
-		if err != nil {
-			l.Error("Error adding cronjobs event handler.", "err", err)
 		}
 	}
 
@@ -217,14 +196,11 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	if p.withNamespaceMetadata {
 		cacheSyncs = append(cacheSyncs, p.namespaceInf.HasSynced)
 	}
-	if p.withDeploymentMetadata {
-		cacheSyncs = append(cacheSyncs, p.deploymentInf.HasSynced)
+	if p.withDeploymentMetadata && p.replicaSetInf != nil {
+		cacheSyncs = append(cacheSyncs, p.replicaSetInf.HasSynced)
 	}
-	if p.withJobMetadata {
+	if (p.withJobMetadata || p.withCronJobMetadata) && p.jobInf != nil {
 		cacheSyncs = append(cacheSyncs, p.jobInf.HasSynced)
-	}
-	if p.withCronJobMetadata {
-		cacheSyncs = append(cacheSyncs, p.cronJobInf.HasSynced)
 	}
 
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
@@ -450,10 +426,10 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	return tg
 }
 
-func (p *Pod) enqueuePodsForDeployment(deploymentName string) {
-	pods, err := p.podInf.GetIndexer().ByIndex(deploymentIndex, deploymentName)
+func (p *Pod) enqueuePodsForReplicaSet(rsName string) {
+	pods, err := p.podInf.GetIndexer().ByIndex(replicaSetIndex, rsName)
 	if err != nil {
-		p.logger.Error("Error getting pods for deployment", "deployment", deploymentName, "err", err)
+		p.logger.Error("Error getting pods for replicaset", "replicaset", rsName, "err", err)
 		return
 	}
 
@@ -466,18 +442,6 @@ func (p *Pod) enqueuePodsForJob(jobName string) {
 	pods, err := p.podInf.GetIndexer().ByIndex(jobIndex, jobName)
 	if err != nil {
 		p.logger.Error("Error getting pods for job", "job", jobName, "err", err)
-		return
-	}
-
-	for _, pod := range pods {
-		p.enqueue(pod.(*apiv1.Pod))
-	}
-}
-
-func (p *Pod) enqueuePodsForCronJob(cronJobName string) {
-	pods, err := p.podInf.GetIndexer().ByIndex(cronJobIndex, cronJobName)
-	if err != nil {
-		p.logger.Error("Error getting pods for cronjob", "cronjob", cronJobName, "err", err)
 		return
 	}
 
