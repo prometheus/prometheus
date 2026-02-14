@@ -157,8 +157,8 @@ type resourceSelector struct {
 // AttachMetadataConfig is the configuration for attaching additional metadata
 // coming from namespaces or nodes on which the targets are scheduled.
 type AttachMetadataConfig struct {
-	Node      bool `yaml:"node"`
-	Namespace bool `yaml:"namespace"`
+	Node              bool `yaml:"node"`
+	Namespace         bool `yaml:"namespace"`
 	PodMetadataConfig `yaml:",inline"`
 }
 
@@ -446,26 +446,14 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				namespaceInf = d.newNamespaceInformer(context.Background())
 				go namespaceInf.Run(ctx.Done())
 			}
-			var deploymentInf, replicaSetInf cache.SharedInformer
+			var replicaSetInf, jobInformer cache.SharedInformer
 			if d.attachMetadata.Deployment {
 				replicaSetInf = d.newReplicaSetInformer(ctx, namespace)
-				deploymentInf = d.newDeploymentInformer(ctx, namespace)
 				go replicaSetInf.Run(ctx.Done())
-				go deploymentInf.Run(ctx.Done())
 			}
-			var jobInformer cache.SharedInformer
-			if d.attachMetadata.Job {
+			if d.attachMetadata.Job || d.attachMetadata.CronJob {
 				jobInformer = d.newJobInformer(ctx, namespace)
 				go jobInformer.Run(ctx.Done())
-			}
-			var cronJobInformer cache.SharedInformer
-			if d.attachMetadata.CronJob {
-				if jobInformer == nil {
-					jobInformer = d.newJobInformer(ctx, namespace)
-					go jobInformer.Run(ctx.Done())
-				}
-				cronJobInformer = d.newCronJobInformer(ctx, namespace)
-				go cronJobInformer.Run(ctx.Done())
 			}
 			eps := NewEndpointSlice(
 				d.logger.With("role", "endpointslice"),
@@ -538,28 +526,14 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				go namespaceInf.Run(ctx.Done())
 			}
 
-			var deploymentInf, replicaSetInf cache.SharedInformer
+			var replicaSetInf, jobInformer cache.SharedInformer
 			if d.attachMetadata.Deployment {
 				replicaSetInf = d.newReplicaSetInformer(ctx, namespace)
-				deploymentInf = d.newDeploymentInformer(ctx, namespace)
 				go replicaSetInf.Run(ctx.Done())
-				go deploymentInf.Run(ctx.Done())
 			}
-
-			var jobInformer cache.SharedInformer
-			if d.attachMetadata.Job {
+			if d.attachMetadata.Job || d.attachMetadata.CronJob {
 				jobInformer = d.newJobInformer(ctx, namespace)
 				go jobInformer.Run(ctx.Done())
-			}
-
-			var cronJobInformer cache.SharedInformer
-			if d.attachMetadata.CronJob {
-				if jobInformer == nil {
-					jobInformer = d.newJobInformer(ctx, namespace)
-					go jobInformer.Run(ctx.Done())
-				}
-				cronJobInformer = d.newCronJobInformer(ctx, namespace)
-				go cronJobInformer.Run(ctx.Done())
 			}
 
 			eps := NewEndpoints(
@@ -592,8 +566,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			namespaceInformer = d.newNamespaceInformer(ctx)
 			go namespaceInformer.Run(ctx.Done())
 		}
-		var deploymentInformer, replicaSetInformer cache.SharedInformer
-		var jobInformer, cronJobInformer cache.SharedInformer
+		var replicaSetInformer, jobInformer cache.SharedInformer
 
 		for _, namespace := range namespaces {
 			p := d.client.CoreV1().Pods(namespace)
@@ -611,31 +584,19 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			if d.attachMetadata.Deployment {
 				replicaSetInformer = d.newReplicaSetInformer(ctx, namespace)
-				deploymentInformer = d.newDeploymentInformer(ctx, namespace)
 				go replicaSetInformer.Run(ctx.Done())
-				go deploymentInformer.Run(ctx.Done())
 			}
-			if d.attachMetadata.Job {
+			if d.attachMetadata.Job || d.attachMetadata.CronJob {
 				jobInformer = d.newJobInformer(ctx, namespace)
 				go jobInformer.Run(ctx.Done())
 			}
-			if d.attachMetadata.CronJob {
-				if jobInformer == nil {
-					jobInformer = d.newJobInformer(ctx, namespace)
-					go jobInformer.Run(ctx.Done())
-				}
-				cronJobInformer = d.newCronJobInformer(ctx, namespace)
-				go cronJobInformer.Run(ctx.Done())
-			}
 			pod := NewPod(
 				d.logger.With("role", "pod"),
-				d.newIndexedPodsInformer(plw, replicaSetInformer, jobInformer),
+				d.newIndexedPodsInformer(plw),
 				nodeInformer,
 				namespaceInformer,
 				replicaSetInformer,
-				deploymentInformer,
 				jobInformer,
-				cronJobInformer,
 				d.attachMetadata.Deployment,
 				d.attachMetadata.Job,
 				d.attachMetadata.CronJob,
@@ -771,19 +732,6 @@ func (d *Discovery) newReplicaSetInformer(_ context.Context, namespace string) c
 	return d.mustNewSharedInformer(rslw, &appsv1.ReplicaSet{}, resyncDisabled)
 }
 
-func (d *Discovery) newDeploymentInformer(_ context.Context, namespace string) cache.SharedInformer {
-	dep := d.client.AppsV1().Deployments(namespace)
-	deplw := &cache.ListWatch{
-		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
-			return dep.List(ctx, options)
-		},
-		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
-			return dep.Watch(ctx, options)
-		},
-	}
-	return d.mustNewSharedInformer(deplw, &appsv1.Deployment{}, resyncDisabled)
-}
-
 func (d *Discovery) newJobInformer(_ context.Context, namespace string) cache.SharedInformer {
 	j := d.client.BatchV1().Jobs(namespace)
 	jlw := &cache.ListWatch{
@@ -795,19 +743,6 @@ func (d *Discovery) newJobInformer(_ context.Context, namespace string) cache.Sh
 		},
 	}
 	return d.mustNewSharedInformer(jlw, &batchv1.Job{}, resyncDisabled)
-}
-
-func (d *Discovery) newCronJobInformer(_ context.Context, namespace string) cache.SharedInformer {
-	cj := d.client.BatchV1().CronJobs(namespace)
-	cjlw := &cache.ListWatch{
-		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
-			return cj.List(ctx, options)
-		},
-		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
-			return cj.Watch(ctx, options)
-		},
-	}
-	return d.mustNewSharedInformer(cjlw, &batchv1.CronJob{}, resyncDisabled)
 }
 
 func (d *Discovery) newNodeInformer(_ context.Context) cache.SharedInformer {
@@ -839,7 +774,7 @@ func (d *Discovery) newNamespaceInformer(_ context.Context) cache.SharedInformer
 	return d.mustNewSharedInformer(nlw, &apiv1.Namespace{}, resyncDisabled)
 }
 
-func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch, replicaSetInf, jobInf cache.SharedInformer) cache.SharedIndexInformer {
+func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
 	indexers := make(map[string]cache.IndexFunc)
 	if d.attachMetadata.Node {
 		indexers[nodeIndex] = func(obj any) ([]string, error) {
@@ -856,7 +791,7 @@ func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch, replicaSetInf, 
 	}
 
 	if d.attachMetadata.Deployment {
-		indexers[deploymentIndex] = func(obj any) ([]string, error) {
+		indexers[replicaSetIndex] = func(obj any) ([]string, error) {
 			pod, ok := obj.(*apiv1.Pod)
 			if !ok {
 				return nil, errors.New("object is not a pod")
@@ -865,27 +800,11 @@ func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch, replicaSetInf, 
 			if owner == nil || owner.Kind != "ReplicaSet" {
 				return nil, nil
 			}
-			if replicaSetInf == nil {
-				return nil, nil
-			}
-			key := namespacedName(pod.Namespace, owner.Name)
-			obj, exists, err := replicaSetInf.GetStore().GetByKey(key)
-			if err != nil || !exists {
-				return nil, nil
-			}
-			rs, ok := obj.(*appsv1.ReplicaSet)
-			if !ok {
-				return nil, nil
-			}
-			rsOwner := GetControllerOf(rs)
-			if rsOwner == nil || rsOwner.Kind != "Deployment" {
-				return nil, nil
-			}
-			return []string{namespacedName(pod.Namespace, rsOwner.Name)}, nil
+			return []string{namespacedName(pod.Namespace, owner.Name)}, nil
 		}
 	}
 
-	if d.attachMetadata.Job {
+	if d.attachMetadata.Job || d.attachMetadata.CronJob {
 		indexers[jobIndex] = func(obj any) ([]string, error) {
 			pod, ok := obj.(*apiv1.Pod)
 			if !ok {
@@ -896,36 +815,6 @@ func (d *Discovery) newIndexedPodsInformer(plw *cache.ListWatch, replicaSetInf, 
 				return nil, nil
 			}
 			return []string{namespacedName(pod.Namespace, owner.Name)}, nil
-		}
-	}
-
-	if d.attachMetadata.CronJob {
-		indexers[cronJobIndex] = func(obj any) ([]string, error) {
-			pod, ok := obj.(*apiv1.Pod)
-			if !ok {
-				return nil, errors.New("object is not a pod")
-			}
-			owner := GetControllerOf(pod)
-			if owner == nil || owner.Kind != "Job" {
-				return nil, nil
-			}
-			if jobInf == nil {
-				return nil, nil
-			}
-			key := namespacedName(pod.Namespace, owner.Name)
-			obj, exists, err := jobInf.GetStore().GetByKey(key)
-			if err != nil || !exists {
-				return nil, nil
-			}
-			job, ok := obj.(*batchv1.Job)
-			if !ok {
-				return nil, nil
-			}
-			jobOwner := GetControllerOf(job)
-			if jobOwner == nil || jobOwner.Kind != "CronJob" {
-				return nil, nil
-			}
-			return []string{namespacedName(pod.Namespace, jobOwner.Name)}, nil
 		}
 	}
 
