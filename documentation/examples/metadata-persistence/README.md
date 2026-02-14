@@ -1,13 +1,16 @@
 # Persisted Series Metadata Demo
 
-This demo showcases the persisted series metadata feature in Prometheus TSDB.
+This demo showcases the persisted series metadata feature in Prometheus TSDB,
+including time-varying metadata that tracks how metric definitions change over time.
 
 ## Overview
 
 Prometheus can now persist metric metadata (TYPE, HELP, UNIT) to disk alongside
 time series data. This means that even after scrape targets are removed, the
 metadata for historical metrics remains available via the `/api/v1/metadata`
-API endpoint.
+API endpoint. When metadata changes over time (e.g., an exporter binary upgrade
+changes a metric's help text), each version is tracked with its time range and
+queryable through the `/api/v1/metadata/versions` endpoint.
 
 ## The Problem This Solves
 
@@ -18,6 +21,7 @@ difficult to:
 - Understand what historical metrics meant
 - Debug old metrics in dashboards
 - Maintain documentation for decommissioned services
+- Track when and how metric definitions changed across exporter upgrades
 
 ## How It Works
 
@@ -26,13 +30,15 @@ difficult to:
 │  Mock Exporter  │ ←───────────────│  Scrape/Parse   │
 │  TYPE/HELP/UNIT │   (protobuf)    └────────┬────────┘
 └─────────────────┘                          │
-                                             │ append
-                                             ↓
-                                    ┌─────────────────┐
-                                    │   TSDB Head     │
-                                    │   (in-memory)   │
-                                    └────────┬────────┘
-                                             │
+        │                                    │ append
+   upgrade (help                             ↓
+   text changes)                    ┌─────────────────┐
+        │                           │   TSDB Head     │
+        ↓                           │   (in-memory)   │
+┌─────────────────┐                 │  v1: help="old" │
+│  Mock Exporter  │  scrape again   │  v2: help="new" │
+│  (new version)  │ ←───────────    └────────┬────────┘
+└─────────────────┘                          │
                                     ┌────────┴────────┐
                                     │                 │
                               WAL   │                 │ compact
@@ -44,18 +50,22 @@ difficult to:
                            └─────────────┘   │    .parquet     │
                                              └────────┬────────┘
                                                       │
-                                                      │ query
-                                                      ↓
-                                             ┌─────────────────┐
-                                             │ /api/v1/metadata│
-                                             └─────────────────┘
+                                             ┌────────┴────────┐
+                                             │                 │
+                                             ↓                 ↓
+                                    ┌────────────────┐ ┌───────────────────┐
+                                    │/api/v1/metadata│ │/api/v1/metadata/  │
+                                    │  (latest only) │ │    versions       │
+                                    └────────────────┘ │ (version history) │
+                                                       └───────────────────┘
 ```
 
 1. **Scraping**: Metadata is captured from TYPE/HELP/UNIT comments in metrics (via protobuf format)
-2. **Storage**: Metadata is stored in TSDB head (in-memory)
+2. **Storage**: Metadata is stored in TSDB head (in-memory) with version tracking
 3. **WAL Replay**: Metadata survives TSDB restarts via Write-Ahead Log replay
-4. **Persistence**: When blocks are compacted, metadata is written to Parquet files
-5. **Querying**: The `/api/v1/metadata` endpoint returns both active and persisted metadata
+4. **Versioning**: When metadata changes, a new version is created with its time range
+5. **Persistence**: When blocks are compacted, metadata versions are written to Parquet files
+6. **Querying**: The `/api/v1/metadata/versions` endpoint returns version history with time ranges
 
 ## Running the Demo
 
@@ -92,45 +102,57 @@ Shows metadata stored in-memory in the TSDB head.
 Closes and reopens the TSDB to exercise Write-Ahead Log (WAL) replay. Verifies
 that metadata records survive a restart by querying the replayed head.
 
-### Phase 4: Stop Exporter
+### Phase 4: Simulate Exporter Upgrade
+Upgrades the mock exporter with changed help text for two metrics, then scrapes
+again at a later timestamp. This creates version history in the metadata store:
+- `demo_http_requests_total`: Help changes from "Total number of HTTP requests received." to "Total HTTP requests processed by the server."
+- `demo_request_duration_seconds`: Help changes from "Time spent processing requests." to "Latency of request processing in seconds."
+
+### Phase 5: Query Version History
+Queries versioned metadata from the TSDB head, showing all versions per metric
+with their time ranges. Changed metrics show 2 versions; unchanged metrics show 1.
+
+### Phase 6: Stop Exporter
 Stops the mock exporter to simulate a target being removed. Without metadata
 persistence, this metadata would be lost.
 
-### Phase 5: Compact to Disk
+### Phase 7: Compact to Disk
 Forces head compaction to persist data to a Parquet block file
-(`series_metadata.parquet`).
+(`series_metadata.parquet`), including version history.
 
-### Phase 6: Query from Blocks
+### Phase 8: Query from Blocks
 Shows metadata retrieved from the persisted Parquet file, demonstrating that
 metadata remains available even after the scrape target is gone.
 
-### Phase 7: API Response Format
-Demonstrates the JSON format returned by `/api/v1/metadata`.
+### Phase 9: Versioned API Response Format
+Demonstrates the JSON format returned by `/api/v1/metadata/versions`, showing
+each metric's version history with `minTime`/`maxTime` per version.
 
-### Phase 8: Summary
+### Phase 10: Summary
 Summarizes the key concepts demonstrated.
 
 ## Key Output
 
 ```
-Response Content-Type: application/vnd.google.protobuf; ...
-Stored 4 metrics with metadata in TSDB head (in-memory)
-  - Float samples: 10
-  - Native histograms: 1
-...
-Metadata after WAL replay:
-  demo_http_requests_total:
-    Type: counter
-    Help: Total number of HTTP requests received.
-...
-Parquet metadata file created: .../series_metadata.parquet
-```
+--- Phase 5: Querying metadata version history ---
 
-This confirms that:
-- Protobuf format is used for scraping (required for native histograms)
-- Native histogram samples are being stored
-- Metadata survives WAL replay (TSDB restart)
-- Metadata was persisted to a Parquet file in the block directory
+Versioned metadata from TSDB head:
+  demo_http_requests_total (2 versions):
+    v1 [2026-02-15T10:15:06Z → 2026-02-15T10:15:06Z]
+      Type: counter
+      Help: Total number of HTTP requests received.
+    v2 [2026-02-15T11:15:06Z → 2026-02-15T11:15:06Z]
+      Type: counter
+      Help: Total HTTP requests processed by the server.
+  demo_request_duration_seconds (2 versions):
+    v1 [2026-02-15T10:15:06Z → 2026-02-15T10:15:06Z]
+      Type: histogram
+      Help: Time spent processing requests.
+    v2 [2026-02-15T11:15:06Z → 2026-02-15T11:15:06Z]
+      Type: histogram
+      Help: Latency of request processing in seconds.
+  ...
+```
 
 ## Demo Components
 
@@ -143,40 +165,59 @@ A simple HTTP server that exposes metrics using the prometheus client library:
 - `demo_request_duration_seconds` (native histogram) - TYPE, HELP, with exponential buckets
 - `demo_response_size_bytes` (summary) - TYPE, HELP
 
-The exporter uses `promhttp.Handler` which automatically negotiates content type
-and serves protobuf format when requested, enabling native histogram support.
+The exporter supports an `UpgradeMetrics()` method that simulates a binary upgrade
+by swapping to a fresh registry with changed help text for two metrics.
 
 ### Main Demo (`main.go`)
 
 Orchestrates the demonstration:
 
 1. Creates a temporary TSDB with `EnableNativeMetadata = true`
-2. Starts the mock exporter
-3. Scrapes and parses metrics using `textparse` (protobuf format)
-4. Appends float samples and native histograms to TSDB
-5. Closes and reopens TSDB to verify WAL replay
+2. Starts the mock exporter and scrapes metrics
+3. Closes and reopens TSDB to verify WAL replay
+4. Upgrades the exporter and scrapes again to create version history
+5. Queries versioned metadata showing per-metric version history
 6. Demonstrates persistence by compacting and querying
+7. Shows the `/api/v1/metadata/versions` API response format
 
 ## API Response Format
 
-The `/api/v1/metadata` endpoint returns metadata in this format:
+The `/api/v1/metadata/versions` endpoint returns versioned metadata:
 
 ```json
 {
   "status": "success",
   "data": {
+    "demo_http_requests_total": [
+      {
+        "type": "counter",
+        "help": "Total number of HTTP requests received.",
+        "unit": "",
+        "minTime": 1771150506221,
+        "maxTime": 1771150506221
+      },
+      {
+        "type": "counter",
+        "help": "Total HTTP requests processed by the server.",
+        "unit": "",
+        "minTime": 1771154106221,
+        "maxTime": 1771154106221
+      }
+    ],
     "demo_request_duration_seconds": [
       {
         "type": "histogram",
         "help": "Time spent processing requests.",
-        "unit": ""
-      }
-    ],
-    "demo_temperature_celsius": [
+        "unit": "",
+        "minTime": 1771150506221,
+        "maxTime": 1771150506221
+      },
       {
-        "type": "gauge",
-        "help": "Current temperature in the demo environment.",
-        "unit": ""
+        "type": "histogram",
+        "help": "Latency of request processing in seconds.",
+        "unit": "",
+        "minTime": 1771154106221,
+        "maxTime": 1771154106221
       }
     ]
   }
@@ -186,9 +227,10 @@ The `/api/v1/metadata` endpoint returns metadata in this format:
 ## Key Files in Prometheus
 
 - `tsdb/seriesmetadata/seriesmetadata.go` - Parquet reader/writer for metadata
+- `tsdb/seriesmetadata/versioned_metadata.go` - Version tracking and merging
 - `tsdb/head.go` - Head block metadata storage
 - `tsdb/compact.go` - Metadata merging during compaction
-- `web/api/v1/api.go` - API endpoint integration
+- `web/api/v1/api.go` - API endpoint integration (`/api/v1/metadata/versions`)
 
 ## Learn More
 

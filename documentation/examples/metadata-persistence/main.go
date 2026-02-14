@@ -100,7 +100,8 @@ func runDemo() error {
 	// === PHASE 1: Scrape and store metrics with metadata ===
 	printPhase(1, "Scraping metrics from exporter (protobuf format) and storing in TSDB")
 
-	metadataMap, stats, err := scrapeAndStore(db, exporterURL)
+	baseTimestamp := time.Now().UnixMilli()
+	metadataMap, stats, err := scrapeAndStore(db, exporterURL, baseTimestamp)
 	if err != nil {
 		return fmt.Errorf("scrape and store: %w", err)
 	}
@@ -142,8 +143,47 @@ func runDemo() error {
 	printSeriesMetadata("Metadata after WAL replay:", replayMeta)
 	replayMeta.Close()
 
-	// === PHASE 4: Stop the exporter (simulate target going down) ===
-	printPhase(4, "Stopping the mock exporter (simulating target removal)")
+	// === PHASE 4: Simulate exporter upgrade — metadata changes ===
+	printPhase(4, "Simulating exporter upgrade — metadata changes")
+
+	fmt.Printf("Upgrading exporter: changing help text for 2 metrics...\n")
+	exporter.UpgradeMetrics()
+
+	upgradeTimestamp := baseTimestamp + int64(time.Hour/time.Millisecond)
+	fmt.Printf("Scraping again at later timestamp (+1h) to record new metadata versions...\n\n")
+	upgradedMeta, upgradeStats, err := scrapeAndStore(db, exporterURL, upgradeTimestamp)
+	if err != nil {
+		return fmt.Errorf("scrape after upgrade: %w", err)
+	}
+
+	fmt.Printf("%sStored %s%d%s metrics after upgrade\n", colorGreen, colorBold, len(upgradedMeta), colorReset)
+	fmt.Printf("  %s•%s Float samples: %s%d%s\n", colorGray, colorReset, colorBold, upgradeStats.floatSamples, colorReset)
+	fmt.Printf("  %s•%s Native histograms: %s%d%s\n", colorGray, colorReset, colorBold, upgradeStats.histogramSamples, colorReset)
+	fmt.Println()
+
+	fmt.Printf("%sMetadata changes:%s\n", colorBold, colorReset)
+	fmt.Printf("  %sdemo_http_requests_total%s:\n", colorCyan, colorReset)
+	fmt.Printf("    Help: %s%q%s → %s%q%s\n",
+		colorGray, metadataMap["demo_http_requests_total"].Help, colorReset,
+		colorGreen, upgradedMeta["demo_http_requests_total"].Help, colorReset)
+	fmt.Printf("  %sdemo_request_duration_seconds%s:\n", colorCyan, colorReset)
+	fmt.Printf("    Help: %s%q%s → %s%q%s\n",
+		colorGray, metadataMap["demo_request_duration_seconds"].Help, colorReset,
+		colorGreen, upgradedMeta["demo_request_duration_seconds"].Help, colorReset)
+	fmt.Println()
+
+	// === PHASE 5: Query metadata version history ===
+	printPhase(5, "Querying metadata version history")
+
+	versionReader, err := db.Head().SeriesMetadata()
+	if err != nil {
+		return fmt.Errorf("get head metadata for versions: %w", err)
+	}
+	printVersionedMetadata("Versioned metadata from TSDB head:", versionReader)
+	versionReader.Close()
+
+	// === PHASE 6: Stop the exporter (simulate target going down) ===
+	printPhase(6, "Stopping the mock exporter (simulating target removal)")
 
 	if err := exporter.Stop(); err != nil {
 		return fmt.Errorf("stop exporter: %w", err)
@@ -151,8 +191,8 @@ func runDemo() error {
 	fmt.Printf("%sExporter stopped.%s In a real scenario, the scrape target is now gone.\n", colorYellow, colorReset)
 	fmt.Printf("%sWithout metadata persistence, this metadata would be lost!%s\n", colorYellow, colorReset)
 
-	// === PHASE 5: Compact head to persist metadata to disk ===
-	printPhase(5, "Compacting TSDB head to persist metadata to disk")
+	// === PHASE 7: Compact head to persist metadata to disk ===
+	printPhase(7, "Compacting TSDB head to persist metadata to disk")
 
 	// Force compaction by creating a block
 	if err := db.CompactHead(tsdb.NewRangeHead(db.Head(), db.Head().MinTime(), db.Head().MaxTime())); err != nil {
@@ -174,34 +214,36 @@ func runDemo() error {
 	}
 	fmt.Println()
 
-	// === PHASE 6: Query persisted metadata from DB ===
-	printPhase(6, "Querying metadata from TSDB (including persisted blocks)")
+	// === PHASE 8: Query persisted metadata from DB ===
+	printPhase(8, "Querying metadata from TSDB (including persisted blocks)")
 
 	dbMeta, err := db.SeriesMetadata()
 	if err != nil {
 		return fmt.Errorf("get DB metadata: %w", err)
 	}
-	printSeriesMetadata("Metadata from TSDB (persisted):", dbMeta)
+	printSeriesMetadata("Metadata from TSDB (latest per metric):", dbMeta)
+	printVersionedMetadata("Versioned metadata from persisted blocks:", dbMeta)
 	dbMeta.Close()
 
-	// === PHASE 7: Demonstrate API response format ===
-	printPhase(7, "Demonstrating /api/v1/metadata API response format")
+	// === PHASE 9: Demonstrate versioned API response format ===
+	printPhase(9, "Demonstrating /api/v1/metadata/versions API response format")
 
-	apiResponse := buildAPIResponse(db)
+	apiResponse := buildVersionedAPIResponse(db)
 	prettyJSON, _ := json.MarshalIndent(apiResponse, "", "  ")
-	fmt.Printf("%sAPI Response (same format as /api/v1/metadata):%s\n", colorBold, colorReset)
+	fmt.Printf("%sAPI Response (same format as /api/v1/metadata/versions):%s\n", colorBold, colorReset)
 	fmt.Printf("%s%s%s\n", colorGray, string(prettyJSON), colorReset)
 	fmt.Println()
 
 	// === Summary ===
-	printPhase(8, "Summary")
+	printPhase(10, "Summary")
 	fmt.Printf("%sThis demo showed how Prometheus persists metric metadata:%s\n", colorBold, colorReset)
 	fmt.Printf("  %s1.%s Metadata is captured during scraping (TYPE, HELP, UNIT comments)\n", colorGreen, colorReset)
 	fmt.Printf("  %s2.%s Metadata is stored in TSDB head (in-memory)\n", colorGreen, colorReset)
 	fmt.Printf("  %s3.%s Metadata survives TSDB restart via %sWAL replay%s\n", colorGreen, colorReset, colorBold, colorReset)
-	fmt.Printf("  %s4.%s When blocks are compacted, metadata is persisted to Parquet files\n", colorGreen, colorReset)
-	fmt.Printf("  %s5.%s Even after scrape targets are removed, metadata remains queryable\n", colorGreen, colorReset)
-	fmt.Printf("  %s6.%s The /api/v1/metadata endpoint returns both active and persisted metadata\n", colorGreen, colorReset)
+	fmt.Printf("  %s4.%s Metadata changes are tracked with time ranges (version history)\n", colorGreen, colorReset)
+	fmt.Printf("  %s5.%s When blocks are compacted, metadata is persisted to Parquet files\n", colorGreen, colorReset)
+	fmt.Printf("  %s6.%s Even after scrape targets are removed, metadata remains queryable\n", colorGreen, colorReset)
+	fmt.Printf("  %s7.%s The /api/v1/metadata/versions endpoint shows version history\n", colorGreen, colorReset)
 	fmt.Println()
 	fmt.Printf("%sThis enables users to understand historical metrics even when\n", colorCyan)
 	fmt.Printf("the original exporters are no longer running.%s\n", colorReset)
@@ -216,8 +258,9 @@ type scrapeStats struct {
 }
 
 // scrapeAndStore fetches metrics from the exporter using protobuf format,
-// parses them, and stores in TSDB.
-func scrapeAndStore(db *tsdb.DB, url string) (map[string]metadata.Metadata, scrapeStats, error) {
+// parses them, and stores in TSDB. If overrideTimestamp is non-zero it is
+// used instead of time.Now() for sample timestamps.
+func scrapeAndStore(db *tsdb.DB, url string, overrideTimestamp int64) (map[string]metadata.Metadata, scrapeStats, error) {
 	var stats scrapeStats
 
 	// Create request with protobuf Accept header (required for native histograms)
@@ -248,18 +291,27 @@ func scrapeAndStore(db *tsdb.DB, url string) (map[string]metadata.Metadata, scra
 		return nil, stats, fmt.Errorf("create parser: %w", err)
 	}
 
-	// Collect metadata and samples
+	// Phase 1: Parse all data, append samples, collect series refs for metadata.
 	metadataMap := make(map[string]metadata.Metadata)
 	var currentMeta metadata.Metadata
 	var currentMetric string
 
+	type seriesRef struct {
+		ref  storage.SeriesRef
+		lset labels.Labels
+	}
+	var seriesRefs []seriesRef
+
 	app := db.Appender(context.TODO())
-	now := time.Now().UnixMilli()
+	now := overrideTimestamp
+	if now == 0 {
+		now = time.Now().UnixMilli()
+	}
 
 	for {
 		entry, err := parser.Next()
 		if err != nil {
-			if err.Error() == "EOF" {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return nil, stats, fmt.Errorf("parse: %w", err)
@@ -297,24 +349,14 @@ func scrapeAndStore(db *tsdb.DB, url string) (map[string]metadata.Metadata, scra
 				timestamp = *ts
 			}
 
-			// Append sample
 			ref, err := app.Append(0, lset, timestamp, val)
 			if err != nil {
 				return nil, stats, fmt.Errorf("append sample: %w", err)
 			}
 			stats.floatSamples++
-
-			// Append metadata for this series
-			// Try full metric name first, then stripped name (for histograms/summaries)
-			metricName := lset.Get(labels.MetricName)
-			if meta, ok := lookupMetadata(metadataMap, metricName); ok {
-				if _, err := app.UpdateMetadata(ref, lset, meta); err != nil {
-					_ = err // Metadata update errors are non-fatal
-				}
-			}
+			seriesRefs = append(seriesRefs, seriesRef{ref: ref, lset: lset})
 
 		case textparse.EntryHistogram:
-			// Native histogram entry
 			_, ts, h, fh := parser.Histogram()
 			var lset labels.Labels
 			parser.Labels(&lset)
@@ -324,7 +366,6 @@ func scrapeAndStore(db *tsdb.DB, url string) (map[string]metadata.Metadata, scra
 				timestamp = *ts
 			}
 
-			// Append native histogram
 			histApp, ok := app.(storage.HistogramAppender)
 			if !ok {
 				return nil, stats, errors.New("appender does not support histograms")
@@ -334,19 +375,27 @@ func scrapeAndStore(db *tsdb.DB, url string) (map[string]metadata.Metadata, scra
 				return nil, stats, fmt.Errorf("append histogram: %w", err)
 			}
 			stats.histogramSamples++
-
-			// Append metadata for this histogram
-			metricName := lset.Get(labels.MetricName)
-			if meta, ok := lookupMetadata(metadataMap, metricName); ok {
-				if _, err := app.UpdateMetadata(ref, lset, meta); err != nil {
-					_ = err // Metadata update errors are non-fatal
-				}
-			}
+			seriesRefs = append(seriesRefs, seriesRef{ref: ref, lset: lset})
 		}
 	}
 
 	if err := app.Commit(); err != nil {
-		return nil, stats, fmt.Errorf("commit: %w", err)
+		return nil, stats, fmt.Errorf("commit samples: %w", err)
+	}
+
+	// Phase 2: Update metadata in a new appender so that the timestamp
+	// (derived from head MaxTime) reflects the samples just committed.
+	metaApp := db.Appender(context.TODO())
+	for _, sr := range seriesRefs {
+		metricName := sr.lset.Get(labels.MetricName)
+		if meta, ok := lookupMetadata(metadataMap, metricName); ok {
+			if _, err := metaApp.UpdateMetadata(sr.ref, sr.lset, meta); err != nil {
+				_ = err // non-fatal
+			}
+		}
+	}
+	if err := metaApp.Commit(); err != nil {
+		return nil, stats, fmt.Errorf("commit metadata: %w", err)
 	}
 
 	return metadataMap, stats, nil
@@ -467,9 +516,59 @@ func printSeriesMetadata(title string, reader seriesmetadata.Reader) {
 	fmt.Println()
 }
 
-// buildAPIResponse builds a response in the same format as /api/v1/metadata.
-// Deduplicates entries by base metric name (strips _count, _sum, _bucket suffixes).
-func buildAPIResponse(db *tsdb.DB) map[string]any {
+// printVersionedMetadata prints versioned metadata from a Reader, showing all
+// versions per metric with their time ranges.
+func printVersionedMetadata(title string, reader seriesmetadata.Reader) {
+	fmt.Printf("%s%s%s\n", colorBold, title, colorReset)
+
+	// Collect and merge by base metric name.
+	byName := make(map[string]*seriesmetadata.VersionedMetadata)
+	_ = reader.IterVersionedMetadata(func(_ uint64, name string, vm *seriesmetadata.VersionedMetadata) error {
+		if name == "" {
+			return nil
+		}
+		baseName := stripMetricSuffix(name)
+		if existing, ok := byName[baseName]; ok {
+			byName[baseName] = seriesmetadata.MergeVersionedMetadata(existing, vm)
+		} else {
+			byName[baseName] = vm.Copy()
+		}
+		return nil
+	})
+
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	for _, name := range names {
+		vm := byName[name]
+		fmt.Printf("  %s%s%s", colorCyan, name, colorReset)
+		if len(vm.Versions) == 1 {
+			fmt.Printf(" (1 version):\n")
+		} else {
+			fmt.Printf(" (%s%d versions%s):\n", colorYellow, len(vm.Versions), colorReset)
+		}
+		for i, v := range vm.Versions {
+			minT := time.UnixMilli(v.MinTime).UTC().Format(time.RFC3339)
+			maxT := time.UnixMilli(v.MaxTime).UTC().Format(time.RFC3339)
+			fmt.Printf("    %sv%d%s [%s → %s]\n", colorBold, i+1, colorReset, minT, maxT)
+			fmt.Printf("      Type: %s\n", colorizeType(v.Meta.Type))
+			fmt.Printf("      Help: %s%s%s\n", colorGray, v.Meta.Help, colorReset)
+			if v.Meta.Unit != "" {
+				fmt.Printf("      Unit: %s\n", v.Meta.Unit)
+			}
+		}
+	}
+	if len(byName) == 0 {
+		fmt.Printf("  %s(no versioned metadata found)%s\n", colorGray, colorReset)
+	}
+	fmt.Println()
+}
+
+// buildVersionedAPIResponse builds a response in the same format as /api/v1/metadata/versions.
+func buildVersionedAPIResponse(db *tsdb.DB) map[string]any {
 	reader, err := db.SeriesMetadata()
 	if err != nil {
 		return map[string]any{
@@ -479,39 +578,41 @@ func buildAPIResponse(db *tsdb.DB) map[string]any {
 	}
 	defer reader.Close()
 
-	// Collect and deduplicate by base metric name
-	seen := make(map[string]metadata.Metadata)
-	_ = reader.IterByMetricName(func(name string, metas []metadata.Metadata) error {
-		if len(metas) == 0 {
+	// Collect and merge by base metric name.
+	byName := make(map[string]*seriesmetadata.VersionedMetadata)
+	_ = reader.IterVersionedMetadata(func(_ uint64, name string, vm *seriesmetadata.VersionedMetadata) error {
+		if name == "" {
 			return nil
 		}
-		meta := metas[0]
 		baseName := stripMetricSuffix(name)
-		// Prefer the base name entry, or first seen
-		if _, exists := seen[baseName]; !exists || name == baseName {
-			seen[baseName] = meta
+		if existing, ok := byName[baseName]; ok {
+			byName[baseName] = seriesmetadata.MergeVersionedMetadata(existing, vm)
+		} else {
+			byName[baseName] = vm.Copy()
 		}
 		return nil
 	})
 
-	// Build response data
-	data := make(map[string][]map[string]string)
-	for name, meta := range seen {
-		data[name] = []map[string]string{{
-			"type": string(meta.Type),
-			"help": meta.Help,
-			"unit": meta.Unit,
-		}}
+	// Build response data matching the /api/v1/metadata/versions format.
+	type versionEntry struct {
+		Type    string `json:"type"`
+		Help    string `json:"help"`
+		Unit    string `json:"unit"`
+		MinTime int64  `json:"minTime"`
+		MaxTime int64  `json:"maxTime"`
 	}
 
-	// If no data from TSDB, show a message
-	if len(data) == 0 {
-		// Add some sample data to show the format
-		data["demo_http_requests_total"] = []map[string]string{{
-			"type": string(model.MetricTypeCounter),
-			"help": "Total number of HTTP requests received.",
-			"unit": "",
-		}}
+	data := make(map[string][]versionEntry)
+	for name, vm := range byName {
+		for _, v := range vm.Versions {
+			data[name] = append(data[name], versionEntry{
+				Type:    string(v.Meta.Type),
+				Help:    v.Meta.Help,
+				Unit:    v.Meta.Unit,
+				MinTime: v.MinTime,
+				MaxTime: v.MaxTime,
+			})
+		}
 	}
 
 	return map[string]any{

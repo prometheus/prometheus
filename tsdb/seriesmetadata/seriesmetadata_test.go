@@ -34,7 +34,7 @@ func TestWriteAndReadbackSeriesMetadata(t *testing.T) {
 
 	mem := NewMemSeriesMetadata()
 
-	// Add some test metadata - map metric name to (hash, metadata)
+	// Add some test metadata via versioned path (required for Parquet persistence).
 	type testEntry struct {
 		hash uint64
 		meta metadata.Metadata
@@ -47,7 +47,11 @@ func TestWriteAndReadbackSeriesMetadata(t *testing.T) {
 	}
 
 	for name, entry := range testData {
-		mem.Set(name, entry.hash, entry.meta)
+		mem.SetVersioned(name, entry.hash, &MetadataVersion{
+			Meta:    entry.meta,
+			MinTime: 1000,
+			MaxTime: 2000,
+		})
 	}
 
 	// Write to file
@@ -189,8 +193,6 @@ func TestMemSeriesMetadataIter(t *testing.T) {
 }
 
 func TestSeriesMetadataOverwrite(t *testing.T) {
-	tmpdir := t.TempDir()
-
 	mem := NewMemSeriesMetadata()
 	meta1 := metadata.Metadata{Type: model.MetricTypeCounter, Help: "First version"}
 	meta2 := metadata.Metadata{Type: model.MetricTypeGauge, Help: "Second version"}
@@ -213,18 +215,6 @@ func TestSeriesMetadataOverwrite(t *testing.T) {
 	gotSingle, found = mem.Get(200)
 	require.True(t, found)
 	require.Equal(t, meta2, gotSingle)
-
-	// Write and read back - Parquet stores one entry per metric name (the first)
-	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
-	require.NoError(t, err)
-
-	reader, _, err := ReadSeriesMetadata(tmpdir)
-	require.NoError(t, err)
-	defer reader.Close()
-
-	metas, found := reader.GetByMetricName("test_metric")
-	require.True(t, found)
-	require.Len(t, metas, 1)
 }
 
 func TestSetSameHashDifferentMetadata(t *testing.T) {
@@ -330,9 +320,16 @@ func TestWriteAndReadbackZeroHash(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	mem := NewMemSeriesMetadata()
-	mem.Set("metric_a", 0, metadata.Metadata{Type: model.MetricTypeCounter, Help: "A"})
-	mem.Set("metric_b", 0, metadata.Metadata{Type: model.MetricTypeGauge, Help: "B"})
-	mem.Set("metric_c", 0, metadata.Metadata{Type: model.MetricTypeHistogram, Help: "C"})
+	// Use distinct hashes for persistence via versioned path.
+	mem.SetVersioned("metric_a", 1, &MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "A"}, MinTime: 1000, MaxTime: 2000,
+	})
+	mem.SetVersioned("metric_b", 2, &MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeGauge, Help: "B"}, MinTime: 1000, MaxTime: 2000,
+	})
+	mem.SetVersioned("metric_c", 3, &MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeHistogram, Help: "C"}, MinTime: 1000, MaxTime: 2000,
+	})
 
 	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
 	require.NoError(t, err)
@@ -353,18 +350,128 @@ func TestWriteAndReadbackZeroHash(t *testing.T) {
 	require.Equal(t, uint64(3), reader.Total())
 }
 
+func TestVersionedMetadataParquetRoundTrip(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// Add versioned entries for series hash=100.
+	mem.SetVersioned("http_requests_total", 100, &MetadataVersion{
+		Meta:    metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests"},
+		MinTime: 1000,
+		MaxTime: 2000,
+	})
+	mem.SetVersioned("http_requests_total", 100, &MetadataVersion{
+		Meta:    metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests processed"},
+		MinTime: 2001,
+		MaxTime: 3000,
+	})
+
+	// Add versioned entries for series hash=200.
+	mem.SetVersioned("temperature", 200, &MetadataVersion{
+		Meta:    metadata.Metadata{Type: model.MetricTypeGauge, Help: "Temperature in Celsius"},
+		MinTime: 500,
+		MaxTime: 1500,
+	})
+
+	// Write.
+	size, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+	require.Positive(t, size)
+
+	// Read back.
+	reader, readSize, err := ReadSeriesMetadata(tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+	require.Equal(t, size, readSize)
+
+	// Verify GetByMetricName returns latest version per metric (derived from versioned data).
+	metas, found := reader.GetByMetricName("http_requests_total")
+	require.True(t, found)
+	require.Len(t, metas, 1)
+
+	metas, found = reader.GetByMetricName("temperature")
+	require.True(t, found)
+	require.Len(t, metas, 1)
+
+	// Verify versioned metadata for hash=100.
+	vm, found := reader.GetVersionedMetadata(100)
+	require.True(t, found)
+	require.Len(t, vm.Versions, 2)
+	require.Equal(t, "Total requests", vm.Versions[0].Meta.Help)
+	require.Equal(t, int64(1000), vm.Versions[0].MinTime)
+	require.Equal(t, int64(2000), vm.Versions[0].MaxTime)
+	require.Equal(t, "Total HTTP requests processed", vm.Versions[1].Meta.Help)
+	require.Equal(t, int64(2001), vm.Versions[1].MinTime)
+	require.Equal(t, int64(3000), vm.Versions[1].MaxTime)
+
+	// Verify versioned metadata for hash=200.
+	vm, found = reader.GetVersionedMetadata(200)
+	require.True(t, found)
+	require.Len(t, vm.Versions, 1)
+	require.Equal(t, "Temperature in Celsius", vm.Versions[0].Meta.Help)
+	require.Equal(t, int64(500), vm.Versions[0].MinTime)
+
+	// Non-existent hash.
+	_, found = reader.GetVersionedMetadata(999)
+	require.False(t, found)
+
+	// TotalVersionedMetadata.
+	require.Equal(t, 2, reader.TotalVersionedMetadata())
+}
+
+func TestVersionedMetadataContentDeduplication(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// Two different series with the same metadata content.
+	sharedMeta := metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests"}
+
+	mem.SetVersioned("http_requests_total", 100, &MetadataVersion{
+		Meta: sharedMeta, MinTime: 1000, MaxTime: 2000,
+	})
+	mem.SetVersioned("http_requests_total", 200, &MetadataVersion{
+		Meta: sharedMeta, MinTime: 1000, MaxTime: 2000,
+	})
+
+	// Write.
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
+	require.NoError(t, err)
+
+	// Read back.
+	reader, _, err := ReadSeriesMetadata(tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	// Both series should resolve to the same metadata content.
+	vm1, found := reader.GetVersionedMetadata(100)
+	require.True(t, found)
+	require.Len(t, vm1.Versions, 1)
+	require.Equal(t, "Total requests", vm1.Versions[0].Meta.Help)
+
+	vm2, found := reader.GetVersionedMetadata(200)
+	require.True(t, found)
+	require.Len(t, vm2.Versions, 1)
+	require.Equal(t, "Total requests", vm2.Versions[0].Meta.Help)
+}
+
 func TestLargeMetadata(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	mem := NewMemSeriesMetadata()
 
-	// Create many entries
+	// Create many entries via versioned path
 	const numEntries = 10000
 	for i := range uint64(numEntries) {
-		mem.Set(fmt.Sprintf("metric_%d", i), i, metadata.Metadata{
-			Type: model.MetricTypeCounter,
-			Unit: "bytes",
-			Help: "Test metric with some help text",
+		mem.SetVersioned(fmt.Sprintf("metric_%d", i), i+1, &MetadataVersion{
+			Meta: metadata.Metadata{
+				Type: model.MetricTypeCounter,
+				Unit: "bytes",
+				Help: "Test metric with some help text",
+			},
+			MinTime: 1000,
+			MaxTime: 2000,
 		})
 	}
 

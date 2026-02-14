@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -756,15 +755,19 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 			if err != nil {
 				return fmt.Errorf("get series metadata from block: %w", err)
 			}
-			err = mr.IterByMetricName(func(name string, metas []metadata.Metadata) error {
-				for _, meta := range metas {
-					mergedMeta.Set(name, 0, meta)
+			// Merge versioned metadata.
+			err = mr.IterVersionedMetadata(func(labelsHash uint64, metricName string, vm *seriesmetadata.VersionedMetadata) error {
+				existing, ok := mergedMeta.GetVersionedMetadata(labelsHash)
+				if ok {
+					mergedMeta.SetVersionedMetadata(labelsHash, metricName, seriesmetadata.MergeVersionedMetadata(existing, vm))
+				} else {
+					mergedMeta.SetVersionedMetadata(labelsHash, metricName, vm.Copy())
 				}
 				return nil
 			})
-			mr.Close() // Must close to release pending readers
+			mr.Close()
 			if err != nil {
-				return fmt.Errorf("iterate series metadata: %w", err)
+				return fmt.Errorf("iterate versioned series metadata: %w", err)
 			}
 		}
 		if _, err := seriesmetadata.WriteFile(c.logger, tmp, mergedMeta); err != nil {

@@ -2209,8 +2209,12 @@ func TestCompactMergesSeriesMetadata(t *testing.T) {
 
 	// Create block 1 with metadata for metrics A and B.
 	block1Meta := seriesmetadata.NewMemSeriesMetadata()
-	block1Meta.Set("http_requests_total", 0, metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests", Unit: ""})
-	block1Meta.Set("go_goroutines", 0, metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines", Unit: ""})
+	block1Meta.SetVersioned("http_requests_total", 1, &seriesmetadata.MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests", Unit: ""}, MinTime: 0, MaxTime: 100,
+	})
+	block1Meta.SetVersioned("go_goroutines", 2, &seriesmetadata.MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines", Unit: ""}, MinTime: 0, MaxTime: 100,
+	})
 
 	// Create a minimal block1 with some series data.
 	block1Dir := createBlock(t, dir, genSeries(1, 1, 0, 100))
@@ -2219,8 +2223,12 @@ func TestCompactMergesSeriesMetadata(t *testing.T) {
 
 	// Create block 2 with updated metadata for metric A and new metric C.
 	block2Meta := seriesmetadata.NewMemSeriesMetadata()
-	block2Meta.Set("http_requests_total", 0, metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests (updated)", Unit: ""})
-	block2Meta.Set("cpu_seconds_total", 0, metadata.Metadata{Type: model.MetricTypeCounter, Help: "CPU time", Unit: "seconds"})
+	block2Meta.SetVersioned("http_requests_total", 1, &seriesmetadata.MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests (updated)", Unit: ""}, MinTime: 101, MaxTime: 200,
+	})
+	block2Meta.SetVersioned("cpu_seconds_total", 3, &seriesmetadata.MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "CPU time", Unit: "seconds"}, MinTime: 101, MaxTime: 200,
+	})
 
 	block2Dir := createBlock(t, dir, genSeries(1, 1, 101, 200))
 	_, err = seriesmetadata.WriteFile(promslog.NewNopLogger(), block2Dir, block2Meta)

@@ -901,8 +901,12 @@ func TestBlockSeriesMetadataConcurrentReaders(t *testing.T) {
 
 	// Write a metadata file into the block directory.
 	mem := seriesmetadata.NewMemSeriesMetadata()
-	mem.Set("http_requests_total", 1, metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests"})
-	mem.Set("cpu_seconds", 2, metadata.Metadata{Type: model.MetricTypeGauge, Help: "CPU seconds"})
+	mem.SetVersioned("http_requests_total", 1, &seriesmetadata.MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests"}, MinTime: 0, MaxTime: 10,
+	})
+	mem.SetVersioned("cpu_seconds", 2, &seriesmetadata.MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeGauge, Help: "CPU seconds"}, MinTime: 0, MaxTime: 10,
+	})
 	_, err := seriesmetadata.WriteFile(promslog.NewNopLogger(), blockDir, mem)
 	require.NoError(t, err)
 

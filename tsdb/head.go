@@ -35,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -1762,9 +1761,12 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 
 		for _, s := range shard {
 			s.Lock()
-			meta := s.meta
+			var vmCopy *seriesmetadata.VersionedMetadata
+			if s.meta != nil {
+				vmCopy = s.meta.Copy()
+			}
 			s.Unlock()
-			if meta == nil {
+			if vmCopy == nil {
 				continue
 			}
 
@@ -1774,9 +1776,8 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 				continue // Skip series without metric name
 			}
 
-			// Use StableHash of labels as the key for consistent identification.
 			hash := labels.StableHash(s.lset)
-			mem.Set(metricName, hash, *meta)
+			mem.SetVersionedMetadata(hash, metricName, vmCopy)
 		}
 	}
 
@@ -1806,9 +1807,12 @@ func (h *Head) SeriesMetadataForMatchers(ctx context.Context, matchers ...*label
 		}
 
 		s.Lock()
-		meta := s.meta
+		var vmCopy *seriesmetadata.VersionedMetadata
+		if s.meta != nil {
+			vmCopy = s.meta.Copy()
+		}
 		s.Unlock()
-		if meta == nil {
+		if vmCopy == nil {
 			continue
 		}
 
@@ -1819,7 +1823,7 @@ func (h *Head) SeriesMetadataForMatchers(ctx context.Context, matchers ...*label
 		}
 
 		hash := labels.StableHash(s.lset)
-		mem.Set(metricName, hash, *meta)
+		mem.SetVersionedMetadata(hash, metricName, vmCopy)
 	}
 	if p.Err() != nil {
 		return nil, p.Err()
@@ -2473,8 +2477,7 @@ func (s sample) Copy() chunks.Sample {
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
-	ref  chunks.HeadSeriesRef
-	meta *metadata.Metadata
+	ref chunks.HeadSeriesRef
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
@@ -2482,6 +2485,8 @@ type memSeries struct {
 
 	// Everything after here should only be accessed with the lock held.
 	sync.Mutex
+
+	meta *seriesmetadata.VersionedMetadata // Time-varying metadata for this series.
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 

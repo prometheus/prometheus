@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"unsafe"
 
 	"github.com/prometheus/common/model"
@@ -144,8 +145,10 @@ func ToMetricType(m uint8) model.MetricType {
 }
 
 const (
-	unitMetaName = "UNIT"
-	helpMetaName = "HELP"
+	unitMetaName    = "UNIT"
+	helpMetaName    = "HELP"
+	minTimeMetaName = "MINT"
+	maxTimeMetaName = "MAXT"
 )
 
 // ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
@@ -167,10 +170,12 @@ type RefSample struct {
 
 // RefMetadata is the metadata associated with a series ID.
 type RefMetadata struct {
-	Ref  chunks.HeadSeriesRef
-	Type uint8
-	Unit string
-	Help string
+	Ref     chunks.HeadSeriesRef
+	Type    uint8
+	Unit    string
+	Help    string
+	MinTime int64 // Timestamp of the earliest sample in the batch that contributed this metadata.
+	MaxTime int64 // Timestamp of the latest sample in the batch that contributed this metadata.
 }
 
 // RefExemplar is an exemplar with the labels, timestamp, value the exemplar was collected/observed with, and a reference to a series.
@@ -263,10 +268,10 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 		typ := dec.Byte()
 		numFields := dec.Uvarint()
 
-		// We're currently aware of two more metadata fields other than TYPE; that is UNIT and HELP.
-		// We can skip the rest of the fields (if we encounter any), but we must decode them anyway
-		// so we can correctly align with the start with the next metadata record.
+		// Decode all named fields. Known fields: UNIT, HELP, MINT, MAXT.
+		// Unknown fields are skipped for forward compatibility.
 		var unit, help string
+		var minTime, maxTime int64
 		for range numFields {
 			fieldName := dec.UvarintStr()
 			fieldValue := dec.UvarintStr()
@@ -275,14 +280,20 @@ func (*Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, err
 				unit = fieldValue
 			case helpMetaName:
 				help = fieldValue
+			case minTimeMetaName:
+				minTime, _ = strconv.ParseInt(fieldValue, 10, 64)
+			case maxTimeMetaName:
+				maxTime, _ = strconv.ParseInt(fieldValue, 10, 64)
 			}
 		}
 
 		metadata = append(metadata, RefMetadata{
-			Ref:  chunks.HeadSeriesRef(ref),
-			Type: typ,
-			Unit: unit,
-			Help: help,
+			Ref:     chunks.HeadSeriesRef(ref),
+			Type:    typ,
+			Unit:    unit,
+			Help:    help,
+			MinTime: minTime,
+			MaxTime: maxTime,
 		})
 	}
 	if dec.Err() != nil {
@@ -680,11 +691,15 @@ func (*Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 
 		buf.PutByte(m.Type)
 
-		buf.PutUvarint(2) // num_fields: We currently have two more metadata fields, UNIT and HELP.
+		buf.PutUvarint(4) // num_fields: UNIT, HELP, MINT, MAXT.
 		buf.PutUvarintStr(unitMetaName)
 		buf.PutUvarintStr(m.Unit)
 		buf.PutUvarintStr(helpMetaName)
 		buf.PutUvarintStr(m.Help)
+		buf.PutUvarintStr(minTimeMetaName)
+		buf.PutUvarintStr(strconv.FormatInt(m.MinTime, 10))
+		buf.PutUvarintStr(maxTimeMetaName)
+		buf.PutUvarintStr(strconv.FormatInt(m.MaxTime, 10))
 	}
 
 	return buf.Get()

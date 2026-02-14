@@ -63,6 +63,8 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	// Metadata schemas.
 	schemas.Set("Metadata", b.metadataSchema())
 	schemas.Set("MetadataOutputBody", b.metadataOutputBodySchema())
+	schemas.Set("MetadataVersionEntry", b.metadataVersionEntrySchema())
+	schemas.Set("MetadataVersionsOutputBody", b.metadataVersionsOutputBodySchema())
 	schemas.Set("MetricMetadata", b.metricMetadataSchema())
 
 	// Target schemas.
@@ -768,6 +770,47 @@ func (*OpenAPIBuilder) metadataOutputBodySchema() *base.SchemaProxy {
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
 		Description:          "Response body for metadata endpoint.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"status", "data"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) metadataVersionEntrySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("type", stringSchemaWithDescription("Metric type (counter, gauge, histogram, summary, or untyped)."))
+	props.Set("help", stringSchemaWithDescription("Help text describing the metric."))
+	props.Set("unit", stringSchemaWithDescription("Unit of the metric."))
+	props.Set("minTime", stringSchemaWithDescription("Start timestamp for this metadata version."))
+	props.Set("maxTime", stringSchemaWithDescription("End timestamp for this metadata version."))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "A time-bounded metadata version for a metric.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"type", "help", "unit", "minTime", "maxTime"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) metadataVersionsOutputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+		Type: []string{"object"},
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
+			A: base.CreateSchemaProxy(&base.Schema{
+				Type:  []string{"array"},
+				Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/MetadataVersionEntry")},
+			}),
+		},
+	}))
+	props.Set("warnings", warningsSchema())
+	props.Set("infos", infosSchema())
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Response body for metadata versions endpoint.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"status", "data"},
 		Properties:           props,

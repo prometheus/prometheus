@@ -822,8 +822,10 @@ func TestHead_ReadWAL(t *testing.T) {
 			require.True(t, exemplar.Exemplar{Ts: 101, Value: 7, Labels: labels.FromStrings("trace_id", "zxcv")}.Equals(e[0].Exemplars[0]))
 
 			require.NotNil(t, s100.meta)
-			require.Equal(t, "foo", s100.meta.Unit)
-			require.Equal(t, "total foo", s100.meta.Help)
+			curMeta := s100.meta.CurrentMetadata()
+			require.NotNil(t, curMeta)
+			require.Equal(t, "foo", curMeta.Unit)
+			require.Equal(t, "total foo", curMeta.Help)
 
 			intervals, err := head.tombstones.Get(storage.SeriesRef(s100.ref))
 			require.NoError(t, err)

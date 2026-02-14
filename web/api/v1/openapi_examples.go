@@ -571,6 +571,38 @@ func metadataResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// metadataVersionsResponseExamples returns examples for /metadata/versions response.
+func metadataVersionsResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("metadataVersions", &base.Example{
+		Summary: "Time-varying metadata versions per metric",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string][]map[string]any{
+				"http_requests_total": {
+					{
+						"type":    "counter",
+						"help":    "Total HTTP requests",
+						"unit":    "",
+						"minTime": "1700000000.000",
+						"maxTime": "1700100000.000",
+					},
+					{
+						"type":    "counter",
+						"help":    "Total HTTP requests processed",
+						"unit":    "",
+						"minTime": "1700100000.001",
+						"maxTime": "1700200000.000",
+					},
+				},
+			},
+		}),
+	})
+
+	return examples
+}
+
 // scrapePoolsResponseExamples returns examples for /scrape_pools response.
 func scrapePoolsResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()

@@ -251,6 +251,24 @@ func (*OpenAPIBuilder) metadataPath() *v3.PathItem {
 	}
 }
 
+func (*OpenAPIBuilder) metadataVersionsPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("metric", "A metric name to filter metadata versions for.", false, stringSchema(), []example{{"example", "http_requests_total"}}),
+		queryParamWithExample("limit", "The maximum number of metadata version entries to return.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("start", "Start timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime)),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "get-metadata-versions",
+			Summary:     "Get time-varying metadata versions per metric",
+			Tags:        []string{"metadata"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("MetadataVersionsOutputBody", metadataVersionsResponseExamples(), errorResponseExamples(), "Metadata versions retrieved successfully.", "Error retrieving metadata versions."),
+		},
+	}
+}
+
 func (*OpenAPIBuilder) scrapePoolsPath() *v3.PathItem {
 	return &v3.PathItem{
 		Get: &v3.Operation{

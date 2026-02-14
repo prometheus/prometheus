@@ -458,6 +458,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
+	r.Get("/metadata/versions", wrap(api.metadataVersions))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
@@ -1677,6 +1678,105 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 			s = append(s, metadata)
 		}
 		res[name] = s
+	}
+
+	return apiFuncResult{res, nil, nil, nil}
+}
+
+// metadataVersionEntry is one version of metadata in the API response.
+type metadataVersionEntry struct {
+	Type    string `json:"type"`
+	Help    string `json:"help"`
+	Unit    string `json:"unit"`
+	MinTime int64  `json:"minTime"`
+	MaxTime int64  `json:"maxTime"`
+}
+
+func (api *API) metadataVersions(r *http.Request) apiFuncResult {
+	if !api.enableNativeMetadata || api.db == nil {
+		return apiFuncResult{map[string][]metadataVersionEntry{}, nil, nil, nil}
+	}
+
+	metric := r.FormValue("metric")
+
+	limit := -1
+	if s := r.FormValue("limit"); s != "" {
+		var err error
+		if limit, err = strconv.Atoi(s); err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
+		}
+	}
+
+	// Parse optional time range filter.
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	mint := start.UnixMilli()
+	maxt := end.UnixMilli()
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error reading series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// Merge versioned metadata by metric name to deduplicate across series.
+	byName := map[string]*seriesmetadata.VersionedMetadata{}
+	err = mr.IterVersionedMetadata(func(_ uint64, name string, vm *seriesmetadata.VersionedMetadata) error {
+		if name == "" {
+			return nil
+		}
+		if metric != "" && name != metric {
+			return nil
+		}
+		if existing, ok := byName[name]; ok {
+			byName[name] = seriesmetadata.MergeVersionedMetadata(existing, vm)
+		} else {
+			byName[name] = vm.Copy()
+		}
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error iterating versioned metadata: %w", err)}, nil, nil}
+	}
+
+	// Sort metric names for deterministic results when limit is applied.
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	// Build response with time range filtering and limit.
+	res := map[string][]metadataVersionEntry{}
+	totalEntries := 0
+	for _, name := range names {
+		vm := byName[name]
+		filtered := seriesmetadata.FilterVersionsByTimeRange(vm, mint, maxt)
+		if filtered == nil {
+			continue
+		}
+		for _, v := range filtered.Versions {
+			if limit >= 0 && totalEntries >= limit {
+				break
+			}
+			res[name] = append(res[name], metadataVersionEntry{
+				Type:    string(v.Meta.Type),
+				Help:    v.Meta.Help,
+				Unit:    v.Meta.Unit,
+				MinTime: v.MinTime,
+				MaxTime: v.MaxTime,
+			})
+			totalEntries++
+		}
+		if limit >= 0 && totalEntries >= limit {
+			break
+		}
 	}
 
 	return apiFuncResult{res, nil, nil, nil}

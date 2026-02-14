@@ -19,6 +19,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,7 +32,10 @@ type MockExporter struct {
 	server   *http.Server
 	listener net.Listener
 	addr     string
+
+	mu       sync.Mutex // protects handler and registry swaps
 	registry *prometheus.Registry
+	handler  http.Handler
 
 	// Metrics
 	httpRequestsTotal  *prometheus.CounterVec
@@ -90,7 +94,7 @@ func NewMockExporter(addr string) *MockExporter {
 	registry.MustRegister(requestDuration)
 	registry.MustRegister(responseSizeBytes)
 
-	return &MockExporter{
+	m := &MockExporter{
 		addr:               addr,
 		registry:           registry,
 		httpRequestsTotal:  httpRequestsTotal,
@@ -98,6 +102,10 @@ func NewMockExporter(addr string) *MockExporter {
 		requestDuration:    requestDuration,
 		responseSizeBytes:  responseSizeBytes,
 	}
+	m.handler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+		EnableOpenMetrics: true,
+	})
+	return m
 }
 
 // Start begins serving metrics.
@@ -113,11 +121,13 @@ func (m *MockExporter) Start() error {
 	m.seedMetrics()
 
 	mux := http.NewServeMux()
-	// Use promhttp handler which automatically handles content negotiation
-	// and will serve protobuf format when requested (needed for native histograms)
-	mux.Handle("/metrics", promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{
-		EnableOpenMetrics: true,
-	}))
+	// Delegate to the current handler so UpgradeMetrics can swap it.
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		m.mu.Lock()
+		h := m.handler
+		m.mu.Unlock()
+		h.ServeHTTP(w, r)
+	})
 
 	m.server = &http.Server{
 		Handler:      mux,
@@ -158,6 +168,71 @@ func (m *MockExporter) seedMetrics() {
 		size := rng.Float64() * 10000 // 0-10KB
 		m.responseSizeBytes.WithLabelValues().Observe(size)
 	}
+}
+
+// UpgradeMetrics simulates an exporter binary upgrade by creating a fresh
+// registry with changed help text for two metrics, then swapping the handler.
+func (m *MockExporter) UpgradeMetrics() {
+	registry := prometheus.NewRegistry()
+
+	m.httpRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "demo_http_requests_total",
+			Help: "Total HTTP requests processed by the server.",
+		},
+		[]string{"method", "status"},
+	)
+	m.temperatureCelsius = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "demo_temperature_celsius",
+			Help: "Current temperature in the demo environment.",
+		},
+		[]string{"location"},
+	)
+	m.requestDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:                            "demo_request_duration_seconds",
+			Help:                            "Latency of request processing in seconds.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		},
+	)
+	m.responseSizeBytes = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "demo_response_size_bytes",
+			Help:       "Size of HTTP responses.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+		},
+		[]string{},
+	)
+
+	registry.MustRegister(m.httpRequestsTotal)
+	registry.MustRegister(m.temperatureCelsius)
+	registry.MustRegister(m.requestDuration)
+	registry.MustRegister(m.responseSizeBytes)
+
+	// Seed with fresh data.
+	m.httpRequestsTotal.WithLabelValues("GET", "200").Add(200)
+	m.httpRequestsTotal.WithLabelValues("POST", "200").Add(75)
+	m.httpRequestsTotal.WithLabelValues("GET", "404").Add(15)
+	m.temperatureCelsius.WithLabelValues("server_room").Set(24.1)
+	m.temperatureCelsius.WithLabelValues("office").Set(21.5)
+
+	rng := rand.New(rand.NewSource(99))
+	for range 500 {
+		m.requestDuration.Observe(rng.ExpFloat64() * 0.1)
+	}
+	for range 250 {
+		m.responseSizeBytes.WithLabelValues().Observe(rng.Float64() * 10000)
+	}
+
+	m.mu.Lock()
+	m.registry = registry
+	m.handler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{
+		EnableOpenMetrics: true,
+	})
+	m.mu.Unlock()
 }
 
 // Stop gracefully shuts down the exporter.
