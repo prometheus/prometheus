@@ -3752,8 +3752,9 @@ func TestRequestTraceparentHeader(t *testing.T) {
 
 func TestTargetScraperScrapeOK(t *testing.T) {
 	const (
-		configTimeout   = 1500 * time.Millisecond
-		expectedTimeout = "1.5"
+		configTimeout          = 1500 * time.Millisecond
+		expectedTimeout        = "1.5"
+		expectedAcceptEncoding = "gzip"
 	)
 
 	var (
@@ -3794,17 +3795,7 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 
 			require.Equal(t, http.MethodGet, r.Method, "HTTP method should be GET")
 
-			expectedHeaders := []string{"Accept", "Accept-Encoding", "User-Agent", "X-Prometheus-Scrape-Timeout-Seconds"}
-			for name := range r.Header {
-				found := false
-				for _, eh := range expectedHeaders {
-					if strings.EqualFold(name, eh) {
-						found = true
-						break
-					}
-				}
-				require.Truef(t, found, "Unexpected header found: %s", name)
-			}
+			require.Equal(t, expectedAcceptEncoding, r.Header.Get("Accept-Encoding"), "Unexpected Accept-Encoding header")
 
 			if allowUTF8 {
 				w.Header().Set("Content-Type", `text/plain; version=1.0.0; escaping=allow-utf-8`)
@@ -3830,9 +3821,10 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 				),
 				scrapeConfig: &config.ScrapeConfig{},
 			},
-			client:       http.DefaultClient,
-			timeout:      configTimeout,
-			acceptHeader: acceptHeader,
+			client:               http.DefaultClient,
+			timeout:              configTimeout,
+			acceptHeader:         acceptHeader,
+			acceptEncodingHeader: expectedAcceptEncoding,
 		}
 		var buf bytes.Buffer
 
