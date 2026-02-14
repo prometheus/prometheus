@@ -4308,24 +4308,39 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 				n.SkipHistogramBuckets = false
 				break pathLoop
 			}
-			call, ok := path[i].(*parser.Call)
-			if !ok {
+
+			switch p := path[i].(type) {
+			case *parser.ParenExpr, *parser.StepInvariantExpr:
+				// these are transparent, continue to parent.
 				continue pathLoop
-			}
-			switch call.Func.Name {
-			case "histogram_count", "histogram_sum", "histogram_avg":
-				// We allow skipping buckets preliminarily. But
-				// we will continue through the path to see if
-				// we find a subquery (or a histogram function)
-				// further up (the latter wouldn't make sense,
-				// but no harm in detecting it).
-				n.SkipHistogramBuckets = true
-			case "histogram_quantile", "histogram_fraction":
-				// If we ever see a function that needs the
-				// whole histogram, we will not skip the
-				// buckets.
-				n.SkipHistogramBuckets = false
-				break pathLoop
+			case *parser.Call:
+				switch p.Func.Name {
+				case "histogram_count", "histogram_sum", "histogram_avg":
+					// We allow skipping buckets preliminarily. But
+					// we will continue through the path to see if
+					// we find a subquery (or a histogram function)
+					// further up.
+					n.SkipHistogramBuckets = true
+					continue pathLoop
+				case "histogram_quantile", "histogram_fraction":
+					// If we ever see a function that needs the
+					// whole histogram, we will not skip the
+					// buckets.
+					n.SkipHistogramBuckets = false
+					break pathLoop
+				default:
+					// other functions likely need buckets (e.g. rate, increase).
+					if !n.SkipHistogramBuckets {
+						n.SkipHistogramBuckets = false
+						break pathLoop
+					}
+				}
+			default:
+				// AggregateExpr, BinaryExpr, etc. currently need buckets.
+				if !n.SkipHistogramBuckets {
+					n.SkipHistogramBuckets = false
+					break pathLoop
+				}
 			}
 		}
 		return nil

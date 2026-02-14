@@ -168,3 +168,50 @@ func TestVectorElemBinop_Histograms(t *testing.T) {
 		})
 	}
 }
+
+func TestHistogramCountBinopOptimization(t *testing.T) {
+	cases := []struct {
+		expr     string
+		expected bool
+	}{
+		{
+			expr:     "histogram_count(m1)",
+			expected: true,
+		},
+		{
+			expr:     "histogram_count(m1 + m2)",
+			expected: false,
+		},
+		{
+			expr:     "histogram_count(sum(m1))",
+			expected: false,
+		},
+		{
+			expr:     "histogram_count(m1) + m2",
+			expected: true,
+		},
+		{
+			expr:     "histogram_count((m1))",
+			expected: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.expr, func(t *testing.T) {
+			expr, err := testParser.ParseExpr(tc.expr)
+			require.NoError(t, err)
+
+			detectHistogramStatsDecoding(expr)
+			parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+				// check if the histogram_count is optimized
+				if vs, ok := node.(*parser.VectorSelector); ok {
+					if vs.Name == "m1" {
+						require.Equal(t, tc.expected, vs.SkipHistogramBuckets, "vector selector m1 should be %v", tc.expected)
+					}
+				}
+				return nil
+			})
+
+		})
+	}
+}
