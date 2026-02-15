@@ -93,6 +93,7 @@ This branch adds Parquet-based series metadata persistence to TSDB, gated behind
 - **Merge path**: `DB.SeriesMetadata()` merges metadata across all blocks and the head, deduplicating by metric name (guarded by `EnableNativeMetadata`). Callers use `hash=0` since only the metric name is available during merge/compaction — the `byHash` map skips entries with zero hash to avoid corruption.
 - **Compaction**: `LeveledCompactor` merges metadata from source blocks into the compacted block via `WriteFile()` (guarded by `enableNativeMetadata` on the compactor).
 - **Web API**: `TSDBAdminStats` interface extended with `SeriesMetadata()`; `readyStorage` in main.go implements it. `/api/v1/metadata` is supplemented with persisted TSDB metadata for metrics not found in active scrape targets. When the feature is disabled, `DB.SeriesMetadata()` returns an empty reader so the API naturally finds nothing to supplement.
+- **Parquet schema**: Do not introduce new Parquet schema versions (e.g. v2) or schema migration logic. Modify the existing `metadataRow` struct in place.
 
 Demo example in `documentation/examples/metadata-persistence/`.
 

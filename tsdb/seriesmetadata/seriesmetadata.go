@@ -49,14 +49,14 @@ const SeriesMetadataFilename = "series_metadata.parquet"
 // Namespace constants for the metadataRow discriminator.
 const (
 	nsMetadataTable   = "metadata_table"   // content-addressed table: unique (type, unit, help) tuples
-	nsMetadataMapping = "metadata_mapping" // maps series→versioned metadata: labelsHash, contentHash, minTime, maxTime
+	nsMetadataMapping = "metadata_mapping" // maps series→versioned metadata: seriesRef, contentHash, minTime, maxTime
 )
 
 // metadataRow is the unified Parquet schema for series metadata.
 // The Namespace field discriminates the logical row type.
 type metadataRow struct {
 	Namespace   string `parquet:"namespace"`
-	LabelsHash  uint64 `parquet:"labels_hash"`
+	SeriesRef   uint64 `parquet:"series_ref"`
 	MinTime     int64  `parquet:"mint,optional"`
 	MaxTime     int64  `parquet:"maxt,optional"`
 	ContentHash uint64 `parquet:"content_hash,optional"`
@@ -68,14 +68,14 @@ type metadataRow struct {
 
 // Reader provides read access to series metadata.
 type Reader interface {
-	// Get returns metadata for the series with the given labels hash.
-	Get(labelsHash uint64) (metadata.Metadata, bool)
+	// Get returns metadata for the series with the given ref.
+	Get(ref uint64) (metadata.Metadata, bool)
 
 	// GetByMetricName returns all unique metadata entries for the given metric name.
 	GetByMetricName(name string) ([]metadata.Metadata, bool)
 
 	// Iter calls the given function for each series metadata entry.
-	Iter(f func(labelsHash uint64, meta metadata.Metadata) error) error
+	Iter(f func(ref uint64, meta metadata.Metadata) error) error
 
 	// IterByMetricName calls the given function for each metric name and its metadata entries.
 	IterByMetricName(f func(name string, metas []metadata.Metadata) error) error
@@ -90,22 +90,22 @@ type Reader interface {
 	VersionedMetadataReader
 }
 
-// metadataEntry stores metadata with both hash and metric name for indexing.
+// metadataEntry stores metadata with both ref and metric name for indexing.
 type metadataEntry struct {
 	metricName string
-	labelsHash uint64
+	ref        uint64
 	meta       metadata.Metadata
 }
 
 // MemSeriesMetadata is an in-memory implementation of series metadata storage.
 type MemSeriesMetadata struct {
-	// byHash maps labels hash to metadata entry (latest value).
-	byHash map[uint64]*metadataEntry
+	// byRef maps series ref to metadata entry (latest value).
+	byRef map[uint64]*metadataEntry
 	// byName maps metric name to a set of unique metadata tuples.
 	byName map[string]map[metadata.Metadata]struct{}
-	// byHashVersioned maps labels hash to versioned metadata.
-	byHashVersioned map[uint64]*versionedEntry
-	mtx             sync.RWMutex
+	// byRefVersioned maps series ref to versioned metadata.
+	byRefVersioned map[uint64]*versionedEntry
+	mtx            sync.RWMutex
 }
 
 // versionedEntry pairs a metric name with versioned metadata for indexing.
@@ -117,17 +117,17 @@ type versionedEntry struct {
 // NewMemSeriesMetadata creates a new in-memory series metadata store.
 func NewMemSeriesMetadata() *MemSeriesMetadata {
 	return &MemSeriesMetadata{
-		byHash:          make(map[uint64]*metadataEntry),
-		byName:          make(map[string]map[metadata.Metadata]struct{}),
-		byHashVersioned: make(map[uint64]*versionedEntry),
+		byRef:          make(map[uint64]*metadataEntry),
+		byName:         make(map[string]map[metadata.Metadata]struct{}),
+		byRefVersioned: make(map[uint64]*versionedEntry),
 	}
 }
 
-// Get returns metadata for the series with the given labels hash.
-func (m *MemSeriesMetadata) Get(labelsHash uint64) (metadata.Metadata, bool) {
+// Get returns metadata for the series with the given ref.
+func (m *MemSeriesMetadata) Get(ref uint64) (metadata.Metadata, bool) {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
-	entry, ok := m.byHash[labelsHash]
+	entry, ok := m.byRef[ref]
 	if !ok {
 		return metadata.Metadata{}, false
 	}
@@ -150,13 +150,13 @@ func (m *MemSeriesMetadata) GetByMetricName(name string) ([]metadata.Metadata, b
 	return result, true
 }
 
-// Set stores metadata for the given metric name and labels hash.
-func (m *MemSeriesMetadata) Set(metricName string, labelsHash uint64, meta metadata.Metadata) {
+// Set stores metadata for the given metric name and series ref.
+func (m *MemSeriesMetadata) Set(metricName string, ref uint64, meta metadata.Metadata) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	if labelsHash != 0 {
-		if old, ok := m.byHash[labelsHash]; ok && (old.meta != meta || old.metricName != metricName) {
+	if ref != 0 {
+		if old, ok := m.byRef[ref]; ok && (old.meta != meta || old.metricName != metricName) {
 			if set, exists := m.byName[old.metricName]; exists {
 				delete(set, old.meta)
 				if len(set) == 0 {
@@ -168,11 +168,11 @@ func (m *MemSeriesMetadata) Set(metricName string, labelsHash uint64, meta metad
 
 	entry := &metadataEntry{
 		metricName: metricName,
-		labelsHash: labelsHash,
+		ref:        ref,
 		meta:       meta,
 	}
-	if labelsHash != 0 {
-		m.byHash[labelsHash] = entry
+	if ref != 0 {
+		m.byRef[ref] = entry
 	}
 
 	if _, ok := m.byName[metricName]; !ok {
@@ -182,39 +182,39 @@ func (m *MemSeriesMetadata) Set(metricName string, labelsHash uint64, meta metad
 }
 
 // SetVersioned stores a versioned metadata entry for the given series.
-// It also updates the byHash/byName maps with the latest version's metadata.
-func (m *MemSeriesMetadata) SetVersioned(metricName string, labelsHash uint64, version *MetadataVersion) {
+// It also updates the byRef/byName maps with the latest version's metadata.
+func (m *MemSeriesMetadata) SetVersioned(metricName string, ref uint64, version *MetadataVersion) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	entry, ok := m.byHashVersioned[labelsHash]
+	entry, ok := m.byRefVersioned[ref]
 	if !ok {
 		entry = &versionedEntry{
 			metricName: metricName,
 			vm:         &VersionedMetadata{},
 		}
-		m.byHashVersioned[labelsHash] = entry
+		m.byRefVersioned[ref] = entry
 	}
 	entry.vm.AddOrExtend(version)
 
 	// Update the non-versioned maps with the latest value.
 	cur := entry.vm.CurrentVersion()
 	if cur != nil {
-		m.setLatestLocked(metricName, labelsHash, cur.Meta)
+		m.setLatestLocked(metricName, ref, cur.Meta)
 	}
 }
 
 // SetVersionedMetadata bulk-sets a complete VersionedMetadata for a series.
-// If metricName is empty, only the versioned store is updated (byHash/byName are not touched).
-func (m *MemSeriesMetadata) SetVersionedMetadata(labelsHash uint64, metricName string, vm *VersionedMetadata) {
+// If metricName is empty, only the versioned store is updated (byRef/byName are not touched).
+func (m *MemSeriesMetadata) SetVersionedMetadata(ref uint64, metricName string, vm *VersionedMetadata) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	if existing, ok := m.byHashVersioned[labelsHash]; ok && metricName == "" {
+	if existing, ok := m.byRefVersioned[ref]; ok && metricName == "" {
 		metricName = existing.metricName
 	}
 
-	m.byHashVersioned[labelsHash] = &versionedEntry{
+	m.byRefVersioned[ref] = &versionedEntry{
 		metricName: metricName,
 		vm:         vm,
 	}
@@ -223,16 +223,16 @@ func (m *MemSeriesMetadata) SetVersionedMetadata(labelsHash uint64, metricName s
 	if metricName != "" {
 		cur := vm.CurrentVersion()
 		if cur != nil {
-			m.setLatestLocked(metricName, labelsHash, cur.Meta)
+			m.setLatestLocked(metricName, ref, cur.Meta)
 		}
 	}
 }
 
-// setLatestLocked updates byHash/byName with the latest metadata value.
+// setLatestLocked updates byRef/byName with the latest metadata value.
 // Caller must hold m.mtx.
-func (m *MemSeriesMetadata) setLatestLocked(metricName string, labelsHash uint64, meta metadata.Metadata) {
-	if labelsHash != 0 {
-		if old, ok := m.byHash[labelsHash]; ok && (old.meta != meta || old.metricName != metricName) {
+func (m *MemSeriesMetadata) setLatestLocked(metricName string, ref uint64, meta metadata.Metadata) {
+	if ref != 0 {
+		if old, ok := m.byRef[ref]; ok && (old.meta != meta || old.metricName != metricName) {
 			if set, exists := m.byName[old.metricName]; exists {
 				delete(set, old.meta)
 				if len(set) == 0 {
@@ -244,11 +244,11 @@ func (m *MemSeriesMetadata) setLatestLocked(metricName string, labelsHash uint64
 
 	entry := &metadataEntry{
 		metricName: metricName,
-		labelsHash: labelsHash,
+		ref:        ref,
 		meta:       meta,
 	}
-	if labelsHash != 0 {
-		m.byHash[labelsHash] = entry
+	if ref != 0 {
+		m.byRef[ref] = entry
 	}
 
 	if _, ok := m.byName[metricName]; !ok {
@@ -257,28 +257,28 @@ func (m *MemSeriesMetadata) setLatestLocked(metricName string, labelsHash uint64
 	m.byName[metricName][meta] = struct{}{}
 }
 
-// Delete removes metadata for the given labels hash.
-func (m *MemSeriesMetadata) Delete(labelsHash uint64) {
+// Delete removes metadata for the given series ref.
+func (m *MemSeriesMetadata) Delete(ref uint64) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-	if entry, ok := m.byHash[labelsHash]; ok {
+	if entry, ok := m.byRef[ref]; ok {
 		if set, exists := m.byName[entry.metricName]; exists {
 			delete(set, entry.meta)
 			if len(set) == 0 {
 				delete(m.byName, entry.metricName)
 			}
 		}
-		delete(m.byHash, labelsHash)
+		delete(m.byRef, ref)
 	}
-	delete(m.byHashVersioned, labelsHash)
+	delete(m.byRefVersioned, ref)
 }
 
-// Iter calls the given function for each metadata entry by labels hash.
-func (m *MemSeriesMetadata) Iter(f func(labelsHash uint64, meta metadata.Metadata) error) error {
+// Iter calls the given function for each metadata entry by series ref.
+func (m *MemSeriesMetadata) Iter(f func(ref uint64, meta metadata.Metadata) error) error {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
-	for hash, entry := range m.byHash {
-		if err := f(hash, entry.meta); err != nil {
+	for r, entry := range m.byRef {
+		if err := f(r, entry.meta); err != nil {
 			return err
 		}
 	}
@@ -315,10 +315,10 @@ func (*MemSeriesMetadata) Close() error {
 }
 
 // GetVersionedMetadata returns the versioned metadata for a series.
-func (m *MemSeriesMetadata) GetVersionedMetadata(labelsHash uint64) (*VersionedMetadata, bool) {
+func (m *MemSeriesMetadata) GetVersionedMetadata(ref uint64) (*VersionedMetadata, bool) {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
-	entry, ok := m.byHashVersioned[labelsHash]
+	entry, ok := m.byRefVersioned[ref]
 	if !ok {
 		return nil, false
 	}
@@ -326,11 +326,11 @@ func (m *MemSeriesMetadata) GetVersionedMetadata(labelsHash uint64) (*VersionedM
 }
 
 // IterVersionedMetadata calls the given function for each series with versioned metadata.
-func (m *MemSeriesMetadata) IterVersionedMetadata(f func(labelsHash uint64, metricName string, vm *VersionedMetadata) error) error {
+func (m *MemSeriesMetadata) IterVersionedMetadata(f func(ref uint64, metricName string, vm *VersionedMetadata) error) error {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
-	for hash, entry := range m.byHashVersioned {
-		if err := f(hash, entry.metricName, entry.vm); err != nil {
+	for r, entry := range m.byRefVersioned {
+		if err := f(r, entry.metricName, entry.vm); err != nil {
 			return err
 		}
 	}
@@ -341,15 +341,15 @@ func (m *MemSeriesMetadata) IterVersionedMetadata(f func(labelsHash uint64, metr
 func (m *MemSeriesMetadata) TotalVersionedMetadata() int {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
-	return len(m.byHashVersioned)
+	return len(m.byRefVersioned)
 }
 
 // parquetReader implements Reader by reading from a Parquet file.
 type parquetReader struct {
-	file            *os.File
-	byHash          map[uint64]*metadataEntry
-	byName          map[string][]metadata.Metadata
-	byHashVersioned map[uint64]*versionedEntry
+	file           *os.File
+	byRef          map[uint64]*metadataEntry
+	byName         map[string][]metadata.Metadata
+	byRefVersioned map[uint64]*versionedEntry
 
 	closeOnce sync.Once
 	closeErr  error
@@ -383,7 +383,7 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 
 	// Phase 2: Collect mapping entries.
 	type mappingEntry struct {
-		labelsHash  uint64
+		seriesRef   uint64
 		metricName  string
 		contentHash uint64
 		minTime     int64
@@ -394,7 +394,7 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 		row := &rows[i]
 		if row.Namespace == nsMetadataMapping {
 			mappings = append(mappings, mappingEntry{
-				labelsHash:  row.LabelsHash,
+				seriesRef:   row.SeriesRef,
 				metricName:  row.MetricName,
 				contentHash: row.ContentHash,
 				minTime:     row.MinTime,
@@ -404,11 +404,11 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 	}
 
 	// Phase 3: Resolve mappings → versioned metadata.
-	byHashVersioned := make(map[uint64]*versionedEntry)
-	// Sort mappings by labelsHash then minTime for deterministic construction.
+	byRefVersioned := make(map[uint64]*versionedEntry)
+	// Sort mappings by seriesRef then minTime for deterministic construction.
 	sort.Slice(mappings, func(i, j int) bool {
-		if mappings[i].labelsHash != mappings[j].labelsHash {
-			return mappings[i].labelsHash < mappings[j].labelsHash
+		if mappings[i].seriesRef != mappings[j].seriesRef {
+			return mappings[i].seriesRef < mappings[j].seriesRef
 		}
 		return mappings[i].minTime < mappings[j].minTime
 	})
@@ -417,13 +417,13 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 		if !ok {
 			continue // Orphaned mapping row; skip.
 		}
-		entry, ok := byHashVersioned[mp.labelsHash]
+		entry, ok := byRefVersioned[mp.seriesRef]
 		if !ok {
 			entry = &versionedEntry{
 				metricName: mp.metricName,
 				vm:         &VersionedMetadata{},
 			}
-			byHashVersioned[mp.labelsHash] = entry
+			byRefVersioned[mp.seriesRef] = entry
 		}
 		entry.vm.AddOrExtend(&MetadataVersion{
 			Meta:    meta,
@@ -432,17 +432,17 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 		})
 	}
 
-	// Phase 4: Derive byHash/byName from versioned data (latest version per series).
-	byHash := make(map[uint64]*metadataEntry, len(byHashVersioned))
+	// Phase 4: Derive byRef/byName from versioned data (latest version per series).
+	byRef := make(map[uint64]*metadataEntry, len(byRefVersioned))
 	byNameSet := make(map[string]map[metadata.Metadata]struct{})
-	for hash, ve := range byHashVersioned {
+	for r, ve := range byRefVersioned {
 		cur := ve.vm.CurrentVersion()
 		if cur == nil {
 			continue
 		}
-		byHash[hash] = &metadataEntry{
+		byRef[r] = &metadataEntry{
 			metricName: ve.metricName,
-			labelsHash: hash,
+			ref:        r,
 			meta:       cur.Meta,
 		}
 		if _, ok := byNameSet[ve.metricName]; !ok {
@@ -461,16 +461,16 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 	}
 
 	return &parquetReader{
-		file:            file,
-		byHash:          byHash,
-		byName:          byName,
-		byHashVersioned: byHashVersioned,
+		file:           file,
+		byRef:          byRef,
+		byName:         byName,
+		byRefVersioned: byRefVersioned,
 	}, nil
 }
 
-// Get returns metadata for the series with the given labels hash.
-func (r *parquetReader) Get(labelsHash uint64) (metadata.Metadata, bool) {
-	entry, ok := r.byHash[labelsHash]
+// Get returns metadata for the series with the given ref.
+func (r *parquetReader) Get(ref uint64) (metadata.Metadata, bool) {
+	entry, ok := r.byRef[ref]
 	if !ok {
 		return metadata.Metadata{}, false
 	}
@@ -486,10 +486,10 @@ func (r *parquetReader) GetByMetricName(name string) ([]metadata.Metadata, bool)
 	return metas, true
 }
 
-// Iter calls the given function for each metadata entry by labels hash.
-func (r *parquetReader) Iter(f func(labelsHash uint64, meta metadata.Metadata) error) error {
-	for hash, entry := range r.byHash {
-		if err := f(hash, entry.meta); err != nil {
+// Iter calls the given function for each metadata entry by series ref.
+func (r *parquetReader) Iter(f func(ref uint64, meta metadata.Metadata) error) error {
+	for sr, entry := range r.byRef {
+		if err := f(sr, entry.meta); err != nil {
 			return err
 		}
 	}
@@ -512,8 +512,8 @@ func (r *parquetReader) Total() uint64 {
 }
 
 // GetVersionedMetadata returns the versioned metadata for a series.
-func (r *parquetReader) GetVersionedMetadata(labelsHash uint64) (*VersionedMetadata, bool) {
-	entry, ok := r.byHashVersioned[labelsHash]
+func (r *parquetReader) GetVersionedMetadata(ref uint64) (*VersionedMetadata, bool) {
+	entry, ok := r.byRefVersioned[ref]
 	if !ok {
 		return nil, false
 	}
@@ -521,9 +521,9 @@ func (r *parquetReader) GetVersionedMetadata(labelsHash uint64) (*VersionedMetad
 }
 
 // IterVersionedMetadata calls the given function for each series with versioned metadata.
-func (r *parquetReader) IterVersionedMetadata(f func(labelsHash uint64, metricName string, vm *VersionedMetadata) error) error {
-	for hash, entry := range r.byHashVersioned {
-		if err := f(hash, entry.metricName, entry.vm); err != nil {
+func (r *parquetReader) IterVersionedMetadata(f func(ref uint64, metricName string, vm *VersionedMetadata) error) error {
+	for sr, entry := range r.byRefVersioned {
+		if err := f(sr, entry.metricName, entry.vm); err != nil {
 			return err
 		}
 	}
@@ -532,7 +532,7 @@ func (r *parquetReader) IterVersionedMetadata(f func(labelsHash uint64, metricNa
 
 // TotalVersionedMetadata returns the total count of series with versioned metadata.
 func (r *parquetReader) TotalVersionedMetadata() int {
-	return len(r.byHashVersioned)
+	return len(r.byRefVersioned)
 }
 
 // Close releases resources associated with the reader.
@@ -554,7 +554,7 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 
 	// 1. Build content-addressed table and mapping rows from versioned metadata.
 	contentTable := make(map[uint64]metadata.Metadata) // contentHash → metadata
-	err := mr.IterVersionedMetadata(func(labelsHash uint64, metricName string, vm *VersionedMetadata) error {
+	err := mr.IterVersionedMetadata(func(ref uint64, metricName string, vm *VersionedMetadata) error {
 		for _, v := range vm.Versions {
 			ch := HashMetadataContent(v.Meta)
 			if _, exists := contentTable[ch]; !exists {
@@ -562,7 +562,7 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 			}
 			rows = append(rows, metadataRow{
 				Namespace:   nsMetadataMapping,
-				LabelsHash:  labelsHash,
+				SeriesRef:   ref,
 				ContentHash: ch,
 				MinTime:     v.MinTime,
 				MaxTime:     v.MaxTime,

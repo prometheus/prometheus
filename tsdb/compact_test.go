@@ -2204,33 +2204,66 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 	}
 }
 
+// getBlockSeriesRefs opens a block's index and returns all series refs.
+func getBlockSeriesRefs(t *testing.T, blockDir string) []storage.SeriesRef {
+	t.Helper()
+	b, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
+	require.NoError(t, err)
+	defer b.Close()
+
+	ir, err := b.Index()
+	require.NoError(t, err)
+	defer ir.Close()
+
+	k, v := index.AllPostingsKey()
+	p, err := ir.Postings(context.Background(), k, v)
+	require.NoError(t, err)
+
+	var refs []storage.SeriesRef
+	for p.Next() {
+		refs = append(refs, p.At())
+	}
+	require.NoError(t, p.Err())
+	return refs
+}
+
 func TestCompactMergesSeriesMetadata(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create block 1 with metadata for metrics A and B.
+	// Create blocks with 3 series each so we have enough refs for distinct metadata entries.
+	block1Dir := createBlock(t, dir, genSeries(3, 1, 0, 100))
+	block2Dir := createBlock(t, dir, genSeries(3, 1, 101, 200))
+
+	// Get the actual series refs from each block's index.
+	b1Refs := getBlockSeriesRefs(t, block1Dir)
+	require.GreaterOrEqual(t, len(b1Refs), 3)
+	b2Refs := getBlockSeriesRefs(t, block2Dir)
+	require.GreaterOrEqual(t, len(b2Refs), 3)
+
+	// Create block 1 metadata using actual block series refs.
+	// Each metadata entry uses a different series ref.
 	block1Meta := seriesmetadata.NewMemSeriesMetadata()
-	block1Meta.SetVersioned("http_requests_total", 1, &seriesmetadata.MetadataVersion{
+	block1Meta.SetVersioned("http_requests_total", uint64(b1Refs[0]), &seriesmetadata.MetadataVersion{
 		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests", Unit: ""}, MinTime: 0, MaxTime: 100,
 	})
-	block1Meta.SetVersioned("go_goroutines", 2, &seriesmetadata.MetadataVersion{
+	block1Meta.SetVersioned("go_goroutines", uint64(b1Refs[1]), &seriesmetadata.MetadataVersion{
 		Meta: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines", Unit: ""}, MinTime: 0, MaxTime: 100,
 	})
 
-	// Create a minimal block1 with some series data.
-	block1Dir := createBlock(t, dir, genSeries(1, 1, 0, 100))
 	_, err := seriesmetadata.WriteFile(promslog.NewNopLogger(), block1Dir, block1Meta)
 	require.NoError(t, err)
 
-	// Create block 2 with updated metadata for metric A and new metric C.
+	// Create block 2 metadata using actual block series refs.
+	// http_requests_total uses the same series (same labels) as block1 — ref will be different
+	// but labels hash will match, enabling cross-block merge.
 	block2Meta := seriesmetadata.NewMemSeriesMetadata()
-	block2Meta.SetVersioned("http_requests_total", 1, &seriesmetadata.MetadataVersion{
+	block2Meta.SetVersioned("http_requests_total", uint64(b2Refs[0]), &seriesmetadata.MetadataVersion{
 		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests (updated)", Unit: ""}, MinTime: 101, MaxTime: 200,
 	})
-	block2Meta.SetVersioned("cpu_seconds_total", 3, &seriesmetadata.MetadataVersion{
+	block2Meta.SetVersioned("cpu_seconds_total", uint64(b2Refs[2]), &seriesmetadata.MetadataVersion{
 		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "CPU time", Unit: "seconds"}, MinTime: 101, MaxTime: 200,
 	})
 
-	block2Dir := createBlock(t, dir, genSeries(1, 1, 101, 200))
 	_, err = seriesmetadata.WriteFile(promslog.NewNopLogger(), block2Dir, block2Meta)
 	require.NoError(t, err)
 
@@ -2265,13 +2298,12 @@ func TestCompactMergesSeriesMetadata(t *testing.T) {
 	require.NoError(t, err)
 	defer mr.Close()
 
-	// http_requests_total: both block1 and block2 entries merged.
+	// http_requests_total: both block1 and block2 entries merged via labels hash match.
 	metas, ok := mr.GetByMetricName("http_requests_total")
 	require.True(t, ok)
 	require.NotEmpty(t, metas)
-	// Parquet stores one entry per metric, so after write/readback we get one.
-	// The compaction merged both entries, WriteFile picks the first.
 	require.Len(t, metas, 1)
+	require.Equal(t, "Total requests (updated)", metas[0].Help)
 
 	// go_goroutines: only in block1, should be preserved.
 	metas, ok = mr.GetByMetricName("go_goroutines")

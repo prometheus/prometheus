@@ -1776,8 +1776,7 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 				continue // Skip series without metric name
 			}
 
-			hash := labels.StableHash(s.lset)
-			mem.SetVersionedMetadata(hash, metricName, vmCopy)
+			mem.SetVersionedMetadata(uint64(s.ref), metricName, vmCopy)
 		}
 	}
 
@@ -1822,8 +1821,7 @@ func (h *Head) SeriesMetadataForMatchers(ctx context.Context, matchers ...*label
 			continue
 		}
 
-		hash := labels.StableHash(s.lset)
-		mem.SetVersionedMetadata(hash, metricName, vmCopy)
+		mem.SetVersionedMetadata(uint64(s.ref), metricName, vmCopy)
 	}
 	if p.Err() != nil {
 		return nil, p.Err()

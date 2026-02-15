@@ -1154,51 +1154,85 @@ func (db *DB) BlockMetas() []BlockMeta {
 
 // SeriesMetadata returns a merged reader of series metadata from all blocks and the head.
 // Returns an empty reader when native metadata is not enabled.
+//
+// The merge resolves block/head series refs to labels via each source's index,
+// then merges by labels hash as a transient in-memory key.
+//
+// NOTE: The returned reader's ref values are labels hashes, NOT series refs.
+// The merged result spans multiple indexes so no single series ref is valid.
+// Callers should use GetByMetricName / IterByMetricName / IterVersionedMetadata
+// (ignoring the ref parameter) rather than Get(ref).
 func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 	if !db.opts.EnableNativeMetadata {
 		return seriesmetadata.NewMemSeriesMetadata(), nil
 	}
 
 	merged := seriesmetadata.NewMemSeriesMetadata()
+	var builder labels.ScratchBuilder
 
-	// Collect metadata from all blocks
+	// Collect metadata from all blocks, resolving BlockSeriesRef → labels via index.
 	for _, b := range db.Blocks() {
 		mr, err := b.SeriesMetadata()
 		if err != nil {
 			return nil, fmt.Errorf("get block series metadata: %w", err)
 		}
-		// Merge versioned metadata.
-		err = mr.IterVersionedMetadata(func(labelsHash uint64, metricName string, vm *seriesmetadata.VersionedMetadata) error {
-			existing, ok := merged.GetVersionedMetadata(labelsHash)
+		ir, err := b.Index()
+		if err != nil {
+			mr.Close()
+			return nil, fmt.Errorf("get block index: %w", err)
+		}
+
+		err = mr.IterVersionedMetadata(func(ref uint64, metricName string, vm *seriesmetadata.VersionedMetadata) error {
+			if err := ir.Series(storage.SeriesRef(ref), &builder, nil); err != nil {
+				return fmt.Errorf("resolve block series ref %d: %w", ref, err)
+			}
+			lHash := labels.StableHash(builder.Labels())
+
+			existing, ok := merged.GetVersionedMetadata(lHash)
 			if ok {
-				merged.SetVersionedMetadata(labelsHash, metricName, seriesmetadata.MergeVersionedMetadata(existing, vm))
+				merged.SetVersionedMetadata(lHash, metricName, seriesmetadata.MergeVersionedMetadata(existing, vm))
 			} else {
-				merged.SetVersionedMetadata(labelsHash, metricName, vm.Copy())
+				merged.SetVersionedMetadata(lHash, metricName, vm.Copy())
 			}
 			return nil
 		})
 		mr.Close()
+		ir.Close()
 		if err != nil {
 			return nil, fmt.Errorf("iterate block versioned metadata: %w", err)
 		}
 	}
 
-	// Collect metadata from head (most recent data supplements block metadata)
+	// Collect metadata from head, resolving HeadSeriesRef → labels via head's index.
 	headMeta, err := db.head.SeriesMetadata()
 	if err != nil {
 		return nil, fmt.Errorf("get head series metadata: %w", err)
 	}
-	// Merge versioned metadata from head.
-	err = headMeta.IterVersionedMetadata(func(labelsHash uint64, metricName string, vm *seriesmetadata.VersionedMetadata) error {
-		existing, ok := merged.GetVersionedMetadata(labelsHash)
+	headIR, err := db.head.Index()
+	if err != nil {
+		headMeta.Close()
+		return nil, fmt.Errorf("get head index: %w", err)
+	}
+
+	err = headMeta.IterVersionedMetadata(func(ref uint64, metricName string, vm *seriesmetadata.VersionedMetadata) error {
+		if err := headIR.Series(storage.SeriesRef(ref), &builder, nil); err != nil {
+			// Series may have been garbage collected since metadata was read; skip.
+			// Log in case it indicates a real index issue rather than a benign race.
+			db.logger.Debug("skipping head metadata entry: could not resolve series ref", "ref", ref, "err", err)
+			return nil
+		}
+		lHash := labels.StableHash(builder.Labels())
+
+		existing, ok := merged.GetVersionedMetadata(lHash)
 		if ok {
-			merged.SetVersionedMetadata(labelsHash, metricName, seriesmetadata.MergeVersionedMetadata(existing, vm))
+			merged.SetVersionedMetadata(lHash, metricName, seriesmetadata.MergeVersionedMetadata(existing, vm))
 		} else {
-			merged.SetVersionedMetadata(labelsHash, metricName, vm.Copy())
+			merged.SetVersionedMetadata(lHash, metricName, vm.Copy())
 		}
 		return nil
 	})
 	headMeta.Close()
+	headIR.Close()
 	if err != nil {
 		return nil, fmt.Errorf("iterate head versioned metadata: %w", err)
 	}

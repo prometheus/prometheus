@@ -171,8 +171,8 @@ func HashMetadataContent(meta metadata.Metadata) uint64 {
 
 // VersionedMetadataReader provides read access to versioned metadata.
 type VersionedMetadataReader interface {
-	GetVersionedMetadata(labelsHash uint64) (*VersionedMetadata, bool)
-	IterVersionedMetadata(f func(labelsHash uint64, metricName string, vm *VersionedMetadata) error) error
+	GetVersionedMetadata(ref uint64) (*VersionedMetadata, bool)
+	IterVersionedMetadata(f func(ref uint64, metricName string, vm *VersionedMetadata) error) error
 	TotalVersionedMetadata() int
 }
 
