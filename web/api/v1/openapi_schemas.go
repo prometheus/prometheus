@@ -65,6 +65,7 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("MetadataOutputBody", b.metadataOutputBodySchema())
 	schemas.Set("MetadataVersionEntry", b.metadataVersionEntrySchema())
 	schemas.Set("MetadataVersionsOutputBody", b.metadataVersionsOutputBodySchema())
+	schemas.Set("MetadataSeriesOutputBody", b.metadataSeriesOutputBodySchema())
 	schemas.Set("MetricMetadata", b.metricMetadataSchema())
 
 	// Target schemas.
@@ -811,6 +812,30 @@ func (*OpenAPIBuilder) metadataVersionsOutputBodySchema() *base.SchemaProxy {
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
 		Description:          "Response body for metadata versions endpoint.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"status", "data"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) metadataSeriesOutputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+		Type: []string{"object"},
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
+			A: base.CreateSchemaProxy(&base.Schema{
+				Type:  []string{"array"},
+				Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/MetadataVersionEntry")},
+			}),
+		},
+	}))
+	props.Set("warnings", warningsSchema())
+	props.Set("infos", infosSchema())
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Response body for metadata series endpoint.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"status", "data"},
 		Properties:           props,

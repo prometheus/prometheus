@@ -459,6 +459,7 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/metadata", wrap(api.metricMetadata))
 	r.Get("/metadata/versions", wrap(api.metadataVersions))
+	r.Get("/metadata/series", wrap(api.metadataSeries))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
@@ -1764,6 +1765,112 @@ func (api *API) metadataVersions(r *http.Request) apiFuncResult {
 		for _, v := range filtered.Versions {
 			if limit >= 0 && totalEntries >= limit {
 				break
+			}
+			res[name] = append(res[name], metadataVersionEntry{
+				Type:    string(v.Meta.Type),
+				Help:    v.Meta.Help,
+				Unit:    v.Meta.Unit,
+				MinTime: v.MinTime,
+				MaxTime: v.MaxTime,
+			})
+			totalEntries++
+		}
+		if limit >= 0 && totalEntries >= limit {
+			break
+		}
+	}
+
+	return apiFuncResult{res, nil, nil, nil}
+}
+
+func (api *API) metadataSeries(r *http.Request) apiFuncResult {
+	if !api.enableNativeMetadata || api.db == nil {
+		return apiFuncResult{map[string][]metadataVersionEntry{}, nil, nil, nil}
+	}
+
+	// Parse filter params.
+	typeFilter := r.FormValue("type")
+	unitFilter := r.FormValue("unit")
+
+	var helpRegex *regexp.Regexp
+	if helpPattern := r.FormValue("help"); helpPattern != "" {
+		var err error
+		helpRegex, err = regexp.Compile(helpPattern)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid help regex: %w", err)}, nil, nil}
+		}
+	}
+
+	limit := -1
+	if s := r.FormValue("limit"); s != "" {
+		var err error
+		if limit, err = strconv.Atoi(s); err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
+		}
+	}
+
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	mint := start.UnixMilli()
+	maxt := end.UnixMilli()
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error reading series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// Merge versioned metadata by metric name.
+	byName := map[string]*seriesmetadata.VersionedMetadata{}
+	err = mr.IterVersionedMetadata(func(_ uint64, name string, vm *seriesmetadata.VersionedMetadata) error {
+		if name == "" {
+			return nil
+		}
+		if existing, ok := byName[name]; ok {
+			byName[name] = seriesmetadata.MergeVersionedMetadata(existing, vm)
+		} else {
+			byName[name] = vm.Copy()
+		}
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error iterating versioned metadata: %w", err)}, nil, nil}
+	}
+
+	// Sort metric names for deterministic results when limit is applied.
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	// Build response: filter versions by time range and metadata criteria.
+	res := map[string][]metadataVersionEntry{}
+	totalEntries := 0
+	for _, name := range names {
+		vm := byName[name]
+		filtered := seriesmetadata.FilterVersionsByTimeRange(vm, mint, maxt)
+		if filtered == nil {
+			continue
+		}
+		for _, v := range filtered.Versions {
+			if limit >= 0 && totalEntries >= limit {
+				break
+			}
+			if typeFilter != "" && string(v.Meta.Type) != typeFilter {
+				continue
+			}
+			if unitFilter != "" && v.Meta.Unit != unitFilter {
+				continue
+			}
+			if helpRegex != nil && !helpRegex.MatchString(v.Meta.Help) {
+				continue
 			}
 			res[name] = append(res[name], metadataVersionEntry{
 				Type:    string(v.Meta.Type),

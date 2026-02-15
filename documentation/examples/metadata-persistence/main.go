@@ -225,13 +225,19 @@ func runDemo() error {
 	printVersionedMetadata("Versioned metadata from persisted blocks:", dbMeta)
 	dbMeta.Close()
 
-	// === PHASE 9: Demonstrate versioned API response format ===
-	printPhase(9, "Demonstrating /api/v1/metadata/versions API response format")
+	// === PHASE 9: Demonstrate API response formats ===
+	printPhase(9, "Demonstrating metadata API response formats")
 
 	apiResponse := buildVersionedAPIResponse(db)
 	prettyJSON, _ := json.MarshalIndent(apiResponse, "", "  ")
 	fmt.Printf("%sAPI Response (same format as /api/v1/metadata/versions):%s\n", colorBold, colorReset)
 	fmt.Printf("%s%s%s\n", colorGray, string(prettyJSON), colorReset)
+	fmt.Println()
+
+	seriesResponse := buildMetadataSeriesAPIResponse(db, "counter")
+	seriesJSON, _ := json.MarshalIndent(seriesResponse, "", "  ")
+	fmt.Printf("%sAPI Response (same format as /api/v1/metadata/series?type=counter):%s\n", colorBold, colorReset)
+	fmt.Printf("%s%s%s\n", colorGray, string(seriesJSON), colorReset)
 	fmt.Println()
 
 	// === Summary ===
@@ -244,6 +250,7 @@ func runDemo() error {
 	fmt.Printf("  %s5.%s When blocks are compacted, metadata is persisted to Parquet files\n", colorGreen, colorReset)
 	fmt.Printf("  %s6.%s Even after scrape targets are removed, metadata remains queryable\n", colorGreen, colorReset)
 	fmt.Printf("  %s7.%s The /api/v1/metadata/versions endpoint shows version history\n", colorGreen, colorReset)
+	fmt.Printf("  %s8.%s The /api/v1/metadata/series endpoint finds metrics by metadata criteria\n", colorGreen, colorReset)
 	fmt.Println()
 	fmt.Printf("%sThis enables users to understand historical metrics even when\n", colorCyan)
 	fmt.Printf("the original exporters are no longer running.%s\n", colorReset)
@@ -605,6 +612,65 @@ func buildVersionedAPIResponse(db *tsdb.DB) map[string]any {
 	data := make(map[string][]versionEntry)
 	for name, vm := range byName {
 		for _, v := range vm.Versions {
+			data[name] = append(data[name], versionEntry{
+				Type:    string(v.Meta.Type),
+				Help:    v.Meta.Help,
+				Unit:    v.Meta.Unit,
+				MinTime: v.MinTime,
+				MaxTime: v.MaxTime,
+			})
+		}
+	}
+
+	return map[string]any{
+		"status": "success",
+		"data":   data,
+	}
+}
+
+// buildMetadataSeriesAPIResponse builds a response in the same format as
+// /api/v1/metadata/series?type=<typeFilter>, which performs inverse metadata
+// lookup — finding metrics that match a given metadata criteria.
+func buildMetadataSeriesAPIResponse(db *tsdb.DB, typeFilter string) map[string]any {
+	reader, err := db.SeriesMetadata()
+	if err != nil {
+		return map[string]any{
+			"status": "error",
+			"error":  err.Error(),
+		}
+	}
+	defer reader.Close()
+
+	// Collect and merge by base metric name.
+	byName := make(map[string]*seriesmetadata.VersionedMetadata)
+	_ = reader.IterVersionedMetadata(func(_ uint64, name string, vm *seriesmetadata.VersionedMetadata) error {
+		if name == "" {
+			return nil
+		}
+		baseName := stripMetricSuffix(name)
+		if existing, ok := byName[baseName]; ok {
+			byName[baseName] = seriesmetadata.MergeVersionedMetadata(existing, vm)
+		} else {
+			byName[baseName] = vm.Copy()
+		}
+		return nil
+	})
+
+	// Build response: only include versions matching the type filter.
+	type versionEntry struct {
+		Type    string `json:"type"`
+		Help    string `json:"help"`
+		Unit    string `json:"unit"`
+		MinTime int64  `json:"minTime"`
+		MaxTime int64  `json:"maxTime"`
+	}
+
+	data := make(map[string][]versionEntry)
+	for name, vm := range byName {
+		for _, v := range vm.Versions {
+			if typeFilter != "" && string(v.Meta.Type) != typeFilter {
+				continue
+			}
 			data[name] = append(data[name], versionEntry{
 				Type:    string(v.Meta.Type),
 				Help:    v.Meta.Help,

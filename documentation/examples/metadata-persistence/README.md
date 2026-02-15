@@ -66,6 +66,7 @@ difficult to:
 4. **Versioning**: When metadata changes, a new version is created with its time range
 5. **Persistence**: When blocks are compacted, metadata versions are written to Parquet files
 6. **Querying**: The `/api/v1/metadata/versions` endpoint returns version history with time ranges
+7. **Inverse lookup**: The `/api/v1/metadata/series` endpoint finds metrics by type, unit, or help text
 
 ## Running the Demo
 
@@ -124,9 +125,10 @@ Forces head compaction to persist data to a Parquet block file
 Shows metadata retrieved from the persisted Parquet file, demonstrating that
 metadata remains available even after the scrape target is gone.
 
-### Phase 9: Versioned API Response Format
-Demonstrates the JSON format returned by `/api/v1/metadata/versions`, showing
-each metric's version history with `minTime`/`maxTime` per version.
+### Phase 9: Metadata API Response Formats
+Demonstrates the JSON formats returned by `/api/v1/metadata/versions` (version
+history with `minTime`/`maxTime` per version) and `/api/v1/metadata/series`
+(inverse metadata lookup — finding metrics by type, unit, or help text).
 
 ### Phase 10: Summary
 Summarizes the key concepts demonstrated.
@@ -178,7 +180,7 @@ Orchestrates the demonstration:
 4. Upgrades the exporter and scrapes again to create version history
 5. Queries versioned metadata showing per-metric version history
 6. Demonstrates persistence by compacting and querying
-7. Shows the `/api/v1/metadata/versions` API response format
+7. Shows the `/api/v1/metadata/versions` and `/api/v1/metadata/series` API response formats
 
 ## API Response Format
 
@@ -224,13 +226,41 @@ The `/api/v1/metadata/versions` endpoint returns versioned metadata:
 }
 ```
 
+The `/api/v1/metadata/series` endpoint performs inverse metadata lookup — finding
+metrics that match given metadata criteria (type, unit, or help regex):
+
+```json
+// GET /api/v1/metadata/series?type=counter
+{
+  "status": "success",
+  "data": {
+    "demo_http_requests_total": [
+      {
+        "type": "counter",
+        "help": "Total number of HTTP requests received.",
+        "unit": "",
+        "minTime": 1771150506221,
+        "maxTime": 1771150506221
+      },
+      {
+        "type": "counter",
+        "help": "Total HTTP requests processed by the server.",
+        "unit": "",
+        "minTime": 1771154106221,
+        "maxTime": 1771154106221
+      }
+    ]
+  }
+}
+```
+
 ## Key Files in Prometheus
 
 - `tsdb/seriesmetadata/seriesmetadata.go` - Parquet reader/writer for metadata
 - `tsdb/seriesmetadata/versioned_metadata.go` - Version tracking and merging
 - `tsdb/head.go` - Head block metadata storage
 - `tsdb/compact.go` - Metadata merging during compaction
-- `web/api/v1/api.go` - API endpoint integration (`/api/v1/metadata/versions`)
+- `web/api/v1/api.go` - API endpoint integration (`/api/v1/metadata/versions`, `/api/v1/metadata/series`)
 
 ## Learn More
 
