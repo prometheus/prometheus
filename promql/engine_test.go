@@ -1079,6 +1079,28 @@ load 10s
 			},
 		},
 		{
+			// Regression test: when a subquery contains a range function
+			// like rate(), the TotalSamples should reflect the actual
+			// storage samples scanned, not just the intermediate result
+			// points. See https://github.com/prometheus/prometheus/issues/16638
+			Query:        "rate(metricWith3SampleEvery10Seconds[60s])[60s:5s]",
+			Start:        time.Unix(201, 0),
+			PeakSamples:  42,
+			TotalSamples: 216, // 3 series * 6 samples per series per subquery step * 12 subquery steps (60s/5s)
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 216,
+			},
+		},
+		{
+			Query:        "max_over_time(rate(metricWith3SampleEvery10Seconds[60s])[60s:5s])",
+			Start:        time.Unix(201, 0),
+			PeakSamples:  51,
+			TotalSamples: 216, // Same storage samples as the bare subquery above
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 216,
+			},
+		},
+		{
 			Query:        `metricWith3SampleEvery10Seconds{a="1"}`,
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),

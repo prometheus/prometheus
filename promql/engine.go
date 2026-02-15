@@ -1773,13 +1773,14 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
-func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr) (*parser.MatrixSelector, int, annotations.Annotations) {
+func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr) (*parser.MatrixSelector, int, int64, annotations.Annotations) {
 	samplesStats := ev.samplesStats
 	// Avoid double counting samples when running a subquery, those samples will be counted in later stage.
 	ev.samplesStats = ev.samplesStats.NewChild()
 	val, ws := ev.eval(ctx, subq)
 	// But do incorporate the peak from the subquery.
 	samplesStats.UpdatePeakFromSubquery(ev.samplesStats)
+	childTotalSamples := ev.samplesStats.TotalSamples
 	ev.samplesStats = samplesStats
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
@@ -1822,7 +1823,7 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 		}
 		vs.Series = append(vs.Series, NewStorageSeries(s))
 	}
-	return ms, mat.TotalSamples(), ws
+	return ms, mat.TotalSamples(), childTotalSamples, ws
 }
 
 // eval evaluates the given expression as the given AST expression node requires.
@@ -1914,9 +1915,20 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				matrixArgIndex = i
 				matrixArg = true
 				// Replacing parser.SubqueryExpr with parser.MatrixSelector.
-				val, totalSamples, ws := ev.evalSubquery(ctx, subq)
+				val, totalSamples, childTotalSamples, ws := ev.evalSubquery(ctx, subq)
 				e.Args[i] = val
 				warnings.Merge(ws)
+				// The subquery's child evaluator counted all storage
+				// samples scanned (childTotalSamples). The outer
+				// function will count the intermediate result points
+				// (totalSamples) as it iterates over the matrix. When
+				// the subquery contains range functions (e.g. rate()),
+				// childTotalSamples > totalSamples because each result
+				// point is derived from multiple storage samples. Add
+				// the difference so TotalSamples reflects storage I/O.
+				if adj := childTotalSamples - int64(totalSamples); adj > 0 {
+					ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, adj)
+				}
 				defer func() {
 					// subquery result takes space in the memory. Get rid of that at the end.
 					val.VectorSelector.(*parser.VectorSelector).Series = nil
