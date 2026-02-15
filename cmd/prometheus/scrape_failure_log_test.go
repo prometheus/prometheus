@@ -22,11 +22,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -165,7 +165,7 @@ scrape_configs:
 // for all requests. It also increments the request count each time it's hit.
 func startGarbageServer(t *testing.T, requestCount *atomic.Int32) string {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requestCount.Inc()
+		requestCount.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(server.Close)

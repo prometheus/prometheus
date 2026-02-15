@@ -398,7 +398,7 @@ func (ch *OOOCompactionHead) Meta() BlockMeta {
 		MaxTime: ch.maxt,
 		ULID:    oooCompactionHeadULID,
 		Stats: BlockStats{
-			NumSeries: uint64(len(ch.postings)),
+			NumSeries: int64(len(ch.postings)),
 		},
 	}
 }

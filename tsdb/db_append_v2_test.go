@@ -26,6 +26,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,7 +35,6 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -588,7 +588,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange_AppendV2(t *testing.T) {
 	snap := t.TempDir()
 
 	// Hackingly introduce "race", by having lower max time then maxTime in last chunk.
-	db.head.maxTime.Sub(10)
+	db.head.maxTime.Add(-10)
 
 	require.NoError(t, db.Snapshot(snap, true))
 	require.NoError(t, db.Close())
@@ -1798,17 +1798,17 @@ func TestCorrectNumTombstones_AppendV2(t *testing.T) {
 	require.Len(t, db.blocks, 1)
 
 	require.NoError(t, db.Delete(ctx, 0, 1, defaultMatcher))
-	require.Equal(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
+	require.Equal(t, int64(1), db.blocks[0].meta.Stats.NumTombstones)
 
 	// {0, 1} and {2, 3} are merged to form 1 tombstone.
 	require.NoError(t, db.Delete(ctx, 2, 3, defaultMatcher))
-	require.Equal(t, uint64(1), db.blocks[0].meta.Stats.NumTombstones)
+	require.Equal(t, int64(1), db.blocks[0].meta.Stats.NumTombstones)
 
 	require.NoError(t, db.Delete(ctx, 5, 6, defaultMatcher))
-	require.Equal(t, uint64(2), db.blocks[0].meta.Stats.NumTombstones)
+	require.Equal(t, int64(2), db.blocks[0].meta.Stats.NumTombstones)
 
 	require.NoError(t, db.Delete(ctx, 9, 11, defaultMatcher))
-	require.Equal(t, uint64(3), db.blocks[0].meta.Stats.NumTombstones)
+	require.Equal(t, int64(3), db.blocks[0].meta.Stats.NumTombstones)
 }
 
 // TestBlockRanges checks the following use cases:
@@ -2517,7 +2517,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingQuerier_AppendV
 	require.NoError(t, err)
 
 	// Start OOO head compaction.
-	compactionComplete := atomic.NewBool(false)
+	var compactionComplete atomic.Bool
 	go func() {
 		defer compactionComplete.Store(true)
 
@@ -2612,7 +2612,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterSelecting_AppendV2(t *tes
 	seriesSet := querier.Select(ctx, true, hints, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"))
 
 	// Start OOO head compaction.
-	compactionComplete := atomic.NewBool(false)
+	var compactionComplete atomic.Bool
 	go func() {
 		defer compactionComplete.Store(true)
 
@@ -2700,7 +2700,7 @@ func TestQuerierShouldNotFailIfOOOCompactionOccursAfterRetrievingIterators_Appen
 	iterator := iterators[0]
 
 	// Start OOO head compaction.
-	compactionComplete := atomic.NewBool(false)
+	var compactionComplete atomic.Bool
 	go func() {
 		defer compactionComplete.Store(true)
 

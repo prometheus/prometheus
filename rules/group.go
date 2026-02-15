@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,7 +31,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -503,7 +503,7 @@ func (g *Group) CopyState(from *Group) {
 // Rules can be evaluated concurrently if the `concurrent-rule-eval` feature flag is enabled.
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	var (
-		samplesTotal    atomic.Float64
+		samplesTotal    atomic.Uint64
 		ruleQueryOffset = g.QueryOffset()
 	)
 	eval := func(i int, rule Rule, cleanup func()) {
@@ -547,7 +547,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 		rule.SetHealth(HealthGood)
 		rule.SetLastError(nil)
-		samplesTotal.Add(float64(len(vector)))
+		samplesTotal.Add(uint64(len(vector)))
 
 		if ar, ok := rule.(*AlertingRule); ok {
 			ar.sendAlerts(ctx, ts, g.opts.ResendDelay, g.interval, g.opts.NotifyFunc)
@@ -686,7 +686,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 	}
 
-	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
+	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(float64(samplesTotal.Load()))
 	g.cleanupStaleSeries(ctx, ts)
 }
 

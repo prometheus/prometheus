@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"text/template"
 	"time"
@@ -50,7 +51,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.uber.org/atomic"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/config"
@@ -5941,7 +5941,7 @@ func TestScrapeLoopAppendSampleLimitReplaceAllSamples(t *testing.T) {
 
 func TestScrapeLoopDisableStalenessMarkerInjection(t *testing.T) {
 	var (
-		loopDone = atomic.NewBool(false)
+		loopDone atomic.Bool
 		appender = &collectResultAppender{}
 		scraper  = &testScraper{}
 		app      = func(_ context.Context) storage.Appender { return appender }

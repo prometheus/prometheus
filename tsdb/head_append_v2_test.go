@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,7 +37,6 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
@@ -360,7 +360,7 @@ func TestHeadAppenderV2_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 	for i := range totalSeries {
 		series[i] = labels.FromStrings("foo", strconv.Itoa(i))
 	}
-	done := atomic.NewBool(false)
+	var done atomic.Bool
 
 	go func() {
 		defer done.Store(true)
@@ -2405,7 +2405,7 @@ func TestSnapshotError_AppenderV2(t *testing.T) {
 
 	// There should be no series in the memory after snapshot error since WAL was removed.
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
-	require.Equal(t, uint64(0), head.NumSeries())
+	require.Equal(t, int64(0), head.NumSeries())
 	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
 	tm, err = head.tombstones.Get(1)
 	require.NoError(t, err)
@@ -2434,7 +2434,7 @@ func TestSnapshotError_AppenderV2(t *testing.T) {
 	// There should be no series in the memory after snapshot error since WAL was removed.
 	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
 	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
-	require.Equal(t, uint64(0), head.NumSeries())
+	require.Equal(t, int64(0), head.NumSeries())
 
 	// Since the snapshot could replay certain series, we continue invoking the create hooks.
 	// In such instances, we need to ensure that we also trigger the delete hooks when resetting the memory.
@@ -4494,7 +4494,7 @@ func TestHeadAppenderV2_NumStaleSeries(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	// Initially, no series should be stale.
-	require.Equal(t, uint64(0), head.NumStaleSeries())
+	require.Equal(t, int64(0), head.NumStaleSeries())
 
 	appendSample := func(lbls labels.Labels, ts int64, val float64) {
 		app := head.AppenderV2(context.Background())
@@ -4516,8 +4516,8 @@ func TestHeadAppenderV2_NumStaleSeries(t *testing.T) {
 	}
 
 	verifySeriesCounts := func(numStaleSeries, numSeries int) {
-		require.Equal(t, uint64(numStaleSeries), head.NumStaleSeries())
-		require.Equal(t, uint64(numSeries), head.NumSeries())
+		require.Equal(t, int64(numStaleSeries), head.NumStaleSeries())
+		require.Equal(t, int64(numSeries), head.NumSeries())
 	}
 
 	restartHeadAndVerifySeriesCounts := func(numStaleSeries, numSeries int) {

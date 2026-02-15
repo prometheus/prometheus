@@ -1826,11 +1826,11 @@ type TSDBStat struct {
 
 // HeadStats has information about the TSDB head.
 type HeadStats struct {
-	NumSeries     uint64 `json:"numSeries"`
-	NumLabelPairs int    `json:"numLabelPairs"`
-	ChunkCount    int64  `json:"chunkCount"`
-	MinTime       int64  `json:"minTime"`
-	MaxTime       int64  `json:"maxTime"`
+	NumSeries     int64 `json:"numSeries"`
+	NumLabelPairs int   `json:"numLabelPairs"`
+	ChunkCount    int64 `json:"chunkCount"`
+	MinTime       int64 `json:"minTime"`
+	MaxTime       int64 `json:"maxTime"`
 }
 
 // TSDBStatus has information of cardinality statistics from postings.

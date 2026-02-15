@@ -17,11 +17,11 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -149,7 +149,7 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	require.True(t, q.queueIsFull())
 
 	// Adding another job should block as long as no job from the queue gets consumed.
-	addedJob := atomic.NewBool(false)
+	var addedJob atomic.Bool
 	go func() {
 		addChunk()
 		addedJob.Store(true)

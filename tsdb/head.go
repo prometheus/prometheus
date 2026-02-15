@@ -24,12 +24,12 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -68,8 +68,8 @@ var (
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
 	chunkRange               atomic.Int64
-	numSeries                atomic.Uint64
-	numStaleSeries           atomic.Uint64
+	numSeries                atomic.Int64
+	numStaleSeries           atomic.Int64
 	minOOOTime, maxOOOTime   atomic.Int64 // TODO(jesusvazquez) These should be updated after garbage collection.
 	minTime, maxTime         atomic.Int64 // Current min and max of the samples included in the head. TODO(jesusvazquez) Ensure these are properly tracked.
 	minValidTime             atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
@@ -1455,7 +1455,7 @@ func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
 }
 
 type Stats struct {
-	NumSeries         uint64
+	NumSeries         int64
 	MinTime, MaxTime  int64
 	IndexPostingStats *index.PostingsStats
 }
@@ -1530,7 +1530,7 @@ func (h *RangeHead) BlockMaxTime() int64 {
 	return h.MaxTime() + 1
 }
 
-func (h *RangeHead) NumSeries() uint64 {
+func (h *RangeHead) NumSeries() int64 {
 	return h.head.NumSeries()
 }
 
@@ -1629,7 +1629,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.numSeries.Sub(uint64(seriesRemoved))
+	h.numSeries.Add(-int64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -1659,12 +1659,12 @@ func (h *Head) Tombstones() (tombstones.Reader, error) {
 }
 
 // NumSeries returns the number of series tracked in the head.
-func (h *Head) NumSeries() uint64 {
+func (h *Head) NumSeries() int64 {
 	return h.numSeries.Load()
 }
 
 // NumStaleSeries returns the number of stale series in the head.
-func (h *Head) NumStaleSeries() uint64 {
+func (h *Head) NumStaleSeries() int64 {
 	return h.numStaleSeries.Load()
 }
 
@@ -1768,7 +1768,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 	if id == 0 {
 		// Note this id is wasted in the case where a concurrent operation creates the same series first.
-		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+		id = chunks.HeadSeriesRef(h.lastSeriesID.Add(1))
 	}
 
 	shardHash := uint64(0)
@@ -1783,7 +1783,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 
 	h.metrics.seriesCreated.Inc()
-	h.numSeries.Inc()
+	h.numSeries.Add(1)
 
 	h.postings.Add(storage.SeriesRef(id), lset)
 
@@ -1946,7 +1946,7 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, numStaleSeries *atomic.Uint64) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int, _, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, numStaleSeries *atomic.Int64) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ int, _, _ int64, minMmapFile int) {
 	var (
 		deleted          = map[storage.SeriesRef]struct{}{}
 		affected         = map[labels.Label]struct{}{}
@@ -2007,7 +2007,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, n
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
-			numStaleSeries.Dec()
+			numStaleSeries.Add(-1)
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}

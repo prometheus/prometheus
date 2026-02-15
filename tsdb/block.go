@@ -186,9 +186,9 @@ type BlockStats struct {
 	NumSamples          uint64 `json:"numSamples,omitempty"`
 	NumFloatSamples     uint64 `json:"numFloatSamples,omitempty"`
 	NumHistogramSamples uint64 `json:"numHistogramSamples,omitempty"`
-	NumSeries           uint64 `json:"numSeries,omitempty"`
+	NumSeries           int64  `json:"numSeries,omitempty"`
 	NumChunks           uint64 `json:"numChunks,omitempty"`
-	NumTombstones       uint64 `json:"numTombstones,omitempty"`
+	NumTombstones       int64  `json:"numTombstones,omitempty"`
 }
 
 // BlockDesc describes a block by ULID and time range.
@@ -625,7 +625,7 @@ Outer:
 		return err
 	}
 	pb.tombstones = stones
-	pb.meta.Stats.NumTombstones = pb.tombstones.Total()
+	pb.meta.Stats.NumTombstones = int64(pb.tombstones.Total())
 
 	n, err := tombstones.WriteFile(pb.logger, pb.dir, pb.tombstones)
 	if err != nil {

@@ -1093,7 +1093,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			require.Equal(t, tc.expSeriesSamples, raw)
 
 			// Check if stats are calculated properly.
-			s := BlockStats{NumSeries: uint64(len(tc.expSeriesSamples))}
+			s := BlockStats{NumSeries: int64(len(tc.expSeriesSamples))}
 			for _, series := range tc.expSeriesSamples {
 				s.NumChunks += uint64(len(series.chunks))
 				for _, chk := range series.chunks {
