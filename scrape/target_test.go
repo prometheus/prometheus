@@ -138,6 +138,52 @@ func TestTargetURL(t *testing.T) {
 	require.Equal(t, expectedURL, target.URL())
 }
 
+func TestTargetURL_Unix(t *testing.T) {
+	scrapeConfig := &config.ScrapeConfig{}
+	labels := labels.FromMap(map[string]string{
+		model.AddressLabel:     "unix:///tmp/sock",
+		model.SchemeLabel:      "http",
+		model.MetricsPathLabel: "/metrics",
+	})
+	target := NewTarget(labels, scrapeConfig, nil, nil)
+
+	// unix:///tmp/sock -> /tmp/sock
+	// scheme -> unix
+	// params -> __unix_socket__=/tmp/sock, __unix_scheme__=http
+
+	expectedURL := &url.URL{
+		Scheme:   "unix",
+		Host:     "localhost",
+		Path:     "/metrics",
+		RawQuery: "__unix_scheme__=http&__unix_socket__=%2Ftmp%2Fsock",
+	}
+
+	require.Equal(t, expectedURL, target.URL())
+}
+
+func TestTargetURL_UnixNoSlashes(t *testing.T) {
+	scrapeConfig := &config.ScrapeConfig{}
+	labels := labels.FromMap(map[string]string{
+		model.AddressLabel:     "unix:/tmp/sock",
+		model.SchemeLabel:      "http",
+		model.MetricsPathLabel: "/metrics",
+	})
+	target := NewTarget(labels, scrapeConfig, nil, nil)
+
+	// unix:/tmp/sock -> /tmp/sock
+	// scheme -> unix
+	// params -> __unix_socket__=/tmp/sock, __unix_scheme__=http
+
+	expectedURL := &url.URL{
+		Scheme:   "unix",
+		Host:     "localhost",
+		Path:     "/metrics",
+		RawQuery: "__unix_scheme__=http&__unix_socket__=%2Ftmp%2Fsock",
+	}
+
+	require.Equal(t, expectedURL, target.URL())
+}
+
 func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Target {
 	lb := labels.NewBuilder(lbls)
 	lb.Set(model.SchemeLabel, "http")
