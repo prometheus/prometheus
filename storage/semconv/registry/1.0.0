@@ -1,0 +1,30 @@
+groups:
+  - id: registry.http
+    type: attribute_group
+    brief: "HTTP attributes"
+    attributes:
+      - id: http.response.status_code
+        type: int
+        stability: stable
+        brief: "HTTP response status code"
+        examples: [200, 404, 500]
+  - id: registry.user
+    type: attribute_group
+    brief: "User attributes"
+    attributes:
+      - id: user
+        type: string
+        stability: stable
+        brief: "The username or user identifier"
+        examples: ["alice", "bob"]
+  - id: metric.test.counter
+    type: metric
+    brief: "Counts the number of iterations in the test application"
+    stability: development
+    metric_name: test.counter
+    instrument: counter
+    unit: By
+    attributes:
+      - ref: http.response.status_code
+        requirement_level: recommended
+      - ref: user
