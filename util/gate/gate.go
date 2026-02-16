@@ -13,27 +13,52 @@
 
 package gate
 
-import "context"
+import (
+	"context"
+	"time"
+)
+
+// Observer is the minimal interface for recording metrics.
+type Observer interface {
+	Observe(float64)
+}
 
 // A Gate controls the maximum number of concurrently running and waiting queries.
 type Gate struct {
-	ch chan struct{}
+	ch           chan struct{}
+	waitDuration Observer // Optional: nil if not tracking
 }
 
 // New returns a query gate that limits the number of queries
 // being concurrently executed.
 func New(length int) *Gate {
+	return NewWithMetric(length, nil)
+}
+
+// NewWithMetric returns a gate that optionally tracks wait duration.
+// If waitDuration is non-nil, it observes the duration spent waiting
+// to acquire a slot in the gate.
+func NewWithMetric(length int, waitDuration Observer) *Gate {
 	return &Gate{
-		ch: make(chan struct{}, length),
+		ch:           make(chan struct{}, length),
+		waitDuration: waitDuration,
 	}
 }
 
 // Start blocks until the gate has a free spot or the context is done.
 func (g *Gate) Start(ctx context.Context) error {
+	var start time.Time
+	if g.waitDuration != nil {
+		start = time.Now()
+	}
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case g.ch <- struct{}{}:
+		if g.waitDuration != nil {
+			g.waitDuration.Observe(time.Since(start).Seconds())
+		}
 		return nil
 	}
 }
