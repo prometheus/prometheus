@@ -1,0 +1,675 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// This file implements the XOR18238 chunk encoding, which corresponds to the
+// encoding proposed in https://github.com/prometheus/prometheus/pull/18238.
+
+package chunkenc
+
+import (
+	"encoding/binary"
+	"errors"
+	"math"
+	"math/bits"
+
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/value"
+)
+
+// xor18238STHeaderSize is the size in bytes of the ST header appended after
+// the standard chunk header in an XOR18238 chunk.
+const xor18238STHeaderSize = 1
+
+// errXOR18238STNotSupported is returned when an XOR18238 chunk has
+// first_st_known set.
+var errXOR18238STNotSupported = errors.New("XOR18238 chunk with start timestamp not supported")
+
+// XOR18238Chunk implements XOR encoding with joint timestamp+value control bits
+// and byte-packed dod encoding for efficient appending.
+//
+// Control prefix for samples >= 2:
+//
+//	0     → dod=0 AND value unchanged              (1 bit)
+//	10    → dod=0, value changed                   (2 bits, then value encoding)
+//	110   → dod≠0, 13-bit signed [-4096, 4095]     (prefix+dod packed into 2 bytes)
+//	1110  → dod≠0, 20-bit signed [-524288, 524287] (prefix+dod packed into 3 bytes)
+//	11110 → dod≠0, 64-bit escape                   (5+64 bits, then value encoding)
+//	11111 → dod=0, stale NaN                       (5 bits, no value field)
+//
+// The dod bins are widened so that prefix+dod aligns to byte boundaries,
+// replacing writeBit calls with writeByte for common cases.
+//
+// Value encoding for the dod≠0 cases (`<varbit_xor18238>`):
+//
+//	0   → value unchanged
+//	10  → reuse previous leading/trailing window
+//	110 → new leading/trailing window
+//	111 → stale NaN
+//
+// Value encoding for the dod=0, value-changed case (`<varbit_xor18238_nn>`):
+//
+//	0 → reuse previous leading/trailing window
+//	1 → new leading/trailing window
+type XOR18238Chunk struct {
+	b bstream
+}
+
+// NewXOR18238Chunk returns a new chunk with XOR18238 encoding.
+func NewXOR18238Chunk() *XOR18238Chunk {
+	b := make([]byte, chunkHeaderSize+xor18238STHeaderSize, chunkAllocationSize)
+	return &XOR18238Chunk{b: bstream{stream: b, count: 0}}
+}
+
+func (c *XOR18238Chunk) Reset(stream []byte) {
+	c.b.Reset(stream)
+}
+
+// Encoding returns the encoding type.
+func (*XOR18238Chunk) Encoding() Encoding {
+	return EncXOR18238
+}
+
+// Bytes returns the underlying byte slice of the chunk.
+func (c *XOR18238Chunk) Bytes() []byte {
+	return c.b.bytes()
+}
+
+// NumSamples returns the number of samples in the chunk.
+func (c *XOR18238Chunk) NumSamples() int {
+	return int(binary.BigEndian.Uint16(c.Bytes()))
+}
+
+// Compact implements the Chunk interface.
+func (c *XOR18238Chunk) Compact() {
+	if l := len(c.b.stream); cap(c.b.stream) > l+chunkCompactCapacityThreshold {
+		buf := make([]byte, l)
+		copy(buf, c.b.stream)
+		c.b.stream = buf
+	}
+}
+
+// Appender implements the Chunk interface.
+func (c *XOR18238Chunk) Appender() (Appender, error) {
+	if len(c.b.stream) == chunkHeaderSize+xor18238STHeaderSize {
+		return &xor18238Appender{
+			b:       &c.b,
+			t:       math.MinInt64,
+			leading: 0xff,
+			num:     0,
+		}, nil
+	}
+	it := c.iterator(nil)
+
+	for it.Next() != ValNone {
+	}
+	if err := it.Err(); err != nil {
+		return nil, err
+	}
+
+	a := &xor18238Appender{
+		b:        &c.b,
+		t:        it.t,
+		v:        it.baselineV,
+		tDelta:   it.tDelta,
+		leading:  it.leading,
+		trailing: it.trailing,
+		num:      binary.BigEndian.Uint16(c.b.bytes()),
+	}
+	return a, nil
+}
+
+func (c *XOR18238Chunk) iterator(it Iterator) *xor18238Iterator {
+	if xor18238Iter, ok := it.(*xor18238Iterator); ok {
+		xor18238Iter.Reset(c.b.bytes())
+		return xor18238Iter
+	}
+	return &xor18238Iterator{
+		br:        newBReader(c.b.bytes()[chunkHeaderSize+xor18238STHeaderSize:]),
+		numTotal:  binary.BigEndian.Uint16(c.b.bytes()),
+		t:         math.MinInt64,
+		baselineV: 0,
+	}
+}
+
+// Iterator implements the Chunk interface.
+func (c *XOR18238Chunk) Iterator(it Iterator) Iterator {
+	return c.iterator(it)
+}
+
+// xor18238Appender uses joint timestamp+value control bits and byte-packed dod bins.
+type xor18238Appender struct {
+	b *bstream
+
+	t      int64
+	v      float64
+	tDelta uint64
+
+	leading  uint8
+	trailing uint8
+
+	num uint16 // Cached sample count, written back to b on each Append.
+}
+
+func (a *xor18238Appender) Append(_, t int64, v float64) {
+	var tDelta uint64
+	switch a.num {
+	case 0:
+		buf := make([]byte, binary.MaxVarintLen64)
+		for _, b := range buf[:binary.PutVarint(buf, t)] {
+			a.b.writeByte(b)
+		}
+		a.b.writeBits(math.Float64bits(v), 64)
+	case 1:
+		tDelta = uint64(t - a.t)
+
+		buf := make([]byte, binary.MaxVarintLen64)
+		for _, b := range buf[:binary.PutUvarint(buf, tDelta)] {
+			a.b.writeByte(b)
+		}
+
+		a.writeVDelta(v)
+	default:
+		tDelta = uint64(t - a.t)
+		dod := int64(tDelta - a.tDelta)
+
+		if dod == 0 {
+			// Timestamp unchanged.
+			switch {
+			case value.IsStaleNaN(v):
+				// Stale NaN with dod=0: joint control `11111`.
+				a.b.writeBits(0b11111, 5)
+			case math.Float64bits(v)^math.Float64bits(a.v) == 0:
+				// Both unchanged: single 0 bit.
+				a.b.writeBit(zero)
+			default:
+				// Value changed: joint control `10` + value.
+				a.b.writeBits(0b10, 2)
+				a.writeVDeltaKnownNonZero(v)
+			}
+		} else {
+			// Timestamp changed: byte-packed dod encoding + value.
+			switch {
+			case dod >= -(1<<12) && dod <= (1<<12)-1:
+				// 13-bit dod: prefix `110` packed with top 5 bits → 2 bytes total.
+				a.b.writeByte(0b110_00000 | byte(uint64(dod)>>8)&0x1F)
+				a.b.writeByte(byte(uint64(dod)))
+			case dod >= -(1<<19) && dod <= (1<<19)-1:
+				// 20-bit dod: prefix `1110` packed with top 4 bits → 3 bytes total.
+				a.b.writeByte(0b1110_0000 | byte(uint64(dod)>>16)&0x0F)
+				a.b.writeByte(byte(uint64(dod) >> 8))
+				a.b.writeByte(byte(uint64(dod)))
+			default:
+				// 64-bit escape (rare): `11110`.
+				a.b.writeBits(0b11110, 5)
+				a.b.writeBits(uint64(dod), 64)
+			}
+			a.writeVDelta(v)
+		}
+	}
+
+	a.t = t
+	if !value.IsStaleNaN(v) {
+		a.v = v
+	}
+	a.num++
+	binary.BigEndian.PutUint16(a.b.bytes(), a.num)
+	a.tDelta = tDelta
+}
+
+// writeVDelta encodes the value delta for the dod≠0 case.
+// Encoding:
+//
+//	`0`   → value unchanged (XOR = 0)
+//	`10`  → reuse previous leading/trailing window
+//	`110` → new leading/trailing window
+//	`111` → stale NaN marker
+func (a *xor18238Appender) writeVDelta(v float64) {
+	if value.IsStaleNaN(v) {
+		a.b.writeBits(0b111, 3)
+		return
+	}
+
+	delta := math.Float64bits(v) ^ math.Float64bits(a.v)
+
+	if delta == 0 {
+		a.b.writeBit(zero)
+		return
+	}
+
+	newLeading := uint8(bits.LeadingZeros64(delta))
+	newTrailing := uint8(bits.TrailingZeros64(delta))
+
+	if newLeading >= 32 {
+		newLeading = 31
+	}
+
+	if a.leading != 0xff && newLeading >= a.leading && newTrailing >= a.trailing {
+		a.b.writeBits(0b10, 2)
+		a.b.writeBits(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
+		return
+	}
+
+	a.leading, a.trailing = newLeading, newTrailing
+
+	a.b.writeBits(0b110, 3)
+	a.b.writeBits(uint64(newLeading), 5)
+
+	sigbits := 64 - newLeading - newTrailing
+	a.b.writeBits(uint64(sigbits), 6)
+	a.b.writeBits(delta>>newTrailing, int(sigbits))
+}
+
+// writeVDeltaKnownNonZero encodes the value delta when it is known to be
+// non-zero and non-stale (dod=0, value-changed case). Skips the val=0 check,
+// saving 1 bit on the reuse path. Stale NaN with dod=0 is handled at the
+// joint control level (`11111`) and never reaches this function.
+//
+// Encoding:
+//
+//	`0` → reuse previous leading/trailing window
+//	`1` → new leading/trailing window
+func (a *xor18238Appender) writeVDeltaKnownNonZero(v float64) {
+	delta := math.Float64bits(v) ^ math.Float64bits(a.v)
+
+	newLeading := uint8(bits.LeadingZeros64(delta))
+	newTrailing := uint8(bits.TrailingZeros64(delta))
+
+	if newLeading >= 32 {
+		newLeading = 31
+	}
+
+	if a.leading != 0xff && newLeading >= a.leading && newTrailing >= a.trailing {
+		a.b.writeBit(zero)
+		a.b.writeBits(delta>>a.trailing, 64-int(a.leading)-int(a.trailing))
+		return
+	}
+
+	a.leading, a.trailing = newLeading, newTrailing
+
+	a.b.writeBit(one)
+	a.b.writeBits(uint64(newLeading), 5)
+
+	sigbits := 64 - newLeading - newTrailing
+	a.b.writeBits(uint64(sigbits), 6)
+	a.b.writeBits(delta>>newTrailing, int(sigbits))
+}
+
+func (*xor18238Appender) AppendHistogram(*HistogramAppender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+	panic("appended a histogram sample to a float chunk")
+}
+
+func (*xor18238Appender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+	panic("appended a float histogram sample to a float chunk")
+}
+
+// xor18238Iterator decodes XOR18238 chunks.
+type xor18238Iterator struct {
+	br       bstreamReader
+	numTotal uint16
+	numRead  uint16
+
+	t   int64
+	val float64
+
+	leading  uint8
+	trailing uint8
+
+	tDelta uint64
+	err    error
+
+	baselineV float64 // Last non-stale value for XOR baseline.
+}
+
+func (it *xor18238Iterator) Seek(t int64) ValueType {
+	if it.err != nil {
+		return ValNone
+	}
+
+	for t > it.t || it.numRead == 0 {
+		if it.Next() == ValNone {
+			return ValNone
+		}
+	}
+	return ValFloat
+}
+
+func (it *xor18238Iterator) At() (int64, float64) {
+	return it.t, it.val
+}
+
+func (*xor18238Iterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+	panic("cannot call xor18238Iterator.AtHistogram")
+}
+
+func (*xor18238Iterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	panic("cannot call xor18238Iterator.AtFloatHistogram")
+}
+
+func (it *xor18238Iterator) AtT() int64 {
+	return it.t
+}
+
+func (*xor18238Iterator) AtST() int64 {
+	return 0
+}
+
+func (it *xor18238Iterator) Err() error {
+	return it.err
+}
+
+func (it *xor18238Iterator) Reset(b []byte) {
+	it.br = newBReader(b[chunkHeaderSize+xor18238STHeaderSize:])
+	it.numTotal = binary.BigEndian.Uint16(b)
+
+	it.numRead = 0
+	it.t = 0
+	it.val = 0
+	it.leading = 0
+	it.trailing = 0
+	it.tDelta = 0
+	it.baselineV = 0
+
+	// The ST header byte follows the standard chunk header. Bit 7
+	// (first_st_known) indicates that start timestamp data is present, which
+	// this implementation does not support.
+	if b[chunkHeaderSize]&0x80 != 0 {
+		it.err = errXOR18238STNotSupported
+		return
+	}
+	it.err = nil
+}
+
+func (it *xor18238Iterator) Next() ValueType {
+	if it.err != nil || it.numRead == it.numTotal {
+		return ValNone
+	}
+
+	if it.numRead == 0 {
+		t, err := binary.ReadVarint(&it.br)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		v, err := it.br.readBits(64)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		it.t = t
+		it.val = math.Float64frombits(v)
+		if !value.IsStaleNaN(it.val) {
+			it.baselineV = it.val
+		}
+		it.numRead++
+		return ValFloat
+	}
+
+	if it.numRead == 1 {
+		tDelta, err := binary.ReadUvarint(&it.br)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		it.tDelta = tDelta
+		it.t += int64(it.tDelta)
+
+		return it.readValue()
+	}
+
+	ctrl, err := it.br.readXOR18238Control()
+	if err != nil {
+		it.err = err
+		return ValNone
+	}
+
+	switch ctrl {
+	case 0:
+		// dod=0, value unchanged: `0`.
+		it.t += int64(it.tDelta)
+		it.val = it.baselineV
+		it.numRead++
+		return ValFloat
+	case 1:
+		// dod=0, value changed: `10`.
+		it.t += int64(it.tDelta)
+		return it.readValueKnownNonZero()
+	case 2:
+		// 13-bit dod: `110`.
+		if err := it.readDod(13); err != nil {
+			it.err = err
+			return ValNone
+		}
+	case 3:
+		// 20-bit dod: `1110`.
+		if err := it.readDod(20); err != nil {
+			it.err = err
+			return ValNone
+		}
+	case 4:
+		// 64-bit escape: `11110`.
+		if err := it.readDod(64); err != nil {
+			it.err = err
+			return ValNone
+		}
+	default:
+		// dod=0, stale NaN: `11111`.
+		it.t += int64(it.tDelta)
+		it.val = math.Float64frombits(value.StaleNaN)
+		it.numRead++
+		return ValFloat
+	}
+
+	return it.readValue()
+}
+
+func (it *xor18238Iterator) readDod(w uint8) error {
+	var b uint64
+	if it.br.valid >= w {
+		it.br.valid -= w
+		b = (it.br.buffer >> it.br.valid) & ((uint64(1) << w) - 1)
+	} else {
+		var err error
+		b, err = it.br.readBits(w)
+		if err != nil {
+			return err
+		}
+	}
+
+	if w < 64 && b >= (1<<(w-1)) {
+		b -= 1 << w
+	}
+	dod := int64(b)
+
+	it.tDelta = uint64(int64(it.tDelta) + dod)
+	it.t += int64(it.tDelta)
+	return nil
+}
+
+func (it *xor18238Iterator) readValue() ValueType {
+	// First bit: `0` = value unchanged, `1` = value changed.
+	var bit bit
+	if it.br.valid > 0 {
+		it.br.valid--
+		bit = (it.br.buffer & (uint64(1) << it.br.valid)) != 0
+	} else {
+		var err error
+		bit, err = it.br.readBit()
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+	}
+
+	if bit == zero {
+		// `0` = value unchanged.
+		it.val = it.baselineV
+		it.numRead++
+		return ValFloat
+	}
+
+	// Second bit: `10` = reuse window, `11x` = new window or stale.
+	if it.br.valid > 0 {
+		it.br.valid--
+		bit = (it.br.buffer & (uint64(1) << it.br.valid)) != 0
+	} else {
+		var err error
+		bit, err = it.br.readBit()
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+	}
+
+	if bit == zero {
+		// `10` = reuse previous leading/trailing window.
+		sz := uint8(64 - int(it.leading) - int(it.trailing))
+		var valueBits uint64
+		if it.br.valid >= sz {
+			it.br.valid -= sz
+			valueBits = (it.br.buffer >> it.br.valid) & ((uint64(1) << sz) - 1)
+		} else {
+			var err error
+			valueBits, err = it.br.readBits(sz)
+			if err != nil {
+				it.err = err
+				return ValNone
+			}
+		}
+
+		vbits := math.Float64bits(it.baselineV)
+		vbits ^= valueBits << it.trailing
+		it.val = math.Float64frombits(vbits)
+		it.baselineV = it.val
+		it.numRead++
+		return ValFloat
+	}
+
+	// Third bit: `110` = new window, `111` = stale NaN.
+	if it.br.valid > 0 {
+		it.br.valid--
+		bit = (it.br.buffer & (uint64(1) << it.br.valid)) != 0
+	} else {
+		var err error
+		bit, err = it.br.readBit()
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+	}
+
+	if bit == zero {
+		// `110` = new leading/trailing window.
+		return it.readNewLeadingTrailing()
+	}
+
+	// `111` = stale NaN.
+	it.val = math.Float64frombits(value.StaleNaN)
+	it.numRead++
+	return ValFloat
+}
+
+func (it *xor18238Iterator) readValueKnownNonZero() ValueType {
+	var bit bit
+	if it.br.valid > 0 {
+		it.br.valid--
+		bit = (it.br.buffer & (uint64(1) << it.br.valid)) != 0
+	} else {
+		var err error
+		bit, err = it.br.readBit()
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+	}
+
+	if bit == zero {
+		sz := uint8(64 - int(it.leading) - int(it.trailing))
+		var valueBits uint64
+		if it.br.valid >= sz {
+			it.br.valid -= sz
+			valueBits = (it.br.buffer >> it.br.valid) & ((uint64(1) << sz) - 1)
+		} else {
+			var err error
+			valueBits, err = it.br.readBits(sz)
+			if err != nil {
+				it.err = err
+				return ValNone
+			}
+		}
+
+		vbits := math.Float64bits(it.baselineV)
+		vbits ^= valueBits << it.trailing
+		it.val = math.Float64frombits(vbits)
+		it.baselineV = it.val
+		it.numRead++
+		return ValFloat
+	}
+
+	return it.readNewLeadingTrailing()
+}
+
+func (it *xor18238Iterator) readNewLeadingTrailing() ValueType {
+	var newLeading uint64
+	if it.br.valid >= 5 {
+		it.br.valid -= 5
+		newLeading = (it.br.buffer >> it.br.valid) & 0x1f
+	} else {
+		var err error
+		newLeading, err = it.br.readBits(5)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+	}
+
+	var sigbits uint64
+	if it.br.valid >= 6 {
+		it.br.valid -= 6
+		sigbits = (it.br.buffer >> it.br.valid) & 0x3f
+	} else {
+		var err error
+		sigbits, err = it.br.readBits(6)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+	}
+
+	it.leading = uint8(newLeading)
+
+	if sigbits == 0 {
+		sigbits = 64
+	}
+	it.trailing = 64 - it.leading - uint8(sigbits)
+
+	n := uint8(sigbits)
+	var valueBits uint64
+	if it.br.valid >= n {
+		it.br.valid -= n
+		valueBits = (it.br.buffer >> it.br.valid) & ((uint64(1) << n) - 1)
+	} else {
+		var err error
+		valueBits, err = it.br.readBits(n)
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+	}
+
+	vbits := math.Float64bits(it.baselineV)
+	vbits ^= valueBits << it.trailing
+	it.val = math.Float64frombits(vbits)
+	it.baselineV = it.val
+	it.numRead++
+	return ValFloat
+}

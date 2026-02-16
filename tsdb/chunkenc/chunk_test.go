@@ -31,15 +31,26 @@ func TestChunk(t *testing.T) {
 	testcases := []struct {
 		encoding   Encoding
 		supportsST bool
-		factory    func() Chunk
 	}{
-		{encoding: EncXOR, supportsST: false, factory: func() Chunk { return NewXORChunk() }},
-		{encoding: EncXOROptST, supportsST: true, factory: func() Chunk { return NewXOROptSTChunk() }},
+		{encoding: EncXOR, supportsST: false},
+		{encoding: EncXOR2, supportsST: false},
+		{encoding: EncXOR18111, supportsST: false},
+		{encoding: EncXOR18111ST, supportsST: true},
+		{encoding: EncXOR18111ST2, supportsST: true},
+		{encoding: EncXOR2ST, supportsST: true},
+		{encoding: EncXOR2STotel, supportsST: true},
+		{encoding: EncXOROptST, supportsST: true},
+		{encoding: EncXOROptOtelST, supportsST: true},
+		{encoding: EncXOR18238, supportsST: false},
+		{encoding: EncXOR18238OPTST, supportsST: true},
+		{encoding: EncXOR18238OPTST2, supportsST: true},
+		{encoding: EncXOR18238OPTST3, supportsST: true},
 	}
 	for _, tc := range testcases {
 		t.Run(fmt.Sprintf("%v", tc.encoding), func(t *testing.T) {
 			for range make([]struct{}, 1) {
-				c := tc.factory()
+				c, err := NewEmptyChunk(tc.encoding)
+				require.NoError(t, err)
 				testChunk(t, c, tc.supportsST)
 			}
 		})

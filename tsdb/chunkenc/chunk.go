@@ -31,6 +31,17 @@ const (
 	EncHistogram
 	EncFloatHistogram
 	EncXOROptST
+	EncXOROptOtelST
+	EncXOR2
+	EncXOR2ST
+	EncXOR2STotel
+	EncXOR18111
+	EncXOR18111ST
+	EncXOR18111ST2
+	EncXOR18238
+	EncXOR18238OPTST
+	EncXOR18238OPTST2
+	EncXOR18238OPTST3
 )
 
 func (e Encoding) String() string {
@@ -45,13 +56,37 @@ func (e Encoding) String() string {
 		return "floathistogram"
 	case EncXOROptST:
 		return "XOR-start-timestamp"
+	case EncXOROptOtelST:
+		return "XOR-opt-otel-start-timestamp"
+	case EncXOR2:
+		return "XOR2"
+	case EncXOR2ST:
+		return "XOR2-start-timestamp"
+	case EncXOR2STotel:
+		return "XOR2-otel-start-timestamp"
+	case EncXOR18111:
+		return "XOR18111"
+	case EncXOR18111ST:
+		return "XOR18111-start-timestamp"
+	case EncXOR18111ST2:
+		return "XOR18111-start-timestamp-2"
+	case EncXOR18238:
+		return "XOR18238"
+	case EncXOR18238OPTST:
+		return "XOR18238-start-timestamp"
+	case EncXOR18238OPTST2:
+		return "XOR18238-start-timestamp-2"
+	case EncXOR18238OPTST3:
+		return "XOR18238-start-timestamp-3"
 	}
 	return "<unknown>"
 }
 
+const EncodingForFloatST = EncXOR2ST
+
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
-	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOROptST
+	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncodingForFloatST
 }
 
 const (
@@ -195,7 +230,7 @@ func (v ValueType) ChunkEncoding(storeST bool) Encoding {
 	switch v {
 	case ValFloat:
 		if storeST {
-			return EncXOROptST
+			return EncodingForFloatST
 		}
 		return EncXOR
 	case ValHistogram:
@@ -299,6 +334,17 @@ type pool struct {
 	histogram      sync.Pool
 	floatHistogram sync.Pool
 	xoroptst       sync.Pool
+	xoroptOtelst   sync.Pool
+	xor2           sync.Pool
+	xor2st         sync.Pool
+	xor2stOtel     sync.Pool
+	xor18111       sync.Pool
+	xor18111st  sync.Pool
+	xor18111st2 sync.Pool
+	xor18238       sync.Pool
+	xor18238optst  sync.Pool
+	xor18238optst2 sync.Pool
+	xor18238optst3 sync.Pool
 }
 
 // NewPool returns a new pool.
@@ -324,6 +370,61 @@ func NewPool() Pool {
 				return &XorOptSTChunk{b: bstream{}}
 			},
 		},
+		xoroptOtelst: sync.Pool{
+			New: func() any {
+				return &XorOptSTotelChunk{b: bstream{}}
+			},
+		},
+		xor2: sync.Pool{
+			New: func() any {
+				return &XOR2Chunk{XORChunk: XORChunk{b: bstream{}}}
+			},
+		},
+		xor2st: sync.Pool{
+			New: func() any {
+				return &XOR2STChunk{XORChunk: XORChunk{b: bstream{}}}
+			},
+		},
+		xor2stOtel: sync.Pool{
+			New: func() any {
+				return &XOR2STotelChunk{XORChunk: XORChunk{b: bstream{}}}
+			},
+		},
+		xor18111: sync.Pool{
+			New: func() any {
+				return &XOR18111Chunk{b: bstream{}}
+			},
+		},
+		xor18111st: sync.Pool{
+			New: func() any {
+				return &XOR18111STChunk{b: bstream{}}
+			},
+		},
+		xor18111st2: sync.Pool{
+			New: func() any {
+				return &XOR18111ST2Chunk{b: bstream{}}
+			},
+		},
+		xor18238: sync.Pool{
+			New: func() any {
+				return &XOR18238Chunk{b: bstream{}}
+			},
+		},
+		xor18238optst: sync.Pool{
+			New: func() any {
+				return &XOR18238OPTSTChunk{b: bstream{}}
+			},
+		},
+		xor18238optst2: sync.Pool{
+			New: func() any {
+				return &XOR18238OPTST2Chunk{b: bstream{}}
+			},
+		},
+		xor18238optst3: sync.Pool{
+			New: func() any {
+				return &XOR18238OPTST3Chunk{b: bstream{}}
+			},
+		},
 	}
 }
 
@@ -338,6 +439,28 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c = p.floatHistogram.Get().(*FloatHistogramChunk)
 	case EncXOROptST:
 		c = p.xoroptst.Get().(*XorOptSTChunk)
+	case EncXOROptOtelST:
+		c = p.xoroptOtelst.Get().(*XorOptSTotelChunk)
+	case EncXOR2:
+		c = p.xor2.Get().(*XOR2Chunk)
+	case EncXOR2ST:
+		c = p.xor2st.Get().(*XOR2STChunk)
+	case EncXOR2STotel:
+		c = p.xor2stOtel.Get().(*XOR2STotelChunk)
+	case EncXOR18111:
+		c = p.xor18111.Get().(*XOR18111Chunk)
+	case EncXOR18111ST:
+		c = p.xor18111st.Get().(*XOR18111STChunk)
+	case EncXOR18111ST2:
+		c = p.xor18111st2.Get().(*XOR18111ST2Chunk)
+	case EncXOR18238:
+		c = p.xor18238.Get().(*XOR18238Chunk)
+	case EncXOR18238OPTST:
+		c = p.xor18238optst.Get().(*XOR18238OPTSTChunk)
+	case EncXOR18238OPTST2:
+		c = p.xor18238optst2.Get().(*XOR18238OPTST2Chunk)
+	case EncXOR18238OPTST3:
+		c = p.xor18238optst3.Get().(*XOR18238OPTST3Chunk)
 	default:
 		return nil, fmt.Errorf("invalid chunk encoding %q", e)
 	}
@@ -362,6 +485,39 @@ func (p *pool) Put(c Chunk) error {
 	case EncXOROptST:
 		_, ok = c.(*XorOptSTChunk)
 		sp = &p.xoroptst
+	case EncXOROptOtelST:
+		_, ok = c.(*XorOptSTotelChunk)
+		sp = &p.xoroptOtelst
+	case EncXOR2:
+		_, ok = c.(*XOR2Chunk)
+		sp = &p.xor2
+	case EncXOR2ST:
+		_, ok = c.(*XOR2STChunk)
+		sp = &p.xor2st
+	case EncXOR2STotel:
+		_, ok = c.(*XOR2STotelChunk)
+		sp = &p.xor2stOtel
+	case EncXOR18111:
+		_, ok = c.(*XOR18111Chunk)
+		sp = &p.xor18111
+	case EncXOR18111ST:
+		_, ok = c.(*XOR18111STChunk)
+		sp = &p.xor18111st
+	case EncXOR18111ST2:
+		_, ok = c.(*XOR18111ST2Chunk)
+		sp = &p.xor18111st2
+	case EncXOR18238:
+		_, ok = c.(*XOR18238Chunk)
+		sp = &p.xor18238
+	case EncXOR18238OPTST:
+		_, ok = c.(*XOR18238OPTSTChunk)
+		sp = &p.xor18238optst
+	case EncXOR18238OPTST2:
+		_, ok = c.(*XOR18238OPTST2Chunk)
+		sp = &p.xor18238optst2
+	case EncXOR18238OPTST3:
+		_, ok = c.(*XOR18238OPTST3Chunk)
+		sp = &p.xor18238optst3
 	default:
 		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
@@ -390,6 +546,28 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 		return &FloatHistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	case EncXOROptST:
 		return &XorOptSTChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOROptOtelST:
+		return &XorOptSTotelChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR2:
+		return &XOR2Chunk{XORChunk: XORChunk{b: bstream{count: 0, stream: d}}}, nil
+	case EncXOR2ST:
+		return &XOR2STChunk{XORChunk: XORChunk{b: bstream{count: 0, stream: d}}}, nil
+	case EncXOR2STotel:
+		return &XOR2STotelChunk{XORChunk: XORChunk{b: bstream{count: 0, stream: d}}}, nil
+	case EncXOR18111:
+		return &XOR18111Chunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR18111ST:
+		return &XOR18111STChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR18111ST2:
+		return &XOR18111ST2Chunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR18238:
+		return &XOR18238Chunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR18238OPTST:
+		return &XOR18238OPTSTChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR18238OPTST2:
+		return &XOR18238OPTST2Chunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR18238OPTST3:
+		return &XOR18238OPTST3Chunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
@@ -405,6 +583,28 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 		return NewFloatHistogramChunk(), nil
 	case EncXOROptST:
 		return NewXOROptSTChunk(), nil
+	case EncXOROptOtelST:
+		return NewXOROptSTotelChunk(), nil
+	case EncXOR2:
+		return NewXOR2Chunk(), nil
+	case EncXOR2ST:
+		return NewXOR2STChunk(), nil
+	case EncXOR2STotel:
+		return NewXOR2STotelChunk(), nil
+	case EncXOR18111:
+		return NewXOR18111Chunk(), nil
+	case EncXOR18111ST:
+		return NewXOR18111STChunk(), nil
+	case EncXOR18111ST2:
+		return NewXOR18111ST2Chunk(), nil
+	case EncXOR18238:
+		return NewXOR18238Chunk(), nil
+	case EncXOR18238OPTST:
+		return NewXOR18238OPTSTChunk(), nil
+	case EncXOR18238OPTST2:
+		return NewXOR18238OPTST2Chunk(), nil
+	case EncXOR18238OPTST3:
+		return NewXOR18238OPTST3Chunk(), nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }

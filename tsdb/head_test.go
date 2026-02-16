@@ -7695,7 +7695,7 @@ func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
 
 				encoding := chk.Encoding()
 				if enableST {
-					require.Equal(t, chunkenc.EncXOROptST, encoding,
+					require.Equal(t, chunkenc.EncodingForFloatST, encoding,
 						"Expected ST-capable encoding when EnableSTStorage is true")
 				} else {
 					require.Equal(t, chunkenc.EncXOR, encoding,

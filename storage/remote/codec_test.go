@@ -940,7 +940,7 @@ func TestChunkedSeriesIterator(t *testing.T) {
 		chks := buildTestChunks(t)
 
 		// Set chunk type to an invalid value.
-		chks[0].Type = 8
+		chks[0].Type = 15
 
 		it := newChunkedSeriesIterator(chks, 0, 14000)
 
