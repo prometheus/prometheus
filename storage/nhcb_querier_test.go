@@ -141,6 +141,18 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			expectedSuffix: "_sum",
 		},
 		{
+			name:          "both classic and NHCB - return both",
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+			classicSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
+			},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  5,
+			expectedSuffix: "_bucket",
+		},
+		{
 			name:          "no classic and no NHCB - return empty",
 			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
 			classicSeries: []Series{},
