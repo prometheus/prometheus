@@ -81,8 +81,9 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 		return ErrSeriesSet(err)
 	}
 
+	seriesSets := make([]SeriesSet, 0, 2)
 	if len(classicSeries) > 0 {
-		return &bufferedSeriesSet{series: classicSeries}
+		seriesSets = append(seriesSets, &bufferedSeriesSet{series: classicSeries})
 	}
 
 	baseMatchers = append(baseMatchers, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
@@ -90,11 +91,15 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 	if nhcbSet.Err() != nil {
 		return nhcbSet
 	}
-
-	return &nhcbToClassicSeriesSet{
+	seriesSets = append(seriesSets, &nhcbToClassicSeriesSet{
 		nhcbSet:    nhcbSet,
 		suffix:     suffix,
 		metricName: metricName,
+	})
+
+	return &multipleSeriesSet{
+		seriesSet: seriesSets,
+		idx:       0,
 	}
 }
 
@@ -160,6 +165,43 @@ func extractHistogramSuffix(matchers []*labels.Matcher) (string, string, []*labe
 
 	baseName := metricName[:len(metricName)-len(suffix)]
 	return baseName, suffix, baseMatchers
+}
+
+type multipleSeriesSet struct {
+	seriesSet []SeriesSet
+	idx       int
+}
+
+func (m *multipleSeriesSet) Next() bool {
+	if m.idx >= len(m.seriesSet) {
+		return false
+	}
+	if !(m.seriesSet[m.idx].Next()) {
+		m.idx++
+		return m.Next()
+	}
+	return true
+}
+
+func (m *multipleSeriesSet) At() Series {
+	return m.seriesSet[m.idx].At()
+}
+
+func (m *multipleSeriesSet) Err() error {
+	for _, ss := range m.seriesSet {
+		if err := ss.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *multipleSeriesSet) Warnings() annotations.Annotations {
+	var w annotations.Annotations
+	for _, ss := range m.seriesSet {
+		w.Merge(ss.Warnings())
+	}
+	return w
 }
 
 // nhcbToClassicSeriesSet converts NHCB series to classic histogram series format.
