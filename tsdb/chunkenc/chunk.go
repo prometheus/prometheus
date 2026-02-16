@@ -482,19 +482,3 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
-
-func newEmptyChunkWithST(e Encoding) Chunk {
-	switch e {
-	case EncXOROptST:
-		return NewXOROptSTChunk()
-	case EncXOROptOtelST:
-		return NewXOROptSTotelChunk()
-	case EncXOR2ST:
-		return NewXOR2STChunk()
-	case EncXOR2STotel:
-		return NewXOR2STotelChunk()
-	default:
-		// The caller code is literally right above this function.
-		panic(fmt.Sprintf("invalid chunk encoding %q", e))
-	}
-}
