@@ -49,9 +49,11 @@ func (e Encoding) String() string {
 	return "<unknown>"
 }
 
+const EncodingForFloatST = EncXOROptST
+
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
-	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOROptST
+	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncodingForFloatST
 }
 
 const (
@@ -195,7 +197,7 @@ func (v ValueType) ChunkEncoding(storeST bool) Encoding {
 	switch v {
 	case ValFloat:
 		if storeST {
-			return EncXOROptST
+			return EncodingForFloatST
 		}
 		return EncXOR
 	case ValHistogram:
@@ -407,4 +409,14 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 		return NewXOROptSTChunk(), nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
+}
+
+func newEmptyChunkWithST(e Encoding) Chunk {
+	switch e {
+	case EncXOROptST:
+		return NewXOROptSTChunk()
+	default:
+		// The caller code is literally right above this function.
+		panic(fmt.Sprintf("invalid chunk encoding %q", e))
+	}
 }
