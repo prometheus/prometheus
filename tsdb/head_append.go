@@ -1058,8 +1058,10 @@ func (a *headAppenderBase) log() error {
 	buf := a.head.getBytesBuffer()
 	defer func() { a.head.putBytesBuffer(buf) }()
 
-	var rec []byte
-	var enc record.Encoder
+	var (
+		rec []byte
+		enc = record.Encoder{EnableSTStorage: a.head.opts.EnableSTStorage}
+	)
 
 	if len(a.seriesRefs) > 0 {
 		rec = enc.Series(a.seriesRefs, buf)
@@ -1178,7 +1180,7 @@ type appenderCommitContext struct {
 	oooRecords          [][]byte
 	oooCapMax           int64
 	appendChunkOpts     chunkOpts
-	enc                 record.Encoder
+	oooEnc              record.Encoder
 }
 
 // commitExemplars adds all exemplars from the provided batch to the head's exemplar storage.
@@ -1228,31 +1230,31 @@ func (acc *appenderCommitContext) collectOOORecords(a *headAppenderBase) {
 				})
 			}
 		}
-		r := acc.enc.MmapMarkers(markers, a.head.getBytesBuffer())
+		r := acc.oooEnc.MmapMarkers(markers, a.head.getBytesBuffer())
 		acc.oooRecords = append(acc.oooRecords, r)
 	}
 
 	if len(acc.wblSamples) > 0 {
-		r := acc.enc.Samples(acc.wblSamples, a.head.getBytesBuffer())
+		r := acc.oooEnc.Samples(acc.wblSamples, a.head.getBytesBuffer())
 		acc.oooRecords = append(acc.oooRecords, r)
 	}
 	if len(acc.wblHistograms) > 0 {
-		r, customBucketsHistograms := acc.enc.HistogramSamples(acc.wblHistograms, a.head.getBytesBuffer())
+		r, customBucketsHistograms := acc.oooEnc.HistogramSamples(acc.wblHistograms, a.head.getBytesBuffer())
 		if len(r) > 0 {
 			acc.oooRecords = append(acc.oooRecords, r)
 		}
 		if len(customBucketsHistograms) > 0 {
-			r := acc.enc.CustomBucketsHistogramSamples(customBucketsHistograms, a.head.getBytesBuffer())
+			r := acc.oooEnc.CustomBucketsHistogramSamples(customBucketsHistograms, a.head.getBytesBuffer())
 			acc.oooRecords = append(acc.oooRecords, r)
 		}
 	}
 	if len(acc.wblFloatHistograms) > 0 {
-		r, customBucketsFloatHistograms := acc.enc.FloatHistogramSamples(acc.wblFloatHistograms, a.head.getBytesBuffer())
+		r, customBucketsFloatHistograms := acc.oooEnc.FloatHistogramSamples(acc.wblFloatHistograms, a.head.getBytesBuffer())
 		if len(r) > 0 {
 			acc.oooRecords = append(acc.oooRecords, r)
 		}
 		if len(customBucketsFloatHistograms) > 0 {
-			r := acc.enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, a.head.getBytesBuffer())
+			r := acc.oooEnc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, a.head.getBytesBuffer())
 			acc.oooRecords = append(acc.oooRecords, r)
 		}
 	}
@@ -1431,7 +1433,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		default:
 			newlyStale := !value.IsStaleNaN(series.lastValue) && value.IsStaleNaN(s.V)
 			staleToNonStale := value.IsStaleNaN(series.lastValue) && !value.IsStaleNaN(s.V)
-			ok, chunkCreated = series.append(s.T, s.V, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.append(s.ST, s.T, s.V, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1540,7 +1542,8 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				newlyStale = newlyStale && !value.IsStaleNaN(series.lastHistogramValue.Sum)
 				staleToNonStale = value.IsStaleNaN(series.lastHistogramValue.Sum) && !value.IsStaleNaN(s.H.Sum)
 			}
-			ok, chunkCreated = series.appendHistogram(s.T, s.H, a.appendID, acc.appendChunkOpts)
+			// TODO(bwplotka): Add support for ST for Histograms.
+			ok, chunkCreated = series.appendHistogram(0, s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1649,7 +1652,8 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				newlyStale = newlyStale && !value.IsStaleNaN(series.lastFloatHistogramValue.Sum)
 				staleToNonStale = value.IsStaleNaN(series.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.FH.Sum)
 			}
-			ok, chunkCreated = series.appendFloatHistogram(s.T, s.FH, a.appendID, acc.appendChunkOpts)
+			// TODO(bwplotka): Add support for ST for FloatHistograms.
+			ok, chunkCreated = series.appendFloatHistogram(0, s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1741,9 +1745,10 @@ func (a *headAppenderBase) Commit() (err error) {
 			chunkDiskMapper: h.chunkDiskMapper,
 			chunkRange:      h.chunkRange.Load(),
 			samplesPerChunk: h.opts.SamplesPerChunk,
+			enableSTStorage: h.opts.EnableSTStorage,
 		},
-		enc: record.Encoder{
-			EnableSTStorage: false,
+		oooEnc: record.Encoder{
+			EnableSTStorage: a.head.opts.EnableSharding,
 		},
 	}
 
@@ -1827,19 +1832,25 @@ type chunkOpts struct {
 	chunkDiskMapper *chunks.ChunkDiskMapper
 	chunkRange      int64
 	samplesPerChunk int
+
+	enableSTStorage bool
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // Series lock must be held when calling.
-func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o)
+func (s *memSeries) append(st, t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+	enc := chunkenc.EncXOR
+	if o.enableSTStorage {
+		enc = chunkenc.EncXOROptST
+	}
+
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, enc, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	// TODO(krajorama): pass ST.
-	s.app.Append(0, t, v)
+	s.app.Append(st, t, v)
 
 	c.maxTime = t
 
@@ -1859,14 +1870,16 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sa
 // In case of recoding the existing chunk, a new chunk is allocated and the old chunk is dropped.
 // To keep the meaning of prometheus_tsdb_head_chunks and prometheus_tsdb_head_chunks_created_total
 // consistent, we return chunkCreated=false in this case.
-func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.EncHistogram, o)
+	enc := chunkenc.EncHistogram
+	// TODO(bwplotka): Implement histogram ST encoding and switch on o.enableSTStorage.
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, enc, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1882,7 +1895,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	}
 
 	// TODO(krajorama): pass ST.
-	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, 0, t, h, false) // false=request a new chunk if needed
+	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, st, t, h, false) // false=request a new chunk if needed
 
 	s.lastHistogramValue = h
 	s.lastFloatHistogramValue = nil
@@ -1917,14 +1930,16 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 // In case of recoding the existing chunk, a new chunk is allocated and the old chunk is dropped.
 // To keep the meaning of prometheus_tsdb_head_chunks and prometheus_tsdb_head_chunks_created_total
 // consistent, we return chunkCreated=false in this case.
-func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.EncFloatHistogram, o)
+	enc := chunkenc.EncFloatHistogram
+	// TODO(bwplotka): Implement histogram ST encoding and switch on o.enableSTStorage.
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, enc, o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1939,8 +1954,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		prevApp = nil
 	}
 
-	// TODO(krajorama): pass ST.
-	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, 0, t, fh, false) // False means request a new chunk if needed.
+	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, st, t, fh, false) // False means request a new chunk if needed.
 
 	s.lastHistogramValue = nil
 	s.lastFloatHistogramValue = fh

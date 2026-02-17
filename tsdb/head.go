@@ -203,7 +203,6 @@ type HeadOptions struct {
 
 	// EnableSTStorage determines whether agent DB should write a Start Timestamp (ST)
 	// per sample to WAL.
-	// TODO(bwplotka): Implement this option as per PROM-60, currently it's noop.
 	EnableSTStorage bool
 }
 
