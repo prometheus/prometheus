@@ -599,6 +599,13 @@ func (c *chainSampleIterator) AtT() int64 {
 	return c.curr.AtT()
 }
 
+func (c *chainSampleIterator) AtST() int64 {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtST called before first .Next or after .Next returned false.")
+	}
+	return c.curr.AtST()
+}
+
 func (c *chainSampleIterator) Next() chunkenc.ValueType {
 	var (
 		currT           int64

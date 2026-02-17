@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -42,6 +43,14 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// Disable the WatchListClient feature gate that is enabled by default in
+	// client-go v0.35.0+. The WatchList flow requires the server to support
+	// SendInitialEvents and to send a bookmark event with the
+	// "k8s.io/initial-events-end" annotation. The fake clientset used in tests
+	// does not support this protocol, causing informers to hang indefinitely
+	// waiting for the bookmark. Disabling this feature restores the traditional
+	// List+Watch flow which is compatible with the fake clientset.
+	os.Setenv("KUBE_FEATURE_WatchListClient", "false")
 	testutil.TolerantVerifyLeak(m)
 }
 
@@ -52,7 +61,7 @@ func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime
 
 // makeDiscoveryWithVersion creates a kubernetes.Discovery instance with the specified kubernetes version for testing.
 func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer string, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
-	clientset := fake.NewSimpleClientset(objects...)
+	clientset := fake.NewClientset(objects...)
 	fakeDiscovery, _ := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	fakeDiscovery.FakedServerVersion = &version.Info{GitVersion: k8sVer}
 

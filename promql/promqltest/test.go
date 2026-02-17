@@ -43,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
 	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
@@ -72,7 +71,7 @@ var testStartTime = time.Unix(0, 0).UTC()
 
 // LoadedStorage returns storage with generated data using the provided load statements.
 // Non-load statements will cause test errors.
-func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
+func LoadedStorage(t testing.TB, input string) *teststorage.TestStorage {
 	test, err := newTest(t, input, false, newTestStorage)
 	require.NoError(t, err)
 
@@ -85,6 +84,14 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 		}
 	}
 	return test.storage.(*teststorage.TestStorage)
+}
+
+// TestParserOpts are the parser options used for all built-in test engines.
+var TestParserOpts = parser.Options{
+	EnableExperimentalFunctions:  true,
+	ExperimentalDurationExpr:     true,
+	EnableExtendedRangeSelectors: true,
+	EnableBinopFillModifiers:     true,
 }
 
 // NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.
@@ -100,6 +107,7 @@ func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Du
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 		EnableDelayedNameRemoval: true,
+		Parser:                   parser.NewParser(TestParserOpts),
 	})
 }
 
@@ -152,16 +160,8 @@ func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 }
 
 // RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
-func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
-	t.Cleanup(func() {
-		parser.EnableExperimentalFunctions = false
-		parser.ExperimentalDurationExpr = false
-		parser.EnableExtendedRangeSelectors = false
-	})
-	parser.EnableExperimentalFunctions = true
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExtendedRangeSelectors = true
-
+// The engine must be created with ParserOptions that enable all experimental features used in the test files.
+func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testing.TB) storage.Storage) {
 	files, err := fs.Glob(testsFs, "*/*.test")
 	require.NoError(t, err)
 
@@ -175,22 +175,22 @@ func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage f
 }
 
 // RunTest parses and runs the test against the provided engine.
-func RunTest(t testutil.T, input string, engine promql.QueryEngine) {
+func RunTest(t testing.TB, input string, engine promql.QueryEngine) {
 	RunTestWithStorage(t, input, engine, newTestStorage)
 }
 
 // RunTestWithStorage parses and runs the test against the provided engine and storage.
-func RunTestWithStorage(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
+func RunTestWithStorage(t testing.TB, input string, engine promql.QueryEngine, newStorage func(testing.TB) storage.Storage) {
 	require.NoError(t, runTest(t, input, engine, newStorage, false))
 }
 
 // testTest allows tests to be run in "test-the-test" mode (true for
 // testingMode). This is a special mode for testing test code execution itself.
-func testTest(t testutil.T, input string, engine promql.QueryEngine) error {
+func testTest(t testing.TB, input string, engine promql.QueryEngine) error {
 	return runTest(t, input, engine, newTestStorage, true)
 }
 
-func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage, testingMode bool) error {
+func runTest(t testing.TB, input string, engine promql.QueryEngine, newStorage func(testing.TB) storage.Storage, testingMode bool) error {
 	test, err := newTest(t, input, testingMode, newStorage)
 
 	// Why do this before checking err? newTest() can create the test storage and then return an error,
@@ -225,13 +225,14 @@ func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage f
 // test is a sequence of read and write commands that are run
 // against a test storage.
 type test struct {
-	testutil.T
+	testing.TB
+
 	// testingMode distinguishes between normal execution and test-execution mode.
 	testingMode bool
 
 	cmds []testCommand
 
-	open    func(testutil.T) storage.Storage
+	open    func(testing.TB) storage.Storage
 	storage storage.Storage
 
 	context   context.Context
@@ -239,9 +240,9 @@ type test struct {
 }
 
 // newTest returns an initialized empty Test.
-func newTest(t testutil.T, input string, testingMode bool, newStorage func(testutil.T) storage.Storage) (*test, error) {
+func newTest(t testing.TB, input string, testingMode bool, newStorage func(testing.TB) storage.Storage) (*test, error) {
 	test := &test{
-		T:           t,
+		TB:          t,
 		cmds:        []testCommand{},
 		testingMode: testingMode,
 		open:        newStorage,
@@ -252,7 +253,7 @@ func newTest(t testutil.T, input string, testingMode bool, newStorage func(testu
 	return test, err
 }
 
-func newTestStorage(t testutil.T) storage.Storage { return teststorage.New(t) }
+func newTestStorage(t testing.TB) storage.Storage { return teststorage.New(t) }
 
 //go:embed testdata
 var testsFs embed.FS
@@ -296,7 +297,8 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 }
 
 func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
-	metric, vals, err := parser.ParseSeriesDesc(defLine)
+	testParser := parser.NewParser(TestParserOpts)
+	metric, vals, err := testParser.ParseSeriesDesc(defLine)
 	if err != nil {
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = line
@@ -425,7 +427,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 		expr = rangeParts[5]
 	}
 
-	_, err := parser.ParseExpr(expr)
+	_, err := parserForBuiltinTests.ParseExpr(expr)
 	if err != nil {
 		parser.EnrichParseError(err, func(parseErr *parser.ParseErr) {
 			parseErr.LineOffset = i
@@ -1045,7 +1047,12 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			exp := ev.expected[hash]
 
 			var expectedFloats []promql.FPoint
-			var expectedHistograms []promql.HPoint
+			// expectedHPoint wraps HPoint with CounterResetHintSet flag from SequenceValue.
+			type expectedHPoint struct {
+				promql.HPoint
+				CounterResetHintSet bool
+			}
+			var expectedHistograms []expectedHPoint
 
 			for i, e := range exp.vals {
 				ts := ev.start.Add(time.Duration(i) * ev.step)
@@ -1057,7 +1064,10 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 				t := ts.UnixNano() / int64(time.Millisecond/time.Nanosecond)
 
 				if e.Histogram != nil {
-					expectedHistograms = append(expectedHistograms, promql.HPoint{T: t, H: e.Histogram})
+					expectedHistograms = append(expectedHistograms, expectedHPoint{
+						HPoint:              promql.HPoint{T: t, H: e.Histogram},
+						CounterResetHintSet: e.CounterResetHintSet,
+					})
 				} else if !e.Omitted {
 					expectedFloats = append(expectedFloats, promql.FPoint{T: t, F: e.Value})
 				}
@@ -1086,7 +1096,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 					return fmt.Errorf("expected histogram value at index %v for %s to have timestamp %v, but it had timestamp %v (result has %s)", i, ev.metrics[hash], expected.T, actual.T, formatSeriesResult(s))
 				}
 
-				if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0)) {
+				if !compareNativeHistogram(expected.H.Compact(0), actual.H.Compact(0), expected.CounterResetHintSet) {
 					return fmt.Errorf("expected histogram value at index %v (t=%v) for %s to be %v, but got %v (result has %s)", i, actual.T, ev.metrics[hash], expected.H.TestExpression(), actual.H.TestExpression(), formatSeriesResult(s))
 				}
 			}
@@ -1125,7 +1135,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if expH != nil && v.H == nil {
 				return fmt.Errorf("expected histogram %s for %s but got float value %v", HistogramTestExpression(expH), v.Metric, v.F)
 			}
-			if expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0)) {
+			if expH != nil && !compareNativeHistogram(expH.Compact(0), v.H.Compact(0), exp0.CounterResetHintSet) {
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
 			if !almost.Equal(exp0.Value, v.F, defaultEpsilon) {
@@ -1163,7 +1173,9 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 
 // compareNativeHistogram is helper function to compare two native histograms
 // which can tolerate some differ in the field of float type, such as Count, Sum.
-func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
+// The counterResetHintSet parameter indicates whether the counter reset hint was
+// explicitly specified in the expected histogram (from the test file).
+func compareNativeHistogram(exp, cur *histogram.FloatHistogram, counterResetHintSet bool) bool {
 	if exp == nil || cur == nil {
 		return false
 	}
@@ -1197,6 +1209,15 @@ func compareNativeHistogram(exp, cur *histogram.FloatHistogram) bool {
 	}
 	if !floatBucketsMatch(exp.PositiveBuckets, cur.PositiveBuckets) {
 		return false
+	}
+
+	// Compare CounterResetHint only if explicitly specified in expected histogram.
+	// When counterResetHintSet is false, no hint was specified, meaning "don't care".
+	// When counterResetHintSet is true, the hint was explicitly specified and must match.
+	if counterResetHintSet {
+		if exp.CounterResetHint != cur.CounterResetHint {
+			return false
+		}
 	}
 
 	return true
@@ -1342,8 +1363,13 @@ type atModifierTestCase struct {
 	evalTime time.Time
 }
 
+// parserForBuiltinTests is the parser used when parsing expressions in the
+// built-in test framework (e.g. atModifierTestCases). It must match the Parser
+// used by NewTestEngine so that expressions parse consistently.
+var parserForBuiltinTests = parser.NewParser(TestParserOpts)
+
 func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCase, error) {
-	expr, err := parser.ParseExpr(exprStr)
+	expr, err := parserForBuiltinTests.ParseExpr(exprStr)
 	if err != nil {
 		return nil, err
 	}
@@ -1454,7 +1480,7 @@ func (t *test) execEval(cmd *evalCmd, engine promql.QueryEngine) error {
 		return do()
 	}
 
-	if tt, ok := t.T.(*testing.T); ok {
+	if tt, ok := t.TB.(*testing.T); ok {
 		tt.Run(fmt.Sprintf("line %d/%s", cmd.line, cmd.expr), func(t *testing.T) {
 			require.NoError(t, do())
 		})
@@ -1622,12 +1648,12 @@ func assertMatrixSorted(m promql.Matrix) error {
 func (t *test) clear() {
 	if t.storage != nil {
 		err := t.storage.Close()
-		require.NoError(t.T, err, "Unexpected error while closing test storage.")
+		require.NoError(t.TB, err, "Unexpected error while closing test storage.")
 	}
 	if t.cancelCtx != nil {
 		t.cancelCtx()
 	}
-	t.storage = t.open(t.T)
+	t.storage = t.open(t.TB)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 

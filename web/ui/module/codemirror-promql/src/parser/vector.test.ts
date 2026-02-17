@@ -15,29 +15,31 @@ import { buildVectorMatching } from './vector';
 import { createEditorState } from '../test/utils-test';
 import { BinaryExpr } from '@prometheus-io/lezer-promql';
 import { syntaxTree } from '@codemirror/language';
-import { VectorMatchCardinality } from '../types';
+import { VectorMatchCardinality, VectorMatching } from '../types';
+
+const noFill = { fill: { lhs: null, rhs: null } };
 
 describe('buildVectorMatching test', () => {
-  const testCases = [
+  const testCases: { binaryExpr: string; expectedVectorMatching: VectorMatching }[] = [
     {
       binaryExpr: 'foo * bar',
-      expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [] },
+      expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [], ...noFill },
     },
     {
       binaryExpr: 'foo * sum',
-      expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [] },
+      expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [], ...noFill },
     },
     {
       binaryExpr: 'foo == 1',
-      expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [] },
+      expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [], ...noFill },
     },
     {
       binaryExpr: 'foo == bool 1',
-      expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [] },
+      expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [], ...noFill },
     },
     {
       binaryExpr: '2.5 / bar',
-      expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [] },
+      expectedVectorMatching: { card: VectorMatchCardinality.CardOneToOne, matchingLabels: [], on: false, include: [], ...noFill },
     },
     {
       binaryExpr: 'foo and bar',
@@ -46,6 +48,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: [],
         on: false,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -55,6 +58,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: [],
         on: false,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -64,6 +68,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: [],
         on: false,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -75,6 +80,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: [],
         on: false,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -86,6 +92,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: [],
         on: false,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -95,6 +102,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: ['test', 'blub'],
         on: true,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -104,6 +112,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: ['test', 'blub'],
         on: true,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -113,6 +122,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: ['test', 'blub'],
         on: true,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -122,6 +132,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: [],
         on: true,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -131,6 +142,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: ['test', 'blub'],
         on: false,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -140,6 +152,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: [],
         on: false,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -149,6 +162,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: ['bar'],
         on: true,
         include: [],
+        ...noFill,
       },
     },
     {
@@ -158,6 +172,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: ['test', 'blub'],
         on: true,
         include: ['bar'],
+        ...noFill,
       },
     },
     {
@@ -167,6 +182,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: ['test', 'blub'],
         on: false,
         include: ['blub'],
+        ...noFill,
       },
     },
     {
@@ -176,6 +192,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: ['test', 'blub'],
         on: false,
         include: ['bar'],
+        ...noFill,
       },
     },
     {
@@ -185,6 +202,7 @@ describe('buildVectorMatching test', () => {
         matchingLabels: ['test', 'blub'],
         on: true,
         include: ['bar', 'foo'],
+        ...noFill,
       },
     },
     {
@@ -194,6 +212,57 @@ describe('buildVectorMatching test', () => {
         matchingLabels: ['test', 'blub'],
         on: false,
         include: ['bar', 'foo'],
+        ...noFill,
+      },
+    },
+    {
+      binaryExpr: 'foo + fill(23) bar',
+      expectedVectorMatching: {
+        card: VectorMatchCardinality.CardOneToOne,
+        matchingLabels: [],
+        on: false,
+        include: [],
+        fill: { lhs: 23, rhs: 23 },
+      },
+    },
+    {
+      binaryExpr: 'foo + fill_left(23) bar',
+      expectedVectorMatching: {
+        card: VectorMatchCardinality.CardOneToOne,
+        matchingLabels: [],
+        on: false,
+        include: [],
+        fill: { lhs: 23, rhs: null },
+      },
+    },
+    {
+      binaryExpr: 'foo + fill_right(23) bar',
+      expectedVectorMatching: {
+        card: VectorMatchCardinality.CardOneToOne,
+        matchingLabels: [],
+        on: false,
+        include: [],
+        fill: { lhs: null, rhs: 23 },
+      },
+    },
+    {
+      binaryExpr: 'foo + fill_left(23) fill_right(42) bar',
+      expectedVectorMatching: {
+        card: VectorMatchCardinality.CardOneToOne,
+        matchingLabels: [],
+        on: false,
+        include: [],
+        fill: { lhs: 23, rhs: 42 },
+      },
+    },
+    {
+      binaryExpr: 'foo + fill_right(23) fill_left(42) bar',
+      expectedVectorMatching: {
+        card: VectorMatchCardinality.CardOneToOne,
+        matchingLabels: [],
+        on: false,
+        include: [],
+        fill: { lhs: 42, rhs: 23 },
       },
     },
   ];
@@ -203,7 +272,7 @@ describe('buildVectorMatching test', () => {
       const node = syntaxTree(state).topNode.getChild(BinaryExpr);
       expect(node).toBeTruthy();
       if (node) {
-        expect(value.expectedVectorMatching).toEqual(buildVectorMatching(state, node));
+        expect(buildVectorMatching(state, node)).toEqual(value.expectedVectorMatching);
       }
     });
   });

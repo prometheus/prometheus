@@ -69,6 +69,7 @@ type AppendV2Options struct {
 	// Exemplars (optional) attached to the appended sample.
 	// Exemplar slice MUST be sorted by Exemplar.TS.
 	// Exemplar slice is unsafe for reuse.
+	// Duplicate exemplars errors MUST be ignored by implementations.
 	Exemplars []exemplar.Exemplar
 
 	// RejectOutOfOrder tells implementation that this append should not be out
@@ -89,11 +90,57 @@ type AppendPartialError struct {
 
 // Error returns combined error string.
 func (e *AppendPartialError) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+
 	errs := errors.Join(e.ExemplarErrors...)
 	if errs == nil {
 		return ""
 	}
 	return errs.Error()
+}
+
+// ToError returns AppendPartialError as error, returning nil
+// if there are no errors.
+func (e *AppendPartialError) ToError() error {
+	if e == nil || len(e.ExemplarErrors) == 0 {
+		return nil
+	}
+	return e
+}
+
+// Is implements method that's expected by errors.Is.
+func (*AppendPartialError) Is(target error) bool {
+	// This does not need to handle wrapped errors as AppendPartialError.Is should be used
+	// via errors.Is.
+	_, ok := target.(*AppendPartialError)
+	return ok
+}
+
+// Handle handles the given err that may be an AppendPartialError.
+// If the err is nil or not an AppendPartialError it returns err.
+// Otherwise, partial errors are aggregated.
+func (e *AppendPartialError) Handle(err error) (*AppendPartialError, error) {
+	if err == nil {
+		return e, nil
+	}
+
+	// Fast, alloc-free path first for non-partial error cases.
+	if !errors.Is(err, e) {
+		return e, err
+	}
+	var pErr *AppendPartialError
+	if !errors.As(err, &pErr) {
+		return e, err
+	}
+
+	if e == nil {
+		// Lazy allocation.
+		e = &AppendPartialError{}
+	}
+	e.ExemplarErrors = append(e.ExemplarErrors, pErr.ExemplarErrors...)
+	return e, nil
 }
 
 var _ error = &AppendPartialError{}
@@ -159,6 +206,8 @@ type AppenderTransaction interface {
 // This is to support migration to AppenderV2.
 // TODO(bwplotka): Remove once migration to AppenderV2 is fully complete.
 type LimitedAppenderV1 interface {
+	AppenderTransaction
+
 	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
 	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }

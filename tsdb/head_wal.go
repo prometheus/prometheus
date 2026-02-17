@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -308,7 +307,21 @@ Outer:
 			}
 			h.wlReplaySamplesPool.Put(v)
 		case []tombstones.Stone:
+			// Tombstone records will be fairly rare, so not trying to optimise the allocations here.
+			deleteSeriesShards := make([][]chunks.HeadSeriesRef, concurrency)
 			for _, s := range v {
+				if len(s.Intervals) == 1 && s.Intervals[0].Mint == math.MinInt64 && s.Intervals[0].Maxt == math.MaxInt64 {
+					// This series was fully deleted at this point. This record is only done for stale series at the moment.
+					mod := uint64(s.Ref) % uint64(concurrency)
+					deleteSeriesShards[mod] = append(deleteSeriesShards[mod], chunks.HeadSeriesRef(s.Ref))
+
+					// If the series is with a different reference, try deleting that.
+					if r, ok := multiRef[chunks.HeadSeriesRef(s.Ref)]; ok {
+						mod := uint64(r) % uint64(concurrency)
+						deleteSeriesShards[mod] = append(deleteSeriesShards[mod], r)
+					}
+					continue
+				}
 				for _, itv := range s.Intervals {
 					if itv.Maxt < h.minValidTime.Load() {
 						continue
@@ -326,6 +339,14 @@ Outer:
 					h.tombstones.AddInterval(s.Ref, itv)
 				}
 			}
+
+			for i := range concurrency {
+				if len(deleteSeriesShards[i]) > 0 {
+					processors[i].input <- walSubsetProcessorInputItem{deletedSeriesRefs: deleteSeriesShards[i]}
+					deleteSeriesShards[i] = nil
+				}
+			}
+
 			h.wlReplaytStonesPool.Put(v)
 		case []record.RefExemplar:
 			for _, e := range v {
@@ -558,10 +579,11 @@ type walSubsetProcessor struct {
 }
 
 type walSubsetProcessorInputItem struct {
-	samples          []record.RefSample
-	histogramSamples []histogramRecord
-	existingSeries   *memSeries
-	walSeriesRef     chunks.HeadSeriesRef
+	samples           []record.RefSample
+	histogramSamples  []histogramRecord
+	existingSeries    *memSeries
+	walSeriesRef      chunks.HeadSeriesRef
+	deletedSeriesRefs []chunks.HeadSeriesRef
 }
 
 func (wp *walSubsetProcessor) setup() {
@@ -711,6 +733,10 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		select {
 		case wp.histogramsOutput <- in.histogramSamples:
 		default:
+		}
+
+		if len(in.deletedSeriesRefs) > 0 {
+			h.deleteSeriesByID(in.deletedSeriesRefs)
 		}
 	}
 	h.updateMinMaxTime(mint, maxt)
@@ -1509,7 +1535,7 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 		return err
 	}
 
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, fi := range files {
 		if !strings.HasPrefix(fi.Name(), chunkSnapshotPrefix) {
 			continue
@@ -1532,11 +1558,11 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 
 		if idx < maxIndex || (idx == maxIndex && offset < maxOffset) {
 			if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
-				errs.Add(err)
+				errs = append(errs, err)
 			}
 		}
 	}
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 // loadChunkSnapshot replays the chunk snapshot and restores the Head state from it. If there was any error returned,
@@ -1724,14 +1750,14 @@ Outer:
 	}
 
 	close(errChan)
-	merr := tsdb_errors.NewMulti()
+	var errs []error
 	if loopErr != nil {
-		merr.Add(fmt.Errorf("decode loop: %w", loopErr))
+		errs = append(errs, fmt.Errorf("decode loop: %w", loopErr))
 	}
 	for err := range errChan {
-		merr.Add(fmt.Errorf("record processing: %w", err))
+		errs = append(errs, fmt.Errorf("record processing: %w", err))
 	}
-	if err := merr.Err(); err != nil {
+	if err := errors.Join(errs...); err != nil {
 		return -1, -1, nil, err
 	}
 

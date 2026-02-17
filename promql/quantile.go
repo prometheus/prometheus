@@ -94,10 +94,7 @@ type metricWithBuckets struct {
 //
 // If q>1, +Inf is returned.
 //
-// We also return a bool to indicate if monotonicity needed to be forced,
-// and another bool to indicate if small differences between buckets (that
-// are likely artifacts of floating point precision issues) have been
-// ignored.
+// We also return extra info, see doc for ensureMonotonicAndIgnoreSmallDeltas.
 //
 // Generically speaking, BucketQuantile is for calculating the
 // histogram_quantile() of classic histograms. See also: HistogramQuantile
@@ -105,15 +102,21 @@ type metricWithBuckets struct {
 //
 // BucketQuantile is exported as a useful quantile function over a set of
 // given buckets. It may be used by other PromQL engine implementations.
-func BucketQuantile(q float64, buckets Buckets) (float64, bool, bool) {
-	if math.IsNaN(q) {
-		return math.NaN(), false, false
-	}
-	if q < 0 {
-		return math.Inf(-1), false, false
-	}
-	if q > 1 {
-		return math.Inf(+1), false, false
+func BucketQuantile(q float64, buckets Buckets) (
+	quantile float64,
+	forcedMonotonic, fixedPrecision bool,
+	minBucket, maxBucket, maxDiff float64,
+) {
+	switch {
+	case math.IsNaN(q):
+		quantile = math.NaN()
+		return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
+	case q < 0:
+		quantile = math.Inf(-1)
+		return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
+	case q > 1:
+		quantile = math.Inf(+1)
+		return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
 	}
 	slices.SortFunc(buckets, func(a, b Bucket) int {
 		// We don't expect the bucket boundary to be a NaN.
@@ -126,39 +129,44 @@ func BucketQuantile(q float64, buckets Buckets) (float64, bool, bool) {
 		return 0
 	})
 	if !math.IsInf(buckets[len(buckets)-1].UpperBound, +1) {
-		return math.NaN(), false, false
+		quantile = math.NaN()
+		return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
 	}
 
 	buckets = coalesceBuckets(buckets)
-	forcedMonotonic, fixedPrecision := ensureMonotonicAndIgnoreSmallDeltas(buckets, smallDeltaTolerance)
+	forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff = ensureMonotonicAndIgnoreSmallDeltas(buckets, smallDeltaTolerance)
 
 	if len(buckets) < 2 {
-		return math.NaN(), false, false
+		quantile = math.NaN()
+		return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
 	}
 	observations := buckets[len(buckets)-1].Count
 	if observations == 0 {
-		return math.NaN(), false, false
+		quantile = math.NaN()
+		return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
 	}
 	rank := q * observations
 	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].Count >= rank })
 
-	if b == len(buckets)-1 {
-		return buckets[len(buckets)-2].UpperBound, forcedMonotonic, fixedPrecision
+	switch {
+	case b == len(buckets)-1:
+		quantile = buckets[len(buckets)-2].UpperBound
+	case b == 0 && buckets[0].UpperBound <= 0:
+		quantile = buckets[0].UpperBound
+	default:
+		var (
+			bucketStart float64
+			bucketEnd   = buckets[b].UpperBound
+			count       = buckets[b].Count
+		)
+		if b > 0 {
+			bucketStart = buckets[b-1].UpperBound
+			count -= buckets[b-1].Count
+			rank -= buckets[b-1].Count
+		}
+		quantile = bucketStart + (bucketEnd-bucketStart)*(rank/count)
 	}
-	if b == 0 && buckets[0].UpperBound <= 0 {
-		return buckets[0].UpperBound, forcedMonotonic, fixedPrecision
-	}
-	var (
-		bucketStart float64
-		bucketEnd   = buckets[b].UpperBound
-		count       = buckets[b].Count
-	)
-	if b > 0 {
-		bucketStart = buckets[b-1].UpperBound
-		count -= buckets[b-1].Count
-		rank -= buckets[b-1].Count
-	}
-	return bucketStart + (bucketEnd-bucketStart)*(rank/count), forcedMonotonic, fixedPrecision
+	return quantile, forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
 }
 
 // HistogramQuantile calculates the quantile 'q' based on the given histogram.
@@ -655,10 +663,20 @@ func coalesceBuckets(buckets Buckets) Buckets {
 // the histogram buckets, essentially removing any decreases in the count
 // between successive buckets.
 //
-// We return a bool to indicate if this monotonicity was forced or not, and
-// another bool to indicate if small deltas were ignored or not.
-func ensureMonotonicAndIgnoreSmallDeltas(buckets Buckets, tolerance float64) (bool, bool) {
-	var forcedMonotonic, fixedPrecision bool
+// We return:
+//   - a bool to indicate if monotonicity needed to be forced
+//   - a bool to indicate if small differences between buckets (that are likely
+//     artifacts of floating point precision issues) have been ignored.
+//   - a float to indicate the minimum bucket upper bound where monotonicity was forced, if applicable
+//   - a float to indicate the maximum bucket upper bound where monotonicity was forced, if applicable
+//   - a float to indicate the maximum difference between the count of two consecutive buckets
+//     where monotonicity was forced, if applicable
+func ensureMonotonicAndIgnoreSmallDeltas(buckets Buckets, tolerance float64) (
+	forcedMonotonic, fixedPrecision bool,
+	minBucket, maxBucket, maxDiff float64,
+) {
+	minBucket = math.Inf(+1)
+	maxBucket = math.Inf(-1)
 	prev := buckets[0].Count
 	for i := 1; i < len(buckets); i++ {
 		curr := buckets[i].Count // Assumed always positive.
@@ -679,11 +697,20 @@ func ensureMonotonicAndIgnoreSmallDeltas(buckets Buckets, tolerance float64) (bo
 			// Do not update the 'prev' value as we are ignoring the decrease.
 			buckets[i].Count = prev
 			forcedMonotonic = true
+			if buckets[i].UpperBound < minBucket {
+				minBucket = buckets[i].UpperBound
+			}
+			if buckets[i].UpperBound > maxBucket {
+				maxBucket = buckets[i].UpperBound
+			}
+			if diff := prev - curr; diff > maxDiff {
+				maxDiff = diff
+			}
 			continue
 		}
 		prev = curr
 	}
-	return forcedMonotonic, fixedPrecision
+	return forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
 }
 
 // quantile calculates the given quantile of a vector of samples.

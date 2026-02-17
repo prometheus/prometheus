@@ -140,11 +140,32 @@ func TestReadyAndHealthy(t *testing.T) {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "false", resp.Header.Get("X-Prometheus-Stopping"))
 		cleanupTestResponse(t, resp)
 
 		resp, err = http.Head(u)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "false", resp.Header.Get("X-Prometheus-Stopping"))
+		cleanupTestResponse(t, resp)
+	}
+
+	// Set to stopping
+	webHandler.SetReady(Stopping)
+
+	for _, u := range []string{
+		baseURL + "/-/ready",
+	} {
+		resp, err = http.Get(u)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "true", resp.Header.Get("X-Prometheus-Stopping"))
+		cleanupTestResponse(t, resp)
+
+		resp, err = http.Head(u)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "true", resp.Header.Get("X-Prometheus-Stopping"))
 		cleanupTestResponse(t, resp)
 	}
 
@@ -307,6 +328,7 @@ func TestDebugHandler(t *testing.T) {
 				Host:   "localhost.localdomain:9090",
 				Scheme: "http",
 			},
+			Version: &PrometheusVersion{},
 		}
 		handler := New(nil, opts)
 		handler.SetReady(Ready)
@@ -332,6 +354,7 @@ func TestHTTPMetrics(t *testing.T) {
 			Host:   "localhost.localdomain:9090",
 			Scheme: "http",
 		},
+		Version: &PrometheusVersion{},
 	})
 	getReady := func() int {
 		t.Helper()

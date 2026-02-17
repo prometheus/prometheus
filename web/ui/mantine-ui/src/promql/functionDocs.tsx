@@ -1756,6 +1756,12 @@ const funcDocs: Record<string, React.ReactNode> = {
         .
       </p>
 
+      <p>
+        Note that if there are any time series in <code>v</code> that match the <code>data-label-selector</code> (or the
+        default <code>target_info</code> if that argument is not specified), they will be treated as info series and
+        will be returned unchanged.
+      </p>
+
       <h3>Limitations</h3>
 
       <p>

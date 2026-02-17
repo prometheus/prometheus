@@ -115,7 +115,7 @@ func TestAlertingRuleTemplateWithHistogram(t *testing.T) {
 		return []promql.Sample{{H: &h}}, nil
 	}
 
-	expr, err := parser.ParseExpr("foo")
+	expr, err := testParser.ParseExpr("foo")
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -158,9 +158,8 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 stale
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests < 100`)
+	expr, err := testParser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -264,9 +263,8 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests < 100`)
+	expr, err := testParser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
 
 	ruleWithoutExternalLabels := NewAlertingRule(
@@ -359,9 +357,8 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests < 100`)
+	expr, err := testParser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
 
 	ruleWithoutExternalURL := NewAlertingRule(
@@ -454,9 +451,8 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests < 100`)
+	expr, err := testParser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -510,9 +506,8 @@ func TestAlertingRuleQueryInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	70 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`sum(http_requests) < 100`)
+	expr, err := testParser.ParseExpr(`sum(http_requests) < 100`)
 	require.NoError(t, err)
 
 	ruleWithQueryInTemplate := NewAlertingRule(
@@ -584,7 +579,6 @@ func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 
 func TestAlertingRuleDuplicate(t *testing.T) {
 	storage := teststorage.New(t)
-	defer storage.Close()
 
 	opts := promql.EngineOpts{
 		Logger:     nil,
@@ -598,7 +592,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 
 	now := time.Now()
 
-	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
+	expr, _ := testParser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewAlertingRule(
 		"foo",
 		expr,
@@ -621,7 +615,6 @@ func TestAlertingRuleLimit(t *testing.T) {
 			metric{label="1"} 1
 			metric{label="2"} 1
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	tests := []struct {
 		limit int
@@ -642,7 +635,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 		},
 	}
 
-	expr, _ := parser.ParseExpr(`metric > 0`)
+	expr, _ := testParser.ParseExpr(`metric > 0`)
 	rule := NewAlertingRule(
 		"foo",
 		expr,
@@ -697,12 +690,14 @@ func TestQueryForStateSeries(t *testing.T) {
 		{
 			selectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 				return storage.TestSeriesSet(storage.MockSeries(
+					nil,
 					[]int64{1, 2, 3},
 					[]float64{1, 2, 3},
 					[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
 				))
 			},
 			expectedSeries: storage.MockSeries(
+				nil,
 				[]int64{1, 2, 3},
 				[]float64{1, 2, 3},
 				[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
@@ -763,7 +758,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 	al := &Alert{State: StateFiring, Labels: lbls, ActiveAt: time.Now()}
 	rule.active[h] = al
 
-	expr, err := parser.ParseExpr("foo")
+	expr, err := testParser.ParseExpr("foo")
 	require.NoError(t, err)
 	rule.vector = expr
 
@@ -803,9 +798,8 @@ func TestKeepFiringFor(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 10x5
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests > 50`)
+	expr, err := testParser.ParseExpr(`http_requests > 50`)
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -914,9 +908,8 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 10x10
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests > 50`)
+	expr, err := testParser.ParseExpr(`http_requests > 50`)
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -976,7 +969,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		lbs    = labels.FromStrings("test", "test")
 	)
 
-	expr, err := parser.ParseExpr(query)
+	expr, err := testParser.ParseExpr(query)
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(

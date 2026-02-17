@@ -308,10 +308,10 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			for q, v := range tc.expectedValues {
-				res, forced, fixed := BucketQuantile(q, tc.getInput())
+				quantile, forced, fixed, _, _, _ := BucketQuantile(q, tc.getInput())
 				require.Equal(t, tc.expectedForced, forced)
 				require.Equal(t, tc.expectedFixed, fixed)
-				require.InEpsilon(t, v, res, eps)
+				require.InEpsilon(t, v, quantile, eps)
 			}
 		})
 	}

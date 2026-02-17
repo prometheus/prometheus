@@ -27,6 +27,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/tsdb"
 )
@@ -71,6 +72,7 @@ func getDumpedSamples(t *testing.T, databasePath, sandboxDirRoot string, mint, m
 		maxt,
 		match,
 		formatter,
+		parser.NewParser(parser.Options{}),
 	)
 	require.NoError(t, err)
 
@@ -97,7 +99,6 @@ func TestTSDBDump(t *testing.T) {
 			heavy_metric{foo="bar"} 5 4 3 2 1
 			heavy_metric{foo="foo"} 5 4 3 2 1
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	tests := []struct {
 		name           string
@@ -196,7 +197,6 @@ func TestTSDBDumpOpenMetrics(t *testing.T) {
 			my_counter{foo="bar", baz="abc"} 1 2 3 4 5
 			my_gauge{bar="foo", abc="baz"} 9 8 0 4 7
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	tests := []struct {
 		name           string
