@@ -29,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -487,6 +489,237 @@ func TestForStateRestore(t *testing.T) {
 					newGroup.Eval(context.TODO(), restoreTime)
 					// Restore happens here.
 					newGroup.RestoreForState(restoreTime)
+
+					got := newRule.ActiveAlerts()
+					for _, aa := range got {
+						require.Empty(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+					}
+					sort.Slice(got, func(i, j int) bool {
+						return labels.Compare(got[i].Labels, got[j].Labels) < 0
+					})
+
+					// In all cases, we expect the restoration process to have completed.
+					require.Truef(t, newRule.Restored(), "expected the rule restoration process to have completed")
+
+					// Checking if we have restored it correctly.
+					switch {
+					case tt.noRestore:
+						require.Len(t, got, tt.num)
+						for _, e := range got {
+							require.Equal(t, e.ActiveAt, restoreTime)
+						}
+					case tt.gracePeriod:
+
+						require.Len(t, got, tt.num)
+						for _, e := range got {
+							require.Equal(t, opts.ForGracePeriod, e.ActiveAt.Add(alertForDuration).Sub(restoreTime))
+						}
+					default:
+						exp := tt.expectedAlerts
+						require.Len(t, got, len(exp))
+						sortAlerts(exp)
+						sortAlerts(got)
+						for i, e := range exp {
+							require.Equal(t, e.Labels, got[i].Labels)
+
+							// Difference in time should be within 1e6 ns, i.e. 1ms
+							// (due to conversion between ns & ms, float64 & int64).
+							activeAtDiff := queryOffset.Seconds() + float64(e.ActiveAt.Unix()+int64(tt.downDuration/time.Second)-got[i].ActiveAt.Unix())
+							require.Equal(t, 0.0, math.Abs(activeAtDiff), "'for' state restored time is wrong")
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestForStateRestoreWithTemplate(t *testing.T) {
+	alertLabels := labels.FromStrings(
+		"severity",
+		"critical",
+		"instance_ext",
+		"instance_{{ $labels.instance }}", // Using a template label to test restoration in this particular case
+	)
+
+	for _, queryOffset := range []time.Duration{0, time.Minute} {
+		t.Run(fmt.Sprintf("queryOffset %s", queryOffset.String()), func(t *testing.T) {
+			st := promqltest.LoadedStorage(t, `
+		load 5m
+		http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75  85 50 0 0 25 0 0 40 0 120
+		http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	125 90 60 0 0 25 0 0 40 0 130
+	`)
+			t.Cleanup(func() { st.Close() })
+
+			expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+			require.NoError(t, err)
+
+			ng := testEngine(t)
+			crq := storage.NewCallRecorderQueryable(st)
+			opts := &ManagerOptions{
+				QueryFunc:       EngineQueryFunc(ng, st),
+				Appendable:      st,
+				Queryable:       crq,
+				Context:         context.Background(),
+				Logger:          promslog.NewNopLogger(),
+				NotifyFunc:      func(_ context.Context, _ string, _ ...*Alert) {},
+				OutageTolerance: 30 * time.Minute,
+				ForGracePeriod:  10 * time.Minute,
+			}
+
+			alertForDuration := 25 * time.Minute
+			// Initial run before prometheus goes down.
+			rule := NewAlertingRule(
+				"HTTPRequestRateLow",
+				expr,
+				alertForDuration,
+				0,
+				alertLabels,
+				labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+			)
+
+			group := NewGroup(GroupOptions{
+				Name:          "default",
+				Interval:      time.Second,
+				Rules:         []Rule{rule},
+				ShouldRestore: true,
+				Opts:          opts,
+			})
+			groups := make(map[string]*Group)
+			groups["default;"] = group
+
+			initialRuns := []time.Duration{0, 5 * time.Minute}
+
+			baseTime := time.Unix(0, 0)
+			for _, duration := range initialRuns {
+				evalTime := baseTime.Add(duration)
+				group.Eval(context.TODO(), evalTime)
+			}
+
+			// Prometheus goes down here. We create new rules and groups.
+			type testInput struct {
+				name            string
+				restoreDuration time.Duration
+				expectedAlerts  []*Alert
+
+				num          int
+				noRestore    bool
+				gracePeriod  bool
+				downDuration time.Duration
+				before       func()
+			}
+
+			tests := []testInput{
+				{
+					name:            "normal restore (alerts were not firing)",
+					restoreDuration: 15 * time.Minute,
+					expectedAlerts:  rule.ActiveAlerts(),
+					downDuration:    10 * time.Minute,
+				},
+				{
+					name:            "outage tolerance",
+					restoreDuration: 40 * time.Minute,
+					noRestore:       true,
+					num:             2,
+				},
+				{
+					name:            "no active alerts",
+					restoreDuration: 50 * time.Minute,
+					expectedAlerts:  []*Alert{},
+				},
+				{
+					name:            "test the grace period",
+					restoreDuration: 25 * time.Minute,
+					expectedAlerts:  []*Alert{},
+					gracePeriod:     true,
+					before: func() {
+						for _, duration := range []time.Duration{10 * time.Minute, 15 * time.Minute, 20 * time.Minute} {
+							evalTime := baseTime.Add(duration)
+							group.Eval(context.TODO(), evalTime)
+						}
+					},
+					num: 2,
+				},
+			}
+
+			for i, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					if tt.before != nil {
+						tt.before()
+					}
+
+					newRule := NewAlertingRule(
+						"HTTPRequestRateLow",
+						expr,
+						alertForDuration,
+						0,
+						alertLabels,
+						labels.EmptyLabels(),
+						labels.EmptyLabels(),
+						"",
+						false,
+						nil,
+					)
+					newGroup := NewGroup(GroupOptions{
+						Name:          "default",
+						Interval:      time.Second,
+						Rules:         []Rule{newRule},
+						ShouldRestore: true,
+						Opts:          opts,
+						QueryOffset:   &queryOffset,
+					})
+
+					// Check the storage to see if we have ALERTS_FOR_STATE
+					afs, err := opts.QueryFunc(t.Context(), "ALERTS_FOR_STATE", baseTime)
+					if err != nil {
+						t.Fatalf("failed to query storage for ALERTS_FOR_STATE: %v", err)
+					}
+					t.Log(afs.String())
+
+					newGroups := make(map[string]*Group)
+					newGroups["default;"] = newGroup
+
+					restoreTime := baseTime.Add(tt.restoreDuration).Add(queryOffset)
+					// First eval before restoration.
+					newGroup.Eval(t.Context(), restoreTime)
+					require.Len(t, crq.Queriers(), i)
+
+					// Restore happens here.
+					newGroup.RestoreForState(restoreTime)
+
+					queriers := crq.Queriers()
+					require.Len(t, queriers, i+1, "expected one querier to be created during restoration")
+
+					wantCalls := []storage.SelectCall{
+						{
+							Matchers: []*labels.Matcher{
+								{
+									Name:  "__name__",
+									Value: alertForStateMetricName,
+									Type:  labels.MatchEqual,
+								},
+								{
+									Name:  "alertname",
+									Value: "HTTPRequestRateLow",
+									Type:  labels.MatchEqual,
+								},
+								{
+									Name:  "instance_ext",
+									Value: "instance_0",
+									Type:  labels.MatchEqual,
+								},
+								{
+									Name:  "severity",
+									Value: "critical",
+									Type:  labels.MatchEqual,
+								},
+							},
+						},
+					}
+					gotCalls := queriers[i].SelectCalls()
+					if diff := cmp.Diff(wantCalls, gotCalls, cmpopts.IgnoreUnexported(labels.Matcher{})); diff != "" {
+						t.Errorf("unexpected Select calls (-want +got):\n%s", diff)
+					}
 
 					got := newRule.ActiveAlerts()
 					for _, aa := range got {
