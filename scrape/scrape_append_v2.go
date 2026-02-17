@@ -102,7 +102,7 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 		IgnoreNativeHistograms:                  !sl.enableNativeHistogramScraping,
 		ConvertClassicHistogramsToNHCB:          sl.convertClassicHistToNHCB,
 		KeepClassicOnClassicAndNativeHistograms: sl.alwaysScrapeClassicHist,
-		OpenMetricsSkipSTSeries:                 sl.enableSTZeroIngestion,
+		OpenMetricsSkipSTSeries:                 sl.parseST,
 		FallbackContentType:                     sl.fallbackScrapeProtocol,
 	})
 	if p == nil {
@@ -254,7 +254,7 @@ loop:
 			}
 
 			st := int64(0)
-			if sl.enableSTZeroIngestion {
+			if sl.parseST {
 				// p.StartTimestamp() tend to be expensive (e.g. OM1). Do it only if we care.
 				st = p.StartTimestamp()
 			}

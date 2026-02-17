@@ -115,7 +115,18 @@ type Options struct {
 
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
+	//
+	// NOTE: This option has no effect for AppenderV2 and will be removed with the AppenderV1
+	// removal.
 	EnableStartTimestampZeroIngestion bool
+
+	// ParseST controls if ST should be parsed and appended from the scrape format
+	// notably from the expensive OpenMetrics 1.0 _created line flow. This adds some
+	// overhead and can yield wrong ST values on OM1 edge cases.
+	//
+	// This only applies to AppenderV2 flow.
+	// TODO: Move this option to OM1 parser and use only on OM1 flow
+	ParseST bool
 
 	// EnableTypeAndUnitLabels represents type-and-unit-labels feature flag.
 	EnableTypeAndUnitLabels bool
