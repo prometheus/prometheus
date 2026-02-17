@@ -1170,25 +1170,25 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
 
 	// We test both with few and many samples appended after series creation. If samples are < 120 then there's no
 	// mmap-ed chunk, otherwise there's at least 1 mmap-ed chunk when replaying the WAL.
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, numSamplesAfterSeriesCreation := range []int{1, 1000} {
 			for run := 1; run <= numRuns; run++ {
-				t.Run(fmt.Sprintf("samples after series creation = %d, run = %d, stStorage=%v", numSamplesAfterSeriesCreation, run, enableStStorage), func(t *testing.T) {
-					testWALReplayRaceOnSamplesLoggedBeforeSeries(t, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation, enableStStorage)
+				t.Run(fmt.Sprintf("samples after series creation = %d, run = %d, stStorage=%v", numSamplesAfterSeriesCreation, run, enableSTStorage), func(t *testing.T) {
+					testWALReplayRaceOnSamplesLoggedBeforeSeries(t, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation, enableSTStorage)
 				})
 			}
 		}
 	}
 }
 
-func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation int, enableStStorage bool) {
+func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation int, enableSTStorage bool) {
 	const numSeries = 1000
 	db := newTestDB(t)
 	db.DisableCompactions()
 
 	for seriesRef := 1; seriesRef <= numSeries; seriesRef++ {
 		// Log samples before the series is logged to the WAL.
-		enc := record.Encoder{EnableSTStorage: enableStStorage}
+		enc := record.Encoder{EnableSTStorage: enableSTStorage}
 		var samples []record.RefSample
 
 		for ts := range numSamplesBeforeSeriesCreation {
@@ -1552,8 +1552,8 @@ func TestRetentionDurationMetric(t *testing.T) {
 
 func TestSizeRetention(t *testing.T) {
 	t.Parallel()
-	for _, enableStStorage := range []bool{false, true} {
-		t.Run("enableStStorage="+strconv.FormatBool(enableStStorage), func(t *testing.T) {
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 100
 			db := newTestDB(t, withOpts(opts), withRngs(100))
@@ -1617,7 +1617,7 @@ func TestSizeRetention(t *testing.T) {
 			// Create a WAL checkpoint, and compare sizes.
 			first, last, err := wlog.Segments(db.Head().wal.Dir())
 			require.NoError(t, err)
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableStStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, first, last-1, func(chunks.HeadSeriesRef) bool { return false }, 0, enableSTStorage)
 			require.NoError(t, err)
 			blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 			walSize, err = db.Head().wal.Size()
@@ -2078,15 +2078,15 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.True(t, db.head.initialized())
 	})
 
-	for _, enableStStorage := range []bool{false, true} {
-		t.Run("wal-only-st-"+strconv.FormatBool(enableStStorage), func(t *testing.T) {
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run("wal-only-st-"+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
 			dir := t.TempDir()
 
 			require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0o777))
 			w, err := wlog.New(nil, nil, path.Join(dir, "wal"), compression.None)
 			require.NoError(t, err)
 
-			enc := record.Encoder{EnableSTStorage: enableStStorage}
+			enc := record.Encoder{EnableSTStorage: enableSTStorage}
 			err = w.Log(
 				enc.Series([]record.RefSeries{
 					{Ref: 123, Labels: labels.FromStrings("a", "1")},
@@ -2119,8 +2119,8 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.True(t, db.head.initialized())
 	})
 
-	for _, enableStStorage := range []bool{false, true} {
-		t.Run("existing-block-and-wal,enableStStorage="+strconv.FormatBool(enableStStorage), func(t *testing.T) {
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run("existing-block-and-wal,enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
 			dir := t.TempDir()
 
 			createBlock(t, dir, genSeries(1, 1, 1000, 6000))
@@ -2129,7 +2129,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 			w, err := wlog.New(nil, nil, path.Join(dir, "wal"), compression.None)
 			require.NoError(t, err)
 
-			enc := record.Encoder{EnableSTStorage: enableStStorage}
+			enc := record.Encoder{EnableSTStorage: enableSTStorage}
 			err = w.Log(
 				enc.Series([]record.RefSeries{
 					{Ref: 123, Labels: labels.FromStrings("a", "1")},
@@ -4703,8 +4703,8 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	for _, enableStStorage := range []bool{false, true} {
-		t.Run("enableStStorage="+strconv.FormatBool(enableStStorage), func(t *testing.T) {
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
 			ctx := context.Background()
 			numSamples := 10000
 			hb, w := newTestHead(t, int64(numSamples)*10, compression.None, false)
@@ -4771,7 +4771,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 			keep := func(id chunks.HeadSeriesRef) bool {
 				return id != 3
 			}
-			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableStStorage)
+			_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0, enableSTStorage)
 			require.NoError(t, err)
 
 			// Confirm there's been a checkpoint.

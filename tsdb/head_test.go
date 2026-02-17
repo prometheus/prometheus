@@ -256,7 +256,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 	// Rough estimates of most common % of samples that have an exemplar for each scrape.
 	exemplarsPercentages := []float64{0, 0.5, 1, 5}
 	lastExemplarsPerSeries := -1
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, c := range cases {
 			missingSeriesPercentages := []float64{0, 0.1}
 			for _, missingSeriesPct := range missingSeriesPercentages {
@@ -268,7 +268,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 						continue
 					}
 					lastExemplarsPerSeries = exemplarsPerSeries
-					b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d,oooSeriesPct=%.3f,oooSamplesPct=%.3f,oooCapMax=%d,missingSeriesPct=%.3f,stStorage=%v", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT, c.oooSeriesPct, c.oooSamplesPct, c.oooCapMax, missingSeriesPct, enableStStorage),
+					b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d,oooSeriesPct=%.3f,oooSamplesPct=%.3f,oooCapMax=%d,missingSeriesPct=%.3f,stStorage=%v", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT, c.oooSeriesPct, c.oooSamplesPct, c.oooCapMax, missingSeriesPct, enableSTStorage),
 						func(b *testing.B) {
 							dir := b.TempDir()
 
@@ -307,7 +307,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 									writeSeries = newWriteSeries
 								}
 
-								buf = populateTestWL(b, wal, []any{writeSeries}, buf, enableStStorage)
+								buf = populateTestWL(b, wal, []any{writeSeries}, buf, enableSTStorage)
 							}
 
 							// Write samples.
@@ -333,7 +333,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 											V:   float64(i) * 100,
 										})
 									}
-									buf = populateTestWL(b, wal, []any{refSamples}, buf, enableStStorage)
+									buf = populateTestWL(b, wal, []any{refSamples}, buf, enableSTStorage)
 								}
 							}
 
@@ -372,7 +372,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 											Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i)),
 										})
 									}
-									buf = populateTestWL(b, wal, []any{refExemplars}, buf, enableStStorage)
+									buf = populateTestWL(b, wal, []any{refExemplars}, buf, enableSTStorage)
 								}
 							}
 
@@ -401,10 +401,10 @@ func BenchmarkLoadWLs(b *testing.B) {
 										})
 									}
 									if shouldAddMarkers {
-										populateTestWL(b, wbl, []any{refMarkers}, buf, enableStStorage)
+										populateTestWL(b, wbl, []any{refMarkers}, buf, enableSTStorage)
 									}
-									buf = populateTestWL(b, wal, []any{refSamples}, buf, enableStStorage)
-									buf = populateTestWL(b, wbl, []any{refSamples}, buf, enableStStorage)
+									buf = populateTestWL(b, wal, []any{refSamples}, buf, enableSTStorage)
+									buf = populateTestWL(b, wbl, []any{refSamples}, buf, enableSTStorage)
 								}
 							}
 
@@ -713,9 +713,9 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 }
 
 func TestHead_ReadWAL(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
-			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableStStorage), func(t *testing.T) {
+			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
 				entries := []any{
 					[]record.RefSeries{
 						{Ref: 10, Labels: labels.FromStrings("a", "1")},
@@ -756,7 +756,7 @@ func TestHead_ReadWAL(t *testing.T) {
 
 				head, w := newTestHead(t, 1000, compress, false)
 
-				populateTestWL(t, w, entries, nil, enableStStorage)
+				populateTestWL(t, w, entries, nil, enableSTStorage)
 
 				require.NoError(t, head.Init(math.MinInt64))
 				require.Equal(t, uint64(101), head.lastSeriesID.Load())
@@ -1103,11 +1103,11 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 		},
 	}
 
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, tc := range cases {
-			t.Run(tc.name+",stStorage="+strconv.FormatBool(enableStStorage), func(t *testing.T) {
+			t.Run(tc.name+",stStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
 				h, w := newTestHead(t, 1000, compression.None, false)
-				populateTestWL(t, w, tc.walEntries, nil, enableStStorage)
+				populateTestWL(t, w, tc.walEntries, nil, enableSTStorage)
 				first, _, err := wlog.Segments(w.Dir())
 				require.NoError(t, err)
 
@@ -1690,9 +1690,9 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
-			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableStStorage), func(t *testing.T) {
+			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
 				entries := []any{
 					[]record.RefSeries{
 						{Ref: 10, Labels: labels.FromStrings("a", "1")},
@@ -1708,7 +1708,7 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 				}
 				head, w := newTestHead(t, 1000, compress, false)
 
-				populateTestWL(t, w, entries, nil, enableStStorage)
+				populateTestWL(t, w, entries, nil, enableSTStorage)
 
 				require.NoError(t, head.Init(math.MinInt64))
 
@@ -2575,8 +2575,8 @@ func TestHead_ReturnsSortedLabelValues(t *testing.T) {
 // TestWalRepair_DecodingError ensures that a repair is run for an error
 // when decoding a record.
 func TestWalRepair_DecodingError(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
-		enc := record.Encoder{EnableSTStorage: enableStStorage}
+	for _, enableSTStorage := range []bool{false, true} {
+		enc := record.Encoder{EnableSTStorage: enableSTStorage}
 		for name, test := range map[string]struct {
 			corrFunc  func(rec []byte) []byte // Func that applies the corruption to a record.
 			rec       []byte
@@ -2609,7 +2609,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 			},
 		} {
 			for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
-				t.Run(fmt.Sprintf("%s,compress=%s,stStorage=%v", name, compress, enableStStorage), func(t *testing.T) {
+				t.Run(fmt.Sprintf("%s,compress=%s,stStorage=%v", name, compress, enableSTStorage), func(t *testing.T) {
 					dir := t.TempDir()
 
 					// Fill the wal and corrupt it.
@@ -2672,9 +2672,9 @@ func TestWalRepair_DecodingError(t *testing.T) {
 // TestWblRepair_DecodingError ensures that a repair is run for an error
 // when decoding a record.
 func TestWblRepair_DecodingError(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
-		t.Run("enableStStorage="+strconv.FormatBool(enableStStorage), func(t *testing.T) {
-			enc := record.Encoder{EnableSTStorage: enableStStorage}
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
+			enc := record.Encoder{EnableSTStorage: enableSTStorage}
 			corrFunc := func(rec []byte) []byte {
 				return rec[:3]
 			}
@@ -4378,8 +4378,8 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 }
 
 func TestChunkSnapshot(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
-		t.Run("enableStStorage="+strconv.FormatBool(enableStStorage), func(t *testing.T) {
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
 			head, _ := newTestHead(t, 120*4, compression.None, false)
 			defer func() {
 				head.opts.EnableMemorySnapshotOnShutdown = false
@@ -4525,7 +4525,7 @@ func TestChunkSnapshot(t *testing.T) {
 				require.NoError(t, app.Commit())
 
 				// Add some tombstones.
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 				for i := 1; i <= numSeries; i++ {
 					ref := storage.SeriesRef(i)
 					itvs := tombstones.Intervals{
@@ -4599,7 +4599,7 @@ func TestChunkSnapshot(t *testing.T) {
 				require.NoError(t, app.Commit())
 
 				// Add more tombstones.
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 				for i := 1; i <= numSeries; i++ {
 					ref := storage.SeriesRef(i)
 					itvs := tombstones.Intervals{
@@ -5392,8 +5392,8 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 
 // Tests https://github.com/prometheus/prometheus/issues/9725.
 func TestChunkSnapshotReplayBug(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
-		t.Run("enableStStorage="+strconv.FormatBool(enableStStorage), func(t *testing.T) {
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
 			dir := t.TempDir()
 			wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
 			require.NoError(t, err)
@@ -5418,7 +5418,7 @@ func TestChunkSnapshotReplayBug(t *testing.T) {
 				}
 				// Add a sample so that the series is not garbage collected.
 				samplesRec := record.RefSample{Ref: ref, T: 1000, V: 1000}
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 
 				rec := enc.Series([]record.RefSeries{seriesRec}, buf)
 				buf = rec[:0]

@@ -145,8 +145,8 @@ func TestTailSamples(t *testing.T) {
 	const exemplarsCount = 25
 	const histogramsCount = 50
 	for _, compress := range compression.Types() {
-		for _, enableStStorage := range []bool{false, true} {
-			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableStStorage), func(t *testing.T) {
+		for _, enableSTStorage := range []bool{false, true} {
+			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
 				now := time.Now()
 
 				dir := t.TempDir()
@@ -155,7 +155,7 @@ func TestTailSamples(t *testing.T) {
 				err := os.Mkdir(wdir, 0o777)
 				require.NoError(t, err)
 
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 				w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 				require.NoError(t, err)
 				defer func() {
@@ -294,9 +294,9 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range compression.Types() {
-			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableStStorage), func(t *testing.T) {
+			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
 				dir := t.TempDir()
 				wdir := path.Join(dir, "wal")
 				err := os.Mkdir(wdir, 0o777)
@@ -310,7 +310,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 
 				var recs [][]byte
 
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 
 				for i := range seriesCount {
 					series := enc.Series([]record.RefSeries{
@@ -364,16 +364,16 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range compression.Types() {
-			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableStStorage), func(t *testing.T) {
+			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
 				dir := t.TempDir()
 
 				wdir := path.Join(dir, "wal")
 				err := os.Mkdir(wdir, 0o777)
 				require.NoError(t, err)
 
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 				w, err := NewSize(nil, nil, wdir, segmentSize, compress)
 				require.NoError(t, err)
 				defer func() {
@@ -406,7 +406,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 					}
 				}
 
-				Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0, enableStStorage)
+				Checkpoint(promslog.NewNopLogger(), w, 0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0, enableSTStorage)
 				w.Truncate(1)
 
 				// Write more records after checkpointing.
@@ -454,9 +454,9 @@ func TestReadCheckpoint(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range compression.Types() {
-			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableStStorage), func(t *testing.T) {
+			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
 				dir := t.TempDir()
 
 				wdir := path.Join(dir, "wal")
@@ -467,7 +467,7 @@ func TestReadCheckpoint(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, f.Close())
 
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 				w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 				require.NoError(t, err)
 				t.Cleanup(func() {
@@ -499,7 +499,7 @@ func TestReadCheckpoint(t *testing.T) {
 				}
 				_, err = w.NextSegmentSync()
 				require.NoError(t, err)
-				_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(chunks.HeadSeriesRef) bool { return true }, 0, enableStStorage)
+				_, err = Checkpoint(promslog.NewNopLogger(), w, 30, 31, func(chunks.HeadSeriesRef) bool { return true }, 0, enableSTStorage)
 				require.NoError(t, err)
 				require.NoError(t, w.Truncate(32))
 
@@ -529,16 +529,16 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 	const seriesCount = 40
 	const samplesCount = 500
 
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range compression.Types() {
-			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableStStorage), func(t *testing.T) {
+			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
 				dir := t.TempDir()
 
 				wdir := path.Join(dir, "wal")
 				err := os.Mkdir(wdir, 0o777)
 				require.NoError(t, err)
 
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 				w, err := NewSize(nil, nil, wdir, pageSize, compress)
 				require.NoError(t, err)
 
@@ -603,26 +603,26 @@ func TestCheckpointSeriesReset(t *testing.T) {
 	const samplesCount = 700
 	testCases := []struct {
 		compress        compression.Type
-		enableStStorage bool
+		enableSTStorage bool
 		segments        int
 	}{
-		{compress: compression.None, enableStStorage: false, segments: 24},
-		{compress: compression.Snappy, enableStStorage: false, segments: 23},
-		{compress: compression.None, enableStStorage: true, segments: 20},
-		{compress: compression.Snappy, enableStStorage: true, segments: 20},
+		{compress: compression.None, enableSTStorage: false, segments: 24},
+		{compress: compression.Snappy, enableSTStorage: false, segments: 23},
+		{compress: compression.None, enableSTStorage: true, segments: 20},
+		{compress: compression.Snappy, enableSTStorage: true, segments: 20},
 	}
 
 	dir := t.TempDir()
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("compress=%s,stStorage=%v", tc.compress, tc.enableStStorage), func(t *testing.T) {
-			subdir := filepath.Join(dir, fmt.Sprintf("%s-%v", tc.compress, tc.enableStStorage))
+		t.Run(fmt.Sprintf("compress=%s,stStorage=%v", tc.compress, tc.enableSTStorage), func(t *testing.T) {
+			subdir := filepath.Join(dir, fmt.Sprintf("%s-%v", tc.compress, tc.enableSTStorage))
 			err := os.MkdirAll(subdir, 0o777)
 			require.NoError(t, err)
 			wdir := filepath.Join(subdir, "wal")
 			err = os.MkdirAll(wdir, 0o777)
 			require.NoError(t, err)
 
-			enc := record.Encoder{EnableSTStorage: tc.enableStStorage}
+			enc := record.Encoder{EnableSTStorage: tc.enableSTStorage}
 			w, err := NewSize(nil, nil, wdir, segmentSize, tc.compress)
 			require.NoError(t, err)
 			defer func() {
@@ -698,16 +698,16 @@ func TestRun_StartupTime(t *testing.T) {
 	const seriesCount = 40
 	const samplesCount = 500
 
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range compression.Types() {
-			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableStStorage), func(t *testing.T) {
+			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
 				dir := t.TempDir()
 
 				wdir := path.Join(dir, "wal")
 				err := os.Mkdir(wdir, 0o777)
 				require.NoError(t, err)
 
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 				w, err := NewSize(nil, nil, wdir, pageSize, compress)
 				require.NoError(t, err)
 
@@ -752,8 +752,8 @@ func TestRun_StartupTime(t *testing.T) {
 	}
 }
 
-func generateWALRecords(w *WL, segment, seriesCount, samplesCount int, enableStStorage bool) error {
-	enc := record.Encoder{EnableSTStorage: enableStStorage}
+func generateWALRecords(w *WL, segment, seriesCount, samplesCount int, enableSTStorage bool) error {
+	enc := record.Encoder{EnableSTStorage: enableSTStorage}
 	for j := range seriesCount {
 		ref := j + (segment * 100)
 		series := enc.Series([]record.RefSeries{
@@ -793,9 +793,9 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 50
 
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range compression.Types() {
-			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableStStorage), func(t *testing.T) {
+			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
 				dir := t.TempDir()
 
 				wdir := path.Join(dir, "wal")
@@ -805,7 +805,7 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 				w, err := NewSize(nil, nil, wdir, segmentSize, compress)
 				require.NoError(t, err)
 				// Write to 00000000, the watcher will read series from it.
-				require.NoError(t, generateWALRecords(w, 0, seriesCount, samplesCount, enableStStorage))
+				require.NoError(t, generateWALRecords(w, 0, seriesCount, samplesCount, enableSTStorage))
 				// Create 00000001, the watcher will tail it once started.
 				w.NextSegment()
 
@@ -838,7 +838,7 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 				// In the meantime, add some new segments in bulk.
 				// We should end up with segmentsToWrite + 1 segments now.
 				for i := 1; i < segmentsToWrite; i++ {
-					require.NoError(t, generateWALRecords(w, i, seriesCount, samplesCount, enableStStorage))
+					require.NoError(t, generateWALRecords(w, i, seriesCount, samplesCount, enableSTStorage))
 					w.NextSegment()
 				}
 

@@ -275,10 +275,10 @@ func TestRecord_EncodeDecode(t *testing.T) {
 }
 
 func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, schema := range []int32{-100, 100} {
-			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableStStorage), func(t *testing.T) {
-				enc := Encoder{EnableSTStorage: enableStStorage}
+			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableSTStorage), func(t *testing.T) {
+				enc := Encoder{EnableSTStorage: enableSTStorage}
 
 				var output bytes.Buffer
 				logger := promslog.New(&promslog.Config{Writer: &output})
@@ -312,10 +312,10 @@ func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
 }
 
 func TestRecord_DecodeInvalidFloatHistogramSchema(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, schema := range []int32{-100, 100} {
-			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableStStorage), func(t *testing.T) {
-				enc := Encoder{EnableSTStorage: enableStStorage}
+			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableSTStorage), func(t *testing.T) {
+				enc := Encoder{EnableSTStorage: enableSTStorage}
 
 				var output bytes.Buffer
 				logger := promslog.New(&promslog.Config{Writer: &output})
@@ -349,10 +349,10 @@ func TestRecord_DecodeInvalidFloatHistogramSchema(t *testing.T) {
 }
 
 func TestRecord_DecodeTooHighResolutionHistogramSchema(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, schema := range []int32{9, 52} {
-			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableStStorage), func(t *testing.T) {
-				enc := Encoder{EnableSTStorage: enableStStorage}
+			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableSTStorage), func(t *testing.T) {
+				enc := Encoder{EnableSTStorage: enableSTStorage}
 
 				var output bytes.Buffer
 				logger := promslog.New(&promslog.Config{Writer: &output})
@@ -386,10 +386,10 @@ func TestRecord_DecodeTooHighResolutionHistogramSchema(t *testing.T) {
 }
 
 func TestRecord_DecodeTooHighResolutionFloatHistogramSchema(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, schema := range []int32{9, 52} {
-			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableStStorage), func(t *testing.T) {
-				enc := Encoder{EnableSTStorage: enableStStorage}
+			t.Run(fmt.Sprintf("schema=%d,stStorage=%v", schema, enableSTStorage), func(t *testing.T) {
+				enc := Encoder{EnableSTStorage: enableSTStorage}
 
 				var output bytes.Buffer
 				logger := promslog.New(&promslog.Config{Writer: &output})
@@ -425,8 +425,8 @@ func TestRecord_DecodeTooHighResolutionFloatHistogramSchema(t *testing.T) {
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
 // Bugfix check for pull/521 and pull/523.
 func TestRecord_Corrupted(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
-		enc := Encoder{EnableSTStorage: enableStStorage}
+	for _, enableSTStorage := range []bool{false, true} {
+		enc := Encoder{EnableSTStorage: enableSTStorage}
 		dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
 
 		t.Run("Test corrupted series record", func(t *testing.T) {
@@ -784,13 +784,13 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			make: initNHCBRefs,
 		},
 	} {
-		for _, enableStStorage := range []bool{false, true} {
+		for _, enableSTStorage := range []bool{false, true} {
 			for _, labelCount := range []int{0, 10, 50} {
 				for _, histograms := range []int{10, 100, 1000} {
 					for _, buckets := range []int{0, 1, 10, 100} {
 						b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
 							series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
-							enc := Encoder{EnableSTStorage: enableStStorage}
+							enc := Encoder{EnableSTStorage: enableSTStorage}
 							for b.Loop() {
 								var buf []byte
 								enc.Series(series, buf)

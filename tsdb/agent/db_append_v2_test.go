@@ -96,10 +96,10 @@ func TestCommit_AppendV2(t *testing.T) {
 		numHistograms = 100
 		numSeries     = 8
 	)
-	for _, enableStStorage := range []bool{false, true} {
-		t.Run("enableStStorage="+strconv.FormatBool(enableStStorage), func(t *testing.T) {
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
 			opts := DefaultOptions()
-			opts.EnableSTStorage = enableStStorage
+			opts.EnableSTStorage = enableSTStorage
 			s := createTestAgentDB(t, nil, opts)
 
 			app := s.AppenderV2(context.TODO())
@@ -196,7 +196,7 @@ func TestCommit_AppendV2(t *testing.T) {
 					walSeriesCount += len(series)
 
 				case record.Samples:
-					if enableStStorage {
+					if enableSTStorage {
 						t.Errorf("Got V1 Samples when ST enabled")
 					}
 					var samples []record.RefSample
@@ -205,7 +205,7 @@ func TestCommit_AppendV2(t *testing.T) {
 					walSamplesCount += len(samples)
 
 				case record.SamplesV2:
-					if !enableStStorage {
+					if !enableSTStorage {
 						t.Errorf("Got V2 Samples when ST disabled")
 					}
 					var samples []record.RefSample
@@ -256,9 +256,9 @@ func TestRollbackAppendV2(t *testing.T) {
 		numSeries     = 8
 	)
 
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		opts := DefaultOptions()
-		opts.EnableSTStorage = enableStStorage
+		opts.EnableSTStorage = enableSTStorage
 		s := createTestAgentDB(t, nil, opts)
 		app := s.AppenderV2(context.TODO())
 

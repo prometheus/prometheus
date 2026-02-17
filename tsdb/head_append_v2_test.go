@@ -1867,8 +1867,8 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 }
 
 func TestChunkSnapshot_AppenderV2(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
-		t.Run("enableStStorage="+strconv.FormatBool(enableStStorage), func(t *testing.T) {
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run("enableSTStorage="+strconv.FormatBool(enableSTStorage), func(t *testing.T) {
 			head, _ := newTestHead(t, 120*4, compression.None, false)
 			defer func() {
 				head.opts.EnableMemorySnapshotOnShutdown = false
@@ -2017,7 +2017,7 @@ func TestChunkSnapshot_AppenderV2(t *testing.T) {
 				require.NoError(t, app.Commit())
 
 				// Add some tombstones.
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 				for i := 1; i <= numSeries; i++ {
 					ref := storage.SeriesRef(i)
 					itvs := tombstones.Intervals{
@@ -2095,7 +2095,7 @@ func TestChunkSnapshot_AppenderV2(t *testing.T) {
 				require.NoError(t, app.Commit())
 
 				// Add more tombstones.
-				enc := record.Encoder{EnableSTStorage: enableStStorage}
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
 				for i := 1; i <= numSeries; i++ {
 					ref := storage.SeriesRef(i)
 					itvs := tombstones.Intervals{
