@@ -494,15 +494,17 @@ var ErrClosed = errors.New("db already closed")
 // Current implementation doesn't support concurrency so
 // all API calls should happen in the same go routine.
 type DBReadOnly struct {
-	logger     *slog.Logger
-	dir        string
-	sandboxDir string
-	closers    []io.Closer
-	closed     chan struct{}
+	logger           *slog.Logger
+	dir              string
+	sandboxDir       string
+	closers          []io.Closer
+	closed           chan struct{}
+	stStorageEnabled bool
 }
 
 // OpenDBReadOnly opens DB in the given directory for read only operations.
-func OpenDBReadOnly(dir, sandboxDirRoot string, l *slog.Logger) (*DBReadOnly, error) {
+// stStorageEnabled should be true when reading blocks that may contain ST data.
+func OpenDBReadOnly(dir, sandboxDirRoot string, l *slog.Logger, stStorageEnabled bool) (*DBReadOnly, error) {
 	if _, err := os.Stat(dir); err != nil {
 		return nil, fmt.Errorf("opening the db dir: %w", err)
 	}
@@ -520,10 +522,11 @@ func OpenDBReadOnly(dir, sandboxDirRoot string, l *slog.Logger) (*DBReadOnly, er
 	}
 
 	return &DBReadOnly{
-		logger:     l,
-		dir:        dir,
-		sandboxDir: sandboxDir,
-		closed:     make(chan struct{}),
+		logger:           l,
+		dir:              dir,
+		sandboxDir:       sandboxDir,
+		closed:           make(chan struct{}),
+		stStorageEnabled: stStorageEnabled,
 	}, nil
 }
 
@@ -590,7 +593,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	return nil
 }
 
-func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQueryable, error) {
+func (db *DBReadOnly) loadDataAsQueryable(maxt int64, enableSTStorage bool) (storage.SampleAndChunkQueryable, error) {
 	select {
 	case <-db.closed:
 		return nil, ErrClosed
@@ -662,9 +665,12 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 	}
 
 	db.closers = append(db.closers, head)
+	dbOpts := DefaultOptions()
+	dbOpts.EnableSTStorage = enableSTStorage
 	return &DB{
 		dir:                   db.dir,
 		logger:                db.logger,
+		opts:                  dbOpts,
 		blocks:                blocks,
 		head:                  head,
 		blockQuerierFunc:      NewBlockQuerier,
@@ -675,7 +681,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 // Querier loads the blocks and wal and returns a new querier over the data partition for the given time range.
 // Current implementation doesn't support multiple Queriers.
 func (db *DBReadOnly) Querier(mint, maxt int64) (storage.Querier, error) {
-	q, err := db.loadDataAsQueryable(maxt)
+	q, err := db.loadDataAsQueryable(maxt, db.stStorageEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -685,7 +691,7 @@ func (db *DBReadOnly) Querier(mint, maxt int64) (storage.Querier, error) {
 // ChunkQuerier loads blocks and the wal and returns a new chunk querier over the data partition for the given time range.
 // Current implementation doesn't support multiple ChunkQueriers.
 func (db *DBReadOnly) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	q, err := db.loadDataAsQueryable(maxt)
+	q, err := db.loadDataAsQueryable(maxt, db.stStorageEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -699,7 +705,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, db.stStorageEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -813,6 +819,7 @@ func (db *DBReadOnly) Block(blockID string, postingsDecoderFactory PostingsDecod
 	if err != nil {
 		return nil, err
 	}
+	block.SetSTStorageEnabled(db.stStorageEnabled)
 	db.closers = append(db.closers, block)
 
 	return block, nil
@@ -983,6 +990,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			PD:                          opts.PostingsDecoderFactory,
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
+			EnableSTStorage:             opts.EnableSTStorage,
 		})
 	}
 	if err != nil {
@@ -1044,6 +1052,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
+	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
@@ -1786,7 +1795,7 @@ func (db *DB) reloadBlocks() (err error) {
 	}()
 
 	db.mtx.RLock()
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.EnableSTStorage)
 	db.mtx.RUnlock()
 	if err != nil {
 		return err
@@ -1886,7 +1895,7 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, stStorageEnabled bool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("find blocks: %w", err)
@@ -1908,6 +1917,7 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 				corrupted[meta.ULID] = err
 				continue
 			}
+			block.SetSTStorageEnabled(stStorageEnabled)
 		}
 		blocks = append(blocks, block)
 	}
@@ -2433,7 +2443,7 @@ func (db *DB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 	if err != nil {
 		return nil, err
 	}
-	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
+	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMergerWithStoreST(storage.ChainedSeriesMerge, db.opts.EnableSTStorage)), nil
 }
 
 func (db *DB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {

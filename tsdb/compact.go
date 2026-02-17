@@ -178,6 +178,9 @@ type LeveledCompactorOptions struct {
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
 
+	// EnableSTStorage determines whether compaction should re-encode chunks with start timestamps.
+	EnableSTStorage bool
+
 	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
@@ -211,7 +214,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	}
 	mergeFunc := opts.MergeFunc
 	if mergeFunc == nil {
-		mergeFunc = storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)
+		mergeFunc = storage.NewCompactingChunkSeriesMergerWithStoreST(storage.ChainedSeriesMerge, opts.EnableSTStorage)
 	}
 	maxBlockChunkSegmentSize := opts.MaxBlockChunkSegmentSize
 	if maxBlockChunkSegmentSize == 0 {

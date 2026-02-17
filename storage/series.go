@@ -289,11 +289,12 @@ func newChunkToSeriesDecoder(labels labels.Labels, chk chunks.Meta) Series {
 
 type seriesSetToChunkSet struct {
 	SeriesSet
+	storeST bool
 }
 
 // NewSeriesSetToChunkSet converts SeriesSet to ChunkSeriesSet by encoding chunks from samples.
-func NewSeriesSetToChunkSet(chk SeriesSet) ChunkSeriesSet {
-	return &seriesSetToChunkSet{SeriesSet: chk}
+func NewSeriesSetToChunkSet(chk SeriesSet, storeST bool) ChunkSeriesSet {
+	return &seriesSetToChunkSet{SeriesSet: chk, storeST: storeST}
 }
 
 func (c *seriesSetToChunkSet) Next() bool {
@@ -304,7 +305,7 @@ func (c *seriesSetToChunkSet) Next() bool {
 }
 
 func (c *seriesSetToChunkSet) At() ChunkSeries {
-	return NewSeriesToChunkEncoder(c.SeriesSet.At())
+	return NewSeriesToChunkEncoder(c.SeriesSet.At(), c.storeST)
 }
 
 func (c *seriesSetToChunkSet) Err() error {
@@ -313,13 +314,14 @@ func (c *seriesSetToChunkSet) Err() error {
 
 type seriesToChunkEncoder struct {
 	Series
+	storeST bool
 }
 
 const seriesToChunkEncoderSplit = 120
 
 // NewSeriesToChunkEncoder encodes samples to chunks with 120 samples limit.
-func NewSeriesToChunkEncoder(series Series) ChunkSeries {
-	return &seriesToChunkEncoder{series}
+func NewSeriesToChunkEncoder(series Series, storeST bool) ChunkSeries {
+	return &seriesToChunkEncoder{Series: series, storeST: storeST}
 }
 
 func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
@@ -342,10 +344,11 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	seriesIter := s.Series.Iterator(nil)
 	lastType := chunkenc.ValNone
 	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
+		st := seriesIter.AtST()
 		if typ != lastType || i >= seriesToChunkEncoderSplit {
 			// Create a new chunk if the sample type changed or too many samples in the current one.
 			chks = appendChunk(chks, mint, maxt, chk)
-			chk, err = chunkenc.NewEmptyChunk(typ.ChunkEncoding())
+			chk, err = typ.NewChunk(s.storeST)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}
@@ -360,19 +363,17 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		lastType = typ
 
 		var (
-			st, t int64
-			v     float64
-			h     *histogram.Histogram
-			fh    *histogram.FloatHistogram
+			t  int64
+			v  float64
+			h  *histogram.Histogram
+			fh *histogram.FloatHistogram
 		)
 		switch typ {
 		case chunkenc.ValFloat:
 			t, v = seriesIter.At()
-			st = seriesIter.AtST()
 			app.Append(st, t, v)
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram(nil)
-			st = seriesIter.AtST()
 			newChk, recoded, app, err = app.AppendHistogram(nil, st, t, h, false)
 			if err != nil {
 				return errChunksIterator{err: err}
@@ -388,7 +389,6 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram(nil)
-			st = seriesIter.AtST()
 			newChk, recoded, app, err = app.AppendFloatHistogram(nil, st, t, fh, false)
 			if err != nil {
 				return errChunksIterator{err: err}

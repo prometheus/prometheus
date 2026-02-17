@@ -228,7 +228,7 @@ func TestTSDBDumpOpenMetricsRoundTrip(t *testing.T) {
 
 	dbDir := t.TempDir()
 	// Import samples from OM format
-	err = backfill(5000, initialMetrics, dbDir, false, false, 2*time.Hour, map[string]string{})
+	err = backfill(5000, initialMetrics, dbDir, false, false, 2*time.Hour, map[string]string{}, false)
 	require.NoError(t, err)
 	db, err := tsdb.Open(dbDir, nil, nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)

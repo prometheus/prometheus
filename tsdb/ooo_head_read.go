@@ -77,7 +77,7 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 	*chks = (*chks)[:0]
 
 	if s.ooo != nil {
-		return getOOOSeriesChunks(s, oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, oh.inoMint, chks)
+		return getOOOSeriesChunks(s, oh.head.opts.EnableSTStorage.Load(), oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, oh.inoMint, chks)
 	}
 	*chks = appendSeriesChunks(s, oh.inoMint, oh.maxt, *chks)
 	return nil
@@ -88,7 +88,7 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 //
 // maxMmapRef tells upto what max m-map chunk that we can consider. If it is non-0, then
 // the oooHeadChunk will not be considered.
-func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, includeInOrder bool, inoMint int64, chks *[]chunks.Meta) error {
+func getOOOSeriesChunks(s *memSeries, storeST bool, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, includeInOrder bool, inoMint int64, chks *[]chunks.Meta) error {
 	tmpChks := make([]chunks.Meta, 0, len(s.ooo.oooMmappedChunks))
 
 	addChunk := func(minT, maxT int64, ref chunks.ChunkRef, chunk chunkenc.Chunk) {
@@ -106,7 +106,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 		if c.OverlapsClosedInterval(mint, maxt) && maxMmapRef == 0 {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
 			if len(c.chunk.samples) > 0 { // Empty samples happens in tests, at least.
-				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(c.minTime, c.maxTime)
+				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(storeST, c.minTime, c.maxTime)
 				if err != nil {
 					handleChunkWriteError(err)
 					return nil
@@ -230,6 +230,11 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chu
 	return c, it, err
 }
 
+// STStorageEnabled returns whether ST storage is enabled in the Head.
+func (cr *HeadAndOOOChunkReader) STStorageEnabled() bool {
+	return cr.head.opts.EnableSTStorage.Load()
+}
+
 // ChunkOrIterableWithCopy implements ChunkReaderWithCopy. The special Copy
 // behaviour is only implemented for the in-order head chunk.
 func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
@@ -347,7 +352,7 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 		}
 
 		var lastMmapRef chunks.ChunkDiskMapperRef
-		mmapRefs := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper, head.logger)
+		mmapRefs := ms.mmapCurrentOOOHeadChunk(head.opts.EnableSTStorage.Load(), head.chunkDiskMapper, head.logger)
 		if len(mmapRefs) == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
 			// Nothing was m-mapped. So take the mmapRef from the existing slice if it exists.
 			mmapRefs = []chunks.ChunkDiskMapperRef{ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref}
@@ -481,7 +486,7 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 		return nil
 	}
 
-	return getOOOSeriesChunks(s, ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks)
+	return getOOOSeriesChunks(s, ir.ch.head.opts.EnableSTStorage.Load(), ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks)
 }
 
 func (*OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, error) {

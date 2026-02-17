@@ -2553,7 +2553,7 @@ func TestDBReadOnly(t *testing.T) {
 	}
 
 	// Open a read only db and ensure that the API returns the same result as the normal DB.
-	dbReadOnly, err := OpenDBReadOnly(dbDir, "", nil)
+	dbReadOnly, err := OpenDBReadOnly(dbDir, "", nil, false)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, dbReadOnly.Close()) }()
 
@@ -2609,7 +2609,7 @@ func TestDBReadOnly(t *testing.T) {
 func TestDBReadOnlyClosing(t *testing.T) {
 	t.Parallel()
 	sandboxDir := t.TempDir()
-	db, err := OpenDBReadOnly(t.TempDir(), sandboxDir, promslog.New(&promslog.Config{}))
+	db, err := OpenDBReadOnly(t.TempDir(), sandboxDir, promslog.New(&promslog.Config{}), false)
 	require.NoError(t, err)
 	// The sandboxDir was there.
 	require.DirExists(t, db.sandboxDir)
@@ -2648,7 +2648,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	}
 
 	// Flush WAL.
-	db, err := OpenDBReadOnly(dbDir, "", nil)
+	db, err := OpenDBReadOnly(dbDir, "", nil, false)
 	require.NoError(t, err)
 
 	flush := t.TempDir()
@@ -2656,7 +2656,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// Reopen the DB from the flushed WAL block.
-	db, err = OpenDBReadOnly(flush, "", nil)
+	db, err = OpenDBReadOnly(flush, "", nil, false)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 	blocks, err := db.Blocks()
@@ -2704,7 +2704,7 @@ func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
 	spinUpQuerierAndCheck := func(dir, sandboxDir string, chunksCount int) {
 		dBDirHash := dirHash(dir)
 		// Bootstrap a RO db from the same dir and set up a querier.
-		dbReadOnly, err := OpenDBReadOnly(dir, sandboxDir, nil)
+		dbReadOnly, err := OpenDBReadOnly(dir, sandboxDir, nil, false)
 		require.NoError(t, err)
 		require.Equal(t, chunksCount, countChunks(dir))
 		q, err := dbReadOnly.Querier(math.MinInt, math.MaxInt)
@@ -9625,4 +9625,67 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 
 	// Should still have no blocks since there was nothing to compact.
 	require.Empty(t, db.Blocks())
+}
+
+// TestCompactHeadWithSTStorage ensures that when EnableSTStorage is true,
+// compacted blocks contain chunks with EncXOR encoding for float samples
+// when using the original Appender (which does not support start timestamps).
+func TestCompactHeadWithSTStorage(t *testing.T) {
+	t.Parallel()
+
+	opts := &Options{
+		RetentionDuration: int64(time.Hour * 24 * 15 / time.Millisecond),
+		NoLockfile:        true,
+		MinBlockDuration:  int64(time.Hour * 2 / time.Millisecond),
+		MaxBlockDuration:  int64(time.Hour * 2 / time.Millisecond),
+		WALCompression:    compression.Snappy,
+		EnableSTStorage:   true,
+	}
+	db := newTestDB(t, withOpts(opts))
+	ctx := context.Background()
+	app := db.Appender(ctx)
+
+	maxt := 100
+	for i := range maxt {
+		// Original Appender signature: (ref, labels, t, v)
+		_, err := app.Append(0, labels.FromStrings("a", "b"), int64(i), float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// Compact the Head to create a new block.
+	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, int64(maxt)-1)))
+	// Check that we have exactly one block.
+	require.Len(t, db.Blocks(), 1)
+	b := db.Blocks()[0]
+
+	// Open chunk reader and index reader.
+	chunkr, err := b.Chunks()
+	require.NoError(t, err)
+	defer chunkr.Close()
+
+	indexr, err := b.Index()
+	require.NoError(t, err)
+	defer indexr.Close()
+
+	// Get postings for the series.
+	p, err := indexr.Postings(ctx, "a", "b")
+	require.NoError(t, err)
+
+	chunkCount := 0
+	for p.Next() {
+		var builder labels.ScratchBuilder
+		var chks []chunks.Meta
+		require.NoError(t, indexr.Series(p.At(), &builder, &chks))
+
+		for _, chk := range chks {
+			c, _, err := chunkr.ChunkOrIterable(chk)
+			require.NoError(t, err)
+			require.Equal(t, chunkenc.EncXOROptST, c.Encoding(),
+				"expected EncXOR encoding when using original Appender, got %s", c.Encoding())
+			chunkCount++
+		}
+	}
+	require.NoError(t, p.Err())
+	require.Positive(t, chunkCount, "expected at least one chunk")
 }

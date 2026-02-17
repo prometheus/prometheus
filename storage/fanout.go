@@ -31,6 +31,7 @@ type fanout struct {
 
 	primary     Storage
 	secondaries []Storage
+	storeST     bool
 }
 
 // NewFanout returns a new fanout Storage, which proxies reads and writes
@@ -43,10 +44,16 @@ type fanout struct {
 //
 // NOTE: In the case of Prometheus, it treats all remote storages as secondary / best effort.
 func NewFanout(logger *slog.Logger, primary Storage, secondaries ...Storage) Storage {
+	return NewFanoutWithStoreST(logger, false, primary, secondaries...)
+}
+
+// NewFanoutWithStoreST returns a new fanout Storage with start timestamp storage enabled or disabled.
+func NewFanoutWithStoreST(logger *slog.Logger, storeST bool, primary Storage, secondaries ...Storage) Storage {
 	return &fanout{
 		logger:      logger,
 		primary:     primary,
 		secondaries: secondaries,
+		storeST:     storeST,
 	}
 }
 
@@ -120,7 +127,7 @@ func (f *fanout) ChunkQuerier(mint, maxt int64) (ChunkQuerier, error) {
 		}
 		secondaries = append(secondaries, querier)
 	}
-	return NewMergeChunkQuerier([]ChunkQuerier{primary}, secondaries, NewCompactingChunkSeriesMerger(ChainedSeriesMerge)), nil
+	return NewMergeChunkQuerier([]ChunkQuerier{primary}, secondaries, NewCompactingChunkSeriesMergerWithStoreST(ChainedSeriesMerge, f.storeST)), nil
 }
 
 func (f *fanout) Appender(ctx context.Context) Appender {

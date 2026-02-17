@@ -844,10 +844,16 @@ func main() {
 	template.RegisterFeatures(features.DefaultRegistry)
 
 	var (
-		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
-		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
-		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
+		localStorage = &readyStorage{stats: tsdb.NewDBStats()}
+		scraper      = &readyScrapeManager{}
+		storeST      = cfg.tsdb.EnableSTStorage
+	)
+	if agentMode {
+		storeST = cfg.agent.EnableSTStorage
+	}
+	var (
+		remoteStorage = remote.NewStorageWithStoreST(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels, storeST)
+		fanoutStorage = storage.NewFanoutWithStoreST(logger, storeST, localStorage, remoteStorage)
 	)
 
 	var (

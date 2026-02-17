@@ -95,6 +95,7 @@ func (h *Head) appenderV2() *headAppenderV2 {
 			typesInBatch:          h.getTypeMap(),
 			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+			storeST:               h.opts.EnableSTStorage.Load(),
 		},
 	}
 }
@@ -141,7 +142,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	}
 
 	// TODO(bwplotka): Handle ST natively (as per PROM-60).
-	if a.head.opts.EnableSTAsZeroSample && st != 0 {
+	if st != 0 && a.head.opts.EnableSTAsZeroSample {
 		a.bestEffortAppendSTZeroSample(s, ls, st, t, h, fh)
 	}
 
@@ -177,7 +178,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// we do not need to check for the difference between "unknown
 			// series" and "known series with stNone".
 		}
-		appErr = a.appendFloat(s, t, v, opts.RejectOutOfOrder)
+		appErr = a.appendFloat(s, st, t, v, opts.RejectOutOfOrder)
 	}
 	// Handle append error, if any.
 	if appErr != nil {
@@ -218,7 +219,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	return storage.SeriesRef(s.ref), partialErr
 }
 
-func (a *headAppenderV2) appendFloat(s *memSeries, t int64, v float64, fastRejectOOO bool) error {
+func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastRejectOOO bool) error {
 	s.Lock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
@@ -239,7 +240,7 @@ func (a *headAppenderV2) appendFloat(s *memSeries, t int64, v float64, fastRejec
 	}
 
 	b := a.getCurrentBatch(stFloat, s.ref)
-	b.floats = append(b.floats, record.RefSample{Ref: s.ref, T: t, V: v})
+	b.floats = append(b.floats, record.RefSample{Ref: s.ref, ST: st, T: t, V: v})
 	b.floatSeries = append(b.floatSeries, s)
 	return nil
 }
@@ -366,7 +367,7 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 		}
 		err = a.appendHistogram(s, st, zeroHistogram, true)
 	default:
-		err = a.appendFloat(s, st, 0, true)
+		err = a.appendFloat(s, 0, st, 0, true)
 	}
 
 	if err != nil {
