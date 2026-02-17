@@ -360,3 +360,23 @@ Example query:
 ```
 
 See [the fill modifiers documentation](querying/operators.md#filling-in-missing-matches) for more details and examples.
+
+## XOR2 chunk encoding
+
+`--enable-feature=xor2-encoding`
+
+Enables XOR2 chunk encoding for float samples, which provides **better disk compression** for typical Prometheus workloads.
+
+### Why use XOR2?
+
+XOR2 reduces chunk storage size by 5-20% in typical Prometheus deployments, with even greater savings when scrape targets frequently disappear or restart.
+
+XOR2 achieves this through two key improvements:
+
+1. **Staleness marker optimization**: When a scrape target disappears, Prometheus writes a special "staleness marker" to indicate the series has ended. Standard XOR encoding uses ~110 bits per marker; XOR2 uses only 13 bits—a **90% reduction**. For deployments with dynamic infrastructure (Kubernetes pods, auto-scaling, short-lived jobs), staleness markers can represent 10-40% of all samples.
+
+2. **Adaptive timestamp encoding**: XOR2 automatically optimizes for both regular and irregular scrape intervals. Regular data gets the same compression as standard XOR (zero overhead), while irregular data benefits from improved encoding that handles larger timestamp variations more efficiently.
+
+### Compatibility
+
+Chunks encoded with XOR2 **cannot be read by older Prometheus versions**. Rolling back to a version without XOR2 support will prevent reading newly written blocks until XOR2 is disabled and new blocks are written.
