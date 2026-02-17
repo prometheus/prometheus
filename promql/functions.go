@@ -1799,7 +1799,7 @@ func funcHistogramQuantiles(vectorVals []Vector, _ Matrix, args parser.Expressio
 		}
 
 		if _, ok := enh.quantileStrs[q]; !ok {
-			enh.quantileStrs[q] = fmt.Sprintf("%g", q)
+			enh.quantileStrs[q] = labels.FormatOpenMetricsFloat(q)
 		}
 		qs = append(qs, q)
 	}
@@ -1828,13 +1828,13 @@ func funcHistogramQuantiles(vectorVals []Vector, _ Matrix, args parser.Expressio
 		// Deal with classic histograms that have already been filtered for conflicting native histograms.
 		for _, mb := range enh.signatureToMetricWithBuckets {
 			if len(mb.buckets) > 0 {
-				hq, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
+				hq, forcedMonotonicity, _, minBucket, maxBucket, maxDiff := BucketQuantile(q, mb.buckets)
 				if forcedMonotonicity {
+					metricName := ""
 					if enh.enableDelayedNameRemoval {
-						annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(mb.metric.Get(labels.MetricName), args[0].PositionRange()))
-					} else {
-						annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo("", args[0].PositionRange()))
+						metricName = getMetricName(mb.metric)
 					}
+					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(metricName, args[1].PositionRange(), enh.Ts, minBucket, maxBucket, maxDiff))
 				}
 
 				if !enh.enableDelayedNameRemoval {

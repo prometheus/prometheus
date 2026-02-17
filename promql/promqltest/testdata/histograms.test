@@ -600,29 +600,29 @@ eval instant at 50m histogram_quantile(1, testhistogram3_bucket)
 
 eval instant at 50m histogram_quantiles(testhistogram3, "q", 0, 0.25, 0.5, 0.75, 1)
 	expect no_warn
-	{q="0", start="positive"} 0
-	{q="0", start="negative"} -0.25
+	{q="0.0", start="positive"} 0
+	{q="0.0", start="negative"} -0.25
 	{q="0.25", start="positive"} 0.055
 	{q="0.25", start="negative"} -0.225
 	{q="0.5", start="positive"} 0.125
 	{q="0.5", start="negative"} -0.2
 	{q="0.75", start="positive"} 0.45
 	{q="0.75", start="negative"} -0.15
-	{q="1", start="positive"} 1
-	{q="1", start="negative"} -0.1
+	{q="1.0", start="positive"} 1
+	{q="1.0", start="negative"} -0.1
 
 eval instant at 50m histogram_quantiles(testhistogram3_bucket, "q", 0, 0.25, 0.5, 0.75, 1)
 	expect no_warn
-	{q="0", start="positive"} 0
-	{q="0", start="negative"} -0.25
+	{q="0.0", start="positive"} 0
+	{q="0.0", start="negative"} -0.25
 	{q="0.25", start="positive"} 0.055
 	{q="0.25", start="negative"} -0.225
 	{q="0.5", start="positive"} 0.125
 	{q="0.5", start="negative"} -0.2
 	{q="0.75", start="positive"} 0.45
 	{q="0.75", start="negative"} -0.15
-	{q="1", start="positive"} 1
-	{q="1", start="negative"} -0.1
+	{q="1.0", start="positive"} 1
+	{q="1.0", start="negative"} -0.1
 
 # Break label set uniqueness.
 
