@@ -92,7 +92,7 @@ const CheckpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableStStorage bool) (*CheckpointStats, error) {
+func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64, enableSTStorage bool) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
@@ -156,7 +156,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		metadata              []record.RefMetadata
 		st                    = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
 		dec                   = record.NewDecoder(st, logger)
-		enc                   = record.Encoder{EnableSTStorage: enableStStorage}
+		enc                   = record.Encoder{EnableSTStorage: enableSTStorage}
 		buf                   []byte
 		recs                  [][]byte
 

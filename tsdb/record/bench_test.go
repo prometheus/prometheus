@@ -34,7 +34,7 @@ func zeroOutSTs(samples []record.RefSample) []record.RefSample {
 }
 
 func TestEncodeDecode(t *testing.T) {
-	for _, enableStStorage := range []bool{false, true} {
+	for _, enableSTStorage := range []bool{false, true} {
 		for _, tcase := range []testrecord.RefSamplesCase{
 			testrecord.Realistic1000Samples,
 			testrecord.Realistic1000WithVariableSTSamples,
@@ -45,7 +45,7 @@ func TestEncodeDecode(t *testing.T) {
 			var (
 				dec record.Decoder
 				buf []byte
-				enc = record.Encoder{EnableSTStorage: enableStStorage}
+				enc = record.Encoder{EnableSTStorage: enableSTStorage}
 			)
 
 			s := testrecord.GenTestRefSamplesCase(t, tcase)
@@ -55,7 +55,7 @@ func TestEncodeDecode(t *testing.T) {
 				require.NoError(t, err)
 				// if ST is off, we expect all STs to be zero
 				expected := s
-				if !enableStStorage {
+				if !enableSTStorage {
 					expected = zeroOutSTs(s)
 				}
 
@@ -69,7 +69,7 @@ func TestEncodeDecode(t *testing.T) {
 				require.NoError(t, err)
 
 				expected := s
-				if !enableStStorage {
+				if !enableSTStorage {
 					expected = zeroOutSTs(s)
 				}
 				require.Equal(t, expected, got)
@@ -81,7 +81,7 @@ func TestEncodeDecode(t *testing.T) {
 				got, err := dec.Samples(enc.Samples(s, nil), samples)
 				require.NoError(t, err)
 				expected := s
-				if !enableStStorage {
+				if !enableSTStorage {
 					expected = zeroOutSTs(s)
 				}
 				require.Equal(t, expected, got)
@@ -102,7 +102,7 @@ func TestEncodeDecode(t *testing.T) {
 				got, err := dec.Samples(buf, nil)
 				require.NoError(t, err)
 				expected := s
-				if !enableStStorage {
+				if !enableSTStorage {
 					expected = zeroOutSTs(s)
 				}
 				require.Equal(t, expected, got)
