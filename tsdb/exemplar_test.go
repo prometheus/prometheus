@@ -1267,10 +1267,8 @@ func debugCircularBuffer(ce *CircularExemplarStorage) string {
 		if e.ref == nil {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf(
-			"i: %d, ts: %d, next: %d, prev: %d",
-			i, e.exemplar.Ts, e.next, e.prev,
-		))
+		fmt.Fprintf(&sb, "i: %d, ts: %d, next: %d, prev: %d",
+			i, e.exemplar.Ts, e.next, e.prev)
 		for _, idx := range ce.index {
 			if i == idx.newest {
 				sb.WriteString(" <- newest " + idx.seriesLabels.String())
@@ -1281,6 +1279,6 @@ func debugCircularBuffer(ce *CircularExemplarStorage) string {
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString(fmt.Sprintf("Next index: %d\n", ce.nextIndex))
+	fmt.Fprintf(&sb, "Next index: %d\n", ce.nextIndex)
 	return sb.String()
 }
