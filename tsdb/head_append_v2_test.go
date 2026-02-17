@@ -2993,7 +2993,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64)
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(false, math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 	require.Len(t, chks, 1)
 
