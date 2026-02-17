@@ -225,7 +225,8 @@ func (h *writeHandler) appendV1Samples(app storage.Appender, ss []prompb.Sample,
 		if err != nil {
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) ||
+				errors.Is(err, storage.ErrTooOldSample) {
 				h.logger.Error("Out of order sample from remote write", "err", err.Error(), "series", labels.String(), "timestamp", s.Timestamp)
 			}
 			return err
@@ -247,7 +248,8 @@ func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 			// a note indicating its inclusion in the future.
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) ||
+				errors.Is(err, storage.ErrTooOldSample) {
 				h.logger.Error("Out of order histogram from remote write", "err", err.Error(), "series", labels.String(), "timestamp", hp.Timestamp)
 			}
 			return err
@@ -409,7 +411,8 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			// a note indicating its inclusion in the future.
 			if errors.Is(err, storage.ErrOutOfOrderSample) ||
 				errors.Is(err, storage.ErrOutOfBounds) ||
-				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) {
+				errors.Is(err, storage.ErrDuplicateSampleForTimestamp) ||
+				errors.Is(err, storage.ErrTooOldSample) {
 				// TODO(bwplotka): Not too spammy log?
 				h.logger.Error("Out of order histogram from remote write", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
