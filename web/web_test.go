@@ -503,14 +503,12 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for range 3 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			resp, err := http.Post(baseURL+"/-/quit", "", strings.NewReader(""))
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()
