@@ -1033,15 +1033,9 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 The `elasticache` role discovers targets from AWS ElastiCache for both serverless caches and cache clusters.
 
-ElastiCache service discovery supports:
-- **Serverless caches**: Redis and Valkey serverless deployments with automatic scaling
-- **Cache clusters**: Both Redis and Memcached cluster mode and non-cluster mode deployments
+**Important**: For cache clusters, one target is created per cache node. Each target includes the cluster-level labels (ARN, status, tags, etc.) and node-specific labels (node ID, endpoint, availability zone, etc.). The `__address__` label is set to the individual node's endpoint address and port.
 
-For cache clusters, the `__address__` label is set to:
-1. The configuration endpoint (for cluster mode enabled Redis or Memcached clusters), or
-2. The first cache node endpoint (for non-cluster mode or single-node deployments)
-
-For serverless caches, the `__address__` label is set to the serverless cache endpoint.
+For serverless caches, one target is created per serverless cache, with the `__address__` label set to the serverless cache endpoint.
 
 The IAM credentials used must have the following permissions to discover scrape targets:
 
@@ -1050,6 +1044,10 @@ The IAM credentials used must have the following permissions to discover scrape 
 - `elasticache:ListTagsForResource`
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
+
+**Common labels (available on all targets):**
+
+* `__meta_elasticache_deployment_option`: the deployment option - either `serverless` for serverless caches or `node` for cache cluster nodes
 
 **Serverless Cache labels:**
 
@@ -1126,15 +1124,15 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_elasticache_cache_cluster_pending_modified_values_cache_node_ids_to_remove`: comma-separated list of cache node IDs to be removed
 * `__meta_elasticache_cache_cluster_security_group_membership_id_<index>`: security group ID (indexed)
 * `__meta_elasticache_cache_cluster_security_group_membership_status_<index>`: security group status (indexed)
-* `__meta_elasticache_cache_node_id_<index>`: cache node ID (indexed by node position)
-* `__meta_elasticache_cache_node_status_<index>`: cache node status (indexed)
-* `__meta_elasticache_cache_node_create_time_<index>`: cache node creation time (indexed)
-* `__meta_elasticache_cache_node_availability_zone_<index>`: cache node availability zone (indexed)
-* `__meta_elasticache_cache_node_customer_outpost_arn_<index>`: cache node outpost ARN (indexed)
-* `__meta_elasticache_cache_node_source_cache_node_id_<index>`: source cache node ID for replication (indexed)
-* `__meta_elasticache_cache_node_parameter_group_status_<index>`: parameter group status (indexed)
-* `__meta_elasticache_cache_node_endpoint_address_<index>`: cache node endpoint address (indexed)
-* `__meta_elasticache_cache_node_endpoint_port_<index>`: cache node endpoint port (indexed)
+* `__meta_elasticache_cache_cluster_node_id`: cache node ID
+* `__meta_elasticache_cache_cluster_node_status`: cache node status
+* `__meta_elasticache_cache_cluster_node_create_time`: cache node creation time in RFC3339 format
+* `__meta_elasticache_cache_cluster_node_availability_zone`: cache node availability zone
+* `__meta_elasticache_cache_cluster_node_customer_outpost_arn`: cache node outpost ARN
+* `__meta_elasticache_cache_cluster_node_source_cache_node_id`: source cache node ID for replication
+* `__meta_elasticache_cache_cluster_node_parameter_group_status`: parameter group status
+* `__meta_elasticache_cache_cluster_node_endpoint_address`: cache node endpoint address
+* `__meta_elasticache_cache_cluster_node_endpoint_port`: cache node endpoint port
 * `__meta_elasticache_cache_cluster_tag_<tagkey>`: each cache cluster tag value, keyed by tag name
 
 See below for the configuration options for AWS discovery:
@@ -1178,8 +1176,7 @@ filters:
       values: <string>, [...] ]
 
 # List of ECS, MSK, or ElastiCache cluster identifiers (ecs, msk, and elasticache roles only) to discover.
-# For ECS and MSK: ARNs of clusters to discover. If empty, all clusters in the region are discovered.
-# For ElastiCache: serverless cache names or cache cluster IDs. If empty, all caches in the region are discovered.
+# A List of ARNs of clusters to discover. If empty, all clusters in the region are discovered.
 # This can significantly improve performance when you only need to monitor specific clusters/caches.
 [ clusters: [<string>, ...] ]
 

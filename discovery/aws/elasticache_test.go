@@ -228,6 +228,7 @@ func TestAddServerlessCacheTargets(t *testing.T) {
 				{Key: strptr("Environment"), Value: strptr("test")},
 			},
 			expectedLabels: model.LabelSet{
+				"__meta_elasticache_deployment_option":                     "serverless",
 				"__meta_elasticache_serverless_cache_arn":                  "arn:aws:elasticache:us-east-1:123456789012:serverlesscache:my-cache",
 				"__meta_elasticache_serverless_cache_name":                 "my-cache",
 				"__meta_elasticache_serverless_cache_status":               "available",
@@ -271,13 +272,14 @@ func TestAddCacheClusterTargets(t *testing.T) {
 	testTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name           string
-		cluster        *types.CacheCluster
-		tags           []types.Tag
-		expectedLabels model.LabelSet
+		name                string
+		cluster             *types.CacheCluster
+		tags                []types.Tag
+		expectedTargetCount int
+		expectedLabels      []model.LabelSet // One per node
 	}{
 		{
-			name: "CacheClusterWithConfigurationEndpoint",
+			name: "CacheClusterWithMultipleNodes",
 			cluster: &types.CacheCluster{
 				CacheClusterId:         strptr("my-cluster-001"),
 				ARN:                    strptr("arn:aws:elasticache:us-east-1:123456789012:cluster:my-cluster-001"),
@@ -285,7 +287,7 @@ func TestAddCacheClusterTargets(t *testing.T) {
 				Engine:                 strptr("redis"),
 				EngineVersion:          strptr("7.1"),
 				CacheNodeType:          strptr("cache.t3.micro"),
-				NumCacheNodes:          aws.Int32(1),
+				NumCacheNodes:          aws.Int32(2),
 				CacheClusterCreateTime: aws.Time(testTime),
 				ConfigurationEndpoint: &types.Endpoint{
 					Address: strptr("my-cluster.abc123.cfg.use1.cache.amazonaws.com"),
@@ -303,37 +305,99 @@ func TestAddCacheClusterTargets(t *testing.T) {
 						Status:          strptr("active"),
 					},
 				},
+				CacheNodes: []types.CacheNode{
+					{
+						CacheNodeId:              strptr("0001"),
+						CacheNodeStatus:          strptr("available"),
+						CacheNodeCreateTime:      aws.Time(testTime),
+						CustomerAvailabilityZone: strptr("us-east-1a"),
+						Endpoint: &types.Endpoint{
+							Address: strptr("my-cluster-001.abc123.0001.use1.cache.amazonaws.com"),
+							Port:    aws.Int32(6379),
+						},
+					},
+					{
+						CacheNodeId:              strptr("0002"),
+						CacheNodeStatus:          strptr("available"),
+						CacheNodeCreateTime:      aws.Time(testTime),
+						CustomerAvailabilityZone: strptr("us-east-1b"),
+						Endpoint: &types.Endpoint{
+							Address: strptr("my-cluster-001.abc123.0002.use1.cache.amazonaws.com"),
+							Port:    aws.Int32(6379),
+						},
+					},
+				},
 			},
 			tags: []types.Tag{
 				{Key: strptr("Environment"), Value: strptr("production")},
 				{Key: strptr("Application"), Value: strptr("web-app")},
 			},
-			expectedLabels: model.LabelSet{
-				"__meta_elasticache_cache_cluster_arn":                                "arn:aws:elasticache:us-east-1:123456789012:cluster:my-cluster-001",
-				"__meta_elasticache_cache_cluster_cache_cluster_id":                   "my-cluster-001",
-				"__meta_elasticache_cache_cluster_cache_cluster_status":               "available",
-				"__meta_elasticache_cache_cluster_engine":                             "redis",
-				"__meta_elasticache_cache_cluster_engine_version":                     "7.1",
-				"__meta_elasticache_cache_cluster_cache_node_type":                    "cache.t3.micro",
-				"__meta_elasticache_cache_cluster_num_cache_nodes":                    "1",
-				"__meta_elasticache_cache_cluster_cache_cluster_create_time":          "2024-01-01T00:00:00Z",
-				"__meta_elasticache_cache_cluster_configuration_endpoint_address":     "my-cluster.abc123.cfg.use1.cache.amazonaws.com",
-				"__meta_elasticache_cache_cluster_configuration_endpoint_port":        "6379",
-				"__meta_elasticache_cache_cluster_at_rest_encryption_enabled":         "true",
-				"__meta_elasticache_cache_cluster_transit_encryption_enabled":         "true",
-				"__meta_elasticache_cache_cluster_auth_token_enabled":                 "true",
-				"__meta_elasticache_cache_cluster_auto_minor_version_upgrade":         "true",
-				"__meta_elasticache_cache_cluster_cache_subnet_group_name":            "my-subnet-group",
-				"__meta_elasticache_cache_cluster_preferred_availability_zone":        "us-east-1a",
-				"__meta_elasticache_cache_cluster_security_group_membership_id_0":     "sg-12345",
-				"__meta_elasticache_cache_cluster_security_group_membership_status_0": "active",
-				"__meta_elasticache_cache_cluster_tag_Environment":                    "production",
-				"__meta_elasticache_cache_cluster_tag_Application":                    "web-app",
-				"__address__": "my-cluster.abc123.cfg.use1.cache.amazonaws.com:6379",
+			expectedTargetCount: 2,
+			expectedLabels: []model.LabelSet{
+				{
+					"__meta_elasticache_deployment_option":                                "node",
+					"__meta_elasticache_cache_cluster_arn":                                "arn:aws:elasticache:us-east-1:123456789012:cluster:my-cluster-001",
+					"__meta_elasticache_cache_cluster_cache_cluster_id":                   "my-cluster-001",
+					"__meta_elasticache_cache_cluster_cache_cluster_status":               "available",
+					"__meta_elasticache_cache_cluster_engine":                             "redis",
+					"__meta_elasticache_cache_cluster_engine_version":                     "7.1",
+					"__meta_elasticache_cache_cluster_cache_node_type":                    "cache.t3.micro",
+					"__meta_elasticache_cache_cluster_num_cache_nodes":                    "2",
+					"__meta_elasticache_cache_cluster_cache_cluster_create_time":          "2024-01-01T00:00:00Z",
+					"__meta_elasticache_cache_cluster_configuration_endpoint_address":     "my-cluster.abc123.cfg.use1.cache.amazonaws.com",
+					"__meta_elasticache_cache_cluster_configuration_endpoint_port":        "6379",
+					"__meta_elasticache_cache_cluster_at_rest_encryption_enabled":         "true",
+					"__meta_elasticache_cache_cluster_transit_encryption_enabled":         "true",
+					"__meta_elasticache_cache_cluster_auth_token_enabled":                 "true",
+					"__meta_elasticache_cache_cluster_auto_minor_version_upgrade":         "true",
+					"__meta_elasticache_cache_cluster_cache_subnet_group_name":            "my-subnet-group",
+					"__meta_elasticache_cache_cluster_preferred_availability_zone":        "us-east-1a",
+					"__meta_elasticache_cache_cluster_security_group_membership_id_0":     "sg-12345",
+					"__meta_elasticache_cache_cluster_security_group_membership_status_0": "active",
+					"__meta_elasticache_cache_cluster_tag_Environment":                    "production",
+					"__meta_elasticache_cache_cluster_tag_Application":                    "web-app",
+					"__meta_elasticache_cache_cluster_node_id":                            "0001",
+					"__meta_elasticache_cache_cluster_node_status":                        "available",
+					"__meta_elasticache_cache_cluster_node_create_time":                   "2024-01-01T00:00:00Z",
+					"__meta_elasticache_cache_cluster_node_availability_zone":             "us-east-1a",
+					"__meta_elasticache_cache_cluster_node_endpoint_address":              "my-cluster-001.abc123.0001.use1.cache.amazonaws.com",
+					"__meta_elasticache_cache_cluster_node_endpoint_port":                 "6379",
+					"__address__": "my-cluster-001.abc123.0001.use1.cache.amazonaws.com:6379",
+				},
+				{
+					"__meta_elasticache_deployment_option":                                "node",
+					"__meta_elasticache_cache_cluster_arn":                                "arn:aws:elasticache:us-east-1:123456789012:cluster:my-cluster-001",
+					"__meta_elasticache_cache_cluster_cache_cluster_id":                   "my-cluster-001",
+					"__meta_elasticache_cache_cluster_cache_cluster_status":               "available",
+					"__meta_elasticache_cache_cluster_engine":                             "redis",
+					"__meta_elasticache_cache_cluster_engine_version":                     "7.1",
+					"__meta_elasticache_cache_cluster_cache_node_type":                    "cache.t3.micro",
+					"__meta_elasticache_cache_cluster_num_cache_nodes":                    "2",
+					"__meta_elasticache_cache_cluster_cache_cluster_create_time":          "2024-01-01T00:00:00Z",
+					"__meta_elasticache_cache_cluster_configuration_endpoint_address":     "my-cluster.abc123.cfg.use1.cache.amazonaws.com",
+					"__meta_elasticache_cache_cluster_configuration_endpoint_port":        "6379",
+					"__meta_elasticache_cache_cluster_at_rest_encryption_enabled":         "true",
+					"__meta_elasticache_cache_cluster_transit_encryption_enabled":         "true",
+					"__meta_elasticache_cache_cluster_auth_token_enabled":                 "true",
+					"__meta_elasticache_cache_cluster_auto_minor_version_upgrade":         "true",
+					"__meta_elasticache_cache_cluster_cache_subnet_group_name":            "my-subnet-group",
+					"__meta_elasticache_cache_cluster_preferred_availability_zone":        "us-east-1a",
+					"__meta_elasticache_cache_cluster_security_group_membership_id_0":     "sg-12345",
+					"__meta_elasticache_cache_cluster_security_group_membership_status_0": "active",
+					"__meta_elasticache_cache_cluster_tag_Environment":                    "production",
+					"__meta_elasticache_cache_cluster_tag_Application":                    "web-app",
+					"__meta_elasticache_cache_cluster_node_id":                            "0002",
+					"__meta_elasticache_cache_cluster_node_status":                        "available",
+					"__meta_elasticache_cache_cluster_node_create_time":                   "2024-01-01T00:00:00Z",
+					"__meta_elasticache_cache_cluster_node_availability_zone":             "us-east-1b",
+					"__meta_elasticache_cache_cluster_node_endpoint_address":              "my-cluster-001.abc123.0002.use1.cache.amazonaws.com",
+					"__meta_elasticache_cache_cluster_node_endpoint_port":                 "6379",
+					"__address__": "my-cluster-001.abc123.0002.use1.cache.amazonaws.com:6379",
+				},
 			},
 		},
 		{
-			name: "CacheClusterWithCacheNode",
+			name: "CacheClusterWithSingleNode",
 			cluster: &types.CacheCluster{
 				CacheClusterId:     strptr("node-cluster-001"),
 				ARN:                strptr("arn:aws:elasticache:us-east-1:123456789012:cluster:node-cluster-001"),
@@ -355,22 +419,26 @@ func TestAddCacheClusterTargets(t *testing.T) {
 					},
 				},
 			},
-			tags: []types.Tag{},
-			expectedLabels: model.LabelSet{
-				"__meta_elasticache_cache_cluster_arn":                  "arn:aws:elasticache:us-east-1:123456789012:cluster:node-cluster-001",
-				"__meta_elasticache_cache_cluster_cache_cluster_id":     "node-cluster-001",
-				"__meta_elasticache_cache_cluster_cache_cluster_status": "available",
-				"__meta_elasticache_cache_cluster_engine":               "redis",
-				"__meta_elasticache_cache_cluster_engine_version":       "6.2",
-				"__meta_elasticache_cache_cluster_cache_node_type":      "cache.r6g.large",
-				"__meta_elasticache_cache_cluster_num_cache_nodes":      "1",
-				"__meta_elasticache_cache_node_id_0":                    "0001",
-				"__meta_elasticache_cache_node_status_0":                "available",
-				"__meta_elasticache_cache_node_create_time_0":           "2024-01-01T00:00:00Z",
-				"__meta_elasticache_cache_node_availability_zone_0":     "us-east-1a",
-				"__meta_elasticache_cache_node_endpoint_address_0":      "node-cluster-001.abc123.0001.use1.cache.amazonaws.com",
-				"__meta_elasticache_cache_node_endpoint_port_0":         "6379",
-				"__address__": "node-cluster-001.abc123.0001.use1.cache.amazonaws.com:6379",
+			tags:                []types.Tag{},
+			expectedTargetCount: 1,
+			expectedLabels: []model.LabelSet{
+				{
+					"__meta_elasticache_deployment_option":                    "node",
+					"__meta_elasticache_cache_cluster_arn":                    "arn:aws:elasticache:us-east-1:123456789012:cluster:node-cluster-001",
+					"__meta_elasticache_cache_cluster_cache_cluster_id":       "node-cluster-001",
+					"__meta_elasticache_cache_cluster_cache_cluster_status":   "available",
+					"__meta_elasticache_cache_cluster_engine":                 "redis",
+					"__meta_elasticache_cache_cluster_engine_version":         "6.2",
+					"__meta_elasticache_cache_cluster_cache_node_type":        "cache.r6g.large",
+					"__meta_elasticache_cache_cluster_num_cache_nodes":        "1",
+					"__meta_elasticache_cache_cluster_node_id":                "0001",
+					"__meta_elasticache_cache_cluster_node_status":            "available",
+					"__meta_elasticache_cache_cluster_node_create_time":       "2024-01-01T00:00:00Z",
+					"__meta_elasticache_cache_cluster_node_availability_zone": "us-east-1a",
+					"__meta_elasticache_cache_cluster_node_endpoint_address":  "node-cluster-001.abc123.0001.use1.cache.amazonaws.com",
+					"__meta_elasticache_cache_cluster_node_endpoint_port":     "6379",
+					"__address__": "node-cluster-001.abc123.0001.use1.cache.amazonaws.com:6379",
+				},
 			},
 		},
 	}
@@ -383,14 +451,18 @@ func TestAddCacheClusterTargets(t *testing.T) {
 
 			addCacheClusterTargets(tg, tt.cluster, tt.tags)
 
-			require.Len(t, tg.Targets, 1)
-			labels := tg.Targets[0]
+			require.Len(t, tg.Targets, tt.expectedTargetCount)
 
-			// Check that all expected labels are present with correct values
-			for k, v := range tt.expectedLabels {
-				actualValue, exists := labels[k]
-				require.True(t, exists, "label %s should exist", k)
-				require.Equal(t, v, actualValue, "label %s mismatch", k)
+			// Check each target
+			for i, expectedLabels := range tt.expectedLabels {
+				labels := tg.Targets[i]
+
+				// Check that all expected labels are present with correct values
+				for k, v := range expectedLabels {
+					actualValue, exists := labels[k]
+					require.True(t, exists, "label %s should exist in target %d", k, i)
+					require.Equal(t, v, actualValue, "label %s mismatch in target %d", k, i)
+				}
 			}
 		})
 	}
@@ -405,7 +477,7 @@ func newMockElasticacheClient(data *elasticacheDataStore) *mockElasticacheClient
 	return &mockElasticacheClient{data: data}
 }
 
-func (m *mockElasticacheClient) DescribeServerlessCaches(ctx context.Context, input *elasticache.DescribeServerlessCachesInput, opts ...func(*elasticache.Options)) (*elasticache.DescribeServerlessCachesOutput, error) {
+func (m *mockElasticacheClient) DescribeServerlessCaches(_ context.Context, input *elasticache.DescribeServerlessCachesInput, _ ...func(*elasticache.Options)) (*elasticache.DescribeServerlessCachesOutput, error) {
 	if input.ServerlessCacheName != nil {
 		// Filter by name
 		for _, cache := range m.data.serverlessCaches {
@@ -425,7 +497,7 @@ func (m *mockElasticacheClient) DescribeServerlessCaches(ctx context.Context, in
 	}, nil
 }
 
-func (m *mockElasticacheClient) DescribeCacheClusters(ctx context.Context, input *elasticache.DescribeCacheClustersInput, opts ...func(*elasticache.Options)) (*elasticache.DescribeCacheClustersOutput, error) {
+func (m *mockElasticacheClient) DescribeCacheClusters(_ context.Context, input *elasticache.DescribeCacheClustersInput, _ ...func(*elasticache.Options)) (*elasticache.DescribeCacheClustersOutput, error) {
 	if input.CacheClusterId != nil {
 		// Single cluster lookup
 		for _, cluster := range m.data.cacheClusters {
@@ -445,7 +517,7 @@ func (m *mockElasticacheClient) DescribeCacheClusters(ctx context.Context, input
 	}, nil
 }
 
-func (m *mockElasticacheClient) ListTagsForResource(ctx context.Context, input *elasticache.ListTagsForResourceInput, opts ...func(*elasticache.Options)) (*elasticache.ListTagsForResourceOutput, error) {
+func (m *mockElasticacheClient) ListTagsForResource(_ context.Context, input *elasticache.ListTagsForResourceInput, _ ...func(*elasticache.Options)) (*elasticache.ListTagsForResourceOutput, error) {
 	if input.ResourceName != nil {
 		if tags, ok := m.data.tags[*input.ResourceName]; ok {
 			return &elasticache.ListTagsForResourceOutput{
@@ -457,4 +529,87 @@ func (m *mockElasticacheClient) ListTagsForResource(ctx context.Context, input *
 	return &elasticache.ListTagsForResourceOutput{
 		TagList: []types.Tag{},
 	}, nil
+}
+
+func TestSplitCacheDeploymentOptions(t *testing.T) {
+	tests := []struct {
+		name                       string
+		caches                     []string
+		expectedServerlessCacheIDs []string
+		expectedCacheClusterIDs    []string
+	}{
+		{
+			name: "MixedARNs",
+			caches: []string{
+				"arn:aws:elasticache:us-east-1:123456789012:serverlesscache:my-serverless-cache",
+				"arn:aws:elasticache:us-east-1:123456789012:replicationgroup:my-replication-group",
+				"arn:aws:elasticache:us-west-2:123456789012:serverlesscache:prod-cache",
+			},
+			expectedServerlessCacheIDs: []string{"my-serverless-cache", "prod-cache"},
+			expectedCacheClusterIDs:    []string{"my-replication-group"},
+		},
+		{
+			name: "OnlyServerlessCaches",
+			caches: []string{
+				"arn:aws:elasticache:us-east-1:123456789012:serverlesscache:cache-1",
+				"arn:aws:elasticache:us-east-1:123456789012:serverlesscache:cache-2",
+			},
+			expectedServerlessCacheIDs: []string{"cache-1", "cache-2"},
+			expectedCacheClusterIDs:    nil,
+		},
+		{
+			name: "OnlyReplicationGroups",
+			caches: []string{
+				"arn:aws:elasticache:us-east-1:123456789012:replicationgroup:cluster-1",
+				"arn:aws:elasticache:us-east-1:123456789012:replicationgroup:cluster-2",
+			},
+			expectedServerlessCacheIDs: nil,
+			expectedCacheClusterIDs:    []string{"cluster-1", "cluster-2"},
+		},
+		{
+			name:                       "EmptyInput",
+			caches:                     []string{},
+			expectedServerlessCacheIDs: nil,
+			expectedCacheClusterIDs:    nil,
+		},
+		{
+			name: "InvalidARNs",
+			caches: []string{
+				"not-an-arn",
+				"arn:aws:elasticache:us-east-1",
+				"",
+			},
+			expectedServerlessCacheIDs: nil,
+			expectedCacheClusterIDs:    nil,
+		},
+		{
+			name: "UnknownResourceType",
+			caches: []string{
+				"arn:aws:elasticache:us-east-1:123456789012:unknown:resource-id",
+			},
+			expectedServerlessCacheIDs: nil,
+			expectedCacheClusterIDs:    nil,
+		},
+		{
+			name: "MixedWithInvalidARNs",
+			caches: []string{
+				"arn:aws:elasticache:us-east-1:123456789012:serverlesscache:valid-cache",
+				"invalid-arn",
+				"arn:aws:elasticache:us-east-1:123456789012:replicationgroup:valid-cluster",
+				"",
+				"arn:aws:elasticache:us-east-1:123456789012:unknown:ignored",
+			},
+			expectedServerlessCacheIDs: []string{"valid-cache"},
+			expectedCacheClusterIDs:    []string{"valid-cluster"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serverlessCacheIDs, cacheClusterIDs := splitCacheDeploymentOptions(tt.caches)
+
+			require.Equal(t, tt.expectedServerlessCacheIDs, serverlessCacheIDs, "serverless cache IDs mismatch")
+			require.Equal(t, tt.expectedCacheClusterIDs, cacheClusterIDs, "cache cluster IDs mismatch")
+		})
+	}
 }
