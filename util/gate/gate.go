@@ -47,18 +47,33 @@ func NewWithMetric(length int, waitDuration Observer) *Gate {
 
 // Start blocks until the gate has a free spot or the context is done.
 func (g *Gate) Start(ctx context.Context) error {
-	var start time.Time
 	if g.waitDuration != nil {
-		start = time.Now()
+		// Try non-blocking send first to avoid timing overhead when no wait is needed.
+		select {
+		case g.ch <- struct{}{}:
+			// Acquired immediately, no wait time.
+			g.waitDuration.Observe(0)
+			return nil
+		default:
+			// Channel is full, will need to wait.
+		}
+
+		// Start timing the actual wait.
+		start := time.Now()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case g.ch <- struct{}{}:
+			g.waitDuration.Observe(time.Since(start).Seconds())
+			return nil
+		}
 	}
 
+	// No metric tracking, use simple select.
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case g.ch <- struct{}{}:
-		if g.waitDuration != nil {
-			g.waitDuration.Observe(time.Since(start).Seconds())
-		}
 		return nil
 	}
 }

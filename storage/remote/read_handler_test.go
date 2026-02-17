@@ -526,12 +526,12 @@ func TestReadHandlerWaitDurationMetric(t *testing.T) {
 		if mf.GetName() == "prometheus_remote_read_handler_wait_duration_seconds" {
 			foundMetric = true
 			require.Equal(t, "Duration spent waiting for a free remote read slot, in seconds.", mf.GetHelp())
-			require.Greater(t, len(mf.GetMetric()), 0)
+			require.NotEmpty(t, mf.GetMetric())
 
 			// Verify we have at least one observation
 			metric := mf.GetMetric()[0]
 			if metric.GetHistogram() != nil {
-				require.Greater(t, metric.GetHistogram().GetSampleCount(), uint64(0))
+				require.Positive(t, metric.GetHistogram().GetSampleCount())
 			}
 			break
 		}
