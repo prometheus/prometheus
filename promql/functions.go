@@ -1602,6 +1602,80 @@ func funcHistogramCount(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh
 	}), nil
 }
 
+// === histogram_buckets(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+func funcHistogramBuckets(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	for _, el := range vectorVals[0] {
+		if el.H == nil {
+			continue
+		}
+
+		// Only process NHCB
+		if !histogram.IsCustomBucketsSchema(el.H.Schema) {
+			continue
+		}
+
+		customValues := el.H.CustomValues
+		if len(customValues) == 0 {
+			continue
+		}
+
+		baseName := el.Metric.Get(model.MetricNameLabel)
+		if baseName == "" {
+			continue
+		}
+		if enh.metricsNameWithSuffix == nil {
+			enh.metricsNameWithSuffix = make(map[string]string)
+		}
+		metricNameWithSuffix, ok := enh.metricsNameWithSuffix[baseName]
+		if !ok {
+			metricNameWithSuffix = baseName + "_bucket"
+			enh.metricsNameWithSuffix[baseName] = metricNameWithSuffix
+		}
+
+		positiveBuckets := make([]float64, len(customValues)+1)
+		idx := 0
+		currIdx := 0
+
+		for _, span := range el.H.PositiveSpans {
+			idx += int(span.Offset)
+			for range span.Length {
+				if idx < len(positiveBuckets) {
+					positiveBuckets[idx] = el.H.PositiveBuckets[currIdx]
+					idx++
+					currIdx++
+				}
+			}
+		}
+
+		currCount := float64(0)
+		for i, val := range customValues {
+			currCount += positiveBuckets[i]
+			builder := labels.NewBuilder(el.Metric)
+			builder.Set(model.MetricNameLabel, metricNameWithSuffix)
+			builder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(val))
+			enh.Out = append(enh.Out, Sample{
+				Metric:   builder.Labels(),
+				F:        currCount,
+				DropName: false,
+			})
+		}
+
+		// Add +Inf bucket with the overflow bucket
+		currCount += positiveBuckets[len(positiveBuckets)-1]
+		builder := labels.NewBuilder(el.Metric)
+		builder.Set(model.MetricNameLabel, metricNameWithSuffix)
+		builder.Set(model.BucketLabel, labels.FormatOpenMetricsFloat(math.Inf(1)))
+
+		enh.Out = append(enh.Out, Sample{
+			Metric:   builder.Labels(),
+			F:        currCount,
+			DropName: false,
+		})
+	}
+
+	return enh.Out, nil
+}
+
 // === histogram_sum(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcHistogramSum(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleHistogramFunc(vectorVals, enh, func(h *histogram.FloatHistogram) float64 {
@@ -2097,6 +2171,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"first_over_time":              funcFirstOverTime,
 	"floor":                        funcFloor,
 	"histogram_avg":                funcHistogramAvg,
+	"histogram_buckets":            funcHistogramBuckets,
 	"histogram_count":              funcHistogramCount,
 	"histogram_fraction":           funcHistogramFraction,
 	"histogram_quantile":           funcHistogramQuantile,

@@ -233,6 +233,25 @@ Which is equivalent to the following query:
     /
       histogram_count(rate(http_request_duration_seconds[5m]))
 
+## `histogram_buckets()`
+
+`histogram_buckets(v instant-vector)` converts Native Histogram Custom Buckets
+(NHCB) to classic histogram bucket format. For each NHCB histogram sample in
+`v`, it returns multiple series (one per bucket) with the `_bucket` suffix
+appended to the metric name and an `le` label indicating the bucket boundary.
+Non-NHCB histograms (exponential schema) and float samples are ignored and do
+not show up in the returned vector.
+
+Use `histogram_buckets` to convert NHCB histograms to classic histogram format
+for compatibility with existing queries:
+
+    histogram_buckets(http_request_duration_seconds)
+
+This returns series like:
+- `http_request_duration_seconds_bucket{le="0.1"}` with cumulative count up to 0.1
+- `http_request_duration_seconds_bucket{le="0.5"}` with cumulative count up to 0.5
+- `http_request_duration_seconds_bucket{le="+Inf"}` with total count
+
 ## `histogram_count()` and `histogram_sum()`
 
 `histogram_count(v instant-vector)` returns the count of observations stored in
