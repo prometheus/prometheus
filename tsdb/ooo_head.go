@@ -96,7 +96,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 		if s.t > maxt {
 			break
 		}
-		encoding := chunkenc.EncXOR
+		encoding := chunkenc.ValFloat.ChunkEncoding()
 		if s.h != nil {
 			encoding = chunkenc.EncHistogram
 		} else if s.fh != nil {
@@ -112,8 +112,12 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			}
 			cmint = s.t
 			switch encoding {
-			case chunkenc.EncXOR:
-				chunk = chunkenc.NewXORChunk()
+			case chunkenc.EncXOR, chunkenc.EncXOR2:
+				var err error
+				chunk, err = chunkenc.NewEmptyChunk(encoding)
+				if err != nil {
+					return chks, err
+				}
 			case chunkenc.EncHistogram:
 				chunk = chunkenc.NewHistogramChunk()
 			case chunkenc.EncFloatHistogram:
@@ -127,7 +131,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 			}
 		}
 		switch encoding {
-		case chunkenc.EncXOR:
+		case chunkenc.EncXOR, chunkenc.EncXOR2:
 			// TODO(krajorama): pass ST.
 			app.Append(0, s.t, s.f)
 		case chunkenc.EncHistogram:

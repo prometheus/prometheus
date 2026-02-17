@@ -36,7 +36,7 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 Notes:
 
 * `len`: Chunk size in bytes. 1 to 5 bytes long using the [`<uvarint>` encoding](https://go.dev/src/encoding/binary/varint.go).
-* `encoding`: Currently either `XOR`, `histogram`, or `floathistogram`, see [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47).
+* `encoding`: Currently either `XOR`, `XOR2`, `histogram`, or `floathistogram`, see [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47).
 * `data`: See below for each encoding.
 * `checksum`: Checksum of `encoding` and `data`. It's a [cyclic redundancy check](https://en.wikipedia.org/wiki/Cyclic_redundancy_check) with the Castagnoli polynomial, serialised as an unsigned 32 bits big endian number. Can be referred as a `CRC-32C`.
 
@@ -64,6 +64,56 @@ Notes:
   see [code for details](https://github.com/prometheus/prometheus/blob/7309c20e7e5774e7838f183ec97c65baa4362edc/tsdb/chunkenc/xor.go#L179-L205).
 * `padding` of 0 to 7 bits so that the whole chunk data is byte-aligned.
 * The chunk can have as few as one sample, i.e. `ts_1`, `v_1`, etc. are optional.
+
+## XOR2 chunk data
+
+XOR2 uses the same structure as XOR for samples 0 and 1. Starting from sample 2,
+a joint control prefix encodes both the timestamp delta-of-delta (dod) and whether
+the value changed, with common dod cases byte-aligned for efficient writing.
+
+```
+┌──────────────────────┬───────────────┬───────────────┬──────────────────────┬──────────────────────┬─────────────────────────────────────────┬─────┬─────────────────────────────────────────┬──────────────────┐
+│ num_samples <uint16> │ ts_0 <varint> │ v_0 <float64> │ ts_1_delta <uvarint> │ v_1 <varbit_xor2>    │        sample_2 <joint_sample2>         │ ... │        sample_n <joint_sample2>         │ padding <x bits> │
+└──────────────────────┴───────────────┴───────────────┴──────────────────────┴──────────────────────┴─────────────────────────────────────────┴─────┴─────────────────────────────────────────┴──────────────────┘
+```
+
+### Joint sample encoding for n >= 2 (`<joint_sample2>`):
+
+Each sample starts with a variable-length control prefix that jointly encodes the
+dod and value change status:
+
+| Control prefix | dod | Value encoding that follows |
+|---|---|---|
+| `0` | 0 | (none, value unchanged) |
+| `10` | 0 | `<varbit_xor2_nn>` (value known non-zero and non-stale) |
+| `110DDDDD` `DDDDDDDD` | 13-bit signed [-4096, 4095] | `<varbit_xor2>` |
+| `1110DDDD` `DDDDDDDD` `DDDDDDDD` | 20-bit signed [-524288, 524287] | `<varbit_xor2>` |
+| `11110` + 64-bit dod | exact | `<varbit_xor2>` |
+| `11111` | 0 | (none, stale NaN — no value field) |
+
+The `110` and `1110` cases pack the prefix and the most-significant dod bits into
+the first byte, making the full dod field byte-aligned.
+
+### Value delta encoding (`<varbit_xor2>`):
+
+Used after the dod≠0 control prefixes. The XOR of the current and previous value is encoded as:
+
+| Prefix | Meaning |
+|---|---|
+| `0` | XOR = 0 (value unchanged) |
+| `10` | Reuse previous leading/trailing window; `sigbits` value bits follow |
+| `110` + leading(5) + sigbits(6) + value(sigbits) | New leading/trailing window |
+| `111` | Stale NaN marker (3 bits) |
+
+### Value delta encoding, known non-zero (`<varbit_xor2_nn>`):
+
+Used after the `10` control prefix (dod=0, value known to have changed and be non-stale).
+The delta=0 check is skipped, saving one bit on the reuse path:
+
+| Prefix | Meaning |
+|---|---|
+| `0` | Reuse previous leading/trailing window; `sigbits` value bits follow |
+| `1` + leading(5) + sigbits(6) + value(sigbits) | New leading/trailing window |
 
 ## Histogram chunk data
 
