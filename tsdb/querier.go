@@ -905,7 +905,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 			}
 		}
 	case chunkenc.ValFloat:
-		newChunk = chunkenc.NewXORChunk()
+		newChunk = chunkenc.NewFloatChunk()
 		if app, err = newChunk.Appender(); err != nil {
 			break
 		}

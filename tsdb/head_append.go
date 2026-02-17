@@ -1831,7 +1831,7 @@ type chunkOpts struct {
 // isolation for this append.)
 // Series lock must be held when calling.
 func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o)
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.ValFloat.ChunkEncoding(), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}

@@ -21,6 +21,26 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
+// useXOR2Encoding controls whether to use XOR2 encoding for float samples.
+// When true, float samples will use XOR2 encoding (adaptive control bits + staleness optimization).
+// When false, float samples will use the original XOR encoding.
+// This should be set once at startup before any chunks are created.
+var useXOR2Encoding bool
+
+// EnableXOR2 enables XOR2 float chunk encoding.
+func EnableXOR2() {
+	useXOR2Encoding = true
+}
+
+func setXOR2Enabled(enabled bool) {
+	useXOR2Encoding = enabled
+}
+
+// XOR2Enabled returns whether XOR2 float chunk encoding is enabled.
+func XOR2Enabled() bool {
+	return useXOR2Encoding
+}
+
 // Encoding is the identifier for a chunk encoding.
 type Encoding uint8
 
@@ -30,6 +50,7 @@ const (
 	EncXOR
 	EncHistogram
 	EncFloatHistogram
+	EncXOR2
 )
 
 func (e Encoding) String() string {
@@ -42,13 +63,15 @@ func (e Encoding) String() string {
 		return "histogram"
 	case EncFloatHistogram:
 		return "floathistogram"
+	case EncXOR2:
+		return "XOR2"
 	}
 	return "<unknown>"
 }
 
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
-	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram
+	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOR2
 }
 
 const (
@@ -189,6 +212,9 @@ func (v ValueType) String() string {
 func (v ValueType) ChunkEncoding() Encoding {
 	switch v {
 	case ValFloat:
+		if useXOR2Encoding {
+			return EncXOR2
+		}
 		return EncXOR
 	case ValHistogram:
 		return EncHistogram
@@ -202,6 +228,9 @@ func (v ValueType) ChunkEncoding() Encoding {
 func (v ValueType) NewChunk() (Chunk, error) {
 	switch v {
 	case ValFloat:
+		if useXOR2Encoding {
+			return NewXOR2Chunk(), nil
+		}
 		return NewXORChunk(), nil
 	case ValHistogram:
 		return NewHistogramChunk(), nil
@@ -297,6 +326,7 @@ type Pool interface {
 // pool is a memory pool of chunk objects.
 type pool struct {
 	xor            sync.Pool
+	xor2           sync.Pool
 	histogram      sync.Pool
 	floatHistogram sync.Pool
 }
@@ -307,6 +337,11 @@ func NewPool() Pool {
 		xor: sync.Pool{
 			New: func() any {
 				return &XORChunk{b: bstream{}}
+			},
+		},
+		xor2: sync.Pool{
+			New: func() any {
+				return &XOR2Chunk{b: bstream{}}
 			},
 		},
 		histogram: sync.Pool{
@@ -327,6 +362,8 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 	switch e {
 	case EncXOR:
 		c = p.xor.Get().(*XORChunk)
+	case EncXOR2:
+		c = p.xor2.Get().(*XOR2Chunk)
 	case EncHistogram:
 		c = p.histogram.Get().(*HistogramChunk)
 	case EncFloatHistogram:
@@ -346,6 +383,9 @@ func (p *pool) Put(c Chunk) error {
 	case EncXOR:
 		_, ok = c.(*XORChunk)
 		sp = &p.xor
+	case EncXOR2:
+		_, ok = c.(*XOR2Chunk)
+		sp = &p.xor2
 	case EncHistogram:
 		_, ok = c.(*HistogramChunk)
 		sp = &p.histogram
@@ -374,6 +414,8 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	switch e {
 	case EncXOR:
 		return &XORChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR2:
+		return &XOR2Chunk{b: bstream{count: 0, stream: d}}, nil
 	case EncHistogram:
 		return &HistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	case EncFloatHistogram:
@@ -387,10 +429,20 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 	switch e {
 	case EncXOR:
 		return NewXORChunk(), nil
+	case EncXOR2:
+		return NewXOR2Chunk(), nil
 	case EncHistogram:
 		return NewHistogramChunk(), nil
 	case EncFloatHistogram:
 		return NewFloatHistogramChunk(), nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
+}
+
+// NewFloatChunk returns an empty float chunk using the configured float encoding.
+func NewFloatChunk() Chunk {
+	if useXOR2Encoding {
+		return NewXOR2Chunk()
+	}
+	return NewXORChunk()
 }
