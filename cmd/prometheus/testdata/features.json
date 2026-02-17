@@ -80,6 +80,7 @@
     "histogram_count": true,
     "histogram_fraction": true,
     "histogram_quantile": true,
+    "histogram_quantiles": true,
     "histogram_stddev": true,
     "histogram_stdvar": true,
     "histogram_sum": true,
