@@ -3048,8 +3048,8 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		for i, rs := range rhs {
 			sigOrd := rhsh[i].sigOrdinal
 
-			if (len(matchedSigsPresent) > 0 && matchedSigsPresent[sigOrd]) ||
-				(len(matchedSigs) > 0 && matchedSigs[sigOrd] != nil) {
+			if (matching.Card == parser.CardOneToOne && matchedSigsPresent[sigOrd]) ||
+				(matching.Card != parser.CardOneToOne && matchedSigs[sigOrd] != nil) {
 				continue // Already matched.
 			}
 			ls := Sample{
