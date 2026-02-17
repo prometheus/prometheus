@@ -72,7 +72,7 @@ export const functionSignatures: Record<string, Func> = {
   histogram_quantiles: {
     name: "histogram_quantiles",
     argTypes: [valueType.vector, valueType.string, valueType.scalar, valueType.scalar],
-    variadic: 10,
+    variadic: 9,
     returnType: valueType.vector,
   },
   histogram_stddev: {

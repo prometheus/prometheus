@@ -208,7 +208,7 @@ var Functions = map[string]*Function{
 	"histogram_quantiles": {
 		Name:         "histogram_quantiles",
 		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeString, ValueTypeScalar, ValueTypeScalar},
-		Variadic:     10,
+		Variadic:     9,
 		ReturnType:   ValueTypeVector,
 		Experimental: true,
 	},
