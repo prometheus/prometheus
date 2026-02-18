@@ -2212,4 +2212,16 @@ eval instant at 1m cbh_two_buckets_split_at_negative >/ 10.0
   cbh_two_buckets_split_at_negative {{schema:-53 sum:1000.0 count:100 custom_values:[-5] buckets:[0 100]}}
 
 
+load 1m
+  cbh_for_join{label="a"} {{schema:-53 sum:33 count:101 custom_values:[5] buckets:[1 100]}}
+  cbh_for_join{label="b"} {{schema:-53 sum:66 count:202 custom_values:[5] buckets:[2 200]}}
+  cbh_for_join{label="c"} {{schema:-53 sum:99 count:303 custom_values:[5] buckets:[3 300]}}
+  float_for_join{label="a"} 1
+  float_for_join{label="b"} 4
+
+eval instant at 1m cbh_for_join >/ on (label) float_for_join
+  {label="a"} {{schema:-53 count:100.8 sum:502.4 custom_values:[5] buckets:[0.8 100]}}
+  {label="b"} {{schema:-53 count:200.4 sum:1001.8 custom_values:[5] buckets:[0.4 200]}}
+
+
 clear
