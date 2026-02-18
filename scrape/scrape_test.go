@@ -1545,6 +1545,14 @@ func TestPromTextToProto(t *testing.T) {
 	require.Equal(t, "promhttp_metric_handler_requests_total", got[236])
 }
 
+func seriesPerHistogramFor100HistsWithExemplars(appV2 bool) int {
+	if appV2 {
+		// AppenderV2 with parseST enabled, uses _created lines for ST instead of samples.
+		return 23
+	}
+	return 24
+}
+
 // TestScrapeLoopAppend_WithStorage tests appends and storage integration for the
 // large input files that are also used in benchmarks.
 func TestScrapeLoopAppend_WithStorage(t *testing.T) {
@@ -1630,8 +1638,13 @@ func TestScrapeLoopAppend_WithStorage(t *testing.T) {
 				name:         "100HistsWithExemplars",
 				parsableText: makeTestHistogramsWithExemplars(100),
 
-				expectedSamplesLen: 24 * 100,
+				expectedSamplesLen: seriesPerHistogramFor100HistsWithExemplars(appV2) * 100,
 				testAppendedSamples: func(t *testing.T, committed []sample) {
+					st := int64(0)
+					if appV2 {
+						st = 1726839813016
+					}
+
 					// Verify a few samples.
 					m := metadata.Metadata{Type: model.MetricTypeHistogram, Help: "RPC latency distributions."}
 					testutil.RequireEqual(t, sample{
@@ -1641,7 +1654,7 @@ func TestScrapeLoopAppend_WithStorage(t *testing.T) {
 							}
 							return "rpc_durations_histogram0_seconds"
 						}(),
-						M: m, L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram0_seconds_bucket", "le", "0.0003100000000000002"), V: 15, T: timestamp.FromTime(ts),
+						M: m, L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram0_seconds_bucket", "le", "0.0003100000000000002"), V: 15, ST: st, T: timestamp.FromTime(ts),
 						ES: []exemplar.Exemplar{
 							{Labels: labels.FromStrings("dummyID", "9818"), Value: 0.0002791130914009552, Ts: 1726839814982, HasTs: true},
 						},
@@ -1653,17 +1666,17 @@ func TestScrapeLoopAppend_WithStorage(t *testing.T) {
 							}
 							return "rpc_durations_histogram49_seconds"
 						}(),
-						M: m, L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram49_seconds_sum"), V: -8.452185437166741e-05, T: timestamp.FromTime(ts),
-					}, committed[24*50-3])
+						M: m, L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram49_seconds_sum"), V: -8.452185437166741e-05, ST: st, T: timestamp.FromTime(ts),
+					}, committed[seriesPerHistogramFor100HistsWithExemplars(appV2)*50-3])
 
 					// This series does not have metadata, nor metric family, because of isSeriesPartOfFamily bug and OpenMetric 1.0 limitations around _created series.
 					// TODO(bwplotka): Fix with https://github.com/prometheus/prometheus/issues/17900
 					testutil.RequireEqual(t, sample{
-						L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram99_seconds_created"), V: 1.726839813016302e+09, T: timestamp.FromTime(ts),
+						L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram99_seconds_created"), V: 1.726839813016302e+09, ST: st, T: timestamp.FromTime(ts),
 					}, committed[len(committed)-1])
 				},
 				testExemplars: func(t *testing.T, er []exemplar.QueryResult) {
-					// 12 out of 24 histogram series have exemplars.
+					// 12 out of 23/24 histogram series have exemplars.
 					require.Len(t, er, 12*100)
 					testutil.RequireEqual(t, exemplar.QueryResult{
 						SeriesLabels: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram0_seconds_bucket", "le", "0.0003100000000000002"),
@@ -2900,6 +2913,11 @@ func TestScrapeLoopAppend(t *testing.T) {
 }
 
 func testScrapeLoopAppend(t *testing.T, appV2 bool) {
+	st := int64(0)
+	if appV2 {
+		st = 111111001
+	}
+
 	for _, test := range []struct {
 		title                           string
 		alwaysScrapeClassicHist         bool
@@ -2953,6 +2971,32 @@ func testScrapeLoopAppend(t *testing.T, appV2 bool) {
 			}},
 		},
 		{
+			title: "Metric with ST",
+			scrapeText: `# TYPE metric counter
+metric_total{n="1"} 1.1
+metric_created{n="1"} 9999.999
+# EOF`,
+			contentType: "application/openmetrics-text",
+			samples: func() []sample {
+				if !appV2 {
+					return []sample{
+						{
+							L: labels.FromStrings("__name__", "metric_total", "n", "1"),
+							V: 1.1,
+						},
+						{
+							L: labels.FromStrings("__name__", "metric_created", "n", "1"),
+							V: 9999.999,
+						},
+					}
+				}
+				return []sample{{
+					L:  labels.FromStrings("__name__", "metric_total", "n", "1"),
+					ST: 9999999, V: 1.1,
+				}}
+			}(),
+		},
+		{
 			title: "Two metrics and exemplars",
 			scrapeText: `metric_total{n="1"} 1 # {t="1"} 1.0 10000
 metric_total{n="2"} 2 # {t="2"} 2.0 20000
@@ -2969,7 +3013,7 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 			}},
 		},
 		{
-			title: "Native histogram with three exemplars from classic buckets",
+			title: "Native histogram with ST and three exemplars from classic buckets",
 
 			enableNativeHistogramsIngestion: true,
 			scrapeText: `name: "test_histogram"
@@ -2977,6 +3021,10 @@ help: "Test histogram with many buckets removed to keep it manageable in size."
 type: HISTOGRAM
 metric: <
   histogram: <
+    created_timestamp: <
+      seconds: 111111
+      nanos: 1000000
+    >
     sample_count: 175
     sample_sum: 0.0008280461746287094
     bucket: <
@@ -3059,8 +3107,9 @@ metric: <
 `,
 			contentType: "application/vnd.google.protobuf",
 			samples: []sample{{
-				T: 1234568,
-				L: labels.FromStrings("__name__", "test_histogram"),
+				T:  1234568,
+				ST: st,
+				L:  labels.FromStrings("__name__", "test_histogram"),
 				H: &histogram.Histogram{
 					Count:         175,
 					ZeroCount:     2,
@@ -3086,7 +3135,7 @@ metric: <
 			}},
 		},
 		{
-			title: "Native histogram with three exemplars scraped as classic histogram",
+			title: "Native histogram with ST and three exemplars scraped as classic histogram",
 
 			enableNativeHistogramsIngestion: true,
 			scrapeText: `name: "test_histogram"
@@ -3094,6 +3143,10 @@ help: "Test histogram with many buckets removed to keep it manageable in size."
 type: HISTOGRAM
 metric: <
   histogram: <
+    created_timestamp: <
+      seconds: 111111
+      nanos: 1000000
+    >
     sample_count: 175
     sample_sum: 0.0008280461746287094
     bucket: <
@@ -3178,8 +3231,9 @@ metric: <
 			contentType:             "application/vnd.google.protobuf",
 			samples: []sample{
 				{
-					T: 1234568,
-					L: labels.FromStrings("__name__", "test_histogram"),
+					T:  1234568,
+					ST: st,
+					L:  labels.FromStrings("__name__", "test_histogram"),
 					H: &histogram.Histogram{
 						Count:         175,
 						ZeroCount:     2,
@@ -3204,26 +3258,26 @@ metric: <
 						{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true},
 					},
 				},
-				{L: labels.FromStrings("__name__", "test_histogram_count"), T: 1234568, V: 175},
-				{L: labels.FromStrings("__name__", "test_histogram_sum"), T: 1234568, V: 0.0008280461746287094},
-				{L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"), T: 1234568, V: 2},
+				{L: labels.FromStrings("__name__", "test_histogram_count"), ST: st, T: 1234568, V: 175},
+				{L: labels.FromStrings("__name__", "test_histogram_sum"), ST: st, T: 1234568, V: 0.0008280461746287094},
+				{L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0004899999999999998"), ST: st, T: 1234568, V: 2},
 				{
-					L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"), T: 1234568, V: 4,
+					L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0003899999999999998"), ST: st, T: 1234568, V: 4,
 					ES: []exemplar.Exemplar{{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, Ts: 1625851155146, HasTs: true}},
 				},
 				{
-					L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"), T: 1234568, V: 16,
+					L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0002899999999999998"), ST: st, T: 1234568, V: 16,
 					ES: []exemplar.Exemplar{{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, Ts: 1234568, HasTs: false}},
 				},
 				{
-					L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0001899999999999998"), T: 1234568, V: 32,
+					L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "-0.0001899999999999998"), ST: st, T: 1234568, V: 32,
 					ES: []exemplar.Exemplar{{Labels: labels.FromStrings("dummyID", "58215"), Value: -0.00019, Ts: 1625851055146, HasTs: true}},
 				},
-				{L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), T: 1234568, V: 175},
+				{L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), ST: st, T: 1234568, V: 175},
 			},
 		},
 		{
-			title:                           "Native histogram with exemplars and no classic buckets",
+			title:                           "Native histogram with ST, exemplars and no classic buckets",
 			contentType:                     "application/vnd.google.protobuf",
 			enableNativeHistogramsIngestion: true,
 			scrapeText: `name: "test_histogram"
@@ -3231,6 +3285,10 @@ help: "Test histogram."
 type: HISTOGRAM
 metric: <
   histogram: <
+    created_timestamp: <
+      seconds: 111111
+      nanos: 1000000
+    >
     sample_count: 175
     sample_sum: 0.0008280461746287094
     schema: 3
@@ -3296,8 +3354,9 @@ metric: <
 
 `,
 			samples: []sample{{
-				T: 1234568,
-				L: labels.FromStrings("__name__", "test_histogram"),
+				T:  1234568,
+				ST: st,
+				L:  labels.FromStrings("__name__", "test_histogram"),
 				H: &histogram.Histogram{
 					Count:         175,
 					ZeroCount:     2,
@@ -3323,7 +3382,7 @@ metric: <
 			}},
 		},
 		{
-			title:                           "Native histogram with exemplars but ingestion disabled",
+			title:                           "Native histogram with ST, exemplars but ingestion disabled",
 			contentType:                     "application/vnd.google.protobuf",
 			enableNativeHistogramsIngestion: false,
 			scrapeText: `name: "test_histogram"
@@ -3331,6 +3390,10 @@ help: "Test histogram."
 type: HISTOGRAM
 metric: <
   histogram: <
+    created_timestamp: <
+      seconds: 111111
+      nanos: 1000000
+    >
     sample_count: 175
     sample_sum: 0.0008280461746287094
     schema: 3
@@ -3396,9 +3459,9 @@ metric: <
 
 `,
 			samples: []sample{
-				{L: labels.FromStrings("__name__", "test_histogram_count"), T: 1234568, V: 175},
-				{L: labels.FromStrings("__name__", "test_histogram_sum"), T: 1234568, V: 0.0008280461746287094},
-				{L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), T: 1234568, V: 175},
+				{L: labels.FromStrings("__name__", "test_histogram_count"), ST: st, T: 1234568, V: 175},
+				{L: labels.FromStrings("__name__", "test_histogram_sum"), ST: st, T: 1234568, V: 0.0008280461746287094},
+				{L: labels.FromStrings("__name__", "test_histogram_bucket", "le", "+Inf"), ST: st, T: 1234568, V: 175},
 			},
 		},
 	} {
@@ -3420,7 +3483,7 @@ metric: <
 				// This test does not care about metadata.
 				// Having this true would mean we need to add metadata to sample
 				// expectations.
-				// TODO(bwplotka): Add cases for append metadata to WAL and pass metadata
+				// TODO(bwplotka): Add cases for append metadata to WAL and pass metadata.
 				sl.appendMetadataToWAL = false
 			})
 			app := sl.appender()
