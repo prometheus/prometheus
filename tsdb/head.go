@@ -1394,16 +1394,9 @@ func (h *Head) truncateWAL(mint int64) error {
 		var walCorr *wlog.CorruptionErr
 		if errors.As(err, &walCorr) {
 			h.metrics.walCorruptionsTotal.Inc()
-			// If IgnoreOldCorruptedWAL is enabled, skip this checkpoint attempt instead of
-			// blocking compaction indefinitely. This allows the TSDB to continue operating
-			// and prevents unbounded disk growth. The corrupted data will remain in the WAL
-			// until it can be addressed (e.g., via offline repair or when old enough to be
-			// beyond the retention window in future checkpoints).
 			if h.opts.IgnoreOldCorruptedWAL {
 				h.logger.Warn("WAL corruption detected during checkpointing, skipping checkpoint to allow compaction to continue",
 					"dir", walCorr.Dir, "segment", walCorr.Segment, "offset", walCorr.Offset, "err", walCorr.Err)
-				// Return nil to allow compaction to proceed without blocking on this checkpoint.
-				// The next compaction cycle will retry checkpointing.
 				return nil
 			}
 		}
