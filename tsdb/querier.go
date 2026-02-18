@@ -875,7 +875,6 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 		return false
 	}
 	p.currMetaWithChunk.MinTime = p.currDelIter.AtT()
-	needTS := p.currDelIter.AtST() != 0
 
 	// Re-encode the chunk if iterator is provided. This means that it has
 	// some samples to be deleted or chunk is opened.
@@ -885,7 +884,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 		st, t    int64
 		err      error
 	)
-	newChunk, err = valueType.NewChunk(needTS)
+	newChunk, err = chunkenc.NewEmptyChunk(p.currMeta.Chunk.Encoding())
 	if err != nil {
 		p.err = fmt.Errorf("create new chunk while re-encoding: %w", err)
 		return false
@@ -903,15 +902,6 @@ loop:
 			break
 		}
 		st = p.currDelIter.AtST()
-		if !needTS && st != 0 {
-			// A sample with non-zero ST was found after creating a non-ST chunk.
-			// Recode all previously written samples into a new ST-capable chunk.
-			needTS = true
-			newChunk, app, err = recodeChunkToST(valueType, newChunk)
-			if err != nil {
-				break loop
-			}
-		}
 		switch vt {
 		case chunkenc.ValFloat:
 			var v float64
@@ -949,44 +939,6 @@ loop:
 	p.currMetaWithChunk.Chunk = newChunk
 	p.currMetaWithChunk.MaxTime = t
 	return true
-}
-
-// recodeChunkToST creates a new ST-capable chunk of the given value type and
-// copies all samples from oldChunk into it, preserving their ST values.
-func recodeChunkToST(vt chunkenc.ValueType, oldChunk chunkenc.Chunk) (chunkenc.Chunk, chunkenc.Appender, error) {
-	newChunk, err := vt.NewChunk(true)
-	if err != nil {
-		return nil, nil, fmt.Errorf("create ST chunk for recoding: %w", err)
-	}
-	app, err := newChunk.Appender()
-	if err != nil {
-		return nil, nil, fmt.Errorf("create appender for ST chunk: %w", err)
-	}
-	it := oldChunk.Iterator(nil)
-	for {
-		switch it.Next() {
-		case chunkenc.ValNone:
-			if err := it.Err(); err != nil {
-				return nil, nil, fmt.Errorf("iterate old chunk for recoding: %w", err)
-			}
-			return newChunk, app, nil
-		case chunkenc.ValFloat:
-			t, v := it.At()
-			app.Append(it.AtST(), t, v)
-		case chunkenc.ValHistogram:
-			t, h := it.AtHistogram(nil)
-			_, _, app, err = app.AppendHistogram(nil, it.AtST(), t, h, true)
-			if err != nil {
-				return nil, nil, fmt.Errorf("recode histogram sample: %w", err)
-			}
-		case chunkenc.ValFloatHistogram:
-			t, h := it.AtFloatHistogram(nil)
-			_, _, app, err = app.AppendFloatHistogram(nil, it.AtST(), t, h, true)
-			if err != nil {
-				return nil, nil, fmt.Errorf("recode float histogram sample: %w", err)
-			}
-		}
-	}
 }
 
 // populateChunksFromIterable reads the samples from currDelIter to create
