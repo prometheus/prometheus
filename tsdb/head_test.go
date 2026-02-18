@@ -5823,6 +5823,10 @@ func newUnsupportedChunk() *unsupportedChunk {
 	return &unsupportedChunk{chunkenc.NewXORChunk()}
 }
 
+func (*unsupportedChunk) Encoding() chunkenc.Encoding {
+	return EncUnsupportedXOR
+}
+
 // Tests https://github.com/prometheus/prometheus/issues/10277.
 func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 	dir := t.TempDir()
