@@ -1546,6 +1546,14 @@ const funcDocs: Record<string, React.ReactNode> = {
   histogram_quantiles: (
     <>
       <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
         <code>histogram_quantiles(v instant-vector, quantile_label string, φ_1 scalar, φ_2 scalar, ...)</code>{" "}
         calculates multiple (between 1 and 10) φ-quantiles (0 ≤ φ ≤ 1) from a{" "}
         <a href="https://prometheus.io/docs/concepts/metric_types/#histogram">classic histogram</a> or from a native
