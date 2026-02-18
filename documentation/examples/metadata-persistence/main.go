@@ -530,7 +530,7 @@ func printVersionedMetadata(title string, reader seriesmetadata.Reader) {
 
 	// Collect and merge by base metric name.
 	byName := make(map[string]*seriesmetadata.VersionedMetadata)
-	_ = reader.IterVersionedMetadata(func(_ uint64, name string, vm *seriesmetadata.VersionedMetadata) error {
+	_ = reader.IterVersionedMetadata(func(_ uint64, name string, _ labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
 		if name == "" {
 			return nil
 		}
@@ -585,22 +585,6 @@ func buildVersionedAPIResponse(db *tsdb.DB) map[string]any {
 	}
 	defer reader.Close()
 
-	// Collect and merge by base metric name.
-	byName := make(map[string]*seriesmetadata.VersionedMetadata)
-	_ = reader.IterVersionedMetadata(func(_ uint64, name string, vm *seriesmetadata.VersionedMetadata) error {
-		if name == "" {
-			return nil
-		}
-		baseName := stripMetricSuffix(name)
-		if existing, ok := byName[baseName]; ok {
-			byName[baseName] = seriesmetadata.MergeVersionedMetadata(existing, vm)
-		} else {
-			byName[baseName] = vm.Copy()
-		}
-		return nil
-	})
-
-	// Build response data matching the /api/v1/metadata/versions format.
 	type versionEntry struct {
 		Type    string `json:"type"`
 		Help    string `json:"help"`
@@ -608,11 +592,41 @@ func buildVersionedAPIResponse(db *tsdb.DB) map[string]any {
 		MinTime int64  `json:"minTime"`
 		MaxTime int64  `json:"maxTime"`
 	}
+	type seriesEntry struct {
+		Labels   labels.Labels  `json:"labels"`
+		Versions []versionEntry `json:"versions"`
+	}
 
-	data := make(map[string][]versionEntry)
-	for name, vm := range byName {
-		for _, v := range vm.Versions {
-			data[name] = append(data[name], versionEntry{
+	// Collect per-series versioned metadata.
+	type collectedEntry struct {
+		lset labels.Labels
+		vm   *seriesmetadata.VersionedMetadata
+	}
+	var collected []collectedEntry
+	if err := reader.IterVersionedMetadata(func(_ uint64, name string, lset labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
+		if name == "" {
+			return nil
+		}
+		collected = append(collected, collectedEntry{lset: lset, vm: vm})
+		return nil
+	}); err != nil {
+		return map[string]any{
+			"status": "error",
+			"error":  err.Error(),
+		}
+	}
+
+	// Sort by labels for deterministic output.
+	slices.SortFunc(collected, func(a, b collectedEntry) int {
+		return labels.Compare(a.lset, b.lset)
+	})
+
+	// Build response data matching the /api/v1/metadata/versions format.
+	data := make([]seriesEntry, 0, len(collected))
+	for _, e := range collected {
+		versions := make([]versionEntry, 0, len(e.vm.Versions))
+		for _, v := range e.vm.Versions {
+			versions = append(versions, versionEntry{
 				Type:    string(v.Meta.Type),
 				Help:    v.Meta.Help,
 				Unit:    v.Meta.Unit,
@@ -620,6 +634,10 @@ func buildVersionedAPIResponse(db *tsdb.DB) map[string]any {
 				MaxTime: v.MaxTime,
 			})
 		}
+		data = append(data, seriesEntry{
+			Labels:   e.lset,
+			Versions: versions,
+		})
 	}
 
 	return map[string]any{
@@ -641,22 +659,6 @@ func buildMetadataSeriesAPIResponse(db *tsdb.DB, typeFilter string) map[string]a
 	}
 	defer reader.Close()
 
-	// Collect and merge by base metric name.
-	byName := make(map[string]*seriesmetadata.VersionedMetadata)
-	_ = reader.IterVersionedMetadata(func(_ uint64, name string, vm *seriesmetadata.VersionedMetadata) error {
-		if name == "" {
-			return nil
-		}
-		baseName := stripMetricSuffix(name)
-		if existing, ok := byName[baseName]; ok {
-			byName[baseName] = seriesmetadata.MergeVersionedMetadata(existing, vm)
-		} else {
-			byName[baseName] = vm.Copy()
-		}
-		return nil
-	})
-
-	// Build response: only include versions matching the type filter.
 	type versionEntry struct {
 		Type    string `json:"type"`
 		Help    string `json:"help"`
@@ -664,14 +666,44 @@ func buildMetadataSeriesAPIResponse(db *tsdb.DB, typeFilter string) map[string]a
 		MinTime int64  `json:"minTime"`
 		MaxTime int64  `json:"maxTime"`
 	}
+	type seriesEntry struct {
+		Labels   labels.Labels  `json:"labels"`
+		Versions []versionEntry `json:"versions"`
+	}
 
-	data := make(map[string][]versionEntry)
-	for name, vm := range byName {
-		for _, v := range vm.Versions {
+	// Collect per-series versioned metadata.
+	type collectedEntry struct {
+		lset labels.Labels
+		vm   *seriesmetadata.VersionedMetadata
+	}
+	var collected []collectedEntry
+	if err := reader.IterVersionedMetadata(func(_ uint64, name string, lset labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
+		if name == "" {
+			return nil
+		}
+		collected = append(collected, collectedEntry{lset: lset, vm: vm})
+		return nil
+	}); err != nil {
+		return map[string]any{
+			"status": "error",
+			"error":  err.Error(),
+		}
+	}
+
+	// Sort by labels for deterministic output.
+	slices.SortFunc(collected, func(a, b collectedEntry) int {
+		return labels.Compare(a.lset, b.lset)
+	})
+
+	// Build response: only include versions matching the type filter.
+	data := make([]seriesEntry, 0)
+	for _, e := range collected {
+		var versions []versionEntry
+		for _, v := range e.vm.Versions {
 			if typeFilter != "" && string(v.Meta.Type) != typeFilter {
 				continue
 			}
-			data[name] = append(data[name], versionEntry{
+			versions = append(versions, versionEntry{
 				Type:    string(v.Meta.Type),
 				Help:    v.Meta.Help,
 				Unit:    v.Meta.Unit,
@@ -679,6 +711,13 @@ func buildMetadataSeriesAPIResponse(db *tsdb.DB, typeFilter string) map[string]a
 				MaxTime: v.MaxTime,
 			})
 		}
+		if len(versions) == 0 {
+			continue
+		}
+		data = append(data, seriesEntry{
+			Labels:   e.lset,
+			Versions: versions,
+		})
 	}
 
 	return map[string]any{

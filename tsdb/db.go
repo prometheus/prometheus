@@ -1182,17 +1182,18 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 			return nil, fmt.Errorf("get block index: %w", err)
 		}
 
-		err = mr.IterVersionedMetadata(func(ref uint64, metricName string, vm *seriesmetadata.VersionedMetadata) error {
+		err = mr.IterVersionedMetadata(func(ref uint64, _ string, _ labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
 			if err := ir.Series(storage.SeriesRef(ref), &builder, nil); err != nil {
 				return fmt.Errorf("resolve block series ref %d: %w", ref, err)
 			}
-			lHash := labels.StableHash(builder.Labels())
+			lset := builder.Labels()
+			lHash := labels.StableHash(lset)
 
 			existing, ok := merged.GetVersionedMetadata(lHash)
 			if ok {
-				merged.SetVersionedMetadata(lHash, metricName, seriesmetadata.MergeVersionedMetadata(existing, vm))
+				merged.SetVersionedMetadataWithLabels(lHash, lset.Copy(), seriesmetadata.MergeVersionedMetadata(existing, vm))
 			} else {
-				merged.SetVersionedMetadata(lHash, metricName, vm.Copy())
+				merged.SetVersionedMetadataWithLabels(lHash, lset.Copy(), vm.Copy())
 			}
 			return nil
 		})
@@ -1214,20 +1215,21 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 		return nil, fmt.Errorf("get head index: %w", err)
 	}
 
-	err = headMeta.IterVersionedMetadata(func(ref uint64, metricName string, vm *seriesmetadata.VersionedMetadata) error {
+	err = headMeta.IterVersionedMetadata(func(ref uint64, _ string, _ labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
 		if err := headIR.Series(storage.SeriesRef(ref), &builder, nil); err != nil {
 			// Series may have been garbage collected since metadata was read; skip.
 			// Log in case it indicates a real index issue rather than a benign race.
 			db.logger.Debug("skipping head metadata entry: could not resolve series ref", "ref", ref, "err", err)
 			return nil
 		}
-		lHash := labels.StableHash(builder.Labels())
+		lset := builder.Labels()
+		lHash := labels.StableHash(lset)
 
 		existing, ok := merged.GetVersionedMetadata(lHash)
 		if ok {
-			merged.SetVersionedMetadata(lHash, metricName, seriesmetadata.MergeVersionedMetadata(existing, vm))
+			merged.SetVersionedMetadataWithLabels(lHash, lset.Copy(), seriesmetadata.MergeVersionedMetadata(existing, vm))
 		} else {
-			merged.SetVersionedMetadata(lHash, metricName, vm.Copy())
+			merged.SetVersionedMetadataWithLabels(lHash, lset.Copy(), vm.Copy())
 		}
 		return nil
 	})

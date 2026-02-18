@@ -810,7 +810,7 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 			return fmt.Errorf("get index from block: %w", err)
 		}
 
-		err = mr.IterVersionedMetadata(func(ref uint64, metricName string, vm *seriesmetadata.VersionedMetadata) error {
+		err = mr.IterVersionedMetadata(func(ref uint64, metricName string, _ labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
 			// Resolve the source block's ref → labels via its index.
 			if err := ir.Series(storage.SeriesRef(ref), &builder, nil); err != nil {
 				return fmt.Errorf("resolve series ref %d: %w", ref, err)

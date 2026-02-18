@@ -20,6 +20,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 )
 
@@ -172,7 +173,7 @@ func HashMetadataContent(meta metadata.Metadata) uint64 {
 // VersionedMetadataReader provides read access to versioned metadata.
 type VersionedMetadataReader interface {
 	GetVersionedMetadata(ref uint64) (*VersionedMetadata, bool)
-	IterVersionedMetadata(f func(ref uint64, metricName string, vm *VersionedMetadata) error) error
+	IterVersionedMetadata(f func(ref uint64, metricName string, lset labels.Labels, vm *VersionedMetadata) error) error
 	TotalVersionedMetadata() int
 }
 

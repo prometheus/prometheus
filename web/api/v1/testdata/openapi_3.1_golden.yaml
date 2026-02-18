@@ -1365,18 +1365,22 @@ paths:
                                 $ref: '#/components/schemas/MetadataVersionsOutputBody'
                             examples:
                                 metadataVersions:
-                                    summary: Time-varying metadata versions per metric
+                                    summary: Time-varying metadata versions per series
                                     value:
                                         data:
-                                            http_requests_total:
+                                            - labels:
+                                                __name__: http_requests_total
+                                                instance: localhost:9090
+                                                job: api
+                                              versions:
                                                 - help: Total HTTP requests
-                                                  maxTime: "1700100000.000"
-                                                  minTime: "1700000000.000"
+                                                  maxTime: 1700100000000
+                                                  minTime: 1700000000000
                                                   type: counter
                                                   unit: ""
                                                 - help: Total HTTP requests processed
-                                                  maxTime: "1700200000.000"
-                                                  minTime: "1700100000.001"
+                                                  maxTime: 1700200000000
+                                                  minTime: 1700100000001
                                                   type: counter
                                                   unit: ""
                                         status: success
@@ -1488,19 +1492,27 @@ paths:
                                 $ref: '#/components/schemas/MetadataSeriesOutputBody'
                             examples:
                                 metadataSeries:
-                                    summary: Metrics matching metadata criteria
+                                    summary: Series matching metadata criteria
                                     value:
                                         data:
-                                            http_request_duration_seconds:
+                                            - labels:
+                                                __name__: http_request_duration_seconds
+                                                instance: localhost:9090
+                                                job: api
+                                              versions:
                                                 - help: HTTP request duration in seconds
-                                                  maxTime: "1700200000.000"
-                                                  minTime: "1700000000.000"
+                                                  maxTime: 1700200000000
+                                                  minTime: 1700000000000
                                                   type: histogram
                                                   unit: seconds
-                                            http_requests_total:
+                                            - labels:
+                                                __name__: http_requests_total
+                                                instance: localhost:9090
+                                                job: api
+                                              versions:
                                                 - help: Total HTTP requests
-                                                  maxTime: "1700200000.000"
-                                                  minTime: "1700000000.000"
+                                                  maxTime: 1700200000000
+                                                  minTime: 1700000000000
                                                   type: counter
                                                   unit: ""
                                         status: success
@@ -3542,11 +3554,13 @@ components:
                     type: string
                     description: Unit of the metric.
                 minTime:
-                    type: string
-                    description: Start timestamp for this metadata version.
+                    type: integer
+                    format: int64
+                    description: Start timestamp (Unix milliseconds) for this metadata version.
                 maxTime:
-                    type: string
-                    description: End timestamp for this metadata version.
+                    type: integer
+                    format: int64
+                    description: End timestamp (Unix milliseconds) for this metadata version.
             required:
                 - type
                 - help
@@ -3555,6 +3569,20 @@ components:
                 - maxTime
             additionalProperties: false
             description: A time-bounded metadata version for a metric.
+        MetadataSeriesEntry:
+            type: object
+            properties:
+                labels:
+                    $ref: '#/components/schemas/Labels'
+                versions:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MetadataVersionEntry'
+            required:
+                - labels
+                - versions
+            additionalProperties: false
+            description: Per-series metadata with label set and versioned metadata entries.
         MetadataVersionsOutputBody:
             type: object
             properties:
@@ -3566,11 +3594,9 @@ components:
                     description: Response status.
                     example: success
                 data:
-                    type: object
-                    additionalProperties:
-                        type: array
-                        items:
-                            $ref: '#/components/schemas/MetadataVersionEntry'
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MetadataSeriesEntry'
                 warnings:
                     type: array
                     items:
@@ -3597,11 +3623,9 @@ components:
                     description: Response status.
                     example: success
                 data:
-                    type: object
-                    additionalProperties:
-                        type: array
-                        items:
-                            $ref: '#/components/schemas/MetadataVersionEntry'
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MetadataSeriesEntry'
                 warnings:
                     type: array
                     items:

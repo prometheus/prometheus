@@ -576,24 +576,31 @@ func metadataVersionsResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
 
 	examples.Set("metadataVersions", &base.Example{
-		Summary: "Time-varying metadata versions per metric",
+		Summary: "Time-varying metadata versions per series",
 		Value: createYAMLNode(map[string]any{
 			"status": "success",
-			"data": map[string][]map[string]any{
-				"http_requests_total": {
-					{
-						"type":    "counter",
-						"help":    "Total HTTP requests",
-						"unit":    "",
-						"minTime": "1700000000.000",
-						"maxTime": "1700100000.000",
+			"data": []map[string]any{
+				{
+					"labels": map[string]string{
+						"__name__": "http_requests_total",
+						"job":      "api",
+						"instance": "localhost:9090",
 					},
-					{
-						"type":    "counter",
-						"help":    "Total HTTP requests processed",
-						"unit":    "",
-						"minTime": "1700100000.001",
-						"maxTime": "1700200000.000",
+					"versions": []map[string]any{
+						{
+							"type":    "counter",
+							"help":    "Total HTTP requests",
+							"unit":    "",
+							"minTime": int64(1700000000000),
+							"maxTime": int64(1700100000000),
+						},
+						{
+							"type":    "counter",
+							"help":    "Total HTTP requests processed",
+							"unit":    "",
+							"minTime": int64(1700100000001),
+							"maxTime": int64(1700200000000),
+						},
 					},
 				},
 			},
@@ -608,26 +615,40 @@ func metadataSeriesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
 
 	examples.Set("metadataSeries", &base.Example{
-		Summary: "Metrics matching metadata criteria",
+		Summary: "Series matching metadata criteria",
 		Value: createYAMLNode(map[string]any{
 			"status": "success",
-			"data": map[string][]map[string]any{
-				"http_requests_total": {
-					{
-						"type":    "counter",
-						"help":    "Total HTTP requests",
-						"unit":    "",
-						"minTime": "1700000000.000",
-						"maxTime": "1700200000.000",
+			"data": []map[string]any{
+				{
+					"labels": map[string]string{
+						"__name__": "http_request_duration_seconds",
+						"job":      "api",
+						"instance": "localhost:9090",
+					},
+					"versions": []map[string]any{
+						{
+							"type":    "histogram",
+							"help":    "HTTP request duration in seconds",
+							"unit":    "seconds",
+							"minTime": int64(1700000000000),
+							"maxTime": int64(1700200000000),
+						},
 					},
 				},
-				"http_request_duration_seconds": {
-					{
-						"type":    "histogram",
-						"help":    "HTTP request duration in seconds",
-						"unit":    "seconds",
-						"minTime": "1700000000.000",
-						"maxTime": "1700200000.000",
+				{
+					"labels": map[string]string{
+						"__name__": "http_requests_total",
+						"job":      "api",
+						"instance": "localhost:9090",
+					},
+					"versions": []map[string]any{
+						{
+							"type":    "counter",
+							"help":    "Total HTTP requests",
+							"unit":    "",
+							"minTime": int64(1700000000000),
+							"maxTime": int64(1700200000000),
+						},
 					},
 				},
 			},

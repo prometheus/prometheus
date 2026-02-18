@@ -1765,7 +1765,8 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 			if s.meta != nil {
 				vmCopy = s.meta.Copy()
 			}
-			metricName := s.lset.Get(labels.MetricName)
+			lsetCopy := s.lset.Copy()
+			metricName := lsetCopy.Get(labels.MetricName)
 			s.Unlock()
 			if vmCopy == nil {
 				continue
@@ -1775,7 +1776,7 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 				continue // Skip series without metric name
 			}
 
-			mem.SetVersionedMetadata(uint64(s.ref), metricName, vmCopy)
+			mem.SetVersionedMetadataWithLabels(uint64(s.ref), lsetCopy, vmCopy)
 		}
 	}
 
@@ -1809,7 +1810,8 @@ func (h *Head) SeriesMetadataForMatchers(ctx context.Context, matchers ...*label
 		if s.meta != nil {
 			vmCopy = s.meta.Copy()
 		}
-		metricName := s.lset.Get(labels.MetricName)
+		lsetCopy := s.lset.Copy()
+		metricName := lsetCopy.Get(labels.MetricName)
 		s.Unlock()
 		if vmCopy == nil {
 			continue
@@ -1819,7 +1821,7 @@ func (h *Head) SeriesMetadataForMatchers(ctx context.Context, matchers ...*label
 			continue
 		}
 
-		mem.SetVersionedMetadata(uint64(s.ref), metricName, vmCopy)
+		mem.SetVersionedMetadataWithLabels(uint64(s.ref), lsetCopy, vmCopy)
 	}
 	if p.Err() != nil {
 		return nil, p.Err()

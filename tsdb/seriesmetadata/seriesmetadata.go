@@ -26,6 +26,7 @@ import (
 	"github.com/parquet-go/parquet-go"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
@@ -111,6 +112,7 @@ type MemSeriesMetadata struct {
 // versionedEntry pairs a metric name with versioned metadata for indexing.
 type versionedEntry struct {
 	metricName string
+	labels     labels.Labels
 	vm         *VersionedMetadata
 }
 
@@ -228,6 +230,32 @@ func (m *MemSeriesMetadata) SetVersionedMetadata(ref uint64, metricName string, 
 	}
 }
 
+// SetVersionedMetadataWithLabels bulk-sets a complete VersionedMetadata for a series,
+// storing the full label set alongside the metric name.
+func (m *MemSeriesMetadata) SetVersionedMetadataWithLabels(ref uint64, lset labels.Labels, vm *VersionedMetadata) {
+	metricName := lset.Get(labels.MetricName)
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	if existing, ok := m.byRefVersioned[ref]; ok && metricName == "" {
+		metricName = existing.metricName
+	}
+
+	m.byRefVersioned[ref] = &versionedEntry{
+		metricName: metricName,
+		labels:     lset,
+		vm:         vm,
+	}
+
+	if metricName != "" {
+		cur := vm.CurrentVersion()
+		if cur != nil {
+			m.setLatestLocked(metricName, ref, cur.Meta)
+		}
+	}
+}
+
 // setLatestLocked updates byRef/byName with the latest metadata value.
 // Caller must hold m.mtx.
 func (m *MemSeriesMetadata) setLatestLocked(metricName string, ref uint64, meta metadata.Metadata) {
@@ -326,11 +354,11 @@ func (m *MemSeriesMetadata) GetVersionedMetadata(ref uint64) (*VersionedMetadata
 }
 
 // IterVersionedMetadata calls the given function for each series with versioned metadata.
-func (m *MemSeriesMetadata) IterVersionedMetadata(f func(ref uint64, metricName string, vm *VersionedMetadata) error) error {
+func (m *MemSeriesMetadata) IterVersionedMetadata(f func(ref uint64, metricName string, lset labels.Labels, vm *VersionedMetadata) error) error {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 	for r, entry := range m.byRefVersioned {
-		if err := f(r, entry.metricName, entry.vm); err != nil {
+		if err := f(r, entry.metricName, entry.labels, entry.vm); err != nil {
 			return err
 		}
 	}
@@ -419,6 +447,9 @@ func newParquetReader(file *os.File) (*parquetReader, error) {
 		}
 		entry, ok := byRefVersioned[mp.seriesRef]
 		if !ok {
+			// labels is intentionally left empty: the Parquet format stores
+			// series refs, not label sets. Callers that need labels must
+			// resolve them via the block's index reader.
 			entry = &versionedEntry{
 				metricName: mp.metricName,
 				vm:         &VersionedMetadata{},
@@ -521,9 +552,9 @@ func (r *parquetReader) GetVersionedMetadata(ref uint64) (*VersionedMetadata, bo
 }
 
 // IterVersionedMetadata calls the given function for each series with versioned metadata.
-func (r *parquetReader) IterVersionedMetadata(f func(ref uint64, metricName string, vm *VersionedMetadata) error) error {
+func (r *parquetReader) IterVersionedMetadata(f func(ref uint64, metricName string, lset labels.Labels, vm *VersionedMetadata) error) error {
 	for sr, entry := range r.byRefVersioned {
-		if err := f(sr, entry.metricName, entry.vm); err != nil {
+		if err := f(sr, entry.metricName, entry.labels, entry.vm); err != nil {
 			return err
 		}
 	}
@@ -554,7 +585,7 @@ func WriteFile(logger *slog.Logger, dir string, mr Reader) (int64, error) {
 
 	// 1. Build content-addressed table and mapping rows from versioned metadata.
 	contentTable := make(map[uint64]metadata.Metadata) // contentHash → metadata
-	err := mr.IterVersionedMetadata(func(ref uint64, metricName string, vm *VersionedMetadata) error {
+	err := mr.IterVersionedMetadata(func(ref uint64, metricName string, _ labels.Labels, vm *VersionedMetadata) error {
 		for _, v := range vm.Versions {
 			ch := HashMetadataContent(v.Meta)
 			if _, exists := contentTable[ch]; !exists {

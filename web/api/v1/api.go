@@ -1693,9 +1693,15 @@ type metadataVersionEntry struct {
 	MaxTime int64  `json:"maxTime"`
 }
 
+// metadataSeriesEntry is a per-series metadata entry in the API response.
+type metadataSeriesEntry struct {
+	Labels   labels.Labels          `json:"labels"`
+	Versions []metadataVersionEntry `json:"versions"`
+}
+
 func (api *API) metadataVersions(r *http.Request) apiFuncResult {
 	if !api.enableNativeMetadata || api.db == nil {
-		return apiFuncResult{map[string][]metadataVersionEntry{}, nil, nil, nil}
+		return apiFuncResult{[]metadataSeriesEntry{}, nil, nil, nil}
 	}
 
 	metric := r.FormValue("metric")
@@ -1726,58 +1732,55 @@ func (api *API) metadataVersions(r *http.Request) apiFuncResult {
 	}
 	defer mr.Close()
 
-	// Merge versioned metadata by metric name to deduplicate across series.
-	byName := map[string]*seriesmetadata.VersionedMetadata{}
-	err = mr.IterVersionedMetadata(func(_ uint64, name string, vm *seriesmetadata.VersionedMetadata) error {
+	// Collect per-series versioned metadata.
+	type seriesEntry struct {
+		lset labels.Labels
+		vm   *seriesmetadata.VersionedMetadata
+	}
+	var entries []seriesEntry
+	err = mr.IterVersionedMetadata(func(_ uint64, name string, lset labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
 		if name == "" {
 			return nil
 		}
 		if metric != "" && name != metric {
 			return nil
 		}
-		if existing, ok := byName[name]; ok {
-			byName[name] = seriesmetadata.MergeVersionedMetadata(existing, vm)
-		} else {
-			byName[name] = vm.Copy()
-		}
+		entries = append(entries, seriesEntry{lset: lset, vm: vm})
 		return nil
 	})
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error iterating versioned metadata: %w", err)}, nil, nil}
 	}
 
-	// Sort metric names for deterministic results when limit is applied.
-	names := make([]string, 0, len(byName))
-	for name := range byName {
-		names = append(names, name)
-	}
-	slices.Sort(names)
+	// Sort by labels for deterministic output.
+	slices.SortFunc(entries, func(a, b seriesEntry) int {
+		return labels.Compare(a.lset, b.lset)
+	})
 
-	// Build response with time range filtering and limit.
-	res := map[string][]metadataVersionEntry{}
-	totalEntries := 0
-	for _, name := range names {
-		vm := byName[name]
-		filtered := seriesmetadata.FilterVersionsByTimeRange(vm, mint, maxt)
+	// Build response with time range filtering; limit applies to series count.
+	res := make([]metadataSeriesEntry, 0, len(entries))
+	for _, e := range entries {
+		if limit >= 0 && len(res) >= limit {
+			break
+		}
+		filtered := seriesmetadata.FilterVersionsByTimeRange(e.vm, mint, maxt)
 		if filtered == nil {
 			continue
 		}
+		versions := make([]metadataVersionEntry, 0, len(filtered.Versions))
 		for _, v := range filtered.Versions {
-			if limit >= 0 && totalEntries >= limit {
-				break
-			}
-			res[name] = append(res[name], metadataVersionEntry{
+			versions = append(versions, metadataVersionEntry{
 				Type:    string(v.Meta.Type),
 				Help:    v.Meta.Help,
 				Unit:    v.Meta.Unit,
 				MinTime: v.MinTime,
 				MaxTime: v.MaxTime,
 			})
-			totalEntries++
 		}
-		if limit >= 0 && totalEntries >= limit {
-			break
-		}
+		res = append(res, metadataSeriesEntry{
+			Labels:   e.lset,
+			Versions: versions,
+		})
 	}
 
 	return apiFuncResult{res, nil, nil, nil}
@@ -1785,7 +1788,7 @@ func (api *API) metadataVersions(r *http.Request) apiFuncResult {
 
 func (api *API) metadataSeries(r *http.Request) apiFuncResult {
 	if !api.enableNativeMetadata || api.db == nil {
-		return apiFuncResult{map[string][]metadataVersionEntry{}, nil, nil, nil}
+		return apiFuncResult{[]metadataSeriesEntry{}, nil, nil, nil}
 	}
 
 	// Parse filter params.
@@ -1826,43 +1829,40 @@ func (api *API) metadataSeries(r *http.Request) apiFuncResult {
 	}
 	defer mr.Close()
 
-	// Merge versioned metadata by metric name.
-	byName := map[string]*seriesmetadata.VersionedMetadata{}
-	err = mr.IterVersionedMetadata(func(_ uint64, name string, vm *seriesmetadata.VersionedMetadata) error {
+	// Collect per-series versioned metadata.
+	type seriesEntry struct {
+		lset labels.Labels
+		vm   *seriesmetadata.VersionedMetadata
+	}
+	var entries []seriesEntry
+	err = mr.IterVersionedMetadata(func(_ uint64, name string, lset labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
 		if name == "" {
 			return nil
 		}
-		if existing, ok := byName[name]; ok {
-			byName[name] = seriesmetadata.MergeVersionedMetadata(existing, vm)
-		} else {
-			byName[name] = vm.Copy()
-		}
+		entries = append(entries, seriesEntry{lset: lset, vm: vm})
 		return nil
 	})
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error iterating versioned metadata: %w", err)}, nil, nil}
 	}
 
-	// Sort metric names for deterministic results when limit is applied.
-	names := make([]string, 0, len(byName))
-	for name := range byName {
-		names = append(names, name)
-	}
-	slices.Sort(names)
+	// Sort by labels for deterministic output.
+	slices.SortFunc(entries, func(a, b seriesEntry) int {
+		return labels.Compare(a.lset, b.lset)
+	})
 
-	// Build response: filter versions by time range and metadata criteria.
-	res := map[string][]metadataVersionEntry{}
-	totalEntries := 0
-	for _, name := range names {
-		vm := byName[name]
-		filtered := seriesmetadata.FilterVersionsByTimeRange(vm, mint, maxt)
+	// Build response: filter versions by time range and metadata criteria; limit applies to series count.
+	res := make([]metadataSeriesEntry, 0)
+	for _, e := range entries {
+		if limit >= 0 && len(res) >= limit {
+			break
+		}
+		filtered := seriesmetadata.FilterVersionsByTimeRange(e.vm, mint, maxt)
 		if filtered == nil {
 			continue
 		}
+		var versions []metadataVersionEntry
 		for _, v := range filtered.Versions {
-			if limit >= 0 && totalEntries >= limit {
-				break
-			}
 			if typeFilter != "" && string(v.Meta.Type) != typeFilter {
 				continue
 			}
@@ -1872,18 +1872,21 @@ func (api *API) metadataSeries(r *http.Request) apiFuncResult {
 			if helpRegex != nil && !helpRegex.MatchString(v.Meta.Help) {
 				continue
 			}
-			res[name] = append(res[name], metadataVersionEntry{
+			versions = append(versions, metadataVersionEntry{
 				Type:    string(v.Meta.Type),
 				Help:    v.Meta.Help,
 				Unit:    v.Meta.Unit,
 				MinTime: v.MinTime,
 				MaxTime: v.MaxTime,
 			})
-			totalEntries++
 		}
-		if limit >= 0 && totalEntries >= limit {
-			break
+		if len(versions) == 0 {
+			continue
 		}
+		res = append(res, metadataSeriesEntry{
+			Labels:   e.lset,
+			Versions: versions,
+		})
 	}
 
 	return apiFuncResult{res, nil, nil, nil}

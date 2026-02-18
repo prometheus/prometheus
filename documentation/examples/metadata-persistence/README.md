@@ -86,7 +86,7 @@ compaction, and querying behave the same. Remote write v1 is an exception — se
 
 **Scrape** parses `# TYPE`, `# HELP`, and `# UNIT` comments from the exposition
 format (protobuf or text). Metadata appending is gated by the
-`append_metadata_to_wal` scrape config option (enabled by default).
+`--enable-feature=metadata-wal-records` global CLI flag.
 
 **Remote write v2** carries metadata in the `Metadata` message of each
 `writev2.TimeSeries` proto — type as an enum, help and unit as symbol table
@@ -232,40 +232,22 @@ The `/api/v1/metadata/versions` endpoint returns versioned metadata:
 ```json
 {
   "status": "success",
-  "data": {
-    "demo_http_requests_total": [
-      {
-        "type": "counter",
-        "help": "Total number of HTTP requests received.",
-        "unit": "",
-        "minTime": 1771150506221,
-        "maxTime": 1771150506221
-      },
-      {
-        "type": "counter",
-        "help": "Total HTTP requests processed by the server.",
-        "unit": "",
-        "minTime": 1771154106221,
-        "maxTime": 1771154106221
-      }
-    ],
-    "demo_request_duration_seconds": [
-      {
-        "type": "histogram",
-        "help": "Time spent processing requests.",
-        "unit": "",
-        "minTime": 1771150506221,
-        "maxTime": 1771150506221
-      },
-      {
-        "type": "histogram",
-        "help": "Latency of request processing in seconds.",
-        "unit": "",
-        "minTime": 1771154106221,
-        "maxTime": 1771154106221
-      }
-    ]
-  }
+  "data": [
+    {
+      "labels": {"__name__": "demo_http_requests_total", "instance": "127.0.0.1:8080", "job": "demo"},
+      "versions": [
+        {"type": "counter", "help": "Total number of HTTP requests received.", "unit": "", "minTime": 1771150506221, "maxTime": 1771150506221},
+        {"type": "counter", "help": "Total HTTP requests processed by the server.", "unit": "", "minTime": 1771154106221, "maxTime": 1771154106221}
+      ]
+    },
+    {
+      "labels": {"__name__": "demo_request_duration_seconds", "instance": "127.0.0.1:8080", "job": "demo"},
+      "versions": [
+        {"type": "histogram", "help": "Time spent processing requests.", "unit": "", "minTime": 1771150506221, "maxTime": 1771150506221},
+        {"type": "histogram", "help": "Latency of request processing in seconds.", "unit": "", "minTime": 1771154106221, "maxTime": 1771154106221}
+      ]
+    }
+  ]
 }
 ```
 
@@ -273,27 +255,17 @@ The `/api/v1/metadata/series` endpoint performs inverse metadata lookup — find
 metrics that match given metadata criteria (type, unit, or help regex):
 
 ```json
-// GET /api/v1/metadata/series?type=counter
 {
   "status": "success",
-  "data": {
-    "demo_http_requests_total": [
-      {
-        "type": "counter",
-        "help": "Total number of HTTP requests received.",
-        "unit": "",
-        "minTime": 1771150506221,
-        "maxTime": 1771150506221
-      },
-      {
-        "type": "counter",
-        "help": "Total HTTP requests processed by the server.",
-        "unit": "",
-        "minTime": 1771154106221,
-        "maxTime": 1771154106221
-      }
-    ]
-  }
+  "data": [
+    {
+      "labels": {"__name__": "demo_http_requests_total", "instance": "127.0.0.1:8080", "job": "demo"},
+      "versions": [
+        {"type": "counter", "help": "Total number of HTTP requests received.", "unit": "", "minTime": 1771150506221, "maxTime": 1771150506221},
+        {"type": "counter", "help": "Total HTTP requests processed by the server.", "unit": "", "minTime": 1771154106221, "maxTime": 1771154106221}
+      ]
+    }
+  ]
 }
 ```
 
