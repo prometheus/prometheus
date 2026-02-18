@@ -26,6 +26,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// caseInsensitiveContainsMatcher is a sentinel for TestNewFastRegexMatcher when the
+// expected matcher is a case-insensitive containsStringMatcher (ac != nil), so we
+// compare by structure and behavior instead of pointer equality.
+type caseInsensitiveContainsMatcher struct {
+	substrings []string
+}
+
+func (caseInsensitiveContainsMatcher) Matches(string) bool { return false }
+
 var (
 	asciiRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
 	regexes    = []string{
@@ -380,7 +389,7 @@ func TestNewFastRegexMatcher(t *testing.T) {
 		{"(.+)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: trueMatcher{}}},
 		{"^.+foo.+", &containsStringMatcher{substrings: []string{"foo"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
 		{"^(.*)(foo)(.*)$", trueMatcher{}}, // The containsInOrder check done in the function returned by compileMatchStringFunction is sufficient.
-		{"^(.*)(foo|foobar)(.*)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: trueMatcher{}, right: trueMatcher{}}},
+		{"^(.*)(foo|foobar)(.*)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: nil, right: nil}},
 		{"^(.*)(foo|foobar)(.+)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
 		{"^(.*)(bar|b|buzz)(.+)$", &containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}},
 		{"10\\.0\\.(1|2)\\.+", nil},
@@ -391,10 +400,8 @@ func TestNewFastRegexMatcher(t *testing.T) {
 		{"^((.*)(bar|b|buzz)(.+)|foo)$", orStringMatcher([]StringMatcher{&containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: trueMatcher{}, right: &anyNonEmptyStringMatcher{matchNL: true}}, &equalStringMatcher{s: "foo", caseSensitive: true}})},
 		{"((fo(bar))|.+foo)", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "fobar", caseSensitive: true}}), &literalSuffixStringMatcher{suffix: "foo", suffixCaseSensitive: true, left: &anyNonEmptyStringMatcher{matchNL: true}}})},
 		{"(.+)/(gateway|cortex-gw|cortex-gw-internal)", &containsStringMatcher{substrings: []string{"/gateway", "/cortex-gw", "/cortex-gw-internal"}, left: &anyNonEmptyStringMatcher{matchNL: true}, right: nil}},
-		// we don't support case insensitive matching for contains.
-		// This is because there's no strings.IndexOfFold function.
-		// We can revisit later if this is really popular by using strings.ToUpper.
-		{"^(.*)((?i)foo|foobar)(.*)$", nil},
+		// Case-insensitive alternations now use Aho-Corasick (previously unsupported).
+		{"^(.*)((?i)foo|foobar)(.*)$", caseInsensitiveContainsMatcher{substrings: []string{"FOO", "FOOBAR"}}},
 		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil},
 		{"[a-z][a-z]", nil},
 		{"[1^3]", nil},
@@ -427,8 +434,171 @@ func TestNewFastRegexMatcher(t *testing.T) {
 			t.Parallel()
 			matcher, err := NewFastRegexMatcher(c.pattern)
 			require.NoError(t, err)
+			if cis, ok := c.exp.(caseInsensitiveContainsMatcher); ok {
+				require.IsType(t, (*containsStringMatcher)(nil), matcher.stringMatcher)
+				m := matcher.stringMatcher.(*containsStringMatcher)
+				require.Equal(t, cis.substrings, m.substrings)
+				require.NotNil(t, m.ac, "case-insensitive should use Aho-Corasick")
+				require.True(t, m.Matches("foo"))
+				require.True(t, m.Matches("FOO"))
+				require.True(t, m.Matches("xfoobarz"))
+				require.False(t, m.Matches("baz"))
+				return
+			}
 			require.Equal(t, c.exp, matcher.stringMatcher)
 		})
+	}
+}
+
+func TestContainsStringMatcherAhoCorasick(t *testing.T) {
+	tests := []struct {
+		name          string
+		patterns      []string
+		caseSensitive bool
+		input         string
+		want          bool
+	}{
+		// Small pattern set uses strings.Index path.
+		{"small_match", []string{"foo", "bar"}, true, "foobar", true},
+		{"small_no_match", []string{"foo", "bar"}, true, "baz", false},
+		// Large pattern set uses Aho-Corasick.
+		{"large_match", []string{"a1", "a2", "a3", "a4", "a5", "a6"}, true, "test a5 here", true},
+		{"large_no_match", []string{"a1", "a2", "a3", "a4", "a5", "a6"}, true, "test b1 here", false},
+		// Case-insensitive always uses AC.
+		{"case_insensitive_match", []string{"Foo", "Bar"}, false, "testing foo here", true},
+		{"case_insensitive_no_match", []string{"Foo", "Bar"}, false, "testing baz", false},
+		{"case_insensitive_large", []string{"A1", "A2", "A3", "A4", "A5"}, false, "a3", true},
+		// ASCII case-insensitive.
+		{"ascii_case_lower", []string{"FOO"}, false, "foo", true},
+		{"ascii_case_upper", []string{"foo"}, false, "FOO", true},
+		{"ascii_case_mixed", []string{"FoObAr"}, false, "foobar", true},
+		// Edge cases.
+		{"empty_pattern", []string{""}, true, "anything", true},
+		{"unicode", []string{"日本", "中国"}, true, "I love 日本", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newContainsStringMatcher(tt.patterns, tt.caseSensitive, nil, nil)
+			if got := m.Matches(tt.input); got != tt.want {
+				t.Errorf("Matches(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestContainsStringMatcherWithContextMatchers(t *testing.T) {
+	// Test Aho-Corasick path with left/right matchers (5+ patterns).
+	patterns := []string{"p1", "p2", "p3", "p4", "p5"}
+	left := trueMatcher{}
+	right := trueMatcher{}
+	m := newContainsStringMatcher(patterns, true, left, right)
+	require.True(t, m.Matches("prefix p3 suffix"))
+	require.True(t, m.Matches("p1"))
+	require.False(t, m.Matches("nope"))
+	// Case-insensitive with context.
+	m2 := newContainsStringMatcher([]string{"Foo", "Bar"}, false, left, right)
+	require.True(t, m2.Matches("xfooY"))
+	require.True(t, m2.Matches("BAR"))
+	require.False(t, m2.Matches("baz"))
+}
+
+func TestNewFastRegexMatcher_CaseInsensitiveAlternation(t *testing.T) {
+	matcher, err := NewFastRegexMatcher("^(.*)((?i)foo|foobar)(.*)$")
+	require.NoError(t, err)
+
+	require.IsType(t, (*containsStringMatcher)(nil), matcher.stringMatcher)
+	m := matcher.stringMatcher.(*containsStringMatcher)
+	require.NotNil(t, m.ac, "case-insensitive should use Aho-Corasick")
+
+	require.True(t, m.Matches("prefix foo suffix"))
+	require.True(t, m.Matches("prefix FOO suffix"))
+	require.True(t, m.Matches("prefix FoO suffix"))
+	require.True(t, m.Matches("prefix foobar suffix"))
+	require.True(t, m.Matches("prefix FOOBAR suffix"))
+	require.False(t, m.Matches("prefix bar suffix"))
+}
+
+func TestContainsStringMatcher_NilOptimization(t *testing.T) {
+	patterns := []string{"foo", "bar"}
+	left := trueMatcher{}
+	right := trueMatcher{}
+
+	m := newContainsStringMatcher(patterns, true, left, right)
+	require.Nil(t, m.left, "left should be nil when both are trueMatcher")
+	require.Nil(t, m.right, "right should be nil when both are trueMatcher")
+	require.True(t, m.Matches("testing foo here"))
+}
+
+func TestContainsStringMatcher_EmptyPatternForcesFallback(t *testing.T) {
+	m := newContainsStringMatcher([]string{"foo", "", "bar"}, true, nil, nil)
+	require.Nil(t, m.ac, "empty pattern should force fallback")
+	require.True(t, m.Matches("anything"))
+}
+
+func TestContainsStringMatcher_HighPatternCount(t *testing.T) {
+	t.Run("at_threshold_20", func(t *testing.T) {
+		patterns := make([]string, 20)
+		for i := range patterns {
+			patterns[i] = fmt.Sprintf("p%d", i)
+		}
+		m := newContainsStringMatcher(patterns, true, nil, nil)
+		require.Nil(t, m.ac, "20 patterns should use strings.Index fallback")
+	})
+
+	t.Run("above_threshold_21", func(t *testing.T) {
+		patterns := make([]string, 21)
+		for i := range patterns {
+			patterns[i] = fmt.Sprintf("p%d", i)
+		}
+		m := newContainsStringMatcher(patterns, true, nil, nil)
+		require.NotNil(t, m.ac, "21 patterns should use Aho-Corasick")
+	})
+}
+
+func BenchmarkContainsStringMatcher(b *testing.B) {
+	patterns := make([]string, 20)
+	for i := range patterns {
+		patterns[i] = fmt.Sprintf("pattern%d", i)
+	}
+	m := newContainsStringMatcher(patterns, true, nil, nil)
+	input := "some text with pattern10 in the middle"
+	b.ResetTimer()
+	for b.Loop() {
+		m.Matches(input)
+	}
+}
+
+func BenchmarkContainsStringMatcherSmall(b *testing.B) {
+	m := newContainsStringMatcher([]string{"foo", "bar", "baz"}, true, nil, nil)
+	input := "some text with bar in the middle"
+	b.ResetTimer()
+	for b.Loop() {
+		m.Matches(input)
+	}
+}
+
+func BenchmarkContainsStringMatcherCaseInsensitive(b *testing.B) {
+	patterns := []string{"Pattern1", "Pattern2", "Pattern3", "Pattern4", "Pattern5"}
+	m := newContainsStringMatcher(patterns, false, nil, nil)
+	input := "some text with pattern3 in the middle"
+	b.ResetTimer()
+	for b.Loop() {
+		m.Matches(input)
+	}
+}
+
+func BenchmarkContainsStringMatcherWithContext(b *testing.B) {
+	patterns := make([]string, 20)
+	for i := range patterns {
+		patterns[i] = fmt.Sprintf("pattern%d", i)
+	}
+	left := trueMatcher{}
+	right := trueMatcher{}
+	m := newContainsStringMatcher(patterns, true, left, right)
+	input := "prefix pattern10 suffix"
+	b.ResetTimer()
+	for b.Loop() {
+		m.Matches(input)
 	}
 }
 

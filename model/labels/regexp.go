@@ -18,7 +18,9 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 
+	ahocorasick "github.com/cloudflare/ahocorasick"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
 	"golang.org/x/text/unicode/norm"
@@ -567,15 +569,17 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 				suffixCaseSensitive: matchesCaseSensitive,
 			}
 
-		// We found literals in the middle. We can trigger the fast path only if
-		// the matches are case sensitive because containsStringMatcher doesn't
-		// support case insensitive.
+		// We found literals in the middle. Use containsStringMatcher for both
+		// case-sensitive and case-insensitive (Aho-Corasick enables the latter).
 		case matchesCaseSensitive:
-			return &containsStringMatcher{
-				substrings: matches,
-				left:       left,
-				right:      right,
+			return newContainsStringMatcher(matches, true, left, right)
+		default:
+			// Case-insensitive: normalize to uppercase for AC matching.
+			normalized := make([]string, len(matches))
+			for i, m := range matches {
+				normalized[i] = strings.ToUpper(m)
 			}
+			return newContainsStringMatcher(normalized, false, left, right)
 		}
 	}
 	return nil
@@ -615,6 +619,12 @@ func isCaseSensitiveLiteral(re *syntax.Regexp) bool {
 	return re.Op == syntax.OpLiteral && isCaseSensitive(re)
 }
 
+// acThreshold is the minimum number of alternates above which we use Aho-Corasick
+// instead of repeated strings.Index. Set to 21 so that 20 alternations stay on the
+// strings.Index path (no regression vs main). Case-insensitive matching always
+// uses AC regardless of pattern count, as it's the only way to support it efficiently.
+const acThreshold = 21
+
 // containsStringMatcher matches a string if it contains any of the substrings.
 // If left and right are not nil, it's a contains operation where left and right must match.
 // If left is nil, it's a hasPrefix operation and right must match.
@@ -628,16 +638,93 @@ type containsStringMatcher struct {
 
 	// The matcher that must match the right side. Can be nil.
 	right StringMatcher
+
+	// ac is set when we use Aho-Corasick for acThreshold+ patterns or case-insensitive matching.
+	// nil means use the strings.Index fallback.
+	ac *ahocorasick.Matcher
+
+	// caseInsensitive controls whether matching uses case-insensitive semantics.
+	// Case-insensitive matching is ASCII-only and implemented by uppercasing both
+	// patterns and haystack before matching.
+	caseInsensitive bool
+}
+
+// newContainsStringMatcher builds a containsStringMatcher. For acThreshold+ patterns or
+// case-insensitive matching we use Aho-Corasick; otherwise we use strings.Index.
+// Empty string in substrings is not supported with AC and forces the fallback path.
+func newContainsStringMatcher(substrings []string, caseSensitive bool, left, right StringMatcher) *containsStringMatcher {
+	// When both sides are trueMatcher (match everything), set both to nil so the
+	// zero-alloc fast path in matchesWithAhoCorasick is used. Only when both are
+	// trivial; if only one is trueMatcher the other constrains position and we
+	// need the full search (prefix/suffix-only paths would be wrong).
+	if _, lok := left.(trueMatcher); lok {
+		if _, rok := right.(trueMatcher); rok {
+			left = nil
+			right = nil
+		}
+	}
+
+	// Normalize patterns for case-insensitive matching (ASCII-only).
+	// This normalization is idempotent and also covers direct calls to
+	// newContainsStringMatcher from tests/benchmarks.
+	if !caseSensitive {
+		normalized := make([]string, len(substrings))
+		for i, s := range substrings {
+			normalized[i] = strings.ToUpper(s)
+		}
+		substrings = normalized
+	}
+
+	m := &containsStringMatcher{
+		substrings:      substrings,
+		left:            left,
+		right:           right,
+		caseInsensitive: !caseSensitive,
+	}
+	useAC := len(substrings) >= acThreshold || !caseSensitive
+	if useAC {
+		// Don't build AC if any pattern is empty; the fallback handles it correctly.
+		if slices.Contains(substrings, "") {
+			useAC = false
+		}
+	}
+	// Cloudflare's matcher does not provide match positions. Therefore we only use
+	// Aho-Corasick when there are no context matchers.
+	if useAC && left == nil && right == nil {
+		m.ac = ahocorasick.NewStringMatcher(substrings)
+	}
+	return m
 }
 
 func (m *containsStringMatcher) Matches(s string) bool {
+	if m.ac != nil {
+		return m.matchesWithAhoCorasick(s)
+	}
+	return m.matchesWithStringsIndex(s)
+}
+
+func (m *containsStringMatcher) matchesWithAhoCorasick(s string) bool {
+	haystack := s
+	if m.caseInsensitive {
+		haystack = strings.ToUpper(s)
+	}
+	// m.ac is only set when there are no context matchers.
+	return m.ac.Contains(unsafeStringToBytes(haystack))
+}
+
+func (m *containsStringMatcher) matchesWithStringsIndex(s string) bool {
+	haystack := s
+	if m.caseInsensitive {
+		haystack = strings.ToUpper(s)
+	}
+
 	for _, substr := range m.substrings {
 		switch {
 		case m.right != nil && m.left != nil:
 			searchStartPos := 0
 
 			for {
-				pos := strings.Index(s[searchStartPos:], substr)
+				pos := strings.Index(haystack[searchStartPos:], substr)
 				if pos < 0 {
 					break
 				}
@@ -657,16 +744,25 @@ func (m *containsStringMatcher) Matches(s string) bool {
 			}
 		case m.left != nil:
 			// If we have to check for characters on the left then we need to match a suffix.
-			if strings.HasSuffix(s, substr) && m.left.Matches(s[:len(s)-len(substr)]) {
+			if strings.HasSuffix(haystack, substr) && m.left.Matches(s[:len(s)-len(substr)]) {
 				return true
 			}
 		case m.right != nil:
-			if strings.HasPrefix(s, substr) && m.right.Matches(s[len(substr):]) {
+			if strings.HasPrefix(haystack, substr) && m.right.Matches(s[len(substr):]) {
+				return true
+			}
+		default:
+			if strings.Contains(haystack, substr) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func unsafeStringToBytes(s string) []byte {
+	// Prometheus treats inputs as immutable. This avoids allocating in hot paths.
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
 func newLiteralPrefixStringMatcher(prefix string, prefixCaseSensitive bool, right StringMatcher) StringMatcher {
