@@ -1243,7 +1243,7 @@ func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 	sl.scrapeFailureLogger = l
 }
 
-func calculateScrapeOffset(sl *scrapeLoop) time.Duration {
+func getScrapeOffset(sl *scrapeLoop) time.Duration {
 	if sl.initialScrapeOffset == nil {
 		return sl.scraper.offset(sl.interval, sl.offsetSeed)
 	}
@@ -1252,7 +1252,7 @@ func calculateScrapeOffset(sl *scrapeLoop) time.Duration {
 
 func (sl *scrapeLoop) run(errc chan<- error) {
 	select {
-	case <-time.After(calculateScrapeOffset(sl)):
+	case <-time.After(getScrapeOffset(sl)):
 		// Continue after a scraping offset.
 	case <-sl.shutdownScrape:
 		sl.cancel()
