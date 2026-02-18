@@ -196,36 +196,7 @@ func (v ValueType) String() string {
 	}
 }
 
-func (v ValueType) ChunkEncoding() Encoding {
-	switch v {
-	case ValFloat:
-		return EncXOR
-	case ValHistogram:
-		return EncHistogram
-	case ValFloatHistogram:
-		return EncFloatHistogram
-	default:
-		return EncNone
-	}
-}
-
-func (v ValueType) ChunkEncodingWithST(st int64) Encoding {
-	switch v {
-	case ValFloat:
-		if st != 0 {
-			return EncXOROptST
-		}
-		return EncXOR
-	case ValHistogram:
-		return EncHistogram
-	case ValFloatHistogram:
-		return EncFloatHistogram
-	default:
-		return EncNone
-	}
-}
-
-func (v ValueType) ChunkEncodingWithStoreST(storeST bool) Encoding {
+func (v ValueType) ChunkEncoding(storeST bool) Encoding {
 	switch v {
 	case ValFloat:
 		if storeST {
@@ -242,21 +213,7 @@ func (v ValueType) ChunkEncodingWithStoreST(storeST bool) Encoding {
 }
 
 func (v ValueType) NewChunk(storeST bool) (Chunk, error) {
-	switch v {
-	case ValFloat:
-		if storeST {
-			return NewXOROptSTChunk(), nil
-		}
-		return NewXORChunk(), nil
-	case ValHistogram:
-		// TODO(krajorama): return a ST capable histogram chunk when they are supported.
-		return NewHistogramChunk(), nil
-	case ValFloatHistogram:
-		// TODO(krajorama): return a ST capable float histogram chunk when they are supported.
-		return NewFloatHistogramChunk(), nil
-	default:
-		return nil, fmt.Errorf("value type %v unsupported", v)
-	}
+	return NewEmptyChunk(v.ChunkEncoding(storeST))
 }
 
 // MockSeriesIterator returns an iterator for a mock series with custom
@@ -451,12 +408,9 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 }
 
 // NewEmptyChunk returns an empty chunk for the given encoding.
-func NewEmptyChunk(e Encoding, storeST bool) (Chunk, error) {
+func NewEmptyChunk(e Encoding) (Chunk, error) {
 	switch e {
 	case EncXOR:
-		if storeST {
-			return NewXOROptSTChunk(), nil
-		}
 		return NewXORChunk(), nil
 	case EncHistogram:
 		return NewHistogramChunk(), nil

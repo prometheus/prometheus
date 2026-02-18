@@ -349,7 +349,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 								for k := 0; k < c.batches*c.seriesPerBatch; k++ {
 									// Create one mmapped chunk per series, with one sample at the given time.
 									s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, 0, defaultIsolationDisabled, false)
-									s.append(c.mmappedChunkT, 42, 0, cOpts)
+									s.append(false, 0, c.mmappedChunkT, 42, 0, cOpts)
 									// There's only one head chunk because only a single sample is appended. mmapChunks()
 									// ignores the latest chunk, so we need to cut a new head chunk to guarantee the chunk with
 									// the sample at c.mmappedChunkT is mmapped.
@@ -7447,6 +7447,140 @@ func TestHeadAppender_WBLEncoder_EnableSTStorage(t *testing.T) {
 			}
 			require.NoError(t, r.Err())
 			require.True(t, foundSampleRecord, "no sample record found in WBL")
+		})
+	}
+}
+
+// TestHeadAppender_STStorage_Disabled verifies that when EnableSTStorage is false,
+// start timestamps are NOT stored in chunks (AtST returns 0).
+func TestHeadAppender_STStorage_Disabled(t *testing.T) {
+	type sampleData struct {
+		st      int64
+		ts      int64
+		fSample float64
+	}
+
+	samples := []sampleData{
+		{st: 10, ts: 100, fSample: 1.0},
+		{st: 20, ts: 200, fSample: 2.0},
+		{st: 30, ts: 300, fSample: 3.0},
+	}
+
+	opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+	opts.EnableSTStorage.Store(false) // Explicitly disable ST storage
+	h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+	lbls := labels.FromStrings("foo", "bar")
+
+	// Use AppenderV2 to append samples with ST values
+	a := h.AppenderV2(context.Background())
+	for _, s := range samples {
+		_, err := a.Append(0, lbls, s.st, s.ts, s.fSample, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, a.Commit())
+
+	// Verify ST values are NOT stored (should all be 0)
+	ctx := context.Background()
+	idxReader, err := h.Index()
+	require.NoError(t, err)
+	defer idxReader.Close()
+
+	chkReader, err := h.Chunks()
+	require.NoError(t, err)
+	defer chkReader.Close()
+
+	p, err := idxReader.Postings(ctx, "foo", "bar")
+	require.NoError(t, err)
+
+	var lblBuilder labels.ScratchBuilder
+	require.True(t, p.Next())
+	sRef := p.At()
+
+	var chkMetas []chunks.Meta
+	require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
+
+	// Read chunks and verify all ST values are 0
+	for _, meta := range chkMetas {
+		chk, iterable, err := chkReader.ChunkOrIterable(meta)
+		require.NoError(t, err)
+		require.Nil(t, iterable)
+
+		it := chk.Iterator(nil)
+		for it.Next() != chunkenc.ValNone {
+			st := it.AtST()
+			require.Equal(t, int64(0), st, "ST should be 0 when EnableSTStorage is false")
+		}
+		require.NoError(t, it.Err())
+	}
+}
+
+// TestHeadAppender_STStorage_ChunkEncoding verifies that the correct chunk encoding
+// is used based on EnableSTStorage setting.
+func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
+	samples := []struct {
+		st      int64
+		ts      int64
+		fSample float64
+	}{
+		{st: 10, ts: 100, fSample: 1.0},
+		{st: 20, ts: 200, fSample: 2.0},
+	}
+
+	for _, enableST := range []bool{false, true} {
+		t.Run(fmt.Sprintf("EnableSTStorage=%t", enableST), func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+			opts.EnableSTStorage.Store(enableST)
+			h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+			lbls := labels.FromStrings("foo", "bar")
+			a := h.Appender(context.Background())
+			for _, s := range samples {
+				_, err := a.AppendSTZeroSample(0, lbls, s.ts, s.st)
+				require.NoError(t, err)
+				_, err = a.Append(0, lbls, s.ts, s.fSample)
+				require.NoError(t, err)
+			}
+			require.NoError(t, a.Commit())
+
+			// Check chunk encoding
+			ctx := context.Background()
+			idxReader, err := h.Index()
+			require.NoError(t, err)
+			defer idxReader.Close()
+
+			chkReader, err := h.Chunks()
+			require.NoError(t, err)
+			defer chkReader.Close()
+
+			p, err := idxReader.Postings(ctx, "foo", "bar")
+			require.NoError(t, err)
+
+			var lblBuilder labels.ScratchBuilder
+			require.True(t, p.Next())
+			sRef := p.At()
+
+			var chkMetas []chunks.Meta
+			require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
+			require.NotEmpty(t, chkMetas)
+
+			// Verify encoding
+			for _, meta := range chkMetas {
+				chk, iterable, err := chkReader.ChunkOrIterable(meta)
+				require.NoError(t, err)
+				require.Nil(t, iterable)
+
+				encoding := chk.Encoding()
+				if enableST {
+					// Should use ST-capable encoding
+					require.Equal(t, chunkenc.EncXOROptST, encoding,
+						"Expected ST-capable encoding when EnableSTStorage is true")
+				} else {
+					// Should use regular XOR encoding
+					require.Equal(t, chunkenc.EncXOR, encoding,
+						"Expected regular XOR encoding when EnableSTStorage is false")
+				}
+			}
 		})
 	}
 }

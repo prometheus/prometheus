@@ -2925,13 +2925,15 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot_AppenderV2(t *testing.T) {
 // TestWBLReplay checks the replay at a low level.
 func TestWBLReplay_AppenderV2(t *testing.T) {
 	for name, scenario := range sampleTypeScenarios {
-		t.Run(name, func(t *testing.T) {
-			testWBLReplayAppenderV2(t, scenario)
-		})
+		for _, enableSTstorage := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/st-storage=%v", name, enableSTstorage), func(t *testing.T) {
+				testWBLReplayAppenderV2(t, scenario, enableSTstorage)
+			})
+		}
 	}
 }
 
-func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario) {
+func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableSTstorage bool) {
 	dir := t.TempDir()
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
 	require.NoError(t, err)
@@ -2942,6 +2944,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario) {
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(30 * time.Minute.Milliseconds())
+	opts.EnableSTStorage.Store(enableSTstorage)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -2993,7 +2996,7 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(false, math.MinInt64, math.MaxInt64)
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(h.opts.EnableSTStorage.Load(), math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 	require.Len(t, chks, 1)
 
@@ -4751,6 +4754,141 @@ func TestHeadAppenderV2_Append_HistogramStalenessConversionMetrics(t *testing.T)
 				"Float counter should match actual float samples stored")
 			require.Equal(t, float64(actualHistogramSamples), getSampleCounter(sampleMetricTypeHistogram),
 				"Histogram counter should match actual histogram samples stored")
+		})
+	}
+}
+
+// TestHeadAppender_STStorage verifies that when EnableSTStorage is true,
+// start timestamps are properly stored in chunks and returned by queries.
+// This test uses AppenderV2 which has native ST support.
+func TestHeadAppenderV2_STStorage(t *testing.T) {
+	testHistogram := tsdbutil.GenerateTestHistogram(1)
+	testHistogram.CounterResetHint = histogram.NotCounterReset
+
+	type sampleData struct {
+		st      int64
+		ts      int64
+		fSample float64
+		h       *histogram.Histogram
+	}
+
+	testCases := []struct {
+		name        string
+		samples     []sampleData
+		expectedSTs []int64 // Expected ST values
+		isHistogram bool
+	}{
+		{
+			name: "Float samples with ST",
+			samples: []sampleData{
+				{st: 10, ts: 100, fSample: 1.0},
+				{st: 20, ts: 200, fSample: 2.0},
+				{st: 30, ts: 300, fSample: 3.0},
+			},
+			expectedSTs: []int64{10, 20, 30},
+			isHistogram: false,
+		},
+		{
+			name: "Float samples with varying ST",
+			samples: []sampleData{
+				{st: 5, ts: 100, fSample: 1.0},
+				{st: 5, ts: 200, fSample: 2.0},   // Same ST
+				{st: 150, ts: 300, fSample: 3.0}, // Different ST
+			},
+			expectedSTs: []int64{5, 5, 150},
+			isHistogram: false,
+		},
+		{
+			name: "Histogram samples",
+			samples: []sampleData{
+				{st: 10, ts: 100, h: testHistogram},
+				{st: 20, ts: 200, h: testHistogram},
+				{st: 30, ts: 300, h: testHistogram},
+			},
+			// Histograms don't support ST storage yet, should return 0
+			expectedSTs: []int64{0, 0, 0},
+			isHistogram: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+			opts.EnableSTStorage.Store(true)
+			h, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+			lbls := labels.FromStrings("foo", "bar")
+
+			// Use AppenderV2 which has native ST support
+			a := h.AppenderV2(context.Background())
+			for _, s := range tc.samples {
+				_, err := a.Append(0, lbls, s.st, s.ts, s.fSample, s.h, nil, storage.AOptions{})
+				require.NoError(t, err)
+			}
+			require.NoError(t, a.Commit())
+
+			// Verify ST values are stored in chunks
+			ctx := context.Background()
+			idxReader, err := h.Index()
+			require.NoError(t, err)
+			defer idxReader.Close()
+
+			chkReader, err := h.Chunks()
+			require.NoError(t, err)
+			defer chkReader.Close()
+
+			p, err := idxReader.Postings(ctx, "foo", "bar")
+			require.NoError(t, err)
+
+			var lblBuilder labels.ScratchBuilder
+			require.True(t, p.Next())
+			sRef := p.At()
+
+			var chkMetas []chunks.Meta
+			require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
+
+			// Read chunks and verify ST values
+			var actualSTs []int64
+			for _, meta := range chkMetas {
+				chk, iterable, err := chkReader.ChunkOrIterable(meta)
+				require.NoError(t, err)
+				require.Nil(t, iterable)
+
+				it := chk.Iterator(nil)
+				for it.Next() != chunkenc.ValNone {
+					st := it.AtST()
+					actualSTs = append(actualSTs, st)
+				}
+				require.NoError(t, it.Err())
+			}
+
+			// Verify expected ST values
+			if tc.isHistogram {
+				require.Equal(t, tc.expectedSTs, actualSTs, "Histogram samples should return 0 for ST")
+			} else {
+				require.Equal(t, tc.expectedSTs, actualSTs, "Float samples should have ST stored")
+			}
+
+			// Also verify via querier
+			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			defer q.Close()
+
+			ss := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			require.True(t, ss.Next())
+			series := ss.At()
+			require.NoError(t, ss.Err())
+
+			seriesIt := series.Iterator(nil)
+			var queriedSTs []int64
+			for seriesIt.Next() != chunkenc.ValNone {
+				st := seriesIt.AtST()
+				queriedSTs = append(queriedSTs, st)
+			}
+			require.NoError(t, seriesIt.Err())
+
+			// Verify querier returns same ST values
+			require.Equal(t, tc.expectedSTs, queriedSTs, "Querier should return same ST values as chunk iterator")
 		})
 	}
 }

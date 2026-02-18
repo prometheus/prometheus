@@ -115,7 +115,7 @@ func NewListSeriesIterator(samples Samples) chunkenc.Iterator {
 
 func (it *listSeriesIterator) Encoding() chunkenc.Encoding {
 	s := it.samples.Get(it.idx)
-	encoding := s.Type().ChunkEncodingWithST(s.ST())
+	encoding := s.Type().ChunkEncoding(s.ST() != 0)
 	if encoding == chunkenc.EncNone {
 		panic(fmt.Sprintf("unknown sample type %s", s.Type().String()))
 	}
@@ -357,7 +357,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		if typ != lastType || lastHadST != hasST || i >= seriesToChunkEncoderSplit {
 			// Create a new chunk if the sample type changed or too many samples in the current one.
 			chks = appendChunk(chks, mint, maxt, chk)
-			chk, err = chunkenc.NewEmptyChunk(typ.ChunkEncoding(), hasST)
+			chk, err = typ.NewChunk(hasST)
 			if err != nil {
 				return errChunksIterator{err: err}
 			}

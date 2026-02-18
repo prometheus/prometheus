@@ -93,7 +93,7 @@ func (o *OOOChunk) ToEncodedChunks(storeST bool, mint, maxt int64) (chks []memCh
 		if s.t > maxt {
 			break
 		}
-		encoding := chunkenc.EncXOR
+		encoding := chunkenc.ValFloat.ChunkEncoding(storeST)
 		switch {
 		case s.h != nil:
 			// TODO(krajorama): use ST capable histogram chunk.
@@ -101,10 +101,6 @@ func (o *OOOChunk) ToEncodedChunks(storeST bool, mint, maxt int64) (chks []memCh
 		case s.fh != nil:
 			// TODO(krajorama): use ST capable float histogram chunk.
 			encoding = chunkenc.EncFloatHistogram
-		default:
-			if storeST {
-				encoding = chunkenc.EncXOROptST
-			}
 		}
 
 		// prevApp is the appender for the previous sample.
@@ -115,7 +111,7 @@ func (o *OOOChunk) ToEncodedChunks(storeST bool, mint, maxt int64) (chks []memCh
 				chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
 			}
 			cmint = s.t
-			chunk, err = chunkenc.NewEmptyChunk(encoding, storeST)
+			chunk, err = chunkenc.NewEmptyChunk(encoding)
 			if err != nil {
 				// This should never happen. No point using a default type as
 				// calling the wrong append function would panic.

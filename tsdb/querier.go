@@ -1012,9 +1012,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
 			cmint = p.currDelIter.AtT()
-			// Note: we're passing false for storeST, because we set the
-			// encoding explicitly.
-			if currentChunk, err = chunkenc.NewEmptyChunk(encoding, false); err != nil {
+			if currentChunk, err = chunkenc.NewEmptyChunk(encoding); err != nil {
 				break
 			}
 			if app, err = currentChunk.Appender(); err != nil {
