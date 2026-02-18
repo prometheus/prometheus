@@ -166,7 +166,7 @@ groups:
 			name: "multiple documents with empty second - should warn",
 			content: `
 groups:
-  - name:  group1
+  - name: group1
     rules:
       - alert: TestAlert
         expr: up == 0
@@ -183,29 +183,9 @@ groups:
 
 			if tt.expectError {
 				require.NotEmpty(t, errs, "expected error for %s, got none", tt.name)
-
-				foundExpectedError := false
-				for _, err := range errs {
-					if err != nil && len(tt.errorContains) > 0 {
-						errStr := err.Error()
-						if len(errStr) > 0 && len(tt.errorContains) > 0 {
-							// Simple substring check
-							for i := 0; i <= len(errStr)-len(tt.errorContains); i++ {
-								if errStr[i:i+len(tt.errorContains)] == tt.errorContains {
-									foundExpectedError = true
-									break
-								}
-							}
-						}
-					}
-					if foundExpectedError {
-						break
-					}
-				}
-
-				require.True(t, foundExpectedError, "expected error containing '%s', got errors: %v", tt.errorContains, errs)
+				require.ErrorContains(t, errs[0], tt.errorContains)
 			} else {
-				require.Empty(t, errs, "unexpected errors for %s:  %v", tt.name, errs)
+				require.Empty(t, errs, "unexpected errors for %s: %v", tt.name, errs)
 			}
 		})
 	}
