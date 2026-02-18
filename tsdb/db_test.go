@@ -67,6 +67,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 func TestMain(m *testing.M) {
@@ -9602,4 +9603,78 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 
 	// Should still have no blocks since there was nothing to compact.
 	require.Empty(t, db.Blocks())
+}
+
+// TestHeadCompactionWithConcurrentAppends verifies that head compaction
+// correctly waits for overlapping appenders before proceeding. This is
+// a deterministic unit test for the concurrent scraping+compaction scenario
+// described in https://github.com/prometheus/prometheus/issues/16490.
+func TestHeadCompactionWithConcurrentAppends(t *testing.T) {
+	// WaitForAppendersOverlapping relies on isolation to track open appenders.
+	// With isolation disabled, appenders are never registered, so compaction
+	// never blocks and the test's core assertion cannot hold.
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		db := newTestDB(t, withRngs(1000))
+		db.DisableCompactions()
+
+		// Open first appender and initialize the head with data at t=0.
+		appA := db.Appender(t.Context())
+		refA, err := appA.Append(0, labels.FromStrings("series", "A"), 0, 1.0)
+		require.NoError(t, err)
+
+		// Open second appender while head.MaxTime is still 0.
+		// This appender gets registered in isolation with minTime=0
+		// (from appendableMinValidTime), which overlaps the compaction
+		// range [0, 999] and will block compaction until committed.
+		appB := db.Appender(t.Context())
+		_, err = appB.Append(0, labels.FromStrings("series", "B"), 0, 2.0)
+		require.NoError(t, err)
+
+		// Extend data through first appender to make head compactable.
+		// With chunkRange=1000, head needs span > 1500 (1.5x chunkRange).
+		_, err = appA.Append(refA, labels.FromStrings("series", "A"), 2000, 3.0)
+		require.NoError(t, err)
+		require.NoError(t, appA.Commit())
+
+		require.True(t, db.head.compactable())
+
+		// Start compaction in a goroutine. It blocks on
+		// WaitForAppendersOverlapping because appB has minTime=0,
+		// overlapping the compaction range [0, 999].
+		compactResult := make(chan error, 1)
+		go func() {
+			compactResult <- db.Compact(t.Context())
+		}()
+
+		// Wait for the goroutine to reach the blocking
+		// WaitForAppendersOverlapping call.
+		synctest.Wait()
+		select {
+		case <-compactResult:
+			t.Fatal("compaction should block while overlapping appender is open")
+		default:
+		}
+
+		// Commit the overlapping appender to unblock compaction.
+		require.NoError(t, appB.Commit())
+
+		// Advance virtual time past the 500ms poll interval in
+		// WaitForAppendersOverlapping and let the goroutine proceed.
+		time.Sleep(time.Second)
+		synctest.Wait()
+
+		select {
+		case err := <-compactResult:
+			require.NoError(t, err)
+		default:
+			t.Fatal("compaction should complete after overlapping appender commits")
+		}
+
+		// Verify a block was created covering the compacted range.
+		require.NotEmpty(t, db.Blocks())
+	})
 }

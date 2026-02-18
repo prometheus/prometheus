@@ -811,7 +811,7 @@ func TestHeadCompactionWhileScraping(t *testing.T) {
 	t.Parallel()
 
 	// To increase the chance of reproducing the data race
-	for i := range 5 {
+	for i := range 3 {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			t.Parallel()
 
@@ -822,11 +822,11 @@ func TestHeadCompactionWhileScraping(t *testing.T) {
 			config := fmt.Sprintf(`
 scrape_configs:
   - job_name: 'self1'
-    scrape_interval: 61ms
+    scrape_interval: 100ms
     static_configs:
       - targets: ['localhost:%d']
   - job_name: 'self2'
-    scrape_interval: 67ms
+    scrape_interval: 150ms
     static_configs:
       - targets: ['localhost:%d']
 `, port, port)
@@ -837,7 +837,7 @@ scrape_configs:
 				configFile,
 				port,
 				fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
-				"--storage.tsdb.min-block-duration=100ms",
+				"--storage.tsdb.min-block-duration=500ms",
 			)
 			require.NoError(t, prom.Start())
 
@@ -855,12 +855,12 @@ scrape_configs:
 					return false
 				}
 
-				// Wait for some compactions to run
+				// Wait for at least one compaction to run while scraping is happening.
 				compactions, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_compactions_total")
 				if err != nil {
 					return false
 				}
-				if compactions < 3 {
+				if compactions < 1 {
 					return false
 				}
 
@@ -874,7 +874,7 @@ scrape_configs:
 				require.NoError(t, err)
 				require.Zero(t, failures)
 				return true
-			}, 15*time.Second, 500*time.Millisecond)
+			}, 60*time.Second, 500*time.Millisecond)
 		})
 	}
 }
