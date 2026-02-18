@@ -435,6 +435,10 @@ annotation, you should find and remove the source of the invalid data.
 
 ## `histogram_quantiles()`
 
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
 `histogram_quantiles(v instant-vector, quantile_label string, φ_1 scalar, φ_2 scalar, ...)` calculates multiple (between 1 and 10) φ-quantiles (0 ≤
 φ ≤ 1) from a [classic
 histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) or from
