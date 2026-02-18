@@ -7529,18 +7529,17 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	ctx := context.Background()
 	app := db.AppenderV2(ctx)
 
-	maxt := 100
-	for i := range maxt {
+	mint := 100
+	maxt := 200
+	for i := mint; i < maxt; i++ {
 		// AppendV2 signature: (ref, labels, st, t, v, h, fh, opts)
-		// st=0 (start timestamp), t=i (sample timestamp)
-		// TODO(krajorama): verify with non zero st once the API supports it.
-		_, err := app.Append(0, labels.FromStrings("a", "b"), 0, int64(i), float64(i), nil, nil, storage.AOptions{})
+		_, err := app.Append(0, labels.FromStrings("a", "b"), 50, int64(i), float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
 	// Compact the Head to create a new block.
-	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, int64(maxt)-1)))
+	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), int64(mint), int64(maxt)-1)))
 	// Check that we have exactly one block.
 	require.Len(t, db.Blocks(), 1)
 	b := db.Blocks()[0]
@@ -7568,7 +7567,7 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 			c, _, err := chunkr.ChunkOrIterable(chk)
 			require.NoError(t, err)
 			require.Equal(t, chunkenc.EncXOROptST, c.Encoding(),
-				"expected EncXOROptST encoding when EnableSTStorage=true, got %s", c.Encoding())
+				"unexpected chunk encoding, got %s", c.Encoding())
 			chunkCount++
 		}
 	}

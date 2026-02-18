@@ -113,15 +113,6 @@ func NewListSeriesIterator(samples Samples) chunkenc.Iterator {
 	return &listSeriesIterator{samples: samples, idx: -1}
 }
 
-func (it *listSeriesIterator) Encoding() chunkenc.Encoding {
-	s := it.samples.Get(it.idx)
-	encoding := s.Type().ChunkEncoding(s.ST() != 0)
-	if encoding == chunkenc.EncNone {
-		panic(fmt.Sprintf("unknown sample type %s", s.Type().String()))
-	}
-	return encoding
-}
-
 func (it *listSeriesIterator) Reset(samples Samples) {
 	it.samples = samples
 	it.idx = -1

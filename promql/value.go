@@ -442,13 +442,6 @@ func newStorageSeriesIterator(series Series) *storageSeriesIterator {
 	}
 }
 
-func (ssi *storageSeriesIterator) Encoding() chunkenc.Encoding {
-	if ssi.currH != nil {
-		return chunkenc.EncFloatHistogram
-	}
-	return chunkenc.EncXOR
-}
-
 func (ssi *storageSeriesIterator) reset(series Series) {
 	ssi.floats = series.Floats
 	ssi.histograms = series.Histograms

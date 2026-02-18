@@ -9627,9 +9627,10 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 	require.Empty(t, db.Blocks())
 }
 
-// TestCompactHeadWithSTStorage ensures that when EnableSTStorage is true,
-// compacted blocks contain chunks with EncXOR encoding for float samples
-// when using the original Appender (which does not support start timestamps).
+// TestCompactHeadWithSTStorage demonstrates that when no ST is stored in the
+// head and truncated chunk is compacted, then recoding via
+// populateWithDelChunkSeriesIterator.populateCurrForSingleChunk
+// results in non ST capable chunk.
 func TestCompactHeadWithSTStorage(t *testing.T) {
 	t.Parallel()
 
@@ -9681,7 +9682,7 @@ func TestCompactHeadWithSTStorage(t *testing.T) {
 		for _, chk := range chks {
 			c, _, err := chunkr.ChunkOrIterable(chk)
 			require.NoError(t, err)
-			require.Equal(t, chunkenc.EncXOROptST, c.Encoding(),
+			require.Equal(t, chunkenc.EncXOR, c.Encoding(),
 				"expected EncXOR encoding when using original Appender, got %s", c.Encoding())
 			chunkCount++
 		}

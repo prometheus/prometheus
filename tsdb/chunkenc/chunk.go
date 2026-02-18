@@ -160,11 +160,6 @@ type Iterator interface {
 	// Returns 0 if the start timestamp is not implemented or not set.
 	// Before the iterator has advanced, the behaviour is unspecified.
 	AtST() int64
-	// Encoding returns what encoding to use for storing the current sample.
-	// Only call this as last resort if the encoding is really needed, and
-	// the current chunk isn't accessible otherwise.
-	// Before the iterator has advanced, the behaviour is unspecified.
-	Encoding() Encoding
 	// Err returns the current error. It should be used only after the
 	// iterator is exhausted, i.e. `Next` or `Seek` have returned ValNone.
 	Err() error
@@ -236,13 +231,6 @@ type mockSeriesIterator struct {
 	currIndex       int
 }
 
-func (it *mockSeriesIterator) Encoding() Encoding {
-	if it.AtST() != 0 {
-		return EncXOROptST
-	}
-	return EncXOR
-}
-
 func (*mockSeriesIterator) Seek(int64) ValueType { return ValNone }
 
 func (it *mockSeriesIterator) At() (int64, float64) {
@@ -285,7 +273,6 @@ func NewNopIterator() Iterator {
 
 type nopIterator struct{}
 
-func (nopIterator) Encoding() Encoding   { return EncNone }
 func (nopIterator) Next() ValueType      { return ValNone }
 func (nopIterator) Seek(int64) ValueType { return ValNone }
 func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }

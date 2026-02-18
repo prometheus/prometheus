@@ -771,10 +771,6 @@ func (p *populateWithDelSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (p *populateWithDelSeriesIterator) Encoding() chunkenc.Encoding {
-	return p.curr.Encoding()
-}
-
 func (p *populateWithDelSeriesIterator) At() (int64, float64) {
 	return p.curr.At()
 }
@@ -870,7 +866,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 
 // populateCurrForSingleChunk sets the fields within p.currMetaWithChunk. This
 // should be called if the samples in p.currDelIter only form one chunk.
-// TODO(krajorama): test ST when chunks support it.
 func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 	valueType := p.currDelIter.Next()
 	if valueType == chunkenc.ValNone {
@@ -880,6 +875,7 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 		return false
 	}
 	p.currMetaWithChunk.MinTime = p.currDelIter.AtT()
+	needTS := p.currDelIter.AtST() != 0
 
 	// Re-encode the chunk if iterator is provided. This means that it has
 	// some samples to be deleted or chunk is opened.
@@ -889,66 +885,56 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 		st, t    int64
 		err      error
 	)
-	switch valueType {
-	case chunkenc.ValHistogram:
-		// TODO(krajorama): handle ST capable histogram chunks when they are supported.
-		newChunk = chunkenc.NewHistogramChunk()
-		if app, err = newChunk.Appender(); err != nil {
+	newChunk, err = valueType.NewChunk(needTS)
+	if err != nil {
+		p.err = fmt.Errorf("create new chunk while re-encoding: %w", err)
+		return false
+	}
+	app, err = newChunk.Appender()
+	if err != nil {
+		p.err = fmt.Errorf("create appender while re-encoding: %w", err)
+		return false
+	}
+
+loop:
+	for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+		if vt != valueType {
+			err = fmt.Errorf("found value type %v in chunk with %v", vt, valueType)
 			break
 		}
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
-			if vt != chunkenc.ValHistogram {
-				err = fmt.Errorf("found value type %v in histogram chunk", vt)
-				break
-			}
-			var h *histogram.Histogram
-			t, h = p.currDelIter.AtHistogram(nil)
-			st = p.currDelIter.AtST()
-			_, _, app, err = app.AppendHistogram(nil, st, t, h, true)
+		st = p.currDelIter.AtST()
+		if !needTS && st != 0 {
+			// A sample with non-zero ST was found after creating a non-ST chunk.
+			// Recode all previously written samples into a new ST-capable chunk.
+			needTS = true
+			newChunk, app, err = recodeChunkToST(valueType, newChunk)
 			if err != nil {
-				break
+				break loop
 			}
 		}
-	case chunkenc.ValFloat:
-		if p.currMeta.Chunk.Encoding() == chunkenc.EncXOROptST {
-			newChunk = chunkenc.NewXOROptSTChunk()
-		} else {
-			newChunk = chunkenc.NewXORChunk()
-		}
-		if app, err = newChunk.Appender(); err != nil {
-			break
-		}
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
-			if vt != chunkenc.ValFloat {
-				err = fmt.Errorf("found value type %v in float chunk", vt)
-				break
-			}
+		switch vt {
+		case chunkenc.ValFloat:
 			var v float64
 			t, v = p.currDelIter.At()
-			st = p.currDelIter.AtST()
 			app.Append(st, t, v)
-		}
-	case chunkenc.ValFloatHistogram:
-		// TODO(krajorama): handle ST capable float histogram chunks when they are supported.
-		newChunk = chunkenc.NewFloatHistogramChunk()
-		if app, err = newChunk.Appender(); err != nil {
-			break
-		}
-		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
-			if vt != chunkenc.ValFloatHistogram {
-				err = fmt.Errorf("found value type %v in histogram chunk", vt)
-				break
+		case chunkenc.ValHistogram:
+			var h *histogram.Histogram
+			t, h = p.currDelIter.AtHistogram(nil)
+			_, _, app, err = app.AppendHistogram(nil, st, t, h, true)
+			if err != nil {
+				break loop
 			}
+		case chunkenc.ValFloatHistogram:
 			var h *histogram.FloatHistogram
 			t, h = p.currDelIter.AtFloatHistogram(nil)
-			st = p.currDelIter.AtST()
 			_, _, app, err = app.AppendFloatHistogram(nil, st, t, h, true)
 			if err != nil {
-				break
+				break loop
 			}
+		default:
+			err = fmt.Errorf("populateCurrForSingleChunk: value type %v unsupported", valueType)
+			break loop
 		}
-	default:
-		err = fmt.Errorf("populateCurrForSingleChunk: value type %v unsupported", valueType)
 	}
 
 	if err != nil {
@@ -963,6 +949,44 @@ func (p *populateWithDelChunkSeriesIterator) populateCurrForSingleChunk() bool {
 	p.currMetaWithChunk.Chunk = newChunk
 	p.currMetaWithChunk.MaxTime = t
 	return true
+}
+
+// recodeChunkToST creates a new ST-capable chunk of the given value type and
+// copies all samples from oldChunk into it, preserving their ST values.
+func recodeChunkToST(vt chunkenc.ValueType, oldChunk chunkenc.Chunk) (chunkenc.Chunk, chunkenc.Appender, error) {
+	newChunk, err := vt.NewChunk(true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create ST chunk for recoding: %w", err)
+	}
+	app, err := newChunk.Appender()
+	if err != nil {
+		return nil, nil, fmt.Errorf("create appender for ST chunk: %w", err)
+	}
+	it := oldChunk.Iterator(nil)
+	for {
+		switch it.Next() {
+		case chunkenc.ValNone:
+			if err := it.Err(); err != nil {
+				return nil, nil, fmt.Errorf("iterate old chunk for recoding: %w", err)
+			}
+			return newChunk, app, nil
+		case chunkenc.ValFloat:
+			t, v := it.At()
+			app.Append(it.AtST(), t, v)
+		case chunkenc.ValHistogram:
+			t, h := it.AtHistogram(nil)
+			_, _, app, err = app.AppendHistogram(nil, it.AtST(), t, h, true)
+			if err != nil {
+				return nil, nil, fmt.Errorf("recode histogram sample: %w", err)
+			}
+		case chunkenc.ValFloatHistogram:
+			t, h := it.AtFloatHistogram(nil)
+			_, _, app, err = app.AppendFloatHistogram(nil, it.AtST(), t, h, true)
+			if err != nil {
+				return nil, nil, fmt.Errorf("recode float histogram sample: %w", err)
+			}
+		}
+	}
 }
 
 // populateChunksFromIterable reads the samples from currDelIter to create
@@ -995,7 +1019,7 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 	)
 
 	prevValueType := chunkenc.ValNone
-	prevEncoding := chunkenc.EncNone
+	hasTS := false
 
 	for currentValueType := firstValueType; currentValueType != chunkenc.ValNone; currentValueType = p.currDelIter.Next() {
 		var (
@@ -1006,21 +1030,24 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 		// chunk as chunks can't have multiple encoding types).
 		// For the first sample, the following condition will always be true as
 		// ValNone != ValFloat | ValHistogram | ValFloatHistogram.
-		encoding := p.currDelIter.Encoding()
-		if currentValueType != prevValueType || (encoding != prevEncoding) {
+		// Also if we need to store start time (ST), but the current chunk is
+		// not capable.
+		st = p.currDelIter.AtST()
+		needTS := st != 0
+		if currentValueType != prevValueType || !hasTS && needTS {
 			if prevValueType != chunkenc.ValNone {
 				p.chunksFromIterable = append(p.chunksFromIterable, chunks.Meta{Chunk: currentChunk, MinTime: cmint, MaxTime: cmaxt})
 			}
 			cmint = p.currDelIter.AtT()
-			if currentChunk, err = chunkenc.NewEmptyChunk(encoding); err != nil {
+			if currentChunk, err = currentValueType.NewChunk(needTS); err != nil {
 				break
 			}
 			if app, err = currentChunk.Appender(); err != nil {
 				break
 			}
+			hasTS = needTS
 		}
 
-		st = p.currDelIter.AtST()
 		switch currentValueType {
 		case chunkenc.ValFloat:
 			{
@@ -1060,7 +1087,6 @@ func (p *populateWithDelChunkSeriesIterator) populateChunksFromIterable() bool {
 
 		cmaxt = t
 		prevValueType = currentValueType
-		prevEncoding = encoding
 	}
 
 	if err != nil {
@@ -1205,10 +1231,6 @@ type DeletedIterator struct {
 	Iter chunkenc.Iterator
 	// Intervals are the deletion intervals.
 	Intervals tombstones.Intervals
-}
-
-func (it *DeletedIterator) Encoding() chunkenc.Encoding {
-	return it.Iter.Encoding()
 }
 
 func (it *DeletedIterator) At() (int64, float64) {

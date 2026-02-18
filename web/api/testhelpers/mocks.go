@@ -245,10 +245,6 @@ type FakeSeriesIterator struct {
 	idx     int
 }
 
-func (*FakeSeriesIterator) Encoding() chunkenc.Encoding {
-	return chunkenc.EncXOR
-}
-
 func (f *FakeSeriesIterator) Next() chunkenc.ValueType {
 	f.idx++
 	if f.idx < len(f.samples) {
@@ -310,10 +306,6 @@ func (f *FakeHistogramSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
 type FakeHistogramSeriesIterator struct {
 	histograms []promql.HPoint
 	idx        int
-}
-
-func (*FakeHistogramSeriesIterator) Encoding() chunkenc.Encoding {
-	return chunkenc.EncFloatHistogram
 }
 
 func (f *FakeHistogramSeriesIterator) Next() chunkenc.ValueType {

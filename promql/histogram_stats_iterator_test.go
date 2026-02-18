@@ -213,10 +213,6 @@ type histogramIterator struct {
 	histograms []*histogram.Histogram
 }
 
-func (*histogramIterator) Encoding() chunkenc.Encoding {
-	return chunkenc.EncFloatHistogram
-}
-
 func (h *histogramIterator) Next() chunkenc.ValueType {
 	h.i++
 	if h.i < len(h.histograms) {

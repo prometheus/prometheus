@@ -764,10 +764,6 @@ type mockSampleIterator struct {
 	idx int
 }
 
-func (it *mockSampleIterator) Encoding() chunkenc.Encoding {
-	return it.s[it.idx].Type().ChunkEncoding(it.s[it.idx].ST() != 0)
-}
-
 func (it *mockSampleIterator) Seek(t int64) chunkenc.ValueType {
 	for ; it.idx < len(it.s); it.idx++ {
 		if it.idx != -1 && it.s[it.idx].T() >= t {
@@ -2125,6 +2121,13 @@ func TestPopulateWithDelChunkSeriesIterator_WithST(t *testing.T) {
 		sample{st: 400, t: 4000, f: 4.0},
 		sample{st: 500, t: 5000, f: 5.0},
 	}
+	samplesWithNoLeadingST := []chunks.Sample{
+		sample{st: 0, t: 1000, f: 1.0},
+		sample{st: 0, t: 2000, f: 2.0},
+		sample{st: 0, t: 3000, f: 3.0},
+		sample{st: 400, t: 4000, f: 4.0},
+		sample{st: 500, t: 5000, f: 5.0},
+	}
 
 	cases := []struct {
 		name      string
@@ -2157,6 +2160,20 @@ func TestPopulateWithDelChunkSeriesIterator_WithST(t *testing.T) {
 			expected: []chunks.Sample{
 				sample{st: 200, t: 2000, f: 2.0},
 				sample{st: 300, t: 3000, f: 3.0},
+				sample{st: 400, t: 4000, f: 4.0},
+				sample{st: 500, t: 5000, f: 5.0},
+			},
+		},
+		{
+			// This tests that populateCurrForSingleChunk can handle
+			// chunks that don't start with ST, but introduce ST later.
+			name:    "delete first sample - ST late preserved",
+			samples: [][]chunks.Sample{samplesWithNoLeadingST},
+			// Delete first sample.
+			intervals: tombstones.Intervals{{Mint: 1000, Maxt: 1000}},
+			expected: []chunks.Sample{
+				sample{st: 0, t: 2000, f: 2.0},
+				sample{st: 0, t: 3000, f: 3.0},
 				sample{st: 400, t: 4000, f: 4.0},
 				sample{st: 500, t: 5000, f: 5.0},
 			},

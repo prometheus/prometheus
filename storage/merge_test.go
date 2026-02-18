@@ -1692,10 +1692,6 @@ type errIterator struct {
 	err error
 }
 
-func (errIterator) Encoding() chunkenc.Encoding {
-	return chunkenc.EncNone
-}
-
 func (errIterator) Next() chunkenc.ValueType {
 	return chunkenc.ValNone
 }

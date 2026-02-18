@@ -197,10 +197,6 @@ type xorOptSTtIterator struct {
 	err    error
 }
 
-func (*xorOptSTtIterator) Encoding() Encoding {
-	return EncXOROptST
-}
-
 func (it *xorOptSTtIterator) Seek(t int64) ValueType {
 	if it.err != nil {
 		return ValNone
