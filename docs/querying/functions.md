@@ -439,7 +439,7 @@ annotation, you should find and remove the source of the invalid data.
 φ ≤ 1) from a [classic
 histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) or from
 a native histogram. Quantile calculation works the same way as in `histogram_quantile()`.
-The second argument (a string) specifies label name that is used to identify different quantiles in the query result.
+The second argument (a string) specifies the label name that is used to identify different quantiles in the query result.
 ```
 histogram_quantiles(sum(rate(foo[1m])), "quantile", 0.9, 0.99)
 # => {quantile="0.9"} 123
