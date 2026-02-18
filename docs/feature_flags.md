@@ -360,3 +360,39 @@ Example query:
 ```
 
 See [the fill modifiers documentation](querying/operators.md#filling-in-missing-matches) for more details and examples.
+
+## HTTP/3 QUIC Support
+
+`--enable-feature=http3`
+
+Enables HTTP/3 over QUIC alongside HTTP/1.1 and HTTP/2 for the Prometheus web server.
+
+**Requirements:**
+- TLS must be configured via `--web.config.file` with a valid certificate and key
+
+**Behavior:**
+- HTTP/3 uses UDP on the same port as TCP (HTTP/1.1+HTTP/2)
+- `Alt-Svc` headers are automatically added to HTTP/1.1 and HTTP/2 responses to advertise HTTP/3 availability
+- Clients that support HTTP/3 will automatically upgrade after seeing the `Alt-Svc` header
+- If TLS is not configured, HTTP/3 will be silently disabled with a warning in the logs
+
+**Example web config file (`web.yml`):**
+```yaml
+tls_server_config:
+  cert_file: /path/to/cert.pem
+  key_file: /path/to/key.pem
+```
+
+**Starting Prometheus with HTTP/3:**
+```bash
+./prometheus --enable-feature=http3 --web.config.file=web.yml
+```
+
+**Testing HTTP/3:**
+```bash
+# Check Alt-Svc header in HTTP/1.1 response
+curl -I -k https://localhost:9090/
+
+# Connect via HTTP/3 (requires curl with HTTP/3 support)
+curl --http3 -k https://localhost:9090/metrics
+```
