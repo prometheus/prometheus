@@ -269,6 +269,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "created-timestamp-zero-ingestion":
 				// NOTE(bwplotka): Once AppendableV1 is removed, there will be only the TSDB and agent flags.
 				c.scrape.EnableStartTimestampZeroIngestion = true
+				c.scrape.ParseST = true
 				c.web.STZeroIngestionEnabled = true
 				c.tsdb.EnableSTAsZeroSample = true
 				c.agent.EnableSTAsZeroSample = true
@@ -280,6 +281,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental start timestamp zero ingestion enabled. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "st-storage":
 				// TODO(bwplotka): Implement ST Storage as per PROM-60 and document this hidden feature flag.
+				c.scrape.ParseST = true
 				c.tsdb.EnableSTStorage = true
 				c.agent.EnableSTStorage = true
 
