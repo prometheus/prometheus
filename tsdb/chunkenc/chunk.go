@@ -32,8 +32,14 @@ func EnableXOR2() {
 	useXOR2Encoding = true
 }
 
-func setXOR2Enabled(enabled bool) {
+// SetXOR2Enabled sets whether XOR2 encoding is enabled.
+// This function is primarily for testing purposes.
+func SetXOR2Enabled(enabled bool) {
 	useXOR2Encoding = enabled
+}
+
+func setXOR2Enabled(enabled bool) {
+	SetXOR2Enabled(enabled)
 }
 
 // XOR2Enabled returns whether XOR2 float chunk encoding is enabled.
@@ -72,6 +78,27 @@ func (e Encoding) String() string {
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
 	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOR2
+}
+
+// EncodingsCompatible returns true if two encodings can coexist in the same series
+// without requiring a chunk cut. This allows graceful transitions between encoding
+// versions (e.g., XOR to XOR2) without creating many small chunks.
+func EncodingsCompatible(enc1, enc2 Encoding) bool {
+	// Same encoding is always compatible.
+	if enc1 == enc2 {
+		return true
+	}
+
+	// XOR and XOR2 are both float encodings - they're compatible.
+	if (enc1 == EncXOR || enc1 == EncXOR2) && (enc2 == EncXOR || enc2 == EncXOR2) {
+		return true
+	}
+
+	// Histogram encodings could be compatible in the future.
+	// if (enc1 == EncHistogram && enc2 == EncHistogram2) { return true }
+
+	// Different encoding types (float vs histogram) are incompatible.
+	return false
 }
 
 const (

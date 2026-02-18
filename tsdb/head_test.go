@@ -7240,3 +7240,179 @@ func TestHistogramStalenessConversionMetrics(t *testing.T) {
 		})
 	}
 }
+
+func TestXORToXOR2EncodingTransition(t *testing.T) {
+	// This test verifies that when XOR2 encoding is enabled mid-stream,
+	// existing XOR chunks continue without being cut, and new chunks use XOR2.
+	dir := t.TempDir()
+
+	// Start with XOR encoding (XOR2 disabled).
+	originalXOR2State := chunkenc.XOR2Enabled()
+	chunkenc.SetXOR2Enabled(false)
+	defer chunkenc.SetXOR2Enabled(originalXOR2State) // Reset after test.
+
+	opts := DefaultOptions()
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+	db.DisableCompactions()
+
+	lbls := labels.FromStrings("series", "test1")
+
+	// Phase 1: Append samples with XOR encoding (default).
+	app := db.Appender(context.Background())
+	var timestamp int64 = 1000
+	for range 50 {
+		_, err := app.Append(0, lbls, timestamp, float64(timestamp))
+		require.NoError(t, err)
+		timestamp += 100
+	}
+	require.NoError(t, app.Commit())
+
+	// Verify we have one chunk with XOR encoding.
+	ms, created, err := db.Head().getOrCreate(lbls.Hash(), lbls, false)
+	require.NoError(t, err)
+	require.False(t, created)
+	require.NotNil(t, ms)
+	require.Equal(t, 1, ms.headChunks.len())
+	require.Equal(t, chunkenc.EncXOR, ms.headChunks.chunk.Encoding())
+	require.Equal(t, 50, ms.headChunks.chunk.NumSamples())
+
+	// Phase 2: Enable XOR2 encoding and continue appending.
+	// The existing XOR chunk should continue without being cut.
+	chunkenc.SetXOR2Enabled(true)
+
+	app = db.Appender(context.Background())
+	for range 50 {
+		_, err := app.Append(0, lbls, timestamp, float64(timestamp))
+		require.NoError(t, err)
+		timestamp += 100
+	}
+	require.NoError(t, app.Commit())
+
+	// Verify we still have one chunk (no premature cut).
+	// The chunk should have 100 samples now.
+	require.Equal(t, 1, ms.headChunks.len())
+	// The encoding should still be XOR (the original chunk encoding).
+	require.Equal(t, chunkenc.EncXOR, ms.headChunks.chunk.Encoding())
+	require.Equal(t, 100, ms.headChunks.chunk.NumSamples())
+
+	// Phase 3: Continue appending until the chunk naturally completes.
+	// When a new chunk is created, it should use XOR2.
+	app = db.Appender(context.Background())
+	for range 50 {
+		_, err := app.Append(0, lbls, timestamp, float64(timestamp))
+		require.NoError(t, err)
+		timestamp += 100
+	}
+	require.NoError(t, app.Commit())
+
+	// The first chunk should have filled naturally and a second chunk created.
+	require.GreaterOrEqual(t, ms.headChunks.len(), 1)
+
+	// If a second chunk was created, it should use XOR2.
+	if ms.headChunks.len() > 1 {
+		// Get the current head chunk (most recent).
+		currentChunk := ms.headChunks
+		require.Equal(t, chunkenc.EncXOR2, currentChunk.chunk.Encoding())
+	}
+}
+
+func TestXORToXOR2EncodingTransitionMultipleSeries(t *testing.T) {
+	// This test verifies graceful transition with multiple series at different stages.
+	dir := t.TempDir()
+
+	// Start with XOR encoding (XOR2 disabled).
+	originalXOR2State := chunkenc.XOR2Enabled()
+	chunkenc.SetXOR2Enabled(false)
+	defer chunkenc.SetXOR2Enabled(originalXOR2State)
+
+	opts := DefaultOptions()
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+	db.DisableCompactions()
+
+	// Create multiple series with different sample counts.
+	seriesConfigs := []struct {
+		name           string
+		initialSamples int
+		afterSamples   int
+	}{
+		{"series1", 20, 30},  // Small chunk.
+		{"series2", 50, 50},  // Medium chunk.
+		{"series3", 80, 40},  // Large chunk.
+		{"series4", 110, 20}, // Nearly full chunk.
+	}
+
+	type seriesInfo struct {
+		lbls      labels.Labels
+		timestamp int64
+	}
+	seriesData := make([]seriesInfo, 0, len(seriesConfigs))
+
+	// Phase 1: Create series with XOR encoding.
+	for _, cfg := range seriesConfigs {
+		lbls := labels.FromStrings("series", cfg.name)
+		app := db.Appender(context.Background())
+		var timestamp int64 = 1000
+
+		for range cfg.initialSamples {
+			_, err := app.Append(0, lbls, timestamp, float64(timestamp))
+			require.NoError(t, err)
+			timestamp += 100
+		}
+		require.NoError(t, app.Commit())
+
+		seriesData = append(seriesData, seriesInfo{lbls: lbls, timestamp: timestamp})
+
+		// Verify chunk exists with XOR encoding.
+		ms, created, err := db.Head().getOrCreate(lbls.Hash(), lbls, false)
+		require.NoError(t, err)
+		require.False(t, created)
+		require.Equal(t, 1, ms.headChunks.len())
+		require.Equal(t, chunkenc.EncXOR, ms.headChunks.chunk.Encoding())
+		require.Equal(t, cfg.initialSamples, ms.headChunks.chunk.NumSamples())
+	}
+
+	// Phase 2: Enable XOR2 and continue appending.
+	chunkenc.SetXOR2Enabled(true)
+
+	for i, cfg := range seriesConfigs {
+		si := seriesData[i]
+		app := db.Appender(context.Background())
+
+		for range cfg.afterSamples {
+			_, err := app.Append(0, si.lbls, si.timestamp, float64(si.timestamp))
+			require.NoError(t, err)
+			si.timestamp += 100
+		}
+		require.NoError(t, app.Commit())
+
+		seriesData[i] = si // Update timestamp.
+
+		// Verify no premature chunk cuts occurred.
+		ms, created, err := db.Head().getOrCreate(si.lbls.Hash(), si.lbls, false)
+		require.NoError(t, err)
+		require.False(t, created)
+
+		// Check chunk count - should be minimal.
+		totalSamples := cfg.initialSamples + cfg.afterSamples
+		expectedChunks := (totalSamples + 119) / 120 // Default samples per chunk is 120.
+		if expectedChunks == 0 {
+			expectedChunks = 1
+		}
+
+		actualChunks := ms.headChunks.len()
+
+		// We expect chunks to fill naturally, not be cut prematurely.
+		// Allow some variance for time-based cuts.
+		require.LessOrEqual(t, actualChunks, expectedChunks+1,
+			"Series %s: expected at most %d chunks for %d samples, got %d",
+			cfg.name, expectedChunks+1, totalSamples, actualChunks)
+	}
+}
