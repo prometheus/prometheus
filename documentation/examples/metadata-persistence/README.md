@@ -14,9 +14,9 @@ queryable through the `/api/v1/metadata/versions` endpoint.
 
 ## The Problem This Solves
 
-Previously, Prometheus only kept metadata in memory from active scrape targets.
-When a target stopped being scraped, its metadata was lost. This made it
-difficult to:
+Previously, Prometheus only kept metadata in memory from active ingestion
+sources (scrape targets, remote write senders, OTLP exporters). When a source
+stopped sending data, its metadata was lost. This made it difficult to:
 
 - Understand what historical metrics meant
 - Debug old metrics in dashboards
@@ -27,7 +27,7 @@ difficult to:
 
 ```
 ┌─────────────────┐     scrape      ┌─────────────────┐
-│  Mock Exporter  │ ←───────────────│  Scrape/Parse   │
+│    Exporter     │ ←───────────────│  Scrape/Parse   │
 │  TYPE/HELP/UNIT │   (protobuf)    └────────┬────────┘
 └─────────────────┘                          │
         │                                    │ append
@@ -36,7 +36,7 @@ difficult to:
         │                           │   TSDB Head     │
         ↓                           │   (in-memory)   │
 ┌─────────────────┐                 │  v1: help="old" │
-│  Mock Exporter  │  scrape again   │  v2: help="new" │
+│    Exporter     │  scrape again   │  v2: help="new" │
 │  (new version)  │ ←───────────    └────────┬────────┘
 └─────────────────┘                          │
                                     ┌────────┴────────┐
@@ -60,13 +60,56 @@ difficult to:
                                                        └───────────────────┘
 ```
 
-1. **Scraping**: Metadata is captured from TYPE/HELP/UNIT comments in metrics (via protobuf format)
+1. **Ingestion**: Metadata is captured from any ingestion path — scraping (TYPE/HELP/UNIT comments), remote write v2 (proto metadata fields), or OTLP (metric kind, description, unit). See [Ingestion Paths](#ingestion-paths) below
 2. **Storage**: Metadata is stored in TSDB head (in-memory) with version tracking
 3. **WAL Replay**: Metadata survives TSDB restarts via Write-Ahead Log replay
 4. **Versioning**: When metadata changes, a new version is created with its time range
 5. **Persistence**: When blocks are compacted, metadata versions are written to Parquet files
 6. **Querying**: The `/api/v1/metadata/versions` endpoint returns version history with time ranges
 7. **Inverse lookup**: The `/api/v1/metadata/series` endpoint finds metrics by type, unit, or help text
+
+## Ingestion Paths
+
+Metadata persistence works identically for scrape, remote write v2, and OTLP.
+These paths produce the same `metadata.Metadata{Type, Help, Unit}` struct, and
+once metadata reaches the TSDB appender, storage, versioning, WAL replay,
+compaction, and querying behave the same. Remote write v1 is an exception — see below.
+
+| Path | TYPE source | HELP source | UNIT source |
+|------|------------|-------------|-------------|
+| **Scrape** | `# TYPE` comment in exposition format (text or protobuf) | `# HELP` comment | `# UNIT` comment |
+| **Remote write v2** | `Metadata.Type` enum in `writev2.TimeSeries` proto | `Metadata.HelpRef` (symbol table) | `Metadata.UnitRef` (symbol table) |
+| **Remote write v1**\* | `MetricMetadata.Type` enum in top-level `WriteRequest.metadata` list | `MetricMetadata.Help` string | `MetricMetadata.Unit` string |
+| **OTLP** | Mapped from OTel metric kind (e.g. monotonic `Sum` → counter) | `metric.Description()` | `metric.Unit()` with Prometheus unit convention transforms |
+
+\* Metadata from remote write v1 is not persisted to TSDB — see below.
+
+**Scrape** parses `# TYPE`, `# HELP`, and `# UNIT` comments from the exposition
+format (protobuf or text). Metadata appending is gated by the
+`append_metadata_to_wal` scrape config option (enabled by default).
+
+**Remote write v2** carries metadata in the `Metadata` message of each
+`writev2.TimeSeries` proto — type as an enum, help and unit as symbol table
+references. Metadata appending is gated by the `appendMetadata` flag on the
+write handler.
+
+**Remote write v1** carries metadata in a separate top-level `WriteRequest.metadata`
+list, decoupled from timeseries — each `MetricMetadata` message identifies itself
+by `metric_family_name` rather than series labels. On the sender side, metadata is
+sent as out-of-band batches via the `MetadataWatcher` (gated by
+`metadata_config.send`, disabled by default). However, the v1 spec explicitly
+excludes metadata as experimental, and the Prometheus receiver does not persist it.
+**Metadata from remote write v1 is not written to TSDB.** Users needing metadata
+persistence over remote write should use remote write v2.
+
+**OTLP** maps from OpenTelemetry metric attributes — type from the metric kind
+(e.g. monotonic `Sum` → counter, `Gauge` → gauge), help from
+`metric.Description()`, and unit from `metric.Unit()` with Prometheus unit
+convention transforms (e.g. `ms` → `milliseconds`). OTLP metadata ingestion is
+always enabled with no additional flag gating.
+
+This demo uses scraping as the example since it is the most common ingestion
+path, but the same metadata storage and querying applies to all three.
 
 ## Running the Demo
 

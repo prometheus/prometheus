@@ -1765,13 +1765,12 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 			if s.meta != nil {
 				vmCopy = s.meta.Copy()
 			}
+			metricName := s.lset.Get(labels.MetricName)
 			s.Unlock()
 			if vmCopy == nil {
 				continue
 			}
 
-			// s.lset is immutable after creation, safe to read without lock.
-			metricName := s.lset.Get(labels.MetricName)
 			if metricName == "" {
 				continue // Skip series without metric name
 			}
@@ -1810,13 +1809,12 @@ func (h *Head) SeriesMetadataForMatchers(ctx context.Context, matchers ...*label
 		if s.meta != nil {
 			vmCopy = s.meta.Copy()
 		}
+		metricName := s.lset.Get(labels.MetricName)
 		s.Unlock()
 		if vmCopy == nil {
 			continue
 		}
 
-		// s.lset is immutable after creation, safe to read without lock.
-		metricName := s.lset.Get(labels.MetricName)
 		if metricName == "" {
 			continue
 		}
