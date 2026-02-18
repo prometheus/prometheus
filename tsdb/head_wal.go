@@ -1400,7 +1400,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	// Assuming 100 bytes (overestimate) per exemplar, that's ~1MB.
 	maxExemplarsPerRecord := 10000
 	batch := make([]record.RefExemplar, 0, maxExemplarsPerRecord)
-	enc := record.Encoder{EnableSTStorage: h.opts.EnableSTStorage}
+	enc := record.Encoder{EnableSTStorage: h.opts.EnableSTStorage.Load()}
 	flushExemplars := func() error {
 		if len(batch) == 0 {
 			return nil
