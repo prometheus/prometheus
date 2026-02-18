@@ -1667,13 +1667,20 @@ func TestScrapeLoopAppend_WithStorage(t *testing.T) {
 							return "rpc_durations_histogram49_seconds"
 						}(),
 						M: m, L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram49_seconds_sum"), V: -8.452185437166741e-05, ST: st, T: timestamp.FromTime(ts),
-					}, committed[seriesPerHistogramFor100HistsWithExemplars(appV2)*50-3])
+					}, committed[seriesPerHistogramFor100HistsWithExemplars(appV2)*49+21])
 
-					// This series does not have metadata, nor metric family, because of isSeriesPartOfFamily bug and OpenMetric 1.0 limitations around _created series.
-					// TODO(bwplotka): Fix with https://github.com/prometheus/prometheus/issues/17900
-					testutil.RequireEqual(t, sample{
-						L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram99_seconds_created"), V: 1.726839813016302e+09, ST: st, T: timestamp.FromTime(ts),
-					}, committed[len(committed)-1])
+					if !appV2 {
+						// This series does not have metadata, nor metric family, because of isSeriesPartOfFamily bug and OpenMetric 1.0 limitations around _created series.
+						// TODO(bwplotka): Fix with https://github.com/prometheus/prometheus/issues/17900
+						testutil.RequireEqual(t, sample{
+							L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram99_seconds_created"), V: 1.726839813016302e+09, T: timestamp.FromTime(ts),
+						}, committed[len(committed)-1])
+					} else {
+						testutil.RequireEqual(t, sample{
+							MF: "rpc_durations_histogram99_seconds",
+							M:  m, L: labels.FromStrings(model.MetricNameLabel, "rpc_durations_histogram99_seconds_count"), V: 15, ST: st, T: timestamp.FromTime(ts),
+						}, committed[len(committed)-1])
+					}
 				},
 				testExemplars: func(t *testing.T, er []exemplar.QueryResult) {
 					// 12 out of 23/24 histogram series have exemplars.
