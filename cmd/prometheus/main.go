@@ -331,6 +331,10 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 		}
 	}
 
+	// Enable for Prombench
+	chunkenc.EnableXOR2()
+  logger.Info("Experimental XOR2 chunk encoding enabled for Prombench")
+
 	if c.web.ConvertOTLPDelta && c.web.NativeOTLPDeltaIngestion {
 		return errors.New("cannot enable otlp-deltatocumulative and otlp-native-delta-ingestion features at the same time")
 	}
