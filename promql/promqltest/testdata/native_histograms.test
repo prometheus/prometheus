@@ -1920,7 +1920,7 @@ eval instant at 1m h_test_2 >/ -1.3
 eval instant at 1m h_test_2 </ -1.3
   h_test_2  {{schema:2 count:2.45786052095524 sum:-3.5189307983595066 z_bucket_w:0.001 n_offset:2 n_buckets:[1.45786052095524 1]}}
 
-# Exponential buckets:  trim on bucket boundary uses no interpolation
+# Exponential buckets: trim on bucket boundary uses no interpolation.
 eval instant at 1m h_test </ 2
   h_test{}  {{count:10 sum:3.5355339059327373 z_bucket:1 z_bucket_w:0.001 buckets:[2 4] n_buckets:[1 2]}}
 
@@ -2143,11 +2143,11 @@ eval instant at 1m cbh_two_buckets_split_at_zero >/ 10.0
 load 1m
   cbh_two_buckets_split_at_positive {{schema:-53 sum:33 count:101 custom_values:[5] buckets:[1 100]}}
 
-# Skip (5; +Inf] bucket (100).
+# Skip (5, +Inf] bucket (100).
 eval instant at 1m cbh_two_buckets_split_at_positive </ 10.0
   cbh_two_buckets_split_at_positive {{schema:-53 sum:2.5 count:1 custom_values:[5] buckets:[1 0]}}
 
-# Skip (5; +Inf] bucket (100) and 3/5 of [-Inf, 5] bucket (0.6 * 3.5).
+# Skip (5, +Inf] bucket (100) and 3/5 of [0, 5] bucket (0.6 * 3.5).
 eval instant at 1m cbh_two_buckets_split_at_positive </ 2.0
   cbh_two_buckets_split_at_positive {{schema:-53 sum:0.4 count:0.4 custom_values:[5] buckets:[0.4 0]}}
 
@@ -2159,7 +2159,7 @@ eval instant at 1m cbh_two_buckets_split_at_positive </ 0.0
 eval instant at 1m cbh_two_buckets_split_at_positive </ -10.0
   cbh_two_buckets_split_at_positive {{schema:-53 sum:0.0 count:0 custom_values:[5] buckets:[0 0]}}
 
-# Skip [-Inf, 5] bucket (1).
+# Skip [0, 5] bucket (1).
 eval instant at 1m cbh_two_buckets_split_at_positive >/ -10.0
   cbh_two_buckets_split_at_positive {{schema:-53 sum:500.0 count:100 custom_values:[5] buckets:[0 100]}}
 
@@ -2167,7 +2167,7 @@ eval instant at 1m cbh_two_buckets_split_at_positive >/ -10.0
 eval instant at 1m cbh_two_buckets_split_at_positive >/ 0.0
   cbh_two_buckets_split_at_positive {{schema:-53 sum:33.0 count:101 custom_values:[5] buckets:[1 100]}}
 
-# Keep (5, +Inf] bucket (100) and 3/5 of [-Inf, 5] bucket (0.6 * 1).
+# Keep (5, +Inf] bucket (100) and 3/5 of [0, 5] bucket (0.6 * 3.5).
 eval instant at 1m cbh_two_buckets_split_at_positive >/ 2.0
   cbh_two_buckets_split_at_positive {{schema:-53 sum:502.1 count:100.6 custom_values:[5] buckets:[0.6 100]}}
 
@@ -2179,11 +2179,11 @@ eval instant at 1m cbh_two_buckets_split_at_positive >/ 10.0
 load 1m
   cbh_two_buckets_split_at_negative {{schema:-53 sum:33 count:101 custom_values:[-5] buckets:[1 100]}}
 
-# Skip (-5; +Inf] bucket (100).
+# Skip (-5, +Inf] bucket (100).
 eval instant at 1m cbh_two_buckets_split_at_negative </ 10.0
   cbh_two_buckets_split_at_negative {{schema:-53 sum:-5.0 count:1 custom_values:[-5] buckets:[1 0]}}
 
-# Skip (-5; +Inf] bucket (100).
+# Skip (-5, +Inf] bucket (100).
 eval instant at 1m cbh_two_buckets_split_at_negative </ 0.0
   cbh_two_buckets_split_at_negative {{schema:-53 sum:-5 count:1 custom_values:[-5] buckets:[1 0]}}
 
@@ -2191,7 +2191,7 @@ eval instant at 1m cbh_two_buckets_split_at_negative </ 0.0
 eval instant at 1m cbh_two_buckets_split_at_negative </ -2.0
   cbh_two_buckets_split_at_negative {{schema:-53 sum:-5.0 count:1 custom_values:[-5] buckets:[1 0]}}
 
-# Skip (-5; +Inf] bucket (100).
+# Skip (-5, +Inf] bucket (100).
 eval instant at 1m cbh_two_buckets_split_at_negative </ -10.0
   cbh_two_buckets_split_at_negative {{schema:-53 sum:-10.0 count:1 custom_values:[-5] buckets:[1 0]}}
 
