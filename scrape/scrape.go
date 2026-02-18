@@ -876,7 +876,7 @@ type scrapeLoop struct {
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
 	scrapeOnShutdown        bool
-	skipOffsetting          bool // For testability.
+	initialScrapeOffset     *time.Duration // For testing only: overrides the computed scrape offset.
 	// error injection through setForcedError.
 	forcedErr    error
 	forcedErrMtx sync.Mutex
@@ -1230,7 +1230,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
 		scrapeOnShutdown:        opts.sp.options.ScrapeOnShutdown,
-		skipOffsetting:          opts.sp.options.skipOffsetting,
+		initialScrapeOffset:     opts.sp.options.initialScrapeOffset,
 	}
 }
 
@@ -1243,17 +1243,22 @@ func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 	sl.scrapeFailureLogger = l
 }
 
+func calculateScrapeOffset(sl *scrapeLoop) time.Duration {
+	if sl.initialScrapeOffset == nil {
+		return sl.scraper.offset(sl.interval, sl.offsetSeed)
+	}
+	return *sl.initialScrapeOffset
+}
+
 func (sl *scrapeLoop) run(errc chan<- error) {
-	if !sl.skipOffsetting {
-		select {
-		case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
-			// Continue after a scraping offset.
-		case <-sl.shutdownScrape:
-			sl.cancel()
-		case <-sl.ctx.Done():
-			close(sl.stopped)
-			return
-		}
+	select {
+	case <-time.After(calculateScrapeOffset(sl)):
+		// Continue after a scraping offset.
+	case <-sl.shutdownScrape:
+		sl.cancel()
+	case <-sl.ctx.Done():
+		close(sl.stopped)
+		return
 	}
 
 	var last time.Time

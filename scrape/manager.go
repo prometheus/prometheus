@@ -126,13 +126,19 @@ type Options struct {
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 
-	// Option to allow a final scrape before the manager is shutdown.  Useful
-	// for serverless flavours of OTel's prometheusreceiver which might require
-	// a final scrape of targets before the instance is shutdown.
+	// Option to allow a final scrape before the manager is shutdown. This is useful
+	// for Prometheus in agent mode or serverless flavours of OTel's prometheusreceiver
+	// which might require a final scrape of targets before the instance is shutdown.
+	//
+	// Note: This final scrape ignores the configured scrape interval. If the time
+	// elapsed since the last scrape is short, some backends (e.g. Google Cloud Monitoring)
+	// may reject the data points due to timestamps being too close together.
 	ScrapeOnShutdown bool
 
-	// private option for testability.
-	skipOffsetting bool
+	// initialScrapeOffset is a private option strictly for testing. It overrides
+	// the standard scrape offset to manually control execution timing during
+	// test runs.
+	initialScrapeOffset *time.Duration
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles

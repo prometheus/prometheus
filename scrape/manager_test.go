@@ -765,9 +765,10 @@ func TestManagerSTZeroIngestion(t *testing.T) {
 							encoded := prepareTestEncodedCounter(t, testFormat, expectedMetricName, expectedSampleValue, sampleTs, stTs)
 
 							app := teststorage.NewAppendable()
+							noOffSet := time.Duration(0)
 							discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 								EnableStartTimestampZeroIngestion: testSTZeroIngest,
-								skipOffsetting:                    true,
+								initialScrapeOffset:               &noOffSet,
 							}, app, nil)
 							defer scrapeManager.Stop()
 
@@ -951,9 +952,10 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 			defer cancel()
 
 			app := teststorage.NewAppendable()
+			noOffSet := time.Duration(0)
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 				EnableStartTimestampZeroIngestion: tc.enableSTZeroIngestion,
-				skipOffsetting:                    true,
+				initialScrapeOffset:               &noOffSet,
 			}, app, nil)
 			defer scrapeManager.Stop()
 
@@ -1063,9 +1065,10 @@ func TestNHCBAndSTZeroIngestion(t *testing.T) {
 	ctx := t.Context()
 
 	app := teststorage.NewAppendable()
+	noOffSet := time.Duration(0)
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 		EnableStartTimestampZeroIngestion: true,
-		skipOffsetting:                    true,
+		initialScrapeOffset:               &noOffSet,
 	}, app, nil)
 	defer scrapeManager.Stop()
 
@@ -1598,36 +1601,59 @@ scrape_configs:
 }
 
 func TestManagerStopAfterScrapeAttempt(t *testing.T) {
+	noOffset := 0 * time.Nanosecond
+	largeOffset := 99 * time.Hour
+	oneSecondOffset := 1 * time.Second
+	tenSecondOffset := 10 * time.Second
 	interval := 10 * time.Second
 	for _, tcase := range []struct {
-		name             string
-		scrapeOnShutdown bool
-		stopDelay        time.Duration
-		expectedSamples  int
+		name                string
+		scrapeOnShutdown    bool
+		stopDelay           time.Duration
+		expectedSamples     int
+		initialScrapeOffset *time.Duration
 	}{
 		{
-			name:             "no scrape on shutdown before next interval",
-			stopDelay:        5 * time.Second,
-			expectedSamples:  1,
-			scrapeOnShutdown: false,
+			name:                "no scrape on stop, with offset of 10s",
+			initialScrapeOffset: &tenSecondOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     0,
+			scrapeOnShutdown:    false,
 		},
 		{
-			name:             "no scrape on shutdown before next interval",
-			stopDelay:        11 * time.Second,
-			expectedSamples:  2,
-			scrapeOnShutdown: false,
+			name:                "no scrape on stop, no offset",
+			initialScrapeOffset: &noOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     1,
+			scrapeOnShutdown:    false,
 		},
 		{
-			name:             "no scrape on shutdown before next interval",
-			stopDelay:        5 * time.Second,
-			expectedSamples:  2,
-			scrapeOnShutdown: true,
+			name:                "scrape on stop, no offset",
+			initialScrapeOffset: &noOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     2,
+			scrapeOnShutdown:    true,
 		},
 		{
-			name:             "scrape on shutdown after next interval",
-			stopDelay:        11 * time.Second,
-			expectedSamples:  3,
-			scrapeOnShutdown: true,
+			name:                "scrape on stop, with large offset",
+			initialScrapeOffset: &largeOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     1,
+			scrapeOnShutdown:    true,
+		},
+		{
+			name:                "scrape on stop after 5s, with offset of 1s",
+			initialScrapeOffset: &oneSecondOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     2,
+			scrapeOnShutdown:    true,
+		},
+		{
+			name:                "scrape on stop after 5s, with offset of 10s",
+			initialScrapeOffset: &tenSecondOffset,
+			stopDelay:           5 * time.Second,
+			expectedSamples:     1,
+			scrapeOnShutdown:    true,
 		},
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
@@ -1636,8 +1662,8 @@ func TestManagerStopAfterScrapeAttempt(t *testing.T) {
 			// Setup scrape manager.
 			scrapeManager, err := NewManager(
 				&Options{
-					ScrapeOnShutdown: tcase.scrapeOnShutdown,
-					skipOffsetting:   true,
+					ScrapeOnShutdown:    tcase.scrapeOnShutdown,
+					initialScrapeOffset: tcase.initialScrapeOffset,
 				},
 				promslog.New(&promslog.Config{}),
 				nil,
@@ -1681,6 +1707,7 @@ func TestManagerStopAfterScrapeAttempt(t *testing.T) {
 					},
 				},
 			})
+			scrapeManager.offsetSeed = uint64(0)
 			scrapeManager.reload()
 
 			// Wait for the defined stop delay, before stopping.
