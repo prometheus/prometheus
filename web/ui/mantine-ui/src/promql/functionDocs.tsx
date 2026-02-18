@@ -1550,7 +1550,7 @@ const funcDocs: Record<string, React.ReactNode> = {
         calculates multiple (between 1 and 10) φ-quantiles (0 ≤ φ ≤ 1) from a{" "}
         <a href="https://prometheus.io/docs/concepts/metric_types/#histogram">classic histogram</a> or from a native
         histogram. Quantile calculation works the same way as in <code>histogram_quantile()</code>. The second argument
-        (a string) specifies label name that is used to identify different quantiles in the query result.
+        (a string) specifies the label name that is used to identify different quantiles in the query result.
       </p>
 
       <pre>
