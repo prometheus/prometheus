@@ -244,6 +244,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'histogram_quantiles',
+    detail: 'function',
+    info: 'Calculate multiple quantiles from native histograms and from conventional histogram buckets',
+    type: 'function',
+  },
+  {
     label: 'histogram_sum',
     detail: 'function',
     info: 'Return the sum of observations from a native histogram',
