@@ -141,8 +141,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		}
 	}
 
-	// TODO(bwplotka): Handle ST natively (as per PROM-60).
-	if st != 0 && a.head.opts.EnableSTAsZeroSample {
+	if a.head.opts.EnableSTAsZeroSample && st != 0 {
 		a.bestEffortAppendSTZeroSample(s, ls, st, t, h, fh)
 	}
 
