@@ -65,7 +65,7 @@ func TestOOOInsert(t *testing.T) {
 			},
 		},
 		"float st descending while t ascending": {
-			// st values go in opposite direction of t to ensure ordering is by t
+			// st values go in opposite direction of t to ensure ordering is by t.
 			sampleFunc: func(st, ts int64) sample {
 				return sample{st: 1000 - ts, t: ts, f: float64(ts)}
 			},
@@ -159,7 +159,7 @@ func TestOOOInsertDuplicate(t *testing.T) {
 			},
 		},
 		"float st descending while t ascending": {
-			// st values go in opposite direction of t to ensure duplicate detection is by t
+			// st values go in opposite direction of t to ensure duplicate detection is by t.
 			sampleFunc: func(st, ts int64) sample {
 				return sample{st: 1000 - ts, t: ts, f: float64(ts)}
 			},

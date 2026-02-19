@@ -545,7 +545,7 @@ func TestRecord_Type(t *testing.T) {
 	recordType = dec.Type(enc.Samples(samples, nil))
 	require.Equal(t, Samples, recordType)
 
-	// With EnableSTStorage set, all Samples are V2
+	// With EnableSTStorage set, all Samples are V2.
 	enc = Encoder{EnableSTStorage: true}
 	samples = []RefSample{{Ref: 123, T: 12345, V: 1.2345}}
 	recordType = dec.Type(enc.Samples(samples, nil))

@@ -61,7 +61,7 @@ func TestWriterWithDefaultSegmentSize(t *testing.T) {
 }
 
 func TestChunkFromSamplesWithST(t *testing.T) {
-	// Create samples with explicit ST (source timestamp) values
+	// Create samples with explicit ST (source timestamp) values.
 	samples := []Sample{
 		sample{t: 10, f: 11, st: 5},
 		sample{t: 20, f: 12, st: 15},
@@ -72,11 +72,11 @@ func TestChunkFromSamplesWithST(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, chk.Chunk)
 
-	// Verify MinTime and MaxTime
+	// Verify MinTime and MaxTime.
 	require.Equal(t, int64(10), chk.MinTime)
 	require.Equal(t, int64(30), chk.MaxTime)
 
-	// Iterate over the chunk and verify ST values are preserved
+	// Iterate over the chunk and verify ST values are preserved.
 	it := chk.Chunk.Iterator(nil)
 	idx := 0
 	for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
