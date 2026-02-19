@@ -722,9 +722,9 @@ func (*OpenAPIBuilder) labelsPostInputBodySchema() *base.SchemaProxy {
 }
 
 func (*OpenAPIBuilder) infoLabelsOutputBodySchema() *base.SchemaProxy {
-	props := orderedmap.New[string, *base.SchemaProxy]()
-	props.Set("status", statusSchema())
-	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+	// Data is an InfoLabelsResult with labels map and labelOrder array.
+	dataProps := orderedmap.New[string, *base.SchemaProxy]()
+	dataProps.Set("labels", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"object"},
 		Description: "Map of label names to their possible values from info metrics.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
@@ -733,6 +733,21 @@ func (*OpenAPIBuilder) infoLabelsOutputBodySchema() *base.SchemaProxy {
 				Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 			}),
 		},
+	}))
+	dataProps.Set("labelOrder", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Description: "Ordered list of label names. Without search, alphabetical. With search, sorted by relevance (exact > prefix > earlier substring position > alphabetical).",
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+	}))
+
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Info labels result containing labels map and ordered label names.",
+		Required:             []string{"labels", "labelOrder"},
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           dataProps,
 	}))
 	props.Set("warnings", warningsSchema())
 	props.Set("infos", infosSchema())
@@ -752,6 +767,7 @@ func (*OpenAPIBuilder) infoLabelsPostInputBodySchema() *base.SchemaProxy {
 	props.Set("end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2023-07-21T21:00:00.000Z"))
 	props.Set("expr", stringSchemaWithDescriptionAndExample("Form field: PromQL expression to extract identifying labels from.", "up{job=\"prometheus\"}"))
 	props.Set("metric_match", stringSchemaWithDescriptionAndExample("Form field: Matcher for the info metric name (default: target_info).", "target_info"))
+	props.Set("search", stringSchemaWithDescriptionAndExample("Form field: Filter label names by substring match (case-insensitive). When provided, labelOrder is sorted by relevance.", "env"))
 	props.Set("limit", integerSchemaWithDescriptionAndExample("Form field: Maximum number of values per label to return.", 100))
 
 	return base.CreateSchemaProxy(&base.Schema{
