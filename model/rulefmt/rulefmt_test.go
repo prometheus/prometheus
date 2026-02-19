@@ -391,3 +391,47 @@ func TestErrorUnwrap(t *testing.T) {
 		})
 	}
 }
+
+func TestMultiDocError(t *testing.T) {
+	const (
+		valid = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+`
+		multi = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+---
+groups:
+- name: example2
+  rules:
+  - alert: InstanceDown2
+    expr: up == 0
+`
+	)
+
+	_, errs := Parse([]byte(valid), false, model.UTF8Validation, testParser)
+	require.Empty(t, errs)
+
+	_, errs = Parse([]byte(multi), false, model.UTF8Validation, testParser)
+	require.NotEmpty(t, errs)
+	require.Equal(t, "multidoc rule files are not supported, only the first document is processed", errs[0].Error())
+
+	const multiEmpty = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+---
+`
+	_, errs = Parse([]byte(multiEmpty), false, model.UTF8Validation, testParser)
+	require.NotEmpty(t, errs)
+	require.Equal(t, "multidoc rule files are not supported, only the first document is processed", errs[0].Error())
+}
