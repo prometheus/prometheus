@@ -2113,7 +2113,6 @@ func TestPopulateWithDelSeriesIterator_WithST(t *testing.T) {
 // TestPopulateWithDelChunkSeriesIterator_WithST tests that ST (start time) values are
 // correctly preserved when re-encoding chunks with deletions.
 func TestPopulateWithDelChunkSeriesIterator_WithST(t *testing.T) {
-	// Samples with non-zero ST values.
 	samplesWithST := []chunks.Sample{
 		sample{st: 100, t: 1000, f: 1.0},
 		sample{st: 200, t: 2000, f: 2.0},

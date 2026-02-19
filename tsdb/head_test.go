@@ -2185,33 +2185,39 @@ func TestComputeChunkEndTime(t *testing.T) {
 
 // TestMemSeries_append tests float appending with various storeST/st combinations.
 func TestMemSeries_append(t *testing.T) {
-	scenarios := map[string]struct {
+	scenarios := []struct {
+		name    string
 		storeST bool
 		stFunc  func(ts int64) int64 // Function to compute st from ts
 	}{
-		"storeST=false st=0": {
+		{
+			name:    "storeST=false st=0",
 			storeST: false,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
-		"storeST=true st=0": {
+		{
+			name:    "storeST=true st=0",
 			storeST: true,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
-		"storeST=true st=ts": {
+		{
+			name:    "storeST=true st=ts",
 			storeST: true,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
-		"storeST=true st=ts-100": {
+		{
+			name:    "storeST=true st=ts-100",
 			storeST: true,
 			stFunc:  func(ts int64) int64 { return ts - 100 },
 		},
-		"storeST=false st=ts (st ignored)": {
+		{
+			name:    "storeST=false st=ts (st ignored)",
 			storeST: false,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
 	}
-	for name, scenario := range scenarios {
-		t.Run(name, func(t *testing.T) {
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
 			testMemSeriesAppend(t, scenario.storeST, scenario.stFunc)
 		})
 	}
@@ -2281,33 +2287,39 @@ func testMemSeriesAppend(t *testing.T, storeST bool, stFunc func(ts int64) int64
 
 // TestMemSeries_appendHistogram tests histogram appending with various storeST/st combinations.
 func TestMemSeries_appendHistogram(t *testing.T) {
-	scenarios := map[string]struct {
+	scenarios := []struct {
+		name    string
 		storeST bool
 		stFunc  func(ts int64) int64 // Function to compute st from ts
 	}{
-		"storeST=false st=0": {
+		{
+			name:    "storeST=false st=0",
 			storeST: false,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
-		"storeST=true st=0": {
+		{
+			name:    "storeST=true st=0",
 			storeST: true,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
-		"storeST=true st=ts": {
+		{
+			name:    "storeST=true st=ts",
 			storeST: true,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
-		"storeST=true st=ts-100": {
+		{
+			name:    "storeST=true st=ts-100",
 			storeST: true,
 			stFunc:  func(ts int64) int64 { return ts - 100 },
 		},
-		"storeST=false st=ts (st ignored)": {
+		{
+			name:    "storeST=false st=ts (st ignored)",
 			storeST: false,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
 	}
-	for name, scenario := range scenarios {
-		t.Run(name, func(t *testing.T) {
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
 			testMemSeriesAppendHistogram(t, scenario.storeST, scenario.stFunc)
 		})
 	}
@@ -7467,12 +7479,11 @@ func TestHeadAppender_STStorage_Disabled(t *testing.T) {
 	}
 
 	opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
-	opts.EnableSTStorage.Store(false) // Explicitly disable ST storage
+	opts.EnableSTStorage.Store(false) // Explicitly disable ST storage.
 	h, _ := newTestHeadWithOptions(t, compression.None, opts)
 
 	lbls := labels.FromStrings("foo", "bar")
 
-	// Use AppenderV2 to append samples with ST values
 	a := h.AppenderV2(context.Background())
 	for _, s := range samples {
 		_, err := a.Append(0, lbls, s.st, s.ts, s.fSample, nil, nil, storage.AOptions{})
@@ -7480,7 +7491,6 @@ func TestHeadAppender_STStorage_Disabled(t *testing.T) {
 	}
 	require.NoError(t, a.Commit())
 
-	// Verify ST values are NOT stored (should all be 0)
 	ctx := context.Background()
 	idxReader, err := h.Index()
 	require.NoError(t, err)
@@ -7500,7 +7510,6 @@ func TestHeadAppender_STStorage_Disabled(t *testing.T) {
 	var chkMetas []chunks.Meta
 	require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
 
-	// Read chunks and verify all ST values are 0
 	for _, meta := range chkMetas {
 		chk, iterable, err := chkReader.ChunkOrIterable(meta)
 		require.NoError(t, err)
@@ -7663,7 +7672,6 @@ func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
 			}
 			require.NoError(t, a.Commit())
 
-			// Check chunk encoding
 			ctx := context.Background()
 			idxReader, err := h.Index()
 			require.NoError(t, err)
@@ -7684,7 +7692,6 @@ func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
 			require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
 			require.NotEmpty(t, chkMetas)
 
-			// Verify encoding
 			for _, meta := range chkMetas {
 				chk, iterable, err := chkReader.ChunkOrIterable(meta)
 				require.NoError(t, err)
@@ -7692,11 +7699,9 @@ func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
 
 				encoding := chk.Encoding()
 				if enableST {
-					// Should use ST-capable encoding
 					require.Equal(t, chunkenc.EncXOROptST, encoding,
 						"Expected ST-capable encoding when EnableSTStorage is true")
 				} else {
-					// Should use regular XOR encoding
 					require.Equal(t, chunkenc.EncXOR, encoding,
 						"Expected regular XOR encoding when EnableSTStorage is false")
 				}

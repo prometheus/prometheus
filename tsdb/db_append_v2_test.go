@@ -7532,19 +7532,15 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	mint := 100
 	maxt := 200
 	for i := mint; i < maxt; i++ {
-		// AppendV2 signature: (ref, labels, st, t, v, h, fh, opts)
 		_, err := app.Append(0, labels.FromStrings("a", "b"), 50, int64(i), float64(i), nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
 
-	// Compact the Head to create a new block.
 	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), int64(mint), int64(maxt)-1)))
-	// Check that we have exactly one block.
 	require.Len(t, db.Blocks(), 1)
 	b := db.Blocks()[0]
 
-	// Open chunk reader and index reader.
 	chunkr, err := b.Chunks()
 	require.NoError(t, err)
 	defer chunkr.Close()
@@ -7553,7 +7549,6 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	require.NoError(t, err)
 	defer indexr.Close()
 
-	// Get postings for the series.
 	p, err := indexr.Postings(ctx, "a", "b")
 	require.NoError(t, err)
 
@@ -7615,16 +7610,16 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 
 	testCases := []struct {
 		name            string
-		appendSamples   []chunks.Sample // Samples in append order (out of order)
-		expectedSamples []chunks.Sample // Expected samples in time order after query
+		appendSamples   []chunks.Sample
+		expectedSamples []chunks.Sample
 	}{
 		{
 			name: "Float samples out of order",
 			appendSamples: []chunks.Sample{
-				newSample(20, 200, 2.0, nil, nil), // Append second sample first
-				newSample(10, 100, 1.0, nil, nil), // Append first sample second (OOO)
-				newSample(30, 300, 3.0, nil, nil), // Append third sample last
-				newSample(25, 250, 2.5, nil, nil), // Append middle sample (OOO)
+				newSample(20, 200, 2.0, nil, nil), // Append second sample first.
+				newSample(10, 100, 1.0, nil, nil), // Append first sample second (OOO).
+				newSample(30, 300, 3.0, nil, nil), // Append third sample last.
+				newSample(25, 250, 2.5, nil, nil), // Append middle sample (OOO).
 			},
 			expectedSamples: []chunks.Sample{
 				newSample(10, 100, 1.0, nil, nil),
@@ -7636,11 +7631,11 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 		{
 			name: "Histogram samples out of order",
 			appendSamples: []chunks.Sample{
-				newSample(30, 300, 0, testHistogram, nil), // Append third sample first
-				newSample(10, 100, 0, testHistogram, nil), // Append first sample second (OOO)
-				newSample(20, 200, 0, testHistogram, nil), // Append second sample last (OOO)
+				newSample(30, 300, 0, testHistogram, nil), // Append third sample first.
+				newSample(10, 100, 0, testHistogram, nil), // Append first sample second (OOO).
+				newSample(20, 200, 0, testHistogram, nil), // Append second sample last (OOO).
 			},
-			// Histograms don't support ST storage yet, should return 0 for ST
+			// Histograms don't support ST storage yet, should return 0 for ST.
 			expectedSamples: []chunks.Sample{
 				newSample(0, 100, 0, testHistogram, nil),
 				newSample(0, 200, 0, testHistogram, nil),
@@ -7651,7 +7646,7 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			name: "Mixed float samples with same ST",
 			appendSamples: []chunks.Sample{
 				newSample(10, 200, 2.0, nil, nil),
-				newSample(10, 100, 1.0, nil, nil), // OOO with same ST
+				newSample(10, 100, 1.0, nil, nil), // OOO with same ST.
 				newSample(10, 300, 3.0, nil, nil),
 			},
 			expectedSamples: []chunks.Sample{
@@ -7672,7 +7667,6 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 
 			lbls := labels.FromStrings("foo", "bar")
 
-			// Append samples in the specified (out of order) sequence
 			for _, s := range tc.appendSamples {
 				app := db.AppenderV2(context.Background())
 				_, err := app.Append(0, lbls, s.ST(), s.T(), s.F(), s.H(), s.FH(), storage.AOptions{})
@@ -7680,7 +7674,6 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 				require.NoError(t, app.Commit(), "Committing OOO sample with ST should succeed")
 			}
 
-			// Query using ChunkQuerier to verify ST values
 			querier, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
 			require.NoError(t, err)
 			defer querier.Close()
@@ -7691,7 +7684,6 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			require.NoError(t, ss.Err())
 			require.False(t, ss.Next(), "Should have only one series")
 
-			// Iterate through chunks and collect samples using storage.ExpandSamples
 			chunkIt := series.Iterator(nil)
 			var actualSamples []chunks.Sample
 
@@ -7704,11 +7696,10 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			}
 			require.NoError(t, chunkIt.Err())
 
-			// Verify samples are in time order with correct values
-			// Use requireEqualSamplesIgnoreCounterResets to ignore histogram counter reset hints
+			// Use requireEqualSamplesIgnoreCounterResets to ignore histogram counter reset hints.
 			requireEqualSamples(t, lbls.String(), tc.expectedSamples, actualSamples, requireEqualSamplesIgnoreCounterResets)
 
-			// Additionally verify ST values match expectations
+			// Additionally verify ST values match expectations.
 			require.Len(t, actualSamples, len(tc.expectedSamples))
 			for i, expected := range tc.expectedSamples {
 				actual := actualSamples[i]

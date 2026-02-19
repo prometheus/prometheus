@@ -4775,7 +4775,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 	testCases := []struct {
 		name        string
 		samples     []sampleData
-		expectedSTs []int64 // Expected ST values
+		expectedSTs []int64
 		isHistogram bool
 	}{
 		{
@@ -4792,8 +4792,8 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 			name: "Float samples with varying ST",
 			samples: []sampleData{
 				{st: 5, ts: 100, fSample: 1.0},
-				{st: 5, ts: 200, fSample: 2.0},   // Same ST
-				{st: 150, ts: 300, fSample: 3.0}, // Different ST
+				{st: 5, ts: 200, fSample: 2.0},
+				{st: 150, ts: 300, fSample: 3.0},
 			},
 			expectedSTs: []int64{5, 5, 150},
 			isHistogram: false,
@@ -4805,7 +4805,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				{st: 20, ts: 200, h: testHistogram},
 				{st: 30, ts: 300, h: testHistogram},
 			},
-			// Histograms don't support ST storage yet, should return 0
+			// Histograms don't support ST storage yet, should return 0.
 			expectedSTs: []int64{0, 0, 0},
 			isHistogram: true,
 		},
@@ -4819,7 +4819,6 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 
 			lbls := labels.FromStrings("foo", "bar")
 
-			// Use AppenderV2 which has native ST support
 			a := h.AppenderV2(context.Background())
 			for _, s := range tc.samples {
 				_, err := a.Append(0, lbls, s.st, s.ts, s.fSample, s.h, nil, storage.AOptions{})
@@ -4827,7 +4826,7 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 			}
 			require.NoError(t, a.Commit())
 
-			// Verify ST values are stored in chunks
+			// Verify ST values are stored in chunks.
 			ctx := context.Background()
 			idxReader, err := h.Index()
 			require.NoError(t, err)
@@ -4847,7 +4846,6 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 			var chkMetas []chunks.Meta
 			require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
 
-			// Read chunks and verify ST values
 			var actualSTs []int64
 			for _, meta := range chkMetas {
 				chk, iterable, err := chkReader.ChunkOrIterable(meta)
@@ -4862,14 +4860,13 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 				require.NoError(t, it.Err())
 			}
 
-			// Verify expected ST values
 			if tc.isHistogram {
 				require.Equal(t, tc.expectedSTs, actualSTs, "Histogram samples should return 0 for ST")
 			} else {
 				require.Equal(t, tc.expectedSTs, actualSTs, "Float samples should have ST stored")
 			}
 
-			// Also verify via querier
+			// Also verify via querier.
 			q, err := NewBlockQuerier(h, math.MinInt64, math.MaxInt64)
 			require.NoError(t, err)
 			defer q.Close()
@@ -4887,7 +4884,6 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 			}
 			require.NoError(t, seriesIt.Err())
 
-			// Verify querier returns same ST values
 			require.Equal(t, tc.expectedSTs, queriedSTs, "Querier should return same ST values as chunk iterator")
 		})
 	}
