@@ -255,6 +255,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		Context:    context.Background(),
 		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
 		Logger:     promslog.NewNopLogger(),
+		Parser:     tg.parser,
 	}
 	m := rules.NewManager(opts)
 	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, nil, ignoreUnknownFields, ruleFiles...)
