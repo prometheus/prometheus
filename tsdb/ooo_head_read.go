@@ -106,7 +106,7 @@ func getOOOSeriesChunks(s *memSeries, storeST bool, mint, maxt int64, lastGarbag
 		if c.OverlapsClosedInterval(mint, maxt) && maxMmapRef == 0 {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
 			if len(c.chunk.samples) > 0 { // Empty samples happens in tests, at least.
-				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(storeST, c.minTime, c.maxTime)
+				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(c.minTime, c.maxTime, storeST)
 				if err != nil {
 					handleChunkWriteError(err)
 					return nil

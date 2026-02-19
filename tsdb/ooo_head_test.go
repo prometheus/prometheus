@@ -320,7 +320,7 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 				}
 			}
 
-			chunks, err := oooChunk.ToEncodedChunks(false, math.MinInt64, math.MaxInt64)
+			chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, false)
 			require.NoError(t, err)
 			require.Len(t, chunks, len(tc.expectedChunks), "number of chunks")
 			sampleIndex := 0
@@ -418,7 +418,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 					oooChunk.Insert(s.st, s.t, s.f, nil, nil)
 				}
 
-				chunks, err := oooChunk.ToEncodedChunks(ss.storeST, math.MinInt64, math.MaxInt64)
+				chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, ss.storeST)
 				require.NoError(t, err)
 				require.Len(t, chunks, 1, "number of chunks")
 

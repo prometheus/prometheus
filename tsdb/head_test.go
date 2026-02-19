@@ -5652,7 +5652,7 @@ func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(false, math.MinInt64, math.MaxInt64)
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, false)
 	require.NoError(t, err)
 	require.Len(t, chks, 1)
 
@@ -7627,7 +7627,7 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 	require.NotNil(t, ms.ooo)
 	require.NotNil(t, ms.ooo.oooHeadChunk)
 
-	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(true, math.MinInt64, math.MaxInt64)
+	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, true)
 	require.NoError(t, err)
 	require.Len(t, chks, 1)
 

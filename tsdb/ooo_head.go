@@ -73,7 +73,7 @@ func (o *OOOChunk) NumSamples() int {
 // ToEncodedChunks returns chunks with the samples in the OOOChunk.
 //
 //nolint:revive
-func (o *OOOChunk) ToEncodedChunks(storeST bool, mint, maxt int64) (chks []memChunk, err error) {
+func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, storeST bool) (chks []memChunk, err error) {
 	if len(o.samples) == 0 {
 		return nil, nil
 	}

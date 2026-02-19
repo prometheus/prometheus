@@ -2187,7 +2187,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(storeST bool, chunkDiskMapper *chunk
 		// OOO is not enabled or there is no head chunk, so nothing to m-map here.
 		return nil
 	}
-	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(storeST, math.MinInt64, math.MaxInt64)
+	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, storeST)
 	if err != nil {
 		handleChunkWriteError(err)
 		return nil
