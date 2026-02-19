@@ -26,10 +26,10 @@
 // will cause Matcher.matchesEmpty() and labelMatchersToString() to silently
 // produce incorrect results.
 // =============================================================================
-export const EqlSingle = 162;
-export const EqlRegex = 163;
+export const EqlSingle = 163;
+export const EqlRegex = 164;
 export const Neq = 63;
-export const NeqRegex = 164;
+export const NeqRegex = 165;
 
 export type FetchFn = (input: RequestInfo, init?: RequestInit) => Promise<Response>;
 
