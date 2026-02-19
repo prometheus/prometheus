@@ -347,7 +347,7 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 		}
 
 		var lastMmapRef chunks.ChunkDiskMapperRef
-		mmapRefs := ms.mmapCurrentOOOHeadChunk(head.opts.EnableSTStorage.Load(), head.chunkDiskMapper, head.logger)
+		mmapRefs := ms.mmapCurrentOOOHeadChunk(chunkOpts{chunkDiskMapper: head.chunkDiskMapper, storeST: head.opts.EnableSTStorage.Load()}, head.logger)
 		if len(mmapRefs) == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
 			// Nothing was m-mapped. So take the mmapRef from the existing slice if it exists.
 			mmapRefs = []chunks.ChunkDiskMapperRef{ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref}

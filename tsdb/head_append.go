@@ -1813,7 +1813,7 @@ func (s *memSeries) insert(st, t int64, v float64, h *histogram.Histogram, fh *h
 	c := s.ooo.oooHeadChunk
 	if c == nil || c.chunk.NumSamples() == int(oooCapMax) {
 		// Note: If no new samples come in then we rely on compaction to clean up stale in-memory OOO chunks.
-		c, mmapRefs = s.cutNewOOOHeadChunk(o.storeST, t, o.chunkDiskMapper, logger)
+		c, mmapRefs = s.cutNewOOOHeadChunk(t, o, logger)
 		chunkCreated = true
 	}
 
@@ -2169,8 +2169,8 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
 // The caller must ensure that s is locked and s.ooo is not nil.
-func (s *memSeries) cutNewOOOHeadChunk(storeST bool, mint int64, chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) (*oooHeadChunk, []chunks.ChunkDiskMapperRef) {
-	ref := s.mmapCurrentOOOHeadChunk(storeST, chunkDiskMapper, logger)
+func (s *memSeries) cutNewOOOHeadChunk(mint int64, o chunkOpts, logger *slog.Logger) (*oooHeadChunk, []chunks.ChunkDiskMapperRef) {
+	ref := s.mmapCurrentOOOHeadChunk(o, logger)
 
 	s.ooo.oooHeadChunk = &oooHeadChunk{
 		chunk:   NewOOOChunk(),
@@ -2182,12 +2182,12 @@ func (s *memSeries) cutNewOOOHeadChunk(storeST bool, mint int64, chunkDiskMapper
 }
 
 // s must be locked when calling.
-func (s *memSeries) mmapCurrentOOOHeadChunk(storeST bool, chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) []chunks.ChunkDiskMapperRef {
+func (s *memSeries) mmapCurrentOOOHeadChunk(o chunkOpts, logger *slog.Logger) []chunks.ChunkDiskMapperRef {
 	if s.ooo == nil || s.ooo.oooHeadChunk == nil {
 		// OOO is not enabled or there is no head chunk, so nothing to m-map here.
 		return nil
 	}
-	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, storeST)
+	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, o.storeST)
 	if err != nil {
 		handleChunkWriteError(err)
 		return nil
@@ -2198,7 +2198,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(storeST bool, chunkDiskMapper *chunk
 			logger.Error("Too many OOO chunks, dropping data", "series", s.lset.String())
 			break
 		}
-		chunkRef := chunkDiskMapper.WriteChunk(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true, handleChunkWriteError)
+		chunkRef := o.chunkDiskMapper.WriteChunk(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true, handleChunkWriteError)
 		chunkRefs = append(chunkRefs, chunkRef)
 		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
