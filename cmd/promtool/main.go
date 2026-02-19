@@ -948,11 +948,11 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int
 		dRules := checkDuplicates(rgs.Groups)
 		if len(dRules) != 0 {
 			var errMessage strings.Builder
-			errMessage.WriteString(fmt.Sprintf("%d duplicate rule(s) found.\n", len(dRules)))
+			fmt.Fprintf(&errMessage, "%d duplicate rule(s) found.\n", len(dRules))
 			for _, n := range dRules {
-				errMessage.WriteString(fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric))
+				fmt.Fprintf(&errMessage, "Metric: %s\nLabel(s):\n", n.metric)
 				n.label.Range(func(l labels.Label) {
-					errMessage.WriteString(fmt.Sprintf("\t%s: %s\n", l.Name, l.Value))
+					fmt.Fprintf(&errMessage, "\t%s: %s\n", l.Name, l.Value)
 				})
 			}
 			errMessage.WriteString("Might cause inconsistency while recording expressions")

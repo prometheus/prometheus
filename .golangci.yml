@@ -39,6 +39,7 @@ linters:
     - predeclared
     - revive
     - sloglint
+    - staticcheck
     - testifylint
     - unconvert
     - unused
