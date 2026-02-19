@@ -130,6 +130,27 @@ jobs:
       - run: make -C documentation/prometheus-mixin
       - run: git diff --exit-code
 
+  test-compliance:
+    name: Compliance testing
+    runs-on: ubuntu-latest
+    container:
+      # Whenever the Go version is updated here, .promu.yml
+      # should also be updated.
+      image: quay.io/prometheus/golang-builder:1.25-base
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+      - uses: prometheus/promci@fc721ff8497a70a93a881cd552b71af7fb3a9d53 # v0.5.4
+      - uses: ./.github/promci/actions/setup_environment
+        with:
+          enable_npm: false
+      # NOTE: Those tests are based on https://github.com/prometheus/compliance and
+      # are executed against the ./cmd/prometheus main package.
+      - run: go test -skip ${SKIP_TESTS} -v --tags=compliance ./compliance/...
+        env:
+          SKIP_TESTS: "TestRemoteWriteSender/prometheus/samples/rw2/start_timestamp*" # TODO(bwplotka): PROM-60
+
   build:
     name: Build Prometheus for common architectures
     runs-on: ubuntu-latest
