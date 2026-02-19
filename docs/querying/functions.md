@@ -802,6 +802,9 @@ query results always have a fixed output ordering.
 
 Same as `sort`, but sorts in descending order.
 
+Please note that `sort_desc` only affects the results of instant queries, as range
+query results always have a fixed output ordering.
+
 ## `sort_by_label()`
 
 **This function has to be enabled via the [feature
@@ -826,6 +829,9 @@ flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
 Same as `sort_by_label`, but sorts in descending order.
+
+Please note that `sort_by_label_desc` only affects the results of instant queries, as
+range query results always have a fixed output ordering.
 
 ## `sqrt()`
 
