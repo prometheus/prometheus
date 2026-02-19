@@ -49,17 +49,36 @@ This returns metrics enriched with their `target_info` labels.
 
 ### 4. API Endpoint
 
-Test the new `/api/v1/info_labels` endpoint:
+Test the `/api/v1/info_labels` endpoint. The response is a structured object with
+`labels` (map of label names to value arrays) and `labelOrder` (array preserving
+the server's ordering):
 
 ```bash
 # Get all data labels from target_info
 curl 'http://localhost:9090/api/v1/info_labels'
+# Response: {"status":"success","data":{"labels":{"cluster":[...],"env":[...],...},"labelOrder":["cluster","env","region","version"]}}
 
 # Filter by expression results
 curl 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{job="api-gateway"}'
 
 # Use a different info metric
 curl 'http://localhost:9090/api/v1/info_labels?metric_match=build_info'
+```
+
+### 5. Search Filtering
+
+The `search` parameter filters label names by case-insensitive substring match
+and returns `labelOrder` sorted by relevance (exact > prefix > earlier position > alphabetical):
+
+```bash
+# Exact match on "env" — returns env label first
+curl 'http://localhost:9090/api/v1/info_labels?search=env'
+
+# Substring "ion" — matches region (pos 3) and version (pos 4), ordered by position
+curl 'http://localhost:9090/api/v1/info_labels?search=ion'
+
+# Combined with expr filtering
+curl 'http://localhost:9090/api/v1/info_labels?expr=http_requests_total{job="api-gateway"}&search=cl'
 ```
 
 ## Test Data

@@ -205,6 +205,7 @@ func (*OpenAPIBuilder) infoLabelsPath() *v3.PathItem {
 		queryParamWithExample("end", "End timestamp for info labels query.", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("expr", "PromQL expression to extract identifying labels from.", false, stringSchema(), []example{{"example", "up{job=\"prometheus\"}"}}),
 		queryParamWithExample("metric_match", "Matcher for the info metric name (default: target_info).", false, stringSchema(), []example{{"example", "target_info"}}),
+		queryParamWithExample("search", "Filter label names by substring match (case-insensitive). When provided, response includes a labelOrder array sorted by relevance.", false, stringSchema(), []example{{"example", "env"}}),
 		queryParamWithExample("limit", "Maximum number of values per label to return.", false, integerSchema(), []example{{"example", 100}}),
 	}
 	return &v3.PathItem{

@@ -539,13 +539,30 @@ func infoLabelsResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
 
 	examples.Set("infoLabels", &base.Example{
-		Summary: "Map of label names to values from info metrics",
+		Summary: "All info labels (no search filter)",
 		Value: createYAMLNode(map[string]any{
 			"status": "success",
-			"data": map[string][]string{
-				"version":    {"1.0.0", "2.0.0"},
-				"commit":     {"abc123"},
-				"go_version": {"go1.21.0"},
+			"data": map[string]any{
+				"labels": map[string][]string{
+					"version":    {"1.0.0", "2.0.0"},
+					"commit":     {"abc123"},
+					"go_version": {"go1.21.0"},
+				},
+				"labelOrder": []string{"commit", "go_version", "version"},
+			},
+		}),
+	})
+
+	examples.Set("infoLabelsWithSearch", &base.Example{
+		Summary: "Info labels filtered by search (search=ver)",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": map[string]any{
+				"labels": map[string][]string{
+					"version":    {"1.0.0", "2.0.0"},
+					"go_version": {"go1.21.0"},
+				},
+				"labelOrder": []string{"version", "go_version"},
 			},
 		}),
 	})
@@ -569,6 +586,14 @@ func infoLabelsPostExamples() *orderedmap.Map[string, *base.Example] {
 		Value: createYAMLNode(map[string]any{
 			"expr":         "up{job=\"prometheus\"}",
 			"metric_match": "target_info",
+		}),
+	})
+
+	examples.Set("queryWithSearch", &base.Example{
+		Summary: "Info labels query with search filter",
+		Value: createYAMLNode(map[string]any{
+			"metric_match": "target_info",
+			"search":       "env",
 		}),
 	})
 

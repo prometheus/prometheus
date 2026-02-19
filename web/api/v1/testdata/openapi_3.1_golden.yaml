@@ -1065,6 +1065,16 @@ paths:
                   examples:
                     example:
                         value: target_info
+                - name: search
+                  in: query
+                  description: Filter label names by substring match (case-insensitive). When provided, response includes a labelOrder array sorted by relevance.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: env
                 - name: limit
                   in: query
                   description: Maximum number of values per label to return.
@@ -1085,16 +1095,35 @@ paths:
                                 $ref: '#/components/schemas/InfoLabelsOutputBody'
                             examples:
                                 infoLabels:
-                                    summary: Map of label names to values from info metrics
+                                    summary: All info labels (no search filter)
                                     value:
                                         data:
-                                            commit:
-                                                - abc123
-                                            go_version:
-                                                - go1.21.0
-                                            version:
-                                                - 1.0.0
-                                                - 2.0.0
+                                            labelOrder:
+                                                - commit
+                                                - go_version
+                                                - version
+                                            labels:
+                                                commit:
+                                                    - abc123
+                                                go_version:
+                                                    - go1.21.0
+                                                version:
+                                                    - 1.0.0
+                                                    - 2.0.0
+                                        status: success
+                                infoLabelsWithSearch:
+                                    summary: Info labels filtered by search (search=ver)
+                                    value:
+                                        data:
+                                            labelOrder:
+                                                - version
+                                                - go_version
+                                            labels:
+                                                go_version:
+                                                    - go1.21.0
+                                                version:
+                                                    - 1.0.0
+                                                    - 2.0.0
                                         status: success
                 default:
                     description: Error retrieving info labels.
@@ -1131,6 +1160,11 @@ paths:
                                 value:
                                     expr: up{job="prometheus"}
                                     metric_match: target_info
+                            queryWithSearch:
+                                summary: Info labels query with search filter
+                                value:
+                                    metric_match: target_info
+                                    search: env
                 required: true
             responses:
                 "200":
@@ -1141,16 +1175,35 @@ paths:
                                 $ref: '#/components/schemas/InfoLabelsOutputBody'
                             examples:
                                 infoLabels:
-                                    summary: Map of label names to values from info metrics
+                                    summary: All info labels (no search filter)
                                     value:
                                         data:
-                                            commit:
-                                                - abc123
-                                            go_version:
-                                                - go1.21.0
-                                            version:
-                                                - 1.0.0
-                                                - 2.0.0
+                                            labelOrder:
+                                                - commit
+                                                - go_version
+                                                - version
+                                            labels:
+                                                commit:
+                                                    - abc123
+                                                go_version:
+                                                    - go1.21.0
+                                                version:
+                                                    - 1.0.0
+                                                    - 2.0.0
+                                        status: success
+                                infoLabelsWithSearch:
+                                    summary: Info labels filtered by search (search=ver)
+                                    value:
+                                        data:
+                                            labelOrder:
+                                                - version
+                                                - go_version
+                                            labels:
+                                                go_version:
+                                                    - go1.21.0
+                                                version:
+                                                    - 1.0.0
+                                                    - 2.0.0
                                         status: success
                 default:
                     description: Error retrieving info labels via POST.
@@ -3342,11 +3395,24 @@ components:
                     example: success
                 data:
                     type: object
-                    additionalProperties:
-                        type: array
-                        items:
-                            type: string
-                    description: Map of label names to their possible values from info metrics.
+                    properties:
+                        labels:
+                            type: object
+                            additionalProperties:
+                                type: array
+                                items:
+                                    type: string
+                            description: Map of label names to their possible values from info metrics.
+                        labelOrder:
+                            type: array
+                            items:
+                                type: string
+                            description: Ordered list of label names. Without search, alphabetical. With search, sorted by relevance (exact > prefix > earlier substring position > alphabetical).
+                    required:
+                        - labels
+                        - labelOrder
+                    additionalProperties: false
+                    description: Info labels result containing labels map and ordered label names.
                 warnings:
                     type: array
                     items:
@@ -3381,6 +3447,10 @@ components:
                     type: string
                     description: 'Form field: Matcher for the info metric name (default: target_info).'
                     example: target_info
+                search:
+                    type: string
+                    description: 'Form field: Filter label names by substring match (case-insensitive). When provided, labelOrder is sorted by relevance.'
+                    example: env
                 limit:
                     type: integer
                     format: int64
