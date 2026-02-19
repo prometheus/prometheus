@@ -934,7 +934,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{vals, nil, warnings, closer}
 }
 
-// infoLabels returns a map of data label names to their values from info metrics.
+// infoLabels returns data label names and their values from info metrics.
 // Data labels are all labels from the info metric except __name__ and identifying labels
 // (job, instance).
 //
@@ -944,6 +944,8 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 //   - expr: Optional PromQL expression. If provided, the expression is evaluated and
 //     identifying labels (job, instance) are extracted from the result to filter info metrics.
 //     Note that some use cases require for this to be optional, as they want to e.g. get all labels off of target_info.
+//   - search: Optional substring filter for label names (case-insensitive). When provided,
+//     only matching label names are returned and labelOrder is sorted by relevance.
 //   - start/end: Time range for the query (default: last 12 hours)
 //   - limit: Maximum number of values per label to return
 func (api *API) infoLabels(r *http.Request) (result apiFuncResult) {
@@ -960,6 +962,9 @@ func (api *API) infoLabels(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return invalidParamError(err, "metric_match")
 	}
+
+	// Parse search parameter for label name filtering
+	search := r.FormValue("search")
 
 	// Parse limit
 	limit, err := parseLimitParam(r.FormValue("limit"))
@@ -1013,7 +1018,7 @@ func (api *API) infoLabels(r *http.Request) (result apiFuncResult) {
 
 		// If no identifying labels were found, return empty result early
 		if len(identifyingLabelValues) == 0 {
-			return apiFuncResult{map[string][]string{}, nil, exprWarnings, nil}
+			return apiFuncResult{infohelper.InfoLabelsResult{Labels: map[string][]string{}, LabelOrder: []string{}}, nil, exprWarnings, nil}
 		}
 	}
 
@@ -1037,7 +1042,7 @@ func (api *API) infoLabels(r *http.Request) (result apiFuncResult) {
 		Func:  "info_labels",
 	}
 
-	dataLabels, warnings, err := extractor.ExtractDataLabels(ctx, q, infoMetricMatcher, identifyingLabelValues, hints)
+	dataLabels, warnings, err := extractor.ExtractDataLabels(ctx, q, infoMetricMatcher, identifyingLabelValues, hints, search)
 	warnings.Merge(exprWarnings)
 	if err != nil {
 		return apiFuncResult{nil, returnAPIError(err), warnings, closer}
@@ -1045,9 +1050,9 @@ func (api *API) infoLabels(r *http.Request) (result apiFuncResult) {
 
 	// Apply limit if specified (limit applies per label)
 	if limit > 0 {
-		for name, vals := range dataLabels {
+		for name, vals := range dataLabels.Labels {
 			if len(vals) > limit {
-				dataLabels[name] = vals[:limit]
+				dataLabels.Labels[name] = vals[:limit]
 				warnings = warnings.Add(fmt.Errorf("values for label %q truncated due to limit", name))
 			}
 		}

@@ -18,6 +18,7 @@ package infohelper
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -28,6 +29,15 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
+
+// InfoLabelsResult is the structured result of ExtractDataLabels.
+// Labels is the map of label names to their unique sorted values.
+// LabelOrder preserves the ordering of label names — alphabetical when no
+// search is given, relevance-ranked otherwise.
+type InfoLabelsResult struct {
+	Labels     map[string][]string `json:"labels"`
+	LabelOrder []string            `json:"labelOrder"`
+}
 
 // DefaultIdentifyingLabels are the standard labels used to match base metrics to info metrics.
 // These are the default identifying labels for Prometheus info metrics.
@@ -69,7 +79,7 @@ func NewWithDefaults() *InfoLabelExtractor {
 	return New(DefaultConfig())
 }
 
-// ExtractDataLabels queries info metrics and returns a map of data label names to their values.
+// ExtractDataLabels queries info metrics and returns label names and their values.
 // Data labels are all labels on the info metric except for __name__ and identifying labels.
 //
 // Parameters:
@@ -80,15 +90,19 @@ func NewWithDefaults() *InfoLabelExtractor {
 //     are considered. The map keys are identifying label names (e.g., "job", "instance") and values
 //     are sets of label values. If nil or empty, all info metrics are returned.
 //   - hints: Select hints for the storage layer
+//   - search: If non-empty, only label names containing this substring (case-insensitive) are
+//     included, and LabelOrder is sorted by relevance. If empty, all labels are returned with
+//     LabelOrder in alphabetical order.
 //
-// Returns a map where keys are label names and values are slices of unique values for that label.
+// Returns an InfoLabelsResult with labels map and ordered label names.
 func (e *InfoLabelExtractor) ExtractDataLabels(
 	ctx context.Context,
 	querier storage.Querier,
 	infoMetricMatcher *labels.Matcher,
 	identifyingLabelValues map[string]map[string]struct{},
 	hints *storage.SelectHints,
-) (map[string][]string, annotations.Annotations, error) {
+	search string,
+) (InfoLabelsResult, annotations.Annotations, error) {
 	var warnings annotations.Annotations
 
 	// Build matchers for the info metric query
@@ -106,13 +120,15 @@ func (e *InfoLabelExtractor) ExtractDataLabels(
 	infoSet := querier.Select(ctx, false, hints, infoMatchers...)
 	warnings.Merge(infoSet.Warnings())
 
+	searchLower := strings.ToLower(search)
+
 	// Collect data labels from info series
 	dataLabels := make(map[string]map[string]struct{})
 
 	for infoSet.Next() {
 		// Check for context cancellation periodically
 		if ctx.Err() != nil {
-			return nil, warnings, ctx.Err()
+			return InfoLabelsResult{}, warnings, ctx.Err()
 		}
 
 		series := infoSet.At()
@@ -129,6 +145,11 @@ func (e *InfoLabelExtractor) ExtractDataLabels(
 				return
 			}
 
+			// If search is provided, skip labels that don't match
+			if search != "" && !strings.Contains(strings.ToLower(lbl.Name), searchLower) {
+				return
+			}
+
 			// Add to data labels
 			if dataLabels[lbl.Name] == nil {
 				dataLabels[lbl.Name] = make(map[string]struct{})
@@ -138,21 +159,65 @@ func (e *InfoLabelExtractor) ExtractDataLabels(
 	}
 
 	if err := infoSet.Err(); err != nil {
-		return nil, warnings, err
+		return InfoLabelsResult{}, warnings, err
 	}
 
 	// Convert to sorted slices
-	result := make(map[string][]string, len(dataLabels))
+	labelsMap := make(map[string][]string, len(dataLabels))
 	for name, vals := range dataLabels {
 		valList := make([]string, 0, len(vals))
 		for v := range vals {
 			valList = append(valList, v)
 		}
 		slices.Sort(valList)
-		result[name] = valList
+		labelsMap[name] = valList
 	}
 
-	return result, warnings, nil
+	// Build ordered label names. Ensure non-nil slice for consistent JSON serialization.
+	labelOrder := make([]string, 0, len(labelsMap))
+	for name := range labelsMap {
+		labelOrder = append(labelOrder, name)
+	}
+	if search != "" {
+		rankLabels(labelOrder, searchLower)
+	} else {
+		slices.Sort(labelOrder)
+	}
+
+	return InfoLabelsResult{Labels: labelsMap, LabelOrder: labelOrder}, warnings, nil
+}
+
+// rankLabels sorts label names by relevance to a lowercase search string.
+// Ordering: exact match first, then prefix match, then by substring position,
+// with alphabetical tie-breaking.
+// TODO: Consider Jaro-Winkler or similar fuzzy matching for improved relevance.
+func rankLabels(names []string, searchLower string) {
+	keys := make(map[string]string, len(names))
+	for _, n := range names {
+		keys[n] = labelRelevance(n, searchLower)
+	}
+	slices.SortFunc(names, func(a, b string) int {
+		return strings.Compare(keys[a], keys[b])
+	})
+}
+
+// labelRelevance returns a sort key for a label name given a lowercase search.
+// Lower values = more relevant. The key encodes: match type (exact=0, prefix=1,
+// contains=2+position) and alphabetical order as tie-breaker.
+func labelRelevance(name, searchLower string) string {
+	lower := strings.ToLower(name)
+	var prefix string
+	switch {
+	case lower == searchLower:
+		prefix = "0"
+	case strings.HasPrefix(lower, searchLower):
+		prefix = "1"
+	default:
+		pos := strings.Index(lower, searchLower)
+		// Encode position as a zero-padded 4-digit number so earlier positions sort first.
+		prefix = fmt.Sprintf("2%04d", pos)
+	}
+	return prefix + ":" + lower
 }
 
 // IdentifyingLabels returns the identifying labels configured for this extractor.

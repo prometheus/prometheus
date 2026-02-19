@@ -43,15 +43,19 @@ func TestExtractDataLabels(t *testing.T) {
 		name                   string
 		infoMetricMatcher      *labels.Matcher
 		identifyingLabelValues map[string]map[string]struct{}
-		expectedLabels         map[string][]string
+		search                 string
+		expected               infohelper.InfoLabelsResult
 	}{
 		{
 			name:              "all target_info labels without filter",
 			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
-			expectedLabels: map[string][]string{
-				"version": {"1.0", "2.0", "2.1"},
-				"env":     {"prod", "staging"},
-				"region":  {"us-east"},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"1.0", "2.0", "2.1"},
+					"env":     {"prod", "staging"},
+					"region":  {"us-east"},
+				},
+				LabelOrder: []string{"env", "region", "version"},
 			},
 		},
 		{
@@ -60,9 +64,12 @@ func TestExtractDataLabels(t *testing.T) {
 			identifyingLabelValues: map[string]map[string]struct{}{
 				"job": {"prometheus": {}},
 			},
-			expectedLabels: map[string][]string{
-				"version": {"2.0", "2.1"},
-				"env":     {"prod", "staging"},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"2.0", "2.1"},
+					"env":     {"prod", "staging"},
+				},
+				LabelOrder: []string{"env", "version"},
 			},
 		},
 		{
@@ -71,9 +78,12 @@ func TestExtractDataLabels(t *testing.T) {
 			identifyingLabelValues: map[string]map[string]struct{}{
 				"instance": {"localhost:9090": {}},
 			},
-			expectedLabels: map[string][]string{
-				"version": {"2.0"},
-				"env":     {"prod"},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"2.0"},
+					"env":     {"prod"},
+				},
+				LabelOrder: []string{"env", "version"},
 			},
 		},
 		{
@@ -83,23 +93,32 @@ func TestExtractDataLabels(t *testing.T) {
 				"job":      {"prometheus": {}, "node": {}},
 				"instance": {"localhost:9090": {}, "node1:9100": {}},
 			},
-			expectedLabels: map[string][]string{
-				"version": {"1.0", "2.0"},
-				"env":     {"prod"},
-				"region":  {"us-east"},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"1.0", "2.0"},
+					"env":     {"prod"},
+					"region":  {"us-east"},
+				},
+				LabelOrder: []string{"env", "region", "version"},
 			},
 		},
 		{
 			name:              "custom info metric",
 			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "custom_info"),
-			expectedLabels: map[string][]string{
-				"custom_label": {"custom_value"},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"custom_label": {"custom_value"},
+				},
+				LabelOrder: []string{"custom_label"},
 			},
 		},
 		{
 			name:              "non-existent info metric",
 			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "nonexistent_info"),
-			expectedLabels:    map[string][]string{},
+			expected: infohelper.InfoLabelsResult{
+				Labels:     map[string][]string{},
+				LabelOrder: []string{},
+			},
 		},
 		{
 			name:              "no matching identifying labels",
@@ -107,16 +126,76 @@ func TestExtractDataLabels(t *testing.T) {
 			identifyingLabelValues: map[string]map[string]struct{}{
 				"job": {"nonexistent": {}},
 			},
-			expectedLabels: map[string][]string{},
+			expected: infohelper.InfoLabelsResult{
+				Labels:     map[string][]string{},
+				LabelOrder: []string{},
+			},
 		},
 		{
 			name:              "regex match on info metric name",
 			infoMetricMatcher: labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*_info"),
-			expectedLabels: map[string][]string{
-				"version":      {"1.0", "2.0", "2.1"},
-				"env":          {"prod", "staging"},
-				"region":       {"us-east"},
-				"custom_label": {"custom_value"},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version":      {"1.0", "2.0", "2.1"},
+					"env":          {"prod", "staging"},
+					"region":       {"us-east"},
+					"custom_label": {"custom_value"},
+				},
+				LabelOrder: []string{"custom_label", "env", "region", "version"},
+			},
+		},
+		{
+			name:              "search filters label names",
+			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
+			search:            "ver",
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"1.0", "2.0", "2.1"},
+				},
+				LabelOrder: []string{"version"},
+			},
+		},
+		{
+			name:              "search exact match sorts first",
+			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
+			search:            "env",
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"env": {"prod", "staging"},
+				},
+				LabelOrder: []string{"env"},
+			},
+		},
+		{
+			name:              "search substring position ordering",
+			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
+			search:            "ion",
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"1.0", "2.0", "2.1"},
+					"region":  {"us-east"},
+				},
+				LabelOrder: []string{"region", "version"},
+			},
+		},
+		{
+			name:              "search no matches",
+			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
+			search:            "zzz",
+			expected: infohelper.InfoLabelsResult{
+				Labels:     map[string][]string{},
+				LabelOrder: []string{},
+			},
+		},
+		{
+			name:              "search is case-insensitive",
+			infoMetricMatcher: labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"),
+			search:            "ENV",
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"env": {"prod", "staging"},
+				},
+				LabelOrder: []string{"env"},
 			},
 		},
 	}
@@ -136,9 +215,9 @@ func TestExtractDataLabels(t *testing.T) {
 				Func:  "info_labels",
 			}
 
-			result, _, err := extractor.ExtractDataLabels(ctx, q, tc.infoMetricMatcher, tc.identifyingLabelValues, hints)
+			result, _, err := extractor.ExtractDataLabels(ctx, q, tc.infoMetricMatcher, tc.identifyingLabelValues, hints, tc.search)
 			require.NoError(t, err)
-			require.Equal(t, tc.expectedLabels, result)
+			require.Equal(t, tc.expected, result)
 		})
 	}
 }

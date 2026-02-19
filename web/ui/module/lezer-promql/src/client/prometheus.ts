@@ -37,7 +37,9 @@ export interface PrometheusClient {
   // If expr is provided, the expression is evaluated and identifying labels (job, instance)
   // are extracted from the result to filter which info metrics are returned.
   // If metricMatch is provided, it specifies which info metrics to query (supports =, =~, !=, !~).
-  infoLabelPairs(expr?: string, metricMatch?: string): Promise<Record<string, string[]>>;
+  // If search is provided, label names are filtered by case-insensitive substring match and
+  // the returned Record preserves relevance ordering.
+  infoLabelPairs(expr?: string, metricMatch?: string, search?: string): Promise<Record<string, string[]>>;
 
   // destroy is called to release all resources held by this client
   destroy?(): void;
@@ -202,7 +204,7 @@ export class HTTPPrometheusClient implements PrometheusClient {
     });
   }
 
-  infoLabelPairs(expr?: string, metricMatch?: string): Promise<Record<string, string[]>> {
+  infoLabelPairs(expr?: string, metricMatch?: string, search?: string): Promise<Record<string, string[]>> {
     const params: URLSearchParams = new URLSearchParams();
     if (this.lookbackInterval) {
       const end = new Date();
@@ -216,13 +218,23 @@ export class HTTPPrometheusClient implements PrometheusClient {
     if (metricMatch) {
       params.set('metric_match', metricMatch);
     }
-    return this.fetchAPI<Record<string, string[]>>(`${this.infoLabelsEndpoint()}?${params}`)
+    if (search) {
+      params.set('search', search);
+    }
+    return this.fetchAPI<{ labels: Record<string, string[]>; labelOrder: string[] }>(`${this.infoLabelsEndpoint()}?${params}`)
       .then((data) => {
-        // Validate response is an object (API could return null or array on error)
-        if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+        // Validate response structure
+        if (data === null || typeof data !== 'object' || !data.labels || !data.labelOrder) {
           return {};
         }
-        return data;
+        // Reconstruct Record in labelOrder order so Object.keys() preserves relevance/alphabetical ordering
+        const result: Record<string, string[]> = {};
+        for (const key of data.labelOrder) {
+          if (key in data.labels) {
+            result[key] = data.labels[key];
+          }
+        }
+        return result;
       })
       .catch((error) => {
         if (this.errorHandler) {
@@ -510,17 +522,17 @@ export class CachedPrometheusClient implements PrometheusClient {
     });
   }
 
-  infoLabelPairs(expr?: string, metricMatch?: string): Promise<Record<string, string[]>> {
+  infoLabelPairs(expr?: string, metricMatch?: string, search?: string): Promise<Record<string, string[]>> {
     // Info labels are expected to be relatively stable, so we cache them.
-    // The cache key includes the expression and metric match.
+    // The cache key includes the expression, metric match, and search string.
     // Use JSON.stringify to avoid collisions when parameters contain underscores.
-    const cacheKey = JSON.stringify(['infoLabels', expr || '', metricMatch || '']);
+    const cacheKey = JSON.stringify(['infoLabels', expr || '', metricMatch || '', search || '']);
     const cached = this.cache.getInfoLabelPairs(cacheKey);
     if (cached !== undefined) {
       return Promise.resolve(cached);
     }
 
-    return this.client.infoLabelPairs(expr, metricMatch).then((labels) => {
+    return this.client.infoLabelPairs(expr, metricMatch, search).then((labels) => {
       this.cache.setInfoLabelPairs(cacheKey, labels);
       return labels;
     });
