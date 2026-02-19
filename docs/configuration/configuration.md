@@ -3008,6 +3008,8 @@ configuration.
 
 ```yaml
 # The targets specified by the static config.
+# If the target is a unix socket, it must be prefixed with "unix:".
+# E.g. "unix:///var/run/mysocket.sock".
 targets:
   [ - '<host>' ]
 

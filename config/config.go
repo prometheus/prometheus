@@ -1407,6 +1407,9 @@ func checkStaticTargets(configs discovery.Configs) error {
 func CheckTargetAddress(address model.LabelValue) error {
 	// For now check for a URL, we may want to expand this later.
 	if strings.Contains(string(address), "/") {
+		if strings.HasPrefix(string(address), "unix:") {
+			return nil
+		}
 		return fmt.Errorf("%q is not a valid hostname", address)
 	}
 	return nil

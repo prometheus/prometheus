@@ -17,11 +17,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"reflect"
@@ -2271,10 +2273,63 @@ func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...
 	if err != nil {
 		return nil, fmt.Errorf("error creating HTTP client: %w", err)
 	}
-	client.Transport = otelhttp.NewTransport(
+
+	if t, ok := client.Transport.(*http.Transport); ok {
+		oldDialContext := t.DialContext
+		t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(addr)
+			// Intercept "_unix-" prefixed hosts (generated in unixRoundTripper) and dial the unix socket directly.
+			// We use "_" (underscore) prefix because it is not allowed in valid DNS hostnames, preventing collisions.
+			if err == nil && strings.HasPrefix(host, "_unix-") {
+				decodedBytes, err := hex.DecodeString(strings.TrimPrefix(host, "_unix-"))
+				if err == nil {
+					if oldDialContext != nil {
+						return oldDialContext(ctx, "unix", string(decodedBytes))
+					}
+					return (&net.Dialer{}).DialContext(ctx, "unix", string(decodedBytes))
+				}
+			}
+			if oldDialContext != nil {
+				return oldDialContext(ctx, network, addr)
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		}
+	}
+
+	client.Transport = &unixRoundTripper{rt: otelhttp.NewTransport(
 		client.Transport,
 		otelhttp.WithClientTrace(func(ctx context.Context) *httptrace.ClientTrace {
 			return otelhttptrace.NewClientTrace(ctx, otelhttptrace.WithoutSubSpans())
-		}))
+		}))}
 	return client, nil
+}
+
+type unixRoundTripper struct {
+	rt http.RoundTripper
+}
+
+func (t *unixRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Scheme != "unix" {
+		return t.rt.RoundTrip(req)
+	}
+
+	socketPath := req.URL.Query().Get("__unix_socket__")
+	if socketPath == "" {
+		return nil, errors.New("unix scheme used but __unix_socket__ query param missing")
+	}
+
+	newReq := req.Clone(req.Context())
+	q := newReq.URL.Query()
+	scheme := q.Get("__unix_scheme__")
+	if scheme == "" {
+		scheme = "http"
+	}
+	q.Del("__unix_socket__")
+	q.Del("__unix_scheme__")
+	newReq.URL.RawQuery = q.Encode()
+
+	newReq.URL.Scheme = scheme
+	newReq.URL.Host = "_unix-" + hex.EncodeToString([]byte(socketPath))
+
+	return t.rt.RoundTrip(newReq)
 }
