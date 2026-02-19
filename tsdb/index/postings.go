@@ -173,14 +173,10 @@ func (p *MemPostings) LabelValues(_ context.Context, name string, hints *storage
 	values := p.lvs[name]
 	p.mtx.RUnlock()
 
+	// Clone and apply limit if needed.
 	if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
-		values = values[:hints.Limit]
+		return slices.Clone(values[:hints.Limit])
 	}
-
-	// The slice from p.lvs[name] is shared between all readers, and it is append-only.
-	// Since it's shared, we need to make a copy of it before returning it to make
-	// sure that no caller modifies the original one by sorting it or filtering it.
-	// Since it's append-only, we can do this while not holding the mutex anymore.
 	return slices.Clone(values)
 }
 

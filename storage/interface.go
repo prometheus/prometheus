@@ -249,11 +249,67 @@ type SelectHints struct {
 	ProjectionInclude bool
 }
 
+// Filter determines whether a value should be included in results.
+// Returns (accepted, score) where score is used for relevance ranking.
+// Score should be in range [0.0, 1.0] where 1.0 is perfect match.
+type Filter interface {
+	Accept(value string) (accepted bool, score float64)
+}
+
+// Comparator defines ordering for search results.
+// This allows sorting by value, score, or any combination.
+type Comparator interface {
+	Compare(a, b SearchResult) int
+}
+
 // LabelHints specifies hints passed for label reads.
 // This is used only as an option for implementation to use.
+// Results are returned in natural (alphabetical) order.
 type LabelHints struct {
 	// Maximum number of results returned. Use a value of 0 to disable.
 	Limit int
+}
+
+// SearchHints configures search operations with filtering and scoring.
+// Unlike LabelHints, SearchHints is specifically designed for search APIs
+// that need relevance scoring and ranking.
+type SearchHints struct {
+	// Filter determines which values to include and their relevance scores.
+	// A nil Filter accepts all values with score 1.0.
+	Filter Filter
+
+	// Limit is the maximum number of results to return.
+	// Use 0 to disable limiting.
+	Limit int
+
+	// CompareFunc is used for ordering results.
+	// It receives full SearchResult values, allowing comparison by value,
+	// score, or any combination.
+	// A nil value means alphabetical ordering by value.
+	CompareFunc Comparator
+}
+
+// SearchResult represents a single search result with its relevance score.
+type SearchResult struct {
+	// Value is the label name or label value.
+	Value string
+
+	// Score represents relevance, with 1.0 being a perfect match.
+	// Score range is [0.0, 1.0].
+	Score float64
+}
+
+// Searcher provides search capabilities with relevance scoring.
+// This interface is designed for autocomplete and search UIs that need
+// to rank results by relevance rather than just filter them.
+type Searcher interface {
+	// SearchLabelNames returns label names matching the search criteria.
+	// Results include relevance scores based on the Filter.
+	SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) ([]SearchResult, error)
+
+	// SearchLabelValues returns label values for the given label name.
+	// Results include relevance scores based on the Filter.
+	SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) ([]SearchResult, error)
 }
 
 // QueryableFunc is an adapter to allow the use of ordinary functions as

@@ -17,7 +17,9 @@
 package storage
 
 import (
+	"cmp"
 	"context"
+	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -130,6 +132,82 @@ func (a *chunkSeriesMergerAdapter) Merge(s ...Labels) Labels {
 		buf = append(buf, ser.(ChunkSeries))
 	}
 	return a.VerticalChunkSeriesMergeFunc(buf...)
+}
+
+// collectSearchers extracts Searcher implementations from a genericQuerier tree.
+func collectSearchers(gq genericQuerier) []Searcher {
+	switch v := gq.(type) {
+	case *mergeGenericQuerier:
+		var searchers []Searcher
+		for _, q := range v.queriers {
+			searchers = append(searchers, collectSearchers(q)...)
+		}
+		return searchers
+	case *secondaryQuerier:
+		return collectSearchers(v.genericQuerier)
+	case *genericQuerierAdapter:
+		if s, ok := v.q.(Searcher); ok {
+			return []Searcher{s}
+		}
+	}
+	return nil
+}
+
+// mergeSearchResults merges search results from multiple calls to fn, deduplicating
+// by value and taking the maximum score for duplicates.
+func mergeSearchResults(hints *SearchHints, fn func(Searcher) ([]SearchResult, error), searchers []Searcher) ([]SearchResult, error) {
+	if len(searchers) == 0 {
+		return nil, nil
+	}
+	if len(searchers) == 1 {
+		return fn(searchers[0])
+	}
+	scores := make(map[string]float64)
+	for _, s := range searchers {
+		results, err := fn(s)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range results {
+			if existing, ok := scores[r.Value]; !ok || r.Score > existing {
+				scores[r.Value] = r.Score
+			}
+		}
+	}
+	merged := make([]SearchResult, 0, len(scores))
+	for value, score := range scores {
+		merged = append(merged, SearchResult{Value: value, Score: score})
+	}
+	if hints != nil && hints.CompareFunc != nil {
+		slices.SortFunc(merged, hints.CompareFunc.Compare)
+	} else {
+		slices.SortFunc(merged, func(a, b SearchResult) int {
+			return cmp.Compare(a.Value, b.Value)
+		})
+	}
+	if hints != nil && hints.Limit > 0 && len(merged) > hints.Limit {
+		merged = merged[:hints.Limit]
+	}
+	return merged, nil
+}
+
+// Compile-time assertion that querierAdapter implements Searcher.
+var _ Searcher = &querierAdapter{}
+
+// SearchLabelNames implements Searcher by merging results from all underlying queriers
+// that support the Searcher interface.
+func (q *querierAdapter) SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) ([]SearchResult, error) {
+	return mergeSearchResults(hints, func(s Searcher) ([]SearchResult, error) {
+		return s.SearchLabelNames(ctx, hints, matchers...)
+	}, collectSearchers(q.genericQuerier))
+}
+
+// SearchLabelValues implements Searcher by merging results from all underlying queriers
+// that support the Searcher interface.
+func (q *querierAdapter) SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) ([]SearchResult, error) {
+	return mergeSearchResults(hints, func(s Searcher) ([]SearchResult, error) {
+		return s.SearchLabelValues(ctx, name, hints, matchers...)
+	}, collectSearchers(q.genericQuerier))
 }
 
 type noopGenericSeriesSet struct{}

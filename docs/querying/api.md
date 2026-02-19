@@ -521,6 +521,92 @@ curl http://localhost:9090/api/v1/label/U__http_2e_status_code/values
 }
 ```
 
+### Searching metric names, label names, and label values
+
+The following endpoints provide streamed discovery results for metric names,
+label names, and label values:
+
+```
+GET /api/v1/search/metric_names
+POST /api/v1/search/metric_names
+GET /api/v1/search/label_names
+POST /api/v1/search/label_names
+GET /api/v1/search/label_values
+POST /api/v1/search/label_values
+```
+
+These endpoints return newline-delimited JSON with content type
+`application/x-ndjson`. Each response contains one or more result batches,
+followed by a final trailer line:
+
+```json
+{"results":[{"name":"http_requests_total","cardinality":42,"type":"counter","help":"Total HTTP requests."}]}
+{"status":"success","has_more":false}
+```
+
+If an error occurs before streaming starts, the API returns the usual
+Prometheus JSON error object. If an error occurs after streaming starts, the
+stream ends with an NDJSON error line instead.
+
+Common URL query parameters:
+
+- `match[]=<series_selector>`: Repeated series selector used to scope the
+  search. Optional.
+- `search=<string>`: Search string matched against names or values. Optional.
+- `fuzz_threshold=<number>`: Fuzzy threshold from 0 to 100. Optional.
+- `fuzz_alg=<subsequence | jarowinkler>`: Matching algorithm. Optional.
+- `case_sensitive=<bool>`: Toggle case-sensitive matching. Optional.
+- `sort_by=<string>`: Sort mode. Supported values depend on the endpoint.
+- `sort_dir=<asc | dsc>`: Sort direction. Optional. Only valid when `sort_by`
+  is set.
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
+- `limit=<number>`: Maximum number of returned results. Optional. Default is
+  100.
+- `batch_size=<number>`: Preferred number of results per NDJSON batch.
+  Optional. Default is 100.
+
+Additional parameters for `/api/v1/search/metric_names`:
+
+- `include_cardinality=<bool>`: Include metric cardinality in each result.
+- `include_metadata=<bool>`: Include metric metadata in each result.
+- `sort_by=<alpha | cardinality | score>`
+
+Additional parameters for `/api/v1/search/label_names`:
+
+- `include_frequency=<bool>`: Include label frequency in each result.
+- `include_cardinality=<bool>`: Include label cardinality in each result.
+- `sort_by=<alpha | cardinality | frequency | score>`
+
+Additional parameters for `/api/v1/search/label_values`:
+
+- `label=<label_name>`: Label name whose values should be searched. Required.
+- `include_frequency=<bool>`: Include value frequency in each result.
+- `sort_by=<alpha | frequency | score>`
+
+This example searches metric names for autocomplete:
+
+```bash
+curl -g 'http://localhost:9090/api/v1/search/metric_names?search=http_req&sort_by=score&include_metadata=true&limit=5'
+```
+
+```json
+{"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
+{"status":"success","has_more":false}
+```
+
+This example searches label values for the `instance` label within the `up`
+metric:
+
+```bash
+curl -g 'http://localhost:9090/api/v1/search/label_values?label=instance&match[]=up&search=909&include_frequency=true&sort_by=frequency&sort_dir=dsc'
+```
+
+```json
+{"results":[{"name":"localhost:9090","frequency":80},{"name":"localhost:9091","frequency":40}]}
+{"status":"success","has_more":true}
+```
+
 ## Querying exemplars
 
 This is **experimental** and might change in the future.
