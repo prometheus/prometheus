@@ -37,7 +37,8 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
-const serviceName = "prometheus"
+// TODO: should move to a config entry for otel attributes
+const OTELServiceName = "prometheus"
 
 // Manager is capable of building, (re)installing and shutting down
 // the tracer provider.
@@ -144,11 +145,13 @@ func buildTracerProvider(ctx context.Context, tracingCfg config.TracingConfig) (
 		ctx,
 		resource.WithSchemaURL(semconv.SchemaURL),
 		resource.WithAttributes(
-			semconv.ServiceNameKey.String(serviceName),
+			semconv.ServiceNameKey.String(OTELServiceName),
 			semconv.ServiceVersionKey.String(version.Version),
 		),
+		resource.WithProcessPID(),
 		resource.WithProcessRuntimeDescription(),
 		resource.WithTelemetrySDK(),
+		resource.WithFromEnv(),
 	)
 	if err != nil {
 		return nil, nil, err
@@ -179,7 +182,7 @@ func buildTracerProvider(ctx context.Context, tracingCfg config.TracingConfig) (
 func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 	var client otlptrace.Client
 	switch tracingCfg.ClientType {
-	case config.TracingClientGRPC:
+	case config.OTELClientGRPC:
 		opts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(tracingCfg.Endpoint)}
 		if tracingCfg.Insecure {
 			opts = append(opts, otlptracegrpc.WithInsecure())
@@ -203,7 +206,7 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 		}
 
 		client = otlptracegrpc.NewClient(opts...)
-	case config.TracingClientHTTP:
+	case config.OTELClientHTTP:
 		opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(tracingCfg.Endpoint)}
 		if tracingCfg.Insecure {
 			opts = append(opts, otlptracehttp.WithInsecure())

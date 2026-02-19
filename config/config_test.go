@@ -1744,7 +1744,7 @@ var expectedConf = &Config{
 	},
 	TracingConfig: TracingConfig{
 		Endpoint:    "localhost:4317",
-		ClientType:  TracingClientGRPC,
+		ClientType:  OTELClientGRPC,
 		Insecure:    false,
 		Compression: "gzip",
 		Timeout:     model.Duration(5 * time.Second),

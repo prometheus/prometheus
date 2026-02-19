@@ -1026,6 +1026,8 @@ func main() {
 					return nil
 				}
 
+				// This reloader responds to SIGHUP so any SIGHUP for Prometheus will
+				// truncate the query log file.
 				l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
 				if err != nil {
 					return err

@@ -288,6 +288,7 @@ type Config struct {
 	ScrapeConfigs     []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 	StorageConfig     StorageConfig   `yaml:"storage,omitempty"`
 	TracingConfig     TracingConfig   `yaml:"tracing,omitempty"`
+	LoggingConfig     LoggingConfig   `yaml:"logging,omitempty"` // TODO should unify this with TracingConfig and have a single ObservabilityConfig or something like that.
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
@@ -478,8 +479,10 @@ type GlobalConfig struct {
 	// Offset the rule evaluation timestamp of this particular group by the specified duration into the past to ensure the underlying metrics have been received.
 	RuleQueryOffset model.Duration `yaml:"rule_query_offset,omitempty"`
 	// File to which PromQL queries are logged.
+	// See also logging_config for OpenTelemetry-based query logging.
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
 	// File to which scrape failures are logged.
+	// See also logging_config for OpenTelemetry-based scrape failure logging.
 	ScrapeFailureLogFile string `yaml:"scrape_failure_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
@@ -1127,26 +1130,26 @@ func (t *TSDBConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	return nil
 }
 
-type TracingClientType string
+type OTELClientType string
 
 const (
-	TracingClientHTTP TracingClientType = "http"
-	TracingClientGRPC TracingClientType = "grpc"
+	OTELClientHTTP OTELClientType = "http"
+	OTELClientGRPC OTELClientType = "grpc"
 
 	GzipCompression = "gzip"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (t *TracingClientType) UnmarshalYAML(unmarshal func(any) error) error {
-	*t = TracingClientType("")
-	type plain TracingClientType
+func (t *OTELClientType) UnmarshalYAML(unmarshal func(any) error) error {
+	*t = OTELClientType("")
+	type plain OTELClientType
 	if err := unmarshal((*plain)(t)); err != nil {
 		return err
 	}
 
-	if *t != TracingClientHTTP && *t != TracingClientGRPC {
-		return fmt.Errorf("expected tracing client type to be to be %s or %s, but got %s",
-			TracingClientHTTP, TracingClientGRPC, *t,
+	if *t != OTELClientHTTP && *t != OTELClientGRPC {
+		return fmt.Errorf("expected OTEL client type to be to be %s or %s, but got %s",
+			OTELClientHTTP, OTELClientGRPC, *t,
 		)
 	}
 
@@ -1154,15 +1157,16 @@ func (t *TracingClientType) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 // TracingConfig configures the tracing options.
+// See also LoggingConfig
 type TracingConfig struct {
-	ClientType       TracingClientType `yaml:"client_type,omitempty"`
+	ClientType       OTELClientType    `yaml:"client_type,omitempty"`
 	Endpoint         string            `yaml:"endpoint,omitempty"`
-	SamplingFraction float64           `yaml:"sampling_fraction,omitempty"`
-	Insecure         bool              `yaml:"insecure,omitempty"`
+	SamplingFraction float64           `yaml:"sampling_fraction,omitempty"` // TODO make this optional so it doesn't clobber env config
+	Insecure         bool              `yaml:"insecure,omitempty"`          // TODO make this optional so it doesn't clobber env config
 	TLSConfig        config.TLSConfig  `yaml:"tls_config,omitempty"`
 	Headers          map[string]string `yaml:"headers,omitempty"`
-	Compression      string            `yaml:"compression,omitempty"`
-	Timeout          model.Duration    `yaml:"timeout,omitempty"`
+	Compression      string            `yaml:"compression,omitempty"` // TODO make this optional so it doesn't clobber env config
+	Timeout          model.Duration    `yaml:"timeout,omitempty"`     // TODO make this optional so it doesn't clobber env config
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1173,17 +1177,22 @@ func (t *TracingConfig) SetDirectory(dir string) {
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (t *TracingConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*t = TracingConfig{
-		ClientType: TracingClientGRPC,
+		ClientType: OTELClientGRPC,
 	}
 	type plain TracingConfig
 	if err := unmarshal((*plain)(t)); err != nil {
 		return err
 	}
 
-	if err := validateHeadersForTracing(t.Headers); err != nil {
+	if err := validateHeadersForOTELExporter(t.Headers, t.ClientType); err != nil {
 		return err
 	}
 
+	// TODO: The provider should really accept an endpoint configured from the enviroment
+	// per OpenTelemetry conventions, so this shouldn't actually be an error. Validation
+	// needs to happen after the provider is constructed, to ensure it has a valid exporter.
+	// But for now, we require an endpoint to be explicitly set in the config to avoid
+	// confusion about whether environment variable configuration is working or not.
 	if t.Endpoint == "" {
 		return errors.New("tracing endpoint must be set")
 	}
@@ -1191,6 +1200,88 @@ func (t *TracingConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if t.Compression != "" && t.Compression != GzipCompression {
 		return fmt.Errorf("invalid compression type %s provided, valid options: %s",
 			t.Compression, GzipCompression)
+	}
+
+	return nil
+}
+
+// Configuration for logging. This is currently only used for OpenTelemetry logging,
+// but it gets its own struct to allow future logging configuration to be grouped here
+// without further bloating the global config struct.
+//
+// See also GlobalConfig.QueryLogFile and GlobalConfig.ScrapeFailureLogFile, which should
+// ideally move here in future.
+type LoggingConfig struct {
+	// Log categories to send to the configured exporter. If empty, no logs are sent.
+	// Options: "query" for query logs, "scrape_failure" for scrape failure logs.
+	// Exporting the global Prometheus logs is not currently supported, but may be added in the future.
+	Include           []string          `yaml:"include,omitempty"`
+	OTELLoggingConfig OTELLoggingConfig `yaml:"otel_logging,omitempty"`
+}
+
+func (t *LoggingConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	*t = LoggingConfig{}
+	type plain LoggingConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	for _, category := range t.Include {
+		switch category {
+		case "query", "scrape_failure":
+		default:
+			return fmt.Errorf("invalid log category %q provided, valid options: 'query', 'scrape_failure'", category)
+		}
+	}
+
+	return nil
+}
+
+// OpenTelemetry log exporter configuration, currently used for query and scrape failure
+// logs.
+//
+// If logging_config.otel_logging.enabled is true, the OpenTelemetry logging configuration
+// will be used to attempt to export logs of the included categories. Prometheus will attempt
+// to construct an OpenTelemetry log provider and export any logs included by logging_config.include
+// to the configured endpoint.
+//
+// An exporter configuration may be provided explicitly for the OTLP HTTP or gRPC exporters,
+// but if not, the configuration will be inferred from the environment using
+// the OpenTelemetry Go SDK's exporter configuration variables:
+//   - https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/#otlp-exporter
+//
+// # See also TracingConfig
+//
+// TODO: check whether the otlp batch processor can be configured in env-vars, and add batching
+// here if it cannot.
+type OTELLoggingConfig struct {
+	Enabled     bool              `yaml:"enabled,omitempty"`
+	ClientType  OTELClientType    `yaml:"client_type,omitempty"`
+	Endpoint    string            `yaml:"endpoint,omitempty"`
+	Insecure    *bool             `yaml:"insecure,omitempty"`
+	TLSConfig   config.TLSConfig  `yaml:"tls_config,omitempty"`
+	Headers     map[string]string `yaml:"headers,omitempty"`
+	Compression *string           `yaml:"compression,omitempty"`
+	Timeout     *model.Duration   `yaml:"timeout,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *OTELLoggingConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	*t = OTELLoggingConfig{
+		ClientType: OTELClientGRPC,
+	}
+	type plain OTELLoggingConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	if err := validateHeadersForOTELExporter(t.Headers, t.ClientType); err != nil {
+		return err
+	}
+
+	if t.Compression != nil && *t.Compression != "" && *t.Compression != GzipCompression {
+		return fmt.Errorf("invalid compression type %s provided, valid options: %s",
+			*t.Compression, GzipCompression)
 	}
 
 	return nil
@@ -1511,7 +1602,7 @@ func validateAuthConfigs(c *RemoteWriteConfig) error {
 	return nil
 }
 
-func validateHeadersForTracing(headers map[string]string) error {
+func validateHeadersForOTELExporter(headers map[string]string, _ OTELClientType) error {
 	for header := range headers {
 		if strings.ToLower(header) == "authorization" {
 			return errors.New("custom authorization header configuration is not yet supported")
@@ -1653,7 +1744,9 @@ func getGoGC() int {
 	return DefaultGoGCPercentage
 }
 
-// OTLPConfig is the configuration for writing to the OTLP endpoint.
+// OTLPConfig is the configuration for writing to the OTLP endpoint for OpenTelmetry remote-write.
+// It is _not_ used for for the OpenTelemetry tracing and (query) log exporters Prometheus
+// supports for its own instrumentation.
 type OTLPConfig struct {
 	PromoteAllResourceAttributes      bool                                     `yaml:"promote_all_resource_attributes,omitempty"`
 	PromoteResourceAttributes         []string                                 `yaml:"promote_resource_attributes,omitempty"`
