@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -67,7 +68,7 @@ func appenderV2WithLimits(app storage.AppenderV2, sampleLimit, bucketLimit int, 
 func (sl *scrapeLoop) updateStaleMarkersV2(app storage.AppenderV2, defTime int64) (err error) {
 	sl.cache.forEachStale(func(ref storage.SeriesRef, lset labels.Labels) bool {
 		// Series no longer exposed, mark it stale.
-		_, err = app.Append(ref, lset, 0, defTime, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{RejectOutOfOrder: true})
+		_, err = app.Append(ref, lset, 0, defTime, sample.Float(math.Float64frombits(value.StaleNaN)), storage.AOptions{RejectOutOfOrder: true})
 		switch {
 		case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 			// Do not count these in logging, as this is expected if a target
@@ -312,7 +313,16 @@ loop:
 			}
 
 			// Append sample to the storage.
-			ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
+			var sv sample.Value
+			switch {
+			case fh != nil:
+				sv = sample.FloatHistogram(fh)
+			case h != nil:
+				sv = sample.Histogram(h)
+			default:
+				sv = sample.Float(val)
+			}
+			ref, err = app.Append(ref, lset, st, t, sv, appOpts)
 		}
 		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
@@ -395,7 +405,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 		lset = sl.reportSampleMutator(b.Labels())
 	}
 
-	ref, err = sl.Append(ref, lset, 0, t, v, nil, nil, storage.AOptions{
+	ref, err = sl.Append(ref, lset, 0, t, sample.Float(v), storage.AOptions{
 		MetricFamilyName: yoloString(s.name),
 		Metadata:         s.Metadata,
 		RejectOutOfOrder: rejectOOO,
