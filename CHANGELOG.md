@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.10.0-rc.0 / 2026-02-16
+## 3.10.0-rc.1 / 2026-02-19
 
 Prometheus now offers a distroless Docker image variant alongside the default
 busybox image. The distroless variant provides enhanced security with a minimal
