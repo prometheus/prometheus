@@ -263,6 +263,9 @@ type Options struct {
 	// StaleSeriesCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
 	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
 	StaleSeriesCompactionThreshold float64
+
+	// FsSizeFunc is a function returning the total disk size for a given path.
+	FsSizeFunc FsSizeFunc
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -272,6 +275,8 @@ type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
 type BlockQuerierFunc func(b BlockReader, mint, maxt int64) (storage.Querier, error)
 
 type BlockChunkQuerierFunc func(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error)
+
+type FsSizeFunc func(path string) uint64
 
 // DB handles reads and writes of time series falling into
 // a hashed partition of a seriedb.
@@ -334,6 +339,8 @@ type DB struct {
 	blockQuerierFunc BlockQuerierFunc
 
 	blockChunkQuerierFunc BlockChunkQuerierFunc
+
+	fsSizeFunc FsSizeFunc
 }
 
 type dbMetrics struct {
@@ -681,6 +688,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		head:                  head,
 		blockQuerierFunc:      NewBlockQuerier,
 		blockChunkQuerierFunc: NewBlockChunkQuerier,
+		fsSizeFunc:            prom_runtime.FsSize,
 	}, nil
 }
 
@@ -1013,6 +1021,12 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.blockChunkQuerierFunc = NewBlockChunkQuerier
 	} else {
 		db.blockChunkQuerierFunc = opts.BlockChunkQuerierFunc
+	}
+
+	if opts.FsSizeFunc == nil {
+		db.fsSizeFunc = prom_runtime.FsSize
+	} else {
+		db.fsSizeFunc = opts.FsSizeFunc
 	}
 
 	var wal, wbl *wlog.WL
@@ -2009,7 +2023,7 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 
 	// Max percentage prevails over max size.
 	if maxPercentage > 0 {
-		diskSize := prom_runtime.FsSize(db.dir)
+		diskSize := db.fsSizeFunc(db.dir)
 		if diskSize <= 0 {
 			db.logger.Warn("Unable to retrieve filesystem size of database directory, skip percentage limitation and default to fixed size limitation", "dir", db.dir)
 		} else {
