@@ -130,6 +130,28 @@ jobs:
       - run: make -C documentation/prometheus-mixin
       - run: git diff --exit-code
 
+  test-compliance-rw-sender:
+    name: Remote Write compliance for sending
+    runs-on: ubuntu-latest
+    container:
+      # Whenever the Go version is updated here, .promu.yml
+      # should also be updated.
+      image: quay.io/prometheus/golang-builder:1.25-base
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+      - uses: prometheus/promci@fc721ff8497a70a93a881cd552b71af7fb3a9d53 # v0.5.4
+      - uses: ./.github/promci/actions/setup_environment
+        with:
+          enable_npm: false
+      # NOTE: Those tests are based on https://github.com/prometheus/compliance
+      # see the cmd/prometheus/compliance_test.go
+      - run: go test --tags=compliance ./cmd/prometheus/...
+        env:
+          COMPLIANCE_REPO: "git@github.com:prometheus/compliance.git"
+          COMPLIANCE_VERSION: "52166be6e0dab23c802fae66aa250eae18babb4a"
+
   build:
     name: Build Prometheus for common architectures
     runs-on: ubuntu-latest
