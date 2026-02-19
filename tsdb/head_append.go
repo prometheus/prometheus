@@ -1170,6 +1170,7 @@ type appenderCommitContext struct {
 	histoOOBRejected    int
 	inOrderMint         int64
 	inOrderMaxt         int64
+	appendChunkOpts     chunkOpts
 	oooMinT             int64
 	oooMaxT             int64
 	wblSamples          []record.RefSample
@@ -1179,7 +1180,6 @@ type appenderCommitContext struct {
 	oooMmapMarkersCount int
 	oooRecords          [][]byte
 	oooCapMax           int64
-	appendChunkOpts     chunkOpts
 	oooEnc              record.Encoder
 }
 
@@ -1389,7 +1389,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(a.storeST, s.ST, s.T, s.V, nil, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated, mmapRefs = series.insert(s.ST, s.T, s.V, nil, nil, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1433,7 +1433,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		default:
 			newlyStale := !value.IsStaleNaN(series.lastValue) && value.IsStaleNaN(s.V)
 			staleToNonStale := value.IsStaleNaN(series.lastValue) && !value.IsStaleNaN(s.V)
-			ok, chunkCreated = series.append(a.storeST, s.ST, s.T, s.V, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.append(s.ST, s.T, s.V, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1495,7 +1495,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
 			// TODO(krajorama,ywwg): Pass ST when available in WAL.
-			ok, chunkCreated, mmapRefs = series.insert(a.storeST, 0, s.T, 0, s.H, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated, mmapRefs = series.insert(0, s.T, 0, s.H, nil, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1544,7 +1544,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				staleToNonStale = value.IsStaleNaN(series.lastHistogramValue.Sum) && !value.IsStaleNaN(s.H.Sum)
 			}
 			// TODO(krajorama,ywwg): pass ST when available in WAL.
-			ok, chunkCreated = series.appendHistogram(a.storeST, 0, s.T, s.H, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.appendHistogram(0, s.T, s.H, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1606,7 +1606,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 			// and the delta is within the OOO tolerance.
 			var mmapRefs []chunks.ChunkDiskMapperRef
 			// TODO(krajorama,ywwg): Pass ST when available in WAL.
-			ok, chunkCreated, mmapRefs = series.insert(a.storeST, 0, s.T, 0, nil, s.FH, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated, mmapRefs = series.insert(0, s.T, 0, nil, s.FH, acc.appendChunkOpts, acc.oooCapMax, a.head.logger)
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1655,7 +1655,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				staleToNonStale = value.IsStaleNaN(series.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.FH.Sum)
 			}
 			// TODO(krajorama,ywwg): pass ST when available in WAL.
-			ok, chunkCreated = series.appendFloatHistogram(a.storeST, 0, s.T, s.FH, a.appendID, acc.appendChunkOpts)
+			ok, chunkCreated = series.appendFloatHistogram(0, s.T, s.FH, a.appendID, acc.appendChunkOpts)
 			if ok {
 				if s.T < acc.inOrderMint {
 					acc.inOrderMint = s.T
@@ -1747,6 +1747,7 @@ func (a *headAppenderBase) Commit() (err error) {
 			chunkDiskMapper: h.chunkDiskMapper,
 			chunkRange:      h.chunkRange.Load(),
 			samplesPerChunk: h.opts.SamplesPerChunk,
+			storeST:         a.storeST,
 		},
 		oooEnc: record.Encoder{
 			EnableSTStorage: a.storeST,
@@ -1805,14 +1806,14 @@ func (a *headAppenderBase) Commit() (err error) {
 }
 
 // insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(storeST bool, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64, logger *slog.Logger) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
+func (s *memSeries) insert(st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, o chunkOpts, oooCapMax int64, logger *slog.Logger) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
 	if s.ooo == nil {
 		s.ooo = &memSeriesOOOFields{}
 	}
 	c := s.ooo.oooHeadChunk
 	if c == nil || c.chunk.NumSamples() == int(oooCapMax) {
 		// Note: If no new samples come in then we rely on compaction to clean up stale in-memory OOO chunks.
-		c, mmapRefs = s.cutNewOOOHeadChunk(storeST, t, chunkDiskMapper, logger)
+		c, mmapRefs = s.cutNewOOOHeadChunk(o.storeST, t, o.chunkDiskMapper, logger)
 		chunkCreated = true
 	}
 
@@ -1833,14 +1834,15 @@ type chunkOpts struct {
 	chunkDiskMapper *chunks.ChunkDiskMapper
 	chunkRange      int64
 	samplesPerChunk int
+	storeST         bool
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // Series lock must be held when calling.
-func (s *memSeries) append(storeST bool, st, t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.ValFloat.ChunkEncoding(storeST), o)
+func (s *memSeries) append(st, t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.ValFloat.ChunkEncoding(o.storeST), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1864,14 +1866,14 @@ func (s *memSeries) append(storeST bool, st, t int64, v float64, appendID uint64
 // In case of recoding the existing chunk, a new chunk is allocated and the old chunk is dropped.
 // To keep the meaning of prometheus_tsdb_head_chunks and prometheus_tsdb_head_chunks_created_total
 // consistent, we return chunkCreated=false in this case.
-func (s *memSeries) appendHistogram(storeST bool, st, t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(storeST), o)
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(o.storeST), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1921,14 +1923,14 @@ func (s *memSeries) appendHistogram(storeST bool, st, t int64, h *histogram.Hist
 // In case of recoding the existing chunk, a new chunk is allocated and the old chunk is dropped.
 // To keep the meaning of prometheus_tsdb_head_chunks and prometheus_tsdb_head_chunks_created_total
 // consistent, we return chunkCreated=false in this case.
-func (s *memSeries) appendFloatHistogram(storeST bool, st, t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogram, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper
 	// chunk reference afterwards and mmap used up chunks.
 
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(storeST), o)
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(o.storeST), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
