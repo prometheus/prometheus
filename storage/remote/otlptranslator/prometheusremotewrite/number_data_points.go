@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
+	"github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -63,7 +64,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(
 		}
 		ts := convertTimeStamp(pt.Timestamp())
 		st := convertTimeStamp(pt.StartTimestamp())
-		if _, err = c.appender.Append(0, labels, st, ts, val, nil, nil, appOpts); err != nil {
+		if _, err = c.appender.Append(0, labels, st, ts, sample.Float(val), appOpts); err != nil {
 			return err
 		}
 	}
@@ -113,7 +114,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(
 		}
 
 		appOpts.Exemplars = exemplars
-		if _, err = c.appender.Append(0, lbls, st, ts, val, nil, nil, appOpts); err != nil {
+		if _, err = c.appender.Append(0, lbls, st, ts, sample.Float(val), appOpts); err != nil {
 			return err
 		}
 	}
