@@ -903,6 +903,7 @@ func main() {
 
 	var (
 		tracingManager = tracing.NewManager(logger)
+		loggingManager = logging.NewManager(logger)
 
 		queryEngine *promql.Engine
 		ruleManager *rules.Manager
@@ -1003,6 +1004,7 @@ func main() {
 	// This is passed to ruleManager.Update().
 	externalURL := cfg.web.ExternalURL.String()
 
+	// Config reloaders are applied in order
 	reloaders := []reloader{
 		{
 			name:     "db_storage",
@@ -1014,25 +1016,17 @@ func main() {
 			name:     "web_handler",
 			reloader: webHandler.ApplyConfig,
 		}, {
+			// Logging manager for query and scrape logs. Must be reloaded before the
+			// query engine and scrape manager.
+			name:     "logging",
+			reloader: loggingManager.ApplyConfig,
+		}, {
 			name: "query_engine",
 			reloader: func(cfg *config.Config) error {
 				if agentMode {
 					// No-op in Agent mode.
 					return nil
 				}
-
-				if cfg.GlobalConfig.QueryLogFile == "" {
-					queryEngine.SetQueryLogger(nil)
-					return nil
-				}
-
-				// This reloader responds to SIGHUP so any SIGHUP for Prometheus will
-				// truncate the query log file.
-				l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
-				if err != nil {
-					return err
-				}
-				queryEngine.SetQueryLogger(l)
 				return nil
 			},
 		}, {
@@ -1238,6 +1232,19 @@ func main() {
 			func(error) {
 				logger.Info("Stopping tracing manager...")
 				tracingManager.Stop()
+			},
+		)
+	}
+	{
+		// Query and scrape logging manager
+		g.Add(
+			func() error {
+				<-reloadReady.C
+				loggingManager.Run()
+				return nil
+			},
+			func(error) {
+				loggingManager.Stop()
 			},
 		)
 	}

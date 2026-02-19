@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/go-logr/logr"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/version"
 	"go.opentelemetry.io/otel"
@@ -59,7 +60,10 @@ func NewManager(logger *slog.Logger) *Manager {
 
 // Run starts the tracing manager. It registers the global text map propagator and error handler.
 // It is blocking.
+//
+// TODO extract the global setup into a separate helper for all otel setup
 func (m *Manager) Run() {
+	otel.SetLogger(logr.FromSlogHandler(m.logger.Handler()))
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	otel.SetErrorHandler(otelErrHandler(func(err error) {
 		m.logger.Error("OpenTelemetry handler returned an error", "err", err.Error())

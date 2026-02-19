@@ -510,11 +510,11 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 	defer ng.queryLoggerLock.Unlock()
 
 	if ng.queryLogger != nil {
-		// An error closing the old file descriptor should
+		// An error closing the old file descriptor or exporter should
 		// not make reload fail; only log a warning.
 		err := ng.queryLogger.Close()
 		if err != nil {
-			ng.logger.Warn("Error while closing the previous query log file", "err", err)
+			ng.logger.Warn("Error while closing the previous query logger", "err", err)
 		}
 	}
 
