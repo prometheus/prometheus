@@ -3581,6 +3581,14 @@ with this feature.
   # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.size.
   [ size: <size> | default = 0 ]
 
+  # Maximum percent of total disk space allowed for storage of blocks. Alternative to `size` and
+  # behaves the same as if size was calculated by hand as a percentage of the total storage capacity.
+  # Prometheus will fail to start if this config is enabled, but it fails to query the total storage capacity.
+  # The total disk space allowed will automatically adapt to volume resize.
+  # If set to 0 or not set, percentage-based retention is disabled.
+  #
+  # This is an experimental feature, this behaviour could change or be removed in the future.
+  [ percentage: <uint> | default = 0 ]
 ```
 
 ### `<exemplars>`
