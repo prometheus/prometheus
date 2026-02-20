@@ -5,4 +5,5 @@ use (
 	./documentation/examples/remote_storage
 	./internal/tools
 	./web/ui/mantine-ui/src/promql/tools
+	./compliance
 )
