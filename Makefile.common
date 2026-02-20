@@ -117,6 +117,16 @@ case " $(DOCKERFILE_ARCH_EXCLUSIONS) " in \
 esac
 endef
 
+# Shell helper to check whether a registry/arch pair is excluded.
+# Extracts registry from DOCKER_REPO (e.g., quay.io/prometheus -> quay.io)
+define registry_arch_is_excluded
+registry=$$(echo "$(DOCKER_REPO)" | cut -d'/' -f1); \
+case " $(DOCKER_REGISTRY_ARCH_EXCLUSIONS) " in \
+	*" $$registry:$(1) "*) true ;; \
+	*) false ;; \
+esac
+endef
+
 BUILD_DOCKER_ARCHS = $(addprefix common-docker-,$(DOCKER_ARCHS))
 PUBLISH_DOCKER_ARCHS = $(addprefix common-docker-publish-,$(DOCKER_ARCHS))
 TAG_DOCKER_ARCHS = $(addprefix common-docker-tag-latest-,$(DOCKER_ARCHS))
@@ -300,6 +310,10 @@ $(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
 			echo "Skipping push for $$variant_name variant on linux-$* (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
 			continue; \
 		fi; \
+		if $(call registry_arch_is_excluded,$*); then \
+			echo "Skipping push for $$variant_name variant on linux-$* to $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
+			continue; \
+		fi; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 			echo "Pushing $$variant_name variant for linux-$*"; \
 			docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name"; \
@@ -331,6 +345,10 @@ $(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
 			echo "Skipping tag for $$variant_name variant on linux-$* (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
 			continue; \
 		fi; \
+		if $(call registry_arch_is_excluded,$*); then \
+			echo "Skipping tag for $$variant_name variant on linux-$* for $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
+			continue; \
+		fi; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 			echo "Tagging $$variant_name variant for linux-$* as latest"; \
 			docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest-$$variant_name"; \
@@ -353,6 +371,11 @@ common-docker-manifest:
 			refs=""; \
 			for arch in $(DOCKER_ARCHS); do \
 				if $(call dockerfile_arch_is_excluded,$$arch); then \
+					echo "  Skipping $$arch for $$variant_name (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+					continue; \
+				fi; \
+				if $(call registry_arch_is_excluded,$$arch); then \
+					echo "  Skipping $$arch for $$variant_name on $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
 					continue; \
 				fi; \
 				refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name"; \
@@ -369,6 +392,11 @@ common-docker-manifest:
 			refs=""; \
 			for arch in $(DOCKER_ARCHS); do \
 				if $(call dockerfile_arch_is_excluded,$$arch); then \
+					echo "  Skipping $$arch for default variant (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+					continue; \
+				fi; \
+				if $(call registry_arch_is_excluded,$$arch); then \
+					echo "  Skipping $$arch for default variant on $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
 					continue; \
 				fi; \
 				refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:$(SANITIZED_DOCKER_IMAGE_TAG)"; \
@@ -386,6 +414,11 @@ common-docker-manifest:
 				refs=""; \
 				for arch in $(DOCKER_ARCHS); do \
 					if $(call dockerfile_arch_is_excluded,$$arch); then \
+						echo "  Skipping $$arch for $$variant_name version tag (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+						continue; \
+					fi; \
+					if $(call registry_arch_is_excluded,$$arch); then \
+						echo "  Skipping $$arch for $$variant_name version tag on $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
 						continue; \
 					fi; \
 					refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name"; \
@@ -402,6 +435,11 @@ common-docker-manifest:
 				refs=""; \
 				for arch in $(DOCKER_ARCHS); do \
 					if $(call dockerfile_arch_is_excluded,$$arch); then \
+						echo "  Skipping $$arch for default variant version tag (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+						continue; \
+					fi; \
+					if $(call registry_arch_is_excluded,$$arch); then \
+						echo "  Skipping $$arch for default variant version tag on $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
 						continue; \
 					fi; \
 					refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:v$(DOCKER_MAJOR_VERSION_TAG)"; \
