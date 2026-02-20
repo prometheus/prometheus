@@ -866,9 +866,12 @@ func generateRecords(c recCase) (ret records) {
 			Help: "help text",
 		}
 		for j := range c.samplesPerSeries {
+			ts := c.tsFn(i, j)
+			st := ts - 1 // Keep ST simple for now; we don't need to
+			// test exact semantics.
 			ret.samples[i*c.samplesPerSeries+j] = record.RefSample{
 				Ref: chunks.HeadSeriesRef(i),
-				T:   c.tsFn(i, j),
+				T:   st,
 				V:   float64(i),
 			}
 		}

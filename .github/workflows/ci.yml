@@ -147,9 +147,7 @@ jobs:
           enable_npm: false
       # NOTE: Those tests are based on https://github.com/prometheus/compliance and
       # are executed against the ./cmd/prometheus main package.
-      - run: go test -skip ${SKIP_TESTS} -v --tags=compliance ./compliance/...
-        env:
-          SKIP_TESTS: "TestRemoteWriteSender/prometheus/samples/rw2/start_timestamp*" # TODO(bwplotka): PROM-60
+      - run: go test -v --tags=compliance ./compliance/...
 
   build:
     name: Build Prometheus for common architectures
