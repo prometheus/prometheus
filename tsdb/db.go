@@ -848,6 +848,7 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 		opts.FeatureRegistry.Set(features.TSDB, "isolation", !opts.IsolationDisabled)
 		opts.FeatureRegistry.Set(features.TSDB, "use_uncached_io", opts.UseUncachedIO)
 		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
+		opts.FeatureRegistry.Set(features.TSDB, "xor2_encoding", chunkenc.XOR2Enabled())
 	}
 
 	return open(dir, l, r, opts, rngs, stats)

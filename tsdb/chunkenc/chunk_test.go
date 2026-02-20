@@ -254,6 +254,85 @@ func newXORChunk() Chunk {
 	return NewXORChunk()
 }
 
+func TestEncodingsCompatible(t *testing.T) {
+	tests := []struct {
+		name     string
+		enc1     Encoding
+		enc2     Encoding
+		expected bool
+	}{
+		{
+			name:     "XOR and XOR2 are compatible",
+			enc1:     EncXOR,
+			enc2:     EncXOR2,
+			expected: true,
+		},
+		{
+			name:     "XOR2 and XOR are compatible (reversed)",
+			enc1:     EncXOR2,
+			enc2:     EncXOR,
+			expected: true,
+		},
+		{
+			name:     "same encoding XOR is compatible",
+			enc1:     EncXOR,
+			enc2:     EncXOR,
+			expected: true,
+		},
+		{
+			name:     "same encoding XOR2 is compatible",
+			enc1:     EncXOR2,
+			enc2:     EncXOR2,
+			expected: true,
+		},
+		{
+			name:     "XOR and Histogram are incompatible",
+			enc1:     EncXOR,
+			enc2:     EncHistogram,
+			expected: false,
+		},
+		{
+			name:     "XOR2 and Histogram are incompatible",
+			enc1:     EncXOR2,
+			enc2:     EncHistogram,
+			expected: false,
+		},
+		{
+			name:     "XOR and FloatHistogram are incompatible",
+			enc1:     EncXOR,
+			enc2:     EncFloatHistogram,
+			expected: false,
+		},
+		{
+			name:     "Histogram and FloatHistogram are incompatible",
+			enc1:     EncHistogram,
+			enc2:     EncFloatHistogram,
+			expected: false,
+		},
+		{
+			name:     "same encoding Histogram is compatible",
+			enc1:     EncHistogram,
+			enc2:     EncHistogram,
+			expected: true,
+		},
+		{
+			name:     "same encoding FloatHistogram is compatible",
+			enc1:     EncFloatHistogram,
+			enc2:     EncFloatHistogram,
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := EncodingsCompatible(tt.enc1, tt.enc2)
+			require.Equal(t, tt.expected, result,
+				"EncodingsCompatible(%v, %v) = %v, want %v",
+				tt.enc1, tt.enc2, result, tt.expected)
+		})
+	}
+}
+
 func BenchmarkXORIterator(b *testing.B) {
 	benchmarkIterator(b, newXORChunk)
 }

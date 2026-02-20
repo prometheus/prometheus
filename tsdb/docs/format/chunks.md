@@ -36,7 +36,7 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 Notes:
 
 * `len`: Chunk size in bytes. 1 to 5 bytes long using the [`<uvarint>` encoding](https://go.dev/src/encoding/binary/varint.go).
-* `encoding`: Currently either `XOR`, `histogram`, or `floathistogram`, see [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47).
+* `encoding`: Currently either `XOR`, `XOR2`, `histogram`, or `floathistogram`, see [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47).
 * `data`: See below for each encoding.
 * `checksum`: Checksum of `encoding` and `data`. It's a [cyclic redundancy check](https://en.wikipedia.org/wiki/Cyclic_redundancy_check) with the Castagnoli polynomial, serialised as an unsigned 32 bits big endian number. Can be referred as a `CRC-32C`.
 
@@ -64,6 +64,48 @@ Notes:
   see [code for details](https://github.com/prometheus/prometheus/blob/7309c20e7e5774e7838f183ec97c65baa4362edc/tsdb/chunkenc/xor.go#L179-L205).
 * `padding` of 0 to 7 bits so that the whole chunk data is byte-aligned.
 * The chunk can have as few as one sample, i.e. `ts_1`, `v_1`, etc. are optional.
+
+## XOR2 chunk data
+
+XOR2 is an improved XOR encoding with adaptive control bits and staleness optimization.
+It has the same overall structure as XOR but with enhanced timestamp encoding:
+
+```
+┌──────────────────────┬───────────────┬───────────────┬──────────────────────┬──────────────────────┬──────────────────────┬──────────────────────┬─────┬──────────────────────┬──────────────────────┬──────────────────┐
+│ num_samples <uint16> │ ts_0 <varint> │ v_0 <float64> │ ts_1_delta <uvarint> │ v_1_xor <varbit_xor> │ ts_2_dod <varbit_ts> │ v_2_xor <varbit_xor> │ ... │ ts_n_dod <varbit_ts> │ v_n_xor <varbit_xor> │ padding <x bits> │
+└──────────────────────┴───────────────┴───────────────┴──────────────────────┴──────────────────────┴──────────────────────┴──────────────────────┴─────┴──────────────────────┴──────────────────────┴──────────────────┘
+```
+
+### Key differences from XOR:
+
+Adaptive timestamp encoding (`<varbit_ts>`):
+- Starts in "compact mode" with 4-bit control codes (same as XOR)
+- Automatically switches to "full mode" with 5-bit control codes when needed
+- Mode switch is signaled by the marker `1111` (4 bits)
+- Full mode provides larger buckets (7, 14, 20 bits) and exact multiplier+residual encoding
+
+Staleness optimization (`<varbit_xor>`):
+- Staleness markers (NaN values) are encoded using an impossible XOR pattern
+- Pattern: `11` + `leading=31` (5 bits) + `sigbits=63` (6 bits) = 13 bits total
+- Normal NaN encoding would use ~110 bits
+- Decoder recognizes `leading=31, sigbits=63` as impossible (would require `trailing=-30`)
+
+Compact mode control codes (4-bit):
+- `0`: dod == 0
+- `10`: 14-bit signed dod
+- `110`: 17-bit signed dod
+- `1110`: 20-bit signed dod
+- `1111`: Mode switch marker to full mode (followed by a full-mode control code)
+
+**Full mode control codes (5-bit):**
+- `0`: dod == 0
+- `10`: 7-bit signed dod
+- `110`: 14-bit signed dod
+- `1110`: 20-bit signed dod
+- `11110`: Multiplier encoding (1 sign bit + 4-bit multiplier + 8-bit signed residual)
+- `11111`: 64-bit full dod
+
+The mode switch happens transparently when delta-of-delta cannot fit in 14/17/20 bits
 
 ## Histogram chunk data
 
