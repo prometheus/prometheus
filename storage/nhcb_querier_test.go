@@ -64,12 +64,23 @@ func TestExtractHistogramSuffix(t *testing.T) {
 			expectedBase:   "",
 			expectedSuffix: "",
 		},
+		{
+			name:           "bucket regex suffix",
+			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, ".+_bucket")},
+			expectedBase:   ".+",
+			expectedSuffix: "_bucket",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			baseName, suffix, _ := extractHistogramSuffix(tc.matchers)
-			require.Equal(t, tc.expectedBase, baseName)
+			matcher, suffix, _ := extractHistogramSuffix(tc.matchers)
+			if tc.expectedBase == "" {
+				require.Nil(t, matcher)
+			} else {
+				require.NotNil(t, matcher)
+				require.Equal(t, tc.expectedBase, matcher.Value)
+			}
 			require.Equal(t, tc.expectedSuffix, suffix)
 		})
 	}
@@ -109,6 +120,15 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 				NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1"), []chunks.Sample{fSample{t: 1, f: 5}}),
 			},
 			expectedCount: 1,
+		},
+		{
+			name:          "histogram with regex exists - return classic",
+			queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+_requests_bucket")},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount: 4,
 		},
 		{
 			name:          "no classic - convert NHCB to bucket series",
@@ -158,6 +178,71 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			classicSeries: []Series{},
 			nhcbSeries:    []Series{},
 			expectedCount: 0,
+		},
+		{
+			name: "le exact match filters to single bucket",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "5.0"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  1,
+			expectedSuffix: "_bucket",
+		},
+		{
+			name: "le exact match +Inf",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "+Inf"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  1,
+			expectedSuffix: "_bucket",
+		},
+		{
+			name: "le exact match no match",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, "99.0"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  0,
+			expectedSuffix: "_bucket",
+		},
+		{
+			name: "le regex match filters to matching buckets",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, "1.0|10.0"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  2,
+			expectedSuffix: "_bucket",
+		},
+		{
+			name: "le not equal excludes one bucket",
+			queryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+				labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "+Inf"),
+			},
+			classicSeries: []Series{},
+			nhcbSeries: []Series{
+				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			},
+			expectedCount:  3,
+			expectedSuffix: "_bucket",
 		},
 	}
 

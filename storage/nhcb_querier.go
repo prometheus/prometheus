@@ -61,7 +61,7 @@ func (s *NHCBAsClassicStorage) Querier(mint, maxt int64) (Querier, error) {
 
 // Select implements the Querier interface.
 func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
-	metricName, suffix, baseMatchers := extractHistogramSuffix(matchers)
+	metricNameMacher, suffix, baseMatchers := extractHistogramSuffix(matchers)
 	if suffix == "" {
 		// Not a classic histogram query, pass through
 		return q.Querier.Select(ctx, sortSeries, hints, matchers...)
@@ -85,16 +85,25 @@ func (q *NHCBAsClassicQuerier) Select(ctx context.Context, sortSeries bool, hint
 	if len(classicSeries) > 0 {
 		seriesSets = append(seriesSets, &bufferedSeriesSet{series: classicSeries})
 	}
+	matchersWithoutLe := make([]*labels.Matcher, 0, len(matchers)-1)
+	var leMatcher *labels.Matcher
+	for _, matcher := range baseMatchers {
+		if matcher.Name == labels.BucketLabel {
+			leMatcher = matcher
+		} else {
+			matchersWithoutLe = append(matchersWithoutLe, matcher)
+		}
+	}
 
-	baseMatchers = append(baseMatchers, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName))
-	nhcbSet := q.Querier.Select(ctx, sortSeries, hints, baseMatchers...)
+	matchersWithoutLe = append(matchersWithoutLe, metricNameMacher)
+	nhcbSet := q.Querier.Select(ctx, sortSeries, hints, matchersWithoutLe...)
 	if nhcbSet.Err() != nil {
 		return nhcbSet
 	}
 	seriesSets = append(seriesSets, &nhcbToClassicSeriesSet{
-		nhcbSet:    nhcbSet,
-		suffix:     suffix,
-		metricName: metricName,
+		nhcbSet:   nhcbSet,
+		leMatcher: leMatcher,
+		suffix:    suffix,
 	})
 
 	return &multipleSeriesSet{
@@ -132,22 +141,25 @@ func (*bufferedSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
-// extractHistogramSuffix extracts the metric name, suffix (_bucket, _count, _sum), and base matchers.
+// extractHistogramSuffix extracts the metric name as a matcher, suffix (_bucket, _count, _sum), and matchers without
+// the name.
 // Returns empty suffix if not a classic histogram query.
-func extractHistogramSuffix(matchers []*labels.Matcher) (string, string, []*labels.Matcher) {
+func extractHistogramSuffix(matchers []*labels.Matcher) (*labels.Matcher, string, []*labels.Matcher) {
 	var metricName string
+	var matchType labels.MatchType
 	baseMatchers := make([]*labels.Matcher, 0, len(matchers))
 
 	for _, m := range matchers {
 		if m.Name == model.MetricNameLabel {
 			metricName = m.Value
+			matchType = m.Type
 		} else {
 			baseMatchers = append(baseMatchers, m)
 		}
 	}
 
 	if metricName == "" {
-		return "", "", matchers
+		return nil, "", matchers
 	}
 
 	var suffix string
@@ -160,11 +172,15 @@ func extractHistogramSuffix(matchers []*labels.Matcher) (string, string, []*labe
 	case strings.HasSuffix(metricName, "_sum"):
 		suffix = "_sum"
 	default:
-		return "", "", matchers
+		return nil, "", matchers
 	}
 
 	baseName := metricName[:len(metricName)-len(suffix)]
-	return baseName, suffix, baseMatchers
+	newNameMatcher, err := labels.NewMatcher(matchType, model.MetricNameLabel, baseName)
+	if err != nil {
+		return nil, "", matchers
+	}
+	return newNameMatcher, suffix, baseMatchers
 }
 
 type multipleSeriesSet struct {
@@ -206,12 +222,12 @@ func (m *multipleSeriesSet) Warnings() annotations.Annotations {
 
 // nhcbToClassicSeriesSet converts NHCB series to classic histogram series format.
 type nhcbToClassicSeriesSet struct {
-	nhcbSet    SeriesSet
-	suffix     string
-	metricName string
-	series     []Series
-	idx        int
-	err        error
+	nhcbSet   SeriesSet
+	leMatcher *labels.Matcher
+	suffix    string
+	series    []Series
+	idx       int
+	err       error
 }
 
 func (s *nhcbToClassicSeriesSet) Next() bool {
@@ -227,7 +243,6 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 		lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
 
 		convertedSeriesMap := make(map[string]*convertedSeriesData)
-
 		for s.nhcbSet.Next() {
 			nhcbSeries := s.nhcbSet.At()
 			if nhcbSeries == nil {
@@ -313,8 +328,14 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 			s.err = err
 			return false
 		}
-
 		for _, data := range convertedSeriesMap {
+			if s.leMatcher != nil {
+				// In case a le was provided we need to filter with it
+				if !s.leMatcher.Matches(data.labels.Get(labels.BucketLabel)) {
+					continue
+				}
+			}
+
 			s.series = append(s.series, NewListSeries(data.labels, data.samples))
 		}
 	}
