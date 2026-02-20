@@ -161,8 +161,8 @@ type HeadOptions struct {
 	OutOfOrderCapMax     atomic.Int64
 
 	// EnableSTStorage determines whether databases (WAL/WBL, tsdb,
-	// agent) should set a Start Time value per sample. Currently not
-	// user-settable and only set in tests.
+	// agent) should set a Start Time value per sample.
+	// Represents 'st-storage' feature flag.
 	EnableSTStorage atomic.Bool
 
 	ChunkRange int64

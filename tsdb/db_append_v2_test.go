@@ -7512,6 +7512,64 @@ func TestAbortBlockCompactions_AppendV2(t *testing.T) {
 	require.Equal(t, 4, compactions, "expected 4 compactions to be completed")
 }
 
+// TestCompactHeadWithSTStorage_AppendV2 ensures that when EnableSTStorage is true,
+// compacted blocks contain chunks with EncXOROptST encoding for float samples.
+func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
+	t.Parallel()
+
+	opts := &Options{
+		RetentionDuration: int64(time.Hour * 24 * 15 / time.Millisecond),
+		NoLockfile:        true,
+		MinBlockDuration:  int64(time.Hour * 2 / time.Millisecond),
+		MaxBlockDuration:  int64(time.Hour * 2 / time.Millisecond),
+		WALCompression:    compression.Snappy,
+		EnableSTStorage:   true,
+	}
+	db := newTestDB(t, withOpts(opts))
+	ctx := context.Background()
+	app := db.AppenderV2(ctx)
+
+	mint := 100
+	maxt := 200
+	for i := mint; i < maxt; i++ {
+		_, err := app.Append(0, labels.FromStrings("a", "b"), 50, int64(i), float64(i), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), int64(mint), int64(maxt)-1)))
+	require.Len(t, db.Blocks(), 1)
+	b := db.Blocks()[0]
+
+	chunkr, err := b.Chunks()
+	require.NoError(t, err)
+	defer chunkr.Close()
+
+	indexr, err := b.Index()
+	require.NoError(t, err)
+	defer indexr.Close()
+
+	p, err := indexr.Postings(ctx, "a", "b")
+	require.NoError(t, err)
+
+	chunkCount := 0
+	for p.Next() {
+		var builder labels.ScratchBuilder
+		var chks []chunks.Meta
+		require.NoError(t, indexr.Series(p.At(), &builder, &chks))
+
+		for _, chk := range chks {
+			c, _, err := chunkr.ChunkOrIterable(chk)
+			require.NoError(t, err)
+			require.Equal(t, chunkenc.EncXOROptST, c.Encoding(),
+				"unexpected chunk encoding, got %s", c.Encoding())
+			chunkCount++
+		}
+	}
+	require.NoError(t, p.Err())
+	require.Positive(t, chunkCount, "expected at least one chunk")
+}
+
 func TestNewCompactorFunc_AppendV2(t *testing.T) {
 	opts := DefaultOptions()
 	block1 := ulid.MustNew(1, nil)
@@ -7542,4 +7600,111 @@ func TestNewCompactorFunc_AppendV2(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, ulids, 1)
 	require.Equal(t, block2, ulids[0])
+}
+
+// TestDBAppenderV2_STStorage_OutOfOrder verifies that ST storage works correctly
+// when samples are appended out of order and can be queried using ChunkQuerier.
+func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
+	testHistogram := tsdbutil.GenerateTestHistogram(1)
+	testHistogram.CounterResetHint = histogram.NotCounterReset
+
+	testCases := []struct {
+		name            string
+		appendSamples   []chunks.Sample
+		expectedSamples []chunks.Sample
+	}{
+		{
+			name: "Float samples out of order",
+			appendSamples: []chunks.Sample{
+				newSample(20, 200, 2.0, nil, nil), // Append second sample first.
+				newSample(10, 100, 1.0, nil, nil), // Append first sample second (OOO).
+				newSample(30, 300, 3.0, nil, nil), // Append third sample last.
+				newSample(25, 250, 2.5, nil, nil), // Append middle sample (OOO).
+			},
+			expectedSamples: []chunks.Sample{
+				newSample(10, 100, 1.0, nil, nil),
+				newSample(20, 200, 2.0, nil, nil),
+				newSample(25, 250, 2.5, nil, nil),
+				newSample(30, 300, 3.0, nil, nil),
+			},
+		},
+		{
+			name: "Histogram samples out of order",
+			appendSamples: []chunks.Sample{
+				newSample(30, 300, 0, testHistogram, nil), // Append third sample first.
+				newSample(10, 100, 0, testHistogram, nil), // Append first sample second (OOO).
+				newSample(20, 200, 0, testHistogram, nil), // Append second sample last (OOO).
+			},
+			// Histograms don't support ST storage yet, should return 0 for ST.
+			expectedSamples: []chunks.Sample{
+				newSample(0, 100, 0, testHistogram, nil),
+				newSample(0, 200, 0, testHistogram, nil),
+				newSample(0, 300, 0, testHistogram, nil),
+			},
+		},
+		{
+			name: "Mixed float samples with same ST",
+			appendSamples: []chunks.Sample{
+				newSample(10, 200, 2.0, nil, nil),
+				newSample(10, 100, 1.0, nil, nil), // OOO with same ST.
+				newSample(10, 300, 3.0, nil, nil),
+			},
+			expectedSamples: []chunks.Sample{
+				newSample(10, 100, 1.0, nil, nil),
+				newSample(10, 200, 2.0, nil, nil),
+				newSample(10, 300, 3.0, nil, nil),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+			opts.EnableSTStorage = true
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+
+			lbls := labels.FromStrings("foo", "bar")
+
+			for _, s := range tc.appendSamples {
+				app := db.AppenderV2(context.Background())
+				_, err := app.Append(0, lbls, s.ST(), s.T(), s.F(), s.H(), s.FH(), storage.AOptions{})
+				require.NoError(t, err, "Appending OOO sample with ST should succeed")
+				require.NoError(t, app.Commit(), "Committing OOO sample with ST should succeed")
+			}
+
+			querier, err := db.ChunkQuerier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			defer querier.Close()
+
+			ss := querier.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			require.True(t, ss.Next(), "Should have series")
+			series := ss.At()
+			require.NoError(t, ss.Err())
+			require.False(t, ss.Next(), "Should have only one series")
+
+			chunkIt := series.Iterator(nil)
+			var actualSamples []chunks.Sample
+
+			for chunkIt.Next() {
+				chk := chunkIt.At()
+				it := chk.Chunk.Iterator(nil)
+				samples, err := storage.ExpandSamples(it, newSample)
+				require.NoError(t, err)
+				actualSamples = append(actualSamples, samples...)
+			}
+			require.NoError(t, chunkIt.Err())
+
+			// Use requireEqualSamplesIgnoreCounterResets to ignore histogram counter reset hints.
+			requireEqualSamples(t, lbls.String(), tc.expectedSamples, actualSamples, requireEqualSamplesIgnoreCounterResets)
+
+			// Additionally verify ST values match expectations.
+			require.Len(t, actualSamples, len(tc.expectedSamples))
+			for i, expected := range tc.expectedSamples {
+				actual := actualSamples[i]
+				require.Equal(t, expected.ST(), actual.ST(), "Sample %d: ST should match", i)
+			}
+		})
+	}
 }

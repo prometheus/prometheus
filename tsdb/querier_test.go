@@ -2025,6 +2025,207 @@ func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
 	}
 }
 
+// TestPopulateWithDelSeriesIterator_WithST tests that ST (start time) values are
+// correctly preserved when iterating through chunks with ST support.
+func TestPopulateWithDelSeriesIterator_WithST(t *testing.T) {
+	// Samples with non-zero ST values to test ST preservation.
+	samplesWithST := [][]chunks.Sample{
+		{
+			sample{st: 100, t: 1000, f: 1.0},
+			sample{st: 200, t: 2000, f: 2.0},
+			sample{st: 300, t: 3000, f: 3.0},
+		},
+	}
+
+	// Samples with varying ST patterns.
+	samplesVaryingST := [][]chunks.Sample{
+		{
+			sample{st: 0, t: 1000, f: 1.0},    // st=0
+			sample{st: 1500, t: 1500, f: 1.5}, // st=t
+			sample{st: 1900, t: 2000, f: 2.0}, // st=t-100
+			sample{st: 500, t: 3000, f: 3.0},  // st < t
+		},
+	}
+
+	cases := []struct {
+		name     string
+		samples  [][]chunks.Sample
+		expected []chunks.Sample
+	}{
+		{
+			name:    "all samples have non-zero ST",
+			samples: samplesWithST,
+			expected: []chunks.Sample{
+				sample{st: 100, t: 1000, f: 1.0},
+				sample{st: 200, t: 2000, f: 2.0},
+				sample{st: 300, t: 3000, f: 3.0},
+			},
+		},
+		{
+			name:    "samples with varying ST patterns",
+			samples: samplesVaryingST,
+			expected: []chunks.Sample{
+				sample{st: 0, t: 1000, f: 1.0},
+				sample{st: 1500, t: 1500, f: 1.5},
+				sample{st: 1900, t: 2000, f: 2.0},
+				sample{st: 500, t: 3000, f: 3.0},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Test with chunks (not iterables).
+			t.Run("chunks", func(t *testing.T) {
+				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.samples...)
+				it := &populateWithDelSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, nil)
+
+				var result []chunks.Sample
+				for it.Next() != chunkenc.ValNone {
+					st := it.AtST()
+					ts, v := it.At()
+					result = append(result, sample{st: st, t: ts, f: v})
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, tc.expected, result)
+			})
+
+			// Test with iterables.
+			t.Run("iterables", func(t *testing.T) {
+				f, chkMetas := createFakeReaderAndIterables(tc.samples...)
+				it := &populateWithDelSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, nil)
+
+				var result []chunks.Sample
+				for it.Next() != chunkenc.ValNone {
+					st := it.AtST()
+					ts, v := it.At()
+					result = append(result, sample{st: st, t: ts, f: v})
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, tc.expected, result)
+			})
+		})
+	}
+}
+
+// TestPopulateWithDelChunkSeriesIterator_WithST tests that ST (start time) values are
+// correctly preserved when re-encoding chunks with deletions.
+func TestPopulateWithDelChunkSeriesIterator_WithST(t *testing.T) {
+	samplesWithST := []chunks.Sample{
+		sample{st: 100, t: 1000, f: 1.0},
+		sample{st: 200, t: 2000, f: 2.0},
+		sample{st: 300, t: 3000, f: 3.0},
+		sample{st: 400, t: 4000, f: 4.0},
+		sample{st: 500, t: 5000, f: 5.0},
+	}
+	samplesWithNoLeadingST := []chunks.Sample{
+		sample{st: 0, t: 1000, f: 1.0},
+		sample{st: 0, t: 2000, f: 2.0},
+		sample{st: 0, t: 3000, f: 3.0},
+		sample{st: 400, t: 4000, f: 4.0},
+		sample{st: 500, t: 5000, f: 5.0},
+	}
+
+	cases := []struct {
+		name      string
+		samples   [][]chunks.Sample
+		intervals tombstones.Intervals
+		expected  []chunks.Sample
+	}{
+		{
+			name:      "no deletions - ST preserved",
+			samples:   [][]chunks.Sample{samplesWithST},
+			intervals: nil,
+			expected:  samplesWithST,
+		},
+		{
+			name:    "with deletions - ST preserved in remaining samples",
+			samples: [][]chunks.Sample{samplesWithST},
+			// Delete samples at t=2000 and t=4000.
+			intervals: tombstones.Intervals{{Mint: 2000, Maxt: 2000}, {Mint: 4000, Maxt: 4000}},
+			expected: []chunks.Sample{
+				sample{st: 100, t: 1000, f: 1.0},
+				sample{st: 300, t: 3000, f: 3.0},
+				sample{st: 500, t: 5000, f: 5.0},
+			},
+		},
+		{
+			name:    "delete first sample - ST preserved",
+			samples: [][]chunks.Sample{samplesWithST},
+			// Delete first sample.
+			intervals: tombstones.Intervals{{Mint: 1000, Maxt: 1000}},
+			expected: []chunks.Sample{
+				sample{st: 200, t: 2000, f: 2.0},
+				sample{st: 300, t: 3000, f: 3.0},
+				sample{st: 400, t: 4000, f: 4.0},
+				sample{st: 500, t: 5000, f: 5.0},
+			},
+		},
+		{
+			// This tests that populateCurrForSingleChunk can handle
+			// chunks that don't start with ST, but introduce ST later.
+			name:    "delete first sample - ST late preserved",
+			samples: [][]chunks.Sample{samplesWithNoLeadingST},
+			// Delete first sample.
+			intervals: tombstones.Intervals{{Mint: 1000, Maxt: 1000}},
+			expected: []chunks.Sample{
+				sample{st: 0, t: 2000, f: 2.0},
+				sample{st: 0, t: 3000, f: 3.0},
+				sample{st: 400, t: 4000, f: 4.0},
+				sample{st: 500, t: 5000, f: 5.0},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Test with chunks that need re-encoding due to deletions.
+			t.Run("chunks", func(t *testing.T) {
+				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.samples...)
+				it := &populateWithDelChunkSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, tc.intervals)
+
+				var result []chunks.Sample
+				for it.Next() {
+					meta := it.At()
+					chkIt := meta.Chunk.Iterator(nil)
+					for chkIt.Next() != chunkenc.ValNone {
+						st := chkIt.AtST()
+						ts, v := chkIt.At()
+						result = append(result, sample{st: st, t: ts, f: v})
+					}
+					require.NoError(t, chkIt.Err())
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, tc.expected, result)
+			})
+
+			// Test with iterables.
+			t.Run("iterables", func(t *testing.T) {
+				f, chkMetas := createFakeReaderAndIterables(tc.samples...)
+				it := &populateWithDelChunkSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, tc.intervals)
+
+				var result []chunks.Sample
+				for it.Next() {
+					meta := it.At()
+					chkIt := meta.Chunk.Iterator(nil)
+					for chkIt.Next() != chunkenc.ValNone {
+						st := chkIt.AtST()
+						ts, v := chkIt.At()
+						result = append(result, sample{st: st, t: ts, f: v})
+					}
+					require.NoError(t, chkIt.Err())
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, tc.expected, result)
+			})
+		})
+	}
+}
+
 // Test the cost of merging series sets for different number of merged sets and their size.
 // The subset are all equivalent so this does not capture merging of partial or non-overlapping sets well.
 // TODO(bwplotka): Merge with storage merged series set benchmark.

@@ -76,6 +76,8 @@ type Chunk interface {
 	Bytes() []byte
 
 	// Encoding returns the encoding type of the chunk.
+	// If the chunk is capable of storing ST (start timestamps), it should
+	// return the appropriate encoding type (e.g., EncXOROptST).
 	Encoding() Encoding
 
 	// Appender returns an appender to append samples to the chunk.
@@ -189,9 +191,12 @@ func (v ValueType) String() string {
 	}
 }
 
-func (v ValueType) ChunkEncoding() Encoding {
+func (v ValueType) ChunkEncoding(storeST bool) Encoding {
 	switch v {
 	case ValFloat:
+		if storeST {
+			return EncXOROptST
+		}
 		return EncXOR
 	case ValHistogram:
 		return EncHistogram
@@ -202,17 +207,8 @@ func (v ValueType) ChunkEncoding() Encoding {
 	}
 }
 
-func (v ValueType) NewChunk() (Chunk, error) {
-	switch v {
-	case ValFloat:
-		return NewXORChunk(), nil
-	case ValHistogram:
-		return NewHistogramChunk(), nil
-	case ValFloatHistogram:
-		return NewFloatHistogramChunk(), nil
-	default:
-		return nil, fmt.Errorf("value type %v unsupported", v)
-	}
+func (v ValueType) NewChunk(storeST bool) (Chunk, error) {
+	return NewEmptyChunk(v.ChunkEncoding(storeST))
 }
 
 // MockSeriesIterator returns an iterator for a mock series with custom
