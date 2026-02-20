@@ -105,6 +105,7 @@ type scrapePool struct {
 	activeTargets       map[uint64]*Target
 	droppedTargets      []*Target // Subject to KeepDroppedTargets limit.
 	droppedTargetsCount int       // Count of all dropped targets.
+	scrapeFailureLogger FailureLogger
 
 	// newLoop injection for testing purposes.
 	injectTestNewLoop func(scrapeLoopOptions) loop
@@ -112,9 +113,6 @@ type scrapePool struct {
 	metrics    *scrapeMetrics
 	buffers    *pool.Pool
 	offsetSeed uint64
-
-	scrapeFailureLogger    FailureLogger
-	scrapeFailureLoggerMtx sync.RWMutex
 }
 
 type labelLimits struct {
@@ -224,24 +222,16 @@ func (sp *scrapePool) DroppedTargetsCount() int {
 }
 
 func (sp *scrapePool) SetScrapeFailureLogger(l FailureLogger) {
-	sp.scrapeFailureLoggerMtx.Lock()
-	defer sp.scrapeFailureLoggerMtx.Unlock()
+	sp.targetMtx.Lock()
+	defer sp.targetMtx.Unlock()
 	if l != nil {
 		l = slog.New(l).With("job_name", sp.config.JobName).Handler().(FailureLogger)
 	}
 	sp.scrapeFailureLogger = l
 
-	sp.targetMtx.Lock()
-	defer sp.targetMtx.Unlock()
 	for _, s := range sp.loops {
 		s.setScrapeFailureLogger(sp.scrapeFailureLogger)
 	}
-}
-
-func (sp *scrapePool) getScrapeFailureLogger() FailureLogger {
-	sp.scrapeFailureLoggerMtx.RLock()
-	defer sp.scrapeFailureLoggerMtx.RUnlock()
-	return sp.scrapeFailureLogger
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
@@ -323,6 +313,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 	sp.targetMtx.Lock()
 
 	forcedErr := sp.refreshTargetLimitErr()
+	scrapeFailureLogger := sp.scrapeFailureLogger
 	for fp, oldLoop := range sp.loops {
 		var cache *scrapeCache
 		if oc := oldLoop.getCache(); reuseCache && oc != nil {
@@ -364,7 +355,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 			wg.Done()
 
 			newLoop.setForcedError(forcedErr)
-			newLoop.setScrapeFailureLogger(sp.getScrapeFailureLogger())
+			newLoop.setScrapeFailureLogger(scrapeFailureLogger)
 			newLoop.run(nil)
 		}(oldLoop, newLoop)
 
