@@ -70,24 +70,30 @@ func (p *Provider) Config() any {
 
 // CreateAndRegisterSDMetrics registers the metrics needed for SD mechanisms.
 // Does not register the metrics for the Discovery Manager.
-// TODO(ptodev): Add ability to unregister the metrics?
-func CreateAndRegisterSDMetrics(reg prometheus.Registerer) (map[string]DiscovererMetrics, error) {
+func CreateAndRegisterSDMetrics(reg prometheus.Registerer) (*SDMetrics, error) {
 	// Some SD mechanisms use the "refresh" package, which has its own metrics.
 	refreshSdMetrics := NewRefreshMetrics(reg)
 
 	// Register the metrics specific for each SD mechanism, and the ones for the refresh package.
-	sdMetrics, err := RegisterSDMetrics(reg, refreshSdMetrics)
+	mechanismMetrics, err := RegisterSDMetrics(reg, refreshSdMetrics)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register service discovery metrics: %w", err)
 	}
 
-	return sdMetrics, nil
+	return &SDMetrics{
+		MechanismMetrics: mechanismMetrics,
+		RefreshManager:   refreshSdMetrics,
+	}, nil
 }
 
 // NewManager is the Discovery Manager constructor.
-func NewManager(ctx context.Context, logger *slog.Logger, registerer prometheus.Registerer, sdMetrics map[string]DiscovererMetrics, options ...func(*Manager)) *Manager {
+func NewManager(ctx context.Context, logger *slog.Logger, registerer prometheus.Registerer, sdMetrics *SDMetrics, options ...func(*Manager)) *Manager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
+	}
+	if sdMetrics == nil || sdMetrics.RefreshManager == nil {
+		logger.Error("Failed to create discovery manager: sdMetrics.RefreshManager must be set")
+		return nil
 	}
 	mgr := &Manager{
 		logger:      logger,
@@ -191,7 +197,7 @@ type Manager struct {
 	registerer prometheus.Registerer
 
 	metrics   *Metrics
-	sdMetrics map[string]DiscovererMetrics
+	sdMetrics *SDMetrics
 
 	// featureRegistry is used to track which service discovery providers are configured.
 	featureRegistry features.Collector
@@ -251,6 +257,19 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 
 			prov.cancel()
 			prov.mu.RUnlock()
+
+			// Clear up refresh metrics associated with this cancelled provider (sub means scrape job name).
+			m.targetsMtx.Lock()
+			for s := range prov.subs {
+				// Also clean up discovered targets metric. targetsMtx lock needed for safe access to m.targets.
+				delete(m.targets, poolKey{s, prov.name})
+				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
+
+				if cfg, ok := prov.config.(Config); ok {
+					m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
+				}
+			}
+			m.targetsMtx.Unlock()
 			continue
 		}
 		prov.mu.RUnlock()
@@ -266,7 +285,13 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			// Remove obsolete subs' targets.
 			if _, ok := prov.newSubs[s]; !ok {
 				delete(m.targets, poolKey{s, prov.name})
-				m.metrics.DiscoveredTargets.DeleteLabelValues(m.name, s)
+				m.metrics.DiscoveredTargets.DeleteLabelValues(s)
+
+				// Also clean up refresh metrics for subs that are being removed from a provider that is still running.
+				cfg, ok := prov.config.(Config)
+				if ok {
+					m.sdMetrics.RefreshManager.DeleteLabelValues(cfg.Name(), s)
+				}
 			}
 		}
 		// Set metrics and targets for new subs.
@@ -498,7 +523,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
 			Logger:            m.logger.With("discovery", typ, "config", setName),
 			HTTPClientOptions: m.httpOpts,
-			Metrics:           m.sdMetrics[typ],
+			Metrics:           m.sdMetrics.MechanismMetrics[typ],
 			SetName:           setName,
 		})
 		if err != nil {
