@@ -704,9 +704,11 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	}
 	closers = append(closers, indexw)
 
+	startTime := time.Now()
 	if err := blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, indexw, chunkw, AllSortedPostings); err != nil {
 		return fmt.Errorf("populate block: %w", err)
 	}
+	c.logger.Info("[prometheus compactor write] finished populating block", "duration", time.Since(startTime), "duration_ms", time.Since(startTime).Milliseconds())
 
 	select {
 	case <-c.ctx.Done():
@@ -933,6 +935,7 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 
 		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
+		var iter chunkenc.Iterator
 		for _, chk := range chks {
 			samples := uint64(chk.Chunk.NumSamples())
 			meta.Stats.NumSamples += samples
@@ -940,11 +943,11 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 			case chunkenc.EncHistogram:
 				meta.Stats.NumHistogramSamples += samples
 				// Count histogram buckets from all samples
-				iter := chk.Chunk.Iterator(nil)
+				iter = chk.Chunk.Iterator(iter)
 				for iter.Next() == chunkenc.ValHistogram {
 					_, h := iter.AtHistogram(nil)
 					if h != nil {
-						meta.Stats.NumHistogramBuckets += countHistogramBuckets(h)
+						meta.Stats.NumHistogramBuckets += h.BucketCount()
 					}
 				}
 				if iter.Err() != nil {
@@ -953,11 +956,11 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 			case chunkenc.EncFloatHistogram:
 				meta.Stats.NumHistogramSamples += samples
 				// Count float histogram buckets from all samples
-				iter := chk.Chunk.Iterator(nil)
+				iter = chk.Chunk.Iterator(iter)
 				for iter.Next() == chunkenc.ValFloatHistogram {
 					_, fh := iter.AtFloatHistogram(nil)
 					if fh != nil {
-						meta.Stats.NumHistogramBuckets += countFloatHistogramBuckets(fh)
+						meta.Stats.NumHistogramBuckets += fh.BucketCount()
 					}
 				}
 				if iter.Err() != nil {
