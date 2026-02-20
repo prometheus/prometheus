@@ -1,0 +1,6 @@
+rule_files:
+  - features.yml
+
+evaluation_interval: 1m
+
+tests: []
