@@ -760,11 +760,12 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(s.Ref, timeSeries{
-				seriesLabels: lbls,
-				metadata:     meta,
-				timestamp:    s.T,
-				value:        s.V,
-				sType:        tSample,
+				seriesLabels:   lbls,
+				metadata:       meta,
+				startTimestamp: s.ST,
+				timestamp:      s.T,
+				value:          s.V,
+				sType:          tSample,
 			}) {
 				continue outer
 			}
@@ -882,9 +883,10 @@ outer:
 			if t.shards.enqueue(h.Ref, timeSeries{
 				seriesLabels: lbls,
 				metadata:     meta,
-				timestamp:    h.T,
-				histogram:    h.H,
-				sType:        tHistogram,
+				// TODO(bwplotka): Populate ST once histogram Ref has it.
+				timestamp: h.T,
+				histogram: h.H,
+				sType:     tHistogram,
 			}) {
 				continue outer
 			}
@@ -941,8 +943,9 @@ outer:
 			default:
 			}
 			if t.shards.enqueue(h.Ref, timeSeries{
-				seriesLabels:   lbls,
-				metadata:       meta,
+				seriesLabels: lbls,
+				metadata:     meta,
+				// TODO(bwplotka): Populate ST once histogram Ref has it.
 				timestamp:      h.T,
 				floatHistogram: h.FH,
 				sType:          tFloatHistogram,
@@ -1396,13 +1399,13 @@ type queue struct {
 }
 
 type timeSeries struct {
-	seriesLabels   labels.Labels
-	value          float64
-	histogram      *histogram.Histogram
-	floatHistogram *histogram.FloatHistogram
-	metadata       *metadata.Metadata
-	timestamp      int64
-	exemplarLabels labels.Labels
+	seriesLabels              labels.Labels
+	value                     float64
+	histogram                 *histogram.Histogram
+	floatHistogram            *histogram.FloatHistogram
+	metadata                  *metadata.Metadata
+	startTimestamp, timestamp int64
+	exemplarLabels            labels.Labels
 	// The type of series: sample, exemplar, or histogram.
 	sType seriesType
 }
@@ -1995,8 +1998,9 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 		switch d.sType {
 		case tSample:
 			pendingData[nPending].Samples = append(pendingData[nPending].Samples, writev2.Sample{
-				Value:     d.value,
-				Timestamp: d.timestamp,
+				Value:          d.value,
+				Timestamp:      d.timestamp,
+				StartTimestamp: d.startTimestamp,
 			})
 			nPendingSamples++
 		case tExemplar:
@@ -2007,9 +2011,11 @@ func populateV2TimeSeries(symbolTable *writev2.SymbolsTable, batch []timeSeries,
 			})
 			nPendingExemplars++
 		case tHistogram:
+			// TODO(bwplotka): Extend with ST once histograms populate it.
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromIntHistogram(d.timestamp, d.histogram))
 			nPendingHistograms++
 		case tFloatHistogram:
+			// TODO(bwplotka): Extend with ST once histograms populate it.
 			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, writev2.FromFloatHistogram(d.timestamp, d.floatHistogram))
 			nPendingHistograms++
 		case tMetadata:

@@ -847,6 +847,7 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 		for j := range numSamples {
 			samples = append(samples, record.RefSample{
 				Ref: chunks.HeadSeriesRef(i),
+				ST:  int64(j - 1),
 				T:   int64(j),
 				V:   float64(i),
 			})
@@ -2108,9 +2109,11 @@ func createTimeseriesWithRandomLabelCount(id string, seriesCount int, timeAdd ti
 	// use a fixed rand source so tests are consistent
 	r := rand.New(rand.NewSource(99))
 	for i := range seriesCount {
+		ts := time.Now().Add(timeAdd).UnixMilli()
 		s := record.RefSample{
 			Ref: chunks.HeadSeriesRef(i),
-			T:   time.Now().Add(timeAdd).UnixMilli(),
+			ST:  ts - 1,
+			T:   ts,
 			V:   r.Float64(),
 		}
 		samples = append(samples, s)
@@ -2147,9 +2150,11 @@ func createTimeseriesWithOldSamples(numSamples, numSeries int, extraLabels ...la
 			})
 		}
 		for j := 0; j < numSamples/2; j++ {
+			ts := time.Now().UnixMilli() + int64(j)
 			sample := record.RefSample{
 				Ref: chunks.HeadSeriesRef(i),
-				T:   time.Now().UnixMilli() + int64(j),
+				ST:  ts - 1,
+				T:   ts,
 				V:   float64(i),
 			}
 			samples = append(samples, sample)
