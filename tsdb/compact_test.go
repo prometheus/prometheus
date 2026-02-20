@@ -1162,18 +1162,10 @@ func TestCompaction_populateBlock(t *testing.T) {
 						switch {
 						case smpl.h != nil:
 							s.NumHistogramSamples++
-							bucketCount := uint64(len(smpl.h.PositiveBuckets) + len(smpl.h.NegativeBuckets))
-							if smpl.h.ZeroCount > 0 {
-								bucketCount++
-							}
-							s.NumHistogramBuckets += bucketCount
+							s.NumHistogramBuckets += smpl.h.BucketCount()
 						case smpl.fh != nil:
 							s.NumHistogramSamples++
-							bucketCount := uint64(len(smpl.fh.PositiveBuckets) + len(smpl.fh.NegativeBuckets))
-							if smpl.fh.ZeroCount > 0 {
-								bucketCount++
-							}
-							s.NumHistogramBuckets += bucketCount
+							s.NumHistogramBuckets += smpl.fh.BucketCount()
 						default:
 							s.NumFloatSamples++
 						}
@@ -1223,6 +1215,15 @@ func BenchmarkCompaction(b *testing.B) {
 			ranges:         [][2]int64{{0, 5000}, {3000, 8000}, {6000, 11000}, {9000, 14000}},
 			compactionType: "vertical",
 		},
+		// Histograms.
+		{
+			ranges:         [][2]int64{{0, 100}, {200, 300}, {400, 500}, {600, 700}},
+			compactionType: "histogram",
+		},
+		{
+			ranges:         [][2]int64{{0, 1000}, {2000, 3000}, {4000, 5000}, {6000, 7000}},
+			compactionType: "histogram",
+		},
 	}
 
 	nSeries := 10000
@@ -1233,7 +1234,13 @@ func BenchmarkCompaction(b *testing.B) {
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
-				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil, nil)
+				var series []storage.Series
+				if c.compactionType == "histogram" {
+					series = genHistogramSeries(nSeries, 10, r[0], r[1], 1, false)
+				} else {
+					series = genSeries(nSeries, 10, r[0], r[1])
+				}
+				block, err := OpenBlock(nil, createBlock(b, dir, series), nil, nil)
 				require.NoError(b, err)
 				blocks = append(blocks, block)
 				defer func() {

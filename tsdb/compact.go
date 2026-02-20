@@ -788,25 +788,6 @@ func AllSortedPostings(ctx context.Context, reader IndexReader) index.Postings {
 
 type DefaultBlockPopulator struct{}
 
-// countBuckets is a helper function that counts buckets given lengths and zero count.
-func countBuckets(posLen, negLen int, hasZero bool) uint64 {
-	count := uint64(posLen + negLen)
-	if hasZero {
-		count++
-	}
-	return count
-}
-
-// countHistogramBuckets returns the number of buckets in a histogram.
-func countHistogramBuckets(h *histogram.Histogram) uint64 {
-	return countBuckets(len(h.PositiveBuckets), len(h.NegativeBuckets), h.ZeroCount > 0)
-}
-
-// countFloatHistogramBuckets returns the number of buckets in a float histogram.
-func countFloatHistogramBuckets(fh *histogram.FloatHistogram) uint64 {
-	return countBuckets(len(fh.PositiveBuckets), len(fh.NegativeBuckets), fh.ZeroCount > 0)
-}
-
 // PopulateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
@@ -933,6 +914,7 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 
 		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
+		var iter chunkenc.Iterator
 		for _, chk := range chks {
 			samples := uint64(chk.Chunk.NumSamples())
 			meta.Stats.NumSamples += samples
@@ -940,11 +922,12 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 			case chunkenc.EncHistogram:
 				meta.Stats.NumHistogramSamples += samples
 				// Count histogram buckets from all samples
-				iter := chk.Chunk.Iterator(nil)
+				var h *histogram.Histogram
+				iter = chk.Chunk.Iterator(iter)
 				for iter.Next() == chunkenc.ValHistogram {
-					_, h := iter.AtHistogram(nil)
+					_, h = iter.AtHistogram(h)
 					if h != nil {
-						meta.Stats.NumHistogramBuckets += countHistogramBuckets(h)
+						meta.Stats.NumHistogramBuckets += h.BucketCount()
 					}
 				}
 				if iter.Err() != nil {
@@ -953,11 +936,12 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 			case chunkenc.EncFloatHistogram:
 				meta.Stats.NumHistogramSamples += samples
 				// Count float histogram buckets from all samples
-				iter := chk.Chunk.Iterator(nil)
+				var fh *histogram.FloatHistogram
+				iter = chk.Chunk.Iterator(iter)
 				for iter.Next() == chunkenc.ValFloatHistogram {
-					_, fh := iter.AtFloatHistogram(nil)
+					_, fh = iter.AtFloatHistogram(fh)
 					if fh != nil {
-						meta.Stats.NumHistogramBuckets += countFloatHistogramBuckets(fh)
+						meta.Stats.NumHistogramBuckets += fh.BucketCount()
 					}
 				}
 				if iter.Err() != nil {

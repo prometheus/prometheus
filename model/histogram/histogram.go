@@ -652,3 +652,11 @@ func (h *Histogram) ReduceResolution(targetSchema int32) error {
 	h.Schema = targetSchema
 	return nil
 }
+
+func (h *Histogram) BucketCount() uint64 {
+	count := uint64(len(h.PositiveBuckets) + len(h.NegativeBuckets))
+	if h.ZeroCount > 0 {
+		count++
+	}
+	return count
+}
