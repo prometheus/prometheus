@@ -201,6 +201,7 @@
     "nerve": true,
     "nomad": true,
     "openstack": true,
+    "outscale": true,
     "ovhcloud": true,
     "puppetdb": true,
     "scaleway": true,
