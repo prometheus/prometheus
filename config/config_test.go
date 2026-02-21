@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/moby"
 	"github.com/prometheus/prometheus/discovery/nomad"
 	"github.com/prometheus/prometheus/discovery/openstack"
+	"github.com/prometheus/prometheus/discovery/outscale"
 	"github.com/prometheus/prometheus/discovery/ovhcloud"
 	"github.com/prometheus/prometheus/discovery/puppetdb"
 	"github.com/prometheus/prometheus/discovery/scaleway"
@@ -1708,6 +1709,44 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "outscale",
+
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
+			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&outscale.SDConfig{
+					Endpoint:         "https://api.eu-west-2.outscale.com/api/v1",
+					Region:           "eu-west-2",
+					AccessKey:        "A1B2C3D4E5F6G7H8I9J0",
+					SecretKey:        "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+					Port:             80,
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -2086,6 +2125,7 @@ func TestLoadConfig(t *testing.T) {
 	testutil.RequireEqualWithOptions(t, expectedConf, c, []cmp.Option{
 		cmpopts.IgnoreUnexported(config.ProxyConfig{}),
 		cmpopts.IgnoreUnexported(ionos.SDConfig{}),
+		cmpopts.IgnoreUnexported(outscale.SDConfig{}),
 		cmpopts.IgnoreUnexported(stackit.SDConfig{}),
 		cmpopts.IgnoreUnexported(regexp.Regexp{}),
 		cmpopts.IgnoreUnexported(hetzner.SDConfig{}),
@@ -2114,7 +2154,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 25, "wrong number of secret matches found")
+	require.Len(t, matches, 26, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -2536,6 +2576,14 @@ var expectedErrors = []struct {
 	{
 		filename: "scaleway_two_secrets.bad.yml",
 		errMsg:   "at most one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "outscale_no_region.bad.yml",
+		errMsg:   "outscale SD configuration requires a region",
+	},
+	{
+		filename: "outscale_no_secret.bad.yml",
+		errMsg:   "outscale SD configuration requires access_key and secret_key",
 	},
 	{
 		filename: "scrape_body_size_limit.bad.yml",
