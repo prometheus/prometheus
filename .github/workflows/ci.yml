@@ -16,7 +16,7 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -34,7 +34,7 @@ jobs:
     name: More Go tests
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -59,7 +59,7 @@ jobs:
       GOEXPERIMENT: synctest
     container:
       # The go version in this image should be N-1 wrt test_go.
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -77,7 +77,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
 
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -116,7 +116,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -136,7 +136,7 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -229,7 +229,7 @@ jobs:
     name: Check generated parser
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
