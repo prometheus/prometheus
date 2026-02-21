@@ -200,6 +200,9 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 		awsConfig.WithRegion(d.cfg.Region),
 		awsConfig.WithHTTPClient(httpClient),
 	}
+	if d.cfg.Endpoint != "" {
+		configOptions = append(configOptions, awsConfig.WithBaseEndpoint(d.cfg.Endpoint))
+	}
 
 	// Only set static credentials if both access key and secret key are provided.
 	// Otherwise, let the AWS SDK use its default credential chain (environment variables, IAM role, etc.).
@@ -234,8 +237,15 @@ func (d *EC2Discovery) refreshAZIDs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if azs.AvailabilityZones == nil {
+		d.azToAZID = make(map[string]string)
+		return nil
+	}
 	d.azToAZID = make(map[string]string, len(azs.AvailabilityZones))
 	for _, az := range azs.AvailabilityZones {
+		if az.ZoneName == nil || az.ZoneId == nil {
+			continue
+		}
 		d.azToAZID[*az.ZoneName] = *az.ZoneId
 	}
 	return nil
