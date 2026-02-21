@@ -28,16 +28,19 @@ import (
 	"testing"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -888,4 +891,59 @@ func populateSeries(lbls []map[string]string, mint, maxt int64) []storage.Series
 		series = append(series, storage.NewListSeries(labels.FromMap(lbl), samples))
 	}
 	return series
+}
+
+func TestBlockSeriesMetadataConcurrentReaders(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a block with some series.
+	blockDir := createBlock(t, dir, genSeries(2, 1, 0, 10))
+
+	// Write a metadata file into the block directory.
+	mem := seriesmetadata.NewMemSeriesMetadata()
+	mem.SetVersioned("http_requests_total", 1, &seriesmetadata.MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests"}, MinTime: 0, MaxTime: 10,
+	})
+	mem.SetVersioned("cpu_seconds", 2, &seriesmetadata.MetadataVersion{
+		Meta: metadata.Metadata{Type: model.MetricTypeGauge, Help: "CPU seconds"}, MinTime: 0, MaxTime: 10,
+	})
+	_, err := seriesmetadata.WriteFile(promslog.NewNopLogger(), blockDir, mem)
+	require.NoError(t, err)
+
+	// Open the block.
+	block, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
+	require.NoError(t, err)
+
+	// Get two concurrent readers.
+	reader1, err := block.SeriesMetadata()
+	require.NoError(t, err)
+
+	reader2, err := block.SeriesMetadata()
+	require.NoError(t, err)
+
+	// Close the first reader.
+	require.NoError(t, reader1.Close())
+
+	// The second reader must still work after the first is closed.
+	metas, found := reader2.GetByMetricName("http_requests_total")
+	require.True(t, found)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+
+	collected := make(map[string]metadata.Metadata)
+	err = reader2.IterByMetricName(func(name string, ms []metadata.Metadata) error {
+		require.NotEmpty(t, ms)
+		collected[name] = ms[0]
+		return nil
+	})
+	require.NoError(t, err)
+	require.Len(t, collected, 2)
+
+	require.Equal(t, uint64(2), reader2.Total())
+
+	// Close the second reader.
+	require.NoError(t, reader2.Close())
+
+	// Close the block — should not panic or error.
+	require.NoError(t, block.Close())
 }

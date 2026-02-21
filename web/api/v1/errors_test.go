@@ -169,7 +169,8 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		false,
 		false,
 		overrideErrorCode,
-		nil,
+		false, // enableNativeMetadata
+		nil,   // featureRegistry
 		OpenAPIOptions{},
 		parser.NewParser(parser.Options{}),
 	)

@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"github.com/prometheus/otlptranslator"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -55,6 +56,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -212,6 +214,8 @@ type TSDBAdminStats interface {
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 	BlockMetas() ([]tsdb.BlockMeta, error)
+	SeriesMetadata() (seriesmetadata.Reader, error)
+	SeriesMetadataForMatchers(ctx context.Context, matchers ...*labels.Matcher) (seriesmetadata.Reader, error)
 }
 
 type QueryOpts interface {
@@ -236,18 +240,19 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db                  TSDBAdminStats
-	dbDir               string
-	enableAdmin         bool
-	logger              *slog.Logger
-	CORSOrigin          *regexp.Regexp
-	buildInfo           *PrometheusVersion
-	runtimeInfo         func() (RuntimeInfo, error)
-	gatherer            prometheus.Gatherer
-	isAgent             bool
-	statsRenderer       StatsRenderer
-	notificationsGetter func() []notifications.Notification
-	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
+	db                   TSDBAdminStats
+	dbDir                string
+	enableAdmin          bool
+	enableNativeMetadata bool
+	logger               *slog.Logger
+	CORSOrigin           *regexp.Regexp
+	buildInfo            *PrometheusVersion
+	runtimeInfo          func() (RuntimeInfo, error)
+	gatherer             prometheus.Gatherer
+	isAgent              bool
+	statsRenderer        StatsRenderer
+	notificationsGetter  func() []notifications.Notification
+	notificationsSub     func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
 	overrideErrorCode OverrideErrorCode
 
@@ -301,6 +306,7 @@ func NewAPI(
 	enableTypeAndUnitLabels bool,
 	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
+	enableNativeMetadata bool,
 	featureRegistry features.Collector,
 	openAPIOptions OpenAPIOptions,
 	promqlParser parser.Parser,
@@ -314,28 +320,29 @@ func NewAPI(
 		targetRetriever:       tr,
 		alertmanagerRetriever: ar,
 
-		now:                 time.Now,
-		config:              configFunc,
-		flagsMap:            flagsMap,
-		ready:               readyFunc,
-		globalURLOptions:    globalURLOptions,
-		db:                  db,
-		dbDir:               dbDir,
-		enableAdmin:         enableAdmin,
-		rulesRetriever:      rr,
-		logger:              logger,
-		CORSOrigin:          corsOrigin,
-		runtimeInfo:         runtimeInfo,
-		buildInfo:           buildInfo,
-		gatherer:            gatherer,
-		isAgent:             isAgent,
-		statsRenderer:       DefaultStatsRenderer,
-		notificationsGetter: notificationsGetter,
-		notificationsSub:    notificationsSub,
-		overrideErrorCode:   overrideErrorCode,
-		featureRegistry:     featureRegistry,
-		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
-		parser:              promqlParser,
+		now:                  time.Now,
+		config:               configFunc,
+		flagsMap:             flagsMap,
+		ready:                readyFunc,
+		globalURLOptions:     globalURLOptions,
+		db:                   db,
+		dbDir:                dbDir,
+		enableAdmin:          enableAdmin,
+		enableNativeMetadata: enableNativeMetadata,
+		rulesRetriever:       rr,
+		logger:               logger,
+		CORSOrigin:           corsOrigin,
+		runtimeInfo:          runtimeInfo,
+		buildInfo:            buildInfo,
+		gatherer:             gatherer,
+		isAgent:              isAgent,
+		statsRenderer:        DefaultStatsRenderer,
+		notificationsGetter:  notificationsGetter,
+		notificationsSub:     notificationsSub,
+		overrideErrorCode:    overrideErrorCode,
+		featureRegistry:      featureRegistry,
+		openAPIBuilder:       NewOpenAPIBuilder(openAPIOptions, logger),
+		parser:               promqlParser,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -452,6 +459,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
+	r.Get("/metadata/versions", wrap(api.metadataVersions))
+	r.Get("/metadata/series", wrap(api.metadataSeries))
+	r.Get("/resources", wrap(api.resourceAttributes))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
@@ -1281,37 +1291,106 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	builder := labels.NewBuilder(labels.EmptyLabels())
 	metric := r.FormValue("metric")
 	res := []metricMetadata{}
-	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
-		for _, t := range tt {
-			if limit >= 0 && len(res) >= limit {
-				break
+
+	if api.enableNativeMetadata && api.db != nil {
+		// When native metadata is enabled, query TSDB head for per-target metadata.
+		// Cache results by (job, instance) to avoid redundant postings queries.
+		type targetKey struct{ job, instance string }
+		metadataCache := map[targetKey]seriesmetadata.Reader{}
+		defer func() {
+			for _, mr := range metadataCache {
+				mr.Close()
 			}
-			targetLabels := t.Labels(builder)
-			// Filter targets that don't satisfy the label matchers.
-			if matchTarget != "" && !matchLabels(targetLabels, matchers) {
-				continue
+		}()
+
+		for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
+			for _, t := range tt {
+				if limit >= 0 && len(res) >= limit {
+					break
+				}
+				targetLabels := t.Labels(builder)
+				if matchTarget != "" && !matchLabels(targetLabels, matchers) {
+					continue
+				}
+
+				key := targetKey{
+					job:      targetLabels.Get("job"),
+					instance: targetLabels.Get("instance"),
+				}
+				mr, ok := metadataCache[key]
+				if !ok {
+					targetMatchers := targetToMatchers(targetLabels)
+					var err error
+					mr, err = api.db.SeriesMetadataForMatchers(r.Context(), targetMatchers...)
+					if err != nil {
+						api.logger.Error("error reading target metadata from TSDB", "err", err)
+						continue
+					}
+					metadataCache[key] = mr
+				}
+
+				if metric == "" {
+					_ = mr.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+						if limit >= 0 && len(res) >= limit {
+							return errors.New("limit reached")
+						}
+						if len(metas) > 0 {
+							m := metas[0]
+							res = append(res, metricMetadata{
+								Target:       targetLabels,
+								MetricFamily: name,
+								Type:         m.Type,
+								Help:         m.Help,
+								Unit:         m.Unit,
+							})
+						}
+						return nil
+					})
+				} else {
+					if metas, ok := mr.GetByMetricName(metric); ok && len(metas) > 0 {
+						m := metas[0]
+						res = append(res, metricMetadata{
+							Target:       targetLabels,
+							MetricFamily: metric,
+							Type:         m.Type,
+							Help:         m.Help,
+							Unit:         m.Unit,
+						})
+					}
+				}
 			}
-			// If no metric is specified, get the full list for the target.
-			if metric == "" {
-				for _, md := range t.ListMetadata() {
+		}
+	} else {
+		// Use scrape cache metadata.
+		for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
+			for _, t := range tt {
+				if limit >= 0 && len(res) >= limit {
+					break
+				}
+				targetLabels := t.Labels(builder)
+				if matchTarget != "" && !matchLabels(targetLabels, matchers) {
+					continue
+				}
+				if metric == "" {
+					for _, md := range t.ListMetadata() {
+						res = append(res, metricMetadata{
+							Target:       targetLabels,
+							MetricFamily: md.MetricFamily,
+							Type:         md.Type,
+							Help:         md.Help,
+							Unit:         md.Unit,
+						})
+					}
+					continue
+				}
+				if md, ok := t.GetMetadata(metric); ok {
 					res = append(res, metricMetadata{
-						Target:       targetLabels,
-						MetricFamily: md.MetricFamily,
-						Type:         md.Type,
-						Help:         md.Help,
-						Unit:         md.Unit,
+						Target: targetLabels,
+						Type:   md.Type,
+						Help:   md.Help,
+						Unit:   md.Unit,
 					})
 				}
-				continue
-			}
-			// Get metadata for the specified metric.
-			if md, ok := t.GetMetadata(metric); ok {
-				res = append(res, metricMetadata{
-					Target: targetLabels,
-					Type:   md.Type,
-					Help:   md.Help,
-					Unit:   md.Unit,
-				})
 			}
 		}
 	}
@@ -1325,6 +1404,21 @@ type metricMetadata struct {
 	Type         model.MetricType `json:"type"`
 	Help         string           `json:"help"`
 	Unit         string           `json:"unit"`
+}
+
+// targetToMatchers builds label matchers from a target's labels to identify
+// its series in the TSDB index. Uses the "job" and "instance" labels.
+func targetToMatchers(targetLabels labels.Labels) []*labels.Matcher {
+	var ms []*labels.Matcher
+	job := targetLabels.Get("job")
+	if job != "" {
+		ms = append(ms, labels.MustNewMatcher(labels.MatchEqual, "job", job))
+	}
+	instance := targetLabels.Get("instance")
+	if instance != "" {
+		ms = append(ms, labels.MustNewMatcher(labels.MatchEqual, "instance", instance))
+	}
+	return ms
 }
 
 type RelabelStep struct {
@@ -1468,12 +1562,66 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	metric := r.FormValue("metric")
-	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
-		for _, t := range tt {
+
+	if api.enableNativeMetadata && api.db != nil {
+		// When native metadata is enabled, TSDB is the sole metadata source.
+		mr, err := api.db.SeriesMetadata()
+		if err != nil {
+			api.logger.Error("error reading series metadata from TSDB", "err", err)
+		} else if mr != nil {
+			defer mr.Close()
 			if metric == "" {
-				for _, mm := range t.ListMetadata() {
-					m := metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
-					ms, ok := metrics[mm.MetricFamily]
+				if err := mr.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+					if limitPerMetric > 0 && len(metas) > limitPerMetric {
+						metas = metas[:limitPerMetric]
+					}
+					set := make(map[metadata.Metadata]struct{}, len(metas))
+					for _, m := range metas {
+						set[m] = struct{}{}
+					}
+					metrics[name] = set
+					return nil
+				}); err != nil {
+					api.logger.Error("error iterating series metadata from TSDB", "err", err)
+				}
+			} else {
+				if metas, ok := mr.GetByMetricName(metric); ok {
+					if limitPerMetric > 0 && len(metas) > limitPerMetric {
+						metas = metas[:limitPerMetric]
+					}
+					set := make(map[metadata.Metadata]struct{}, len(metas))
+					for _, m := range metas {
+						set[m] = struct{}{}
+					}
+					metrics[metric] = set
+				}
+			}
+		}
+	} else {
+		// Collect metadata from active scrape targets (takes precedence).
+		for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
+			for _, t := range tt {
+				if metric == "" {
+					for _, mm := range t.ListMetadata() {
+						m := metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
+						ms, ok := metrics[mm.MetricFamily]
+
+						if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+							continue
+						}
+
+						if !ok {
+							ms = map[metadata.Metadata]struct{}{}
+							metrics[mm.MetricFamily] = ms
+						}
+						ms[m] = struct{}{}
+					}
+					continue
+				}
+
+				if md, ok := t.GetMetadata(metric); ok {
+					m := metadata.Metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
+					ms, ok := metrics[md.MetricFamily]
 
 					if limitPerMetric > 0 && len(ms) >= limitPerMetric {
 						continue
@@ -1481,26 +1629,42 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 					if !ok {
 						ms = map[metadata.Metadata]struct{}{}
-						metrics[mm.MetricFamily] = ms
+						metrics[md.MetricFamily] = ms
 					}
 					ms[m] = struct{}{}
 				}
-				continue
 			}
+		}
 
-			if md, ok := t.GetMetadata(metric); ok {
-				m := metadata.Metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
-				ms, ok := metrics[md.MetricFamily]
-
-				if limitPerMetric > 0 && len(ms) >= limitPerMetric {
-					continue
+		// Supplement with persisted TSDB metadata for metrics not found in active targets.
+		if api.db != nil {
+			mr, err := api.db.SeriesMetadata()
+			if err != nil {
+				api.logger.Error("error reading persisted series metadata", "err", err)
+			} else if mr != nil {
+				defer mr.Close()
+				if metric == "" {
+					_ = mr.IterByMetricName(func(name string, metas []metadata.Metadata) error {
+						if _, exists := metrics[name]; !exists {
+							set := map[metadata.Metadata]struct{}{}
+							for _, m := range metas {
+								set[m] = struct{}{}
+							}
+							metrics[name] = set
+						}
+						return nil
+					})
+				} else {
+					if _, exists := metrics[metric]; !exists {
+						if metas, ok := mr.GetByMetricName(metric); ok {
+							set := map[metadata.Metadata]struct{}{}
+							for _, m := range metas {
+								set[m] = struct{}{}
+							}
+							metrics[metric] = set
+						}
+					}
 				}
-
-				if !ok {
-					ms = map[metadata.Metadata]struct{}{}
-					metrics[md.MetricFamily] = ms
-				}
-				ms[m] = struct{}{}
 			}
 		}
 	}
@@ -1520,6 +1684,602 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 	}
 
 	return apiFuncResult{res, nil, nil, nil}
+}
+
+// metadataVersionEntry is one version of metadata in the API response.
+type metadataVersionEntry struct {
+	Type    string `json:"type"`
+	Help    string `json:"help"`
+	Unit    string `json:"unit"`
+	MinTime int64  `json:"minTime"`
+	MaxTime int64  `json:"maxTime"`
+}
+
+// metadataSeriesEntry is a per-series metadata entry in the API response.
+type metadataSeriesEntry struct {
+	Labels   labels.Labels          `json:"labels"`
+	Versions []metadataVersionEntry `json:"versions"`
+}
+
+func (api *API) metadataVersions(r *http.Request) apiFuncResult {
+	if !api.enableNativeMetadata || api.db == nil {
+		return apiFuncResult{[]metadataSeriesEntry{}, nil, nil, nil}
+	}
+
+	metric := r.FormValue("metric")
+
+	limit := -1
+	if s := r.FormValue("limit"); s != "" {
+		var err error
+		if limit, err = strconv.Atoi(s); err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
+		}
+	}
+
+	// Parse optional time range filter.
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	mint := start.UnixMilli()
+	maxt := end.UnixMilli()
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error reading series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// Collect per-series versioned metadata.
+	type seriesEntry struct {
+		lset labels.Labels
+		vm   *seriesmetadata.VersionedMetadata
+	}
+	var entries []seriesEntry
+	err = mr.IterVersionedMetadata(func(_ uint64, name string, lset labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
+		if name == "" {
+			return nil
+		}
+		if metric != "" && name != metric {
+			return nil
+		}
+		entries = append(entries, seriesEntry{lset: lset, vm: vm})
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error iterating versioned metadata: %w", err)}, nil, nil}
+	}
+
+	// Sort by labels for deterministic output.
+	slices.SortFunc(entries, func(a, b seriesEntry) int {
+		return labels.Compare(a.lset, b.lset)
+	})
+
+	// Build response with time range filtering; limit applies to series count.
+	res := make([]metadataSeriesEntry, 0, len(entries))
+	for _, e := range entries {
+		if limit >= 0 && len(res) >= limit {
+			break
+		}
+		filtered := seriesmetadata.FilterVersionsByTimeRange(e.vm, mint, maxt)
+		if filtered == nil {
+			continue
+		}
+		versions := make([]metadataVersionEntry, 0, len(filtered.Versions))
+		for _, v := range filtered.Versions {
+			versions = append(versions, metadataVersionEntry{
+				Type:    string(v.Meta.Type),
+				Help:    v.Meta.Help,
+				Unit:    v.Meta.Unit,
+				MinTime: v.MinTime,
+				MaxTime: v.MaxTime,
+			})
+		}
+		res = append(res, metadataSeriesEntry{
+			Labels:   e.lset,
+			Versions: versions,
+		})
+	}
+
+	return apiFuncResult{res, nil, nil, nil}
+}
+
+func (api *API) metadataSeries(r *http.Request) apiFuncResult {
+	if !api.enableNativeMetadata || api.db == nil {
+		return apiFuncResult{[]metadataSeriesEntry{}, nil, nil, nil}
+	}
+
+	// Parse filter params.
+	typeFilter := r.FormValue("type")
+	unitFilter := r.FormValue("unit")
+
+	var helpRegex *regexp.Regexp
+	if helpPattern := r.FormValue("help"); helpPattern != "" {
+		var err error
+		helpRegex, err = regexp.Compile(helpPattern)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid help regex: %w", err)}, nil, nil}
+		}
+	}
+
+	limit := -1
+	if s := r.FormValue("limit"); s != "" {
+		var err error
+		if limit, err = strconv.Atoi(s); err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, errors.New("limit must be a number")}, nil, nil}
+		}
+	}
+
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	mint := start.UnixMilli()
+	maxt := end.UnixMilli()
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error reading series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// Collect per-series versioned metadata.
+	type seriesEntry struct {
+		lset labels.Labels
+		vm   *seriesmetadata.VersionedMetadata
+	}
+	var entries []seriesEntry
+	err = mr.IterVersionedMetadata(func(_ uint64, name string, lset labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
+		if name == "" {
+			return nil
+		}
+		entries = append(entries, seriesEntry{lset: lset, vm: vm})
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error iterating versioned metadata: %w", err)}, nil, nil}
+	}
+
+	// Sort by labels for deterministic output.
+	slices.SortFunc(entries, func(a, b seriesEntry) int {
+		return labels.Compare(a.lset, b.lset)
+	})
+
+	// Build response: filter versions by time range and metadata criteria; limit applies to series count.
+	res := make([]metadataSeriesEntry, 0)
+	for _, e := range entries {
+		if limit >= 0 && len(res) >= limit {
+			break
+		}
+		filtered := seriesmetadata.FilterVersionsByTimeRange(e.vm, mint, maxt)
+		if filtered == nil {
+			continue
+		}
+		var versions []metadataVersionEntry
+		for _, v := range filtered.Versions {
+			if typeFilter != "" && string(v.Meta.Type) != typeFilter {
+				continue
+			}
+			if unitFilter != "" && v.Meta.Unit != unitFilter {
+				continue
+			}
+			if helpRegex != nil && !helpRegex.MatchString(v.Meta.Help) {
+				continue
+			}
+			versions = append(versions, metadataVersionEntry{
+				Type:    string(v.Meta.Type),
+				Help:    v.Meta.Help,
+				Unit:    v.Meta.Unit,
+				MinTime: v.MinTime,
+				MaxTime: v.MaxTime,
+			})
+		}
+		if len(versions) == 0 {
+			continue
+		}
+		res = append(res, metadataSeriesEntry{
+			Labels:   e.lset,
+			Versions: versions,
+		})
+	}
+
+	return apiFuncResult{res, nil, nil, nil}
+}
+
+// ResourceAttributeData contains identifying and descriptive attribute maps.
+type ResourceAttributeData struct {
+	Identifying map[string]string `json:"identifying"`
+	Descriptive map[string]string `json:"descriptive"`
+}
+
+// EntityData represents a single entity with type and attributes.
+type EntityData struct {
+	Type        string            `json:"type"`
+	Identifying map[string]string `json:"identifying"`
+	Descriptive map[string]string `json:"descriptive"`
+}
+
+// ResourceAttributeVersion is a single version of resource attributes with its time range.
+type ResourceAttributeVersion struct {
+	Attributes ResourceAttributeData `json:"resource_attributes"`
+	Entities   []EntityData          `json:"entities,omitempty"`
+	MinTimeMs  int64                 `json:"min_time_ms"`
+	MaxTimeMs  int64                 `json:"max_time_ms"`
+}
+
+// ResourceAttributesResponse is the response format for the resource_attributes endpoint.
+type ResourceAttributesResponse struct {
+	Labels   labels.Labels              `json:"labels"`
+	Versions []ResourceAttributeVersion `json:"versions"`
+}
+
+func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
+	if !api.enableNativeMetadata {
+		return apiFuncResult{nil, &apiError{errorExec, errors.New("native metadata is disabled; enable with --enable-feature=native-metadata")}, nil, nil}
+	}
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+	}
+
+	// Handle format=attributes for autocomplete use case
+	if r.FormValue("format") == "attributes" {
+		return api.resourceAttributePairs(r)
+	}
+
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	if end.Before(start) {
+		err := errors.New("end timestamp must not be before start timestamp")
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	startMs := timestamp.FromTime(start)
+	endMs := timestamp.FromTime(end)
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
+	// Parse match[] parameters if provided
+	var matcherSets [][]*labels.Matcher
+	if len(r.Form["match[]"]) > 0 {
+		matcherSets, err = api.parseMatchersParam(r.Form["match[]"])
+		if err != nil {
+			return invalidParamError(err, "match[]")
+		}
+	}
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// If no matchers provided, return all resource attributes
+	if len(matcherSets) == 0 {
+		return api.resourceAttributesAll(mr, limit, startMs, endMs)
+	}
+
+	// Query series matching the selectors
+	ctx := r.Context()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
+
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+		Limit: toHintLimit(limit),
+	}
+
+	var set storage.SeriesSet
+	if len(matcherSets) > 1 {
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			s := q.Select(ctx, true, hints, mset...)
+			sets = append(sets, s)
+		}
+		set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+	} else {
+		set = q.Select(ctx, false, hints, matcherSets[0]...)
+	}
+
+	var results []ResourceAttributesResponse
+	warnings := set.Warnings()
+
+	for set.Next() {
+		if limit >= 0 && len(results) >= limit {
+			break
+		}
+
+		lset := set.At().Labels()
+		hash := labels.StableHash(lset)
+
+		versioned, ok := mr.GetVersionedResource(hash)
+		if !ok || len(versioned.Versions) == 0 {
+			continue
+		}
+
+		// Filter versions to only those overlapping with [start, end]
+		versions := filterVersions(versioned.Versions, startMs, endMs)
+		if len(versions) == 0 {
+			continue
+		}
+
+		results = append(results, ResourceAttributesResponse{
+			Labels:   lset,
+			Versions: versions,
+		})
+	}
+
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+	}
+
+	if results == nil {
+		results = []ResourceAttributesResponse{}
+	}
+
+	return apiFuncResult{results, nil, warnings, closer}
+}
+
+// filterVersions returns versions that overlap with [startMs, endMs].
+// Uses the unified ResourceVersion that contains both attributes and entities.
+func filterVersions(versions []*seriesmetadata.ResourceVersion, startMs, endMs int64) []ResourceAttributeVersion {
+	result := make([]ResourceAttributeVersion, 0, len(versions))
+	for _, v := range versions {
+		// Version overlaps if: version.MinTime <= endMs AND version.MaxTime >= startMs
+		if v.MinTime <= endMs && v.MaxTime >= startMs {
+			rv := ResourceAttributeVersion{
+				Attributes: ResourceAttributeData{
+					Identifying: v.Identifying,
+					Descriptive: v.Descriptive,
+				},
+				MinTimeMs: v.MinTime,
+				MaxTimeMs: v.MaxTime,
+			}
+
+			// Extract entities from the unified ResourceVersion
+			for _, entity := range v.Entities {
+				rv.Entities = append(rv.Entities, EntityData{
+					Type:        entity.Type,
+					Identifying: entity.ID,
+					Descriptive: entity.Description,
+				})
+			}
+
+			result = append(result, rv)
+		}
+	}
+	return result
+}
+
+// resourceAttributesAll returns all resource attributes without filtering by matchers.
+func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, endMs int64) apiFuncResult {
+	// Build a map from hash to labels by querying all series
+	ctx := context.Background()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer q.Close()
+
+	// Query all series to build hash->labels map
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+	}
+	set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+
+	hashToLabels := make(map[uint64]labels.Labels)
+	for set.Next() {
+		lset := set.At().Labels()
+		hashToLabels[lset.Hash()] = lset
+	}
+	if err := set.Err(); err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+
+	var results []ResourceAttributesResponse
+	err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		if limit >= 0 && len(results) >= limit {
+			return nil
+		}
+
+		lset, ok := hashToLabels[labelsHash]
+		if !ok {
+			return nil // Skip if we can't find labels for this hash
+		}
+
+		// Filter versions to only those overlapping with [start, end]
+		versions := filterVersions(resources.Versions, startMs, endMs)
+		if len(versions) == 0 {
+			return nil
+		}
+
+		results = append(results, ResourceAttributesResponse{
+			Labels:   lset,
+			Versions: versions,
+		})
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
+	}
+
+	if results == nil {
+		results = []ResourceAttributesResponse{}
+	}
+
+	return apiFuncResult{results, nil, nil, nil}
+}
+
+// resourceAttributePairs returns all unique resource attribute names and their values.
+// Primarily intended for autocomplete in the UI.
+// Query parameters:
+//   - translate: if "true", translates OTel attribute names to Prometheus label names
+//   - match[]: if provided, only returns attributes from resources associated with matching series
+func (api *API) resourceAttributePairs(r *http.Request) apiFuncResult {
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// Check if translation is requested
+	translate := r.FormValue("translate") == "true"
+
+	// Build label namer for translation if needed
+	var labelNamer *otlptranslator.LabelNamer
+	if translate {
+		cfg := api.config()
+		allowUTF8 := cfg.GlobalConfig.MetricNameValidationScheme == model.UTF8Validation
+		labelNamer = &otlptranslator.LabelNamer{
+			UTF8Allowed:                 allowUTF8,
+			UnderscoreLabelSanitization: cfg.OTLPConfig.LabelNameUnderscoreSanitization,
+			PreserveMultipleUnderscores: cfg.OTLPConfig.LabelNamePreserveMultipleUnderscores,
+		}
+	}
+
+	// If match[] parameter is provided, filter resources by matching series
+	var allowedHashes map[uint64]struct{}
+	if len(r.Form["match[]"]) > 0 {
+		matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
+		if err != nil {
+			return invalidParamError(err, "match[]")
+		}
+
+		// Query for matching series to get their hashes
+		q, err := api.Queryable.Querier(timestamp.FromTime(MinTime), timestamp.FromTime(MaxTime))
+		if err != nil {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+		defer q.Close()
+
+		hints := &storage.SelectHints{
+			Start: timestamp.FromTime(MinTime),
+			End:   timestamp.FromTime(MaxTime),
+			Func:  "series",
+		}
+
+		var set storage.SeriesSet
+		if len(matcherSets) > 1 {
+			var sets []storage.SeriesSet
+			for _, mset := range matcherSets {
+				s := q.Select(r.Context(), true, hints, mset...)
+				sets = append(sets, s)
+			}
+			set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+		} else {
+			set = q.Select(r.Context(), false, hints, matcherSets[0]...)
+		}
+
+		// Collect the StableHash of each matching series
+		allowedHashes = make(map[uint64]struct{})
+		for set.Next() {
+			hash := labels.StableHash(set.At().Labels())
+			allowedHashes[hash] = struct{}{}
+		}
+		if err := set.Err(); err != nil {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+	}
+
+	// Collect unique label names and their values
+	labelValues := make(map[string]map[string]struct{})
+
+	err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		// If we have a filter, only process resources for matching series
+		if allowedHashes != nil {
+			if _, ok := allowedHashes[labelsHash]; !ok {
+				return nil // Skip this resource
+			}
+		}
+
+		for _, version := range resources.Versions {
+			// Process identifying attributes
+			for name, value := range version.Identifying {
+				labelName := name
+				if translate && labelNamer != nil {
+					var err error
+					labelName, err = labelNamer.Build(name)
+					if err != nil {
+						continue // Skip attributes that can't be translated
+					}
+				}
+				if labelValues[labelName] == nil {
+					labelValues[labelName] = make(map[string]struct{})
+				}
+				labelValues[labelName][value] = struct{}{}
+			}
+
+			// Process descriptive attributes
+			for name, value := range version.Descriptive {
+				labelName := name
+				if translate && labelNamer != nil {
+					var err error
+					labelName, err = labelNamer.Build(name)
+					if err != nil {
+						continue // Skip attributes that can't be translated
+					}
+				}
+				if labelValues[labelName] == nil {
+					labelValues[labelName] = make(map[string]struct{})
+				}
+				labelValues[labelName][value] = struct{}{}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
+	}
+
+	result := make(map[string][]string, len(labelValues))
+	for name, values := range labelValues {
+		valueList := make([]string, 0, len(values))
+		for v := range values {
+			valueList = append(valueList, v)
+		}
+		slices.Sort(valueList)
+		result[name] = valueList
+	}
+
+	return apiFuncResult{result, nil, nil, nil}
 }
 
 // RuleDiscovery has info for all rules.

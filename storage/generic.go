@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -92,8 +93,44 @@ func (q *querierAdapter) Select(ctx context.Context, sortSeries bool, hints *Sel
 	return &seriesSetAdapter{q.genericQuerier.Select(ctx, sortSeries, hints, matchers...)}
 }
 
+// GetResourceAt implements ResourceQuerier by delegating to the underlying genericQuerier
+// if it supports ResourceQuerier.
+func (q *querierAdapter) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	if rq, ok := q.genericQuerier.(ResourceQuerier); ok {
+		return rq.GetResourceAt(labelsHash, timestamp)
+	}
+	return nil, false
+}
+
+// IterUniqueAttributeNames implements ResourceQuerier by delegating to the underlying
+// genericQuerier if it supports ResourceQuerier.
+func (q *querierAdapter) IterUniqueAttributeNames(fn func(name string)) error {
+	if rq, ok := q.genericQuerier.(ResourceQuerier); ok {
+		return rq.IterUniqueAttributeNames(fn)
+	}
+	return nil
+}
+
 type chunkQuerierAdapter struct {
 	genericQuerier
+}
+
+// GetResourceAt implements ResourceQuerier by delegating to the underlying genericQuerier
+// if it supports ResourceQuerier.
+func (q *chunkQuerierAdapter) GetResourceAt(labelsHash uint64, timestamp int64) (*seriesmetadata.ResourceVersion, bool) {
+	if rq, ok := q.genericQuerier.(ResourceQuerier); ok {
+		return rq.GetResourceAt(labelsHash, timestamp)
+	}
+	return nil, false
+}
+
+// IterUniqueAttributeNames implements ResourceQuerier by delegating to the underlying
+// genericQuerier if it supports ResourceQuerier.
+func (q *chunkQuerierAdapter) IterUniqueAttributeNames(fn func(name string)) error {
+	if rq, ok := q.genericQuerier.(ResourceQuerier); ok {
+		return rq.IterUniqueAttributeNames(fn)
+	}
+	return nil
 }
 
 type chunkSeriesSetAdapter struct {
