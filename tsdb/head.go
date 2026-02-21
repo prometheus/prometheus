@@ -402,6 +402,7 @@ type headMetrics struct {
 	mmapChunksTotal           prometheus.Counter
 	walReplayUnknownRefsTotal *prometheus.CounterVec
 	wblReplayUnknownRefsTotal *prometheus.CounterVec
+	chunkWriteErrorsTotal     prometheus.Counter
 }
 
 const (
@@ -547,6 +548,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WBL replay.",
 		}, []string{"type"}),
+		chunkWriteErrorsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_chunk_write_errors_total",
+			Help: "Total number of errors that occurred while writing chunks to disk.",
+		}),
 	}
 
 	if r != nil {
@@ -579,6 +584,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.mmapChunksTotal,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
+			m.chunkWriteErrorsTotal,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -1897,8 +1903,6 @@ func (h *Head) mmapHeadChunks() {
 }
 
 // mmapHeadChunksInStripe m-maps chunks for all series in a single stripe.
-// It uses deferred unlocking so that locks are released even if mmapChunks panics
-// (e.g. via handleChunkWriteError), preventing deadlocks during cleanup.
 func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
 	h.series.locks[i].RLock()
 	defer h.series.locks[i].RUnlock()
@@ -1912,7 +1916,14 @@ func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
 func (h *Head) mmapSeriesChunks(s *memSeries) int {
 	s.Lock()
 	defer s.Unlock()
-	return s.mmapChunks(h.chunkDiskMapper)
+	return s.mmapChunks(h.chunkDiskMapper, h.chunkWriteErrorCallback)
+}
+
+func (h *Head) chunkWriteErrorCallback(err error) {
+	if err != nil && !errors.Is(err, chunks.ErrChunkDiskMapperClosed) {
+		h.logger.Error("Error writing chunk", "err", err)
+		h.metrics.chunkWriteErrorsTotal.Inc()
+	}
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
