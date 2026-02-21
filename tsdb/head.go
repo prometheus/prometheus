@@ -1890,16 +1890,29 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 // (potentially) a long time, since that could eventually delay next scrape and/or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
-	for i := 0; i < h.series.size; i++ {
-		h.series.locks[i].RLock()
-		for _, series := range h.series.series[i] {
-			series.Lock()
-			count += series.mmapChunks(h.chunkDiskMapper)
-			series.Unlock()
-		}
-		h.series.locks[i].RUnlock()
+	for i := range h.series.size {
+		count += h.mmapHeadChunksInStripe(i)
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
+}
+
+// mmapHeadChunksInStripe m-maps chunks for all series in a single stripe.
+// It uses deferred unlocking so that locks are released even if mmapChunks panics
+// (e.g. via handleChunkWriteError), preventing deadlocks during cleanup.
+func (h *Head) mmapHeadChunksInStripe(i int) (count int) {
+	h.series.locks[i].RLock()
+	defer h.series.locks[i].RUnlock()
+
+	for _, series := range h.series.series[i] {
+		count += h.mmapSeriesChunks(series)
+	}
+	return count
+}
+
+func (h *Head) mmapSeriesChunks(s *memSeries) int {
+	s.Lock()
+	defer s.Unlock()
+	return s.mmapChunks(h.chunkDiskMapper)
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
