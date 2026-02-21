@@ -319,6 +319,11 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
       // sometimes an Identifier has an error has parent. This should be treated in priority
       if (node.parent?.type.id === 0) {
         const errorNodeParent = node.parent.parent;
+        // If we are inside a subquery (including evaluation-time aligned `::`) and editing the duration token (e.g. `go[5d::L5d4]`), prefer Duration completion.
+        if (errorNodeParent?.type.id === SubqueryExpr) {
+          result.push({ kind: ContextKind.Duration });
+          break;
+        }
         if (errorNodeParent?.type.id === StepInvariantExpr) {
           // we are likely in the given situation:
           //   `expr @ s`

@@ -184,6 +184,7 @@ var ItemTypeStr = map[ItemType]string{
 	COMMA:         ",",
 	EQL:           "=",
 	COLON:         ":",
+	DOUBLE_COLON:  "::",
 	SEMICOLON:     ";",
 	BLANK:         "_",
 	TIMES:         "x",
@@ -475,7 +476,12 @@ func lexStatements(l *Lexer) stateFn {
 			if l.gotColon {
 				return l.errorf("unexpected colon %q", r)
 			}
-			l.emit(COLON)
+			if t := l.peek(); t == ':' {
+				l.next()
+				l.emit(DOUBLE_COLON)
+			} else {
+				l.emit(COLON)
+			}
 			l.gotColon = true
 			return lexStatements
 		case 's', 'S', 'm', 'M':
