@@ -870,6 +870,7 @@ type scrapeLoop struct {
 
 	// Options from scrape.Options.
 	enableSTZeroIngestion   bool
+	parseST                 bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
@@ -1223,7 +1224,12 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		validationScheme:              opts.sp.config.MetricNameValidationScheme,
 
 		// scrape.Options.
-		enableSTZeroIngestion:   opts.sp.options.EnableStartTimestampZeroIngestion,
+		enableSTZeroIngestion: opts.sp.options.EnableStartTimestampZeroIngestion,
+		// parseST was added recently. Before EnableStartTimestampZeroIngestion
+		// was enabling parsing ST. For non-Prometheus users of the scrape
+		// manager, we ensure appenderV2 parseST is set on EnableStartTimestampZeroIngestion
+		// This will be removed when EnableStartTimestampZeroIngestion is removed.
+		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,

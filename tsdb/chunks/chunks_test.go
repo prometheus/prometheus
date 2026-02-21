@@ -19,6 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
@@ -57,4 +58,36 @@ func TestWriterWithDefaultSegmentSize(t *testing.T) {
 	d, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	require.Len(t, d, 1, "expected only one segment to be created to hold both chunks")
+}
+
+func TestChunkFromSamplesWithST(t *testing.T) {
+	// Create samples with explicit ST (source timestamp) values.
+	samples := []Sample{
+		sample{t: 10, f: 11, st: 5},
+		sample{t: 20, f: 12, st: 15},
+		sample{t: 30, f: 13, st: 25},
+	}
+
+	chk, err := ChunkFromSamples(samples)
+	require.NoError(t, err)
+	require.NotNil(t, chk.Chunk)
+
+	// Verify MinTime and MaxTime.
+	require.Equal(t, int64(10), chk.MinTime)
+	require.Equal(t, int64(30), chk.MaxTime)
+
+	// Iterate over the chunk and verify ST values are preserved.
+	it := chk.Chunk.Iterator(nil)
+	idx := 0
+	for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+		require.Equal(t, chunkenc.ValFloat, vt)
+		ts, v := it.At()
+		st := it.AtST()
+		require.Equal(t, samples[idx].ST(), st, "ST mismatch at index %d", idx)
+		require.Equal(t, samples[idx].T(), ts, "T mismatch at index %d", idx)
+		require.Equal(t, samples[idx].F(), v, "F mismatch at index %d", idx)
+		idx++
+	}
+	require.NoError(t, it.Err())
+	require.Equal(t, len(samples), idx, "expected all samples to be iterated")
 }
