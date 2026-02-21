@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -703,9 +704,11 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	}
 	closers = append(closers, indexw)
 
+	startTime := time.Now()
 	if err := blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, indexw, chunkw, AllSortedPostings); err != nil {
 		return fmt.Errorf("populate block: %w", err)
 	}
+	c.logger.Info("[prometheus compactor write] finished populating block", "duration", time.Since(startTime), "duration_ms", time.Since(startTime).Milliseconds())
 
 	select {
 	case <-c.ctx.Done():
@@ -786,6 +789,25 @@ func AllSortedPostings(ctx context.Context, reader IndexReader) index.Postings {
 }
 
 type DefaultBlockPopulator struct{}
+
+// countBuckets is a helper function that counts buckets given lengths and zero count.
+func countBuckets(posLen, negLen int, hasZero bool) uint64 {
+	count := uint64(posLen + negLen)
+	if hasZero {
+		count++
+	}
+	return count
+}
+
+// countHistogramBuckets returns the number of buckets in a histogram.
+func countHistogramBuckets(h *histogram.Histogram) uint64 {
+	return countBuckets(len(h.PositiveBuckets), len(h.NegativeBuckets), h.ZeroCount > 0)
+}
+
+// countFloatHistogramBuckets returns the number of buckets in a float histogram.
+func countFloatHistogramBuckets(fh *histogram.FloatHistogram) uint64 {
+	return countBuckets(len(fh.PositiveBuckets), len(fh.NegativeBuckets), fh.ZeroCount > 0)
+}
 
 // PopulateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
@@ -913,12 +935,37 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 
 		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
+		var iter chunkenc.Iterator
 		for _, chk := range chks {
 			samples := uint64(chk.Chunk.NumSamples())
 			meta.Stats.NumSamples += samples
 			switch chk.Chunk.Encoding() {
-			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+			case chunkenc.EncHistogram:
 				meta.Stats.NumHistogramSamples += samples
+				// Count histogram buckets from all samples
+				iter = chk.Chunk.Iterator(iter)
+				for iter.Next() == chunkenc.ValHistogram {
+					_, h := iter.AtHistogram(nil)
+					if h != nil {
+						meta.Stats.NumHistogramBuckets += h.BucketCount()
+					}
+				}
+				if iter.Err() != nil {
+					return fmt.Errorf("histogram iterator: %w", iter.Err())
+				}
+			case chunkenc.EncFloatHistogram:
+				meta.Stats.NumHistogramSamples += samples
+				// Count float histogram buckets from all samples
+				iter = chk.Chunk.Iterator(iter)
+				for iter.Next() == chunkenc.ValFloatHistogram {
+					_, fh := iter.AtFloatHistogram(nil)
+					if fh != nil {
+						meta.Stats.NumHistogramBuckets += fh.BucketCount()
+					}
+				}
+				if iter.Err() != nil {
+					return fmt.Errorf("float histogram iterator: %w", iter.Err())
+				}
 			case chunkenc.EncXOR:
 				meta.Stats.NumFloatSamples += samples
 			}

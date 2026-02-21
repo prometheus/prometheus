@@ -2110,3 +2110,11 @@ func (h *FloatHistogram) HasOverflow() bool {
 	}
 	return false
 }
+
+func (h *FloatHistogram) BucketCount() uint64 {
+	count := uint64(len(h.PositiveBuckets) + len(h.NegativeBuckets))
+	if h.ZeroCount > 0 {
+		count++
+	}
+	return count
+}
