@@ -224,7 +224,12 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.ec2 = ec2.NewFromConfig(cfg)
+	d.ec2 = ec2.NewFromConfig(cfg, func(options *ec2.Options) {
+		if d.cfg.Endpoint != "" {
+			options.BaseEndpoint = &d.cfg.Endpoint
+		}
+		options.HTTPClient = httpClient
+	})
 
 	return d.ec2, nil
 }
@@ -234,8 +239,15 @@ func (d *EC2Discovery) refreshAZIDs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if azs.AvailabilityZones == nil {
+		d.azToAZID = make(map[string]string)
+		return nil
+	}
 	d.azToAZID = make(map[string]string, len(azs.AvailabilityZones))
 	for _, az := range azs.AvailabilityZones {
+		if az.ZoneName == nil || az.ZoneId == nil {
+			continue
+		}
 		d.azToAZID[*az.ZoneName] = *az.ZoneId
 	}
 	return nil
