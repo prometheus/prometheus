@@ -627,3 +627,593 @@ func TestPodDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
 		},
 	}.Run(t)
 }
+
+func TestPodDiscoveryAddWithDualStackIPv4First(t *testing.T) {
+	t.Parallel()
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
+
+	ns := "default"
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			obj := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testpod",
+					Namespace: "default",
+					UID:       types.UID("abc123"),
+				},
+				Spec: v1.PodSpec{
+					NodeName: "testnode",
+					Containers: []v1.Container{
+						{
+							Name:  "testcontainer",
+							Image: "testcontainer:latest",
+							Ports: []v1.ContainerPort{
+								{
+									Name:          "testport",
+									Protocol:      v1.ProtocolTCP,
+									ContainerPort: int32(9000),
+								},
+							},
+						},
+					},
+				},
+				Status: v1.PodStatus{
+					PodIP: "100.117.147.144",
+					PodIPs: []v1.PodIP{
+						{IP: "100.117.147.144"},
+						{IP: "2001::3238:634c:2ed4:ed01"},
+					},
+					HostIP: "2.3.4.5",
+					Phase:  "Running",
+					Conditions: []v1.PodCondition{
+						{
+							Type:   v1.PodReady,
+							Status: v1.ConditionTrue,
+						},
+					},
+					ContainerStatuses: []v1.ContainerStatus{
+						{
+							Name:        "testcontainer",
+							ContainerID: "docker://a1b2c3d4e5f6",
+						},
+					},
+				},
+			}
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			key: {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "100.117.147.144:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":      "testpod",
+					"__meta_kubernetes_namespace":     lv(ns),
+					"__meta_kubernetes_pod_node_name": "testnode",
+					"__meta_kubernetes_pod_ip":        "100.117.147.144",
+					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
+					"__meta_kubernetes_pod_ready":     "true",
+					"__meta_kubernetes_pod_phase":     "Running",
+					"__meta_kubernetes_pod_uid":       "abc123",
+					"__meta_kubernetes_pod_ipv4":      "100.117.147.144",
+					"__meta_kubernetes_pod_ipv6":      "2001::3238:634c:2ed4:ed01",
+				},
+				Source: key,
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryAddWithDualStackIPv6First(t *testing.T) {
+	t.Parallel()
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
+
+	ns := "default"
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			obj := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testpod",
+					Namespace: "default",
+					UID:       types.UID("abc123"),
+				},
+				Spec: v1.PodSpec{
+					NodeName: "testnode",
+					Containers: []v1.Container{
+						{
+							Name:  "testcontainer",
+							Image: "testcontainer:latest",
+							Ports: []v1.ContainerPort{
+								{
+									Name:          "testport",
+									Protocol:      v1.ProtocolTCP,
+									ContainerPort: int32(9000),
+								},
+							},
+						},
+					},
+				},
+				Status: v1.PodStatus{
+					PodIP: "2001::3238:634c:2ed4:ed01",
+					PodIPs: []v1.PodIP{
+						{IP: "2001::3238:634c:2ed4:ed01"},
+						{IP: "100.117.147.144"},
+					},
+					HostIP: "2.3.4.5",
+					Phase:  "Running",
+					Conditions: []v1.PodCondition{
+						{
+							Type:   v1.PodReady,
+							Status: v1.ConditionTrue,
+						},
+					},
+					ContainerStatuses: []v1.ContainerStatus{
+						{
+							Name:        "testcontainer",
+							ContainerID: "docker://a1b2c3d4e5f6",
+						},
+					},
+				},
+			}
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			key: {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "[2001::3238:634c:2ed4:ed01]:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":      "testpod",
+					"__meta_kubernetes_namespace":     lv(ns),
+					"__meta_kubernetes_pod_node_name": "testnode",
+					"__meta_kubernetes_pod_ip":        "2001::3238:634c:2ed4:ed01",
+					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
+					"__meta_kubernetes_pod_ready":     "true",
+					"__meta_kubernetes_pod_phase":     "Running",
+					"__meta_kubernetes_pod_uid":       "abc123",
+					"__meta_kubernetes_pod_ipv4":      "100.117.147.144",
+					"__meta_kubernetes_pod_ipv6":      "2001::3238:634c:2ed4:ed01",
+				},
+				Source: key,
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryAddWithSingleStackIPv4(t *testing.T) {
+	t.Parallel()
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
+
+	ns := "default"
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			obj := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testpod",
+					Namespace: "default",
+					UID:       types.UID("abc123"),
+				},
+				Spec: v1.PodSpec{
+					NodeName: "testnode",
+					Containers: []v1.Container{
+						{
+							Name:  "testcontainer",
+							Image: "testcontainer:latest",
+							Ports: []v1.ContainerPort{
+								{
+									Name:          "testport",
+									Protocol:      v1.ProtocolTCP,
+									ContainerPort: int32(9000),
+								},
+							},
+						},
+					},
+				},
+				Status: v1.PodStatus{
+					PodIP: "100.117.147.144",
+					PodIPs: []v1.PodIP{
+						{IP: "100.117.147.144"},
+					},
+					HostIP: "2.3.4.5",
+					Phase:  "Running",
+					Conditions: []v1.PodCondition{
+						{
+							Type:   v1.PodReady,
+							Status: v1.ConditionTrue,
+						},
+					},
+					ContainerStatuses: []v1.ContainerStatus{
+						{
+							Name:        "testcontainer",
+							ContainerID: "docker://a1b2c3d4e5f6",
+						},
+					},
+				},
+			}
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			key: {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "100.117.147.144:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":      "testpod",
+					"__meta_kubernetes_namespace":     lv(ns),
+					"__meta_kubernetes_pod_node_name": "testnode",
+					"__meta_kubernetes_pod_ip":        "100.117.147.144",
+					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
+					"__meta_kubernetes_pod_ready":     "true",
+					"__meta_kubernetes_pod_phase":     "Running",
+					"__meta_kubernetes_pod_uid":       "abc123",
+					"__meta_kubernetes_pod_ipv4":      "100.117.147.144",
+				},
+				Source: key,
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryAddWithSingleStackIPv6(t *testing.T) {
+	t.Parallel()
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
+
+	ns := "default"
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			obj := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testpod",
+					Namespace: "default",
+					UID:       types.UID("abc123"),
+				},
+				Spec: v1.PodSpec{
+					NodeName: "testnode",
+					Containers: []v1.Container{
+						{
+							Name:  "testcontainer",
+							Image: "testcontainer:latest",
+							Ports: []v1.ContainerPort{
+								{
+									Name:          "testport",
+									Protocol:      v1.ProtocolTCP,
+									ContainerPort: int32(9000),
+								},
+							},
+						},
+					},
+				},
+				Status: v1.PodStatus{
+					PodIP: "2001::3238:634c:2ed4:ed01",
+					PodIPs: []v1.PodIP{
+						{IP: "2001::3238:634c:2ed4:ed01"},
+					},
+					HostIP: "2.3.4.5",
+					Phase:  "Running",
+					Conditions: []v1.PodCondition{
+						{
+							Type:   v1.PodReady,
+							Status: v1.ConditionTrue,
+						},
+					},
+					ContainerStatuses: []v1.ContainerStatus{
+						{
+							Name:        "testcontainer",
+							ContainerID: "docker://a1b2c3d4e5f6",
+						},
+					},
+				},
+			}
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			key: {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "[2001::3238:634c:2ed4:ed01]:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":      "testpod",
+					"__meta_kubernetes_namespace":     lv(ns),
+					"__meta_kubernetes_pod_node_name": "testnode",
+					"__meta_kubernetes_pod_ip":        "2001::3238:634c:2ed4:ed01",
+					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
+					"__meta_kubernetes_pod_ready":     "true",
+					"__meta_kubernetes_pod_phase":     "Running",
+					"__meta_kubernetes_pod_uid":       "abc123",
+					"__meta_kubernetes_pod_ipv6":      "2001::3238:634c:2ed4:ed01",
+				},
+				Source: key,
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryAddWithSingleStackIPv6WithoutPorts(t *testing.T) {
+	t.Parallel()
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
+
+	ns := "default"
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			obj := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testpod",
+					Namespace: "default",
+					UID:       types.UID("abc123"),
+				},
+				Spec: v1.PodSpec{
+					NodeName: "testnode",
+					Containers: []v1.Container{
+						{
+							Name:  "testcontainer",
+							Image: "testcontainer:latest",
+						},
+					},
+				},
+				Status: v1.PodStatus{
+					PodIP: "2001::3238:634c:2ed4:ed01",
+					PodIPs: []v1.PodIP{
+						{IP: "2001::3238:634c:2ed4:ed01"},
+					},
+					HostIP: "2.3.4.5",
+					Phase:  "Running",
+					Conditions: []v1.PodCondition{
+						{
+							Type:   v1.PodReady,
+							Status: v1.ConditionTrue,
+						},
+					},
+					ContainerStatuses: []v1.ContainerStatus{
+						{
+							Name:        "testcontainer",
+							ContainerID: "docker://a1b2c3d4e5f6",
+						},
+					},
+				},
+			}
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			key: {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                           "[2001::3238:634c:2ed4:ed01]",
+						"__meta_kubernetes_pod_container_name":  "testcontainer",
+						"__meta_kubernetes_pod_container_image": "testcontainer:latest",
+						"__meta_kubernetes_pod_container_init":  "false",
+						"__meta_kubernetes_pod_container_id":    "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":      "testpod",
+					"__meta_kubernetes_namespace":     lv(ns),
+					"__meta_kubernetes_pod_node_name": "testnode",
+					"__meta_kubernetes_pod_ip":        "2001::3238:634c:2ed4:ed01",
+					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
+					"__meta_kubernetes_pod_ready":     "true",
+					"__meta_kubernetes_pod_phase":     "Running",
+					"__meta_kubernetes_pod_uid":       "abc123",
+					"__meta_kubernetes_pod_ipv6":      "2001::3238:634c:2ed4:ed01",
+				},
+				Source: key,
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryAddWithSingleStackIPv4WithoutPorts(t *testing.T) {
+	t.Parallel()
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
+
+	ns := "default"
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			obj := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testpod",
+					Namespace: "default",
+					UID:       types.UID("abc123"),
+				},
+				Spec: v1.PodSpec{
+					NodeName: "testnode",
+					Containers: []v1.Container{
+						{
+							Name:  "testcontainer",
+							Image: "testcontainer:latest",
+						},
+					},
+				},
+				Status: v1.PodStatus{
+					PodIP: "100.117.147.144",
+					PodIPs: []v1.PodIP{
+						{IP: "100.117.147.144"},
+					},
+					HostIP: "2.3.4.5",
+					Phase:  "Running",
+					Conditions: []v1.PodCondition{
+						{
+							Type:   v1.PodReady,
+							Status: v1.ConditionTrue,
+						},
+					},
+					ContainerStatuses: []v1.ContainerStatus{
+						{
+							Name:        "testcontainer",
+							ContainerID: "docker://a1b2c3d4e5f6",
+						},
+					},
+				},
+			}
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			key: {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                           "100.117.147.144",
+						"__meta_kubernetes_pod_container_name":  "testcontainer",
+						"__meta_kubernetes_pod_container_image": "testcontainer:latest",
+						"__meta_kubernetes_pod_container_init":  "false",
+						"__meta_kubernetes_pod_container_id":    "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":      "testpod",
+					"__meta_kubernetes_namespace":     lv(ns),
+					"__meta_kubernetes_pod_node_name": "testnode",
+					"__meta_kubernetes_pod_ip":        "100.117.147.144",
+					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
+					"__meta_kubernetes_pod_ready":     "true",
+					"__meta_kubernetes_pod_phase":     "Running",
+					"__meta_kubernetes_pod_uid":       "abc123",
+					"__meta_kubernetes_pod_ipv4":      "100.117.147.144",
+				},
+				Source: key,
+			},
+		},
+	}.Run(t)
+}
+
+func TestPodDiscoveryAddWithDualStackAndMultiIPs(t *testing.T) {
+	t.Parallel()
+	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
+
+	ns := "default"
+	key := fmt.Sprintf("pod/%s/testpod", ns)
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			obj := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testpod",
+					Namespace: "default",
+					UID:       types.UID("abc123"),
+				},
+				Spec: v1.PodSpec{
+					NodeName: "testnode",
+					Containers: []v1.Container{
+						{
+							Name:  "testcontainer",
+							Image: "testcontainer:latest",
+							Ports: []v1.ContainerPort{
+								{
+									Name:          "testport",
+									Protocol:      v1.ProtocolTCP,
+									ContainerPort: int32(9000),
+								},
+							},
+						},
+					},
+				},
+				Status: v1.PodStatus{
+					PodIP: "100.117.147.144",
+					PodIPs: []v1.PodIP{
+						{IP: "100.117.147.144"},
+						{IP: "110.117.147.144"},
+						{IP: "2001::3238:634c:2ed4:ed01"},
+						{IP: "2002::3238:634c:2ed4:ed01"},
+					},
+					HostIP: "2.3.4.5",
+					Phase:  "Running",
+					Conditions: []v1.PodCondition{
+						{
+							Type:   v1.PodReady,
+							Status: v1.ConditionTrue,
+						},
+					},
+					ContainerStatuses: []v1.ContainerStatus{
+						{
+							Name:        "testcontainer",
+							ContainerID: "docker://a1b2c3d4e5f6",
+						},
+					},
+				},
+			}
+			c.CoreV1().Pods(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			key: {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                                   "100.117.147.144:9000",
+						"__meta_kubernetes_pod_container_name":          "testcontainer",
+						"__meta_kubernetes_pod_container_image":         "testcontainer:latest",
+						"__meta_kubernetes_pod_container_port_name":     "testport",
+						"__meta_kubernetes_pod_container_port_number":   "9000",
+						"__meta_kubernetes_pod_container_port_protocol": "TCP",
+						"__meta_kubernetes_pod_container_init":          "false",
+						"__meta_kubernetes_pod_container_id":            "docker://a1b2c3d4e5f6",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_pod_name":      "testpod",
+					"__meta_kubernetes_namespace":     lv(ns),
+					"__meta_kubernetes_pod_node_name": "testnode",
+					"__meta_kubernetes_pod_ip":        "100.117.147.144",
+					"__meta_kubernetes_pod_host_ip":   "2.3.4.5",
+					"__meta_kubernetes_pod_ready":     "true",
+					"__meta_kubernetes_pod_phase":     "Running",
+					"__meta_kubernetes_pod_uid":       "abc123",
+					"__meta_kubernetes_pod_ipv4":      "100.117.147.144",
+					"__meta_kubernetes_pod_ipv6":      "2001::3238:634c:2ed4:ed01",
+				},
+				Source: key,
+			},
+		},
+	}.Run(t)
+}
