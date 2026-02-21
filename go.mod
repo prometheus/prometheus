@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.25.5
+go 1.25.7
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
@@ -40,7 +40,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gophercloud/gophercloud/v2 v2.10.0
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
-	github.com/hashicorp/consul/api v1.33.2
+	github.com/hashicorp/consul/api v1.33.3
 	github.com/hashicorp/nomad/api v0.0.0-20260220212019-daca79db0bd6
 	github.com/hetznercloud/hcloud-go/v2 v2.36.0
 	github.com/ionos-cloud/sdk-go/v6 v6.3.6
