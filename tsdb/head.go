@@ -403,6 +403,7 @@ type headMetrics struct {
 	mmapChunksTotal           prometheus.Counter
 	walReplayUnknownRefsTotal *prometheus.CounterVec
 	wblReplayUnknownRefsTotal *prometheus.CounterVec
+	chunkWriteErrorsTotal     prometheus.Counter
 }
 
 const (
@@ -548,6 +549,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WBL replay.",
 		}, []string{"type"}),
+		chunkWriteErrorsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_chunk_write_errors_total",
+			Help: "Total number of errors that occurred while writing chunks to disk.",
+		}),
 	}
 
 	if r != nil {
@@ -580,6 +585,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.mmapChunksTotal,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
+			m.chunkWriteErrorsTotal,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -1891,16 +1897,27 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 // (potentially) a long time, since that could eventually delay next scrape and/or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
-	for i := 0; i < h.series.size; i++ {
+	for i := range h.series.size {
 		h.series.locks[i].RLock()
 		for _, series := range h.series.series[i] {
 			series.Lock()
-			count += series.mmapChunks(h.chunkDiskMapper)
+			n, err := series.mmapChunks(h.chunkDiskMapper)
 			series.Unlock()
+			if err != nil {
+				h.chunkWriteErrorCallback(err)
+			}
+			count += n
 		}
 		h.series.locks[i].RUnlock()
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
+}
+
+func (h *Head) chunkWriteErrorCallback(err error) {
+	if err != nil && !errors.Is(err, chunks.ErrChunkDiskMapperClosed) {
+		h.logger.Error("Error writing chunk", "err", err)
+		h.metrics.chunkWriteErrorsTotal.Inc()
+	}
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
