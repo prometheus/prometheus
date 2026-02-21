@@ -3252,6 +3252,99 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 				},
 			},
 		},
+		{ // ParenExpr preserved in AggregateExpr.Expr.
+			input:      `sum((foo))`,
+			outputTest: true,
+			expected: &parser.AggregateExpr{
+				Op: parser.SUM,
+				Expr: &parser.ParenExpr{
+					Expr: &parser.VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+						},
+						PosRange: posrange.PositionRange{
+							Start: 5,
+							End:   8,
+						},
+					},
+					PosRange: posrange.PositionRange{
+						Start: 4,
+						End:   9,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   10,
+				},
+			},
+		},
+		{ // ParenExpr preserved in AggregateExpr.Param.
+			input:      `topk((5), foo)`,
+			outputTest: true,
+			expected: &parser.AggregateExpr{
+				Op: parser.TOPK,
+				Expr: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+					},
+					PosRange: posrange.PositionRange{
+						Start: 10,
+						End:   13,
+					},
+				},
+				Param: &parser.ParenExpr{
+					Expr: &parser.NumberLiteral{
+						Val: 5,
+						PosRange: posrange.PositionRange{
+							Start: 6,
+							End:   7,
+						},
+					},
+					PosRange: posrange.PositionRange{
+						Start: 5,
+						End:   8,
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   14,
+				},
+			},
+		},
+		{ // ParenExpr preserved in Call.Args.
+			input: `rate((foo[5m]))`,
+			expected: &parser.Call{
+				Func: parser.MustGetFunction("rate"),
+				Args: parser.Expressions{
+					&parser.ParenExpr{
+						Expr: &parser.MatrixSelector{
+							VectorSelector: &parser.VectorSelector{
+								Name: "foo",
+								LabelMatchers: []*labels.Matcher{
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+								},
+								PosRange: posrange.PositionRange{
+									Start: 6,
+									End:   9,
+								},
+							},
+							Range:  5 * time.Minute,
+							EndPos: 13,
+						},
+						PosRange: posrange.PositionRange{
+							Start: 5,
+							End:   14,
+						},
+					},
+				},
+				PosRange: posrange.PositionRange{
+					Start: 0,
+					End:   15,
+				},
+			},
+		},
 	}
 
 	for _, test := range testCases {
