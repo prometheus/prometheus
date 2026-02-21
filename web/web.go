@@ -301,6 +301,7 @@ type Options struct {
 	STZeroIngestionEnabled     bool
 	EnableTypeAndUnitLabels    bool
 	AppendMetadata             bool
+	EnableNativeMetadata       bool
 	AppName                    string
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
@@ -419,6 +420,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		o.EnableTypeAndUnitLabels,
 		o.AppendMetadata,
 		nil,
+		o.EnableNativeMetadata,
 		o.FeatureRegistry,
 		api_v1.OpenAPIOptions{
 			ExternalURL: o.ExternalURL.String(),

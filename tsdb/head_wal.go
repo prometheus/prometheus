@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
@@ -442,11 +443,20 @@ Outer:
 					missingSeries[m.Ref] = struct{}{}
 					continue
 				}
-				s.meta = &metadata.Metadata{
-					Type: record.ToMetricType(m.Type),
-					Unit: m.Unit,
-					Help: m.Help,
+				s.Lock()
+				if s.meta == nil {
+					s.meta = &seriesmetadata.VersionedMetadata{}
 				}
+				s.meta.AddOrExtend(&seriesmetadata.MetadataVersion{
+					Meta: metadata.Metadata{
+						Type: record.ToMetricType(m.Type),
+						Unit: m.Unit,
+						Help: m.Help,
+					},
+					MinTime: m.MinTime,
+					MaxTime: m.MaxTime,
+				})
+				s.Unlock()
 			}
 			h.wlReplayMetadataPool.Put(v)
 		default:

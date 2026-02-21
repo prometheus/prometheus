@@ -1290,6 +1290,245 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+    /metadata/versions:
+        get:
+            tags:
+                - metadata
+            summary: Get time-varying metadata versions per metric
+            operationId: get-metadata-versions
+            parameters:
+                - name: metric
+                  in: query
+                  description: A metric name to filter metadata versions for.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: http_requests_total
+                - name: limit
+                  in: query
+                  description: The maximum number of metadata version entries to return.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+                - name: start
+                  in: query
+                  description: Start timestamp to filter metadata versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: End timestamp to filter metadata versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+            responses:
+                "200":
+                    description: Metadata versions retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/MetadataVersionsOutputBody'
+                            examples:
+                                metadataVersions:
+                                    summary: Time-varying metadata versions per series
+                                    value:
+                                        data:
+                                            - labels:
+                                                __name__: http_requests_total
+                                                instance: localhost:9090
+                                                job: api
+                                              versions:
+                                                - help: Total HTTP requests
+                                                  maxTime: 1700100000000
+                                                  minTime: 1700000000000
+                                                  type: counter
+                                                  unit: ""
+                                                - help: Total HTTP requests processed
+                                                  maxTime: 1700200000000
+                                                  minTime: 1700100000001
+                                                  type: counter
+                                                  unit: ""
+                                        status: success
+                default:
+                    description: Error retrieving metadata versions.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+    /metadata/series:
+        get:
+            tags:
+                - metadata
+            summary: Find metrics by metadata criteria
+            operationId: get-metadata-series
+            parameters:
+                - name: type
+                  in: query
+                  description: Filter by metric type (exact match, e.g. counter, gauge, histogram, summary).
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: counter
+                - name: unit
+                  in: query
+                  description: Filter by metric unit (exact match).
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: seconds
+                - name: help
+                  in: query
+                  description: Filter by help text (RE2 regular expression).
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: Total HTTP.*
+                - name: limit
+                  in: query
+                  description: The maximum number of metadata version entries to return.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+                - name: start
+                  in: query
+                  description: Start timestamp to filter metadata versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: End timestamp to filter metadata versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+            responses:
+                "200":
+                    description: Metadata series retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/MetadataSeriesOutputBody'
+                            examples:
+                                metadataSeries:
+                                    summary: Series matching metadata criteria
+                                    value:
+                                        data:
+                                            - labels:
+                                                __name__: http_request_duration_seconds
+                                                instance: localhost:9090
+                                                job: api
+                                              versions:
+                                                - help: HTTP request duration in seconds
+                                                  maxTime: 1700200000000
+                                                  minTime: 1700000000000
+                                                  type: histogram
+                                                  unit: seconds
+                                            - labels:
+                                                __name__: http_requests_total
+                                                instance: localhost:9090
+                                                job: api
+                                              versions:
+                                                - help: Total HTTP requests
+                                                  maxTime: 1700200000000
+                                                  minTime: 1700000000000
+                                                  type: counter
+                                                  unit: ""
+                                        status: success
+                default:
+                    description: Error retrieving metadata series.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
     /scrape_pools:
         get:
             tags:
@@ -3340,6 +3579,106 @@ components:
                 - data
             additionalProperties: false
             description: Response body for metadata endpoint.
+        MetadataVersionEntry:
+            type: object
+            properties:
+                type:
+                    type: string
+                    description: Metric type (counter, gauge, histogram, summary, or untyped).
+                help:
+                    type: string
+                    description: Help text describing the metric.
+                unit:
+                    type: string
+                    description: Unit of the metric.
+                minTime:
+                    type: integer
+                    format: int64
+                    description: Start timestamp (Unix milliseconds) for this metadata version.
+                maxTime:
+                    type: integer
+                    format: int64
+                    description: End timestamp (Unix milliseconds) for this metadata version.
+            required:
+                - type
+                - help
+                - unit
+                - minTime
+                - maxTime
+            additionalProperties: false
+            description: A time-bounded metadata version for a metric.
+        MetadataSeriesEntry:
+            type: object
+            properties:
+                labels:
+                    $ref: '#/components/schemas/Labels'
+                versions:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MetadataVersionEntry'
+            required:
+                - labels
+                - versions
+            additionalProperties: false
+            description: Per-series metadata with label set and versioned metadata entries.
+        MetadataVersionsOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MetadataSeriesEntry'
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for metadata versions endpoint.
+        MetadataSeriesOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/MetadataSeriesEntry'
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for metadata series endpoint.
         MetricMetadata:
             type: object
             properties:

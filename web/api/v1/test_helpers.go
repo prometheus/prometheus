@@ -102,6 +102,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		false,                              // enableTypeAndUnitLabels
 		false,                              // appendMetadata
 		nil,                                // overrideErrorCode
+		false,                              // enableNativeMetadata
 		nil,                                // featureRegistry
 		OpenAPIOptions{},                   // openAPIOptions
 		parser.NewParser(parser.Options{}), // promqlParser

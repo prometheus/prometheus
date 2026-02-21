@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -372,13 +371,25 @@ func TestCheckpoint(t *testing.T) {
 			}
 			testutil.RequireEqual(t, expectedRefSeries, series)
 
-			expectedRefMetadata := []record.RefMetadata{
-				{Ref: 0, Unit: strconv.FormatInt(last-100, 10), Help: strconv.FormatInt(last-100, 10)},
-				{Ref: 2, Unit: strconv.FormatInt(last-100, 10), Help: strconv.FormatInt(last-100, 10)},
-				{Ref: 4, Unit: "unit", Help: "help"},
+			// Verify only kept Refs (even numbers) are present.
+			allowedRefs := map[chunks.HeadSeriesRef]bool{0: true, 2: true, 4: true}
+			for _, m := range metadata {
+				require.True(t, allowedRefs[m.Ref], "unexpected Ref %d in checkpoint metadata", m.Ref)
 			}
-			sort.Slice(metadata, func(i, j int) bool { return metadata[i].Ref < metadata[j].Ref })
-			require.Equal(t, expectedRefMetadata, metadata)
+			// All unique (Ref, content) pairs are preserved: each loop iteration writes unique
+			// metadata for Refs 0 and 2, plus the initial "unit"/"help" for Refs 2 and 4.
+			// So we expect many more than 3 entries.
+			require.Greater(t, len(metadata), 3, "checkpoint should preserve all unique metadata versions")
+			// Verify Ref 4 has its initial metadata.
+			var ref4Found bool
+			for _, m := range metadata {
+				if m.Ref == 4 {
+					require.Equal(t, "unit", m.Unit)
+					require.Equal(t, "help", m.Help)
+					ref4Found = true
+				}
+			}
+			require.True(t, ref4Found, "Ref 4 metadata should be in checkpoint")
 		})
 	}
 }
