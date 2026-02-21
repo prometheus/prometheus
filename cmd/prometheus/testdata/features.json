@@ -186,6 +186,7 @@
     "dockerswarm": true,
     "ec2": true,
     "ecs": true,
+    "elasticache": true,
     "eureka": true,
     "file": true,
     "gce": true,
