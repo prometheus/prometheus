@@ -167,6 +167,7 @@ FunctionIdentifier {
   HistogramCount |
   HistogramFraction |
   HistogramQuantile |
+  HistogramQuantiles |
   HistogramStdDev |
   HistogramStdVar |
   HistogramSum |
@@ -426,6 +427,7 @@ NumberDurationLiteralInDurationContext {
   HistogramCount { condFn<"histogram_count"> }
   HistogramFraction { condFn<"histogram_fraction"> }
   HistogramQuantile { condFn<"histogram_quantile"> }
+  HistogramQuantiles { condFn<"histogram_quantiles"> }
   HistogramStdDev { condFn<"histogram_stddev"> }
   HistogramStdVar { condFn<"histogram_stdvar"> }
   HistogramSum { condFn<"histogram_sum"> }

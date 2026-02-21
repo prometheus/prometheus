@@ -1720,8 +1720,8 @@ func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expression
 	inVec := vectorVals[1]
 	var annos annotations.Annotations
 
-	if math.IsNaN(q) || q < 0 || q > 1 {
-		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
+	if err := validateQuantile(q, args[0]); err != nil {
+		annos.Add(err)
 	}
 	annos.Merge(enh.resetHistograms(inVec, args[1]))
 
@@ -1764,6 +1764,89 @@ func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expression
 				F:        quantile,
 				DropName: true,
 			})
+		}
+	}
+
+	return enh.Out, annos
+}
+
+func validateQuantile(q float64, arg parser.Expr) error {
+	if math.IsNaN(q) || q < 0 || q > 1 {
+		return annotations.NewInvalidQuantileWarning(q, arg.PositionRange())
+	}
+	return nil
+}
+
+// === histogram_quantiles(Vector parser.ValueTypeVector, label parser.ValueTypeString, q0 parser.ValueTypeScalar, qs parser.ValueTypeScalar...) (Vector, Annotations) ===
+func funcHistogramQuantiles(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	var (
+		inVec         = vectorVals[0]
+		quantileLabel = args[1].(*parser.StringLiteral).Val
+		numQuantiles  = len(vectorVals[2:])
+		qs            = make([]float64, 0, numQuantiles)
+
+		annos annotations.Annotations
+	)
+
+	if enh.quantileStrs == nil {
+		enh.quantileStrs = make(map[float64]string, numQuantiles)
+	}
+	for i := 2; i < len(vectorVals); i++ {
+		q := vectorVals[i][0].F
+
+		if err := validateQuantile(q, args[i]); err != nil {
+			annos.Add(err)
+		}
+
+		if _, ok := enh.quantileStrs[q]; !ok {
+			enh.quantileStrs[q] = labels.FormatOpenMetricsFloat(q)
+		}
+		qs = append(qs, q)
+	}
+
+	annos.Merge(enh.resetHistograms(inVec, args[0]))
+
+	for _, q := range qs {
+		// Deal with the native histograms.
+		for _, sample := range enh.nativeHistogramSamples {
+			if sample.H == nil {
+				// Native histogram conflicts with classic histogram at the same timestamp, ignore.
+				continue
+			}
+			if !enh.enableDelayedNameRemoval {
+				sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
+			}
+			hq, hqAnnos := HistogramQuantile(q, sample.H, sample.Metric.Get(model.MetricNameLabel), args[0].PositionRange())
+			annos.Merge(hqAnnos)
+			enh.Out = append(enh.Out, Sample{
+				Metric:   enh.getOrCreateLblsWithQuantile(sample.Metric, quantileLabel, q),
+				F:        hq,
+				DropName: true,
+			})
+		}
+
+		// Deal with classic histograms that have already been filtered for conflicting native histograms.
+		for _, mb := range enh.signatureToMetricWithBuckets {
+			if len(mb.buckets) > 0 {
+				hq, forcedMonotonicity, _, minBucket, maxBucket, maxDiff := BucketQuantile(q, mb.buckets)
+				if forcedMonotonicity {
+					metricName := ""
+					if enh.enableDelayedNameRemoval {
+						metricName = getMetricName(mb.metric)
+					}
+					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(metricName, args[1].PositionRange(), enh.Ts, minBucket, maxBucket, maxDiff))
+				}
+
+				if !enh.enableDelayedNameRemoval {
+					mb.metric = mb.metric.DropReserved(schema.IsMetadataLabel)
+				}
+
+				enh.Out = append(enh.Out, Sample{
+					Metric:   enh.getOrCreateLblsWithQuantile(mb.metric, quantileLabel, q),
+					F:        hq,
+					DropName: true,
+				})
+			}
 		}
 	}
 
@@ -2100,6 +2183,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"histogram_count":              funcHistogramCount,
 	"histogram_fraction":           funcHistogramFraction,
 	"histogram_quantile":           funcHistogramQuantile,
+	"histogram_quantiles":          funcHistogramQuantiles,
 	"histogram_sum":                funcHistogramSum,
 	"histogram_stddev":             funcHistogramStdDev,
 	"histogram_stdvar":             funcHistogramStdVar,

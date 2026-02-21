@@ -67,6 +67,9 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		parsed = optimizeAlternatingSimpleContains(parsed)
+
 		m.re, err = regexp.Compile("^(?s:" + parsed.String() + ")$")
 		if err != nil {
 			return nil, err
@@ -367,6 +370,43 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 	multiMatcher.add(s)
 
 	return multiMatcher, multiMatcher.setMatches()
+}
+
+// optimizeAlternatingSimpleContains checks to see if a regex is a series of alternations that take the form .*literal.*
+// In these cases, the regex itself can be rewritten as .*(foo|bar).*,
+// which can result in a significant performance improvement at execution.
+func optimizeAlternatingSimpleContains(r *syntax.Regexp) *syntax.Regexp {
+	if r.Op != syntax.OpAlternate {
+		return r
+	}
+	containsLiterals := make([]*syntax.Regexp, 0, len(r.Sub))
+	for _, sub := range r.Sub {
+		// If any subexpression does not take the form .*literal.*, we should not try to optimize this
+		if sub.Op != syntax.OpConcat || len(sub.Sub) != 3 {
+			return r
+		}
+		concatSubs := sub.Sub
+		if !isCaseSensitiveLiteral(concatSubs[1]) || !isMatchAny(concatSubs[0]) || !isMatchAny(concatSubs[2]) {
+			return r
+		}
+		containsLiterals = append(containsLiterals, concatSubs[1])
+	}
+
+	// Only rewrite the regex if there's more than one literal
+	if len(containsLiterals) > 1 {
+		returnRegex := &syntax.Regexp{Op: syntax.OpConcat}
+		prefixAnyMatcher := &syntax.Regexp{Op: syntax.OpStar, Sub: []*syntax.Regexp{{Op: syntax.OpAnyChar}}, Flags: syntax.Perl | syntax.DotNL}
+		suffixAnyMatcher := &syntax.Regexp{Op: syntax.OpStar, Sub: []*syntax.Regexp{{Op: syntax.OpAnyChar}}, Flags: syntax.Perl | syntax.DotNL}
+		alts := &syntax.Regexp{Op: syntax.OpAlternate}
+		alts.Sub = containsLiterals
+		returnRegex.Sub = []*syntax.Regexp{
+			prefixAnyMatcher,
+			alts,
+			suffixAnyMatcher,
+		}
+		return returnRegex
+	}
+	return r
 }
 
 // optimizeConcatRegex returns literal prefix/suffix text that can be safely

@@ -372,7 +372,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, prometheus.DefaultRegisterer))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.UTF8Validation, model.Duration(*checkLookbackDelta)), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newConfigLintConfig(*checkConfigLint, *checkConfigLintFatal, *checkConfigIgnoreUnknownFields, model.UTF8Validation, model.Duration(*checkLookbackDelta)), promtoolParser, *configFiles...))
 
 	case checkServerHealthCmd.FullCommand():
 		os.Exit(checkErr(CheckServerStatus(serverURL, checkHealth, httpRoundTripper)))
@@ -598,7 +598,7 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 }
 
 // CheckConfig validates configuration files.
-func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig, files ...string) int {
+func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig, p parser.Parser, files ...string) int {
 	failed := false
 	hasErrors := false
 
@@ -619,7 +619,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig,
 		if !checkSyntaxOnly {
 			scrapeConfigsFailed := lintScrapeConfigs(scrapeConfigs, lintSettings)
 			failed = failed || scrapeConfigsFailed
-			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig, parser.NewParser(parser.Options{}))
+			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig, p)
 			failed = failed || rulesFailed
 			hasErrors = hasErrors || rulesHaveErrors
 		}
@@ -948,11 +948,11 @@ func checkRuleGroups(rgs *rulefmt.RuleGroups, lintSettings rulesLintConfig) (int
 		dRules := checkDuplicates(rgs.Groups)
 		if len(dRules) != 0 {
 			var errMessage strings.Builder
-			errMessage.WriteString(fmt.Sprintf("%d duplicate rule(s) found.\n", len(dRules)))
+			fmt.Fprintf(&errMessage, "%d duplicate rule(s) found.\n", len(dRules))
 			for _, n := range dRules {
-				errMessage.WriteString(fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric))
+				fmt.Fprintf(&errMessage, "Metric: %s\nLabel(s):\n", n.metric)
 				n.label.Range(func(l labels.Label) {
-					errMessage.WriteString(fmt.Sprintf("\t%s: %s\n", l.Name, l.Value))
+					fmt.Fprintf(&errMessage, "\t%s: %s\n", l.Name, l.Value)
 				})
 			}
 			errMessage.WriteString("Might cause inconsistency while recording expressions")

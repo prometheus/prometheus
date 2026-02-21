@@ -94,11 +94,9 @@ func TestQueryConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	for range maxConcurrency {
 		q := engine.NewTestQuery(f)
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			q.Exec(ctx)
-			wg.Done()
-		}()
+		})
 		select {
 		case <-processing:
 			// Expected.
@@ -108,11 +106,9 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	q := engine.NewTestQuery(f)
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		q.Exec(ctx)
-		wg.Done()
-	}()
+	})
 
 	select {
 	case <-processing:
