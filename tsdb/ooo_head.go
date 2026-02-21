@@ -123,7 +123,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, storeST bool) (chks []memCh
 			}
 		}
 		switch encoding {
-		case chunkenc.EncXOR, chunkenc.EncXOROptST:
+		case chunkenc.EncXOR, chunkenc.EncodingForFloatST:
 			app.Append(s.st, s.t, s.f)
 		case chunkenc.EncHistogram:
 			// TODO(krajorama): handle ST capable histogram chunk.

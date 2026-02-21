@@ -61,7 +61,7 @@ func (e Encoding) String() string {
 	return "<unknown>"
 }
 
-const EncodingForFloatST = EncXOROptST
+const EncodingForFloatST = EncXOR2ST
 
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
