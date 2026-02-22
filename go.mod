@@ -23,7 +23,7 @@ require (
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dennwc/varint v1.0.0
-	github.com/digitalocean/godo v1.173.0
+	github.com/digitalocean/godo v1.175.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/edsrzf/mmap-go v1.2.0
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
