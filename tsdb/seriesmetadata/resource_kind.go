@@ -96,7 +96,7 @@ func (*resourceKindDescriptor) ContentHash(version any) uint64 {
 	return hashResourceContent(version.(*ResourceVersion))
 }
 
-func (*resourceKindDescriptor) CommitToSeries(series any, walRecord any) {
+func (*resourceKindDescriptor) CommitToSeries(series, walRecord any) {
 	accessor := series.(kindMetaAccessor)
 	// walRecord is a ResourceCommitData (set by the tsdb package).
 	rcd := walRecord.(ResourceCommitData)
@@ -144,7 +144,7 @@ func (*resourceKindDescriptor) CopyVersioned(v any) any {
 	return v.(*Versioned[*ResourceVersion]).Copy(ResourceOps)
 }
 
-func (*resourceKindDescriptor) SetOnSeries(series any, versioned any) {
+func (*resourceKindDescriptor) SetOnSeries(series, versioned any) {
 	accessor := series.(kindMetaAccessor)
 	accessor.SetKindMeta(KindResource, versioned)
 }

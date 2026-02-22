@@ -24,7 +24,7 @@ type VersionConstraint interface {
 	GetMaxTime() int64
 	SetMinTime(int64)
 	SetMaxTime(int64)
-	UpdateTimeRange(min, max int64)
+	UpdateTimeRange(minTime, maxTime int64)
 }
 
 // KindOps provides kind-specific operations for version values.

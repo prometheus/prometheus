@@ -113,6 +113,12 @@ var (
 // Return false to fall back to default status code.
 type OverrideErrorCode func(errorNum, error) (code int, override bool)
 
+// maxMetadataResults is the safety cap on resource metadata API responses.
+// Prevents unbounded memory allocation from large result sets.
+const maxMetadataResults = 500_000
+
+var errMaxResultsReached = errors.New("result set too large, truncated at safety cap")
+
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
 type apiError struct {
@@ -1553,9 +1559,20 @@ type ResourceAttributeVersion struct {
 
 // ResourceAttributesResponse is the response format for the resource_attributes endpoint.
 type ResourceAttributesResponse struct {
-	Labels     labels.Labels              `json:"labels"`
-	Versions   []ResourceAttributeVersion `json:"versions"`
-	labelsHash uint64                     // internal: used for deferred label resolution
+	Labels   labels.Labels              `json:"labels"`
+	Versions []ResourceAttributeVersion `json:"versions"`
+}
+
+// PaginatedResourceAttributes wraps resource attribute results with cursor-based pagination.
+type PaginatedResourceAttributes struct {
+	Results   []ResourceAttributesResponse `json:"results"`
+	NextToken string                       `json:"nextToken,omitempty"`
+}
+
+// PaginatedSeriesMetadata wraps series metadata results with cursor-based pagination.
+type PaginatedSeriesMetadata struct {
+	Results   []SeriesMetadataResponse `json:"results"`
+	NextToken string                   `json:"nextToken,omitempty"`
 }
 
 // ScopeAttributeVersion is a single version of scope metadata with its time range.
@@ -1628,9 +1645,11 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 	}
 	defer mr.Close()
 
+	nextToken := r.FormValue("next_token")
+
 	// If no matchers provided, return all resource attributes
 	if len(matcherSets) == 0 {
-		return api.resourceAttributesAll(mr, limit, startMs, endMs)
+		return api.resourceAttributesAll(mr, limit, startMs, endMs, nextToken)
 	}
 
 	// Query series matching the selectors
@@ -1700,7 +1719,12 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 		return labels.Compare(a.Labels, b.Labels)
 	})
 
+	// Apply cursor pagination.
+	results = applyResourceCursor(results, nextToken)
+
+	var respNextToken string
 	if limit > 0 && len(results) > limit {
+		respNextToken = getResourceNextToken(results[limit-1].Labels)
 		results = results[:limit]
 		warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -1709,7 +1733,7 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 		results = []ResourceAttributesResponse{}
 	}
 
-	return apiFuncResult{results, nil, warnings, closer}
+	return apiFuncResult{&PaginatedResourceAttributes{Results: results, NextToken: respNextToken}, nil, warnings, closer}
 }
 
 // filterVersions returns versions that overlap with [startMs, endMs].
@@ -1744,12 +1768,10 @@ func filterVersions(versions []*seriesmetadata.ResourceVersion, startMs, endMs i
 }
 
 // resourceAttributesAll returns all resource attributes without filtering by matchers.
-func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, endMs int64) apiFuncResult {
+func (*API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, endMs int64, nextToken string) apiFuncResult {
 	var results []ResourceAttributesResponse
 	var warnings annotations.Annotations
 
-	// Try to use LabelsForHash from the metadata reader first (avoids O(ALL_SERIES) scan).
-	allResolved := true
 	err := mr.IterVersionedResources(context.Background(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
 		// Filter versions to only those overlapping with [start, end]
 		versions := filterVersions(resources.Versions, startMs, endMs)
@@ -1758,63 +1780,25 @@ func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, start
 		}
 
 		lset, ok := mr.LabelsForHash(labelsHash)
-		if ok {
-			results = append(results, ResourceAttributesResponse{
-				Labels:   lset,
-				Versions: versions,
-			})
-		} else {
-			allResolved = false
-			// Defer resolution — store hash temporarily.
-			results = append(results, ResourceAttributesResponse{
-				labelsHash: labelsHash,
-				Versions:   versions,
-			})
+		if !ok {
+			// With incremental head metadata and block Parquet labels,
+			// unresolved hashes indicate a race or deleted series — skip.
+			return nil
+		}
+		results = append(results, ResourceAttributesResponse{
+			Labels:   lset,
+			Versions: versions,
+		})
+		if len(results) >= maxMetadataResults {
+			return errMaxResultsReached
 		}
 		return nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errMaxResultsReached) {
 		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
 	}
-
-	// If any labels were unresolved, fall back to querying all series.
-	if !allResolved && len(results) > 0 {
-		ctx := context.Background()
-		q, err := api.Queryable.Querier(startMs, endMs)
-		if err != nil {
-			return apiFuncResult{nil, returnAPIError(err), nil, nil}
-		}
-		defer q.Close()
-
-		hints := &storage.SelectHints{
-			Start: startMs,
-			End:   endMs,
-			Func:  "series",
-		}
-		set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
-
-		hashToLabels := make(map[uint64]labels.Labels)
-		for set.Next() {
-			lset := set.At().Labels()
-			hashToLabels[labels.StableHash(lset)] = lset
-		}
-		if err := set.Err(); err != nil {
-			return apiFuncResult{nil, returnAPIError(err), nil, nil}
-		}
-
-		// Resolve labels for results that were deferred.
-		filtered := results[:0]
-		for _, r := range results {
-			if r.Labels.Len() == 0 {
-				lset, ok := hashToLabels[r.labelsHash]
-				if !ok {
-					continue
-				}
-				r.Labels = lset
-			}
-			filtered = append(filtered, r)
-		}
-		results = filtered
+	if errors.Is(err, errMaxResultsReached) {
+		warnings.Add(errMaxResultsReached)
 	}
 
 	// Sort for deterministic output.
@@ -1822,8 +1806,12 @@ func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, start
 		return labels.Compare(a.Labels, b.Labels)
 	})
 
-	// Apply limit after sorting for deterministic results.
+	// Apply cursor pagination.
+	results = applyResourceCursor(results, nextToken)
+
+	var respNextToken string
 	if limit > 0 && len(results) > limit {
+		respNextToken = getResourceNextToken(results[limit-1].Labels)
 		results = results[:limit]
 		warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -1832,7 +1820,7 @@ func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, start
 		results = []ResourceAttributesResponse{}
 	}
 
-	return apiFuncResult{results, nil, warnings, nil}
+	return apiFuncResult{&PaginatedResourceAttributes{Results: results, NextToken: respNextToken}, nil, warnings, nil}
 }
 
 // resourceAttributePairs returns all unique resource attribute names and their values.
@@ -1975,12 +1963,10 @@ func (api *API) resourceAttributePairs(r *http.Request) apiFuncResult {
 
 // parseAttrFilter parses "key:value" into key, value.
 func parseAttrFilter(s string) (key, value string, err error) {
-	idx := strings.Index(s, ":")
-	if idx < 0 {
+	key, value, ok := strings.Cut(s, ":")
+	if !ok {
 		return "", "", fmt.Errorf("invalid attribute filter %q: expected key:value format", s)
 	}
-	key = s[:idx]
-	value = s[idx+1:]
 	if key == "" {
 		return "", "", fmt.Errorf("invalid attribute filter %q: key must not be empty", s)
 	}
@@ -2065,6 +2051,8 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "limit")
 	}
 
+	nextToken := r.FormValue("next_token")
+
 	// Parse optional match[] parameters
 	var matcherSets [][]*labels.Matcher
 	if len(r.Form["match[]"]) > 0 {
@@ -2140,6 +2128,9 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 				matched[hash] = &matchedEntry{
 					resourceVersions: filterVersions(matchingVersions, startMs, endMs),
 				}
+				if len(matched) >= maxMetadataResults {
+					break
+				}
 			}
 		}
 	} else {
@@ -2158,10 +2149,13 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 				matched[labelsHash] = &matchedEntry{
 					resourceVersions: filterVersions(matchingVersions, startMs, endMs),
 				}
+				if len(matched) >= maxMetadataResults {
+					return errMaxResultsReached
+				}
 			}
 			return nil
 		})
-		if err != nil {
+		if err != nil && !errors.Is(err, errMaxResultsReached) {
 			return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
 		}
 	}
@@ -2174,7 +2168,7 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 	}
 
 	if len(matched) == 0 {
-		return apiFuncResult{[]SeriesMetadataResponse{}, nil, nil, nil}
+		return apiFuncResult{&PaginatedSeriesMetadata{Results: []SeriesMetadataResponse{}}, nil, nil, nil}
 	}
 
 	// Resolve labelsHash -> labels.Labels, and if match[] is provided, intersect
@@ -2230,35 +2224,21 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 			}
 		}
 	} else {
-		// No match[]: try LabelsForHash first to avoid O(ALL_SERIES) scan.
-		allResolved := true
+		// No match[]: resolve labels from metadata reader directly.
+		// With incremental head metadata and block Parquet labels,
+		// unresolved hashes indicate a race or deleted series — skip.
 		for hash := range matched {
-			if lset, ok := mr.LabelsForHash(hash); ok {
-				hashToLabels[hash] = lset
-			} else {
-				allResolved = false
-				break
+			lset, ok := mr.LabelsForHash(hash)
+			if !ok {
+				delete(matched, hash)
+				continue
 			}
-		}
-
-		// Fall back to scanning all series if LabelsForHash doesn't cover everything.
-		if !allResolved {
-			set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
-			for set.Next() {
-				lset := set.At().Labels()
-				hash := labels.StableHash(lset)
-				if _, ok := matched[hash]; ok {
-					hashToLabels[hash] = lset
-				}
-			}
-			if err := set.Err(); err != nil {
-				return apiFuncResult{nil, returnAPIError(err), nil, nil}
-			}
+			hashToLabels[hash] = lset
 		}
 	}
 
 	if len(matched) == 0 {
-		return apiFuncResult{[]SeriesMetadataResponse{}, nil, nil, nil}
+		return apiFuncResult{&PaginatedSeriesMetadata{Results: []SeriesMetadataResponse{}}, nil, nil, nil}
 	}
 
 	// Build response — collect all, then sort for determinism.
@@ -2280,8 +2260,16 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 		return labels.Compare(a.Labels, b.Labels)
 	})
 
+	// Apply cursor pagination.
+	results = applySeriesMetadataCursor(results, nextToken)
+
 	var warnings annotations.Annotations
+	if len(matched) >= maxMetadataResults {
+		warnings.Add(errMaxResultsReached)
+	}
+	var respNextToken string
 	if limit > 0 && len(results) > limit {
+		respNextToken = getResourceNextToken(results[limit-1].Labels)
 		results = results[:limit]
 		warnings.Add(errors.New("results truncated due to limit"))
 	}
@@ -2290,7 +2278,7 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 		results = []SeriesMetadataResponse{}
 	}
 
-	return apiFuncResult{results, nil, warnings, nil}
+	return apiFuncResult{&PaginatedSeriesMetadata{Results: results, NextToken: respNextToken}, nil, warnings, nil}
 }
 
 // RuleDiscovery has info for all rules.
@@ -2555,6 +2543,47 @@ func getRuleGroupNextToken(file, group string) string {
 	h := sha1.New()
 	h.Write([]byte(file + ";" + group))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// getResourceNextToken computes a cursor token for a sorted labels set.
+func getResourceNextToken(lset labels.Labels) string {
+	h := sha1.New()
+	h.Write([]byte(lset.String()))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// applyResourceCursor skips past results whose token matches nextToken.
+// Results must be sorted. If nextToken is empty, returns results unchanged.
+func applyResourceCursor(results []ResourceAttributesResponse, nextToken string) []ResourceAttributesResponse {
+	if nextToken == "" || len(results) == 0 {
+		return results
+	}
+	for i, r := range results {
+		if getResourceNextToken(r.Labels) == nextToken {
+			if i+1 < len(results) {
+				return results[i+1:]
+			}
+			return nil
+		}
+	}
+	return results
+}
+
+// applySeriesMetadataCursor skips past results whose token matches nextToken.
+// Results must be sorted. If nextToken is empty, returns results unchanged.
+func applySeriesMetadataCursor(results []SeriesMetadataResponse, nextToken string) []SeriesMetadataResponse {
+	if nextToken == "" || len(results) == 0 {
+		return results
+	}
+	for i, r := range results {
+		if getResourceNextToken(r.Labels) == nextToken {
+			if i+1 < len(results) {
+				return results[i+1:]
+			}
+			return nil
+		}
+	}
+	return results
 }
 
 type prometheusConfig struct {

@@ -108,6 +108,12 @@ The index is **time-unaware** — it includes all labelsHashes that have *any* v
 
 On `memSeries`, metadata is stored as `kindMeta []kindMetaEntry` where each entry is `{kind KindID, data any}`. Linear scan of 0-2 entries is faster than map lookup. The `kindMetaAccessor` interface (`GetKindMeta`/`SetKindMeta`) provides kind-generic access.
 
+The `Head` also maintains a shared `*MemSeriesMetadata` (`seriesMeta`) that is incrementally updated during `commitResources()`/`commitScopes()` and WAL replay via `updateSharedMetadata()`. This avoids an O(ALL_SERIES) scan that would otherwise be required to collect metadata across all shards. `Head.SeriesMetadata()` returns an O(1) `headMetadataReader` wrapper around this live store instead of scanning.
+
+The head does **not** populate `seriesMeta.labelsMap` — labels are resolved on-demand via `stripeSeries.getByID` in `headMetadataReader.LabelsForHash`. This saves ~3GB at 10M series by avoiding label set duplication.
+
+Two sharded stripe arrays (`metaRefStripes` and `metaHashStripes`, 256-way) track `HeadSeriesRef ↔ labelsHash` mappings for GC cleanup and label resolution. Lock ordering: series lock → stripe lock. `MemStore[V]` operations are internally concurrent-safe via their own mutexes.
+
 ### Versioning
 
 `AddOrExtend(ops, version)` on `Versioned[V]` handles ingestion:
