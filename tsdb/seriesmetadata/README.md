@@ -46,10 +46,11 @@ All metadata is **versioned over time** per series. When a descriptive attribute
 └──────────────────────────────────────────────────────────┘
                               │
                               ▼
-                    ┌─────────────────────┐
-                    │   Query / API       │
-                    │  info(), /resources │
-                    └─────────────────────┘
+                    ┌──────────────────────────────┐
+                    │        Query / API           │
+                    │  info(), /resources,         │
+                    │  /resources/series           │
+                    └──────────────────────────────┘
 ```
 
 ## Kind Framework
