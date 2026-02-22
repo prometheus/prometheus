@@ -1064,3 +1064,93 @@ func TestRefResolverRoundTrip(t *testing.T) {
 	require.Len(t, vs.Versions, 1)
 	require.Equal(t, "otel-go", vs.Versions[0].Name)
 }
+
+func TestBuildResourceAttrIndex(t *testing.T) {
+	mem := NewMemSeriesMetadata()
+
+	// Series 1: payment-service in production
+	rv1 := NewResourceVersion(
+		map[string]string{"service.name": "payment-service", "service.namespace": "production"},
+		map[string]string{"host.name": "host-1"},
+		nil, 1000, 2000,
+	)
+	mem.SetVersionedResource(100, NewVersionedResource(rv1))
+
+	// Series 2: payment-service in staging (same service.name, different namespace)
+	rv2 := NewResourceVersion(
+		map[string]string{"service.name": "payment-service", "service.namespace": "staging"},
+		map[string]string{"host.name": "host-2"},
+		nil, 1000, 2000,
+	)
+	mem.SetVersionedResource(200, NewVersionedResource(rv2))
+
+	// Series 3: frontend-service in production
+	rv3 := NewResourceVersion(
+		map[string]string{"service.name": "frontend-service", "service.namespace": "production"},
+		map[string]string{"host.name": "host-1"},
+		nil, 1000, 2000,
+	)
+	mem.SetVersionedResource(300, NewVersionedResource(rv3))
+
+	// Before building index, LookupResourceAttr should return nil.
+	require.Nil(t, mem.LookupResourceAttr("service.name", "payment-service"))
+
+	mem.BuildResourceAttrIndex()
+
+	// Identifying attribute lookup: service.name=payment-service matches series 100 and 200
+	hashes := mem.LookupResourceAttr("service.name", "payment-service")
+	require.Len(t, hashes, 2)
+	require.Contains(t, hashes, uint64(100))
+	require.Contains(t, hashes, uint64(200))
+
+	// Identifying attribute lookup: service.namespace=production matches series 100 and 300
+	hashes = mem.LookupResourceAttr("service.namespace", "production")
+	require.Len(t, hashes, 2)
+	require.Contains(t, hashes, uint64(100))
+	require.Contains(t, hashes, uint64(300))
+
+	// Descriptive attribute lookup: host.name=host-1 matches series 100 and 300
+	hashes = mem.LookupResourceAttr("host.name", "host-1")
+	require.Len(t, hashes, 2)
+	require.Contains(t, hashes, uint64(100))
+	require.Contains(t, hashes, uint64(300))
+
+	// Non-existent attribute returns empty (not nil since index is built)
+	hashes = mem.LookupResourceAttr("service.name", "nonexistent")
+	require.Empty(t, hashes)
+}
+
+func TestBuildResourceAttrIndex_MultipleVersions(t *testing.T) {
+	mem := NewMemSeriesMetadata()
+
+	// Series with two versions: different descriptive attrs across versions.
+	rv1 := NewResourceVersion(
+		map[string]string{"service.name": "my-service"},
+		map[string]string{"host.name": "host-old"},
+		nil, 1000, 2000,
+	)
+	rv2 := NewResourceVersion(
+		map[string]string{"service.name": "my-service"},
+		map[string]string{"host.name": "host-new"},
+		nil, 2001, 3000,
+	)
+	vr := NewVersionedResource(rv1)
+	vr.Versions = append(vr.Versions, rv2)
+	mem.SetVersionedResource(100, vr)
+
+	mem.BuildResourceAttrIndex()
+
+	// Both host.name values should be indexed.
+	hashes := mem.LookupResourceAttr("host.name", "host-old")
+	require.Len(t, hashes, 1)
+	require.Contains(t, hashes, uint64(100))
+
+	hashes = mem.LookupResourceAttr("host.name", "host-new")
+	require.Len(t, hashes, 1)
+	require.Contains(t, hashes, uint64(100))
+
+	// Identifying attr present in both versions is indexed once.
+	hashes = mem.LookupResourceAttr("service.name", "my-service")
+	require.Len(t, hashes, 1)
+	require.Contains(t, hashes, uint64(100))
+}
