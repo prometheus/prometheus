@@ -13,7 +13,10 @@
 
 package seriesmetadata
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 // versionedEntry stores versioned metadata with a labels hash for indexing.
 type versionedEntry[V VersionConstraint] struct {
@@ -121,29 +124,46 @@ func (m *MemStore[V]) Delete(labelsHash uint64) {
 	delete(m.byHash, labelsHash)
 }
 
+// checkContextEveryNIterations controls how often ctx.Err() is checked during iteration.
+const checkContextEveryNIterations = 100
+
 // Iter calls the function for each series' current version.
-func (m *MemStore[V]) Iter(f func(labelsHash uint64, version V) error) error {
+func (m *MemStore[V]) Iter(ctx context.Context, f func(labelsHash uint64, version V) error) error {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
+	i := 0
 	for hash, entry := range m.byHash {
+		if i%checkContextEveryNIterations == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
 		current, ok := entry.versioned.CurrentVersion()
 		if ok {
 			if err := f(hash, current); err != nil {
 				return err
 			}
 		}
+		i++
 	}
 	return nil
 }
 
 // IterVersioned calls the function for each series' versioned data.
-func (m *MemStore[V]) IterVersioned(f func(labelsHash uint64, versioned *Versioned[V]) error) error {
+func (m *MemStore[V]) IterVersioned(ctx context.Context, f func(labelsHash uint64, versioned *Versioned[V]) error) error {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
+	i := 0
 	for hash, entry := range m.byHash {
+		if i%checkContextEveryNIterations == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
 		if err := f(hash, entry.versioned); err != nil {
 			return err
 		}
+		i++
 	}
 	return nil
 }

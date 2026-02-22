@@ -15,6 +15,7 @@ package seriesmetadata
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +30,7 @@ import (
 	"github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress/zstd"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -50,23 +52,33 @@ type Reader interface {
 	VersionedScopeReader
 
 	// IterKind iterates all entries for a kind (type-erased).
-	IterKind(id KindID, f func(labelsHash uint64, versioned any) error) error
+	IterKind(ctx context.Context, id KindID, f func(labelsHash uint64, versioned any) error) error
 
 	// KindLen returns the number of entries for a kind.
 	KindLen(id KindID) int
+
+	// LabelsForHash returns the labels for a given labels hash, if available.
+	LabelsForHash(labelsHash uint64) (labels.Labels, bool)
+}
+
+// LabelsPopulator allows post-construction population of the labels map.
+type LabelsPopulator interface {
+	SetLabels(labelsHash uint64, lset labels.Labels)
 }
 
 // MemSeriesMetadata is an in-memory implementation of series metadata storage.
 // It wraps per-kind stores accessible both generically (via IterKind/KindLen)
 // and type-safely (via ResourceStore/ScopeStore).
 type MemSeriesMetadata struct {
-	stores map[KindID]any // each value is *MemStore[V] for the appropriate V
+	stores    map[KindID]any           // each value is *MemStore[V] for the appropriate V
+	labelsMap map[uint64]labels.Labels // labelsHash → labels.Labels
 }
 
 // NewMemSeriesMetadata creates a new in-memory series metadata store.
 func NewMemSeriesMetadata() *MemSeriesMetadata {
 	m := &MemSeriesMetadata{
-		stores: make(map[KindID]any, len(allKindsRegistered)),
+		stores:    make(map[KindID]any, len(allKindsRegistered)),
+		labelsMap: make(map[uint64]labels.Labels),
 	}
 	for _, kind := range allKindsRegistered {
 		m.stores[kind.ID()] = kind.NewStore()
@@ -98,8 +110,19 @@ func (m *MemSeriesMetadata) ScopeCount() int { return m.ScopeStore().Len() }
 // Close is a no-op for in-memory storage.
 func (*MemSeriesMetadata) Close() error { return nil }
 
+// SetLabels associates a labels set with a labels hash for later lookup.
+func (m *MemSeriesMetadata) SetLabels(labelsHash uint64, lset labels.Labels) {
+	m.labelsMap[labelsHash] = lset
+}
+
+// LabelsForHash returns the labels for a given labels hash, if available.
+func (m *MemSeriesMetadata) LabelsForHash(labelsHash uint64) (labels.Labels, bool) {
+	lset, ok := m.labelsMap[labelsHash]
+	return lset, ok
+}
+
 // IterKind iterates all entries for a kind.
-func (m *MemSeriesMetadata) IterKind(id KindID, f func(labelsHash uint64, versioned any) error) error {
+func (m *MemSeriesMetadata) IterKind(ctx context.Context, id KindID, f func(labelsHash uint64, versioned any) error) error {
 	kind, ok := KindByID(id)
 	if !ok {
 		return nil
@@ -108,7 +131,7 @@ func (m *MemSeriesMetadata) IterKind(id KindID, f func(labelsHash uint64, versio
 	if !ok {
 		return nil
 	}
-	return kind.IterVersioned(store, f)
+	return kind.IterVersioned(ctx, store, f)
 }
 
 // KindLen returns the number of entries for a kind.
@@ -150,12 +173,12 @@ func (m *MemSeriesMetadata) DeleteResource(labelsHash uint64) {
 	m.ResourceStore().Delete(labelsHash)
 }
 
-func (m *MemSeriesMetadata) IterResources(f func(labelsHash uint64, resource *ResourceVersion) error) error {
-	return m.ResourceStore().Iter(f)
+func (m *MemSeriesMetadata) IterResources(ctx context.Context, f func(labelsHash uint64, resource *ResourceVersion) error) error {
+	return m.ResourceStore().Iter(ctx, f)
 }
 
-func (m *MemSeriesMetadata) IterVersionedResources(f func(labelsHash uint64, resources *VersionedResource) error) error {
-	return m.ResourceStore().IterVersioned(f)
+func (m *MemSeriesMetadata) IterVersionedResources(ctx context.Context, f func(labelsHash uint64, resources *VersionedResource) error) error {
+	return m.ResourceStore().IterVersioned(ctx, f)
 }
 
 func (m *MemSeriesMetadata) TotalResources() uint64 {
@@ -176,8 +199,8 @@ func (m *MemSeriesMetadata) SetVersionedScope(labelsHash uint64, scopes *Version
 	m.ScopeStore().SetVersioned(labelsHash, scopes)
 }
 
-func (m *MemSeriesMetadata) IterVersionedScopes(f func(labelsHash uint64, scopes *VersionedScope) error) error {
-	return m.ScopeStore().IterVersioned(f)
+func (m *MemSeriesMetadata) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
+	return m.ScopeStore().IterVersioned(ctx, f)
 }
 
 func (m *MemSeriesMetadata) TotalScopes() uint64 {
@@ -467,12 +490,12 @@ func (r *parquetReader) GetResourceAt(labelsHash uint64, timestamp int64) (*Reso
 	return r.mem.GetResourceAt(labelsHash, timestamp)
 }
 
-func (r *parquetReader) IterResources(f func(labelsHash uint64, resource *ResourceVersion) error) error {
-	return r.mem.IterResources(f)
+func (r *parquetReader) IterResources(ctx context.Context, f func(labelsHash uint64, resource *ResourceVersion) error) error {
+	return r.mem.IterResources(ctx, f)
 }
 
-func (r *parquetReader) IterVersionedResources(f func(labelsHash uint64, resources *VersionedResource) error) error {
-	return r.mem.IterVersionedResources(f)
+func (r *parquetReader) IterVersionedResources(ctx context.Context, f func(labelsHash uint64, resources *VersionedResource) error) error {
+	return r.mem.IterVersionedResources(ctx, f)
 }
 
 func (r *parquetReader) TotalResources() uint64 {
@@ -487,8 +510,8 @@ func (r *parquetReader) GetVersionedScope(labelsHash uint64) (*VersionedScope, b
 	return r.mem.GetVersionedScope(labelsHash)
 }
 
-func (r *parquetReader) IterVersionedScopes(f func(labelsHash uint64, scopes *VersionedScope) error) error {
-	return r.mem.IterVersionedScopes(f)
+func (r *parquetReader) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
+	return r.mem.IterVersionedScopes(ctx, f)
 }
 
 func (r *parquetReader) TotalScopes() uint64 {
@@ -499,8 +522,16 @@ func (r *parquetReader) TotalScopeVersions() uint64 {
 	return r.mem.TotalScopeVersions()
 }
 
-func (r *parquetReader) IterKind(id KindID, f func(labelsHash uint64, versioned any) error) error {
-	return r.mem.IterKind(id, f)
+func (r *parquetReader) IterKind(ctx context.Context, id KindID, f func(labelsHash uint64, versioned any) error) error {
+	return r.mem.IterKind(ctx, id, f)
+}
+
+func (r *parquetReader) LabelsForHash(labelsHash uint64) (labels.Labels, bool) {
+	return r.mem.LabelsForHash(labelsHash)
+}
+
+func (r *parquetReader) SetLabels(labelsHash uint64, lset labels.Labels) {
+	r.mem.SetLabels(labelsHash, lset)
 }
 
 func (r *parquetReader) KindLen(id KindID) int {
@@ -569,7 +600,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 	// Iterate all kinds and build rows.
 	for _, kind := range AllKinds() {
 		state := kindStates[kind.ID()]
-		err := mr.IterKind(kind.ID(), func(labelsHash uint64, versioned any) error {
+		err := mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
 			kind.IterateVersions(versioned, func(version any, minTime, maxTime int64) {
 				contentHash := kind.ContentHash(version)
 				if _, exists := state.contentTable[contentHash]; !exists {

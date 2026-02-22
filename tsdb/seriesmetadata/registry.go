@@ -13,7 +13,10 @@
 
 package seriesmetadata
 
-import "log/slog"
+import (
+	"context"
+	"log/slog"
+)
 
 // KindID uniquely identifies a metadata kind.
 type KindID string
@@ -94,7 +97,7 @@ type KindDescriptor interface {
 	SetVersioned(store any, labelsHash uint64, versioned any)
 
 	// IterVersioned iterates all entries in the store.
-	IterVersioned(store any, f func(labelsHash uint64, versioned any) error) error
+	IterVersioned(ctx context.Context, store any, f func(labelsHash uint64, versioned any) error) error
 
 	// StoreLen returns the number of entries in the store.
 	StoreLen(store any) int

@@ -15,6 +15,7 @@ package seriesmetadata
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -191,7 +192,7 @@ func TestResourceIter(t *testing.T) {
 	}
 
 	collected := make(map[uint64]*ResourceVersion)
-	err := store.Iter(func(labelsHash uint64, rv *ResourceVersion) error {
+	err := store.Iter(context.Background(), func(labelsHash uint64, rv *ResourceVersion) error {
 		collected[labelsHash] = rv
 		return nil
 	})
