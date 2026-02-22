@@ -82,13 +82,6 @@ func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeC
 	return s
 }
 
-// SetMetadataReader sets the TSDB metadata reader for remote write.
-// Must be called before ApplyConfig creates QueueManagers, as the reader
-// is passed to QueueManagers at construction time and not updated afterward.
-func (s *Storage) SetMetadataReader(mr MetadataReader) {
-	s.rws.SetMetadataReader(mr)
-}
-
 func (s *Storage) Notify() {
 	s.rws.Notify()
 }
