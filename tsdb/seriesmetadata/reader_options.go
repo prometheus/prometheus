@@ -52,6 +52,27 @@ func WithRefResolver(fn func(seriesRef uint64) (labelsHash uint64, ok bool)) Rea
 	}
 }
 
+// WithResourceAttrIndexOnly loads only the resource attribute inverted index.
+// Useful for Mimir store-gateway reverse-lookup queries that only need the index.
+func WithResourceAttrIndexOnly() ReaderOption {
+	return WithNamespaceFilter(NamespaceResourceAttrIndex)
+}
+
+// WithResourceData loads resource tables and mappings (no inverted index).
+func WithResourceData() ReaderOption {
+	return WithNamespaceFilter(NamespaceResourceTable, NamespaceResourceMapping)
+}
+
+// WithScopeData loads scope tables and mappings.
+func WithScopeData() ReaderOption {
+	return WithNamespaceFilter(NamespaceScopeTable, NamespaceScopeMapping)
+}
+
+// WithFullResourceData loads resource tables, mappings, and inverted index.
+func WithFullResourceData() ReaderOption {
+	return WithNamespaceFilter(NamespaceResourceTable, NamespaceResourceMapping, NamespaceResourceAttrIndex)
+}
+
 // ReadSeriesMetadataFromReaderAt reads series metadata from an io.ReaderAt.
 // This is the API for distributed systems like Mimir that provide
 // objstore.Bucket-backed readers. The caller is responsible for closing

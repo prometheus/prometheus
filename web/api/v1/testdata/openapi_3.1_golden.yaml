@@ -1310,6 +1310,16 @@ paths:
                   examples:
                     example:
                         value: 100
+                - name: next_token
+                  in: query
+                  description: Cursor token from a previous paginated response to fetch the next page.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: a1b2c3d4e5f6...
             responses:
                 "200":
                     description: Resource attributes retrieved successfully.
@@ -1452,6 +1462,16 @@ paths:
                   examples:
                     example:
                         value: 100
+                - name: next_token
+                  in: query
+                  description: Cursor token from a previous paginated response to fetch the next page.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: a1b2c3d4e5f6...
             responses:
                 "200":
                     description: Matching series with metadata retrieved successfully.
@@ -3523,10 +3543,19 @@ components:
                     description: Response status.
                     example: success
                 data:
-                    type: array
-                    items:
-                        $ref: '#/components/schemas/ResourceAttributesResponse'
-                    description: Array of resource attributes for matching time series.
+                    type: object
+                    properties:
+                        results:
+                            type: array
+                            items:
+                                $ref: '#/components/schemas/ResourceAttributesResponse'
+                            description: Array of resource attributes for matching time series.
+                        nextToken:
+                            type: string
+                            description: Cursor token for fetching the next page. Empty when there are no more results.
+                    required:
+                        - results
+                    description: Paginated resource attributes with cursor-based pagination.
                 warnings:
                     type: array
                     items:
@@ -3553,11 +3582,20 @@ components:
                     description: Response status.
                     example: success
                 data:
-                    type: array
-                    items:
-                        type: object
-                        description: A series matching the metadata criteria with its resource and scope version history.
-                    description: Array of series matching the metadata criteria, with their resource and scope versions.
+                    type: object
+                    properties:
+                        results:
+                            type: array
+                            items:
+                                type: object
+                                description: A series matching the metadata criteria with its resource and scope version history.
+                            description: Array of series matching the metadata criteria, with their resource and scope versions.
+                        nextToken:
+                            type: string
+                            description: Cursor token for fetching the next page. Empty when there are no more results.
+                    required:
+                        - results
+                    description: Paginated series metadata with cursor-based pagination.
                 warnings:
                     type: array
                     items:

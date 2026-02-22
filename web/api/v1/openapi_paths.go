@@ -263,6 +263,7 @@ func (*OpenAPIBuilder) resourcesPath() *v3.PathItem {
 		queryParamWithExample("start", "Start timestamp to filter resource versions.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp to filter resource versions.", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("limit", "Maximum number of resources to return.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("next_token", "Cursor token from a previous paginated response to fetch the next page.", false, stringSchema(), []example{{"example", "a1b2c3d4e5f6..."}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
@@ -289,6 +290,7 @@ func (*OpenAPIBuilder) resourcesSeriesPath() *v3.PathItem {
 		queryParamWithExample("start", "Start timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "End timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("limit", "Maximum number of series to return.", false, integerSchema(), []example{{"example", 100}}),
+		queryParamWithExample("next_token", "Cursor token from a previous paginated response to fetch the next page.", false, stringSchema(), []example{{"example", "a1b2c3d4e5f6..."}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
