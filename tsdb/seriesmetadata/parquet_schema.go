@@ -33,6 +33,13 @@ const (
 	// NamespaceScopeMapping maps a series (SeriesRef) to a scope (ContentHash)
 	// at a specific time range (MinTime/MaxTime).
 	NamespaceScopeMapping = "scope_mapping"
+
+	// NamespaceResourceAttrIndex stores inverted index entries mapping
+	// resource attribute key:value pairs to series refs. Each row represents
+	// one (key, value, seriesRef) tuple. The key and value are stored in
+	// IdentifyingAttrs[0]; ContentHash is xxhash("key\x00value") for bloom
+	// filter skipability.
+	NamespaceResourceAttrIndex = "resource_attr_index"
 )
 
 // Identifying attribute keys per OTel semantic conventions.
