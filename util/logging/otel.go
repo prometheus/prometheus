@@ -30,7 +30,6 @@ import (
 	"log/slog"
 	"reflect"
 	"time"
-	"weak"
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/version"
@@ -51,7 +50,6 @@ type otelLogManager struct {
 	shutdownFunc   func() error
 	config         config.OTELLoggingConfig
 	loggerProvider *otel_log_api.LoggerProvider
-	handlers       map[string]weak.Pointer[closeableLogger]
 }
 
 func NewOTELLogManager(logger *slog.Logger) otelLogManager {
@@ -72,22 +70,17 @@ func (m *otelLogManager) Stop() error {
 	return nil
 }
 
-// Obtain a slog.Handler for an OpenTelemetry logger with the given name. This
-// handler will be updated to point to the current logger provider whenever ApplyConfig is called,
-// or a no-op logger if no provider is currently configured.
+// Create a slog.Handler for an OpenTelemetry logger with the given name.
 func (m *otelLogManager) Handler(name string) CloseableLogger {
-	if p, ok := m.handlers[name]; ok {
-		h := p.Value()
-		if h != nil {
-			// A handler already exists for this name and the weak pointer is still valid, so we can return it.
-			return h
-		}
-		// The weak pointer has been collected, so we need to create a new handler and update the pointer.
-		delete(m.handlers, name)
+	if m.loggerProvider == nil {
+		return nil
 	}
 
 	h := closeableLogger{
-		Handler: m.newHandler(name),
+		Handler: otelslog.NewHandler(
+			name,
+			otelslog.WithLoggerProvider(*m.loggerProvider),
+		),
 		closeFunc: func() error {
 			// No resources to clean up on the handler itself; we rely on the
 			// provider's shutdown to clean up resources. TODO it might be worth
@@ -97,22 +90,7 @@ func (m *otelLogManager) Handler(name string) CloseableLogger {
 			return nil
 		},
 	}
-	m.handlers[name] = weak.Make[closeableLogger](&h)
 	return h
-}
-
-// Obtain a new slog.Handler that writes to an OpenTelemetry logger
-// with the given name, or if no otel provider is created, a noop
-// logger. The handler is not cached, and not updated on config reload,
-// so Handler() should be used to get a logger for external use.
-func (m *otelLogManager) newHandler(name string) slog.Handler {
-	if m.loggerProvider != nil {
-		return otelslog.NewHandler(
-			name,
-			otelslog.WithLoggerProvider(*m.loggerProvider),
-		)
-	}
-	return noopHandler
 }
 
 // Enabled returns true if and only if the manager has an active logger provider.
@@ -123,9 +101,6 @@ func (m *otelLogManager) Enabled() bool {
 // ApplyConfig applies the provided OpenTelemetry logging configuration.
 // If the configuration is unchanged it may still restart the provider to ensure
 // that TLS certificates are reloaded.
-//
-// The provider keeps track of handlers it has issued and replaces the embedded
-// logger within each one, so changes take effect immediately.
 //
 // TODO unify with the tracing manager's ApplyConfig as much as feasible
 func (m *otelLogManager) ApplyConfig(cfg config.OTELLoggingConfig) error {
@@ -168,23 +143,10 @@ func (m *otelLogManager) ApplyConfig(cfg config.OTELLoggingConfig) error {
 	m.config = cfg
 	m.loggerProvider = &lp
 
-	// For all existing handlers, update them to use the new provider. This ensures that
-	// all handlers issued by this manager will point to the current provider before the old
-	// one is shut down. This indirection allows us to avoid the need to call every consumer
-	// to reload their logger(s).
-	for name, p := range m.handlers {
-		h := p.Value()
-		if h == nil {
-			// The weak pointer has been collected, so we can skip updating this handler.
-			delete(m.handlers, name)
-			continue
-		}
-		h.Handler = m.newHandler(name)
-	}
-
 	m.logger.Info("Successfully installed a new OpenTelemetry logging provider.")
 
-	// The old provider is intentionally shut down only after the new one is installed.
+	// The new provider needs to be shut down, but there will still be references to it
+	// in prior instances of the handlers. TODO delayed shutdown with reference counting?
 	if shutdownOldProvider != nil {
 		if err := shutdownOldProvider(); err != nil {
 			m.logger.Warn("failed to shut down the old otel logging provider", "err", err)

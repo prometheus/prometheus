@@ -31,10 +31,6 @@ func NewMultiLogger(loggers ...CloseableLogger) multiLogger {
 	return multiLogger{loggers: loggers}
 }
 
-func (q multiLogger) SetLoggers(loggers ...CloseableLogger) {
-	q.loggers = loggers
-}
-
 func (q multiLogger) Enabled(ctx context.Context, level slog.Level) bool {
 	for _, logger := range q.loggers {
 		if logger.Enabled(ctx, level) {

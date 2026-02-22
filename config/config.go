@@ -1215,6 +1215,9 @@ type LoggingConfig struct {
 	// Log categories to send to the configured exporter. If empty, no logs are sent.
 	// Options: "query" for query logs, "scrape_failure" for scrape failure logs.
 	// Exporting the global Prometheus logs is not currently supported, but may be added in the future.
+	// The Include field does not affect file logging configured by
+	// GlobalConfig.QueryLogFile and GlobalConfig.ScrapeFailureLogFile, only
+	// log destinations configured through the OTELLoggingConfig.
 	Include           []string          `yaml:"include,omitempty"`
 	OTELLoggingConfig OTELLoggingConfig `yaml:"otel_logging,omitempty"`
 }

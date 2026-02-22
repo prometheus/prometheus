@@ -35,6 +35,11 @@ import (
 	_ "go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 )
 
+const (
+	queryLoggerName         = "query"
+	scrapeFailureLoggerName = "scrape_failure"
+)
+
 // Manager (re)creates and shuts down OpenTelemetry log providers
 // based on the provided configuration.
 //
@@ -48,12 +53,16 @@ import (
 //	}
 //	...
 //	m.Stop()
+//
+// Do NOT pass concrete types of logging.Manager around; instead, pass interfaces exposing
+// appropriate subsets of its functionality.
 type Manager struct {
 	// The OTLP query log exporter writes its own logs to the slog stream.
 	logger       *slog.Logger
 	done         chan struct{}
 	shutdownFunc func() error
 
+	// Copy of the last-applied configuration for the logging provider.
 	config config.LoggingConfig
 
 	// For historical reasons, the query and scrape log file paths are
@@ -62,12 +71,9 @@ type Manager struct {
 	queryLogFile         string
 	scrapeFailureLogFile string
 
-	// The logger instances issued to the query and scrape loggers are retained
-	// so that their destinations can be updated when the configuration changes.
-	queryLogger         multiLogger
-	scrapeFailureLogger multiLogger
-
 	otelLogMgr otelLogManager
+
+	isRunning bool
 }
 
 // Create a new Manager. The passed Logger is for the manager's own logs,
@@ -78,84 +84,137 @@ func NewManager(logger *slog.Logger) *Manager {
 		logger:     logger,
 		done:       make(chan struct{}),
 		otelLogMgr: NewOTELLogManager(logger),
+		isRunning:  false,
 	}
 }
 
 // Run starts the logging manager. Closes the done channel on return.
 func (m *Manager) Run() {
+	m.isRunning = true
+	m.logger.Debug("Logging manager started")
 	<-m.done
+}
+
+func (m *Manager) IsRunning() bool {
+	return m.isRunning
 }
 
 // ApplyConfig takes care of refreshing the logging configuration by shutting down
 // the current OpenTelemetry logging provider (if any is registered) and installing
 // a new one.
 //
-// The query and scrape providers must apply their own configurations AFTER this
-// function returns, to ensure that they obtain new loggers from the provider. This way
-// we don't need the indirection overhead of a logger wrapper for every logged event.
+// The consuming query engine and scrape manager will refresh their loggers in their
+// own config update requests, which must occur after this has run.
 func (m *Manager) ApplyConfig(cfg *config.Config) error {
+	m.logger.Debug("Logging manager configuration reloading")
+
 	m.queryLogFile = cfg.GlobalConfig.QueryLogFile
 	m.scrapeFailureLogFile = cfg.GlobalConfig.ScrapeFailureLogFile
 
-	// The OTLP log manager caches its loggers and internally updates them to
-	// point to a new log provider when a reload is required.
 	m.otelLogMgr.ApplyConfig(cfg.LoggingConfig.OTELLoggingConfig)
 
-	queryLoggers := []CloseableLogger{
-		m.otelLogMgr.Handler("query"),
-	}
-	scrapeFailureLoggers := []CloseableLogger{
-		m.otelLogMgr.Handler("scrape_failure"),
-	}
-
-	// The file-backed loggers are re-created every config apply, even if file
-	// paths did not change, because Prometheus treats a SIGHUP as a signal to
-	// truncate log files.
-	if m.queryLogFile != "" {
-		l, err := NewJSONFileLogger(m.queryLogFile)
-		if err != nil {
-			return err
-		}
-		queryLoggers = append(queryLoggers, l)
-	}
-
-	if m.scrapeFailureLogFile != "" {
-		l, err := NewJSONFileLogger(m.scrapeFailureLogFile)
-		if err != nil {
-			return err
-		}
-		scrapeFailureLoggers = append(scrapeFailureLoggers, l)
-	}
-
-	// Replace the destination loggers in the multi-logger adapter instances
-	// used by the query and scrape loggers.
-	m.queryLogger.SetLoggers(queryLoggers...)
-	m.scrapeFailureLogger.SetLoggers(scrapeFailureLoggers...)
+	m.logger.Debug("Logging manager configuration reloaded")
 
 	return nil
 }
 
 // Stop gracefully shuts down the logging provider and stops the logging manager.
 func (m *Manager) Stop() {
+
+	m.logger.Debug("Logging manager shutting down...")
+
 	defer close(m.done)
 
-	if m.shutdownFunc == nil {
-		return
+	if m.shutdownFunc != nil {
+		if err := m.shutdownFunc(); err != nil {
+			m.logger.Error("failed to shut down the opentelemetry logging provider", "err", err)
+		}
 	}
 
-	if err := m.shutdownFunc(); err != nil {
-		m.logger.Error("failed to shut down the opentelemetry logging provider", "err", err)
-	}
-
+	m.isRunning = false
 	m.logger.Info("OpenTelemetry logging manager stopped")
 }
 
-func (m *Manager) QueryLogger() CloseableLogger {
-	return m.queryLogger
+// Test whether a given log destination is included in the log output configuration
+// used by the OTLP logger.
+func (m *Manager) isIncluded(include string) bool {
+	for _, includeStr := range m.config.Include {
+		if includeStr == include {
+			return true
+		}
+	}
+	return false
 }
 
-// Interface to replace promql.QueryLogger and the scrape logger interface
-// TODO
+// Simplified type for the manager to return new query logger instances, reopening
+// the query log file and creating a new OTLP logger with updated configuration
+// as needed.
+type QueryLoggerFactory interface {
+	NewQueryLogger() CloseableLogger
+}
+
+// Implements QueryLoggerFactory
+func (m *Manager) NewQueryLogger() CloseableLogger {
+	queryLoggers := []CloseableLogger{}
+
+	if m.isIncluded(queryLoggerName) {
+		otlpLogger := m.otelLogMgr.Handler(queryLoggerName)
+		if otlpLogger != nil {
+			queryLoggers = append(queryLoggers, otlpLogger)
+		}
+	}
+
+	if m.queryLogFile != "" {
+		l, err := NewJSONFileLogger(m.queryLogFile)
+		if err != nil {
+			m.logger.Error("failed to create query file logger at %s", "path", m.queryLogFile, "err", err)
+		} else {
+			queryLoggers = append(queryLoggers, l)
+		}
+	}
+
+	return NewMultiLogger(queryLoggers...)
+}
+
+// Simplified type for the manager to return new scrape failure logger instances, reopening
+// the scrape failure log file and creating a new OTLP logger with updated configuration
+// as needed.
+type ScrapeFailureLoggerFactory interface {
+	NewScrapeFailureLogger(jobName string, logfile string) CloseableLogger
+}
+
+// Implements ScrapeFailureLoggerFactory
+// TODO inject scrape config name, job name, instance name (?) etc
+func (m *Manager) NewScrapeFailureLogger(jobName string, logfile string) CloseableLogger {
+	queryLoggers := []CloseableLogger{}
+
+	if m.isIncluded(scrapeFailureLoggerName) {
+		// TODO inject the job name as an attribute
+		otlpLogger := m.otelLogMgr.Handler(scrapeFailureLoggerName)
+		if otlpLogger != nil {
+			queryLoggers = append(queryLoggers, otlpLogger)
+		}
+	}
+
+	// TODO: if a scrape job doesn't set a specific log file, do we fall back to the default global
+	// scrape failure log?
+	if logfile == "" {
+		logfile = m.scrapeFailureLogFile
+	}
+	if logfile != "" {
+		l, err := NewJSONFileLogger(logfile)
+		if err != nil {
+			m.logger.Error("failed to create scrape failure file logger at %s", "path", logfile, "err", err)
+		} else {
+			queryLoggers = append(queryLoggers, l)
+		}
+	}
+
+	return NewMultiLogger(queryLoggers...)
+}
+
+// Extend slog.Logger with the ability to close the logger. Necessary to support
+// file-based loggers with updateable paths and log rotation.
 type CloseableLogger interface {
 	slog.Handler
 	io.Closer
@@ -172,4 +231,32 @@ func (c closeableLogger) Close() error {
 		return c.closeFunc()
 	}
 	return nil
+}
+
+// Test helpers for other packages to consume.
+
+// Use ConfigForTest to create a config for the logging.Manager tests.
+func ConfigForTest(loggingConfig *config.LoggingConfig) config.Config {
+	config := config.Config{}
+	if loggingConfig != nil {
+		config.LoggingConfig = *loggingConfig
+	}
+	return config
+}
+
+// NewTestLogManager creates a pre-configured Manager for testing purposes. The optional
+// config can be used to set specific logging options, but if nil is passed, a default config will be used.
+// The initial config is immediately applied and the manager is started, so the returned manager is ready to use.
+// A noop slog is used for the manager's own logs.
+func NewTestLogManager(config *config.Config) *Manager {
+	if config == nil {
+		defaultConfig := ConfigForTest(nil)
+		config = &defaultConfig
+	}
+
+	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
+	manager := NewManager(discard)
+	go manager.Run()
+	manager.ApplyConfig(config)
+	return manager
 }

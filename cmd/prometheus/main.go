@@ -889,10 +889,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	loggingManager := logging.NewManager(logger)
+
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
 		logger.With("component", "scrape manager"),
-		logging.NewJSONFileLogger,
+		logging.ScrapeFailureLoggerFactory(loggingManager),
 		nil, fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
@@ -903,7 +905,6 @@ func main() {
 
 	var (
 		tracingManager = tracing.NewManager(logger)
-		loggingManager = logging.NewManager(logger)
 
 		queryEngine *promql.Engine
 		ruleManager *rules.Manager
@@ -1017,7 +1018,8 @@ func main() {
 			reloader: webHandler.ApplyConfig,
 		}, {
 			// Logging manager for query and scrape logs. Must be reloaded before the
-			// query engine and scrape manager.
+			// query engine and scrape manager to ensure that the new loggers passed
+			// to them are up to date.
 			name:     "logging",
 			reloader: loggingManager.ApplyConfig,
 		}, {
@@ -1027,6 +1029,9 @@ func main() {
 					// No-op in Agent mode.
 					return nil
 				}
+				// The query engine needs to re-open the query log file on reload, refresh
+				// any otel logger provider etc.
+				queryEngine.SetQueryLogger(loggingManager)
 				return nil
 			},
 		}, {
