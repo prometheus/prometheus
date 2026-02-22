@@ -2002,51 +2002,6 @@ func matchesResourceVersion(rv *seriesmetadata.ResourceVersion, resourceAttrFilt
 	return true
 }
 
-// matchesScopeVersion checks if a ScopeVersion matches the given filters.
-// All filters must match (AND semantics).
-func matchesScopeVersion(sv *seriesmetadata.ScopeVersion, scopeName, scopeVersion, scopeSchemaURL string, scopeAttrFilters map[string]string) bool {
-	if scopeName != "" && sv.Name != scopeName {
-		return false
-	}
-	if scopeVersion != "" && sv.Version != scopeVersion {
-		return false
-	}
-	if scopeSchemaURL != "" && sv.SchemaURL != scopeSchemaURL {
-		return false
-	}
-	for k, v := range scopeAttrFilters {
-		if sv.Attrs[k] != v {
-			return false
-		}
-	}
-	return true
-}
-
-// matchesEntityFilters checks if any entity in a ResourceVersion matches the entity filters.
-// At least one entity must match ALL entity filters.
-func matchesEntityFilters(rv *seriesmetadata.ResourceVersion, entityType string, entityAttrFilters map[string]string) bool {
-	for _, ent := range rv.Entities {
-		if entityType != "" && ent.Type != entityType {
-			continue
-		}
-		matched := true
-		for k, v := range entityAttrFilters {
-			if ent.ID[k] == v {
-				continue
-			}
-			if ent.Description[k] == v {
-				continue
-			}
-			matched = false
-			break
-		}
-		if matched {
-			return true
-		}
-	}
-	return false
-}
-
 // filterScopeVersions returns scope versions that overlap with [startMs, endMs].
 func filterScopeVersions(versions []*seriesmetadata.ScopeVersion, startMs, endMs int64) []ScopeAttributeVersion {
 	result := make([]ScopeAttributeVersion, 0, len(versions))
@@ -2087,36 +2042,8 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 		resourceAttrFilters[k] = v
 	}
 
-	// Parse scope filters
-	scopeName := r.FormValue("scope.name")
-	scopeVersion := r.FormValue("scope.version")
-	scopeSchemaURL := r.FormValue("scope.schema_url")
-	scopeAttrFilters := make(map[string]string)
-	for _, f := range r.Form["scope.attr"] {
-		k, v, err := parseAttrFilter(f)
-		if err != nil {
-			return invalidParamError(err, "scope.attr")
-		}
-		scopeAttrFilters[k] = v
-	}
-
-	// Parse entity filters
-	entityType := r.FormValue("entity.type")
-	entityAttrFilters := make(map[string]string)
-	for _, f := range r.Form["entity.attr"] {
-		k, v, err := parseAttrFilter(f)
-		if err != nil {
-			return invalidParamError(err, "entity.attr")
-		}
-		entityAttrFilters[k] = v
-	}
-
-	hasResourceFilters := len(resourceAttrFilters) > 0
-	hasScopeFilters := scopeName != "" || scopeVersion != "" || scopeSchemaURL != "" || len(scopeAttrFilters) > 0
-	hasEntityFilters := entityType != "" || len(entityAttrFilters) > 0
-
-	if !hasResourceFilters && !hasScopeFilters && !hasEntityFilters {
-		return apiFuncResult{nil, &apiError{errorBadData, errors.New("at least one metadata filter is required (resource.attr, scope.name, scope.version, scope.schema_url, scope.attr, entity.type, or entity.attr)")}, nil, nil}
+	if len(resourceAttrFilters) == 0 {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("at least one resource.attr filter is required")}, nil, nil}
 	}
 
 	start, err := parseTimeParam(r, "start", MinTime)
@@ -2160,83 +2087,32 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 	}
 	matched := make(map[uint64]*matchedEntry)
 
-	// Check resource/entity filters (both operate on resource versions)
-	if hasResourceFilters || hasEntityFilters {
-		err = mr.IterVersionedResources(r.Context(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
-			var matchingVersions []*seriesmetadata.ResourceVersion
-			for _, rv := range resources.Versions {
-				// Time range filter
-				if rv.MinTime > endMs || rv.MaxTime < startMs {
-					continue
-				}
-				resourceOK := !hasResourceFilters || matchesResourceVersion(rv, resourceAttrFilters)
-				entityOK := !hasEntityFilters || matchesEntityFilters(rv, entityType, entityAttrFilters)
-				if resourceOK && entityOK {
-					matchingVersions = append(matchingVersions, rv)
-				}
+	// Filter resources by attribute matches
+	err = mr.IterVersionedResources(r.Context(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		var matchingVersions []*seriesmetadata.ResourceVersion
+		for _, rv := range resources.Versions {
+			if rv.MinTime > endMs || rv.MaxTime < startMs {
+				continue
 			}
-			if len(matchingVersions) > 0 {
-				matched[labelsHash] = &matchedEntry{
-					resourceVersions: filterVersions(matchingVersions, startMs, endMs),
-				}
+			if matchesResourceVersion(rv, resourceAttrFilters) {
+				matchingVersions = append(matchingVersions, rv)
 			}
-			return nil
-		})
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
 		}
+		if len(matchingVersions) > 0 {
+			matched[labelsHash] = &matchedEntry{
+				resourceVersions: filterVersions(matchingVersions, startMs, endMs),
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
 	}
 
-	// Check scope filters
-	if hasScopeFilters {
-		scopeMatched := make(map[uint64][]ScopeAttributeVersion)
-		err = mr.IterVersionedScopes(r.Context(), func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
-			var matchingVersions []*seriesmetadata.ScopeVersion
-			for _, sv := range scopes.Versions {
-				if sv.MinTime > endMs || sv.MaxTime < startMs {
-					continue
-				}
-				if matchesScopeVersion(sv, scopeName, scopeVersion, scopeSchemaURL, scopeAttrFilters) {
-					matchingVersions = append(matchingVersions, sv)
-				}
-			}
-			if len(matchingVersions) > 0 {
-				scopeMatched[labelsHash] = filterScopeVersions(matchingVersions, startMs, endMs)
-			}
-			return nil
-		})
-		if err != nil {
-			return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate scopes: %w", err)}, nil, nil}
-		}
-
-		if hasResourceFilters || hasEntityFilters {
-			// Intersect: only keep series that matched both resource/entity AND scope filters
-			for hash, entry := range matched {
-				sv, ok := scopeMatched[hash]
-				if !ok {
-					delete(matched, hash)
-				} else {
-					entry.scopeVersions = sv
-				}
-			}
-		} else {
-			// Only scope filters active — add all scope-matched series
-			for hash, sv := range scopeMatched {
-				matched[hash] = &matchedEntry{scopeVersions: sv}
-			}
-			// Also populate resource versions for scope-matched series (for complete response)
-			for hash, entry := range matched {
-				if resources, ok := mr.GetVersionedResource(hash); ok {
-					entry.resourceVersions = filterVersions(resources.Versions, startMs, endMs)
-				}
-			}
-		}
-	} else {
-		// No scope filters, but populate scope versions for matched series (for complete response)
-		for hash, entry := range matched {
-			if scopes, ok := mr.GetVersionedScope(hash); ok {
-				entry.scopeVersions = filterScopeVersions(scopes.Versions, startMs, endMs)
-			}
+	// Populate scope versions for matched series (for complete response)
+	for hash, entry := range matched {
+		if scopes, ok := mr.GetVersionedScope(hash); ok {
+			entry.scopeVersions = filterScopeVersions(scopes.Versions, startMs, endMs)
 		}
 	}
 

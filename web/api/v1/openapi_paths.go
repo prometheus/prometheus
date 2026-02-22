@@ -282,18 +282,6 @@ func (*OpenAPIBuilder) resourcesSeriesPath() *v3.PathItem {
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", "service.name:payment-service"}}),
-		queryParamWithExample("scope.name", "Exact match on InstrumentationScope name.", false, stringSchema(), []example{{"example", "opentelemetry-go"}}),
-		queryParamWithExample("scope.version", "Exact match on InstrumentationScope version.", false, stringSchema(), []example{{"example", "1.24.0"}}),
-		queryParamWithExample("scope.schema_url", "Exact match on InstrumentationScope schema URL.", false, stringSchema(), nil),
-		queryParamWithExample("scope.attr", "Scope attribute filter in key:value format. Repeatable. All must match (AND).", false, base.CreateSchemaProxy(&base.Schema{
-			Type:  []string{"array"},
-			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []example{{"example", "library.language:go"}}),
-		queryParamWithExample("entity.type", "Exact match on entity type.", false, stringSchema(), []example{{"example", "service"}}),
-		queryParamWithExample("entity.attr", "Entity attribute filter in key:value format. Repeatable. All must match (AND).", false, base.CreateSchemaProxy(&base.Schema{
-			Type:  []string{"array"},
-			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
-		}), []example{{"example", "service.name:payment-service"}}),
 		queryParamWithExample("match[]", "Series selector to pre-filter by label matchers.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
