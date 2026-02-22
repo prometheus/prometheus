@@ -53,6 +53,8 @@ All metadata is **versioned over time** per series. When a descriptive attribute
                     └──────────────────────────────┘
 ```
 
+The `/resources/series` reverse-lookup endpoint only supports filtering by resource attributes (`resource.attr=key:value`). Scope and entity filters are intentionally excluded as an architectural choice for simplicity — matched series include their scope versions in the response as supplementary data but scopes are not filterable.
+
 ## Kind Framework
 
 The metadata subsystem uses a **kind framework** to handle different metadata types (resources, scopes) generically. This avoids duplicating nearly identical code at every layer (WAL, Parquet, head commit/replay, compaction, DB merge).

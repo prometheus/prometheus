@@ -1264,7 +1264,6 @@ func buildReverseLookupAPIResponse(db *tsdb.DB) map[string]any {
 		ServiceName  string            `json:"service_name,omitempty"`
 		ScopeName    string            `json:"scope_name,omitempty"`
 		VersionCount int               `json:"version_count"`
-		EntityTypes  []string          `json:"entity_types,omitempty"`
 	}
 
 	type result struct {
@@ -1322,39 +1321,6 @@ func buildReverseLookupAPIResponse(db *tsdb.DB) map[string]any {
 		})
 		results = append(results, result{
 			Query:   `scope.name=github.com/example/payment`,
-			Matches: matches,
-		})
-	}
-
-	// 3. Find series with entity type "service"
-	{
-		var matches []matchedEntry
-		_ = reader.IterVersionedResources(context.Background(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
-			for _, rv := range resources.Versions {
-				for _, ent := range rv.Entities {
-					if ent.Type == "service" {
-						lbls := make(map[string]string)
-						if lbs, ok := labelsMap[labelsHash]; ok {
-							lbs.Range(func(l labels.Label) { lbls[l.Name] = l.Value })
-						}
-						var entityTypes []string
-						for _, e := range rv.Entities {
-							entityTypes = append(entityTypes, e.Type)
-						}
-						matches = append(matches, matchedEntry{
-							Labels:       lbls,
-							ServiceName:  rv.Identifying["service.name"],
-							VersionCount: len(resources.Versions),
-							EntityTypes:  entityTypes,
-						})
-						break
-					}
-				}
-			}
-			return nil
-		})
-		results = append(results, result{
-			Query:   `entity.type=service`,
 			Matches: matches,
 		})
 	}
