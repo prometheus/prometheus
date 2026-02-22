@@ -1244,7 +1244,9 @@ func buildResourceAttributesAPIResponse(db *tsdb.DB) map[string]any {
 
 	return map[string]any{
 		"status": "success",
-		"data":   data,
+		"data": map[string]any{
+			"results": data,
+		},
 	}
 }
 

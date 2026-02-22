@@ -27,6 +27,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress/zstd"
 
@@ -80,8 +81,10 @@ type MemSeriesMetadata struct {
 
 	// resourceAttrIndex maps "key\x00value" → set of labelsHashes.
 	// Covers both Identifying and Descriptive attributes across all versions.
-	// Built lazily via BuildResourceAttrIndex(); nil until built.
-	resourceAttrIndex map[string]map[uint64]struct{}
+	// Built lazily via BuildResourceAttrIndex() or incrementally via
+	// UpdateResourceAttrIndex(). nil until first build or incremental init.
+	resourceAttrIndex   map[string]map[uint64]struct{}
+	resourceAttrIndexMu sync.RWMutex // protects resourceAttrIndex
 }
 
 // NewMemSeriesMetadata creates a new in-memory series metadata store.
@@ -123,6 +126,11 @@ func (*MemSeriesMetadata) Close() error { return nil }
 // SetLabels associates a labels set with a labels hash for later lookup.
 func (m *MemSeriesMetadata) SetLabels(labelsHash uint64, lset labels.Labels) {
 	m.labelsMap[labelsHash] = lset
+}
+
+// DeleteLabels removes the labels mapping for a given hash.
+func (m *MemSeriesMetadata) DeleteLabels(labelsHash uint64) {
+	delete(m.labelsMap, labelsHash)
 }
 
 // LabelsForHash returns the labels for a given labels hash, if available.
@@ -222,36 +230,125 @@ func (m *MemSeriesMetadata) TotalScopeVersions() uint64 {
 }
 
 // BuildResourceAttrIndex builds the inverted index from all resource versions.
-// Called once after merge in buildSeriesMetadata. After this, LookupResourceAttr
+// Called once after merge in mergeBlockMetadata. After this, LookupResourceAttr
 // returns results in O(1) instead of requiring a full scan.
+// Skips rebuilding if the index is already populated (e.g. from Parquet or
+// incremental updates).
 func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
+	m.resourceAttrIndexMu.Lock()
+	defer m.resourceAttrIndexMu.Unlock()
+	if m.resourceAttrIndex != nil {
+		return
+	}
 	idx := make(map[string]map[uint64]struct{})
-	m.ResourceStore().IterVersioned(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
+	_ = m.ResourceStore().IterVersioned(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
 		for _, rv := range vr.Versions {
-			for k, v := range rv.Identifying {
-				key := k + "\x00" + v
-				if idx[key] == nil {
-					idx[key] = make(map[uint64]struct{})
-				}
-				idx[key][labelsHash] = struct{}{}
-			}
-			for k, v := range rv.Descriptive {
-				key := k + "\x00" + v
-				if idx[key] == nil {
-					idx[key] = make(map[uint64]struct{})
-				}
-				idx[key][labelsHash] = struct{}{}
-			}
+			addToAttrIndex(idx, labelsHash, rv)
 		}
 		return nil
 	})
 	m.resourceAttrIndex = idx
 }
 
+// InitResourceAttrIndex initializes an empty inverted index, enabling
+// incremental updates via UpdateResourceAttrIndex. This must be called
+// before any incremental updates (e.g. on head startup).
+func (m *MemSeriesMetadata) InitResourceAttrIndex() {
+	m.resourceAttrIndexMu.Lock()
+	defer m.resourceAttrIndexMu.Unlock()
+	if m.resourceAttrIndex == nil {
+		m.resourceAttrIndex = make(map[string]map[uint64]struct{})
+	}
+}
+
+// UpdateResourceAttrIndex incrementally updates the inverted index when a
+// resource version changes. Removes stale entries from old, adds new ones.
+// old may be nil if this is the first insert for this labelsHash.
+func (m *MemSeriesMetadata) UpdateResourceAttrIndex(
+	labelsHash uint64,
+	old *VersionedResource,
+	cur *VersionedResource,
+) {
+	m.resourceAttrIndexMu.Lock()
+	defer m.resourceAttrIndexMu.Unlock()
+	if m.resourceAttrIndex == nil {
+		return
+	}
+	// Remove old entries.
+	if old != nil {
+		for _, rv := range old.Versions {
+			removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv)
+		}
+	}
+	// Add current entries.
+	if cur != nil {
+		for _, rv := range cur.Versions {
+			addToAttrIndex(m.resourceAttrIndex, labelsHash, rv)
+		}
+	}
+}
+
+// RemoveFromResourceAttrIndex removes all index entries for a labelsHash.
+func (m *MemSeriesMetadata) RemoveFromResourceAttrIndex(labelsHash uint64, vr *VersionedResource) {
+	if vr == nil {
+		return
+	}
+	m.resourceAttrIndexMu.Lock()
+	defer m.resourceAttrIndexMu.Unlock()
+	if m.resourceAttrIndex == nil {
+		return
+	}
+	for _, rv := range vr.Versions {
+		removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv)
+	}
+}
+
+// addToAttrIndex adds all attribute entries for a resource version to the index.
+func addToAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, rv *ResourceVersion) {
+	for k, v := range rv.Identifying {
+		key := k + "\x00" + v
+		if idx[key] == nil {
+			idx[key] = make(map[uint64]struct{})
+		}
+		idx[key][labelsHash] = struct{}{}
+	}
+	for k, v := range rv.Descriptive {
+		key := k + "\x00" + v
+		if idx[key] == nil {
+			idx[key] = make(map[uint64]struct{})
+		}
+		idx[key][labelsHash] = struct{}{}
+	}
+}
+
+// removeFromAttrIndex removes all attribute entries for a resource version from the index.
+func removeFromAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, rv *ResourceVersion) {
+	for k, v := range rv.Identifying {
+		key := k + "\x00" + v
+		if set, ok := idx[key]; ok {
+			delete(set, labelsHash)
+			if len(set) == 0 {
+				delete(idx, key)
+			}
+		}
+	}
+	for k, v := range rv.Descriptive {
+		key := k + "\x00" + v
+		if set, ok := idx[key]; ok {
+			delete(set, labelsHash)
+			if len(set) == 0 {
+				delete(idx, key)
+			}
+		}
+	}
+}
+
 // LookupResourceAttr returns labelsHashes that have a resource version
 // with the given key:value in Identifying or Descriptive attributes.
 // Returns nil if the index has not been built.
 func (m *MemSeriesMetadata) LookupResourceAttr(key, value string) map[uint64]struct{} {
+	m.resourceAttrIndexMu.RLock()
+	defer m.resourceAttrIndexMu.RUnlock()
 	if m.resourceAttrIndex == nil {
 		return nil
 	}
@@ -358,6 +455,39 @@ func denormalizeRows(
 		for labelsHash, rawVersions := range state.versionsByHash {
 			kind.DenormalizeIntoStore(store, labelsHash, rawVersions)
 		}
+	}
+
+	// Phase 4: Process resource attribute inverted index rows.
+	idx := make(map[string]map[uint64]struct{})
+	hasIndexRows := false
+	for i := range rows {
+		row := &rows[i]
+		if row.Namespace != NamespaceResourceAttrIndex {
+			continue
+		}
+		hasIndexRows = true
+		if len(row.IdentifyingAttrs) == 0 {
+			continue
+		}
+		attr := row.IdentifyingAttrs[0]
+		labelsHash := row.SeriesRef
+		if refResolver != nil {
+			lh, ok := refResolver(row.SeriesRef)
+			if !ok {
+				continue
+			}
+			labelsHash = lh
+		}
+		key := attr.Key + "\x00" + attr.Value
+		if idx[key] == nil {
+			idx[key] = make(map[uint64]struct{})
+		}
+		idx[key][labelsHash] = struct{}{}
+	}
+	if hasIndexRows {
+		mem.resourceAttrIndexMu.Lock()
+		mem.resourceAttrIndex = idx
+		mem.resourceAttrIndexMu.Unlock()
 	}
 }
 
@@ -711,6 +841,17 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 		allNamespaceRows = append(allNamespaceRows, tableRows, state.mappingRows)
 	}
 
+	// Optionally build resource attribute inverted index rows.
+	if opts.EnableInvertedIndex {
+		indexRows := buildResourceAttrIndexRows(mr, opts.RefResolver)
+		if len(indexRows) > 0 {
+			sortMetadataRows(indexRows)
+			metadataCounts["resource_attr_index_count"] = len(indexRows)
+			totalRows += len(indexRows)
+			allNamespaceRows = append(allNamespaceRows, indexRows)
+		}
+	}
+
 	if totalRows == 0 {
 		return 0, nil
 	}
@@ -783,12 +924,17 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 	}
 	tmp = ""
 
-	logger.Info("Series metadata written",
+	logArgs := []any{
 		"resource_table", metadataCounts["resource_table_count"],
 		"resource_mappings", metadataCounts["resource_mapping_count"],
 		"scope_table", metadataCounts["scope_table_count"],
 		"scope_mappings", metadataCounts["scope_mapping_count"],
-		"size", size)
+		"size", size,
+	}
+	if cnt, ok := metadataCounts["resource_attr_index_count"]; ok {
+		logArgs = append(logArgs, "resource_attr_index", cnt)
+	}
+	logger.Info("Series metadata written", logArgs...)
 
 	return size, nil
 }
@@ -835,6 +981,66 @@ func buildResourceTableRow(contentHash uint64, rv *ResourceVersion) metadataRow 
 		DescriptiveAttrs: descAttrs,
 		Entities:         entityRows,
 	}
+}
+
+// buildResourceAttrIndexRows builds inverted index rows for Parquet from all
+// resource versions. Each unique (key, value, seriesRef) tuple produces one row.
+func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (uint64, bool)) []metadataRow {
+	type indexKey struct {
+		attrKey   string
+		attrValue string
+		seriesRef uint64
+	}
+	seen := make(map[indexKey]struct{})
+	var rows []metadataRow
+
+	_ = mr.IterVersionedResources(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
+		seriesRef := labelsHash
+		if refResolver != nil {
+			ref, ok := refResolver(labelsHash)
+			if !ok {
+				return nil
+			}
+			seriesRef = ref
+		}
+
+		addEntry := func(k, v string) {
+			ik := indexKey{attrKey: k, attrValue: v, seriesRef: seriesRef}
+			if _, exists := seen[ik]; exists {
+				return
+			}
+			seen[ik] = struct{}{}
+			rows = append(rows, metadataRow{
+				Namespace:   NamespaceResourceAttrIndex,
+				SeriesRef:   seriesRef,
+				ContentHash: attrKeyValueHash(k, v),
+				IdentifyingAttrs: []EntityAttributeEntry{
+					{Key: k, Value: v},
+				},
+			})
+		}
+
+		for _, rv := range vr.Versions {
+			for k, v := range rv.Identifying {
+				addEntry(k, v)
+			}
+			for k, v := range rv.Descriptive {
+				addEntry(k, v)
+			}
+		}
+		return nil
+	})
+
+	return rows
+}
+
+// attrKeyValueHash computes xxhash("key\x00value") for bloom filter skipability.
+func attrKeyValueHash(key, value string) uint64 {
+	h := xxhash.New()
+	_, _ = h.WriteString(key)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(value)
+	return h.Sum64()
 }
 
 // ReadSeriesMetadata reads series metadata from a Parquet file in the given directory.
