@@ -31,6 +31,12 @@ type WriterOptions struct {
 	// which knows the query-time predicates.
 	EnableBloomFilters bool
 
+	// EnableInvertedIndex writes resource attribute inverted index rows
+	// (namespace=resource_attr_index) into the Parquet file. Each row maps
+	// a (key, value) attribute pair to a series ref, enabling O(1) reverse
+	// lookup without runtime index build.
+	EnableInvertedIndex bool
+
 	// RefResolver converts a labelsHash (the in-memory key) to a block-level
 	// seriesRef for Parquet mapping rows. If nil, labelsHash is written
 	// directly as SeriesRef (backward compat for head/test writes without

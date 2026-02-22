@@ -378,7 +378,7 @@ func TestCheckpoint(t *testing.T) {
 			}
 			// Checkpoint keeps only the latest metadata per Ref: latest loop iteration
 			// for Refs 0 and 2, plus the initial "unit"/"help" for Ref 4.
-			require.Equal(t, 3, len(metadata), "checkpoint should preserve latest metadata per ref")
+			require.Len(t, metadata, 3, "checkpoint should preserve latest metadata per ref")
 			// Verify Ref 4 has its initial metadata.
 			var ref4Found bool
 			for _, m := range metadata {

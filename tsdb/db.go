@@ -348,11 +348,19 @@ type DB struct {
 
 	fsSizeFunc FsSizeFunc
 
-	// Series metadata cache — avoids re-merging all blocks + head on every request.
-	metadataCacheMtx       sync.Mutex
-	metadataCache          seriesmetadata.Reader
-	metadataCacheBlocksKey string    // sorted block ULIDs fingerprint
-	metadataCacheTime      time.Time // when cache was built (for head TTL)
+	// Blocks-only metadata cache — avoids re-merging blocks on every request.
+	// metadataCache is read lock-free via atomic load; metadataBuildMtx prevents
+	// thundering herd on cache miss. Head data is layered on top at query time.
+	metadataCache    atomic.Value // stores *metadataCacheEntry
+	metadataBuildMtx sync.Mutex
+}
+
+// metadataCacheEntry holds the cached blocks-only merged metadata reader.
+// The cache is keyed solely by block ULIDs — it never expires for the same
+// block set. Head metadata is always served live via layered reader.
+type metadataCacheEntry struct {
+	reader    seriesmetadata.Reader
+	blocksKey string // sorted block ULIDs fingerprint
 }
 
 type dbMetrics struct {
@@ -1198,18 +1206,14 @@ type cachedMetadataReader struct {
 	seriesmetadata.Reader
 }
 
-func (r *cachedMetadataReader) Close() error { return nil }
+func (*cachedMetadataReader) Close() error { return nil }
 
-// metadataCacheHeadTTL is how long the cached metadata remains valid for head data.
-// Block data is invalidated by block set changes, but head data changes continuously.
-const metadataCacheHeadTTL = 30 * time.Second
-
-// SeriesMetadata returns a merged reader of series metadata from all blocks and the head.
+// SeriesMetadata returns a layered reader combining blocks (cached) and head (live).
 // Returns an empty reader when native metadata is not enabled.
 //
-// The merge resolves block/head series refs to labels via each source's index,
-// then merges by labels hash as a transient in-memory key. Also merges
-// resource/scope attributes which are already keyed by labels hash.
+// The blocks-only cache never expires for the same block set — it invalidates
+// only on compaction/block reload. Head metadata updates are immediately
+// visible without waiting for any TTL.
 //
 // NOTE: The returned reader's ref values are labels hashes, NOT series refs.
 // The merged result spans multiple indexes so no single series ref is valid.
@@ -1219,30 +1223,49 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 		return seriesmetadata.NewMemSeriesMetadata(), nil
 	}
 
-	db.metadataCacheMtx.Lock()
-	defer db.metadataCacheMtx.Unlock()
-
 	// Build fingerprint from current block set.
 	blocks := db.Blocks()
 	blocksKey := blocksFingerprint(blocks)
 
-	// Cache is valid if blocks haven't changed and head TTL hasn't expired.
-	if db.metadataCache != nil &&
-		db.metadataCacheBlocksKey == blocksKey &&
-		time.Since(db.metadataCacheTime) < metadataCacheHeadTTL {
-		return &cachedMetadataReader{db.metadataCache}, nil
+	// Fast path: check blocks cache atomically (no lock, no TTL).
+	var blocksMerged seriesmetadata.Reader
+	if v := db.metadataCache.Load(); v != nil {
+		if entry := v.(*metadataCacheEntry); entry.blocksKey == blocksKey {
+			blocksMerged = entry.reader
+		}
 	}
 
-	merged, err := db.buildSeriesMetadata(blocks)
+	if blocksMerged == nil {
+		// Cache miss — acquire build mutex to prevent thundering herd.
+		db.metadataBuildMtx.Lock()
+
+		// Re-check after acquiring lock.
+		if v := db.metadataCache.Load(); v != nil {
+			if entry := v.(*metadataCacheEntry); entry.blocksKey == blocksKey {
+				blocksMerged = entry.reader
+			}
+		}
+		if blocksMerged == nil {
+			merged, err := db.mergeBlockMetadata(blocks)
+			if err != nil {
+				db.metadataBuildMtx.Unlock()
+				return nil, err
+			}
+			db.metadataCache.Store(&metadataCacheEntry{
+				reader:    merged,
+				blocksKey: blocksKey,
+			})
+			blocksMerged = merged
+		}
+		db.metadataBuildMtx.Unlock()
+	}
+
+	headReader, err := db.head.SeriesMetadata()
 	if err != nil {
 		return nil, err
 	}
 
-	db.metadataCache = merged
-	db.metadataCacheBlocksKey = blocksKey
-	db.metadataCacheTime = time.Now()
-
-	return &cachedMetadataReader{merged}, nil
+	return seriesmetadata.NewLayeredReader(&cachedMetadataReader{blocksMerged}, headReader), nil
 }
 
 // blocksFingerprint builds a cache key from sorted block ULIDs.
@@ -1260,11 +1283,11 @@ func blocksFingerprint(blocks []*Block) string {
 	return b.String()
 }
 
-// buildSeriesMetadata merges metadata from all blocks + head into a single reader.
-func (db *DB) buildSeriesMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
+// mergeBlockMetadata merges metadata from all blocks into a single reader.
+// Head metadata is not included — it is layered on top at query time.
+func (*DB) mergeBlockMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
 	merged := seriesmetadata.NewMemSeriesMetadata()
 
-	// Collect all metadata kinds from blocks.
 	for _, b := range blocks {
 		mr, err := b.SeriesMetadata()
 		if err != nil {
@@ -1275,7 +1298,6 @@ func (db *DB) buildSeriesMetadata(blocks []*Block) (seriesmetadata.Reader, error
 			err = mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
 				store := merged.StoreForKind(kind.ID())
 				kind.SetVersioned(store, labelsHash, versioned)
-				// Copy labels from source into merged.
 				if _, exists := merged.LabelsForHash(labelsHash); !exists {
 					if lset, ok := mr.LabelsForHash(labelsHash); ok {
 						merged.SetLabels(labelsHash, lset)
@@ -1291,31 +1313,9 @@ func (db *DB) buildSeriesMetadata(blocks []*Block) (seriesmetadata.Reader, error
 		mr.Close()
 	}
 
-	// Collect all metadata kinds from head.
-	headMeta, err := db.head.SeriesMetadata()
-	if err != nil {
-		return nil, fmt.Errorf("get head series metadata: %w", err)
-	}
-
-	for _, kind := range seriesmetadata.AllKinds() {
-		err = headMeta.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
-			store := merged.StoreForKind(kind.ID())
-			kind.SetVersioned(store, labelsHash, versioned)
-			// Copy labels from head into merged.
-			if _, exists := merged.LabelsForHash(labelsHash); !exists {
-				if lset, ok := headMeta.LabelsForHash(labelsHash); ok {
-					merged.SetLabels(labelsHash, lset)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			headMeta.Close()
-			return nil, fmt.Errorf("iterate head %s: %w", kind.ID(), err)
-		}
-	}
-	headMeta.Close()
-
+	// Build inverted index for blocks. With Fix 3.3 (per-block Parquet index),
+	// blocks read from new Parquet files already have the index populated and
+	// BuildResourceAttrIndex skips. Only old-format blocks need runtime build.
 	merged.BuildResourceAttrIndex()
 	return merged, nil
 }
