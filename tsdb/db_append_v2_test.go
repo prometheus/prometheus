@@ -3579,9 +3579,9 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
 	series3 := db.head.series.getByHash(s3.Hash(), s3)
 	series4 := db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta.CurrentMetadata(), m1)
-	require.Equal(t, *series2.meta.CurrentMetadata(), m2)
-	require.Equal(t, *series3.meta.CurrentMetadata(), m3)
+	require.Equal(t, *series1.meta, m1)
+	require.Equal(t, *series2.meta, m2)
+	require.Equal(t, *series3.meta, m3)
 	require.Nil(t, series4.meta)
 
 	// Add a replicated metadata entry to the first series,
@@ -3604,10 +3604,10 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	series2 = db.head.series.getByHash(s2.Hash(), s2)
 	series3 = db.head.series.getByHash(s3.Hash(), s3)
 	series4 = db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta.CurrentMetadata(), m1)
-	require.Equal(t, *series2.meta.CurrentMetadata(), m5)
-	require.Equal(t, *series3.meta.CurrentMetadata(), m3)
-	require.Equal(t, *series4.meta.CurrentMetadata(), m4)
+	require.Equal(t, *series1.meta, m1)
+	require.Equal(t, *series2.meta, m5)
+	require.Equal(t, *series3.meta, m3)
+	require.Equal(t, *series4.meta, m4)
 
 	require.NoError(t, db.Close())
 
@@ -3622,10 +3622,10 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	_, err = reopenDB.head.wal.Size()
 	require.NoError(t, err)
 
-	require.Equal(t, *reopenDB.head.series.getByHash(s1.Hash(), s1).meta.CurrentMetadata(), m1)
-	require.Equal(t, *reopenDB.head.series.getByHash(s2.Hash(), s2).meta.CurrentMetadata(), m5)
-	require.Equal(t, *reopenDB.head.series.getByHash(s3.Hash(), s3).meta.CurrentMetadata(), m3)
-	require.Equal(t, *reopenDB.head.series.getByHash(s4.Hash(), s4).meta.CurrentMetadata(), m4)
+	require.Equal(t, *reopenDB.head.series.getByHash(s1.Hash(), s1).meta, m1)
+	require.Equal(t, *reopenDB.head.series.getByHash(s2.Hash(), s2).meta, m5)
+	require.Equal(t, *reopenDB.head.series.getByHash(s3.Hash(), s3).meta, m3)
+	require.Equal(t, *reopenDB.head.series.getByHash(s4.Hash(), s4).meta, m4)
 }
 
 // TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the

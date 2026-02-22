@@ -23,6 +23,7 @@ type ReaderOption func(*readerOptions)
 
 type readerOptions struct {
 	namespaceFilter map[string]struct{}
+	refResolver     func(seriesRef uint64) (labelsHash uint64, ok bool)
 }
 
 // WithNamespaceFilter restricts loading to rows matching the given namespaces.
@@ -38,6 +39,16 @@ func WithNamespaceFilter(namespaces ...string) ReaderOption {
 		for _, ns := range namespaces {
 			o.namespaceFilter[ns] = struct{}{}
 		}
+	}
+}
+
+// WithRefResolver provides a function that converts a block-level seriesRef
+// (stored in Parquet mapping rows) back to a labelsHash for in-memory lookups.
+// If not set, SeriesRef values are used as-is (handles head-written files
+// where seriesRef == labelsHash).
+func WithRefResolver(fn func(seriesRef uint64) (labelsHash uint64, ok bool)) ReaderOption {
+	return func(o *readerOptions) {
+		o.refResolver = fn
 	}
 }
 
