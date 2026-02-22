@@ -95,6 +95,15 @@ Data is stored per-series, keyed by `labels.StableHash` (a 64-bit hash of the se
 
 `MemSeriesMetadata` wraps a `map[KindID]any` (each value is a `*MemStore[V]` for the appropriate V) and implements the `Reader` interface. It provides `StoreForKind(id)` for generic access and type-safe accessors `ResourceStore()` / `ScopeStore()`.
 
+### Resource Attribute Inverted Index
+
+`MemSeriesMetadata` supports an optional inverted index for O(1) reverse lookup by resource attribute key:value pairs. The index maps `"key\x00value"` → set of labelsHashes, covering both Identifying and Descriptive attributes across all versions.
+
+- **`BuildResourceAttrIndex()`**: Iterates all resource versions once and populates the index. Called by `DB.buildSeriesMetadata()` after merging blocks + head. Since the merged reader is cached for 30 seconds, the index build cost is amortized across many API requests.
+- **`LookupResourceAttr(key, value)`**: Returns the set of labelsHashes matching the given attribute, or nil if the index has not been built. The `/resources/series` handler intersects candidate sets from multiple filters, then verifies each candidate with `GetVersionedResource` + time range + attribute checks. Falls back to a full `IterVersionedResources` scan if the index is nil.
+
+The index is **time-unaware** — it includes all labelsHashes that have *any* version with the attribute. Time-range filtering happens during the verification step after index lookup. This is a deliberate trade-off: the index stays simple and the handler already performs per-version time filtering.
+
 ### Head Storage
 
 On `memSeries`, metadata is stored as `kindMeta []kindMetaEntry` where each entry is `{kind KindID, data any}`. Linear scan of 0-2 entries is faster than map lookup. The `kindMetaAccessor` interface (`GetKindMeta`/`SetKindMeta`) provides kind-generic access.
@@ -243,17 +252,24 @@ for _, version := range vr.Versions {
 }
 
 // Iterate all series (type-safe)
-reader.IterVersionedResources(func(labelsHash uint64, vr *VersionedResource) error {
+reader.IterVersionedResources(ctx, func(labelsHash uint64, vr *VersionedResource) error {
     // ...
     return nil
 })
 
 // Iterate via kind framework (generic)
-reader.IterKind(KindResource, func(labelsHash uint64, versioned any) error {
+reader.IterKind(ctx, KindResource, func(labelsHash uint64, versioned any) error {
     vr := versioned.(*VersionedResource)
     // ...
     return nil
 })
+
+// Reverse lookup: find series by resource attribute (O(1) with index)
+hashes := reader.LookupResourceAttr("service.name", "payment-service")
+for hash := range hashes {
+    vr, _ := reader.GetVersionedResource(hash)
+    // verify time range / additional filters...
+}
 ```
 
 ## Entities
@@ -285,7 +301,7 @@ Several features are designed for object-storage access patterns in clustered im
 
 | File | Contents |
 |------|----------|
-| `seriesmetadata.go` | Core types (`Reader`, `MemSeriesMetadata`, `parquetReader`), write/read paths, denormalization |
+| `seriesmetadata.go` | Core types (`Reader`, `MemSeriesMetadata`, `parquetReader`), write/read paths, denormalization, resource attribute inverted index |
 | `versioned.go` | Generic `Versioned[V]` container, `VersionConstraint` interface, `KindOps[V]`, `MergeVersioned()` |
 | `mem_store.go` | Generic `MemStore[V]` in-memory store |
 | `registry.go` | `KindDescriptor` interface, `KindID`, global kind registry, `kindMetaAccessor` |
