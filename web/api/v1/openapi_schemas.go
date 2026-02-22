@@ -62,6 +62,7 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 
 	// Resources schemas.
 	schemas.Set("ResourcesOutputBody", b.resourcesOutputBodySchema())
+	schemas.Set("ResourcesSeriesOutputBody", b.resourcesSeriesOutputBodySchema())
 	schemas.Set("ResourcesAttributesOutputBody", b.resourcesAttributesOutputBodySchema())
 	schemas.Set("ResourceAttributesResponse", b.resourceAttributesResponseSchema())
 	schemas.Set("ResourceAttributeVersion", b.resourceAttributeVersionSchema())
@@ -757,6 +758,29 @@ func (*OpenAPIBuilder) resourcesOutputBodySchema() *base.SchemaProxy {
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:                 []string{"object"},
 		Description:          "Response body for resources endpoint (default format).",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"status", "data"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) resourcesSeriesOutputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Description: "Array of series matching the metadata criteria, with their resource and scope versions.",
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
+			Type:        []string{"object"},
+			Description: "A series matching the metadata criteria with its resource and scope version history.",
+		})},
+	}))
+	props.Set("warnings", warningsSchema())
+	props.Set("infos", infosSchema())
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Response body for the reverse lookup endpoint.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"status", "data"},
 		Properties:           props,

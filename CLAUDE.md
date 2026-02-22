@@ -109,7 +109,9 @@ Prometheus supports persisting OTel resource attributes, instrumentation scopes,
   - `hybrid`: combines native metadata for `target_info` with metric-join for other info metrics; native metadata takes precedence on conflicts
   - Mode is selected per-call by `classifyInfoMode()` in `promql/info.go` based on `__name__` matchers
 - **Label Name Translation**: `LabelNamerConfig` in `promql/engine.go` controls mapping OTel attribute names to Prometheus label names (UTF-8 handling, underscore sanitization). Used by `buildAttrNameMappings()` to create bidirectional name mappings
-- **API Endpoint**: `/api/v1/resources` for querying stored attributes (supports `format=attributes` for autocomplete). Returns 400 when native metadata is disabled
+- **API Endpoints**:
+  - `/api/v1/resources`: Forward lookup — given series (via `match[]`), return their resource attributes (supports `format=attributes` for autocomplete). Returns 400 when native metadata is disabled
+  - `/api/v1/resources/series`: Reverse lookup — given metadata filters, find matching series with full version history. Filters: `resource.attr=key:value`, `scope.name`, `scope.version`, `scope.schema_url`, `scope.attr=key:value`, `entity.type`, `entity.attr=key:value`. Supports `match[]` pre-filter, `start`/`end` time range, and `limit`. Returns 400 when no metadata filters provided or native metadata disabled
 - **OTLP Integration**: `CombinedAppender` in `storage/remote/otlptranslator/prometheusremotewrite/` handles OTLP ingestion
 - **Observability**: Instrumentation metrics for monitoring the metadata pipeline:
   - `prometheus_tsdb_head_resource_updates_committed_total` — resource attribute updates committed
@@ -119,7 +121,7 @@ Prometheus supports persisting OTel resource attributes, instrumentation scopes,
 
 Demo examples in `documentation/examples/`:
 - `info-autocomplete-demo/`: Interactive demo for info() function autocomplete
-- `otlp-resource-attributes/`: OTLP ingestion with resource attributes
+- `otlp-resource-attributes/`: OTLP ingestion with resource attributes, including reverse lookup by metadata criteria
 
 ### Parquet Usage: parquet-common vs tsdb/seriesmetadata
 
