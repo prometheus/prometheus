@@ -30,13 +30,11 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -2204,118 +2202,3 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 	}
 }
 
-// getBlockSeriesRefs opens a block's index and returns all series refs.
-func getBlockSeriesRefs(t *testing.T, blockDir string) []storage.SeriesRef {
-	t.Helper()
-	b, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
-	require.NoError(t, err)
-	defer b.Close()
-
-	ir, err := b.Index()
-	require.NoError(t, err)
-	defer ir.Close()
-
-	k, v := index.AllPostingsKey()
-	p, err := ir.Postings(context.Background(), k, v)
-	require.NoError(t, err)
-
-	var refs []storage.SeriesRef
-	for p.Next() {
-		refs = append(refs, p.At())
-	}
-	require.NoError(t, p.Err())
-	return refs
-}
-
-func TestCompactMergesSeriesMetadata(t *testing.T) {
-	dir := t.TempDir()
-
-	// Create blocks with 3 series each so we have enough refs for distinct metadata entries.
-	block1Dir := createBlock(t, dir, genSeries(3, 1, 0, 100))
-	block2Dir := createBlock(t, dir, genSeries(3, 1, 101, 200))
-
-	// Get the actual series refs from each block's index.
-	b1Refs := getBlockSeriesRefs(t, block1Dir)
-	require.GreaterOrEqual(t, len(b1Refs), 3)
-	b2Refs := getBlockSeriesRefs(t, block2Dir)
-	require.GreaterOrEqual(t, len(b2Refs), 3)
-
-	// Create block 1 metadata using actual block series refs.
-	// Each metadata entry uses a different series ref.
-	block1Meta := seriesmetadata.NewMemSeriesMetadata()
-	block1Meta.SetVersioned("http_requests_total", uint64(b1Refs[0]), &seriesmetadata.MetadataVersion{
-		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests", Unit: ""}, MinTime: 0, MaxTime: 100,
-	})
-	block1Meta.SetVersioned("go_goroutines", uint64(b1Refs[1]), &seriesmetadata.MetadataVersion{
-		Meta: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines", Unit: ""}, MinTime: 0, MaxTime: 100,
-	})
-
-	_, err := seriesmetadata.WriteFile(promslog.NewNopLogger(), block1Dir, block1Meta)
-	require.NoError(t, err)
-
-	// Create block 2 metadata using actual block series refs.
-	// http_requests_total uses the same series (same labels) as block1 — ref will be different
-	// but labels hash will match, enabling cross-block merge.
-	block2Meta := seriesmetadata.NewMemSeriesMetadata()
-	block2Meta.SetVersioned("http_requests_total", uint64(b2Refs[0]), &seriesmetadata.MetadataVersion{
-		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests (updated)", Unit: ""}, MinTime: 101, MaxTime: 200,
-	})
-	block2Meta.SetVersioned("cpu_seconds_total", uint64(b2Refs[2]), &seriesmetadata.MetadataVersion{
-		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "CPU time", Unit: "seconds"}, MinTime: 101, MaxTime: 200,
-	})
-
-	_, err = seriesmetadata.WriteFile(promslog.NewNopLogger(), block2Dir, block2Meta)
-	require.NoError(t, err)
-
-	// Open both blocks.
-	b1, err := OpenBlock(promslog.NewNopLogger(), block1Dir, nil, nil)
-	require.NoError(t, err)
-	defer b1.Close()
-
-	b2, err := OpenBlock(promslog.NewNopLogger(), block2Dir, nil, nil)
-	require.NoError(t, err)
-	defer b2.Close()
-
-	// Create a compactor with native metadata enabled.
-	compactor, err := NewLeveledCompactorWithOptions(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, LeveledCompactorOptions{
-		EnableOverlappingCompaction: true,
-		EnableNativeMetadata:        true,
-	})
-	require.NoError(t, err)
-
-	// Compact the two blocks.
-	outDir := t.TempDir()
-	ulids, err := compactor.Compact(outDir, []string{block1Dir, block2Dir}, []*Block{b1, b2})
-	require.NoError(t, err)
-	require.Len(t, ulids, 1)
-
-	// Open the compacted block and verify metadata.
-	compacted, err := OpenBlock(promslog.NewNopLogger(), filepath.Join(outDir, ulids[0].String()), nil, nil)
-	require.NoError(t, err)
-	defer compacted.Close()
-
-	mr, err := compacted.SeriesMetadata()
-	require.NoError(t, err)
-	defer mr.Close()
-
-	// http_requests_total: both block1 and block2 entries merged via labels hash match.
-	metas, ok := mr.GetByMetricName("http_requests_total")
-	require.True(t, ok)
-	require.NotEmpty(t, metas)
-	require.Len(t, metas, 1)
-	require.Equal(t, "Total requests (updated)", metas[0].Help)
-
-	// go_goroutines: only in block1, should be preserved.
-	metas, ok = mr.GetByMetricName("go_goroutines")
-	require.True(t, ok)
-	require.Len(t, metas, 1)
-	require.Equal(t, model.MetricTypeGauge, metas[0].Type)
-	require.Equal(t, "Number of goroutines", metas[0].Help)
-
-	// cpu_seconds_total: only in block2, should be present.
-	metas, ok = mr.GetByMetricName("cpu_seconds_total")
-	require.True(t, ok)
-	require.Len(t, metas, 1)
-	require.Equal(t, "CPU time", metas[0].Help)
-	require.Equal(t, "seconds", metas[0].Unit)
-}

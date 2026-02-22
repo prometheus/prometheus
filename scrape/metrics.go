@@ -347,10 +347,6 @@ type MetadataMetricsCollector struct {
 	CacheEntries    *prometheus.Desc
 	CacheBytes      *prometheus.Desc
 	TargetsGatherer TargetsGatherer
-
-	// MetadataCountForJob, when set, provides TSDB-based metadata counts per job.
-	// Used when native-metadata is enabled to report metrics from TSDB instead of the scrape cache.
-	MetadataCountForJob func(job string) (entries, bytes int)
 }
 
 // Describe sends the metrics descriptions to the channel.
@@ -367,13 +363,9 @@ func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 	for tset, targets := range mc.TargetsGatherer.TargetsActive() {
 		var size, length int
-		if mc.MetadataCountForJob != nil {
-			length, size = mc.MetadataCountForJob(tset)
-		} else {
-			for _, t := range targets {
-				size += t.SizeMetadata()
-				length += t.LengthMetadata()
-			}
+		for _, t := range targets {
+			size += t.SizeMetadata()
+			length += t.LengthMetadata()
 		}
 
 		ch <- prometheus.MustNewConstMetric(

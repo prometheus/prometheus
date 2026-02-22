@@ -1081,25 +1081,16 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	s.Lock()
-	var cur *metadata.Metadata
-	if s.meta != nil {
-		cur = s.meta.CurrentMetadata()
-	}
-	hasNewMetadata := cur == nil || *cur != meta
+	hasNewMetadata := s.meta == nil || *s.meta != meta
 	s.Unlock()
 
 	if hasNewMetadata {
-		// UpdateMetadata has no timestamp context; use headMaxt as best estimate.
-		// Guard against math.MinInt64 (no samples appended yet).
-		t := max(a.headMaxt, 0)
 		b := a.getCurrentBatch(stNone, s.ref)
 		b.metadata = append(b.metadata, record.RefMetadata{
-			Ref:     s.ref,
-			Type:    record.GetMetricType(meta.Type),
-			Unit:    meta.Unit,
-			Help:    meta.Help,
-			MinTime: t,
-			MaxTime: t,
+			Ref:  s.ref,
+			Type: record.GetMetricType(meta.Type),
+			Unit: meta.Unit,
+			Help: meta.Help,
 		})
 		b.metadataSeries = append(b.metadataSeries, s)
 	}
@@ -1829,57 +1820,55 @@ func commitMetadata(b *appendBatch) {
 	for i, m := range b.metadata {
 		series = b.metadataSeries[i]
 		series.Lock()
-		if series.meta == nil {
-			series.meta = &seriesmetadata.VersionedMetadata{}
-		}
-		series.meta.AddOrExtend(&seriesmetadata.MetadataVersion{
-			Meta: metadata.Metadata{
-				Type: record.ToMetricType(m.Type),
-				Unit: m.Unit,
-				Help: m.Help,
-			},
-			MinTime: m.MinTime,
-			MaxTime: m.MaxTime,
-		})
+		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
 		series.Unlock()
 	}
 }
 
 // commitResources commits the resource updates for each series in the provided batch.
 func commitResources(b *appendBatch) {
+	resKind, _ := seriesmetadata.KindByID(seriesmetadata.KindResource)
 	for i, r := range b.resources {
 		s := b.resourceSeries[i]
-
-		// Convert WAL record entities to seriesmetadata entities.
-		metadataEntities := make([]*seriesmetadata.Entity, len(r.Entities))
-		for j, e := range r.Entities {
-			metadataEntities[j] = seriesmetadata.NewEntity(e.Type, e.ID, e.Description)
-		}
-		rv := seriesmetadata.NewResourceVersion(r.Identifying, r.Descriptive, metadataEntities, r.MinTime, r.MaxTime)
-
 		s.Lock()
-		if s.resource == nil {
-			s.resource = seriesmetadata.NewVersionedResource(rv)
-		} else {
-			s.resource.AddOrExtend(rv)
-		}
+		resKind.CommitToSeries(s, seriesmetadata.ResourceCommitData{
+			Identifying: r.Identifying,
+			Descriptive: r.Descriptive,
+			Entities:    refResourceEntitiesToCommitData(r.Entities),
+			MinTime:     r.MinTime,
+			MaxTime:     r.MaxTime,
+		})
 		s.Unlock()
 	}
 }
 
+// refResourceEntitiesToCommitData converts WAL record entities to ResourceEntityData.
+func refResourceEntitiesToCommitData(entities []record.RefResourceEntity) []seriesmetadata.ResourceEntityData {
+	result := make([]seriesmetadata.ResourceEntityData, len(entities))
+	for i, e := range entities {
+		result[i] = seriesmetadata.ResourceEntityData{
+			Type:        e.Type,
+			ID:          e.ID,
+			Description: e.Description,
+		}
+	}
+	return result
+}
+
 // commitScopes commits the scope updates for each series in the provided batch.
 func commitScopes(b *appendBatch) {
+	scopeKind, _ := seriesmetadata.KindByID(seriesmetadata.KindScope)
 	for i, sc := range b.scopes {
 		s := b.scopeSeries[i]
-
-		sv := seriesmetadata.NewScopeVersion(sc.Name, sc.Version, sc.SchemaURL, sc.Attrs, sc.MinTime, sc.MaxTime)
-
 		s.Lock()
-		if s.scope == nil {
-			s.scope = seriesmetadata.NewVersionedScope(sv)
-		} else {
-			s.scope.AddOrExtend(sv)
-		}
+		scopeKind.CommitToSeries(s, seriesmetadata.ScopeCommitData{
+			Name:      sc.Name,
+			Version:   sc.Version,
+			SchemaURL: sc.SchemaURL,
+			Attrs:     sc.Attrs,
+			MinTime:   sc.MinTime,
+			MaxTime:   sc.MaxTime,
+		})
 		s.Unlock()
 	}
 }

@@ -746,10 +746,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		return fmt.Errorf("write new tombstones file: %w", err)
 	}
 
-	// Merge and write series metadata from source blocks.
-	// Each source block has different BlockSeriesRef values for the same series,
-	// so we resolve refs → labels via each block's index, merge by labels hash
-	// (transient in-memory key), then re-key with the new block's refs.
+	// Merge and write series metadata (resources and scopes) from source blocks.
 	if c.enableNativeMetadata {
 		if err := c.mergeAndWriteSeriesMetadata(tmp, blocks); err != nil {
 			return fmt.Errorf("merge and write series metadata: %w", err)
@@ -784,130 +781,75 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	return nil
 }
 
-// mergeAndWriteSeriesMetadata merges versioned metadata, resources, and scopes from
-// source blocks and writes them to the new compacted block. Each source block has
-// different BlockSeriesRef values for the same series, so we resolve refs → labels
-// via each block's index, merge by labels hash as a transient in-memory key, then
-// re-key with the new block's refs.
+// mergeAndWriteSeriesMetadata merges versioned resources and scopes from
+// source blocks and writes them to the new compacted block. The merged data
+// is keyed by labelsHash in memory; on write, a RefResolver built from the
+// new block's index converts labelsHash → seriesRef for Parquet mapping rows.
 func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []BlockReader) error {
-	// Phase 1: Collect metadata from source blocks, resolving refs to labels and
-	// merging by labels hash.
-	type mergedEntry struct {
-		metricName string
-		vm         *seriesmetadata.VersionedMetadata
-	}
-	mergedByLabelsHash := make(map[uint64]*mergedEntry)
-
-	// Resource and scope data is already keyed by labelsHash, so collect directly.
 	output := seriesmetadata.NewMemSeriesMetadata()
 
-	var builder labels.ScratchBuilder
 	for _, b := range blocks {
 		mr, err := b.SeriesMetadata()
 		if err != nil {
 			return fmt.Errorf("get series metadata from block: %w", err)
 		}
-		ir, err := b.Index()
-		if err != nil {
-			mr.Close()
-			return fmt.Errorf("get index from block: %w", err)
-		}
 
-		err = mr.IterVersionedMetadata(func(ref uint64, metricName string, _ labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
-			// Resolve the source block's ref → labels via its index.
-			if err := ir.Series(storage.SeriesRef(ref), &builder, nil); err != nil {
-				return fmt.Errorf("resolve series ref %d: %w", ref, err)
+		// Merge all metadata kinds from this block into the output.
+		for _, kind := range seriesmetadata.AllKinds() {
+			err = mr.IterKind(kind.ID(), func(labelsHash uint64, versioned any) error {
+				store := output.StoreForKind(kind.ID())
+				kind.SetVersioned(store, labelsHash, versioned)
+				return nil
+			})
+			if err != nil {
+				mr.Close()
+				return fmt.Errorf("iterate %s: %w", kind.ID(), err)
 			}
-			lset := builder.Labels()
-			lHash := labels.StableHash(lset)
-
-			if existing, ok := mergedByLabelsHash[lHash]; ok {
-				existing.vm = seriesmetadata.MergeVersionedMetadata(existing.vm, vm)
-			} else {
-				mergedByLabelsHash[lHash] = &mergedEntry{
-					metricName: metricName,
-					vm:         vm.Copy(),
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			mr.Close()
-			ir.Close()
-			return fmt.Errorf("iterate versioned series metadata: %w", err)
-		}
-
-		// Merge versioned resources (unified attributes + entities).
-		err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
-			output.SetVersionedResource(labelsHash, resources)
-			return nil
-		})
-		if err != nil {
-			mr.Close()
-			ir.Close()
-			return fmt.Errorf("iterate resource attributes: %w", err)
-		}
-
-		// Merge versioned scopes.
-		err = mr.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
-			output.SetVersionedScope(labelsHash, scopes)
-			return nil
-		})
-		if err != nil {
-			mr.Close()
-			ir.Close()
-			return fmt.Errorf("iterate scope attributes: %w", err)
 		}
 
 		mr.Close()
-		ir.Close()
 	}
 
-	if len(mergedByLabelsHash) == 0 && output.ResourceCount() == 0 && output.ScopeCount() == 0 {
+	if output.ResourceCount() == 0 && output.ScopeCount() == 0 {
 		return nil
 	}
 
-	// Phase 2: Open the new block's index and build labelsHash → newBlockSeriesRef mapping.
-	newIR, err := index.NewFileReader(filepath.Join(tmp, indexFilename), index.DecodePostingsRaw)
+	// Open the new block's index to build labelsHash → seriesRef mapping.
+	ir, err := index.NewFileReader(filepath.Join(tmp, indexFilename), index.DecodePostingsRaw)
 	if err != nil {
-		return fmt.Errorf("open new block index: %w", err)
+		return fmt.Errorf("open new block index for ref resolver: %w", err)
 	}
-	defer newIR.Close()
+	defer ir.Close()
 
+	// Scan all postings to build the mapping. Only series that have
+	// resource/scope data need resolving, but scanning all is simpler
+	// and the index is already on disk.
+	labelsHashToRef := make(map[uint64]uint64, output.ResourceCount()+output.ScopeCount())
+	var builder labels.ScratchBuilder
 	k, v := index.AllPostingsKey()
-	allPostings, err := newIR.Postings(c.ctx, k, v)
+	p, err := ir.Postings(c.ctx, k, v)
 	if err != nil {
-		return fmt.Errorf("get all postings from new block: %w", err)
+		return fmt.Errorf("get all postings for ref resolver: %w", err)
+	}
+	for p.Next() {
+		ref := p.At()
+		if err := ir.Series(ref, &builder, nil); err != nil {
+			return fmt.Errorf("read series for ref resolver: %w", err)
+		}
+		lh := labels.StableHash(builder.Labels())
+		labelsHashToRef[lh] = uint64(ref)
+	}
+	if err := p.Err(); err != nil {
+		return fmt.Errorf("iterate postings for ref resolver: %w", err)
 	}
 
-	labelsHashToNewRef := make(map[uint64]storage.SeriesRef)
-	for allPostings.Next() {
-		ref := allPostings.At()
-		if err := newIR.Series(ref, &builder, nil); err != nil {
-			return fmt.Errorf("resolve new block series ref %d: %w", ref, err)
-		}
-		lset := builder.Labels()
-		lHash := labels.StableHash(lset)
-		// Only store refs for series that have metadata.
-		if _, ok := mergedByLabelsHash[lHash]; ok {
-			labelsHashToNewRef[lHash] = ref
-		}
+	wopts := seriesmetadata.WriterOptions{
+		RefResolver: func(labelsHash uint64) (uint64, bool) {
+			ref, ok := labelsHashToRef[labelsHash]
+			return ref, ok
+		},
 	}
-	if allPostings.Err() != nil {
-		return fmt.Errorf("iterate new block postings: %w", allPostings.Err())
-	}
-
-	// Phase 3: Build the output MemSeriesMetadata with new block refs.
-	for lHash, entry := range mergedByLabelsHash {
-		newRef, ok := labelsHashToNewRef[lHash]
-		if !ok {
-			// Series not in new block (e.g., deleted by tombstones during compaction).
-			continue
-		}
-		output.SetVersionedMetadata(uint64(newRef), entry.metricName, entry.vm)
-	}
-
-	if _, err := seriesmetadata.WriteFile(c.logger, tmp, output); err != nil {
+	if _, err := seriesmetadata.WriteFileWithOptions(c.logger, tmp, output, wopts); err != nil {
 		return fmt.Errorf("write series metadata file: %w", err)
 	}
 	return nil

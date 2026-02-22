@@ -376,10 +376,9 @@ func TestCheckpoint(t *testing.T) {
 			for _, m := range metadata {
 				require.True(t, allowedRefs[m.Ref], "unexpected Ref %d in checkpoint metadata", m.Ref)
 			}
-			// All unique (Ref, content) pairs are preserved: each loop iteration writes unique
-			// metadata for Refs 0 and 2, plus the initial "unit"/"help" for Refs 2 and 4.
-			// So we expect many more than 3 entries.
-			require.Greater(t, len(metadata), 3, "checkpoint should preserve all unique metadata versions")
+			// Checkpoint keeps only the latest metadata per Ref: latest loop iteration
+			// for Refs 0 and 2, plus the initial "unit"/"help" for Ref 4.
+			require.Equal(t, 3, len(metadata), "checkpoint should preserve latest metadata per ref")
 			// Verify Ref 4 has its initial metadata.
 			var ref4Found bool
 			for _, m := range metadata {

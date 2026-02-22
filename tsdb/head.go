@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -63,6 +64,35 @@ var (
 
 	defaultWALReplayConcurrency = runtime.GOMAXPROCS(0)
 )
+
+func init() {
+	// Wire up WAL encode/decode functions for the seriesmetadata kind descriptors.
+	// These pluggable functions break the import cycle: seriesmetadata cannot
+	// import tsdb/record, so the tsdb package sets them here.
+	var dec record.Decoder
+	var enc record.Encoder
+
+	seriesmetadata.ResourceDecodeWAL = func(rec []byte, into any) (any, error) {
+		var buf []record.RefResource
+		if into != nil {
+			buf = into.([]record.RefResource)
+		}
+		return dec.Resources(rec, buf)
+	}
+	seriesmetadata.ResourceEncodeWAL = func(records any, buf []byte) []byte {
+		return enc.Resources(records.([]record.RefResource), buf)
+	}
+	seriesmetadata.ScopeDecodeWAL = func(rec []byte, into any) (any, error) {
+		var buf []record.RefScope
+		if into != nil {
+			buf = into.([]record.RefScope)
+		}
+		return dec.Scopes(rec, buf)
+	}
+	seriesmetadata.ScopeEncodeWAL = func(records any, buf []byte) []byte {
+		return enc.Scopes(records.([]record.RefScope), buf)
+	}
+}
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
@@ -1766,108 +1796,33 @@ func (h *Head) Tombstones() (tombstones.Reader, error) {
 }
 
 // SeriesMetadata returns series metadata for the head.
-// It extracts metadata and resource attributes from all memSeries.
+// It extracts resource and scope attributes from all memSeries.
 func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 	mem := seriesmetadata.NewMemSeriesMetadata()
+	allKinds := seriesmetadata.AllKinds()
 
-	// Iterate over all series shards and collect metadata and resource attributes
+	// Iterate over all series shards and collect metadata per kind.
 	for i := 0; i < h.series.size; i++ {
 		h.series.locks[i].RLock()
 		for _, s := range h.series.series[i] {
-			// Lock the series to safely read and deep-copy mutable fields
-			// which can be written concurrently by the scrape loop.
 			s.Lock()
-			var vmCopy *seriesmetadata.VersionedMetadata
-			if s.meta != nil {
-				vmCopy = s.meta.Copy()
-			}
-			// Deep-copy resource and scope to avoid data races: the scrape loop
-			// can call AddOrExtend() on these objects concurrently.
-			var resource *seriesmetadata.VersionedResource
-			if s.resource != nil {
-				resource = s.resource.Copy()
-			}
-			var scope *seriesmetadata.VersionedScope
-			if s.scope != nil {
-				scope = s.scope.Copy()
-			}
-			lsetCopy := s.lset.Copy()
-			s.Unlock()
-
-			// Skip series with nothing to collect.
-			if vmCopy == nil && resource == nil && scope == nil {
+			if len(s.kindMeta) == 0 {
+				s.Unlock()
 				continue
 			}
-
-			// Use StableHash of labels as the key for consistent identification.
-			hash := labels.StableHash(lsetCopy)
-
-			// Collect versioned metadata if present.
-			if vmCopy != nil {
-				metricName := lsetCopy.Get(labels.MetricName)
-				if metricName != "" {
-					mem.SetVersionedMetadataWithLabels(uint64(s.ref), lsetCopy, vmCopy)
+			hash := labels.StableHash(s.lset)
+			for _, kind := range allKinds {
+				v, ok := kind.CollectFromSeries(s)
+				if !ok {
+					continue
 				}
+				copied := kind.CopyVersioned(v)
+				store := mem.StoreForKind(kind.ID())
+				kind.SetVersioned(store, hash, copied)
 			}
-
-			// Collect resource if present.
-			if resource != nil {
-				mem.SetVersionedResource(hash, resource)
-			}
-
-			// Collect scope if present.
-			if scope != nil {
-				mem.SetVersionedScope(hash, scope)
-			}
+			s.Unlock()
 		}
 		h.series.locks[i].RUnlock()
-	}
-
-	return mem, nil
-}
-
-// SeriesMetadataForMatchers returns metadata for series matching the given label matchers.
-// It queries the head's postings index and reads memSeries.meta for matching series.
-// Multiple unique metadata entries per metric name are collected (set semantics).
-func (h *Head) SeriesMetadataForMatchers(ctx context.Context, matchers ...*labels.Matcher) (seriesmetadata.Reader, error) {
-	ir := h.indexRange(math.MinInt64, math.MaxInt64)
-
-	p, err := PostingsForMatchers(ctx, ir, matchers...)
-	if err != nil {
-		return nil, fmt.Errorf("select series for metadata: %w", err)
-	}
-
-	mem := seriesmetadata.NewMemSeriesMetadata()
-	for p.Next() {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during metadata collection: %w", err)
-		}
-
-		s := h.series.getByID(chunks.HeadSeriesRef(p.At()))
-		if s == nil {
-			continue
-		}
-
-		s.Lock()
-		var vmCopy *seriesmetadata.VersionedMetadata
-		if s.meta != nil {
-			vmCopy = s.meta.Copy()
-		}
-		lsetCopy := s.lset.Copy()
-		metricName := lsetCopy.Get(labels.MetricName)
-		s.Unlock()
-		if vmCopy == nil {
-			continue
-		}
-
-		if metricName == "" {
-			continue
-		}
-
-		mem.SetVersionedMetadataWithLabels(uint64(s.ref), lsetCopy, vmCopy)
-	}
-	if p.Err() != nil {
-		return nil, p.Err()
 	}
 
 	return mem, nil
@@ -2516,6 +2471,12 @@ func (s sample) Copy() chunks.Sample {
 	return c
 }
 
+// kindMetaEntry stores a single kind's metadata on a memSeries.
+type kindMetaEntry struct {
+	kind seriesmetadata.KindID
+	data any // *Versioned[V] for the appropriate V
+}
+
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
@@ -2529,16 +2490,12 @@ type memSeries struct {
 	// Everything after here should only be accessed with the lock held.
 	sync.Mutex
 
-	meta *seriesmetadata.VersionedMetadata // Time-varying metadata for this series.
+	meta *metadata.Metadata
 
-	// resource stores unified OTel resource data (attributes + entities) for this series.
-	// nil if no resource has been set. Supports multiple versions
-	// to track resource changes over time.
-	resource *seriesmetadata.VersionedResource
-
-	// scope stores OTel InstrumentationScope data for this series.
-	// nil if no scope has been set. Supports multiple versions.
-	scope *seriesmetadata.VersionedScope
+	// kindMeta stores per-kind metadata (resources, scopes, etc.) for this series.
+	// nil when no metadata has been set. Typically 0-2 entries.
+	// Linear scan of 1-2 entries is faster than map lookup.
+	kindMeta []kindMetaEntry
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 
@@ -2602,6 +2559,27 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 		s.txs = newTxRing(0)
 	}
 	return s
+}
+
+// GetKindMeta returns the metadata for a kind, or nil/false if not set.
+func (s *memSeries) GetKindMeta(id seriesmetadata.KindID) (any, bool) {
+	for _, e := range s.kindMeta {
+		if e.kind == id {
+			return e.data, true
+		}
+	}
+	return nil, false
+}
+
+// SetKindMeta sets the metadata for a kind.
+func (s *memSeries) SetKindMeta(id seriesmetadata.KindID, v any) {
+	for i, e := range s.kindMeta {
+		if e.kind == id {
+			s.kindMeta[i].data = v
+			return
+		}
+	}
+	s.kindMeta = append(s.kindMeta, kindMetaEntry{kind: id, data: v})
 }
 
 func (s *memSeries) minTime() int64 {

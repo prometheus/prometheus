@@ -105,13 +105,6 @@ func TestAPIEmpty(t *testing.T) {
 			RequireJSONPathExists("$.data")
 	})
 
-	t.Run("GET /api/v1/metadata/series returns success", func(t *testing.T) {
-		testhelpers.GET(t, api, "/api/v1/metadata/series").
-			RequireSuccess().
-			ValidateOpenAPI().
-			RequireJSONPathExists("$.data")
-	})
-
 	t.Run("GET /api/v1/status/config returns success", func(t *testing.T) {
 		testhelpers.GET(t, api, "/api/v1/status/config").
 			RequireSuccess().

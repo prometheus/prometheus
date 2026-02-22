@@ -160,15 +160,6 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 
 	r := NewReader(sgmReader)
 
-	// metadataKey groups metadata entries by series and content.
-	// Entries with the same key get their time ranges coalesced during checkpointing.
-	type metadataKey struct {
-		Ref  chunks.HeadSeriesRef
-		Type uint8
-		Unit string
-		Help string
-	}
-
 	var (
 		series                []record.RefSeries
 		samples               []record.RefSample
@@ -185,7 +176,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		buf                   []byte
 		recs                  [][]byte
 
-		metadataMap = make(map[metadataKey]record.RefMetadata)
+		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
 		// Resources and scopes are versioned (descriptive attributes can change over time),
 		// so we keep ALL records per ref, not just the latest. This preserves version history
 		// so that VersionAt() returns correct attributes for historical timestamps after replay.
@@ -349,27 +340,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			if err != nil {
 				return nil, fmt.Errorf("decode metadata: %w", err)
 			}
-			// Keep all unique (series, content) pairs, coalescing time ranges.
-			kept := 0
+			// Only keep reference to the latest found metadata for each refID.
+			repl := 0
 			for _, m := range metadata {
 				if keep(m.Ref) {
-					kept++
-					key := metadataKey{Ref: m.Ref, Type: m.Type, Unit: m.Unit, Help: m.Help}
-					if existing, ok := metadataMap[key]; ok {
-						if m.MinTime < existing.MinTime {
-							existing.MinTime = m.MinTime
-						}
-						if m.MaxTime > existing.MaxTime {
-							existing.MaxTime = m.MaxTime
-						}
-						metadataMap[key] = existing
-					} else {
-						metadataMap[key] = m
+					if _, ok := latestMetadataMap[m.Ref]; !ok {
+						repl++
 					}
+					latestMetadataMap[m.Ref] = m
 				}
 			}
 			stats.TotalMetadata += len(metadata)
-			stats.DroppedMetadata += len(metadata) - kept
+			stats.DroppedMetadata += len(metadata) - repl
 		case record.ResourceUpdate:
 			resources, err = dec.Resources(rec, resources)
 			if err != nil {
@@ -426,30 +408,12 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		return nil, fmt.Errorf("flush records: %w", err)
 	}
 
-	// Flush metadata records (all unique series+content pairs with coalesced time ranges).
-	// Sort by (Ref, MinTime) so WAL replay processes entries in time order per series,
-	// which is required by AddOrExtend's "compare with latest" semantics.
-	if len(metadataMap) > 0 {
-		allMetadata := make([]record.RefMetadata, 0, len(metadataMap))
-		for _, m := range metadataMap {
-			allMetadata = append(allMetadata, m)
+	if len(latestMetadataMap) > 0 {
+		latestMetadata := make([]record.RefMetadata, 0, len(latestMetadataMap))
+		for _, m := range latestMetadataMap {
+			latestMetadata = append(latestMetadata, m)
 		}
-		slices.SortFunc(allMetadata, func(a, b record.RefMetadata) int {
-			if a.Ref != b.Ref {
-				if a.Ref < b.Ref {
-					return -1
-				}
-				return 1
-			}
-			if a.MinTime < b.MinTime {
-				return -1
-			}
-			if a.MinTime > b.MinTime {
-				return 1
-			}
-			return 0
-		})
-		if err := cp.Log(enc.Metadata(allMetadata, buf[:0])); err != nil {
+		if err := cp.Log(enc.Metadata(latestMetadata, buf[:0])); err != nil {
 			return nil, fmt.Errorf("flush metadata records: %w", err)
 		}
 	}
