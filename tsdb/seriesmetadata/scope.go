@@ -13,7 +13,10 @@
 
 package seriesmetadata
 
-import "maps"
+import (
+	"context"
+	"maps"
+)
 
 // ScopeVersion represents a snapshot of OTel InstrumentationScope data at a point in time.
 type ScopeVersion struct {
@@ -110,7 +113,7 @@ func MergeVersionedScopes(a, b *VersionedScope) *VersionedScope {
 // VersionedScopeReader provides read access to versioned scopes.
 type VersionedScopeReader interface {
 	GetVersionedScope(labelsHash uint64) (*VersionedScope, bool)
-	IterVersionedScopes(f func(labelsHash uint64, scopes *VersionedScope) error) error
+	IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error
 	TotalScopes() uint64
 	TotalScopeVersions() uint64
 }
