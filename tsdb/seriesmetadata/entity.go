@@ -14,6 +14,7 @@
 package seriesmetadata
 
 import (
+	"context"
 	"errors"
 	"maps"
 	"slices"
@@ -311,8 +312,8 @@ type VersionedResourceReader interface {
 	GetResource(labelsHash uint64) (*ResourceVersion, bool)
 	GetVersionedResource(labelsHash uint64) (*VersionedResource, bool)
 	GetResourceAt(labelsHash uint64, timestamp int64) (*ResourceVersion, bool)
-	IterResources(f func(labelsHash uint64, resource *ResourceVersion) error) error
-	IterVersionedResources(f func(labelsHash uint64, resources *VersionedResource) error) error
+	IterResources(ctx context.Context, f func(labelsHash uint64, resource *ResourceVersion) error) error
+	IterVersionedResources(ctx context.Context, f func(labelsHash uint64, resources *VersionedResource) error) error
 	TotalResources() uint64
 	TotalResourceVersions() uint64
 }

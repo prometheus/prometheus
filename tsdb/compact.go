@@ -796,7 +796,7 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 
 		// Merge all metadata kinds from this block into the output.
 		for _, kind := range seriesmetadata.AllKinds() {
-			err = mr.IterKind(kind.ID(), func(labelsHash uint64, versioned any) error {
+			err = mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
 				store := output.StoreForKind(kind.ID())
 				kind.SetVersioned(store, labelsHash, versioned)
 				return nil

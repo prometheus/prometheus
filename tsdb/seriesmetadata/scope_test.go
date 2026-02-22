@@ -14,6 +14,7 @@
 package seriesmetadata
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -207,7 +208,7 @@ func TestMemScopeStoreIter(t *testing.T) {
 	}
 
 	collected := make(map[uint64]*VersionedScope)
-	err := store.IterVersioned(func(labelsHash uint64, scopes *VersionedScope) error {
+	err := store.IterVersioned(context.Background(), func(labelsHash uint64, scopes *VersionedScope) error {
 		collected[labelsHash] = scopes
 		return nil
 	})
