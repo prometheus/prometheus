@@ -1553,8 +1553,9 @@ type ResourceAttributeVersion struct {
 
 // ResourceAttributesResponse is the response format for the resource_attributes endpoint.
 type ResourceAttributesResponse struct {
-	Labels   labels.Labels              `json:"labels"`
-	Versions []ResourceAttributeVersion `json:"versions"`
+	Labels     labels.Labels              `json:"labels"`
+	Versions   []ResourceAttributeVersion `json:"versions"`
+	labelsHash uint64                     // internal: used for deferred label resolution
 }
 
 // ScopeAttributeVersion is a single version of scope metadata with its time range.
@@ -1670,10 +1671,6 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 	warnings := set.Warnings()
 
 	for set.Next() {
-		if limit > 0 && len(results) >= limit {
-			break
-		}
-
 		lset := set.At().Labels()
 		hash := labels.StableHash(lset)
 
@@ -1696,6 +1693,16 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 
 	if err := set.Err(); err != nil {
 		return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+	}
+
+	// Sort for deterministic output.
+	slices.SortFunc(results, func(a, b ResourceAttributesResponse) int {
+		return labels.Compare(a.Labels, b.Labels)
+	})
+
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+		warnings.Add(errors.New("results truncated due to limit"))
 	}
 
 	if results == nil {
@@ -1738,63 +1745,94 @@ func filterVersions(versions []*seriesmetadata.ResourceVersion, startMs, endMs i
 
 // resourceAttributesAll returns all resource attributes without filtering by matchers.
 func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, startMs, endMs int64) apiFuncResult {
-	// Build a map from hash to labels by querying all series
-	ctx := context.Background()
-	q, err := api.Queryable.Querier(startMs, endMs)
-	if err != nil {
-		return apiFuncResult{nil, returnAPIError(err), nil, nil}
-	}
-	defer q.Close()
-
-	// Query all series to build hash->labels map
-	hints := &storage.SelectHints{
-		Start: startMs,
-		End:   endMs,
-		Func:  "series",
-	}
-	set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
-
-	hashToLabels := make(map[uint64]labels.Labels)
-	for set.Next() {
-		lset := set.At().Labels()
-		hashToLabels[labels.StableHash(lset)] = lset
-	}
-	if err := set.Err(); err != nil {
-		return apiFuncResult{nil, returnAPIError(err), nil, nil}
-	}
-
 	var results []ResourceAttributesResponse
-	err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
-		if limit > 0 && len(results) >= limit {
-			return nil
-		}
+	var warnings annotations.Annotations
 
-		lset, ok := hashToLabels[labelsHash]
-		if !ok {
-			return nil // Skip if we can't find labels for this hash
-		}
-
+	// Try to use LabelsForHash from the metadata reader first (avoids O(ALL_SERIES) scan).
+	allResolved := true
+	err := mr.IterVersionedResources(context.Background(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
 		// Filter versions to only those overlapping with [start, end]
 		versions := filterVersions(resources.Versions, startMs, endMs)
 		if len(versions) == 0 {
 			return nil
 		}
 
-		results = append(results, ResourceAttributesResponse{
-			Labels:   lset,
-			Versions: versions,
-		})
+		lset, ok := mr.LabelsForHash(labelsHash)
+		if ok {
+			results = append(results, ResourceAttributesResponse{
+				Labels:   lset,
+				Versions: versions,
+			})
+		} else {
+			allResolved = false
+			// Defer resolution — store hash temporarily.
+			results = append(results, ResourceAttributesResponse{
+				labelsHash: labelsHash,
+				Versions:   versions,
+			})
+		}
 		return nil
 	})
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
 	}
 
+	// If any labels were unresolved, fall back to querying all series.
+	if !allResolved && len(results) > 0 {
+		ctx := context.Background()
+		q, err := api.Queryable.Querier(startMs, endMs)
+		if err != nil {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+		defer q.Close()
+
+		hints := &storage.SelectHints{
+			Start: startMs,
+			End:   endMs,
+			Func:  "series",
+		}
+		set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+
+		hashToLabels := make(map[uint64]labels.Labels)
+		for set.Next() {
+			lset := set.At().Labels()
+			hashToLabels[labels.StableHash(lset)] = lset
+		}
+		if err := set.Err(); err != nil {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+
+		// Resolve labels for results that were deferred.
+		filtered := results[:0]
+		for _, r := range results {
+			if r.Labels.Len() == 0 {
+				lset, ok := hashToLabels[r.labelsHash]
+				if !ok {
+					continue
+				}
+				r.Labels = lset
+			}
+			filtered = append(filtered, r)
+		}
+		results = filtered
+	}
+
+	// Sort for deterministic output.
+	slices.SortFunc(results, func(a, b ResourceAttributesResponse) int {
+		return labels.Compare(a.Labels, b.Labels)
+	})
+
+	// Apply limit after sorting for deterministic results.
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+		warnings.Add(errors.New("results truncated due to limit"))
+	}
+
 	if results == nil {
 		results = []ResourceAttributesResponse{}
 	}
 
-	return apiFuncResult{results, nil, nil, nil}
+	return apiFuncResult{results, nil, warnings, nil}
 }
 
 // resourceAttributePairs returns all unique resource attribute names and their values.
@@ -1875,7 +1913,7 @@ func (api *API) resourceAttributePairs(r *http.Request) apiFuncResult {
 	// Collect unique label names and their values
 	labelValues := make(map[string]map[string]struct{})
 
-	err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+	err = mr.IterVersionedResources(r.Context(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
 		// If we have a filter, only process resources for matching series
 		if allowedHashes != nil {
 			if _, ok := allowedHashes[labelsHash]; !ok {
@@ -2124,7 +2162,7 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 
 	// Check resource/entity filters (both operate on resource versions)
 	if hasResourceFilters || hasEntityFilters {
-		err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		err = mr.IterVersionedResources(r.Context(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
 			var matchingVersions []*seriesmetadata.ResourceVersion
 			for _, rv := range resources.Versions {
 				// Time range filter
@@ -2152,7 +2190,7 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 	// Check scope filters
 	if hasScopeFilters {
 		scopeMatched := make(map[uint64][]ScopeAttributeVersion)
-		err = mr.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+		err = mr.IterVersionedScopes(r.Context(), func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
 			var matchingVersions []*seriesmetadata.ScopeVersion
 			for _, sv := range scopes.Versions {
 				if sv.MinTime > endMs || sv.MaxTime < startMs {
@@ -2259,18 +2297,30 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 			}
 		}
 	} else {
-		// No match[]: scan all named series to resolve hashes to labels.
-		set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
-
-		for set.Next() {
-			lset := set.At().Labels()
-			hash := labels.StableHash(lset)
-			if _, ok := matched[hash]; ok {
+		// No match[]: try LabelsForHash first to avoid O(ALL_SERIES) scan.
+		allResolved := true
+		for hash := range matched {
+			if lset, ok := mr.LabelsForHash(hash); ok {
 				hashToLabels[hash] = lset
+			} else {
+				allResolved = false
+				break
 			}
 		}
-		if err := set.Err(); err != nil {
-			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+
+		// Fall back to scanning all series if LabelsForHash doesn't cover everything.
+		if !allResolved {
+			set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+			for set.Next() {
+				lset := set.At().Labels()
+				hash := labels.StableHash(lset)
+				if _, ok := matched[hash]; ok {
+					hashToLabels[hash] = lset
+				}
+			}
+			if err := set.Err(); err != nil {
+				return apiFuncResult{nil, returnAPIError(err), nil, nil}
+			}
 		}
 	}
 
@@ -2278,15 +2328,12 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{[]SeriesMetadataResponse{}, nil, nil, nil}
 	}
 
-	// Build response
+	// Build response — collect all, then sort for determinism.
 	results := make([]SeriesMetadataResponse, 0, len(matched))
 	for hash, entry := range matched {
 		lset, ok := hashToLabels[hash]
 		if !ok {
 			continue
-		}
-		if limit > 0 && len(results) >= limit {
-			break
 		}
 		results = append(results, SeriesMetadataResponse{
 			Labels:        lset,
@@ -2295,11 +2342,22 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 		})
 	}
 
+	// Sort for deterministic output.
+	slices.SortFunc(results, func(a, b SeriesMetadataResponse) int {
+		return labels.Compare(a.Labels, b.Labels)
+	})
+
+	var warnings annotations.Annotations
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+		warnings.Add(errors.New("results truncated due to limit"))
+	}
+
 	if results == nil {
 		results = []SeriesMetadataResponse{}
 	}
 
-	return apiFuncResult{results, nil, nil, nil}
+	return apiFuncResult{results, nil, warnings, nil}
 }
 
 // RuleDiscovery has info for all rules.

@@ -592,7 +592,7 @@ func (q *HeadAndOOOQuerier) IterUniqueAttributeNames(fn func(name string)) error
 	// Note: we don't close the reader here as it's the head's reader
 	// which is managed by the head itself.
 	seen := make(map[string]struct{})
-	return reader.IterResources(func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
+	return reader.IterResources(context.Background(), func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
 		if resource == nil {
 			return nil
 		}
@@ -680,7 +680,7 @@ func (q *HeadAndOOOChunkQuerier) IterUniqueAttributeNames(fn func(name string)) 
 		return err
 	}
 	seen := make(map[string]struct{})
-	return reader.IterResources(func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
+	return reader.IterResources(context.Background(), func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
 		if resource == nil {
 			return nil
 		}

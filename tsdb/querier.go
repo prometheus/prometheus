@@ -155,7 +155,7 @@ func (q *blockQuerier) IterUniqueAttributeNames(fn func(name string)) error {
 		return nil
 	}
 	seen := make(map[string]struct{})
-	return reader.IterResources(func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
+	return reader.IterResources(context.Background(), func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
 		if resource == nil {
 			return nil
 		}
