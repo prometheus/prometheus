@@ -1029,11 +1029,117 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_broker_node_exporter_enabled`: whether node exporter is enabled on brokers (broker nodes only)
 * `__meta_msk_controller_endpoint_index`: the index of the controller endpoint (controller nodes only)
 
+#### `elasticache`
+
+The `elasticache` role discovers targets from AWS ElastiCache for both serverless caches and cache clusters.
+
+**Important**: For cache clusters, one target is created per cache node. Each target includes the cluster-level labels (ARN, status, tags, etc.) and node-specific labels (node ID, endpoint, availability zone, etc.). The `__address__` label is set to the individual node's endpoint address and port.
+
+For serverless caches, one target is created per serverless cache, with the `__address__` label set to the serverless cache endpoint.
+
+The IAM credentials used must have the following permissions to discover scrape targets:
+
+- `elasticache:DescribeServerlessCaches`
+- `elasticache:DescribeCacheClusters`
+- `elasticache:ListTagsForResource`
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+**Common labels (available on all targets):**
+
+* `__meta_elasticache_deployment_option`: the deployment option - either `serverless` for serverless caches or `node` for cache cluster nodes
+
+**Serverless Cache labels:**
+
+* `__meta_elasticache_serverless_cache_arn`: the ARN of the serverless cache
+* `__meta_elasticache_serverless_cache_name`: the name of the serverless cache
+* `__meta_elasticache_serverless_cache_status`: the status of the serverless cache
+* `__meta_elasticache_serverless_cache_engine`: the cache engine (redis or valkey)
+* `__meta_elasticache_serverless_cache_full_engine_version`: the full engine version
+* `__meta_elasticache_serverless_cache_major_engine_version`: the major engine version
+* `__meta_elasticache_serverless_cache_description`: the description of the serverless cache
+* `__meta_elasticache_serverless_cache_create_time`: the creation time in RFC3339 format
+* `__meta_elasticache_serverless_cache_snapshot_retention_limit`: the snapshot retention limit in days
+* `__meta_elasticache_serverless_cache_daily_snapshot_time`: the daily snapshot time
+* `__meta_elasticache_serverless_cache_user_group_id`: the user group ID
+* `__meta_elasticache_serverless_cache_kms_key_id`: the KMS key ID for encryption at rest
+* `__meta_elasticache_serverless_cache_endpoint_address`: the endpoint address
+* `__meta_elasticache_serverless_cache_endpoint_port`: the endpoint port
+* `__meta_elasticache_serverless_cache_reader_endpoint_address`: the reader endpoint address
+* `__meta_elasticache_serverless_cache_reader_endpoint_port`: the reader endpoint port
+* `__meta_elasticache_serverless_cache_security_group_id_<index>`: security group IDs (indexed)
+* `__meta_elasticache_serverless_cache_subnet_id_<index>`: subnet IDs (indexed)
+* `__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_maximum`: maximum data storage in the specified unit
+* `__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_minimum`: minimum data storage in the specified unit
+* `__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_unit`: unit for data storage (e.g., GB)
+* `__meta_elasticache_serverless_cache_cache_usage_limit_ecpu_per_second_maximum`: maximum ECPU per second
+* `__meta_elasticache_serverless_cache_cache_usage_limit_ecpu_per_second_minimum`: minimum ECPU per second
+* `__meta_elasticache_serverless_cache_tag_<tagkey>`: each serverless cache tag value, keyed by tag name
+
+**Cache Cluster labels:**
+
+* `__meta_elasticache_cache_cluster_arn`: the ARN of the cache cluster
+* `__meta_elasticache_cache_cluster_cache_cluster_id`: the cache cluster ID
+* `__meta_elasticache_cache_cluster_cache_cluster_status`: the status of the cache cluster
+* `__meta_elasticache_cache_cluster_engine`: the cache engine (redis or memcached)
+* `__meta_elasticache_cache_cluster_engine_version`: the engine version
+* `__meta_elasticache_cache_cluster_cache_node_type`: the cache node type (e.g., cache.t3.micro)
+* `__meta_elasticache_cache_cluster_num_cache_nodes`: the number of cache nodes
+* `__meta_elasticache_cache_cluster_cache_cluster_create_time`: the creation time in RFC3339 format
+* `__meta_elasticache_cache_cluster_at_rest_encryption_enabled`: whether encryption at rest is enabled
+* `__meta_elasticache_cache_cluster_transit_encryption_enabled`: whether encryption in transit is enabled
+* `__meta_elasticache_cache_cluster_transit_encryption_mode`: the transit encryption mode
+* `__meta_elasticache_cache_cluster_auth_token_enabled`: whether auth token is enabled
+* `__meta_elasticache_cache_cluster_auth_token_last_modified`: the last modification time of auth token
+* `__meta_elasticache_cache_cluster_auto_minor_version_upgrade`: whether auto minor version upgrade is enabled
+* `__meta_elasticache_cache_cluster_cache_parameter_group`: the cache parameter group name
+* `__meta_elasticache_cache_cluster_cache_subnet_group_name`: the cache subnet group name
+* `__meta_elasticache_cache_cluster_client_download_landing_page`: the client download landing page URL
+* `__meta_elasticache_cache_cluster_ip_discovery`: the IP discovery mode (ipv4 or ipv6)
+* `__meta_elasticache_cache_cluster_network_type`: the network type (ipv4, ipv6, or dual_stack)
+* `__meta_elasticache_cache_cluster_preferred_availability_zone`: the preferred availability zone
+* `__meta_elasticache_cache_cluster_preferred_maintenance_window`: the preferred maintenance window
+* `__meta_elasticache_cache_cluster_preferred_outpost_arn`: the preferred outpost ARN
+* `__meta_elasticache_cache_cluster_replication_group_id`: the replication group ID (for Redis clusters that are part of a replication group)
+* `__meta_elasticache_cache_cluster_replication_group_log_delivery_enabled`: whether log delivery is enabled for the replication group
+* `__meta_elasticache_cache_cluster_snapshot_retention_limit`: the snapshot retention limit in days
+* `__meta_elasticache_cache_cluster_snapshot_window`: the daily snapshot window
+* `__meta_elasticache_cache_cluster_configuration_endpoint_address`: the configuration endpoint address (cluster mode enabled only)
+* `__meta_elasticache_cache_cluster_configuration_endpoint_port`: the configuration endpoint port (cluster mode enabled only)
+* `__meta_elasticache_cache_cluster_notification_topic_arn`: the SNS topic ARN for notifications
+* `__meta_elasticache_cache_cluster_notification_topic_status`: the SNS topic status
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_destination_type_<index>`: log delivery destination type (cloudwatch-logs or kinesis-firehose)
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_log_format_<index>`: log format (text or json)
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_log_type_<index>`: log type (slow-log or engine-log)
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_status_<index>`: log delivery status
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_message_<index>`: log delivery message
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_log_group_<index>`: CloudWatch log group name (cloudwatch-logs destination only)
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_delivery_stream_<index>`: Kinesis Firehose delivery stream name (kinesis-firehose destination only)
+* `__meta_elasticache_cache_cluster_pending_modified_values_auth_token_status`: pending auth token status
+* `__meta_elasticache_cache_cluster_pending_modified_values_cache_node_type`: pending cache node type change
+* `__meta_elasticache_cache_cluster_pending_modified_values_engine_version`: pending engine version upgrade
+* `__meta_elasticache_cache_cluster_pending_modified_values_num_cache_nodes`: pending number of cache nodes
+* `__meta_elasticache_cache_cluster_pending_modified_values_transit_encryption_enabled`: pending transit encryption status
+* `__meta_elasticache_cache_cluster_pending_modified_values_transit_encryption_mode`: pending transit encryption mode
+* `__meta_elasticache_cache_cluster_pending_modified_values_cache_node_ids_to_remove`: comma-separated list of cache node IDs to be removed
+* `__meta_elasticache_cache_cluster_security_group_membership_id_<index>`: security group ID (indexed)
+* `__meta_elasticache_cache_cluster_security_group_membership_status_<index>`: security group status (indexed)
+* `__meta_elasticache_cache_cluster_node_id`: cache node ID
+* `__meta_elasticache_cache_cluster_node_status`: cache node status
+* `__meta_elasticache_cache_cluster_node_create_time`: cache node creation time in RFC3339 format
+* `__meta_elasticache_cache_cluster_node_availability_zone`: cache node availability zone
+* `__meta_elasticache_cache_cluster_node_customer_outpost_arn`: cache node outpost ARN
+* `__meta_elasticache_cache_cluster_node_source_cache_node_id`: source cache node ID for replication
+* `__meta_elasticache_cache_cluster_node_parameter_group_status`: parameter group status
+* `__meta_elasticache_cache_cluster_node_endpoint_address`: cache node endpoint address
+* `__meta_elasticache_cache_cluster_node_endpoint_port`: cache node endpoint port
+* `__meta_elasticache_cache_cluster_tag_<tagkey>`: each cache cluster tag value, keyed by tag name
+
 See below for the configuration options for AWS discovery:
 
 ```yaml
 # The AWS role to use for service discovery.
-# Must be one of: ec2, lightsail, ecs, or msk.
+# Must be one of: ec2, lightsail, ecs, msk, or elasticache.
 role: <string>
 
 # The AWS region. If blank, the region from the instance metadata is used.
@@ -1069,8 +1175,9 @@ filters:
   [ - name: <string>
       values: <string>, [...] ]
 
-# List of ECS or MSK cluster ARNs (ecs and msk roles only) to discover. If empty, all clusters in the region are discovered.
-# This can significantly improve performance when you only need to monitor specific clusters.
+# List of ECS, ElastiCache, or MSK cluster identifiers (ecs, elasticache, and msk roles only) to discover.
+# A List of ARNs of clusters to discover. If empty, all clusters in the region are discovered.
+# This can significantly improve performance when you only need to monitor specific clusters/caches.
 [ clusters: [<string>, ...] ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
