@@ -1875,7 +1875,7 @@ func commitMetadata(b *appendBatch) {
 }
 
 // commitResources commits the resource updates for each series in the provided batch.
-func commitResources(b *appendBatch) {
+func (a *headAppenderBase) commitResources(b *appendBatch) {
 	resKind, _ := seriesmetadata.KindByID(seriesmetadata.KindResource)
 	for i, r := range b.resources {
 		s := b.resourceSeries[i]
@@ -1887,6 +1887,7 @@ func commitResources(b *appendBatch) {
 			MinTime:     r.MinTime,
 			MaxTime:     r.MaxTime,
 		})
+		a.head.updateSharedMetadata(s, resKind)
 		s.Unlock()
 	}
 }
@@ -1905,7 +1906,7 @@ func refResourceEntitiesToCommitData(entities []record.RefResourceEntity) []seri
 }
 
 // commitScopes commits the scope updates for each series in the provided batch.
-func commitScopes(b *appendBatch) {
+func (a *headAppenderBase) commitScopes(b *appendBatch) {
 	scopeKind, _ := seriesmetadata.KindByID(seriesmetadata.KindScope)
 	for i, sc := range b.scopes {
 		s := b.scopeSeries[i]
@@ -1918,6 +1919,7 @@ func commitScopes(b *appendBatch) {
 			MinTime:   sc.MinTime,
 			MaxTime:   sc.MaxTime,
 		})
+		a.head.updateSharedMetadata(s, scopeKind)
 		s.Unlock()
 	}
 }
@@ -2019,8 +2021,8 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.commitHistograms(b, acc)
 		a.commitFloatHistograms(b, acc)
 		commitMetadata(b)
-		commitResources(b)
-		commitScopes(b)
+		a.commitResources(b)
+		a.commitScopes(b)
 	}
 	// Release the reservations that protected newly indexed series before their first sample was queued.
 	a.releaseCreatedSeriesReservations()
