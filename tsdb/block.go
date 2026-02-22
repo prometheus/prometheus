@@ -380,18 +380,30 @@ func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDeco
 	closers = append(closers, tr)
 
 	// Build a resolver that converts block-level seriesRef → labelsHash
-	// for Parquet mapping rows. The index reader is already open above.
+	// for Parquet mapping rows. Also captures labels for LabelsForHash.
 	var builder labels.ScratchBuilder
+	labelsCapture := make(map[uint64]labels.Labels)
 	readRefResolver := seriesmetadata.WithRefResolver(func(seriesRef uint64) (uint64, bool) {
 		if err := ir.Series(storage.SeriesRef(seriesRef), &builder, nil); err != nil {
 			return 0, false
 		}
-		return labels.StableHash(builder.Labels()), true
+		lset := builder.Labels()
+		hash := labels.StableHash(lset)
+		if _, exists := labelsCapture[hash]; !exists {
+			labelsCapture[hash] = lset
+		}
+		return hash, true
 	})
 
 	smr, sizeSeriesMeta, err := seriesmetadata.ReadSeriesMetadata(logger, dir, readRefResolver)
 	if err != nil {
 		return nil, err
+	}
+	// Populate the labels map on the reader so LabelsForHash works.
+	if populator, ok := smr.(seriesmetadata.LabelsPopulator); ok {
+		for hash, lset := range labelsCapture {
+			populator.SetLabels(hash, lset)
+		}
 	}
 	closers = append(closers, smr)
 

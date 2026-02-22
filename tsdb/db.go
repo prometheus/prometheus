@@ -347,6 +347,12 @@ type DB struct {
 	blockChunkQuerierFunc BlockChunkQuerierFunc
 
 	fsSizeFunc FsSizeFunc
+
+	// Series metadata cache — avoids re-merging all blocks + head on every request.
+	metadataCacheMtx       sync.Mutex
+	metadataCache          seriesmetadata.Reader
+	metadataCacheBlocksKey string    // sorted block ULIDs fingerprint
+	metadataCacheTime      time.Time // when cache was built (for head TTL)
 }
 
 type dbMetrics struct {
@@ -1186,6 +1192,18 @@ func (db *DB) BlockMetas() []BlockMeta {
 	return metas
 }
 
+// cachedMetadataReader wraps a Reader and ignores Close() calls,
+// since the underlying reader is shared across callers via the cache.
+type cachedMetadataReader struct {
+	seriesmetadata.Reader
+}
+
+func (r *cachedMetadataReader) Close() error { return nil }
+
+// metadataCacheHeadTTL is how long the cached metadata remains valid for head data.
+// Block data is invalidated by block set changes, but head data changes continuously.
+const metadataCacheHeadTTL = 30 * time.Second
+
 // SeriesMetadata returns a merged reader of series metadata from all blocks and the head.
 // Returns an empty reader when native metadata is not enabled.
 //
@@ -1201,19 +1219,68 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 		return seriesmetadata.NewMemSeriesMetadata(), nil
 	}
 
+	db.metadataCacheMtx.Lock()
+	defer db.metadataCacheMtx.Unlock()
+
+	// Build fingerprint from current block set.
+	blocks := db.Blocks()
+	blocksKey := blocksFingerprint(blocks)
+
+	// Cache is valid if blocks haven't changed and head TTL hasn't expired.
+	if db.metadataCache != nil &&
+		db.metadataCacheBlocksKey == blocksKey &&
+		time.Since(db.metadataCacheTime) < metadataCacheHeadTTL {
+		return &cachedMetadataReader{db.metadataCache}, nil
+	}
+
+	merged, err := db.buildSeriesMetadata(blocks)
+	if err != nil {
+		return nil, err
+	}
+
+	db.metadataCache = merged
+	db.metadataCacheBlocksKey = blocksKey
+	db.metadataCacheTime = time.Now()
+
+	return &cachedMetadataReader{merged}, nil
+}
+
+// blocksFingerprint builds a cache key from sorted block ULIDs.
+func blocksFingerprint(blocks []*Block) string {
+	if len(blocks) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, blk := range blocks {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(blk.Meta().ULID.String())
+	}
+	return b.String()
+}
+
+// buildSeriesMetadata merges metadata from all blocks + head into a single reader.
+func (db *DB) buildSeriesMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
 	merged := seriesmetadata.NewMemSeriesMetadata()
 
 	// Collect all metadata kinds from blocks.
-	for _, b := range db.Blocks() {
+	for _, b := range blocks {
 		mr, err := b.SeriesMetadata()
 		if err != nil {
 			return nil, fmt.Errorf("get block series metadata: %w", err)
 		}
 
 		for _, kind := range seriesmetadata.AllKinds() {
-			err = mr.IterKind(kind.ID(), func(labelsHash uint64, versioned any) error {
+			err = mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
 				store := merged.StoreForKind(kind.ID())
 				kind.SetVersioned(store, labelsHash, versioned)
+				// Copy labels from source into merged.
+				if _, exists := merged.LabelsForHash(labelsHash); !exists {
+					if lset, ok := mr.LabelsForHash(labelsHash); ok {
+						merged.SetLabels(labelsHash, lset)
+					}
+				}
 				return nil
 			})
 			if err != nil {
@@ -1231,9 +1298,15 @@ func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 	}
 
 	for _, kind := range seriesmetadata.AllKinds() {
-		err = headMeta.IterKind(kind.ID(), func(labelsHash uint64, versioned any) error {
+		err = headMeta.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
 			store := merged.StoreForKind(kind.ID())
 			kind.SetVersioned(store, labelsHash, versioned)
+			// Copy labels from head into merged.
+			if _, exists := merged.LabelsForHash(labelsHash); !exists {
+				if lset, ok := headMeta.LabelsForHash(labelsHash); ok {
+					merged.SetLabels(labelsHash, lset)
+				}
+			}
 			return nil
 		})
 		if err != nil {
