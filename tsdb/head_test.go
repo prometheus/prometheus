@@ -797,10 +797,8 @@ func TestHead_ReadWAL(t *testing.T) {
 				require.False(t, ok)
 
 				require.NotNil(t, s100.meta)
-				curMeta := s100.meta.CurrentMetadata()
-				require.NotNil(t, curMeta)
-				require.Equal(t, "foo", curMeta.Unit)
-				require.Equal(t, "total foo", curMeta.Help)
+				require.Equal(t, "foo", s100.meta.Unit)
+				require.Equal(t, "total foo", s100.meta.Help)
 
 				expandChunk := func(c chunkenc.Iterator) (x []sample) {
 					for c.Next() == chunkenc.ValFloat {
@@ -8124,9 +8122,11 @@ func TestResourceAndScopeWALReplay(t *testing.T) {
 	s := head.series.getByID(chunks.HeadSeriesRef(ref))
 	require.NotNil(t, s)
 	s.Lock()
-	require.NotNil(t, s.resource)
-	require.Len(t, s.resource.Versions, 1)
-	require.Equal(t, "frontend", s.resource.Versions[0].Identifying["service.name"])
+	res, resOK := s.GetKindMeta(seriesmetadata.KindResource)
+	require.True(t, resOK)
+	vr := res.(*seriesmetadata.VersionedResource)
+	require.Len(t, vr.Versions, 1)
+	require.Equal(t, "frontend", vr.Versions[0].Identifying["service.name"])
 	s.Unlock()
 
 	// Close the head and replay WAL into a new head using the same dir.
@@ -8144,10 +8144,12 @@ func TestResourceAndScopeWALReplay(t *testing.T) {
 	s2 := head2.series.getByID(chunks.HeadSeriesRef(ref))
 	require.NotNil(t, s2)
 	s2.Lock()
-	require.NotNil(t, s2.resource, "resource should survive WAL replay")
-	require.Len(t, s2.resource.Versions, 1)
-	require.Equal(t, "frontend", s2.resource.Versions[0].Identifying["service.name"])
-	require.Equal(t, "node-1", s2.resource.Versions[0].Descriptive["host.name"])
+	res2, res2OK := s2.GetKindMeta(seriesmetadata.KindResource)
+	require.True(t, res2OK, "resource should survive WAL replay")
+	vr2 := res2.(*seriesmetadata.VersionedResource)
+	require.Len(t, vr2.Versions, 1)
+	require.Equal(t, "frontend", vr2.Versions[0].Identifying["service.name"])
+	require.Equal(t, "node-1", vr2.Versions[0].Descriptive["host.name"])
 	s2.Unlock()
 }
 
@@ -8181,7 +8183,8 @@ func TestResourceAndScopeRollback(t *testing.T) {
 	s := head.series.getByID(chunks.HeadSeriesRef(ref))
 	require.NotNil(t, s)
 	s.Lock()
-	require.Nil(t, s.resource, "resource must not be set after rollback")
+	_, resOK := s.GetKindMeta(seriesmetadata.KindResource)
+	require.False(t, resOK, "resource must not be set after rollback")
 	s.Unlock()
 }
 
@@ -8222,9 +8225,11 @@ func TestResourceDedupInV1Appender(t *testing.T) {
 	s := head.series.getByID(chunks.HeadSeriesRef(ref))
 	require.NotNil(t, s)
 	s.Lock()
-	require.NotNil(t, s.resource)
-	require.Len(t, s.resource.Versions, 1)
-	require.Equal(t, "v1", s.resource.Versions[0].Identifying["service.name"])
+	res, resOK := s.GetKindMeta(seriesmetadata.KindResource)
+	require.True(t, resOK)
+	vr := res.(*seriesmetadata.VersionedResource)
+	require.Len(t, vr.Versions, 1)
+	require.Equal(t, "v1", vr.Versions[0].Identifying["service.name"])
 	s.Unlock()
 }
 
@@ -8269,16 +8274,20 @@ func TestResourceAndScopeWALReplayWithScope(t *testing.T) {
 	defer s.Unlock()
 
 	// Resource should be replayed.
-	require.NotNil(t, s.resource)
-	require.Len(t, s.resource.Versions, 1)
-	require.Equal(t, "frontend", s.resource.Versions[0].Identifying["service.name"])
+	res, resOK := s.GetKindMeta(seriesmetadata.KindResource)
+	require.True(t, resOK)
+	vr := res.(*seriesmetadata.VersionedResource)
+	require.Len(t, vr.Versions, 1)
+	require.Equal(t, "frontend", vr.Versions[0].Identifying["service.name"])
 
 	// Scope should be replayed.
-	require.NotNil(t, s.scope)
-	require.Len(t, s.scope.Versions, 1)
-	require.Equal(t, "go.opentelemetry.io/instrumentation", s.scope.Versions[0].Name)
-	require.Equal(t, "0.42.0", s.scope.Versions[0].Version)
-	require.Equal(t, "val", s.scope.Versions[0].Attrs["lib.custom"])
+	sc, scOK := s.GetKindMeta(seriesmetadata.KindScope)
+	require.True(t, scOK)
+	vs := sc.(*seriesmetadata.VersionedScope)
+	require.Len(t, vs.Versions, 1)
+	require.Equal(t, "go.opentelemetry.io/instrumentation", vs.Versions[0].Name)
+	require.Equal(t, "0.42.0", vs.Versions[0].Version)
+	require.Equal(t, "val", vs.Versions[0].Attrs["lib.custom"])
 
 	_ = w
 	_ = seriesmetadata.EntityTypeResource // Ensure import is used.

@@ -54,21 +54,21 @@ func TestVersionedScopeAddOrExtend(t *testing.T) {
 	vs := &VersionedScope{}
 
 	sv1 := NewScopeVersion("mylib", "1.0.0", "", map[string]string{"k": "v"}, 1000, 2000)
-	vs.AddOrExtend(sv1)
+	vs.AddOrExtend(ScopeOps, sv1)
 	require.Len(t, vs.Versions, 1)
 	require.Equal(t, int64(1000), vs.Versions[0].MinTime)
 	require.Equal(t, int64(2000), vs.Versions[0].MaxTime)
 
 	// Same scope, later time — should extend
 	sv2 := NewScopeVersion("mylib", "1.0.0", "", map[string]string{"k": "v"}, 3000, 4000)
-	vs.AddOrExtend(sv2)
+	vs.AddOrExtend(ScopeOps, sv2)
 	require.Len(t, vs.Versions, 1)
 	require.Equal(t, int64(1000), vs.Versions[0].MinTime)
 	require.Equal(t, int64(4000), vs.Versions[0].MaxTime)
 
 	// Different scope — should add new version
 	sv3 := NewScopeVersion("mylib", "2.0.0", "", map[string]string{"k": "v"}, 5000, 6000)
-	vs.AddOrExtend(sv3)
+	vs.AddOrExtend(ScopeOps, sv3)
 	require.Len(t, vs.Versions, 2)
 	require.Equal(t, "2.0.0", vs.Versions[1].Version)
 }
@@ -82,23 +82,27 @@ func TestVersionedScopeVersionAt(t *testing.T) {
 	}
 
 	// Within first version
-	v := vs.VersionAt(1500)
+	v, ok := vs.VersionAt(1500)
+	require.True(t, ok)
 	require.Equal(t, "1.0", v.Version)
 
 	// Within second version
-	v = vs.VersionAt(3500)
+	v, ok = vs.VersionAt(3500)
+	require.True(t, ok)
 	require.Equal(t, "2.0", v.Version)
 
 	// Between versions — returns closest earlier
-	v = vs.VersionAt(2500)
+	v, ok = vs.VersionAt(2500)
+	require.True(t, ok)
 	require.Equal(t, "1.0", v.Version)
 
 	// Before all versions — no version covers this timestamp
-	v = vs.VersionAt(500)
-	require.Nil(t, v)
+	_, ok = vs.VersionAt(500)
+	require.False(t, ok)
 
 	// After all versions
-	v = vs.VersionAt(5000)
+	v, ok = vs.VersionAt(5000)
+	require.True(t, ok)
 	require.Equal(t, "2.0", v.Version)
 }
 
@@ -147,24 +151,24 @@ func TestMemScopeStoreBasicOperations(t *testing.T) {
 	store := NewMemScopeStore()
 
 	sv := NewScopeVersion("mylib", "1.0.0", "https://schema.example.com", map[string]string{"key": "val"}, 1000, 2000)
-	store.SetScope(123, sv)
+	store.Set(123, sv)
 
-	got, found := store.GetVersionedScope(123)
+	got, found := store.GetVersioned(123)
 	require.True(t, found)
 	require.Len(t, got.Versions, 1)
 	require.Equal(t, "mylib", got.Versions[0].Name)
 	require.Equal(t, "1.0.0", got.Versions[0].Version)
 
-	require.Equal(t, uint64(1), store.TotalScopes())
-	require.Equal(t, uint64(1), store.TotalScopeVersions())
+	require.Equal(t, uint64(1), store.TotalEntries())
+	require.Equal(t, uint64(1), store.TotalVersions())
 
 	// Not found
-	_, found = store.GetVersionedScope(999)
+	_, found = store.GetVersioned(999)
 	require.False(t, found)
 
 	// Delete
-	store.DeleteScope(123)
-	_, found = store.GetVersionedScope(123)
+	store.Delete(123)
+	_, found = store.GetVersioned(123)
 	require.False(t, found)
 }
 
@@ -172,13 +176,13 @@ func TestMemScopeStoreVersioning(t *testing.T) {
 	store := NewMemScopeStore()
 
 	sv1 := NewScopeVersion("lib", "1.0", "", nil, 1000, 2000)
-	store.SetScope(100, sv1)
+	store.Set(100, sv1)
 
 	// Same scope — extend
 	sv2 := NewScopeVersion("lib", "1.0", "", nil, 3000, 4000)
-	store.SetScope(100, sv2)
+	store.Set(100, sv2)
 
-	got, found := store.GetVersionedScope(100)
+	got, found := store.GetVersioned(100)
 	require.True(t, found)
 	require.Len(t, got.Versions, 1)
 	require.Equal(t, int64(1000), got.Versions[0].MinTime)
@@ -186,12 +190,12 @@ func TestMemScopeStoreVersioning(t *testing.T) {
 
 	// Different scope — new version
 	sv3 := NewScopeVersion("lib", "2.0", "", nil, 5000, 6000)
-	store.SetScope(100, sv3)
+	store.Set(100, sv3)
 
-	got, found = store.GetVersionedScope(100)
+	got, found = store.GetVersioned(100)
 	require.True(t, found)
 	require.Len(t, got.Versions, 2)
-	require.Equal(t, uint64(2), store.TotalScopeVersions())
+	require.Equal(t, uint64(2), store.TotalVersions())
 }
 
 func TestMemScopeStoreIter(t *testing.T) {
@@ -199,11 +203,11 @@ func TestMemScopeStoreIter(t *testing.T) {
 
 	for i := uint64(1); i <= 3; i++ {
 		sv := NewScopeVersion("lib", "1.0", "", nil, int64(i*1000), int64(i*2000))
-		store.SetScope(i, sv)
+		store.Set(i, sv)
 	}
 
 	collected := make(map[uint64]*VersionedScope)
-	err := store.IterVersionedScopes(func(labelsHash uint64, scopes *VersionedScope) error {
+	err := store.IterVersioned(func(labelsHash uint64, scopes *VersionedScope) error {
 		collected[labelsHash] = scopes
 		return nil
 	})
