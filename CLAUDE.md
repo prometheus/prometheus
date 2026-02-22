@@ -57,7 +57,7 @@ Service Discovery → Scrape → Storage (TSDB) → PromQL Engine → Web API/UI
 - **cmd/promtool/**: CLI utility for validation, TSDB operations
 - **storage/**: Storage abstraction layer with `Appender`, `Querier` interfaces
 - **tsdb/**: Time series database (head block, WAL, compaction, chunks)
-- **tsdb/seriesmetadata/**: Series metadata, OTel resource/scope attribute, and entity persistence
+- **tsdb/seriesmetadata/**: OTel resource/scope attribute and entity persistence
 - **promql/**: Query engine and PromQL parser
 - **scrape/**: Metric collection from targets
 - **discovery/**: 30+ service discovery implementations
@@ -79,24 +79,28 @@ The storage layer is transitioning from `Appender` (V1) to `AppenderV2`. New cod
 - **Persistent Blocks**: Immutable on-disk blocks
 - **Compaction**: Merges blocks and applies retention
 - **Chunks**: Gorilla-compressed time series data
-- **Series Metadata**: Optional Parquet-based storage for metric metadata and OTel resource attributes
+- **Series Metadata**: Optional Parquet-based storage for OTel resource/scope attributes
 
 ### OTel Native Metadata
 
 Prometheus supports persisting OTel resource attributes, instrumentation scopes, and entities per time series. Enabled via `--enable-feature=native-metadata`.
 
-- **Feature gate**: `--enable-feature=native-metadata` in `cmd/prometheus/main.go` sets both `tsdb.Options.EnableNativeMetadata` and `web.EnableNativeMetadata` (the latter switches API endpoints to TSDB-backed metadata). When disabled (default), `DB.SeriesMetadata()` returns an empty reader and compaction skips metadata merge/write.
-- **Package**: `tsdb/seriesmetadata/` — core types are `VersionedMetadata` (tracks metadata changes over time for a series) and `MetadataVersion` (single version with MinTime/MaxTime and metadata content). Storage backends: `MemSeriesMetadata` (in-memory) and `parquetReader` (Parquet-backed).
-- **Reader interface**: `Get(ref)`, `GetByMetricName(name)`, `Iter()`, `IterByMetricName()`, `Total()`, `Close()`, plus `VersionedMetadataReader` methods (`GetVersionedMetadata(ref)`, `IterVersionedMetadata()`, `TotalVersionedMetadata()`).
+- **Feature gate**: `--enable-feature=native-metadata` in `cmd/prometheus/main.go` sets `tsdb.Options.EnableNativeMetadata` and `web.EnableNativeMetadata`. When disabled (default), `DB.SeriesMetadata()` returns an empty reader and compaction skips metadata merge/write.
+- **Package**: `tsdb/seriesmetadata/` — uses a **kind framework** with Go generics (`Versioned[V]`, `MemStore[V]`) for type-safe hot paths and a `KindDescriptor` interface for runtime dispatch at serialization boundaries. Core types are `MemSeriesMetadata` (wraps `map[KindID]any` of per-kind stores) and `parquetReader` (Parquet-backed). The `Reader` interface provides `Close()`, `IterKind()`, `KindLen()`, plus type-safe `VersionedResourceReader` and `VersionedScopeReader` methods.
 - **BlockReader interface**: `SeriesMetadata()` was added to `BlockReader` (block.go), so all block-like types expose metadata. `RangeHead` and `OOOCompactionHead` both delegate to the underlying `Head`.
-- **Write path**: `memSeries.meta` is `*seriesmetadata.VersionedMetadata`. `commitMetadata()` (head_append.go) calls `series.meta.AddOrExtend(&MetadataVersion{...})` with MinTime/MaxTime from the WAL record. WAL replay (head_wal.go) uses the same `AddOrExtend` pattern. `Head.SeriesMetadata()` reads from `memSeries.meta` across all shards using a two-phase locking pattern (shard RLock to collect refs, then per-series lock to read metadata).
+- **Write path**: `memSeries.meta` is `*metadata.Metadata` (simple pointer, non-versioned) set by `commitMetadata()`. OTel metadata is stored as `kindMeta []kindMetaEntry` on `memSeries` (each entry is `{kind KindID, data any}` holding a `*Versioned[V]`). The `kindMetaAccessor` interface (`GetKindMeta`/`SetKindMeta`) provides kind-generic access. `Head.SeriesMetadata()` collects metadata across all shards via `AllKinds()` iteration.
 - **Block path**: `Block.SeriesMetadata()` lazily loads the Parquet file via `sync.Once` and returns a `blockSeriesMetadataReader` wrapper that tracks pending readers (same pattern as `blockIndexReader`, `blockTombstoneReader`, `blockChunkReader`). `Block.Size()` includes `numBytesSeriesMetadata`, which is populated after lazy load.
-- **Merge path**: `DB.SeriesMetadata()` merges versioned metadata across all blocks and the head, keyed by `labels.StableHash` (guarded by `EnableNativeMetadata`). `DB.SeriesMetadataForMatchers()` delegates to the head for per-target metadata queries.
-- **Compaction**: `LeveledCompactor.mergeAndWriteSeriesMetadata()` (compact.go, guarded by `enableNativeMetadata`) runs three phases: (1) collect metadata from source blocks, resolving each block's refs to labels via its index and merging by `labels.StableHash`; (2) open the new block's index and map labels hashes to new refs; (3) build `MemSeriesMetadata` with new refs and write via `WriteFile()`.
-- **Web API**: `TSDBAdminStats` interface extended with `SeriesMetadata()` and `SeriesMetadataForMatchers()`; `readyStorage` in main.go implements both. When native metadata is enabled: `/api/v1/metadata` uses TSDB as sole metadata source; `/api/v1/targets/metadata` queries TSDB head per-target via `SeriesMetadataForMatchers()`; `/api/v1/metadata/versions` returns time-versioned metadata history with optional `metric`, `limit`, `start`, `end` parameters; `/api/v1/metadata/series` performs inverse metadata lookup — find metrics by `type` (exact), `unit` (exact), or `help` (RE2 regex), with optional `limit`, `start`, `end` filtering. When disabled, these endpoints fall back to scrape-cache behavior or return empty results.
-- **Parquet schema**: Do not introduce new Parquet schema versions (e.g. v2) or schema migration logic. Modify the existing `metadataRow` struct in place.
-- **Resources**: `UpdateResource()` on `storage.ResourceUpdater` ingests identifying/descriptive attributes plus entities. Data is versioned over time per series (`VersionedResource` → `[]ResourceVersion`); `AddOrExtend()` creates a new version when attributes change or extends the time range when they match
-- **Scopes**: `UpdateScope()` ingests OTel InstrumentationScope data (name, version, schema URL, attributes). Stored as `VersionedScope` → `[]ScopeVersion` in `MemScopeStore`
+- **Merge path**: `DB.SeriesMetadata()` merges metadata across all blocks and the head via kind-aware iteration (`AllKinds()` + `IterKind()` + `SetVersioned()`), keyed by `labels.StableHash` (guarded by `EnableNativeMetadata`).
+- **Compaction**: `LeveledCompactor.mergeAndWriteSeriesMetadata()` (compact.go, guarded by `enableNativeMetadata`) collects metadata from source blocks via kind-aware iteration, merges by labels hash per kind, opens the new block's index to build a `labelsHash → seriesRef` map, and writes via `WriteFileWithOptions()` with a `RefResolver`.
+- **Web API**: `TSDBAdminStats` interface extended with `SeriesMetadata()`; `readyStorage` in main.go implements it. The `/api/v1/metadata` and `/api/v1/targets/metadata` endpoints always use scrape-cache regardless of native metadata setting.
+- **Parquet schema**: Do not introduce new Parquet schema versions (e.g. v2) or schema migration logic. Modify the existing `metadataRow` struct in place. The single `metadataRow` struct covers all four namespace types; unused fields are zero/empty per namespace:
+  - Common columns: `namespace` (discriminator), `series_ref` (mapping rows only), `mint`/`maxt` (optional time range), `content_hash` (content-addressed key)
+  - Resource table columns: `identifying_attrs` (list), `descriptive_attrs` (list), `entities` (list of `EntityRow` with nested ID/description attr lists)
+  - Scope table columns: `scope_name`, `scope_version_str`, `schema_url`, `scope_attrs` (list)
+  - Mapping rows use only: `namespace`, `series_ref`, `content_hash`, `mint`, `maxt`
+- **Kind framework**: Each metadata type (resource, scope) is a registered `KindDescriptor` with `KindOps[V]` for type-safe operations. `Versioned[V]` is the generic versioned container; `MemStore[V]` is the generic in-memory store. Type aliases (`VersionedResource = Versioned[*ResourceVersion]`, `MemResourceStore = MemStore[*ResourceVersion]`, etc.) provide backward compatibility. Adding a new kind: define version struct, implement `KindOps` + `KindDescriptor`, register in `init()` — framework layers (WAL dispatch, Parquet, head commit, compaction, DB merge) work automatically via the registry.
+- **Resources**: `UpdateResource()` on `storage.ResourceUpdater` ingests identifying/descriptive attributes plus entities. Data is versioned over time per series (`Versioned[*ResourceVersion]` → `[]*ResourceVersion`); `AddOrExtend(ops, version)` creates a new version when attributes change or extends the time range when they match
+- **Scopes**: `UpdateScope()` ingests OTel InstrumentationScope data (name, version, schema URL, attributes). Stored as `Versioned[*ScopeVersion]` → `[]*ScopeVersion` in `MemStore[*ScopeVersion]`
 - **Entities**: `Entity` type in `tsdb/seriesmetadata/entity.go` with 7 predefined types: `resource`, `service`, `host`, `container`, `k8s.pod`, `k8s.node`, `process`. Each entity has typed ID (identifying) and Description (descriptive) attribute maps. Entities are embedded in `ResourceVersion`
 - **Identifying Attributes**: `service.name`, `service.namespace`, `service.instance.id` used for resource identification
 - **info() Function**: PromQL experimental function to enrich metrics with resource/scope attributes. Three modes controlled by `--query.info-resource-strategy`:
@@ -116,30 +120,29 @@ Prometheus supports persisting OTel resource attributes, instrumentation scopes,
 Demo examples in `documentation/examples/`:
 - `info-autocomplete-demo/`: Interactive demo for info() function autocomplete
 - `otlp-resource-attributes/`: OTLP ingestion with resource attributes
-- `metadata-persistence/`: Basic metadata persistence demo
 
 ### Parquet Usage: parquet-common vs tsdb/seriesmetadata
 
 These two systems both use `parquet-go` but solve different problems and should not be merged:
 
 - **parquet-common** (`github.com/prometheus-community/parquet-common`): Replaces entire TSDB block format (labels + sample chunks) with columnar Parquet for cloud-scale analytical storage (Cortex/Thanos). Dynamic schema with one column per label name. Uses advanced Parquet features (projections, row group stats, bloom filters, page-level I/O).
-- **tsdb/seriesmetadata**: Small sidecar Parquet file alongside standard TSDB blocks storing metric metadata and OTel resource attributes. Static struct-based schema with nested lists. Loads entire file into memory for O(1) hash lookup. Typically kilobytes, not gigabytes.
+- **tsdb/seriesmetadata**: Small sidecar Parquet file alongside standard TSDB blocks storing OTel resource/scope attributes. Static struct-based schema with nested lists. Loads entire file into memory for O(1) hash lookup. Typically kilobytes, not gigabytes.
 
 **Why they can't converge**: Incompatible schemas (columnar per-label vs row-oriented with nested lists), incompatible scale assumptions (distributed cloud vs single-node local), and resource attributes are versioned (multiple values over time per series) which doesn't fit parquet-common's one-value-per-row label model. parquet-common exposes no reusable Parquet I/O primitives — its API is purpose-built for time series data.
 
 **Techniques ported from parquet-common to seriesmetadata**:
 - Explicit zstd compression (`zstd.SpeedBetterCompression`) instead of parquet-go defaults
-- Row sorting before write (by namespace, labels_hash, content_hash, MinTime) for better compression
+- Row sorting before write (by namespace, series_ref, content_hash, MinTime) for better compression
 - Footer key-value metadata for schema evolution and row counts
 - Namespace-partitioned row groups: each namespace written as separate row group(s) via `WriteFileWithOptions`, enabling selective reads
-- Optional bloom filters on `labels_hash` and `content_hash` columns (`WriterOptions.EnableBloomFilters`). Write-only in this package; querying is done by the consumer (e.g., Mimir store-gateway)
+- Optional bloom filters on `series_ref` and `content_hash` columns (`WriterOptions.EnableBloomFilters`). Write-only in this package; querying is done by the consumer (e.g., Mimir store-gateway)
 - Configurable row group size limits (`WriterOptions.MaxRowsPerRowGroup`) for bounded memory on read
 - `io.ReaderAt` read API (`ReadSeriesMetadataFromReaderAt`) decouples from `*os.File`, enabling `objstore.Bucket`-backed readers
 - Namespace filtering on read (`WithNamespaceFilter`) skips non-matching row groups using Parquet column index min/max bounds
 
 **Not ported** (inapplicable to this schema): Column projections (fixed ~15 column schema, not 500+ dynamic columns), two-file projections, page-level I/O (row groups are KB-to-MB, not GB), sharding.
 
-**Normalized Parquet Storage**: The Parquet file uses content-addressed tables to eliminate cross-series duplication of resources and scopes. Five namespace types: `metric` (unchanged), `resource_table` (unique resource content keyed by xxhash `ContentHash`), `resource_mapping` (series `LabelsHash` → `ContentHash` + time range), `scope_table`, `scope_mapping`. N series sharing the same OTel resource produce 1 table row + N mapping rows instead of N full copies. The in-memory model remains denormalized (`MemResourceStore`, `MemScopeStore` unchanged) — normalization happens only during `WriteFile()` and is reversed during read. Content hashing uses `xxhash.Sum64` with sorted keys for determinism. Footer metadata tracks `resource_table_count`, `resource_mapping_count`, `scope_table_count`, `scope_mapping_count`.
+**Normalized Parquet Storage**: The Parquet file uses content-addressed tables to eliminate cross-series duplication of resources and scopes. Four namespace types: `resource_table` (unique resource content keyed by xxhash `ContentHash`), `resource_mapping` (series `SeriesRef` → `ContentHash` + time range), `scope_table`, `scope_mapping`. Mapping rows store `SeriesRef` (block-level series reference) rather than `labelsHash`; the conversion happens at the Parquet boundary via resolver functions: `WriterOptions.RefResolver` converts `labelsHash → seriesRef` on write, `WithRefResolver` reader option converts `seriesRef → labelsHash` on read. When no resolver is provided (head/test writes), `labelsHash` is stored directly as `SeriesRef`. N series sharing the same OTel resource produce 1 table row + N mapping rows instead of N full copies. The in-memory model remains denormalized (`MemStore[V]` per kind) — normalization happens only during `WriteFile()` and is reversed during read. Parquet write/read dispatches per kind via `AllKinds()` + `KindDescriptor.BuildTableRow()`/`ParseTableRow()`. Content hashing uses `xxhash.Sum64` with sorted keys for determinism. Footer metadata tracks `resource_table_count`, `resource_mapping_count`, `scope_table_count`, `scope_mapping_count`.
 
 **Distributed-Scale Considerations**: The namespace-partitioned row groups, bloom filters, `io.ReaderAt` API, and namespace filtering are designed for object-storage access patterns in clustered HA implementations (e.g., Grafana Mimir store-gateway). A Mimir integration would wrap `objstore.Bucket` as `io.ReaderAt`, use `WithNamespaceFilter` to read only the needed namespaces, and query bloom filters at the store-gateway layer to skip row groups before deserialization.
 

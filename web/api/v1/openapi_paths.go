@@ -293,44 +293,6 @@ func (*OpenAPIBuilder) metadataPath() *v3.PathItem {
 	}
 }
 
-func (*OpenAPIBuilder) metadataVersionsPath() *v3.PathItem {
-	params := []*v3.Parameter{
-		queryParamWithExample("metric", "A metric name to filter metadata versions for.", false, stringSchema(), []example{{"example", "http_requests_total"}}),
-		queryParamWithExample("limit", "The maximum number of metadata version entries to return.", false, integerSchema(), []example{{"example", 100}}),
-		queryParamWithExample("start", "Start timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
-		queryParamWithExample("end", "End timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime)),
-	}
-	return &v3.PathItem{
-		Get: &v3.Operation{
-			OperationId: "get-metadata-versions",
-			Summary:     "Get time-varying metadata versions per metric",
-			Tags:        []string{"metadata"},
-			Parameters:  params,
-			Responses:   responsesWithErrorExamples("MetadataVersionsOutputBody", metadataVersionsResponseExamples(), errorResponseExamples(), "Metadata versions retrieved successfully.", "Error retrieving metadata versions."),
-		},
-	}
-}
-
-func (*OpenAPIBuilder) metadataSeriesPath() *v3.PathItem {
-	params := []*v3.Parameter{
-		queryParamWithExample("type", "Filter by metric type (exact match, e.g. counter, gauge, histogram, summary).", false, stringSchema(), []example{{"example", "counter"}}),
-		queryParamWithExample("unit", "Filter by metric unit (exact match).", false, stringSchema(), []example{{"example", "seconds"}}),
-		queryParamWithExample("help", "Filter by help text (RE2 regular expression).", false, stringSchema(), []example{{"example", "Total HTTP.*"}}),
-		queryParamWithExample("limit", "The maximum number of metadata version entries to return.", false, integerSchema(), []example{{"example", 100}}),
-		queryParamWithExample("start", "Start timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
-		queryParamWithExample("end", "End timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime)),
-	}
-	return &v3.PathItem{
-		Get: &v3.Operation{
-			OperationId: "get-metadata-series",
-			Summary:     "Find metrics by metadata criteria",
-			Tags:        []string{"metadata"},
-			Parameters:  params,
-			Responses:   responsesWithErrorExamples("MetadataSeriesOutputBody", metadataSeriesResponseExamples(), errorResponseExamples(), "Metadata series retrieved successfully.", "Error retrieving metadata series."),
-		},
-	}
-}
-
 func (*OpenAPIBuilder) scrapePoolsPath() *v3.PathItem {
 	return &v3.PathItem{
 		Get: &v3.Operation{

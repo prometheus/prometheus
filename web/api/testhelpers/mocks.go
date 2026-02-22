@@ -477,10 +477,6 @@ func (*FakeTSDBAdminStats) SeriesMetadata() (seriesmetadata.Reader, error) {
 	return seriesmetadata.NewMemSeriesMetadata(), nil
 }
 
-func (*FakeTSDBAdminStats) SeriesMetadataForMatchers(_ context.Context, _ ...*labels.Matcher) (seriesmetadata.Reader, error) {
-	return seriesmetadata.NewMemSeriesMetadata(), nil
-}
-
 // NewEmptyQueryable returns a queryable with no series.
 func NewEmptyQueryable() storage.SampleAndChunkQueryable {
 	return &FakeQueryable{series: []storage.Series{}}

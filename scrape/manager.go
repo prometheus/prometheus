@@ -464,10 +464,3 @@ func (m *Manager) DisableEndOfRunStalenessMarkers(targetSet string, targets []*T
 		sp.disableEndOfRunStalenessMarkers(targets)
 	}
 }
-
-// SetMetadataCountForJob sets a callback that provides TSDB-based metadata
-// counts per job. When set, the metadata cache metrics will use TSDB as
-// the source instead of the scrape cache.
-func (m *Manager) SetMetadataCountForJob(f func(job string) (entries, bytes int)) {
-	m.metrics.targetMetadataCache.MetadataCountForJob = f
-}

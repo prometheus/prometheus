@@ -813,8 +813,8 @@ func printScopeAttributesFiltered(title string, reader seriesmetadata.Reader, sc
 	var entries []entry
 
 	_ = reader.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
-		current := scopes.CurrentVersion()
-		if current != nil && current.Name == scopeName {
+		current, ok := scopes.CurrentVersion()
+		if ok && current.Name == scopeName {
 			entries = append(entries, entry{hash: labelsHash, scopes: scopes})
 		}
 		return nil
@@ -882,8 +882,8 @@ func printResourceAttributesFiltered(title string, reader seriesmetadata.Reader,
 
 	_ = reader.IterVersionedResources(func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
 		// Filter by current version's service name/namespace from identifying attributes
-		current := attrs.CurrentVersion()
-		if current != nil && current.Identifying[seriesmetadata.AttrServiceName] == serviceName && current.Identifying[seriesmetadata.AttrServiceNamespace] == serviceNamespace {
+		current, ok := attrs.CurrentVersion()
+		if ok && current.Identifying[seriesmetadata.AttrServiceName] == serviceName && current.Identifying[seriesmetadata.AttrServiceNamespace] == serviceNamespace {
 			entries = append(entries, entry{hash: labelsHash, attrs: attrs})
 		}
 		return nil

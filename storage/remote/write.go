@@ -75,7 +75,6 @@ type WriteStorage struct {
 	// For timestampTracker.
 	highestTimestamp        *maxTimestamp
 	enableTypeAndUnitLabels bool
-	metadataReader          MetadataReader
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
@@ -110,15 +109,6 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 	}
 	go rws.run()
 	return rws
-}
-
-// SetMetadataReader sets the TSDB metadata reader for the WriteStorage.
-// Must be called before ApplyConfig creates QueueManagers, as the reader
-// is passed to QueueManagers at construction time and not updated afterward.
-func (rws *WriteStorage) SetMetadataReader(mr MetadataReader) {
-	rws.mtx.Lock()
-	defer rws.mtx.Unlock()
-	rws.metadataReader = mr
 }
 
 func (rws *WriteStorage) run() {
@@ -225,7 +215,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.SendNativeHistograms,
 			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
-			rws.metadataReader,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
@@ -374,8 +363,6 @@ func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metada
 }
 
 func (*timestampTracker) UpdateResource(storage.SeriesRef, labels.Labels, map[string]string, map[string]string, []storage.EntityData, int64) (storage.SeriesRef, error) {
-	// Resource metadata is not supported for remote write destinations.
-	// Remote write endpoints manage their own resource attributes independently.
 	return 0, nil
 }
 

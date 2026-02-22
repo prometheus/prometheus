@@ -21,7 +21,7 @@ type WriterOptions struct {
 	// 0 means no limit (one row group per namespace).
 	MaxRowsPerRowGroup int
 
-	// EnableBloomFilters adds split-block bloom filters to labels_hash and
+	// EnableBloomFilters adds split-block bloom filters to series_ref and
 	// content_hash columns. Increases file size slightly but enables
 	// store-gateway to skip row groups without deserialization.
 	//
@@ -30,6 +30,12 @@ type WriterOptions struct {
 	// is expected to happen in the consumer (e.g. Mimir store-gateway)
 	// which knows the query-time predicates.
 	EnableBloomFilters bool
+
+	// RefResolver converts a labelsHash (the in-memory key) to a block-level
+	// seriesRef for Parquet mapping rows. If nil, labelsHash is written
+	// directly as SeriesRef (backward compat for head/test writes without
+	// a block index).
+	RefResolver func(labelsHash uint64) (seriesRef uint64, ok bool)
 }
 
 // writeNamespaceRows writes rows in chunks of maxPerGroup, calling Flush after

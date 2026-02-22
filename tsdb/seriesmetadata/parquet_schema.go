@@ -15,8 +15,6 @@ package seriesmetadata
 
 // Namespace constants for discriminating row types in the Parquet file.
 const (
-	// NamespaceMetric indicates a row contains metric metadata (type, unit, help).
-	NamespaceMetric = "metric"
 	// NamespaceResource indicates a row contains a unified resource with attributes and entities.
 	NamespaceResource = "resource"
 	// NamespaceScope indicates a row contains OTel InstrumentationScope data.
@@ -24,15 +22,15 @@ const (
 
 	// NamespaceResourceTable indicates a content-addressed resource table row.
 	// Contains the full resource content (identifying/descriptive attrs, entities)
-	// keyed by ContentHash. No LabelsHash or time range.
+	// keyed by ContentHash. No SeriesRef or time range.
 	NamespaceResourceTable = "resource_table"
-	// NamespaceResourceMapping maps a series (LabelsHash) to a resource (ContentHash)
+	// NamespaceResourceMapping maps a series (SeriesRef) to a resource (ContentHash)
 	// at a specific time range (MinTime/MaxTime).
 	NamespaceResourceMapping = "resource_mapping"
 	// NamespaceScopeTable indicates a content-addressed scope table row.
 	// Contains the full scope content keyed by ContentHash.
 	NamespaceScopeTable = "scope_table"
-	// NamespaceScopeMapping maps a series (LabelsHash) to a scope (ContentHash)
+	// NamespaceScopeMapping maps a series (SeriesRef) to a scope (ContentHash)
 	// at a specific time range (MinTime/MaxTime).
 	NamespaceScopeMapping = "scope_mapping"
 )
@@ -75,49 +73,28 @@ type EntityRow struct {
 	Description []EntityAttributeEntry `parquet:"description,list"`
 }
 
-// metadataRow is the unified Parquet schema for metric metadata, resources, and scopes.
+// metadataRow is the unified Parquet schema for OTel resources and scopes.
 // The Namespace field discriminates the logical row type.
 type metadataRow struct {
-	// Namespace discriminates the row type: "metric", "resource", "scope",
-	// "metadata_table", or "metadata_mapping".
+	// Namespace discriminates the row type: "resource_table", "resource_mapping",
+	// "scope_table", or "scope_mapping".
 	Namespace string `parquet:"namespace"`
 
-	// SeriesRef is the block-level series reference. Used by content-addressed
-	// metadata_mapping rows to identify the series within a block.
-	SeriesRef uint64 `parquet:"series_ref,optional"`
+	// SeriesRef identifies the series for mapping rows. In block Parquet files
+	// this is the block-level series reference; the read path uses a RefResolver
+	// to convert back to labelsHash for in-memory lookups. When no RefResolver
+	// is provided (e.g. head/test writes), labelsHash is stored directly.
+	SeriesRef uint64 `parquet:"series_ref"`
 
-	// LabelsHash is the stable hash of the series labels (using labels.StableHash).
-	// For metric metadata, this is used for deduplication during compaction.
-	// For resources/scopes, this identifies the specific series.
-	LabelsHash uint64 `parquet:"labels_hash"`
-
-	// MinTime is the minimum timestamp (in milliseconds) when this metadata was active.
-	// Optional for metric metadata, required for resources.
+	// MinTime is the minimum timestamp (in milliseconds) when this data was active.
 	MinTime int64 `parquet:"mint,optional"`
 
-	// MaxTime is the maximum timestamp (in milliseconds) when this metadata was active.
-	// Optional for metric metadata, required for resources.
+	// MaxTime is the maximum timestamp (in milliseconds) when this data was active.
 	MaxTime int64 `parquet:"maxt,optional"`
 
 	// ContentHash is the xxhash of content for content-addressed rows.
-	// Used for metadata_table/metadata_mapping (metric metadata deduplication),
-	// resource_table/resource_mapping, and scope_table/scope_mapping rows.
-	// Zero for plain metric rows.
+	// Used for resource_table/resource_mapping and scope_table/scope_mapping rows.
 	ContentHash uint64 `parquet:"content_hash,optional"`
-
-	// --- Metric metadata fields (namespace="metric") ---
-
-	// MetricName is the __name__ label value for the metric.
-	MetricName string `parquet:"metric_name,optional"`
-
-	// Type is the metric type as a string (counter, gauge, histogram, etc.)
-	Type string `parquet:"type,optional"`
-
-	// Unit is the metric unit (e.g., "bytes", "seconds").
-	Unit string `parquet:"unit,optional"`
-
-	// Help is the metric help text.
-	Help string `parquet:"help,optional"`
 
 	// --- Resource fields (namespace="resource") ---
 

@@ -28,13 +28,11 @@ import (
 	"testing"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -899,18 +897,68 @@ func TestBlockSeriesMetadataConcurrentReaders(t *testing.T) {
 	// Create a block with some series.
 	blockDir := createBlock(t, dir, genSeries(2, 1, 0, 10))
 
-	// Write a metadata file into the block directory.
-	mem := seriesmetadata.NewMemSeriesMetadata()
-	mem.SetVersioned("http_requests_total", 1, &seriesmetadata.MetadataVersion{
-		Meta: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests"}, MinTime: 0, MaxTime: 10,
-	})
-	mem.SetVersioned("cpu_seconds", 2, &seriesmetadata.MetadataVersion{
-		Meta: metadata.Metadata{Type: model.MetricTypeGauge, Help: "CPU seconds"}, MinTime: 0, MaxTime: 10,
-	})
-	_, err := seriesmetadata.WriteFile(promslog.NewNopLogger(), blockDir, mem)
+	// Open the block's index to discover actual series refs and labelsHashes.
+	ir, err := index.NewFileReader(filepath.Join(blockDir, indexFilename), index.DecodePostingsRaw)
 	require.NoError(t, err)
 
-	// Open the block.
+	type seriesInfo struct {
+		ref        storage.SeriesRef
+		labelsHash uint64
+	}
+	var series []seriesInfo
+	var builder labels.ScratchBuilder
+	k, v := index.AllPostingsKey()
+	p, err := ir.Postings(context.Background(), k, v)
+	require.NoError(t, err)
+	for p.Next() {
+		ref := p.At()
+		require.NoError(t, ir.Series(ref, &builder, nil))
+		series = append(series, seriesInfo{
+			ref:        ref,
+			labelsHash: labels.StableHash(builder.Labels()),
+		})
+	}
+	require.NoError(t, p.Err())
+	require.Len(t, series, 2)
+	ir.Close()
+
+	// Build labelsHash→seriesRef map for write-side resolver.
+	labelsHashToRef := map[uint64]uint64{
+		series[0].labelsHash: uint64(series[0].ref),
+		series[1].labelsHash: uint64(series[1].ref),
+	}
+
+	// Write a metadata file with resource data keyed by actual labelsHashes,
+	// using a RefResolver to store seriesRefs in the Parquet file.
+	mem := seriesmetadata.NewMemSeriesMetadata()
+	mem.SetVersionedResource(series[0].labelsHash, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			{
+				MinTime: 0, MaxTime: 10,
+				Identifying: map[string]string{"service.name": "api"},
+				Descriptive: map[string]string{"host.name": "host1"},
+			},
+		},
+	})
+	mem.SetVersionedResource(series[1].labelsHash, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			{
+				MinTime: 0, MaxTime: 10,
+				Identifying: map[string]string{"service.name": "web"},
+				Descriptive: map[string]string{"host.name": "host2"},
+			},
+		},
+	})
+	_, err = seriesmetadata.WriteFileWithOptions(promslog.NewNopLogger(), blockDir, mem, seriesmetadata.WriterOptions{
+		RefResolver: func(labelsHash uint64) (uint64, bool) {
+			ref, ok := labelsHashToRef[labelsHash]
+			return ref, ok
+		},
+	})
+	require.NoError(t, err)
+
+	// Open the block — its ReadSeriesMetadata uses a resolver to convert
+	// seriesRef back to labelsHash.
 	block, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
 	require.NoError(t, err)
 
@@ -925,21 +973,16 @@ func TestBlockSeriesMetadataConcurrentReaders(t *testing.T) {
 	require.NoError(t, reader1.Close())
 
 	// The second reader must still work after the first is closed.
-	metas, found := reader2.GetByMetricName("http_requests_total")
+	require.Equal(t, uint64(2), reader2.TotalResources())
+
+	// Verify actual key-based lookups work (not just counts).
+	r1, found := reader2.GetResource(series[0].labelsHash)
 	require.True(t, found)
-	require.Len(t, metas, 1)
-	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+	require.Equal(t, "api", r1.Identifying["service.name"])
 
-	collected := make(map[string]metadata.Metadata)
-	err = reader2.IterByMetricName(func(name string, ms []metadata.Metadata) error {
-		require.NotEmpty(t, ms)
-		collected[name] = ms[0]
-		return nil
-	})
-	require.NoError(t, err)
-	require.Len(t, collected, 2)
-
-	require.Equal(t, uint64(2), reader2.Total())
+	r2, found := reader2.GetResource(series[1].labelsHash)
+	require.True(t, found)
+	require.Equal(t, "web", r2.Identifying["service.name"])
 
 	// Close the second reader.
 	require.NoError(t, reader2.Close())

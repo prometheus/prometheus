@@ -470,22 +470,16 @@ Outer:
 					continue
 				}
 				s.Lock()
-				if s.meta == nil {
-					s.meta = &seriesmetadata.VersionedMetadata{}
+				s.meta = &metadata.Metadata{
+					Type: record.ToMetricType(m.Type),
+					Unit: m.Unit,
+					Help: m.Help,
 				}
-				s.meta.AddOrExtend(&seriesmetadata.MetadataVersion{
-					Meta: metadata.Metadata{
-						Type: record.ToMetricType(m.Type),
-						Unit: m.Unit,
-						Help: m.Help,
-					},
-					MinTime: m.MinTime,
-					MaxTime: m.MaxTime,
-				})
 				s.Unlock()
 			}
 			h.wlReplayMetadataPool.Put(v)
 		case []record.RefResource:
+			resKind, _ := seriesmetadata.KindByID(seriesmetadata.KindResource)
 			for _, r := range v {
 				if ref, ok := multiRef[r.Ref]; ok {
 					r.Ref = ref
@@ -496,21 +490,19 @@ Outer:
 					missingSeries[r.Ref] = struct{}{}
 					continue
 				}
-				metadataEntities := make([]*seriesmetadata.Entity, len(r.Entities))
-				for i, e := range r.Entities {
-					metadataEntities[i] = seriesmetadata.NewEntity(e.Type, e.ID, e.Description)
-				}
-				rv := seriesmetadata.NewResourceVersion(r.Identifying, r.Descriptive, metadataEntities, r.MinTime, r.MaxTime)
 				s.Lock()
-				if s.resource == nil {
-					s.resource = seriesmetadata.NewVersionedResource(rv)
-				} else {
-					s.resource.AddOrExtend(rv)
-				}
+				resKind.CommitToSeries(s, seriesmetadata.ResourceCommitData{
+					Identifying: r.Identifying,
+					Descriptive: r.Descriptive,
+					Entities:    refResourceEntitiesToCommitData(r.Entities),
+					MinTime:     r.MinTime,
+					MaxTime:     r.MaxTime,
+				})
 				s.Unlock()
 			}
 			h.wlReplayResourcesPool.Put(v)
 		case []record.RefScope:
+			scopeKind, _ := seriesmetadata.KindByID(seriesmetadata.KindScope)
 			for _, sc := range v {
 				if ref, ok := multiRef[sc.Ref]; ok {
 					sc.Ref = ref
@@ -521,13 +513,15 @@ Outer:
 					missingSeries[sc.Ref] = struct{}{}
 					continue
 				}
-				sv := seriesmetadata.NewScopeVersion(sc.Name, sc.Version, sc.SchemaURL, sc.Attrs, sc.MinTime, sc.MaxTime)
 				s.Lock()
-				if s.scope == nil {
-					s.scope = seriesmetadata.NewVersionedScope(sv)
-				} else {
-					s.scope.AddOrExtend(sv)
-				}
+				scopeKind.CommitToSeries(s, seriesmetadata.ScopeCommitData{
+					Name:      sc.Name,
+					Version:   sc.Version,
+					SchemaURL: sc.SchemaURL,
+					Attrs:     sc.Attrs,
+					MinTime:   sc.MinTime,
+					MaxTime:   sc.MaxTime,
+				})
 				s.Unlock()
 			}
 			h.wlReplayScopesPool.Put(v)

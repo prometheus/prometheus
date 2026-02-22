@@ -1195,134 +1195,55 @@ func (db *DB) BlockMetas() []BlockMeta {
 //
 // NOTE: The returned reader's ref values are labels hashes, NOT series refs.
 // The merged result spans multiple indexes so no single series ref is valid.
-// Callers should use GetByMetricName / IterByMetricName / IterVersionedMetadata
-// (ignoring the ref parameter) rather than Get(ref).
+// Callers should use the resource/scope iteration methods.
 func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 	if !db.opts.EnableNativeMetadata {
 		return seriesmetadata.NewMemSeriesMetadata(), nil
 	}
 
 	merged := seriesmetadata.NewMemSeriesMetadata()
-	var builder labels.ScratchBuilder
 
-	// Collect metadata from all blocks, resolving BlockSeriesRef → labels via index.
+	// Collect all metadata kinds from blocks.
 	for _, b := range db.Blocks() {
 		mr, err := b.SeriesMetadata()
 		if err != nil {
 			return nil, fmt.Errorf("get block series metadata: %w", err)
 		}
-		ir, err := b.Index()
-		if err != nil {
-			mr.Close()
-			return nil, fmt.Errorf("get block index: %w", err)
-		}
 
-		err = mr.IterVersionedMetadata(func(ref uint64, _ string, _ labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
-			if err := ir.Series(storage.SeriesRef(ref), &builder, nil); err != nil {
-				return fmt.Errorf("resolve block series ref %d: %w", ref, err)
+		for _, kind := range seriesmetadata.AllKinds() {
+			err = mr.IterKind(kind.ID(), func(labelsHash uint64, versioned any) error {
+				store := merged.StoreForKind(kind.ID())
+				kind.SetVersioned(store, labelsHash, versioned)
+				return nil
+			})
+			if err != nil {
+				mr.Close()
+				return nil, fmt.Errorf("iterate block %s: %w", kind.ID(), err)
 			}
-			lset := builder.Labels()
-			lHash := labels.StableHash(lset)
-
-			existing, ok := merged.GetVersionedMetadata(lHash)
-			if ok {
-				merged.SetVersionedMetadataWithLabels(lHash, lset.Copy(), seriesmetadata.MergeVersionedMetadata(existing, vm))
-			} else {
-				merged.SetVersionedMetadataWithLabels(lHash, lset.Copy(), vm.Copy())
-			}
-			return nil
-		})
-		if err != nil {
-			mr.Close()
-			ir.Close()
-			return nil, fmt.Errorf("iterate block versioned metadata: %w", err)
-		}
-		ir.Close()
-		// Collect versioned resources (unified attributes + entities)
-		err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
-			merged.SetVersionedResource(labelsHash, resources)
-			return nil
-		})
-		if err != nil {
-			mr.Close()
-			return nil, fmt.Errorf("iterate block resources: %w", err)
-		}
-		// Collect versioned scopes (instrumentation library metadata)
-		err = mr.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
-			merged.SetVersionedScope(labelsHash, scopes)
-			return nil
-		})
-		if err != nil {
-			mr.Close()
-			return nil, fmt.Errorf("iterate block scopes: %w", err)
 		}
 		mr.Close()
 	}
 
-	// Collect metadata from head, resolving HeadSeriesRef → labels via head's index.
+	// Collect all metadata kinds from head.
 	headMeta, err := db.head.SeriesMetadata()
 	if err != nil {
 		return nil, fmt.Errorf("get head series metadata: %w", err)
 	}
-	headIR, err := db.head.Index()
-	if err != nil {
-		headMeta.Close()
-		return nil, fmt.Errorf("get head index: %w", err)
-	}
 
-	err = headMeta.IterVersionedMetadata(func(ref uint64, _ string, _ labels.Labels, vm *seriesmetadata.VersionedMetadata) error {
-		if err := headIR.Series(storage.SeriesRef(ref), &builder, nil); err != nil {
-			// Series may have been garbage collected since metadata was read; skip.
-			// Log in case it indicates a real index issue rather than a benign race.
-			db.logger.Debug("skipping head metadata entry: could not resolve series ref", "ref", ref, "err", err)
+	for _, kind := range seriesmetadata.AllKinds() {
+		err = headMeta.IterKind(kind.ID(), func(labelsHash uint64, versioned any) error {
+			store := merged.StoreForKind(kind.ID())
+			kind.SetVersioned(store, labelsHash, versioned)
 			return nil
+		})
+		if err != nil {
+			headMeta.Close()
+			return nil, fmt.Errorf("iterate head %s: %w", kind.ID(), err)
 		}
-		lset := builder.Labels()
-		lHash := labels.StableHash(lset)
-
-		existing, ok := merged.GetVersionedMetadata(lHash)
-		if ok {
-			merged.SetVersionedMetadataWithLabels(lHash, lset.Copy(), seriesmetadata.MergeVersionedMetadata(existing, vm))
-		} else {
-			merged.SetVersionedMetadataWithLabels(lHash, lset.Copy(), vm.Copy())
-		}
-		return nil
-	})
-	headMeta.Close()
-	headIR.Close()
-	if err != nil {
-		return nil, fmt.Errorf("iterate head versioned metadata: %w", err)
-	}
-	// Collect versioned resources from head (unified attributes + entities)
-	err = headMeta.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
-		merged.SetVersionedResource(labelsHash, resources)
-		return nil
-	})
-	if err != nil {
-		headMeta.Close()
-		return nil, fmt.Errorf("iterate head resources: %w", err)
-	}
-	// Collect versioned scopes from head (instrumentation library metadata)
-	err = headMeta.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
-		merged.SetVersionedScope(labelsHash, scopes)
-		return nil
-	})
-	if err != nil {
-		headMeta.Close()
-		return nil, fmt.Errorf("iterate head scopes: %w", err)
 	}
 	headMeta.Close()
 
 	return merged, nil
-}
-
-// SeriesMetadataForMatchers returns metadata for series matching the given label matchers.
-// Delegates to the head. Returns an empty reader when native metadata is not enabled.
-func (db *DB) SeriesMetadataForMatchers(ctx context.Context, matchers ...*labels.Matcher) (seriesmetadata.Reader, error) {
-	if !db.opts.EnableNativeMetadata {
-		return seriesmetadata.NewMemSeriesMetadata(), nil
-	}
-	return db.head.SeriesMetadataForMatchers(ctx, matchers...)
 }
 
 func (db *DB) run(ctx context.Context) {
