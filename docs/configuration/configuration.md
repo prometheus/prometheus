@@ -1175,7 +1175,7 @@ filters:
   [ - name: <string>
       values: <string>, [...] ]
 
-# List of ECS, MSK, or ElastiCache cluster identifiers (ecs, msk, and elasticache roles only) to discover.
+# List of ECS, ElastiCache, or MSK cluster identifiers (ecs, elasticache, and msk roles only) to discover.
 # A List of ARNs of clusters to discover. If empty, all clusters in the region are discovered.
 # This can significantly improve performance when you only need to monitor specific clusters/caches.
 [ clusters: [<string>, ...] ]
