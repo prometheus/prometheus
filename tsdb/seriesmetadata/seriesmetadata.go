@@ -59,6 +59,11 @@ type Reader interface {
 
 	// LabelsForHash returns the labels for a given labels hash, if available.
 	LabelsForHash(labelsHash uint64) (labels.Labels, bool)
+
+	// LookupResourceAttr returns labelsHashes that have a resource version
+	// with the given key:value in Identifying or Descriptive attributes.
+	// Returns nil if the index has not been built.
+	LookupResourceAttr(key, value string) map[uint64]struct{}
 }
 
 // LabelsPopulator allows post-construction population of the labels map.
@@ -72,6 +77,11 @@ type LabelsPopulator interface {
 type MemSeriesMetadata struct {
 	stores    map[KindID]any           // each value is *MemStore[V] for the appropriate V
 	labelsMap map[uint64]labels.Labels // labelsHash → labels.Labels
+
+	// resourceAttrIndex maps "key\x00value" → set of labelsHashes.
+	// Covers both Identifying and Descriptive attributes across all versions.
+	// Built lazily via BuildResourceAttrIndex(); nil until built.
+	resourceAttrIndex map[string]map[uint64]struct{}
 }
 
 // NewMemSeriesMetadata creates a new in-memory series metadata store.
@@ -209,6 +219,43 @@ func (m *MemSeriesMetadata) TotalScopes() uint64 {
 
 func (m *MemSeriesMetadata) TotalScopeVersions() uint64 {
 	return m.ScopeStore().TotalVersions()
+}
+
+// BuildResourceAttrIndex builds the inverted index from all resource versions.
+// Called once after merge in buildSeriesMetadata. After this, LookupResourceAttr
+// returns results in O(1) instead of requiring a full scan.
+func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
+	idx := make(map[string]map[uint64]struct{})
+	m.ResourceStore().IterVersioned(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
+		for _, rv := range vr.Versions {
+			for k, v := range rv.Identifying {
+				key := k + "\x00" + v
+				if idx[key] == nil {
+					idx[key] = make(map[uint64]struct{})
+				}
+				idx[key][labelsHash] = struct{}{}
+			}
+			for k, v := range rv.Descriptive {
+				key := k + "\x00" + v
+				if idx[key] == nil {
+					idx[key] = make(map[uint64]struct{})
+				}
+				idx[key][labelsHash] = struct{}{}
+			}
+		}
+		return nil
+	})
+	m.resourceAttrIndex = idx
+}
+
+// LookupResourceAttr returns labelsHashes that have a resource version
+// with the given key:value in Identifying or Descriptive attributes.
+// Returns nil if the index has not been built.
+func (m *MemSeriesMetadata) LookupResourceAttr(key, value string) map[uint64]struct{} {
+	if m.resourceAttrIndex == nil {
+		return nil
+	}
+	return m.resourceAttrIndex[key+"\x00"+value]
 }
 
 // parquetReader implements Reader by reading from a Parquet file.
@@ -536,6 +583,10 @@ func (r *parquetReader) SetLabels(labelsHash uint64, lset labels.Labels) {
 
 func (r *parquetReader) KindLen(id KindID) int {
 	return r.mem.KindLen(id)
+}
+
+func (r *parquetReader) LookupResourceAttr(key, value string) map[uint64]struct{} {
+	return r.mem.LookupResourceAttr(key, value)
 }
 
 // Close releases resources associated with the reader.
