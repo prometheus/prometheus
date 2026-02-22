@@ -1,6 +1,6 @@
 module compliance
 
-go 1.25.5
+go 1.25.7
 
 require github.com/prometheus/compliance/remotewrite v0.0.0-20260220101514-bccaa3a70275
 
