@@ -315,8 +315,19 @@ func runDemo() error {
 	fmt.Printf("%sAPI Response (/api/v1/resources):%s\n", colorBold, colorReset)
 	fmt.Printf("%s%s%s\n\n", colorGray, string(prettyJSON), colorReset)
 
+	// === PHASE 9: Reverse lookup — find series by metadata criteria ===
+	printPhase(9, "Reverse lookup: find series by metadata criteria")
+
+	fmt.Printf("The %s/api/v1/resources/series%s endpoint finds series that match OTel metadata filters.\n", colorBold, colorReset)
+	fmt.Printf("This is the reverse of %s/api/v1/resources%s (which takes series → returns attributes).\n\n", colorBold, colorReset)
+
+	reverseLookupResponse := buildReverseLookupAPIResponse(db)
+	reverseLookupJSON, _ := json.MarshalIndent(reverseLookupResponse, "", "  ")
+	fmt.Printf("%sReverse Lookup Results:%s\n", colorBold, colorReset)
+	fmt.Printf("%s%s%s\n\n", colorGray, string(reverseLookupJSON), colorReset)
+
 	// === Summary ===
-	printPhase(9, "Summary")
+	printPhase(10, "Summary")
 	fmt.Printf("%sThis demo showed how Prometheus persists OTel resource and scope attributes:%s\n", colorBold, colorReset)
 	fmt.Printf("  %s1.%s Resource attributes arrive via OTLP metrics (service.name, etc.)\n", colorGreen, colorReset)
 	fmt.Printf("  %s2.%s Attributes are stored per-series in TSDB head (in-memory)\n", colorGreen, colorReset)
@@ -1234,5 +1245,123 @@ func buildResourceAttributesAPIResponse(db *tsdb.DB) map[string]any {
 	return map[string]any{
 		"status": "success",
 		"data":   data,
+	}
+}
+
+// buildReverseLookupAPIResponse demonstrates the reverse lookup: find series by metadata criteria.
+// This exercises the same logic as /api/v1/resources/series but directly against TSDB.
+func buildReverseLookupAPIResponse(db *tsdb.DB) map[string]any {
+	reader, err := db.SeriesMetadata()
+	if err != nil {
+		return map[string]any{"status": "error", "error": err.Error()}
+	}
+	defer reader.Close()
+
+	labelsMap := buildHashToLabelsMap(db)
+
+	type matchedEntry struct {
+		Labels       map[string]string `json:"labels"`
+		ServiceName  string            `json:"service_name,omitempty"`
+		ScopeName    string            `json:"scope_name,omitempty"`
+		VersionCount int               `json:"version_count"`
+		EntityTypes  []string          `json:"entity_types,omitempty"`
+	}
+
+	type result struct {
+		Query   string         `json:"query"`
+		Matches []matchedEntry `json:"matches"`
+	}
+
+	var results []result
+
+	// 1. Find series with service.name=payment-service
+	{
+		var matches []matchedEntry
+		_ = reader.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			for _, rv := range resources.Versions {
+				if rv.Identifying["service.name"] == "payment-service" {
+					lbls := make(map[string]string)
+					if lbs, ok := labelsMap[labelsHash]; ok {
+						lbs.Range(func(l labels.Label) { lbls[l.Name] = l.Value })
+					}
+					matches = append(matches, matchedEntry{
+						Labels:       lbls,
+						ServiceName:  rv.Identifying["service.name"],
+						VersionCount: len(resources.Versions),
+					})
+					break
+				}
+			}
+			return nil
+		})
+		results = append(results, result{
+			Query:   `resource.attr=service.name:payment-service`,
+			Matches: matches,
+		})
+	}
+
+	// 2. Find series with scope name "github.com/example/payment"
+	{
+		var matches []matchedEntry
+		_ = reader.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+			for _, sv := range scopes.Versions {
+				if sv.Name == "github.com/example/payment" {
+					lbls := make(map[string]string)
+					if lbs, ok := labelsMap[labelsHash]; ok {
+						lbs.Range(func(l labels.Label) { lbls[l.Name] = l.Value })
+					}
+					matches = append(matches, matchedEntry{
+						Labels:       lbls,
+						ScopeName:    sv.Name,
+						VersionCount: len(scopes.Versions),
+					})
+					break
+				}
+			}
+			return nil
+		})
+		results = append(results, result{
+			Query:   `scope.name=github.com/example/payment`,
+			Matches: matches,
+		})
+	}
+
+	// 3. Find series with entity type "service"
+	{
+		var matches []matchedEntry
+		_ = reader.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			for _, rv := range resources.Versions {
+				for _, ent := range rv.Entities {
+					if ent.Type == "service" {
+						lbls := make(map[string]string)
+						if lbs, ok := labelsMap[labelsHash]; ok {
+							lbs.Range(func(l labels.Label) { lbls[l.Name] = l.Value })
+						}
+						var entityTypes []string
+						for _, e := range rv.Entities {
+							entityTypes = append(entityTypes, e.Type)
+						}
+						matches = append(matches, matchedEntry{
+							Labels:       lbls,
+							ServiceName:  rv.Identifying["service.name"],
+							VersionCount: len(resources.Versions),
+							EntityTypes:  entityTypes,
+						})
+						break
+					}
+				}
+			}
+			return nil
+		})
+		results = append(results, result{
+			Query:   `entity.type=service`,
+			Matches: matches,
+		})
+	}
+
+	return map[string]any{
+		"status":      "success",
+		"description": "Reverse lookup: find series matching OTel metadata criteria",
+		"queries":     results,
 	}
 }
