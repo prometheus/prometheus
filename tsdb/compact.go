@@ -946,6 +946,7 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 	}
 
 	wopts := seriesmetadata.WriterOptions{
+		EnableInvertedIndex: true,
 		RefResolver: func(labelsHash uint64) (uint64, bool) {
 			ref, ok := labelsHashToRef[labelsHash]
 			return ref, ok
