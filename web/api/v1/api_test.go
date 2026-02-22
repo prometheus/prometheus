@@ -5107,6 +5107,12 @@ func TestResourceSeriesLookup(t *testing.T) {
 		},
 	})
 
+	// Populate labels and inverted index for metadata lookups.
+	mem.SetLabels(paymentHash, paymentLbls)
+	mem.SetLabels(orderHash, orderLbls)
+	mem.SetLabels(stagingHash, stagingLbls)
+	mem.BuildResourceAttrIndex()
+
 	db := &fakeDB{seriesMetadata: mem}
 
 	api := &API{
@@ -5165,7 +5171,7 @@ func TestResourceSeriesLookup(t *testing.T) {
 		r := makeRequest(url.Values{"resource.attr": {"service.name:payment-service"}})
 		result := api.resourceSeriesLookup(r)
 		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
+		data := result.data.(*PaginatedSeriesMetadata).Results
 		// Should match payment (production) and staging
 		require.Len(t, data, 2)
 	})
@@ -5174,7 +5180,7 @@ func TestResourceSeriesLookup(t *testing.T) {
 		r := makeRequest(url.Values{"resource.attr": {"service.name:payment-service", "service.namespace:production"}})
 		result := api.resourceSeriesLookup(r)
 		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
+		data := result.data.(*PaginatedSeriesMetadata).Results
 		// Should only match production payment-service
 		require.Len(t, data, 1)
 		require.Equal(t, "payment-service", data[0].Versions[0].Attributes.Identifying["service.name"])
@@ -5185,7 +5191,7 @@ func TestResourceSeriesLookup(t *testing.T) {
 		r := makeRequest(url.Values{"resource.attr": {"cloud.region:us-east-1"}})
 		result := api.resourceSeriesLookup(r)
 		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
+		data := result.data.(*PaginatedSeriesMetadata).Results
 		// Only staging payment-service is in us-east-1
 		require.Len(t, data, 1)
 		require.Equal(t, "staging", data[0].Versions[0].Attributes.Identifying["service.namespace"])
@@ -5198,7 +5204,7 @@ func TestResourceSeriesLookup(t *testing.T) {
 		})
 		result := api.resourceSeriesLookup(r)
 		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
+		data := result.data.(*PaginatedSeriesMetadata).Results
 		// us-west-2 matches payment (production) and order, but match[] restricts to http_requests_total → only payment
 		require.Len(t, data, 1)
 		require.Equal(t, "http_requests_total", data[0].Labels.Get("__name__"))
@@ -5211,18 +5217,46 @@ func TestResourceSeriesLookup(t *testing.T) {
 		})
 		result := api.resourceSeriesLookup(r)
 		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
-		require.Len(t, data, 1)
+		paginated := result.data.(*PaginatedSeriesMetadata)
+		require.Len(t, paginated.Results, 1)
+		require.NotEmpty(t, paginated.NextToken, "should have nextToken when more results exist")
 	})
 
 	t.Run("no matching metadata returns empty", func(t *testing.T) {
 		r := makeRequest(url.Values{"resource.attr": {"service.name:nonexistent-service"}})
 		result := api.resourceSeriesLookup(r)
 		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
-		require.Len(t, data, 0)
+		data := result.data.(*PaginatedSeriesMetadata).Results
+		require.Empty(t, data)
 	})
 
+	t.Run("pagination with next_token", func(t *testing.T) {
+		// First page: limit=1
+		r := makeRequest(url.Values{
+			"resource.attr": {"service.name:payment-service"},
+			"limit":         {"1"},
+		})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		page1 := result.data.(*PaginatedSeriesMetadata)
+		require.Len(t, page1.Results, 1)
+		require.NotEmpty(t, page1.NextToken)
+
+		// Second page: use next_token
+		r = makeRequest(url.Values{
+			"resource.attr": {"service.name:payment-service"},
+			"limit":         {"1"},
+			"next_token":    {page1.NextToken},
+		})
+		result = api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		page2 := result.data.(*PaginatedSeriesMetadata)
+		require.Len(t, page2.Results, 1)
+		require.Empty(t, page2.NextToken, "last page should have no nextToken")
+
+		// Results should be different
+		require.NotEqual(t, page1.Results[0].Labels.String(), page2.Results[0].Labels.String())
+	})
 }
 
 func TestParseAttrFilter(t *testing.T) {

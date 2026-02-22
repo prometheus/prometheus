@@ -76,7 +76,7 @@ type KindDescriptor interface {
 
 	// CommitToSeries applies a single WAL record entry to a memSeries.
 	// `series` is a kindMetaAccessor, `walRecord` is a single WAL record entry.
-	CommitToSeries(series any, walRecord any)
+	CommitToSeries(series, walRecord any)
 
 	// CollectFromSeries extracts the *Versioned[V] from a memSeries (type-erased).
 	// Returns nil, false if the series has no data for this kind.
@@ -86,7 +86,7 @@ type KindDescriptor interface {
 	CopyVersioned(v any) any
 
 	// SetOnSeries sets the *Versioned[V] on a memSeries (type-erased).
-	SetOnSeries(series any, versioned any)
+	SetOnSeries(series, versioned any)
 
 	// --- Store operations (type-erased wrappers around MemStore) ---
 
