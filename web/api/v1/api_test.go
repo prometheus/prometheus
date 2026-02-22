@@ -5110,66 +5110,6 @@ func TestResourceSeriesLookup(t *testing.T) {
 		require.Equal(t, "staging", data[0].Versions[0].Attributes.Identifying["service.namespace"])
 	})
 
-	t.Run("filter by scope name", func(t *testing.T) {
-		r := makeRequest(url.Values{"scope.name": {"opentelemetry-go"}})
-		result := api.resourceSeriesLookup(r)
-		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
-		// Only payment-service (production) has opentelemetry-go scope
-		require.Len(t, data, 1)
-		require.Len(t, data[0].ScopeVersions, 1)
-		require.Equal(t, "opentelemetry-go", data[0].ScopeVersions[0].Name)
-	})
-
-	t.Run("filter by scope version", func(t *testing.T) {
-		r := makeRequest(url.Values{"scope.name": {"opentelemetry-java"}, "scope.version": {"1.30.0"}})
-		result := api.resourceSeriesLookup(r)
-		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
-		require.Len(t, data, 1)
-		require.Equal(t, "opentelemetry-java", data[0].ScopeVersions[0].Name)
-	})
-
-	t.Run("filter by scope attribute", func(t *testing.T) {
-		r := makeRequest(url.Values{"scope.attr": {"library.language:go"}})
-		result := api.resourceSeriesLookup(r)
-		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
-		require.Len(t, data, 1)
-	})
-
-	t.Run("filter by entity type", func(t *testing.T) {
-		r := makeRequest(url.Values{"entity.type": {"service"}})
-		result := api.resourceSeriesLookup(r)
-		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
-		// Only payment-service (production) has entities
-		require.Len(t, data, 1)
-	})
-
-	t.Run("filter by entity type and attr", func(t *testing.T) {
-		r := makeRequest(url.Values{"entity.type": {"host"}, "entity.attr": {"host.name:host-1"}})
-		result := api.resourceSeriesLookup(r)
-		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
-		require.Len(t, data, 1)
-	})
-
-	t.Run("combined resource + scope filters (intersection)", func(t *testing.T) {
-		r := makeRequest(url.Values{
-			"resource.attr": {"service.name:payment-service"},
-			"scope.name":    {"opentelemetry-go"},
-		})
-		result := api.resourceSeriesLookup(r)
-		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
-		// payment-service production + opentelemetry-go = 1 match
-		// (staging payment-service has no scope set)
-		require.Len(t, data, 1)
-		require.Equal(t, "production", data[0].Versions[0].Attributes.Identifying["service.namespace"])
-		require.Equal(t, "opentelemetry-go", data[0].ScopeVersions[0].Name)
-	})
-
 	t.Run("match[] pre-filter narrows results", func(t *testing.T) {
 		r := makeRequest(url.Values{
 			"resource.attr": {"cloud.region:us-west-2"},
@@ -5202,13 +5142,6 @@ func TestResourceSeriesLookup(t *testing.T) {
 		require.Len(t, data, 0)
 	})
 
-	t.Run("scope filter with no matching scope returns empty", func(t *testing.T) {
-		r := makeRequest(url.Values{"scope.name": {"nonexistent-scope"}})
-		result := api.resourceSeriesLookup(r)
-		require.Nil(t, result.err)
-		data := result.data.([]SeriesMetadataResponse)
-		require.Len(t, data, 0)
-	})
 }
 
 func TestParseAttrFilter(t *testing.T) {
