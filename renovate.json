@@ -14,7 +14,7 @@
   "github-actions": {
     "managerFilePatterns": ["scripts/**"]
   },
-  "prBodyNotes": ["---", "Does this PR introduce a user-facing change?","```NONE```"],
+  "prBodyNotes": ["---", "Does this PR introduce a user-facing change?", "```release-notes", "NONE", "```"],
   "prConcurrentLimit": 20,
   "prHourlyLimit": 5,
   "packageRules": [
