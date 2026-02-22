@@ -2106,6 +2106,7 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 				continue
 			}
 			hash := labels.StableHash(s.lset)
+			mem.SetLabels(hash, s.lset)
 			for _, kind := range allKinds {
 				v, ok := kind.CollectFromSeries(s)
 				if !ok {

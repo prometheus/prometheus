@@ -15,6 +15,7 @@ package seriesmetadata
 
 import (
 	"cmp"
+	"context"
 	"log/slog"
 	"slices"
 
@@ -156,8 +157,8 @@ func (*resourceKindDescriptor) SetVersioned(store any, labelsHash uint64, versio
 	store.(*MemStore[*ResourceVersion]).SetVersioned(labelsHash, versioned.(*Versioned[*ResourceVersion]))
 }
 
-func (*resourceKindDescriptor) IterVersioned(store any, f func(labelsHash uint64, versioned any) error) error {
-	return store.(*MemStore[*ResourceVersion]).IterVersioned(func(labelsHash uint64, v *Versioned[*ResourceVersion]) error {
+func (*resourceKindDescriptor) IterVersioned(ctx context.Context, store any, f func(labelsHash uint64, versioned any) error) error {
+	return store.(*MemStore[*ResourceVersion]).IterVersioned(ctx, func(labelsHash uint64, v *Versioned[*ResourceVersion]) error {
 		return f(labelsHash, v)
 	})
 }
