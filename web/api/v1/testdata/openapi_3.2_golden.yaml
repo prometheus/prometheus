@@ -1370,6 +1370,169 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+    /resources/series:
+        get:
+            tags:
+                - resources
+            summary: Find series by OTel metadata criteria
+            description: 'Reverse lookup: given attribute filters (resource, scope, entity), find all series that have matching OTel metadata. At least one metadata filter is required.'
+            operationId: resources-series-lookup
+            parameters:
+                - name: resource.attr
+                  in: query
+                  description: Resource attribute filter in key:value format. Repeatable. All must match (AND).
+                  required: false
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value: service.name:payment-service
+                - name: scope.name
+                  in: query
+                  description: Exact match on InstrumentationScope name.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: opentelemetry-go
+                - name: scope.version
+                  in: query
+                  description: Exact match on InstrumentationScope version.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: 1.24.0
+                - name: scope.schema_url
+                  in: query
+                  description: Exact match on InstrumentationScope schema URL.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                - name: scope.attr
+                  in: query
+                  description: Scope attribute filter in key:value format. Repeatable. All must match (AND).
+                  required: false
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value: library.language:go
+                - name: entity.type
+                  in: query
+                  description: Exact match on entity type.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: service
+                - name: entity.attr
+                  in: query
+                  description: Entity attribute filter in key:value format. Repeatable. All must match (AND).
+                  required: false
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value: service.name:payment-service
+                - name: match[]
+                  in: query
+                  description: Series selector to pre-filter by label matchers.
+                  required: false
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value:
+                            - '{__name__="http_requests_total"}'
+                - name: start
+                  in: query
+                  description: Start timestamp to filter metadata versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: End timestamp to filter metadata versions.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+                - name: limit
+                  in: query
+                  description: Maximum number of series to return.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+            responses:
+                "200":
+                    description: Matching series with metadata retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ResourcesSeriesOutputBody'
+                default:
+                    description: Error performing reverse lookup.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
     /metadata:
         get:
             tags:
@@ -3478,6 +3641,37 @@ components:
                 - data
             additionalProperties: false
             description: Response body for resources endpoint (default format).
+        ResourcesSeriesOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    type: array
+                    items:
+                        type: object
+                        description: A series matching the metadata criteria with its resource and scope version history.
+                    description: Array of series matching the metadata criteria, with their resource and scope versions.
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for the reverse lookup endpoint.
         ResourcesAttributesOutputBody:
             type: object
             properties:

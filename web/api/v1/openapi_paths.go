@@ -276,6 +276,44 @@ func (*OpenAPIBuilder) resourcesPath() *v3.PathItem {
 	}
 }
 
+func (*OpenAPIBuilder) resourcesSeriesPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("resource.attr", "Resource attribute filter in key:value format. Repeatable. All must match (AND).", false, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", "service.name:payment-service"}}),
+		queryParamWithExample("scope.name", "Exact match on InstrumentationScope name.", false, stringSchema(), []example{{"example", "opentelemetry-go"}}),
+		queryParamWithExample("scope.version", "Exact match on InstrumentationScope version.", false, stringSchema(), []example{{"example", "1.24.0"}}),
+		queryParamWithExample("scope.schema_url", "Exact match on InstrumentationScope schema URL.", false, stringSchema(), nil),
+		queryParamWithExample("scope.attr", "Scope attribute filter in key:value format. Repeatable. All must match (AND).", false, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", "library.language:go"}}),
+		queryParamWithExample("entity.type", "Exact match on entity type.", false, stringSchema(), []example{{"example", "service"}}),
+		queryParamWithExample("entity.attr", "Entity attribute filter in key:value format. Repeatable. All must match (AND).", false, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", "service.name:payment-service"}}),
+		queryParamWithExample("match[]", "Series selector to pre-filter by label matchers.", false, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", []string{`{__name__="http_requests_total"}`}}}),
+		queryParamWithExample("start", "Start timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp to filter metadata versions.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("limit", "Maximum number of series to return.", false, integerSchema(), []example{{"example", 100}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "resources-series-lookup",
+			Summary:     "Find series by OTel metadata criteria",
+			Description: "Reverse lookup: given attribute filters (resource, scope, entity), find all series that have matching OTel metadata. At least one metadata filter is required.",
+			Tags:        []string{"resources"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("ResourcesSeriesOutputBody", nil, errorResponseExamples(), "Matching series with metadata retrieved successfully.", "Error performing reverse lookup."),
+		},
+	}
+}
+
 func (*OpenAPIBuilder) metadataPath() *v3.PathItem {
 	params := []*v3.Parameter{
 		queryParamWithExample("limit", "The maximum number of metrics to return.", false, integerSchema(), []example{{"example", 100}}),

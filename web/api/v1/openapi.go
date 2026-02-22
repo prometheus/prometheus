@@ -279,6 +279,7 @@ func (b *OpenAPIBuilder) getAllPathDefinitions() *orderedmap.Map[string, *v3.Pat
 
 	// Resources endpoints.
 	paths.Set("/resources", b.resourcesPath())
+	paths.Set("/resources/series", b.resourcesSeriesPath())
 
 	// Metadata endpoints.
 	paths.Set("/metadata", b.metadataPath())

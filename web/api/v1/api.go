@@ -459,6 +459,7 @@ func (api *API) Register(r *route.Router) {
 
 	r.Get("/metadata", wrap(api.metricMetadata))
 	r.Get("/resources", wrap(api.resourceAttributes))
+	r.Get("/resources/series", wrap(api.resourceSeriesLookup))
 
 	r.Get("/status/config", wrap(api.serveConfig))
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
@@ -1556,6 +1557,23 @@ type ResourceAttributesResponse struct {
 	Versions []ResourceAttributeVersion `json:"versions"`
 }
 
+// ScopeAttributeVersion is a single version of scope metadata with its time range.
+type ScopeAttributeVersion struct {
+	Name      string            `json:"name"`
+	Version   string            `json:"version,omitempty"`
+	SchemaURL string            `json:"schema_url,omitempty"`
+	Attrs     map[string]string `json:"attrs,omitempty"`
+	MinTimeMs int64             `json:"min_time_ms"`
+	MaxTimeMs int64             `json:"max_time_ms"`
+}
+
+// SeriesMetadataResponse is the response for the reverse lookup endpoint.
+type SeriesMetadataResponse struct {
+	Labels        labels.Labels              `json:"labels"`
+	Versions      []ResourceAttributeVersion `json:"versions,omitempty"`
+	ScopeVersions []ScopeAttributeVersion    `json:"scope_versions,omitempty"`
+}
+
 func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 	if !api.enableNativeMetadata {
 		return apiFuncResult{nil, &apiError{errorExec, errors.New("native metadata is disabled; enable with --enable-feature=native-metadata")}, nil, nil}
@@ -1652,7 +1670,7 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 	warnings := set.Warnings()
 
 	for set.Next() {
-		if limit >= 0 && len(results) >= limit {
+		if limit > 0 && len(results) >= limit {
 			break
 		}
 
@@ -1739,7 +1757,7 @@ func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, start
 	hashToLabels := make(map[uint64]labels.Labels)
 	for set.Next() {
 		lset := set.At().Labels()
-		hashToLabels[lset.Hash()] = lset
+		hashToLabels[labels.StableHash(lset)] = lset
 	}
 	if err := set.Err(); err != nil {
 		return apiFuncResult{nil, returnAPIError(err), nil, nil}
@@ -1747,7 +1765,7 @@ func (api *API) resourceAttributesAll(mr seriesmetadata.Reader, limit int, start
 
 	var results []ResourceAttributesResponse
 	err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
-		if limit >= 0 && len(results) >= limit {
+		if limit > 0 && len(results) >= limit {
 			return nil
 		}
 
@@ -1915,6 +1933,373 @@ func (api *API) resourceAttributePairs(r *http.Request) apiFuncResult {
 	}
 
 	return apiFuncResult{result, nil, nil, nil}
+}
+
+// parseAttrFilter parses "key:value" into key, value.
+func parseAttrFilter(s string) (key, value string, err error) {
+	idx := strings.Index(s, ":")
+	if idx < 0 {
+		return "", "", fmt.Errorf("invalid attribute filter %q: expected key:value format", s)
+	}
+	key = s[:idx]
+	value = s[idx+1:]
+	if key == "" {
+		return "", "", fmt.Errorf("invalid attribute filter %q: key must not be empty", s)
+	}
+	return key, value, nil
+}
+
+// matchesResourceVersion checks if a ResourceVersion matches the given attribute filters.
+// All filters must match (AND semantics). Each filter matches against either identifying or descriptive attributes.
+func matchesResourceVersion(rv *seriesmetadata.ResourceVersion, resourceAttrFilters map[string]string) bool {
+	for k, v := range resourceAttrFilters {
+		if rv.Identifying[k] == v {
+			continue
+		}
+		if rv.Descriptive[k] == v {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// matchesScopeVersion checks if a ScopeVersion matches the given filters.
+// All filters must match (AND semantics).
+func matchesScopeVersion(sv *seriesmetadata.ScopeVersion, scopeName, scopeVersion, scopeSchemaURL string, scopeAttrFilters map[string]string) bool {
+	if scopeName != "" && sv.Name != scopeName {
+		return false
+	}
+	if scopeVersion != "" && sv.Version != scopeVersion {
+		return false
+	}
+	if scopeSchemaURL != "" && sv.SchemaURL != scopeSchemaURL {
+		return false
+	}
+	for k, v := range scopeAttrFilters {
+		if sv.Attrs[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// matchesEntityFilters checks if any entity in a ResourceVersion matches the entity filters.
+// At least one entity must match ALL entity filters.
+func matchesEntityFilters(rv *seriesmetadata.ResourceVersion, entityType string, entityAttrFilters map[string]string) bool {
+	for _, ent := range rv.Entities {
+		if entityType != "" && ent.Type != entityType {
+			continue
+		}
+		matched := true
+		for k, v := range entityAttrFilters {
+			if ent.ID[k] == v {
+				continue
+			}
+			if ent.Description[k] == v {
+				continue
+			}
+			matched = false
+			break
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+// filterScopeVersions returns scope versions that overlap with [startMs, endMs].
+func filterScopeVersions(versions []*seriesmetadata.ScopeVersion, startMs, endMs int64) []ScopeAttributeVersion {
+	result := make([]ScopeAttributeVersion, 0, len(versions))
+	for _, v := range versions {
+		if v.MinTime <= endMs && v.MaxTime >= startMs {
+			result = append(result, ScopeAttributeVersion{
+				Name:      v.Name,
+				Version:   v.Version,
+				SchemaURL: v.SchemaURL,
+				Attrs:     v.Attrs,
+				MinTimeMs: v.MinTime,
+				MaxTimeMs: v.MaxTime,
+			})
+		}
+	}
+	return result
+}
+
+func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
+	if !api.enableNativeMetadata {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("native metadata is disabled; enable with --enable-feature=native-metadata")}, nil, nil}
+	}
+	if api.db == nil {
+		return apiFuncResult{nil, &apiError{errorInternal, errors.New("TSDB not available")}, nil, nil}
+	}
+
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
+	}
+
+	// Parse resource attribute filters
+	resourceAttrFilters := make(map[string]string)
+	for _, f := range r.Form["resource.attr"] {
+		k, v, err := parseAttrFilter(f)
+		if err != nil {
+			return invalidParamError(err, "resource.attr")
+		}
+		resourceAttrFilters[k] = v
+	}
+
+	// Parse scope filters
+	scopeName := r.FormValue("scope.name")
+	scopeVersion := r.FormValue("scope.version")
+	scopeSchemaURL := r.FormValue("scope.schema_url")
+	scopeAttrFilters := make(map[string]string)
+	for _, f := range r.Form["scope.attr"] {
+		k, v, err := parseAttrFilter(f)
+		if err != nil {
+			return invalidParamError(err, "scope.attr")
+		}
+		scopeAttrFilters[k] = v
+	}
+
+	// Parse entity filters
+	entityType := r.FormValue("entity.type")
+	entityAttrFilters := make(map[string]string)
+	for _, f := range r.Form["entity.attr"] {
+		k, v, err := parseAttrFilter(f)
+		if err != nil {
+			return invalidParamError(err, "entity.attr")
+		}
+		entityAttrFilters[k] = v
+	}
+
+	hasResourceFilters := len(resourceAttrFilters) > 0
+	hasScopeFilters := scopeName != "" || scopeVersion != "" || scopeSchemaURL != "" || len(scopeAttrFilters) > 0
+	hasEntityFilters := entityType != "" || len(entityAttrFilters) > 0
+
+	if !hasResourceFilters && !hasScopeFilters && !hasEntityFilters {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("at least one metadata filter is required (resource.attr, scope.name, scope.version, scope.schema_url, scope.attr, entity.type, or entity.attr)")}, nil, nil}
+	}
+
+	start, err := parseTimeParam(r, "start", MinTime)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", MaxTime)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+	if end.Before(start) {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("end timestamp must not be before start timestamp")}, nil, nil}
+	}
+	startMs := timestamp.FromTime(start)
+	endMs := timestamp.FromTime(end)
+
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
+	// Parse optional match[] parameters
+	var matcherSets [][]*labels.Matcher
+	if len(r.Form["match[]"]) > 0 {
+		matcherSets, err = api.parseMatchersParam(r.Form["match[]"])
+		if err != nil {
+			return invalidParamError(err, "match[]")
+		}
+	}
+
+	mr, err := api.db.SeriesMetadata()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to get series metadata: %w", err)}, nil, nil}
+	}
+	defer mr.Close()
+
+	// Track matched series by labels hash. Each entry accumulates resource + scope versions.
+	type matchedEntry struct {
+		resourceVersions []ResourceAttributeVersion
+		scopeVersions    []ScopeAttributeVersion
+	}
+	matched := make(map[uint64]*matchedEntry)
+
+	// Check resource/entity filters (both operate on resource versions)
+	if hasResourceFilters || hasEntityFilters {
+		err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			var matchingVersions []*seriesmetadata.ResourceVersion
+			for _, rv := range resources.Versions {
+				// Time range filter
+				if rv.MinTime > endMs || rv.MaxTime < startMs {
+					continue
+				}
+				resourceOK := !hasResourceFilters || matchesResourceVersion(rv, resourceAttrFilters)
+				entityOK := !hasEntityFilters || matchesEntityFilters(rv, entityType, entityAttrFilters)
+				if resourceOK && entityOK {
+					matchingVersions = append(matchingVersions, rv)
+				}
+			}
+			if len(matchingVersions) > 0 {
+				matched[labelsHash] = &matchedEntry{
+					resourceVersions: filterVersions(matchingVersions, startMs, endMs),
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
+		}
+	}
+
+	// Check scope filters
+	if hasScopeFilters {
+		scopeMatched := make(map[uint64][]ScopeAttributeVersion)
+		err = mr.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+			var matchingVersions []*seriesmetadata.ScopeVersion
+			for _, sv := range scopes.Versions {
+				if sv.MinTime > endMs || sv.MaxTime < startMs {
+					continue
+				}
+				if matchesScopeVersion(sv, scopeName, scopeVersion, scopeSchemaURL, scopeAttrFilters) {
+					matchingVersions = append(matchingVersions, sv)
+				}
+			}
+			if len(matchingVersions) > 0 {
+				scopeMatched[labelsHash] = filterScopeVersions(matchingVersions, startMs, endMs)
+			}
+			return nil
+		})
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate scopes: %w", err)}, nil, nil}
+		}
+
+		if hasResourceFilters || hasEntityFilters {
+			// Intersect: only keep series that matched both resource/entity AND scope filters
+			for hash, entry := range matched {
+				sv, ok := scopeMatched[hash]
+				if !ok {
+					delete(matched, hash)
+				} else {
+					entry.scopeVersions = sv
+				}
+			}
+		} else {
+			// Only scope filters active — add all scope-matched series
+			for hash, sv := range scopeMatched {
+				matched[hash] = &matchedEntry{scopeVersions: sv}
+			}
+			// Also populate resource versions for scope-matched series (for complete response)
+			for hash, entry := range matched {
+				if resources, ok := mr.GetVersionedResource(hash); ok {
+					entry.resourceVersions = filterVersions(resources.Versions, startMs, endMs)
+				}
+			}
+		}
+	} else {
+		// No scope filters, but populate scope versions for matched series (for complete response)
+		for hash, entry := range matched {
+			if scopes, ok := mr.GetVersionedScope(hash); ok {
+				entry.scopeVersions = filterScopeVersions(scopes.Versions, startMs, endMs)
+			}
+		}
+	}
+
+	if len(matched) == 0 {
+		return apiFuncResult{[]SeriesMetadataResponse{}, nil, nil, nil}
+	}
+
+	// Resolve labelsHash -> labels.Labels, and if match[] is provided, intersect
+	// with label matchers at the same time (avoiding a second full series scan).
+	ctx := r.Context()
+	q, err := api.Queryable.Querier(startMs, endMs)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+
+	hints := &storage.SelectHints{
+		Start: startMs,
+		End:   endMs,
+		Func:  "series",
+	}
+
+	hashToLabels := make(map[uint64]labels.Labels)
+	if len(matcherSets) > 0 {
+		// match[] provided: Select only matching series, save their labels,
+		// and intersect with metadata-matched hashes.
+		var set storage.SeriesSet
+		if len(matcherSets) > 1 {
+			var sets []storage.SeriesSet
+			for _, mset := range matcherSets {
+				s := q.Select(ctx, true, hints, mset...)
+				sets = append(sets, s)
+			}
+			set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
+		} else {
+			set = q.Select(ctx, false, hints, matcherSets[0]...)
+		}
+
+		for set.Next() {
+			lset := set.At().Labels()
+			hash := labels.StableHash(lset)
+			if _, ok := matched[hash]; ok {
+				hashToLabels[hash] = lset
+			}
+		}
+		if err := set.Err(); err != nil {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+
+		// Remove matched entries that didn't appear in the match[] results.
+		for hash := range matched {
+			if _, ok := hashToLabels[hash]; !ok {
+				delete(matched, hash)
+			}
+		}
+	} else {
+		// No match[]: scan all named series to resolve hashes to labels.
+		set := q.Select(ctx, false, hints, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
+
+		for set.Next() {
+			lset := set.At().Labels()
+			hash := labels.StableHash(lset)
+			if _, ok := matched[hash]; ok {
+				hashToLabels[hash] = lset
+			}
+		}
+		if err := set.Err(); err != nil {
+			return apiFuncResult{nil, returnAPIError(err), nil, nil}
+		}
+	}
+
+	if len(matched) == 0 {
+		return apiFuncResult{[]SeriesMetadataResponse{}, nil, nil, nil}
+	}
+
+	// Build response
+	results := make([]SeriesMetadataResponse, 0, len(matched))
+	for hash, entry := range matched {
+		lset, ok := hashToLabels[hash]
+		if !ok {
+			continue
+		}
+		if limit > 0 && len(results) >= limit {
+			break
+		}
+		results = append(results, SeriesMetadataResponse{
+			Labels:        lset,
+			Versions:      entry.resourceVersions,
+			ScopeVersions: entry.scopeVersions,
+		})
+	}
+
+	if results == nil {
+		results = []SeriesMetadataResponse{}
+	}
+
+	return apiFuncResult{results, nil, nil, nil}
 }
 
 // RuleDiscovery has info for all rules.

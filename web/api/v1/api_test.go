@@ -4940,3 +4940,301 @@ func (*fakeQuery) Cancel() {}
 func (q *fakeQuery) String() string {
 	return q.query
 }
+
+func TestResourceSeriesLookup(t *testing.T) {
+	s := teststorage.New(t)
+
+	// Write some test series into storage.
+	app := s.Appender(context.Background())
+	now := time.Now()
+	nowMs := timestamp.FromTime(now)
+
+	paymentLbls := labels.FromStrings("__name__", "http_requests_total", "method", "GET", "service", "payment")
+	orderLbls := labels.FromStrings("__name__", "orders_total", "service", "order")
+	stagingLbls := labels.FromStrings("__name__", "http_requests_total", "method", "POST", "service", "payment-staging")
+
+	_, err := app.Append(0, paymentLbls, nowMs, 100)
+	require.NoError(t, err)
+	_, err = app.Append(0, orderLbls, nowMs, 50)
+	require.NoError(t, err)
+	_, err = app.Append(0, stagingLbls, nowMs, 10)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Compute stable hashes for the series.
+	paymentHash := labels.StableHash(paymentLbls)
+	orderHash := labels.StableHash(orderLbls)
+	stagingHash := labels.StableHash(stagingLbls)
+
+	// Build metadata store with resource and scope versions.
+	mem := seriesmetadata.NewMemSeriesMetadata()
+
+	// payment-service resource
+	mem.SetVersionedResource(paymentHash, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			seriesmetadata.NewResourceVersion(
+				map[string]string{"service.name": "payment-service", "service.namespace": "production"},
+				map[string]string{"host.name": "host-1", "cloud.region": "us-west-2"},
+				[]*seriesmetadata.Entity{
+					seriesmetadata.NewEntity("service",
+						map[string]string{"service.name": "payment-service"},
+						map[string]string{"deployment.environment": "production"},
+					),
+					seriesmetadata.NewEntity("host",
+						map[string]string{"host.name": "host-1"},
+						map[string]string{"cloud.region": "us-west-2"},
+					),
+				},
+				nowMs-10000, nowMs,
+			),
+		},
+	})
+
+	// order-service resource
+	mem.SetVersionedResource(orderHash, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			seriesmetadata.NewResourceVersion(
+				map[string]string{"service.name": "order-service", "service.namespace": "production"},
+				map[string]string{"host.name": "host-2", "cloud.region": "us-west-2"},
+				nil,
+				nowMs-10000, nowMs,
+			),
+		},
+	})
+
+	// payment-service staging resource
+	mem.SetVersionedResource(stagingHash, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			seriesmetadata.NewResourceVersion(
+				map[string]string{"service.name": "payment-service", "service.namespace": "staging"},
+				map[string]string{"host.name": "staging-host-1", "cloud.region": "us-east-1"},
+				nil,
+				nowMs-10000, nowMs,
+			),
+		},
+	})
+
+	// Scope metadata
+	mem.ScopeStore().SetVersioned(paymentHash, &seriesmetadata.VersionedScope{
+		Versions: []*seriesmetadata.ScopeVersion{
+			seriesmetadata.NewScopeVersion("opentelemetry-go", "1.24.0", "", map[string]string{"library.language": "go"}, nowMs-10000, nowMs),
+		},
+	})
+	mem.ScopeStore().SetVersioned(orderHash, &seriesmetadata.VersionedScope{
+		Versions: []*seriesmetadata.ScopeVersion{
+			seriesmetadata.NewScopeVersion("opentelemetry-java", "1.30.0", "", map[string]string{"library.language": "java"}, nowMs-10000, nowMs),
+		},
+	})
+
+	db := &fakeDB{seriesMetadata: mem}
+
+	api := &API{
+		Queryable:            s,
+		QueryEngine:          testEngine(t),
+		parser:               testParser,
+		db:                   db,
+		enableNativeMetadata: true,
+		now:                  time.Now,
+	}
+
+	startStr := strconv.FormatFloat(float64(nowMs-100000)/1000, 'f', 3, 64)
+	endStr := strconv.FormatFloat(float64(nowMs+100000)/1000, 'f', 3, 64)
+
+	makeRequest := func(params url.Values) *http.Request {
+		u, _ := url.Parse("http://example.com/api/v1/resources/series")
+		// Always include reasonable start/end to avoid extreme time ranges.
+		if params.Get("start") == "" {
+			params.Set("start", startStr)
+		}
+		if params.Get("end") == "" {
+			params.Set("end", endStr)
+		}
+		u.RawQuery = params.Encode()
+		r, _ := http.NewRequest(http.MethodGet, u.String(), nil)
+		return r
+	}
+
+	t.Run("no metadata filters returns error", func(t *testing.T) {
+		r := makeRequest(url.Values{})
+		result := api.resourceSeriesLookup(r)
+		require.NotNil(t, result.err)
+		require.Equal(t, errorBadData, result.err.typ)
+	})
+
+	t.Run("native metadata disabled returns error", func(t *testing.T) {
+		disabledAPI := &API{
+			Queryable:            s,
+			db:                   db,
+			enableNativeMetadata: false,
+		}
+		r := makeRequest(url.Values{"resource.attr": {"service.name:payment-service"}})
+		result := disabledAPI.resourceSeriesLookup(r)
+		require.NotNil(t, result.err)
+		require.Equal(t, errorBadData, result.err.typ)
+	})
+
+	t.Run("invalid attr filter format", func(t *testing.T) {
+		r := makeRequest(url.Values{"resource.attr": {"badformat"}})
+		result := api.resourceSeriesLookup(r)
+		require.NotNil(t, result.err)
+		require.Equal(t, errorBadData, result.err.typ)
+	})
+
+	t.Run("filter by single resource attribute", func(t *testing.T) {
+		r := makeRequest(url.Values{"resource.attr": {"service.name:payment-service"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		// Should match payment (production) and staging
+		require.Len(t, data, 2)
+	})
+
+	t.Run("filter by multiple resource attributes (AND)", func(t *testing.T) {
+		r := makeRequest(url.Values{"resource.attr": {"service.name:payment-service", "service.namespace:production"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		// Should only match production payment-service
+		require.Len(t, data, 1)
+		require.Equal(t, "payment-service", data[0].Versions[0].Attributes.Identifying["service.name"])
+		require.Equal(t, "production", data[0].Versions[0].Attributes.Identifying["service.namespace"])
+	})
+
+	t.Run("filter by descriptive resource attribute", func(t *testing.T) {
+		r := makeRequest(url.Values{"resource.attr": {"cloud.region:us-east-1"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		// Only staging payment-service is in us-east-1
+		require.Len(t, data, 1)
+		require.Equal(t, "staging", data[0].Versions[0].Attributes.Identifying["service.namespace"])
+	})
+
+	t.Run("filter by scope name", func(t *testing.T) {
+		r := makeRequest(url.Values{"scope.name": {"opentelemetry-go"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		// Only payment-service (production) has opentelemetry-go scope
+		require.Len(t, data, 1)
+		require.Len(t, data[0].ScopeVersions, 1)
+		require.Equal(t, "opentelemetry-go", data[0].ScopeVersions[0].Name)
+	})
+
+	t.Run("filter by scope version", func(t *testing.T) {
+		r := makeRequest(url.Values{"scope.name": {"opentelemetry-java"}, "scope.version": {"1.30.0"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		require.Len(t, data, 1)
+		require.Equal(t, "opentelemetry-java", data[0].ScopeVersions[0].Name)
+	})
+
+	t.Run("filter by scope attribute", func(t *testing.T) {
+		r := makeRequest(url.Values{"scope.attr": {"library.language:go"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		require.Len(t, data, 1)
+	})
+
+	t.Run("filter by entity type", func(t *testing.T) {
+		r := makeRequest(url.Values{"entity.type": {"service"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		// Only payment-service (production) has entities
+		require.Len(t, data, 1)
+	})
+
+	t.Run("filter by entity type and attr", func(t *testing.T) {
+		r := makeRequest(url.Values{"entity.type": {"host"}, "entity.attr": {"host.name:host-1"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		require.Len(t, data, 1)
+	})
+
+	t.Run("combined resource + scope filters (intersection)", func(t *testing.T) {
+		r := makeRequest(url.Values{
+			"resource.attr": {"service.name:payment-service"},
+			"scope.name":    {"opentelemetry-go"},
+		})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		// payment-service production + opentelemetry-go = 1 match
+		// (staging payment-service has no scope set)
+		require.Len(t, data, 1)
+		require.Equal(t, "production", data[0].Versions[0].Attributes.Identifying["service.namespace"])
+		require.Equal(t, "opentelemetry-go", data[0].ScopeVersions[0].Name)
+	})
+
+	t.Run("match[] pre-filter narrows results", func(t *testing.T) {
+		r := makeRequest(url.Values{
+			"resource.attr": {"cloud.region:us-west-2"},
+			"match[]":       {`{__name__="http_requests_total"}`},
+		})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		// us-west-2 matches payment (production) and order, but match[] restricts to http_requests_total → only payment
+		require.Len(t, data, 1)
+		require.Equal(t, "http_requests_total", data[0].Labels.Get("__name__"))
+	})
+
+	t.Run("limit caps results", func(t *testing.T) {
+		r := makeRequest(url.Values{
+			"resource.attr": {"service.name:payment-service"},
+			"limit":         {"1"},
+		})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		require.Len(t, data, 1)
+	})
+
+	t.Run("no matching metadata returns empty", func(t *testing.T) {
+		r := makeRequest(url.Values{"resource.attr": {"service.name:nonexistent-service"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		require.Len(t, data, 0)
+	})
+
+	t.Run("scope filter with no matching scope returns empty", func(t *testing.T) {
+		r := makeRequest(url.Values{"scope.name": {"nonexistent-scope"}})
+		result := api.resourceSeriesLookup(r)
+		require.Nil(t, result.err)
+		data := result.data.([]SeriesMetadataResponse)
+		require.Len(t, data, 0)
+	})
+}
+
+func TestParseAttrFilter(t *testing.T) {
+	tests := []struct {
+		input string
+		key   string
+		value string
+		err   bool
+	}{
+		{"service.name:payment", "service.name", "payment", false},
+		{"key:value:with:colons", "key", "value:with:colons", false},
+		{"key:", "key", "", false},
+		{"novalue", "", "", true},
+		{":nokey", "", "", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			k, v, err := parseAttrFilter(tc.input)
+			if tc.err {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.key, k)
+				require.Equal(t, tc.value, v)
+			}
+		})
+	}
+}
