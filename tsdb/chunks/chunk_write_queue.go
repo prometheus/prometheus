@@ -138,7 +138,7 @@ func (c *chunkWriteQueue) processJob(job chunkWriteJob) {
 
 	delete(c.chunkRefMap, job.ref)
 
-	c.completed.Inc()
+	c.completed.Add(1)
 
 	c.shrinkChunkRefMap()
 }
@@ -174,13 +174,13 @@ func (c *chunkWriteQueue) shrinkChunkRefMap() {
 
 	c.chunkRefMapPeakSize = 0
 	c.chunkRefMapLastShrink = now
-	c.shrink.Inc()
+	c.shrink.Add(1)
 }
 
 func (c *chunkWriteQueue) addJob(job chunkWriteJob) (err error) {
 	defer func() {
 		if err == nil {
-			c.adds.Inc()
+			c.adds.Add(1)
 		}
 	}()
 
@@ -217,7 +217,7 @@ func (c *chunkWriteQueue) get(ref ChunkDiskMapperRef) chunkenc.Chunk {
 
 	chk, ok := c.chunkRefMap[ref]
 	if ok {
-		c.gets.Inc()
+		c.gets.Add(1)
 	}
 
 	return chk

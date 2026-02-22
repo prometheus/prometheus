@@ -74,10 +74,10 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	h.queries.Inc()
+	h.queries.Add(1)
 
 	defer h.remoteReadGate.Done()
-	defer h.queries.Dec()
+	defer h.queries.Add(-1)
 
 	req, err := DecodeReadRequest(r)
 	if err != nil {

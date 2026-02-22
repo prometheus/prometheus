@@ -671,9 +671,9 @@ func (ng *Engine) NewTestQuery(f func(context.Context) error) Query {
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
 func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annotations.Annotations, err error) {
-	ng.metrics.currentQueries.Inc()
+	ng.metrics.currentQueries.Add(1)
 	defer func() {
-		ng.metrics.currentQueries.Dec()
+		ng.metrics.currentQueries.Add(-1)
 		ng.metrics.querySamples.Add(float64(q.sampleStats.TotalSamples))
 	}()
 
@@ -709,7 +709,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 			}
 			logger.LogAttrs(context.Background(), slog.LevelInfo, "promql query logged", f...)
 			// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
-			// ng.metrics.queryLogFailures.Inc()
+			// ng.metrics.queryLogFailures.Add(1)
 			// ng.logger.Error("can't log query", "err", err)
 		}
 		ng.queryLoggerLock.RUnlock()

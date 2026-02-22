@@ -85,8 +85,6 @@ linters:
       rules:
         main:
           deny:
-            - pkg: "sync/atomic"
-              desc: "Use go.uber.org/atomic instead of sync/atomic"
             - pkg: "github.com/stretchr/testify/assert"
               desc: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
             - pkg: "github.com/go-kit/kit/log"
@@ -101,6 +99,8 @@ linters:
               desc: "Use github.com/klauspost/compress instead of gzip"
             - pkg: "zlib"
               desc: "Use github.com/klauspost/compress instead of zlib"
+            - pkg: "go.uber.org/atomic"
+              desc: "Use sync/atomic instead of go.uber.org/atomic"
             - pkg: "golang.org/x/exp/slices"
               desc: "Use 'slices' instead."
             - pkg: "gopkg.in/yaml.v2"

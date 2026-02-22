@@ -21,13 +21,13 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -218,10 +218,10 @@ func (m *Manager) reload() {
 				m.logger.Error("error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			m.metrics.targetScrapePools.Inc()
+			m.metrics.targetScrapePools.Add(1)
 			sp, err := newScrapePool(scrapeConfig, m.appendable, m.appendableV2, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
 			if err != nil {
-				m.metrics.targetScrapePoolsFailed.Inc()
+				m.metrics.targetScrapePoolsFailed.Add(1)
 				m.logger.Error("error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
 			}

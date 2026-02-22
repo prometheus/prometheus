@@ -161,7 +161,7 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	resp, err := d.client.Do(req.WithContext(ctx))
 	if err != nil {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, err
 	}
 	defer func() {
@@ -170,31 +170,31 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	if !matchContentType.MatchString(strings.TrimSpace(resp.Header.Get("Content-Type"))) {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, fmt.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
 	}
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, err
 	}
 
 	var targetGroups []*targetgroup.Group
 
 	if err := json.Unmarshal(b, &targetGroups); err != nil {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, err
 	}
 
 	for i, tg := range targetGroups {
 		if tg == nil {
-			d.metrics.failuresCount.Inc()
+			d.metrics.failuresCount.Add(1)
 			err = errors.New("nil target group item found")
 			return nil, err
 		}

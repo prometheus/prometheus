@@ -89,15 +89,15 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node,
 
 	_, err := e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o any) {
-			epAddCount.Inc()
+			epAddCount.Add(1)
 			e.enqueue(o)
 		},
 		UpdateFunc: func(_, o any) {
-			epUpdateCount.Inc()
+			epUpdateCount.Add(1)
 			e.enqueue(o)
 		},
 		DeleteFunc: func(o any) {
-			epDeleteCount.Inc()
+			epDeleteCount.Add(1)
 			e.enqueue(o)
 		},
 	})
@@ -125,15 +125,15 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node,
 		// TODO(fabxc): potentially remove add and delete event handlers. Those should
 		// be triggered via the endpoint handlers already.
 		AddFunc: func(o any) {
-			svcAddCount.Inc()
+			svcAddCount.Add(1)
 			serviceUpdate(o)
 		},
 		UpdateFunc: func(_, o any) {
-			svcUpdateCount.Inc()
+			svcUpdateCount.Add(1)
 			serviceUpdate(o)
 		},
 		DeleteFunc: func(o any) {
-			svcDeleteCount.Inc()
+			svcDeleteCount.Add(1)
 			serviceUpdate(o)
 		},
 	})
@@ -142,7 +142,7 @@ func NewEndpoints(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node,
 	}
 	_, err = e.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(old, cur any) {
-			podUpdateCount.Inc()
+			podUpdateCount.Add(1)
 			oldPod, ok := old.(*apiv1.Pod)
 			if !ok {
 				return

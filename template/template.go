@@ -335,11 +335,11 @@ func (te Expander) Expand() (result string, resultErr error) {
 			}
 		}
 		if resultErr != nil {
-			templateTextExpansionFailures.Inc()
+			templateTextExpansionFailures.Add(1)
 		}
 	}()
 
-	templateTextExpansionTotal.Inc()
+	templateTextExpansionTotal.Add(1)
 
 	tmpl := text_template.New(te.name).Funcs(te.funcMap)
 	tmpl.Option(te.options...)

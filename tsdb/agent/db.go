@@ -21,12 +21,12 @@ import (
 	"math"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -293,6 +293,9 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 		return nil, fmt.Errorf("creating WAL: %w", err)
 	}
 
+	nextRef := &atomic.Uint64{}
+	nextRef.Store(0)
+
 	db := &DB{
 		logger: l,
 		opts:   opts,
@@ -301,7 +304,7 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 		wal:    w,
 		locker: locker,
 
-		nextRef: atomic.NewUint64(0),
+		nextRef: nextRef,
 		series:  newStripeSeries(opts.StripeSize),
 		deleted: make(map[chunks.HeadSeriesRef]int),
 
@@ -554,7 +557,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					series := &memSeries{ref: entry.Ref, lset: entry.Labels, lastTs: 0}
 					db.series.Set(entry.Labels.Hash(), series)
 					multiRef[entry.Ref] = series.ref
-					db.metrics.numActiveSeries.Inc()
+					db.metrics.numActiveSeries.Add(1)
 					if entry.Ref > lastRef {
 						lastRef = entry.Ref
 					}
@@ -566,7 +569,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				// Update the lastTs for the series based
 				ref, ok := multiRef[entry.Ref]
 				if !ok {
-					nonExistentSeriesRefs.Inc()
+					nonExistentSeriesRefs.Add(1)
 					continue
 				}
 				series := db.series.GetByID(ref)
@@ -580,7 +583,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				// Update the lastTs for the series based
 				ref, ok := multiRef[entry.Ref]
 				if !ok {
-					nonExistentSeriesRefs.Inc()
+					nonExistentSeriesRefs.Add(1)
 					continue
 				}
 				series := db.series.GetByID(ref)
@@ -594,7 +597,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				// Update the lastTs for the series based
 				ref, ok := multiRef[entry.Ref]
 				if !ok {
-					nonExistentSeriesRefs.Inc()
+					nonExistentSeriesRefs.Add(1)
 					continue
 				}
 				series := db.series.GetByID(ref)
@@ -708,13 +711,13 @@ func (db *DB) truncate(mint int64) error {
 		return nil
 	}
 
-	db.metrics.checkpointCreationTotal.Inc()
+	db.metrics.checkpointCreationTotal.Add(1)
 
 	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint); err != nil {
-		db.metrics.checkpointCreationFail.Inc()
+		db.metrics.checkpointCreationFail.Add(1)
 		var cerr *wlog.CorruptionErr
 		if errors.As(err, &cerr) {
-			db.metrics.walCorruptionsTotal.Inc()
+			db.metrics.walCorruptionsTotal.Add(1)
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
 	}
@@ -732,7 +735,7 @@ func (db *DB) truncate(mint int64) error {
 			delete(db.deleted, ref)
 		}
 	}
-	db.metrics.checkpointDeleteTotal.Inc()
+	db.metrics.checkpointDeleteTotal.Add(1)
 	db.metrics.numWALSeriesPendingDeletion.Set(float64(len(db.deleted)))
 
 	if err := wlog.DeleteCheckpoints(db.wal.Dir(), last); err != nil {
@@ -740,7 +743,7 @@ func (db *DB) truncate(mint int64) error {
 		// occupying disk space. They will just be ignored since a newer checkpoint
 		// exists.
 		db.logger.Error("delete old checkpoints", "err", err)
-		db.metrics.checkpointDeleteFail.Inc()
+		db.metrics.checkpointDeleteFail.Add(1)
 	}
 
 	db.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
@@ -854,7 +857,7 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	defer series.Unlock()
 
 	if t <= a.minValidTime(series.lastTs) {
-		a.metrics.totalOutOfOrderSamples.Inc()
+		a.metrics.totalOutOfOrderSamples.Add(1)
 		return 0, storage.ErrOutOfOrderSample
 	}
 
@@ -866,7 +869,7 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	})
 	a.sampleSeries = append(a.sampleSeries, series)
 
-	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Add(1)
 	return storage.SeriesRef(series.ref), nil
 }
 
@@ -889,7 +892,7 @@ func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, err erro
 		return series, nil
 	}
 
-	ref := chunks.HeadSeriesRef(a.nextRef.Inc())
+	ref := chunks.HeadSeriesRef(a.nextRef.Add(1))
 	series = &memSeries{ref: ref, lset: l, lastTs: math.MinInt64}
 	a.series.Set(hash, series)
 
@@ -897,7 +900,7 @@ func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, err erro
 		Ref:    series.ref,
 		Labels: l,
 	})
-	a.metrics.numActiveSeries.Inc()
+	a.metrics.numActiveSeries.Add(1)
 	return series, nil
 }
 
@@ -928,7 +931,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exem
 		V:      e.Value,
 		Labels: e.Labels,
 	})
-	a.metrics.totalAppendedExemplars.Inc()
+	a.metrics.totalAppendedExemplars.Add(1)
 	return storage.SeriesRef(s.ref), nil
 }
 
@@ -989,7 +992,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 	defer series.Unlock()
 
 	if t <= a.minValidTime(series.lastTs) {
-		a.metrics.totalOutOfOrderSamples.Inc()
+		a.metrics.totalOutOfOrderSamples.Add(1)
 		return 0, storage.ErrOutOfOrderSample
 	}
 
@@ -1012,7 +1015,7 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 		a.floatHistogramSeries = append(a.floatHistogramSeries, series)
 	}
 
-	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Add(1)
 	return storage.SeriesRef(series.ref), nil
 }
 
@@ -1079,7 +1082,7 @@ func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.L
 		a.floatHistogramSeries = append(a.floatHistogramSeries, series)
 	}
 
-	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Add(1)
 	return storage.SeriesRef(series.ref), nil
 }
 
@@ -1101,7 +1104,7 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 	defer series.Unlock()
 
 	if t <= a.minValidTime(series.lastTs) {
-		a.metrics.totalOutOfOrderSamples.Inc()
+		a.metrics.totalOutOfOrderSamples.Add(1)
 		return 0, storage.ErrOutOfOrderSample
 	}
 
@@ -1122,7 +1125,7 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 	})
 	a.sampleSeries = append(a.sampleSeries, series)
 
-	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Add(1)
 
 	return storage.SeriesRef(series.ref), nil
 }
@@ -1226,19 +1229,19 @@ func (a *appenderBase) log() error {
 	for i, s := range a.pendingSamples {
 		series = a.sampleSeries[i]
 		if !series.updateTimestamp(s.T) {
-			a.metrics.totalOutOfOrderSamples.Inc()
+			a.metrics.totalOutOfOrderSamples.Add(1)
 		}
 	}
 	for i, s := range a.pendingHistograms {
 		series = a.histogramSeries[i]
 		if !series.updateTimestamp(s.T) {
-			a.metrics.totalOutOfOrderSamples.Inc()
+			a.metrics.totalOutOfOrderSamples.Add(1)
 		}
 	}
 	for i, s := range a.pendingFloatHistograms {
 		series = a.floatHistogramSeries[i]
 		if !series.updateTimestamp(s.T) {
-			a.metrics.totalOutOfOrderSamples.Inc()
+			a.metrics.totalOutOfOrderSamples.Add(1)
 		}
 	}
 

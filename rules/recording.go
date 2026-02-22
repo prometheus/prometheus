@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -40,13 +40,13 @@ type RecordingRule struct {
 	vector parser.Expr
 	labels labels.Labels
 	// The health of the recording rule.
-	health *atomic.String
+	health *atomic.Pointer[RuleHealth]
 	// Timestamp of last evaluation of the recording rule.
-	evaluationTimestamp *atomic.Time
+	evaluationTimestamp *atomic.Pointer[time.Time]
 	// The last error seen by the recording rule.
-	lastError *atomic.Error
+	lastError *atomic.Pointer[error]
 	// Duration of how long it took to evaluate the recording rule.
-	evaluationDuration *atomic.Duration
+	evaluationDuration *atomic.Pointer[time.Duration]
 
 	dependenciesMutex sync.RWMutex
 	dependentRules    []Rule
@@ -55,14 +55,27 @@ type RecordingRule struct {
 
 // NewRecordingRule returns a new recording rule.
 func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
+	var health atomic.Pointer[RuleHealth]
+	s := HealthUnknown
+	health.Store(&s)
+
+	var evaluationTimestamp atomic.Pointer[time.Time]
+	evaluationTimestamp.Store(&time.Time{})
+
+	var evaluationDuration atomic.Pointer[time.Duration]
+	d := time.Duration(0)
+	evaluationDuration.Store(&d)
+
+	var lastError atomic.Pointer[error]
+
 	return &RecordingRule{
 		name:                name,
 		vector:              vector,
 		labels:              lset,
-		health:              atomic.NewString(string(HealthUnknown)),
-		evaluationTimestamp: atomic.NewTime(time.Time{}),
-		evaluationDuration:  atomic.NewDuration(0),
-		lastError:           atomic.NewError(nil),
+		health:              &health,
+		evaluationTimestamp: &evaluationTimestamp,
+		evaluationDuration:  &evaluationDuration,
+		lastError:           &lastError,
 	}
 }
 
@@ -138,42 +151,42 @@ func (rule *RecordingRule) String() string {
 
 // SetEvaluationDuration updates evaluationDuration to the time in seconds it took to evaluate the rule on its last evaluation.
 func (rule *RecordingRule) SetEvaluationDuration(dur time.Duration) {
-	rule.evaluationDuration.Store(dur)
+	rule.evaluationDuration.Store(&dur)
 }
 
 // SetLastError sets the current error seen by the recording rule.
 func (rule *RecordingRule) SetLastError(err error) {
-	rule.lastError.Store(err)
+	rule.lastError.Store(&err)
 }
 
 // LastError returns the last error seen by the recording rule.
 func (rule *RecordingRule) LastError() error {
-	return rule.lastError.Load()
+	return *rule.lastError.Load()
 }
 
 // SetHealth sets the current health of the recording rule.
 func (rule *RecordingRule) SetHealth(health RuleHealth) {
-	rule.health.Store(string(health))
+	rule.health.Store(&health)
 }
 
 // Health returns the current health of the recording rule.
 func (rule *RecordingRule) Health() RuleHealth {
-	return RuleHealth(rule.health.Load())
+	return *rule.health.Load()
 }
 
 // GetEvaluationDuration returns the time in seconds it took to evaluate the recording rule.
 func (rule *RecordingRule) GetEvaluationDuration() time.Duration {
-	return rule.evaluationDuration.Load()
+	return *rule.evaluationDuration.Load()
 }
 
 // SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule was last evaluated.
 func (rule *RecordingRule) SetEvaluationTimestamp(ts time.Time) {
-	rule.evaluationTimestamp.Store(ts)
+	rule.evaluationTimestamp.Store(&ts)
 }
 
 // GetEvaluationTimestamp returns the time the evaluation took place.
 func (rule *RecordingRule) GetEvaluationTimestamp() time.Time {
-	return rule.evaluationTimestamp.Load()
+	return *rule.evaluationTimestamp.Load()
 }
 
 func (rule *RecordingRule) SetDependentRules(dependents []Rule) {

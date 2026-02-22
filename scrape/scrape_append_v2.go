@@ -235,7 +235,7 @@ loop:
 
 			// If any label limits is exceeded the scrape should fail.
 			if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {
-				sl.metrics.targetScrapePoolExceededLabelLimits.Inc()
+				sl.metrics.targetScrapePoolExceededLabelLimits.Add(1)
 				break loop
 			}
 		}
@@ -352,14 +352,14 @@ loop:
 			err = sampleLimitErr
 		}
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
-		sl.metrics.targetScrapeSampleLimit.Inc()
+		sl.metrics.targetScrapeSampleLimit.Add(1)
 	}
 	if bucketLimitErr != nil {
 		if err == nil {
 			err = bucketLimitErr // If sample limit is hit, that error takes precedence.
 		}
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
-		sl.metrics.targetScrapeNativeHistogramBucketLimit.Inc()
+		sl.metrics.targetScrapeNativeHistogramBucketLimit.Add(1)
 	}
 	if appErrs.numOutOfOrder > 0 {
 		sl.l.Warn("Error on ingesting out-of-order samples", "num_dropped", appErrs.numOutOfOrder)

@@ -65,15 +65,15 @@ func NewNode(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus.Co
 
 	_, err := n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o any) {
-			nodeAddCount.Inc()
+			nodeAddCount.Add(1)
 			n.enqueue(o)
 		},
 		DeleteFunc: func(o any) {
-			nodeDeleteCount.Inc()
+			nodeDeleteCount.Add(1)
 			n.enqueue(o)
 		},
 		UpdateFunc: func(_, o any) {
-			nodeUpdateCount.Inc()
+			nodeUpdateCount.Add(1)
 			n.enqueue(o)
 		},
 	})

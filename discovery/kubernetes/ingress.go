@@ -59,15 +59,15 @@ func NewIngress(l *slog.Logger, inf cache.SharedIndexInformer, namespace cache.S
 
 	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o any) {
-			ingressAddCount.Inc()
+			ingressAddCount.Add(1)
 			s.enqueue(o)
 		},
 		DeleteFunc: func(o any) {
-			ingressDeleteCount.Inc()
+			ingressDeleteCount.Add(1)
 			s.enqueue(o)
 		},
 		UpdateFunc: func(_, o any) {
-			ingressUpdateCount.Inc()
+			ingressUpdateCount.Add(1)
 			s.enqueue(o)
 		},
 	})

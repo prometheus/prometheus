@@ -581,7 +581,7 @@ func (w *WL) setSegment(segment *Segment) error {
 // the page, the remaining bytes will be set to zero and a new page will be started.
 // If forceClear is true, this is enforced regardless of how many bytes are left in the page.
 func (w *WL) flushPage(forceClear bool) error {
-	w.metrics.pageFlushes.Inc()
+	w.metrics.pageFlushes.Add(1)
 
 	p := w.page
 	shouldClear := forceClear || p.full()
@@ -603,7 +603,7 @@ func (w *WL) flushPage(forceClear bool) error {
 	if shouldClear {
 		p.reset()
 		w.donePages++
-		w.metrics.pageCompletions.Inc()
+		w.metrics.pageCompletions.Add(1)
 	}
 	return nil
 }
@@ -661,7 +661,7 @@ func (w *WL) Log(recs ...[]byte) error {
 	// a bit of extra logic here frees them from that overhead.
 	for i, r := range recs {
 		if err := w.log(r, i == len(recs)-1); err != nil {
-			w.metrics.writesFailed.Inc()
+			w.metrics.writesFailed.Add(1)
 			return err
 		}
 	}
@@ -756,7 +756,7 @@ func (w *WL) log(rec []byte, final bool) error {
 		copy(buf[recordHeaderSize:], part)
 		p.alloc += len(part) + recordHeaderSize
 
-		w.metrics.recordPartWrites.Inc()
+		w.metrics.recordPartWrites.Add(1)
 		w.metrics.recordPartBytes.Add(float64(len(part) + recordHeaderSize))
 
 		if w.page.full() {
@@ -798,10 +798,10 @@ func (w *WL) LastSegmentAndOffset() (seg, offset int, err error) {
 
 // Truncate drops all segments before i.
 func (w *WL) Truncate(i int) (err error) {
-	w.metrics.truncateTotal.Inc()
+	w.metrics.truncateTotal.Add(1)
 	defer func() {
 		if err != nil {
-			w.metrics.truncateFail.Inc()
+			w.metrics.truncateFail.Add(1)
 		}
 	}()
 	refs, err := listSegments(w.Dir())

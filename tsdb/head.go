@@ -24,12 +24,12 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -721,7 +721,7 @@ func (h *Head) Init(minValidTime int64) error {
 				snapIdx, snapOffset = -1, 0
 				refSeries = make(map[chunks.HeadSeriesRef]*memSeries)
 
-				h.metrics.snapshotReplayErrorTotal.Inc()
+				h.metrics.snapshotReplayErrorTotal.Add(1)
 				h.logger.Error("Failed to load chunk snapshot", "err", err)
 				// We clear the partially loaded data to replay fresh from the WAL.
 				if err := h.resetInMemoryState(); err != nil {
@@ -749,7 +749,7 @@ func (h *Head) Init(minValidTime int64) error {
 			h.logger.Error("Loading on-disk chunks failed", "err", err)
 			var cerr *chunks.CorruptionErr
 			if errors.As(err, &cerr) {
-				h.metrics.mmapChunkCorruptionTotal.Inc()
+				h.metrics.mmapChunkCorruptionTotal.Add(1)
 			}
 
 			// Discard snapshot data since we need to replay the WAL for the missed m-map chunks data.
@@ -923,8 +923,8 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 				return nil
 			}
 
-			h.metrics.chunks.Inc()
-			h.metrics.chunksCreated.Inc()
+			h.metrics.chunks.Add(1)
+			h.metrics.chunksCreated.Add(1)
 
 			if ms.ooo == nil {
 				ms.ooo = &memSeriesOOOFields{}
@@ -944,7 +944,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		if !ok {
 			slice := mmappedChunks[seriesRef]
 			if len(slice) > 0 && slice[len(slice)-1].maxTime >= mint {
-				h.metrics.mmapChunkCorruptionTotal.Inc()
+				h.metrics.mmapChunkCorruptionTotal.Add(1)
 				return fmt.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
 					seriesRef, slice[len(slice)-1].minTime, slice[len(slice)-1].maxTime, mint, maxt)
 			}
@@ -959,14 +959,14 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		}
 
 		if len(ms.mmappedChunks) > 0 && ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
-			h.metrics.mmapChunkCorruptionTotal.Inc()
+			h.metrics.mmapChunkCorruptionTotal.Add(1)
 			return fmt.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
 				seriesRef, ms.mmappedChunks[len(ms.mmappedChunks)-1].minTime, ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime,
 				mint, maxt)
 		}
 
-		h.metrics.chunks.Inc()
-		h.metrics.chunksCreated.Inc()
+		h.metrics.chunks.Add(1)
+		h.metrics.chunksCreated.Add(1)
 		ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			minTime:    mint,
@@ -1159,7 +1159,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	defer func() {
 		if err != nil {
-			h.metrics.headTruncateFail.Inc()
+			h.metrics.headTruncateFail.Add(1)
 		}
 	}()
 
@@ -1198,7 +1198,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 		return nil
 	}
 
-	h.metrics.headTruncateTotal.Inc()
+	h.metrics.headTruncateTotal.Add(1)
 	return h.truncateSeriesAndChunkDiskMapper("truncateMemory")
 }
 
@@ -1380,12 +1380,12 @@ func (h *Head) truncateWAL(mint int64) error {
 		return nil
 	}
 
-	h.metrics.checkpointCreationTotal.Inc()
+	h.metrics.checkpointCreationTotal.Add(1)
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
-		h.metrics.checkpointCreationFail.Inc()
+		h.metrics.checkpointCreationFail.Add(1)
 		var cerr *chunks.CorruptionErr
 		if errors.As(err, &cerr) {
-			h.metrics.walCorruptionsTotal.Inc()
+			h.metrics.walCorruptionsTotal.Add(1)
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
 	}
@@ -1405,13 +1405,13 @@ func (h *Head) truncateWAL(mint int64) error {
 	}
 	h.walExpiriesMtx.Unlock()
 
-	h.metrics.checkpointDeleteTotal.Inc()
+	h.metrics.checkpointDeleteTotal.Add(1)
 	if err := wlog.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond
 		// occupying disk space.
 		// They will just be ignored since a higher checkpoint exists.
 		h.logger.Error("delete old checkpoints", "err", err)
-		h.metrics.checkpointDeleteFail.Inc()
+		h.metrics.checkpointDeleteFail.Add(1)
 	}
 	h.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
 
@@ -1707,8 +1707,8 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.numSeries.Sub(uint64(seriesRemoved))
-	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
+	h.numSeries.Add(-uint64(seriesRemoved))
+	h.numStaleSeries.Add(-uint64(staleSeriesDeleted))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -1847,7 +1847,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 	if id == 0 {
 		// Note this id is wasted in the case where a concurrent operation creates the same series first.
-		id = chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+		id = chunks.HeadSeriesRef(h.lastSeriesID.Add(1))
 	}
 
 	shardHash := uint64(0)
@@ -1861,8 +1861,8 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 		return s, false, nil
 	}
 
-	h.metrics.seriesCreated.Inc()
-	h.numSeries.Inc()
+	h.metrics.seriesCreated.Add(1)
+	h.numSeries.Add(1)
 
 	h.postings.Add(storage.SeriesRef(id), lset)
 
@@ -2118,8 +2118,8 @@ func (h *Head) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64) map[sto
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.numSeries.Sub(uint64(seriesRemoved))
-	h.numStaleSeries.Sub(uint64(seriesRemoved))
+	h.numSeries.Add(-uint64(seriesRemoved))
+	h.numStaleSeries.Add(-uint64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)
@@ -2191,8 +2191,8 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	h.metrics.seriesRemoved.Add(float64(len(deleted)))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.numSeries.Sub(uint64(len(deleted)))
-	h.numStaleSeries.Sub(uint64(staleSeriesDeleted))
+	h.numSeries.Add(-uint64(len(deleted)))
+	h.numStaleSeries.Add(-uint64(staleSeriesDeleted))
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted, affected)

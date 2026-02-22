@@ -78,7 +78,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	}
 
 	if t <= a.minValidTime(lastTS) {
-		a.metrics.totalOutOfOrderSamples.Inc()
+		a.metrics.totalOutOfOrderSamples.Add(1)
 		return 0, storage.ErrOutOfOrderSample
 	}
 
@@ -112,7 +112,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		})
 		a.sampleSeries = append(a.sampleSeries, s)
 	}
-	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricType).Inc()
+	a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricType).Add(1)
 	if isStale {
 		// For stale values we never attempt to process metadata/exemplars, claim the success.
 		return storage.SeriesRef(s.ref), nil
@@ -162,7 +162,7 @@ func (a *appenderV2) appendExemplars(s *memSeries, exemplar []exemplar.Exemplar)
 			V:      e.Value,
 			Labels: e.Labels,
 		})
-		a.metrics.totalAppendedExemplars.Inc()
+		a.metrics.totalAppendedExemplars.Add(1)
 	}
 	if len(errs) > 0 {
 		return &storage.AppendPartialError{ExemplarErrors: errs}
@@ -197,7 +197,7 @@ func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels
 		}
 		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{Ref: s.ref, T: st, FH: zeroFloatHistogram})
 		a.floatHistogramSeries = append(a.floatHistogramSeries, s)
-		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Add(1)
 	case h != nil:
 		zeroHistogram := &histogram.Histogram{
 			// The STZeroSample represents a counter reset by definition.
@@ -209,10 +209,10 @@ func (a *appenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.Labels
 		}
 		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{Ref: s.ref, T: st, H: zeroHistogram})
 		a.histogramSeries = append(a.histogramSeries, s)
-		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeHistogram).Add(1)
 	default:
 		a.pendingSamples = append(a.pendingSamples, record.RefSample{Ref: s.ref, T: st, V: 0})
 		a.sampleSeries = append(a.sampleSeries, s)
-		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+		a.metrics.totalAppendedSamples.WithLabelValues(sampleMetricTypeFloat).Add(1)
 	}
 }

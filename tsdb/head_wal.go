@@ -23,10 +23,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -137,7 +137,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		for e := range input {
 			ms := h.series.getByID(e.Ref)
 			if ms == nil {
-				unknownExemplarRefs.Inc()
+				unknownExemplarRefs.Add(1)
 				missingSeries[e.Ref] = struct{}{}
 				continue
 			}
@@ -332,7 +332,7 @@ Outer:
 						s.Ref = storage.SeriesRef(r)
 					}
 					if m := h.series.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
-						unknownTombstoneRefs.Inc()
+						unknownTombstoneRefs.Add(1)
 						missingSeries[chunks.HeadSeriesRef(s.Ref)] = struct{}{}
 						continue
 					}
@@ -438,7 +438,7 @@ Outer:
 				}
 				s := h.series.getByID(m.Ref)
 				if s == nil {
-					unknownMetadataRefs.Inc()
+					unknownMetadataRefs.Add(1)
 					missingSeries[m.Ref] = struct{}{}
 					continue
 				}
@@ -660,15 +660,15 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			}
 
 			if !value.IsStaleNaN(ms.lastValue) && value.IsStaleNaN(s.V) {
-				h.numStaleSeries.Inc()
+				h.numStaleSeries.Add(1)
 			}
 			if value.IsStaleNaN(ms.lastValue) && !value.IsStaleNaN(s.V) {
-				h.numStaleSeries.Dec()
+				h.numStaleSeries.Add(^uint64(0))
 			}
 
 			if _, chunkCreated := ms.append(s.T, s.V, 0, appendChunkOpts); chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
+				h.metrics.chunksCreated.Add(1)
+				h.metrics.chunks.Add(1)
 				_ = ms.mmapChunks(h.chunkDiskMapper)
 			}
 			if s.T > maxt {
@@ -713,14 +713,14 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				_, chunkCreated = ms.appendFloatHistogram(s.t, s.fh, 0, appendChunkOpts)
 			}
 			if newlyStale {
-				h.numStaleSeries.Inc()
+				h.numStaleSeries.Add(1)
 			}
 			if staleToNonStale {
-				h.numStaleSeries.Dec()
+				h.numStaleSeries.Add(^uint64(0))
 			}
 			if chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
+				h.metrics.chunksCreated.Add(1)
+				h.metrics.chunks.Add(1)
 			}
 			if s.t > maxt {
 				maxt = s.t
@@ -902,7 +902,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 				ms := h.series.getByID(rm.Ref)
 				if ms == nil {
-					mmapMarkerUnknownRefs.Inc()
+					mmapMarkerUnknownRefs.Add(1)
 					missingSeries[rm.Ref] = struct{}{}
 					continue
 				}
@@ -1098,8 +1098,8 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 			}
 			ok, chunkCreated, _ := ms.insert(s.T, s.V, nil, nil, h.chunkDiskMapper, oooCapMax, h.logger)
 			if chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
+				h.metrics.chunksCreated.Add(1)
+				h.metrics.chunks.Add(1)
 			}
 			if ok {
 				if s.T < mint {
@@ -1129,8 +1129,8 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 				ok, chunkCreated, _ = ms.insert(s.t, 0, nil, s.fh, h.chunkDiskMapper, oooCapMax, h.logger)
 			}
 			if chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
+				h.metrics.chunksCreated.Add(1)
+				h.metrics.chunks.Add(1)
 			}
 			if ok {
 				if s.t > maxt {
@@ -1642,7 +1642,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				if value.IsStaleNaN(series.lastValue) ||
 					(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
 					(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
-					h.numStaleSeries.Inc()
+					h.numStaleSeries.Add(1)
 				}
 
 				app, err := series.headChunks.chunk.Appender()

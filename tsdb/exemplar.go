@@ -271,7 +271,7 @@ func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.
 		(e.Ts == newestExemplar.Ts && e.Value < newestExemplar.Value) ||
 		(e.Ts == newestExemplar.Ts && e.Value == newestExemplar.Value && e.Labels.Hash() < newestExemplar.Labels.Hash()) {
 		if appended {
-			ce.metrics.outOfOrderExemplars.Inc()
+			ce.metrics.outOfOrderExemplars.Add(1)
 		}
 		return storage.ErrOutOfOrderExemplar
 	}
@@ -483,7 +483,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
 
-	ce.metrics.exemplarsAppended.Inc()
+	ce.metrics.exemplarsAppended.Add(1)
 	ce.computeMetrics()
 	return nil
 }

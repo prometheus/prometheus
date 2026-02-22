@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"text/template"
 	"time"
@@ -48,7 +49,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.uber.org/atomic"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/config"
@@ -6525,7 +6525,8 @@ func TestScrapeLoopDisableStalenessMarkerInjection(t *testing.T) {
 }
 
 func testScrapeLoopDisableStalenessMarkerInjection(t *testing.T, appV2 bool) {
-	loopDone := atomic.NewBool(false)
+	loopDone := atomic.Bool{}
+	loopDone.Store(false)
 
 	appTest := teststorage.NewAppendable()
 	sl, scraper := newTestScrapeLoop(t, withAppendable(appTest, appV2))

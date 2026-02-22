@@ -140,20 +140,20 @@ func (d *fetchDiscovery) poll(ctx context.Context, ch chan<- []*targetgroup.Grou
 
 	if err != nil {
 		d.logger.Error("error parsing resources", "err", err)
-		d.metrics.fetchFailuresCount.Inc()
+		d.metrics.fetchFailuresCount.Add(1)
 		return
 	}
 
 	if response == nil {
 		// No update needed.
-		d.metrics.fetchSkipUpdateCount.Inc()
+		d.metrics.fetchSkipUpdateCount.Add(1)
 		return
 	}
 
 	parsedTargets, err := d.parseResources(response.Resources, response.TypeUrl)
 	if err != nil {
 		d.logger.Error("error parsing resources", "err", err)
-		d.metrics.fetchFailuresCount.Inc()
+		d.metrics.fetchFailuresCount.Add(1)
 		return
 	}
 

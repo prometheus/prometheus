@@ -64,15 +64,15 @@ func NewService(l *slog.Logger, inf cache.SharedIndexInformer, namespace cache.S
 
 	_, err := s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o any) {
-			svcAddCount.Inc()
+			svcAddCount.Add(1)
 			s.enqueue(o)
 		},
 		DeleteFunc: func(o any) {
-			svcDeleteCount.Inc()
+			svcDeleteCount.Add(1)
 			s.enqueue(o)
 		},
 		UpdateFunc: func(_, o any) {
-			svcUpdateCount.Inc()
+			svcUpdateCount.Add(1)
 			s.enqueue(o)
 		},
 	})

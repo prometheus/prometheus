@@ -360,7 +360,7 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 		case <-ctx.Done():
 			return
 		case tgs, ok := <-updates:
-			m.metrics.ReceivedUpdates.Inc()
+			m.metrics.ReceivedUpdates.Add(1)
 			if !ok {
 				m.logger.Debug("Discoverer channel closed", "provider", p.name)
 				// Wait for provider cancellation to ensure targets are cleaned up when expected.
@@ -395,11 +395,11 @@ func (m *Manager) sender() {
 		case <-ticker.C: // Some discoverers send updates too often, so we throttle these with the ticker.
 			select {
 			case <-m.triggerSend:
-				m.metrics.SentUpdates.Inc()
+				m.metrics.SentUpdates.Add(1)
 				select {
 				case m.syncCh <- m.allGroups():
 				default:
-					m.metrics.DelayedUpdates.Inc()
+					m.metrics.DelayedUpdates.Add(1)
 					m.logger.Debug("Discovery receiver's channel was full so will retry the next cycle")
 					select {
 					case m.triggerSend <- struct{}{}:

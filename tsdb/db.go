@@ -28,12 +28,12 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
@@ -101,7 +101,7 @@ func DefaultOptions() *Options {
 type Options struct {
 	// staleSeriesCompactionThreshold is same as below option with same name, but is atomic so that we can do live updates without locks.
 	// This is the one that must be used by the code.
-	staleSeriesCompactionThreshold atomic.Float64
+	staleSeriesCompactionThreshold atomic.Value
 
 	// Segments (wal files) max size.
 	// WALSegmentSize = 0, segment size is default size.
@@ -1088,7 +1088,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
-		db.head.metrics.walCorruptionsTotal.Inc()
+		db.head.metrics.walCorruptionsTotal.Add(1)
 		var e *errLoadWbl
 		if errors.As(initErr, &e) {
 			db.logger.Warn("Encountered WBL read error, attempting repair", "err", initErr)
@@ -1173,9 +1173,9 @@ func (db *DB) run(ctx context.Context) {
 			db.head.mmapHeadChunks()
 
 			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
-			if db.autoCompact && numSeries > 0 && db.opts.staleSeriesCompactionThreshold.Load() > 0 {
+			if db.autoCompact && numSeries > 0 && db.opts.staleSeriesCompactionThreshold.Load().(float64) > 0 {
 				staleSeriesRatio := float64(numStaleSeries) / float64(numSeries)
-				if staleSeriesRatio >= db.opts.staleSeriesCompactionThreshold.Load() {
+				if staleSeriesRatio >= db.opts.staleSeriesCompactionThreshold.Load().(float64) {
 					nextCompactionIsSoon := false
 					if !db.lastHeadCompactionTime.IsZero() {
 						compactionInterval := time.Duration(db.head.chunkRange.Load()) * time.Millisecond
@@ -1195,7 +1195,7 @@ func (db *DB) run(ctx context.Context) {
 			}
 
 		case <-db.compactc:
-			db.metrics.compactionsTriggered.Inc()
+			db.metrics.compactionsTriggered.Add(1)
 
 			db.autoCompactMtx.Lock()
 			if db.autoCompact {
@@ -1206,7 +1206,7 @@ func (db *DB) run(ctx context.Context) {
 					backoff = 0
 				}
 			} else {
-				db.metrics.compactionsSkipped.Inc()
+				db.metrics.compactionsSkipped.Add(1)
 			}
 			db.autoCompactMtx.Unlock()
 		case <-db.stopc:
@@ -1387,7 +1387,7 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 		if returnErr != nil && !errors.Is(returnErr, context.Canceled) {
 			// If we got an error because context was canceled then we're most likely
 			// shutting down TSDB and we don't need to report this on metrics
-			db.metrics.compactionsFailed.Inc()
+			db.metrics.compactionsFailed.Add(1)
 		}
 	}()
 
@@ -1635,11 +1635,11 @@ func (db *DB) CompactStaleHead() (err error) {
 	defer func() {
 		db.cmtx.Unlock()
 		if err != nil {
-			db.metrics.staleSeriesCompactionsFailed.Inc()
+			db.metrics.staleSeriesCompactionsFailed.Add(1)
 		}
 	}()
 
-	db.metrics.staleSeriesCompactionsTriggered.Inc()
+	db.metrics.staleSeriesCompactionsTriggered.Add(1)
 
 	db.logger.Info("Starting stale series compaction")
 	start := time.Now()
@@ -1764,9 +1764,9 @@ func (db *DB) reload() error {
 func (db *DB) reloadBlocks() (err error) {
 	defer func() {
 		if err != nil {
-			db.metrics.reloadsFailed.Inc()
+			db.metrics.reloadsFailed.Add(1)
 		}
-		db.metrics.reloads.Inc()
+		db.metrics.reloads.Add(1)
 	}()
 
 	db.mtx.RLock()
@@ -1957,7 +1957,7 @@ func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 			for _, b := range blocks[i:] {
 				deletable[b.meta.ULID] = struct{}{}
 			}
-			db.metrics.timeRetentionCount.Inc()
+			db.metrics.timeRetentionCount.Add(1)
 			break
 		}
 	}
@@ -1985,7 +1985,7 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 			for _, b := range blocks[i:] {
 				deletable[b.meta.ULID] = struct{}{}
 			}
-			db.metrics.sizeRetentionCount.Inc()
+			db.metrics.sizeRetentionCount.Add(1)
 			break
 		}
 	}

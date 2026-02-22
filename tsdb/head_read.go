@@ -184,7 +184,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	s := h.head.series.getByID(chunks.HeadSeriesRef(ref))
 
 	if s == nil {
-		h.head.metrics.seriesNotFound.Inc()
+		h.head.metrics.seriesNotFound.Add(1)
 		return storage.ErrNotFound
 	}
 	builder.Assign(s.labels())

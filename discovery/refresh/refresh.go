@@ -113,7 +113,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	tgs, err := d.refreshf(ctx)
 	if err != nil {
-		d.metrics.Failures.Inc()
+		d.metrics.Failures.Add(1)
 	}
 	return tgs, err
 }

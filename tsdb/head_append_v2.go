@@ -53,7 +53,7 @@ func (a *initAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.Series
 
 func (a *initAppenderV2) Commit() error {
 	if a.app == nil {
-		a.head.metrics.activeAppenders.Dec()
+		a.head.metrics.activeAppenders.Add(-1)
 		return nil
 	}
 	return a.app.Commit()
@@ -61,7 +61,7 @@ func (a *initAppenderV2) Commit() error {
 
 func (a *initAppenderV2) Rollback() error {
 	if a.app == nil {
-		a.head.metrics.activeAppenders.Dec()
+		a.head.metrics.activeAppenders.Add(-1)
 		return nil
 	}
 	return a.app.Rollback()
@@ -69,7 +69,7 @@ func (a *initAppenderV2) Rollback() error {
 
 // AppenderV2 returns a new AppenderV2 on the database.
 func (h *Head) AppenderV2(context.Context) storage.AppenderV2 {
-	h.metrics.activeAppenders.Inc()
+	h.metrics.activeAppenders.Add(1)
 
 	// The head cache might not have a starting point yet. The init appender
 	// picks up the first appended timestamp as the base.
@@ -127,7 +127,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise, a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricType).Inc()
+		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricType).Add(1)
 		return 0, storage.ErrOutOfBounds
 	}
 
@@ -183,9 +183,9 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	if appErr != nil {
 		switch {
 		case errors.Is(appErr, storage.ErrOutOfOrderSample):
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricType).Inc()
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricType).Add(1)
 		case errors.Is(appErr, storage.ErrTooOldSample):
-			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricType).Inc()
+			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricType).Add(1)
 		}
 		return 0, appErr
 	}

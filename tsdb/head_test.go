@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,7 +38,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
@@ -1231,7 +1231,8 @@ func TestHead_RaceBetweenSeriesCreationAndGC(t *testing.T) {
 	for i := range totalSeries {
 		series[i] = labels.FromStrings("foo", strconv.Itoa(i))
 	}
-	done := atomic.NewBool(false)
+	done := atomic.Bool{}
+	done.Store(false)
 
 	go func() {
 		defer done.Store(true)
@@ -6947,7 +6948,7 @@ type countSeriesLifecycleCallback struct {
 }
 
 func (*countSeriesLifecycleCallback) PreCreation(labels.Labels) error { return nil }
-func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)    { c.created.Inc() }
+func (c *countSeriesLifecycleCallback) PostCreation(labels.Labels)    { c.created.Add(1) }
 func (c *countSeriesLifecycleCallback) PostDeletion(s map[chunks.HeadSeriesRef]labels.Labels) {
 	c.deleted.Add(int64(len(s)))
 }

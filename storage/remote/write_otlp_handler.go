@@ -270,7 +270,7 @@ func (app *otlpInstrumentedAppender) Append(ref storage.SeriesRef, ls labels.Lab
 		// Hide the partial error as otlp converter does not handle it.
 	}
 	if opts.Metadata.IsEmpty() {
-		app.samplesAppendedWithoutMetadata.Inc()
+		app.samplesAppendedWithoutMetadata.Add(1)
 	}
 	return ref, nil
 }

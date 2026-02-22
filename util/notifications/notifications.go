@@ -106,13 +106,13 @@ func (n *Notifications) AddNotification(text string) {
 func (n *Notifications) notifySubscribers(notification Notification) {
 	for sub := range n.subscribers {
 		// Non-blocking send to avoid subscriber blocking issues.
-		n.notificationsSent.Inc()
+		n.notificationsSent.Add(1)
 		select {
 		case sub <- notification:
 			// Notification sent to the subscriber.
 		default:
 			// Drop the notification if the subscriber's channel is full.
-			n.notificationsDropped.Inc()
+			n.notificationsDropped.Add(1)
 		}
 	}
 }

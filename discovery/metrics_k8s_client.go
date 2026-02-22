@@ -162,7 +162,7 @@ func (f *clientGoRequestMetricAdapter) RegisterWithK8sGoClient() {
 }
 
 func (clientGoRequestMetricAdapter) Increment(_ context.Context, code, _, _ string) {
-	clientGoRequestResultMetricVec.WithLabelValues(code).Inc()
+	clientGoRequestResultMetricVec.WithLabelValues(code).Add(1)
 }
 
 func (clientGoRequestMetricAdapter) Observe(_ context.Context, _ string, u url.URL, latency time.Duration) {

@@ -143,7 +143,7 @@ func (a *initAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRe
 
 func (a *initAppender) Commit() error {
 	if a.app == nil {
-		a.head.metrics.activeAppenders.Dec()
+		a.head.metrics.activeAppenders.Add(-1)
 		return nil
 	}
 	return a.app.Commit()
@@ -151,7 +151,7 @@ func (a *initAppender) Commit() error {
 
 func (a *initAppender) Rollback() error {
 	if a.app == nil {
-		a.head.metrics.activeAppenders.Dec()
+		a.head.metrics.activeAppenders.Add(-1)
 		return nil
 	}
 	return a.app.Rollback()
@@ -159,7 +159,7 @@ func (a *initAppender) Rollback() error {
 
 // Appender returns a new Appender on the database.
 func (h *Head) Appender(context.Context) storage.Appender {
-	h.metrics.activeAppenders.Inc()
+	h.metrics.activeAppenders.Add(1)
 
 	// The head cache might not have a starting point yet. The init appender
 	// picks up the first appended timestamp as the base.
@@ -426,7 +426,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Add(1)
 		return 0, storage.ErrOutOfBounds
 	}
 
@@ -466,7 +466,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
 		if isOOO && a.hints != nil && a.hints.DiscardOutOfOrder {
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(1)
 			return 0, storage.ErrOutOfOrderSample
 		}
 		s.pendingCommit = true
@@ -477,9 +477,9 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	if err != nil {
 		switch {
 		case errors.Is(err, storage.ErrOutOfOrderSample):
-			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Add(1)
 		case errors.Is(err, storage.ErrTooOldSample):
-			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
+			a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(1)
 		}
 		return 0, err
 	}
@@ -808,7 +808,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	// Fail fast if OOO is disabled and the sample is out of bounds.
 	// Otherwise a full check will be done later to decide if the sample is in-order or out-of-order.
 	if a.oooTimeWindow == 0 && t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeHistogram).Add(1)
 		return 0, storage.ErrOutOfBounds
 	}
 
@@ -849,9 +849,9 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		if err != nil {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample):
-				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(1)
 			case errors.Is(err, storage.ErrTooOldSample):
-				a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+				a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Add(1)
 			}
 			return 0, err
 		}
@@ -881,9 +881,9 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		if err != nil {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample):
-				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+				a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Add(1)
 			case errors.Is(err, storage.ErrTooOldSample):
-				a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
+				a.head.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeHistogram).Add(1)
 			}
 			return 0, err
 		}
@@ -1440,10 +1440,10 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 					acc.inOrderMaxt = s.T
 				}
 				if newlyStale {
-					a.head.numStaleSeries.Inc()
+					a.head.numStaleSeries.Add(1)
 				}
 				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
+					a.head.numStaleSeries.Add(^uint64(0))
 				}
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
@@ -1452,8 +1452,8 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 
 		if chunkCreated {
-			a.head.metrics.chunks.Inc()
-			a.head.metrics.chunksCreated.Inc()
+			a.head.metrics.chunks.Add(1)
+			a.head.metrics.chunksCreated.Add(1)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1549,10 +1549,10 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 					acc.inOrderMaxt = s.T
 				}
 				if newlyStale {
-					a.head.numStaleSeries.Inc()
+					a.head.numStaleSeries.Add(1)
 				}
 				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
+					a.head.numStaleSeries.Add(^uint64(0))
 				}
 			} else {
 				acc.histogramsAppended--
@@ -1561,8 +1561,8 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		}
 
 		if chunkCreated {
-			a.head.metrics.chunks.Inc()
-			a.head.metrics.chunksCreated.Inc()
+			a.head.metrics.chunks.Add(1)
+			a.head.metrics.chunksCreated.Add(1)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1658,10 +1658,10 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 					acc.inOrderMaxt = s.T
 				}
 				if newlyStale {
-					a.head.numStaleSeries.Inc()
+					a.head.numStaleSeries.Add(1)
 				}
 				if staleToNonStale {
-					a.head.numStaleSeries.Dec()
+					a.head.numStaleSeries.Add(^uint64(0))
 				}
 			} else {
 				acc.histogramsAppended--
@@ -1670,8 +1670,8 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		}
 
 		if chunkCreated {
-			a.head.metrics.chunks.Inc()
-			a.head.metrics.chunksCreated.Inc()
+			a.head.metrics.chunks.Add(1)
+			a.head.metrics.chunksCreated.Add(1)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1750,7 +1750,7 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.commitExemplars(b)
 		defer b.close(h)
 	}
-	defer h.metrics.activeAppenders.Dec()
+	defer h.metrics.activeAppenders.Add(-1)
 	defer h.iso.closeAppend(a.appendID)
 
 	defer func() {
@@ -2249,7 +2249,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 	defer func() {
 		a.unmarkCreatedSeriesAsPendingCommit()
 		h.iso.closeAppend(a.appendID)
-		h.metrics.activeAppenders.Dec()
+		h.metrics.activeAppenders.Add(-1)
 		a.closed = true
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)

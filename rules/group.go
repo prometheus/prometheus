@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,7 +31,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -503,7 +503,7 @@ func (g *Group) CopyState(from *Group) {
 // Rules can be evaluated concurrently if the `concurrent-rule-eval` feature flag is enabled.
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	var (
-		samplesTotal    atomic.Float64
+		samplesTotal    atomic.Value
 		ruleQueryOffset = g.QueryOffset()
 	)
 	eval := func(i int, rule Rule, cleanup func()) {
@@ -528,14 +528,14 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			logger = logger.With("trace_id", sp.SpanContext().TraceID())
 		}
 
-		g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+		g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Add(1)
 
 		vector, err := rule.Eval(ctx, ruleQueryOffset, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 		if err != nil {
 			rule.SetHealth(HealthBad)
 			rule.SetLastError(err)
 			sp.SetStatus(codes.Error, err.Error())
-			g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+			g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Add(1)
 
 			// Canceled queries are intentional termination of queries. This normally
 			// happens on shutdown and thus we skip logging of any errors here.
@@ -565,7 +565,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
 				sp.SetStatus(codes.Error, err.Error())
-				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Add(1)
 
 				logger.Warn("Rule sample appending failed", "err", err)
 				return
@@ -686,7 +686,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 	}
 
-	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
+	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load().(float64))
 	g.cleanupStaleSeries(ctx, ts)
 }
 

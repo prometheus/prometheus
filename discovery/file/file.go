@@ -240,7 +240,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		d.logger.Error("Error adding file watcher", "err", err)
-		d.metrics.fileWatcherErrorsCount.Inc()
+		d.metrics.fileWatcherErrorsCount.Add(1)
 		return
 	}
 	d.watcher = watcher
@@ -336,7 +336,7 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 	for _, p := range d.listFiles() {
 		tgroups, err := d.readFile(p)
 		if err != nil {
-			d.metrics.fileSDReadErrorsCount.Inc()
+			d.metrics.fileSDReadErrorsCount.Add(1)
 
 			d.logger.Error("Error reading file", "path", p, "err", err)
 			// Prevent deletion down below.

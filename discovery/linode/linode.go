@@ -252,21 +252,21 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 	// Gather all linode instances.
 	instances, err := d.client.ListInstances(ctx, &listInstancesOpts)
 	if err != nil {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, err
 	}
 
 	// Gather detailed IP address info for all IPs on all linode instances.
 	detailedIPs, err := d.client.ListIPAddresses(ctx, &listIPAddressesOpts)
 	if err != nil {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, err
 	}
 
 	// Gather detailed IPv6 Range info for all linode instances.
 	ipv6RangeList, err := d.client.ListIPv6Ranges(ctx, &listIPv6RangesOpts)
 	if err != nil {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, err
 	}
 

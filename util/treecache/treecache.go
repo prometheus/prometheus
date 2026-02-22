@@ -134,7 +134,7 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 	retryChan := make(chan struct{})
 
 	failure := func() {
-		failureCounter.Inc()
+		failureCounter.Add(1)
 		failureMode = true
 		time.AfterFunc(time.Second*10, func() {
 			retryChan <- struct{}{}
@@ -266,7 +266,7 @@ func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTr
 	}
 
 	tc.wg.Go(func() {
-		numWatchers.Inc()
+		numWatchers.Add(1)
 		// Pass up zookeeper events, until the node is deleted.
 		select {
 		case event := <-dataWatcher:
@@ -275,7 +275,7 @@ func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTr
 			node.events <- event
 		case <-node.done:
 		}
-		numWatchers.Dec()
+		numWatchers.Add(-1)
 	})
 	return nil
 }

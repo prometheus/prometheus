@@ -29,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -41,7 +42,6 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -287,12 +287,12 @@ func (sp *scrapePool) stop() {
 func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
-	sp.metrics.targetScrapePoolReloads.Inc()
+	sp.metrics.targetScrapePoolReloads.Add(1)
 	start := time.Now()
 
 	client, err := newScrapeClient(cfg.HTTPClientConfig, cfg.JobName, sp.options.HTTPClientOptions...)
 	if err != nil {
-		sp.metrics.targetScrapePoolReloadsFailed.Inc()
+		sp.metrics.targetScrapePoolReloadsFailed.Add(1)
 		return err
 	}
 
@@ -439,7 +439,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	sp.metrics.targetSyncIntervalLengthHistogram.WithLabelValues(sp.config.JobName).Observe(
 		time.Since(start).Seconds(),
 	)
-	sp.metrics.targetScrapePoolSyncsCounter.WithLabelValues(sp.config.JobName).Inc()
+	sp.metrics.targetScrapePoolSyncsCounter.WithLabelValues(sp.config.JobName).Add(1)
 }
 
 // sync takes a list of potentially duplicated targets, deduplicates them, starts
@@ -540,7 +540,7 @@ func (sp *scrapePool) refreshTargetLimitErr() error {
 		return nil
 	}
 	if l := len(sp.activeTargets); l > int(sp.config.TargetLimit) {
-		sp.metrics.targetScrapePoolExceededTargetLimit.Inc()
+		sp.metrics.targetScrapePoolExceededTargetLimit.Add(1)
 		return fmt.Errorf("target_limit exceeded (number of targets: %d, limit: %d)", l, sp.config.TargetLimit)
 	}
 	return nil
@@ -779,7 +779,7 @@ func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w i
 			return "", err
 		}
 		if n >= s.bodySizeLimit {
-			s.metrics.targetScrapeExceededBodySizeLimit.Inc()
+			s.metrics.targetScrapeExceededBodySizeLimit.Add(1)
 			return "", errBodySizeLimit
 		}
 		return resp.Header.Get("Content-Type"), nil
@@ -805,7 +805,7 @@ func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w i
 		return "", err
 	}
 	if n >= s.bodySizeLimit {
-		s.metrics.targetScrapeExceededBodySizeLimit.Inc()
+		s.metrics.targetScrapeExceededBodySizeLimit.Add(1)
 		return "", errBodySizeLimit
 	}
 	return resp.Header.Get("Content-Type"), nil
@@ -958,7 +958,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		// since the last scrape, and allow an additional 1000 in case
 		// initial scrapes all fail.
 		flushCache = true
-		c.metrics.targetScrapeCacheFlushForced.Inc()
+		c.metrics.targetScrapeCacheFlushForced.Add(1)
 	}
 
 	if flushCache {
@@ -1716,7 +1716,7 @@ loop:
 
 			// If any label limits is exceeded the scrape should fail.
 			if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {
-				sl.metrics.targetScrapePoolExceededLabelLimits.Inc()
+				sl.metrics.targetScrapePoolExceededLabelLimits.Add(1)
 				break loop
 			}
 		}
@@ -1851,14 +1851,14 @@ loop:
 			err = sampleLimitErr
 		}
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
-		sl.metrics.targetScrapeSampleLimit.Inc()
+		sl.metrics.targetScrapeSampleLimit.Add(1)
 	}
 	if bucketLimitErr != nil {
 		if err == nil {
 			err = bucketLimitErr // If sample limit is hit, that error takes precedence.
 		}
 		// We only want to increment this once per scrape, so this is Inc'd outside the loop.
-		sl.metrics.targetScrapeNativeHistogramBucketLimit.Inc()
+		sl.metrics.targetScrapeNativeHistogramBucketLimit.Add(1)
 	}
 	if appErrs.numOutOfOrder > 0 {
 		sl.l.Warn("Error on ingesting out-of-order samples", "num_dropped", appErrs.numOutOfOrder)
@@ -1967,17 +1967,17 @@ func (sl *scrapeLoop) checkAddError(met []byte, exemplars []exemplar.Exemplar, e
 	case errors.Is(err, storage.ErrOutOfOrderSample):
 		appErrs.numOutOfOrder++
 		sl.l.Debug("Out of order sample", "series", string(met))
-		sl.metrics.targetScrapeSampleOutOfOrder.Inc()
+		sl.metrics.targetScrapeSampleOutOfOrder.Add(1)
 		return false, nil
 	case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 		appErrs.numDuplicates++
 		sl.l.Debug("Duplicate sample for timestamp", "series", string(met))
-		sl.metrics.targetScrapeSampleDuplicate.Inc()
+		sl.metrics.targetScrapeSampleDuplicate.Add(1)
 		return false, nil
 	case errors.Is(err, storage.ErrOutOfBounds):
 		appErrs.numOutOfBounds++
 		sl.l.Debug("Out of bounds metric", "series", string(met))
-		sl.metrics.targetScrapeSampleOutOfBounds.Inc()
+		sl.metrics.targetScrapeSampleOutOfBounds.Add(1)
 		return false, nil
 	case errors.Is(err, storage.ErrNotFound):
 		return false, storage.ErrNotFound

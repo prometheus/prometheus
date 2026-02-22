@@ -194,9 +194,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targetgroup.Group) error {
 	response, err := d.lookupFn(name, d.qtype, d.logger)
-	d.metrics.dnsSDLookupsCount.Inc()
+	d.metrics.dnsSDLookupsCount.Add(1)
 	if err != nil {
-		d.metrics.dnsSDLookupFailuresCount.Inc()
+		d.metrics.dnsSDLookupFailuresCount.Add(1)
 		return err
 	}
 

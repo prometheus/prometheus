@@ -666,7 +666,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		if err := os.RemoveAll(tmp); err != nil {
 			c.logger.Error("removed tmp folder after failed compaction", "err", err.Error())
 		}
-		c.metrics.Ran.Inc()
+		c.metrics.Ran.Add(1)
 		c.metrics.Duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
@@ -819,7 +819,7 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 
 		if !overlapping {
 			if i > 0 && b.Meta().MinTime < globalMaxt {
-				metrics.OverlappingBlocks.Inc()
+				metrics.OverlappingBlocks.Add(1)
 				overlapping = true
 				logger.Info("Found overlapping blocks during compaction", "ulid", meta.ULID)
 			}

@@ -349,7 +349,7 @@ func newAzureResourceFromID(id string, logger *slog.Logger) (*arm.ResourceID, er
 func (d *Discovery) refreshAzureClient(ctx context.Context, client client) ([]*targetgroup.Group, error) {
 	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, fmt.Errorf("could not get virtual machines: %w", err)
 	}
 
@@ -358,14 +358,14 @@ func (d *Discovery) refreshAzureClient(ctx context.Context, client client) ([]*t
 	// Load the vms managed by scale sets.
 	scaleSets, err := client.getScaleSets(ctx, d.cfg.ResourceGroup)
 	if err != nil {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, fmt.Errorf("could not get virtual machine scale sets: %w", err)
 	}
 
 	for _, scaleSet := range scaleSets {
 		scaleSetVms, err := client.getScaleSetVMs(ctx, scaleSet)
 		if err != nil {
-			d.metrics.failuresCount.Inc()
+			d.metrics.failuresCount.Add(1)
 			return nil, fmt.Errorf("could not get virtual machine scale set vms: %w", err)
 		}
 		machines = append(machines, scaleSetVms...)
@@ -395,7 +395,7 @@ func (d *Discovery) refreshAzureClient(ctx context.Context, client client) ([]*t
 	var tg targetgroup.Group
 	for tgt := range ch {
 		if tgt.err != nil {
-			d.metrics.failuresCount.Inc()
+			d.metrics.failuresCount.Add(1)
 			return nil, fmt.Errorf("unable to complete Azure service discovery: %w", tgt.err)
 		}
 		if tgt.labelSet != nil {
@@ -411,7 +411,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	client, err := d.createAzureClient()
 	if err != nil {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, fmt.Errorf("could not create Azure client: %w", err)
 	}
 

@@ -284,7 +284,7 @@ func (d *Discovery) getDatacenter() error {
 	info, err := d.client.Agent().Self()
 	if err != nil {
 		d.logger.Error("Error retrieving datacenter name", "err", err)
-		d.metrics.rpcFailuresCount.Inc()
+		d.metrics.rpcFailuresCount.Add(1)
 		return err
 	}
 
@@ -385,7 +385,7 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 
 	if err != nil {
 		d.logger.Error("Error refreshing service list", "err", err)
-		d.metrics.rpcFailuresCount.Inc()
+		d.metrics.rpcFailuresCount.Add(1)
 		time.Sleep(retryInterval)
 		return
 	}
@@ -516,7 +516,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 
 	if err != nil {
 		srv.logger.Error("Error refreshing service", "service", srv.name, "tags", strings.Join(srv.tags, ","), "err", err)
-		srv.rpcFailuresCount.Inc()
+		srv.rpcFailuresCount.Add(1)
 		time.Sleep(retryInterval)
 		return
 	}

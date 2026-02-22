@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,7 +35,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -835,7 +835,8 @@ func TestStop_DrainingDisabled(t *testing.T) {
 		const alertmanagerURL = "http://alertmanager:9093/api/v2/alerts"
 
 		handlerStarted := make(chan struct{})
-		alertsReceived := atomic.NewInt64(0)
+		alertsReceived := atomic.Int64{}
+		alertsReceived.Store(int64(0))
 
 		// Fake Do function that simulates a hanging alertmanager that times out.
 		fakeDo := func(ctx context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {
@@ -906,7 +907,8 @@ func TestStop_DrainingEnabled(t *testing.T) {
 		const alertmanagerURL = "http://alertmanager:9093/api/v2/alerts"
 
 		handlerStarted := make(chan struct{}, 1)
-		alertsReceived := atomic.NewInt64(0)
+		alertsReceived := atomic.Int64{}
+		alertsReceived.Store(0)
 
 		// Fake Do function that simulates alertmanager responding slowly but successfully.
 		fakeDo := func(_ context.Context, _ *http.Client, req *http.Request) (*http.Response, error) {

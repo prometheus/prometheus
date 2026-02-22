@@ -362,8 +362,8 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query, sortSeries bool)
 // chunked responses arrive already sorted by the server.
 // Returns a single SeriesSet with interleaved series from all queries.
 func (c *Client) ReadMultiple(ctx context.Context, queries []*prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
-	c.readQueries.Inc()
-	defer c.readQueries.Dec()
+	c.readQueries.Add(1)
+	defer c.readQueries.Add(-1)
 
 	req := &prompb.ReadRequest{
 		Queries:               queries,
@@ -430,7 +430,7 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 	switch {
 	case strings.HasPrefix(contentType, "application/x-protobuf"):
 		c.readQueriesDuration.WithLabelValues("sampled").Observe(time.Since(start).Seconds())
-		c.readQueriesTotal.WithLabelValues("sampled", strconv.Itoa(httpResp.StatusCode)).Inc()
+		c.readQueriesTotal.WithLabelValues("sampled", strconv.Itoa(httpResp.StatusCode)).Add(1)
 		ss, err := c.handleSampledResponse(req, httpResp, sortSeries)
 		cancel()
 		return ss, err
@@ -443,12 +443,12 @@ func (c *Client) handleReadResponse(httpResp *http.Response, req *prompb.ReadReq
 			if !errors.Is(err, io.EOF) {
 				code = "aborted_stream"
 			}
-			c.readQueriesTotal.WithLabelValues("chunked", code).Inc()
+			c.readQueriesTotal.WithLabelValues("chunked", code).Add(1)
 			cancel()
 		}), nil
 	default:
 		c.readQueriesDuration.WithLabelValues("unsupported").Observe(time.Since(start).Seconds())
-		c.readQueriesTotal.WithLabelValues("unsupported", strconv.Itoa(httpResp.StatusCode)).Inc()
+		c.readQueriesTotal.WithLabelValues("unsupported", strconv.Itoa(httpResp.StatusCode)).Add(1)
 		cancel()
 		return nil, fmt.Errorf("unsupported content type: %s", contentType)
 	}

@@ -217,7 +217,7 @@ func (w *Watcher) Notify() {
 	default: // default so we can exit
 		// we don't need a buffered channel or any buffering since
 		// for each notification it recv's the watcher will read until EOF
-		w.notificationsSkipped.Inc()
+		w.notificationsSkipped.Add(1)
 	}
 }
 
@@ -508,13 +508,13 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	for r.Next() && !isClosed(w.quit) {
 		var err error
 		rec := r.Record()
-		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
+		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Add(1)
 
 		switch dec.Type(rec) {
 		case record.Series:
 			series, err = dec.Series(rec, series[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
+				w.recordDecodeFailsMetric.Add(1)
 				return err
 			}
 			w.writer.StoreSeries(series, segmentNum)
@@ -527,7 +527,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			samples, err = dec.Samples(rec, samples[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
+				w.recordDecodeFailsMetric.Add(1)
 				return err
 			}
 			for _, s := range samples {
@@ -557,7 +557,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			exemplars, err = dec.Exemplars(rec, exemplars[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
+				w.recordDecodeFailsMetric.Add(1)
 				return err
 			}
 			w.writer.AppendExemplars(exemplars)
@@ -572,7 +572,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			histograms, err = dec.HistogramSamples(rec, histograms[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
+				w.recordDecodeFailsMetric.Add(1)
 				return err
 			}
 			for _, h := range histograms {
@@ -600,7 +600,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
+				w.recordDecodeFailsMetric.Add(1)
 				return err
 			}
 			for _, fh := range floatHistograms {
@@ -624,14 +624,14 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			metadata, err = dec.Metadata(rec, metadata[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
+				w.recordDecodeFailsMetric.Add(1)
 				return err
 			}
 			w.writer.StoreMetadata(metadata)
 
 		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
-			w.recordDecodeFailsMetric.Inc()
+			w.recordDecodeFailsMetric.Add(1)
 
 		default:
 			// We're not interested in other types of records.
@@ -652,20 +652,20 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
-		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
+		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Add(1)
 
 		switch dec.Type(rec) {
 		case record.Series:
 			series, err := dec.Series(rec, series[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
+				w.recordDecodeFailsMetric.Add(1)
 				return err
 			}
 			w.writer.UpdateSeriesSegment(series, segmentNum)
 
 		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
-			w.recordDecodeFailsMetric.Inc()
+			w.recordDecodeFailsMetric.Add(1)
 
 		default:
 			// We're only interested in series.

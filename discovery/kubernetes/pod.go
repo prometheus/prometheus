@@ -74,15 +74,15 @@ func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace cac
 	}
 	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o any) {
-			podAddCount.Inc()
+			podAddCount.Add(1)
 			p.enqueue(o)
 		},
 		DeleteFunc: func(o any) {
-			podDeleteCount.Inc()
+			podDeleteCount.Add(1)
 			p.enqueue(o)
 		},
 		UpdateFunc: func(_, o any) {
-			podUpdateCount.Inc()
+			podUpdateCount.Add(1)
 			p.enqueue(o)
 		},
 	})

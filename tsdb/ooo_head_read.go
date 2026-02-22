@@ -63,7 +63,7 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 	s := oh.head.series.getByID(chunks.HeadSeriesRef(ref))
 
 	if s == nil {
-		oh.head.metrics.seriesNotFound.Inc()
+		oh.head.metrics.seriesNotFound.Add(1)
 		return storage.ErrNotFound
 	}
 	builder.Assign(s.labels())
@@ -468,7 +468,7 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 	s := ir.ch.head.series.getByID(chunks.HeadSeriesRef(ref))
 
 	if s == nil {
-		ir.ch.head.metrics.seriesNotFound.Inc()
+		ir.ch.head.metrics.seriesNotFound.Add(1)
 		return storage.ErrNotFound
 	}
 	builder.Assign(s.labels())

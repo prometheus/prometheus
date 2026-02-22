@@ -79,7 +79,7 @@ func EngineQueryFunc(engine promql.QueryEngine, q storage.Queryable) QueryFunc {
 // to invoke this function as well, to ensure correct Group state and metrics
 // are maintained.
 func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.Time) {
-	g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Inc()
+	g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(1)
 
 	start := time.Now()
 	g.Eval(ctx, evalTimestamp)

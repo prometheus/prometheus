@@ -308,7 +308,7 @@ func (r *LiveReader) readRecord() ([]byte, int, error) {
 		if !r.permissive {
 			return nil, 0, fmt.Errorf("record would overflow current page: %d > %d", r.readIndex+recordHeaderSize+length, pageSize)
 		}
-		r.metrics.readerCorruptionErrors.WithLabelValues("record_span_page").Inc()
+		r.metrics.readerCorruptionErrors.WithLabelValues("record_span_page").Add(1)
 		r.logger.Warn("Record spans page boundaries", "start", r.readIndex, "end", recordHeaderSize+length, "pageSize", pageSize)
 	}
 	if recordHeaderSize+length > pageSize {

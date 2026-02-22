@@ -173,7 +173,7 @@ func (d *Discovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 	}
 	stubs, _, err := d.client.Services().List(opts)
 	if err != nil {
-		d.metrics.failuresCount.Inc()
+		d.metrics.failuresCount.Add(1)
 		return nil, err
 	}
 
@@ -185,7 +185,7 @@ func (d *Discovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 		for _, service := range stub.Services {
 			instances, _, err := d.client.Services().Get(service.ServiceName, opts)
 			if err != nil {
-				d.metrics.failuresCount.Inc()
+				d.metrics.failuresCount.Add(1)
 				return nil, fmt.Errorf("failed to fetch services: %w", err)
 			}
 

@@ -90,7 +90,7 @@ func (c *Client) Write(samples model.Samples) error {
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			c.logger.Debug("Cannot send to InfluxDB, skipping sample", "value", v, "sample", s)
-			c.ignoredSamples.Inc()
+			c.ignoredSamples.Add(1)
 			continue
 		}
 		p := influx.NewPoint(

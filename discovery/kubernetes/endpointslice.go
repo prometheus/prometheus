@@ -86,15 +86,15 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 
 	_, err := e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o any) {
-			epslAddCount.Inc()
+			epslAddCount.Add(1)
 			e.enqueue(o)
 		},
 		UpdateFunc: func(_, o any) {
-			epslUpdateCount.Inc()
+			epslUpdateCount.Add(1)
 			e.enqueue(o)
 		},
 		DeleteFunc: func(o any) {
-			epslDeleteCount.Inc()
+			epslDeleteCount.Add(1)
 			e.enqueue(o)
 		},
 	})
@@ -121,15 +121,15 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 	}
 	_, err = e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o any) {
-			svcAddCount.Inc()
+			svcAddCount.Add(1)
 			serviceUpdate(o)
 		},
 		UpdateFunc: func(_, o any) {
-			svcUpdateCount.Inc()
+			svcUpdateCount.Add(1)
 			serviceUpdate(o)
 		},
 		DeleteFunc: func(o any) {
-			svcDeleteCount.Inc()
+			svcDeleteCount.Add(1)
 			serviceUpdate(o)
 		},
 	})

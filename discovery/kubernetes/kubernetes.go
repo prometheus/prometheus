@@ -833,7 +833,7 @@ func (d *Discovery) newIndexedIngressesInformer(ilw *cache.ListWatch) cache.Shar
 }
 
 func (d *Discovery) informerWatchErrorHandler(ctx context.Context, r *cache.Reflector, err error) {
-	d.metrics.failuresCount.Inc()
+	d.metrics.failuresCount.Add(1)
 	cache.DefaultWatchErrorHandler(ctx, r, err)
 }
 

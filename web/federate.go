@@ -79,7 +79,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	q, err := h.localStorage.Querier(mint, maxt)
 	if err != nil {
-		federationErrors.Inc()
+		federationErrors.Add(1)
 		if errors.Is(err, tsdb.ErrNotReady) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
@@ -159,7 +159,7 @@ Loop:
 		federationWarnings.Add(float64(len(ws)))
 	}
 	if set.Err() != nil {
-		federationErrors.Inc()
+		federationErrors.Add(1)
 		http.Error(w, set.Err().Error(), http.StatusInternalServerError)
 		return
 	}
@@ -265,7 +265,7 @@ Loop:
 			return nil
 		})
 		if err != nil {
-			federationErrors.Inc()
+			federationErrors.Add(1)
 			h.logger.Error("federation failed", "err", err)
 			return
 		}
@@ -304,7 +304,7 @@ Loop:
 	// Still have to ship off the last MetricDescriptor, if any.
 	if protMetricFam != nil {
 		if err := enc.Encode(protMetricFam); err != nil {
-			federationErrors.Inc()
+			federationErrors.Add(1)
 			h.logger.Error("federation failed", "err", err)
 		}
 	}

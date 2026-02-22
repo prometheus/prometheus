@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -33,7 +34,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -668,11 +668,11 @@ func (c *timeSeriesAgeChecker) checkAndRecordIfOld(timestamp int64, dataType str
 	// Record the drop in metrics.
 	switch dataType {
 	case "sample":
-		c.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Inc()
+		c.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Add(1)
 	case "histogram":
-		c.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
+		c.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Add(1)
 	case "exemplar":
-		c.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Inc()
+		c.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Add(1)
 	}
 	return true
 }
@@ -728,7 +728,7 @@ func (t *QueueManager) Append(samples []record.RefSample) bool {
 outer:
 	for _, s := range samples {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), s.T) {
-			t.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Inc()
+			t.metrics.droppedSamplesTotal.WithLabelValues(reasonTooOld).Add(1)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -737,9 +737,9 @@ outer:
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				t.logger.Info("Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
-				t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				t.metrics.droppedSamplesTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Add(1)
 			} else {
-				t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				t.metrics.droppedSamplesTotal.WithLabelValues(reasonDroppedSeries).Add(1)
 			}
 			t.seriesMtx.Unlock()
 			continue
@@ -769,7 +769,7 @@ outer:
 				continue outer
 			}
 
-			t.metrics.enqueueRetriesTotal.Inc()
+			t.metrics.enqueueRetriesTotal.Add(1)
 			time.Sleep(time.Duration(backoff))
 			backoff *= 2
 			// It is reasonable to use t.cfg.MaxBackoff here, as if we have hit
@@ -790,7 +790,7 @@ func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
 outer:
 	for _, e := range exemplars {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), e.T) {
-			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Inc()
+			t.metrics.droppedExemplarsTotal.WithLabelValues(reasonTooOld).Add(1)
 			continue
 		}
 		t.seriesMtx.Lock()
@@ -800,9 +800,9 @@ outer:
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[e.Ref]; !ok {
 				t.logger.Info("Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", e.Ref)
-				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Add(1)
 			} else {
-				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				t.metrics.droppedExemplarsTotal.WithLabelValues(reasonDroppedSeries).Add(1)
 			}
 			t.seriesMtx.Unlock()
 			continue
@@ -828,7 +828,7 @@ outer:
 				continue outer
 			}
 
-			t.metrics.enqueueRetriesTotal.Inc()
+			t.metrics.enqueueRetriesTotal.Add(1)
 			time.Sleep(time.Duration(backoff))
 			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
@@ -847,12 +847,12 @@ func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) 
 outer:
 	for _, h := range histograms {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Add(1)
 			continue
 		}
 		if t.protoMsg == remoteapi.WriteV1MessageType && h.H != nil && h.H.Schema == histogram.CustomBucketsSchema {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Add(1)
 			t.logger.Warn("Dropped native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
 			continue
 		}
@@ -862,9 +862,9 @@ outer:
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Add(1)
 			} else {
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Add(1)
 			}
 			t.seriesMtx.Unlock()
 			continue
@@ -889,7 +889,7 @@ outer:
 				continue outer
 			}
 
-			t.metrics.enqueueRetriesTotal.Inc()
+			t.metrics.enqueueRetriesTotal.Add(1)
 			time.Sleep(time.Duration(backoff))
 			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
@@ -908,12 +908,12 @@ func (t *QueueManager) AppendFloatHistograms(floatHistograms []record.RefFloatHi
 outer:
 	for _, h := range floatHistograms {
 		if isSampleOld(currentTime, time.Duration(t.cfg.SampleAgeLimit), h.T) {
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Inc()
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonTooOld).Add(1)
 			continue
 		}
 		if t.protoMsg == remoteapi.WriteV1MessageType && h.FH != nil && h.FH.Schema == histogram.CustomBucketsSchema {
 			// We cannot send native histograms with custom buckets (NHCB) via remote write v1.
-			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Inc()
+			t.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBNotSupported).Add(1)
 			t.logger.Warn("Dropped float native histogram with custom buckets (NHCB) as remote write v1 does not support itB", "ref", h.Ref)
 			continue
 		}
@@ -923,9 +923,9 @@ outer:
 			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[h.Ref]; !ok {
 				t.logger.Info("Dropped histogram for series that was not explicitly dropped via relabelling", "ref", h.Ref)
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Inc()
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonUnintentionalDroppedSeries).Add(1)
 			} else {
-				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Inc()
+				t.metrics.droppedHistogramsTotal.WithLabelValues(reasonDroppedSeries).Add(1)
 			}
 			t.seriesMtx.Unlock()
 			continue
@@ -950,7 +950,7 @@ outer:
 				continue outer
 			}
 
-			t.metrics.enqueueRetriesTotal.Inc()
+			t.metrics.enqueueRetriesTotal.Add(1)
 			time.Sleep(time.Duration(backoff))
 			backoff *= 2
 			if backoff > t.cfg.MaxBackoff {
@@ -1366,14 +1366,14 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data timeSeries) bool {
 		}
 		switch data.sType {
 		case tSample:
-			s.qm.metrics.pendingSamples.Inc()
-			s.enqueuedSamples.Inc()
+			s.qm.metrics.pendingSamples.Add(1)
+			s.enqueuedSamples.Add(1)
 		case tExemplar:
-			s.qm.metrics.pendingExemplars.Inc()
-			s.enqueuedExemplars.Inc()
+			s.qm.metrics.pendingExemplars.Add(1)
+			s.enqueuedExemplars.Add(1)
 		case tHistogram, tFloatHistogram:
-			s.qm.metrics.pendingHistograms.Inc()
-			s.enqueuedHistograms.Inc()
+			s.qm.metrics.pendingHistograms.Add(1)
+			s.enqueuedHistograms.Add(1)
 		default:
 			return true
 		}
@@ -1538,7 +1538,7 @@ func (q *queue) newBatch(capacity int) []timeSeries {
 
 func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	defer func() {
-		if s.running.Dec() == 0 {
+		if s.running.Add(-1) == 0 {
 			close(s.done)
 		}
 	}()
@@ -1737,9 +1737,9 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	s.qm.metrics.pendingSamples.Sub(float64(sampleCount))
 	s.qm.metrics.pendingExemplars.Sub(float64(exemplarCount))
 	s.qm.metrics.pendingHistograms.Sub(float64(histogramCount))
-	s.enqueuedSamples.Sub(int64(sampleCount))
-	s.enqueuedExemplars.Sub(int64(exemplarCount))
-	s.enqueuedHistograms.Sub(int64(histogramCount))
+	s.enqueuedSamples.Add(-int64(sampleCount))
+	s.enqueuedExemplars.Add(-int64(exemplarCount))
+	s.enqueuedHistograms.Add(-int64(histogramCount))
 }
 
 // sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
