@@ -2087,26 +2087,83 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 	}
 	matched := make(map[uint64]*matchedEntry)
 
-	// Filter resources by attribute matches
-	err = mr.IterVersionedResources(r.Context(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
-		var matchingVersions []*seriesmetadata.ResourceVersion
-		for _, rv := range resources.Versions {
-			if rv.MinTime > endMs || rv.MaxTime < startMs {
+	// Filter resources by attribute matches.
+	// Try indexed path first: intersect candidate sets from the inverted index.
+	var candidates map[uint64]struct{}
+	useIndex := true
+	for k, v := range resourceAttrFilters {
+		hashes := mr.LookupResourceAttr(k, v)
+		if hashes == nil {
+			// Index not built — fall back to full scan.
+			useIndex = false
+			break
+		}
+		if candidates == nil {
+			// Start with a copy of the smallest set.
+			candidates = make(map[uint64]struct{}, len(hashes))
+			for h := range hashes {
+				candidates[h] = struct{}{}
+			}
+		} else {
+			// Intersect: remove candidates not in this set.
+			for h := range candidates {
+				if _, ok := hashes[h]; !ok {
+					delete(candidates, h)
+				}
+			}
+		}
+		if len(candidates) == 0 {
+			break
+		}
+	}
+
+	if useIndex {
+		// Indexed path: verify each candidate against time range and attribute filters.
+		for hash := range candidates {
+			if err := r.Context().Err(); err != nil {
+				return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("request cancelled: %w", err)}, nil, nil}
+			}
+			resources, ok := mr.GetVersionedResource(hash)
+			if !ok {
 				continue
 			}
-			if matchesResourceVersion(rv, resourceAttrFilters) {
-				matchingVersions = append(matchingVersions, rv)
+			var matchingVersions []*seriesmetadata.ResourceVersion
+			for _, rv := range resources.Versions {
+				if rv.MinTime > endMs || rv.MaxTime < startMs {
+					continue
+				}
+				if matchesResourceVersion(rv, resourceAttrFilters) {
+					matchingVersions = append(matchingVersions, rv)
+				}
+			}
+			if len(matchingVersions) > 0 {
+				matched[hash] = &matchedEntry{
+					resourceVersions: filterVersions(matchingVersions, startMs, endMs),
+				}
 			}
 		}
-		if len(matchingVersions) > 0 {
-			matched[labelsHash] = &matchedEntry{
-				resourceVersions: filterVersions(matchingVersions, startMs, endMs),
+	} else {
+		// Fallback: full scan for readers without an index.
+		err = mr.IterVersionedResources(r.Context(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+			var matchingVersions []*seriesmetadata.ResourceVersion
+			for _, rv := range resources.Versions {
+				if rv.MinTime > endMs || rv.MaxTime < startMs {
+					continue
+				}
+				if matchesResourceVersion(rv, resourceAttrFilters) {
+					matchingVersions = append(matchingVersions, rv)
+				}
 			}
+			if len(matchingVersions) > 0 {
+				matched[labelsHash] = &matchedEntry{
+					resourceVersions: filterVersions(matchingVersions, startMs, endMs),
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
 		}
-		return nil
-	})
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
 	}
 
 	// Populate scope versions for matched series (for complete response)
