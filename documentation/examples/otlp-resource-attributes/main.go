@@ -604,7 +604,7 @@ func printResourceAttributes(title string, reader seriesmetadata.Reader, db *tsd
 	}
 	var entries []entry
 
-	_ = reader.IterVersionedResources(func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
+	_ = reader.IterVersionedResources(context.Background(), func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
 		entries = append(entries, entry{hash: labelsHash, attrs: attrs})
 		return nil
 	})
@@ -735,7 +735,7 @@ func printScopeAttributes(title string, reader seriesmetadata.Reader, db *tsdb.D
 	}
 	var entries []entry
 
-	_ = reader.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+	_ = reader.IterVersionedScopes(context.Background(), func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
 		entries = append(entries, entry{hash: labelsHash, scopes: scopes})
 		return nil
 	})
@@ -823,7 +823,7 @@ func printScopeAttributesFiltered(title string, reader seriesmetadata.Reader, sc
 	}
 	var entries []entry
 
-	_ = reader.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+	_ = reader.IterVersionedScopes(context.Background(), func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
 		current, ok := scopes.CurrentVersion()
 		if ok && current.Name == scopeName {
 			entries = append(entries, entry{hash: labelsHash, scopes: scopes})
@@ -891,7 +891,7 @@ func printResourceAttributesFiltered(title string, reader seriesmetadata.Reader,
 	}
 	var entries []entry
 
-	_ = reader.IterVersionedResources(func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
+	_ = reader.IterVersionedResources(context.Background(), func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
 		// Filter by current version's service name/namespace from identifying attributes
 		current, ok := attrs.CurrentVersion()
 		if ok && current.Identifying[seriesmetadata.AttrServiceName] == serviceName && current.Identifying[seriesmetadata.AttrServiceNamespace] == serviceNamespace {
@@ -1164,7 +1164,7 @@ func buildResourceAttributesAPIResponse(db *tsdb.DB) map[string]any {
 
 	// Build scope versions map keyed by labels hash
 	scopesByHash := make(map[uint64][]scopeVersionEntry)
-	_ = reader.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+	_ = reader.IterVersionedScopes(context.Background(), func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
 		for _, sv := range scopes.Versions {
 			scopesByHash[labelsHash] = append(scopesByHash[labelsHash], scopeVersionEntry{
 				Name:      sv.Name,
@@ -1179,7 +1179,7 @@ func buildResourceAttributesAPIResponse(db *tsdb.DB) map[string]any {
 	})
 
 	var data []responseEntry
-	_ = reader.IterVersionedResources(func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
+	_ = reader.IterVersionedResources(context.Background(), func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
 		lbls := make(map[string]string)
 		if lbs, ok := labelsMap[labelsHash]; ok {
 			lbs.Range(func(l labels.Label) {
@@ -1277,7 +1277,7 @@ func buildReverseLookupAPIResponse(db *tsdb.DB) map[string]any {
 	// 1. Find series with service.name=payment-service
 	{
 		var matches []matchedEntry
-		_ = reader.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		_ = reader.IterVersionedResources(context.Background(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
 			for _, rv := range resources.Versions {
 				if rv.Identifying["service.name"] == "payment-service" {
 					lbls := make(map[string]string)
@@ -1303,7 +1303,7 @@ func buildReverseLookupAPIResponse(db *tsdb.DB) map[string]any {
 	// 2. Find series with scope name "github.com/example/payment"
 	{
 		var matches []matchedEntry
-		_ = reader.IterVersionedScopes(func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
+		_ = reader.IterVersionedScopes(context.Background(), func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
 			for _, sv := range scopes.Versions {
 				if sv.Name == "github.com/example/payment" {
 					lbls := make(map[string]string)
@@ -1329,7 +1329,7 @@ func buildReverseLookupAPIResponse(db *tsdb.DB) map[string]any {
 	// 3. Find series with entity type "service"
 	{
 		var matches []matchedEntry
-		_ = reader.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+		_ = reader.IterVersionedResources(context.Background(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
 			for _, rv := range resources.Versions {
 				for _, ent := range rv.Entities {
 					if ent.Type == "service" {
