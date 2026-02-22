@@ -3514,17 +3514,15 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry_AppendV2(t *testing.T) {
 		}
 	}
 
-	// There should be 1 metadata block present. All unique (series, content)
-	// pairs are preserved with coalesced time ranges.
+	// There should be 1 metadata block present. Checkpoint keeps only the
+	// latest metadata entry per series ref.
 	wantMetadata := []record.RefMetadata{
-		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help, MinTime: 0, MaxTime: 0},
 		{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help, MinTime: 1, MaxTime: 1},
-		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help, MinTime: 0, MaxTime: 5},
-		{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help, MinTime: 2, MaxTime: 6},
+		{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help, MinTime: 6, MaxTime: 6},
 		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help, MinTime: 0, MaxTime: 0},
 	}
 	require.Len(t, gotMetadataBlocks, 1)
-	require.Len(t, gotMetadataBlocks[0], 5)
+	require.Len(t, gotMetadataBlocks[0], 3)
 	gotMetadataBlock := gotMetadataBlocks[0]
 
 	sort.Slice(gotMetadataBlock, func(i, j int) bool {
@@ -3571,9 +3569,9 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
 	series3 := db.head.series.getByHash(s3.Hash(), s3)
 	series4 := db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta.CurrentMetadata(), m1)
-	require.Equal(t, *series2.meta.CurrentMetadata(), m2)
-	require.Equal(t, *series3.meta.CurrentMetadata(), m3)
+	require.Equal(t, *series1.meta, m1)
+	require.Equal(t, *series2.meta, m2)
+	require.Equal(t, *series3.meta, m3)
 	require.Nil(t, series4.meta)
 
 	// Add a replicated metadata entry to the first series,
@@ -3596,10 +3594,10 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	series2 = db.head.series.getByHash(s2.Hash(), s2)
 	series3 = db.head.series.getByHash(s3.Hash(), s3)
 	series4 = db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta.CurrentMetadata(), m1)
-	require.Equal(t, *series2.meta.CurrentMetadata(), m5)
-	require.Equal(t, *series3.meta.CurrentMetadata(), m3)
-	require.Equal(t, *series4.meta.CurrentMetadata(), m4)
+	require.Equal(t, *series1.meta, m1)
+	require.Equal(t, *series2.meta, m5)
+	require.Equal(t, *series3.meta, m3)
+	require.Equal(t, *series4.meta, m4)
 
 	require.NoError(t, db.Close())
 
@@ -3614,10 +3612,10 @@ func TestMetadataAssertInMemoryData_AppendV2(t *testing.T) {
 	_, err = reopenDB.head.wal.Size()
 	require.NoError(t, err)
 
-	require.Equal(t, *reopenDB.head.series.getByHash(s1.Hash(), s1).meta.CurrentMetadata(), m1)
-	require.Equal(t, *reopenDB.head.series.getByHash(s2.Hash(), s2).meta.CurrentMetadata(), m5)
-	require.Equal(t, *reopenDB.head.series.getByHash(s3.Hash(), s3).meta.CurrentMetadata(), m3)
-	require.Equal(t, *reopenDB.head.series.getByHash(s4.Hash(), s4).meta.CurrentMetadata(), m4)
+	require.Equal(t, *reopenDB.head.series.getByHash(s1.Hash(), s1).meta, m1)
+	require.Equal(t, *reopenDB.head.series.getByHash(s2.Hash(), s2).meta, m5)
+	require.Equal(t, *reopenDB.head.series.getByHash(s3.Hash(), s3).meta, m3)
+	require.Equal(t, *reopenDB.head.series.getByHash(s4.Hash(), s4).meta, m4)
 }
 
 // TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
