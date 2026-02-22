@@ -110,7 +110,7 @@ type ScopeCommitData struct {
 	MaxTime   int64
 }
 
-func (*scopeKindDescriptor) CommitToSeries(series any, walRecord any) {
+func (*scopeKindDescriptor) CommitToSeries(series, walRecord any) {
 	accessor := series.(kindMetaAccessor)
 	scd := walRecord.(ScopeCommitData)
 
@@ -136,7 +136,7 @@ func (*scopeKindDescriptor) CopyVersioned(v any) any {
 	return v.(*Versioned[*ScopeVersion]).Copy(ScopeOps)
 }
 
-func (*scopeKindDescriptor) SetOnSeries(series any, versioned any) {
+func (*scopeKindDescriptor) SetOnSeries(series, versioned any) {
 	accessor := series.(kindMetaAccessor)
 	accessor.SetKindMeta(KindScope, versioned)
 }

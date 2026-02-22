@@ -745,12 +745,25 @@ func (*OpenAPIBuilder) seriesPostInputBodySchema() *base.SchemaProxy {
 }
 
 func (*OpenAPIBuilder) resourcesOutputBodySchema() *base.SchemaProxy {
-	props := orderedmap.New[string, *base.SchemaProxy]()
-	props.Set("status", statusSchema())
-	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+	// The data field is a paginated object with results array and optional nextToken cursor.
+	dataProps := orderedmap.New[string, *base.SchemaProxy]()
+	dataProps.Set("results", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"array"},
 		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/ResourceAttributesResponse")},
 		Description: "Array of resource attributes for matching time series.",
+	}))
+	dataProps.Set("nextToken", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"string"},
+		Description: "Cursor token for fetching the next page. Empty when there are no more results.",
+	}))
+
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"object"},
+		Description: "Paginated resource attributes with cursor-based pagination.",
+		Required:    []string{"results"},
+		Properties:  dataProps,
 	}))
 	props.Set("warnings", warningsSchema())
 	props.Set("infos", infosSchema())
@@ -765,15 +778,28 @@ func (*OpenAPIBuilder) resourcesOutputBodySchema() *base.SchemaProxy {
 }
 
 func (*OpenAPIBuilder) resourcesSeriesOutputBodySchema() *base.SchemaProxy {
-	props := orderedmap.New[string, *base.SchemaProxy]()
-	props.Set("status", statusSchema())
-	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+	// The data field is a paginated object with results array and optional nextToken cursor.
+	dataProps := orderedmap.New[string, *base.SchemaProxy]()
+	dataProps.Set("results", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"array"},
 		Description: "Array of series matching the metadata criteria, with their resource and scope versions.",
 		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
 			Type:        []string{"object"},
 			Description: "A series matching the metadata criteria with its resource and scope version history.",
 		})},
+	}))
+	dataProps.Set("nextToken", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"string"},
+		Description: "Cursor token for fetching the next page. Empty when there are no more results.",
+	}))
+
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"object"},
+		Description: "Paginated series metadata with cursor-based pagination.",
+		Required:    []string{"results"},
+		Properties:  dataProps,
 	}))
 	props.Set("warnings", warningsSchema())
 	props.Set("infos", infosSchema())
