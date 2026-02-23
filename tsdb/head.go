@@ -2050,6 +2050,16 @@ func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
 	return &headMetadataReader{head: h}, nil
 }
 
+// SetIndexedResourceAttrs reconfigures which descriptive resource attributes
+// are included in the inverted index at runtime. This enables per-tenant
+// overrides in Mimir ingesters. Note: changing the indexed set does NOT
+// retroactively rebuild the index — it only affects future updates.
+func (h *Head) SetIndexedResourceAttrs(attrs map[string]struct{}) {
+	if h.seriesMeta != nil {
+		h.seriesMeta.SetIndexedResourceAttrs(attrs)
+	}
+}
+
 // NumSeries returns the number of series tracked in the head.
 func (h *Head) NumSeries() uint64 {
 	return h.numSeries.Load()

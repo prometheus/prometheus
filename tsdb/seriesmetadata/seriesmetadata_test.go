@@ -794,7 +794,7 @@ func TestWriteFileWithOptions_BloomFilters(t *testing.T) {
 	mem := buildTestData(t)
 
 	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{
-		EnableBloomFilters: true,
+		BloomFilterFormat: BloomFilterParquetNative,
 	})
 	require.NoError(t, err)
 
@@ -834,7 +834,7 @@ func TestWriteFileWithOptions_RoundTrip(t *testing.T) {
 
 	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{
 		MaxRowsPerRowGroup: 2,
-		EnableBloomFilters: true,
+		BloomFilterFormat: BloomFilterParquetNative,
 	})
 	require.NoError(t, err)
 

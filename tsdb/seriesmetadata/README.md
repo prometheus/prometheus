@@ -43,6 +43,10 @@ All metadata is **versioned over time** per series. When a descriptive attribute
 │  ┌──────────────┐  ┌──────────────────┐                  │
 │  │ scope_table  │  │ scope_mapping    │                  │
 │  └──────────────┘  └──────────────────┘                  │
+│  ┌────────────────────────────────────┐                  │
+│  │ resource_attr_index (optional)     │                  │
+│  │ (inverted index: attr → series)   │                  │
+│  └────────────────────────────────────┘                  │
 └──────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -86,7 +90,7 @@ Data is stored per-series, keyed by `labels.StableHash` (a 64-bit hash of the se
 
 ### Generic Stores
 
-`MemStore[V]` is a generic in-memory store (`map[uint64]*versionedEntry[V]`). Type aliases provide backward compatibility:
+`MemStore[V]` is a 256-way sharded generic in-memory store (matching the `stripeSeries` pattern in `tsdb/head.go`). Each shard has its own `sync.RWMutex` and map with 40-byte cache-line padding to prevent false sharing. Sharding is by `labelsHash & 0xFF`. Type aliases provide backward compatibility:
 
 | Alias | Underlying Type | Key | Value |
 |-------|-----------------|-----|-------|
@@ -97,7 +101,7 @@ Data is stored per-series, keyed by `labels.StableHash` (a 64-bit hash of the se
 
 ### Resource Attribute Inverted Index
 
-`MemSeriesMetadata` supports an optional inverted index for O(1) reverse lookup by resource attribute key:value pairs. The index maps `"key\x00value"` → set of labelsHashes.
+`MemSeriesMetadata` supports an optional inverted index for O(1) reverse lookup by resource attribute key:value pairs. The index maps `"key\x00value"` → sorted `[]uint64` of labelsHashes, using copy-on-write sorted slices (~4x memory reduction vs maps) that enable zero-copy reads.
 
 **Selective indexing**: The index uses selective attribute indexing to control its size:
 - **Identifying attributes** (from `ResourceVersion.Identifying`, e.g. `service.name`, `service.namespace`, `service.instance.id`) are **always** indexed
@@ -107,7 +111,7 @@ Data is stored per-series, keyed by `labels.StableHash` (a 64-bit hash of the se
 This filtering applies consistently across all index operations: `BuildResourceAttrIndex()`, `UpdateResourceAttrIndex()`, `RemoveFromResourceAttrIndex()`, and Parquet `buildResourceAttrIndexRows()`.
 
 - **`BuildResourceAttrIndex()`**: Iterates all resource versions once and populates the index. Called by `DB.buildSeriesMetadata()` after merging blocks + head. Since the merged reader is cached for 30 seconds, the index build cost is amortized across many API requests.
-- **`LookupResourceAttr(key, value)`**: Returns the set of labelsHashes matching the given attribute, or nil if the index has not been built. The `/resources/series` handler intersects candidate sets from multiple filters, then verifies each candidate with `GetVersionedResource` + time range + attribute checks. Falls back to a full `IterVersionedResources` scan if the index is nil.
+- **`LookupResourceAttr(key, value)`**: Returns a sorted `[]uint64` of labelsHashes matching the given attribute, or nil if the index has not been built. The returned slice must not be modified (COW guarantees safety for concurrent readers). The `/resources/series` handler intersects candidate slices from multiple filters using sorted two-pointer intersection, then verifies each candidate with `GetVersionedResource` + time range + attribute checks. Falls back to a full `IterVersionedResources` scan if the index is nil.
 
 The index is **time-unaware** — it includes all labelsHashes that have *any* version with the attribute. Time-range filtering happens during the verification step after index lookup. This is a deliberate trade-off: the index stays simple and the handler already performs per-version time filtering.
 
@@ -230,13 +234,16 @@ All data is zstd-compressed at `SpeedBetterCompression` level. Typical file size
 size, err := WriteFile(logger, blockDir, reader)
 
 // With options (compaction uses this)
+stats := &seriesmetadata.WriteStats{}
 size, err := WriteFileWithOptions(logger, blockDir, reader, WriterOptions{
     RefResolver:          func(labelsHash uint64) (seriesRef uint64, ok bool) { ... },
     MaxRowsPerRowGroup:   10000,
-    EnableBloomFilters:   true,
+    BloomFilterFormat:    BloomFilterParquetNative,
     EnableInvertedIndex:  true,
     IndexedResourceAttrs: map[string]struct{}{"k8s.namespace.name": {}},
+    WriteStats:           stats,
 })
+// stats.NamespaceRowCounts now contains per-namespace row counts
 ```
 
 ### Reading
@@ -285,7 +292,7 @@ reader.IterKind(ctx, KindResource, func(labelsHash uint64, versioned any) error 
 
 // Reverse lookup: find series by resource attribute (O(1) with index)
 hashes := reader.LookupResourceAttr("service.name", "payment-service")
-for hash := range hashes {
+for _, hash := range hashes {
     vr, _ := reader.GetVersionedResource(hash)
     // verify time range / additional filters...
 }
@@ -309,13 +316,18 @@ Entities are derived from OTel resource attributes using `entity.ResourceEntityR
 
 ## Distributed-Scale Features
 
-Several features are designed for object-storage access patterns in clustered implementations (e.g. Grafana Mimir store-gateway):
+Several features are designed for object-storage access patterns in clustered implementations (e.g. Grafana Mimir store-gateway and ingesters):
 
 - **`io.ReaderAt` API**: `ReadSeriesMetadataFromReaderAt()` decouples from `*os.File`, enabling `objstore.Bucket`-backed readers
 - **Namespace filtering**: `WithNamespaceFilter()` skips non-matching row groups using Parquet column index min/max bounds
-- **Bloom filters**: `WriterOptions.EnableBloomFilters` adds split-block bloom filters on `series_ref`, `content_hash`, `attr_key`, and `attr_value` columns. Write-only in this package; querying happens in the consumer. The `attr_key`/`attr_value` bloom filters enable store-gateways to find matching `resource_attr_index` rows via Parquet-native filtering
+- **Bloom filters**: `WriterOptions.BloomFilterFormat` controls bloom filter generation. `BloomFilterParquetNative` embeds split-block bloom filters on `series_ref`, `content_hash`, `attr_key`, and `attr_value` columns. Write-only in this package; querying happens in the consumer. The `attr_key`/`attr_value` bloom filters enable store-gateways to find matching `resource_attr_index` rows via Parquet-native filtering. `BloomFilterSidecar` is reserved for future use (separate file for independent store-gateway caching)
 - **Selective resource attribute indexing**: `WriterOptions.IndexedResourceAttrs` controls which descriptive attributes appear in the inverted index. Identifying attributes are always indexed. This reduces index size by ~10x at scale
 - **Row group size limits**: `WriterOptions.MaxRowsPerRowGroup` bounds memory usage when reading large row groups
+- **`BlockSeriesMetadata` in `meta.json`**: After compaction, `BlockMeta.SeriesMetadata` records namespace row counts and indexed resource attribute names, enabling Mimir store-gateway to pre-plan queries without opening the Parquet file
+- **`WriteStats`**: `WriterOptions.WriteStats` is populated after a successful write with per-namespace row counts, allowing the caller to capture stats (e.g. for `BlockMeta`) without parsing the Parquet footer
+- **Per-tenant `IndexedResourceAttrs`**: `Head.SetIndexedResourceAttrs()` allows runtime reconfiguration of which descriptive attributes are indexed, enabling Mimir ingesters to apply per-tenant overrides
+- **Direct commit functions**: `CommitResourceDirect()` and `CommitScopeDirect()` bypass `interface{}` boxing on the hot ingestion path, avoiding heap allocations per series commit. `CollectResourceDirect()` and `CollectScopeDirect()` provide the same optimization for the collect path
+- **Unique attribute name cache**: `UniqueAttrNameReader` interface (via type assertion) provides O(1) access to the set of all resource attribute names, avoiding O(N_series) full scans for attribute name discovery
 
 ## File Organization
 
@@ -323,14 +335,15 @@ Several features are designed for object-storage access patterns in clustered im
 |------|----------|
 | `seriesmetadata.go` | Core types (`Reader`, `MemSeriesMetadata`, `parquetReader`), write/read paths, denormalization, resource attribute inverted index |
 | `versioned.go` | Generic `Versioned[V]` container, `VersionConstraint` interface, `KindOps[V]`, `MergeVersioned()` |
-| `mem_store.go` | Generic `MemStore[V]` in-memory store |
+| `mem_store.go` | Generic `MemStore[V]` 256-way sharded in-memory store |
 | `registry.go` | `KindDescriptor` interface, `KindID`, global kind registry, `kindMetaAccessor` |
-| `resource_kind.go` | `resourceKindDescriptor` (implements `KindDescriptor` for resources), `ResourceOps`, `ResourceCommitData`, content hashing |
-| `scope_kind.go` | `scopeKindDescriptor` (implements `KindDescriptor` for scopes), `ScopeOps`, `ScopeCommitData`, content hashing |
+| `resource_kind.go` | `resourceKindDescriptor` (implements `KindDescriptor` for resources), `ResourceOps`, `ResourceCommitData`, `CommitResourceDirect()`, `CollectResourceDirect()`, content hashing |
+| `scope_kind.go` | `scopeKindDescriptor` (implements `KindDescriptor` for scopes), `ScopeOps`, `ScopeCommitData`, `CommitScopeDirect()`, `CollectScopeDirect()`, content hashing |
 | `parquet_schema.go` | Parquet schema (`metadataRow`, `EntityRow`, `EntityAttributeEntry`), namespace constants |
 | `entity.go` | `Entity`, `ResourceVersion`, type aliases (`VersionedResource`, `MemResourceStore`, `VersionedResourceReader`) |
 | `scope.go` | `ScopeVersion`, type aliases (`VersionedScope`, `MemScopeStore`, `VersionedScopeReader`) |
 | `content_hash.go` | Shared `hashAttrs()` utility for deterministic xxhash of attribute maps |
 | `resource_attributes.go` | `SplitAttributes()`, `IsIdentifyingAttribute()`, `AttributesEqual()` |
-| `writer_options.go` | `WriterOptions` (bloom filters, row group limits, `IndexedResourceAttrs`, `RefResolver`) |
+| `writer_options.go` | `WriterOptions` (`BloomFilterFormat`, row group limits, `IndexedResourceAttrs`, `RefResolver`, `WriteStats`) |
 | `reader_options.go` | `ReaderOption`, `WithNamespaceFilter()`, `WithRefResolver()`, `ReadSeriesMetadataFromReaderAt()` |
+| `layered_reader.go` | `layeredMetadataReader` (combines base block reader + head reader with dedup), `MergeSortedUnique()` |
