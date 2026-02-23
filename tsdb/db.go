@@ -256,6 +256,11 @@ type Options struct {
 	// in Parquet-based metadata files alongside TSDB blocks.
 	EnableNativeMetadata bool
 
+	// IndexedResourceAttrs specifies additional descriptive resource attribute
+	// names to include in the inverted index beyond identifying attributes
+	// (which are always indexed). nil means index only identifying attributes.
+	IndexedResourceAttrs map[string]struct{}
+
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
@@ -1034,6 +1039,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
 			EnableNativeMetadata:        opts.EnableNativeMetadata,
+			IndexedResourceAttrs:        opts.IndexedResourceAttrs,
 		})
 	}
 	if err != nil {
@@ -1103,6 +1109,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
+	headOpts.IndexedResourceAttrs = opts.IndexedResourceAttrs
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
