@@ -2078,6 +2078,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
 		EnableSTStorage:                opts.EnableSTStorage,
 		EnableNativeMetadata:           opts.EnableNativeMetadata,
+		EnableResourceAttrIndex:        true,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 	}
 }
