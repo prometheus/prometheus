@@ -76,9 +76,9 @@ func (s Sample) String() string {
 	if s.FH != nil {
 		fh = " " + s.FH.String()
 	}
-	b.WriteString(fmt.Sprintf("%s %v%v%v st@%v t@%v", s.L.String(), s.V, h, fh, s.ST, s.T))
+	fmt.Fprintf(&b, "%s %v%v%v st@%v t@%v", s.L.String(), s.V, h, fh, s.ST, s.T)
 	if len(s.ES) > 0 {
-		b.WriteString(fmt.Sprintf(" %v", s.ES))
+		fmt.Fprintf(&b, " %v", s.ES)
 	}
 	b.WriteString("\n")
 	return b.String()

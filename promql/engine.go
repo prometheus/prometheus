@@ -1214,6 +1214,9 @@ type EvalNodeHelper struct {
 	// funcHistogramQuantile and funcHistogramFraction for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
 	nativeHistogramSamples       []Sample
+	// funcHistogramQuantiles for histograms.
+	quantileStrs                  map[float64]string
+	signatureToLabelsWithQuantile map[string]map[float64]labels.Labels
 
 	lb           *labels.Builder
 	lblBuf       []byte
@@ -1303,6 +1306,35 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 		}
 	}
 	return annos
+}
+
+func (enh *EvalNodeHelper) getOrCreateLblsWithQuantile(lbls labels.Labels, quantileLabel string, q float64) labels.Labels {
+	if enh.signatureToLabelsWithQuantile == nil {
+		enh.signatureToLabelsWithQuantile = make(map[string]map[float64]labels.Labels)
+	}
+
+	enh.lblBuf = lbls.Bytes(enh.lblBuf)
+	cachedLbls, ok := enh.signatureToLabelsWithQuantile[string(enh.lblBuf)]
+	if !ok {
+		cachedLbls = make(map[float64]labels.Labels, len(enh.quantileStrs))
+		enh.signatureToLabelsWithQuantile[string(enh.lblBuf)] = cachedLbls
+	}
+
+	cachedLblsWithQuantile, ok := cachedLbls[q]
+	if !ok {
+		quantileStr := "NaN"
+		if !math.IsNaN(q) {
+			// Cannot do map lookup by NaN key.
+			quantileStr = enh.quantileStrs[q]
+		}
+		cachedLblsWithQuantile = labels.NewBuilder(lbls).
+			Set(quantileLabel, quantileStr).
+			Labels()
+
+		cachedLbls[q] = cachedLblsWithQuantile
+	}
+
+	return cachedLblsWithQuantile
 }
 
 // rangeEval evaluates the given expressions, and then for each step calls
@@ -4320,7 +4352,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 				// further up (the latter wouldn't make sense,
 				// but no harm in detecting it).
 				n.SkipHistogramBuckets = true
-			case "histogram_quantile", "histogram_fraction":
+			case "histogram_quantile", "histogram_quantiles", "histogram_fraction":
 				// If we ever see a function that needs the
 				// whole histogram, we will not skip the
 				// buckets.

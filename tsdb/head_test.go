@@ -3355,12 +3355,10 @@ func testHeadSeriesChunkRace(t *testing.T) {
 	defer q.Close()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		h.updateMinMaxTime(20, 25)
 		h.gc()
-	}()
+	})
 	ss := q.Select(context.Background(), false, nil, matcher)
 	for ss.Next() {
 	}
@@ -3844,13 +3842,11 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 	s := ss.At()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// Compacting head while the querier spans the compaction time.
 		require.NoError(t, db.Compact(ctx))
 		require.NotEmpty(t, db.Blocks())
-	}()
+	})
 
 	// Give enough time for compaction to finish.
 	// We expect it to be blocked until querier is closed.
@@ -3908,13 +3904,11 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// Compacting head while the querier spans the compaction time.
 		require.NoError(t, db.Compact(ctx))
 		require.NotEmpty(t, db.Blocks())
-	}()
+	})
 
 	// Give enough time for compaction to finish.
 	// We expect it to be blocked until querier is closed.

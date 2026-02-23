@@ -228,6 +228,9 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 		}
 
 		pt := dataPoints.At(x)
+		// Clear stale exemplars from the previous data point to prevent
+		// them from leaking into _sum and _count of this data point.
+		appOpts.Exemplars = nil
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestamp := convertTimeStamp(pt.StartTimestamp())
 		baseLabels, err := c.createAttributes(pt.Attributes(), settings, reservedLabelNames, false, appOpts.Metadata)
