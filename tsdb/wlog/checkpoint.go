@@ -152,6 +152,11 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 // checkpointTempFileSuffix is the suffix used when creating temporary checkpoint files.
 const checkpointTempFileSuffix = ".tmp"
 
+// checkpointFlushChunkSize is the number of resource/scope records to buffer
+// before flushing to the checkpoint WAL. Bounds peak memory to ~2 MB per chunk
+// instead of potentially gigabytes for the full monolithic slice.
+const checkpointFlushChunkSize = 10000
+
 // DeleteTempCheckpoints deletes all temporary checkpoint directories in the given directory.
 func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
 	if err := tsdbutil.RemoveTmpDirs(logger, dir, isTempDir); err != nil {
@@ -505,12 +510,13 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 
 	// Flush all resource records for each series (preserving version history).
 	// Reconstruct full RefResource records from the content-addressed table.
+	// Flush in chunks to bound peak memory instead of materializing all records at once.
 	if len(resourceRefToContent) > 0 {
-		var allResources []record.RefResource
+		chunk := make([]record.RefResource, 0, checkpointFlushChunkSize)
 		for ref, mappings := range resourceRefToContent {
 			for _, m := range mappings {
 				canonical := resourceContentTable[m.contentHash]
-				allResources = append(allResources, record.RefResource{
+				chunk = append(chunk, record.RefResource{
 					Ref:         ref,
 					MinTime:     m.minTime,
 					MaxTime:     m.maxTime,
@@ -518,21 +524,30 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 					Descriptive: canonical.Descriptive,
 					Entities:    canonical.Entities,
 				})
+				if len(chunk) >= checkpointFlushChunkSize {
+					if err := cp.Log(enc.Resources(chunk, buf[:0])); err != nil {
+						return nil, fmt.Errorf("flush resource records: %w", err)
+					}
+					chunk = chunk[:0]
+				}
 			}
 		}
-		if err := cp.Log(enc.Resources(allResources, buf[:0])); err != nil {
-			return nil, fmt.Errorf("flush resource records: %w", err)
+		if len(chunk) > 0 {
+			if err := cp.Log(enc.Resources(chunk, buf[:0])); err != nil {
+				return nil, fmt.Errorf("flush resource records: %w", err)
+			}
 		}
 	}
 
 	// Flush all scope records for each series (preserving version history).
 	// Reconstruct full RefScope records from the content-addressed table.
+	// Flush in chunks to bound peak memory instead of materializing all records at once.
 	if len(scopeRefToContent) > 0 {
-		var allScopes []record.RefScope
+		chunk := make([]record.RefScope, 0, checkpointFlushChunkSize)
 		for ref, mappings := range scopeRefToContent {
 			for _, m := range mappings {
 				canonical := scopeContentTable[m.contentHash]
-				allScopes = append(allScopes, record.RefScope{
+				chunk = append(chunk, record.RefScope{
 					Ref:       ref,
 					MinTime:   m.minTime,
 					MaxTime:   m.maxTime,
@@ -541,10 +556,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 					SchemaURL: canonical.SchemaURL,
 					Attrs:     canonical.Attrs,
 				})
+				if len(chunk) >= checkpointFlushChunkSize {
+					if err := cp.Log(enc.Scopes(chunk, buf[:0])); err != nil {
+						return nil, fmt.Errorf("flush scope records: %w", err)
+					}
+					chunk = chunk[:0]
+				}
 			}
 		}
-		if err := cp.Log(enc.Scopes(allScopes, buf[:0])); err != nil {
-			return nil, fmt.Errorf("flush scope records: %w", err)
+		if len(chunk) > 0 {
+			if err := cp.Log(enc.Scopes(chunk, buf[:0])); err != nil {
+				return nil, fmt.Errorf("flush scope records: %w", err)
+			}
 		}
 	}
 

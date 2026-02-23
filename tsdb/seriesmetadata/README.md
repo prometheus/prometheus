@@ -101,7 +101,7 @@ Data is stored per-series, keyed by `labels.StableHash` (a 64-bit hash of the se
 
 ### Resource Attribute Inverted Index
 
-`MemSeriesMetadata` supports an optional inverted index for O(1) reverse lookup by resource attribute key:value pairs. The index maps `"key\x00value"` → sorted `[]uint64` of labelsHashes, using copy-on-write sorted slices (~4x memory reduction vs maps) that enable zero-copy reads.
+`MemSeriesMetadata` supports an optional 256-way sharded inverted index (`shardedAttrIndex`) for O(1) reverse lookup by resource attribute key:value pairs. Each stripe has its own `sync.RWMutex` and map, with keys routed by `xxhash.Sum64String("key\x00value") & 0xFF`. Within each stripe, values are sorted `[]uint64` of labelsHashes, using copy-on-write sorted slices (~4x memory reduction vs maps) that enable zero-copy reads. Lock ordering: `indexedResourceAttrsMu.RLock()` (for config) → per-stripe `mtx.Lock()` (never hold two stripe locks simultaneously).
 
 **Selective indexing**: The index uses selective attribute indexing to control its size:
 - **Identifying attributes** (from `ResourceVersion.Identifying`, e.g. `service.name`, `service.namespace`, `service.instance.id`) are **always** indexed
@@ -328,6 +328,9 @@ Several features are designed for object-storage access patterns in clustered im
 - **Per-tenant `IndexedResourceAttrs`**: `Head.SetIndexedResourceAttrs()` allows runtime reconfiguration of which descriptive attributes are indexed, enabling Mimir ingesters to apply per-tenant overrides
 - **Direct commit functions**: `CommitResourceDirect()` and `CommitScopeDirect()` bypass `interface{}` boxing on the hot ingestion path, avoiding heap allocations per series commit. `CollectResourceDirect()` and `CollectScopeDirect()` provide the same optimization for the collect path
 - **Unique attribute name cache**: `UniqueAttrNameReader` interface (via type assertion) provides O(1) access to the set of all resource attribute names, avoiding O(N_series) full scans for attribute name discovery
+- **`SetVersionedWithDiff` fast-path**: When the incoming `Versioned` has a single version that equals the existing current version (~90% of steady-state commits), `UpdateTimeRange` extends in-place with zero allocations, skipping `MergeVersioned` (~12 allocs)
+- **WAL checkpoint content dedup**: Both resources and scopes use content-addressed dedup (`contentMapping` type) in WAL checkpoints, reducing memory from O(N_series × content_size) to O(N_unique_content + N_series × 24B)
+- **Chunked checkpoint flushing**: WAL checkpoint resource and scope records are flushed in 10K-record chunks instead of materializing all records into a single slice, bounding peak allocation to ~2 MB per chunk
 
 ## File Organization
 
