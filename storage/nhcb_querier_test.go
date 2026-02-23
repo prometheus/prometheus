@@ -203,7 +203,7 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  1,
-			expectedSuffix: "_bucket",
+			expectedSuffix: "_butipcket",
 		},
 		{
 			name: "le exact match no match",
@@ -267,6 +267,52 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 			require.NoError(t, ss.Err())
 			require.Equal(t, tc.expectedCount, count)
 		})
+	}
+}
+
+func TestNHCBAsClassicQuerier_ConsistentOrder(t *testing.T) {
+	nhcb := &histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           16,
+		Sum:             100.0,
+		CustomValues:    []float64{1.0, 5.0, 10.0},
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 4}},
+		PositiveBuckets: []int64{2, 1, 2, 1},
+	}
+
+	mock := &nhcbMockQuerier{
+		classicSeries: []Series{},
+		nhcbSeries: []Series{
+			NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+			NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "web"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+		},
+	}
+	q := NewNHCBAsClassicQuerier(mock)
+
+	// Run the same query multiple times and verify order is consistent.
+	for i := 0; i < 5; i++ {
+		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+		var seriesLabels []string
+		for ss.Next() {
+			seriesLabels = append(seriesLabels, ss.At().Labels().String())
+		}
+		require.NoError(t, ss.Err())
+
+		// 2 NHCB series × 4 buckets each (le=1.0, 5.0, 10.0, +Inf) = 8 series.
+		require.Len(t, seriesLabels, 8)
+
+		// Expect buckets for "api" job first (in le order), then "web" job (in le order).
+		expectedOrder := []string{
+			`{__name__="http_requests_bucket", job="api", le="1.0"}`,
+			`{__name__="http_requests_bucket", job="api", le="5.0"}`,
+			`{__name__="http_requests_bucket", job="api", le="10.0"}`,
+			`{__name__="http_requests_bucket", job="api", le="+Inf"}`,
+			`{__name__="http_requests_bucket", job="web", le="1.0"}`,
+			`{__name__="http_requests_bucket", job="web", le="5.0"}`,
+			`{__name__="http_requests_bucket", job="web", le="10.0"}`,
+			`{__name__="http_requests_bucket", job="web", le="+Inf"}`,
+		}
+		require.Equal(t, expectedOrder, seriesLabels)
 	}
 }
 
