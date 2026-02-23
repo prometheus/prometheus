@@ -1058,10 +1058,11 @@ func (*Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 }
 
 // encodeMap writes a varint-length-prefixed map of string pairs to the encoder.
-// Keys are sorted for deterministic encoding.
-func encodeMap(buf *encoding.Encbuf, m map[string]string) {
+// Keys are sorted for deterministic encoding. The keys buffer is reused across
+// calls to avoid allocation per map encode.
+func encodeMap(buf *encoding.Encbuf, m map[string]string, keys []string) []string {
 	buf.PutUvarint(len(m))
-	keys := make([]string, 0, len(m))
+	keys = keys[:0]
 	for k := range m {
 		keys = append(keys, k)
 	}
@@ -1070,6 +1071,7 @@ func encodeMap(buf *encoding.Encbuf, m map[string]string) {
 		buf.PutUvarintStr(k)
 		buf.PutUvarintStr(m[k])
 	}
+	return keys
 }
 
 // Resources appends the encoded resource updates to b and returns the resulting slice.
@@ -1077,17 +1079,18 @@ func (*Encoder) Resources(resources []RefResource, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(ResourceUpdate))
 
+	var keysBuf []string
 	for _, r := range resources {
 		buf.PutUvarint64(uint64(r.Ref))
 		buf.PutVarint64(r.MinTime)
 		buf.PutVarint64(r.MaxTime)
-		encodeMap(&buf, r.Identifying)
-		encodeMap(&buf, r.Descriptive)
+		keysBuf = encodeMap(&buf, r.Identifying, keysBuf)
+		keysBuf = encodeMap(&buf, r.Descriptive, keysBuf)
 		buf.PutUvarint(len(r.Entities))
 		for _, e := range r.Entities {
 			buf.PutUvarintStr(e.Type)
-			encodeMap(&buf, e.ID)
-			encodeMap(&buf, e.Description)
+			keysBuf = encodeMap(&buf, e.ID, keysBuf)
+			keysBuf = encodeMap(&buf, e.Description, keysBuf)
 		}
 	}
 
@@ -1099,6 +1102,7 @@ func (*Encoder) Scopes(scopes []RefScope, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(ScopeUpdate))
 
+	var keysBuf []string
 	for _, s := range scopes {
 		buf.PutUvarint64(uint64(s.Ref))
 		buf.PutVarint64(s.MinTime)
@@ -1106,7 +1110,7 @@ func (*Encoder) Scopes(scopes []RefScope, b []byte) []byte {
 		buf.PutUvarintStr(s.Name)
 		buf.PutUvarintStr(s.Version)
 		buf.PutUvarintStr(s.SchemaURL)
-		encodeMap(&buf, s.Attrs)
+		keysBuf = encodeMap(&buf, s.Attrs, keysBuf)
 	}
 
 	return buf.Get()
