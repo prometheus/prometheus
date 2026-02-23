@@ -33,6 +33,17 @@ type resourceOps struct{}
 func (resourceOps) Equal(a, b *ResourceVersion) bool         { return ResourceVersionsEqual(a, b) }
 func (resourceOps) Copy(v *ResourceVersion) *ResourceVersion { return copyResourceVersion(v) }
 
+func (resourceOps) ContentHash(v *ResourceVersion) uint64 { return hashResourceContent(v) }
+func (resourceOps) ThinCopy(canonical, v *ResourceVersion) *ResourceVersion {
+	return &ResourceVersion{
+		Identifying: canonical.Identifying,
+		Descriptive: canonical.Descriptive,
+		Entities:    canonical.Entities,
+		MinTime:     v.MinTime,
+		MaxTime:     v.MaxTime,
+	}
+}
+
 // ResourceOps is the shared KindOps instance for resources.
 var ResourceOps KindOps[*ResourceVersion] = resourceOps{}
 
