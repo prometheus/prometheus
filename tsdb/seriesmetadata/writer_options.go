@@ -15,21 +15,38 @@ package seriesmetadata
 
 import "github.com/parquet-go/parquet-go"
 
+// BloomFilterFormat controls how bloom filters are written into the Parquet file.
+type BloomFilterFormat int
+
+const (
+	// BloomFilterNone disables bloom filter generation.
+	BloomFilterNone BloomFilterFormat = iota
+
+	// BloomFilterParquetNative embeds split-block bloom filters in the Parquet
+	// file footer for series_ref, content_hash, attr_key, and attr_value columns.
+	// This is the current behavior when bloom filters are enabled.
+	BloomFilterParquetNative
+
+	// BloomFilterSidecar is reserved for future use: bloom filters written to a
+	// separate file for independent store-gateway caching. Not yet implemented.
+	// BloomFilterSidecar
+)
+
 // WriterOptions configures Parquet write behavior for distributed-scale features.
 type WriterOptions struct {
 	// MaxRowsPerRowGroup limits rows per row group within a namespace.
 	// 0 means no limit (one row group per namespace).
 	MaxRowsPerRowGroup int
 
-	// EnableBloomFilters adds split-block bloom filters to series_ref and
-	// content_hash columns. Increases file size slightly but enables
-	// store-gateway to skip row groups without deserialization.
+	// BloomFilterFormat controls bloom filter generation. Use BloomFilterParquetNative
+	// to embed split-block bloom filters in the Parquet file. Default (BloomFilterNone)
+	// disables bloom filters.
 	//
 	// Note: the read side in this package does not query bloom filters —
 	// it loads all matching row groups into memory. Bloom filter querying
 	// is expected to happen in the consumer (e.g. Mimir store-gateway)
 	// which knows the query-time predicates.
-	EnableBloomFilters bool
+	BloomFilterFormat BloomFilterFormat
 
 	// EnableInvertedIndex writes resource attribute inverted index rows
 	// (namespace=resource_attr_index) into the Parquet file. Each row maps
