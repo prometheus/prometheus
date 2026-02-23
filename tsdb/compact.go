@@ -821,10 +821,17 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 	}
 	defer ir.Close()
 
-	// Scan all postings to build the mapping. Only series that have
-	// resource/scope data need resolving, but scanning all is simpler
-	// and the index is already on disk.
-	labelsHashToRef := make(map[uint64]uint64, output.ResourceCount()+output.ScopeCount())
+	// Build labelsHash → seriesRef mapping by scanning the index.
+	// Collect hashes that need resolving from the merged metadata to avoid
+	// storing entries for series without metadata.
+	needsResolve := make(map[uint64]struct{}, output.ResourceCount()+output.ScopeCount())
+	for _, kind := range seriesmetadata.AllKinds() {
+		_ = output.IterKind(c.ctx, kind.ID(), func(labelsHash uint64, _ any) error {
+			needsResolve[labelsHash] = struct{}{}
+			return nil
+		})
+	}
+	labelsHashToRef := make(map[uint64]uint64, len(needsResolve))
 	var builder labels.ScratchBuilder
 	k, v := index.AllPostingsKey()
 	p, err := ir.Postings(c.ctx, k, v)
@@ -837,7 +844,13 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 			return fmt.Errorf("read series for ref resolver: %w", err)
 		}
 		lh := labels.StableHash(builder.Labels())
-		labelsHashToRef[lh] = uint64(ref)
+		if _, ok := needsResolve[lh]; ok {
+			labelsHashToRef[lh] = uint64(ref)
+			// Early exit if all hashes resolved.
+			if len(labelsHashToRef) == len(needsResolve) {
+				break
+			}
+		}
 	}
 	if err := p.Err(); err != nil {
 		return fmt.Errorf("iterate postings for ref resolver: %w", err)
