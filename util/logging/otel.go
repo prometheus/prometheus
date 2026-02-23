@@ -70,6 +70,21 @@ func (m *otelLogManager) Stop() error {
 	return nil
 }
 
+// Request a log flush from the underlying provider, if supported. This is
+// not guaranteed to do anything, but can be used as a hint to try to flush logs before
+// shutdown. It's non-blocking and there is no means to wait for any pending flush
+// to complete.
+func (m *otelLogManager) Flush() error {
+	if m.loggerProvider != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if lp, ok := (*m.loggerProvider).(*otel_log_sdk.LoggerProvider); ok {
+			return lp.ForceFlush(ctx)
+		}
+	}
+	return nil
+}
+
 // Create a slog.Handler for an OpenTelemetry logger with the given name.
 func (m *otelLogManager) Handler(name string) CloseableLogger {
 	if m.loggerProvider == nil {
@@ -210,6 +225,7 @@ func buildOtelLoggingProvider(ctx context.Context, otelLoggingCfg config.OTELLog
 		// It is important that the shutdown func use the provider instance from the
 		// closure, not the one from the manager struct, as the manager may wish to
 		// create a new provider and update it before shutting down the old one.
+		lp.ForceFlush(ctx)
 		err := lp.Shutdown(ctx)
 		if err != nil {
 			return err

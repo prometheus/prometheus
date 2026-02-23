@@ -135,6 +135,12 @@ func (m *Manager) Stop() {
 	m.logger.Info("OpenTelemetry logging manager stopped")
 }
 
+// Request log flushes for any active OpenTelemetry log destinations. Non-blocking.
+func (m *Manager) Flush() {
+	m.logger.Debug("Flushing OpenTelemetry logs...")
+	m.otelLogMgr.Flush()
+}
+
 // Test whether a given log destination is included in the log output configuration
 // used by the OTLP logger.
 func (m *Manager) isIncluded(include string) bool {
@@ -188,6 +194,11 @@ type ScrapeFailureLoggerFactory interface {
 func (m *Manager) NewScrapeFailureLogger(jobName string, logfile string) CloseableLogger {
 	queryLoggers := []CloseableLogger{}
 
+	if jobName == "" {
+		m.logger.Warn("scrape failure logger requested with empty-string as job name, using 'unknown_job'", "logfile", logfile)
+		jobName = "unknown_job"
+	}
+
 	if m.isIncluded(scrapeFailureLoggerName) {
 		// TODO inject the job name as an attribute
 		otlpLogger := m.otelLogMgr.Handler(scrapeFailureLoggerName)
@@ -199,7 +210,8 @@ func (m *Manager) NewScrapeFailureLogger(jobName string, logfile string) Closeab
 	// TODO: if a scrape job doesn't set a specific log file, do we fall back to the default global
 	// scrape failure log?
 	if logfile == "" {
-		logfile = m.scrapeFailureLogFile
+		// the scrape log manager is supposed to ensure that the scrape log is never empty
+		m.logger.Warn("scrape logger requested with empty-string as filename", "job", jobName)
 	}
 	if logfile != "" {
 		l, err := NewJSONFileLogger(logfile)
