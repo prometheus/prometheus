@@ -1977,6 +1977,10 @@ func (r *headMetadataReader) LookupResourceAttr(key, value string) []uint64 {
 	return r.head.seriesMeta.LookupResourceAttr(key, value)
 }
 
+func (r *headMetadataReader) UniqueResourceAttrNames() map[string]struct{} {
+	return r.head.seriesMeta.UniqueResourceAttrNames()
+}
+
 // SeriesMetadata returns a reader over the head's series metadata.
 // When native metadata is enabled, this is O(1) — it returns a wrapper
 // around the incrementally-maintained shared store instead of scanning all series.
