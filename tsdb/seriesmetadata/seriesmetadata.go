@@ -148,7 +148,12 @@ func (*MemSeriesMetadata) Close() error { return nil }
 // SetIndexedResourceAttrs configures which additional descriptive resource
 // attribute names are included in the inverted index. Identifying attributes
 // are always indexed regardless of this setting.
+// Thread-safe: uses the same mutex as index operations.
+// Note: changing the indexed set does NOT retroactively rebuild the index —
+// it only affects future updates. The caller should rebuild if needed.
 func (m *MemSeriesMetadata) SetIndexedResourceAttrs(attrs map[string]struct{}) {
+	m.resourceAttrIndexMu.Lock()
+	defer m.resourceAttrIndexMu.Unlock()
 	m.indexedResourceAttrs = attrs
 }
 
@@ -1005,7 +1010,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 	for k, v := range metadataCounts {
 		writerOpts = append(writerOpts, parquet.KeyValueMetadata(k, strconv.Itoa(v)))
 	}
-	if opts.EnableBloomFilters {
+	if opts.BloomFilterFormat == BloomFilterParquetNative {
 		writerOpts = append(writerOpts,
 			parquet.BloomFilters(
 				parquet.SplitBlockFilter(10, "series_ref"),
