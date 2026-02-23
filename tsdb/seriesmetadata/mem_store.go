@@ -36,13 +36,28 @@ type memStoreStripe[V VersionConstraint] struct {
 	_      [40]byte // cache-line padding to prevent false sharing
 }
 
+// contentStripe is a single shard of the content-addressed dedup table.
+type contentStripe[V VersionConstraint] struct {
+	mtx    sync.RWMutex
+	byHash map[uint64]V
+	_      [40]byte // cache-line padding to prevent false sharing
+}
+
 // MemStore is a generic in-memory store for versioned metadata keyed by labels hash.
 // It uses 256-way sharding (matching the stripeSeries pattern in tsdb/head.go)
 // to reduce lock contention under high concurrency.
+//
+// When the KindOps also implements ContentDedupOps, MemStore maintains a
+// content-addressed table so that versions with identical content share
+// map/slice pointers from a single canonical entry, reducing per-version
+// memory from ~1500B to ~72B.
+//
 // It is safe for concurrent use.
 type MemStore[V VersionConstraint] struct {
-	stripes [numMemStoreStripes]memStoreStripe[V]
-	ops     KindOps[V]
+	stripes        [numMemStoreStripes]memStoreStripe[V]
+	contentStripes [numMemStoreStripes]contentStripe[V]
+	ops            KindOps[V]
+	dedupOps       ContentDedupOps[V] // nil when ops doesn't implement ContentDedupOps
 }
 
 // NewMemStore creates a new generic in-memory store.
@@ -51,11 +66,94 @@ func NewMemStore[V VersionConstraint](ops KindOps[V]) *MemStore[V] {
 	for i := range m.stripes {
 		m.stripes[i].byHash = make(map[uint64]*versionedEntry[V])
 	}
+	if dedupOps, ok := any(ops).(ContentDedupOps[V]); ok {
+		m.dedupOps = dedupOps
+		for i := range m.contentStripes {
+			m.contentStripes[i].byHash = make(map[uint64]V)
+		}
+	}
 	return m
 }
 
 func (m *MemStore[V]) stripe(labelsHash uint64) *memStoreStripe[V] {
 	return &m.stripes[labelsHash&uint64(numMemStoreStripes-1)]
+}
+
+// getOrCreateCanonical returns the canonical version for the given content hash.
+// If no canonical exists yet, it deep-copies v via ops.Copy and stores it.
+// Uses double-checked locking: RLock first, then Lock only on miss.
+func (m *MemStore[V]) getOrCreateCanonical(hash uint64, v V) V {
+	cs := &m.contentStripes[hash&uint64(numMemStoreStripes-1)]
+
+	cs.mtx.RLock()
+	if canonical, ok := cs.byHash[hash]; ok {
+		cs.mtx.RUnlock()
+		return canonical
+	}
+	cs.mtx.RUnlock()
+
+	cs.mtx.Lock()
+	defer cs.mtx.Unlock()
+	if canonical, ok := cs.byHash[hash]; ok {
+		return canonical
+	}
+	canonical := m.ops.Copy(v)
+	cs.byHash[hash] = canonical
+	return canonical
+}
+
+// internVersions replaces deep-copied versions with thin copies sharing canonical
+// map/slice pointers. No-op when dedupOps is nil.
+func (m *MemStore[V]) internVersions(vs *Versioned[V]) {
+	if m.dedupOps == nil {
+		return
+	}
+	for i, v := range vs.Versions {
+		hash := m.dedupOps.ContentHash(v)
+		canonical := m.getOrCreateCanonical(hash, v)
+		vs.Versions[i] = m.dedupOps.ThinCopy(canonical, v)
+	}
+}
+
+// internLastVersion replaces only the last version with a thin copy.
+// Used after AddOrExtend appends a new version.
+func (m *MemStore[V]) internLastVersion(vs *Versioned[V]) {
+	if m.dedupOps == nil || len(vs.Versions) == 0 {
+		return
+	}
+	last := len(vs.Versions) - 1
+	v := vs.Versions[last]
+	hash := m.dedupOps.ContentHash(v)
+	canonical := m.getOrCreateCanonical(hash, v)
+	vs.Versions[last] = m.dedupOps.ThinCopy(canonical, v)
+}
+
+// InternVersion returns a thin copy of v sharing map/slice pointers from the
+// canonical entry in the content table. Used for per-series interning from
+// the head commit and WAL replay paths.
+// Returns v unchanged when dedup is not enabled.
+func (m *MemStore[V]) InternVersion(v V) V {
+	if m.dedupOps == nil {
+		return v
+	}
+	hash := m.dedupOps.ContentHash(v)
+	canonical := m.getOrCreateCanonical(hash, v)
+	return m.dedupOps.ThinCopy(canonical, v)
+}
+
+// TotalCanonical returns the number of unique canonical entries in the content table.
+func (m *MemStore[V]) TotalCanonical() int {
+	if m.dedupOps == nil {
+		return 0
+	}
+	var total int
+	for i := range m.contentStripes {
+		cs := &m.contentStripes[i]
+		cs.mtx.RLock()
+		total += len(cs.byHash)
+		cs.mtx.RUnlock()
+	}
+	return total
 }
 
 // Len returns the number of unique series with metadata.
@@ -117,14 +215,20 @@ func (m *MemStore[V]) Set(labelsHash uint64, version V) {
 	defer s.mtx.Unlock()
 
 	if existing, ok := s.byHash[labelsHash]; ok {
+		prevLen := len(existing.versioned.Versions)
 		existing.versioned.AddOrExtend(m.ops, version)
+		if len(existing.versioned.Versions) > prevLen {
+			m.internLastVersion(existing.versioned)
+		}
 		return
 	}
 
-	s.byHash[labelsHash] = &versionedEntry[V]{
+	entry := &versionedEntry[V]{
 		labelsHash: labelsHash,
 		versioned:  &Versioned[V]{Versions: []V{m.ops.Copy(version)}},
 	}
+	m.internVersions(entry.versioned)
+	s.byHash[labelsHash] = entry
 }
 
 // SetVersioned stores versioned data for the series.
@@ -136,13 +240,16 @@ func (m *MemStore[V]) SetVersioned(labelsHash uint64, versioned *Versioned[V]) {
 
 	if existing, ok := s.byHash[labelsHash]; ok {
 		existing.versioned = MergeVersioned(m.ops, existing.versioned, versioned)
+		m.internVersions(existing.versioned)
 		return
 	}
 
-	s.byHash[labelsHash] = &versionedEntry[V]{
+	entry := &versionedEntry[V]{
 		labelsHash: labelsHash,
 		versioned:  versioned.Copy(m.ops),
 	}
+	m.internVersions(entry.versioned)
+	s.byHash[labelsHash] = entry
 }
 
 // SetVersionedWithDiff atomically stores versioned data and returns the
@@ -169,6 +276,7 @@ func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Version
 		}
 
 		existing.versioned = MergeVersioned(m.ops, existing.versioned, versioned)
+		m.internVersions(existing.versioned)
 		return old, existing.versioned
 	}
 
@@ -176,6 +284,7 @@ func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Version
 		labelsHash: labelsHash,
 		versioned:  versioned.Copy(m.ops),
 	}
+	m.internVersions(entry.versioned)
 	s.byHash[labelsHash] = entry
 	return nil, entry.versioned
 }
