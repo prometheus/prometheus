@@ -584,6 +584,8 @@ func (q *HeadAndOOOQuerier) GetResourceAt(labelsHash uint64, timestamp int64) (*
 }
 
 // IterUniqueAttributeNames implements storage.ResourceQuerier.
+// Uses the cached UniqueResourceAttrNames when available (O(1)),
+// falling back to a full scan otherwise.
 func (q *HeadAndOOOQuerier) IterUniqueAttributeNames(fn func(name string)) error {
 	reader, err := q.head.SeriesMetadata()
 	if err != nil {
@@ -591,6 +593,18 @@ func (q *HeadAndOOOQuerier) IterUniqueAttributeNames(fn func(name string)) error
 	}
 	// Note: we don't close the reader here as it's the head's reader
 	// which is managed by the head itself.
+
+	// Fast path: use cached unique names if the reader supports it.
+	if r, ok := reader.(seriesmetadata.UniqueAttrNameReader); ok {
+		if names := r.UniqueResourceAttrNames(); names != nil {
+			for name := range names {
+				fn(name)
+			}
+			return nil
+		}
+	}
+
+	// Slow path: full scan (only reached when cache not available).
 	seen := make(map[string]struct{})
 	return reader.IterResources(context.Background(), func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
 		if resource == nil {
@@ -679,6 +693,18 @@ func (q *HeadAndOOOChunkQuerier) IterUniqueAttributeNames(fn func(name string)) 
 	if err != nil {
 		return err
 	}
+
+	// Fast path: use cached unique names if the reader supports it.
+	if r, ok := reader.(seriesmetadata.UniqueAttrNameReader); ok {
+		if names := r.UniqueResourceAttrNames(); names != nil {
+			for name := range names {
+				fn(name)
+			}
+			return nil
+		}
+	}
+
+	// Slow path: full scan.
 	seen := make(map[string]struct{})
 	return reader.IterResources(context.Background(), func(_ uint64, resource *seriesmetadata.ResourceVersion) error {
 		if resource == nil {

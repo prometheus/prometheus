@@ -306,6 +306,10 @@ func (*evaluator) enrichVectorWithResourceAttrs(base Vector, rq storage.Resource
 		return nil
 	}
 
+	// Reusable allAttrs map — cleared and repopulated per series instead of
+	// allocating a new map per series per timestamp.
+	allAttrs := make(map[string]string, 16)
+
 	for _, bs := range base {
 		// Use StableHash because resource attributes are keyed by StableHash (not Hash)
 		hash := labels.StableHash(bs.Metric)
@@ -328,8 +332,9 @@ func (*evaluator) enrichVectorWithResourceAttrs(base Vector, rq storage.Resource
 			continue
 		}
 
-		// Combine all resource attributes for matching
-		allAttrs := make(map[string]string, len(rv.Identifying)+len(rv.Descriptive))
+		// Combine all resource attributes for matching.
+		// Reuse the allAttrs map via clear() to avoid allocation.
+		clear(allAttrs)
 		maps.Copy(allAttrs, rv.Identifying)
 		maps.Copy(allAttrs, rv.Descriptive)
 
