@@ -115,6 +115,8 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 	m.logger.Debug("Logging manager configuration reloaded")
 
+	m.config = cfg.LoggingConfig
+
 	return nil
 }
 

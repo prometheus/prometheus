@@ -13,6 +13,8 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/stretchr/testify/require"
+
+	_ "go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 )
 
 // TestLogManagerCreation excersises NewTestLogManager for the noop log manager
@@ -39,6 +41,23 @@ func TestTestLogManagerCreation(t *testing.T) {
 	}
 }
 
+func TestUnconfiguredLogManager(t *testing.T) {
+
+	cfg := ConfigForTest(nil)
+
+	manager := NewManager(slog.New(slog.DiscardHandler))
+	go manager.Run()
+	manager.ApplyConfig(&cfg)
+
+	ql := manager.NewQueryLogger()
+	require.False(t, ql.Enabled(context.Background(), slog.LevelInfo), "unconfigured logger reports no log output for info level")
+
+	logctx := context.Background()
+	pc, _, _, _ := runtime.Caller(0)
+	err := ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, "this log is discarded", pc))
+	require.NoError(t, err, "no error should be emitted from logging when there is no log destination configured")
+}
+
 func TestLogManagerQueryFileLogging(t *testing.T) {
 
 	cfg := ConfigForTest(nil)
@@ -53,7 +72,7 @@ func TestLogManagerQueryFileLogging(t *testing.T) {
 	manager.ApplyConfig(&cfg)
 
 	ql := manager.NewQueryLogger()
-	require.True(t, ql.Enabled(context.Background(), slog.LevelInfo))
+	require.True(t, ql.Enabled(context.Background(), slog.LevelInfo), "expected query logger to be enabled")
 
 	logctx := context.Background()
 	pc, _, _, _ := runtime.Caller(0)
@@ -98,11 +117,13 @@ func TestLogManagerScrapeFileLogging(t *testing.T) {
 	manager.ApplyConfig(&cfg)
 
 	sl := manager.NewScrapeFailureLogger("test_job", slf)
-	require.True(t, sl.Enabled(context.Background(), slog.LevelInfo))
+	require.True(t, sl.Enabled(context.Background(), slog.LevelInfo), "expected scrape failure logger to be enabled")
+
+	slh := slog.New(sl).With("target", "test_target").Handler()
 
 	logctx := context.Background()
 	pc, _, _, _ := runtime.Caller(0)
-	sl.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg, pc))
+	slh.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg, pc))
 
 	manager.Stop()
 
@@ -112,26 +133,24 @@ func TestLogManagerScrapeFileLogging(t *testing.T) {
 		t.Fatalf("unexpected error reading scrape failure log file: %v", err)
 	}
 	logContent := string(data)
-	expectedSubstring := testLogMsg
-	if !strings.Contains(logContent, expectedSubstring) {
-		t.Fatalf("expected log content to contain %q, got: %s", expectedSubstring, logContent)
-	}
+	require.Contains(t, logContent, testLogMsg, "expected scrape failure log to contain test log message")
 }
 
 func TestLogFileRotation(t *testing.T) {
 
 	cfg := ConfigForTest(nil)
-	td := t.TempDir()
-	qlf := path.Join(td, "test_query.log")
-	cfg.GlobalConfig.QueryLogFile = qlf
 
 	const testLogMsg1 = "test query log message before rotation"
 	const testLogMsg2 = "test query log message after reload, before rotation"
 	const testLogMsg3 = "test query log message after rotation before new logger"
 	const testLogMsg4 = "test query log message after new logger"
+	const testLogMsg5 = "test query log after logfile set to empty"
 
 	manager := NewManager(slog.New(slog.DiscardHandler))
 	go manager.Run()
+	td := t.TempDir()
+	qlf := path.Join(td, "test_query.log")
+	cfg.GlobalConfig.QueryLogFile = qlf
 	manager.ApplyConfig(&cfg)
 
 	ql := manager.NewQueryLogger()
@@ -148,7 +167,8 @@ func TestLogFileRotation(t *testing.T) {
 	manager.ApplyConfig(&cfg)
 	ql = manager.NewQueryLogger()
 	pc, _, _, _ = runtime.Caller(0)
-	ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg2, pc))
+	err := ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg2, pc))
+	require.NoError(t, err, "unexpected error writing log record after rotation before new logger")
 
 	// Rotate the log file by applying a new config with a different log file path.
 	qlf2 := path.Join(td, "test_query_rotated.log")
@@ -157,7 +177,8 @@ func TestLogFileRotation(t *testing.T) {
 
 	// The existing logger still points to the old file, which is not closed.
 	pc, _, _, _ = runtime.Caller(0)
-	ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg3, pc))
+	err = ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg3, pc))
+	require.NoError(t, err, "unexpected error writing log record after rotation")
 
 	// Re-create the logger to pick up the new file path. The old logger is closed before
 	// the new one is opened. On *nix it'd actually be ok to open the new logger before
@@ -166,7 +187,21 @@ func TestLogFileRotation(t *testing.T) {
 	ql = manager.NewQueryLogger()
 
 	// This message will go to the new log file.
-	ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg4, pc))
+	err = ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg4, pc))
+	require.NoError(t, err, "unexpected error writing log record to new log file")
+
+	// Now set the log file to empty, which should cause the logger to stop logging to a file but not error out.
+	// Like before, the existing logger will still point to the old file, so a new logger must be created
+	// to see the effect of the changes.
+	cfg.GlobalConfig.QueryLogFile = ""
+	manager.ApplyConfig(&cfg)
+
+	ql.Close()
+	ql = manager.NewQueryLogger()
+
+	pc, _, _, _ = runtime.Caller(0)
+	err = ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg5, pc))
+	require.NoError(t, err, "unexpected error writing log record after setting log file to empty")
 
 	manager.Stop()
 
@@ -187,6 +222,7 @@ func TestLogFileRotation(t *testing.T) {
 	require.NotContains(t, logContent2, testLogMsg1, "expected second log file "+qlf2+" to not contain first log message")
 	require.NotContains(t, logContent2, testLogMsg2, "expected second log file "+qlf2+" to not contain second log message")
 	require.NotContains(t, logContent2, testLogMsg3, "expected second log file "+qlf2+" to not contain third log message")
+	require.NotContains(t, logContent2, testLogMsg5, "expected second log file "+qlf2+" to not contain fifth log message after setting log file to empty")
 }
 
 // Verify that the query log can be rotated in-place by renaming it aside. This will only work on
@@ -215,7 +251,8 @@ func TestLogFileRotationInplace(t *testing.T) {
 
 	logctx := context.Background()
 	pc, _, _, _ := runtime.Caller(0)
-	ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg1, pc))
+	err := ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg1, pc))
+	require.NoError(t, err, "unexpected error writing log record before rotation")
 
 	// Rotate the log file by renaming it aside.
 	qlfRotated := path.Join(td, "test_query_rotated.log")
@@ -228,7 +265,8 @@ func TestLogFileRotationInplace(t *testing.T) {
 	// The existing logger still points to the old file, which is not closed; this will append to
 	// the renamed file.
 	pc, _, _, _ = runtime.Caller(0)
-	ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg2, pc))
+	err = ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg2, pc))
+	require.NoError(t, err, "unexpected error writing log record after rotation before new logger")
 
 	// Re-create the logger to pick up the new file path.
 	ql.Close()
@@ -238,7 +276,8 @@ func TestLogFileRotationInplace(t *testing.T) {
 	require.FileExistsf(t, qlf, "expected log file %s to exist after rotation", qlf)
 
 	// And log messages must go to it, not the rotated file.
-	ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg3, pc))
+	err = ql.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg3, pc))
+	require.NoError(t, err, "unexpected error writing log record after rotation")
 
 	manager.Stop()
 
@@ -257,4 +296,98 @@ func TestLogFileRotationInplace(t *testing.T) {
 	require.Contains(t, logContent2, testLogMsg3, "expected second log file to contain third log message")
 	require.NotContains(t, logContent2, testLogMsg1, "expected second log file to not contain first log message")
 	require.NotContains(t, logContent2, testLogMsg2, "expected second log file to not contain second log message")
+}
+
+// Use the console (stdout) otel exporter
+func TestOtelStdoutQueryLog(t *testing.T) {
+	cfg := ConfigForTest(&config.LoggingConfig{
+		Include: []string{"query"},
+		OTELLoggingConfig: config.OTELLoggingConfig{
+			Enabled: true,
+		},
+	})
+	t.Setenv("OTEL_LOG_EXPORTER", "console")
+	t.Setenv("OTEL_LOG_LEVEL", "info")
+	const testLogMsg = "test otel stdout log message"
+
+	manager := NewManager(slog.New(slog.DiscardHandler))
+	go manager.Run()
+	manager.ApplyConfig(&cfg)
+
+	require.Equal(t, queryLoggerName, "query")
+	require.True(t, manager.isIncluded(queryLoggerName), "expected query logger to be included based on config; active config is %#v", manager.config)
+
+	otelLogger := manager.NewQueryLogger()
+	require.NotNil(t, otelLogger, "expected non-nil logger")
+	require.True(t, otelLogger.Enabled(context.Background(), slog.LevelInfo), "expected otel stdout logger to be enabled")
+
+	logctx := context.Background()
+	pc, _, _, _ := runtime.Caller(0)
+	err := otelLogger.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg, pc))
+	require.NoError(t, err, "unexpected error writing log record to otel stdout logger")
+}
+
+//
+
+// OTLP is enabled, but the exporter is set to "none"
+func TestOtelNoneQueryLog(t *testing.T) {
+	cfg := ConfigForTest(&config.LoggingConfig{
+		Include: []string{"query"},
+		OTELLoggingConfig: config.OTELLoggingConfig{
+			Enabled: true,
+		},
+	})
+	t.Setenv("OTEL_LOG_EXPORTER", "none")
+	t.Setenv("OTEL_LOG_LEVEL", "info")
+	const testLogMsg = "test otel stdout log message"
+
+	manager := NewManager(slog.New(slog.DiscardHandler))
+	go manager.Run()
+	manager.ApplyConfig(&cfg)
+
+	require.Equal(t, queryLoggerName, "query")
+	require.True(t, manager.isIncluded(queryLoggerName), "expected query logger to be included based on config; active config is %#v", manager.config)
+
+	otelLogger := manager.NewQueryLogger()
+	require.NotNil(t, otelLogger, "expected non-nil logger")
+	require.True(t, otelLogger.Enabled(context.Background(), slog.LevelInfo), "expected otel stdout logger to be enabled")
+
+	logctx := context.Background()
+	pc, _, _, _ := runtime.Caller(0)
+	err := otelLogger.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg, pc))
+	require.NoError(t, err, "unexpected error writing log record to otel stdout logger")
+}
+
+//
+
+func TestOtelOTLPQueryLog(t *testing.T) {
+	cfg := ConfigForTest(&config.LoggingConfig{
+		Include: []string{"query"},
+		OTELLoggingConfig: config.OTELLoggingConfig{
+			Enabled: true,
+		},
+	})
+	t.Setenv("OTEL_LOG_EXPORTER", "otlpgrpc")
+	t.Setenv("OTEL_LOG_LEVEL", "info")
+	const testLogMsg = "test otel stdout log message"
+
+	manager := NewManager(slog.New(slog.DiscardHandler))
+	go manager.Run()
+	manager.ApplyConfig(&cfg)
+
+	require.Equal(t, queryLoggerName, "query")
+	require.True(t, manager.isIncluded(queryLoggerName), "expected query logger to be included based on config; active config is %#v", manager.config)
+
+	otelLogger := manager.NewQueryLogger()
+	require.NotNil(t, otelLogger, "expected non-nil logger")
+	require.True(t, otelLogger.Enabled(context.Background(), slog.LevelInfo), "expected otel stdout logger to be enabled")
+
+	logctx := context.Background()
+	pc, _, _, _ := runtime.Caller(0)
+	err := otelLogger.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg, pc))
+	require.NoError(t, err, "unexpected error writing log record to otel stdout logger")
+}
+
+func TestCombinedFileAndOTLPQueryLog(t *testing.T) {
+	// TODO
 }
