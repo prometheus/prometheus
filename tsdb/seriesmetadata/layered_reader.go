@@ -89,34 +89,39 @@ func (r *layeredMetadataReader) IterResources(ctx context.Context, f func(labels
 }
 
 func (r *layeredMetadataReader) IterVersionedResources(ctx context.Context, f func(labelsHash uint64, resources *VersionedResource) error) error {
-	// Collect top (head) entries into a map to avoid O(N_head) cross-reader
-	// point lookups during base iteration.
-	topEntries := make(map[uint64]*VersionedResource)
-	if err := r.top.IterVersionedResources(ctx, func(labelsHash uint64, resources *VersionedResource) error {
-		topEntries[labelsHash] = resources
+	// Phase 1: Collect only the hash set from top (head). This uses
+	// map[uint64]struct{} (~16 bytes/entry) instead of storing full
+	// *VersionedResource pointers (~56+ bytes/entry), saving ~40% memory.
+	topHashes := make(map[uint64]struct{})
+	if err := r.top.IterVersionedResources(ctx, func(labelsHash uint64, _ *VersionedResource) error {
+		topHashes[labelsHash] = struct{}{}
 		return nil
 	}); err != nil {
 		return err
 	}
 
-	// Iterate base. For shared hashes, merge with collected top data.
-	if err := r.base.IterVersionedResources(ctx, func(labelsHash uint64, resources *VersionedResource) error {
-		if topVR, ok := topEntries[labelsHash]; ok {
-			delete(topEntries, labelsHash) // Mark as merged.
-			return f(labelsHash, MergeVersionedResources(resources, topVR))
+	// Phase 2: Iterate base. For shared hashes, merge via point lookup on top.
+	if err := r.base.IterVersionedResources(ctx, func(labelsHash uint64, baseVR *VersionedResource) error {
+		if _, shared := topHashes[labelsHash]; shared {
+			delete(topHashes, labelsHash)
+			topVR, _ := r.top.GetVersionedResource(labelsHash)
+			return f(labelsHash, MergeVersionedResources(baseVR, topVR))
 		}
-		return f(labelsHash, resources)
+		return f(labelsHash, baseVR)
 	}); err != nil {
 		return err
 	}
 
-	// Emit remaining top-only entries.
-	for labelsHash, resources := range topEntries {
+	// Phase 3: Emit remaining top-only entries via point lookups.
+	for labelsHash := range topHashes {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := f(labelsHash, resources); err != nil {
-			return err
+		topVR, _ := r.top.GetVersionedResource(labelsHash)
+		if topVR != nil {
+			if err := f(labelsHash, topVR); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -149,30 +154,34 @@ func (r *layeredMetadataReader) GetVersionedScope(labelsHash uint64) (*Versioned
 }
 
 func (r *layeredMetadataReader) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
-	topEntries := make(map[uint64]*VersionedScope)
-	if err := r.top.IterVersionedScopes(ctx, func(labelsHash uint64, scopes *VersionedScope) error {
-		topEntries[labelsHash] = scopes
+	topHashes := make(map[uint64]struct{})
+	if err := r.top.IterVersionedScopes(ctx, func(labelsHash uint64, _ *VersionedScope) error {
+		topHashes[labelsHash] = struct{}{}
 		return nil
 	}); err != nil {
 		return err
 	}
 
-	if err := r.base.IterVersionedScopes(ctx, func(labelsHash uint64, scopes *VersionedScope) error {
-		if topVS, ok := topEntries[labelsHash]; ok {
-			delete(topEntries, labelsHash)
-			return f(labelsHash, MergeVersionedScopes(scopes, topVS))
+	if err := r.base.IterVersionedScopes(ctx, func(labelsHash uint64, baseVS *VersionedScope) error {
+		if _, shared := topHashes[labelsHash]; shared {
+			delete(topHashes, labelsHash)
+			topVS, _ := r.top.GetVersionedScope(labelsHash)
+			return f(labelsHash, MergeVersionedScopes(baseVS, topVS))
 		}
-		return f(labelsHash, scopes)
+		return f(labelsHash, baseVS)
 	}); err != nil {
 		return err
 	}
 
-	for labelsHash, scopes := range topEntries {
+	for labelsHash := range topHashes {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := f(labelsHash, scopes); err != nil {
-			return err
+		topVS, _ := r.top.GetVersionedScope(labelsHash)
+		if topVS != nil {
+			if err := f(labelsHash, topVS); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

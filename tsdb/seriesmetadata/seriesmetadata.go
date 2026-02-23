@@ -1060,6 +1060,11 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 	}
 	logger.Info("Series metadata written", logArgs...)
 
+	// Populate write stats if requested.
+	if opts.WriteStats != nil {
+		opts.WriteStats.NamespaceRowCounts = metadataCounts
+	}
+
 	return size, nil
 }
 
