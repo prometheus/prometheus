@@ -31,43 +31,43 @@ func TestExtractHistogramSuffix(t *testing.T) {
 	tests := []struct {
 		name           string
 		matchers       []*labels.Matcher
-		expectedBase   string
+		expectedName   string
 		expectedSuffix string
 	}{
 		{
 			name:           "bucket suffix",
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
-			expectedBase:   "http_requests",
+			expectedName:   "http_requests_bucket",
 			expectedSuffix: "_bucket",
 		},
 		{
 			name:           "count suffix",
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
-			expectedBase:   "http_requests",
+			expectedName:   "http_requests_count",
 			expectedSuffix: "_count",
 		},
 		{
 			name:           "sum suffix",
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_sum")},
-			expectedBase:   "http_requests",
+			expectedName:   "http_requests_sum",
 			expectedSuffix: "_sum",
 		},
 		{
 			name:           "no suffix - regular metric",
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge")},
-			expectedBase:   "",
+			expectedName:   "",
 			expectedSuffix: "",
 		},
 		{
 			name:           "no metric name matcher",
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus")},
-			expectedBase:   "",
+			expectedName:   "",
 			expectedSuffix: "",
 		},
 		{
 			name:           "bucket regex suffix",
 			matchers:       []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, ".+_bucket")},
-			expectedBase:   ".+",
+			expectedName:   ".+_bucket",
 			expectedSuffix: "_bucket",
 		},
 	}
@@ -75,11 +75,11 @@ func TestExtractHistogramSuffix(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			matcher, suffix, _ := extractHistogramSuffix(tc.matchers)
-			if tc.expectedBase == "" {
+			if tc.expectedName == "" {
 				require.Nil(t, matcher)
 			} else {
 				require.NotNil(t, matcher)
-				require.Equal(t, tc.expectedBase, matcher.Value)
+				require.Equal(t, tc.expectedName, matcher.Value)
 			}
 			require.Equal(t, tc.expectedSuffix, suffix)
 		})
@@ -203,7 +203,7 @@ func TestNHCBAsClassicQuerier_Select(t *testing.T) {
 				NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
 			},
 			expectedCount:  1,
-			expectedSuffix: "_butipcket",
+			expectedSuffix: "_bucket",
 		},
 		{
 			name: "le exact match no match",
