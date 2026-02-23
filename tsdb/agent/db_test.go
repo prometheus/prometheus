@@ -1402,7 +1402,7 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	}
 }
 
-func readWALSamples(t *testing.T, walDir string) []*walSample {
+func readWALSamples(t *testing.T, walDir string) []walSample {
 	t.Helper()
 	sr, err := wlog.NewSegmentsReader(walDir)
 	require.NoError(t, err)
