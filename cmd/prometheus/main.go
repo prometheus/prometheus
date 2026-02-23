@@ -1193,9 +1193,11 @@ func main() {
 			func() error {
 				<-reloadReady.C
 				ruleManager.Run()
+				logger.Info("Rule manager stopped")
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping rule manager manager...")
 				ruleManager.Stop()
 			},
 		)
@@ -1230,9 +1232,11 @@ func main() {
 			func() error {
 				<-reloadReady.C
 				tracingManager.Run()
+				logger.Info("Tracing manager stopped")
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping tracing manager...")
 				tracingManager.Stop()
 			},
 		)
@@ -1309,6 +1313,7 @@ func main() {
 							checksum = currentChecksum
 						}
 					case <-cancel:
+						logger.Info("Reloaders stopped")
 						return nil
 					}
 				}
@@ -1316,6 +1321,7 @@ func main() {
 			func(error) {
 				// Wait for any in-progress reloads to complete to avoid
 				// reloading things after they have been shutdown.
+				logger.Info("Stopping reloaders...")
 				cancel <- struct{}{}
 			},
 		)
@@ -1399,9 +1405,11 @@ func main() {
 				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
+				logger.Info("TSDB stopped")
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping storage...")
 				if err := fanoutStorage.Close(); err != nil {
 					logger.Error("Error stopping storage", "err", err)
 				}
@@ -1456,9 +1464,11 @@ func main() {
 				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
+				logger.Info("Agent WAL storage stopped")
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping agent WAL storage...")
 				if err := fanoutStorage.Close(); err != nil {
 					logger.Error("Error stopping storage", "err", err)
 				}
@@ -1473,9 +1483,11 @@ func main() {
 				if err := webHandler.Run(ctxWeb, listeners, *webConfig); err != nil {
 					return fmt.Errorf("error starting web server: %w", err)
 				}
+				logger.Info("Web handler stopped")
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping web handler...")
 				cancelWeb()
 			},
 		)
@@ -1498,6 +1510,7 @@ func main() {
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping notifier manager...")
 				notifierManager.Stop()
 			},
 		)

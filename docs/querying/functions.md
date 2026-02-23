@@ -433,6 +433,23 @@ and is therefore flagged by an info-level annotation reading `input to
 histogram_quantile needed to be fixed for monotonicity`. If you encounter this
 annotation, you should find and remove the source of the invalid data.
 
+## `histogram_quantiles()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`histogram_quantiles(v instant-vector, quantile_label string, φ_1 scalar, φ_2 scalar, ...)` calculates multiple (between 1 and 10) φ-quantiles (0 ≤
+φ ≤ 1) from a [classic
+histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) or from
+a native histogram. Quantile calculation works the same way as in `histogram_quantile()`.
+The second argument (a string) specifies the label name that is used to identify different quantiles in the query result.
+```
+histogram_quantiles(sum(rate(foo[1m])), "quantile", 0.9, 0.99)
+# => {quantile="0.9"} 123
+     {quantile="0.99"} 128
+```
+
 ## `histogram_stddev()` and `histogram_stdvar()`
 
 `histogram_stddev(v instant-vector)` returns the estimated standard deviation
