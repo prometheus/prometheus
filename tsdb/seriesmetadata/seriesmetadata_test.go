@@ -1307,3 +1307,37 @@ func TestMemStoreContentDedupTimeRangesIndependent(t *testing.T) {
 	require.Equal(t, int64(3000), got2.MinTime)
 	require.Equal(t, int64(4000), got2.MaxTime)
 }
+
+func TestInvertedIndexDisabled(t *testing.T) {
+	mem := NewMemSeriesMetadata()
+	// Do NOT call InitResourceAttrIndex — simulates EnableResourceAttrIndex=false.
+
+	rv1 := NewResourceVersion(
+		map[string]string{"service.name": "payment-service", "service.namespace": "production"},
+		map[string]string{"host.name": "host-1"},
+		nil, 1000, 2000,
+	)
+	vr := NewVersionedResource(rv1)
+	mem.SetVersionedResource(100, vr)
+
+	// Incremental update with no index initialized — should still track attr names.
+	mem.UpdateResourceAttrIndex(100, nil, vr)
+
+	// LookupResourceAttr returns nil (index not built).
+	require.Nil(t, mem.LookupResourceAttr("service.name", "payment-service"))
+
+	// UniqueResourceAttrNames still returns attr names (decoupled from index).
+	names := mem.UniqueResourceAttrNames()
+	require.NotNil(t, names)
+	require.Contains(t, names, "service.name")
+	require.Contains(t, names, "service.namespace")
+	require.Contains(t, names, "host.name")
+
+	// Now build the full index from scratch — verify it works.
+	// BuildResourceAttrIndex creates and populates the index in one step.
+	mem.BuildResourceAttrIndex()
+
+	hashes := mem.LookupResourceAttr("service.name", "payment-service")
+	require.Len(t, hashes, 1)
+	require.Contains(t, hashes, uint64(100))
+}
