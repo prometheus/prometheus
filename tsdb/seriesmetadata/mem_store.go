@@ -155,6 +155,19 @@ func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Version
 
 	if existing, ok := s.byHash[labelsHash]; ok {
 		old = existing.versioned
+
+		// Fast path: single incoming version that matches current — just extend time range.
+		// This is the common case (~90% of commits) where resource/scope content hasn't changed.
+		// Mirrors AddOrExtend (versioned.go) — zero allocations vs ~12 from MergeVersioned.
+		if len(versioned.Versions) == 1 && len(existing.versioned.Versions) > 0 {
+			current := existing.versioned.Versions[len(existing.versioned.Versions)-1]
+			incoming := versioned.Versions[0]
+			if m.ops.Equal(current, incoming) {
+				current.UpdateTimeRange(incoming.GetMinTime(), incoming.GetMaxTime())
+				return old, existing.versioned
+			}
+		}
+
 		existing.versioned = MergeVersioned(m.ops, existing.versioned, versioned)
 		return old, existing.versioned
 	}
