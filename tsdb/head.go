@@ -1829,11 +1829,7 @@ func (h *Head) updateSharedMetadata(s *memSeries, kind seriesmetadata.KindDescri
 	if !ok {
 		return
 	}
-	// Use cached stableHash — lset is immutable so hash never changes.
-	if s.stableHash == 0 {
-		s.stableHash = labels.StableHash(s.lset)
-	}
-	hash := s.stableHash
+	hash := s.getStableHash()
 
 	mask := uint64(len(h.metaRefStripes) - 1)
 	refShard := &h.metaRefStripes[uint64(s.ref)&mask]
@@ -1870,10 +1866,7 @@ func (h *Head) updateSharedResourceMetadata(s *memSeries) {
 	if !ok {
 		return
 	}
-	if s.stableHash == 0 {
-		s.stableHash = labels.StableHash(s.lset)
-	}
-	hash := s.stableHash
+	hash := s.getStableHash()
 
 	mask := uint64(len(h.metaRefStripes) - 1)
 	refShard := &h.metaRefStripes[uint64(s.ref)&mask]
@@ -1900,10 +1893,7 @@ func (h *Head) updateSharedScopeMetadata(s *memSeries) {
 	if !ok {
 		return
 	}
-	if s.stableHash == 0 {
-		s.stableHash = labels.StableHash(s.lset)
-	}
-	hash := s.stableHash
+	hash := s.getStableHash()
 
 	mask := uint64(len(h.metaRefStripes) - 1)
 	refShard := &h.metaRefStripes[uint64(s.ref)&mask]
@@ -2740,6 +2730,17 @@ type kindMetaEntry struct {
 	data any // *Versioned[V] for the appropriate V
 }
 
+// nativeMeta holds OTel native metadata state for a memSeries.
+// Allocated lazily on first SetKindMeta call; nil when native metadata
+// is not in use, saving 24 bytes per series (slice header + stableHash)
+// compared to storing the fields inline on memSeries.
+type nativeMeta struct {
+	// stableHash caches labels.StableHash(lset). Computed lazily on first
+	// metadata commit (lset is immutable so the hash never changes).
+	stableHash uint64
+	kindMeta   []kindMetaEntry
+}
+
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
@@ -2750,19 +2751,15 @@ type memSeries struct {
 	// been explicitly enabled in TSDB.
 	shardHash uint64
 
-	// stableHash caches labels.StableHash(lset). Computed lazily on first metadata
-	// commit (lset is immutable so the hash never changes). 0 means not yet computed.
-	stableHash uint64
-
 	// Everything after here should only be accessed with the lock held.
 	sync.Mutex
 
 	meta *metadata.Metadata
 
-	// kindMeta stores per-kind metadata (resources, scopes, etc.) for this series.
-	// nil when no metadata has been set. Typically 0-2 entries.
-	// Linear scan of 1-2 entries is faster than map lookup.
-	kindMeta []kindMetaEntry
+	// nativeMeta holds OTel native metadata (stableHash cache + per-kind versioned data).
+	// nil when native metadata is not in use, saving 24 bytes per series.
+	// Allocated lazily on first SetKindMeta call.
+	nativeMeta *nativeMeta
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 
@@ -2830,7 +2827,10 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 
 // GetKindMeta returns the metadata for a kind, or nil/false if not set.
 func (s *memSeries) GetKindMeta(id seriesmetadata.KindID) (any, bool) {
-	for _, e := range s.kindMeta {
+	if s.nativeMeta == nil {
+		return nil, false
+	}
+	for _, e := range s.nativeMeta.kindMeta {
 		if e.kind == id {
 			return e.data, true
 		}
@@ -2840,13 +2840,25 @@ func (s *memSeries) GetKindMeta(id seriesmetadata.KindID) (any, bool) {
 
 // SetKindMeta sets the metadata for a kind.
 func (s *memSeries) SetKindMeta(id seriesmetadata.KindID, v any) {
-	for i, e := range s.kindMeta {
+	if s.nativeMeta == nil {
+		s.nativeMeta = &nativeMeta{}
+	}
+	for i, e := range s.nativeMeta.kindMeta {
 		if e.kind == id {
-			s.kindMeta[i].data = v
+			s.nativeMeta.kindMeta[i].data = v
 			return
 		}
 	}
-	s.kindMeta = append(s.kindMeta, kindMetaEntry{kind: id, data: v})
+	s.nativeMeta.kindMeta = append(s.nativeMeta.kindMeta, kindMetaEntry{kind: id, data: v})
+}
+
+// getStableHash returns the cached labels.StableHash, computing it on first call.
+// Caller must hold s.Lock() and s.nativeMeta must be non-nil (guaranteed after SetKindMeta).
+func (s *memSeries) getStableHash() uint64 {
+	if s.nativeMeta.stableHash == 0 {
+		s.nativeMeta.stableHash = labels.StableHash(s.lset)
+	}
+	return s.nativeMeta.stableHash
 }
 
 func (s *memSeries) minTime() int64 {
