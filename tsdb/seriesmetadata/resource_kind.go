@@ -17,6 +17,7 @@ import (
 	"cmp"
 	"context"
 	"log/slog"
+	"maps"
 	"slices"
 
 	"github.com/cespare/xxhash/v2"
@@ -97,25 +98,7 @@ func (*resourceKindDescriptor) ContentHash(version any) uint64 {
 }
 
 func (*resourceKindDescriptor) CommitToSeries(series, walRecord any) {
-	accessor := series.(kindMetaAccessor)
-	// walRecord is a ResourceCommitData (set by the tsdb package).
-	rcd := walRecord.(ResourceCommitData)
-
-	metadataEntities := make([]*Entity, len(rcd.Entities))
-	for j, e := range rcd.Entities {
-		metadataEntities[j] = NewEntity(e.Type, e.ID, e.Description)
-	}
-	rv := NewResourceVersion(rcd.Identifying, rcd.Descriptive, metadataEntities, rcd.MinTime, rcd.MaxTime)
-
-	existing, _ := accessor.GetKindMeta(KindResource)
-	if existing == nil {
-		accessor.SetKindMeta(KindResource, &Versioned[*ResourceVersion]{
-			Versions: []*ResourceVersion{copyResourceVersion(rv)},
-		})
-	} else {
-		vr := existing.(*Versioned[*ResourceVersion])
-		vr.AddOrExtend(ResourceOps, rv)
-	}
+	CommitResourceDirect(series.(kindMetaAccessor), walRecord.(ResourceCommitData))
 }
 
 // ResourceEntityData is a lightweight struct for passing entity data
@@ -135,24 +118,49 @@ type ResourceCommitData struct {
 	MaxTime     int64
 }
 
-// CommitResourceDirect is the hot-path equivalent of CommitToSeries for
-// resources, avoiding interface{} boxing of ResourceCommitData.
-// Called directly from headAppenderBase.commitResources.
+// CommitResourceDirect is the hot-path commit for resources.
+// It constructs the ResourceVersion with exactly one deep copy of each map
+// (from the caller's buffers into stored metadata) and takes ownership of
+// the result — no further copies via AddOrExtend or copyResourceVersion.
+// Called directly from headAppenderBase.commitResources and from
+// CommitToSeries (cold path, WAL replay).
 func CommitResourceDirect(accessor kindMetaAccessor, rcd ResourceCommitData) {
-	metadataEntities := make([]*Entity, len(rcd.Entities))
+	entities := make([]*Entity, len(rcd.Entities))
 	for j, e := range rcd.Entities {
-		metadataEntities[j] = NewEntity(e.Type, e.ID, e.Description)
+		entityType := e.Type
+		if entityType == "" {
+			entityType = EntityTypeResource
+		}
+		entities[j] = &Entity{
+			Type:        entityType,
+			ID:          maps.Clone(e.ID),
+			Description: maps.Clone(e.Description),
+		}
 	}
-	rv := NewResourceVersion(rcd.Identifying, rcd.Descriptive, metadataEntities, rcd.MinTime, rcd.MaxTime)
+	slices.SortFunc(entities, func(a, b *Entity) int {
+		return cmp.Compare(a.Type, b.Type)
+	})
+
+	rv := &ResourceVersion{
+		Identifying: maps.Clone(rcd.Identifying),
+		Descriptive: maps.Clone(rcd.Descriptive),
+		Entities:    entities,
+		MinTime:     rcd.MinTime,
+		MaxTime:     rcd.MaxTime,
+	}
 
 	existing, _ := accessor.GetKindMeta(KindResource)
 	if existing == nil {
 		accessor.SetKindMeta(KindResource, &Versioned[*ResourceVersion]{
-			Versions: []*ResourceVersion{copyResourceVersion(rv)},
+			Versions: []*ResourceVersion{rv},
 		})
 	} else {
 		vr := existing.(*Versioned[*ResourceVersion])
-		vr.AddOrExtend(ResourceOps, rv)
+		if len(vr.Versions) > 0 && ResourceOps.Equal(vr.Versions[len(vr.Versions)-1], rv) {
+			vr.Versions[len(vr.Versions)-1].UpdateTimeRange(rv.MinTime, rv.MaxTime)
+		} else {
+			vr.Versions = append(vr.Versions, rv)
+		}
 	}
 }
 
