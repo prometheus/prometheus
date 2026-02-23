@@ -33,6 +33,18 @@ type scopeOps struct{}
 func (scopeOps) Equal(a, b *ScopeVersion) bool      { return ScopeVersionsEqual(a, b) }
 func (scopeOps) Copy(v *ScopeVersion) *ScopeVersion { return CopyScopeVersion(v) }
 
+func (scopeOps) ContentHash(v *ScopeVersion) uint64 { return hashScopeContent(v) }
+func (scopeOps) ThinCopy(canonical, v *ScopeVersion) *ScopeVersion {
+	return &ScopeVersion{
+		Name:      canonical.Name,
+		Version:   canonical.Version,
+		SchemaURL: canonical.SchemaURL,
+		Attrs:     canonical.Attrs,
+		MinTime:   v.MinTime,
+		MaxTime:   v.MaxTime,
+	}
+}
+
 // ScopeOps is the shared KindOps instance for scopes.
 var ScopeOps KindOps[*ScopeVersion] = scopeOps{}
 
