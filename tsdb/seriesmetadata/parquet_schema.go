@@ -128,4 +128,14 @@ type metadataRow struct {
 
 	// ScopeAttrs contains InstrumentationScope attributes.
 	ScopeAttrs []EntityAttributeEntry `parquet:"scope_attrs,list,optional"`
+
+	// --- Resource attribute index fields (namespace="resource_attr_index") ---
+
+	// AttrKey is the attribute name for resource_attr_index rows.
+	// Top-level column enables Parquet-native filtering (column stats, bloom filters).
+	AttrKey string `parquet:"attr_key,optional"`
+
+	// AttrValue is the attribute value for resource_attr_index rows.
+	// Top-level column enables Parquet-native filtering (column stats, bloom filters).
+	AttrValue string `parquet:"attr_value,optional"`
 }
