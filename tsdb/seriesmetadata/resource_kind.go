@@ -135,6 +135,37 @@ type ResourceCommitData struct {
 	MaxTime     int64
 }
 
+// CommitResourceDirect is the hot-path equivalent of CommitToSeries for
+// resources, avoiding interface{} boxing of ResourceCommitData.
+// Called directly from headAppenderBase.commitResources.
+func CommitResourceDirect(accessor kindMetaAccessor, rcd ResourceCommitData) {
+	metadataEntities := make([]*Entity, len(rcd.Entities))
+	for j, e := range rcd.Entities {
+		metadataEntities[j] = NewEntity(e.Type, e.ID, e.Description)
+	}
+	rv := NewResourceVersion(rcd.Identifying, rcd.Descriptive, metadataEntities, rcd.MinTime, rcd.MaxTime)
+
+	existing, _ := accessor.GetKindMeta(KindResource)
+	if existing == nil {
+		accessor.SetKindMeta(KindResource, &Versioned[*ResourceVersion]{
+			Versions: []*ResourceVersion{copyResourceVersion(rv)},
+		})
+	} else {
+		vr := existing.(*Versioned[*ResourceVersion])
+		vr.AddOrExtend(ResourceOps, rv)
+	}
+}
+
+// CollectResourceDirect is the hot-path equivalent of CollectFromSeries
+// for resources, avoiding interface{} boxing on the return path.
+func CollectResourceDirect(accessor kindMetaAccessor) (*VersionedResource, bool) {
+	v, ok := accessor.GetKindMeta(KindResource)
+	if !ok || v == nil {
+		return nil, false
+	}
+	return v.(*Versioned[*ResourceVersion]), true
+}
+
 func (*resourceKindDescriptor) CollectFromSeries(series any) (any, bool) {
 	accessor := series.(kindMetaAccessor)
 	return accessor.GetKindMeta(KindResource)
