@@ -273,6 +273,11 @@ type Options struct {
 	// (which are always indexed). nil means index only identifying attributes.
 	IndexedResourceAttrs map[string]struct{}
 
+	// EnableResourceAttrIndex enables the resource attribute inverted index
+	// for O(1) reverse lookup by attribute key:value. When disabled, the index
+	// is not built in memory or written to Parquet. Default: true.
+	EnableResourceAttrIndex bool
+
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
@@ -1130,6 +1135,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			FloatChunkEncoding:          db.floatChunkEncoding,
 			EnableNativeMetadata:        opts.EnableNativeMetadata,
 			IndexedResourceAttrs:        opts.IndexedResourceAttrs,
+			EnableResourceAttrIndex:     opts.EnableResourceAttrIndex,
 		})
 	}
 	if err != nil {
@@ -1203,6 +1209,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableFastStartup = opts.EnableFastStartup
 	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
 	headOpts.IndexedResourceAttrs = opts.IndexedResourceAttrs
+	headOpts.EnableResourceAttrIndex = opts.EnableResourceAttrIndex
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1384,7 +1391,7 @@ func blocksFingerprint(blocks []*Block) string {
 
 // mergeBlockMetadata merges metadata from all blocks into a single reader.
 // Head metadata is not included — it is layered on top at query time.
-func (*DB) mergeBlockMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
+func (db *DB) mergeBlockMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
 	merged := seriesmetadata.NewMemSeriesMetadata()
 
 	for _, b := range blocks {
@@ -1415,7 +1422,9 @@ func (*DB) mergeBlockMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
 	// Build inverted index for blocks. With Fix 3.3 (per-block Parquet index),
 	// blocks read from new Parquet files already have the index populated and
 	// BuildResourceAttrIndex skips. Only old-format blocks need runtime build.
-	merged.BuildResourceAttrIndex()
+	if db.opts.EnableResourceAttrIndex {
+		merged.BuildResourceAttrIndex()
+	}
 	return merged, nil
 }
 
