@@ -242,7 +242,8 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 		s.series = make([]Series, 0)
 		lsetBuilder := labels.NewBuilder(labels.EmptyLabels())
 
-		convertedSeriesMap := make(map[string]*convertedSeriesData)
+		convertedSeries := make([]*convertedSeriesData, 0)
+		convertedSeriesIndex := make(map[string]int)
 		for s.nhcbSet.Next() {
 			nhcbSeries := s.nhcbSet.At()
 			if nhcbSeries == nil {
@@ -299,14 +300,17 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 					}
 
 					key := l.String()
-					if _, exists := convertedSeriesMap[key]; !exists {
-						convertedSeriesMap[key] = &convertedSeriesData{
+					idx, exists := convertedSeriesIndex[key]
+					if !exists {
+						idx = len(convertedSeries)
+						convertedSeriesIndex[key] = idx
+						convertedSeries = append(convertedSeries, &convertedSeriesData{
 							labels:  l,
 							samples: make([]chunks.Sample, 0),
-						}
+						})
 					}
 
-					convertedSeriesMap[key].samples = append(convertedSeriesMap[key].samples, fSample{
+					convertedSeries[idx].samples = append(convertedSeries[idx].samples, fSample{
 						t: t,
 						f: value,
 					})
@@ -328,7 +332,7 @@ func (s *nhcbToClassicSeriesSet) Next() bool {
 			s.err = err
 			return false
 		}
-		for _, data := range convertedSeriesMap {
+		for _, data := range convertedSeries {
 			if s.leMatcher != nil {
 				// In case a le was provided we need to filter with it
 				if !s.leMatcher.Matches(data.labels.Get(labels.BucketLabel)) {
