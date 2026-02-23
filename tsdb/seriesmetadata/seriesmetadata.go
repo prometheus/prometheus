@@ -346,13 +346,24 @@ func removeFromAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, 
 // LookupResourceAttr returns labelsHashes that have a resource version
 // with the given key:value in Identifying or Descriptive attributes.
 // Returns nil if the index has not been built.
+// The returned map is a snapshot safe for concurrent use by the caller.
 func (m *MemSeriesMetadata) LookupResourceAttr(key, value string) map[uint64]struct{} {
 	m.resourceAttrIndexMu.RLock()
 	defer m.resourceAttrIndexMu.RUnlock()
 	if m.resourceAttrIndex == nil {
 		return nil
 	}
-	return m.resourceAttrIndex[key+"\x00"+value]
+	live := m.resourceAttrIndex[key+"\x00"+value]
+	if len(live) == 0 {
+		return nil
+	}
+	// Return a snapshot copy — the live map is concurrently mutated by
+	// UpdateResourceAttrIndex / RemoveFromResourceAttrIndex.
+	snapshot := make(map[uint64]struct{}, len(live))
+	for h := range live {
+		snapshot[h] = struct{}{}
+	}
+	return snapshot
 }
 
 // parquetReader implements Reader by reading from a Parquet file.
@@ -985,13 +996,13 @@ func buildResourceTableRow(contentHash uint64, rv *ResourceVersion) metadataRow 
 
 // buildResourceAttrIndexRows builds inverted index rows for Parquet from all
 // resource versions. Each unique (key, value, seriesRef) tuple produces one row.
+// Uses a numeric hash pair for dedup instead of string keys to reduce memory.
 func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (uint64, bool)) []metadataRow {
-	type indexKey struct {
-		attrKey   string
-		attrValue string
-		seriesRef uint64
+	type dedupKey struct {
+		contentHash uint64 // attrKeyValueHash(k, v)
+		seriesRef   uint64
 	}
-	seen := make(map[indexKey]struct{})
+	seen := make(map[dedupKey]struct{})
 	var rows []metadataRow
 
 	_ = mr.IterVersionedResources(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
@@ -1005,15 +1016,16 @@ func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (
 		}
 
 		addEntry := func(k, v string) {
-			ik := indexKey{attrKey: k, attrValue: v, seriesRef: seriesRef}
-			if _, exists := seen[ik]; exists {
+			ch := attrKeyValueHash(k, v)
+			dk := dedupKey{contentHash: ch, seriesRef: seriesRef}
+			if _, exists := seen[dk]; exists {
 				return
 			}
-			seen[ik] = struct{}{}
+			seen[dk] = struct{}{}
 			rows = append(rows, metadataRow{
 				Namespace:   NamespaceResourceAttrIndex,
 				SeriesRef:   seriesRef,
-				ContentHash: attrKeyValueHash(k, v),
+				ContentHash: ch,
 				IdentifyingAttrs: []EntityAttributeEntry{
 					{Key: k, Value: v},
 				},
