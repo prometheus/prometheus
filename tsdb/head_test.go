@@ -7536,3 +7536,120 @@ func TestResourceAndScopeWALReplayWithScope(t *testing.T) {
 	_ = w
 	_ = seriesmetadata.EntityTypeResource // Ensure import is used.
 }
+
+func TestResourceAndScopeWALFilterUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.ChunkDirRoot = dir
+
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+
+	head, err := NewHead(nil, nil, wal, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	ctx := context.Background()
+	lset := labels.FromStrings("a", "b")
+
+	// 1. Append sample + resource → Commit.
+	app := head.Appender(ctx)
+	ref, appErr := app.Append(0, lset, 100, 1.0)
+	require.NoError(t, appErr)
+	_, appErr = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "frontend"},
+		map[string]string{"host.name": "node-1"},
+		nil,
+		100,
+	)
+	require.NoError(t, appErr)
+	require.NoError(t, app.Commit())
+
+	// Verify resource exists.
+	s := head.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, s)
+	s.Lock()
+	res, resOK := s.GetKindMeta(seriesmetadata.KindResource)
+	require.True(t, resOK)
+	vr := res.(*seriesmetadata.VersionedResource)
+	require.Len(t, vr.Versions, 1)
+	s.Unlock()
+
+	// No WAL filtering yet on first commit (nothing stored before).
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.resourceUpdatesWALFiltered))
+
+	// 2. Append sample + SAME resource content → Commit.
+	app = head.Appender(ctx)
+	_, appErr = app.Append(ref, lset, 200, 2.0)
+	require.NoError(t, appErr)
+	_, appErr = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "frontend"},
+		map[string]string{"host.name": "node-1"},
+		nil,
+		200,
+	)
+	require.NoError(t, appErr)
+	require.NoError(t, app.Commit())
+
+	// The unchanged entry should have been WAL-filtered.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.resourceUpdatesWALFiltered))
+	// Committed metric counts all (changed + unchanged).
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.resourceUpdatesCommitted))
+
+	// Time range should have been extended in-place.
+	s.Lock()
+	res, _ = s.GetKindMeta(seriesmetadata.KindResource)
+	vr = res.(*seriesmetadata.VersionedResource)
+	require.Len(t, vr.Versions, 1)
+	require.Equal(t, int64(100), vr.Versions[0].MinTime)
+	require.Equal(t, int64(200), vr.Versions[0].MaxTime)
+	s.Unlock()
+
+	// 3. Close head, replay WAL into new head. The filtered entry should
+	//    not be in the WAL, but the resource should still exist from the first record.
+	require.NoError(t, head.Close())
+
+	wal2, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+
+	head2, err := NewHead(nil, nil, wal2, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = head2.Close() })
+	require.NoError(t, head2.Init(0))
+
+	s2 := head2.series.getByID(chunks.HeadSeriesRef(ref))
+	require.NotNil(t, s2)
+	s2.Lock()
+	res2, res2OK := s2.GetKindMeta(seriesmetadata.KindResource)
+	require.True(t, res2OK)
+	vr2 := res2.(*seriesmetadata.VersionedResource)
+	require.Len(t, vr2.Versions, 1)
+	require.Equal(t, "frontend", vr2.Versions[0].Identifying["service.name"])
+	require.Equal(t, "node-1", vr2.Versions[0].Descriptive["host.name"])
+	s2.Unlock()
+
+	// 4. Append sample + DIFFERENT resource → Commit.
+	app = head2.Appender(ctx)
+	_, appErr = app.Append(ref, lset, 300, 3.0)
+	require.NoError(t, appErr)
+	_, appErr = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "backend"},
+		map[string]string{"host.name": "node-2"},
+		nil,
+		300,
+	)
+	require.NoError(t, appErr)
+	require.NoError(t, app.Commit())
+
+	// Changed content should NOT be filtered.
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head2.metrics.resourceUpdatesWALFiltered))
+
+	// Two resource versions should exist.
+	s2.Lock()
+	res2, _ = s2.GetKindMeta(seriesmetadata.KindResource)
+	vr2 = res2.(*seriesmetadata.VersionedResource)
+	require.Len(t, vr2.Versions, 2)
+	require.Equal(t, "frontend", vr2.Versions[0].Identifying["service.name"])
+	require.Equal(t, "backend", vr2.Versions[1].Identifying["service.name"])
+	s2.Unlock()
+}

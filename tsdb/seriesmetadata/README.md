@@ -90,7 +90,7 @@ Data is stored per-series, keyed by `labels.StableHash` (a 64-bit hash of the se
 
 ### Generic Stores
 
-`MemStore[V]` is a 256-way sharded generic in-memory store (matching the `stripeSeries` pattern in `tsdb/head.go`). Each shard has its own `sync.RWMutex` and map with 40-byte cache-line padding to prevent false sharing. Sharding is by `labelsHash & 0xFF`. Type aliases provide backward compatibility:
+`MemStore[V]` is a 256-way sharded generic in-memory store (matching the `stripeSeries` pattern in `tsdb/head.go`). Each shard has its own `sync.RWMutex` and map with 40-byte cache-line padding to prevent false sharing. Sharding is by `labelsHash & 0xFF`. When the `KindOps` also implements `ContentDedupOps[V]` (both `resourceOps` and `scopeOps` do), MemStore maintains a content-addressed dedup table so that versions with identical content share map/slice pointers from a single canonical entry (see Content-Addressed Dedup below). Type aliases provide backward compatibility:
 
 | Alias | Underlying Type | Key | Value |
 |-------|-----------------|-----|-------|
@@ -130,6 +130,27 @@ Two sharded stripe arrays (`metaRefStripes` and `metaHashStripes`, 256-way) trac
 `AddOrExtend(ops, version)` on `Versioned[V]` handles ingestion:
 - If the latest version's content matches (via `KindOps.Equal`), extends `MaxTime` (same content, later timestamp)
 - If content differs, appends a new version (attributes changed)
+
+### Content-Addressed Dedup
+
+When many series share the same OTel resource or scope (common at scale — e.g. 30M series sharing ~1K unique resources), the denormalized per-series storage wastes memory: each series holds a deep-copied version, and the shared `MemStore` holds another. Content-addressed dedup eliminates this by sharing map/slice pointers from a single canonical entry.
+
+**Interface**: `ContentDedupOps[V]` is an optional extension of `KindOps[V]`, detected via type assertion. Both `resourceOps` and `scopeOps` implement it.
+
+```go
+type ContentDedupOps[V VersionConstraint] interface {
+    ContentHash(v V) uint64      // deterministic xxhash of immutable content fields
+    ThinCopy(canonical, v V) V   // new V sharing canonical's maps, v's time range
+}
+```
+
+**Content table**: A separate 256-way sharded map (`contentHash → V`) stores one canonical (deep-copied) version per unique content. `getOrCreateCanonical` uses double-checked locking (RLock → Lock on miss). Created lazily only when ops implements `ContentDedupOps`.
+
+**Interning**: All `MemStore` methods that store deep copies call `internVersions` (or `internLastVersion`) after the copy/merge, replacing each version with a thin copy sharing the canonical's maps. The `SetVersionedWithDiff` fast path (time-range extension only) skips interning since no new version is created. `InternVersion(v)` is public for per-series interning from outside `MemStore`.
+
+**Per-series interning**: After `CommitResourceDirect`/`CommitScopeDirect` creates a deep-copied version on the series, `Head.internSeriesResource()`/`internSeriesScope()` replaces its maps with canonical pointers. Same in WAL replay after `CommitToSeries`.
+
+**Memory impact** (30M series, 1K unique resources): per-version drops from ~1500B (deep copy with maps) to ~72B (thin copy struct with shared pointers). Canonicals are never deleted — at 1K unique resources × 1500B = 1.5MB, negligible.
 
 ## Parquet File Format
 
@@ -329,6 +350,7 @@ Several features are designed for object-storage access patterns in clustered im
 - **Direct commit functions**: `CommitResourceDirect()` and `CommitScopeDirect()` are called directly on the hot ingestion path with typed arguments (bypassing `interface{}` boxing). They use single-copy ownership: `maps.Clone` once from caller buffers, construct the version struct, and inline `AddOrExtend` logic — no redundant deep copies via `NewResourceVersion`/`copyResourceVersion`. `KindDescriptor.CommitToSeries()` (WAL replay) delegates to the same Direct functions after type-asserting `any` arguments. `CollectResourceDirect()` and `CollectScopeDirect()` provide the same boxing-avoidance for the collect path
 - **Unique attribute name cache**: `UniqueAttrNameReader` interface (via type assertion) provides O(1) access to the set of all resource attribute names, avoiding O(N_series) full scans for attribute name discovery
 - **`SetVersionedWithDiff` fast-path**: When the incoming `Versioned` has a single version that equals the existing current version (~90% of steady-state commits), `UpdateTimeRange` extends in-place with zero allocations, skipping `MergeVersioned` (~12 allocs)
+- **In-memory content-addressed dedup**: `MemStore[V]` uses `ContentDedupOps[V]` to share map/slice pointers across versions with identical content. Per-version memory drops from ~1500B to ~72B. `InternVersion()` is public for per-series interning from head commit and WAL replay paths
 - **WAL checkpoint content dedup**: Both resources and scopes use content-addressed dedup (`contentMapping` type) in WAL checkpoints, reducing memory from O(N_series × content_size) to O(N_unique_content + N_series × 24B)
 - **Chunked checkpoint flushing**: WAL checkpoint resource and scope records are flushed in 10K-record chunks instead of materializing all records into a single slice, bounding peak allocation to ~2 MB per chunk
 
@@ -337,11 +359,11 @@ Several features are designed for object-storage access patterns in clustered im
 | File | Contents |
 |------|----------|
 | `seriesmetadata.go` | Core types (`Reader`, `MemSeriesMetadata`, `parquetReader`), write/read paths, denormalization, resource attribute inverted index |
-| `versioned.go` | Generic `Versioned[V]` container, `VersionConstraint` interface, `KindOps[V]`, `MergeVersioned()` |
-| `mem_store.go` | Generic `MemStore[V]` 256-way sharded in-memory store |
+| `versioned.go` | Generic `Versioned[V]` container, `VersionConstraint` interface, `KindOps[V]`, `ContentDedupOps[V]`, `MergeVersioned()` |
+| `mem_store.go` | Generic `MemStore[V]` 256-way sharded in-memory store with content-addressed dedup |
 | `registry.go` | `KindDescriptor` interface, `KindID`, global kind registry, `kindMetaAccessor` |
-| `resource_kind.go` | `resourceKindDescriptor` (implements `KindDescriptor` for resources), `ResourceOps`, `ResourceCommitData`, `CommitResourceDirect()`, `CollectResourceDirect()`, content hashing |
-| `scope_kind.go` | `scopeKindDescriptor` (implements `KindDescriptor` for scopes), `ScopeOps`, `ScopeCommitData`, `CommitScopeDirect()`, `CollectScopeDirect()`, content hashing |
+| `resource_kind.go` | `resourceKindDescriptor` (implements `KindDescriptor` for resources), `ResourceOps` (implements `KindOps` + `ContentDedupOps`), `ResourceCommitData`, `CommitResourceDirect()`, `CollectResourceDirect()`, content hashing |
+| `scope_kind.go` | `scopeKindDescriptor` (implements `KindDescriptor` for scopes), `ScopeOps` (implements `KindOps` + `ContentDedupOps`), `ScopeCommitData`, `CommitScopeDirect()`, `CollectScopeDirect()`, content hashing |
 | `parquet_schema.go` | Parquet schema (`metadataRow`, `EntityRow`, `EntityAttributeEntry`), namespace constants |
 | `entity.go` | `Entity`, `ResourceVersion`, type aliases (`VersionedResource`, `MemResourceStore`, `VersionedResourceReader`) |
 | `scope.go` | `ScopeVersion`, type aliases (`VersionedScope`, `MemScopeStore`, `VersionedScopeReader`) |
