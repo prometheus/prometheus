@@ -202,13 +202,10 @@ func TestLayeredReader_LookupResourceAttrUnion(t *testing.T) {
 	lr := NewLayeredReader(base, top)
 	defer lr.Close()
 
-	// Union should contain all three hashes.
+	// Union should contain all three hashes (sorted).
 	result := lr.LookupResourceAttr("region", "us-west")
 	require.NotNil(t, result)
-	require.Len(t, result, 3)
-	require.Contains(t, result, baseHash)
-	require.Contains(t, result, topHash)
-	require.Contains(t, result, sharedHash)
+	require.Equal(t, []uint64{baseHash, topHash, sharedHash}, result)
 
 	// Unknown key should return nil.
 	result = lr.LookupResourceAttr("unknown", "value")

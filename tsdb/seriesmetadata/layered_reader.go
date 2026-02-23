@@ -216,7 +216,7 @@ func (r *layeredMetadataReader) LabelsForHash(labelsHash uint64) (labels.Labels,
 	return r.base.LabelsForHash(labelsHash)
 }
 
-func (r *layeredMetadataReader) LookupResourceAttr(key, value string) map[uint64]struct{} {
+func (r *layeredMetadataReader) LookupResourceAttr(key, value string) []uint64 {
 	baseSet := r.base.LookupResourceAttr(key, value)
 	topSet := r.top.LookupResourceAttr(key, value)
 
@@ -230,13 +230,30 @@ func (r *layeredMetadataReader) LookupResourceAttr(key, value string) map[uint64
 		return baseSet
 	}
 
-	// Union.
-	merged := make(map[uint64]struct{}, len(baseSet)+len(topSet))
-	for h := range baseSet {
-		merged[h] = struct{}{}
+	return MergeSortedUnique(baseSet, topSet)
+}
+
+// MergeSortedUnique merges two sorted uint64 slices into a new sorted slice
+// containing all unique values from both inputs. Both inputs must be sorted
+// in ascending order.
+func MergeSortedUnique(a, b []uint64) []uint64 {
+	result := make([]uint64, 0, len(a)+len(b))
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] < b[j]:
+			result = append(result, a[i])
+			i++
+		case a[i] > b[j]:
+			result = append(result, b[j])
+			j++
+		default:
+			result = append(result, a[i])
+			i++
+			j++
+		}
 	}
-	for h := range topSet {
-		merged[h] = struct{}{}
-	}
-	return merged
+	result = append(result, a[i:]...)
+	result = append(result, b[j:]...)
+	return result
 }

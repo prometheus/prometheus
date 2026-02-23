@@ -1975,6 +1975,25 @@ func parseAttrFilter(s string) (key, value string, err error) {
 
 // matchesResourceVersion checks if a ResourceVersion matches the given attribute filters.
 // All filters must match (AND semantics). Each filter matches against either identifying or descriptive attributes.
+// intersectSorted returns elements present in both sorted uint64 slices.
+func intersectSorted(a, b []uint64) []uint64 {
+	result := make([]uint64, 0, min(len(a), len(b)))
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] < b[j]:
+			i++
+		case a[i] > b[j]:
+			j++
+		default:
+			result = append(result, a[i])
+			i++
+			j++
+		}
+	}
+	return result
+}
+
 func matchesResourceVersion(rv *seriesmetadata.ResourceVersion, resourceAttrFilters map[string]string) bool {
 	for k, v := range resourceAttrFilters {
 		if rv.Identifying[k] == v {
@@ -2077,7 +2096,7 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 
 	// Filter resources by attribute matches.
 	// Try indexed path first: intersect candidate sets from the inverted index.
-	var candidates map[uint64]struct{}
+	var candidates []uint64
 	useIndex := true
 	for k, v := range resourceAttrFilters {
 		hashes := mr.LookupResourceAttr(k, v)
@@ -2087,18 +2106,11 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 			break
 		}
 		if candidates == nil {
-			// Start with a copy of the smallest set.
-			candidates = make(map[uint64]struct{}, len(hashes))
-			for h := range hashes {
-				candidates[h] = struct{}{}
-			}
+			// Start with the first sorted set (zero-copy from index).
+			candidates = hashes
 		} else {
-			// Intersect: remove candidates not in this set.
-			for h := range candidates {
-				if _, ok := hashes[h]; !ok {
-					delete(candidates, h)
-				}
-			}
+			// Intersect: two-pointer intersection of sorted slices.
+			candidates = intersectSorted(candidates, hashes)
 		}
 		if len(candidates) == 0 {
 			break
@@ -2107,7 +2119,7 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 
 	if useIndex {
 		// Indexed path: verify each candidate against time range and attribute filters.
-		for hash := range candidates {
+		for _, hash := range candidates {
 			if err := r.Context().Err(); err != nil {
 				return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("request cancelled: %w", err)}, nil, nil}
 			}
