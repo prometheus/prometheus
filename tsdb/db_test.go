@@ -9676,7 +9676,7 @@ func TestBlockSizeIncludesSeriesMetadata(t *testing.T) {
 	b, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
 	require.NoError(t, err)
 
-	// Metadata is eagerly loaded in OpenBlock, so Size() should include it immediately.
+	// Size() includes metadata file size even before lazy load (stat at open time).
 	blockSize := b.Size()
 
 	// Close the block before removing the metadata file; on Windows,
