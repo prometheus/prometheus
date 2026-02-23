@@ -2106,6 +2106,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableSTStorage:                opts.EnableSTStorage,
 		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
 		EnableNativeMetadata:           opts.EnableNativeMetadata,
+		EnableResourceAttrIndex:        true,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
 	}

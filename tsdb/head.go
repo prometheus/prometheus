@@ -269,6 +269,9 @@ type HeadOptions struct {
 	// IndexedResourceAttrs specifies additional descriptive resource attribute
 	// names to include in the inverted index beyond identifying attributes.
 	IndexedResourceAttrs map[string]struct{}
+
+	// EnableResourceAttrIndex enables the resource attribute inverted index.
+	EnableResourceAttrIndex bool
 }
 
 const (
@@ -431,7 +434,9 @@ func (h *Head) resetInMemoryState() error {
 	if h.opts.EnableNativeMetadata {
 		h.seriesMeta = seriesmetadata.NewMemSeriesMetadata()
 		h.seriesMeta.SetIndexedResourceAttrs(h.opts.IndexedResourceAttrs)
-		h.seriesMeta.InitResourceAttrIndex()
+		if h.opts.EnableResourceAttrIndex {
+			h.seriesMeta.InitResourceAttrIndex()
+		}
 		h.metaRefStripes, h.metaHashStripes = newMetadataStripes()
 	}
 
