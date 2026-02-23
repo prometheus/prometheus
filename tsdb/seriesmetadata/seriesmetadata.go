@@ -61,10 +61,11 @@ type Reader interface {
 	// LabelsForHash returns the labels for a given labels hash, if available.
 	LabelsForHash(labelsHash uint64) (labels.Labels, bool)
 
-	// LookupResourceAttr returns labelsHashes that have a resource version
+	// LookupResourceAttr returns sorted labelsHashes that have a resource version
 	// with the given key:value in Identifying or Descriptive attributes.
-	// Returns nil if the index has not been built.
-	LookupResourceAttr(key, value string) map[uint64]struct{}
+	// Returns nil if the index has not been built. The returned slice must not
+	// be modified by the caller.
+	LookupResourceAttr(key, value string) []uint64
 }
 
 // LabelsPopulator allows post-construction population of the labels map.
@@ -79,12 +80,14 @@ type MemSeriesMetadata struct {
 	stores    map[KindID]any           // each value is *MemStore[V] for the appropriate V
 	labelsMap map[uint64]labels.Labels // labelsHash → labels.Labels
 
-	// resourceAttrIndex maps "key\x00value" → set of labelsHashes.
+	// resourceAttrIndex maps "key\x00value" → sorted []uint64 of labelsHashes.
+	// Uses copy-on-write sorted slices for ~4x memory reduction vs maps and
+	// zero-copy reads (readers holding old slices are safe).
 	// Covers identifying attributes (always) and descriptive attributes
 	// only when the key is in indexedResourceAttrs.
 	// Built lazily via BuildResourceAttrIndex() or incrementally via
 	// UpdateResourceAttrIndex(). nil until first build or incremental init.
-	resourceAttrIndex   map[string]map[uint64]struct{}
+	resourceAttrIndex   map[string][]uint64
 	resourceAttrIndexMu sync.RWMutex // protects resourceAttrIndex
 
 	// indexedResourceAttrs specifies additional descriptive resource attribute
@@ -253,7 +256,7 @@ func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
 	if m.resourceAttrIndex != nil {
 		return
 	}
-	idx := make(map[string]map[uint64]struct{})
+	idx := make(map[string][]uint64)
 	extra := m.indexedResourceAttrs
 	_ = m.ResourceStore().IterVersioned(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
 		for _, rv := range vr.Versions {
@@ -271,7 +274,7 @@ func (m *MemSeriesMetadata) InitResourceAttrIndex() {
 	m.resourceAttrIndexMu.Lock()
 	defer m.resourceAttrIndexMu.Unlock()
 	if m.resourceAttrIndex == nil {
-		m.resourceAttrIndex = make(map[string]map[uint64]struct{})
+		m.resourceAttrIndex = make(map[string][]uint64)
 	}
 }
 
@@ -319,39 +322,66 @@ func (m *MemSeriesMetadata) RemoveFromResourceAttrIndex(labelsHash uint64, vr *V
 	}
 }
 
+// sortedInsert inserts val into the sorted slice s using copy-on-write semantics.
+// Returns the (possibly new) slice. If val already exists, s is returned unchanged.
+// The new slice does not share backing memory with s, so readers holding old
+// slices are safe from concurrent mutation.
+func sortedInsert(s []uint64, val uint64) []uint64 {
+	i, found := slices.BinarySearch(s, val)
+	if found {
+		return s
+	}
+	ns := make([]uint64, len(s)+1)
+	copy(ns, s[:i])
+	ns[i] = val
+	copy(ns[i+1:], s[i:])
+	return ns
+}
+
+// sortedRemove removes val from the sorted slice s using copy-on-write semantics.
+// Returns the (possibly new) slice. If val is not found, s is returned unchanged.
+func sortedRemove(s []uint64, val uint64) []uint64 {
+	i, found := slices.BinarySearch(s, val)
+	if !found {
+		return s
+	}
+	ns := make([]uint64, len(s)-1)
+	copy(ns, s[:i])
+	copy(ns[i:], s[i+1:])
+	return ns
+}
+
 // addToAttrIndex adds attribute entries for a resource version to the index.
 // Identifying attributes are always indexed. Descriptive attributes are only
 // indexed if their key is in extraIndexed.
-func addToAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
+// Uses copy-on-write sorted slices so readers holding old slices are safe.
+func addToAttrIndex(idx map[string][]uint64, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
 	for k, v := range rv.Identifying {
 		key := k + "\x00" + v
-		if idx[key] == nil {
-			idx[key] = make(map[uint64]struct{})
-		}
-		idx[key][labelsHash] = struct{}{}
+		idx[key] = sortedInsert(idx[key], labelsHash)
 	}
 	for k, v := range rv.Descriptive {
 		if _, ok := extraIndexed[k]; !ok {
 			continue
 		}
 		key := k + "\x00" + v
-		if idx[key] == nil {
-			idx[key] = make(map[uint64]struct{})
-		}
-		idx[key][labelsHash] = struct{}{}
+		idx[key] = sortedInsert(idx[key], labelsHash)
 	}
 }
 
 // removeFromAttrIndex removes attribute entries for a resource version from the index.
 // Identifying attributes are always removed. Descriptive attributes are only
 // removed if their key is in extraIndexed.
-func removeFromAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
+// Uses copy-on-write sorted slices so readers holding old slices are safe.
+func removeFromAttrIndex(idx map[string][]uint64, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
 	for k, v := range rv.Identifying {
 		key := k + "\x00" + v
-		if set, ok := idx[key]; ok {
-			delete(set, labelsHash)
-			if len(set) == 0 {
+		if s, ok := idx[key]; ok {
+			ns := sortedRemove(s, labelsHash)
+			if len(ns) == 0 {
 				delete(idx, key)
+			} else {
+				idx[key] = ns
 			}
 		}
 	}
@@ -360,36 +390,33 @@ func removeFromAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, 
 			continue
 		}
 		key := k + "\x00" + v
-		if set, ok := idx[key]; ok {
-			delete(set, labelsHash)
-			if len(set) == 0 {
+		if s, ok := idx[key]; ok {
+			ns := sortedRemove(s, labelsHash)
+			if len(ns) == 0 {
 				delete(idx, key)
+			} else {
+				idx[key] = ns
 			}
 		}
 	}
 }
 
-// LookupResourceAttr returns labelsHashes that have a resource version
+// LookupResourceAttr returns sorted labelsHashes that have a resource version
 // with the given key:value in Identifying or Descriptive attributes.
 // Returns nil if the index has not been built.
-// The returned map is a snapshot safe for concurrent use by the caller.
-func (m *MemSeriesMetadata) LookupResourceAttr(key, value string) map[uint64]struct{} {
+// The returned slice is safe for concurrent use — copy-on-write ensures
+// that mutations create new slices rather than modifying existing ones.
+func (m *MemSeriesMetadata) LookupResourceAttr(key, value string) []uint64 {
 	m.resourceAttrIndexMu.RLock()
 	defer m.resourceAttrIndexMu.RUnlock()
 	if m.resourceAttrIndex == nil {
 		return nil
 	}
-	live := m.resourceAttrIndex[key+"\x00"+value]
-	if len(live) == 0 {
+	s := m.resourceAttrIndex[key+"\x00"+value]
+	if len(s) == 0 {
 		return nil
 	}
-	// Return a snapshot copy — the live map is concurrently mutated by
-	// UpdateResourceAttrIndex / RemoveFromResourceAttrIndex.
-	snapshot := make(map[uint64]struct{}, len(live))
-	for h := range live {
-		snapshot[h] = struct{}{}
-	}
-	return snapshot
+	return s
 }
 
 // parquetReader implements Reader by reading from a Parquet file.
@@ -497,7 +524,7 @@ func denormalizeRows(
 	// Phase 4: Process resource attribute inverted index rows.
 	// Prefer dedicated AttrKey/AttrValue columns when non-empty (new files),
 	// fall back to IdentifyingAttrs[0] for backward compatibility (old files).
-	idx := make(map[string]map[uint64]struct{})
+	idx := make(map[string][]uint64)
 	hasIndexRows := false
 	for i := range rows {
 		row := &rows[i]
@@ -526,10 +553,7 @@ func denormalizeRows(
 			labelsHash = lh
 		}
 		key := attrKey + "\x00" + attrValue
-		if idx[key] == nil {
-			idx[key] = make(map[uint64]struct{})
-		}
-		idx[key][labelsHash] = struct{}{}
+		idx[key] = sortedInsert(idx[key], labelsHash)
 	}
 	if hasIndexRows {
 		mem.resourceAttrIndexMu.Lock()
@@ -762,7 +786,7 @@ func (r *parquetReader) KindLen(id KindID) int {
 	return r.mem.KindLen(id)
 }
 
-func (r *parquetReader) LookupResourceAttr(key, value string) map[uint64]struct{} {
+func (r *parquetReader) LookupResourceAttr(key, value string) []uint64 {
 	return r.mem.LookupResourceAttr(key, value)
 }
 
