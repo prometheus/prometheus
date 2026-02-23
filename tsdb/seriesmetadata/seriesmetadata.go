@@ -73,6 +73,13 @@ type LabelsPopulator interface {
 	SetLabels(labelsHash uint64, lset labels.Labels)
 }
 
+// UniqueAttrNameReader is optionally implemented by Reader implementations
+// that maintain a cached set of unique resource attribute names. Checking
+// this via type assertion avoids O(N_series) full scans.
+type UniqueAttrNameReader interface {
+	UniqueResourceAttrNames() map[string]struct{}
+}
+
 // MemSeriesMetadata is an in-memory implementation of series metadata storage.
 // It wraps per-kind stores accessible both generically (via IterKind/KindLen)
 // and type-safely (via ResourceStore/ScopeStore).
@@ -94,6 +101,12 @@ type MemSeriesMetadata struct {
 	// names to include in the inverted index beyond identifying attributes
 	// (which are always indexed). nil means index only identifying attributes.
 	indexedResourceAttrs map[string]struct{}
+
+	// uniqueAttrNames is a grow-only cache of all resource attribute names
+	// seen across all resource versions. Updated incrementally in addToAttrIndex
+	// and BuildResourceAttrIndex. Cardinality is typically tiny (<100 names).
+	uniqueAttrNames   map[string]struct{}
+	uniqueAttrNamesMu sync.RWMutex
 }
 
 // NewMemSeriesMetadata creates a new in-memory series metadata store.
@@ -137,6 +150,15 @@ func (*MemSeriesMetadata) Close() error { return nil }
 // are always indexed regardless of this setting.
 func (m *MemSeriesMetadata) SetIndexedResourceAttrs(attrs map[string]struct{}) {
 	m.indexedResourceAttrs = attrs
+}
+
+// UniqueResourceAttrNames returns a snapshot of all resource attribute names
+// that have been seen. The returned map must not be modified by the caller.
+// This is O(1) — no iteration required.
+func (m *MemSeriesMetadata) UniqueResourceAttrNames() map[string]struct{} {
+	m.uniqueAttrNamesMu.RLock()
+	defer m.uniqueAttrNamesMu.RUnlock()
+	return m.uniqueAttrNames
 }
 
 // SetLabels associates a labels set with a labels hash for later lookup.
@@ -257,14 +279,20 @@ func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
 		return
 	}
 	idx := make(map[string][]uint64)
+	names := make(map[string]struct{})
 	extra := m.indexedResourceAttrs
 	_ = m.ResourceStore().IterVersioned(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
 		for _, rv := range vr.Versions {
 			addToAttrIndex(idx, labelsHash, rv, extra)
+			collectAttrNames(names, rv)
 		}
 		return nil
 	})
 	m.resourceAttrIndex = idx
+
+	m.uniqueAttrNamesMu.Lock()
+	m.uniqueAttrNames = names
+	m.uniqueAttrNamesMu.Unlock()
 }
 
 // InitResourceAttrIndex initializes an empty inverted index, enabling
@@ -292,6 +320,19 @@ func (m *MemSeriesMetadata) UpdateResourceAttrIndex(
 		return
 	}
 	extra := m.indexedResourceAttrs
+
+	// Track new attr names from the current version (grow-only).
+	if cur != nil {
+		m.uniqueAttrNamesMu.Lock()
+		if m.uniqueAttrNames == nil {
+			m.uniqueAttrNames = make(map[string]struct{})
+		}
+		for _, rv := range cur.Versions {
+			collectAttrNames(m.uniqueAttrNames, rv)
+		}
+		m.uniqueAttrNamesMu.Unlock()
+	}
+
 	// Remove old entries.
 	if old != nil {
 		for _, rv := range old.Versions {
@@ -349,6 +390,16 @@ func sortedRemove(s []uint64, val uint64) []uint64 {
 	copy(ns, s[:i])
 	copy(ns[i:], s[i+1:])
 	return ns
+}
+
+// collectAttrNames adds all attribute names from a resource version to the name set.
+func collectAttrNames(names map[string]struct{}, rv *ResourceVersion) {
+	for k := range rv.Identifying {
+		names[k] = struct{}{}
+	}
+	for k := range rv.Descriptive {
+		names[k] = struct{}{}
+	}
 }
 
 // addToAttrIndex adds attribute entries for a resource version to the index.
