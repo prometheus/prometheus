@@ -200,6 +200,12 @@ type HeadOptions struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableMetadataWALRecords bool
+
+	// IgnoreOldCorruptedWAL, if set to true, allows compaction to continue even if
+	// checkpoint creation encounters corrupted WAL segments, by skipping the failed
+	// checkpoint attempt instead of blocking indefinitely. This prevents unbounded
+	// disk growth when corruption blocks the checkpoint process.
+	IgnoreOldCorruptedWAL bool
 }
 
 const (
@@ -1383,9 +1389,16 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.metrics.checkpointCreationTotal.Inc()
 	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, h.keepSeriesInWALCheckpointFn(mint), mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		var cerr *chunks.CorruptionErr
-		if errors.As(err, &cerr) {
+
+		// Check for WAL corruption errors
+		var walCorr *wlog.CorruptionErr
+		if errors.As(err, &walCorr) {
 			h.metrics.walCorruptionsTotal.Inc()
+			if h.opts.IgnoreOldCorruptedWAL {
+				h.logger.Warn("WAL corruption detected during checkpointing, skipping checkpoint to allow compaction to continue",
+					"dir", walCorr.Dir, "segment", walCorr.Segment, "offset", walCorr.Offset, "err", walCorr.Err)
+				return nil
+			}
 		}
 		return fmt.Errorf("create checkpoint: %w", err)
 	}

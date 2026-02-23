@@ -510,6 +510,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.block-reload-interval", "Interval at which to check for new or removed blocks in storage. Users who manually backfill or drop blocks must wait up to this duration before changes become available.").
 		Default("1m").Hidden().SetValue(&cfg.tsdb.BlockReloadInterval)
 
+	serverOnlyFlag(a, "storage.tsdb.ignore-old-corrupted-wal", "If set to true, allows compaction to continue even if checkpoint creation encounters corrupted WAL segments by skipping the failed checkpoint attempt. This prevents unbounded disk growth when corruption blocks compaction.").
+		Default("false").BoolVar(&cfg.tsdb.IgnoreOldCorruptedWAL)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -1983,6 +1986,7 @@ type tsdbOptions struct {
 	EnableSTAsZeroSample           bool
 	EnableSTStorage                bool
 	StaleSeriesCompactionThreshold float64
+	IgnoreOldCorruptedWAL          bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2012,6 +2016,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableSTAsZeroSample:           opts.EnableSTAsZeroSample,
 		EnableSTStorage:                opts.EnableSTStorage,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
+		IgnoreOldCorruptedWAL:          opts.IgnoreOldCorruptedWAL,
 	}
 }
 
