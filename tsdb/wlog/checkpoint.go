@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cespare/xxhash/v2"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -34,6 +36,52 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
+
+// resourceMapping maps a series ref to a content hash with a time range.
+// Used during checkpoint to dedup resource content across series.
+type resourceMapping struct {
+	contentHash uint64
+	minTime     int64
+	maxTime     int64
+}
+
+// hashResourceWALContent computes a deterministic xxhash for a RefResource's
+// content (identifying + descriptive attrs + entities). It does NOT include
+// Ref, MinTime, or MaxTime since those are per-mapping, not per-content.
+func hashResourceWALContent(r *record.RefResource) uint64 {
+	h := xxhash.New()
+
+	hashMapInto(h, r.Identifying)
+	_, _ = h.Write([]byte{1})
+	hashMapInto(h, r.Descriptive)
+	_, _ = h.Write([]byte{1})
+
+	for _, e := range r.Entities {
+		_, _ = h.WriteString(e.Type)
+		_, _ = h.Write([]byte{0})
+		hashMapInto(h, e.ID)
+		_, _ = h.Write([]byte{1})
+		hashMapInto(h, e.Description)
+		_, _ = h.Write([]byte{1})
+	}
+
+	return h.Sum64()
+}
+
+// hashMapInto writes a deterministic representation of a string map into a hash digest.
+func hashMapInto(h *xxhash.Digest, m map[string]string) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		_, _ = h.WriteString(k)
+		_, _ = h.Write([]byte{0})
+		_, _ = h.WriteString(m[k])
+		_, _ = h.Write([]byte{0})
+	}
+}
 
 // CheckpointStats returns stats about a created checkpoint.
 type CheckpointStats struct {
@@ -180,8 +228,13 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		// Resources and scopes are versioned (descriptive attributes can change over time),
 		// so we keep ALL records per ref, not just the latest. This preserves version history
 		// so that VersionAt() returns correct attributes for historical timestamps after replay.
-		allResourcesMap = make(map[chunks.HeadSeriesRef][]record.RefResource)
-		allScopesMap    = make(map[chunks.HeadSeriesRef][]record.RefScope)
+		//
+		// Content-addressed dedup: many series share the same resource/scope content.
+		// Store unique content once in a table, and map refs to content hashes.
+		// This dramatically reduces memory when N series share K unique resources (K << N).
+		resourceContentTable = make(map[uint64]record.RefResource)             // contentHash → canonical record
+		resourceRefToContent = make(map[chunks.HeadSeriesRef][]resourceMapping) // ref → content hashes with time ranges
+		allScopesMap         = make(map[chunks.HeadSeriesRef][]record.RefScope)
 	)
 	for r.Next() {
 		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata, resources, scopes = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0], resources[:0], scopes[:0]
@@ -358,10 +411,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				return nil, fmt.Errorf("decode resources: %w", err)
 			}
 			repl := 0
-			for _, r := range resources {
+			for i, r := range resources {
 				if keep(r.Ref) {
 					repl++
-					allResourcesMap[r.Ref] = append(allResourcesMap[r.Ref], r)
+					ch := hashResourceWALContent(&resources[i])
+					if _, exists := resourceContentTable[ch]; !exists {
+						resourceContentTable[ch] = r
+					}
+					resourceRefToContent[r.Ref] = append(resourceRefToContent[r.Ref], resourceMapping{
+						contentHash: ch,
+						minTime:     r.MinTime,
+						maxTime:     r.MaxTime,
+					})
 				}
 			}
 			stats.TotalResources += len(resources)
@@ -419,10 +480,21 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 	}
 
 	// Flush all resource records for each series (preserving version history).
-	if len(allResourcesMap) > 0 {
+	// Reconstruct full RefResource records from the content-addressed table.
+	if len(resourceRefToContent) > 0 {
 		var allResources []record.RefResource
-		for _, rs := range allResourcesMap {
-			allResources = append(allResources, rs...)
+		for ref, mappings := range resourceRefToContent {
+			for _, m := range mappings {
+				canonical := resourceContentTable[m.contentHash]
+				allResources = append(allResources, record.RefResource{
+					Ref:         ref,
+					MinTime:     m.minTime,
+					MaxTime:     m.maxTime,
+					Identifying: canonical.Identifying,
+					Descriptive: canonical.Descriptive,
+					Entities:    canonical.Entities,
+				})
+			}
 		}
 		if err := cp.Log(enc.Resources(allResources, buf[:0])); err != nil {
 			return nil, fmt.Errorf("flush resource records: %w", err)
