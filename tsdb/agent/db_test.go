@@ -1325,7 +1325,9 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	dbDir := t.TempDir()
 	opts := DefaultOptions()
-	db := createTestAgentDB(t, nil, opts, dbDir)
+	rs1 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+	db, err := Open(promslog.NewNopLogger(), nil, rs1, dbDir, opts)
+	require.NoError(t, err)
 
 	app := db.Appender(context.Background())
 
@@ -1344,7 +1346,7 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Forcefully create a bunch of new segments to force a truncation.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		_, err := db.wal.NextSegmentSync()
 		require.NoError(t, err)
 	}
@@ -1352,7 +1354,7 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	require.Empty(t, db.deleted)
 
 	// Truncate at 1 ms higher than the highest timestamp.
-	err := db.truncate(11)
+	err = db.truncate(11)
 	require.NoError(t, err)
 
 	// The original SeriesRefs should be considered deleted.
@@ -1376,9 +1378,17 @@ func TestDuplicateSeriesRefsByHash(t *testing.T) {
 	}
 
 	// Close the WAL before we have a chance to remove the original RefIDs.
+	// Both db and rs1 must be closed to release all file handles before
+	// reopening the same directory — important on Windows.
 	require.NoError(t, db.Close())
+	require.NoError(t, rs1.Close())
 
-	db = createTestAgentDB(t, nil, opts, dbDir)
+	rs2 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+	t.Cleanup(func() { require.NoError(t, rs2.Close()) })
+	db, err = Open(promslog.NewNopLogger(), nil, rs2, dbDir, opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
 	// The original SeriesRefs should be in series.
 	for _, ref := range originalSeriesRefs {
 		require.NotNil(t, db.series.GetByID(ref))
