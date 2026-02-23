@@ -18,40 +18,64 @@ import (
 	"sync"
 )
 
+// numMemStoreStripes is the number of shards in a MemStore.
+// Must be a power of two for fast modulo via bitmask.
+const numMemStoreStripes = 256
+
 // versionedEntry stores versioned metadata with a labels hash for indexing.
 type versionedEntry[V VersionConstraint] struct {
 	labelsHash uint64
 	versioned  *Versioned[V]
 }
 
+// memStoreStripe is a single shard of a MemStore. Each stripe has its own
+// mutex and map to reduce lock contention across concurrent goroutines.
+type memStoreStripe[V VersionConstraint] struct {
+	mtx    sync.RWMutex
+	byHash map[uint64]*versionedEntry[V]
+	_      [40]byte // cache-line padding to prevent false sharing
+}
+
 // MemStore is a generic in-memory store for versioned metadata keyed by labels hash.
+// It uses 256-way sharding (matching the stripeSeries pattern in tsdb/head.go)
+// to reduce lock contention under high concurrency.
 // It is safe for concurrent use.
 type MemStore[V VersionConstraint] struct {
-	byHash map[uint64]*versionedEntry[V]
-	mtx    sync.RWMutex
-	ops    KindOps[V]
+	stripes [numMemStoreStripes]memStoreStripe[V]
+	ops     KindOps[V]
 }
 
 // NewMemStore creates a new generic in-memory store.
 func NewMemStore[V VersionConstraint](ops KindOps[V]) *MemStore[V] {
-	return &MemStore[V]{
-		byHash: make(map[uint64]*versionedEntry[V]),
-		ops:    ops,
+	m := &MemStore[V]{ops: ops}
+	for i := range m.stripes {
+		m.stripes[i].byHash = make(map[uint64]*versionedEntry[V])
 	}
+	return m
+}
+
+func (m *MemStore[V]) stripe(labelsHash uint64) *memStoreStripe[V] {
+	return &m.stripes[labelsHash&uint64(numMemStoreStripes-1)]
 }
 
 // Len returns the number of unique series with metadata.
 func (m *MemStore[V]) Len() int {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-	return len(m.byHash)
+	var total int
+	for i := range m.stripes {
+		s := &m.stripes[i]
+		s.mtx.RLock()
+		total += len(s.byHash)
+		s.mtx.RUnlock()
+	}
+	return total
 }
 
 // Get returns the current (latest) version for the series.
 func (m *MemStore[V]) Get(labelsHash uint64) (V, bool) {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-	entry, ok := m.byHash[labelsHash]
+	s := m.stripe(labelsHash)
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	entry, ok := s.byHash[labelsHash]
 	if !ok || len(entry.versioned.Versions) == 0 {
 		var zero V
 		return zero, false
@@ -61,9 +85,10 @@ func (m *MemStore[V]) Get(labelsHash uint64) (V, bool) {
 
 // GetVersioned returns all versions for the series.
 func (m *MemStore[V]) GetVersioned(labelsHash uint64) (*Versioned[V], bool) {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-	entry, ok := m.byHash[labelsHash]
+	s := m.stripe(labelsHash)
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	entry, ok := s.byHash[labelsHash]
 	if !ok {
 		return nil, false
 	}
@@ -72,9 +97,10 @@ func (m *MemStore[V]) GetVersioned(labelsHash uint64) (*Versioned[V], bool) {
 
 // GetAt returns the version active at the given timestamp.
 func (m *MemStore[V]) GetAt(labelsHash uint64, timestamp int64) (V, bool) {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-	entry, ok := m.byHash[labelsHash]
+	s := m.stripe(labelsHash)
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	entry, ok := s.byHash[labelsHash]
 	if !ok {
 		var zero V
 		return zero, false
@@ -86,15 +112,16 @@ func (m *MemStore[V]) GetAt(labelsHash uint64, timestamp int64) (V, bool) {
 // If data already exists, a new version is created if it differs,
 // or the existing version's time range is extended if identical.
 func (m *MemStore[V]) Set(labelsHash uint64, version V) {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	s := m.stripe(labelsHash)
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 
-	if existing, ok := m.byHash[labelsHash]; ok {
+	if existing, ok := s.byHash[labelsHash]; ok {
 		existing.versioned.AddOrExtend(m.ops, version)
 		return
 	}
 
-	m.byHash[labelsHash] = &versionedEntry[V]{
+	s.byHash[labelsHash] = &versionedEntry[V]{
 		labelsHash: labelsHash,
 		versioned:  &Versioned[V]{Versions: []V{m.ops.Copy(version)}},
 	}
@@ -103,15 +130,16 @@ func (m *MemStore[V]) Set(labelsHash uint64, version V) {
 // SetVersioned stores versioned data for the series.
 // Used during compaction and loading from Parquet.
 func (m *MemStore[V]) SetVersioned(labelsHash uint64, versioned *Versioned[V]) {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	s := m.stripe(labelsHash)
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 
-	if existing, ok := m.byHash[labelsHash]; ok {
+	if existing, ok := s.byHash[labelsHash]; ok {
 		existing.versioned = MergeVersioned(m.ops, existing.versioned, versioned)
 		return
 	}
 
-	m.byHash[labelsHash] = &versionedEntry[V]{
+	s.byHash[labelsHash] = &versionedEntry[V]{
 		labelsHash: labelsHash,
 		versioned:  versioned.Copy(m.ops),
 	}
@@ -121,10 +149,11 @@ func (m *MemStore[V]) SetVersioned(labelsHash uint64, versioned *Versioned[V]) {
 // versioned state before and after the operation in a single lock acquisition.
 // Returns (nil, new) for first insert, (old, merged) for merge.
 func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Versioned[V]) (old, cur *Versioned[V]) {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	s := m.stripe(labelsHash)
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 
-	if existing, ok := m.byHash[labelsHash]; ok {
+	if existing, ok := s.byHash[labelsHash]; ok {
 		old = existing.versioned
 		existing.versioned = MergeVersioned(m.ops, existing.versioned, versioned)
 		return old, existing.versioned
@@ -134,33 +163,47 @@ func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Version
 		labelsHash: labelsHash,
 		versioned:  versioned.Copy(m.ops),
 	}
-	m.byHash[labelsHash] = entry
+	s.byHash[labelsHash] = entry
 	return nil, entry.versioned
 }
 
 // Delete removes all metadata for the series.
 func (m *MemStore[V]) Delete(labelsHash uint64) {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-	delete(m.byHash, labelsHash)
+	s := m.stripe(labelsHash)
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	delete(s.byHash, labelsHash)
 }
 
 // checkContextEveryNIterations controls how often ctx.Err() is checked during iteration.
 const checkContextEveryNIterations = 100
 
-// snapshotEntries returns a shallow copy of all entries. The slice of
-// pointers is taken under the read lock so iteration can proceed without
-// holding the lock, avoiding writer starvation on large stores.
+// snapshotEntries returns a shallow copy of all entries across all stripes.
+// Each stripe's read lock is held briefly while copying its entries, then released
+// before moving to the next stripe. This avoids holding all locks simultaneously
+// and prevents writer starvation on large stores.
 // The *versionedEntry pointers themselves are stable (not deleted, only
 // replaced), and the Versioned inside is append-only, so a shallow
 // snapshot is safe for read-only iteration.
 func (m *MemStore[V]) snapshotEntries() []*versionedEntry[V] {
-	m.mtx.RLock()
-	entries := make([]*versionedEntry[V], 0, len(m.byHash))
-	for _, entry := range m.byHash {
-		entries = append(entries, entry)
+	// Pre-count total entries to allocate once.
+	var total int
+	for i := range m.stripes {
+		s := &m.stripes[i]
+		s.mtx.RLock()
+		total += len(s.byHash)
+		s.mtx.RUnlock()
 	}
-	m.mtx.RUnlock()
+
+	entries := make([]*versionedEntry[V], 0, total)
+	for i := range m.stripes {
+		s := &m.stripes[i]
+		s.mtx.RLock()
+		for _, entry := range s.byHash {
+			entries = append(entries, entry)
+		}
+		s.mtx.RUnlock()
+	}
 	return entries
 }
 
@@ -205,18 +248,26 @@ func (m *MemStore[V]) IterVersioned(ctx context.Context, f func(labelsHash uint6
 
 // TotalEntries returns the count of series with metadata.
 func (m *MemStore[V]) TotalEntries() uint64 {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-	return uint64(len(m.byHash))
+	var total uint64
+	for i := range m.stripes {
+		s := &m.stripes[i]
+		s.mtx.RLock()
+		total += uint64(len(s.byHash))
+		s.mtx.RUnlock()
+	}
+	return total
 }
 
 // TotalVersions returns the total count of all versions across all series.
 func (m *MemStore[V]) TotalVersions() uint64 {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
 	var total uint64
-	for _, entry := range m.byHash {
-		total += uint64(len(entry.versioned.Versions))
+	for i := range m.stripes {
+		s := &m.stripes[i]
+		s.mtx.RLock()
+		for _, entry := range s.byHash {
+			total += uint64(len(entry.versioned.Versions))
+		}
+		s.mtx.RUnlock()
 	}
 	return total
 }
