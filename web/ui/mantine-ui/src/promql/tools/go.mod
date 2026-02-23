@@ -4,13 +4,12 @@ go 1.25.5
 
 require (
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
-	github.com/prometheus/prometheus v0.308.1
+	github.com/prometheus/prometheus v0.309.1
 	github.com/russross/blackfriday/v2 v2.1.0
 )
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dennwc/varint v1.0.0 // indirect
