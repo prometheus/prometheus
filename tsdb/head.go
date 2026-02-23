@@ -1973,7 +1973,7 @@ func (r *headMetadataReader) TotalScopeVersions() uint64 {
 	return r.head.seriesMeta.TotalScopeVersions()
 }
 
-func (r *headMetadataReader) LookupResourceAttr(key, value string) map[uint64]struct{} {
+func (r *headMetadataReader) LookupResourceAttr(key, value string) []uint64 {
 	return r.head.seriesMeta.LookupResourceAttr(key, value)
 }
 
