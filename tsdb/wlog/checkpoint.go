@@ -37,9 +37,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
-// resourceMapping maps a series ref to a content hash with a time range.
-// Used during checkpoint to dedup resource content across series.
-type resourceMapping struct {
+// contentMapping maps a series ref to a content hash with a time range.
+// Used during checkpoint to dedup resource and scope content across series.
+type contentMapping struct {
 	contentHash uint64
 	minTime     int64
 	maxTime     int64
@@ -65,6 +65,21 @@ func hashResourceWALContent(r *record.RefResource) uint64 {
 		_, _ = h.Write([]byte{1})
 	}
 
+	return h.Sum64()
+}
+
+// hashScopeWALContent computes a deterministic xxhash for a RefScope's
+// content (name, version, schema URL, attrs). It does NOT include Ref,
+// MinTime, or MaxTime since those are per-mapping, not per-content.
+func hashScopeWALContent(s *record.RefScope) uint64 {
+	h := xxhash.New()
+	_, _ = h.WriteString(s.Name)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(s.Version)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(s.SchemaURL)
+	_, _ = h.Write([]byte{0})
+	hashMapInto(h, s.Attrs)
 	return h.Sum64()
 }
 
@@ -233,8 +248,9 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		// Store unique content once in a table, and map refs to content hashes.
 		// This dramatically reduces memory when N series share K unique resources (K << N).
 		resourceContentTable = make(map[uint64]record.RefResource)             // contentHash → canonical record
-		resourceRefToContent = make(map[chunks.HeadSeriesRef][]resourceMapping) // ref → content hashes with time ranges
-		allScopesMap         = make(map[chunks.HeadSeriesRef][]record.RefScope)
+		resourceRefToContent = make(map[chunks.HeadSeriesRef][]contentMapping) // ref → content hashes with time ranges
+		scopeContentTable    = make(map[uint64]record.RefScope)               // contentHash → canonical scope record
+		scopeRefToContent    = make(map[chunks.HeadSeriesRef][]contentMapping) // ref → content hashes with time ranges
 	)
 	for r.Next() {
 		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata, resources, scopes = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0], resources[:0], scopes[:0]
@@ -418,7 +434,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 					if _, exists := resourceContentTable[ch]; !exists {
 						resourceContentTable[ch] = r
 					}
-					resourceRefToContent[r.Ref] = append(resourceRefToContent[r.Ref], resourceMapping{
+					resourceRefToContent[r.Ref] = append(resourceRefToContent[r.Ref], contentMapping{
 						contentHash: ch,
 						minTime:     r.MinTime,
 						maxTime:     r.MaxTime,
@@ -433,10 +449,18 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 				return nil, fmt.Errorf("decode scopes: %w", err)
 			}
 			repl := 0
-			for _, s := range scopes {
+			for i, s := range scopes {
 				if keep(s.Ref) {
 					repl++
-					allScopesMap[s.Ref] = append(allScopesMap[s.Ref], s)
+					ch := hashScopeWALContent(&scopes[i])
+					if _, exists := scopeContentTable[ch]; !exists {
+						scopeContentTable[ch] = s
+					}
+					scopeRefToContent[s.Ref] = append(scopeRefToContent[s.Ref], contentMapping{
+						contentHash: ch,
+						minTime:     s.MinTime,
+						maxTime:     s.MaxTime,
+					})
 				}
 			}
 			stats.TotalScopes += len(scopes)
@@ -502,10 +526,22 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 	}
 
 	// Flush all scope records for each series (preserving version history).
-	if len(allScopesMap) > 0 {
+	// Reconstruct full RefScope records from the content-addressed table.
+	if len(scopeRefToContent) > 0 {
 		var allScopes []record.RefScope
-		for _, ss := range allScopesMap {
-			allScopes = append(allScopes, ss...)
+		for ref, mappings := range scopeRefToContent {
+			for _, m := range mappings {
+				canonical := scopeContentTable[m.contentHash]
+				allScopes = append(allScopes, record.RefScope{
+					Ref:       ref,
+					MinTime:   m.minTime,
+					MaxTime:   m.maxTime,
+					Name:      canonical.Name,
+					Version:   canonical.Version,
+					SchemaURL: canonical.SchemaURL,
+					Attrs:     canonical.Attrs,
+				})
+			}
 		}
 		if err := cp.Log(enc.Scopes(allScopes, buf[:0])); err != nil {
 			return nil, fmt.Errorf("flush scope records: %w", err)
