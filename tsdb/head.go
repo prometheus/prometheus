@@ -1860,6 +1860,65 @@ func (h *Head) updateSharedMetadata(s *memSeries, kind seriesmetadata.KindDescri
 	kind.SetVersioned(store, hash, v)
 }
 
+// updateSharedResourceMetadata is the type-safe hot-path version of
+// updateSharedMetadata for resource kind, avoiding interface{} boxing.
+func (h *Head) updateSharedResourceMetadata(s *memSeries) {
+	if h.seriesMeta == nil {
+		return
+	}
+	vr, ok := seriesmetadata.CollectResourceDirect(s)
+	if !ok {
+		return
+	}
+	if s.stableHash == 0 {
+		s.stableHash = labels.StableHash(s.lset)
+	}
+	hash := s.stableHash
+
+	mask := uint64(len(h.metaRefStripes) - 1)
+	refShard := &h.metaRefStripes[uint64(s.ref)&mask]
+	refShard.Lock()
+	refShard.refToHash[s.ref] = hash
+	refShard.Unlock()
+
+	hashShard := &h.metaHashStripes[hash&mask]
+	hashShard.Lock()
+	hashShard.hashToRef[hash] = s.ref
+	hashShard.Unlock()
+
+	oldVR, newVR := h.seriesMeta.ResourceStore().SetVersionedWithDiff(hash, vr)
+	h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
+}
+
+// updateSharedScopeMetadata is the type-safe hot-path version of
+// updateSharedMetadata for scope kind, avoiding interface{} boxing.
+func (h *Head) updateSharedScopeMetadata(s *memSeries) {
+	if h.seriesMeta == nil {
+		return
+	}
+	vs, ok := seriesmetadata.CollectScopeDirect(s)
+	if !ok {
+		return
+	}
+	if s.stableHash == 0 {
+		s.stableHash = labels.StableHash(s.lset)
+	}
+	hash := s.stableHash
+
+	mask := uint64(len(h.metaRefStripes) - 1)
+	refShard := &h.metaRefStripes[uint64(s.ref)&mask]
+	refShard.Lock()
+	refShard.refToHash[s.ref] = hash
+	refShard.Unlock()
+
+	hashShard := &h.metaHashStripes[hash&mask]
+	hashShard.Lock()
+	hashShard.hashToRef[hash] = s.ref
+	hashShard.Unlock()
+
+	h.seriesMeta.ScopeStore().SetVersioned(hash, vs)
+}
+
 // cleanupSharedMetadata removes metadata for deleted series from the shared store.
 func (h *Head) cleanupSharedMetadata(deleted map[storage.SeriesRef]struct{}) {
 	if h.seriesMeta == nil || len(deleted) == 0 {

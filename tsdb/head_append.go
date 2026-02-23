@@ -1827,18 +1827,17 @@ func commitMetadata(b *appendBatch) {
 
 // commitResources commits the resource updates for each series in the provided batch.
 func (a *headAppenderBase) commitResources(b *appendBatch) {
-	resKind, _ := seriesmetadata.KindByID(seriesmetadata.KindResource)
 	for i, r := range b.resources {
 		s := b.resourceSeries[i]
 		s.Lock()
-		resKind.CommitToSeries(s, seriesmetadata.ResourceCommitData{
+		seriesmetadata.CommitResourceDirect(s, seriesmetadata.ResourceCommitData{
 			Identifying: r.Identifying,
 			Descriptive: r.Descriptive,
 			Entities:    refResourceEntitiesToCommitData(r.Entities),
 			MinTime:     r.MinTime,
 			MaxTime:     r.MaxTime,
 		})
-		a.head.updateSharedMetadata(s, resKind)
+		a.head.updateSharedResourceMetadata(s)
 		s.Unlock()
 	}
 }
@@ -1858,11 +1857,10 @@ func refResourceEntitiesToCommitData(entities []record.RefResourceEntity) []seri
 
 // commitScopes commits the scope updates for each series in the provided batch.
 func (a *headAppenderBase) commitScopes(b *appendBatch) {
-	scopeKind, _ := seriesmetadata.KindByID(seriesmetadata.KindScope)
 	for i, sc := range b.scopes {
 		s := b.scopeSeries[i]
 		s.Lock()
-		scopeKind.CommitToSeries(s, seriesmetadata.ScopeCommitData{
+		seriesmetadata.CommitScopeDirect(s, seriesmetadata.ScopeCommitData{
 			Name:      sc.Name,
 			Version:   sc.Version,
 			SchemaURL: sc.SchemaURL,
@@ -1870,7 +1868,7 @@ func (a *headAppenderBase) commitScopes(b *appendBatch) {
 			MinTime:   sc.MinTime,
 			MaxTime:   sc.MaxTime,
 		})
-		a.head.updateSharedMetadata(s, scopeKind)
+		a.head.updateSharedScopeMetadata(s)
 		s.Unlock()
 	}
 }
