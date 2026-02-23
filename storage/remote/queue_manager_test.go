@@ -1398,6 +1398,13 @@ var extraLabels []labels.Label = []labels.Label{
 	{Name: "pod_name", Value: "some-other-name-5j8s8"},
 }
 
+// Recommended CLI invocation(s):
+/*
+	export bench=sampleSend && go test ./storage/remote/... \
+		-run '^$' -bench '^BenchmarkSampleSend' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
 func BenchmarkSampleSend(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 1
@@ -1904,6 +1911,13 @@ func createDummyTimeSeries(instances int) []timeSeries {
 	return result
 }
 
+// Recommended CLI invocation(s):
+/*
+	export bench=buildWriteRequest && go test ./storage/remote/... \
+		-run '^$' -bench '^BenchmarkBuildWriteRequest' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
 func BenchmarkBuildWriteRequest(b *testing.B) {
 	noopLogger := promslog.NewNopLogger()
 	bench := func(b *testing.B, batch []timeSeries) {
@@ -1944,6 +1958,13 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 	})
 }
 
+// Recommended CLI invocation(s):
+/*
+	export bench=buildV2WriteRequest && go test ./storage/remote/... \
+		-run '^$' -bench '^BenchmarkBuildV2WriteRequest' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
 func BenchmarkBuildV2WriteRequest(b *testing.B) {
 	noopLogger := promslog.NewNopLogger()
 	bench := func(b *testing.B, batch []timeSeries) {
