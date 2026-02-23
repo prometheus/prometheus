@@ -117,6 +117,27 @@ func (m *MemStore[V]) SetVersioned(labelsHash uint64, versioned *Versioned[V]) {
 	}
 }
 
+// SetVersionedWithDiff atomically stores versioned data and returns the
+// versioned state before and after the operation in a single lock acquisition.
+// Returns (nil, new) for first insert, (old, merged) for merge.
+func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Versioned[V]) (old, cur *Versioned[V]) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	if existing, ok := m.byHash[labelsHash]; ok {
+		old = existing.versioned
+		existing.versioned = MergeVersioned(m.ops, existing.versioned, versioned)
+		return old, existing.versioned
+	}
+
+	entry := &versionedEntry[V]{
+		labelsHash: labelsHash,
+		versioned:  versioned.Copy(m.ops),
+	}
+	m.byHash[labelsHash] = entry
+	return nil, entry.versioned
+}
+
 // Delete removes all metadata for the series.
 func (m *MemStore[V]) Delete(labelsHash uint64) {
 	m.mtx.Lock()
@@ -127,12 +148,28 @@ func (m *MemStore[V]) Delete(labelsHash uint64) {
 // checkContextEveryNIterations controls how often ctx.Err() is checked during iteration.
 const checkContextEveryNIterations = 100
 
-// Iter calls the function for each series' current version.
-func (m *MemStore[V]) Iter(ctx context.Context, f func(labelsHash uint64, version V) error) error {
+// snapshotEntries returns a shallow copy of all entries. The slice of
+// pointers is taken under the read lock so iteration can proceed without
+// holding the lock, avoiding writer starvation on large stores.
+// The *versionedEntry pointers themselves are stable (not deleted, only
+// replaced), and the Versioned inside is append-only, so a shallow
+// snapshot is safe for read-only iteration.
+func (m *MemStore[V]) snapshotEntries() []*versionedEntry[V] {
 	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-	i := 0
-	for hash, entry := range m.byHash {
+	entries := make([]*versionedEntry[V], 0, len(m.byHash))
+	for _, entry := range m.byHash {
+		entries = append(entries, entry)
+	}
+	m.mtx.RUnlock()
+	return entries
+}
+
+// Iter calls the function for each series' current version.
+// A snapshot of entries is taken under the lock, then iteration proceeds
+// without holding the lock to avoid blocking writers for large stores.
+func (m *MemStore[V]) Iter(ctx context.Context, f func(labelsHash uint64, version V) error) error {
+	snapshot := m.snapshotEntries()
+	for i, entry := range snapshot {
 		if i%checkContextEveryNIterations == 0 {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -140,30 +177,28 @@ func (m *MemStore[V]) Iter(ctx context.Context, f func(labelsHash uint64, versio
 		}
 		current, ok := entry.versioned.CurrentVersion()
 		if ok {
-			if err := f(hash, current); err != nil {
+			if err := f(entry.labelsHash, current); err != nil {
 				return err
 			}
 		}
-		i++
 	}
 	return nil
 }
 
 // IterVersioned calls the function for each series' versioned data.
+// A snapshot of entries is taken under the lock, then iteration proceeds
+// without holding the lock to avoid blocking writers for large stores.
 func (m *MemStore[V]) IterVersioned(ctx context.Context, f func(labelsHash uint64, versioned *Versioned[V]) error) error {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-	i := 0
-	for hash, entry := range m.byHash {
+	snapshot := m.snapshotEntries()
+	for i, entry := range snapshot {
 		if i%checkContextEveryNIterations == 0 {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 		}
-		if err := f(hash, entry.versioned); err != nil {
+		if err := f(entry.labelsHash, entry.versioned); err != nil {
 			return err
 		}
-		i++
 	}
 	return nil
 }

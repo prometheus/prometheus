@@ -1824,8 +1824,11 @@ func (h *Head) updateSharedMetadata(s *memSeries, kind seriesmetadata.KindDescri
 	if !ok {
 		return
 	}
-	hash := labels.StableHash(s.lset)
-	copied := kind.CopyVersioned(v)
+	// Use cached stableHash — lset is immutable so hash never changes.
+	if s.stableHash == 0 {
+		s.stableHash = labels.StableHash(s.lset)
+	}
+	hash := s.stableHash
 
 	mask := uint64(len(h.metaRefStripes) - 1)
 	refShard := &h.metaRefStripes[uint64(s.ref)&mask]
@@ -1838,22 +1841,18 @@ func (h *Head) updateSharedMetadata(s *memSeries, kind seriesmetadata.KindDescri
 	hashShard.hashToRef[hash] = s.ref
 	hashShard.Unlock()
 
-	// For resource kind: snapshot old versioned data before store update
-	// to incrementally maintain the inverted index.
-	var oldVR *seriesmetadata.VersionedResource
+	// For resource kind: use SetVersionedWithDiff to get old/new in a single
+	// lock acquisition (avoids 3 separate MemStore locks: get, set, get).
 	if kind.ID() == seriesmetadata.KindResource {
-		oldVR, _ = h.seriesMeta.GetVersionedResource(hash)
-	}
-
-	// Store operations are internally concurrent-safe via MemStore.mtx.
-	store := h.seriesMeta.StoreForKind(kind.ID())
-	kind.SetVersioned(store, hash, copied)
-
-	// After store update: incrementally update the inverted index.
-	if kind.ID() == seriesmetadata.KindResource {
-		newVR, _ := h.seriesMeta.GetVersionedResource(hash)
+		vr := v.(*seriesmetadata.VersionedResource)
+		oldVR, newVR := h.seriesMeta.ResourceStore().SetVersionedWithDiff(hash, vr)
 		h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
+		return
 	}
+
+	// Other kinds: standard path.
+	store := h.seriesMeta.StoreForKind(kind.ID())
+	kind.SetVersioned(store, hash, v)
 }
 
 // cleanupSharedMetadata removes metadata for deleted series from the shared store.
@@ -2672,6 +2671,10 @@ type memSeries struct {
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
 	shardHash uint64
+
+	// stableHash caches labels.StableHash(lset). Computed lazily on first metadata
+	// commit (lset is immutable so the hash never changes). 0 means not yet computed.
+	stableHash uint64
 
 	// Everything after here should only be accessed with the lock held.
 	sync.Mutex
