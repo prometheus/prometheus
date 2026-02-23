@@ -290,7 +290,7 @@ func TestNHCBAsClassicQuerier_ConsistentOrder(t *testing.T) {
 	q := NewNHCBAsClassicQuerier(mock)
 
 	// Run the same query multiple times and verify order is consistent.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
 		var seriesLabels []string
 		for ss.Next() {
