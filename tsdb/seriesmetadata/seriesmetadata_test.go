@@ -1095,6 +1095,8 @@ func TestBuildResourceAttrIndex(t *testing.T) {
 	// Before building index, LookupResourceAttr should return nil.
 	require.Nil(t, mem.LookupResourceAttr("service.name", "payment-service"))
 
+	// Configure host.name as an extra indexed descriptive attribute.
+	mem.SetIndexedResourceAttrs(map[string]struct{}{"host.name": {}})
 	mem.BuildResourceAttrIndex()
 
 	// Identifying attribute lookup: service.name=payment-service matches series 100 and 200
@@ -1138,6 +1140,8 @@ func TestBuildResourceAttrIndex_MultipleVersions(t *testing.T) {
 	vr.Versions = append(vr.Versions, rv2)
 	mem.SetVersionedResource(100, vr)
 
+	// Configure host.name as an extra indexed descriptive attribute.
+	mem.SetIndexedResourceAttrs(map[string]struct{}{"host.name": {}})
 	mem.BuildResourceAttrIndex()
 
 	// Both host.name values should be indexed.

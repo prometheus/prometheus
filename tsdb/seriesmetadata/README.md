@@ -97,7 +97,14 @@ Data is stored per-series, keyed by `labels.StableHash` (a 64-bit hash of the se
 
 ### Resource Attribute Inverted Index
 
-`MemSeriesMetadata` supports an optional inverted index for O(1) reverse lookup by resource attribute key:value pairs. The index maps `"key\x00value"` → set of labelsHashes, covering both Identifying and Descriptive attributes across all versions.
+`MemSeriesMetadata` supports an optional inverted index for O(1) reverse lookup by resource attribute key:value pairs. The index maps `"key\x00value"` → set of labelsHashes.
+
+**Selective indexing**: The index uses selective attribute indexing to control its size:
+- **Identifying attributes** (from `ResourceVersion.Identifying`, e.g. `service.name`, `service.namespace`, `service.instance.id`) are **always** indexed
+- **Descriptive attributes** (from `ResourceVersion.Descriptive`) are only indexed if their key is in `indexedResourceAttrs` — a configurable set passed via `SetIndexedResourceAttrs()`, sourced from `tsdb.Options.IndexedResourceAttrs`
+- Default (nil `indexedResourceAttrs`) means only identifying attributes are indexed, reducing index size by ~10x at scale
+
+This filtering applies consistently across all index operations: `BuildResourceAttrIndex()`, `UpdateResourceAttrIndex()`, `RemoveFromResourceAttrIndex()`, and Parquet `buildResourceAttrIndexRows()`.
 
 - **`BuildResourceAttrIndex()`**: Iterates all resource versions once and populates the index. Called by `DB.buildSeriesMetadata()` after merging blocks + head. Since the merged reader is cached for 30 seconds, the index build cost is amortized across many API requests.
 - **`LookupResourceAttr(key, value)`**: Returns the set of labelsHashes matching the given attribute, or nil if the index has not been built. The `/resources/series` handler intersects candidate sets from multiple filters, then verifies each candidate with `GetVersionedResource` + time range + attribute checks. Falls back to a full `IterVersionedResources` scan if the index is nil.
@@ -138,6 +145,7 @@ Each row has a `namespace` discriminator field:
 | `resource_mapping` | Series → resource + time range | `series_ref`, `content_hash`, `mint`, `maxt` |
 | `scope_table` | Unique scope content | `content_hash`, `scope_name`, `scope_version_str`, `schema_url`, `scope_attrs` |
 | `scope_mapping` | Series → scope + time range | `series_ref`, `content_hash`, `mint`, `maxt` |
+| `resource_attr_index` | Inverted index: attr → series | `series_ref`, `content_hash`, `identifying_attrs[0]`, `attr_key`, `attr_value` |
 
 ### Parquet Schema
 
@@ -172,10 +180,12 @@ metadataRow
 ├── scope_name         string?       (InstrumentationScope name)
 ├── scope_version_str  string?       (InstrumentationScope version)
 ├── schema_url         string?       (InstrumentationScope schema URL)
-└── scope_attrs        list?         (InstrumentationScope attributes)
-    └── element
-        ├── key        string
-        └── value      string
+├── scope_attrs        list?         (InstrumentationScope attributes)
+│   └── element
+│       ├── key        string
+│       └── value      string
+├── attr_key           string?       (resource_attr_index: attribute name)
+└── attr_value         string?       (resource_attr_index: attribute value)
 ```
 
 ### SeriesRef and the Resolver Pattern
@@ -189,7 +199,7 @@ Mapping rows store `series_ref` — the block-level series reference (a small in
 
 Each namespace is written as a separate row group (or multiple row groups if `MaxRowsPerRowGroup` is set). This enables selective reads — a reader can skip entire row groups based on namespace column statistics.
 
-Write order (alphabetical by namespace value): `resource_mapping`, `resource_table`, `scope_mapping`, `scope_table`.
+Write order (alphabetical by namespace value): `resource_mapping`, `resource_table`, `scope_mapping`, `scope_table`, then `resource_attr_index` (when enabled).
 
 Within each namespace, rows are sorted by `(series_ref, content_hash, mint)` for better zstd compression.
 
@@ -204,6 +214,7 @@ Parquet footer key-value pairs:
 | `resource_mapping_count` | Number of series→resource mapping rows |
 | `scope_table_count` | Number of unique scope content rows |
 | `scope_mapping_count` | Number of series→scope mapping rows |
+| `resource_attr_index_count` | Number of inverted index rows (when enabled) |
 | `row_group_layout` | `"namespace_partitioned"` |
 
 ### Compression
@@ -220,9 +231,11 @@ size, err := WriteFile(logger, blockDir, reader)
 
 // With options (compaction uses this)
 size, err := WriteFileWithOptions(logger, blockDir, reader, WriterOptions{
-    RefResolver:        func(labelsHash uint64) (seriesRef uint64, ok bool) { ... },
-    MaxRowsPerRowGroup: 10000,
-    EnableBloomFilters: true,
+    RefResolver:          func(labelsHash uint64) (seriesRef uint64, ok bool) { ... },
+    MaxRowsPerRowGroup:   10000,
+    EnableBloomFilters:   true,
+    EnableInvertedIndex:  true,
+    IndexedResourceAttrs: map[string]struct{}{"k8s.namespace.name": {}},
 })
 ```
 
@@ -300,7 +313,8 @@ Several features are designed for object-storage access patterns in clustered im
 
 - **`io.ReaderAt` API**: `ReadSeriesMetadataFromReaderAt()` decouples from `*os.File`, enabling `objstore.Bucket`-backed readers
 - **Namespace filtering**: `WithNamespaceFilter()` skips non-matching row groups using Parquet column index min/max bounds
-- **Bloom filters**: `WriterOptions.EnableBloomFilters` adds split-block bloom filters on `series_ref` and `content_hash` columns. Write-only in this package; querying happens in the consumer
+- **Bloom filters**: `WriterOptions.EnableBloomFilters` adds split-block bloom filters on `series_ref`, `content_hash`, `attr_key`, and `attr_value` columns. Write-only in this package; querying happens in the consumer. The `attr_key`/`attr_value` bloom filters enable store-gateways to find matching `resource_attr_index` rows via Parquet-native filtering
+- **Selective resource attribute indexing**: `WriterOptions.IndexedResourceAttrs` controls which descriptive attributes appear in the inverted index. Identifying attributes are always indexed. This reduces index size by ~10x at scale
 - **Row group size limits**: `WriterOptions.MaxRowsPerRowGroup` bounds memory usage when reading large row groups
 
 ## File Organization
@@ -318,5 +332,5 @@ Several features are designed for object-storage access patterns in clustered im
 | `scope.go` | `ScopeVersion`, type aliases (`VersionedScope`, `MemScopeStore`, `VersionedScopeReader`) |
 | `content_hash.go` | Shared `hashAttrs()` utility for deterministic xxhash of attribute maps |
 | `resource_attributes.go` | `SplitAttributes()`, `IsIdentifyingAttribute()`, `AttributesEqual()` |
-| `writer_options.go` | `WriterOptions` (bloom filters, row group limits, `RefResolver`) |
+| `writer_options.go` | `WriterOptions` (bloom filters, row group limits, `IndexedResourceAttrs`, `RefResolver`) |
 | `reader_options.go` | `ReaderOption`, `WithNamespaceFilter()`, `WithRefResolver()`, `ReadSeriesMetadataFromReaderAt()` |

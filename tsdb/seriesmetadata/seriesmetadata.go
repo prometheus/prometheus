@@ -80,11 +80,17 @@ type MemSeriesMetadata struct {
 	labelsMap map[uint64]labels.Labels // labelsHash → labels.Labels
 
 	// resourceAttrIndex maps "key\x00value" → set of labelsHashes.
-	// Covers both Identifying and Descriptive attributes across all versions.
+	// Covers identifying attributes (always) and descriptive attributes
+	// only when the key is in indexedResourceAttrs.
 	// Built lazily via BuildResourceAttrIndex() or incrementally via
 	// UpdateResourceAttrIndex(). nil until first build or incremental init.
 	resourceAttrIndex   map[string]map[uint64]struct{}
 	resourceAttrIndexMu sync.RWMutex // protects resourceAttrIndex
+
+	// indexedResourceAttrs specifies additional descriptive resource attribute
+	// names to include in the inverted index beyond identifying attributes
+	// (which are always indexed). nil means index only identifying attributes.
+	indexedResourceAttrs map[string]struct{}
 }
 
 // NewMemSeriesMetadata creates a new in-memory series metadata store.
@@ -122,6 +128,13 @@ func (m *MemSeriesMetadata) ScopeCount() int { return m.ScopeStore().Len() }
 
 // Close is a no-op for in-memory storage.
 func (*MemSeriesMetadata) Close() error { return nil }
+
+// SetIndexedResourceAttrs configures which additional descriptive resource
+// attribute names are included in the inverted index. Identifying attributes
+// are always indexed regardless of this setting.
+func (m *MemSeriesMetadata) SetIndexedResourceAttrs(attrs map[string]struct{}) {
+	m.indexedResourceAttrs = attrs
+}
 
 // SetLabels associates a labels set with a labels hash for later lookup.
 func (m *MemSeriesMetadata) SetLabels(labelsHash uint64, lset labels.Labels) {
@@ -241,9 +254,10 @@ func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
 		return
 	}
 	idx := make(map[string]map[uint64]struct{})
+	extra := m.indexedResourceAttrs
 	_ = m.ResourceStore().IterVersioned(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
 		for _, rv := range vr.Versions {
-			addToAttrIndex(idx, labelsHash, rv)
+			addToAttrIndex(idx, labelsHash, rv, extra)
 		}
 		return nil
 	})
@@ -274,16 +288,17 @@ func (m *MemSeriesMetadata) UpdateResourceAttrIndex(
 	if m.resourceAttrIndex == nil {
 		return
 	}
+	extra := m.indexedResourceAttrs
 	// Remove old entries.
 	if old != nil {
 		for _, rv := range old.Versions {
-			removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv)
+			removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv, extra)
 		}
 	}
 	// Add current entries.
 	if cur != nil {
 		for _, rv := range cur.Versions {
-			addToAttrIndex(m.resourceAttrIndex, labelsHash, rv)
+			addToAttrIndex(m.resourceAttrIndex, labelsHash, rv, extra)
 		}
 	}
 }
@@ -298,13 +313,16 @@ func (m *MemSeriesMetadata) RemoveFromResourceAttrIndex(labelsHash uint64, vr *V
 	if m.resourceAttrIndex == nil {
 		return
 	}
+	extra := m.indexedResourceAttrs
 	for _, rv := range vr.Versions {
-		removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv)
+		removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv, extra)
 	}
 }
 
-// addToAttrIndex adds all attribute entries for a resource version to the index.
-func addToAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, rv *ResourceVersion) {
+// addToAttrIndex adds attribute entries for a resource version to the index.
+// Identifying attributes are always indexed. Descriptive attributes are only
+// indexed if their key is in extraIndexed.
+func addToAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
 	for k, v := range rv.Identifying {
 		key := k + "\x00" + v
 		if idx[key] == nil {
@@ -313,6 +331,9 @@ func addToAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, rv *R
 		idx[key][labelsHash] = struct{}{}
 	}
 	for k, v := range rv.Descriptive {
+		if _, ok := extraIndexed[k]; !ok {
+			continue
+		}
 		key := k + "\x00" + v
 		if idx[key] == nil {
 			idx[key] = make(map[uint64]struct{})
@@ -321,8 +342,10 @@ func addToAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, rv *R
 	}
 }
 
-// removeFromAttrIndex removes all attribute entries for a resource version from the index.
-func removeFromAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, rv *ResourceVersion) {
+// removeFromAttrIndex removes attribute entries for a resource version from the index.
+// Identifying attributes are always removed. Descriptive attributes are only
+// removed if their key is in extraIndexed.
+func removeFromAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
 	for k, v := range rv.Identifying {
 		key := k + "\x00" + v
 		if set, ok := idx[key]; ok {
@@ -333,6 +356,9 @@ func removeFromAttrIndex(idx map[string]map[uint64]struct{}, labelsHash uint64, 
 		}
 	}
 	for k, v := range rv.Descriptive {
+		if _, ok := extraIndexed[k]; !ok {
+			continue
+		}
 		key := k + "\x00" + v
 		if set, ok := idx[key]; ok {
 			delete(set, labelsHash)
@@ -469,6 +495,8 @@ func denormalizeRows(
 	}
 
 	// Phase 4: Process resource attribute inverted index rows.
+	// Prefer dedicated AttrKey/AttrValue columns when non-empty (new files),
+	// fall back to IdentifyingAttrs[0] for backward compatibility (old files).
 	idx := make(map[string]map[uint64]struct{})
 	hasIndexRows := false
 	for i := range rows {
@@ -477,10 +505,18 @@ func denormalizeRows(
 			continue
 		}
 		hasIndexRows = true
-		if len(row.IdentifyingAttrs) == 0 {
+
+		var attrKey, attrValue string
+		if row.AttrKey != "" {
+			attrKey = row.AttrKey
+			attrValue = row.AttrValue
+		} else if len(row.IdentifyingAttrs) > 0 {
+			attrKey = row.IdentifyingAttrs[0].Key
+			attrValue = row.IdentifyingAttrs[0].Value
+		} else {
 			continue
 		}
-		attr := row.IdentifyingAttrs[0]
+
 		labelsHash := row.SeriesRef
 		if refResolver != nil {
 			lh, ok := refResolver(row.SeriesRef)
@@ -489,7 +525,7 @@ func denormalizeRows(
 			}
 			labelsHash = lh
 		}
-		key := attr.Key + "\x00" + attr.Value
+		key := attrKey + "\x00" + attrValue
 		if idx[key] == nil {
 			idx[key] = make(map[uint64]struct{})
 		}
@@ -854,7 +890,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 
 	// Optionally build resource attribute inverted index rows.
 	if opts.EnableInvertedIndex {
-		indexRows := buildResourceAttrIndexRows(mr, opts.RefResolver)
+		indexRows := buildResourceAttrIndexRows(mr, opts.RefResolver, opts.IndexedResourceAttrs)
 		if len(indexRows) > 0 {
 			sortMetadataRows(indexRows)
 			metadataCounts["resource_attr_index_count"] = len(indexRows)
@@ -899,6 +935,8 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 			parquet.BloomFilters(
 				parquet.SplitBlockFilter(10, "series_ref"),
 				parquet.SplitBlockFilter(10, "content_hash"),
+				parquet.SplitBlockFilter(10, "attr_key"),
+				parquet.SplitBlockFilter(10, "attr_value"),
 			),
 		)
 	}
@@ -996,8 +1034,10 @@ func buildResourceTableRow(contentHash uint64, rv *ResourceVersion) metadataRow 
 
 // buildResourceAttrIndexRows builds inverted index rows for Parquet from all
 // resource versions. Each unique (key, value, seriesRef) tuple produces one row.
+// Identifying attributes are always indexed. Descriptive attributes are only
+// indexed if their key is in indexedResourceAttrs.
 // Uses a numeric hash pair for dedup instead of string keys to reduce memory.
-func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (uint64, bool)) []metadataRow {
+func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (uint64, bool), indexedResourceAttrs map[string]struct{}) []metadataRow {
 	type dedupKey struct {
 		contentHash uint64 // attrKeyValueHash(k, v)
 		seriesRef   uint64
@@ -1026,6 +1066,8 @@ func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (
 				Namespace:   NamespaceResourceAttrIndex,
 				SeriesRef:   seriesRef,
 				ContentHash: ch,
+				AttrKey:     k,
+				AttrValue:   v,
 				IdentifyingAttrs: []EntityAttributeEntry{
 					{Key: k, Value: v},
 				},
@@ -1037,6 +1079,9 @@ func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (
 				addEntry(k, v)
 			}
 			for k, v := range rv.Descriptive {
+				if _, ok := indexedResourceAttrs[k]; !ok {
+					continue
+				}
 				addEntry(k, v)
 			}
 		}
