@@ -26,7 +26,7 @@ All metadata is **versioned over time** per series. When a descriptive attribute
                     ┌─────────────────────┐
                     │   TSDB Head Block   │
                     │  (memSeries)        │
-                    │  kindMeta []entry   │
+                    │  *nativeMeta        │
                     └─────────┬───────────┘
                               │ Compaction
                               ▼
@@ -117,7 +117,7 @@ The index is **time-unaware** — it includes all labelsHashes that have *any* v
 
 ### Head Storage
 
-On `memSeries`, metadata is stored as `kindMeta []kindMetaEntry` where each entry is `{kind KindID, data any}`. Linear scan of 0-2 entries is faster than map lookup. The `kindMetaAccessor` interface (`GetKindMeta`/`SetKindMeta`) provides kind-generic access.
+On `memSeries`, OTel metadata is stored behind a `*nativeMeta` pointer (nil when native metadata is not in use, saving 24 bytes per series vs inline fields). The `nativeMeta` struct holds `stableHash uint64` (cached `labels.StableHash`, computed lazily on first metadata commit) and `kindMeta []kindMetaEntry` where each entry is `{kind KindID, data any}`. Linear scan of 0-2 entries is faster than map lookup. The `kindMetaAccessor` interface (`GetKindMeta`/`SetKindMeta`) provides kind-generic access; `SetKindMeta` lazy-allocates `nativeMeta`.
 
 The `Head` also maintains a shared `*MemSeriesMetadata` (`seriesMeta`) that is incrementally updated during `commitResources()`/`commitScopes()` and WAL replay via `updateSharedMetadata()`. This avoids an O(ALL_SERIES) scan that would otherwise be required to collect metadata across all shards. `Head.SeriesMetadata()` returns an O(1) `headMetadataReader` wrapper around this live store instead of scanning.
 
