@@ -215,6 +215,111 @@ func TestLayeredReader_LookupResourceAttrUnion(t *testing.T) {
 	require.Nil(t, result)
 }
 
+func TestSelectiveResourceAttrIndexing(t *testing.T) {
+	m := NewMemSeriesMetadata()
+
+	hash1 := uint64(100)
+	hash2 := uint64(200)
+
+	// hash1: identifying=service.name, descriptive=k8s.namespace.name + host.name
+	m.SetVersionedResource(hash1, &VersionedResource{
+		Versions: []*ResourceVersion{
+			NewResourceVersion(
+				map[string]string{"service.name": "frontend"},
+				map[string]string{"k8s.namespace.name": "prod", "host.name": "node-1"},
+				nil, 100, 200,
+			),
+		},
+	})
+	// hash2: identifying=service.name, descriptive=k8s.namespace.name + cloud.region
+	m.SetVersionedResource(hash2, &VersionedResource{
+		Versions: []*ResourceVersion{
+			NewResourceVersion(
+				map[string]string{"service.name": "backend"},
+				map[string]string{"k8s.namespace.name": "staging", "cloud.region": "us-east-1"},
+				nil, 300, 400,
+			),
+		},
+	})
+
+	t.Run("no extra indexed attrs", func(t *testing.T) {
+		// Only identifying attrs should be indexed.
+		m.SetIndexedResourceAttrs(nil)
+		m.resourceAttrIndex = nil // force rebuild
+		m.BuildResourceAttrIndex()
+
+		// Identifying attrs are always indexed.
+		result := m.LookupResourceAttr("service.name", "frontend")
+		require.NotNil(t, result)
+		require.Contains(t, result, hash1)
+
+		result = m.LookupResourceAttr("service.name", "backend")
+		require.NotNil(t, result)
+		require.Contains(t, result, hash2)
+
+		// Descriptive attrs should NOT be indexed.
+		result = m.LookupResourceAttr("k8s.namespace.name", "prod")
+		require.Nil(t, result)
+		result = m.LookupResourceAttr("host.name", "node-1")
+		require.Nil(t, result)
+		result = m.LookupResourceAttr("cloud.region", "us-east-1")
+		require.Nil(t, result)
+	})
+
+	t.Run("with extra indexed attrs", func(t *testing.T) {
+		// Index k8s.namespace.name but not host.name or cloud.region.
+		m.SetIndexedResourceAttrs(map[string]struct{}{"k8s.namespace.name": {}})
+		m.resourceAttrIndex = nil // force rebuild
+		m.BuildResourceAttrIndex()
+
+		// Identifying attrs still indexed.
+		result := m.LookupResourceAttr("service.name", "frontend")
+		require.NotNil(t, result)
+		require.Contains(t, result, hash1)
+
+		// k8s.namespace.name is now indexed.
+		result = m.LookupResourceAttr("k8s.namespace.name", "prod")
+		require.NotNil(t, result)
+		require.Contains(t, result, hash1)
+
+		result = m.LookupResourceAttr("k8s.namespace.name", "staging")
+		require.NotNil(t, result)
+		require.Contains(t, result, hash2)
+
+		// host.name and cloud.region should NOT be indexed.
+		result = m.LookupResourceAttr("host.name", "node-1")
+		require.Nil(t, result)
+		result = m.LookupResourceAttr("cloud.region", "us-east-1")
+		require.Nil(t, result)
+	})
+
+	t.Run("incremental update respects filter", func(t *testing.T) {
+		m2 := NewMemSeriesMetadata()
+		m2.SetIndexedResourceAttrs(map[string]struct{}{"k8s.namespace.name": {}})
+		m2.InitResourceAttrIndex()
+
+		hash3 := uint64(300)
+		vr := &VersionedResource{
+			Versions: []*ResourceVersion{
+				NewResourceVersion(
+					map[string]string{"service.name": "api"},
+					map[string]string{"k8s.namespace.name": "default", "host.name": "node-2"},
+					nil, 500, 600,
+				),
+			},
+		}
+		m2.SetVersionedResource(hash3, vr)
+		m2.UpdateResourceAttrIndex(hash3, nil, vr)
+
+		// Identifying and configured descriptive attrs should be indexed.
+		require.NotNil(t, m2.LookupResourceAttr("service.name", "api"))
+		require.NotNil(t, m2.LookupResourceAttr("k8s.namespace.name", "default"))
+
+		// Unconfigured descriptive attrs should NOT be indexed.
+		require.Nil(t, m2.LookupResourceAttr("host.name", "node-2"))
+	})
+}
+
 func TestLayeredReader_ScopeMerge(t *testing.T) {
 	base := NewMemSeriesMetadata()
 	top := NewMemSeriesMetadata()
