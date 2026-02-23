@@ -3285,6 +3285,10 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+  # AWS External ID used when assuming a role.
+  # Can only be used with role_arn.
+  [ external_id: <string> ]
+
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
   # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
@@ -3495,6 +3499,10 @@ sigv4:
 
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
+
+  # AWS External ID used when assuming a role.
+  # Can only be used with role_arn.
+  [ external_id: <string> ]
 
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
