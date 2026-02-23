@@ -552,7 +552,7 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 					lastRef = entry.Ref
 				}
 
-				series := &memSeries{ref: entry.Ref, lset: entry.Labels, lastTs: 0}
+				series := &memSeries{ref: entry.Ref, lset: entry.Labels}
 				series, created := db.series.GetOrSet(series.lset.Hash(), series)
 
 				if !created {
