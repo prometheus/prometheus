@@ -80,6 +80,50 @@ type UniqueAttrNameReader interface {
 	UniqueResourceAttrNames() map[string]struct{}
 }
 
+// numAttrIndexStripes is the number of shards in the inverted attribute index.
+// Must be a power of two for fast modulo via bitmask.
+const numAttrIndexStripes = 256
+
+// attrIndexStripe is a single shard of the inverted attribute index.
+type attrIndexStripe struct {
+	mtx sync.RWMutex
+	idx map[string][]uint64
+	_   [40]byte // cache-line padding to prevent false sharing
+}
+
+// shardedAttrIndex is a 256-way sharded inverted index mapping
+// "key\x00value" → sorted []uint64 of labelsHashes. Sharding by key hash
+// eliminates the single-mutex bottleneck under high ingestion concurrency.
+type shardedAttrIndex struct {
+	stripes [numAttrIndexStripes]attrIndexStripe
+}
+
+func newShardedAttrIndex() *shardedAttrIndex {
+	s := &shardedAttrIndex{}
+	for i := range s.stripes {
+		s.stripes[i].idx = make(map[string][]uint64)
+	}
+	return s
+}
+
+func (s *shardedAttrIndex) stripe(key string) *attrIndexStripe {
+	h := xxhash.Sum64String(key)
+	return &s.stripes[h&uint64(numAttrIndexStripes-1)]
+}
+
+// lookup returns the sorted labelsHashes for a given index key.
+// The returned slice must not be modified by the caller (copy-on-write).
+func (s *shardedAttrIndex) lookup(key string) []uint64 {
+	st := s.stripe(key)
+	st.mtx.RLock()
+	defer st.mtx.RUnlock()
+	v := st.idx[key]
+	if len(v) == 0 {
+		return nil
+	}
+	return v
+}
+
 // MemSeriesMetadata is an in-memory implementation of series metadata storage.
 // It wraps per-kind stores accessible both generically (via IterKind/KindLen)
 // and type-safely (via ResourceStore/ScopeStore).
@@ -87,20 +131,21 @@ type MemSeriesMetadata struct {
 	stores    map[KindID]any           // each value is *MemStore[V] for the appropriate V
 	labelsMap map[uint64]labels.Labels // labelsHash → labels.Labels
 
-	// resourceAttrIndex maps "key\x00value" → sorted []uint64 of labelsHashes.
+	// resourceAttrIndex is a 256-way sharded inverted index mapping
+	// "key\x00value" → sorted []uint64 of labelsHashes.
 	// Uses copy-on-write sorted slices for ~4x memory reduction vs maps and
 	// zero-copy reads (readers holding old slices are safe).
 	// Covers identifying attributes (always) and descriptive attributes
 	// only when the key is in indexedResourceAttrs.
 	// Built lazily via BuildResourceAttrIndex() or incrementally via
 	// UpdateResourceAttrIndex(). nil until first build or incremental init.
-	resourceAttrIndex   map[string][]uint64
-	resourceAttrIndexMu sync.RWMutex // protects resourceAttrIndex
+	resourceAttrIndex *shardedAttrIndex // nil until first build/init
 
 	// indexedResourceAttrs specifies additional descriptive resource attribute
 	// names to include in the inverted index beyond identifying attributes
 	// (which are always indexed). nil means index only identifying attributes.
-	indexedResourceAttrs map[string]struct{}
+	indexedResourceAttrs   map[string]struct{}
+	indexedResourceAttrsMu sync.RWMutex // protects indexedResourceAttrs
 
 	// uniqueAttrNames is a grow-only cache of all resource attribute names
 	// seen across all resource versions. Updated incrementally in addToAttrIndex
@@ -152,8 +197,8 @@ func (*MemSeriesMetadata) Close() error { return nil }
 // Note: changing the indexed set does NOT retroactively rebuild the index —
 // it only affects future updates. The caller should rebuild if needed.
 func (m *MemSeriesMetadata) SetIndexedResourceAttrs(attrs map[string]struct{}) {
-	m.resourceAttrIndexMu.Lock()
-	defer m.resourceAttrIndexMu.Unlock()
+	m.indexedResourceAttrsMu.Lock()
+	defer m.indexedResourceAttrsMu.Unlock()
 	m.indexedResourceAttrs = attrs
 }
 
@@ -278,14 +323,14 @@ func (m *MemSeriesMetadata) TotalScopeVersions() uint64 {
 // Skips rebuilding if the index is already populated (e.g. from Parquet or
 // incremental updates).
 func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
-	m.resourceAttrIndexMu.Lock()
-	defer m.resourceAttrIndexMu.Unlock()
 	if m.resourceAttrIndex != nil {
 		return
 	}
-	idx := make(map[string][]uint64)
+	idx := newShardedAttrIndex()
 	names := make(map[string]struct{})
+	m.indexedResourceAttrsMu.RLock()
 	extra := m.indexedResourceAttrs
+	m.indexedResourceAttrsMu.RUnlock()
 	_ = m.ResourceStore().IterVersioned(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
 		for _, rv := range vr.Versions {
 			addToAttrIndex(idx, labelsHash, rv, extra)
@@ -304,10 +349,8 @@ func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
 // incremental updates via UpdateResourceAttrIndex. This must be called
 // before any incremental updates (e.g. on head startup).
 func (m *MemSeriesMetadata) InitResourceAttrIndex() {
-	m.resourceAttrIndexMu.Lock()
-	defer m.resourceAttrIndexMu.Unlock()
 	if m.resourceAttrIndex == nil {
-		m.resourceAttrIndex = make(map[string][]uint64)
+		m.resourceAttrIndex = newShardedAttrIndex()
 	}
 }
 
@@ -319,12 +362,12 @@ func (m *MemSeriesMetadata) UpdateResourceAttrIndex(
 	old *VersionedResource,
 	cur *VersionedResource,
 ) {
-	m.resourceAttrIndexMu.Lock()
-	defer m.resourceAttrIndexMu.Unlock()
 	if m.resourceAttrIndex == nil {
 		return
 	}
+	m.indexedResourceAttrsMu.RLock()
 	extra := m.indexedResourceAttrs
+	m.indexedResourceAttrsMu.RUnlock()
 
 	// Track new attr names from the current version (grow-only).
 	if cur != nil {
@@ -357,12 +400,12 @@ func (m *MemSeriesMetadata) RemoveFromResourceAttrIndex(labelsHash uint64, vr *V
 	if vr == nil {
 		return
 	}
-	m.resourceAttrIndexMu.Lock()
-	defer m.resourceAttrIndexMu.Unlock()
 	if m.resourceAttrIndex == nil {
 		return
 	}
+	m.indexedResourceAttrsMu.RLock()
 	extra := m.indexedResourceAttrs
+	m.indexedResourceAttrsMu.RUnlock()
 	for _, rv := range vr.Versions {
 		removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv, extra)
 	}
@@ -407,53 +450,67 @@ func collectAttrNames(names map[string]struct{}, rv *ResourceVersion) {
 	}
 }
 
-// addToAttrIndex adds attribute entries for a resource version to the index.
+// addToAttrIndex adds attribute entries for a resource version to the sharded index.
 // Identifying attributes are always indexed. Descriptive attributes are only
 // indexed if their key is in extraIndexed.
 // Uses copy-on-write sorted slices so readers holding old slices are safe.
-func addToAttrIndex(idx map[string][]uint64, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
+// Each key routes to a single stripe — no two stripe locks are held simultaneously.
+func addToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
 	for k, v := range rv.Identifying {
 		key := k + "\x00" + v
-		idx[key] = sortedInsert(idx[key], labelsHash)
+		st := idx.stripe(key)
+		st.mtx.Lock()
+		st.idx[key] = sortedInsert(st.idx[key], labelsHash)
+		st.mtx.Unlock()
 	}
 	for k, v := range rv.Descriptive {
 		if _, ok := extraIndexed[k]; !ok {
 			continue
 		}
 		key := k + "\x00" + v
-		idx[key] = sortedInsert(idx[key], labelsHash)
+		st := idx.stripe(key)
+		st.mtx.Lock()
+		st.idx[key] = sortedInsert(st.idx[key], labelsHash)
+		st.mtx.Unlock()
 	}
 }
 
-// removeFromAttrIndex removes attribute entries for a resource version from the index.
+// removeFromAttrIndex removes attribute entries for a resource version from the sharded index.
 // Identifying attributes are always removed. Descriptive attributes are only
 // removed if their key is in extraIndexed.
 // Uses copy-on-write sorted slices so readers holding old slices are safe.
-func removeFromAttrIndex(idx map[string][]uint64, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
+// Each key routes to a single stripe — no two stripe locks are held simultaneously.
+func removeFromAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
 	for k, v := range rv.Identifying {
 		key := k + "\x00" + v
-		if s, ok := idx[key]; ok {
+		st := idx.stripe(key)
+		st.mtx.Lock()
+		if s, ok := st.idx[key]; ok {
 			ns := sortedRemove(s, labelsHash)
 			if len(ns) == 0 {
-				delete(idx, key)
+				delete(st.idx, key)
 			} else {
-				idx[key] = ns
+				st.idx[key] = ns
 			}
 		}
+		st.mtx.Unlock()
 	}
 	for k, v := range rv.Descriptive {
 		if _, ok := extraIndexed[k]; !ok {
 			continue
 		}
 		key := k + "\x00" + v
-		if s, ok := idx[key]; ok {
+		st := idx.stripe(key)
+		st.mtx.Lock()
+		if s, ok := st.idx[key]; ok {
 			ns := sortedRemove(s, labelsHash)
 			if len(ns) == 0 {
-				delete(idx, key)
+				delete(st.idx, key)
 			} else {
-				idx[key] = ns
+				st.idx[key] = ns
 			}
 		}
+		st.mtx.Unlock()
 	}
 }
 
@@ -463,16 +520,10 @@ func removeFromAttrIndex(idx map[string][]uint64, labelsHash uint64, rv *Resourc
 // The returned slice is safe for concurrent use — copy-on-write ensures
 // that mutations create new slices rather than modifying existing ones.
 func (m *MemSeriesMetadata) LookupResourceAttr(key, value string) []uint64 {
-	m.resourceAttrIndexMu.RLock()
-	defer m.resourceAttrIndexMu.RUnlock()
 	if m.resourceAttrIndex == nil {
 		return nil
 	}
-	s := m.resourceAttrIndex[key+"\x00"+value]
-	if len(s) == 0 {
-		return nil
-	}
-	return s
+	return m.resourceAttrIndex.lookup(key + "\x00" + value)
 }
 
 // parquetReader implements Reader by reading from a Parquet file.
@@ -580,14 +631,16 @@ func denormalizeRows(
 	// Phase 4: Process resource attribute inverted index rows.
 	// Prefer dedicated AttrKey/AttrValue columns when non-empty (new files),
 	// fall back to IdentifyingAttrs[0] for backward compatibility (old files).
-	idx := make(map[string][]uint64)
-	hasIndexRows := false
+	// Build into a local shardedAttrIndex, then assign atomically.
+	var idx *shardedAttrIndex
 	for i := range rows {
 		row := &rows[i]
 		if row.Namespace != NamespaceResourceAttrIndex {
 			continue
 		}
-		hasIndexRows = true
+		if idx == nil {
+			idx = newShardedAttrIndex()
+		}
 
 		var attrKey, attrValue string
 		if row.AttrKey != "" {
@@ -609,12 +662,13 @@ func denormalizeRows(
 			labelsHash = lh
 		}
 		key := attrKey + "\x00" + attrValue
-		idx[key] = sortedInsert(idx[key], labelsHash)
+		// Single-threaded during Parquet load — no stripe locking needed,
+		// but use stripe routing for correct placement.
+		st := idx.stripe(key)
+		st.idx[key] = sortedInsert(st.idx[key], labelsHash)
 	}
-	if hasIndexRows {
-		mem.resourceAttrIndexMu.Lock()
+	if idx != nil {
 		mem.resourceAttrIndex = idx
-		mem.resourceAttrIndexMu.Unlock()
 	}
 }
 
