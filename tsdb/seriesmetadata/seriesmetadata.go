@@ -362,14 +362,8 @@ func (m *MemSeriesMetadata) UpdateResourceAttrIndex(
 	old *VersionedResource,
 	cur *VersionedResource,
 ) {
-	if m.resourceAttrIndex == nil {
-		return
-	}
-	m.indexedResourceAttrsMu.RLock()
-	extra := m.indexedResourceAttrs
-	m.indexedResourceAttrsMu.RUnlock()
-
 	// Track new attr names from the current version (grow-only).
+	// Always runs even without inverted index — used for autocomplete.
 	if cur != nil {
 		m.uniqueAttrNamesMu.Lock()
 		if m.uniqueAttrNames == nil {
@@ -380,6 +374,13 @@ func (m *MemSeriesMetadata) UpdateResourceAttrIndex(
 		}
 		m.uniqueAttrNamesMu.Unlock()
 	}
+
+	if m.resourceAttrIndex == nil {
+		return
+	}
+	m.indexedResourceAttrsMu.RLock()
+	extra := m.indexedResourceAttrs
+	m.indexedResourceAttrsMu.RUnlock()
 
 	// Remove old entries.
 	if old != nil {
