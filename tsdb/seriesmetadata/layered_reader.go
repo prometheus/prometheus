@@ -89,25 +89,37 @@ func (r *layeredMetadataReader) IterResources(ctx context.Context, f func(labels
 }
 
 func (r *layeredMetadataReader) IterVersionedResources(ctx context.Context, f func(labelsHash uint64, resources *VersionedResource) error) error {
-	seen := make(map[uint64]struct{})
-	// Top first.
+	// Collect top (head) entries into a map to avoid O(N_head) cross-reader
+	// point lookups during base iteration.
+	topEntries := make(map[uint64]*VersionedResource)
 	if err := r.top.IterVersionedResources(ctx, func(labelsHash uint64, resources *VersionedResource) error {
-		seen[labelsHash] = struct{}{}
-		// If base also has data for this hash, merge it.
-		if baseVR, ok := r.base.GetVersionedResource(labelsHash); ok {
-			return f(labelsHash, MergeVersionedResources(baseVR, resources))
+		topEntries[labelsHash] = resources
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Iterate base. For shared hashes, merge with collected top data.
+	if err := r.base.IterVersionedResources(ctx, func(labelsHash uint64, resources *VersionedResource) error {
+		if topVR, ok := topEntries[labelsHash]; ok {
+			delete(topEntries, labelsHash) // Mark as merged.
+			return f(labelsHash, MergeVersionedResources(resources, topVR))
 		}
 		return f(labelsHash, resources)
 	}); err != nil {
 		return err
 	}
-	// Base — skip anything already seen.
-	return r.base.IterVersionedResources(ctx, func(labelsHash uint64, resources *VersionedResource) error {
-		if _, ok := seen[labelsHash]; ok {
-			return nil
+
+	// Emit remaining top-only entries.
+	for labelsHash, resources := range topEntries {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		return f(labelsHash, resources)
-	})
+		if err := f(labelsHash, resources); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *layeredMetadataReader) TotalResources() uint64 {
@@ -137,22 +149,33 @@ func (r *layeredMetadataReader) GetVersionedScope(labelsHash uint64) (*Versioned
 }
 
 func (r *layeredMetadataReader) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
-	seen := make(map[uint64]struct{})
+	topEntries := make(map[uint64]*VersionedScope)
 	if err := r.top.IterVersionedScopes(ctx, func(labelsHash uint64, scopes *VersionedScope) error {
-		seen[labelsHash] = struct{}{}
-		if baseVS, ok := r.base.GetVersionedScope(labelsHash); ok {
-			return f(labelsHash, MergeVersionedScopes(baseVS, scopes))
+		topEntries[labelsHash] = scopes
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := r.base.IterVersionedScopes(ctx, func(labelsHash uint64, scopes *VersionedScope) error {
+		if topVS, ok := topEntries[labelsHash]; ok {
+			delete(topEntries, labelsHash)
+			return f(labelsHash, MergeVersionedScopes(scopes, topVS))
 		}
 		return f(labelsHash, scopes)
 	}); err != nil {
 		return err
 	}
-	return r.base.IterVersionedScopes(ctx, func(labelsHash uint64, scopes *VersionedScope) error {
-		if _, ok := seen[labelsHash]; ok {
-			return nil
+
+	for labelsHash, scopes := range topEntries {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		return f(labelsHash, scopes)
-	})
+		if err := f(labelsHash, scopes); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *layeredMetadataReader) TotalScopes() uint64 {
