@@ -15,7 +15,6 @@ package seriesmetadata
 
 import (
 	"math"
-	"sort"
 )
 
 // VersionConstraint defines the time-range interface that all version types must satisfy.
@@ -97,7 +96,8 @@ func (vr *Versioned[V]) Len() int {
 }
 
 // MergeVersioned merges two Versioned instances for the same series.
-// Combines all versions, sorts by MinTime, and merges adjacent identical versions.
+// Both inputs must be sorted by MinTime (the invariant maintained by all stores).
+// Uses a two-pointer merge to avoid an extra allocation + sort.
 func MergeVersioned[V VersionConstraint](ops KindOps[V], a, b *Versioned[V]) *Versioned[V] {
 	if a == nil {
 		return b.Copy(ops)
@@ -106,32 +106,40 @@ func MergeVersioned[V VersionConstraint](ops KindOps[V], a, b *Versioned[V]) *Ve
 		return a.Copy(ops)
 	}
 
-	all := make([]V, 0, len(a.Versions)+len(b.Versions))
-	all = append(all, a.Versions...)
-	all = append(all, b.Versions...)
+	merged := make([]V, 0, len(a.Versions)+len(b.Versions))
 
-	sort.Slice(all, func(i, j int) bool {
-		return all[i].GetMinTime() < all[j].GetMinTime()
-	})
-
-	merged := make([]V, 0, len(all))
-	for _, ver := range all {
-		if len(merged) == 0 {
-			merged = append(merged, ops.Copy(ver))
-			continue
+	// Two-pointer merge (both slices are sorted by MinTime).
+	i, j := 0, 0
+	for i < len(a.Versions) || j < len(b.Versions) {
+		var ver V
+		switch {
+		case i >= len(a.Versions):
+			ver = b.Versions[j]
+			j++
+		case j >= len(b.Versions):
+			ver = a.Versions[i]
+			i++
+		case a.Versions[i].GetMinTime() <= b.Versions[j].GetMinTime():
+			ver = a.Versions[i]
+			i++
+		default:
+			ver = b.Versions[j]
+			j++
 		}
 
-		last := merged[len(merged)-1]
-		if ops.Equal(last, ver) && (last.GetMaxTime() == math.MaxInt64 || ver.GetMinTime() <= last.GetMaxTime()+1) {
-			if ver.GetMaxTime() > last.GetMaxTime() {
-				last.SetMaxTime(ver.GetMaxTime())
+		if len(merged) > 0 {
+			last := merged[len(merged)-1]
+			if ops.Equal(last, ver) && (last.GetMaxTime() == math.MaxInt64 || ver.GetMinTime() <= last.GetMaxTime()+1) {
+				if ver.GetMaxTime() > last.GetMaxTime() {
+					last.SetMaxTime(ver.GetMaxTime())
+				}
+				if ver.GetMinTime() < last.GetMinTime() {
+					last.SetMinTime(ver.GetMinTime())
+				}
+				continue
 			}
-			if ver.GetMinTime() < last.GetMinTime() {
-				last.SetMinTime(ver.GetMinTime())
-			}
-		} else {
-			merged = append(merged, ops.Copy(ver))
 		}
+		merged = append(merged, ops.Copy(ver))
 	}
 
 	return &Versioned[V]{Versions: merged}
