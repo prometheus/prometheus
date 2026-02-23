@@ -17,6 +17,7 @@ import (
 	"cmp"
 	"context"
 	"log/slog"
+	"maps"
 	"slices"
 
 	"github.com/cespare/xxhash/v2"
@@ -111,36 +112,36 @@ type ScopeCommitData struct {
 }
 
 func (*scopeKindDescriptor) CommitToSeries(series, walRecord any) {
-	accessor := series.(kindMetaAccessor)
-	scd := walRecord.(ScopeCommitData)
-
-	sv := NewScopeVersion(scd.Name, scd.Version, scd.SchemaURL, scd.Attrs, scd.MinTime, scd.MaxTime)
-
-	existing, _ := accessor.GetKindMeta(KindScope)
-	if existing == nil {
-		accessor.SetKindMeta(KindScope, &Versioned[*ScopeVersion]{
-			Versions: []*ScopeVersion{CopyScopeVersion(sv)},
-		})
-	} else {
-		vs := existing.(*Versioned[*ScopeVersion])
-		vs.AddOrExtend(ScopeOps, sv)
-	}
+	CommitScopeDirect(series.(kindMetaAccessor), walRecord.(ScopeCommitData))
 }
 
-// CommitScopeDirect is the hot-path equivalent of CommitToSeries for
-// scopes, avoiding interface{} boxing of ScopeCommitData.
-// Called directly from headAppenderBase.commitScopes.
+// CommitScopeDirect is the hot-path commit for scopes.
+// It constructs the ScopeVersion with exactly one deep copy of the attrs map
+// and takes ownership — no further copies via AddOrExtend or CopyScopeVersion.
+// Called directly from headAppenderBase.commitScopes and from
+// CommitToSeries (cold path, WAL replay).
 func CommitScopeDirect(accessor kindMetaAccessor, scd ScopeCommitData) {
-	sv := NewScopeVersion(scd.Name, scd.Version, scd.SchemaURL, scd.Attrs, scd.MinTime, scd.MaxTime)
+	sv := &ScopeVersion{
+		Name:      scd.Name,
+		Version:   scd.Version,
+		SchemaURL: scd.SchemaURL,
+		Attrs:     maps.Clone(scd.Attrs),
+		MinTime:   scd.MinTime,
+		MaxTime:   scd.MaxTime,
+	}
 
 	existing, _ := accessor.GetKindMeta(KindScope)
 	if existing == nil {
 		accessor.SetKindMeta(KindScope, &Versioned[*ScopeVersion]{
-			Versions: []*ScopeVersion{CopyScopeVersion(sv)},
+			Versions: []*ScopeVersion{sv},
 		})
 	} else {
 		vs := existing.(*Versioned[*ScopeVersion])
-		vs.AddOrExtend(ScopeOps, sv)
+		if len(vs.Versions) > 0 && ScopeOps.Equal(vs.Versions[len(vs.Versions)-1], sv) {
+			vs.Versions[len(vs.Versions)-1].UpdateTimeRange(sv.MinTime, sv.MaxTime)
+		} else {
+			vs.Versions = append(vs.Versions, sv)
+		}
 	}
 }
 
