@@ -58,9 +58,8 @@ const (
 // appropriate subsets of its functionality.
 type Manager struct {
 	// The OTLP query log exporter writes its own logs to the slog stream.
-	logger       *slog.Logger
-	done         chan struct{}
-	shutdownFunc func() error
+	logger *slog.Logger
+	done   chan struct{}
 
 	// Copy of the last-applied configuration for the logging provider.
 	config config.LoggingConfig
@@ -90,6 +89,7 @@ func NewManager(logger *slog.Logger) *Manager {
 
 // Run starts the logging manager. Closes the done channel on return.
 func (m *Manager) Run() {
+	m.otelLogMgr.Start()
 	m.isRunning = true
 	m.logger.Debug("Logging manager started")
 	<-m.done
@@ -127,12 +127,7 @@ func (m *Manager) Stop() {
 
 	defer close(m.done)
 
-	if m.shutdownFunc != nil {
-		if err := m.shutdownFunc(); err != nil {
-			m.logger.Error("failed to shut down the opentelemetry logging provider", "err", err)
-		}
-	}
-
+	m.otelLogMgr.Stop()
 	m.isRunning = false
 	m.logger.Info("OpenTelemetry logging manager stopped")
 }

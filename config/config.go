@@ -1244,28 +1244,39 @@ func (t *LoggingConfig) UnmarshalYAML(unmarshal func(any) error) error {
 // logs.
 //
 // If logging_config.otel_logging.enabled is true, the OpenTelemetry logging configuration
-// will be used to attempt to export logs of the included categories. Prometheus will attempt
-// to construct an OpenTelemetry log provider and export any logs included by logging_config.include
-// to the configured endpoint.
+// will be used to attempt to export logs of the included categories.
 //
-// An exporter configuration may be provided explicitly for the OTLP HTTP or gRPC exporters,
-// but if not, the configuration will be inferred from the environment using
-// the OpenTelemetry Go SDK's exporter configuration variables:
-//   - https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/#otlp-exporter
+// An ClientType must be explicitly set for the OpenTelemetry logging exporter to be enabled.
+// Prometheus does not support selecting the exporter to use with the `OTEL_LOGS_EXPORTER`
+// environment variable. Some other settings may be configured using environment variables where
+// supported by the underlying Go OpenTelmetry SDK;
+// see https://github.com/open-telemetry/opentelemetry-specification/blob/main/spec-compliance-matrix.md#environment-variables,
+// https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
+// and https://opentelemetry.io/docs/specs/otel/protocol/exporter/ . Because unsupported env-vars
+// are silently ignored, explicit configuration in the Prometheus config file should be preferred
+// where the necessary features are exposed.
 //
 // # See also TracingConfig
 //
 // TODO: check whether the otlp batch processor can be configured in env-vars, and add batching
 // here if it cannot.
 type OTELLoggingConfig struct {
-	Enabled     bool              `yaml:"enabled,omitempty"`
-	ClientType  OTELClientType    `yaml:"client_type,omitempty"`
-	Endpoint    string            `yaml:"endpoint,omitempty"`
-	Insecure    *bool             `yaml:"insecure,omitempty"`
-	TLSConfig   config.TLSConfig  `yaml:"tls_config,omitempty"`
-	Headers     map[string]string `yaml:"headers,omitempty"`
-	Compression *string           `yaml:"compression,omitempty"`
-	Timeout     *model.Duration   `yaml:"timeout,omitempty"`
+	// OTLP client type to use for exporting logs. Supported values: "http" or "grpc".
+	ClientType OTELClientType `yaml:"client_type,omitempty"`
+	// OTLP endpoint URI
+	Endpoint string `yaml:"endpoint,omitempty"`
+	// Disable TLS
+	Insecure *bool `yaml:"insecure,omitempty"`
+	// TLS certificate and key configuration
+	TLSConfig config.TLSConfig `yaml:"tls_config,omitempty"`
+	// Headers to send with each request to the OTLP endpoint. Can be used for bearer authentication.
+	Headers map[string]string `yaml:"headers,omitempty"`
+	// Compression type for the OTLP exporter. Currently, only "gzip" is supported.
+	Compression *string `yaml:"compression,omitempty"`
+	// Optional timeout for OTLP export requests.
+	Timeout *model.Duration `yaml:"timeout,omitempty"`
+	// Resource attributes to attach to exported logs. This can be used to set the service name and other resource attributes for logs exported by Prometheus. Resource attributes configured here take precedence over those set with the OTEL_RESOURCE_ATTRIBUTES environment variable.
+	ResourceAttributes map[string]string `yaml:"resource_attributes,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

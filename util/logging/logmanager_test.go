@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/neilotoole/slogt"
 	"github.com/prometheus/prometheus/config"
 	"github.com/stretchr/testify/require"
 
@@ -45,7 +46,7 @@ func TestUnconfiguredLogManager(t *testing.T) {
 
 	cfg := ConfigForTest(nil)
 
-	manager := NewManager(slog.New(slog.DiscardHandler))
+	manager := NewManager(slogt.New(t))
 	go manager.Run()
 	manager.ApplyConfig(&cfg)
 
@@ -67,7 +68,7 @@ func TestLogManagerQueryFileLogging(t *testing.T) {
 
 	const testLogMsg = "test query log message"
 
-	manager := NewManager(slog.New(slog.DiscardHandler))
+	manager := NewManager(slogt.New(t))
 	go manager.Run()
 	manager.ApplyConfig(&cfg)
 
@@ -112,7 +113,7 @@ func TestLogManagerScrapeFileLogging(t *testing.T) {
 
 	const testLogMsg = "test scrape log message"
 
-	manager := NewManager(slog.New(slog.DiscardHandler))
+	manager := NewManager(slogt.New(t))
 	go manager.Run()
 	manager.ApplyConfig(&cfg)
 
@@ -146,7 +147,7 @@ func TestLogFileRotation(t *testing.T) {
 	const testLogMsg4 = "test query log message after new logger"
 	const testLogMsg5 = "test query log after logfile set to empty"
 
-	manager := NewManager(slog.New(slog.DiscardHandler))
+	manager := NewManager(slogt.New(t))
 	go manager.Run()
 	td := t.TempDir()
 	qlf := path.Join(td, "test_query.log")
@@ -242,7 +243,7 @@ func TestLogFileRotationInplace(t *testing.T) {
 	const testLogMsg2 = "test query log message after rotation before new logger"
 	const testLogMsg3 = "test query log message after new logger"
 
-	manager := NewManager(slog.New(slog.DiscardHandler))
+	manager := NewManager(slogt.New(t))
 	go manager.Run()
 	manager.ApplyConfig(&cfg)
 
@@ -298,80 +299,26 @@ func TestLogFileRotationInplace(t *testing.T) {
 	require.NotContains(t, logContent2, testLogMsg2, "expected second log file to not contain second log message")
 }
 
-// Use the console (stdout) otel exporter
-func TestOtelStdoutQueryLog(t *testing.T) {
-	cfg := ConfigForTest(&config.LoggingConfig{
-		Include: []string{"query"},
-		OTELLoggingConfig: config.OTELLoggingConfig{
-			Enabled: true,
-		},
-	})
-	t.Setenv("OTEL_LOG_EXPORTER", "console")
-	t.Setenv("OTEL_LOG_LEVEL", "info")
-	const testLogMsg = "test otel stdout log message"
-
-	manager := NewManager(slog.New(slog.DiscardHandler))
-	go manager.Run()
-	manager.ApplyConfig(&cfg)
-
-	require.Equal(t, queryLoggerName, "query")
-	require.True(t, manager.isIncluded(queryLoggerName), "expected query logger to be included based on config; active config is %#v", manager.config)
-
-	otelLogger := manager.NewQueryLogger()
-	require.NotNil(t, otelLogger, "expected non-nil logger")
-	require.True(t, otelLogger.Enabled(context.Background(), slog.LevelInfo), "expected otel stdout logger to be enabled")
-
-	logctx := context.Background()
-	pc, _, _, _ := runtime.Caller(0)
-	err := otelLogger.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg, pc))
-	require.NoError(t, err, "unexpected error writing log record to otel stdout logger")
-}
-
-//
-
-// OTLP is enabled, but the exporter is set to "none"
-func TestOtelNoneQueryLog(t *testing.T) {
-	cfg := ConfigForTest(&config.LoggingConfig{
-		Include: []string{"query"},
-		OTELLoggingConfig: config.OTELLoggingConfig{
-			Enabled: true,
-		},
-	})
-	t.Setenv("OTEL_LOG_EXPORTER", "none")
-	t.Setenv("OTEL_LOG_LEVEL", "info")
-	const testLogMsg = "test otel stdout log message"
-
-	manager := NewManager(slog.New(slog.DiscardHandler))
-	go manager.Run()
-	manager.ApplyConfig(&cfg)
-
-	require.Equal(t, queryLoggerName, "query")
-	require.True(t, manager.isIncluded(queryLoggerName), "expected query logger to be included based on config; active config is %#v", manager.config)
-
-	otelLogger := manager.NewQueryLogger()
-	require.NotNil(t, otelLogger, "expected non-nil logger")
-	require.True(t, otelLogger.Enabled(context.Background(), slog.LevelInfo), "expected otel stdout logger to be enabled")
-
-	logctx := context.Background()
-	pc, _, _, _ := runtime.Caller(0)
-	err := otelLogger.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg, pc))
-	require.NoError(t, err, "unexpected error writing log record to otel stdout logger")
-}
-
-//
-
+// TODO test with env-var settings too
 func TestOtelOTLPQueryLog(t *testing.T) {
 	cfg := ConfigForTest(&config.LoggingConfig{
 		Include: []string{"query"},
 		OTELLoggingConfig: config.OTELLoggingConfig{
-			Enabled: true,
+			ClientType: config.OTELClientGRPC,
+			Endpoint:   "localhost:4317",
+			Insecure:   &[]bool{true}[0],
+			ResourceAttributes: map[string]string{
+				// Show that the hardcoded service can be overridden
+				"service.name": "prometheus2",
+				// and that custom attributes are added
+				"service.instance.id": "instance123",
+				"is-test":             "true",
+			},
 		},
 	})
-	t.Setenv("OTEL_LOG_EXPORTER", "otlpgrpc")
-	t.Setenv("OTEL_LOG_LEVEL", "info")
 	const testLogMsg = "test otel stdout log message"
 
-	manager := NewManager(slog.New(slog.DiscardHandler))
+	manager := NewManager(slogt.New(t))
 	go manager.Run()
 	manager.ApplyConfig(&cfg)
 
@@ -386,6 +333,37 @@ func TestOtelOTLPQueryLog(t *testing.T) {
 	pc, _, _, _ := runtime.Caller(0)
 	err := otelLogger.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg, pc))
 	require.NoError(t, err, "unexpected error writing log record to otel stdout logger")
+
+	// TODO add a listening otel collector, but this might need to be a separate integration test
+	// so it doesn't fill go.mod with testing dependencies and a full otel collector.
+	// For now a simple opentelemetry collector may be run to receive the logs, e.g. this
+	// config.yaml:
+	/*
+		receivers:
+			otlp:
+				protocols:
+					grpc:
+						endpoint: "localhost:4317"
+					http:
+						endpoint: "localhost:4318"
+
+			exporters:
+				debug:
+					verbosity: detailed
+					use_internal_logger: false
+					output_paths: stdout
+			service:
+				pipelines:
+					logs:
+						receivers: [otlp]
+						processors: []
+						exporters: [debug]
+				telemetry:
+					logs:
+						level: WARN
+	*/
+	// and run with "otelcol --config config.yaml"
+	manager.Stop()
 }
 
 func TestCombinedFileAndOTLPQueryLog(t *testing.T) {

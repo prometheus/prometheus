@@ -18,6 +18,10 @@ import (
 	"log/slog"
 )
 
+// Use this instance of noopSlogHandler everywhere, to avoid duplicates and
+// so that pointer-equality comparisions can be made for it.
+var noopHandler = noopSlogHandler{}
+
 /*
  * Noop slog.Handler. Surprisingly, slog doesn't provide this for itself.
  */

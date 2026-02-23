@@ -31,11 +31,14 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/go-logr/logr"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/tracing"
 	otelslog "go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	otel_log_api "go.opentelemetry.io/otel/log"
@@ -61,6 +64,7 @@ func NewOTELLogManager(logger *slog.Logger) otelLogManager {
 func (m *otelLogManager) Start() {
 	// FIXME: need to set an otel error handler, but it's currently only done within the tracing
 	// stack. Factor it out to a common handler.
+	otel.SetLogger(logr.FromSlogHandler(m.logger.Handler()))
 }
 
 func (m *otelLogManager) Stop() error {
@@ -137,16 +141,18 @@ func (m *otelLogManager) ApplyConfig(cfg config.OTELLoggingConfig) error {
 	//
 	// TODO add similar support for the tracing provider.
 	//
-	if !cfg.Enabled {
+	if cfg.ClientType == "" {
+		if cfg.Endpoint != "" {
+			m.logger.Warn("otel logging endpoint is set but client type is not specified, ignoring the endpoint and any related configuration")
+		}
 		m.config = cfg
 		m.shutdownFunc = nil
 		m.loggerProvider = nil
-		// TODO actually unregister it and detach the loggers
 		m.logger.Info("OpenTelemetry logging provider uninstalled.")
 		return nil
 	}
 
-	lp, shutdownFunc, err := buildOtelLoggingProvider(context.Background(), cfg)
+	lp, shutdownFunc, err := buildOtelLoggingProvider(context.Background(), m.logger, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to install a new opentelemetry logging provider: %w", err)
 	}
@@ -172,7 +178,7 @@ func (m *otelLogManager) ApplyConfig(cfg config.OTELLoggingConfig) error {
 
 // buildLoggingProvider return a new opentelemetry logging provider ready for installation, together
 // with a shutdown function.
-func buildOtelLoggingProvider(ctx context.Context, otelLoggingCfg config.OTELLoggingConfig) (otel_log_api.LoggerProvider, func() error, error) {
+func buildOtelLoggingProvider(ctx context.Context, logger *slog.Logger, otelLoggingCfg config.OTELLoggingConfig) (otel_log_api.LoggerProvider, func() error, error) {
 
 	// Create a resource describing the service and the runtime.
 	// TODO unify this with the tracing provider
@@ -190,6 +196,19 @@ func buildOtelLoggingProvider(ctx context.Context, otelLoggingCfg config.OTELLog
 		resource.WithTelemetrySDK(),
 		resource.WithFromEnv(),
 	)
+	// Add resource attributes from the config, which may include things like service.instance.id that are useful for distinguishing between different instances in the same environment.
+	for k, v := range otelLoggingCfg.ResourceAttributes {
+		res, err = resource.Merge(res, resource.NewWithAttributes(semconv.SchemaURL,
+			attribute.KeyValue{
+				Key:   attribute.Key(k),
+				Value: attribute.StringValue(v),
+			},
+		))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to add resource attribute %s=%s: %w", k, v, err)
+		}
+	}
+
 	if err != nil {
 		return nil, nil, err
 	}
@@ -218,6 +237,8 @@ func buildOtelLoggingProvider(ctx context.Context, otelLoggingCfg config.OTELLog
 	}
 
 	lp := otel_log_sdk.NewLoggerProvider(providerOpts...)
+
+	logger.Debug("created otel provider", "provider", lp)
 
 	return lp, func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
