@@ -47,6 +47,18 @@ type WriterOptions struct {
 	// directly as SeriesRef (backward compat for head/test writes without
 	// a block index).
 	RefResolver func(labelsHash uint64) (seriesRef uint64, ok bool)
+
+	// WriteStats is populated after a successful write with namespace row
+	// counts from the written Parquet file. This allows the caller to
+	// capture stats (e.g. for BlockMeta) without parsing the footer.
+	WriteStats *WriteStats
+}
+
+// WriteStats contains post-write statistics about the Parquet file.
+type WriteStats struct {
+	// NamespaceRowCounts maps namespace footer keys (e.g. "resource_table_count")
+	// to their row counts.
+	NamespaceRowCounts map[string]int
 }
 
 // writeNamespaceRows writes rows in chunks of maxPerGroup, calling Flush after
