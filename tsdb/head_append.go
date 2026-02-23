@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"time"
 
@@ -1838,6 +1839,7 @@ func (a *headAppenderBase) commitResources(b *appendBatch) {
 			MaxTime:     r.MaxTime,
 		})
 		a.head.updateSharedResourceMetadata(s)
+		a.head.internSeriesResource(s)
 		s.Unlock()
 	}
 }
@@ -1869,8 +1871,102 @@ func (a *headAppenderBase) commitScopes(b *appendBatch) {
 			MaxTime:   sc.MaxTime,
 		})
 		a.head.updateSharedScopeMetadata(s)
+		a.head.internSeriesScope(s)
 		s.Unlock()
 	}
+}
+
+// resourceContentUnchanged checks whether the incoming WAL resource record
+// has the same content as the current stored ResourceVersion, ignoring time range.
+func resourceContentUnchanged(cur *seriesmetadata.ResourceVersion, r record.RefResource) bool {
+	if !maps.Equal(cur.Identifying, r.Identifying) ||
+		!maps.Equal(cur.Descriptive, r.Descriptive) ||
+		len(cur.Entities) != len(r.Entities) {
+		return false
+	}
+	// Stored entities are sorted by Type; incoming may not be — pairwise match.
+	for _, ce := range cur.Entities {
+		found := false
+		for _, ie := range r.Entities {
+			if ce.Type == ie.Type && maps.Equal(ce.ID, ie.ID) && maps.Equal(ce.Description, ie.Description) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// scopeContentUnchanged checks whether the incoming WAL scope record
+// has the same content as the current stored ScopeVersion, ignoring time range.
+func scopeContentUnchanged(cur *seriesmetadata.ScopeVersion, sc record.RefScope) bool {
+	return cur.Name == sc.Name && cur.Version == sc.Version &&
+		cur.SchemaURL == sc.SchemaURL && maps.Equal(cur.Attrs, sc.Attrs)
+}
+
+// filterUnchangedResources removes entries from b.resources where the content
+// is identical to what's already stored on the series. For unchanged entries,
+// the time range is extended in-place and the shared metadata store is updated.
+// Returns the number of entries filtered out.
+func (a *headAppenderBase) filterUnchangedResources(b *appendBatch) int {
+	n := 0
+	for i, r := range b.resources {
+		s := b.resourceSeries[i]
+		s.Lock()
+		changed := true
+		if vr, ok := seriesmetadata.CollectResourceDirect(s); ok && len(vr.Versions) > 0 {
+			cur := vr.Versions[len(vr.Versions)-1]
+			if resourceContentUnchanged(cur, r) {
+				cur.UpdateTimeRange(r.MinTime, r.MaxTime)
+				a.head.updateSharedResourceMetadata(s)
+				changed = false
+			}
+		}
+		s.Unlock()
+		if changed {
+			b.resources[n] = b.resources[i]
+			b.resourceSeries[n] = b.resourceSeries[i]
+			n++
+		}
+	}
+	filtered := len(b.resources) - n
+	b.resources = b.resources[:n]
+	b.resourceSeries = b.resourceSeries[:n]
+	return filtered
+}
+
+// filterUnchangedScopes removes entries from b.scopes where the content
+// is identical to what's already stored on the series. For unchanged entries,
+// the time range is extended in-place and the shared metadata store is updated.
+// Returns the number of entries filtered out.
+func (a *headAppenderBase) filterUnchangedScopes(b *appendBatch) int {
+	n := 0
+	for i, sc := range b.scopes {
+		s := b.scopeSeries[i]
+		s.Lock()
+		changed := true
+		if vs, ok := seriesmetadata.CollectScopeDirect(s); ok && len(vs.Versions) > 0 {
+			cur := vs.Versions[len(vs.Versions)-1]
+			if scopeContentUnchanged(cur, sc) {
+				cur.UpdateTimeRange(sc.MinTime, sc.MaxTime)
+				a.head.updateSharedScopeMetadata(s)
+				changed = false
+			}
+		}
+		s.Unlock()
+		if changed {
+			b.scopes[n] = b.scopes[i]
+			b.scopeSeries[n] = b.scopeSeries[i]
+			n++
+		}
+	}
+	filtered := len(b.scopes) - n
+	b.scopes = b.scopes[:n]
+	b.scopeSeries = b.scopeSeries[:n]
+	return filtered
 }
 
 func (a *headAppenderBase) unmarkCreatedSeriesAsPendingCommit() {
@@ -1903,6 +1999,18 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.closed = true
 	}()
 
+	// Count total resource/scope updates before filtering, then filter
+	// unchanged entries to avoid unnecessary WAL writes. Unchanged entries
+	// have their time range extended in-place under the series lock.
+	var resourcesTotal, scopesTotal int
+	var resourcesFiltered, scopesFiltered int
+	for _, b := range a.batches {
+		resourcesTotal += len(b.resources)
+		scopesTotal += len(b.scopes)
+		resourcesFiltered += a.filterUnchangedResources(b)
+		scopesFiltered += a.filterUnchangedScopes(b)
+	}
+
 	if err := a.log(); err != nil {
 		_ = a.Rollback() // Most likely the same error will happen again.
 		return fmt.Errorf("write to WAL: %w", err)
@@ -1925,12 +2033,9 @@ func (a *headAppenderBase) Commit() (err error) {
 		},
 	}
 
-	var resourcesCommitted, scopesCommitted int
 	for _, b := range a.batches {
 		acc.floatsAppended += len(b.floats)
 		acc.histogramsAppended += len(b.histograms) + len(b.floatHistograms)
-		resourcesCommitted += len(b.resources)
-		scopesCommitted += len(b.scopes)
 		a.commitExemplars(b)
 		defer b.close(h)
 	}
@@ -1965,8 +2070,10 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
-	h.metrics.resourceUpdatesCommitted.Add(float64(resourcesCommitted))
-	h.metrics.scopeUpdatesCommitted.Add(float64(scopesCommitted))
+	h.metrics.resourceUpdatesCommitted.Add(float64(resourcesTotal))
+	h.metrics.scopeUpdatesCommitted.Add(float64(scopesTotal))
+	h.metrics.resourceUpdatesWALFiltered.Add(float64(resourcesFiltered))
+	h.metrics.scopeUpdatesWALFiltered.Add(float64(scopesFiltered))
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
 	h.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
 

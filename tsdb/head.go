@@ -433,38 +433,40 @@ func (h *Head) resetWLReplayResources() {
 }
 
 type headMetrics struct {
-	activeAppenders           prometheus.Gauge
-	series                    prometheus.GaugeFunc
-	staleSeries               prometheus.GaugeFunc
-	seriesCreated             prometheus.Counter
-	seriesRemoved             prometheus.Counter
-	seriesNotFound            prometheus.Counter
-	chunks                    prometheus.Gauge
-	chunksCreated             prometheus.Counter
-	chunksRemoved             prometheus.Counter
-	gcDuration                prometheus.Summary
-	samplesAppended           *prometheus.CounterVec
-	outOfOrderSamplesAppended *prometheus.CounterVec
-	outOfBoundSamples         *prometheus.CounterVec
-	outOfOrderSamples         *prometheus.CounterVec
-	tooOldSamples             *prometheus.CounterVec
-	walTruncateDuration       prometheus.Summary
-	walCorruptionsTotal       prometheus.Counter
-	dataTotalReplayDuration   prometheus.Gauge
-	headTruncateFail          prometheus.Counter
-	headTruncateTotal         prometheus.Counter
-	checkpointDeleteFail      prometheus.Counter
-	checkpointDeleteTotal     prometheus.Counter
-	checkpointCreationFail    prometheus.Counter
-	checkpointCreationTotal   prometheus.Counter
-	mmapChunkCorruptionTotal  prometheus.Counter
-	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
-	oooHistogram              prometheus.Histogram
-	mmapChunksTotal           prometheus.Counter
-	resourceUpdatesCommitted  prometheus.Counter
-	scopeUpdatesCommitted     prometheus.Counter
-	walReplayUnknownRefsTotal *prometheus.CounterVec
-	wblReplayUnknownRefsTotal *prometheus.CounterVec
+	activeAppenders            prometheus.Gauge
+	series                     prometheus.GaugeFunc
+	staleSeries                prometheus.GaugeFunc
+	seriesCreated              prometheus.Counter
+	seriesRemoved              prometheus.Counter
+	seriesNotFound             prometheus.Counter
+	chunks                     prometheus.Gauge
+	chunksCreated              prometheus.Counter
+	chunksRemoved              prometheus.Counter
+	gcDuration                 prometheus.Summary
+	samplesAppended            *prometheus.CounterVec
+	outOfOrderSamplesAppended  *prometheus.CounterVec
+	outOfBoundSamples          *prometheus.CounterVec
+	outOfOrderSamples          *prometheus.CounterVec
+	tooOldSamples              *prometheus.CounterVec
+	walTruncateDuration        prometheus.Summary
+	walCorruptionsTotal        prometheus.Counter
+	dataTotalReplayDuration    prometheus.Gauge
+	headTruncateFail           prometheus.Counter
+	headTruncateTotal          prometheus.Counter
+	checkpointDeleteFail       prometheus.Counter
+	checkpointDeleteTotal      prometheus.Counter
+	checkpointCreationFail     prometheus.Counter
+	checkpointCreationTotal    prometheus.Counter
+	mmapChunkCorruptionTotal   prometheus.Counter
+	snapshotReplayErrorTotal   prometheus.Counter // Will be either 0 or 1.
+	oooHistogram               prometheus.Histogram
+	mmapChunksTotal            prometheus.Counter
+	resourceUpdatesCommitted   prometheus.Counter
+	scopeUpdatesCommitted      prometheus.Counter
+	resourceUpdatesWALFiltered prometheus.Counter
+	scopeUpdatesWALFiltered    prometheus.Counter
+	walReplayUnknownRefsTotal  *prometheus.CounterVec
+	wblReplayUnknownRefsTotal  *prometheus.CounterVec
 }
 
 const (
@@ -610,6 +612,14 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_head_scope_updates_committed_total",
 			Help: "Total number of scope updates committed to the head block.",
 		}),
+		resourceUpdatesWALFiltered: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_resource_updates_wal_filtered_total",
+			Help: "Total number of resource attribute updates skipped from WAL write due to unchanged content.",
+		}),
+		scopeUpdatesWALFiltered: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_scope_updates_wal_filtered_total",
+			Help: "Total number of scope updates skipped from WAL write due to unchanged content.",
+		}),
 		walReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WAL replay.",
@@ -650,6 +660,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.mmapChunksTotal,
 			m.resourceUpdatesCommitted,
 			m.scopeUpdatesCommitted,
+			m.resourceUpdatesWALFiltered,
+			m.scopeUpdatesWALFiltered,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
 			// Metrics bound to functions and not needed in tests
@@ -1907,6 +1919,36 @@ func (h *Head) updateSharedScopeMetadata(s *memSeries) {
 	hashShard.Unlock()
 
 	h.seriesMeta.ScopeStore().SetVersioned(hash, vs)
+}
+
+// internSeriesResource replaces the deep-copied maps/slices on the latest per-series
+// ResourceVersion with thin copies sharing canonical pointers from the MemStore
+// content table. This deduplicates memory when many series share the same resource.
+func (h *Head) internSeriesResource(s *memSeries) {
+	if h.seriesMeta == nil {
+		return
+	}
+	vr, ok := seriesmetadata.CollectResourceDirect(s)
+	if !ok || len(vr.Versions) == 0 {
+		return
+	}
+	last := len(vr.Versions) - 1
+	vr.Versions[last] = h.seriesMeta.ResourceStore().InternVersion(vr.Versions[last])
+}
+
+// internSeriesScope replaces the deep-copied maps/slices on the latest per-series
+// ScopeVersion with thin copies sharing canonical pointers from the MemStore
+// content table.
+func (h *Head) internSeriesScope(s *memSeries) {
+	if h.seriesMeta == nil {
+		return
+	}
+	vs, ok := seriesmetadata.CollectScopeDirect(s)
+	if !ok || len(vs.Versions) == 0 {
+		return
+	}
+	last := len(vs.Versions) - 1
+	vs.Versions[last] = h.seriesMeta.ScopeStore().InternVersion(vs.Versions[last])
 }
 
 // cleanupSharedMetadata removes metadata for deleted series from the shared store.

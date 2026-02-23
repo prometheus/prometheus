@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/parquet-go/parquet-go"
@@ -834,7 +835,7 @@ func TestWriteFileWithOptions_RoundTrip(t *testing.T) {
 
 	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{
 		MaxRowsPerRowGroup: 2,
-		BloomFilterFormat: BloomFilterParquetNative,
+		BloomFilterFormat:  BloomFilterParquetNative,
 	})
 	require.NoError(t, err)
 
@@ -1157,4 +1158,152 @@ func TestBuildResourceAttrIndex_MultipleVersions(t *testing.T) {
 	hashes = mem.LookupResourceAttr("service.name", "my-service")
 	require.Len(t, hashes, 1)
 	require.Contains(t, hashes, uint64(100))
+}
+
+func TestMemStoreContentDedup(t *testing.T) {
+	store := NewMemResourceStore()
+
+	sharedIdentifying := map[string]string{
+		"service.name":      "my-service",
+		"service.namespace": "production",
+	}
+	sharedDescriptive := map[string]string{
+		"deployment.env": "prod",
+		"host.region":    "us-west-2",
+	}
+
+	// Insert 1000 entries with identical resource content but different labelsHash.
+	const numEntries = 1000
+	for i := uint64(1); i <= numEntries; i++ {
+		rv := NewResourceVersion(sharedIdentifying, sharedDescriptive, nil, 1000, 5000)
+		store.Set(i, rv)
+	}
+
+	// All entries should share a single canonical.
+	require.Equal(t, 1, store.TotalCanonical())
+
+	// Verify all entries share the same map pointers via reflect.
+	var canonicalIdentifying, canonicalDescriptive uintptr
+	for i := uint64(1); i <= numEntries; i++ {
+		got, ok := store.Get(i)
+		require.True(t, ok)
+		idPtr := reflect.ValueOf(got.Identifying).Pointer()
+		descPtr := reflect.ValueOf(got.Descriptive).Pointer()
+		if i == 1 {
+			canonicalIdentifying = idPtr
+			canonicalDescriptive = descPtr
+		} else {
+			require.Equal(t, canonicalIdentifying, idPtr, "series %d should share Identifying map pointer", i)
+			require.Equal(t, canonicalDescriptive, descPtr, "series %d should share Descriptive map pointer", i)
+		}
+		// Values are correct.
+		require.Equal(t, "my-service", got.Identifying["service.name"])
+		require.Equal(t, "prod", got.Descriptive["deployment.env"])
+	}
+
+	// Insert entries with different content → should create a second canonical.
+	for i := uint64(numEntries + 1); i <= numEntries+10; i++ {
+		rv := NewResourceVersion(
+			map[string]string{"service.name": "other-service"},
+			map[string]string{"deployment.env": "staging"},
+			nil, 2000, 6000,
+		)
+		store.Set(i, rv)
+	}
+	require.Equal(t, 2, store.TotalCanonical())
+
+	// The new entries should share a different canonical.
+	got1, _ := store.Get(numEntries + 1)
+	got2, _ := store.Get(numEntries + 5)
+	require.Equal(t, reflect.ValueOf(got1.Identifying).Pointer(), reflect.ValueOf(got2.Identifying).Pointer())
+	// But different from the first group.
+	require.NotEqual(t, canonicalIdentifying, reflect.ValueOf(got1.Identifying).Pointer())
+
+	// Test InternVersion directly.
+	rv := NewResourceVersion(sharedIdentifying, sharedDescriptive, nil, 9000, 9999)
+	interned := store.InternVersion(rv)
+	require.Equal(t, int64(9000), interned.MinTime)
+	require.Equal(t, int64(9999), interned.MaxTime)
+	require.Equal(t, canonicalIdentifying, reflect.ValueOf(interned.Identifying).Pointer())
+	require.Equal(t, canonicalDescriptive, reflect.ValueOf(interned.Descriptive).Pointer())
+}
+
+func TestMemStoreContentDedupScope(t *testing.T) {
+	store := NewMemScopeStore()
+
+	// Insert 100 entries with identical scope content.
+	const numEntries = 100
+	for i := uint64(1); i <= numEntries; i++ {
+		sv := NewScopeVersion("otel-go", "1.0", "https://schema", map[string]string{"lang": "go"}, 1000, 5000)
+		store.Set(i, sv)
+	}
+
+	require.Equal(t, 1, store.TotalCanonical())
+
+	// Verify shared pointers.
+	var canonicalAttrs uintptr
+	for i := uint64(1); i <= numEntries; i++ {
+		got, ok := store.Get(i)
+		require.True(t, ok)
+		attrsPtr := reflect.ValueOf(got.Attrs).Pointer()
+		if i == 1 {
+			canonicalAttrs = attrsPtr
+		} else {
+			require.Equal(t, canonicalAttrs, attrsPtr, "series %d should share Attrs map pointer", i)
+		}
+		require.Equal(t, "otel-go", got.Name)
+		require.Equal(t, "go", got.Attrs["lang"])
+	}
+}
+
+func TestMemStoreContentDedupSetVersioned(t *testing.T) {
+	store := NewMemResourceStore()
+
+	// SetVersioned should also intern.
+	for i := uint64(1); i <= 50; i++ {
+		rv := NewResourceVersion(
+			map[string]string{"service.name": "svc"},
+			map[string]string{"env": "prod"},
+			nil, 1000, 5000,
+		)
+		store.SetVersioned(i, &VersionedResource{Versions: []*ResourceVersion{rv}})
+	}
+	require.Equal(t, 1, store.TotalCanonical())
+
+	// All share the same pointer.
+	var firstPtr uintptr
+	for i := uint64(1); i <= 50; i++ {
+		got, ok := store.Get(i)
+		require.True(t, ok)
+		ptr := reflect.ValueOf(got.Identifying).Pointer()
+		if i == 1 {
+			firstPtr = ptr
+		} else {
+			require.Equal(t, firstPtr, ptr)
+		}
+	}
+}
+
+func TestMemStoreContentDedupTimeRangesIndependent(t *testing.T) {
+	store := NewMemResourceStore()
+
+	// Two entries with same content but different time ranges should share maps
+	// but have independent time ranges.
+	rv1 := NewResourceVersion(map[string]string{"service.name": "svc"}, nil, nil, 1000, 2000)
+	store.Set(1, rv1)
+
+	rv2 := NewResourceVersion(map[string]string{"service.name": "svc"}, nil, nil, 3000, 4000)
+	store.Set(2, rv2)
+
+	got1, _ := store.Get(1)
+	got2, _ := store.Get(2)
+
+	// Same content pointers.
+	require.Equal(t, reflect.ValueOf(got1.Identifying).Pointer(), reflect.ValueOf(got2.Identifying).Pointer())
+
+	// But independent time ranges.
+	require.Equal(t, int64(1000), got1.MinTime)
+	require.Equal(t, int64(2000), got1.MaxTime)
+	require.Equal(t, int64(3000), got2.MinTime)
+	require.Equal(t, int64(4000), got2.MaxTime)
 }

@@ -643,13 +643,14 @@ func denormalizeRows(
 		}
 
 		var attrKey, attrValue string
-		if row.AttrKey != "" {
+		switch {
+		case row.AttrKey != "":
 			attrKey = row.AttrKey
 			attrValue = row.AttrValue
-		} else if len(row.IdentifyingAttrs) > 0 {
+		case len(row.IdentifyingAttrs) > 0:
 			attrKey = row.IdentifyingAttrs[0].Key
 			attrValue = row.IdentifyingAttrs[0].Value
-		} else {
+		default:
 			continue
 		}
 

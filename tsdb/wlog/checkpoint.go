@@ -254,7 +254,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		// This dramatically reduces memory when N series share K unique resources (K << N).
 		resourceContentTable = make(map[uint64]record.RefResource)             // contentHash → canonical record
 		resourceRefToContent = make(map[chunks.HeadSeriesRef][]contentMapping) // ref → content hashes with time ranges
-		scopeContentTable    = make(map[uint64]record.RefScope)               // contentHash → canonical scope record
+		scopeContentTable    = make(map[uint64]record.RefScope)                // contentHash → canonical scope record
 		scopeRefToContent    = make(map[chunks.HeadSeriesRef][]contentMapping) // ref → content hashes with time ranges
 	)
 	for r.Next() {

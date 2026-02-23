@@ -29,7 +29,6 @@ const (
 
 	// BloomFilterSidecar is reserved for future use: bloom filters written to a
 	// separate file for independent store-gateway caching. Not yet implemented.
-	// BloomFilterSidecar
 )
 
 // WriterOptions configures Parquet write behavior for distributed-scale features.

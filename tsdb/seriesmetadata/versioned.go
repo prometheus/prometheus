@@ -33,6 +33,14 @@ type KindOps[V VersionConstraint] interface {
 	Copy(v V) V
 }
 
+// ContentDedupOps is an optional extension of KindOps detected via type assertion.
+// Kinds that implement it get content-addressed dedup in MemStore, where versions
+// with identical content share map/slice pointers from a single canonical entry.
+type ContentDedupOps[V VersionConstraint] interface {
+	ContentHash(v V) uint64
+	ThinCopy(canonical, v V) V
+}
+
 // Versioned holds multiple versions of metadata for a single series.
 // Each version represents a period when specific metadata was active.
 // Versions are ordered by MinTime ascending; most recent version is last.
