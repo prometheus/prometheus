@@ -127,6 +127,33 @@ func (*scopeKindDescriptor) CommitToSeries(series, walRecord any) {
 	}
 }
 
+// CommitScopeDirect is the hot-path equivalent of CommitToSeries for
+// scopes, avoiding interface{} boxing of ScopeCommitData.
+// Called directly from headAppenderBase.commitScopes.
+func CommitScopeDirect(accessor kindMetaAccessor, scd ScopeCommitData) {
+	sv := NewScopeVersion(scd.Name, scd.Version, scd.SchemaURL, scd.Attrs, scd.MinTime, scd.MaxTime)
+
+	existing, _ := accessor.GetKindMeta(KindScope)
+	if existing == nil {
+		accessor.SetKindMeta(KindScope, &Versioned[*ScopeVersion]{
+			Versions: []*ScopeVersion{CopyScopeVersion(sv)},
+		})
+	} else {
+		vs := existing.(*Versioned[*ScopeVersion])
+		vs.AddOrExtend(ScopeOps, sv)
+	}
+}
+
+// CollectScopeDirect is the hot-path equivalent of CollectFromSeries
+// for scopes, avoiding interface{} boxing on the return path.
+func CollectScopeDirect(accessor kindMetaAccessor) (*VersionedScope, bool) {
+	v, ok := accessor.GetKindMeta(KindScope)
+	if !ok || v == nil {
+		return nil, false
+	}
+	return v.(*Versioned[*ScopeVersion]), true
+}
+
 func (*scopeKindDescriptor) CollectFromSeries(series any) (any, bool) {
 	accessor := series.(kindMetaAccessor)
 	return accessor.GetKindMeta(KindScope)
