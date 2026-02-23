@@ -37,6 +37,11 @@ type WriterOptions struct {
 	// lookup without runtime index build.
 	EnableInvertedIndex bool
 
+	// IndexedResourceAttrs specifies additional descriptive resource attribute
+	// names to include in the inverted index beyond identifying attributes
+	// (which are always indexed). nil means index only identifying attributes.
+	IndexedResourceAttrs map[string]struct{}
+
 	// RefResolver converts a labelsHash (the in-memory key) to a block-level
 	// seriesRef for Parquet mapping rows. If nil, labelsHash is written
 	// directly as SeriesRef (backward compat for head/test writes without
