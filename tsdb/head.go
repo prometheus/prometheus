@@ -266,6 +266,10 @@ type HeadOptions struct {
 	// EnableNativeMetadata represents 'native-metadata' feature flag.
 	// When enabled, OTel resource/scope attributes are persisted per time series.
 	EnableNativeMetadata bool
+
+	// IndexedResourceAttrs specifies additional descriptive resource attribute
+	// names to include in the inverted index beyond identifying attributes.
+	IndexedResourceAttrs map[string]struct{}
 }
 
 const (
@@ -427,6 +431,7 @@ func (h *Head) resetInMemoryState() error {
 
 	if h.opts.EnableNativeMetadata {
 		h.seriesMeta = seriesmetadata.NewMemSeriesMetadata()
+		h.seriesMeta.SetIndexedResourceAttrs(h.opts.IndexedResourceAttrs)
 		h.seriesMeta.InitResourceAttrIndex()
 		h.metaRefStripes, h.metaHashStripes = newMetadataStripes()
 	}
