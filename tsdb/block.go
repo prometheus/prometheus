@@ -182,6 +182,26 @@ type BlockMeta struct {
 
 	// Version of the index format.
 	Version int `json:"version"`
+
+	// SeriesMetadata contains optional stats about the OTel series metadata
+	// Parquet file. Populated during compaction when native metadata is enabled.
+	// Nil when no metadata is present.
+	SeriesMetadata *BlockSeriesMetadata `json:"seriesMetadata,omitempty"`
+}
+
+// BlockSeriesMetadata holds metadata stats for a block's Parquet sidecar file.
+// This enables Mimir store-gateway to pre-plan queries without opening the Parquet file.
+type BlockSeriesMetadata struct {
+	// Enabled indicates that the block contains series metadata.
+	Enabled bool `json:"enabled"`
+
+	// NamespaceRowCounts maps namespace names (e.g. "resource_table", "scope_mapping")
+	// to the number of rows in that namespace.
+	NamespaceRowCounts map[string]uint64 `json:"namespaceRowCounts,omitempty"`
+
+	// IndexedResourceAttrs lists the resource attribute names that are
+	// included in the inverted index (resource_attr_index namespace).
+	IndexedResourceAttrs []string `json:"indexedResourceAttrs,omitempty"`
 }
 
 // BlockStats contains stats about contents of a block.
@@ -326,10 +346,15 @@ type Block struct {
 	// We maintain this variable to avoid recalculation every time.
 	symbolTableSize uint64
 
-	chunkr         ChunkReader
-	indexr         IndexReader
-	tombstones     tombstones.Reader
-	seriesMetadata seriesmetadata.Reader
+	chunkr     ChunkReader
+	indexr     IndexReader
+	tombstones tombstones.Reader
+
+	// Series metadata is lazily loaded on first access via sync.Once.
+	// This avoids the cost of resolving all seriesRef → labelsHash at block open time.
+	seriesMetadataOnce sync.Once
+	seriesMetadata     seriesmetadata.Reader
+	seriesMetadataErr  error
 
 	logger *slog.Logger
 
@@ -379,33 +404,13 @@ func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDeco
 	}
 	closers = append(closers, tr)
 
-	// Build a resolver that converts block-level seriesRef → labelsHash
-	// for Parquet mapping rows. Also captures labels for LabelsForHash.
-	var builder labels.ScratchBuilder
-	labelsCapture := make(map[uint64]labels.Labels)
-	readRefResolver := seriesmetadata.WithRefResolver(func(seriesRef uint64) (uint64, bool) {
-		if err := ir.Series(storage.SeriesRef(seriesRef), &builder, nil); err != nil {
-			return 0, false
-		}
-		lset := builder.Labels()
-		hash := labels.StableHash(lset)
-		if _, exists := labelsCapture[hash]; !exists {
-			labelsCapture[hash] = lset
-		}
-		return hash, true
-	})
-
-	smr, sizeSeriesMeta, err := seriesmetadata.ReadSeriesMetadata(logger, dir, readRefResolver)
-	if err != nil {
-		return nil, err
+	// Series metadata (Parquet) is loaded lazily on first SeriesMetadata() call
+	// to avoid the cost of resolving all seriesRef → labelsHash at block open time.
+	// We stat the file now (cheap) so that Size() is correct before lazy load.
+	var sizeSeriesMeta int64
+	if fi, statErr := os.Stat(filepath.Join(dir, seriesmetadata.SeriesMetadataFilename)); statErr == nil {
+		sizeSeriesMeta = fi.Size()
 	}
-	// Populate the labels map on the reader so LabelsForHash works.
-	if populator, ok := smr.(seriesmetadata.LabelsPopulator); ok {
-		for hash, lset := range labelsCapture {
-			populator.SetLabels(hash, lset)
-		}
-	}
-	closers = append(closers, smr)
 
 	pb = &Block{
 		dir:                    dir,
@@ -413,7 +418,6 @@ func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDeco
 		chunkr:                 cr,
 		indexr:                 ir,
 		tombstones:             tr,
-		seriesMetadata:         smr,
 		symbolTableSize:        ir.SymbolTableSize(),
 		logger:                 logger,
 		numBytesChunks:         cr.Size(),
@@ -433,11 +437,16 @@ func (pb *Block) Close() error {
 
 	pb.pendingReaders.Wait()
 
+	var metaCloseErr error
+	if pb.seriesMetadata != nil {
+		metaCloseErr = pb.seriesMetadata.Close()
+	}
+
 	return errors.Join(
 		pb.chunkr.Close(),
 		pb.indexr.Close(),
 		pb.tombstones.Close(),
-		pb.seriesMetadata.Close(),
+		metaCloseErr,
 	)
 }
 
@@ -501,11 +510,52 @@ func (pb *Block) Tombstones() (tombstones.Reader, error) {
 }
 
 // SeriesMetadata returns a new SeriesMetadataReader against the block data.
+// The Parquet metadata file is loaded lazily on first call.
 func (pb *Block) SeriesMetadata() (seriesmetadata.Reader, error) {
 	if err := pb.startRead(); err != nil {
 		return nil, err
 	}
+
+	pb.seriesMetadataOnce.Do(func() {
+		pb.seriesMetadata, pb.seriesMetadataErr = pb.loadSeriesMetadata()
+	})
+	if pb.seriesMetadataErr != nil {
+		pb.pendingReaders.Done()
+		return nil, pb.seriesMetadataErr
+	}
+
 	return &blockSeriesMetadataReader{Reader: pb.seriesMetadata, b: pb}, nil
+}
+
+// loadSeriesMetadata reads the Parquet file and resolves seriesRef → labelsHash.
+func (pb *Block) loadSeriesMetadata() (seriesmetadata.Reader, error) {
+	var builder labels.ScratchBuilder
+	labelsCapture := make(map[uint64]labels.Labels)
+	readRefResolver := seriesmetadata.WithRefResolver(func(seriesRef uint64) (uint64, bool) {
+		if err := pb.indexr.Series(storage.SeriesRef(seriesRef), &builder, nil); err != nil {
+			return 0, false
+		}
+		lset := builder.Labels()
+		hash := labels.StableHash(lset)
+		if _, exists := labelsCapture[hash]; !exists {
+			labelsCapture[hash] = lset
+		}
+		return hash, true
+	})
+
+	smr, sizeSeriesMeta, err := seriesmetadata.ReadSeriesMetadata(pb.logger, pb.dir, readRefResolver)
+	if err != nil {
+		return nil, fmt.Errorf("read series metadata: %w", err)
+	}
+
+	if populator, ok := smr.(seriesmetadata.LabelsPopulator); ok {
+		for hash, lset := range labelsCapture {
+			populator.SetLabels(hash, lset)
+		}
+	}
+
+	pb.numBytesSeriesMetadata = sizeSeriesMeta
+	return smr, nil
 }
 
 // GetSymbolTableSize returns the Symbol Table Size in the index of this block.
