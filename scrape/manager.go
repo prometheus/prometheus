@@ -195,14 +195,28 @@ func (m *Manager) UnregisterMetrics() {
 }
 
 func (m *Manager) reloader() {
-	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
-	if reloadIntervalDuration == model.Duration(0) {
-		reloadIntervalDuration = model.Duration(5 * time.Second)
+	reloadIntervalDuration := time.Duration(m.opts.DiscoveryReloadInterval)
+	if reloadIntervalDuration == 0 {
+		reloadIntervalDuration = 5 * time.Second
 	}
 
-	ticker := time.NewTicker(time.Duration(reloadIntervalDuration))
-
+	ticker := time.NewTicker(reloadIntervalDuration)
 	defer ticker.Stop()
+
+	if m.opts.ScrapeOnShutdown {
+	startupLoop:
+		for {
+			select {
+			case <-m.graceShut:
+				return
+			case <-ticker.C:
+				break startupLoop
+			case <-m.triggerReload:
+				m.reload()
+			}
+		}
+		ticker.Reset(reloadIntervalDuration)
+	}
 
 	for {
 		select {
