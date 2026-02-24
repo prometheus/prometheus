@@ -934,3 +934,5 @@ The following are useful for converting between degrees and radians:
 * `deg(v instant-vector)`: converts radians to degrees for all float samples in `v`.
 * `pi()`: returns pi.
 * `rad(v instant-vector)`: converts degrees to radians for all float samples in `v`.
+
+See also the [trigonometric binary operators](operators.md#trigonometric-binary-operators) for examples of `atan2` with vector matching.

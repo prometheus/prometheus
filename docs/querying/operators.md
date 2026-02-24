@@ -126,6 +126,32 @@ samples. Operations involving histogram samples result in the removal of the
 corresponding vector elements from the output vector, flagged by an
 info-level annotation.
 
+#### Examples
+
+    # Scalar/scalar: returns an angle in radians; convert to degrees for readability
+    deg(atan2(1, 0))
+    # => 90
+
+    # Vector/scalar: apply atan2 to each float sample in a vector against a constant x
+    # (inputs/outputs are in radians; use rad()/deg() helpers as needed)
+    atan2(sin(rad(30)), 1)
+
+    # Vector/vector with matching: match y- and x-components by labels
+    # Note the argument order: atan2(y, x)
+    y_component atan2 on(job, instance) x_component
+
+    # Degrees vs radians: convert degrees to radians for inputs, and radians to degrees for output
+    deg(atan2(sin(rad(45)), cos(rad(45))))
+    # => 45
+
+#### Notes
+
+- `atan2(y, x)` expects arguments in the order y, then x.
+- All angles are in radians. Use `rad()` to convert degrees to radians and `deg()` to convert back; `pi()` is available.
+- Only float samples are supported. If an operation involves a histogram sample, the corresponding element is removed (info-level annotation).
+- Operator precedence: `atan2` shares precedence with `*`, `/`, `%`. Use parentheses in mixed expressions to avoid ambiguity.
+- Vector matching rules apply as with arithmetic operators. Use `on(...)`/`ignoring(...)` and `group_left`/`group_right` as needed.
+
 ### Comparison binary operators
 
 The following binary comparison operators exist in Prometheus:
