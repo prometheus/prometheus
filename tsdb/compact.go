@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -913,12 +914,39 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 
 		meta.Stats.NumChunks += uint64(len(chks))
 		meta.Stats.NumSeries++
+		var iter chunkenc.Iterator
 		for _, chk := range chks {
 			samples := uint64(chk.Chunk.NumSamples())
 			meta.Stats.NumSamples += samples
 			switch chk.Chunk.Encoding() {
-			case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+			case chunkenc.EncHistogram:
 				meta.Stats.NumHistogramSamples += samples
+				// Count histogram buckets from all samples
+				var h *histogram.Histogram
+				iter = chk.Chunk.Iterator(iter)
+				for iter.Next() == chunkenc.ValHistogram {
+					_, h = iter.AtHistogram(h)
+					if h != nil {
+						meta.Stats.NumHistogramBuckets += h.BucketCount()
+					}
+				}
+				if iter.Err() != nil {
+					return fmt.Errorf("histogram iterator: %w", iter.Err())
+				}
+			case chunkenc.EncFloatHistogram:
+				meta.Stats.NumHistogramSamples += samples
+				// Count float histogram buckets from all samples
+				var fh *histogram.FloatHistogram
+				iter = chk.Chunk.Iterator(iter)
+				for iter.Next() == chunkenc.ValFloatHistogram {
+					_, fh = iter.AtFloatHistogram(fh)
+					if fh != nil {
+						meta.Stats.NumHistogramBuckets += fh.BucketCount()
+					}
+				}
+				if iter.Err() != nil {
+					return fmt.Errorf("float histogram iterator: %w", iter.Err())
+				}
 			case chunkenc.EncXOR:
 				meta.Stats.NumFloatSamples += samples
 			}
