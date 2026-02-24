@@ -62,6 +62,7 @@ var DefaultDockerSDConfig = DockerSDConfig{
 	HostNetworkingHost: "localhost",
 	HTTPClientConfig:   config.DefaultHTTPClientConfig,
 	MatchFirstNetwork:  true,
+	MatchFirstPort:     false,
 }
 
 func init() {
@@ -79,6 +80,7 @@ type DockerSDConfig struct {
 
 	RefreshInterval   model.Duration `yaml:"refresh_interval"`
 	MatchFirstNetwork bool           `yaml:"match_first_network"`
+	MatchFirstPort    bool           `yaml:"match_first_port"`
 }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -125,6 +127,7 @@ type DockerDiscovery struct {
 	hostNetworkingHost string
 	filters            filters.Args
 	matchFirstNetwork  bool
+	matchFirstPort     bool
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
@@ -138,6 +141,7 @@ func NewDockerDiscovery(conf *DockerSDConfig, opts discovery.DiscovererOptions) 
 		port:               conf.Port,
 		hostNetworkingHost: conf.HostNetworkingHost,
 		matchFirstNetwork:  conf.MatchFirstNetwork,
+		matchFirstPort:     conf.MatchFirstPort,
 	}
 
 	hostURL, err := url.Parse(conf.Host)
@@ -298,6 +302,9 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				labels[model.AddressLabel] = model.LabelValue(addr)
 				tg.Targets = append(tg.Targets, labels)
 				added = true
+				if d.matchFirstPort {
+					break
+				}
 			}
 
 			if !added {

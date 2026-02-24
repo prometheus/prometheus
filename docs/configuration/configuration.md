@@ -1409,6 +1409,11 @@ host: <string>
 # thus avoiding collecting duplicate targets.
 [ match_first_network: <boolean> | default = true ]
 
+# By default, one scrape per exposed port is created. If this is set to true,
+# only a scrape for the first port is created. This might be useful if you configure
+# the scrapes via labels.
+[ match_first_port: <boolean> | default = false ]
+
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:
