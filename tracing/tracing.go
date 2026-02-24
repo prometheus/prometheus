@@ -21,14 +21,12 @@ import (
 	"time"
 
 	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/version"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc/credentials"
@@ -36,9 +34,6 @@ import (
 	"github.com/prometheus/prometheus/config"
 	promotel_common "github.com/prometheus/prometheus/util/otel"
 )
-
-// TODO: should move to a config entry for otel attributes
-const OTELServiceName = "prometheus"
 
 // Manager is capable of building, (re)installing and shutting down
 // the tracer provider.
@@ -140,18 +135,7 @@ func buildTracerProvider(ctx context.Context, tracingCfg config.TracingConfig) (
 	}
 
 	// Create a resource describing the service and the runtime.
-	res, err := resource.New(
-		ctx,
-		resource.WithSchemaURL(semconv.SchemaURL),
-		resource.WithAttributes(
-			semconv.ServiceNameKey.String(OTELServiceName),
-			semconv.ServiceVersionKey.String(version.Version),
-		),
-		resource.WithProcessPID(),
-		resource.WithProcessRuntimeDescription(),
-		resource.WithTelemetrySDK(),
-		resource.WithFromEnv(),
-	)
+	res, err := promotel_common.NewOTELResource(ctx, tracingCfg.ResourceAttributes)
 	if err != nil {
 		return nil, nil, err
 	}

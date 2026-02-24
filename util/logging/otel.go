@@ -33,18 +33,14 @@ import (
 
 	"github.com/go-logr/logr"
 	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/version"
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/tracing"
+	promotel_common "github.com/prometheus/prometheus/util/otel"
 	otelslog "go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	otel_log_api "go.opentelemetry.io/otel/log"
 	otel_log_sdk "go.opentelemetry.io/otel/sdk/log"
-	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -184,31 +180,8 @@ func buildOtelLoggingProvider(ctx context.Context, logger *slog.Logger, otelLogg
 	// TODO unify this with the tracing provider
 	// TODO verify that environment variable service name overrides the one hardcoded
 	// here
-	res, err := resource.New(
-		ctx,
-		resource.WithSchemaURL(semconv.SchemaURL),
-		resource.WithAttributes(
-			semconv.ServiceNameKey.String(tracing.OTELServiceName),
-			semconv.ServiceVersionKey.String(version.Version),
-		),
-		resource.WithProcessRuntimeDescription(),
-		resource.WithProcessPID(),
-		resource.WithTelemetrySDK(),
-		resource.WithFromEnv(),
-	)
-	// Add resource attributes from the config, which may include things like service.instance.id that are useful for distinguishing between different instances in the same environment.
-	for k, v := range otelLoggingCfg.ResourceAttributes {
-		res, err = resource.Merge(res, resource.NewWithAttributes(semconv.SchemaURL,
-			attribute.KeyValue{
-				Key:   attribute.Key(k),
-				Value: attribute.StringValue(v),
-			},
-		))
-		if err != nil {
-			logger.Warn("failed to add OpenTelemetry resource attribute", "attribute", k, "value", v, "error", err)
-		}
-	}
 
+	res, err := promotel_common.NewOTELResource(ctx, otelLoggingCfg.ResourceAttributes)
 	if err != nil {
 		return nil, nil, err
 	}

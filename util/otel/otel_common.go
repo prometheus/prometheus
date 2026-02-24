@@ -7,14 +7,22 @@
 package promotel_common
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
+
+	"github.com/prometheus/common/version"
 )
+
+const DefaultOTELServiceName = "prometheus"
 
 type metrics struct {
 	otelInternalErrors prometheus.Counter
@@ -104,4 +112,39 @@ func ResetGlobalOTELSetup(registerer prometheus.Registerer) {
 	promOtelMetrics.unregister(registerer)
 	promOtelMetrics = nil
 	isConfigured = false
+}
+
+// Create a new OpenTelmetry resource definition, merging defaults, vars discovered from the
+// OTEL_RESOURCE_ATTRIBUTES environment variable, and any additional attributes provided in
+// the config. The resource will include the service name and version by default, and any
+// additional attributes provided in the config will be merged in.
+func NewOTELResource(ctx context.Context, attrs map[string]string) (*resource.Resource, error) {
+	res, err := resource.New(
+		ctx,
+		resource.WithSchemaURL(semconv.SchemaURL),
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String(DefaultOTELServiceName),
+			semconv.ServiceVersionKey.String(version.Version),
+		),
+		resource.WithProcessPID(),
+		resource.WithProcessRuntimeDescription(),
+		resource.WithTelemetrySDK(),
+		resource.WithFromEnv(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("while creating otel resource attributes: %w", err)
+	}
+	// Add resource attributes from the config, which may include things like service.instance.id that are useful for distinguishing between different instances in the same environment.
+	for k, v := range attrs {
+		res, err = resource.Merge(res, resource.NewWithAttributes(semconv.SchemaURL,
+			attribute.KeyValue{
+				Key:   attribute.Key(k),
+				Value: attribute.StringValue(v),
+			},
+		))
+		if err != nil {
+			return nil, fmt.Errorf("while adding otel resource attribute %s=%s: %w", k, v, err)
+		}
+	}
+	return res, nil
 }

@@ -1159,14 +1159,15 @@ func (t *OTELClientType) UnmarshalYAML(unmarshal func(any) error) error {
 // TracingConfig configures the tracing options.
 // See also LoggingConfig
 type TracingConfig struct {
-	ClientType       OTELClientType    `yaml:"client_type,omitempty"`
-	Endpoint         string            `yaml:"endpoint,omitempty"`
-	SamplingFraction float64           `yaml:"sampling_fraction,omitempty"` // TODO make this optional so it doesn't clobber env config
-	Insecure         bool              `yaml:"insecure,omitempty"`          // TODO make this optional so it doesn't clobber env config
-	TLSConfig        config.TLSConfig  `yaml:"tls_config,omitempty"`
-	Headers          map[string]string `yaml:"headers,omitempty"`
-	Compression      string            `yaml:"compression,omitempty"` // TODO make this optional so it doesn't clobber env config
-	Timeout          model.Duration    `yaml:"timeout,omitempty"`     // TODO make this optional so it doesn't clobber env config
+	ClientType         OTELClientType    `yaml:"client_type,omitempty"`
+	Endpoint           string            `yaml:"endpoint,omitempty"`
+	SamplingFraction   float64           `yaml:"sampling_fraction,omitempty"`
+	Insecure           bool              `yaml:"insecure,omitempty"`
+	TLSConfig          config.TLSConfig  `yaml:"tls_config,omitempty"`
+	Headers            map[string]string `yaml:"headers,omitempty"`
+	Compression        string            `yaml:"compression,omitempty"`
+	Timeout            model.Duration    `yaml:"timeout,omitempty"`
+	ResourceAttributes map[string]string `yaml:"resource_attributes,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
