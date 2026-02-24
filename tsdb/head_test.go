@@ -3825,6 +3825,68 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	wg.Wait()
 }
 
+// Tests https://github.com/prometheus/prometheus/pull/15103.
+func TestRaceOnHeadMint(t *testing.T) {
+	db := newTestDB(t)
+	db.DisableCompactions()
+	ctx := context.Background()
+
+	var (
+		app        = db.Appender(context.Background())
+		ref        = storage.SeriesRef(0)
+		mint, maxt = int64(0), int64(0)
+		err        error
+		// Synchronization points.
+		allowQueryToStart = make(chan struct{})
+		queryStarted      = make(chan struct{})
+	)
+
+	// Appends samples to span over 1.5 block ranges.
+	expSamples := make([]chunks.Sample, 0)
+	lbls := labels.FromStrings("a", "b")
+	// 7 chunks with 15s scrape interval.
+	for i := int64(0); i <= 120*7; i++ {
+		ts := i * DefaultBlockDuration / (4 * 120)
+		ref, err = app.Append(ref, lbls, ts, float64(i))
+		require.NoError(t, err)
+		maxt = ts
+		expSamples = append(expSamples, sample{ts, float64(i), nil, nil})
+	}
+	require.NoError(t, app.Commit())
+
+	db.head.memTruncationCallBack = func(n int) {
+		switch n {
+		case 2:
+			// WaitForPendingReadersInTimeRange has returned, let the query start now to simulate race condition.
+			allowQueryToStart <- struct{}{}
+			<-queryStarted
+		}
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Compacting head while the querier spans the compaction time.
+		require.NoError(t, db.Compact(ctx))
+		require.NotEmpty(t, db.Blocks())
+	}()
+
+	// Wait for the truncateMemory to reach the key point.
+	<-allowQueryToStart
+
+	// Now make a querier that spans the whole range.
+	q, err := db.Querier(mint, maxt)
+	require.NoError(t, err)
+
+	queryStarted <- struct{}{} // Unblock the compaction.
+	wg.Wait()                  // Wait for compaction to finish.
+
+	// Now see if the query works.
+	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.Equal(t, map[string][]chunks.Sample{`{a="b"}`: expSamples}, series)
+}
+
 func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 	db := newTestDB(t)
 	db.DisableCompactions()
@@ -4034,10 +4096,13 @@ func testQueryOOOHeadDuringTruncate(t *testing.T, makeQuerier func(db *DB, minT,
 	queryStarted := make(chan struct{})
 	compactionFinished := make(chan struct{})
 
-	db.head.memTruncationCallBack = func() {
-		// Compaction has started, let the query start and wait for it to actually start to simulate race condition.
-		allowQueryToStart <- struct{}{}
-		<-queryStarted
+	db.head.memTruncationCallBack = func(n int) {
+		switch n {
+		case 1:
+			// Compaction has started, let the query start and wait for it to actually start to simulate race condition.
+			allowQueryToStart <- struct{}{}
+			<-queryStarted
+		}
 	}
 
 	go func() {
