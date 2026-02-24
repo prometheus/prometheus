@@ -69,11 +69,6 @@ func newHighestTimestampMetric() *maxTimestamp {
 func TestBasicContentNegotiation(t *testing.T) {
 	t.Parallel()
 
-	data := recCase{
-		series:           1,
-		samplesPerSeries: 1,
-	}
-
 	queueConfig := config.DefaultQueueConfig
 	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	queueConfig.MaxShards = 1
@@ -144,13 +139,8 @@ func TestBasicContentNegotiation(t *testing.T) {
 			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 			defer s.Close()
 
-			// Generates the same series in both cases.
-			recs := generateRecords(data)
+			recs := generateRecords(recCase{series: 1, samplesPerSeries: 1})
 
-			// Apply new config.
-			queueConfig.Capacity = 1
-			queueConfig.MaxSamplesPerSend = 1
-			// For now we only ever have a single rw config in this test.
 			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.senderProtoMsg
 			require.NoError(t, s.ApplyConfig(conf))
 			hash, err := toHash(writeConfig)
@@ -219,19 +209,19 @@ func TestSampleDelivery(t *testing.T) {
 	}
 
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
-		for _, data := range []recCase{
+		for _, rc := range []recCase{
 			{series: n, samplesPerSeries: n, histogramsPerSeries: 0, floatHistogramsPerSeries: 0, exemplarsPerSeries: 0, name: "samples only"},
 			{series: n, samplesPerSeries: 0, histogramsPerSeries: n, floatHistogramsPerSeries: 0, exemplarsPerSeries: 0, name: "histograms only"},
 			{series: n, samplesPerSeries: 0, histogramsPerSeries: 0, floatHistogramsPerSeries: n, exemplarsPerSeries: 0, name: "float histograms only"},
 			{series: n, samplesPerSeries: 0, histogramsPerSeries: 0, floatHistogramsPerSeries: 0, exemplarsPerSeries: n, name: "exemplars only"},
 			{series: n, samplesPerSeries: n, histogramsPerSeries: n, floatHistogramsPerSeries: n, exemplarsPerSeries: n, name: "all"},
 		} {
-			t.Run(fmt.Sprintf("proto=%s/data=%s", protoMsg, data.name), func(t *testing.T) {
+			t.Run(fmt.Sprintf("proto=%s/case=%s", protoMsg, rc.name), func(t *testing.T) {
 				dir := t.TempDir()
 				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 				defer s.Close()
 
-				recs := generateRecords(data)
+				recs := generateRecords(rc)
 
 				var (
 					series          = recs.series
@@ -382,10 +372,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	t.Parallel()
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
-			// Let's send one less sample than batch size, and wait the timeout duration
-			// TODO(bwplotka): What's the batch size really? actually samples are 9*9 here? Make things explicit here.
-			n := 9
-			recs := generateRecords(recCase{series: n, samplesPerSeries: n})
+			recs := generateRecords(recCase{series: 10, samplesPerSeries: 10})
 			cfg := testDefaultQueueConfig()
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
@@ -745,7 +732,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 	defer onStoreCalled()
 
 	var (
-		recs = generateRecords(recCase{series: 10, samplesPerSeries: 10})
+		recs = generateRecords(recCase{series: 100, samplesPerSeries: 100})
 
 		cfg        = config.DefaultQueueConfig
 		mcfg       = config.DefaultMetadataConfig
@@ -853,9 +840,6 @@ func generateRecords(c recCase) (ret records) {
 			name := fmt.Sprintf("test_metric_%d", i)
 			lb.Reset()
 			lb.Add(model.MetricNameLabel, name)
-			rand.Shuffle(len(c.extraLabels), func(i, j int) {
-				c.extraLabels[i], c.extraLabels[j] = c.extraLabels[j], c.extraLabels[i]
-			})
 			for _, l := range c.extraLabels {
 				lb.Add(l.Name, l.Value)
 			}
@@ -914,8 +898,6 @@ func generateRecords(c recCase) (ret records) {
 }
 
 // BenchmarkGenerateRecords checks data generator performance.
-// We had regression where a single call, triggered by a parallel cases were each allocating ~2 GB memory, OOM-ing
-// our test jobs.
 // Recommended CLI:
 /*
 	export bench=genRecs && go test ./storage/remote/... \
