@@ -3745,6 +3745,173 @@ func TestRateAnnotations(t *testing.T) {
 	}
 }
 
+func TestHistogramQuantileAnnotations(t *testing.T) {
+	testCases := map[string]struct {
+		data                       string
+		expr                       string
+		expectedWarningAnnotations []string
+		expectedInfoAnnotations    []string
+	}{
+		"info annotation for nonmonotonic buckets": {
+			data: `
+				nonmonotonic_bucket{le="0.1"}   0+2x10
+				nonmonotonic_bucket{le="1"}     0+1x10
+				nonmonotonic_bucket{le="10"}    0+5x10
+				nonmonotonic_bucket{le="100"}   0+4x10
+				nonmonotonic_bucket{le="1000"}  0+9x10
+				nonmonotonic_bucket{le="+Inf"}  0+8x10
+			`,
+			expr:                       "histogram_quantile(0.5, nonmonotonic_bucket)",
+			expectedWarningAnnotations: []string{},
+			expectedInfoAnnotations: []string{
+				`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "nonmonotonic_bucket" (1:25)`,
+			},
+		},
+		"warning annotation for missing le label": {
+			data: `
+				myHistogram{abe="0.1"}   0+2x10
+			`,
+			expr: "histogram_quantile(0.5, myHistogram)",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "myHistogram" (1:25)`,
+			},
+			expectedInfoAnnotations: []string{},
+		},
+		"warning annotation for malformed le label": {
+			data: `
+				myHistogram{le="Hello World"}   0+2x10
+			`,
+			expr: "histogram_quantile(0.5, myHistogram)",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World" for metric name "myHistogram" (1:25)`,
+			},
+			expectedInfoAnnotations: []string{},
+		},
+		"warning annotation for mixed histograms": {
+			data: `
+				mixedHistogram{le="0.1"}   0+2x10
+				mixedHistogram{le="1"}     0+3x10
+				mixedHistogram{}           {{schema:0 count:10 sum:50 buckets:[1 2 3]}}
+			`,
+			expr: "histogram_quantile(0.5, mixedHistogram)",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram" (1:25)`,
+			},
+			expectedInfoAnnotations: []string{},
+		},
+	}
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
+			t.Cleanup(func() { _ = store.Close() })
+
+			engine := newTestEngine(t)
+			query, err := engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, timestamp.Time(0).Add(1*time.Minute))
+			require.NoError(t, err)
+			t.Cleanup(query.Close)
+
+			res := query.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
+			testutil.RequireEqual(t, testCase.expectedInfoAnnotations, infos)
+		})
+	}
+}
+
+func TestSortInRangeQueryAnnotations(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+load 10s
+  metric{job="a"} 1 2 3
+  metric{job="b"} 3 2 1
+`)
+	t.Cleanup(func() { storage.Close() })
+	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+
+	testCases := []struct {
+		name                       string
+		query                      string
+		isRangeQuery               bool
+		expectedWarningAnnotations []string
+	}{
+		{
+			name:                       "sort in instant query - no warning",
+			query:                      "sort(metric)",
+			isRangeQuery:               false,
+			expectedWarningAnnotations: []string{},
+		},
+		{
+			name:         "sort in range query - warning expected",
+			query:        "sort(metric)",
+			isRangeQuery: true,
+			expectedWarningAnnotations: []string{
+				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:1)",
+			},
+		},
+		{
+			name:         "sort_desc in range query - warning expected",
+			query:        "sort_desc(metric)",
+			isRangeQuery: true,
+			expectedWarningAnnotations: []string{
+				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:1)",
+			},
+		},
+		{
+			name:         "sort_by_label in range query - warning expected",
+			query:        "sort_by_label(metric)",
+			isRangeQuery: true,
+			expectedWarningAnnotations: []string{
+				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:1)",
+			},
+		},
+		{
+			name:         "sort_by_label_desc in range query - warning expected",
+			query:        "sort_by_label_desc(metric)",
+			isRangeQuery: true,
+			expectedWarningAnnotations: []string{
+				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:1)",
+			},
+		},
+		{
+			name:                       "other function in range query - no warning",
+			query:                      "rate(metric[1m])",
+			isRangeQuery:               true,
+			expectedWarningAnnotations: []string{},
+		},
+		{
+			name:         "nested sort in range query - warning expected",
+			query:        "sum(sort(metric))",
+			isRangeQuery: true,
+			expectedWarningAnnotations: []string{
+				"PromQL warning: sort is ineffective for range queries since results are always ordered by labels (1:5)",
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			start := time.Unix(0, 0)
+			end := time.Unix(10, 0)
+			interval := time.Second
+			var qry promql.Query
+			var err error
+
+			if testCase.isRangeQuery {
+				qry, err = engine.NewRangeQuery(context.Background(), storage, nil, testCase.query, start, end, interval)
+			} else {
+				qry, err = engine.NewInstantQuery(context.Background(), storage, nil, testCase.query, start)
+			}
+			require.NoError(t, err)
+
+			res := qry.Exec(context.Background())
+
+			warnings, _ := res.Warnings.AsStrings(testCase.query, 0, 0)
+			testutil.RequireEqual(t, testCase.expectedWarningAnnotations, warnings)
+		})
+	}
+}
+
 func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	// Make a chunk with two normal histograms of the same value.
 	h1 := histogram.Histogram{

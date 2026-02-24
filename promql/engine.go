@@ -1968,6 +1968,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			return ev.evalInfo(ctx, e.Args)
 		}
 
+		// Emit a warning when sort is used for range queries
+		if (e.Func.Name == "sort" || e.Func.Name == "sort_desc" || e.Func.Name == "sort_by_label" || e.Func.Name == "sort_by_label_desc") && ev.startTimestamp != ev.endTimestamp {
+			warnings.Add(annotations.NewSortInRangeQueryWarning(e.PositionRange()))
+		}
+
 		if !matrixArg {
 			// Does not have a matrix argument.
 			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
