@@ -430,6 +430,6 @@ func TestOtelOTLPMissingEndpoint(t *testing.T) {
 	require.Greater(t, otelErrorCounter, 0, "expected otel error handler to receive at least one error due to missing endpoint")
 }
 
-func TestCombinedFileAndOTLPQueryLog(t *testing.T) {
-	// TODO
-}
+// TODO exercise a combined file and otel logger
+
+// TODO exercise trace context propagation in the loggers
