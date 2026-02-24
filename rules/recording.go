@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -29,6 +29,10 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 )
+
+// ErrDuplicateRecordingLabelSet is returned when a recording rule evaluation produces
+// metrics with identical labelsets after applying rule labels.
+var ErrDuplicateRecordingLabelSet = errors.New("vector contains metrics with the same labelset after applying rule labels")
 
 // A RecordingRule records its vector expression into new timeseries.
 type RecordingRule struct {
@@ -104,7 +108,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, queryOffset time.Duration, 
 	// Check that the rule does not produce identical metrics after applying
 	// labels.
 	if vector.ContainsSameLabelset() {
-		return nil, errors.New("vector contains metrics with the same labelset after applying rule labels")
+		return nil, ErrDuplicateRecordingLabelSet
 	}
 
 	numSeries := len(vector)

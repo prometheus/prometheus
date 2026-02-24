@@ -31,6 +31,7 @@ linters:
     - govet
     - loggercheck
     - misspell
+    - modernize
     - nilnesserr
     # TODO(bwplotka): Enable once https://github.com/golangci/golangci-lint/issues/3228 is fixed.
     # - nolintlint
@@ -38,6 +39,7 @@ linters:
     - predeclared
     - revive
     - sloglint
+    - staticcheck
     - testifylint
     - unconvert
     - unused
@@ -101,6 +103,10 @@ linters:
               desc: "Use github.com/klauspost/compress instead of zlib"
             - pkg: "golang.org/x/exp/slices"
               desc: "Use 'slices' instead."
+            - pkg: "gopkg.in/yaml.v2"
+              desc: "Use go.yaml.in/yaml/v2 instead of gopkg.in/yaml.v2"
+            - pkg: "gopkg.in/yaml.v3"
+              desc: "Use go.yaml.in/yaml/v3 instead of gopkg.in/yaml.v3"
     errcheck:
       exclude-functions:
         # Don't flag lines such as "io.Copy(io.Discard, resp.Body)".
@@ -117,6 +123,12 @@ linters:
         - shadow
         - fieldalignment
       enable-all: true
+    modernize:
+      disable:
+        # Suggest replacing omitempty with omitzero for struct fields.
+        # Disable this check for now since it introduces too many changes in our existing codebase.
+        # See https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_omitzero for more details.
+        - omitzero
     perfsprint:
       # Optimizes even if it requires an int or uint type cast.
       int-conversion: true
@@ -175,6 +187,11 @@ linters:
         - name: unused-receiver
         - name: var-declaration
         - name: var-naming
+          # TODO(SuperQ): See: https://github.com/prometheus/prometheus/issues/17766
+          arguments:
+            - []
+            - []
+            - - skip-package-name-checks: true
     testifylint:
       disable:
         - float-compare

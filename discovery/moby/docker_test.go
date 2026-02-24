@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -48,7 +48,11 @@ host: %s
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDockerDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDockerDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "docker_swarm",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -226,7 +230,11 @@ host: %s
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
-	d, err := NewDockerDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDockerDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "docker_swarm",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()

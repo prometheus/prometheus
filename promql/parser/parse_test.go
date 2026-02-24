@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -30,6 +30,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+var testParser = NewParser(Options{})
 
 func repeatError(query string, err error, start, startStep, end, endStep, count int) (errs ParseErrors) {
 	for i := range count {
@@ -2708,7 +2710,7 @@ var testExpr = []struct {
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 4, End: 5},
-				Err:           errors.New("unexpected \"]\" in subquery or range selector, expected number, duration, or step()"),
+				Err:           errors.New("unexpected \"]\" in subquery or range selector, expected number, duration, step(), or range()"),
 				Query:         `foo[]`,
 			},
 		},
@@ -2741,7 +2743,7 @@ var testExpr = []struct {
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 22, End: 22},
-				Err:           errors.New("unexpected end of input in offset, expected number, duration, or step()"),
+				Err:           errors.New("unexpected end of input in offset, expected number, duration, step(), or range()"),
 				Query:         `some_metric[5m] OFFSET`,
 			},
 		},
@@ -4699,6 +4701,100 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: `foo[range()]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       RANGE,
+				StartPos: 4,
+				EndPos:   11,
+			},
+			EndPos: 12,
+		},
+	},
+	{
+		input: `foo[-range()]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op:       SUB,
+				StartPos: 4,
+				RHS:      &DurationExpr{Op: RANGE, StartPos: 5, EndPos: 12},
+			},
+			EndPos: 13,
+		},
+	},
+	{
+		input: `foo offset range()`,
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 18},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       RANGE,
+				StartPos: 11,
+				EndPos:   18,
+			},
+		},
+	},
+	{
+		input: `foo offset -range()`,
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 19},
+			OriginalOffsetExpr: &DurationExpr{
+				Op:       SUB,
+				RHS:      &DurationExpr{Op: RANGE, StartPos: 12, EndPos: 19},
+				StartPos: 11,
+			},
+		},
+	},
+	{
+		input: `foo[max(range(),5s)]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			RangeExpr: &DurationExpr{
+				Op: MAX,
+				LHS: &DurationExpr{
+					Op:       RANGE,
+					StartPos: 8,
+					EndPos:   15,
+				},
+				RHS: &NumberLiteral{
+					Val:      5,
+					Duration: true,
+					PosRange: posrange.PositionRange{Start: 16, End: 18},
+				},
+				StartPos: 4,
+				EndPos:   19,
+			},
+			EndPos: 20,
+		},
+	},
+	{
 		input: `foo[4s+4s:1s*2] offset (5s-8)`,
 		expected: &SubqueryExpr{
 			Expr: &VectorSelector{
@@ -4942,7 +5038,7 @@ var testExpr = []struct {
 		errors: ParseErrors{
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 8, End: 9},
-				Err:           errors.New(`unexpected "]" in subquery or range selector, expected number, duration, or step()`),
+				Err:           errors.New(`unexpected "]" in subquery or range selector, expected number, duration, step(), or range()`),
 				Query:         `foo[step]`,
 			},
 		},
@@ -5203,18 +5299,14 @@ func readable(s string) string {
 }
 
 func TestParseExpressions(t *testing.T) {
-	// Enable experimental functions testing.
-	EnableExperimentalFunctions = true
-	// Enable experimental duration expression parsing.
-	ExperimentalDurationExpr = true
-	t.Cleanup(func() {
-		EnableExperimentalFunctions = false
-		ExperimentalDurationExpr = false
+	optsParser := NewParser(Options{
+		EnableExperimentalFunctions: true,
+		ExperimentalDurationExpr:    true,
 	})
 
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {
-			expr, err := ParseExpr(test.input)
+			expr, err := optsParser.ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
 			require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
@@ -5342,7 +5434,7 @@ func TestParseSeriesDesc(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			l, v, err := ParseSeriesDesc(tc.input)
+			l, v, err := testParser.ParseSeriesDesc(tc.input)
 			if tc.expectError != "" {
 				require.Contains(t, err.Error(), tc.expectError)
 			} else {
@@ -5356,7 +5448,7 @@ func TestParseSeriesDesc(t *testing.T) {
 
 // NaN has no equality. Thus, we need a separate test for it.
 func TestNaNExpression(t *testing.T) {
-	expr, err := ParseExpr("NaN")
+	expr, err := testParser.ParseExpr("NaN")
 	require.NoError(t, err)
 
 	nl, ok := expr.(*NumberLiteral)
@@ -5784,7 +5876,7 @@ func TestParseHistogramSeries(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, vals, err := ParseSeriesDesc(test.input)
+			_, vals, err := testParser.ParseSeriesDesc(test.input)
 			if test.expectedError != "" {
 				require.EqualError(t, err, test.expectedError)
 				return
@@ -5856,7 +5948,7 @@ func TestHistogramTestExpression(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			expression := test.input.TestExpression()
 			require.Equal(t, test.expected, expression)
-			_, vals, err := ParseSeriesDesc("{} " + expression)
+			_, vals, err := testParser.ParseSeriesDesc("{} " + expression)
 			require.NoError(t, err)
 			require.Len(t, vals, 1)
 			canonical := vals[0].Histogram
@@ -5868,7 +5960,7 @@ func TestHistogramTestExpression(t *testing.T) {
 
 func TestParseSeries(t *testing.T) {
 	for _, test := range testSeries {
-		metric, vals, err := ParseSeriesDesc(test.input)
+		metric, vals, err := testParser.ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
 		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
@@ -5884,7 +5976,7 @@ func TestParseSeries(t *testing.T) {
 }
 
 func TestRecoverParserRuntime(t *testing.T) {
-	p := NewParser("foo bar")
+	p := newParser("foo bar", Options{})
 	var err error
 
 	defer func() {
@@ -5897,7 +5989,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 }
 
 func TestRecoverParserError(t *testing.T) {
-	p := NewParser("foo bar")
+	p := newParser("foo bar", Options{})
 	var err error
 
 	e := errors.New("custom error")
@@ -5932,12 +6024,12 @@ func TestExtractSelectors(t *testing.T) {
 			[]string{},
 		},
 	} {
-		expr, err := ParseExpr(tc.input)
+		expr, err := testParser.ParseExpr(tc.input)
 		require.NoError(t, err)
 
 		var expected [][]*labels.Matcher
 		for _, s := range tc.expected {
-			selector, err := ParseMetricSelector(s)
+			selector, err := testParser.ParseMetricSelector(s)
 			require.NoError(t, err)
 			expected = append(expected, selector)
 		}
@@ -5954,11 +6046,37 @@ func TestParseCustomFunctions(t *testing.T) {
 		ReturnType: ValueTypeVector,
 	}
 	input := "custom_func(metric[1m])"
-	p := NewParser(input, WithFunctions(funcs))
-	expr, err := p.ParseExpr()
+	p := newParserWithFunctions(input, Options{}, funcs)
+	expr, err := p.parseExpr()
 	require.NoError(t, err)
 
 	call, ok := expr.(*Call)
 	require.True(t, ok)
 	require.Equal(t, "custom_func", call.Func.Name)
+}
+
+func TestNewParser(t *testing.T) {
+	p := NewParser(Options{
+		EnableExperimentalFunctions: true,
+		ExperimentalDurationExpr:    true,
+	})
+
+	// ParseExpr should work.
+	expr, err := p.ParseExpr("up")
+	require.NoError(t, err)
+	require.NotNil(t, expr)
+
+	// ParseMetricSelector should work.
+	matchers, err := p.ParseMetricSelector(`{job="prometheus"}`)
+	require.NoError(t, err)
+	require.Len(t, matchers, 1)
+
+	// ParseMetricSelectors should work.
+	matcherSets, err := p.ParseMetricSelectors([]string{`{job="prometheus"}`, `{job="grafana"}`})
+	require.NoError(t, err)
+	require.Len(t, matcherSets, 2)
+
+	// Invalid input should return errors.
+	_, err = p.ParseExpr("===")
+	require.Error(t, err)
 }

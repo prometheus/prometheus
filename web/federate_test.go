@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -35,12 +35,15 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+var testParser = parser.NewParser(parser.Options{})
 
 var scenarios = map[string]struct {
 	params         string
@@ -212,7 +215,6 @@ func TestFederation(t *testing.T) {
 			test_metric_stale                       1+10x99 stale
 			test_metric_old                         1+10x98
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	h := &Handler{
 		localStorage:  &dbAdapter{storage.DB},
@@ -221,6 +223,7 @@ func TestFederation(t *testing.T) {
 		config: &config.Config{
 			GlobalConfig: config.GlobalConfig{},
 		},
+		options: &Options{Parser: testParser},
 	}
 
 	for name, scenario := range scenarios {
@@ -265,6 +268,7 @@ func TestFederation_NotReady(t *testing.T) {
 						ExternalLabels: scenario.externalLabels,
 					},
 				},
+				options: &Options{Parser: testParser},
 			}
 
 			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, nil)
@@ -303,7 +307,6 @@ func normalizeBody(body *bytes.Buffer) string {
 
 func TestFederationWithNativeHistograms(t *testing.T) {
 	storage := teststorage.New(t)
-	t.Cleanup(func() { storage.Close() })
 
 	var expVec promql.Vector
 
@@ -442,6 +445,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		config: &config.Config{
 			GlobalConfig: config.GlobalConfig{},
 		},
+		options: &Options{Parser: testParser},
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?match[]=test_metric", nil)

@@ -101,11 +101,30 @@ MatchingModifierClause {
   ((GroupLeft | GroupRight) (!group GroupingLabels)?)?
 }
 
+FillClause {
+  Fill "(" NumberDurationLiteral ")"
+}
+
+FillLeftClause {
+  FillLeft "(" NumberDurationLiteral ")"
+}
+
+FillRightClause {
+  FillRight "(" NumberDurationLiteral ")"
+}
+
+FillModifier {
+  (FillClause | FillLeftClause | FillRightClause) |
+  (FillLeftClause FillRightClause) |
+  (FillRightClause FillLeftClause)
+}
+
 BoolModifier { Bool }
 
 binModifiers {
   BoolModifier?
   MatchingModifierClause?
+  FillModifier?
 }
 
 GroupingLabels {
@@ -148,6 +167,7 @@ FunctionIdentifier {
   HistogramCount |
   HistogramFraction |
   HistogramQuantile |
+  HistogramQuantiles |
   HistogramStdDev |
   HistogramStdVar |
   HistogramSum |
@@ -366,7 +386,10 @@ NumberDurationLiteralInDurationContext {
   Start,
   End,
   Smoothed,
-  Anchored
+  Anchored,
+  Fill,
+  FillLeft,
+  FillRight
 }
 
 @external propSource promQLHighLight from "./highlight"
@@ -404,6 +427,7 @@ NumberDurationLiteralInDurationContext {
   HistogramCount { condFn<"histogram_count"> }
   HistogramFraction { condFn<"histogram_fraction"> }
   HistogramQuantile { condFn<"histogram_quantile"> }
+  HistogramQuantiles { condFn<"histogram_quantiles"> }
   HistogramStdDev { condFn<"histogram_stddev"> }
   HistogramStdVar { condFn<"histogram_stdvar"> }
   HistogramSum { condFn<"histogram_sum"> }

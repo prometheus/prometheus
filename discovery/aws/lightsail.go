@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -27,7 +26,6 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/lightsail"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
@@ -95,7 +93,7 @@ func (*LightsailSDConfig) Name() string { return "lightsail" }
 
 // NewDiscoverer returns a Discoverer for the Lightsail Config.
 func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewLightsailDiscovery(c, opts.Logger, opts.Metrics)
+	return NewLightsailDiscovery(c, opts)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Lightsail Config.
@@ -107,30 +105,9 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	if c.Region == "" {
-		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
-		if err != nil {
-			return err
-		}
-
-		if cfg.Region != "" {
-			// Use the region from the AWS config. It will load environment variables and shared config files.
-			c.Region = cfg.Region
-		}
-
-		if c.Region == "" {
-			// Try to get the region from the instance metadata service (IMDS).
-			imdsClient := imds.NewFromConfig(cfg)
-			region, err := imdsClient.GetRegion(context.Background(), &imds.GetRegionInput{})
-			if err != nil {
-				return err
-			}
-			c.Region = region.Region
-		}
-	}
-
-	if c.Region == "" {
-		return errors.New("lightsail SD configuration requires a region")
+	c.Region, err = loadRegion(context.Background(), c.Region)
+	if err != nil {
+		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -145,14 +122,14 @@ type LightsailDiscovery struct {
 }
 
 // NewLightsailDiscovery returns a new LightsailDiscovery which periodically refreshes its targets.
-func NewLightsailDiscovery(conf *LightsailSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*LightsailDiscovery, error) {
-	m, ok := metrics.(*lightsailMetrics)
+func NewLightsailDiscovery(conf *LightsailSDConfig, opts discovery.DiscovererOptions) (*LightsailDiscovery, error) {
+	m, ok := opts.Metrics.(*lightsailMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	if logger == nil {
-		logger = promslog.NewNopLogger()
+	if opts.Logger == nil {
+		opts.Logger = promslog.NewNopLogger()
 	}
 
 	d := &LightsailDiscovery{
@@ -160,8 +137,9 @@ func NewLightsailDiscovery(conf *LightsailSDConfig, logger *slog.Logger, metrics
 	}
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "lightsail",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(d.cfg.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -210,7 +188,12 @@ func (d *LightsailDiscovery) lightsailClient(ctx context.Context) (*lightsail.Cl
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.lightsail = lightsail.NewFromConfig(cfg)
+	d.lightsail = lightsail.NewFromConfig(cfg, func(options *lightsail.Options) {
+		if d.cfg.Endpoint != "" {
+			options.BaseEndpoint = &d.cfg.Endpoint
+		}
+		options.HTTPClient = httpClient
+	})
 
 	return d.lightsail, nil
 }

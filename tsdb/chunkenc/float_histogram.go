@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -195,7 +195,7 @@ func (a *FloatHistogramAppender) NumSamples() int {
 
 // Append implements Appender. This implementation panics because normal float
 // samples must never be appended to a histogram chunk.
-func (*FloatHistogramAppender) Append(int64, float64) {
+func (*FloatHistogramAppender) Append(int64, int64, float64) {
 	panic("appended a float sample to a histogram chunk")
 }
 
@@ -682,11 +682,11 @@ func (*FloatHistogramAppender) recodeHistogram(
 	}
 }
 
-func (*FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
+func (*FloatHistogramAppender) AppendHistogram(*HistogramAppender, int64, int64, *histogram.Histogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a histogram sample to a float histogram chunk")
 }
 
-func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppender, t int64, h *histogram.FloatHistogram, appendOnly bool) (Chunk, bool, Appender, error) {
+func (a *FloatHistogramAppender) AppendFloatHistogram(prev *FloatHistogramAppender, _, t int64, h *histogram.FloatHistogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	if a.NumSamples() == 0 {
 		a.appendFloatHistogram(t, h)
 		if h.CounterResetHint == histogram.GaugeType {
@@ -884,7 +884,14 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 			// chunk is from a newer Prometheus version that supports higher
 			// resolution.
 			fh = fh.Copy()
-			fh.ReduceResolution(histogram.ExponentialSchemaMax)
+			if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				// With the checks above, this can only happen
+				// with invalid data in a chunk. As this is a
+				// rare edge case of a rare edge case, we'd
+				// rather not create all the plumbing to handle
+				// this error gracefully.
+				panic(err)
+			}
 		}
 		return it.t, fh
 	}
@@ -915,7 +922,13 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 		// This is a very slow path, but it should only happen if the
 		// chunk is from a newer Prometheus version that supports higher
 		// resolution.
-		fh.ReduceResolution(histogram.ExponentialSchemaMax)
+		if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			// With the checks above, this can only happen with
+			// invalid data in a chunk. As this is a rare edge case
+			// of a rare edge case, we'd rather not create all the
+			// plumbing to handle this error gracefully.
+			panic(err)
+		}
 	}
 
 	return it.t, fh
@@ -923,6 +936,10 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 
 func (it *floatHistogramIterator) AtT() int64 {
 	return it.t
+}
+
+func (*floatHistogramIterator) AtST() int64 {
+	return 0
 }
 
 func (it *floatHistogramIterator) Err() error {

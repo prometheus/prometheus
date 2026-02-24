@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -142,7 +142,7 @@ func TestReduceResolutionHistogram(t *testing.T) {
 
 	for _, tc := range cases {
 		spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
-		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, false)
+		spans, buckets := mustReduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, false)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
 		// Verify inputs were not mutated:
@@ -151,7 +151,7 @@ func TestReduceResolutionHistogram(t *testing.T) {
 
 		// Output slices reuse input slices:
 		const inplace = true
-		spans, buckets = reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, inplace)
+		spans, buckets = mustReduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, true, inplace)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
 		// Verify inputs were mutated which is now expected:
@@ -190,7 +190,7 @@ func TestReduceResolutionFloatHistogram(t *testing.T) {
 
 	for _, tc := range cases {
 		spansCopy, bucketsCopy := slices.Clone(tc.spans), slices.Clone(tc.buckets)
-		spans, buckets := reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, false)
+		spans, buckets := mustReduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, false)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
 		// Verify inputs were not mutated:
@@ -199,7 +199,7 @@ func TestReduceResolutionFloatHistogram(t *testing.T) {
 
 		// Output slices reuse input slices:
 		const inplace = true
-		spans, buckets = reduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, inplace)
+		spans, buckets = mustReduceResolution(tc.spans, tc.buckets, tc.schema, tc.targetSchema, false, inplace)
 		require.Equal(t, tc.expectedSpans, spans)
 		require.Equal(t, tc.expectedBuckets, buckets)
 		// Verify inputs were mutated which is now expected:

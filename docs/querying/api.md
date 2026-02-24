@@ -6,6 +6,22 @@ sort_rank: 7
 The current stable HTTP API is reachable under `/api/v1` on a Prometheus
 server. Any non-breaking additions will be added under that endpoint.
 
+## OpenAPI Specification
+
+An OpenAPI specification for the HTTP API is available at `/api/v1/openapi.yaml`.
+By default, it returns OpenAPI 3.1 for broader compatibility. Use `?openapi_version=3.2`
+for OpenAPI 3.2, which includes advanced features and endpoints like `/api/v1/notifications/live`.
+
+This machine-readable specification describes all available endpoints, request parameters,
+response formats, and schemas.
+
+The OpenAPI specification can be used to:
+
+- Generate client libraries in various programming languages.
+- Validate API requests and responses.
+- Generate interactive API documentation.
+- Test API endpoints.
+
 ## Format overview
 
 The API response format is JSON. Every successful API request returns a `2xx`
@@ -84,8 +100,9 @@ URL query parameters:
 - `time=<rfc3339 | unix_timestamp>`: Evaluation timestamp. Optional.
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
-- `limit=<number>`: Maximum number of returned series. Doesn’t affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
+- `limit=<number>`: Maximum number of returned series. Doesn't affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 - `lookback_delta=<number>`: Override the the [lookback period](#staleness) just for this query. Optional.
+- `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics. Optional.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -159,6 +176,7 @@ URL query parameters:
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 - `lookback_delta=<number>`: Override the the [lookback period](#staleness) just for this query. Optional.
+- `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics. Optional.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -670,6 +688,35 @@ Note that with the currently implemented bucket schemas, positive buckets are
 “open left”, negative buckets are “open right”, and the zero bucket (with a
 negative left boundary and a positive right boundary) is “closed both”.
 
+## Scrape pools
+
+The following endpoint returns a list of all configured scrape pools:
+
+```
+GET /api/v1/scrape_pools
+```
+
+The `data` section of the JSON response is a list of string scrape pool names.
+
+```bash
+curl http://localhost:9090/api/v1/scrape_pools
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "scrapePools": [
+      "prometheus",
+      "node_exporter",
+      "blackbox"
+    ]
+  }
+}
+```
+
+*New in v2.42*
+
 ## Targets
 
 The following endpoint returns an overview of the current state of the
@@ -982,6 +1029,7 @@ curl http://localhost:9090/api/v1/alerts
 ## Querying target metadata
 
 The following endpoint returns metadata about metrics currently scraped from targets.
+The endpoint has the limitation that only metadata scraped from targets directly is returned, metadata sent over Remote-Write or OTLP to Prometheus is not included in this endpoint and will not show up on the UI in "Explore Metrics".
 This is **experimental** and might change in the future.
 
 ```
@@ -1346,7 +1394,7 @@ GET /api/v1/status/tsdb
 ```
 URL query parameters:
 
-- `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned.
+- `limit=<number>`: Limit the number of returned items to a given number for each set of statistics. By default, 10 items are returned. The maximum allowed limit is 10000.
 
 The `data` section of the query result consists of:
 
@@ -1700,3 +1748,80 @@ GET /api/v1/notifications/live
 ```
 
 *New in v3.0*
+
+### Features
+
+The following endpoint returns a list of enabled features in the Prometheus server:
+
+```
+GET /api/v1/features
+```
+
+This endpoint provides information about which features are currently enabled or disabled in the Prometheus instance. Features are organized into categories such as `api`, `promql`, `promql_functions`, etc.
+
+The `data` section contains a map where each key is a feature category, and each value is a map of feature names to their enabled status (boolean).
+
+```bash
+curl http://localhost:9090/api/v1/features
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "api": {
+      "admin": false,
+      "exclude_alerts": true
+    },
+    "otlp_receiver": {
+      "delta_conversion": false,
+      "native_delta_ingestion": false
+    },
+    "prometheus": {
+      "agent_mode": false,
+      "auto_reload_config": false
+    },
+    "promql": {
+      "anchored": false,
+      "at_modifier": true
+    },
+    "promql_functions": {
+      "abs": true,
+      "absent": true
+    },
+    "promql_operators": {
+      "!=": true,
+      "!~": true
+    },
+    "rules": {
+      "concurrent_rule_eval": false,
+      "keep_firing_for": true
+    },
+    "scrape": {
+      "start_timestamp_zero_ingestion": false,
+      "extra_metrics": false
+    },
+    "service_discovery": {
+      "azure": true,
+      "consul": true
+    },
+    "templating": {
+      "args": true,
+      "externalURL": true
+    },
+    "tsdb": {
+      "delayed_compaction": false,
+      "exemplar_storage": false
+    }
+  }
+}
+```
+
+**Notes:**
+
+- All feature names use `snake_case` naming convention
+- Features set to `false` may be omitted from the response
+- Clients should treat absent features as equivalent to `false`
+- Clients must ignore unknown feature names and categories for forward compatibility
+
+*New in v3.8*

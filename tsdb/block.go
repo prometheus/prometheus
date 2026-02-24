@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -101,11 +100,6 @@ type IndexReader interface {
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
-
-	// LabelValueFor returns label value for the given label name in the series referred to by ID.
-	// If the series couldn't be found or the series doesn't have the requested label a
-	// storage.ErrNotFound is returned as error.
-	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
 
 	// LabelNamesFor returns all the label names for the series referred to by the postings.
 	// The names returned are sorted.
@@ -233,6 +227,18 @@ func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
 	return slices.Contains(bm.Hints, CompactionHintFromOutOfOrder)
 }
 
+func (bm *BlockMetaCompaction) SetStaleSeries() {
+	if bm.FromStaleSeries() {
+		return
+	}
+	bm.Hints = append(bm.Hints, CompactionHintFromStaleSeries)
+	slices.Sort(bm.Hints)
+}
+
+func (bm *BlockMetaCompaction) FromStaleSeries() bool {
+	return slices.Contains(bm.Hints, CompactionHintFromStaleSeries)
+}
+
 const (
 	indexFilename = "index"
 	metaFilename  = "meta.json"
@@ -241,6 +247,10 @@ const (
 	// CompactionHintFromOutOfOrder is a hint noting that the block
 	// was created from out-of-order chunks.
 	CompactionHintFromOutOfOrder = "from-out-of-order"
+
+	// CompactionHintFromStaleSeries is a hint noting that the block
+	// was created from stale series.
+	CompactionHintFromStaleSeries = "from-stale-series"
 )
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
@@ -286,12 +296,12 @@ func writeMetaFile(logger *slog.Logger, dir string, meta *BlockMeta) (int64, err
 
 	n, err := f.Write(jsonMeta)
 	if err != nil {
-		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
+		return 0, errors.Join(err, f.Close())
 	}
 
 	// Force the kernel to persist the file on disk to avoid data loss if the host crashes.
 	if err := f.Sync(); err != nil {
-		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
+		return 0, errors.Join(err, f.Close())
 	}
 	if err := f.Close(); err != nil {
 		return 0, err
@@ -333,7 +343,7 @@ func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDeco
 	var closers []io.Closer
 	defer func() {
 		if err != nil {
-			err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
+			err = errors.Join(err, closeAll(closers))
 		}
 	}()
 	meta, sizeMeta, err := readMetaFile(dir)
@@ -387,11 +397,11 @@ func (pb *Block) Close() error {
 
 	pb.pendingReaders.Wait()
 
-	return tsdb_errors.NewMulti(
+	return errors.Join(
 		pb.chunkr.Close(),
 		pb.indexr.Close(),
 		pb.tombstones.Close(),
-	).Err()
+	)
 }
 
 func (pb *Block) String() string {
@@ -549,11 +559,6 @@ func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 func (r blockIndexReader) Close() error {
 	r.b.pendingReaders.Done()
 	return nil
-}
-
-// LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
-	return r.ir.LabelValueFor(ctx, id, label)
 }
 
 // LabelNamesFor returns all the label names for the series referred to by the postings.

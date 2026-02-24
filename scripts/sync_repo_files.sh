@@ -30,6 +30,22 @@ echo_yellow() {
   echo -e "${color_yellow}$@${color_none}" 1>&2
 }
 
+repo_log_red() {
+  echo_red "${org_repo}: $@"
+}
+
+repo_log_green() {
+  echo_green "${org_repo}: $@"
+}
+
+repo_log_yellow() {
+  echo_yellow "${org_repo}: $@"
+}
+
+repo_log() {
+  echo "${org_repo}: $@" 1>&2
+}
+
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 if [ -z "${GITHUB_TOKEN}" ]; then
   echo_red 'GitHub token (GITHUB_TOKEN) not set. Terminating.'
@@ -112,28 +128,28 @@ process_repo() {
   local org_repo
   local default_branch
   org_repo="$1"
-  echo_green "Analyzing '${org_repo}'"
+  repo_log_green "Analyzing '${org_repo}'"
 
   default_branch="$(get_default_branch "${org_repo}")"
   if [[ -z "${default_branch}" ]]; then
-    echo "Can't get the default branch."
+    repo_log_red "Can't get the default branch."
     return
   fi
-  echo "Default branch: ${default_branch}"
+  repo_log "Default branch: ${default_branch}"
 
   local needs_update=()
   for source_file in ${SYNC_FILES}; do
     source_checksum="$(sha256sum "${source_dir}/${source_file}" | cut -d' ' -f1)"
     if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] && ! check_go "${org_repo}" "${default_branch}" ; then
-      echo "${org_repo} is not Go, skipping golangci-lint.yml."
+      repo_log "${org_repo} is not Go, skipping golangci-lint.yml."
       continue
     fi
     if [[ "${source_file}" == '.github/workflows/container_description.yml' ]] && ! check_docker "${org_repo}" "${default_branch}" ; then
-      echo "${org_repo} has no Dockerfile, skipping container_description.yml."
+      repo_log "${org_repo} has no Dockerfile, skipping container_description.yml."
       continue
     fi
     if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
-      echo "LICENSE in ${org_repo} is not apache, skipping."
+      repo_log "LICENSE in ${org_repo} is not apache, skipping."
       continue
     fi
     target_filename="${source_file}"
@@ -142,10 +158,10 @@ process_repo() {
     fi
     target_file="$(curl -sL --fail "https://raw.githubusercontent.com/${org_repo}/${default_branch}/${target_filename}")"
     if [[ -z "${target_file}" ]]; then
-      echo "${target_filename} doesn't exist in ${org_repo}"
+      repo_log "${target_filename} doesn't exist in ${org_repo}"
       case "${source_file}" in
         CODE_OF_CONDUCT.md | SECURITY.md | .github/workflows/container_description.yml)
-          echo "${source_file} missing in ${org_repo}, force updating."
+          repo_log_yellow "${source_file} missing in ${org_repo}, force updating."
           needs_update+=("${source_file}")
           ;;
       esac
@@ -153,15 +169,15 @@ process_repo() {
     fi
     target_checksum="$(echo "${target_file}" | sha256sum | cut -d' ' -f1)"
     if [ "${source_checksum}" == "${target_checksum}" ]; then
-      echo "${source_file} is already in sync."
+      repo_log_green "${source_file} is already in sync."
       continue
     fi
-    echo "${source_file} needs updating."
+    repo_log_yellow "${source_file} needs updating."
     needs_update+=("${source_file}")
   done
 
   if [[ "${#needs_update[@]}" -eq 0 ]] ; then
-    echo "No files need sync."
+    repo_log_green "No files need sync."
     return
   fi
 
@@ -184,17 +200,21 @@ process_repo() {
     esac
   done
 
+  repo_log "File sync complete"
+
   if [[ -n "$(git status --porcelain)" ]]; then
     git config user.email "${git_mail}"
     git config user.name "${git_user}"
     git add .
     git commit -s -m "${commit_msg}"
+    repo_log "Commit created"
     if push_branch "${org_repo}"; then
       if ! post_pull_request "${org_repo}" "${default_branch}"; then
+        repo_log_red "Posting PR failed"
         return 1
       fi
     else
-      echo "Pushing ${branch} to ${org_repo} failed"
+      repo_log_red "Pushing ${branch} to ${org_repo} failed"
       return 1
     fi
   fi

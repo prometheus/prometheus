@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/gogo/protobuf/types"
@@ -400,24 +399,24 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	return true
 }
 
-// CreatedTimestamp returns CT or 0 if CT is not present on counters, summaries or histograms.
-func (p *ProtobufParser) CreatedTimestamp() int64 {
-	var ct *types.Timestamp
+// StartTimestamp returns ST or 0 if ST is not present on counters, summaries or histograms.
+func (p *ProtobufParser) StartTimestamp() int64 {
+	var st *types.Timestamp
 	switch p.dec.GetType() {
 	case dto.MetricType_COUNTER:
-		ct = p.dec.GetCounter().GetCreatedTimestamp()
+		st = p.dec.GetCounter().GetCreatedTimestamp()
 	case dto.MetricType_SUMMARY:
-		ct = p.dec.GetSummary().GetCreatedTimestamp()
+		st = p.dec.GetSummary().GetCreatedTimestamp()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-		ct = p.dec.GetHistogram().GetCreatedTimestamp()
+		st = p.dec.GetHistogram().GetCreatedTimestamp()
 	default:
 	}
-	if ct == nil {
+	if st == nil {
 		return 0
 	}
 	// Same as the gogo proto types.TimestampFromProto but straight to integer.
 	// and without validation.
-	return ct.GetSeconds()*1e3 + int64(ct.GetNanos())/1e6
+	return st.GetSeconds()*1e3 + int64(st.GetNanos())/1e6
 }
 
 // Next advances the parser to the next "sample" (emulating the behavior of a
@@ -465,16 +464,6 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			// All good.
 		default:
 			return EntryInvalid, fmt.Errorf("unknown metric type for metric %q: %s", name, p.dec.GetType())
-		}
-		unit := p.dec.GetUnit()
-		if len(unit) > 0 {
-			if p.dec.GetType() == dto.MetricType_COUNTER && strings.HasSuffix(name, "_total") {
-				if !strings.HasSuffix(name[:len(name)-6], unit) || len(name)-6 < len(unit)+1 || name[len(name)-6-len(unit)-1] != '_' {
-					return EntryInvalid, fmt.Errorf("unit %q not a suffix of counter %q", unit, name)
-				}
-			} else if !strings.HasSuffix(name, unit) || len(name) < len(unit)+1 || name[len(name)-len(unit)-1] != '_' {
-				return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", unit, name)
-			}
 		}
 		p.entryBytes.Reset()
 		p.entryBytes.WriteString(name)

@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -269,34 +269,26 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 
 	readersWG := sync.WaitGroup{}
 	for range readGoroutines {
-		readersWG.Add(1)
-
-		go func() {
-			defer readersWG.Done()
-
+		readersWG.Go(func() {
 			for j, ok := queue.pop(); ok; j, ok = queue.pop() {
 				refsMx.Lock()
 				refs[j.seriesRef] = true
 				refsMx.Unlock()
 			}
-		}()
+		})
 	}
 
 	id := atomic.Uint64{}
 
 	writersWG := sync.WaitGroup{}
 	for range writeGoroutines {
-		writersWG.Add(1)
-
-		go func() {
-			defer writersWG.Done()
-
+		writersWG.Go(func() {
 			for range writes {
 				ref := id.Inc()
 
 				require.True(t, queue.push(chunkWriteJob{seriesRef: HeadSeriesRef(ref)}))
 			}
-		}()
+		})
 	}
 
 	// Wait until all writes are done.

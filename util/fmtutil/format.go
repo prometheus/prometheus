@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"sort"
 	"time"
 
@@ -140,11 +141,23 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 		// Add Histogram bucket timeseries
 		bucketLabels := make(map[string]string, len(labels)+1)
 		maps.Copy(bucketLabels, labels)
+		var hasInf bool
 		for _, b := range m.GetHistogram().Bucket {
+			if b.GetUpperBound() == math.Inf(1) {
+				hasInf = true
+			}
 			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
 			bucketLabels[model.BucketLabel] = fmt.Sprint(b.GetUpperBound())
 			toTimeseries(wr, bucketLabels, timestamp, float64(b.GetCumulativeCount()))
 		}
+
+		// Add +Inf bucket if not present
+		if !hasInf {
+			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
+			bucketLabels[model.BucketLabel] = "+Inf"
+			toTimeseries(wr, bucketLabels, timestamp, float64(m.GetHistogram().GetSampleCount()))
+		}
+
 		// Overwrite label model.MetricNameLabel for count and sum metrics
 		// Add Histogram sum timeseries
 		labels[model.MetricNameLabel] = metricName + sumStr

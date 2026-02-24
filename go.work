@@ -1,0 +1,9 @@
+go 1.25.5
+
+use (
+	.
+	./documentation/examples/remote_storage
+	./internal/tools
+	./web/ui/mantine-ui/src/promql/tools
+	./compliance
+)

@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -67,17 +67,19 @@ func TestSizeOfLabels(t *testing.T) {
 	require.Len(t, expectedSizeOfLabels, len(testCaseLabels))
 	for i, c := range expectedSizeOfLabels { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
 		var total uint64
-		testCaseLabels[i].Range(func(l Label) {
+		labels := testCaseLabels[i]
+		labels.Range(func(l Label) {
 			total += SizeOfLabels(l.Name, l.Value, 1)
 		})
-		require.Equal(t, c, total)
+		require.Equalf(t, c, total, "unexpected size for test case %d: %v", i, labels)
 	}
 }
 
 func TestByteSize(t *testing.T) {
 	require.Len(t, expectedByteSize, len(testCaseLabels))
 	for i, c := range expectedByteSize { // Declared in build-tag-specific files, e.g. labels_slicelabels_test.go.
-		require.Equal(t, c, testCaseLabels[i].ByteSize())
+		labels := testCaseLabels[i]
+		require.Equalf(t, c, labels.ByteSize(), "unexpected size for test case %d: %v", i, labels)
 	}
 }
 

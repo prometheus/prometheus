@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -395,6 +395,7 @@ func TestTimeMetrics(t *testing.T) {
 }
 
 func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames ...string) map[string]float64 {
+	t.Helper()
 	f, err := reg.Gather()
 	require.NoError(t, err)
 
@@ -426,7 +427,7 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 	go func() { done <- prom.Wait() }()
 	select {
 	case err := <-done:
-		t.Logf("prometheus agent should be still running: %v", err)
+		t.Logf("prometheus agent exited early: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
 	case <-time.After(startupTime):
 		prom.Process.Kill()
@@ -571,12 +572,7 @@ func TestDocumentation(t *testing.T) {
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
-	if err := cmd.Run(); err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) && exitError.ExitCode() != 0 {
-			fmt.Println("Command failed with non-zero exit code")
-		}
-	}
+	require.NoError(t, cmd.Run(), "failed to generate CLI documentation via --write-documentation")
 
 	generatedContent := strings.ReplaceAll(stdout.String(), filepath.Base(promPath), strings.TrimSuffix(filepath.Base(promPath), ".test"))
 
@@ -753,7 +749,7 @@ global:
 			configFile := filepath.Join(tmpDir, "prometheus.yml")
 
 			port := testutil.RandomUnprivilegedPort(t)
-			os.WriteFile(configFile, []byte(tc.config), 0o777)
+			require.NoError(t, os.WriteFile(configFile, []byte(tc.config), 0o777))
 			prom := prometheusCommandWithLogging(
 				t,
 				configFile,
@@ -801,7 +797,7 @@ global:
 			newConfig := `
 runtime:
   gogc: 99`
-			os.WriteFile(configFile, []byte(newConfig), 0o777)
+			require.NoError(t, os.WriteFile(configFile, []byte(newConfig), 0o777))
 			reloadPrometheusConfig(t, reloadURL)
 			ensureGOGCValue(99.0)
 		})
@@ -834,7 +830,7 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:%d']
 `, port, port)
-			os.WriteFile(configFile, []byte(config), 0o777)
+			require.NoError(t, os.WriteFile(configFile, []byte(config), 0o777))
 
 			prom := prometheusCommandWithLogging(
 				t,
@@ -968,7 +964,18 @@ remote_write:
 
 // TestRemoteWrite_ReshardingWithoutDeadlock ensures that resharding (scaling up) doesn't block when the shards are full.
 // See: https://github.com/prometheus/prometheus/issues/17384.
+//
+// The following shows key resharding metrics before and after the fix.
+// In v3.7.0, the deadlock prevented the resharding logic from observing the true incoming data rate.
+//
+// | Metric              | v3.7.0        | after the fix       |
+// |---------------------|---------------|---------------------|
+// | dataInRate          | 0.6           | 307.2               |
+// | dataPendingRate     | 0.2           | 306.8               |
+// | dataPending         | 0             | 1228.8              |
+// | desiredShards       | 0.6           | 369.2               |.
 func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
+	t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/17489")
 	t.Parallel()
 
 	tmpDir := t.TempDir()
@@ -983,7 +990,8 @@ func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
 
 	config := fmt.Sprintf(`
 global:
-  scrape_interval: 100ms
+  # Using a smaller interval may cause the scrape to time out.
+  scrape_interval: 1s
 scrape_configs:
   - job_name: 'self'
     static_configs:
@@ -994,6 +1002,8 @@ remote_write:
     queue_config:
       # Speed up the queue being full.
       capacity: 1
+      # Helps keep the “time to send one sample” low so it doesn’t influence the resharding logic.
+      max_samples_per_send: 1
 `, port, server.URL)
 	require.NoError(t, os.WriteFile(configFile, []byte(config), 0o777))
 
@@ -1002,36 +1012,52 @@ remote_write:
 		configFile,
 		port,
 		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+		"--log.level=debug",
 	)
 	require.NoError(t, prom.Start())
 
-	var checkInitialDesiredShardsOnce sync.Once
-	require.Eventually(t, func() bool {
+	const desiredShardsMetric = "prometheus_remote_storage_shards_desired"
+	getMetrics := func() ([]byte, error) {
 		r, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
 		if err != nil {
-			return false
+			return nil, err
 		}
 		defer r.Body.Close()
 		if r.StatusCode != http.StatusOK {
-			return false
+			return nil, fmt.Errorf("unexpected status code: %d", r.StatusCode)
 		}
 
 		metrics, err := io.ReadAll(r.Body)
 		if err != nil {
+			return nil, err
+		}
+		return metrics, nil
+	}
+
+	// Ensure the initial desired shards is 1.
+	require.Eventually(t, func() bool {
+		metrics, err := getMetrics()
+		if err != nil {
 			return false
 		}
+		initialDesiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, desiredShardsMetric)
+		if err != nil {
+			return false
+		}
+		return initialDesiredShards == 1.0
+	}, 10*time.Second, 100*time.Millisecond)
 
-		checkInitialDesiredShardsOnce.Do(func() {
-			s, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_shards_desired")
-			require.NoError(t, err)
-			require.Equal(t, 1.0, s)
-		})
-
-		desiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, "prometheus_remote_storage_shards_desired")
-		if err != nil || desiredShards <= 1 {
+	// Ensure scaling up is triggered after some time.
+	require.Eventually(t, func() bool {
+		metrics, err := getMetrics()
+		if err != nil {
+			return false
+		}
+		desiredShards, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeGauge, desiredShardsMetric)
+		if err != nil || desiredShards <= 1.0 {
 			return false
 		}
 		return true
 		// 3*shardUpdateDuration to allow for the resharding logic to run.
-	}, 30*time.Second, 1*time.Second)
+	}, 30*time.Second, time.Second)
 }

@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -259,7 +259,11 @@ func TestDNS(t *testing.T) {
 			metrics := tc.config.NewDiscovererMetrics(reg, refreshMetrics)
 			require.NoError(t, metrics.Register())
 
-			sd, err := NewDiscovery(tc.config, nil, metrics)
+			sd, err := NewDiscovery(tc.config, discovery.DiscovererOptions{
+				Logger:  nil,
+				Metrics: metrics,
+				SetName: "dns",
+			})
 			require.NoError(t, err)
 			sd.lookupFn = tc.lookup
 

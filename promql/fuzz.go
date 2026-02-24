@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -60,6 +60,8 @@ const (
 // Use package-scope symbol table to avoid memory allocation on every fuzzing operation.
 var symbolTable = labels.NewSymbolTable()
 
+var fuzzParser = parser.NewParser(parser.Options{})
+
 func fuzzParseMetricWithContentType(in []byte, contentType string) int {
 	p, warning := textparse.New(in, contentType, symbolTable, textparse.ParserOptions{})
 	if p == nil || warning != nil {
@@ -103,7 +105,7 @@ func FuzzParseMetricSelector(in []byte) int {
 	if len(in) > maxInputSize {
 		return fuzzMeh
 	}
-	_, err := parser.ParseMetricSelector(string(in))
+	_, err := fuzzParser.ParseMetricSelector(string(in))
 	if err == nil {
 		return fuzzInteresting
 	}
@@ -116,7 +118,7 @@ func FuzzParseExpr(in []byte) int {
 	if len(in) > maxInputSize {
 		return fuzzMeh
 	}
-	_, err := parser.ParseExpr(string(in))
+	_, err := fuzzParser.ParseExpr(string(in))
 	if err == nil {
 		return fuzzInteresting
 	}

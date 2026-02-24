@@ -14,6 +14,7 @@
 // NOTE: This file is also available on https://buf.build/prometheus/prometheus/docs/main:io.prometheus.write.v2
 
 syntax = "proto3";
+
 package io.prometheus.write.v2;
 
 option go_package = "writev2";
@@ -26,6 +27,8 @@ import "gogoproto/gogo.proto";
 //
 // The canonical Content-Type request header value for this message is
 // "application/x-protobuf;proto=io.prometheus.write.v2.Request"
+//
+// Version: v2.0-rc.4
 //
 // NOTE: gogoproto options might change in future for this file, they
 // are not part of the spec proto (they only modify the generated Go code, not
@@ -59,7 +62,7 @@ message TimeSeries {
   //
   // Note that there might be multiple TimeSeries objects in the same
   // Requests with the same labels e.g. for different exemplars, metadata
-  // or created timestamp.
+  // or start timestamp.
   repeated uint32 labels_refs = 1;
 
   // Timeseries messages can either specify samples or (native) histogram samples
@@ -76,23 +79,9 @@ message TimeSeries {
   // metadata represents the metadata associated with the given series' samples.
   Metadata metadata = 5 [(gogoproto.nullable) = false];
 
-  // created_timestamp represents an optional created timestamp associated with
-  // this series' samples in ms format, typically for counter or histogram type
-  // metrics. Created timestamp represents the time when the counter started
-  // counting (sometimes referred to as start timestamp), which can increase
-  // the accuracy of query results.
-  //
-  // Note that some receivers might require this and in return fail to
-  // ingest such samples within the Request.
-  //
-  // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
-  // for conversion from/to time.Time to Prometheus timestamp.
-  //
-  // Note that the "optional" keyword is omitted due to
-  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
-  // Zero value means value not set. If you need to use exactly zero value for
-  // the timestamp, use 1 millisecond before or after.
-  int64 created_timestamp = 6;
+  // This field is reserved for backward compatibility with the deprecated fields;
+  // previously present in the experimental remote write period.
+  reserved 6;
 }
 
 // Exemplar is an additional information attached to some series' samples.
@@ -123,6 +112,26 @@ message Sample {
   // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
   // for conversion from/to time.Time to Prometheus timestamp.
   int64 timestamp = 2;
+  // start_timestamp represents an optional start timestamp for the sample,
+  // in ms format. This information is typically used for counter, histogram (cumulative)
+  // or delta type metrics.
+  //
+  // For cumulative metrics, the start timestamp represents the time when the
+  // counter started counting (sometimes referred to as start timestamp), which
+  // can increase the accuracy of certain processing and query semantics (e.g. rates).
+  //
+  // Note:
+  // * That some receivers might require start timestamps for certain metric
+  // types; rejecting such samples within the Request as a result.
+  // * start timestamp is the same as "created timestamp" name Prometheus used in the past.
+  //
+  // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
+  // for conversion from/to time.Time to Prometheus timestamp.
+  //
+  // Note that the "optional" keyword is omitted due to efficiency and consistency.
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 start_timestamp = 3;
 }
 
 // Metadata represents the metadata associated with the given series' samples.
@@ -148,12 +157,11 @@ message Metadata {
   uint32 unit_ref = 4;
 }
 
-// A native histogram, also known as a sparse histogram.
-// Original design doc:
-// https://docs.google.com/document/d/1cLNv3aufPZb3fNfaJgdaRBZsInZKKIHo9E6HinJVbpM/edit
-// The appendix of this design doc also explains the concept of float
-// histograms. This Histogram message can represent both, the usual
-// integer histogram as well as a float histogram.
+// A native histogram message, supporting
+// * sparse exponential bucketing, custom bucketing.
+// * float or integer histograms.
+//
+// See the full spec: https://prometheus.io/docs/specs/native_histograms/
 message Histogram {
   enum ResetHint {
     RESET_HINT_UNSPECIFIED = 0; // Need to test for a counter reset explicitly.
@@ -242,6 +250,24 @@ message Histogram {
   // The last element is not only the upper inclusive bound of the last regular
   // bucket, but implicitly the lower exclusive bound of the +Inf bucket.
   repeated double custom_values = 16;
+
+  // start_timestamp represents an optional start timestamp for the histogram sample,
+  // in ms format. The start timestamp represents the time when the histogram
+  // started counting, which can increase the accuracy of certain processing and
+  // query semantics (e.g. rates).
+  //
+  // Note:
+  // * That some receivers might require start timestamps for certain metric
+  // types; rejecting such samples within the Request as a result.
+  // * start timestamp is the same as "created timestamp" name Prometheus used in the past.
+  //
+  // For Go, see github.com/prometheus/prometheus/model/timestamp/timestamp.go
+  // for conversion from/to time.Time to Prometheus timestamp.
+  //
+  // Note that the "optional" keyword is omitted due to efficiency and consistency.
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 start_timestamp = 17;
 }
 
 // A BucketSpan defines a number of consecutive buckets with their

@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -269,22 +269,8 @@ func (re Regexp) String() string {
 	return str[5 : len(str)-2]
 }
 
-// Process returns a relabeled version of the given label set. The relabel configurations
-// are applied in order of input.
-// There are circumstances where Process will modify the input label.
-// If you want to avoid issues with the input label set being modified, at the cost of
-// higher memory usage, you can use lbls.Copy().
-// If a label set is dropped, EmptyLabels and false is returned.
-func Process(lbls labels.Labels, cfgs ...*Config) (ret labels.Labels, keep bool) {
-	lb := labels.NewBuilder(lbls)
-	if !ProcessBuilder(lb, cfgs...) {
-		return labels.EmptyLabels(), false
-	}
-	return lb.Labels(), true
-}
-
-// ProcessBuilder is like Process, but the caller passes a labels.Builder
-// containing the initial set of labels, which is mutated by the rules.
+// ProcessBuilder applies relabeling configurations (rules) to the labels in lb.
+// The rules are applied in order of input. Returns false if the rule says to drop.
 func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) (keep bool) {
 	for _, cfg := range cfgs {
 		keep = relabel(cfg, lb)

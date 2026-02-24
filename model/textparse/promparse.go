@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -274,9 +274,9 @@ func (*PromParser) Exemplar(*exemplar.Exemplar) bool {
 	return false
 }
 
-// CreatedTimestamp returns 0 as it's not implemented yet.
+// StartTimestamp returns 0 as it's not implemented yet.
 // TODO(bwplotka): https://github.com/prometheus/prometheus/issues/12980
-func (*PromParser) CreatedTimestamp() int64 {
+func (*PromParser) StartTimestamp() int64 {
 	return 0
 }
 

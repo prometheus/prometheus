@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -871,7 +871,7 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 	return samples, series
 }
 
-func createProtoTimeseriesWithOld(numSamples, baseTs int64, _ ...labels.Label) []prompb.TimeSeries {
+func createProtoTimeseriesWithOld(numSamples, baseTs int64) []prompb.TimeSeries {
 	samples := make([]prompb.TimeSeries, numSamples)
 	// use a fixed rand source so tests are consistent
 	r := rand.New(rand.NewSource(99))
@@ -2351,12 +2351,12 @@ func TestBuildTimeSeries(t *testing.T) {
 	// Run the test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			highest, lowest, result, droppedSamples, _, _ := buildTimeSeries(tc.ts, tc.filter)
+			result, stats := buildTimeSeries(tc.ts, tc.filter)
 			require.NotNil(t, result)
 			require.Len(t, result, tc.responseLen)
-			require.Equal(t, tc.highestTs, highest)
-			require.Equal(t, tc.lowestTs, lowest)
-			require.Equal(t, tc.droppedSamples, droppedSamples)
+			require.Equal(t, tc.highestTs, stats.highest)
+			require.Equal(t, tc.lowestTs, stats.lowest)
+			require.Equal(t, tc.droppedSamples, stats.droppedSamples)
 		})
 	}
 }
@@ -2365,9 +2365,15 @@ func BenchmarkBuildTimeSeries(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 10000
 	filter := func(ts prompb.TimeSeries) bool { return filterTsLimit(99, ts) }
+	originalSamples := createProtoTimeseriesWithOld(numSamples, 100)
+
+	b.ReportAllocs()
 	for b.Loop() {
-		samples := createProtoTimeseriesWithOld(numSamples, 100, extraLabels...)
-		_, _, result, _, _, _ := buildTimeSeries(samples, filter)
+		b.StopTimer()
+		samples := make([]prompb.TimeSeries, len(originalSamples))
+		copy(samples, originalSamples)
+		b.StartTimer()
+		result, _ := buildTimeSeries(samples, filter)
 		require.NotNil(b, result)
 	}
 }

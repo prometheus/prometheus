@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -73,8 +73,7 @@ func pathFromMetric(m model.Metric, prefix string) string {
 		// Since we use '.' instead of '=' to separate label and values
 		// it means that we can't have an '.' in the metric name. Fortunately
 		// this is prohibited in prometheus metrics.
-		buffer.WriteString(fmt.Sprintf(
-			".%s.%s", string(l), escape(v)))
+		fmt.Fprintf(&buffer, ".%s.%s", string(l), escape(v))
 	}
 	return buffer.String()
 }

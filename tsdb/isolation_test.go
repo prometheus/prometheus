@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -88,10 +88,7 @@ func BenchmarkIsolation(b *testing.B) {
 			start := make(chan struct{})
 
 			for range goroutines {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					<-start
 
 					for b.Loop() {
@@ -99,7 +96,7 @@ func BenchmarkIsolation(b *testing.B) {
 
 						iso.closeAppend(appendID)
 					}
-				}()
+				})
 			}
 
 			b.ResetTimer()
@@ -118,10 +115,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 			start := make(chan struct{})
 
 			for range goroutines {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					<-start
 
 					for b.Loop() {
@@ -129,7 +123,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 
 						iso.closeAppend(appendID)
 					}
-				}()
+				})
 			}
 
 			readers := goroutines / 100
@@ -138,17 +132,14 @@ func BenchmarkIsolationWithState(b *testing.B) {
 			}
 
 			for g := 0; g < readers; g++ {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					<-start
 
 					for b.Loop() {
 						s := iso.State(math.MinInt64, math.MaxInt64)
 						s.Close()
 					}
-				}()
+				})
 			}
 
 			b.ResetTimer()

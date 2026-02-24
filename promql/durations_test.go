@@ -1,4 +1,4 @@
-// Copyright 2025 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,11 +23,7 @@ import (
 )
 
 func TestDurationVisitor(t *testing.T) {
-	// Enable experimental duration expression parsing.
-	parser.ExperimentalDurationExpr = true
-	t.Cleanup(func() {
-		parser.ExperimentalDurationExpr = false
-	})
+	p := parser.NewParser(parser.Options{ExperimentalDurationExpr: true})
 	complexExpr := `sum_over_time(
 		rate(metric[5m] offset 1h)[10m:30s] offset 2h
 	) + 
@@ -38,7 +34,7 @@ func TestDurationVisitor(t *testing.T) {
 		metric[2h * 0.5]
 	)`
 
-	expr, err := parser.ParseExpr(complexExpr)
+	expr, err := p.ParseExpr(complexExpr)
 	require.NoError(t, err)
 
 	err = parser.Walk(&durationVisitor{}, expr, nil)
@@ -214,6 +210,37 @@ func TestCalculateDuration(t *testing.T) {
 			expected: 3 * time.Second,
 		},
 		{
+			name: "range",
+			expr: &parser.DurationExpr{
+				Op: parser.RANGE,
+			},
+			expected: 5 * time.Minute,
+		},
+		{
+			name: "range division",
+			expr: &parser.DurationExpr{
+				LHS: &parser.DurationExpr{
+					Op: parser.RANGE,
+				},
+				RHS: &parser.NumberLiteral{Val: 2},
+				Op:  parser.DIV,
+			},
+			expected: 150 * time.Second,
+		},
+		{
+			name: "max of step and range",
+			expr: &parser.DurationExpr{
+				LHS: &parser.DurationExpr{
+					Op: parser.STEP,
+				},
+				RHS: &parser.DurationExpr{
+					Op: parser.RANGE,
+				},
+				Op: parser.MAX,
+			},
+			expected: 5 * time.Minute,
+		},
+		{
 			name: "division by zero",
 			expr: &parser.DurationExpr{
 				LHS: &parser.NumberLiteral{Val: 5},
@@ -243,7 +270,7 @@ func TestCalculateDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := &durationVisitor{step: 1 * time.Second}
+			v := &durationVisitor{step: 1 * time.Second, queryRange: 5 * time.Minute}
 			result, err := v.calculateDuration(tt.expr, tt.allowedNegative)
 			if tt.errorMessage != "" {
 				require.Error(t, err)

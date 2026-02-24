@@ -158,6 +158,383 @@ eval instant at 50m histogram_fraction(0, 0.2, rate(testhistogram3_bucket[10m]))
 	{start="positive"} 0.6363636363636364
 	{start="negative"} 0
 
+# Positive buckets, lower falls in the first bucket.
+load_with_nhcb 5m
+	positive_buckets_lower_falls_in_the_first_bucket_bucket{le="1"}	 1+0x10
+	positive_buckets_lower_falls_in_the_first_bucket_bucket{le="2"}	 3+0x10
+	positive_buckets_lower_falls_in_the_first_bucket_bucket{le="3"}	 6+0x10
+	positive_buckets_lower_falls_in_the_first_bucket_bucket{le="+Inf"} 100+0x10
+
+# - Bucket [0, 1]: contributes 1.0 observation (full bucket).
+# - Bucket [1, 2]: contributes (1.5-1)/(2-1) * (3-1) = 0.5 * 2 = 1.0 observations.
+# Total: (1.0 + 1.0) / 100.0 = 0.02
+
+eval instant at 50m histogram_fraction(0, 1.5, positive_buckets_lower_falls_in_the_first_bucket_bucket)
+	expect no_warn
+	{} 0.02
+
+eval instant at 50m histogram_fraction(0, 1.5, positive_buckets_lower_falls_in_the_first_bucket)
+	expect no_warn
+	{} 0.02
+
+# Negative buckets, lower falls in the first bucket.
+load_with_nhcb 5m
+	negative_buckets_lower_falls_in_the_first_bucket_bucket{le="-3"}	 10+0x10
+	negative_buckets_lower_falls_in_the_first_bucket_bucket{le="-2"}	 12+0x10
+	negative_buckets_lower_falls_in_the_first_bucket_bucket{le="-1"}	 15+0x10
+	negative_buckets_lower_falls_in_the_first_bucket_bucket{le="+Inf"} 100+0x10
+
+# - Bucket [-Inf, -3]: contributes zero observations (no interpolation with infinite width bucket).
+# - Bucket [-3, -2]: contributes 12-10 = 2.0 observations (full bucket).
+# Total: 2.0 / 100.0 = 0.02
+
+eval instant at 50m histogram_fraction(-4, -2, negative_buckets_lower_falls_in_the_first_bucket_bucket)
+	expect no_warn
+	{} 0.02
+
+eval instant at 50m histogram_fraction(-4, -2, negative_buckets_lower_falls_in_the_first_bucket)
+	expect no_warn
+	{} 0.02
+
+# Lower is -Inf.
+load_with_nhcb 5m
+	lower_is_negative_Inf_bucket{le="-3"}	 10+0x10
+	lower_is_negative_Inf_bucket{le="-2"}	 12+0x10
+	lower_is_negative_Inf_bucket{le="-1"}	 15+0x10
+	lower_is_negative_Inf_bucket{le="+Inf"} 100+0x10
+
+# - Bucket [-Inf, -3]: contributes 10.0 observations (full bucket).
+# - Bucket [-3, -2]: contributes 12-10 = 2.0 observations (full bucket).
+# - Bucket [-2, -1]: contributes (-1.5-(-2))/(-1-(-2)) * (15-12) = 0.5 * 3 = 1.5 observations.
+# Total: (10.0 + 2.0 + 1.5) / 100.0 = 0.135
+
+eval instant at 50m histogram_fraction(-Inf, -1.5, lower_is_negative_Inf_bucket)
+	expect no_warn
+	{} 0.135
+
+eval instant at 50m histogram_fraction(-Inf, -1.5, lower_is_negative_Inf)
+	expect no_warn
+	{} 0.135
+
+# Lower is -Inf and upper is +Inf (positive buckets).
+load_with_nhcb 5m
+	lower_is_negative_Inf_and_upper_is_positive_Inf__positive_buckets__bucket{le="1"}	 1+0x10
+	lower_is_negative_Inf_and_upper_is_positive_Inf__positive_buckets__bucket{le="2"}	 3+0x10
+	lower_is_negative_Inf_and_upper_is_positive_Inf__positive_buckets__bucket{le="3"}	 6+0x10
+	lower_is_negative_Inf_and_upper_is_positive_Inf__positive_buckets__bucket{le="+Inf"} 100+0x10
+
+# Range [-Inf, +Inf] captures all observations.
+
+eval instant at 50m histogram_fraction(-Inf, +Inf, lower_is_negative_Inf_and_upper_is_positive_Inf__positive_buckets__bucket)
+	expect no_warn
+	{} 1.0
+
+eval instant at 50m histogram_fraction(-Inf, +Inf, lower_is_negative_Inf_and_upper_is_positive_Inf__positive_buckets_)
+	expect no_warn
+	{} 1.0
+
+# Lower is -Inf and upper is +Inf (negative buckets).
+load_with_nhcb 5m
+	lower_is_negative_Inf_and_upper_is_positive_Inf__negative_buckets__bucket{le="-3"}	 10+0x10
+	lower_is_negative_Inf_and_upper_is_positive_Inf__negative_buckets__bucket{le="-2"}	 12+0x10
+	lower_is_negative_Inf_and_upper_is_positive_Inf__negative_buckets__bucket{le="-1"}	 15+0x10
+	lower_is_negative_Inf_and_upper_is_positive_Inf__negative_buckets__bucket{le="+Inf"} 100+0x10
+
+# Range [-Inf, +Inf] captures all observations.
+
+eval instant at 50m histogram_fraction(-Inf, +Inf, lower_is_negative_Inf_and_upper_is_positive_Inf__negative_buckets__bucket)
+	expect no_warn
+	{} 1.0
+
+eval instant at 50m histogram_fraction(-Inf, +Inf, lower_is_negative_Inf_and_upper_is_positive_Inf__negative_buckets_)
+	expect no_warn
+	{} 1.0
+
+# Lower and upper fall in last bucket (positive buckets).
+load_with_nhcb 5m
+	lower_and_upper_fall_in_last_bucket__positive_buckets__bucket{le="1"}	 1+0x10
+	lower_and_upper_fall_in_last_bucket__positive_buckets__bucket{le="2"}	 3+0x10
+	lower_and_upper_fall_in_last_bucket__positive_buckets__bucket{le="3"}	 6+0x10
+	lower_and_upper_fall_in_last_bucket__positive_buckets__bucket{le="+Inf"} 100+0x10
+
+# - Bucket [3, +Inf]: contributes zero observations (no interpolation with infinite width bucket).
+# Total: 0.0 / 100.0 = 0.0
+
+eval instant at 50m histogram_fraction(4, 5, lower_and_upper_fall_in_last_bucket__positive_buckets__bucket)
+	expect no_warn
+	{} 0.0
+
+eval instant at 50m histogram_fraction(4, 5, lower_and_upper_fall_in_last_bucket__positive_buckets_)
+	expect no_warn
+	{} 0.0
+
+# Lower and upper fall in last bucket (negative buckets).
+load_with_nhcb 5m
+	lower_and_upper_fall_in_last_bucket__negative_buckets__bucket{le="-3"}	 10+0x10
+	lower_and_upper_fall_in_last_bucket__negative_buckets__bucket{le="-2"}	 12+0x10
+	lower_and_upper_fall_in_last_bucket__negative_buckets__bucket{le="-1"}	 15+0x10
+	lower_and_upper_fall_in_last_bucket__negative_buckets__bucket{le="+Inf"} 100+0x10
+
+# - Bucket [-1, +Inf]: contributes zero observations (no interpolation with infinite width bucket).
+# Total: 0.0 / 100.0 = 0.0
+
+eval instant at 50m histogram_fraction(0, 1, lower_and_upper_fall_in_last_bucket__negative_buckets__bucket)
+	expect no_warn
+	{} 0.0
+
+eval instant at 50m histogram_fraction(0, 1, lower_and_upper_fall_in_last_bucket__negative_buckets_)
+	expect no_warn
+	{} 0.0
+
+# Upper falls in last bucket.
+load_with_nhcb 5m
+	upper_falls_in_last_bucket_bucket{le="1"}	 1+0x10
+	upper_falls_in_last_bucket_bucket{le="2"}	 3+0x10
+	upper_falls_in_last_bucket_bucket{le="3"}	 6+0x10
+	upper_falls_in_last_bucket_bucket{le="+Inf"} 100+0x10
+
+# - Bucket [2, 3]: 6-3 = 3.0 observations (full bucket).
+# - Bucket [3, +Inf]: contributes zero observations (no interpolation with infinite width bucket).
+# Total: 3.0 / 100.0 = 0.03
+
+eval instant at 50m histogram_fraction(2, 5, upper_falls_in_last_bucket_bucket)
+	expect no_warn
+	{} 0.03
+
+eval instant at 50m histogram_fraction(2, 5, upper_falls_in_last_bucket)
+	expect no_warn
+	{} 0.03
+
+# Upper is +Inf.
+load_with_nhcb 5m
+	upper_is_positive_Inf_bucket{le="1"}	 1+0x10
+	upper_is_positive_Inf_bucket{le="2"}	 3+0x10
+	upper_is_positive_Inf_bucket{le="3"}	 6+0x10
+	upper_is_positive_Inf_bucket{le="+Inf"} 100+0x10
+
+# All observations in +Inf bucket: 100-6 = 94.0 observations.
+# Total: 94.0 / 100.0 = 0.94
+
+eval instant at 50m histogram_fraction(400, +Inf, upper_is_positive_Inf_bucket)
+	expect no_warn
+	{} 0.94
+
+eval instant at 50m histogram_fraction(400, +Inf, upper_is_positive_Inf)
+	expect no_warn
+	{} 0.94
+
+# Lower equals upper.
+load_with_nhcb 5m
+	lower_equals_upper_bucket{le="1"}	 1+0x10
+	lower_equals_upper_bucket{le="2"}	 3+0x10
+	lower_equals_upper_bucket{le="3"}	 6+0x10
+	lower_equals_upper_bucket{le="+Inf"} 100+0x10
+
+# No observations can be captured in a zero-width range.
+
+eval instant at 50m histogram_fraction(2, 2, lower_equals_upper_bucket)
+	expect no_warn
+	{} 0.0
+
+eval instant at 50m histogram_fraction(2, 2, lower_equals_upper)
+	expect no_warn
+	{} 0.0
+
+# Lower greater than upper.
+load_with_nhcb 5m
+	lower_greater_than_upper_bucket{le="1"}	 1+0x10
+	lower_greater_than_upper_bucket{le="2"}	 3+0x10
+	lower_greater_than_upper_bucket{le="3"}	 6+0x10
+	lower_greater_than_upper_bucket{le="+Inf"} 100+0x10
+
+eval instant at 50m histogram_fraction(3, 2, lower_greater_than_upper_bucket)
+	expect no_warn
+	{} 0.0
+
+eval instant at 50m histogram_fraction(3, 2, lower_greater_than_upper)
+	expect no_warn
+	{} 0.0
+
+# Single bucket.
+load_with_nhcb 5m
+	single_bucket_bucket{le="+Inf"} 100+0x10
+
+# - Bucket [0, +Inf]: contributes zero observations (no interpolation with infinite width bucket).
+# Total: 0.0 / 100.0 = 0.0
+
+eval instant at 50m histogram_fraction(0, 1, single_bucket_bucket)
+	expect no_warn
+	{} 0.0
+
+eval instant at 50m histogram_fraction(0, 1, single_bucket)
+	expect no_warn
+	{} 0.0
+
+# All zero counts.
+load_with_nhcb 5m
+	all_zero_counts_bucket{le="1"}	 0+0x10
+	all_zero_counts_bucket{le="2"}	 0+0x10
+	all_zero_counts_bucket{le="3"}	 0+0x10
+	all_zero_counts_bucket{le="+Inf"} 0+0x10
+
+eval instant at 50m histogram_fraction(0, 5, all_zero_counts_bucket)
+	expect no_warn
+	{} NaN
+
+eval instant at 50m histogram_fraction(0, 5, all_zero_counts)
+	expect no_warn
+	{} NaN
+
+# Lower exactly on bucket boundary.
+load_with_nhcb 5m
+	lower_exactly_on_bucket_boundary_bucket{le="1"}	 1+0x10
+	lower_exactly_on_bucket_boundary_bucket{le="2"}	 3+0x10
+	lower_exactly_on_bucket_boundary_bucket{le="3"}	 6+0x10
+	lower_exactly_on_bucket_boundary_bucket{le="+Inf"} 100+0x10
+
+# - Bucket [2, 3]: 6-3 = 3.0 observations (full bucket).
+# - Bucket [3, +Inf]: contributes zero observations (no interpolation with infinite width bucket).
+# Total: 3.0 / 100.0 = 0.03
+
+eval instant at 50m histogram_fraction(2, 3.5, lower_exactly_on_bucket_boundary_bucket)
+	expect no_warn
+	{} 0.03
+
+eval instant at 50m histogram_fraction(2, 3.5, lower_exactly_on_bucket_boundary)
+	expect no_warn
+	{} 0.03
+
+# Upper exactly on bucket boundary.
+load_with_nhcb 5m
+	upper_exactly_on_bucket_boundary_bucket{le="1"}	 1+0x10
+	upper_exactly_on_bucket_boundary_bucket{le="2"}	 3+0x10
+	upper_exactly_on_bucket_boundary_bucket{le="3"}	 6+0x10
+	upper_exactly_on_bucket_boundary_bucket{le="+Inf"} 100+0x10
+
+# - Bucket [0, 1]: (1.0-0.5)/(1.0-0.0) * 1.0 = 0.5 * 1.0 = 0.5 observations.
+# - Bucket [1, 2]: 3-1 = 2.0 observations (full bucket).
+# Total: (0.5 + 2.0) / 100.0 = 0.025
+
+eval instant at 50m histogram_fraction(0.5, 2, upper_exactly_on_bucket_boundary_bucket)
+	expect no_warn
+	{} 0.025
+
+eval instant at 50m histogram_fraction(0.5, 2, upper_exactly_on_bucket_boundary)
+	expect no_warn
+	{} 0.025
+
+# Both bounds exactly on bucket boundaries.
+load_with_nhcb 5m
+	both_bounds_exactly_on_bucket_boundaries_bucket{le="1"}	 1+0x10
+	both_bounds_exactly_on_bucket_boundaries_bucket{le="2"}	 3+0x10
+	both_bounds_exactly_on_bucket_boundaries_bucket{le="3"}	 6+0x10
+	both_bounds_exactly_on_bucket_boundaries_bucket{le="+Inf"} 100+0x10
+
+# - Bucket [1, 2]: 3-1 = 2.0 observations (full bucket).
+# - Bucket [2, 3]: 6-3 = 3.0 observations (full bucket).
+# Total: (2.0 + 3.0) / 100.0 = 0.05
+
+eval instant at 50m histogram_fraction(1, 3, both_bounds_exactly_on_bucket_boundaries_bucket)
+	expect no_warn
+	{} 0.05
+
+eval instant at 50m histogram_fraction(1, 3, both_bounds_exactly_on_bucket_boundaries)
+	expect no_warn
+	{} 0.05
+
+# Fractional bucket bounds.
+load_with_nhcb 5m
+	fractional_bucket_bounds_bucket{le="0.5"}	 2.5+0x10
+	fractional_bucket_bounds_bucket{le="1"}	 7.5+0x10
+	fractional_bucket_bounds_bucket{le="+Inf"} 100+0x10
+
+# - Bucket [0, 0.5]: (0.5-0.1)/(0.5-0.0) * 2.5 = 0.8 * 2.5 = 2.0 observations.
+# - Bucket [0.5, 1.0]: (0.75-0.5)/(1.0-0.5) * (7.5-2.5) = 0.5 * 5.0 = 2.5 observations.
+# Total: (2.0 + 2.5) / 100.0 = 0.045
+
+eval instant at 50m histogram_fraction(0.1, 0.75, fractional_bucket_bounds_bucket)
+	expect no_warn
+	{} 0.045
+
+eval instant at 50m histogram_fraction(0.1, 0.75, fractional_bucket_bounds)
+	expect no_warn
+	{} 0.045
+
+# Range crosses zero.
+load_with_nhcb 5m
+	range_crosses_zero_bucket{le="-2"}	 5+0x10
+	range_crosses_zero_bucket{le="-1"}	 10+0x10
+	range_crosses_zero_bucket{le="0"}	 15+0x10
+	range_crosses_zero_bucket{le="1"}	 20+0x10
+	range_crosses_zero_bucket{le="+Inf"} 100+0x10
+
+# - Bucket [-1, 0]: 15-10 = 5.0 observations (full bucket).
+# - Bucket [0, 1]: 20-15 = 5.0 observations (full bucket).
+# Total: (5.0 + 5.0) / 100.0 = 0.1
+
+eval instant at 50m histogram_fraction(-1, 1, range_crosses_zero_bucket)
+	expect no_warn
+	{} 0.1
+
+eval instant at 50m histogram_fraction(-1, 1, range_crosses_zero)
+	expect no_warn
+	{} 0.1
+
+# Lower is NaN.
+load_with_nhcb 5m
+	lower_is_NaN_bucket{le="1"}	 1+0x10
+	lower_is_NaN_bucket{le="+Inf"} 100+0x10
+
+eval instant at 50m histogram_fraction(NaN, 1, lower_is_NaN_bucket)
+	expect no_warn
+	{} NaN
+
+eval instant at 50m histogram_fraction(NaN, 1, lower_is_NaN)
+	expect no_warn
+	{} NaN
+
+# Upper is NaN.
+load_with_nhcb 5m
+	upper_is_NaN_bucket{le="1"}	 1+0x10
+	upper_is_NaN_bucket{le="+Inf"} 100+0x10
+
+eval instant at 50m histogram_fraction(0, NaN, upper_is_NaN_bucket)
+	expect no_warn
+	{} NaN
+
+eval instant at 50m histogram_fraction(0, NaN, upper_is_NaN)
+	expect no_warn
+	{} NaN
+
+# Range entirely below all buckets.
+load_with_nhcb 5m
+	range_entirely_below_all_buckets_bucket{le="1"}	 1+0x10
+	range_entirely_below_all_buckets_bucket{le="2"}	 3+0x10
+	range_entirely_below_all_buckets_bucket{le="+Inf"} 10+0x10
+
+eval instant at 50m histogram_fraction(-10, -5, range_entirely_below_all_buckets_bucket)
+	expect no_warn
+	{} 0.0
+
+eval instant at 50m histogram_fraction(-10, -5, range_entirely_below_all_buckets)
+	expect no_warn
+	{} 0.0
+
+# Range entirely above all buckets.
+load_with_nhcb 5m
+	range_entirely_above_all_buckets_bucket{le="1"}	 1+0x10
+	range_entirely_above_all_buckets_bucket{le="2"}	 3+0x10
+	range_entirely_above_all_buckets_bucket{le="+Inf"} 10+0x10
+
+eval instant at 50m histogram_fraction(5, 10, range_entirely_above_all_buckets_bucket)
+	expect no_warn
+	{} 0.0
+
+eval instant at 50m histogram_fraction(5, 10, range_entirely_above_all_buckets)
+	expect no_warn
+	{} 0.0
+
+
 # In the classic histogram, we can access the corresponding bucket (if
 # it exists) and divide by the count to get the same result.
 
@@ -221,6 +598,40 @@ eval instant at 50m histogram_quantile(1, testhistogram3_bucket)
 	{start="positive"} 1
 	{start="negative"} -0.1
 
+eval instant at 50m histogram_quantiles(testhistogram3, "q", 0, 0.25, 0.5, 0.75, 1)
+	expect no_warn
+	{q="0.0", start="positive"} 0
+	{q="0.0", start="negative"} -0.25
+	{q="0.25", start="positive"} 0.055
+	{q="0.25", start="negative"} -0.225
+	{q="0.5", start="positive"} 0.125
+	{q="0.5", start="negative"} -0.2
+	{q="0.75", start="positive"} 0.45
+	{q="0.75", start="negative"} -0.15
+	{q="1.0", start="positive"} 1
+	{q="1.0", start="negative"} -0.1
+
+eval instant at 50m histogram_quantiles(testhistogram3_bucket, "q", 0, 0.25, 0.5, 0.75, 1)
+	expect no_warn
+	{q="0.0", start="positive"} 0
+	{q="0.0", start="negative"} -0.25
+	{q="0.25", start="positive"} 0.055
+	{q="0.25", start="negative"} -0.225
+	{q="0.5", start="positive"} 0.125
+	{q="0.5", start="negative"} -0.2
+	{q="0.75", start="positive"} 0.45
+	{q="0.75", start="negative"} -0.15
+	{q="1.0", start="positive"} 1
+	{q="1.0", start="negative"} -0.1
+
+# Break label set uniqueness.
+
+eval instant at 50m histogram_quantiles(testhistogram3, "start", 0, 0.25, 0.5, 0.75, 1)
+    expect fail
+
+eval instant at 50m histogram_quantiles(testhistogram3_bucket, "start", 0, 0.25, 0.5, 0.75, 1)
+    expect fail
+
 # Quantile too low.
 
 eval instant at 50m histogram_quantile(-0.1, testhistogram)
@@ -232,6 +643,16 @@ eval instant at 50m histogram_quantile(-0.1, testhistogram_bucket)
 	expect warn
 	{start="positive"} -Inf
 	{start="negative"} -Inf
+
+eval instant at 50m histogram_quantiles(testhistogram, "q", -0.1)
+	expect warn
+	{q="-0.1", start="positive"} -Inf
+	{q="-0.1", start="negative"} -Inf
+
+eval instant at 50m histogram_quantiles(testhistogram_bucket, "q", -0.1)
+	expect warn
+	{q="-0.1", start="positive"} -Inf
+	{q="-0.1", start="negative"} -Inf
 
 # Quantile too high.
 
@@ -245,6 +666,16 @@ eval instant at 50m histogram_quantile(1.01, testhistogram_bucket)
 	{start="positive"} +Inf
 	{start="negative"} +Inf
 
+eval instant at 50m histogram_quantiles(testhistogram, "q", 1.01)
+	expect warn
+	{q="1.01", start="positive"} +Inf
+	{q="1.01", start="negative"} +Inf
+
+eval instant at 50m histogram_quantiles(testhistogram_bucket, "q", 1.01)
+	expect warn
+	{q="1.01", start="positive"} +Inf
+	{q="1.01", start="negative"} +Inf
+
 # Quantile invalid.
 
 eval instant at 50m histogram_quantile(NaN, testhistogram)
@@ -257,7 +688,20 @@ eval instant at 50m histogram_quantile(NaN, testhistogram_bucket)
 	{start="positive"} NaN
 	{start="negative"} NaN
 
+eval instant at 50m histogram_quantiles(testhistogram, "q", NaN)
+	expect warn
+	{q="NaN", start="positive"} NaN
+	{q="NaN", start="negative"} NaN
+
+eval instant at 50m histogram_quantiles(testhistogram_bucket, "q", NaN)
+	expect warn
+	{q="NaN", start="positive"} NaN
+	{q="NaN", start="negative"} NaN
+
 eval instant at 50m histogram_quantile(NaN, non_existent)
+  expect warn msg: PromQL warning: quantile value should be between 0 and 1, got NaN
+
+eval instant at 50m histogram_quantiles(non_existent, "q", NaN)
   expect warn msg: PromQL warning: quantile value should be between 0 and 1, got NaN
 
 # Quantile value in lowest bucket.
@@ -590,6 +1034,12 @@ eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
     expect info
     {} 979.75
 
+eval instant at 50m histogram_quantiles(nonmonotonic_bucket, "q", 0.01, 0.5, 0.99)
+    expect info
+    {q="0.01"} 0.0045
+    {q="0.5"} 8.5
+    {q="0.99"} 979.75
+
 # Buckets with different representations of the same upper bound.
 eval instant at 50m histogram_quantile(0.5, rate(mixed_bucket[10m]))
 	{instance="ins1", job="job1"} 0.15
@@ -625,7 +1075,13 @@ load_with_nhcb 5m
 eval instant at 50m histogram_quantile(0.99, {__name__=~"request_duration_seconds\\d*_bucket"})
   expect fail
 
+eval instant at 50m histogram_quantiles({__name__=~"request_duration_seconds\\d*_bucket"}, "q", 0.99)
+  expect fail
+
 eval instant at 50m histogram_quantile(0.99, {__name__=~"request_duration_seconds\\d*"})
+    expect fail
+
+eval instant at 50m histogram_quantiles({__name__=~"request_duration_seconds\\d*"}, "q", 0.99)
     expect fail
 
 # Histogram with constant buckets.
@@ -689,7 +1145,7 @@ eval instant at 10m histogram_sum(increase(histogram_with_reset[15m]))
 
 clear
 
-# Test histogram_quantile and histogram_fraction with conflicting classic and native histograms.
+# Test histogram_quantile(s) and histogram_fraction with conflicting classic and native histograms.
 load 1m
   series{host="a"}            {{schema:0 sum:5 count:4 buckets:[9 2 1]}}
   series{host="a", le="0.1"}  2
@@ -700,6 +1156,11 @@ load 1m
   series{host="a", le="+Inf"} 9
 
 eval instant at 0 histogram_quantile(0.8, series)
+  expect no_info
+  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
+  # Should return no results.
+
+eval instant at 0 histogram_quantiles(series, "q", 0.1, 0.2)
   expect no_info
   expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "series"
   # Should return no results.

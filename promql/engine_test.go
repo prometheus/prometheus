@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -52,8 +52,6 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	// Enable experimental functions testing
-	parser.EnableExperimentalFunctions = true
 	testutil.TolerantVerifyLeak(m)
 }
 
@@ -96,11 +94,9 @@ func TestQueryConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	for range maxConcurrency {
 		q := engine.NewTestQuery(f)
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			q.Exec(ctx)
-			wg.Done()
-		}()
+		})
 		select {
 		case <-processing:
 			// Expected.
@@ -110,11 +106,9 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	q := engine.NewTestQuery(f)
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		q.Exec(ctx)
-		wg.Done()
-	}()
+	})
 
 	select {
 	case <-processing:
@@ -676,7 +670,6 @@ func TestEngineEvalStmtTimestamps(t *testing.T) {
 load 10s
   metric 1 2
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	cases := []struct {
 		Query       string
@@ -789,7 +782,6 @@ load 10s
   metricWith3SampleEvery10Seconds{a="3",b="2"} 1+1x100
   metricWith1HistogramEvery10Seconds {{schema:1 count:5 sum:20 buckets:[1 2 1 1]}}+{{schema:1 count:10 sum:5 buckets:[1 2 3 4]}}x100
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	cases := []struct {
 		Query               string
@@ -1339,7 +1331,6 @@ load 10s
   bigmetric{a="1"} 1+1x100
   bigmetric{a="2"} 1+1x100
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	// These test cases should be touching the limit exactly (hence no exceeding).
 	// Exceeding the limit will be tested by doing -1 to the MaxSamples.
@@ -1511,11 +1502,6 @@ load 10s
 }
 
 func TestExtendedRangeSelectors(t *testing.T) {
-	parser.EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		parser.EnableExtendedRangeSelectors = false
-	})
-
 	engine := newTestEngine(t)
 	storage := promqltest.LoadedStorage(t, `
 	load 10s
@@ -1523,7 +1509,6 @@ func TestExtendedRangeSelectors(t *testing.T) {
 		withreset 1+1x4 1+1x5
 		notregular 0 5 100 2 8
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	tc := []struct {
 		query    string
@@ -1664,6 +1649,40 @@ func TestExtendedRangeSelectors(t *testing.T) {
 	}
 }
 
+// TestParserConfigIsolation ensures the engine's parser configuration is respected.
+func TestParserConfigIsolation(t *testing.T) {
+	ctx := context.Background()
+	storage := promqltest.LoadedStorage(t, `
+		load 10s
+			metric 1+1x10
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	query := "metric[10s] smoothed"
+	t.Run("engine_with_feature_disabled_rejects", func(t *testing.T) {
+		engine := promql.NewEngine(promql.EngineOpts{
+			MaxSamples: 1000, Timeout: 10 * time.Second,
+			Parser: parser.NewParser(parser.Options{EnableExtendedRangeSelectors: false}),
+		})
+		t.Cleanup(func() { _ = engine.Close() })
+		_, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "parse")
+	})
+	t.Run("engine_with_feature_enabled_accepts", func(t *testing.T) {
+		engine := promql.NewEngine(promql.EngineOpts{
+			MaxSamples: 1000, Timeout: 10 * time.Second,
+			Parser: parser.NewParser(parser.Options{EnableExtendedRangeSelectors: true}),
+		})
+		t.Cleanup(func() { _ = engine.Close() })
+		q, err := engine.NewInstantQuery(ctx, storage, nil, query, time.Unix(10, 0))
+		require.NoError(t, err)
+		defer q.Close()
+		res := q.Exec(ctx)
+		require.NoError(t, res.Err)
+	})
+}
+
 func TestAtModifier(t *testing.T) {
 	engine := newTestEngine(t)
 	storage := promqltest.LoadedStorage(t, `
@@ -1677,7 +1696,6 @@ load 10s
 load 1ms
   metric_ms 0+1x10000
 `)
-	t.Cleanup(func() { storage.Close() })
 
 	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
 	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
@@ -2283,7 +2301,6 @@ func TestSubquerySelector(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			engine := newTestEngine(t)
 			storage := promqltest.LoadedStorage(t, tst.loadString)
-			t.Cleanup(func() { storage.Close() })
 
 			for _, c := range tst.cases {
 				t.Run(c.Query, func(t *testing.T) {
@@ -3239,7 +3256,7 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 
 	for _, test := range testCases {
 		t.Run(test.input, func(t *testing.T) {
-			expr, err := parser.ParseExpr(test.input)
+			expr, err := testParser.ParseExpr(test.input)
 			require.NoError(t, err)
 			expr, err = promql.PreprocessExpr(expr, startTime, endTime, 0)
 			require.NoError(t, err)
@@ -3410,7 +3427,6 @@ metric 0 1 2
 		t.Run(c.name, func(t *testing.T) {
 			engine := promqltest.NewTestEngine(t, false, c.engineLookback, promqltest.DefaultMaxSamplesPerQuery)
 			storage := promqltest.LoadedStorage(t, load)
-			t.Cleanup(func() { storage.Close() })
 
 			opts := promql.NewPrometheusQueryOpts(false, c.queryLookback)
 			qry, err := engine.NewInstantQuery(context.Background(), storage, opts, query, c.ts)
@@ -3444,7 +3460,7 @@ func TestHistogramCopyFromIteratorRegression(t *testing.T) {
 histogram {{sum:4 count:4 buckets:[2 2]}} {{sum:6 count:6 buckets:[3 3]}} {{sum:1 count:1 buckets:[1]}}
 `
 	storage := promqltest.LoadedStorage(t, load)
-	t.Cleanup(func() { storage.Close() })
+
 	engine := promqltest.NewTestEngine(t, false, 0, promqltest.DefaultMaxSamplesPerQuery)
 
 	verify := func(t *testing.T, qry promql.Query, expected []histogram.FloatHistogram) {
@@ -3747,12 +3763,12 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 		recoded bool
 	)
 
-	newc, recoded, app, err = app.AppendHistogram(nil, 0, h1.Copy(), false)
+	newc, recoded, app, err = app.AppendHistogram(nil, 0, 0, h1.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
 
-	newc, recoded, _, err = app.AppendHistogram(nil, 10, h1.Copy(), false)
+	newc, recoded, _, err = app.AppendHistogram(nil, 0, 10, h1.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
@@ -3762,7 +3778,7 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	app, err = c2.Appender()
 	require.NoError(t, err)
 
-	app.Append(20, math.Float64frombits(value.StaleNaN))
+	app.Append(0, 20, math.Float64frombits(value.StaleNaN))
 
 	// Make a chunk with two normal histograms that have zero value.
 	h2 := histogram.Histogram{
@@ -3773,12 +3789,12 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	app, err = c3.Appender()
 	require.NoError(t, err)
 
-	newc, recoded, app, err = app.AppendHistogram(nil, 30, h2.Copy(), false)
+	newc, recoded, app, err = app.AppendHistogram(nil, 0, 30, h2.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
 
-	newc, recoded, _, err = app.AppendHistogram(nil, 40, h2.Copy(), false)
+	newc, recoded, _, err = app.AppendHistogram(nil, 0, 40, h2.Copy(), false)
 	require.NoError(t, err)
 	require.False(t, recoded)
 	require.Nil(t, newc)
@@ -3849,6 +3865,7 @@ func TestEvaluationWithDelayedNameRemovalDisabled(t *testing.T) {
 		MaxSamples:               10000,
 		Timeout:                  10 * time.Second,
 		EnableDelayedNameRemoval: false,
+		Parser:                   parser.NewParser(promqltest.TestParserOpts),
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
@@ -3945,6 +3962,41 @@ eval instant at 1m histogram_fraction(-Inf, 0.7071067811865475, histogram_nan)
     expect info msg: PromQL info: input to histogram_fraction has NaN observations, which are excluded from all fractions
     {case="100% NaNs"} 0.0
     {case="20% NaNs"} 0.4
+
+# Test unary negation with non-overlapping series that have different metric names.
+# After negation, the __name__ label is dropped, so series with different names
+# but same other labels should merge if they don't overlap in time.
+clear
+load 20m
+  http_requests{job="api"} 2 _
+  http_errors{job="api"} _ 4
+
+eval instant at 0 -{job="api"}
+  {job="api"} -2
+
+eval instant at 20m -{job="api"}
+  {job="api"} -4
+
+eval range from 0 to 20m step 20m -{job="api"}
+  {job="api"} -2 -4
+
+# Test unary negation failure with overlapping timestamps (same labelset at same time).
+clear
+load 1m
+  http_requests{job="api"} 1
+  http_errors{job="api"} 2
+
+eval_fail instant at 0 -{job="api"}
+
+# Test unary negation with "or" operator combining metrics with removed names.
+clear
+load 10m
+    metric_a   1  _
+    metric_b   3  4
+
+# Use "-" unary operator as a simple way to remove the metric name.
+eval range from 0 to 20m step 10m -metric_a or -metric_b
+    {} -1  -4
 
 `, engine)
 }

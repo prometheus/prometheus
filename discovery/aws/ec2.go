@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,7 +27,6 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -113,7 +112,7 @@ func (*EC2SDConfig) Name() string { return "ec2" }
 
 // NewDiscoverer returns a Discoverer for the EC2 Config.
 func (c *EC2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewEC2Discovery(c, opts.Logger, opts.Metrics)
+	return NewEC2Discovery(c, opts)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
@@ -125,31 +124,10 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	if c.Region == "" {
-		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
-		if err != nil {
-			return err
-		}
-
-		if cfg.Region != "" {
-			// If the region is already set in the config, use it.
-			// This can happen if the user has set the region in the AWS config file or environment variables.
-			c.Region = cfg.Region
-		}
-
-		if c.Region == "" {
-			// Try to get the region from the instance metadata service (IMDS).
-			imdsClient := imds.NewFromConfig(cfg)
-			region, err := imdsClient.GetRegion(context.Background(), &imds.GetRegionInput{})
-			if err != nil {
-				return err
-			}
-			c.Region = region.Region
-		}
-	}
-
-	if c.Region == "" {
-		return errors.New("EC2 SD configuration requires a region")
+	// Check if the region is set, if not attempt to load it from the AWS SDK.
+	c.Region, err = loadRegion(context.Background(), c.Region)
+	if err != nil {
+		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	for _, f := range c.Filters {
@@ -180,23 +158,24 @@ type EC2Discovery struct {
 }
 
 // NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewEC2Discovery(conf *EC2SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*EC2Discovery, error) {
-	m, ok := metrics.(*ec2Metrics)
+func NewEC2Discovery(conf *EC2SDConfig, opts discovery.DiscovererOptions) (*EC2Discovery, error) {
+	m, ok := opts.Metrics.(*ec2Metrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	if logger == nil {
-		logger = promslog.NewNopLogger()
+	if opts.Logger == nil {
+		opts.Logger = promslog.NewNopLogger()
 	}
 	d := &EC2Discovery{
-		logger: logger,
+		logger: opts.Logger,
 		cfg:    conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "ec2",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(d.cfg.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -245,7 +224,12 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.ec2 = ec2.NewFromConfig(cfg)
+	d.ec2 = ec2.NewFromConfig(cfg, func(options *ec2.Options) {
+		if d.cfg.Endpoint != "" {
+			options.BaseEndpoint = &d.cfg.Endpoint
+		}
+		options.HTTPClient = httpClient
+	})
 
 	return d.ec2, nil
 }
@@ -255,8 +239,15 @@ func (d *EC2Discovery) refreshAZIDs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if azs.AvailabilityZones == nil {
+		d.azToAZID = make(map[string]string)
+		return nil
+	}
 	d.azToAZID = make(map[string]string, len(azs.AvailabilityZones))
 	for _, az := range azs.AvailabilityZones {
+		if az.ZoneName == nil || az.ZoneId == nil {
+			continue
+		}
 		d.azToAZID[*az.ZoneName] = *az.ZoneId
 	}
 	return nil

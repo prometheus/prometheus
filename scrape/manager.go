@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -33,18 +33,40 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/osutil"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
-// NewManager is the Manager constructor.
-func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error), app storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
+// NewManager is the Manager constructor using storage.Appendable or storage.AppendableV2.
+//
+// If unsure which one to use/implement, implement AppendableV2 as it significantly simplifies implementation and allows more
+// (passing ST, always-on metadata, exemplars per sample).
+//
+// NewManager returns error if both appendable and appendableV2 are specified.
+//
+// Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// storage.Appendable will be removed soon (ETA: Q2 2026).
+func NewManager(
+	o *Options,
+	logger *slog.Logger,
+	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error),
+	appendable storage.Appendable,
+	appendableV2 storage.AppendableV2,
+	registerer prometheus.Registerer,
+) (*Manager, error) {
 	if o == nil {
 		o = &Options{}
 	}
 	if logger == nil {
 		logger = promslog.NewNopLogger()
+	}
+	if appendable != nil && appendableV2 != nil {
+		return nil, errors.New("scrape.NewManager: appendable and appendableV2 cannot be provided at the same time")
+	}
+	if appendable == nil && appendableV2 == nil {
+		return nil, errors.New("scrape.NewManager: provide either appendable or appendableV2")
 	}
 
 	sm, err := newScrapeMetrics(registerer)
@@ -53,7 +75,8 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 	}
 
 	m := &Manager{
-		append:                 app,
+		appendable:             appendable,
+		appendableV2:           appendableV2,
 		opts:                   o,
 		logger:                 logger,
 		newScrapeFailureLogger: newScrapeFailureLogger,
@@ -67,31 +90,41 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 
 	m.metrics.setTargetMetadataCacheGatherer(m)
 
+	// Register scrape features.
+	if r := o.FeatureRegistry; r != nil {
+		// "Extra scrape metrics" is always enabled because it moved from feature flag to config file.
+		r.Enable(features.Scrape, "extra_scrape_metrics")
+		r.Set(features.Scrape, "start_timestamp_zero_ingestion", o.EnableStartTimestampZeroIngestion)
+		r.Set(features.Scrape, "type_and_unit_labels", o.EnableTypeAndUnitLabels)
+	}
+
 	return m, nil
 }
 
 // Options are the configuration parameters to the scrape manager.
 type Options struct {
-	ExtraMetrics bool
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
 	PassMetadataInContext bool
 	// Option to enable appending of scraped Metadata to the TSDB/other appenders. Individual appenders
 	// can decide what to do with metadata, but for practical purposes this flag exists so that metadata
 	// can be written to the WAL and thus read for remote write.
-	// TODO: implement some form of metadata storage
 	AppendMetadata bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
+
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
-	EnableCreatedTimestampZeroIngestion bool
+	EnableStartTimestampZeroIngestion bool
 
-	// EnableTypeAndUnitLabels
+	// EnableTypeAndUnitLabels represents type-and-unit-labels feature flag.
 	EnableTypeAndUnitLabels bool
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
+
+	// FeatureRegistry is the registry for tracking enabled/disabled features.
+	FeatureRegistry features.Collector
 
 	// private option for testability.
 	skipOffsetting bool
@@ -100,9 +133,12 @@ type Options struct {
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups from the discovery manager.
 type Manager struct {
-	opts      *Options
-	logger    *slog.Logger
-	append    storage.Appendable
+	opts   *Options
+	logger *slog.Logger
+
+	appendable   storage.Appendable
+	appendableV2 storage.AppendableV2
+
 	graceShut chan struct{}
 
 	offsetSeed             uint64     // Global offsetSeed seed is used to spread scrape workload across HA setup.
@@ -183,7 +219,7 @@ func (m *Manager) reload() {
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
-			sp, err := newScrapePool(scrapeConfig, m.append, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
+			sp, err := newScrapePool(scrapeConfig, m.appendable, m.appendableV2, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
 			if err != nil {
 				m.metrics.targetScrapePoolsFailed.Inc()
 				m.logger.Error("error creating new scrape pool", "err", err, "scrape_pool", setName)

@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -35,6 +35,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
+
+var testParser = parser.NewParser(parser.Options{})
 
 func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, interval, numIntervals int) error {
 	ctx := context.Background()
@@ -332,18 +334,15 @@ func rangeQueryCases() []benchCase {
 }
 
 func BenchmarkRangeQuery(b *testing.B) {
-	parser.EnableExtendedRangeSelectors = true
-	b.Cleanup(func() {
-		parser.EnableExtendedRangeSelectors = false
-	})
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
-	defer stor.Close()
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
+		Parser:     parser.NewParser(parser.Options{EnableExtendedRangeSelectors: true, EnableExperimentalFunctions: true}),
 	}
 	engine := promqltest.NewTestEngineWithOpts(b, opts)
 
@@ -383,7 +382,6 @@ func BenchmarkRangeQuery(b *testing.B) {
 func BenchmarkJoinQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
-	defer stor.Close()
 
 	opts := promql.EngineOpts{
 		Logger:     nil,
@@ -393,40 +391,44 @@ func BenchmarkJoinQuery(b *testing.B) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(b, opts)
 
-	const interval = 10000 // 10s interval.
+	const (
+		interval     = 10000 // 10s interval.
+		steps        = 5000
+		numInstances = 1000
+	)
 
-	// A day of data plus 10k steps.
-	numIntervals := 8640 + 10000
+	// A day of data plus steps.
+	numIntervals := 8640 + steps
 
-	require.NoError(b, setupJoinQueryTestData(stor, engine, interval, numIntervals, 1000))
+	require.NoError(b, setupJoinQueryTestData(stor, engine, interval, numIntervals, numInstances))
 
 	for _, c := range []benchCase{
 		{
 			expr:  `rpc_request_success_total + rpc_request_error_total`,
-			steps: 10000,
+			steps: steps,
 		},
 		{
 			expr:  `rpc_request_success_total + ON (job, instance) GROUP_LEFT rpc_request_error_total`,
-			steps: 10000,
+			steps: steps,
 		},
 		{
 			expr:  `rpc_request_success_total AND rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
-			steps: 10000,
+			steps: steps,
 		},
 		{
 			expr:  `rpc_request_success_total OR rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
-			steps: 10000,
+			steps: steps,
 		},
 		{
 			expr:  `rpc_request_success_total UNLESS rpc_request_error_total{instance=~"0.*"}`, // 0.* keeps 1/16 of UUID values
-			steps: 10000,
+			steps: steps,
 		},
 	} {
 		name := fmt.Sprintf("expr=%s/steps=%d", c.expr, c.steps)
 		b.Run(name, func(b *testing.B) {
 			ctx := context.Background()
-			b.ReportAllocs()
-			for b.Loop() {
+
+			queryFn := func() {
 				qry, err := engine.NewRangeQuery(
 					ctx, stor, nil, c.expr,
 					timestamp.Time(int64((numIntervals-c.steps)*10_000)),
@@ -439,13 +441,20 @@ func BenchmarkJoinQuery(b *testing.B) {
 
 				qry.Close()
 			}
+
+			queryFn() // Warm up run.
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for b.Loop() {
+				queryFn()
+			}
 		})
 	}
 }
 
 func BenchmarkNativeHistograms(b *testing.B) {
 	testStorage := teststorage.New(b)
-	defer testStorage.Close()
 
 	app := testStorage.Appender(context.TODO())
 	if err := generateNativeHistogramSeries(app, 3000); err != nil {
@@ -523,7 +532,6 @@ func BenchmarkNativeHistograms(b *testing.B) {
 
 func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 	testStorage := teststorage.New(b)
-	defer testStorage.Close()
 
 	app := testStorage.Appender(context.TODO())
 	if err := generateNativeHistogramCustomBucketsSeries(app, 3000); err != nil {
@@ -594,7 +602,6 @@ func BenchmarkNativeHistogramsCustomBuckets(b *testing.B) {
 func BenchmarkInfoFunction(b *testing.B) {
 	// Initialize test storage and generate test series data.
 	testStorage := teststorage.New(b)
-	defer testStorage.Close()
 
 	start := time.Unix(0, 0)
 	end := start.Add(2 * time.Hour)
@@ -636,6 +643,7 @@ func BenchmarkInfoFunction(b *testing.B) {
 			Timeout:              100 * time.Second,
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
+			Parser:               parser.NewParser(parser.Options{EnableExperimentalFunctions: true}),
 		}
 		engine := promql.NewEngine(opts)
 		b.Run(tc.name, func(b *testing.B) {
@@ -796,13 +804,13 @@ func BenchmarkParser(b *testing.B) {
 		b.Run(c, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				parser.ParseExpr(c)
+				testParser.ParseExpr(c)
 			}
 		})
 	}
 	for _, c := range cases {
 		b.Run("preprocess "+c, func(b *testing.B) {
-			expr, _ := parser.ParseExpr(c)
+			expr, _ := testParser.ParseExpr(c)
 			start, end := time.Now().Add(-time.Hour), time.Now()
 			for b.Loop() {
 				promql.PreprocessExpr(expr, start, end, 0)
@@ -814,7 +822,7 @@ func BenchmarkParser(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				parser.ParseExpr(c)
+				testParser.ParseExpr(c)
 			}
 		})
 	}

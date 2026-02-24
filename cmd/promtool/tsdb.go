@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -42,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
@@ -159,17 +159,14 @@ func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (u
 			batch := lbls[:l]
 			lbls = lbls[l:]
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
+			wg.Go(func() {
 				n, err := b.ingestScrapesShard(batch, 100, int64(timeDelta*i))
 				if err != nil {
 					// exitWithError(err)
 					fmt.Println(" err", err)
 				}
 				total.Add(n)
-			}()
+			})
 		}
 		wg.Wait()
 	}
@@ -338,7 +335,7 @@ func listBlocks(path string, humanReadable bool) error {
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+		err = errors.Join(err, db.Close())
 	}()
 	blocks, err := db.Blocks()
 	if err != nil {
@@ -408,13 +405,13 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, b, nil
 }
 
-func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExtended bool, matchers string) error {
+func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExtended bool, matchers string, p parser.Parser) error {
 	var (
 		selectors []*labels.Matcher
 		err       error
 	)
 	if len(matchers) > 0 {
-		selectors, err = parser.ParseMetricSelector(matchers)
+		selectors, err = p.ParseMetricSelector(matchers)
 		if err != nil {
 			return err
 		}
@@ -424,7 +421,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+		err = errors.Join(err, db.Close())
 	}()
 
 	meta := block.Meta()
@@ -478,24 +475,24 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	labelpairsCount := map[string]uint64{}
 	entries := 0
 	var (
-		p    index.Postings
-		refs []storage.SeriesRef
+		postings index.Postings
+		refs     []storage.SeriesRef
 	)
 	if len(matchers) > 0 {
-		p, err = tsdb.PostingsForMatchers(ctx, ir, selectors...)
+		postings, err = tsdb.PostingsForMatchers(ctx, ir, selectors...)
 		if err != nil {
 			return err
 		}
 		// Expand refs first and cache in memory.
 		// So later we don't have to expand again.
-		refs, err = index.ExpandPostings(p)
+		refs, err = index.ExpandPostings(postings)
 		if err != nil {
 			return err
 		}
 		fmt.Printf("Matched series: %d\n", len(refs))
-		p = index.NewListPostings(refs)
+		postings = index.NewListPostings(refs)
 	} else {
-		p, err = ir.Postings(ctx, "", "") // The special all key.
+		postings, err = ir.Postings(ctx, "", "") // The special all key.
 		if err != nil {
 			return err
 		}
@@ -503,8 +500,8 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	chks := []chunks.Meta{}
 	builder := labels.ScratchBuilder{}
-	for p.Next() {
-		if err = ir.Series(p.At(), &builder, &chks); err != nil {
+	for postings.Next() {
+		if err = ir.Series(postings.At(), &builder, &chks); err != nil {
 			return err
 		}
 		// Amount of the block time range not covered by this series.
@@ -517,8 +514,8 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 			entries++
 		})
 	}
-	if p.Err() != nil {
-		return p.Err()
+	if postings.Err() != nil {
+		return postings.Err()
 	}
 	fmt.Printf("Postings (unique label pairs): %d\n", len(labelpairsUncovered))
 	fmt.Printf("Postings entries (total label pairs): %d\n", entries)
@@ -624,7 +621,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, chunkr.Close()).Err()
+		err = errors.Join(err, chunkr.Close())
 	}()
 
 	totalChunks := 0
@@ -706,13 +703,13 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 type SeriesSetFormatter func(series storage.SeriesSet) error
 
-func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
+func dumpTSDBData(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter, p parser.Parser) (err error) {
 	db, err := tsdb.OpenDBReadOnly(dbDir, sandboxDirRoot, nil)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+		err = errors.Join(err, db.Close())
 	}()
 	q, err := db.Querier(mint, maxt)
 	if err != nil {
@@ -720,7 +717,7 @@ func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt i
 	}
 	defer q.Close()
 
-	matcherSets, err := parser.ParseMetricSelectors(match)
+	matcherSets, err := p.ParseMetricSelectors(match)
 	if err != nil {
 		return err
 	}
@@ -742,7 +739,7 @@ func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt i
 	}
 
 	if ws := ss.Warnings(); len(ws) > 0 {
-		return tsdb_errors.NewMulti(ws.AsErrors()...).Err()
+		return errors.Join(ws.AsErrors()...)
 	}
 
 	if ss.Err() != nil {
@@ -792,6 +789,30 @@ func CondensedString(ls labels.Labels) string {
 	})
 	b.WriteByte('}')
 	return b.String()
+}
+
+func formatSeriesSetLabelsToJSON(ss storage.SeriesSet) error {
+	seriesCache := make(map[string]struct{})
+	for ss.Next() {
+		series := ss.At()
+		lbs := series.Labels()
+
+		b, err := json.Marshal(lbs)
+		if err != nil {
+			return err
+		}
+
+		if len(b) == 0 {
+			continue
+		}
+
+		s := string(b)
+		if _, ok := seriesCache[s]; !ok {
+			fmt.Println(s)
+			seriesCache[s] = struct{}{}
+		}
+	}
+	return nil
 }
 
 func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {

@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -32,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -93,6 +93,16 @@ func (s indexWriterStage) String() string {
 	}
 	return "<unknown>"
 }
+
+// ErrPostingsOffsetTableTooLarge is returned when the postings offset table length
+// would exceed 4 bytes (table would exceed the 4GB limit).
+var ErrPostingsOffsetTableTooLarge = errors.New("length size exceeds 4 bytes")
+
+// ErrIndexExceeds64GiB is returned when the index file would exceed the 64GiB limit.
+var ErrIndexExceeds64GiB = errors.New("exceeding max size of 64GiB")
+
+// ErrSymbolTableTooLarge is returned when the symbol table size exceeds 4 bytes (4GiB limit).
+var ErrSymbolTableTooLarge = fmt.Errorf("symbol table size exceeds %d bytes", uint32(math.MaxUint32))
 
 // The table gets initialized with sync.Once but may still cause a race
 // with any other use of the crc32 package anywhere. Thus we initialize it
@@ -303,7 +313,7 @@ func (fw *FileWriter) Write(bufs ...[]byte) error {
 		// Once we move to compressed/varint representations in those areas, this limitation
 		// can be lifted.
 		if fw.pos > 16*math.MaxUint32 {
-			return fmt.Errorf("%q exceeding max size of 64GiB", fw.name)
+			return fmt.Errorf("%q %w", fw.name, ErrIndexExceeds64GiB)
 		}
 	}
 	return nil
@@ -543,7 +553,7 @@ func (w *Writer) finishSymbols() error {
 	symbolTableSize := w.f.pos - w.toc.Symbols - 4
 	// The symbol table's <len> part is 4 bytes. So the total symbol table size must be less than or equal to 2^32-1
 	if symbolTableSize > math.MaxUint32 {
-		return fmt.Errorf("symbol table size exceeds %d bytes: %d", uint32(math.MaxUint32), symbolTableSize)
+		return fmt.Errorf("%w: %d", ErrSymbolTableTooLarge, symbolTableSize)
 	}
 
 	// Write out the length and symbol count.
@@ -660,7 +670,7 @@ func (w *Writer) writeLengthAndHash(startPos uint64) error {
 	w.buf1.Reset()
 	l := w.f.pos - startPos - 4
 	if l > math.MaxUint32 {
-		return fmt.Errorf("length size exceeds 4 bytes: %d", l)
+		return fmt.Errorf("%w: %d", ErrPostingsOffsetTableTooLarge, l)
 	}
 	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
@@ -999,10 +1009,10 @@ func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
 	}
 	r, err := newReader(realByteSlice(f.Bytes()), f, decoder)
 	if err != nil {
-		return nil, tsdb_errors.NewMulti(
+		return nil, errors.Join(
 			err,
 			f.Close(),
-		).Err()
+		)
 	}
 
 	return r, nil
@@ -1447,32 +1457,6 @@ func (r *Reader) LabelNamesFor(ctx context.Context, postings Postings) ([]string
 	return names, nil
 }
 
-// LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r *Reader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
-	offset := id
-	// In version 2 series IDs are no longer exact references but series are 16-byte padded
-	// and the ID is the multiple of 16 of the actual position.
-	if r.version != FormatV1 {
-		offset = id * seriesByteAlign
-	}
-	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
-	buf := d.Get()
-	if d.Err() != nil {
-		return "", fmt.Errorf("label values for: %w", d.Err())
-	}
-
-	value, err := r.dec.LabelValueFor(ctx, buf, label)
-	if err != nil {
-		return "", storage.ErrNotFound
-	}
-
-	if value == "" {
-		return "", storage.ErrNotFound
-	}
-
-	return value, nil
-}
-
 // Series reads the series with the given ID and writes its labels and chunks into builder and chks.
 func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	offset := id
@@ -1807,37 +1791,6 @@ func (*Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
 	}
 
 	return offsets, d.Err()
-}
-
-// LabelValueFor decodes a label for a given series.
-func (dec *Decoder) LabelValueFor(ctx context.Context, b []byte, label string) (string, error) {
-	d := encoding.Decbuf{B: b}
-	k := d.Uvarint()
-
-	for range k {
-		lno := uint32(d.Uvarint())
-		lvo := uint32(d.Uvarint())
-
-		if d.Err() != nil {
-			return "", fmt.Errorf("read series label offsets: %w", d.Err())
-		}
-
-		ln, err := dec.LookupSymbol(ctx, lno)
-		if err != nil {
-			return "", fmt.Errorf("lookup label name: %w", err)
-		}
-
-		if ln == label {
-			lv, err := dec.LookupSymbol(ctx, lvo)
-			if err != nil {
-				return "", fmt.Errorf("lookup label value: %w", err)
-			}
-
-			return lv, nil
-		}
-	}
-
-	return "", d.Err()
 }
 
 // Series decodes a series entry from the given byte slice into builder and chks.

@@ -1,4 +1,4 @@
-// Copyright 2025 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -77,8 +77,8 @@ func BenchmarkScratchBuilderUnsafeAdd(b *testing.B) {
 	l.SetUnsafeAdd(true)
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		l.Add("__name__", "metric1")
 		l.add = l.add[:0] // Reset slice so add can be repeated without side effects.
 	}

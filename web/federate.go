@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -64,7 +63,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	matcherSets, err := parser.ParseMetricSelectors(req.Form["match[]"])
+	matcherSets, err := h.options.Parser.ParseMetricSelectors(req.Form["match[]"])
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

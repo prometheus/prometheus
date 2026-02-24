@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -2514,6 +2514,243 @@ func TestFloatHistogramAdd(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			testHistogramAdd(t, c.in1, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 			testHistogramAdd(t, c.in2, c.in1, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testHistogramKahanAdd(t, c.in1, nil, c.in2, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+			testHistogramKahanAdd(t, c.in2, nil, c.in1, c.expected, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
+		})
+	}
+}
+
+// TestKahanAddWithCompHistogram tests KahanAdd.
+// Test cases provide two float histograms and a compensation histogram with predefined values.
+func TestKahanAddWithCompHistogram(t *testing.T) {
+	cases := []struct {
+		name                        string
+		in1, comp, in2, expectedSum *FloatHistogram
+		expErrMsg                   string
+		expCounterResetCollision    bool
+		expNHCBBoundsReconciled     bool
+	}{
+		{
+			name: "larger zero bucket in first histogram",
+			in1: &FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       17,
+				Count:           21,
+				Sum:             1.234,
+				PositiveSpans:   []Span{{1, 2}, {0, 3}},
+				PositiveBuckets: []float64{2, 3, 6, 2, 5},
+				NegativeSpans:   []Span{{4, 2}, {1, 2}},
+				NegativeBuckets: []float64{1, 1, 4, 4},
+			},
+			comp: &FloatHistogram{
+				ZeroThreshold:   1,
+				PositiveSpans:   []Span{{1, 2}, {0, 3}},
+				PositiveBuckets: []float64{0.02, 0.03, 0.06, 0.02, 0.05},
+				NegativeSpans:   []Span{{4, 2}, {1, 2}},
+				NegativeBuckets: []float64{0.01, 0.01, 0.04, 0.04},
+			},
+			in2: &FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           30,
+				Sum:             2.345,
+				PositiveSpans:   []Span{{-2, 2}, {2, 3}},
+				PositiveBuckets: []float64{1, 0, 3, 4, 7},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3, 1, 5, 6},
+			},
+			expectedSum: &FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       29,
+				Count:           51,
+				Sum:             3.579,
+				PositiveSpans:   []Span{{1, 2}, {0, 3}},
+				PositiveBuckets: []float64{2.02, 6.03, 10.06, 9.02, 5.05},
+				NegativeSpans:   []Span{{3, 3}, {1, 3}},
+				NegativeBuckets: []float64{3, 2.01, 1.01, 4.04, 9.04, 6},
+			},
+			expErrMsg:                "",
+			expCounterResetCollision: false,
+			expNHCBBoundsReconciled:  false,
+		},
+		{
+			name: "smaller zero bucket in first histogram",
+			in1: &FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           40,
+				Sum:             2.345,
+				PositiveSpans:   []Span{{-2, 2}, {2, 3}},
+				PositiveBuckets: []float64{1, 2, 3, 4, 7},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3, 1, 5, 6},
+			},
+			comp: &FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       0,
+				PositiveSpans:   []Span{{-2, 2}, {2, 3}},
+				PositiveBuckets: []float64{0.02, 0.03, 0.06, 0.07, 0.05},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{0.01, 0.01, 0.04, 0.04},
+			},
+			in2: &FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       17,
+				Count:           11,
+				Sum:             1.234,
+				PositiveSpans:   []Span{{1, 2}, {0, 3}},
+				PositiveBuckets: []float64{2, 3, 6, 2, 5},
+				NegativeSpans:   []Span{{4, 2}, {1, 2}},
+				NegativeBuckets: []float64{1, 1, 4, 4},
+			},
+			expectedSum: &FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       31.05,
+				Count:           51,
+				Sum:             3.579,
+				PositiveSpans:   []Span{{1, 5}},
+				PositiveBuckets: []float64{2, 6.06, 10.07, 9.05, 5},
+				NegativeSpans:   []Span{{3, 3}, {1, 3}},
+				NegativeBuckets: []float64{3.01, 2.01, 1, 4, 9.04, 6.04},
+			},
+			expErrMsg:                "",
+			expCounterResetCollision: false,
+			expNHCBBoundsReconciled:  false,
+		},
+		{
+			name: "first histogram contains zero buckets and Compact is called",
+			in1: &FloatHistogram{
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           30,
+				Sum:             2.345,
+				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
+				PositiveBuckets: []float64{1, 3, 3, 0, 7, -6},
+			},
+			comp: &FloatHistogram{
+				ZeroThreshold:   0.01,
+				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
+				PositiveBuckets: []float64{7, 2, 0.03, 0, 0.05, 0.06},
+			},
+			in2: &FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       17,
+				Count:           21,
+				Sum:             1.234,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{2, 3, 2, 5},
+			},
+			expectedSum: &FloatHistogram{
+				ZeroThreshold:   1,
+				ZeroCount:       41,
+				Count:           51,
+				Sum:             3.579,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{5.03, 3, 9.05, -0.94},
+			},
+			expErrMsg:                "",
+			expCounterResetCollision: false,
+			expNHCBBoundsReconciled:  false,
+		},
+		{
+			name: "reduce resolution",
+			in1: &FloatHistogram{
+				Schema:          2,
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           30,
+				Sum:             2.345,
+				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
+				PositiveBuckets: []float64{1, 3, 1e100, 0, 7, -6},
+			},
+			comp: &FloatHistogram{
+				Schema:          2,
+				ZeroThreshold:   0.01,
+				ZeroCount:       1,
+				PositiveSpans:   []Span{{-2, 2}, {1, 1}, {1, 3}},
+				PositiveBuckets: []float64{7, 2, 0.03, 0, 0.05, 0.06},
+			},
+			in2: &FloatHistogram{
+				Schema:          1,
+				ZeroThreshold:   1,
+				ZeroCount:       17,
+				Count:           21,
+				Sum:             1.234,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{-1e100, 3, 2, 5},
+			},
+			expectedSum: &FloatHistogram{
+				Schema:          1,
+				ZeroThreshold:   1,
+				ZeroCount:       42,
+				Count:           51,
+				Sum:             3.579,
+				PositiveSpans:   []Span{{1, 5}},
+				PositiveBuckets: []float64{0.03, 10.05, -5.94, 2, 5},
+			},
+			expErrMsg:                "",
+			expCounterResetCollision: false,
+			expNHCBBoundsReconciled:  false,
+		},
+		{
+			name: "reduce resolution of 'other' histogram",
+			in1: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   1,
+				ZeroCount:       17,
+				Count:           21,
+				Sum:             1.234,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{2, 3, 2, 5},
+			},
+			comp: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   1,
+				ZeroCount:       1,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{17, 2, 0.03, 0},
+			},
+			in2: &FloatHistogram{
+				Schema:          2,
+				ZeroThreshold:   0.01,
+				ZeroCount:       11,
+				Count:           30,
+				Sum:             2.345,
+				PositiveSpans:   []Span{{-2, 3}, {1, 1}, {1, 3}},
+				PositiveBuckets: []float64{1e100, 4.1, -1e100, 2.1, 0, 7, -6},
+			},
+			expectedSum: &FloatHistogram{
+				Schema:          0,
+				ZeroThreshold:   1,
+				ZeroCount:       33.1,
+				Count:           51,
+				Sum:             3.579,
+				PositiveSpans:   []Span{{1, 2}, {1, 2}},
+				PositiveBuckets: []float64{21.1, 6, 2.03, 5},
+			},
+			expErrMsg:                "",
+			expCounterResetCollision: false,
+			expNHCBBoundsReconciled:  false,
+		},
+		{
+			name: "warn on counter reset hint collision",
+			in1: &FloatHistogram{
+				Schema:           CustomBucketsSchema,
+				CounterResetHint: CounterReset,
+			},
+			in2: &FloatHistogram{
+				Schema:           CustomBucketsSchema,
+				CounterResetHint: NotCounterReset,
+			},
+			expErrMsg:                "",
+			expCounterResetCollision: true,
+			expNHCBBoundsReconciled:  false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			testHistogramKahanAdd(t, c.in1, c.comp, c.in2, c.expectedSum, c.expErrMsg, c.expCounterResetCollision, c.expNHCBBoundsReconciled)
 		})
 	}
 }
@@ -2551,6 +2788,68 @@ func testHistogramAdd(t *testing.T, a, b, expected *FloatHistogram, expErrMsg st
 
 		// Has it also happened in-place?
 		require.Equal(t, expectedCopy, aCopy)
+
+		// Check that the argument was not mutated.
+		require.Equal(t, b, bCopy)
+	}
+}
+
+func testHistogramKahanAdd(
+	t *testing.T, a, c, b, expectedSum *FloatHistogram, expErrMsg string, expCounterResetCollision, expNHCBBoundsReconciled bool,
+) {
+	var (
+		aCopy           = a.Copy()
+		bCopy           = b.Copy()
+		cCopy           *FloatHistogram
+		expectedSumCopy *FloatHistogram
+	)
+
+	if c != nil {
+		cCopy = c.Copy()
+	}
+
+	if expectedSum != nil {
+		expectedSumCopy = expectedSum.Copy()
+	}
+
+	comp, counterResetCollision, nhcbBoundsReconciled, err := aCopy.KahanAdd(bCopy, cCopy)
+	if expErrMsg != "" {
+		require.EqualError(t, err, expErrMsg)
+	} else {
+		require.NoError(t, err)
+	}
+
+	var res *FloatHistogram
+	if comp != nil {
+		// Check that aCopy and its compensation histogram layouts match after addition.
+		require.Equal(t, aCopy.Schema, comp.Schema)
+		require.Equal(t, aCopy.ZeroThreshold, comp.ZeroThreshold)
+		require.Equal(t, aCopy.PositiveSpans, comp.PositiveSpans)
+		require.Equal(t, aCopy.NegativeSpans, comp.NegativeSpans)
+		require.Len(t, aCopy.CustomValues, len(comp.CustomValues))
+		require.Len(t, aCopy.PositiveBuckets, len(comp.PositiveBuckets))
+		require.Len(t, aCopy.NegativeBuckets, len(comp.NegativeBuckets))
+
+		res, _, _, err = aCopy.Add(comp)
+		if expErrMsg != "" {
+			require.EqualError(t, err, expErrMsg)
+		} else {
+			require.NoError(t, err)
+		}
+	}
+
+	// Check that the warnings are correct.
+	require.Equal(t, expCounterResetCollision, counterResetCollision)
+	require.Equal(t, expNHCBBoundsReconciled, nhcbBoundsReconciled)
+
+	if expectedSum != nil {
+		res.Compact(0)
+		expectedSumCopy.Compact(0)
+
+		require.Equal(t, expectedSumCopy, res)
+
+		// Has it also happened in-place?
+		require.Equal(t, expectedSumCopy, aCopy)
 
 		// Check that the argument was not mutated.
 		require.Equal(t, b, bCopy)
@@ -3344,6 +3643,84 @@ func TestAllReverseFloatBucketIterator(t *testing.T) {
 			includeZero: true,
 			includePos:  true,
 		},
+		{
+			h: FloatHistogram{
+				Count:         405,
+				ZeroCount:     102,
+				ZeroThreshold: 0.001,
+				Sum:           1008.4,
+				Schema:        1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 1, Length: 0},
+					{Offset: 3, Length: 3},
+					{Offset: 3, Length: 0},
+					{Offset: 2, Length: 0},
+					{Offset: 5, Length: 3},
+				},
+				// Spans expect one more bucket than listed
+				// here. We mostly want to make sure here that
+				// no panic happens. Data is invalid anyway, so
+				// there is no real "correct" data anymore.
+				PositiveBuckets: []float64{100, 344, 123, 55, 3, 63, 2, 54, 235},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 0},
+					{Offset: 3, Length: 0},
+					{Offset: 3, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 5, Length: 3},
+				},
+				// Spans expect one more bucket than listed
+				// here. We mostly want to make sure here that
+				// no panic happens. Data is invalid anyway, so
+				// there is no real "correct" data anymore.
+				NegativeBuckets: []float64{10, 34, 1230, 54, 67, 63, 2, 554, 235},
+			},
+			includeNeg:  true,
+			includeZero: true,
+			includePos:  true,
+		},
+		{
+			h: FloatHistogram{
+				Count:         447,
+				ZeroCount:     42,
+				ZeroThreshold: 0.6, // Within the bucket closest to zero.
+				Sum:           1008.4,
+				Schema:        0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 1, Length: 0},
+					{Offset: 3, Length: 3},
+					{Offset: 3, Length: 0},
+					{Offset: 2, Length: 0},
+					{Offset: 5, Length: 3},
+				},
+				// One more bucket listed here than expected by
+				// the spans. We mostly want to make sure here
+				// that no panic happens. Data is invalid
+				// anyway, so there is no real "correct" data
+				// anymore.
+				PositiveBuckets: []float64{100, 344, 123, 55, 3, 63, 2, 54, 235, 33, 42},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 0},
+					{Offset: 3, Length: 0},
+					{Offset: 3, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 5, Length: 3},
+				},
+				// One more bucket listed here than expected by
+				// the spans. We mostly want to make sure here
+				// that no panic happens. Data is invalid
+				// anyway, so there is no real "correct" data
+				// anymore.
+				NegativeBuckets: []float64{10, 34, 1230, 54, 67, 63, 2, 554, 235, 33, 42},
+			},
+			includeNeg:  true,
+			includeZero: true,
+			includePos:  true,
+		},
 	}
 
 	for i, c := range cases {
@@ -3391,50 +3768,217 @@ func TestAllReverseFloatBucketIterator(t *testing.T) {
 }
 
 func TestFloatBucketIteratorTargetSchema(t *testing.T) {
-	h := FloatHistogram{
-		Count:  405,
-		Sum:    1008.4,
-		Schema: 1,
-		PositiveSpans: []Span{
-			{Offset: 0, Length: 4},
-			{Offset: 1, Length: 3},
-			{Offset: 2, Length: 3},
+	cases := map[string]struct {
+		h                  FloatHistogram
+		expPositiveBuckets []Bucket[float64]
+		expNegativeBuckets []Bucket[float64]
+	}{
+		"regular": {
+			h: FloatHistogram{
+				Count:  405,
+				Sum:    1008.4,
+				Schema: 1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 1, Length: 3},
+					{Offset: 2, Length: 3},
+				},
+				PositiveBuckets: []float64{100, 344, 123, 55, 3, 63, 2, 54, 235, 33},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 7, Length: 4},
+					{Offset: 1, Length: 3},
+				},
+				NegativeBuckets: []float64{10, 34, 1230, 54, 67, 63, 2, 554, 235, 33},
+			},
+			expPositiveBuckets: []Bucket[float64]{
+				{Lower: 0.25, Upper: 1, LowerInclusive: false, UpperInclusive: true, Count: 100, Index: 0},
+				{Lower: 1, Upper: 4, LowerInclusive: false, UpperInclusive: true, Count: 522, Index: 1},
+				{Lower: 4, Upper: 16, LowerInclusive: false, UpperInclusive: true, Count: 68, Index: 2},
+				{Lower: 16, Upper: 64, LowerInclusive: false, UpperInclusive: true, Count: 322, Index: 3},
+			},
+			expNegativeBuckets: []Bucket[float64]{
+				{Lower: -1, Upper: -0.25, LowerInclusive: true, UpperInclusive: false, Count: 10, Index: 0},
+				{Lower: -4, Upper: -1, LowerInclusive: true, UpperInclusive: false, Count: 1264, Index: 1},
+				{Lower: -64, Upper: -16, LowerInclusive: true, UpperInclusive: false, Count: 184, Index: 3},
+				{Lower: -256, Upper: -64, LowerInclusive: true, UpperInclusive: false, Count: 791, Index: 4},
+				{Lower: -1024, Upper: -256, LowerInclusive: true, UpperInclusive: false, Count: 33, Index: 5},
+			},
 		},
-		PositiveBuckets: []float64{100, 344, 123, 55, 3, 63, 2, 54, 235, 33},
-		NegativeSpans: []Span{
-			{Offset: 0, Length: 3},
-			{Offset: 7, Length: 4},
-			{Offset: 1, Length: 3},
+		"missing buckets": {
+			// One fewer bucket than expected based on spans. This
+			// can only happen with invalid histograms. We still
+			// want to handle it gracefully, essentially by
+			// considering the missing bucket as empty.
+			h: FloatHistogram{
+				Count:  405,
+				Sum:    1008.4,
+				Schema: 1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 1, Length: 3},
+					{Offset: 2, Length: 3},
+				},
+				PositiveBuckets: []float64{100, 344, 123, 55, 3, 63, 2, 54, 235},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 7, Length: 4},
+					{Offset: 1, Length: 3},
+				},
+				NegativeBuckets: []float64{10, 34, 1230, 54, 67, 63, 2, 554, 235},
+			},
+			expPositiveBuckets: []Bucket[float64]{
+				{Lower: 0.25, Upper: 1, LowerInclusive: false, UpperInclusive: true, Count: 100, Index: 0},
+				{Lower: 1, Upper: 4, LowerInclusive: false, UpperInclusive: true, Count: 522, Index: 1},
+				{Lower: 4, Upper: 16, LowerInclusive: false, UpperInclusive: true, Count: 68, Index: 2},
+				{Lower: 16, Upper: 64, LowerInclusive: false, UpperInclusive: true, Count: 289, Index: 3},
+			},
+			expNegativeBuckets: []Bucket[float64]{
+				{Lower: -1, Upper: -0.25, LowerInclusive: true, UpperInclusive: false, Count: 10, Index: 0},
+				{Lower: -4, Upper: -1, LowerInclusive: true, UpperInclusive: false, Count: 1264, Index: 1},
+				{Lower: -64, Upper: -16, LowerInclusive: true, UpperInclusive: false, Count: 184, Index: 3},
+				{Lower: -256, Upper: -64, LowerInclusive: true, UpperInclusive: false, Count: 791, Index: 4},
+			},
 		},
-		NegativeBuckets: []float64{10, 34, 1230, 54, 67, 63, 2, 554, 235, 33},
+		"spurious bucket": {
+			// One more bucket than expected based on spans. This
+			// can only happen with invalid histograms. We still
+			// want to handle it gracefully, essentially by ignoring
+			// the spurious bucket.
+			h: FloatHistogram{
+				Count:  405,
+				Sum:    1008.4,
+				Schema: 1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 1, Length: 3},
+					{Offset: 2, Length: 3},
+				},
+				PositiveBuckets: []float64{100, 344, 123, 55, 3, 63, 2, 54, 235, 33, 42},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 7, Length: 4},
+					{Offset: 1, Length: 3},
+				},
+				NegativeBuckets: []float64{10, 34, 1230, 54, 67, 63, 2, 554, 235, 33, 42},
+			},
+			expPositiveBuckets: []Bucket[float64]{
+				{Lower: 0.25, Upper: 1, LowerInclusive: false, UpperInclusive: true, Count: 100, Index: 0},
+				{Lower: 1, Upper: 4, LowerInclusive: false, UpperInclusive: true, Count: 522, Index: 1},
+				{Lower: 4, Upper: 16, LowerInclusive: false, UpperInclusive: true, Count: 68, Index: 2},
+				{Lower: 16, Upper: 64, LowerInclusive: false, UpperInclusive: true, Count: 322, Index: 3},
+			},
+			expNegativeBuckets: []Bucket[float64]{
+				{Lower: -1, Upper: -0.25, LowerInclusive: true, UpperInclusive: false, Count: 10, Index: 0},
+				{Lower: -4, Upper: -1, LowerInclusive: true, UpperInclusive: false, Count: 1264, Index: 1},
+				{Lower: -64, Upper: -16, LowerInclusive: true, UpperInclusive: false, Count: 184, Index: 3},
+				{Lower: -256, Upper: -64, LowerInclusive: true, UpperInclusive: false, Count: 791, Index: 4},
+				{Lower: -1024, Upper: -256, LowerInclusive: true, UpperInclusive: false, Count: 33, Index: 5},
+			},
+		},
+		"no schema change": {
+			h: FloatHistogram{
+				Count:  405,
+				Sum:    1008.4,
+				Schema: -1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []float64{100, 522, 68, 322},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []float64{100, 522, 68, 322},
+			},
+			expPositiveBuckets: []Bucket[float64]{
+				{Lower: 0.25, Upper: 1, LowerInclusive: false, UpperInclusive: true, Count: 100, Index: 0},
+				{Lower: 1, Upper: 4, LowerInclusive: false, UpperInclusive: true, Count: 522, Index: 1},
+				{Lower: 16, Upper: 64, LowerInclusive: false, UpperInclusive: true, Count: 68, Index: 3},
+				{Lower: 64, Upper: 256, LowerInclusive: false, UpperInclusive: true, Count: 322, Index: 4},
+			},
+			expNegativeBuckets: []Bucket[float64]{
+				{Lower: -1, Upper: -0.25, LowerInclusive: true, UpperInclusive: false, Count: 100, Index: 0},
+				{Lower: -4, Upper: -1, LowerInclusive: true, UpperInclusive: false, Count: 522, Index: 1},
+				{Lower: -64, Upper: -16, LowerInclusive: true, UpperInclusive: false, Count: 68, Index: 3},
+				{Lower: -256, Upper: -64, LowerInclusive: true, UpperInclusive: false, Count: 322, Index: 4},
+			},
+		},
+		"no schema change, missing bucket": {
+			h: FloatHistogram{
+				Count:  405,
+				Sum:    1008.4,
+				Schema: -1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []float64{100, 522, 68},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []float64{100, 522, 68},
+			},
+			expPositiveBuckets: []Bucket[float64]{
+				{Lower: 0.25, Upper: 1, LowerInclusive: false, UpperInclusive: true, Count: 100, Index: 0},
+				{Lower: 1, Upper: 4, LowerInclusive: false, UpperInclusive: true, Count: 522, Index: 1},
+				{Lower: 16, Upper: 64, LowerInclusive: false, UpperInclusive: true, Count: 68, Index: 3},
+			},
+			expNegativeBuckets: []Bucket[float64]{
+				{Lower: -1, Upper: -0.25, LowerInclusive: true, UpperInclusive: false, Count: 100, Index: 0},
+				{Lower: -4, Upper: -1, LowerInclusive: true, UpperInclusive: false, Count: 522, Index: 1},
+				{Lower: -64, Upper: -16, LowerInclusive: true, UpperInclusive: false, Count: 68, Index: 3},
+			},
+		},
+		"no schema change, spurious bucket": {
+			h: FloatHistogram{
+				Count:  405,
+				Sum:    1008.4,
+				Schema: -1,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []float64{100, 522, 68, 322, 42},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []float64{100, 522, 68, 322, 42},
+			},
+			expPositiveBuckets: []Bucket[float64]{
+				{Lower: 0.25, Upper: 1, LowerInclusive: false, UpperInclusive: true, Count: 100, Index: 0},
+				{Lower: 1, Upper: 4, LowerInclusive: false, UpperInclusive: true, Count: 522, Index: 1},
+				{Lower: 16, Upper: 64, LowerInclusive: false, UpperInclusive: true, Count: 68, Index: 3},
+				{Lower: 64, Upper: 256, LowerInclusive: false, UpperInclusive: true, Count: 322, Index: 4},
+			},
+			expNegativeBuckets: []Bucket[float64]{
+				{Lower: -1, Upper: -0.25, LowerInclusive: true, UpperInclusive: false, Count: 100, Index: 0},
+				{Lower: -4, Upper: -1, LowerInclusive: true, UpperInclusive: false, Count: 522, Index: 1},
+				{Lower: -64, Upper: -16, LowerInclusive: true, UpperInclusive: false, Count: 68, Index: 3},
+				{Lower: -256, Upper: -64, LowerInclusive: true, UpperInclusive: false, Count: 322, Index: 4},
+			},
+		},
 	}
-	expPositiveBuckets := []Bucket[float64]{
-		{Lower: 0.25, Upper: 1, LowerInclusive: false, UpperInclusive: true, Count: 100, Index: 0},
-		{Lower: 1, Upper: 4, LowerInclusive: false, UpperInclusive: true, Count: 522, Index: 1},
-		{Lower: 4, Upper: 16, LowerInclusive: false, UpperInclusive: true, Count: 68, Index: 2},
-		{Lower: 16, Upper: 64, LowerInclusive: false, UpperInclusive: true, Count: 322, Index: 3},
-	}
-	expNegativeBuckets := []Bucket[float64]{
-		{Lower: -1, Upper: -0.25, LowerInclusive: true, UpperInclusive: false, Count: 10, Index: 0},
-		{Lower: -4, Upper: -1, LowerInclusive: true, UpperInclusive: false, Count: 1264, Index: 1},
-		{Lower: -64, Upper: -16, LowerInclusive: true, UpperInclusive: false, Count: 184, Index: 3},
-		{Lower: -256, Upper: -64, LowerInclusive: true, UpperInclusive: false, Count: 791, Index: 4},
-		{Lower: -1024, Upper: -256, LowerInclusive: true, UpperInclusive: false, Count: 33, Index: 5},
-	}
+	for tn, tc := range cases {
+		t.Run(tn, func(t *testing.T) {
+			it := tc.h.floatBucketIterator(true, 0, -1)
+			for i, b := range tc.expPositiveBuckets {
+				require.True(t, it.Next(), "positive iterator exhausted too early")
+				require.Equal(t, b, it.At(), "bucket %d", i)
+			}
+			require.False(t, it.Next(), "positive iterator not exhausted")
 
-	it := h.floatBucketIterator(true, 0, -1)
-	for i, b := range expPositiveBuckets {
-		require.True(t, it.Next(), "positive iterator exhausted too early")
-		require.Equal(t, b, it.At(), "bucket %d", i)
+			it = tc.h.floatBucketIterator(false, 0, -1)
+			for i, b := range tc.expNegativeBuckets {
+				require.True(t, it.Next(), "negative iterator exhausted too early")
+				require.Equal(t, b, it.At(), "bucket %d", i)
+			}
+			require.False(t, it.Next(), "negative iterator not exhausted")
+		})
 	}
-	require.False(t, it.Next(), "positive iterator not exhausted")
-
-	it = h.floatBucketIterator(false, 0, -1)
-	for i, b := range expNegativeBuckets {
-		require.True(t, it.Next(), "negative iterator exhausted too early")
-		require.Equal(t, b, it.At(), "bucket %d", i)
-	}
-	require.False(t, it.Next(), "negative iterator not exhausted")
 }
 
 func TestFloatCustomBucketsIterators(t *testing.T) {
@@ -3896,14 +4440,16 @@ func createRandomSpans(rng *rand.Rand, spanNum int32) ([]Span, []float64) {
 
 func TestFloatHistogramReduceResolution(t *testing.T) {
 	tcs := map[string]struct {
-		origin *FloatHistogram
-		target *FloatHistogram
+		origin       *FloatHistogram
+		targetSchema int32
+		target       *FloatHistogram
+		errorMsg     string
 	}{
 		"valid float histogram": {
 			origin: &FloatHistogram{
 				Schema: 0,
 				PositiveSpans: []Span{
-					{Offset: 0, Length: 4},
+					{Offset: -2, Length: 4},
 					{Offset: 0, Length: 0},
 					{Offset: 3, Length: 2},
 				},
@@ -3915,10 +4461,11 @@ func TestFloatHistogramReduceResolution(t *testing.T) {
 				},
 				NegativeBuckets: []float64{1, 3, 1, 2, 1, 1},
 			},
+			targetSchema: -1,
 			target: &FloatHistogram{
 				Schema: -1,
 				PositiveSpans: []Span{
-					{Offset: 0, Length: 3},
+					{Offset: -1, Length: 3},
 					{Offset: 1, Length: 1},
 				},
 				PositiveBuckets: []float64{1, 4, 2, 2},
@@ -3929,12 +4476,58 @@ func TestFloatHistogramReduceResolution(t *testing.T) {
 				NegativeBuckets: []float64{1, 4, 2, 2},
 			},
 		},
+		"not enough buckets": {
+			origin: &FloatHistogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []float64{1, 3, 1, 2, 1},
+			},
+			targetSchema: -1,
+			errorMsg:     "have 5 buckets but spans need more: histogram spans specify different number of buckets than provided",
+		},
+		"too many buckets": {
+			origin: &FloatHistogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 4},
+					{Offset: 0, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []float64{1, 3, 1, 2, 1, 1, 5},
+			},
+			targetSchema: -1,
+			errorMsg:     "spans need 6 buckets, have 7 buckets: histogram spans specify different number of buckets than provided",
+		},
+		"negative offset": {
+			origin: &FloatHistogram{
+				Schema: 0,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 4},
+					{Offset: -1, Length: 0},
+					{Offset: 3, Length: 2},
+				},
+				PositiveBuckets: []float64{1, 3, 1, 2, 1, 1},
+			},
+			targetSchema: -1,
+			errorMsg:     "span number 2 with offset -1: histogram has a span whose offset is negative",
+		},
 	}
 
-	for _, tc := range tcs {
-		target := tc.origin.ReduceResolution(tc.target.Schema)
-		require.Equal(t, tc.target, target)
-		// Check that receiver histogram was mutated:
-		require.Equal(t, tc.target, tc.origin)
+	for tn, tc := range tcs {
+		t.Run(tn, func(t *testing.T) {
+			err := tc.origin.ReduceResolution(tc.targetSchema)
+			if tc.errorMsg != "" {
+				require.Equal(t, tc.errorMsg, err.Error())
+				// The returned error should be a histogram.Error.
+				require.ErrorAs(t, err, &Error{})
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.target, tc.origin)
+		})
 	}
 }

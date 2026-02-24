@@ -1,30 +1,47 @@
-name: CIFuzz
+name: fuzzing
 on:
   workflow_call:
 permissions:
   contents: read
 
 jobs:
-  Fuzzing:
+  fuzzing:
+    name: Run Go Fuzz Tests
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        fuzz_test: [FuzzParseMetricText, FuzzParseOpenMetric, FuzzParseMetricSelector, FuzzParseExpr]
     steps:
-      - name: Build Fuzzers
-        id: build
-        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@cafd7a0eb8ecb4e007c56897996a9b65c49c972f # master
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          oss-fuzz-project-name: "prometheus"
-          dry-run: false
-      - name: Run Fuzzers
-        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@cafd7a0eb8ecb4e007c56897996a9b65c49c972f # master
-        # Note: Regularly check for updates to the pinned commit hash at:
-        # https://github.com/google/oss-fuzz/tree/master/infra/cifuzz/actions/run_fuzzers
+          persist-credentials: false
+      - name: Install Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          oss-fuzz-project-name: "prometheus"
-          fuzz-seconds: 600
-          dry-run: false
-      - name: Upload Crash
+          go-version: 1.25.x
+      - name: Run Fuzzing
+        run: go test -fuzz=${{ matrix.fuzz_test }}$ -fuzztime=5m ./util/fuzzing
+        continue-on-error: true
+        id: fuzz
+      - name: Upload Crash Artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-        if: failure() && steps.build.outcome == 'success'
+        if: failure()
         with:
-          name: artifacts
-          path: ./out/artifacts
+          name: fuzz-artifacts-${{ matrix.fuzz_test }}
+          path: util/fuzzing/testdata/fuzz/${{ matrix.fuzz_test }}
+  fuzzing_status:
+    # This status check aggregates the individual matrix jobs of the fuzzing
+    # step into a final status. Fails if a single matrix job fails, succeeds if
+    # all matrix jobs succeed.
+    name: Fuzzing
+    runs-on: ubuntu-latest
+    needs: [fuzzing]
+    if: always()
+    steps:
+      - name: Successful fuzzing
+        if: ${{ !(contains(needs.*.result, 'failure')) && !(contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Failing or cancelled fuzzing
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

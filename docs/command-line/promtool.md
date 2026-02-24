@@ -12,7 +12,7 @@ Tooling for the Prometheus monitoring system.
 | <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |
 | <code class="text-nowrap">--version</code> | Show application version. |
 | <code class="text-nowrap">--experimental</code> | Enable experimental commands. |
-| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...<code class="text-nowrap"> | Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details |
+| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...<code class="text-nowrap"> | Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-duration-expr, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details |
 
 
 
@@ -59,7 +59,6 @@ Check the resources for validity.
 | Flag | Description | Default |
 | --- | --- | --- |
 | <code class="text-nowrap">--query.lookback-delta</code> | The server's maximum query lookback duration. | `5m` |
-| <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |  |
 
 
 
@@ -192,13 +191,25 @@ Check if the rule files are valid or not.
 
 ##### `promtool check metrics`
 
-Pass Prometheus metrics over stdin to lint them for consistency and correctness.
+Pass Prometheus metrics over stdin to lint them for consistency and correctness, and optionally perform cardinality analysis.
 
 examples:
 
 $ cat metrics.prom | promtool check metrics
 
-$ curl -s http://localhost:9090/metrics | promtool check metrics
+$ curl -s http://localhost:9090/metrics | promtool check metrics `--extended`
+
+$ curl -s http://localhost:9100/metrics | promtool check metrics `--extended` `--lint`=none
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |  |
+| <code class="text-nowrap">--lint</code> | Linting checks to apply for metrics. Available options are: all, none. Use --lint=none to disable metrics linting. | `all` |
+
 
 
 
@@ -570,7 +581,7 @@ List tsdb blocks.
 
 ##### `promtool tsdb dump`
 
-Dump samples from a TSDB.
+Dump data (series+samples or optionally just series) from a TSDB.
 
 
 
@@ -582,6 +593,7 @@ Dump samples from a TSDB.
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump, in milliseconds since the Unix epoch. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump, in milliseconds since the Unix epoch. | `9223372036854775807` |
 | <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
+| <code class="text-nowrap">--format</code> | Output format of the dump (prom (default) or seriesjson). | `prom` |
 
 
 

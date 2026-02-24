@@ -192,8 +192,7 @@ describe("serializeNode and formatNode", () => {
           anchored: false,
           smoothed: false,
         },
-        output:
-          '{label1="value1"}',
+        output: '{label1="value1"}',
       },
 
       // Anchored and smoothed modifiers.
@@ -659,6 +658,7 @@ describe("serializeNode and formatNode", () => {
             labels: [],
             on: false,
             include: [],
+            fillValues: { lhs: null, rhs: null },
           },
           bool: false,
         },
@@ -678,6 +678,7 @@ describe("serializeNode and formatNode", () => {
             labels: [],
             on: true,
             include: [],
+            fillValues: { lhs: null, rhs: null },
           },
           bool: false,
         },
@@ -697,6 +698,7 @@ describe("serializeNode and formatNode", () => {
             labels: ["label1", "label2"],
             on: true,
             include: [],
+            fillValues: { lhs: null, rhs: null },
           },
           bool: false,
         },
@@ -716,12 +718,55 @@ describe("serializeNode and formatNode", () => {
             labels: ["label1", "label2"],
             on: false,
             include: [],
+            fillValues: { lhs: null, rhs: null },
           },
           bool: false,
         },
         output: "… + ignoring(label1, label2) …",
         prettyOutput: `  …
 + ignoring(label1, label2)
+  …`,
+      },
+      {
+        // Empty ignoring() without group modifiers can be stripped away.
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.add,
+          lhs: { type: nodeType.placeholder, children: [] },
+          rhs: { type: nodeType.placeholder, children: [] },
+          matching: {
+            card: vectorMatchCardinality.oneToOne,
+            labels: [],
+            on: false,
+            include: [],
+            fillValues: { lhs: null, rhs: null },
+          },
+          bool: false,
+        },
+        output: "… + …",
+        prettyOutput: `  …
++
+  …`,
+      },
+      {
+        // Empty ignoring() with group modifiers may not be stripped away.
+        node: {
+          type: nodeType.binaryExpr,
+          op: binaryOperatorType.add,
+          lhs: { type: nodeType.placeholder, children: [] },
+          rhs: { type: nodeType.placeholder, children: [] },
+          matching: {
+            card: vectorMatchCardinality.manyToOne,
+            labels: [],
+            on: false,
+            include: ["__name__"],
+            fillValues: { lhs: null, rhs: null },
+          },
+          bool: false,
+        },
+        output: "… + ignoring() group_left(__name__) …",
+        prettyOutput: `  …
++ ignoring() group_left(__name__)
   …`,
       },
       {
@@ -735,6 +780,7 @@ describe("serializeNode and formatNode", () => {
             labels: ["label1", "label2"],
             on: true,
             include: [],
+            fillValues: { lhs: null, rhs: null },
           },
           bool: false,
         },
@@ -754,6 +800,7 @@ describe("serializeNode and formatNode", () => {
             labels: ["label1", "label2"],
             on: true,
             include: ["label3"],
+            fillValues: { lhs: null, rhs: null },
           },
           bool: false,
         },
@@ -773,6 +820,7 @@ describe("serializeNode and formatNode", () => {
             labels: ["label1", "label2"],
             on: true,
             include: [],
+            fillValues: { lhs: null, rhs: null },
           },
           bool: false,
         },
@@ -792,6 +840,7 @@ describe("serializeNode and formatNode", () => {
             labels: ["label1", "label2"],
             on: true,
             include: ["label3"],
+            fillValues: { lhs: null, rhs: null },
           },
           bool: false,
         },
@@ -825,6 +874,7 @@ describe("serializeNode and formatNode", () => {
             labels: ["label1", "label2"],
             on: true,
             include: ["label3"],
+            fillValues: { lhs: null, rhs: null },
           },
           bool: true,
         },
@@ -872,6 +922,7 @@ describe("serializeNode and formatNode", () => {
               include: ["c", "ü"],
               labels: ["b", "ö"],
               on: true,
+              fillValues: { lhs: null, rhs: null },
             },
             op: binaryOperatorType.div,
             rhs: {
@@ -909,6 +960,7 @@ describe("serializeNode and formatNode", () => {
             include: [],
             labels: ["e", "ö"],
             on: false,
+            fillValues: { lhs: null, rhs: null },
           },
           op: binaryOperatorType.add,
           rhs: {

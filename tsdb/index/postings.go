@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -391,7 +391,7 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 
 	for n, e := range p.m {
 		for v, p := range e {
-			if err := f(labels.Label{Name: n, Value: v}, newListPostings(p...)); err != nil {
+			if err := f(labels.Label{Name: n, Value: v}, NewListPostings(p)); err != nil {
 				return err
 			}
 		}
@@ -478,8 +478,8 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 	}
 
 	// Now `vals` only contains the values that matched, get their postings.
-	its := make([]*ListPostings, 0, len(vals))
-	lps := make([]ListPostings, len(vals))
+	its := make([]*listPostings, 0, len(vals))
+	lps := make([]listPostings, len(vals))
 	p.mtx.RLock()
 	e := p.m[name]
 	for i, v := range vals {
@@ -488,7 +488,7 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 			// If we didn't let the mutex go, we'd have these postings here, but they would be pointing nowhere
 			// because there would be a `MemPostings.Delete()` call waiting for the lock to delete these labels,
 			// because the series were deleted already.
-			lps[i] = ListPostings{list: refs}
+			lps[i] = listPostings{list: refs}
 			its = append(its, &lps[i])
 		}
 	}
@@ -500,13 +500,13 @@ func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string,
 
 // Postings returns a postings iterator for the given label values.
 func (p *MemPostings) Postings(ctx context.Context, name string, values ...string) Postings {
-	res := make([]*ListPostings, 0, len(values))
-	lps := make([]ListPostings, len(values))
+	res := make([]*listPostings, 0, len(values))
+	lps := make([]listPostings, len(values))
 	p.mtx.RLock()
 	postingsMapForName := p.m[name]
 	for i, value := range values {
 		if lp := postingsMapForName[value]; lp != nil {
-			lps[i] = ListPostings{list: lp}
+			lps[i] = listPostings{list: lp}
 			res = append(res, &lps[i])
 		}
 	}
@@ -518,12 +518,12 @@ func (p *MemPostings) PostingsForAllLabelValues(ctx context.Context, name string
 	p.mtx.RLock()
 
 	e := p.m[name]
-	its := make([]*ListPostings, 0, len(e))
-	lps := make([]ListPostings, len(e))
+	its := make([]*listPostings, 0, len(e))
+	lps := make([]listPostings, len(e))
 	i := 0
 	for _, refs := range e {
 		if len(refs) > 0 {
-			lps[i] = ListPostings{list: refs}
+			lps[i] = listPostings{list: refs}
 			its = append(its, &lps[i])
 		}
 		i++
@@ -542,7 +542,7 @@ func ExpandPostings(p Postings) (res []storage.SeriesRef, err error) {
 	return res, p.Err()
 }
 
-// Postings provides iterative access over a postings list.
+// Postings provides iterative access over an ordered list of SeriesRef.
 type Postings interface {
 	// Next advances the iterator and returns true if another value was found.
 	Next() bool
@@ -641,14 +641,27 @@ func (it *intersectPostings) Seek(target storage.SeriesRef) bool {
 }
 
 func (it *intersectPostings) Next() bool {
-	target := it.current
-	for _, p := range it.postings {
+	// Move forward the first Postings and take its value as the target to match.
+	if !it.postings[0].Next() {
+		return false
+	}
+	target := it.postings[0].At()
+	allEqual := true
+	for _, p := range it.postings[1:] { // Now move forward all the other ones and check if they match.
 		if !p.Next() {
 			return false
 		}
-		if p.At() > target {
-			target = p.At()
+		at := p.At()
+		if at > target { // This one is past the target, so pick up a new target to Seek at the end.
+			target = at
+			allEqual = false
+		} else if at < target { // This one needs to Seek to the target, but carry on with other postings in case they have an even higher target.
+			allEqual = false
 		}
+	}
+	if allEqual {
+		it.current = target
+		return true
 	}
 	return it.Seek(target)
 }
@@ -814,25 +827,23 @@ func (rp *removedPostings) Err() error {
 	return rp.remove.Err()
 }
 
-// ListPostings implements the Postings interface over a plain list.
-type ListPostings struct {
+// listPostings implements the Postings interface over a plain list.
+type listPostings struct {
 	list []storage.SeriesRef
 	cur  storage.SeriesRef
 }
 
+// NewListPostings creates a Postings from the supplied SeriesRefs, which must be in order.
+// The list slice passed in is retained.
 func NewListPostings(list []storage.SeriesRef) Postings {
-	return newListPostings(list...)
+	return &listPostings{list: list}
 }
 
-func newListPostings(list ...storage.SeriesRef) *ListPostings {
-	return &ListPostings{list: list}
-}
-
-func (it *ListPostings) At() storage.SeriesRef {
+func (it *listPostings) At() storage.SeriesRef {
 	return it.cur
 }
 
-func (it *ListPostings) Next() bool {
+func (it *listPostings) Next() bool {
 	if len(it.list) > 0 {
 		it.cur = it.list[0]
 		it.list = it.list[1:]
@@ -842,7 +853,7 @@ func (it *ListPostings) Next() bool {
 	return false
 }
 
-func (it *ListPostings) Seek(x storage.SeriesRef) bool {
+func (it *listPostings) Seek(x storage.SeriesRef) bool {
 	// If the current value satisfies, then return.
 	if it.cur >= x {
 		return true
@@ -851,23 +862,25 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 		return false
 	}
 
-	// Do binary search between current position and end.
-	i, _ := slices.BinarySearch(it.list, x)
-	if i < len(it.list) {
-		it.cur = it.list[i]
-		it.list = it.list[i+1:]
-		return true
+	i := 0 // Check the next item in the list, otherwise binary search between current position and end.
+	if it.list[0] < x {
+		i, _ = slices.BinarySearch(it.list, x)
+		if i >= len(it.list) { // Off the end - terminate the iterator.
+			it.list = nil
+			return false
+		}
 	}
-	it.list = nil
-	return false
+	it.cur = it.list[i]
+	it.list = it.list[i+1:]
+	return true
 }
 
-func (*ListPostings) Err() error {
+func (*listPostings) Err() error {
 	return nil
 }
 
 // Len returns the remaining number of postings in the list.
-func (it *ListPostings) Len() int {
+func (it *listPostings) Len() int {
 	return len(it.list)
 }
 
@@ -943,7 +956,7 @@ func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int,
 		}
 		if p.At() == h.at() {
 			indexes = append(indexes, h.popIndex())
-		} else if err := h.next(); err != nil {
+		} else if err := h.seekHead(p.At()); err != nil {
 			return nil, err
 		}
 	}
@@ -986,20 +999,18 @@ func (h *postingsWithIndexHeap) popIndex() int {
 // at provides the storage.SeriesRef where root Postings is pointing at this moment.
 func (h postingsWithIndexHeap) at() storage.SeriesRef { return h[0].p.At() }
 
-// next performs the Postings.Next() operation on the root of the heap, performing the related operation on the heap
-// and conveniently returning the result of calling Postings.Err() if the result of calling Next() was false.
-// If Next() succeeds, heap is fixed to move the root to its new position, according to its Postings.At() value.
-// If Next() returns fails and there's no error reported by Postings.Err(), then root is marked as removed and heap is fixed.
-func (h *postingsWithIndexHeap) next() error {
+// seekHead performs the Postings.Seek() operation on the root of the heap.
+// If the root is exhausted or fails, it is removed from the heap.
+func (h *postingsWithIndexHeap) seekHead(val storage.SeriesRef) error {
 	pi := (*h)[0]
-	next := pi.p.Next()
+	next := pi.p.Seek(val)
 	if next {
 		heap.Fix(h, 0)
 		return nil
 	}
 
 	if err := pi.p.Err(); err != nil {
-		return fmt.Errorf("postings %d: %w", pi.index, err)
+		return fmt.Errorf("seek postings %d: %w", pi.index, err)
 	}
 	h.popIndex()
 	return nil

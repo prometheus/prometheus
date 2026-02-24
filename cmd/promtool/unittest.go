@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -47,11 +47,11 @@ import (
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
-	return RulesUnitTestResult(io.Discard, queryOpts, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
+func RulesUnitTest(queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+	return RulesUnitTestResult(io.Discard, queryOpts, p, runStrings, diffFlag, debug, ignoreUnknownFields, files...)
 }
 
-func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
+func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, runStrings []string, diffFlag, debug, ignoreUnknownFields bool, files ...string) int {
 	failed := false
 	junit := &junitxml.JUnitXML{}
 
@@ -61,7 +61,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	}
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f, queryOpts, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts, p, run, diffFlag, debug, ignoreUnknownFields, junit.Suite(f)); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -83,7 +83,7 @@ func RulesUnitTestResult(results io.Writer, queryOpts promqltest.LazyLoaderOpts,
 	return successExitCode
 }
 
-func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
+func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser.Parser, run *regexp.Regexp, diffFlag, debug, ignoreUnknownFields bool, ts *junitxml.TestSuite) []error {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		ts.Abort(err)
@@ -132,6 +132,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, run *reg
 		if t.Interval == 0 {
 			t.Interval = unitTestInp.EvaluationInterval
 		}
+		t.parser = p
 		ers := t.test(testname, evalInterval, groupOrderMap, queryOpts, diffFlag, debug, ignoreUnknownFields, unitTestInp.FuzzyCompare, unitTestInp.RuleFiles...)
 		if ers != nil {
 			for _, e := range ers {
@@ -188,15 +189,39 @@ func resolveAndGlobFilepaths(baseDir string, utf *unitTestFile) error {
 	return nil
 }
 
+// testStartTimestamp wraps time.Time to support custom YAML unmarshaling.
+// It can parse both RFC3339 timestamps and Unix timestamps.
+type testStartTimestamp struct {
+	time.Time
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling for testStartTimestamp.
+// It accepts both RFC3339 formatted strings and numeric Unix timestamps.
+func (t *testStartTimestamp) UnmarshalYAML(unmarshal func(any) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+	parsed, err := parseTime(s)
+	if err != nil {
+		return err
+	}
+	t.Time = parsed
+	return nil
+}
+
 // testGroup is a group of input series and tests associated with it.
 type testGroup struct {
-	Interval        model.Duration   `yaml:"interval"`
-	InputSeries     []series         `yaml:"input_series"`
-	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
-	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
-	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
-	ExternalURL     string           `yaml:"external_url,omitempty"`
-	TestGroupName   string           `yaml:"name,omitempty"`
+	Interval        model.Duration     `yaml:"interval"`
+	InputSeries     []series           `yaml:"input_series"`
+	AlertRuleTests  []alertTestCase    `yaml:"alert_rule_test,omitempty"`
+	PromqlExprTests []promqlTestCase   `yaml:"promql_expr_test,omitempty"`
+	ExternalLabels  labels.Labels      `yaml:"external_labels,omitempty"`
+	ExternalURL     string             `yaml:"external_url,omitempty"`
+	TestGroupName   string             `yaml:"name,omitempty"`
+	StartTimestamp  testStartTimestamp `yaml:"start_timestamp,omitempty"`
+
+	parser parser.Parser `yaml:"-"`
 }
 
 // test performs the unit tests.
@@ -209,6 +234,8 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		}()
 	}
 	// Setup testing suite.
+	// Set the start time from the test group.
+	queryOpts.StartTime = tg.StartTimestamp.Time
 	suite, err := promqltest.NewLazyLoader(tg.seriesLoadingString(), queryOpts)
 	if err != nil {
 		return []error{err}
@@ -228,6 +255,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		Context:    context.Background(),
 		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
 		Logger:     promslog.NewNopLogger(),
+		Parser:     tg.parser,
 	}
 	m := rules.NewManager(opts)
 	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, nil, ignoreUnknownFields, ruleFiles...)
@@ -237,7 +265,12 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 	groups := orderedGroups(groupsMap, groupOrderMap)
 
 	// Bounds for evaluating the rules.
-	mint := time.Unix(0, 0).UTC()
+	var mint time.Time
+	if tg.StartTimestamp.IsZero() {
+		mint = time.Unix(0, 0).UTC()
+	} else {
+		mint = tg.StartTimestamp.Time
+	}
 	maxt := mint.Add(tg.maxEvalTime())
 
 	// Optional floating point compare fuzzing.
@@ -453,10 +486,10 @@ Outer:
 
 		var expSamples []parsedSample
 		for _, s := range testCase.ExpSamples {
-			lb, err := parser.ParseMetric(s.Labels)
+			lb, err := tg.parser.ParseMetric(s.Labels)
 			var hist *histogram.FloatHistogram
 			if err == nil && s.Histogram != "" {
-				_, values, parseErr := parser.ParseSeriesDesc("{} " + s.Histogram)
+				_, values, parseErr := tg.parser.ParseSeriesDesc("{} " + s.Histogram)
 				switch {
 				case parseErr != nil:
 					err = parseErr
@@ -528,9 +561,9 @@ Outer:
 // seriesLoadingString returns the input series in PromQL notation.
 func (tg *testGroup) seriesLoadingString() string {
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("load %v\n", shortDuration(tg.Interval)))
+	fmt.Fprintf(&result, "load %v\n", shortDuration(tg.Interval))
 	for _, is := range tg.InputSeries {
-		result.WriteString(fmt.Sprintf("  %v %v\n", is.Series, is.Values))
+		fmt.Fprintf(&result, "  %v %v\n", is.Series, is.Values)
 	}
 	return result.String()
 }
@@ -631,13 +664,14 @@ func (la labelsAndAnnotations) String() string {
 	if len(la) == 0 {
 		return "[]"
 	}
-	s := "[\n0:" + indentLines("\n"+la[0].String(), "  ")
+	var s strings.Builder
+	s.WriteString("[\n0:" + indentLines("\n"+la[0].String(), "  "))
 	for i, l := range la[1:] {
-		s += ",\n" + strconv.Itoa(i+1) + ":" + indentLines("\n"+l.String(), "  ")
+		s.WriteString(",\n" + strconv.Itoa(i+1) + ":" + indentLines("\n"+l.String(), "  "))
 	}
-	s += "\n]"
+	s.WriteString("\n]")
 
-	return s
+	return s.String()
 }
 
 type labelAndAnnotation struct {
@@ -688,11 +722,12 @@ func parsedSamplesString(pss []parsedSample) string {
 	if len(pss) == 0 {
 		return "nil"
 	}
-	s := pss[0].String()
+	var s strings.Builder
+	s.WriteString(pss[0].String())
 	for _, ps := range pss[1:] {
-		s += ", " + ps.String()
+		s.WriteString(", " + ps.String())
 	}
-	return s
+	return s.String()
 }
 
 func (ps *parsedSample) String() string {

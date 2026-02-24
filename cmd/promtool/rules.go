@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
 const maxSamplesInMemory = 5000
@@ -143,7 +143,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		var closed bool
 		defer func() {
 			if !closed {
-				err = tsdb_errors.NewMulti(err, w.Close()).Err()
+				err = errors.Join(err, w.Close())
 			}
 		}()
 		app := newMultipleAppender(ctx, w)
@@ -181,7 +181,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		if err := app.flushAndCommit(ctx); err != nil {
 			return fmt.Errorf("flush and commit: %w", err)
 		}
-		err = tsdb_errors.NewMulti(err, w.Close()).Err()
+		err = errors.Join(err, w.Close())
 		closed = true
 	}
 

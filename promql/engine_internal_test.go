@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,12 +27,14 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+var testParser = parser.NewParser(parser.Options{})
+
 func TestRecoverEvaluatorRuntime(t *testing.T) {
 	var output bytes.Buffer
 	logger := promslog.New(&promslog.Config{Writer: &output})
 	ev := &evaluator{logger: logger}
 
-	expr, _ := parser.ParseExpr("sum(up)")
+	expr, _ := testParser.ParseExpr("sum(up)")
 
 	var err error
 

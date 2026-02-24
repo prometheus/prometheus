@@ -102,7 +102,7 @@ export const initialState: Settings = {
   ),
   showAnnotations: initializeFromLocalStorage<boolean>(
     localStorageKeyShowAnnotations,
-    true
+    false
   ),
   showQueryWarnings: initializeFromLocalStorage<boolean>(
     localStorageKeyShowQueryWarnings,
