@@ -582,6 +582,10 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 // oooChunk returns the chunk for the HeadChunkID by m-mapping it from the disk.
 // It never returns the head OOO chunk.
 func (s *memSeries) oooChunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, _ *sync.Pool) (chunk chunkenc.Chunk, maxTime int64, err error) {
+	if s.ooo == nil {
+		return nil, 0, storage.ErrNotFound
+	}
+
 	// ix represents the index of chunk in the s.ooo.oooMmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstOOOChunkID) gives the slice index.
 	ix := int(id) - int(s.ooo.firstOOOChunkID)
