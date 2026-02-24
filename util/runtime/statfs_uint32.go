@@ -20,8 +20,7 @@ import (
 	"syscall"
 )
 
-// Statfs returns the file system type (Unix only)
-func Statfs(path string) string {
+func FsType(path string) string {
 	// Types of file systems that may be returned by `statfs`
 	fsTypes := map[uint32]string{
 		0xadf5:     "ADFS_SUPER_MAGIC",
@@ -63,6 +62,7 @@ func Statfs(path string) string {
 		0x012FF7B4: "XENIX_SUPER_MAGIC",
 		0x58465342: "XFS_SUPER_MAGIC",
 		0x012FD16D: "_XIAFS_SUPER_MAGIC",
+		0x794c7630: "OVERLAYFS_SUPER_MAGIC",
 	}
 
 	var fs syscall.Statfs_t
@@ -74,4 +74,13 @@ func Statfs(path string) string {
 		return fsType
 	}
 	return strconv.Itoa(int(fs.Type))
+}
+
+func FsSize(path string) uint64 {
+	var fs syscall.Statfs_t
+	err := syscall.Statfs(path, &fs)
+	if err != nil {
+		return 0
+	}
+	return uint64(fs.Bsize) * fs.Blocks
 }
