@@ -239,7 +239,7 @@ MatrixSelector {
 }
 
 SubqueryExpr {
-  expr "[" NumberDurationLiteralInDurationContext ":" ("" | NumberDurationLiteralInDurationContext) "]"
+  expr "[" NumberDurationLiteralInDurationContext (":" | "::") ("" | NumberDurationLiteralInDurationContext) "]"
 }
 
 UnaryExpr {

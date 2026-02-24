@@ -62,8 +62,9 @@ import (
 )
 
 var (
-	promqlEnableDelayedNameRemoval = false
-	promtoolParserOpts             parser.Options
+	promqlEnableDelayedNameRemoval    = false
+	promqlEnableEvalAlignedSubqueries = false
+	promtoolParserOpts                parser.Options
 )
 
 func init() {
@@ -358,6 +359,8 @@ func main() {
 				promtoolParserOpts.ExperimentalDurationExpr = true
 			case "promql-extended-range-selectors":
 				promtoolParserOpts.EnableExtendedRangeSelectors = true
+			case "promql-eval-aligned-subqueries":
+				promqlEnableEvalAlignedSubqueries = true
 			case "":
 				continue
 			default:
@@ -420,9 +423,10 @@ func main() {
 		}
 		os.Exit(RulesUnitTestResult(results,
 			promqltest.LazyLoaderOpts{
-				EnableAtModifier:         true,
-				EnableNegativeOffset:     true,
-				EnableDelayedNameRemoval: promqlEnableDelayedNameRemoval,
+				EnableAtModifier:            true,
+				EnableNegativeOffset:        true,
+				EnableDelayedNameRemoval:    promqlEnableDelayedNameRemoval,
+				EnableEvalAlignedSubqueries: promqlEnableEvalAlignedSubqueries,
 			},
 			promtoolParser,
 			*testRulesRun,

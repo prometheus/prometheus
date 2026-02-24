@@ -232,6 +232,29 @@ Examples of equivalent durations:
 * `min(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
 
 
+## PromQL evaluation-time aligned subqueries
+
+`--enable-feature=promql-eval-aligned-subqueries`
+
+Enables the experimental aligned subquery syntax `[range::step]`.
+
+Aligned subqueries select points on a grid anchored at the evaluation time (or the `@` time) rather than at Unix-epoch multiples of `step`. The selection window remains left-open, right-closed: `(t-range, t]`. With aligned subqueries, `t` is always included when `step > 0`.
+
+Examples:
+
+```
+sum_over_time(http_requests_total[30m::10m])
+rate(foo_total[5m]) [20m::5m]
+```
+
+Notes:
+
+- When the inner step doesn't divide the outer step evenly in range queries, the engine densifies the inner step using the greatest common divisor to ensure proper alignment.
+- To preserve correctness across outer steps, the engine retains the full subquery window between steps (rather than reducing to the outer step), which may increase memory usage proportionally to `range/step`.
+- Omitting `step` in `[range::]` uses the same default as regular subqueries (the no-step subquery interval).
+
+See the Subquery section in the Querying Basics for more details and examples.
+
 ## OTLP Native Delta Support
 
 `--enable-feature=otlp-native-delta-ingestion`

@@ -97,10 +97,12 @@ const serializeNode = (
           : ""
       }${serializeNode(node.expr, childIndent, pretty)}${childListSeparator}${ind})`;
 
-    case nodeType.subquery:
-      return `${initialInd}${serializeNode(node.expr, indent, pretty)}[${formatPrometheusDuration(node.range)}:${
+    case nodeType.subquery: {
+      const separator = node.alignEvalTime ? '::' : ':';
+      return `${initialInd}${serializeNode(node.expr, indent, pretty)}[${formatPrometheusDuration(node.range)}${separator}${
         node.step !== 0 ? formatPrometheusDuration(node.step) : ""
       }]${serializeAtAndOffset(node.timestamp, node.startOrEnd, node.offset)}`;
+    }
 
     case nodeType.parenExpr:
       return `${initialInd}(${childListSeparator}${serializeNode(

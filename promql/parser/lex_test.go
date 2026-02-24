@@ -923,6 +923,47 @@ var tests = []struct {
 				},
 			},
 			{
+				input: `test:name{on!~"bar"}[4m::]`,
+				expected: []Item{
+					{METRIC_IDENTIFIER, 0, `test:name`},
+					{LEFT_BRACE, 9, `{`},
+					{IDENTIFIER, 10, `on`},
+					{NEQ_REGEX, 12, `!~`},
+					{STRING, 14, `"bar"`},
+					{RIGHT_BRACE, 19, `}`},
+					{LEFT_BRACKET, 20, `[`},
+					{DURATION, 21, `4m`},
+					{DOUBLE_COLON, 23, `::`},
+					{RIGHT_BRACKET, 25, `]`},
+				},
+			},
+			{
+				input: `test:name{on!~"bar"}[4m::15s]`,
+				expected: []Item{
+					{METRIC_IDENTIFIER, 0, `test:name`},
+					{LEFT_BRACE, 9, `{`},
+					{IDENTIFIER, 10, `on`},
+					{NEQ_REGEX, 12, `!~`},
+					{STRING, 14, `"bar"`},
+					{RIGHT_BRACE, 19, `}`},
+					{LEFT_BRACKET, 20, `[`},
+					{DURATION, 21, `4m`},
+					{DOUBLE_COLON, 23, `::`},
+					{DURATION, 25, `15s`},
+					{RIGHT_BRACKET, 28, `]`},
+				},
+			},
+			{
+				input: `test:name[ 4m :: ]`,
+				expected: []Item{
+					{METRIC_IDENTIFIER, 0, `test:name`},
+					{LEFT_BRACKET, 9, `[`},
+					{DURATION, 11, `4m`},
+					{DOUBLE_COLON, 14, `::`},
+					{RIGHT_BRACKET, 17, `]`},
+				},
+			},
+			{
 				input: `test:name[ 5m]`,
 				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
@@ -944,7 +985,7 @@ var tests = []struct {
 				fail:  true,
 			},
 			{
-				input: `test:name{on!~"bar"}[4m::]`,
+				input: `test:name{on!~"bar"}[4m:::]`,
 				fail:  true,
 			},
 			{
@@ -953,6 +994,14 @@ var tests = []struct {
 			},
 			{
 				input: `test:name{on!~"bar"}[1s:1s:1s]`,
+				fail:  true,
+			},
+			{
+				input: `test:name{on!~"bar"}[4m::4s:4h]`,
+				fail:  true,
+			},
+			{
+				input: `test:name{on!~"bar"}[4m:4s::4h]`,
 				fail:  true,
 			},
 		},
