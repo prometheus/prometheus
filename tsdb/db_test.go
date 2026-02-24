@@ -61,6 +61,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -4766,18 +4767,28 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 		}
 	}
 
-	// There should only be 1 metadata block present, with only the latest
-	// metadata kept around.
+	// There should be 1 metadata block present. All unique (series, content)
+	// pairs are preserved with coalesced time ranges.
 	wantMetadata := []record.RefMetadata{
-		{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
-		{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
-		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help, MinTime: 0, MaxTime: 0},
+		{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help, MinTime: 0, MaxTime: 0},
+		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help, MinTime: 0, MaxTime: 0},
+		{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help, MinTime: 0, MaxTime: 0},
+		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help, MinTime: 0, MaxTime: 0},
 	}
 	require.Len(t, gotMetadataBlocks, 1)
-	require.Len(t, gotMetadataBlocks[0], 3)
+	require.Len(t, gotMetadataBlocks[0], 5)
 	gotMetadataBlock := gotMetadataBlocks[0]
 
-	sort.Slice(gotMetadataBlock, func(i, j int) bool { return gotMetadataBlock[i].Ref < gotMetadataBlock[j].Ref })
+	sort.Slice(gotMetadataBlock, func(i, j int) bool {
+		if gotMetadataBlock[i].Ref != gotMetadataBlock[j].Ref {
+			return gotMetadataBlock[i].Ref < gotMetadataBlock[j].Ref
+		}
+		if gotMetadataBlock[i].MinTime != gotMetadataBlock[j].MinTime {
+			return gotMetadataBlock[i].MinTime < gotMetadataBlock[j].MinTime
+		}
+		return gotMetadataBlock[i].Unit < gotMetadataBlock[j].Unit
+	})
 	require.Equal(t, wantMetadata, gotMetadataBlock)
 	require.NoError(t, hb.Close())
 }
@@ -4819,9 +4830,9 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
 	series3 := db.head.series.getByHash(s3.Hash(), s3)
 	series4 := db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta, m1)
-	require.Equal(t, *series2.meta, m2)
-	require.Equal(t, *series3.meta, m3)
+	require.Equal(t, *series1.meta.CurrentMetadata(), m1)
+	require.Equal(t, *series2.meta.CurrentMetadata(), m2)
+	require.Equal(t, *series3.meta.CurrentMetadata(), m3)
 	require.Nil(t, series4.meta)
 
 	// Add a replicated metadata entry to the first series,
@@ -4840,10 +4851,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	series2 = db.head.series.getByHash(s2.Hash(), s2)
 	series3 = db.head.series.getByHash(s3.Hash(), s3)
 	series4 = db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, *series1.meta, m1)
-	require.Equal(t, *series2.meta, m5)
-	require.Equal(t, *series3.meta, m3)
-	require.Equal(t, *series4.meta, m4)
+	require.Equal(t, *series1.meta.CurrentMetadata(), m1)
+	require.Equal(t, *series2.meta.CurrentMetadata(), m5)
+	require.Equal(t, *series3.meta.CurrentMetadata(), m3)
+	require.Equal(t, *series4.meta.CurrentMetadata(), m4)
 
 	require.NoError(t, db.Close())
 
@@ -4853,10 +4864,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	_, err := db.head.wal.Size()
 	require.NoError(t, err)
 
-	require.Equal(t, *db.head.series.getByHash(s1.Hash(), s1).meta, m1)
-	require.Equal(t, *db.head.series.getByHash(s2.Hash(), s2).meta, m5)
-	require.Equal(t, *db.head.series.getByHash(s3.Hash(), s3).meta, m3)
-	require.Equal(t, *db.head.series.getByHash(s4.Hash(), s4).meta, m4)
+	require.Equal(t, *db.head.series.getByHash(s1.Hash(), s1).meta.CurrentMetadata(), m1)
+	require.Equal(t, *db.head.series.getByHash(s2.Hash(), s2).meta.CurrentMetadata(), m5)
+	require.Equal(t, *db.head.series.getByHash(s3.Hash(), s3).meta.CurrentMetadata(), m3)
+	require.Equal(t, *db.head.series.getByHash(s4.Hash(), s4).meta.CurrentMetadata(), m4)
 }
 
 // TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
@@ -9602,4 +9613,208 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 
 	// Should still have no blocks since there was nothing to compact.
 	require.Empty(t, db.Blocks())
+}
+
+func TestDBSeriesMetadata(t *testing.T) {
+	opts := DefaultOptions()
+	opts.EnableNativeMetadata = true
+	opts.EnableMetadataWALRecords = true
+	db := newTestDB(t, withOpts(opts))
+
+	ctx := context.Background()
+	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
+	httpLset := labels.FromStrings("__name__", "http_requests_total", "job", "api")
+	goLset := labels.FromStrings("__name__", "go_goroutines", "job", "api")
+
+	// Append samples spanning 3 block ranges with metadata to trigger compaction.
+	app := db.AppenderV2(ctx)
+	for i := range int64(3) {
+		_, err := app.Append(0, httpLset, -1, i*blockRange, float64(i), nil, nil, storage.AOptions{
+			Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests", Unit: ""},
+		})
+		require.NoError(t, err)
+		_, err = app.Append(0, httpLset, -1, i*blockRange+1000, float64(i), nil, nil, storage.AOptions{
+			Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests", Unit: ""},
+		})
+		require.NoError(t, err)
+		_, err = app.Append(0, goLset, -1, i*blockRange, 42.0, nil, nil, storage.AOptions{
+			Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines", Unit: ""},
+		})
+		require.NoError(t, err)
+		_, err = app.Append(0, goLset, -1, i*blockRange+1000, 42.0, nil, nil, storage.AOptions{
+			Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines", Unit: ""},
+		})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// Verify db.SeriesMetadata() returns head metadata before compaction.
+	mr, err := db.SeriesMetadata()
+	require.NoError(t, err)
+
+	metas, ok := mr.GetByMetricName("http_requests_total")
+	require.True(t, ok)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+	require.Equal(t, "Total HTTP requests", metas[0].Help)
+
+	metas, ok = mr.GetByMetricName("go_goroutines")
+	require.True(t, ok)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeGauge, metas[0].Type)
+	mr.Close()
+
+	require.NoError(t, db.Compact(ctx))
+	require.NotEmpty(t, db.Blocks(), "expected at least one block after compaction")
+
+	// Append new metric with different metadata to head only (after all compacted blocks).
+	headTS := 3 * blockRange
+	app = db.AppenderV2(ctx)
+	_, err = app.Append(0, labels.FromStrings("__name__", "cpu_seconds_total", "job", "api"), -1, headTS, 99.0, nil, nil, storage.AOptions{
+		Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "CPU seconds used", Unit: "seconds"},
+	})
+	require.NoError(t, err)
+	// Also append http_requests_total with updated help text.
+	_, err = app.Append(0, httpLset, -1, headTS, 200.0, nil, nil, storage.AOptions{
+		Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests (updated)", Unit: ""},
+	})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Verify merged metadata: block + head, head should win for same metric.
+	mr, err = db.SeriesMetadata()
+	require.NoError(t, err)
+	defer mr.Close()
+
+	// http_requests_total: both block and head metadata entries present.
+	metas, ok = mr.GetByMetricName("http_requests_total")
+	require.True(t, ok)
+	// Head added updated help text, so we should have both original and updated entries.
+	require.NotEmpty(t, metas)
+	// Verify the updated help text is present among the entries.
+	var foundUpdated bool
+	for _, m := range metas {
+		if m.Help == "Total HTTP requests (updated)" {
+			foundUpdated = true
+		}
+	}
+	require.True(t, foundUpdated, "expected updated help text in metadata entries")
+
+	// go_goroutines: still available from block.
+	metas, ok = mr.GetByMetricName("go_goroutines")
+	require.True(t, ok)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeGauge, metas[0].Type)
+
+	// cpu_seconds_total: only in head.
+	metas, ok = mr.GetByMetricName("cpu_seconds_total")
+	require.True(t, ok)
+	require.Len(t, metas, 1)
+	require.Equal(t, "CPU seconds used", metas[0].Help)
+	require.Equal(t, "seconds", metas[0].Unit)
+}
+
+func TestDBSeriesMetadataDisabled(t *testing.T) {
+	opts := DefaultOptions()
+	opts.EnableNativeMetadata = false
+	opts.EnableMetadataWALRecords = true
+	db := newTestDB(t, withOpts(opts))
+
+	ctx := context.Background()
+	app := db.AppenderV2(ctx)
+	_, err := app.Append(0, labels.FromStrings("__name__", "http_requests_total", "job", "api"), -1, 0, 1.0, nil, nil, storage.AOptions{
+		Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	mr, err := db.SeriesMetadata()
+	require.NoError(t, err)
+	defer mr.Close()
+
+	require.Equal(t, uint64(0), mr.Total())
+	_, ok := mr.GetByMetricName("http_requests_total")
+	require.False(t, ok)
+}
+
+func TestBlockSizeIncludesSeriesMetadata(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a block with some series data and a metadata sidecar file.
+	blockDir := createBlock(t, dir, genSeries(1, 1, 0, 100))
+	mem := seriesmetadata.NewMemSeriesMetadata()
+	mem.Set("http_requests_total", 0, metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total requests"})
+	metaSize, err := seriesmetadata.WriteFile(promslog.NewNopLogger(), blockDir, mem)
+	require.NoError(t, err)
+	require.Positive(t, metaSize)
+
+	b, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
+	require.NoError(t, err)
+	defer b.Close()
+
+	// Before lazy load, Size() should not include the metadata file.
+	sizeBeforeLoad := b.Size()
+
+	// Trigger lazy load of series metadata.
+	mr, err := b.SeriesMetadata()
+	require.NoError(t, err)
+	mr.Close()
+
+	// After lazy load, Size() should include the metadata file.
+	sizeAfterLoad := b.Size()
+	require.Greater(t, sizeAfterLoad, sizeBeforeLoad)
+	require.Equal(t, metaSize, sizeAfterLoad-sizeBeforeLoad)
+}
+
+func TestWALReplayPreservesMetadata(t *testing.T) {
+	dir := t.TempDir()
+	opts := DefaultOptions()
+	opts.EnableNativeMetadata = true
+	opts.EnableMetadataWALRecords = true
+
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	app := db.AppenderV2(ctx)
+	_, err = app.Append(0, labels.FromStrings("__name__", "http_requests_total", "job", "api"), -1, 0, 1.0, nil, nil, storage.AOptions{
+		Metadata: metadata.Metadata{Type: model.MetricTypeCounter, Help: "Total HTTP requests"},
+	})
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.FromStrings("__name__", "go_goroutines", "job", "api"), -1, 0, 42.0, nil, nil, storage.AOptions{
+		Metadata: metadata.Metadata{Type: model.MetricTypeGauge, Help: "Number of goroutines"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Verify metadata is present before restart.
+	mr, err := db.SeriesMetadata()
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), mr.Total())
+	mr.Close()
+
+	// Close and reopen the DB, triggering WAL replay.
+	require.NoError(t, db.Close())
+	db, err = Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Close()) }()
+
+	// Verify metadata survived the WAL replay.
+	mr, err = db.SeriesMetadata()
+	require.NoError(t, err)
+	defer mr.Close()
+
+	require.Equal(t, uint64(2), mr.Total())
+
+	metas, ok := mr.GetByMetricName("http_requests_total")
+	require.True(t, ok)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeCounter, metas[0].Type)
+	require.Equal(t, "Total HTTP requests", metas[0].Help)
+
+	metas, ok = mr.GetByMetricName("go_goroutines")
+	require.True(t, ok)
+	require.Len(t, metas, 1)
+	require.Equal(t, model.MetricTypeGauge, metas[0].Type)
+	require.Equal(t, "Number of goroutines", metas[0].Help)
 }

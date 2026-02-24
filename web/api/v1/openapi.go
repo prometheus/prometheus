@@ -278,6 +278,8 @@ func (b *OpenAPIBuilder) getAllPathDefinitions() *orderedmap.Map[string, *v3.Pat
 
 	// Metadata endpoints.
 	paths.Set("/metadata", b.metadataPath())
+	paths.Set("/metadata/versions", b.metadataVersionsPath())
+	paths.Set("/metadata/series", b.metadataSeriesPath())
 
 	// Target endpoints.
 	paths.Set("/scrape_pools", b.scrapePoolsPath())

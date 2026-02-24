@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -152,6 +153,9 @@ type BlockReader interface {
 
 	// Tombstones returns a tombstones.Reader over the block's deleted data.
 	Tombstones() (tombstones.Reader, error)
+
+	// SeriesMetadata returns a seriesmetadata.Reader over the block's series metadata.
+	SeriesMetadata() (seriesmetadata.Reader, error)
 
 	// Meta provides meta information about the block reader.
 	Meta() BlockMeta
@@ -326,6 +330,12 @@ type Block struct {
 	indexr     IndexReader
 	tombstones tombstones.Reader
 
+	// seriesMetadata is lazily loaded on first call to SeriesMetadata().
+	seriesMetadataOnce     sync.Once
+	seriesMetadata         seriesmetadata.Reader
+	seriesMetadataErr      error
+	numBytesSeriesMetadata int64
+
 	logger *slog.Logger
 
 	numBytesChunks    int64
@@ -397,10 +407,16 @@ func (pb *Block) Close() error {
 
 	pb.pendingReaders.Wait()
 
+	var smErr error
+	if pb.seriesMetadata != nil {
+		smErr = pb.seriesMetadata.Close()
+	}
+
 	return errors.Join(
 		pb.chunkr.Close(),
 		pb.indexr.Close(),
 		pb.tombstones.Close(),
+		smErr,
 	)
 }
 
@@ -422,7 +438,7 @@ func (pb *Block) MaxTime() int64 { return pb.meta.MaxTime }
 
 // Size returns the number of bytes that the block takes up.
 func (pb *Block) Size() int64 {
-	return pb.numBytesChunks + pb.numBytesIndex + pb.numBytesTombstone + pb.numBytesMeta
+	return pb.numBytesChunks + pb.numBytesIndex + pb.numBytesTombstone + pb.numBytesMeta + pb.numBytesSeriesMetadata
 }
 
 // ErrClosing is returned when a block is in the process of being closed.
@@ -461,6 +477,21 @@ func (pb *Block) Tombstones() (tombstones.Reader, error) {
 		return nil, err
 	}
 	return blockTombstoneReader{Reader: pb.tombstones, b: pb}, nil
+}
+
+// SeriesMetadata returns a new SeriesMetadataReader against the block data.
+// The metadata file is lazily loaded on first access.
+func (pb *Block) SeriesMetadata() (seriesmetadata.Reader, error) {
+	pb.seriesMetadataOnce.Do(func() {
+		pb.seriesMetadata, pb.numBytesSeriesMetadata, pb.seriesMetadataErr = seriesmetadata.ReadSeriesMetadata(pb.dir)
+	})
+	if pb.seriesMetadataErr != nil {
+		return nil, pb.seriesMetadataErr
+	}
+	if err := pb.startRead(); err != nil {
+		return nil, err
+	}
+	return blockSeriesMetadataReader{Reader: pb.seriesMetadata, b: pb}, nil
 }
 
 // GetSymbolTableSize returns the Symbol Table Size in the index of this block.
@@ -587,6 +618,16 @@ func (r blockChunkReader) Close() error {
 	return nil
 }
 
+type blockSeriesMetadataReader struct {
+	seriesmetadata.Reader
+	b *Block
+}
+
+func (r blockSeriesMetadataReader) Close() error {
+	r.b.pendingReaders.Done()
+	return nil
+}
+
 // Delete matching series between mint and maxt in the block.
 func (pb *Block) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	pb.mtx.Lock()
@@ -694,13 +735,18 @@ func (pb *Block) Snapshot(dir string) error {
 		return fmt.Errorf("create snapshot chunk dir: %w", err)
 	}
 
-	// Hardlink meta, index and tombstones
+	// Hardlink meta, index, tombstones, and series metadata
 	for _, fname := range []string{
 		metaFilename,
 		indexFilename,
 		tombstones.TombstonesFilename,
+		seriesmetadata.SeriesMetadataFilename,
 	} {
 		if err := os.Link(filepath.Join(pb.dir, fname), filepath.Join(blockDir, fname)); err != nil {
+			// Ignore missing series metadata file for backward compatibility
+			if os.IsNotExist(err) && fname == seriesmetadata.SeriesMetadataFilename {
+				continue
+			}
 			return fmt.Errorf("create snapshot %s: %w", fname, err)
 		}
 	}

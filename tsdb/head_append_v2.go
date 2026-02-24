@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -202,15 +203,21 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	}
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
-		metaChanged := s.meta == nil || !s.meta.Equals(opts.Metadata)
+		var cur *metadata.Metadata
+		if s.meta != nil {
+			cur = s.meta.CurrentMetadata()
+		}
+		metaChanged := cur == nil || !cur.Equals(opts.Metadata)
 		s.Unlock()
 		if metaChanged {
 			b := a.getCurrentBatch(stNone, s.ref)
 			b.metadata = append(b.metadata, record.RefMetadata{
-				Ref:  s.ref,
-				Type: record.GetMetricType(opts.Metadata.Type),
-				Unit: opts.Metadata.Unit,
-				Help: opts.Metadata.Help,
+				Ref:     s.ref,
+				Type:    record.GetMetricType(opts.Metadata.Type),
+				Unit:    opts.Metadata.Unit,
+				Help:    opts.Metadata.Help,
+				MinTime: t,
+				MaxTime: t,
 			})
 			b.metadataSeries = append(b.metadataSeries, s)
 		}

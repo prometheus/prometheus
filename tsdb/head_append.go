@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 )
 
 // initAppender is a helper to initialize the time bounds of the head
@@ -1021,16 +1022,25 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	s.Lock()
-	hasNewMetadata := s.meta == nil || *s.meta != meta
+	var cur *metadata.Metadata
+	if s.meta != nil {
+		cur = s.meta.CurrentMetadata()
+	}
+	hasNewMetadata := cur == nil || *cur != meta
 	s.Unlock()
 
 	if hasNewMetadata {
+		// UpdateMetadata has no timestamp context; use headMaxt as best estimate.
+		// Guard against math.MinInt64 (no samples appended yet).
+		t := max(a.headMaxt, 0)
 		b := a.getCurrentBatch(stNone, s.ref)
 		b.metadata = append(b.metadata, record.RefMetadata{
-			Ref:  s.ref,
-			Type: record.GetMetricType(meta.Type),
-			Unit: meta.Unit,
-			Help: meta.Help,
+			Ref:     s.ref,
+			Type:    record.GetMetricType(meta.Type),
+			Unit:    meta.Unit,
+			Help:    meta.Help,
+			MinTime: t,
+			MaxTime: t,
 		})
 		b.metadataSeries = append(b.metadataSeries, s)
 	}
@@ -1689,7 +1699,18 @@ func commitMetadata(b *appendBatch) {
 	for i, m := range b.metadata {
 		series = b.metadataSeries[i]
 		series.Lock()
-		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		if series.meta == nil {
+			series.meta = &seriesmetadata.VersionedMetadata{}
+		}
+		series.meta.AddOrExtend(&seriesmetadata.MetadataVersion{
+			Meta: metadata.Metadata{
+				Type: record.ToMetricType(m.Type),
+				Unit: m.Unit,
+				Help: m.Help,
+			},
+			MinTime: m.MinTime,
+			MaxTime: m.MaxTime,
+		})
 		series.Unlock()
 	}
 }

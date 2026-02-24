@@ -35,13 +35,13 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/zeropool"
@@ -1544,6 +1544,12 @@ func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
 	return h.head.tombstones, nil
 }
 
+// SeriesMetadata returns series metadata for the head.
+// Delegates to the underlying head to extract metadata from memSeries.
+func (h *RangeHead) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return h.head.SeriesMetadata()
+}
+
 func (h *RangeHead) MinTime() int64 {
 	return h.mint
 }
@@ -1735,6 +1741,93 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 // Tombstones returns a new reader over the head's tombstones.
 func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return h.tombstones, nil
+}
+
+// SeriesMetadata returns series metadata for the head.
+// It extracts metadata from all memSeries that have metadata set.
+func (h *Head) SeriesMetadata() (seriesmetadata.Reader, error) {
+	mem := seriesmetadata.NewMemSeriesMetadata()
+
+	// Iterate over all series shards and collect metadata.
+	// We collect series references under the shard RLock, then read metadata
+	// outside it to avoid holding the shard lock while acquiring per-series locks.
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].RLock()
+		shard := make([]*memSeries, 0, len(h.series.series[i]))
+		for _, s := range h.series.series[i] {
+			shard = append(shard, s)
+		}
+		h.series.locks[i].RUnlock()
+
+		for _, s := range shard {
+			s.Lock()
+			var vmCopy *seriesmetadata.VersionedMetadata
+			if s.meta != nil {
+				vmCopy = s.meta.Copy()
+			}
+			lsetCopy := s.lset.Copy()
+			metricName := lsetCopy.Get(labels.MetricName)
+			s.Unlock()
+			if vmCopy == nil {
+				continue
+			}
+
+			if metricName == "" {
+				continue // Skip series without metric name
+			}
+
+			mem.SetVersionedMetadataWithLabels(uint64(s.ref), lsetCopy, vmCopy)
+		}
+	}
+
+	return mem, nil
+}
+
+// SeriesMetadataForMatchers returns metadata for series matching the given label matchers.
+// It queries the head's postings index and reads memSeries.meta for matching series.
+// Multiple unique metadata entries per metric name are collected (set semantics).
+func (h *Head) SeriesMetadataForMatchers(ctx context.Context, matchers ...*labels.Matcher) (seriesmetadata.Reader, error) {
+	ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+	p, err := PostingsForMatchers(ctx, ir, matchers...)
+	if err != nil {
+		return nil, fmt.Errorf("select series for metadata: %w", err)
+	}
+
+	mem := seriesmetadata.NewMemSeriesMetadata()
+	for p.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("context cancelled during metadata collection: %w", err)
+		}
+
+		s := h.series.getByID(chunks.HeadSeriesRef(p.At()))
+		if s == nil {
+			continue
+		}
+
+		s.Lock()
+		var vmCopy *seriesmetadata.VersionedMetadata
+		if s.meta != nil {
+			vmCopy = s.meta.Copy()
+		}
+		lsetCopy := s.lset.Copy()
+		metricName := lsetCopy.Get(labels.MetricName)
+		s.Unlock()
+		if vmCopy == nil {
+			continue
+		}
+
+		if metricName == "" {
+			continue
+		}
+
+		mem.SetVersionedMetadataWithLabels(uint64(s.ref), lsetCopy, vmCopy)
+	}
+	if p.Err() != nil {
+		return nil, p.Err()
+	}
+
+	return mem, nil
 }
 
 // NumSeries returns the number of series tracked in the head.
@@ -2382,8 +2475,7 @@ func (s sample) Copy() chunks.Sample {
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
 	// Members up to the Mutex are not changed after construction, so can be accessed without a lock.
-	ref  chunks.HeadSeriesRef
-	meta *metadata.Metadata
+	ref chunks.HeadSeriesRef
 
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
@@ -2391,6 +2483,8 @@ type memSeries struct {
 
 	// Everything after here should only be accessed with the lock held.
 	sync.Mutex
+
+	meta *seriesmetadata.VersionedMetadata // Time-varying metadata for this series.
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 
