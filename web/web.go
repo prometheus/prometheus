@@ -700,11 +700,20 @@ func (h *Handler) Listeners() ([]net.Listener, error) {
 	return listeners, nil
 }
 
+// tcpOrUnixDomainSocket returns either TCP/IP or UNIX domain binding information.
+func tcpOrUnixDomainSocket(address string) (string, string) {
+	if strings.HasPrefix(address, "unix://") {
+		return "unix", strings.Replace(address, "unix://", "", 1)
+	}
+
+	return "tcp", address
+}
+
 // Listener creates the TCP listener for web requests.
 func (h *Handler) Listener(address string, sem chan struct{}) (net.Listener, error) {
 	h.logger.Info("Start listening for connections", "address", address)
 
-	listener, err := net.Listen("tcp", address)
+	listener, err := net.Listen(tcpOrUnixDomainSocket(address))
 	if err != nil {
 		return listener, err
 	}
