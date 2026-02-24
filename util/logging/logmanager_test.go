@@ -13,10 +13,11 @@ import (
 	"time"
 
 	"github.com/neilotoole/slogt"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
+	promotel_common "github.com/prometheus/prometheus/util/otel"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
 )
 
 // TestLogManagerCreation excersises NewTestLogManager for the noop log manager
@@ -309,6 +310,9 @@ func TestOtelOTLPQueryLog(t *testing.T) {
 		t.Skip()
 	}
 
+	promotel_common.GlobalOTELSetup(slogt.New(t).With("component", "otel"), prometheus.DefaultRegisterer)
+	defer promotel_common.ResetGlobalOTELSetup(prometheus.DefaultRegisterer)
+
 	cfg := ConfigForTest(&config.LoggingConfig{
 		Include: []string{"query"},
 		OTELLoggingConfig: config.OTELLoggingConfig{
@@ -380,6 +384,15 @@ func TestOtelOTLPQueryLog(t *testing.T) {
 // handler should receive an error.
 func TestOtelOTLPMissingEndpoint(t *testing.T) {
 
+	promotel_common.GlobalOTELSetup(slogt.New(t).With("component", "otel"), prometheus.DefaultRegisterer)
+	defer promotel_common.ResetGlobalOTELSetup(prometheus.DefaultRegisterer)
+
+	otelErrorCounter := 0
+	promotel_common.RegisterOtelErrorCallback(func(err error) {
+		t.Log("otel error callback received error", "err", err.Error())
+		otelErrorCounter++
+	})
+
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err, "unexpected error finding free port for test")
 	endpoint := listener.Addr().String()
@@ -400,13 +413,6 @@ func TestOtelOTLPMissingEndpoint(t *testing.T) {
 	manager := NewManager(slogt.New(t))
 	go manager.Run()
 	manager.ApplyConfig(&cfg)
-
-	otelErrorCounter := 0
-
-	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-		t.Logf("otel error handler received error: %v", err)
-		otelErrorCounter++
-	}))
 
 	otelLogger := manager.NewQueryLogger()
 

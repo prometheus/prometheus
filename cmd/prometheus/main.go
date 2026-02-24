@@ -82,6 +82,7 @@ import (
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/notifications"
+	promotel_common "github.com/prometheus/prometheus/util/otel"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 	"github.com/prometheus/prometheus/web"
 )
@@ -815,6 +816,8 @@ func main() {
 
 	klogv2.SetSlogLogger(logger.With("component", "k8s_client_runtime"))
 	klog.SetOutputBySeverity("INFO", klogv1Writer{})
+
+	promotel_common.GlobalOTELSetup(logger.With("component", "otel"), prometheus.DefaultRegisterer)
 
 	modeAppName := "Prometheus Server"
 	mode := "server"

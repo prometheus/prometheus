@@ -20,14 +20,12 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/go-logr/logr"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/version"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
@@ -36,6 +34,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"github.com/prometheus/prometheus/config"
+	promotel_common "github.com/prometheus/prometheus/util/otel"
 )
 
 // TODO: should move to a config entry for otel attributes
@@ -58,16 +57,12 @@ func NewManager(logger *slog.Logger) *Manager {
 	}
 }
 
-// Run starts the tracing manager. It registers the global text map propagator and error handler.
+// Run starts the tracing manager. Propagators, error handlers etc are handled in promotel_common.
 // It is blocking.
-//
-// TODO extract the global setup into a separate helper for all otel setup
 func (m *Manager) Run() {
-	otel.SetLogger(logr.FromSlogHandler(m.logger.Handler()))
-	otel.SetTextMapPropagator(propagation.TraceContext{})
-	otel.SetErrorHandler(otelErrHandler(func(err error) {
-		m.logger.Error("OpenTelemetry handler returned an error", "err", err.Error())
-	}))
+	if !promotel_common.IsConfigured() {
+		m.logger.Warn("BUG: OpenTelemetry global settings have not been configured; this should have been done at startup by calling promotel_common.GlobalOTELSetup")
+	}
 	<-m.done
 }
 

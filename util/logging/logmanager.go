@@ -29,6 +29,7 @@ import (
 	"log/slog"
 
 	"github.com/prometheus/prometheus/config"
+	promotel_common "github.com/prometheus/prometheus/util/otel"
 )
 
 const (
@@ -84,7 +85,11 @@ func NewManager(logger *slog.Logger) *Manager {
 }
 
 // Run starts the logging manager. Closes the done channel on return.
+// Propagators, error handlers etc are handled in promotel_common.
 func (m *Manager) Run() {
+	if !promotel_common.IsConfigured() {
+		m.logger.Warn("BUG: OpenTelemetry global settings have not been configured; this should have been done at startup by calling promotel_common.GlobalOTELSetup")
+	}
 	m.otelLogMgr.Start()
 	m.isRunning = true
 	m.logger.Debug("Logging manager started")
