@@ -289,11 +289,24 @@ func TestSampleDelivery(t *testing.T) {
 
 			// Send first half of data.
 			c.expectSamples(samples[:len(samples)/2], series)
-			c.expectExemplars(exemplars[:len(exemplars)/2], series)
+			// For RW 2.0, exemplars without matching samples/histograms are dropped per spec requirement
+			// that "At least one element in samples or in histograms MUST be provided".
+			if tc.protoMsg == remoteapi.WriteV2MessageType && !tc.samples && !tc.histograms && !tc.floatHistograms {
+				// Exemplars only case for V2: exemplars are dropped because there are no matching samples/histograms.
+				c.expectExemplars([]record.RefExemplar{}, series)
+			} else {
+				c.expectExemplars(exemplars[:len(exemplars)/2], series)
+			}
 			c.expectHistograms(histograms[:len(histograms)/2], series)
 			c.expectFloatHistograms(floatHistograms[:len(floatHistograms)/2], series)
 			if tc.protoMsg == remoteapi.WriteV2MessageType && len(metadata) > 0 {
-				c.expectMetadataForBatch(metadata, series, samples[:len(samples)/2], exemplars[:len(exemplars)/2], histograms[:len(histograms)/2], floatHistograms[:len(floatHistograms)/2])
+				var expectedExemplars []record.RefExemplar
+				if !tc.samples && !tc.histograms && !tc.floatHistograms {
+					expectedExemplars = []record.RefExemplar{}
+				} else {
+					expectedExemplars = exemplars[:len(exemplars)/2]
+				}
+				c.expectMetadataForBatch(metadata, series, samples[:len(samples)/2], expectedExemplars, histograms[:len(histograms)/2], floatHistograms[:len(floatHistograms)/2])
 			}
 			qm.Append(samples[:len(samples)/2])
 			qm.AppendExemplars(exemplars[:len(exemplars)/2])
@@ -303,11 +316,23 @@ func TestSampleDelivery(t *testing.T) {
 
 			// Send second half of data.
 			c.expectSamples(samples[len(samples)/2:], series)
-			c.expectExemplars(exemplars[len(exemplars)/2:], series)
+			// For RW 2.0, exemplars without matching samples/histograms are dropped per spec requirement.
+			if tc.protoMsg == remoteapi.WriteV2MessageType && !tc.samples && !tc.histograms && !tc.floatHistograms {
+				// Exemplars only case for V2: exemplars are dropped because there are no matching samples/histograms.
+				c.expectExemplars([]record.RefExemplar{}, series)
+			} else {
+				c.expectExemplars(exemplars[len(exemplars)/2:], series)
+			}
 			c.expectHistograms(histograms[len(histograms)/2:], series)
 			c.expectFloatHistograms(floatHistograms[len(floatHistograms)/2:], series)
 			if tc.protoMsg == remoteapi.WriteV2MessageType && len(metadata) > 0 {
-				c.expectMetadataForBatch(metadata, series, samples[len(samples)/2:], exemplars[len(exemplars)/2:], histograms[len(histograms)/2:], floatHistograms[len(floatHistograms)/2:])
+				var expectedExemplars []record.RefExemplar
+				if !tc.samples && !tc.histograms && !tc.floatHistograms {
+					expectedExemplars = []record.RefExemplar{}
+				} else {
+					expectedExemplars = exemplars[len(exemplars)/2:]
+				}
+				c.expectMetadataForBatch(metadata, series, samples[len(samples)/2:], expectedExemplars, histograms[len(histograms)/2:], floatHistograms[len(floatHistograms)/2:])
 			}
 			qm.Append(samples[len(samples)/2:])
 			qm.AppendExemplars(exemplars[len(exemplars)/2:])
