@@ -3594,6 +3594,13 @@ metadata_config:
   # Maximum number of samples per send.
   [ max_samples_per_send: <int> | default = 500]
 
+# EXPERIMENTAL: Converts native histograms with custom buckets (NHCB)
+# to classic histograms. This enables you to use NHCB locally which are 
+# cheaper to store and atomicity while sending classic histograms
+# to external system that don't support native histograms yet. Also useful 
+# for migration scenarios. 
+[ convert_nhcb_to_classic: <boolean> | default = false ]
+
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 # enable_http2 defaults to false for remote-write.

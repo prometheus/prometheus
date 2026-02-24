@@ -1437,6 +1437,13 @@ type RemoteWriteConfig struct {
 	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
 	GoogleIAMConfig  *googleiam.Config       `yaml:"google_iam,omitempty"`
+
+	// EXPERIMENTAL: Converts native histograms with custom buckets (NHCB) to classic histograms
+	// during remote write. This enables you to use NHCB locally (for cheaper storage and
+	// atomicity of histograms) while sending classic histograms to external systems that
+	// don't support native histograms yet. Useful for migration scenarios and external system
+	// support without sacrificing local storage efficiency.
+	ConvertNHCBToClassic bool `yaml:"convert_nhcb_to_classic,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.

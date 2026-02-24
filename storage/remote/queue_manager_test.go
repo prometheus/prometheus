@@ -322,13 +322,13 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 	c := NewTestWriteClient(protoMsg)
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
-	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, false)
 }
 
-func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
+func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType, convertNHCBToClassic bool) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, convertNHCBToClassic)
 
 	return m
 }
@@ -420,7 +420,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 			cfg.MaxShards = 1
 
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, false)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -482,7 +482,7 @@ func TestShutdown(t *testing.T) {
 				cfg := config.DefaultQueueConfig
 				mcfg := config.DefaultMetadataConfig
 
-				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
+				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg, false)
 				n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
 				samples, series := createTimeseries(n, n)
 				m.StoreSeries(series, 0)
@@ -516,7 +516,7 @@ func TestSeriesReset(t *testing.T) {
 
 			cfg := config.DefaultQueueConfig
 			mcfg := config.DefaultMetadataConfig
-			m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg, false)
 			for i := range numSegments {
 				series := []record.RefSeries{}
 				metadata := []record.RefMetadata{}
@@ -558,7 +558,7 @@ func TestReshard(t *testing.T) {
 			cfg.MaxShards = 1
 
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg, false)
 			c.expectSamples(samples, series)
 			m.StoreSeries(series, 0)
 
@@ -598,7 +598,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 			exitCh := make(chan struct{})
 			go func() {
 				for {
-					m = newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+					m = newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, false)
 
 					m.Start()
 					h.Unlock()
@@ -638,7 +638,7 @@ func TestReshardPartialBatch(t *testing.T) {
 			flushDeadline := 10 * time.Millisecond
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
-			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, false)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -685,7 +685,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 			batchSendDeadline := time.Millisecond
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
-			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, false)
 			m.StoreSeries(series, 0)
 			m.Start()
 			defer m.Stop()
@@ -806,7 +806,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, false)
 	m.StoreSeries(fakeSeries, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1009,13 +1009,19 @@ type TestWriteClient struct {
 // NewTestWriteClient creates a new testing write client.
 func NewTestWriteClient(protoMsg remoteapi.WriteMessageType) *TestWriteClient {
 	return &TestWriteClient{
-		receivedSamples:  map[string][]prompb.Sample{},
-		expectedSamples:  map[string][]prompb.Sample{},
-		receivedMetadata: map[string][]prompb.MetricMetadata{},
-		expectedMetadata: map[string][]prompb.MetricMetadata{},
-		protoMsg:         protoMsg,
-		storeWait:        0,
-		returnError:      nil,
+		receivedSamples:         map[string][]prompb.Sample{},
+		expectedSamples:         map[string][]prompb.Sample{},
+		receivedHistograms:      map[string][]prompb.Histogram{},
+		expectedHistograms:      map[string][]prompb.Histogram{},
+		receivedFloatHistograms: map[string][]prompb.Histogram{},
+		expectedFloatHistograms: map[string][]prompb.Histogram{},
+		receivedExemplars:       map[string][]prompb.Exemplar{},
+		expectedExemplars:       map[string][]prompb.Exemplar{},
+		receivedMetadata:        map[string][]prompb.MetricMetadata{},
+		expectedMetadata:        map[string][]prompb.MetricMetadata{},
+		protoMsg:                protoMsg,
+		storeWait:               0,
+		returnError:             nil,
 	}
 }
 
@@ -1063,9 +1069,6 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedHistograms = map[string][]prompb.Histogram{}
-	c.receivedHistograms = map[string][]prompb.Histogram{}
-
 	for _, h := range hh {
 		tsID := getSeriesIDFromRef(series[h.Ref])
 		c.expectedHistograms[tsID] = append(c.expectedHistograms[tsID], prompb.FromIntHistogram(h.T, h.H))
@@ -1075,9 +1078,6 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, serie
 func (c *TestWriteClient) expectFloatHistograms(fhs []record.RefFloatHistogramSample, series []record.RefSeries) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
-
-	c.expectedFloatHistograms = map[string][]prompb.Histogram{}
-	c.receivedFloatHistograms = map[string][]prompb.Histogram{}
 
 	for _, fh := range fhs {
 		tsID := getSeriesIDFromRef(series[fh.Ref])
@@ -1432,7 +1432,7 @@ func BenchmarkSampleSend(b *testing.B) {
 	// todo: test with new proto type(s)
 	for _, format := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		b.Run(string(format), func(b *testing.B) {
-			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format)
+			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format, false)
 			m.StoreSeries(series, 0)
 
 			// These should be received by the client.
@@ -1495,7 +1495,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType)
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, false)
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -2018,7 +2018,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 			cfg.SampleAgeLimit = model.Duration(60 * time.Second)
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, false)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -2058,7 +2058,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 			metadataCfg.SendInterval = model.Duration(time.Second * 60)
 			metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, protoMsg)
+			m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, protoMsg, false)
 
 			m.Start()
 
@@ -2689,7 +2689,7 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, false)
 			m.sendNativeHistograms = true
 
 			// Create series for the histograms
@@ -2826,6 +2826,134 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 			}
 
 			// Verify no failed histograms (this would indicate a different type of error)
+			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
+		})
+	}
+}
+
+func TestAppendToConvertNHCBToClassic(t *testing.T) {
+	h := &histogram.Histogram{
+		Schema:       histogram.CustomBucketsSchema,
+		CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 4, Length: 1},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 2, 3, 4, 5},
+		Count:           35,
+		Sum:             123,
+	}
+
+	fh := &histogram.FloatHistogram{
+		Schema:       histogram.CustomBucketsSchema,
+		CustomValues: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 4, Length: 1},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{1, 2, 3, 4, 5},
+		Count:           15,
+		Sum:             123,
+	}
+
+	testCases := []struct {
+		name                    string
+		protoMsg                remoteapi.WriteMessageType
+		isFloatHistogram        bool
+		expectedSamplesCount    float64
+		expectedHistogramsCount float64
+		convertFlag             bool
+	}{
+		{
+			name:                    "convert nhcb to classic v1",
+			protoMsg:                remoteapi.WriteV1MessageType,
+			isFloatHistogram:        false,
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+			convertFlag:             true,
+		},
+		{
+			name:                    "convert float nhcb to classic v1",
+			protoMsg:                remoteapi.WriteV1MessageType,
+			isFloatHistogram:        true,
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+			convertFlag:             true,
+		},
+		{
+			name:                    "convert nhcb to classic v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			isFloatHistogram:        false,
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+			convertFlag:             true,
+		},
+		{
+			name:                    "convert float nhcb to classic v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			isFloatHistogram:        true,
+			expectedSamplesCount:    13,
+			expectedHistogramsCount: 0,
+			convertFlag:             true,
+		},
+		{
+			name:                    "no nhcb to classic conversion v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			convertFlag:             false,
+			isFloatHistogram:        false,
+			expectedSamplesCount:    0,
+			expectedHistogramsCount: 1,
+		},
+		{
+			name:                    "no float nhcb to classic conversion v2",
+			protoMsg:                remoteapi.WriteV2MessageType,
+			convertFlag:             false,
+			isFloatHistogram:        true,
+			expectedSamplesCount:    0,
+			expectedHistogramsCount: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewTestWriteClient(tc.protoMsg)
+			cfg := testDefaultQueueConfig()
+			mcfg := config.DefaultMetadataConfig
+			cfg.MaxShards = 1
+
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, tc.protoMsg, tc.convertFlag)
+			m.sendNativeHistograms = true
+
+			series := []record.RefSeries{{
+				Ref:    chunks.HeadSeriesRef(0),
+				Labels: labels.FromStrings("__name__", "test_histogram"),
+			}}
+			m.StoreSeries(series, 0)
+
+			m.Start()
+			defer m.Stop()
+
+			initialDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error"))
+
+			if !tc.isFloatHistogram {
+				require.True(t, m.AppendHistograms([]record.RefHistogramSample{{Ref: chunks.HeadSeriesRef(0), T: 1234567890, H: h}}))
+			} else {
+				require.True(t, m.AppendFloatHistograms([]record.RefFloatHistogramSample{{Ref: chunks.HeadSeriesRef(0), T: 1234567890, FH: fh}}))
+			}
+
+			time.Sleep(2 * time.Second)
+
+			finalDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues("nhcb_to_classic_conversion_error"))
+			require.Equal(t, initialDroppedConversionError, finalDroppedConversionError, "No conversion errors should occur")
+
+			finalSamplesTotal := client_testutil.ToFloat64(m.metrics.samplesTotal)
+			finalHistogramsTotal := client_testutil.ToFloat64(m.metrics.histogramsTotal)
+
+			require.Equal(t, tc.expectedSamplesCount, finalSamplesTotal, "Expected samples count mismatch")
+			require.Equal(t, tc.expectedHistogramsCount, finalHistogramsTotal, "Expected histograms count mismatch")
+
 			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
 		})
 	}
