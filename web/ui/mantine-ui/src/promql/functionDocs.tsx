@@ -3086,12 +3086,22 @@ const funcDocs: Record<string, React.ReactNode> = {
       <p>
         Same as <code>sort_by_label</code>, but sorts in descending order.
       </p>
+
+      <p>
+        Please note that <code>sort_by_label_desc</code> only affects the results of instant queries, as range query
+        results always have a fixed output ordering.
+      </p>
     </>
   ),
   sort_desc: (
     <>
       <p>
         Same as <code>sort</code>, but sorts in descending order.
+      </p>
+
+      <p>
+        Please note that <code>sort_desc</code> only affects the results of instant queries, as range query results
+        always have a fixed output ordering.
       </p>
     </>
   ),
