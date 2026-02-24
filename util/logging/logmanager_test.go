@@ -23,7 +23,8 @@ import (
 // TestLogManagerCreation excersises NewTestLogManager for the noop log manager
 // intended for test use.
 func TestTestLogManagerCreation(t *testing.T) {
-	manager := NewTestLogManager(nil)
+	manager, cleanup := NewTestLogManager(nil)
+	defer cleanup()
 	if manager == nil {
 		t.Fatal("expected non-nil LogManager")
 	}

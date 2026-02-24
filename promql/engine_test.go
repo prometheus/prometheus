@@ -2358,8 +2358,8 @@ func TestQueryLogger_basic(t *testing.T) {
 
 	cfg := logging.ConfigForTest(nil)
 	cfg.GlobalConfig.QueryLogFile = ql1File
-	lmgr := logging.NewTestLogManager(&cfg)
-	defer lmgr.Stop()
+	lmgr, cleanup := logging.NewTestLogManager(&cfg)
+	defer cleanup()
 	engine.SetQueryLogger(logging.QueryLoggerFactory(lmgr))
 
 	queryExec("test statement")
@@ -2403,7 +2403,8 @@ func TestQueryLogger_fields(t *testing.T) {
 
 	cfg := logging.ConfigForTest(nil)
 	cfg.GlobalConfig.QueryLogFile = ql1File
-	lmgr := logging.NewTestLogManager(&cfg)
+	lmgr, cleanup := logging.NewTestLogManager(&cfg)
+	defer cleanup()
 	engine.SetQueryLogger(logging.QueryLoggerFactory(lmgr))
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -2434,7 +2435,8 @@ func TestQueryLogger_error(t *testing.T) {
 
 	cfg := logging.ConfigForTest(nil)
 	cfg.GlobalConfig.QueryLogFile = ql1File
-	lmgr := logging.NewTestLogManager(&cfg)
+	lmgr, cleanup := logging.NewTestLogManager(&cfg)
+	defer cleanup()
 	engine.SetQueryLogger(logging.QueryLoggerFactory(lmgr))
 
 	ctx, cancelCtx := context.WithCancel(context.Background())

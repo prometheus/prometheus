@@ -257,8 +257,10 @@ func ConfigForTest(loggingConfig *config.LoggingConfig) config.Config {
 // NewTestLogManager creates a pre-configured Manager for testing purposes. The optional
 // config can be used to set specific logging options, but if nil is passed, a default config will be used.
 // The initial config is immediately applied and the manager is started, so the returned manager is ready to use.
-// A noop slog is used for the manager's own logs.
-func NewTestLogManager(config *config.Config) *Manager {
+// A noop slog is used for the manager's own logs. A cleanup function is explicitly returned
+// to encourage test authors to call it and avoid leaving background goroutines running after tests complete, as it
+// is too easy to forget to defer Stop().
+func NewTestLogManager(config *config.Config) (*Manager, func()) {
 	if config == nil {
 		defaultConfig := ConfigForTest(nil)
 		config = &defaultConfig
@@ -268,5 +270,7 @@ func NewTestLogManager(config *config.Config) *Manager {
 	manager := NewManager(discard)
 	go manager.Run()
 	manager.ApplyConfig(config)
-	return manager
+	return manager, func() {
+		manager.Stop()
+	}
 }
