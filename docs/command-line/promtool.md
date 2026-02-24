@@ -335,6 +335,32 @@ Run labels query.
 
 
 
+##### `promtool query label-names`
+
+Run label names query.
+
+
+
+###### Flags
+
+| Flag | Description |
+| --- | --- |
+| <code class="text-nowrap">--start</code> | Start time (RFC3339 or Unix timestamp). |
+| <code class="text-nowrap">--end</code> | End time (RFC3339 or Unix timestamp). |
+| <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. |
+
+
+
+
+###### Arguments
+
+| Argument | Description | Required |
+| --- | --- | --- |
+| server | Prometheus server to query. | Yes |
+
+
+
+
 ##### `promtool query analyze`
 
 Run queries against your Prometheus to analyze the usage pattern of certain metrics.
