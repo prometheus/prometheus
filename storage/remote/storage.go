@@ -61,6 +61,7 @@ type Storage struct {
 	// For reads.
 	queryables             []storage.SampleAndChunkQueryable
 	localStartTimeCallback startTimeCallback
+	exemplarQueryable      storage.ExemplarQueryable
 }
 
 var _ storage.Storage = &Storage{}
@@ -139,6 +140,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			labelsToEqualityMatchers(rrConf.RequiredMatchers),
 			rrConf.ReadRecent,
 			s.localStartTimeCallback,
+			s.exemplarQueryable,
 		))
 	}
 	s.queryables = queryables
