@@ -106,6 +106,11 @@ Example:
     'these are unescaped: \n \\ \t'
     `these are not unescaped: \n ' " \t`
 
+This can be useful for [`regex expressions`](#regular-expressions) on the regex-match selectors, for example:
+
+    {le=~"0\\.5"}
+    {le=~`0\.5`}
+
 ### Float literals and time durations
 
 Scalar float values can be written as literal integer or floating-point numbers
