@@ -22,6 +22,13 @@ import (
 	"testing"
 )
 
+// Constants which are used by the mocks.
+const (
+	testToken     = "LRK9DAWQ1ZAEFSrCNEEzLCUwhYX1U3g7wMg4dTlkkDC96fyDuyJ39nVbVjCKSDfj"
+	testProjectID = "00000000-0000-0000-0000-000000000000"
+	testRegion    = "eu01"
+)
+
 // SDMock is the interface for the STACKIT IAAS API mock.
 type SDMock struct {
 	t      *testing.T
@@ -53,17 +60,9 @@ func (m *SDMock) ShutdownServer() {
 	m.Server.Close()
 }
 
-const (
-	testToken     = "LRK9DAWQ1ZAEFSrCNEEzLCUwhYX1U3g7wMg4dTlkkDC96fyDuyJ39nVbVjCKSDfj"
-	testProjectID = "00000000-0000-0000-0000-000000000000"
-)
-
-// HandleServers mocks the STACKIT IAAS API.
-func (m *SDMock) HandleServers() {
-	// /token endpoint mocks the token endpoint for service account authentication.
-	// It checks if the request body starts with "assertion=ey" to simulate a valid assertion
-	// as defined in RFC 7523.
-	m.Mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+// tokenHandler returns a http.HandlerFunc that mocks the /token endpoint.
+func (m *SDMock) tokenHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		reqBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -77,12 +76,16 @@ func (m *SDMock) HandleServers() {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-
 		w.Header().Add("content-type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-
 		_, _ = fmt.Fprintf(w, `{"access_token": "%s"}`, testToken)
-	})
+	}
+}
+
+// HandleServers mocks the STACKIT IAAS API.
+func (m *SDMock) HandleServers() {
+	// Reuse token handler
+	m.Mux.HandleFunc("/token", m.tokenHandler())
 
 	m.Mux.HandleFunc(fmt.Sprintf("/v1/projects/%s/servers", testProjectID), func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", testToken) {
@@ -158,5 +161,42 @@ func (m *SDMock) HandleServers() {
   ]
 }`,
 		)
+	})
+}
+
+// HandlePostgresFlex mocks the STACKIT PostgresFlex V2 API.
+func (m *SDMock) HandlePostgresFlex() {
+	// Reuse token handler
+	m.Mux.HandleFunc("/token", m.tokenHandler())
+
+	m.Mux.HandleFunc(fmt.Sprintf("/v2/projects/%s/regions/%s/instances", testProjectID, testRegion), func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", testToken) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.Header().Add("content-type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+
+		_, _ = fmt.Fprint(w, `
+{
+  "items": [
+    {
+      "id": "a0e9a075-e485-41ad-b62e-d1c4706a33da",
+      "name": "instance-1",
+      "status": "Ready"
+    },
+    {
+      "id": "334700ac-7e66-44a3-b2d1-d87354d1fc43",
+      "name": "instance-2",
+      "status": "Progressing"
+    },
+    {
+      "id": "e9dfd2fd-df36-4faa-80d3-96cba2754dba",
+      "name": "instance-3",
+      "status": "Ready"
+    }
+  ]
+}`)
 	})
 }

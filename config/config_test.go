@@ -1588,6 +1588,47 @@ var expectedConf = &Config{
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
+					Role:            "server",
+				},
+			},
+		},
+		{
+			JobName:                        "stackit-postgres-flex",
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultGlobalConfig.ScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     UTF8ValidationConfig,
+			MetricNameEscapingScheme:       model.AllowUTF8,
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&stackit.SDConfig{
+					Project: "11111111-1111-1111-1111-111111111111",
+					Region:  "eu01",
+					HTTPClientConfig: config.HTTPClientConfig{
+						Authorization: &config.Authorization{
+							Type:        "Bearer",
+							Credentials: "abcdef",
+						},
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+					Port:            80,
+					RefreshInterval: model.Duration(60 * time.Second),
+					Role:            "postgres_flex",
 				},
 			},
 		},
@@ -2115,7 +2156,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 25, "wrong number of secret matches found")
+	require.Len(t, matches, 26, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -2625,6 +2666,10 @@ var expectedErrors = []struct {
 	{
 		filename: "stackit_endpoint.bad.yml",
 		errMsg:   "invalid endpoint",
+	},
+	{
+		filename: "stackit_role_not_supported.bad.yml",
+		errMsg:   "unknown role \"bad_role\"",
 	},
 }
 

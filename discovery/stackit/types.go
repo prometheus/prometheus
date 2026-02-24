@@ -36,3 +36,15 @@ type ServerNetwork struct {
 	IPv4        *string `json:"ipv4,omitempty"`
 	PublicIP    *string `json:"publicIp,omitempty"`
 }
+
+// PostgresFlexListResponse Response object for PostgresFlex list request.
+// https://docs.api.eu01.stackit.cloud/documentation/postgres-flex-service/version/v2#tag/instance
+type PostgresFlexListResponse struct {
+	Items *[]PostgresFlex `json:"items"`
+}
+
+type PostgresFlex struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}

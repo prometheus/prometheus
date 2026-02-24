@@ -2721,6 +2721,10 @@ Serverset data must be in the JSON format, the Thrift format is not currently su
 [STACKIT](https://www.stackit.de/de/) SD configurations allow retrieving
 scrape targets from various APIs.
 
+#### `server`
+
+The `server` role discovers scrape targets per [IAAS API](https://docs.api.eu01.stackit.cloud/documentation/iaas/version/v1#tag/Servers/operation/v1ListServersInProject).
+
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_stackit_availability_zone`: The availability zone of the server.
@@ -2734,11 +2738,29 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_stackit_status`: The current status of the server.
 * `__meta_stackit_power_status`: The power status of the server.
 
+#### `postgres_flex`
+
+The postgres_flex role dynamically discovers scrape targets using the [PostgresFlex API](https://docs.api.eu01.stackit.cloud/documentation/postgres-flex-service/version/v2#tag/instance).
+
+To enable this scrape configuration, a valid Authorization Bearer Token must be provided. Refer to [this example configuration](../../documentation/examples/prometheus-stackit.yml) for guidance. 
+Note that authentication using Service Account Keys is not supported at this time.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_stackit_postgres_flex_id`: Unique identifier of the PostgresFlex instance.
+* `__meta_stackit_postgres_flex_name`: Human-readable name of the instance.
+* `__meta_stackit_postgres_flex_region`: Deployment region of the instance.
+* `__meta_stackit_postgres_flex_status`: Current operational status of the instance.
+
 See below for the configuration options for STACKIT discovery:
 
 ```yaml
 # The STACKIT project
 project: <string>
+
+# STACKIT role of entities that should be discovered.
+# postgres_flex and server are supported.
+role: <string>
 
 # STACKIT region to use. No automatic discovery of the region is done.
 [ region : <string> | default = "eu01" ]

@@ -46,3 +46,16 @@ scrape_configs:
       - source_labels: [__meta_stackit_private_ipv4_mynet]
         target_label: __address__
         replacement: "$1:9100"
+
+  # Discover PostgresFlex Instances
+  - job_name: "postgres_flex"
+
+    stackit_sd_configs:
+      - project: 11111111-1111-1111-1111-111111111111
+        role: "postgres_flex"
+        authorization:
+          credentials: "<replace with a STACKIT ServiceAccount Token>"
+
+    authorization:
+      type: Bearer
+      credentials: "<replace with a STACKIT ServiceAccount Token>"
