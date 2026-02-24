@@ -3094,6 +3094,23 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_vultr_instance_disk_gb` : The size of the disk in GB.
 * `__meta_vultr_instance_allowed_bandwidth_gb` : Monthly bandwidth quota in GB.
 
+* `__meta_vultr_baremetal_id` : A unique ID for the vultr baremetal.
+* `__meta_vultr_baremetal_label` : The user-supplied label for this baremetal.
+* `__meta_vultr_baremetal_os` : The Operating System name.
+* `__meta_vultr_baremetal_os_id` : The Operating System id used by this baremetal.
+* `__meta_vultr_baremetal_region` : The Region id where the baremetal is located.
+* `__meta_vultr_baremetal_plan` :  A unique ID for the Plan.
+* `__meta_vultr_baremetal_main_ip` : The main IPv4 address.
+* `__meta_vultr_baremetal_main_ipv6` : The main IPv6 address.
+* `__meta_vultr_baremetal_features` : List of features that are available to the baremetal.
+* `__meta_vultr_baremetal_tags` : List of tags associated with the baremetal.
+* `__meta_vultr_baremetal_server_status` : The server health status.
+* `__meta_vultr_baremetal_cpu_count` : Number of CPUs.
+* `__meta_vultr_baremetal_ram_mb` : The amount of RAM in MB.
+* `__meta_vultr_baremetal_netmask_v4` : The netmask for the baremetal.
+* `__meta_vultr_baremetal_gateway_v4` : The gateway for the baremetal.
+* `__meta_vultr_baremetal_app_id` : The application used to deploy the baremetal.
+* `__meta_vultr_baremetal_image_id` : Unique ID of the image used to deploy the baremetal. 
 ```yaml
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
