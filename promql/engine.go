@@ -4176,6 +4176,10 @@ func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) 
 		return nil, err
 	}
 
+	expr, err := ConstantFoldExpr(expr)
+	if err != nil {
+		return nil, err
+	}
 	_, shouldWrap := preprocessExprHelper(expr, start, end)
 	if shouldWrap {
 		return newStepInvariantExpr(expr), nil
