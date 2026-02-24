@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"os"
 	"path"
 	"runtime"
@@ -12,10 +13,10 @@ import (
 	"time"
 
 	"github.com/neilotoole/slogt"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/stretchr/testify/require"
-
-	_ "go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
+	"go.opentelemetry.io/otel"
 )
 
 // TestLogManagerCreation excersises NewTestLogManager for the noop log manager
@@ -301,12 +302,20 @@ func TestLogFileRotationInplace(t *testing.T) {
 
 // TODO test with env-var settings too
 func TestOtelOTLPQueryLog(t *testing.T) {
+
+	endpoint := os.Getenv("TEST_OTEL_COLLECTOR_GRPC_ENDPOINT")
+	if endpoint == "" {
+		t.Log("TEST_OTEL_COLLECTOR_GRPC_ENDPOINT not set, skipping test of OTLP gRPC logging")
+		t.Skip()
+	}
+
 	cfg := ConfigForTest(&config.LoggingConfig{
 		Include: []string{"query"},
 		OTELLoggingConfig: config.OTELLoggingConfig{
 			ClientType: config.OTELClientGRPC,
-			Endpoint:   "localhost:4317",
+			Endpoint:   endpoint,
 			Insecure:   &[]bool{true}[0],
+			Timeout:    &[]model.Duration{model.Duration(time.Duration(1 * time.Second))}[0],
 			ResourceAttributes: map[string]string{
 				// Show that the hardcoded service can be overridden
 				"service.name": "prometheus2",
@@ -316,7 +325,7 @@ func TestOtelOTLPQueryLog(t *testing.T) {
 			},
 		},
 	})
-	const testLogMsg = "test otel stdout log message"
+	const testLogMsg = "test otel log message"
 
 	manager := NewManager(slogt.New(t))
 	go manager.Run()
@@ -327,12 +336,12 @@ func TestOtelOTLPQueryLog(t *testing.T) {
 
 	otelLogger := manager.NewQueryLogger()
 	require.NotNil(t, otelLogger, "expected non-nil logger")
-	require.True(t, otelLogger.Enabled(context.Background(), slog.LevelInfo), "expected otel stdout logger to be enabled")
+	require.True(t, otelLogger.Enabled(context.Background(), slog.LevelInfo), "expected otel logger to be enabled")
 
 	logctx := context.Background()
 	pc, _, _, _ := runtime.Caller(0)
 	err := otelLogger.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, testLogMsg, pc))
-	require.NoError(t, err, "unexpected error writing log record to otel stdout logger")
+	require.NoError(t, err, "unexpected error writing log record to otel logger")
 
 	// TODO add a listening otel collector, but this might need to be a separate integration test
 	// so it doesn't fill go.mod with testing dependencies and a full otel collector.
@@ -364,6 +373,55 @@ func TestOtelOTLPQueryLog(t *testing.T) {
 	*/
 	// and run with "otelcol --config config.yaml"
 	manager.Stop()
+}
+
+// If there is nothing listening on the OTLP endpoint, the logger should
+// drop the logs, but logging should not report an error. The otel error
+// handler should receive an error.
+func TestOtelOTLPMissingEndpoint(t *testing.T) {
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err, "unexpected error finding free port for test")
+	endpoint := listener.Addr().String()
+	defer listener.Close()
+
+	cfg := ConfigForTest(&config.LoggingConfig{
+		Include: []string{"query"},
+		OTELLoggingConfig: config.OTELLoggingConfig{
+			ClientType: config.OTELClientGRPC,
+			Endpoint:   endpoint,
+			Insecure:   &[]bool{true}[0],
+			Timeout:    &[]model.Duration{model.Duration(time.Duration(1 * time.Second))}[0],
+		},
+	})
+
+	t.Log("using endpoint", endpoint)
+
+	manager := NewManager(slogt.New(t))
+	go manager.Run()
+	manager.ApplyConfig(&cfg)
+
+	otelErrorCounter := 0
+
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		t.Logf("otel error handler received error: %v", err)
+		otelErrorCounter++
+	}))
+
+	otelLogger := manager.NewQueryLogger()
+
+	logctx := context.Background()
+	pc, _, _, _ := runtime.Caller(0)
+	err = otelLogger.Handle(logctx, slog.NewRecord(time.Now(), slog.LevelInfo, "to invalid listener", pc))
+	require.NoError(t, err, "unexpected error writing log record to otel stdout logger")
+
+	// So the otel exporter doesn't have to wait and time out, close the listener promptly
+	// to close any connection or reset the connection attempt.
+	listener.Close()
+
+	manager.Stop()
+
+	require.Greater(t, otelErrorCounter, 0, "expected otel error handler to receive at least one error due to missing endpoint")
 }
 
 func TestCombinedFileAndOTLPQueryLog(t *testing.T) {

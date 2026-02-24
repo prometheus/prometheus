@@ -29,10 +29,6 @@ import (
 	"log/slog"
 
 	"github.com/prometheus/prometheus/config"
-
-	// The stdout log provider can be enabled via otel configuration env-vars, but we need
-	// to ensure it gets compiled and linked.
-	_ "go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 )
 
 const (

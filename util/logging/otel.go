@@ -44,7 +44,7 @@ import (
 	otel_log_api "go.opentelemetry.io/otel/log"
 	otel_log_sdk "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -205,7 +205,7 @@ func buildOtelLoggingProvider(ctx context.Context, logger *slog.Logger, otelLogg
 			},
 		))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to add resource attribute %s=%s: %w", k, v, err)
+			logger.Warn("failed to add OpenTelemetry resource attribute", "attribute", k, "value", v, "error", err)
 		}
 	}
 
@@ -237,8 +237,6 @@ func buildOtelLoggingProvider(ctx context.Context, logger *slog.Logger, otelLogg
 	}
 
 	lp := otel_log_sdk.NewLoggerProvider(providerOpts...)
-
-	logger.Debug("created otel provider", "provider", lp)
 
 	return lp, func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

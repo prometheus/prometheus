@@ -1273,7 +1273,7 @@ type OTELLoggingConfig struct {
 	Headers map[string]string `yaml:"headers,omitempty"`
 	// Compression type for the OTLP exporter. Currently, only "gzip" is supported.
 	Compression *string `yaml:"compression,omitempty"`
-	// Optional timeout for OTLP export requests.
+	// Optional timeout for OTLP export requests. Prometheus shutdown may be delayed by up to this amount of time if there are delays in exporting logs. The otel sdk default https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/#otel_exporter_otlp_timeout is used if unset.
 	Timeout *model.Duration `yaml:"timeout,omitempty"`
 	// Resource attributes to attach to exported logs. This can be used to set the service name and other resource attributes for logs exported by Prometheus. Resource attributes configured here take precedence over those set with the OTEL_RESOURCE_ATTRIBUTES environment variable.
 	ResourceAttributes map[string]string `yaml:"resource_attributes,omitempty"`

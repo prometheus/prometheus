@@ -889,7 +889,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	loggingManager := logging.NewManager(logger)
+	loggingManager := logging.NewManager(logger.With("component", "logging"))
 
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
@@ -904,7 +904,7 @@ func main() {
 	}
 
 	var (
-		tracingManager = tracing.NewManager(logger)
+		tracingManager = tracing.NewManager(logger.With("component", "tracing"))
 
 		queryEngine *promql.Engine
 		ruleManager *rules.Manager
