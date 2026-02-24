@@ -112,7 +112,7 @@ require (
 
 tool (
 	github.com/bufbuild/buf/cmd/buf
-	github.com/daixiang0/gci/cmd/gci
+	github.com/daixiang0/gci
 	github.com/gogo/protobuf/protoc-gen-gogofast
 	github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway
 	github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2

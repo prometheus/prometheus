@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus/documentation/examples/remote_storage
 
-go 1.25.5
+go 1.25.6
 
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
