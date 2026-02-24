@@ -64,9 +64,10 @@ const (
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
 	azureLabelMachineSize          = azureLabel + "machine_size"
 
-	authMethodOAuth           = "OAuth"
-	authMethodSDK             = "SDK"
-	authMethodManagedIdentity = "ManagedIdentity"
+	authMethodOAuth            = "OAuth"
+	authMethodSDK              = "SDK"
+	authMethodManagedIdentity  = "ManagedIdentity"
+	authMethodWorkloadIdentity = "WorkloadIdentity"
 )
 
 // DefaultSDConfig is the default Azure SD configuration.
@@ -161,8 +162,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 	}
 
-	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity && c.AuthenticationMethod != authMethodSDK {
-		return fmt.Errorf("unknown authentication_type %q. Supported types are %q, %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity, authMethodSDK)
+	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity && c.AuthenticationMethod != authMethodSDK && c.AuthenticationMethod != authMethodWorkloadIdentity {
+		return fmt.Errorf("unknown authentication_type %q. Supported types are %q, %q, %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity, authMethodSDK, authMethodWorkloadIdentity)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -289,6 +290,13 @@ func (d *Discovery) createAzureClient() (client, error) {
 func newCredential(cfg SDConfig, policyClientOptions policy.ClientOptions) (azcore.TokenCredential, error) {
 	var credential azcore.TokenCredential
 	switch cfg.AuthenticationMethod {
+	case authMethodWorkloadIdentity:
+		options := &azidentity.WorkloadIdentityCredentialOptions{ClientOptions: policyClientOptions}
+		workloadIdentityCredential, err := azidentity.NewWorkloadIdentityCredential(options)
+		if err != nil {
+			return nil, err
+		}
+		credential = azcore.TokenCredential(workloadIdentityCredential)
 	case authMethodManagedIdentity:
 		options := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: policyClientOptions, ID: azidentity.ClientID(cfg.ClientID)}
 		managedIdentityCredential, err := azidentity.NewManagedIdentityCredential(options)
