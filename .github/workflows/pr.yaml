@@ -1,0 +1,28 @@
+name: 'Check LTS backport labels'
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - labeled
+      - unlabeled
+      - synchronize
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check_release_notes:
+    name: check
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'prometheus' || github.repository_owner == 'prometheus-community' # Don't run this workflow on forks.
+    steps:
+      - uses: mheap/github-action-required-labels@v5
+        with:
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          mode: exactly
+          count: 1
+          labels: |
+            backport-to-lts
+            no-lts-backport
+          message: "With the help of the reviewer(s), please decide whether the changes in this PR should be marked for backporting to the LTS version(s), by setting one of the following labels: {{ provided }}."
