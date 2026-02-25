@@ -260,20 +260,13 @@ func (s *stripeSeries) GetOrSet(hash uint64, series *memSeries) (*memSeries, boo
 	hashLock := s.hashLock(hash)
 
 	s.locks[hashLock].Lock()
-	// If it already exists in hashes, return it.
 	if prev := s.hashes[hashLock].Get(hash, series.lset); prev != nil {
 		s.locks[hashLock].Unlock()
 		return prev, false
 	}
-	s.hashes[hashLock].Set(hash, series)
 	s.locks[hashLock].Unlock()
 
-	refLock := s.refLock(series.ref)
-
-	s.locks[refLock].Lock()
-	s.series[refLock][series.ref] = series
-	s.locks[refLock].Unlock()
-
+	s.Set(hash, series)
 	return series, true
 }
 
