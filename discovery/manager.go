@@ -475,6 +475,7 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 
 	for setName, v := range n {
 		m.metrics.DiscoveredTargets.WithLabelValues(setName).Set(float64(v))
+		m.metrics.LastUpdated.WithLabelValues(setName).SetToCurrentTime()
 	}
 
 	return tSets
