@@ -88,14 +88,10 @@ func TestDB_InvalidSeries(t *testing.T) {
 	})
 }
 
-func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options, dir ...string) *DB {
+func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *DB {
 	t.Helper()
 
 	dbDir := t.TempDir()
-
-	if len(dir) > 0 && dir[0] != "" {
-		dbDir = dir[0]
-	}
 
 	rs := remote.NewStorage(promslog.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil, false)
 	t.Cleanup(func() {

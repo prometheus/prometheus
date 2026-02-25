@@ -558,7 +558,7 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 				if !created {
 					// We don't need to check if entry.Ref exists / if the value is not series.ref because GetOrSet
 					// enforces that the same labels will always get the same Ref. If we did not create a new ref
-					// the only possible ref it should ever be in the WAL is series.ref
+					// the only possible ref it should ever be in the WAL is series.ref.
 					duplicateRefToValidRef[entry.Ref] = series.ref
 
 					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
