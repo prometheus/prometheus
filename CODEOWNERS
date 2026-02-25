@@ -22,6 +22,7 @@
 /discovery/kubernetes           @prometheus/default-maintainers @brancz
 /discovery/stackit              @prometheus/default-maintainers @jkroepke
 /discovery/aws/                 @prometheus/default-maintainers @matt-gp @sysadmind
+/discovery/consul               @prometheus/default-maintainers @mrvarmazyar
 # Pending
 # https://github.com/prometheus/prometheus/pull/15212#issuecomment-3575225179
 # /discovery/aliyun               @prometheus/default-maintainers @KeyOfSpectator
