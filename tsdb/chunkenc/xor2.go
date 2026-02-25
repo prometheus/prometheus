@@ -148,10 +148,6 @@ func (a *xor2Appender) Append(_, t int64, v float64) {
 			a.b.writeByte(b)
 		}
 		a.b.writeBits(math.Float64bits(v), 64)
-		// Initialize baseline.
-		if !value.IsStaleNaN(v) {
-			a.v = v
-		}
 	case 1:
 		tDelta = uint64(t - a.t)
 
@@ -165,7 +161,27 @@ func (a *xor2Appender) Append(_, t int64, v float64) {
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
 
-		a.writeTimestampDelta(dod)
+		if a.mode == modeCompact {
+			switch {
+			case dod == 0:
+				a.b.writeBit(zero)
+			case bitRange(dod, 14):
+				a.b.writeByte(0b10<<6 | (uint8(dod>>8) & (1<<6 - 1)))
+				a.b.writeByte(uint8(dod))
+			case bitRange(dod, 17):
+				a.b.writeBits(0b110, 3)
+				a.b.writeBits(uint64(dod), 17)
+			case bitRange(dod, 20):
+				a.b.writeBits(0b1110, 4)
+				a.b.writeBits(uint64(dod), 20)
+			default:
+				a.b.writeBits(0b1111, 4)
+				a.mode = modeFull
+				a.writeTimestampDeltaFull(dod)
+			}
+		} else {
+			a.writeTimestampDeltaFull(dod)
+		}
 		a.writeVDelta(v)
 	}
 
@@ -176,55 +192,6 @@ func (a *xor2Appender) Append(_, t int64, v float64) {
 	}
 	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
 	a.tDelta = tDelta
-}
-
-func (a *xor2Appender) writeTimestampDelta(dod int64) {
-	// Check if we need to switch from compact to full mode.
-	if a.mode == modeCompact {
-		// In compact mode, we can only handle standard XOR buckets (14, 17, 20).
-		// If we need larger buckets or multiplier encoding, switch to full mode.
-		needsFullMode := false
-
-		if dod != 0 && !bitRange(dod, 14) && !bitRange(dod, 17) && !bitRange(dod, 20) {
-			// Needs full 64-bit or multiplier encoding.
-			needsFullMode = true
-		}
-
-		if needsFullMode {
-			// Write mode switch marker: 1111 (end of compact mode codes).
-			a.b.writeBits(0b1111, 4)
-			a.mode = modeFull
-		}
-	}
-
-	if a.mode == modeCompact {
-		// Compact mode: 4-bit control codes (like original XOR).
-		switch {
-		case dod == 0:
-			a.b.writeBit(zero)
-		case bitRange(dod, 14):
-			a.b.writeByte(0b10<<6 | (uint8(dod>>8) & (1<<6 - 1)))
-			a.b.writeByte(uint8(dod))
-		case bitRange(dod, 17):
-			a.b.writeBits(0b110, 3)
-			a.b.writeBits(uint64(dod), 17)
-		case bitRange(dod, 20):
-			a.b.writeBits(0b1110, 4)
-			a.b.writeBits(uint64(dod), 20)
-		default:
-			// This should not happen if needsFullMode logic is correct.
-			a.b.writeBits(0b1111, 4)
-			a.mode = modeFull
-			// Fall through to full mode encoding below.
-			fallthrough
-		case false: // Trick to enable fallthrough.
-			a.writeTimestampDeltaFull(dod)
-		}
-		return
-	}
-
-	// Full mode encoding.
-	a.writeTimestampDeltaFull(dod)
 }
 
 func (a *xor2Appender) writeTimestampDeltaFull(dod int64) {
@@ -446,16 +413,7 @@ func (it *xor2Iterator) Next() ValueType {
 		return it.readValue()
 	}
 
-	// Read timestamp delta.
-	if err := it.readTimestampDelta(); err != nil {
-		it.err = err
-		return ValNone
-	}
-
-	return it.readValue()
-}
-
-func (it *xor2Iterator) readTimestampDelta() error {
+	// Read timestamp delta-of-delta.
 	if it.mode == modeCompact {
 		// Compact mode: 4-bit control codes.
 		var d byte
@@ -466,7 +424,8 @@ func (it *xor2Iterator) readTimestampDelta() error {
 				bit, err = it.br.readBit()
 			}
 			if err != nil {
-				return err
+				it.err = err
+				return ValNone
 			}
 			if bit == zero {
 				break
@@ -478,7 +437,11 @@ func (it *xor2Iterator) readTimestampDelta() error {
 		if d == 0b1111 {
 			it.mode = modeFull
 			// Continue reading in full mode.
-			return it.readTimestampDeltaFull()
+			if err := it.readTimestampDeltaFull(); err != nil {
+				it.err = err
+				return ValNone
+			}
+			return it.readValue()
 		}
 
 		// Decode compact mode.
@@ -501,7 +464,8 @@ func (it *xor2Iterator) readTimestampDelta() error {
 				bits, err = it.br.readBits(sz)
 			}
 			if err != nil {
-				return err
+				it.err = err
+				return ValNone
 			}
 			if bits > (1 << (sz - 1)) {
 				bits -= 1 << sz
@@ -511,11 +475,14 @@ func (it *xor2Iterator) readTimestampDelta() error {
 
 		it.tDelta = uint64(int64(it.tDelta) + dod)
 		it.t += int64(it.tDelta)
-		return nil
+	} else {
+		if err := it.readTimestampDeltaFull(); err != nil {
+			it.err = err
+			return ValNone
+		}
 	}
 
-	// Full mode.
-	return it.readTimestampDeltaFull()
+	return it.readValue()
 }
 
 func (it *xor2Iterator) readTimestampDeltaFull() error {
@@ -565,7 +532,10 @@ func (it *xor2Iterator) readTimestampDeltaFull() error {
 		}
 		dod = int64(bits)
 	case 0b1110:
-		bits, err := it.br.readBits(20)
+		bits, err := it.br.readBitsFast(20)
+		if err != nil {
+			bits, err = it.br.readBits(20)
+		}
 		if err != nil {
 			return err
 		}

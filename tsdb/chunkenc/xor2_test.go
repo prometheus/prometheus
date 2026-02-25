@@ -21,6 +21,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func BenchmarkXor2Read(b *testing.B) {
+	c := NewXOR2Chunk()
+	app, err := c.Appender()
+	require.NoError(b, err)
+	for i := int64(0); i < 120*1000; i += 1000 {
+		app.Append(0, i, float64(i)+float64(i)/10+float64(i)/100+float64(i)/1000)
+	}
+
+	b.ReportAllocs()
+
+	var it Iterator
+	for b.Loop() {
+		var ts int64
+		var v float64
+		it = c.Iterator(it)
+		for it.Next() != ValNone {
+			ts, v = it.At()
+		}
+		_, _ = ts, v
+	}
+}
+
 func TestXOR2Basic(t *testing.T) {
 	c := NewXOR2Chunk()
 	app, err := c.Appender()

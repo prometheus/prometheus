@@ -254,6 +254,10 @@ func newXORChunk() Chunk {
 	return NewXORChunk()
 }
 
+func newXOR2Chunk() Chunk {
+	return NewXOR2Chunk()
+}
+
 func TestEncodingsCompatible(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -337,6 +341,10 @@ func BenchmarkXORIterator(b *testing.B) {
 	benchmarkIterator(b, newXORChunk)
 }
 
+func BenchmarkXOR2Iterator(b *testing.B) {
+	benchmarkIterator(b, newXOR2Chunk)
+}
+
 func BenchmarkXORAppender(b *testing.B) {
 	r := rand.New(rand.NewSource(1))
 	b.Run("constant", func(b *testing.B) {
@@ -355,6 +363,27 @@ func BenchmarkXORAppender(b *testing.B) {
 			return int64(r.Intn(100) - 50 + 15000), // 15 seconds +- up to 100ms of jitter.
 				r.Float64() // Random between 0 and 1.0.
 		}, newXORChunk)
+	})
+}
+
+func BenchmarkXOR2Appender(b *testing.B) {
+	r := rand.New(rand.NewSource(1))
+	b.Run("constant", func(b *testing.B) {
+		benchmarkAppender(b, func() (int64, float64) {
+			return 1000, 0
+		}, newXOR2Chunk)
+	})
+	b.Run("random steps", func(b *testing.B) {
+		benchmarkAppender(b, func() (int64, float64) {
+			return int64(r.Intn(100) - 50 + 15000), // 15 seconds +- up to 100ms of jitter.
+				float64(r.Intn(100) - 50) // Varying from -50 to +50 in 100 discrete steps.
+		}, newXOR2Chunk)
+	})
+	b.Run("random 0-1", func(b *testing.B) {
+		benchmarkAppender(b, func() (int64, float64) {
+			return int64(r.Intn(100) - 50 + 15000), // 15 seconds +- up to 100ms of jitter.
+				r.Float64() // Random between 0 and 1.0.
+		}, newXOR2Chunk)
 	})
 }
 
