@@ -244,8 +244,8 @@ func TestSampleDelivery(t *testing.T) {
 				c := NewTestWriteClient(protoMsg)
 				qm.SetClient(c)
 
-				qm.StoreSeries(recs.series, 0)
-				qm.StoreMetadata(recs.metadata)
+				qm.StoreSeries(series, 0)
+				qm.StoreMetadata(metadata)
 
 				// Send first half of data.
 				c.expectSamples(samples[:len(samples)/2], series)
@@ -356,7 +356,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 	require.NoError(t, err)
 	qm := s.rws.queues[hash]
 
-	c := NewTestWriteClient(remoteapi.WriteV1MessageType)
+	c := NewTestWriteClient(remoteapi.WriteV2MessageType)
 	qm.SetClient(c)
 
 	qm.StoreSeries(recs.series, 0)
@@ -365,7 +365,10 @@ func TestWALMetadataDelivery(t *testing.T) {
 	require.Len(t, qm.seriesLabels, n)
 	require.Len(t, qm.seriesMetadata, n)
 
-	// TODO(bwplotka): Refactor TestWriteClient to actually speak RW2 so we can verify metadata is attached correctly.
+	c.expectSamples(recs.samples, recs.series)
+	c.expectMetadataForBatch(recs.metadata, recs.series, recs.samples, nil, nil, nil)
+	qm.Append(recs.samples)
+	c.waitForExpectedData(t, 30*time.Second)
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
@@ -851,7 +854,7 @@ func generateRecords(c recCase) (ret records) {
 		c.tsFn = func(_, j int) int64 { return int64(j) }
 	}
 
-	lb := labels.NewScratchBuilder(1 + len(extraLabels))
+	lb := labels.NewScratchBuilder(1 + len(c.extraLabels))
 	for i := range ret.series {
 		ret.series[i] = record.RefSeries{
 			Ref:    chunks.HeadSeriesRef(i),
@@ -2061,6 +2064,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 						return time.Now().Add(timeAdd).UnixMilli()
 					},
 					labelsFn: func(lb *labels.ScratchBuilder, i int) labels.Labels {
+						lb.Reset()
 						labelsCount := r.Intn(maxLabels)
 						lb.Add("__name__", "batch_"+strconv.Itoa(batchID)+"_id_"+strconv.Itoa(i))
 						for j := 1; j < labelsCount+1; j++ {
