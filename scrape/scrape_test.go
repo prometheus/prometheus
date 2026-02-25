@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"math"
 	"net/http"
@@ -6803,4 +6804,55 @@ func testDropsSeriesFromMetricRelabeling(t *testing.T, appV2 bool) {
 	require.Equal(t, 0, seriesAdded)
 
 	require.NoError(t, app.Commit())
+}
+
+// noopFailureLogger is a minimal FailureLogger implementation for testing.
+type noopFailureLogger struct{}
+
+func (noopFailureLogger) Enabled(context.Context, slog.Level) bool  { return true }
+func (noopFailureLogger) Handle(context.Context, slog.Record) error { return nil }
+func (noopFailureLogger) WithAttrs([]slog.Attr) slog.Handler        { return noopFailureLogger{} }
+func (noopFailureLogger) WithGroup(string) slog.Handler             { return noopFailureLogger{} }
+func (noopFailureLogger) Close() error                              { return nil }
+
+// TestScrapePoolSetScrapeFailureLoggerRace is a regression test for concurrent
+// access to scrapeFailureLogger. Both must use targetMtx for synchronization.
+func TestScrapePoolSetScrapeFailureLoggerRace(t *testing.T) {
+	var (
+		app = teststorage.NewAppendable()
+		cfg = &config.ScrapeConfig{
+			JobName:                    "test",
+			ScrapeInterval:             model.Duration(100 * time.Millisecond),
+			ScrapeTimeout:              model.Duration(50 * time.Millisecond),
+			MetricNameValidationScheme: model.UTF8Validation,
+			MetricNameEscapingScheme:   model.AllowUTF8,
+		}
+		sp, err = newScrapePool(cfg, app, nil, 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
+	)
+	require.NoError(t, err)
+	defer sp.stop()
+
+	// Create a target group with a target.
+	tg := &targetgroup.Group{
+		Targets: []model.LabelSet{
+			{model.AddressLabel: "127.0.0.1:9090"},
+		},
+	}
+
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		for range 100 {
+			sp.SetScrapeFailureLogger(noopFailureLogger{})
+			sp.SetScrapeFailureLogger(nil)
+		}
+	})
+
+	wg.Go(func() {
+		for range 100 {
+			sp.Sync([]*targetgroup.Group{tg})
+		}
+	})
+
+	wg.Wait()
 }

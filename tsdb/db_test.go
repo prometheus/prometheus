@@ -9618,3 +9618,39 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 	// Should still have no blocks since there was nothing to compact.
 	require.Empty(t, db.Blocks())
 }
+
+func TestBeyondSizeRetentionWithPercentage(t *testing.T) {
+	const maxBlock = 100
+	const numBytesChunks = 1024
+	const diskSize = maxBlock * numBytesChunks
+
+	opts := DefaultOptions()
+	opts.MaxPercentage = 10
+	opts.FsSizeFunc = func(_ string) uint64 {
+		return uint64(diskSize)
+	}
+
+	db := newTestDB(t, withOpts(opts))
+	require.Zero(t, db.Head().Size())
+
+	blocks := make([]*Block, 0, opts.MaxPercentage+1)
+	for range opts.MaxPercentage {
+		blocks = append(blocks, &Block{
+			numBytesChunks: numBytesChunks,
+			meta:           BlockMeta{ULID: ulid.Make()},
+		})
+	}
+
+	deletable := BeyondSizeRetention(db, blocks)
+	require.Empty(t, deletable)
+
+	ulid := ulid.Make()
+	blocks = append(blocks, &Block{
+		numBytesChunks: numBytesChunks,
+		meta:           BlockMeta{ULID: ulid},
+	})
+
+	deletable = BeyondSizeRetention(db, blocks)
+	require.Len(t, deletable, 1)
+	require.Contains(t, deletable, ulid)
+}

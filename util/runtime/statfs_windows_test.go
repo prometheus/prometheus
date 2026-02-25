@@ -11,16 +11,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build openbsd || netbsd || solaris
+//go:build windows
 
 package runtime
 
-// FsType returns the file system type or "unknown" if unsupported.
-func FsType(path string) string {
-	return "unknown"
+import (
+	"os"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestFsType(t *testing.T) {
+	var fsType string
+
+	path, err := os.Getwd()
+	require.NoError(t, err)
+
+	fsType = FsType(path)
+	require.Equal(t, "unknown", fsType)
+
+	fsType = FsType("A:\\no\\where\\to\\be\\found")
+	require.Equal(t, "unknown", fsType)
 }
 
-// FsSize returns the file system size or 0 if unsupported.
-func FsSize(path string) uint64 {
-	return 0
+func TestFsSize(t *testing.T) {
+	var size uint64
+
+	size = FsSize("C:\\")
+	require.Positive(t, size)
+
+	size = FsSize("c:\\no\\where\\to\\be\\found")
+	require.Equal(t, uint64(0), size)
+
+	size = FsSize("  %% not event a real path\n\n")
+	require.Equal(t, uint64(0), size)
 }

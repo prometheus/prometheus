@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/features"
+	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 )
 
 const (
@@ -125,6 +126,11 @@ type Options struct {
 	// the size of the WAL folder which is not added when calculating
 	// the current size of the database.
 	MaxBytes int64
+
+	// Maximum % of disk space to use for blocks to be retained.
+	// 0 or less means disabled.
+	// If both MaxBytes and MaxPercentage are set, percentage prevails.
+	MaxPercentage uint
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
@@ -257,6 +263,9 @@ type Options struct {
 	// StaleSeriesCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
 	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
 	StaleSeriesCompactionThreshold float64
+
+	// FsSizeFunc is a function returning the total disk size for a given path.
+	FsSizeFunc FsSizeFunc
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -266,6 +275,8 @@ type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
 type BlockQuerierFunc func(b BlockReader, mint, maxt int64) (storage.Querier, error)
 
 type BlockChunkQuerierFunc func(b BlockReader, mint, maxt int64) (storage.ChunkQuerier, error)
+
+type FsSizeFunc func(path string) uint64
 
 // DB handles reads and writes of time series falling into
 // a hashed partition of a seriedb.
@@ -328,6 +339,8 @@ type DB struct {
 	blockQuerierFunc BlockQuerierFunc
 
 	blockChunkQuerierFunc BlockChunkQuerierFunc
+
+	fsSizeFunc FsSizeFunc
 }
 
 type dbMetrics struct {
@@ -344,6 +357,7 @@ type dbMetrics struct {
 	tombCleanTimer                  prometheus.Histogram
 	blocksBytes                     prometheus.Gauge
 	maxBytes                        prometheus.Gauge
+	maxPercentage                   prometheus.Gauge
 	retentionDuration               prometheus.Gauge
 	staleSeriesCompactionsTriggered prometheus.Counter
 	staleSeriesCompactionsFailed    prometheus.Counter
@@ -424,6 +438,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_retention_limit_bytes",
 		Help: "Max number of bytes to be retained in the tsdb blocks, configured 0 means disabled",
 	})
+	m.maxPercentage = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_retention_limit_percentage",
+		Help: "Max percentage of total storage space to be retained in the tsdb blocks, configured 0 means disabled",
+	})
 	m.retentionDuration = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_retention_limit_seconds",
 		Help: "How long to retain samples in storage.",
@@ -464,6 +482,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.tombCleanTimer,
 			m.blocksBytes,
 			m.maxBytes,
+			m.maxPercentage,
 			m.retentionDuration,
 			m.staleSeriesCompactionsTriggered,
 			m.staleSeriesCompactionsFailed,
@@ -669,6 +688,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		head:                  head,
 		blockQuerierFunc:      NewBlockQuerier,
 		blockChunkQuerierFunc: NewBlockChunkQuerier,
+		fsSizeFunc:            prom_runtime.FsSize,
 	}, nil
 }
 
@@ -1007,6 +1027,12 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.blockChunkQuerierFunc = opts.BlockChunkQuerierFunc
 	}
 
+	if opts.FsSizeFunc == nil {
+		db.fsSizeFunc = prom_runtime.FsSize
+	} else {
+		db.fsSizeFunc = opts.FsSizeFunc
+	}
+
 	var wal, wbl *wlog.WL
 	segmentSize := wlog.DefaultSegmentSize
 	// Wal is enabled.
@@ -1067,6 +1093,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	db.metrics = newDBMetrics(db, r)
 	maxBytes := max(opts.MaxBytes, 0)
 	db.metrics.maxBytes.Set(float64(maxBytes))
+	db.metrics.maxPercentage.Set(float64(max(opts.MaxPercentage, 0)))
 	db.metrics.retentionDuration.Set((time.Duration(opts.RetentionDuration) * time.Millisecond).Seconds())
 
 	// Calling db.reload() calls db.reloadBlocks() which requires cmtx to be locked.
@@ -1259,6 +1286,10 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 				db.opts.MaxBytes = int64(conf.StorageConfig.TSDBConfig.Retention.Size)
 				db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
 			}
+			if conf.StorageConfig.TSDBConfig.Retention.Percentage > 0 {
+				db.opts.MaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
+				db.metrics.maxPercentage.Set(float64(db.opts.MaxPercentage))
+			}
 			db.retentionMtx.Unlock()
 		}
 	} else {
@@ -1304,11 +1335,11 @@ func (db *DB) getRetentionDuration() int64 {
 	return db.opts.RetentionDuration
 }
 
-// getMaxBytes returns the current max bytes setting in a thread-safe manner.
-func (db *DB) getMaxBytes() int64 {
+// getRetentionSettings returns max bytes and max percentage settings in a thread-safe manner.
+func (db *DB) getRetentionSettings() (int64, uint) {
 	db.retentionMtx.RLock()
 	defer db.retentionMtx.RUnlock()
-	return db.opts.MaxBytes
+	return db.opts.MaxBytes, db.opts.MaxPercentage
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
@@ -1968,9 +1999,25 @@ func BeyondTimeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 // BeyondSizeRetention returns those blocks which are beyond the size retention
 // set in the db options.
 func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struct{}) {
-	// Size retention is disabled or no blocks to work with.
-	maxBytes := db.getMaxBytes()
-	if len(blocks) == 0 || maxBytes <= 0 {
+	// No blocks to work with
+	if len(blocks) == 0 {
+		return deletable
+	}
+
+	maxBytes, maxPercentage := db.getRetentionSettings()
+
+	// Max percentage prevails over max size.
+	if maxPercentage > 0 {
+		diskSize := db.fsSizeFunc(db.dir)
+		if diskSize <= 0 {
+			db.logger.Warn("Unable to retrieve filesystem size of database directory, skip percentage limitation and default to fixed size limitation", "dir", db.dir)
+		} else {
+			maxBytes = int64(uint64(maxPercentage) * diskSize / 100)
+		}
+	}
+
+	// Size retention is disabled.
+	if maxBytes <= 0 {
 		return deletable
 	}
 

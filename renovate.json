@@ -4,17 +4,27 @@
     "config:recommended"
   ],
   "separateMultipleMajor": true,
-  "baseBranches": ["main"],
+  "baseBranchPatterns": [
+    "main"
+  ],
   "postUpdateOptions": [
     "gomodTidy",
     "gomodUpdateImportPaths"
   ],
-  "schedule": ["* * 21 * *"],
+  "schedule": [
+    "* * 21 * *"
+  ],
   "timezone": "UTC",
   "github-actions": {
-    "managerFilePatterns": ["scripts/**"]
+    "managerFilePatterns": [
+      "scripts/**"
+    ]
   },
-  "prBodyNotes": ["```release-notes","NONE","```"],
+  "prBodyNotes": [
+    "```release-notes",
+    "NONE",
+    "```"
+  ],
   "prConcurrentLimit": 20,
   "prHourlyLimit": 5,
   "packageRules": [
@@ -27,31 +37,49 @@
     },
     {
       "description": "Don't update prometheus-io namespace packages",
-      "matchPackageNames": ["@prometheus-io/**"],
+      "matchPackageNames": [
+        "@prometheus-io/**"
+      ],
       "enabled": false
     },
     {
       "description": "Group AWS Go dependencies",
-      "matchManagers": ["gomod"],
-      "matchPackageNames": ["github.com/aws/**"],
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/aws/**"
+      ],
       "groupName": "AWS Go dependencies"
     },
     {
       "description": "Group Azure Go dependencies",
-      "matchManagers": ["gomod"],
-      "matchPackageNames": ["github.com/Azure/**"],
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/Azure/**"
+      ],
       "groupName": "Azure Go dependencies"
     },
     {
       "description": "Group Kubernetes Go dependencies",
-      "matchManagers": ["gomod"],
-      "matchPackageNames": ["k8s.io/**"],
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "k8s.io/**"
+      ],
       "groupName": "Kubernetes Go dependencies"
     },
     {
       "description": "Group OpenTelemetry Go dependencies",
-      "matchManagers": ["gomod"],
-      "matchPackageNames": ["go.opentelemetry.io/**"],
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "go.opentelemetry.io/**"
+      ],
       "groupName": "OpenTelemetry Go dependencies"
     },
     {
@@ -60,7 +88,10 @@
         "web/ui/mantine-ui/package.json"
       ],
       "groupName": "Mantine UI",
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "enabled": true
     },
     {
@@ -69,7 +100,10 @@
         "web/ui/react-app/package.json"
       ],
       "groupName": "React App",
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "enabled": true
     },
     {
@@ -78,14 +112,19 @@
         "web/ui/module/**/package.json"
       ],
       "groupName": "Modules",
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "enabled": true
     }
   ],
   "branchPrefix": "deps-update/",
   "vulnerabilityAlerts": {
     "enabled": true,
-    "labels": ["security-update"]
+    "labels": [
+      "security-update"
+    ]
   },
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardApproval": false

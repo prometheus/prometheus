@@ -126,6 +126,25 @@ samples. Operations involving histogram samples result in the removal of the
 corresponding vector elements from the output vector, flagged by an
 info-level annotation.
 
+### Histogram trim operators
+
+The following binary histogram trim operators exist in Prometheus:
+
+* `</` (trim upper): removes all observations above a threshold value
+* `>/` (trim lower): removes all observations below a threshold value
+
+Histogram trim operators are defined between vector/scalar and vector/vector value pairs,
+where the left hand side is a native histogram (either exponential or NHCB),
+and the right hand side is a float threshold value.
+
+In case the threshold value is not aligned to one of the bucket boundaries of the histogram,
+either linear (for NHCB and zero buckets of exponential histogram) or exponential (for non zero
+bucket of exponential histogram) interpolation is applied to compute the estimated count
+of observations that remain in the bucket containing the threshold.
+
+In case when some observations get trimmed, the new sum of observation values is recomputed
+(approximately) based on the remaining observations.
+
 ### Comparison binary operators
 
 The following binary comparison operators exist in Prometheus:

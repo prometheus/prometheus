@@ -3285,6 +3285,10 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+  # AWS External ID used when assuming a role.
+  # Can only be used with role_arn.
+  [ external_id: <string> ]
+
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
   # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
@@ -3496,6 +3500,10 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+  # AWS External ID used when assuming a role.
+  # Can only be used with role_arn.
+  [ external_id: <string> ]
+
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
   # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
@@ -3688,6 +3696,14 @@ with this feature.
   # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.size.
   [ size: <size> | default = 0 ]
 
+  # Maximum percent of total disk space allowed for storage of blocks. Alternative to `size` and
+  # behaves the same as if size was calculated by hand as a percentage of the total storage capacity.
+  # Prometheus will fail to start if this config is enabled, but it fails to query the total storage capacity.
+  # The total disk space allowed will automatically adapt to volume resize.
+  # If set to 0 or not set, percentage-based retention is disabled.
+  #
+  # This is an experimental feature, this behaviour could change or be removed in the future.
+  [ percentage: <uint> | default = 0 ]
 ```
 
 ### `<exemplars>`

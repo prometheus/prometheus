@@ -1223,16 +1223,56 @@ type EvalNodeHelper struct {
 	lblResultBuf []byte
 
 	// For binary vector matching.
-	rightSigs    map[int]Sample
-	matchedSigs  map[int]map[uint64]struct{}
-	resultMetric map[string]labels.Labels
-	numSigs      int
+	rightSigs          []Sample
+	sigsPresent        []bool
+	matchedSigs        []map[uint64]struct{}
+	matchedSigsPresent []bool
+	resultMetric       map[string]labels.Labels
+	numSigs            int
 
 	// For info series matching.
 	rightStrSigs map[string]Sample
 
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
+}
+
+func (enh *EvalNodeHelper) resetSigsPresent() []bool {
+	if len(enh.sigsPresent) == 0 {
+		enh.sigsPresent = make([]bool, enh.numSigs)
+	} else {
+		clear(enh.sigsPresent)
+	}
+	return enh.sigsPresent
+}
+
+func (enh *EvalNodeHelper) resetMatchedSigsPresent() []bool {
+	if len(enh.matchedSigsPresent) == 0 {
+		enh.matchedSigsPresent = make([]bool, enh.numSigs)
+	} else {
+		clear(enh.matchedSigsPresent)
+	}
+	return enh.matchedSigsPresent
+}
+
+func (enh *EvalNodeHelper) resetRightSigs() []Sample {
+	if enh.rightSigs == nil {
+		enh.rightSigs = make([]Sample, enh.numSigs)
+	} else {
+		clear(enh.rightSigs)
+	}
+	return enh.rightSigs
+}
+
+func (enh *EvalNodeHelper) resetMatchedSigs() []map[uint64]struct{} {
+	if enh.matchedSigs == nil {
+		enh.matchedSigs = make([]map[uint64]struct{}, enh.numSigs)
+	} else {
+		for i := range enh.matchedSigs {
+			clear(enh.matchedSigs[i])
+		}
+	}
+	return enh.matchedSigs
 }
 
 func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
@@ -2835,7 +2875,7 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 	}
 
 	// Ordinals of signatures present on the right-hand side.
-	rightSigOrdinalsPresent := make([]bool, enh.numSigs)
+	rightSigOrdinalsPresent := enh.resetSigsPresent()
 	for _, sh := range rhsh {
 		rightSigOrdinalsPresent[sh.sigOrdinal] = true
 	}
@@ -2861,7 +2901,7 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 		return enh.Out
 	}
 
-	leftSigOrdinalsPresent := make([]bool, enh.numSigs)
+	leftSigOrdinalsPresent := enh.resetSigsPresent()
 	// Add everything from the left-hand-side Vector.
 	for i, ls := range lhs {
 		leftSigOrdinalsPresent[lhsh[i].sigOrdinal] = true
@@ -2888,7 +2928,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	}
 
 	// Ordinals of signatures present on the right-hand side.
-	rightSigOrdinalsPresent := make([]bool, enh.numSigs)
+	rightSigOrdinalsPresent := enh.resetSigsPresent()
 	for _, sh := range rhsh {
 		rightSigOrdinalsPresent[sh.sigOrdinal] = true
 	}
@@ -2920,19 +2960,16 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	}
 
 	// All samples from the rhs by their join signature ordinal.
-	if enh.rightSigs == nil {
-		enh.rightSigs = make(map[int]Sample, len(enh.Out))
-	} else {
-		clear(enh.rightSigs)
-	}
-	rightSigs := enh.rightSigs
+	rightSigs := enh.resetRightSigs()
+	rightSigsPresent := enh.resetSigsPresent()
 
 	// Add all rhs samples to a map so we can easily find matches later.
 	for i, rs := range rhs {
 		sigOrd := rhsh[i].sigOrdinal
 		// The rhs is guaranteed to be the 'one' side. Having multiple samples
 		// with the same signature means that the matching is many-to-many.
-		if duplSample, found := rightSigs[sigOrd]; found {
+		if rightSigsPresent[sigOrd] {
+			duplSample := rightSigs[sigOrd]
 			// oneSide represents which side of the vector represents the 'one' in the many-to-one relationship.
 			oneSide := "right"
 			if matching.Card == parser.CardOneToMany {
@@ -2944,16 +2981,22 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
 		}
 		rightSigs[sigOrd] = rs
+		rightSigsPresent[sigOrd] = true
 	}
 
-	// Tracks the matching by signature ordinals. For one-to-one operations the value is nil.
-	// For many-to-one the value is a set of hashes to detect duplicated result elements.
-	if enh.matchedSigs == nil {
-		enh.matchedSigs = make(map[int]map[uint64]struct{}, len(rightSigs))
+	var (
+		// Tracks the match-signature for one-to-one operations.
+		matchedSigsPresent []bool
+
+		// Tracks the match-signature for many-to-one operations, the value is a set of signatures
+		// to detect duplicated result elements.
+		matchedSigs []map[uint64]struct{}
+	)
+	if matching.Card == parser.CardOneToOne {
+		matchedSigsPresent = enh.resetMatchedSigsPresent()
 	} else {
-		clear(enh.matchedSigs)
+		matchedSigs = enh.resetMatchedSigs()
 	}
-	matchedSigs := enh.matchedSigs
 
 	var lastErr error
 
@@ -2982,26 +3025,26 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			}
 		}
 
-		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
-		if !ev.enableDelayedNameRemoval && returnBool {
-			metric = metric.DropReserved(schema.IsMetadataLabel)
-		}
-		insertedSigs, exists := matchedSigs[sigOrd]
+		dropMetricName := !ev.enableDelayedNameRemoval && returnBool
+		metric := resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+
 		if matching.Card == parser.CardOneToOne {
-			if exists {
+			if matchedSigsPresent[sigOrd] {
 				ev.errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
 			}
-			matchedSigs[sigOrd] = nil // Set existence to true.
+			matchedSigsPresent[sigOrd] = true
 		} else {
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result Vector. Check whether those labels have already been added for
 			// the same matching labels.
 			insertSig := metric.Hash()
 
-			if !exists {
-				insertedSigs = map[uint64]struct{}{}
-				matchedSigs[sigOrd] = insertedSigs
-			} else if _, duplicate := insertedSigs[insertSig]; duplicate {
+			if matchedSigs[sigOrd] == nil {
+				matchedSigs[sigOrd] = map[uint64]struct{}{}
+			}
+			insertedSigs := matchedSigs[sigOrd]
+
+			if _, duplicate := insertedSigs[insertSig]; duplicate {
 				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
 			}
 			insertedSigs[insertSig] = struct{}{}
@@ -3024,8 +3067,12 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	for i, ls := range lhs {
 		sigOrd := lhsh[i].sigOrdinal
 
-		rs, found := rightSigs[sigOrd] // Look for a match in the rhs Vector.
-		if !found {
+		var rs Sample
+		if rightSigsPresent[sigOrd] {
+			// Found a match in the rhs.
+			rs = rightSigs[sigOrd]
+		} else {
+			// Have to fall back to the fill value.
 			fill := matching.FillValues.RHS
 			if fill == nil {
 				continue
@@ -3042,8 +3089,11 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	// For any rhs samples which have not been matched, check if we need to
 	// perform the operation with a fill value from the lhs.
 	if fill := matching.FillValues.LHS; fill != nil {
-		for sigOrd, rs := range rightSigs {
-			if _, matched := matchedSigs[sigOrd]; matched {
+		for i, rs := range rhs {
+			sigOrd := rhsh[i].sigOrdinal
+
+			if (matching.Card == parser.CardOneToOne && matchedSigsPresent[sigOrd]) ||
+				(matching.Card != parser.CardOneToOne && matchedSigs[sigOrd] != nil) {
 				continue // Already matched.
 			}
 			ls := Sample{
@@ -3060,7 +3110,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
-func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, enh *EvalNodeHelper) labels.Labels {
+func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) labels.Labels {
 	if enh.resultMetric == nil {
 		enh.resultMetric = make(map[string]labels.Labels, len(enh.Out))
 	}
@@ -3078,7 +3128,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	str := string(enh.lblResultBuf)
 
 	enh.resetBuilder(lhs)
-	if changesMetricSchema(op) {
+	if dropMetricName || changesMetricSchema(op) {
 		// Setting empty Metadata causes the deletion of those if they exists.
 		schema.Metadata{}.SetToLabels(enh.lb)
 	}
@@ -3216,6 +3266,8 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return lhs, nil, lhs <= rhs, nil, nil
 			case parser.ATAN2:
 				return math.Atan2(lhs, rhs), nil, true, nil, nil
+			case parser.TRIM_LOWER, parser.TRIM_UPPER:
+				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", parser.ItemTypeStr[op], "float", pos)
 			}
 		}
 	case hlhs == nil && hrhs != nil:
@@ -3223,7 +3275,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			switch op {
 			case parser.MUL:
 				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil, nil
-			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.TRIM_LOWER, parser.TRIM_UPPER, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("float", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
@@ -3234,6 +3286,10 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 				return 0, hlhs.Copy().Mul(rhs).Compact(0), true, nil, nil
 			case parser.DIV:
 				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil, nil
+			case parser.TRIM_UPPER:
+				return 0, hlhs.TrimBuckets(rhs, true), true, nil, nil
+			case parser.TRIM_LOWER:
+				return 0, hlhs.TrimBuckets(rhs, false), true, nil, nil
 			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "float", pos)
 			}
@@ -3274,7 +3330,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.NEQ:
 				// This operation expects that both histograms are compacted.
 				return 0, hlhs, !hlhs.Equals(hrhs), nil, nil
-			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2, parser.TRIM_LOWER, parser.TRIM_UPPER:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "histogram", pos)
 			}
 		}
