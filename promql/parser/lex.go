@@ -189,21 +189,23 @@ var ItemTypeStr = map[ItemType]string{
 	TIMES:         "x",
 	SPACE:         "<space>",
 
-	SUB:       "-",
-	ADD:       "+",
-	MUL:       "*",
-	MOD:       "%",
-	DIV:       "/",
-	EQLC:      "==",
-	NEQ:       "!=",
-	LTE:       "<=",
-	LSS:       "<",
-	GTE:       ">=",
-	GTR:       ">",
-	EQL_REGEX: "=~",
-	NEQ_REGEX: "!~",
-	POW:       "^",
-	AT:        "@",
+	SUB:        "-",
+	ADD:        "+",
+	MUL:        "*",
+	MOD:        "%",
+	DIV:        "/",
+	EQLC:       "==",
+	NEQ:        "!=",
+	LTE:        "<=",
+	LSS:        "<",
+	GTE:        ">=",
+	GTR:        ">",
+	TRIM_UPPER: "</",
+	TRIM_LOWER: ">/",
+	EQL_REGEX:  "=~",
+	NEQ_REGEX:  "!~",
+	POW:        "^",
+	AT:         "@",
 }
 
 func init() {
@@ -446,6 +448,9 @@ func lexStatements(l *Lexer) stateFn {
 		if t := l.peek(); t == '=' {
 			l.next()
 			l.emit(LTE)
+		} else if t := l.peek(); t == '/' {
+			l.next()
+			l.emit(TRIM_UPPER)
 		} else {
 			l.emit(LSS)
 		}
@@ -453,6 +458,9 @@ func lexStatements(l *Lexer) stateFn {
 		if t := l.peek(); t == '=' {
 			l.next()
 			l.emit(GTE)
+		} else if t := l.peek(); t == '/' {
+			l.next()
+			l.emit(TRIM_LOWER)
 		} else {
 			l.emit(GTR)
 		}

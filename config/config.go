@@ -1092,6 +1092,9 @@ type TSDBRetentionConfig struct {
 
 	// Maximum number of bytes that can be stored for blocks.
 	Size units.Base2Bytes `yaml:"size,omitempty"`
+
+	// Maximum percentage of disk used for TSDB storage.
+	Percentage uint `yaml:"percentage,omitempty"`
 }
 
 // TSDBConfig configures runtime reloadable configuration options.

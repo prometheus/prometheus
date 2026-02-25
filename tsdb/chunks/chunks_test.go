@@ -24,6 +24,7 @@ import (
 )
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
+	t.Parallel()
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 	r := &Reader{bs: []ByteSlice{b}}
 
@@ -32,6 +33,7 @@ func TestReaderWithInvalidBuffer(t *testing.T) {
 }
 
 func TestWriterWithDefaultSegmentSize(t *testing.T) {
+	t.Parallel()
 	chk1, err := ChunkFromSamples([]Sample{
 		sample{t: 10, f: 11},
 		sample{t: 20, f: 12},
