@@ -490,6 +490,10 @@ nomad_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of Outscale service discovery configurations.
+outscale_sd_configs:
+  [ - <outscale_sd_config> ... ]
+
 # List of OVHcloud service discovery configurations.
 ovhcloud_sd_configs:
   [ - <ovhcloud_sd_config> ... ]
@@ -3106,6 +3110,46 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ <http_config> ]
 ```
 
+### `<outscale_sd_config>`
+
+Outscale SD configurations allow retrieving scrape targets from [Outscale Cloud](https://outscale.com/) VMs via the Outscale API (OAPI).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_outscale_vm_instance_id`: the ID of the VM
+* `__meta_outscale_vm_region`: the region of the VM
+* `__meta_outscale_vm_subregion`: the subregion of the VM
+* `__meta_outscale_vm_state`: the state of the VM
+* `__meta_outscale_vm_private_ip`: the private IP address of the VM
+* `__meta_outscale_vm_public_ip`: the public IP address of the VM
+* `__meta_outscale_vm_tag_<key>`: each tag value; the tag key is sanitized and appended (e.g. tag key `Name` → `__meta_outscale_vm_tag_Name`)
+
+Targets use the first address found: private IP, then public IP. This can be changed with relabeling, as demonstrated in [the Prometheus outscale-sd configuration file](/documentation/examples/prometheus-outscale.yml).
+
+See below for the configuration options for Outscale discovery:
+
+```yaml
+# Region to use (e.g. eu-west-2).
+region: <string>
+
+# Access key (20 alphanumeric characters). See https://docs.outscale.com/en/userguide/Creating-an-Access-Key.html
+access_key: <string>
+
+# Secret key (40 characters). Required.
+secret_key: <secret>
+
+# API endpoint URL. Defaults to https://api.<region>.outscale.com/api/v1 if empty.
+[ endpoint: <string> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# Refresh interval to re-read the targets list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# HTTP client settings.
+[ <http_config> ]
+```
 
 ### `<static_config>`
 
@@ -3381,6 +3425,10 @@ nomad_sd_configs:
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
+
+# List of Outscale service discovery configurations.
+outscale_sd_configs:
+  [ - <outscale_sd_config> ... ]
 
 # List of OVHcloud service discovery configurations.
 ovhcloud_sd_configs:

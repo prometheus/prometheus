@@ -441,6 +441,12 @@ scrape_configs:
       - authorization:
           credentials: abcdef
 
+  - job_name: outscale
+    outscale_sd_configs:
+      - region: eu-west-2
+        access_key: A1B2C3D4E5F6G7H8I9J0
+        secret_key: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
 alerting:
   alertmanagers:
     - scheme: https
