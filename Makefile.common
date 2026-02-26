@@ -109,6 +109,24 @@ endif
 # Build variant:dockerfile pairs for shell iteration.
 DOCKERFILE_VARIANTS_WITH_NAMES := $(foreach df,$(DOCKERFILE_VARIANTS),$(call dockerfile_variant,$(df)):$(df))
 
+# Shell helper to check whether a dockerfile/arch pair is excluded.
+define dockerfile_arch_is_excluded
+case " $(DOCKERFILE_ARCH_EXCLUSIONS) " in \
+	*" $$dockerfile:$(1) "*) true ;; \
+	*) false ;; \
+esac
+endef
+
+# Shell helper to check whether a registry/arch pair is excluded.
+# Extracts registry from DOCKER_REPO (e.g., quay.io/prometheus -> quay.io)
+define registry_arch_is_excluded
+registry=$$(echo "$(DOCKER_REPO)" | cut -d'/' -f1); \
+case " $(DOCKER_REGISTRY_ARCH_EXCLUSIONS) " in \
+	*" $$registry:$(1) "*) true ;; \
+	*) false ;; \
+esac
+endef
+
 BUILD_DOCKER_ARCHS = $(addprefix common-docker-,$(DOCKER_ARCHS))
 PUBLISH_DOCKER_ARCHS = $(addprefix common-docker-publish-,$(DOCKER_ARCHS))
 TAG_DOCKER_ARCHS = $(addprefix common-docker-tag-latest-,$(DOCKER_ARCHS))
@@ -250,6 +268,10 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
+		if $(call dockerfile_arch_is_excluded,$*); then \
+			echo "Skipping $$variant_name variant for linux-$* (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+			continue; \
+		fi; \
 		distroless_arch="$*"; \
 		if [ "$*" = "armv7" ]; then \
 			distroless_arch="arm"; \
@@ -284,6 +306,14 @@ $(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
 	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
+		if $(call dockerfile_arch_is_excluded,$*); then \
+			echo "Skipping push for $$variant_name variant on linux-$* (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+			continue; \
+		fi; \
+		if $(call registry_arch_is_excluded,$*); then \
+			echo "Skipping push for $$variant_name variant on linux-$* to $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
+			continue; \
+		fi; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 			echo "Pushing $$variant_name variant for linux-$*"; \
 			docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name"; \
@@ -311,6 +341,14 @@ $(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
 	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
+		if $(call dockerfile_arch_is_excluded,$*); then \
+			echo "Skipping tag for $$variant_name variant on linux-$* (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+			continue; \
+		fi; \
+		if $(call registry_arch_is_excluded,$*); then \
+			echo "Skipping tag for $$variant_name variant on linux-$* for $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
+			continue; \
+		fi; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 			echo "Tagging $$variant_name variant for linux-$* as latest"; \
 			docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest-$$variant_name"; \
@@ -330,23 +368,87 @@ common-docker-manifest:
 		variant_name=$${variant%%:*}; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 			echo "Creating manifest for $$variant_name variant"; \
-			DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" $(foreach ARCH,$(DOCKER_ARCHS),$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$(ARCH):$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name); \
+			refs=""; \
+			for arch in $(DOCKER_ARCHS); do \
+				if $(call dockerfile_arch_is_excluded,$$arch); then \
+					echo "  Skipping $$arch for $$variant_name (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+					continue; \
+				fi; \
+				if $(call registry_arch_is_excluded,$$arch); then \
+					echo "  Skipping $$arch for $$variant_name on $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
+					continue; \
+				fi; \
+				refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name"; \
+			done; \
+			if [ -z "$$refs" ]; then \
+				echo "Skipping manifest for $$variant_name variant (no supported architectures)"; \
+				continue; \
+			fi; \
+			DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" $$refs; \
 			DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name"; \
 		fi; \
 		if [ "$$dockerfile" = "Dockerfile" ]; then \
 			echo "Creating default variant ($$variant_name) manifest"; \
-			DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)" $(foreach ARCH,$(DOCKER_ARCHS),$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$(ARCH):$(SANITIZED_DOCKER_IMAGE_TAG)); \
+			refs=""; \
+			for arch in $(DOCKER_ARCHS); do \
+				if $(call dockerfile_arch_is_excluded,$$arch); then \
+					echo "  Skipping $$arch for default variant (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+					continue; \
+				fi; \
+				if $(call registry_arch_is_excluded,$$arch); then \
+					echo "  Skipping $$arch for default variant on $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
+					continue; \
+				fi; \
+				refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:$(SANITIZED_DOCKER_IMAGE_TAG)"; \
+			done; \
+			if [ -z "$$refs" ]; then \
+				echo "Skipping default variant manifest (no supported architectures)"; \
+				continue; \
+			fi; \
+			DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)" $$refs; \
 			DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):$(SANITIZED_DOCKER_IMAGE_TAG)"; \
 		fi; \
 		if [ "$(DOCKER_IMAGE_TAG)" = "latest" ]; then \
 			if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 				echo "Creating manifest for $$variant_name variant version tag"; \
-				DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name" $(foreach ARCH,$(DOCKER_ARCHS),$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$(ARCH):v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name); \
+				refs=""; \
+				for arch in $(DOCKER_ARCHS); do \
+					if $(call dockerfile_arch_is_excluded,$$arch); then \
+						echo "  Skipping $$arch for $$variant_name version tag (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+						continue; \
+					fi; \
+					if $(call registry_arch_is_excluded,$$arch); then \
+						echo "  Skipping $$arch for $$variant_name version tag on $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
+						continue; \
+					fi; \
+					refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name"; \
+				done; \
+				if [ -z "$$refs" ]; then \
+					echo "Skipping version-tag manifest for $$variant_name variant (no supported architectures)"; \
+					continue; \
+				fi; \
+				DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name" $$refs; \
 				DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name"; \
 			fi; \
 			if [ "$$dockerfile" = "Dockerfile" ]; then \
 				echo "Creating default variant version tag manifest"; \
-				DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):v$(DOCKER_MAJOR_VERSION_TAG)" $(foreach ARCH,$(DOCKER_ARCHS),$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$(ARCH):v$(DOCKER_MAJOR_VERSION_TAG)); \
+				refs=""; \
+				for arch in $(DOCKER_ARCHS); do \
+					if $(call dockerfile_arch_is_excluded,$$arch); then \
+						echo "  Skipping $$arch for default variant version tag (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
+						continue; \
+					fi; \
+					if $(call registry_arch_is_excluded,$$arch); then \
+						echo "  Skipping $$arch for default variant version tag on $(DOCKER_REPO) (excluded by DOCKER_REGISTRY_ARCH_EXCLUSIONS)"; \
+						continue; \
+					fi; \
+					refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:v$(DOCKER_MAJOR_VERSION_TAG)"; \
+				done; \
+				if [ -z "$$refs" ]; then \
+					echo "Skipping default variant version-tag manifest (no supported architectures)"; \
+					continue; \
+				fi; \
+				DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create -a "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):v$(DOCKER_MAJOR_VERSION_TAG)" $$refs; \
 				DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME):v$(DOCKER_MAJOR_VERSION_TAG)"; \
 			fi; \
 		fi; \
