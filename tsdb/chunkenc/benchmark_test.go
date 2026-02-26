@@ -344,6 +344,8 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 		{name: "XOR2ST_OTEL", newChunkFn: func() Chunk { return NewXOR2STotelChunk() }},
 		{name: "XOR_OPT_ST", newChunkFn: func() Chunk { return NewXOROptSTChunk() }},
 		{name: "XOR_OPT_ST_OTEL", newChunkFn: func() Chunk { return NewXOROptSTotelChunk() }},
+		{name: "XOR18111", newChunkFn: func() Chunk { return NewXOR18111Chunk() }, stUnsupported: true},
+		{name: "XOR18111ST", newChunkFn: func() Chunk { return NewXOR18111STChunk() }},
 	} {
 		for _, s := range sampleCases {
 			b.Run(fmt.Sprintf("fmt=%s/%s", f.name, s.name), func(b *testing.B) {
