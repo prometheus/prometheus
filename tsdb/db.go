@@ -1277,7 +1277,7 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 		// Update retention configuration if provided.
 		if conf.StorageConfig.TSDBConfig.Retention != nil {
 			db.retentionMtx.Lock()
-			db.opts.RetentionDuration = int64(conf.StorageConfig.TSDBConfig.Retention.Time)
+			db.opts.RetentionDuration = int64(time.Duration(conf.StorageConfig.TSDBConfig.Retention.Time) / time.Millisecond)
 			db.metrics.retentionDuration.Set((time.Duration(db.opts.RetentionDuration) * time.Millisecond).Seconds())
 			db.opts.MaxBytes = int64(conf.StorageConfig.TSDBConfig.Retention.Size)
 			db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
