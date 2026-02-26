@@ -700,7 +700,11 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 			}
 			f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
 			if span := trace.SpanFromContext(ctx); span != nil {
-				f = append(f, slog.Any("spanID", span.SpanContext().SpanID()))
+				spanCtx := span.SpanContext()
+				f = append(f,
+					slog.Any("spanID", spanCtx.SpanID()),
+					slog.Any("traceID", spanCtx.TraceID()),
+				)
 			}
 			if origin := ctx.Value(QueryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]any) {
