@@ -55,6 +55,10 @@ eval instant at 1m histogram_quantile(0.5, single_histogram)
 	expect no_info
 	{} 1.414213562373095
 
+eval instant at 1m histogram_quantiles(single_histogram, "q", 0.5)
+	expect no_info
+	{q="0.5"} 1.414213562373095
+
 clear
 
 # Repeat the same histogram 10 times.
@@ -1545,6 +1549,21 @@ eval instant at 3m avg_over_time(histogram_sum_over_time_incremental_6[4m:1m])
 
 clear
 
+# Test avg_over_time with a single histogram sample (regression test for division by zero bug).
+load 1m
+    single_histogram_sample {{schema:3 sum:5 count:4 buckets:[1 2 1]}}
+    single_nhcb_sample {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}}
+
+# avg_over_time should return the histogram unchanged when there's only one sample, not Inf/NaN.
+eval instant at 0m avg_over_time(single_histogram_sample[1m])
+    {} {{schema:3 sum:5 count:4 buckets:[1 2 1]}}
+
+# Test with native histogram with custom buckets (NHCB).
+eval instant at 0m avg_over_time(single_nhcb_sample[1m])
+    {} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}}
+
+clear
+
 # Test native histograms with sub operator.
 load 10m
     histogram_sub_1{idx="0"} {{schema:0 count:41 sum:2345.6 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
@@ -1589,6 +1608,11 @@ eval instant at 1m histogram_quantile(0.81, histogram_nan)
     expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan"
     {case="100% NaNs"} NaN
     {case="20% NaNs"} NaN
+
+eval instant at 1m histogram_quantiles(histogram_nan, "q", 0.81)
+    expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan"
+    {case="100% NaNs", q="0.81"} NaN
+    {case="20% NaNs", q="0.81"} NaN
 
 eval instant at 1m histogram_quantile(0.8, histogram_nan{case="100% NaNs"})
     expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN for metric name "histogram_nan"
@@ -1876,6 +1900,9 @@ eval instant at 1m histogram_quantile(0.5, myHistogram2)
 eval instant at 1m histogram_quantile(0.5, mixedHistogram)
 	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram"
 
+eval instant at 1m histogram_quantiles(mixedHistogram, "q", 0.5)
+	expect warn msg: PromQL warning: vector contains a mix of classic and native histograms for metric name "mixedHistogram"
+
 clear
 
 # A counter reset only in a bucket. Sub-queries still need to detect
@@ -1945,6 +1972,9 @@ eval instant at 1m histogram_count(histogram unless histogram_quantile(0.5, hist
 eval instant at 1m histogram_quantile(0.5, histogram unless histogram_count(histogram) == 0)
      {} 3.1748021039363987
 
+eval instant at 1m histogram_quantiles(histogram unless histogram_count(histogram) == 0, "q", 0.5)
+     {q="0.5"} 3.1748021039363987
+
 clear
 
 # Regression test for:
@@ -1990,3 +2020,356 @@ eval instant at 1m irate(nhcb_add_bucket[2m]) * 60
     expect no_warn
     expect no_info
     {} {{schema:-53 sum:56 count:15 custom_values:[2 3 4 6] buckets:[1 0 1 5 8] counter_reset_hint:gauge}}
+
+
+# Test native histogram with trim operators ("</": TRIM_UPPER, ">/": TRIM_LOWER)
+load 1m
+  h_test {{schema:0 sum:123.75 count:34 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1 2]}}
+
+eval instant at 1m h_test >/ -Inf
+  h_test {{schema:0 sum:123.75 count:34 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1 2]}}
+
+eval instant at 1m h_test </ +Inf
+  h_test {{schema:0 sum:123.75 count:34 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1 2]}}
+
+eval instant at 1m h_test >/ +Inf
+  h_test {{schema:0 z_bucket_w:0.001}}
+
+eval instant at 1m h_test </ -Inf
+  h_test {{schema:0 z_bucket_w:0.001}}
+
+eval instant at 1m h_test >/ 0
+  h_test {{schema:0 sum:120.20840280171308 count:30.5 z_bucket:0.5 z_bucket_w:0.001 buckets:[2 4 8 16]}}
+
+eval instant at 1m h_test </ 0
+  h_test {{schema:0 sum:-3.53578390593273768 count:3.5 z_bucket:0.5 z_bucket_w:0.001 n_buckets:[1 2]}}
+
+# Exponential buckets: trim uses exponential interpolation if cutoff is inside a bucket
+# Trim at sqrt(2) yields half the area between 1 and 2 boundaries.
+eval instant at 1m h_test </ 1.4142135624
+  h_test {{count:8 sum:0.2570938865989847 z_bucket:1 z_bucket_w:0.001 buckets:[2 2] n_buckets:[1 2]}}
+
+eval instant at 1m h_test >/ 1.4142135624
+  h_test {{count:26 sum:116.50067065070982 z_bucket_w:0.001 buckets:[0 2 8 16]}}
+
+
+load 1m
+  h_test_2 {{schema:2 sum:12.8286080906 count:28 z_bucket:1 z_bucket_w:0.001 buckets:[1 2 4 7 3] n_buckets:[1 5 3 1]}}
+
+eval instant at 1m h_test_2 </ 1.13
+  h_test_2  {{schema:2 count:13.410582181123704 sum:-9.385798726068233 z_bucket:1 z_bucket_w:0.001 buckets:[1 1.410582181123704] n_buckets:[1 5 3 1]}}
+
+eval instant at 1m h_test_2 >/ 1.13
+  h_test_2  {{schema:2 count:14.589417818876296 sum:22.168126492693734 z_bucket_w:0.001 offset:1 buckets:[0.589417818876296 4 7 3]}}
+
+eval instant at 1m h_test_2 >/ -1.3
+  h_test_2  {{schema:2 count:25.54213947904476 sum:16.29588491217537 z_bucket:1 z_bucket_w:0.001 buckets:[1 2 4 7 3] n_buckets:[1 5 1.54213947904476]}}
+
+eval instant at 1m h_test_2 </ -1.3
+  h_test_2  {{schema:2 count:2.45786052095524 sum:-3.5189307983595066 z_bucket_w:0.001 n_offset:2 n_buckets:[1.45786052095524 1]}}
+
+# Exponential buckets: trim on bucket boundary uses no interpolation.
+eval instant at 1m h_test </ 2
+  h_test{}  {{count:10 sum:3.5355339059327373 z_bucket:1 z_bucket_w:0.001 buckets:[2 4] n_buckets:[1 2]}}
+
+eval instant at 1m h_test >/ 2
+  h_test{}  {{count:24 sum:113.13708498984761 z_bucket_w:0.001 offset:2 buckets:[8 16]}}
+
+eval instant at 1m h_test >/ -1
+  h_test{} {{count:32 sum:119.50104602052653 z_bucket:1 z_bucket_w:0.001 buckets:[2 4 8 16] n_buckets:[1]}}
+
+eval instant at 1m h_test </ -1
+  h_test{} {{count:2 sum:-2.8284271247461903 z_bucket_w:0.001 n_offset:1 n_buckets:[2]}}
+
+
+# Exponential buckets: trim zero bucket that is positive-biased (because of the presence of positive buckets).
+load 1m
+  h_positive_buckets {{schema:0 sum:8.0210678118654755 count:12 z_bucket:2 z_bucket_w:0.5 buckets:[10]}}
+
+eval instant at 1m h_positive_buckets >/ 0.5
+  h_positive_buckets {{schema:0 count:10 sum:7.0710678118654755 z_bucket:0 z_bucket_w:0.5 buckets:[10]}}
+
+eval instant at 1m h_positive_buckets >/ 0.1
+  h_positive_buckets {{schema:0 count:11.6 sum:7.551067811865476 z_bucket:1.6 z_bucket_w:0.5 buckets:[10]}}
+
+eval instant at 1m h_positive_buckets >/ 0
+  h_positive_buckets {{schema:0 sum:8.0210678118654755 count:12 z_bucket:2 z_bucket_w:0.5 buckets:[10]}}
+
+eval instant at 1m h_positive_buckets </ 0.5
+  h_positive_buckets {{schema:0 count:2 sum:0.5 z_bucket:2 z_bucket_w:0.5}}
+
+eval instant at 1m h_positive_buckets </ 0.1
+  h_positive_buckets {{schema:0 count:0.4 sum:0.02 z_bucket:0.4 z_bucket_w:0.5}}
+
+eval instant at 1m h_positive_buckets </ 0
+  h_positive_buckets {{schema:0 z_bucket_w:0.5}}
+
+
+# Exponential buckets: trim zero bucket that is negative-biased (because of the presence of negative buckets).
+load 1m
+  h_negative_buckets {{schema:0 sum:-8.0210678118654755 count:12 z_bucket:2 z_bucket_w:0.5 n_buckets:[10]}}
+
+eval instant at 1m h_negative_buckets </ -0.5
+  h_negative_buckets {{schema:0 count:10 sum:-7.0710678118654755 z_bucket:0 z_bucket_w:0.5 n_buckets:[10]}}
+
+eval instant at 1m h_negative_buckets </ -0.1
+  h_negative_buckets {{schema:0 count:11.6 sum:-7.551067811865476 z_bucket:1.6 z_bucket_w:0.5 n_buckets:[10]}}
+
+eval instant at 1m h_negative_buckets </ 0
+  h_negative_buckets {{schema:0 sum:-8.0210678118654755 count:12 z_bucket:2 z_bucket_w:0.5 n_buckets:[10]}}
+
+eval instant at 1m h_negative_buckets >/ -0.5
+  h_negative_buckets {{schema:0 count:2 sum:-0.5 z_bucket:2 z_bucket_w:0.5}}
+
+eval instant at 1m h_negative_buckets >/ -0.1
+  h_negative_buckets {{schema:0 count:0.4 sum:-0.02 z_bucket:0.4 z_bucket_w:0.5}}
+
+eval instant at 1m h_negative_buckets >/ 0
+  h_negative_buckets {{schema:0 z_bucket_w:0.5}}
+
+
+# Exponential buckets: trim zero bucket when there are no other buckets.
+load 1m
+  zero_bucket_only {{schema:0 count:5 sum:0 z_bucket:5 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only >/ 0.1
+  zero_bucket_only {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only </ 0.1
+  zero_bucket_only {{schema:0 count:5 sum:0 z_bucket:5 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only >/ 0.05
+  zero_bucket_only {{schema:0 count:1.25 sum:0.09375 z_bucket:1.25 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only </ 0.05
+  zero_bucket_only {{schema:0 count:3.75 sum:-0.09375 z_bucket:3.75 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only >/ 0
+  zero_bucket_only {{schema:0 count:2.5 sum:0.125 z_bucket:2.5 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only </ 0
+  zero_bucket_only {{schema:0 count:2.5 sum:-0.125 z_bucket:2.5 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only >/ -0.05
+  zero_bucket_only {{schema:0 count:3.75 sum:0.09375 z_bucket:3.75 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only </ -0.05
+  zero_bucket_only {{schema:0 count:1.25 sum:-0.09375 z_bucket:1.25 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only </ -0.1
+  zero_bucket_only {{schema:0 count:0 sum:0 z_bucket:0 z_bucket_w:0.1 }}
+
+eval instant at 1m zero_bucket_only >/ -0.1
+  zero_bucket_only {{schema:0 count:5 sum:0 z_bucket:5 z_bucket_w:0.1 }}
+
+
+load 1m
+  cbh {{schema:-53 sum:172.5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
+
+# Custom buckets: trim on bucket boundary without interpolation
+eval instant at 1m cbh </ 15
+  cbh{} {{schema:-53 count:11 sum:97.5 custom_values:[5 10 15 20] buckets:[1 6 4]}}
+
+eval instant at 1m cbh >/ 15
+  cbh{} {{schema:-53 count:4 sum:72.5 custom_values:[5 10 15 20] offset:3 buckets:[3 1]}}
+
+# Custom buckets: trim uses linear interpolation if cutoff is inside a bucket
+eval instant at 1m cbh </ 13
+  cbh{} {{schema:-53 count:9.4 sum:75.1 custom_values:[5 10 15 20] buckets:[1 6 2.4]}}
+
+eval instant at 1m cbh >/ 13
+  cbh{} {{schema:-53 count:5.6 sum:94.9 custom_values:[5 10 15 20] offset:2 buckets:[1.6 3 1]}}
+
+eval instant at 1m cbh </ 7.5
+  cbh{} {{schema:-53 count:4 sum:21.25 custom_values:[5 10 15 20] buckets:[1 3]}}
+
+# Custom buckets: trim drops +Inf bucket entirely even if cutoff is above its lower bound
+eval instant at 1m cbh </ 50
+  cbh{} {{schema:-53 count:14 sum:150.0 custom_values:[5 10 15 20] buckets:[1 6 4 3]}}
+
+eval instant at 1m cbh </ -Inf
+  cbh{} {{schema:-53 custom_values:[5 10 15 20]}}
+
+eval instant at 1m cbh >/ +Inf
+  cbh{} {{schema:-53 custom_values:[5 10 15 20]}}
+
+eval instant at 1m cbh </ +Inf
+  cbh {{schema:-53 sum:172.5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
+
+eval instant at 1m cbh >/ -Inf
+  cbh {{schema:-53 sum:172.5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
+
+# Noop
+eval instant at 1m cbh >/ 0
+  cbh {{schema:-53 sum:172.5 count:15 custom_values:[5 10 15 20] buckets:[1 6 4 3 1]}}
+
+eval instant at 1m cbh </ 0
+  cbh {{schema:-53 custom_values:[5 10 15 20]}}
+
+
+# Custom buckets: negative values
+load 1m
+  cbh_has_neg {{schema:-53 sum:172.5 count:15 custom_values:[-10 5 10 15 20] buckets:[2 1 6 4 3 1]}}
+
+eval instant at 1m cbh_has_neg </ 2
+  cbh_has_neg{} {{schema:-53 count:2.8 sum:-23.2 custom_values:[-10 5 10 15 20] buckets:[2 0.8]}}
+
+eval instant at 1m cbh_has_neg </ -4
+  cbh_has_neg{} {{schema:-53 count:2.4 sum:-22.8 custom_values:[-10 5 10 15 20] buckets:[2 0.4]}}
+
+eval instant at 1m cbh_has_neg </ -15
+  cbh_has_neg{} {{schema:-53 count:2 sum:-30 custom_values:[-10 5 10 15 20] buckets:[2]}}
+
+
+load 1m
+  zero_bucket {{schema:0 sum:-6.75 z_bucket:5 z_bucket_w:0.01 buckets:[2 3] n_buckets:[1 2 3]}}
+
+# Zero Bucket Edge Case: Interpolation Around Zero
+eval instant at 1m zero_bucket </ -0.005
+  zero_bucket{} {{count:7.25 sum:-12.03019028017131 z_bucket:1.25 z_bucket_w:0.01 n_buckets:[1 2 3]}}
+
+eval instant at 1m zero_bucket >/ 0
+  zero_bucket{} {{count:7.5 sum:5.669354249492381 z_bucket:2.5 z_bucket_w:0.01 buckets:[2 3]}}
+
+
+load 1m
+  cbh_one_bucket {{schema:-53 sum:100.0 count:100 buckets:[100]}}
+
+# Skip [-Inf; +Inf] bucket (100).
+eval instant at 1m cbh_one_bucket </ 10.0
+  cbh_one_bucket {{schema:-53 sum:0.0 count:0 buckets:[0]}}
+
+# Skip [-Inf; +Inf] bucket (100).
+eval instant at 1m cbh_one_bucket >/ 10.0
+  cbh_one_bucket {{schema:-53 sum:0.0 count:0 buckets:[0]}}
+
+# Keep [-Inf; +Inf] bucket (100).
+eval instant at 1m cbh_one_bucket </ +Inf
+  cbh_one_bucket {{schema:-53 sum:100 count:100 buckets:[100]}}
+
+# Skip [-Inf; +Inf] bucket (100).
+eval instant at 1m cbh_one_bucket >/ +Inf
+  cbh_one_bucket {{schema:-53 sum:0 count:0 buckets:[0]}}
+
+# Keep [-Inf; +Inf] bucket (100).
+eval instant at 1m cbh_one_bucket >/ -Inf
+  cbh_one_bucket {{schema:-53 sum:100 count:100 buckets:[100]}}
+
+# Skip [-Inf; +Inf] bucket (100).
+eval instant at 1m cbh_one_bucket </ -Inf
+  cbh_one_bucket {{schema:-53 sum:0 count:0 buckets:[0]}}
+
+
+load 1m
+  cbh_two_buckets_split_at_zero {{schema:-53 sum:33.0 count:100 custom_values:[0] buckets:[1 100]}}
+
+# Skip (0; +Inf] bucket (100).
+eval instant at 1m cbh_two_buckets_split_at_zero </ 10.0
+  cbh_two_buckets_split_at_zero {{schema:-53 sum:0.0 count:1 custom_values:[0] buckets:[1 0]}}
+
+# Skip (0; +Inf] bucket (100).
+eval instant at 1m cbh_two_buckets_split_at_zero </ 0.0
+  cbh_two_buckets_split_at_zero {{schema:-53 sum:0.0 count:1 custom_values:[0] buckets:[1 0]}}
+
+# Skip both buckets (1, 100).
+eval instant at 1m cbh_two_buckets_split_at_zero </ -10.0
+  cbh_two_buckets_split_at_zero {{schema:-53 sum:-10.0 count:1 custom_values:[0] buckets:[1 0]}}
+
+# Skip [-Inf, 0] bucket (1).
+eval instant at 1m cbh_two_buckets_split_at_zero >/ -10.0
+  cbh_two_buckets_split_at_zero {{schema:-53 sum:0.0 count:100 custom_values:[0] buckets:[0 100]}}
+
+# Skip [-Inf, 0] bucket (1).
+eval instant at 1m cbh_two_buckets_split_at_zero >/ 0.0
+  cbh_two_buckets_split_at_zero {{schema:-53 sum:0.0 count:100 custom_values:[0] buckets:[0 100]}}
+
+# Skip first bucket.
+eval instant at 1m cbh_two_buckets_split_at_zero >/ 10.0
+  cbh_two_buckets_split_at_zero {{schema:-53 sum:1000.0 count:100 custom_values:[0] buckets:[0 100]}}
+
+
+load 1m
+  cbh_two_buckets_split_at_positive {{schema:-53 sum:33 count:101 custom_values:[5] buckets:[1 100]}}
+
+# Skip (5, +Inf] bucket (100).
+eval instant at 1m cbh_two_buckets_split_at_positive </ 10.0
+  cbh_two_buckets_split_at_positive {{schema:-53 sum:2.5 count:1 custom_values:[5] buckets:[1 0]}}
+
+# Skip (5, +Inf] bucket (100) and 3/5 of [0, 5] bucket (0.6 * 3.5).
+eval instant at 1m cbh_two_buckets_split_at_positive </ 2.0
+  cbh_two_buckets_split_at_positive {{schema:-53 sum:0.4 count:0.4 custom_values:[5] buckets:[0.4 0]}}
+
+# Skip both buckets (1 and 100).
+eval instant at 1m cbh_two_buckets_split_at_positive </ 0.0
+  cbh_two_buckets_split_at_positive {{schema:-53 custom_values:[5]}}
+
+# Skip both buckets (1 and 100).
+eval instant at 1m cbh_two_buckets_split_at_positive </ -10.0
+  cbh_two_buckets_split_at_positive {{schema:-53 sum:0.0 count:0 custom_values:[5] buckets:[0 0]}}
+
+# Skip [0, 5] bucket (1).
+eval instant at 1m cbh_two_buckets_split_at_positive >/ -10.0
+  cbh_two_buckets_split_at_positive {{schema:-53 sum:500.0 count:100 custom_values:[5] buckets:[0 100]}}
+
+# Noop.
+eval instant at 1m cbh_two_buckets_split_at_positive >/ 0.0
+  cbh_two_buckets_split_at_positive {{schema:-53 sum:33.0 count:101 custom_values:[5] buckets:[1 100]}}
+
+# Keep (5, +Inf] bucket (100) and 3/5 of [0, 5] bucket (0.6 * 3.5).
+eval instant at 1m cbh_two_buckets_split_at_positive >/ 2.0
+  cbh_two_buckets_split_at_positive {{schema:-53 sum:502.1 count:100.6 custom_values:[5] buckets:[0.6 100]}}
+
+# Skip first bucket.
+eval instant at 1m cbh_two_buckets_split_at_positive >/ 10.0
+  cbh_two_buckets_split_at_positive {{schema:-53 sum:1000.0 count:100 custom_values:[5] buckets:[0 100]}}
+
+
+load 1m
+  cbh_two_buckets_split_at_negative {{schema:-53 sum:33 count:101 custom_values:[-5] buckets:[1 100]}}
+
+# Skip (-5, +Inf] bucket (100).
+eval instant at 1m cbh_two_buckets_split_at_negative </ 10.0
+  cbh_two_buckets_split_at_negative {{schema:-53 sum:-5.0 count:1 custom_values:[-5] buckets:[1 0]}}
+
+# Skip (-5, +Inf] bucket (100).
+eval instant at 1m cbh_two_buckets_split_at_negative </ 0.0
+  cbh_two_buckets_split_at_negative {{schema:-53 sum:-5 count:1 custom_values:[-5] buckets:[1 0]}}
+
+# Skip (-5; +Inf] bucket (100).
+eval instant at 1m cbh_two_buckets_split_at_negative </ -2.0
+  cbh_two_buckets_split_at_negative {{schema:-53 sum:-5.0 count:1 custom_values:[-5] buckets:[1 0]}}
+
+# Skip (-5, +Inf] bucket (100).
+eval instant at 1m cbh_two_buckets_split_at_negative </ -10.0
+  cbh_two_buckets_split_at_negative {{schema:-53 sum:-10.0 count:1 custom_values:[-5] buckets:[1 0]}}
+
+# Skip [-Inf, -5] bucket (1).
+eval instant at 1m cbh_two_buckets_split_at_negative >/ -10.0
+  cbh_two_buckets_split_at_negative {{schema:-53 sum:-500 count:100 custom_values:[-5] buckets:[0 100]}}
+
+# Skip [-Inf, -5] bucket (1).
+eval instant at 1m cbh_two_buckets_split_at_negative >/ -2.0
+  cbh_two_buckets_split_at_negative {{schema:-53 sum:-200 count:100 custom_values:[-5] buckets:[0 100]}}
+
+# Skip [-Inf, -5] bucket (1).
+eval instant at 1m cbh_two_buckets_split_at_negative >/ 0.0
+  cbh_two_buckets_split_at_negative {{schema:-53 sum:0.0 count:100 custom_values:[-5] buckets:[0 100]}}
+
+# Skip [-Inf, -5] bucket (1).
+eval instant at 1m cbh_two_buckets_split_at_negative >/ 10.0
+  cbh_two_buckets_split_at_negative {{schema:-53 sum:1000.0 count:100 custom_values:[-5] buckets:[0 100]}}
+
+
+load 1m
+  cbh_for_join{label="a"} {{schema:-53 sum:33 count:101 custom_values:[5] buckets:[1 100]}}
+  cbh_for_join{label="b"} {{schema:-53 sum:66 count:202 custom_values:[5] buckets:[2 200]}}
+  cbh_for_join{label="c"} {{schema:-53 sum:99 count:303 custom_values:[5] buckets:[3 300]}}
+  float_for_join{label="a"} 1
+  float_for_join{label="b"} 4
+
+eval instant at 1m cbh_for_join >/ on (label) float_for_join
+  {label="a"} {{schema:-53 count:100.8 sum:502.4 custom_values:[5] buckets:[0.8 100]}}
+  {label="b"} {{schema:-53 count:200.4 sum:1001.8 custom_values:[5] buckets:[0.4 200]}}
+
+
+clear

@@ -79,6 +79,22 @@ eval range from 0m to 10m step 5m info(build_info, {__name__=~".+_info"})
 
 clear
 
+load 5m
+    metric{instance="a", job="1", label="value"} 0 1 2
+    target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 1
+    build_info{instance="a", job="1", build_data="build"} 1 1 1
+    target_build{instance="a", job="1", build_data="build"} 1 1 1
+
+# Multiple positive __name__ matchers.
+eval range from 0m to 10m step 5m info(metric, {__name__=~"target_.+", __name__=~".+_info"})
+    metric{instance="a", job="1", label="value", data="info", another_data="another info"} 0 1 2
+
+# A positive and a negative __name__ matcher.
+eval range from 0m to 10m step 5m info(metric, {__name__=~".+_info", __name__!~".*build.*"})
+    metric{instance="a", job="1", label="value", data="info", another_data="another info"} 0 1 2
+
+clear
+
 # Overlapping target_info series.
 load 5m
     metric{instance="a", job="1", label="value"} 0 1 2

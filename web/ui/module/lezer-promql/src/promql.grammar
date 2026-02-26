@@ -88,6 +88,8 @@ BinaryExpr {
   expr !eql Eql    binModifiers expr |
   expr !eql Gte    binModifiers expr |
   expr !eql Gtr    binModifiers expr |
+  expr !eql TrimUpper  binModifiers expr |
+  expr !eql TrimLower  binModifiers expr |
   expr !eql Lte    binModifiers expr |
   expr !eql Lss    binModifiers expr |
   expr !eql Neq    binModifiers expr |
@@ -167,6 +169,7 @@ FunctionIdentifier {
   HistogramCount |
   HistogramFraction |
   HistogramQuantile |
+  HistogramQuantiles |
   HistogramStdDev |
   HistogramStdVar |
   HistogramSum |
@@ -337,6 +340,8 @@ NumberDurationLiteralInDurationContext {
   Lss { "<" }
   Gte { ">=" }
   Gtr { ">" }
+  TrimUpper { "</" }
+  TrimLower { ">/" }
   EqlRegex { "=~" }
   EqlSingle { "=" }
   NeqRegex { "!~" }
@@ -426,6 +431,7 @@ NumberDurationLiteralInDurationContext {
   HistogramCount { condFn<"histogram_count"> }
   HistogramFraction { condFn<"histogram_fraction"> }
   HistogramQuantile { condFn<"histogram_quantile"> }
+  HistogramQuantiles { condFn<"histogram_quantiles"> }
   HistogramStdDev { condFn<"histogram_stddev"> }
   HistogramStdVar { condFn<"histogram_stdvar"> }
   HistogramSum { condFn<"histogram_sum"> }

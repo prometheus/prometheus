@@ -39,6 +39,7 @@ linters:
     - predeclared
     - revive
     - sloglint
+    - staticcheck
     - testifylint
     - unconvert
     - unused
@@ -128,8 +129,6 @@ linters:
         # Disable this check for now since it introduces too many changes in our existing codebase.
         # See https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_omitzero for more details.
         - omitzero
-        # Disable waitgroup check until we really move to Go 1.25.
-        - waitgroup
         # Disable newexpr check for now since it introduces too many changes in our existing codebase.
         # To be re-enabled as a part of https://github.com/prometheus/prometheus/issues/18066.
         - newexpr

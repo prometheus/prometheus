@@ -25,6 +25,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+var testParser = parser.NewParser(parser.Options{})
+
 // FixtureSeries creates a simple series with the "up" metric.
 func FixtureSeries() []storage.Series {
 	// Use timestamps relative to "now" so queries work.
@@ -73,7 +75,7 @@ func FixtureMultipleSeries() []storage.Series {
 // FixtureRuleGroups creates a simple set of rule groups for testing.
 func FixtureRuleGroups() []*rules.Group {
 	// Create a simple recording rule.
-	expr, _ := parser.ParseExpr("up == 1")
+	expr, _ := testParser.ParseExpr("up == 1")
 	recordingRule := rules.NewRecordingRule(
 		"job:up:sum",
 		expr,
@@ -81,7 +83,7 @@ func FixtureRuleGroups() []*rules.Group {
 	)
 
 	// Create a simple alerting rule.
-	alertExpr, _ := parser.ParseExpr("up == 0")
+	alertExpr, _ := testParser.ParseExpr("up == 0")
 	alertingRule := rules.NewAlertingRule(
 		"InstanceDown",
 		alertExpr,

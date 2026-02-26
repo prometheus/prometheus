@@ -98,6 +98,8 @@ EQLC
 EQL_REGEX
 GTE
 GTR
+TRIM_UPPER
+TRIM_LOWER
 LAND
 LOR
 LSS
@@ -200,7 +202,7 @@ START_METRIC_SELECTOR
 // Operators are listed with increasing precedence.
 %left LOR
 %left LAND LUNLESS
-%left EQLC GTE GTR LSS LTE NEQ
+%left EQLC GTE GTR LSS LTE NEQ TRIM_UPPER TRIM_LOWER
 %left ADD SUB
 %left MUL DIV MOD ATAN2
 %right POW
@@ -291,6 +293,8 @@ binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinar
                 | expr EQLC    bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr GTE     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr GTR     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr TRIM_UPPER   bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr TRIM_LOWER   bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr LAND    bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr LOR     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr LSS     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
@@ -456,7 +460,7 @@ function_call   : IDENTIFIER function_call_body
                         if !exist{
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"unknown function with name %q", $1.Val)
                         }
-                        if fn != nil && fn.Experimental && !EnableExperimentalFunctions {
+                        if fn != nil && fn.Experimental && !yylex.(*parser).options.EnableExperimentalFunctions {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"function %q is not enabled", $1.Val)
                         }
                         $$ = &Call{

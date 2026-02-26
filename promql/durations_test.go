@@ -23,11 +23,7 @@ import (
 )
 
 func TestDurationVisitor(t *testing.T) {
-	// Enable experimental duration expression parsing.
-	parser.ExperimentalDurationExpr = true
-	t.Cleanup(func() {
-		parser.ExperimentalDurationExpr = false
-	})
+	p := parser.NewParser(parser.Options{ExperimentalDurationExpr: true})
 	complexExpr := `sum_over_time(
 		rate(metric[5m] offset 1h)[10m:30s] offset 2h
 	) + 
@@ -38,7 +34,7 @@ func TestDurationVisitor(t *testing.T) {
 		metric[2h * 0.5]
 	)`
 
-	expr, err := parser.ParseExpr(complexExpr)
+	expr, err := p.ParseExpr(complexExpr)
 	require.NoError(t, err)
 
 	err = parser.Walk(&durationVisitor{}, expr, nil)

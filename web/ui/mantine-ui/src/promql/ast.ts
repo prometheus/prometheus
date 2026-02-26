@@ -40,6 +40,8 @@ export enum binaryOperatorType {
   neq = "!=",
   gtr = ">",
   lss = "<",
+  trimUpper = "</",
+  trimLower = ">/",
   gte = ">=",
   lte = "<=",
   and = "and",
