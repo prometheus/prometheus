@@ -35,6 +35,7 @@ func TestChunk(t *testing.T) {
 		{encoding: EncXOR, supportsST: false},
 		{encoding: EncXOR2, supportsST: false},
 		{encoding: EncXOR18111, supportsST: false},
+		{encoding: EncXOR18111ST, supportsST: true},
 		{encoding: EncXOR2ST, supportsST: true},
 		{encoding: EncXOR2STotel, supportsST: true},
 		{encoding: EncXOROptST, supportsST: true},
