@@ -213,6 +213,7 @@ eval instant at 0s sum_over_time(timestamp(metric{job="1"} @ 10)[100s:10s] @ 300
 eval instant at 0s sum_over_time(timestamp(timestamp(metric{job="1"} @ 999))[10s:1s] @ 10)
   {job="1"} 55
 
+
 clear
 
 # Tests for @ modifier with empty data.
