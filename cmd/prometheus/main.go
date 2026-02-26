@@ -666,6 +666,18 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Set TSDB retention defaults from CLI flags before any config file is loaded.
+	// This makes CLI flags act as the default when no retention section is present.
+	cliRetentionDuration := cfg.tsdb.RetentionDuration
+	cliMaxBytes := cfg.tsdb.MaxBytes
+	if cliRetentionDuration == 0 && cliMaxBytes == 0 {
+		cliRetentionDuration = defaultRetentionDuration
+	}
+	config.DefaultTSDBRetentionConfig = config.TSDBRetentionConfig{
+		Time: cliRetentionDuration,
+		Size: cliMaxBytes,
+	}
+
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
 	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, promslog.NewNopLogger()); err != nil {
@@ -707,21 +719,11 @@ func main() {
 		logger.Warn("The option --storage.tsdb.block-reload-interval is set to a value less than 1s. Setting it to 1s to avoid overload.")
 		cfg.tsdb.BlockReloadInterval = model.Duration(1 * time.Second)
 	}
-	if cfgFile.StorageConfig.TSDBConfig != nil {
-		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
-		cfg.tsdb.StaleSeriesCompactionThreshold = cfgFile.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold
-		if cfgFile.StorageConfig.TSDBConfig.Retention != nil {
-			if cfgFile.StorageConfig.TSDBConfig.Retention.Time > 0 {
-				cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
-			}
-			if cfgFile.StorageConfig.TSDBConfig.Retention.Size > 0 {
-				cfg.tsdb.MaxBytes = cfgFile.StorageConfig.TSDBConfig.Retention.Size
-			}
-			if cfgFile.StorageConfig.TSDBConfig.Retention.Percentage > 0 {
-				cfg.tsdb.MaxPercentage = cfgFile.StorageConfig.TSDBConfig.Retention.Percentage
-			}
-		}
-	}
+	cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+	cfg.tsdb.StaleSeriesCompactionThreshold = cfgFile.StorageConfig.TSDBConfig.StaleSeriesCompactionThreshold
+	cfg.tsdb.RetentionDuration = cfgFile.StorageConfig.TSDBConfig.Retention.Time
+	cfg.tsdb.MaxBytes = cfgFile.StorageConfig.TSDBConfig.Retention.Size
+	cfg.tsdb.MaxPercentage = cfgFile.StorageConfig.TSDBConfig.Retention.Percentage
 
 	// Set Go runtime parameters before we get too far into initialization.
 	updateGoGC(cfgFile, logger)
@@ -773,11 +775,6 @@ func main() {
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
 	if !agentMode {
-		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 && cfg.tsdb.MaxPercentage == 0 {
-			cfg.tsdb.RetentionDuration = defaultRetentionDuration
-			logger.Info("No time, size or percentage retention was set so using the default time retention", "duration", defaultRetentionDuration)
-		}
-
 		// Check for overflows. This limits our max retention to 100y.
 		if cfg.tsdb.RetentionDuration < 0 {
 			y, err := model.ParseDuration("100y")

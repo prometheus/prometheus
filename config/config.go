@@ -278,6 +278,9 @@ var (
 	}
 )
 
+// DefaultTSDBRetentionConfig is the default TSDB retention configuration.
+var DefaultTSDBRetentionConfig TSDBRetentionConfig
+
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
 	GlobalConfig      GlobalConfig    `yaml:"global"`
@@ -403,6 +406,13 @@ func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 	// We have to restore it here.
 	if c.Runtime.isZero() {
 		c.Runtime = DefaultRuntimeConfig
+	}
+
+	// If no storage.tsdb section is present, TSDBConfig is nil and its
+	// UnmarshalYAML never runs. Inject the default retention here.
+	if c.StorageConfig.TSDBConfig == nil {
+		retention := DefaultTSDBRetentionConfig
+		c.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -1142,6 +1152,11 @@ func (t *TSDBConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 
 	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
+
+	if t.Retention == nil {
+		retention := DefaultTSDBRetentionConfig
+		t.Retention = &retention
+	}
 
 	return nil
 }

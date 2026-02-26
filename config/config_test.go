@@ -2716,6 +2716,10 @@ func TestGlobalConfig(t *testing.T) {
 		require.NoError(t, err)
 		exp := DefaultConfig
 		exp.loaded = true
+		// TSDBConfig is always injected by Config.UnmarshalYAML even when no
+		// storage.tsdb section is present, so the expected config must include it.
+		retention := DefaultTSDBRetentionConfig
+		exp.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 		require.Equal(t, exp, *c)
 	})
 
