@@ -27,6 +27,7 @@ jobs:
           enable_npm: true
       - run: make GO_ONLY=1 SKIP_GOLANGCI_LINT=1
       - run: go test ./tsdb/ -test.tsdb-isolation=false
+      - run: go test ./tsdb/ -test.chunks-encoding=xor2
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
 

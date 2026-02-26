@@ -71,9 +71,15 @@ import (
 
 func TestMain(m *testing.M) {
 	var isolationEnabled bool
+	var chunksEncoding string
 	flag.BoolVar(&isolationEnabled, "test.tsdb-isolation", true, "enable isolation")
+	flag.StringVar(&chunksEncoding, "test.chunks-encoding", "xor", "chunks encoding to use (xor or xor2)")
 	flag.Parse()
 	defaultIsolationDisabled = !isolationEnabled
+
+	if chunksEncoding == "xor2" {
+		chunkenc.EnableXOR2()
+	}
 
 	goleak.VerifyTestMain(m,
 		goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func1"),

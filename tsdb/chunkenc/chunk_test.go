@@ -254,8 +254,95 @@ func newXORChunk() Chunk {
 	return NewXORChunk()
 }
 
+func newXOR2Chunk() Chunk {
+	return NewXOR2Chunk()
+}
+
+func TestEncodingsCompatible(t *testing.T) {
+	tests := []struct {
+		name     string
+		enc1     Encoding
+		enc2     Encoding
+		expected bool
+	}{
+		{
+			name:     "XOR and XOR2 are compatible",
+			enc1:     EncXOR,
+			enc2:     EncXOR2,
+			expected: true,
+		},
+		{
+			name:     "XOR2 and XOR are compatible (reversed)",
+			enc1:     EncXOR2,
+			enc2:     EncXOR,
+			expected: true,
+		},
+		{
+			name:     "same encoding XOR is compatible",
+			enc1:     EncXOR,
+			enc2:     EncXOR,
+			expected: true,
+		},
+		{
+			name:     "same encoding XOR2 is compatible",
+			enc1:     EncXOR2,
+			enc2:     EncXOR2,
+			expected: true,
+		},
+		{
+			name:     "XOR and Histogram are incompatible",
+			enc1:     EncXOR,
+			enc2:     EncHistogram,
+			expected: false,
+		},
+		{
+			name:     "XOR2 and Histogram are incompatible",
+			enc1:     EncXOR2,
+			enc2:     EncHistogram,
+			expected: false,
+		},
+		{
+			name:     "XOR and FloatHistogram are incompatible",
+			enc1:     EncXOR,
+			enc2:     EncFloatHistogram,
+			expected: false,
+		},
+		{
+			name:     "Histogram and FloatHistogram are incompatible",
+			enc1:     EncHistogram,
+			enc2:     EncFloatHistogram,
+			expected: false,
+		},
+		{
+			name:     "same encoding Histogram is compatible",
+			enc1:     EncHistogram,
+			enc2:     EncHistogram,
+			expected: true,
+		},
+		{
+			name:     "same encoding FloatHistogram is compatible",
+			enc1:     EncFloatHistogram,
+			enc2:     EncFloatHistogram,
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := EncodingsCompatible(tt.enc1, tt.enc2)
+			require.Equal(t, tt.expected, result,
+				"EncodingsCompatible(%v, %v) = %v, want %v",
+				tt.enc1, tt.enc2, result, tt.expected)
+		})
+	}
+}
+
 func BenchmarkXORIterator(b *testing.B) {
 	benchmarkIterator(b, newXORChunk)
+}
+
+func BenchmarkXOR2Iterator(b *testing.B) {
+	benchmarkIterator(b, newXOR2Chunk)
 }
 
 func BenchmarkXORAppender(b *testing.B) {
@@ -276,6 +363,27 @@ func BenchmarkXORAppender(b *testing.B) {
 			return int64(r.Intn(100) - 50 + 15000), // 15 seconds +- up to 100ms of jitter.
 				r.Float64() // Random between 0 and 1.0.
 		}, newXORChunk)
+	})
+}
+
+func BenchmarkXOR2Appender(b *testing.B) {
+	r := rand.New(rand.NewSource(1))
+	b.Run("constant", func(b *testing.B) {
+		benchmarkAppender(b, func() (int64, float64) {
+			return 1000, 0
+		}, newXOR2Chunk)
+	})
+	b.Run("random steps", func(b *testing.B) {
+		benchmarkAppender(b, func() (int64, float64) {
+			return int64(r.Intn(100) - 50 + 15000), // 15 seconds +- up to 100ms of jitter.
+				float64(r.Intn(100) - 50) // Varying from -50 to +50 in 100 discrete steps.
+		}, newXOR2Chunk)
+	})
+	b.Run("random 0-1", func(b *testing.B) {
+		benchmarkAppender(b, func() (int64, float64) {
+			return int64(r.Intn(100) - 50 + 15000), // 15 seconds +- up to 100ms of jitter.
+				r.Float64() // Random between 0 and 1.0.
+		}, newXOR2Chunk)
 	})
 }
 
