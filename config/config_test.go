@@ -2626,6 +2626,22 @@ var expectedErrors = []struct {
 		filename: "stackit_endpoint.bad.yml",
 		errMsg:   "invalid endpoint",
 	},
+	{
+		filename: "tsdb_retention_time.bad.yml",
+		errMsg:   `not a valid duration string: "-1h"`,
+	},
+	{
+		filename: "tsdb_retention_size.bad.yml",
+		errMsg:   `'storage.tsdb.retention.size' must be greater than or equal to 0`,
+	},
+	{
+		filename: "tsdb_retention_percentage.bad.yml",
+		errMsg:   `'storage.tsdb.retention.percentage' must be in the range [0, 100]`,
+	},
+	{
+		filename: "tsdb_retention_percentage_negative.bad.yml",
+		errMsg:   "cannot unmarshal !!int `-1` into uint",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {

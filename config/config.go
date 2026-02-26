@@ -1097,6 +1097,22 @@ type TSDBRetentionConfig struct {
 	Percentage uint `yaml:"percentage,omitempty"`
 }
 
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TSDBRetentionConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	*t = TSDBRetentionConfig{}
+	type plain TSDBRetentionConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+	if t.Size < 0 {
+		return fmt.Errorf("'storage.tsdb.retention.size' must be greater than or equal to 0, got %v", t.Size)
+	}
+	if t.Percentage > 100 {
+		return fmt.Errorf("'storage.tsdb.retention.percentage' must be in the range [0, 100], got %v", t.Percentage)
+	}
+	return nil
+}
+
 // TSDBConfig configures runtime reloadable configuration options.
 type TSDBConfig struct {
 	// OutOfOrderTimeWindow sets how long back in time an out-of-order sample can be inserted

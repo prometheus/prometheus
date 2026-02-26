@@ -1277,18 +1277,12 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 		// Update retention configuration if provided.
 		if conf.StorageConfig.TSDBConfig.Retention != nil {
 			db.retentionMtx.Lock()
-			if conf.StorageConfig.TSDBConfig.Retention.Time > 0 {
-				db.opts.RetentionDuration = int64(conf.StorageConfig.TSDBConfig.Retention.Time)
-				db.metrics.retentionDuration.Set((time.Duration(db.opts.RetentionDuration) * time.Millisecond).Seconds())
-			}
-			if conf.StorageConfig.TSDBConfig.Retention.Size > 0 {
-				db.opts.MaxBytes = int64(conf.StorageConfig.TSDBConfig.Retention.Size)
-				db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
-			}
-			if conf.StorageConfig.TSDBConfig.Retention.Percentage > 0 {
-				db.opts.MaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
-				db.metrics.maxPercentage.Set(float64(db.opts.MaxPercentage))
-			}
+			db.opts.RetentionDuration = int64(conf.StorageConfig.TSDBConfig.Retention.Time)
+			db.metrics.retentionDuration.Set((time.Duration(db.opts.RetentionDuration) * time.Millisecond).Seconds())
+			db.opts.MaxBytes = int64(conf.StorageConfig.TSDBConfig.Retention.Size)
+			db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
+			db.opts.MaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
+			db.metrics.maxPercentage.Set(float64(db.opts.MaxPercentage))
 			db.retentionMtx.Unlock()
 		}
 	} else {
