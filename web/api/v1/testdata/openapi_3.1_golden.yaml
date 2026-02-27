@@ -1182,37 +1182,6 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
-        delete:
-            tags:
-                - series
-            summary: Delete series
-            description: 'Delete series matching selectors. Note: This is deprecated, use POST /admin/tsdb/delete_series instead.'
-            operationId: delete-series
-            responses:
-                "200":
-                    description: Series marked for deletion.
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/SeriesDeleteOutputBody'
-                            examples:
-                                seriesDeleted:
-                                    summary: Series marked for deletion
-                                    value:
-                                        status: success
-                default:
-                    description: Error deleting series.
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/Error'
-                            examples:
-                                tsdbNotReady:
-                                    summary: TSDB not ready
-                                    value:
-                                        error: TSDB not ready
-                                        errorType: internal
-                                        status: error
     /metadata:
         get:
             tags:
@@ -3224,35 +3193,6 @@ components:
                 - match[]
             additionalProperties: false
             description: POST request body for series query.
-        SeriesDeleteOutputBody:
-            type: object
-            properties:
-                status:
-                    type: string
-                    enum:
-                        - success
-                        - error
-                    description: Response status.
-                    example: success
-                data:
-                    description: Response data (structure varies by endpoint).
-                    example:
-                        result: ok
-                warnings:
-                    type: array
-                    items:
-                        type: string
-                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
-                infos:
-                    type: array
-                    items:
-                        type: string
-                    description: Only set if there were info-level annotations while executing the request.
-            required:
-                - status
-                - data
-            additionalProperties: false
-            description: Generic response body.
         Metadata:
             type: object
             properties:
