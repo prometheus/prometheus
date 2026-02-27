@@ -87,7 +87,10 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 }
 
 func TestConfiguredServiceWithTags(t *testing.T) {
+	t.Parallel()
+
 	type testcase struct {
+		name string
 		// What we've configured to watch.
 		conf *SDConfig
 		// The service we're checking if we should watch or not.
@@ -98,6 +101,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 
 	cases := []testcase{
 		{
+			name: "empty tags not watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -107,6 +111,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: false,
 		},
 		{
+			name: "exact match watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -116,6 +121,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: true,
 		},
 		{
+			name: "non-configured service not watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -125,6 +131,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: false,
 		},
 		{
+			name: "non-configured service with tags not watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -134,6 +141,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: false,
 		},
 		{
+			name: "superset of tags watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -143,6 +151,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: true,
 		},
 		{
+			name: "exact match with more tags watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1", "foo"},
@@ -152,6 +161,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: true,
 		},
 		{
+			name: "duplicate tags watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -163,13 +173,18 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		metrics := NewTestMetrics(t, tc.conf, prometheus.NewRegistry())
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		consulDiscovery, err := NewDiscovery(tc.conf, nil, metrics)
-		require.NoError(t, err, "when initializing discovery")
-		ret := consulDiscovery.shouldWatch(tc.serviceName, tc.serviceTags)
-		require.Equal(t, tc.shouldWatch, ret, "Watched service and tags: %s %+v, input was %s %+v",
-			tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
+			metrics := NewTestMetrics(t, tc.conf, prometheus.NewRegistry())
+
+			consulDiscovery, err := NewDiscovery(tc.conf, nil, metrics)
+			require.NoError(t, err, "when initializing discovery")
+			ret := consulDiscovery.shouldWatch(tc.serviceName, tc.serviceTags)
+			require.Equal(t, tc.shouldWatch, ret, "Watched service and tags: %s %+v, input was %s %+v",
+				tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
+		})
 	}
 }
 
