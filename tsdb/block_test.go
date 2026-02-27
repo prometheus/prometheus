@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
@@ -888,4 +889,104 @@ func populateSeries(lbls []map[string]string, mint, maxt int64) []storage.Series
 		series = append(series, storage.NewListSeries(labels.FromMap(lbl), samples))
 	}
 	return series
+}
+
+func TestBlockSeriesMetadataConcurrentReaders(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a block with some series.
+	blockDir := createBlock(t, dir, genSeries(2, 1, 0, 10))
+
+	// Open the block's index to discover actual series refs and labelsHashes.
+	ir, err := index.NewFileReader(filepath.Join(blockDir, indexFilename), index.DecodePostingsRaw)
+	require.NoError(t, err)
+
+	type seriesInfo struct {
+		ref        storage.SeriesRef
+		labelsHash uint64
+	}
+	var series []seriesInfo
+	var builder labels.ScratchBuilder
+	k, v := index.AllPostingsKey()
+	p, err := ir.Postings(context.Background(), k, v)
+	require.NoError(t, err)
+	for p.Next() {
+		ref := p.At()
+		require.NoError(t, ir.Series(ref, &builder, nil))
+		series = append(series, seriesInfo{
+			ref:        ref,
+			labelsHash: labels.StableHash(builder.Labels()),
+		})
+	}
+	require.NoError(t, p.Err())
+	require.Len(t, series, 2)
+	ir.Close()
+
+	// Build labelsHash→seriesRef map for write-side resolver.
+	labelsHashToRef := map[uint64]uint64{
+		series[0].labelsHash: uint64(series[0].ref),
+		series[1].labelsHash: uint64(series[1].ref),
+	}
+
+	// Write a metadata file with resource data keyed by actual labelsHashes,
+	// using a RefResolver to store seriesRefs in the Parquet file.
+	mem := seriesmetadata.NewMemSeriesMetadata()
+	mem.SetVersionedResource(series[0].labelsHash, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			{
+				MinTime: 0, MaxTime: 10,
+				Identifying: map[string]string{"service.name": "api"},
+				Descriptive: map[string]string{"host.name": "host1"},
+			},
+		},
+	})
+	mem.SetVersionedResource(series[1].labelsHash, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			{
+				MinTime: 0, MaxTime: 10,
+				Identifying: map[string]string{"service.name": "web"},
+				Descriptive: map[string]string{"host.name": "host2"},
+			},
+		},
+	})
+	_, err = seriesmetadata.WriteFileWithOptions(promslog.NewNopLogger(), blockDir, mem, seriesmetadata.WriterOptions{
+		RefResolver: func(labelsHash uint64) (uint64, bool) {
+			ref, ok := labelsHashToRef[labelsHash]
+			return ref, ok
+		},
+	})
+	require.NoError(t, err)
+
+	// Open the block — its ReadSeriesMetadata uses a resolver to convert
+	// seriesRef back to labelsHash.
+	block, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
+	require.NoError(t, err)
+
+	// Get two concurrent readers.
+	reader1, err := block.SeriesMetadata()
+	require.NoError(t, err)
+
+	reader2, err := block.SeriesMetadata()
+	require.NoError(t, err)
+
+	// Close the first reader.
+	require.NoError(t, reader1.Close())
+
+	// The second reader must still work after the first is closed.
+	require.Equal(t, uint64(2), reader2.TotalResources())
+
+	// Verify actual key-based lookups work (not just counts).
+	r1, found := reader2.GetResource(series[0].labelsHash)
+	require.True(t, found)
+	require.Equal(t, "api", r1.Identifying["service.name"])
+
+	r2, found := reader2.GetResource(series[1].labelsHash)
+	require.True(t, found)
+	require.Equal(t, "web", r2.Identifying["service.name"])
+
+	// Close the second reader.
+	require.NoError(t, reader2.Close())
+
+	// Close the block — should not panic or error.
+	require.NoError(t, block.Close())
 }

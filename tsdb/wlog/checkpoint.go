@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cespare/xxhash/v2"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -35,6 +37,67 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
+// contentMapping maps a series ref to a content hash with a time range.
+// Used during checkpoint to dedup resource and scope content across series.
+type contentMapping struct {
+	contentHash uint64
+	minTime     int64
+	maxTime     int64
+}
+
+// hashResourceWALContent computes a deterministic xxhash for a RefResource's
+// content (identifying + descriptive attrs + entities). It does NOT include
+// Ref, MinTime, or MaxTime since those are per-mapping, not per-content.
+func hashResourceWALContent(r *record.RefResource) uint64 {
+	h := xxhash.New()
+
+	hashMapInto(h, r.Identifying)
+	_, _ = h.Write([]byte{1})
+	hashMapInto(h, r.Descriptive)
+	_, _ = h.Write([]byte{1})
+
+	for _, e := range r.Entities {
+		_, _ = h.WriteString(e.Type)
+		_, _ = h.Write([]byte{0})
+		hashMapInto(h, e.ID)
+		_, _ = h.Write([]byte{1})
+		hashMapInto(h, e.Description)
+		_, _ = h.Write([]byte{1})
+	}
+
+	return h.Sum64()
+}
+
+// hashScopeWALContent computes a deterministic xxhash for a RefScope's
+// content (name, version, schema URL, attrs). It does NOT include Ref,
+// MinTime, or MaxTime since those are per-mapping, not per-content.
+func hashScopeWALContent(s *record.RefScope) uint64 {
+	h := xxhash.New()
+	_, _ = h.WriteString(s.Name)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(s.Version)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(s.SchemaURL)
+	_, _ = h.Write([]byte{0})
+	hashMapInto(h, s.Attrs)
+	return h.Sum64()
+}
+
+// hashMapInto writes a deterministic representation of a string map into a hash digest.
+func hashMapInto(h *xxhash.Digest, m map[string]string) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		_, _ = h.WriteString(k)
+		_, _ = h.Write([]byte{0})
+		_, _ = h.WriteString(m[k])
+		_, _ = h.Write([]byte{0})
+	}
+}
+
 // CheckpointStats returns stats about a created checkpoint.
 type CheckpointStats struct {
 	DroppedSeries     int
@@ -42,11 +105,15 @@ type CheckpointStats struct {
 	DroppedTombstones int
 	DroppedExemplars  int
 	DroppedMetadata   int
+	DroppedResources  int
+	DroppedScopes     int
 	TotalSeries       int // Processed series including dropped ones.
 	TotalSamples      int // Processed float and histogram samples including dropped ones.
 	TotalTombstones   int // Processed tombstones including dropped ones.
 	TotalExemplars    int // Processed exemplars including dropped ones.
 	TotalMetadata     int // Processed metadata including dropped ones.
+	TotalResources    int // Processed resource updates including dropped ones.
+	TotalScopes       int // Processed scope updates including dropped ones.
 }
 
 // LastCheckpoint returns the directory name and index of the most recent checkpoint.
@@ -84,6 +151,11 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 
 // checkpointTempFileSuffix is the suffix used when creating temporary checkpoint files.
 const checkpointTempFileSuffix = ".tmp"
+
+// checkpointFlushChunkSize is the number of resource/scope records to buffer
+// before flushing to the checkpoint WAL. Bounds peak memory to ~2 MB per chunk
+// instead of potentially gigabytes for the full monolithic slice.
+const checkpointFlushChunkSize = 10000
 
 // DeleteTempCheckpoints deletes all temporary checkpoint directories in the given directory.
 func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
@@ -164,6 +236,8 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		tstones               []tombstones.Stone
 		exemplars             []record.RefExemplar
 		metadata              []record.RefMetadata
+		resources             []record.RefResource
+		scopes                []record.RefScope
 		st                    = labels.NewSymbolTable() // Needed for decoding; labels do not outlive this function.
 		dec                   = record.NewDecoder(st, logger)
 		enc                   record.Encoder
@@ -171,9 +245,20 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		recs                  [][]byte
 
 		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
+		// Resources and scopes are versioned (descriptive attributes can change over time),
+		// so we keep ALL records per ref, not just the latest. This preserves version history
+		// so that VersionAt() returns correct attributes for historical timestamps after replay.
+		//
+		// Content-addressed dedup: many series share the same resource/scope content.
+		// Store unique content once in a table, and map refs to content hashes.
+		// This dramatically reduces memory when N series share K unique resources (K << N).
+		resourceContentTable = make(map[uint64]record.RefResource)             // contentHash → canonical record
+		resourceRefToContent = make(map[chunks.HeadSeriesRef][]contentMapping) // ref → content hashes with time ranges
+		scopeContentTable    = make(map[uint64]record.RefScope)                // contentHash → canonical scope record
+		scopeRefToContent    = make(map[chunks.HeadSeriesRef][]contentMapping) // ref → content hashes with time ranges
 	)
 	for r.Next() {
-		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0]
+		series, samples, histogramSamples, floatHistogramSamples, tstones, exemplars, metadata, resources, scopes = series[:0], samples[:0], histogramSamples[:0], floatHistogramSamples[:0], tstones[:0], exemplars[:0], metadata[:0], resources[:0], scopes[:0]
 
 		// We don't reset the buffer since we batch up multiple records
 		// before writing them to the checkpoint.
@@ -341,6 +426,50 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			stats.TotalMetadata += len(metadata)
 			stats.DroppedMetadata += len(metadata) - repl
+		case record.ResourceUpdate:
+			resources, err = dec.Resources(rec, resources)
+			if err != nil {
+				return nil, fmt.Errorf("decode resources: %w", err)
+			}
+			repl := 0
+			for i, r := range resources {
+				if keep(r.Ref) {
+					repl++
+					ch := hashResourceWALContent(&resources[i])
+					if _, exists := resourceContentTable[ch]; !exists {
+						resourceContentTable[ch] = r
+					}
+					resourceRefToContent[r.Ref] = append(resourceRefToContent[r.Ref], contentMapping{
+						contentHash: ch,
+						minTime:     r.MinTime,
+						maxTime:     r.MaxTime,
+					})
+				}
+			}
+			stats.TotalResources += len(resources)
+			stats.DroppedResources += len(resources) - repl
+		case record.ScopeUpdate:
+			scopes, err = dec.Scopes(rec, scopes)
+			if err != nil {
+				return nil, fmt.Errorf("decode scopes: %w", err)
+			}
+			repl := 0
+			for i, s := range scopes {
+				if keep(s.Ref) {
+					repl++
+					ch := hashScopeWALContent(&scopes[i])
+					if _, exists := scopeContentTable[ch]; !exists {
+						scopeContentTable[ch] = s
+					}
+					scopeRefToContent[s.Ref] = append(scopeRefToContent[s.Ref], contentMapping{
+						contentHash: ch,
+						minTime:     s.MinTime,
+						maxTime:     s.MaxTime,
+					})
+				}
+			}
+			stats.TotalScopes += len(scopes)
+			stats.DroppedScopes += len(scopes) - repl
 		default:
 			// Unknown record type, probably from a future Prometheus version.
 			continue
@@ -369,7 +498,6 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		return nil, fmt.Errorf("flush records: %w", err)
 	}
 
-	// Flush latest metadata records for each series.
 	if len(latestMetadataMap) > 0 {
 		latestMetadata := make([]record.RefMetadata, 0, len(latestMetadataMap))
 		for _, m := range latestMetadataMap {
@@ -377,6 +505,69 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 		}
 		if err := cp.Log(enc.Metadata(latestMetadata, buf[:0])); err != nil {
 			return nil, fmt.Errorf("flush metadata records: %w", err)
+		}
+	}
+
+	// Flush all resource records for each series (preserving version history).
+	// Reconstruct full RefResource records from the content-addressed table.
+	// Flush in chunks to bound peak memory instead of materializing all records at once.
+	if len(resourceRefToContent) > 0 {
+		chunk := make([]record.RefResource, 0, checkpointFlushChunkSize)
+		for ref, mappings := range resourceRefToContent {
+			for _, m := range mappings {
+				canonical := resourceContentTable[m.contentHash]
+				chunk = append(chunk, record.RefResource{
+					Ref:         ref,
+					MinTime:     m.minTime,
+					MaxTime:     m.maxTime,
+					Identifying: canonical.Identifying,
+					Descriptive: canonical.Descriptive,
+					Entities:    canonical.Entities,
+				})
+				if len(chunk) >= checkpointFlushChunkSize {
+					if err := cp.Log(enc.Resources(chunk, buf[:0])); err != nil {
+						return nil, fmt.Errorf("flush resource records: %w", err)
+					}
+					chunk = chunk[:0]
+				}
+			}
+		}
+		if len(chunk) > 0 {
+			if err := cp.Log(enc.Resources(chunk, buf[:0])); err != nil {
+				return nil, fmt.Errorf("flush resource records: %w", err)
+			}
+		}
+	}
+
+	// Flush all scope records for each series (preserving version history).
+	// Reconstruct full RefScope records from the content-addressed table.
+	// Flush in chunks to bound peak memory instead of materializing all records at once.
+	if len(scopeRefToContent) > 0 {
+		chunk := make([]record.RefScope, 0, checkpointFlushChunkSize)
+		for ref, mappings := range scopeRefToContent {
+			for _, m := range mappings {
+				canonical := scopeContentTable[m.contentHash]
+				chunk = append(chunk, record.RefScope{
+					Ref:       ref,
+					MinTime:   m.minTime,
+					MaxTime:   m.maxTime,
+					Name:      canonical.Name,
+					Version:   canonical.Version,
+					SchemaURL: canonical.SchemaURL,
+					Attrs:     canonical.Attrs,
+				})
+				if len(chunk) >= checkpointFlushChunkSize {
+					if err := cp.Log(enc.Scopes(chunk, buf[:0])); err != nil {
+						return nil, fmt.Errorf("flush scope records: %w", err)
+					}
+					chunk = chunk[:0]
+				}
+			}
+		}
+		if len(chunk) > 0 {
+			if err := cp.Log(enc.Scopes(chunk, buf[:0])); err != nil {
+				return nil, fmt.Errorf("flush scope records: %w", err)
+			}
 		}
 	}
 

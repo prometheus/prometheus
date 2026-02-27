@@ -91,6 +91,7 @@ type engineMetrics struct {
 	queryResultSort           prometheus.Observer
 	queryResultSortHistogram  prometheus.Observer
 	querySamples              prometheus.Counter
+	infoFunctionCalls         *prometheus.CounterVec
 }
 
 type (
@@ -295,6 +296,18 @@ type QueryTracker interface {
 	Delete(insertIndex int)
 }
 
+// InfoResourceStrategy controls how info() resolves resource attributes.
+type InfoResourceStrategy string
+
+const (
+	// InfoResourceStrategyTargetInfo uses only target_info metric-join (default).
+	InfoResourceStrategyTargetInfo InfoResourceStrategy = "target-info"
+	// InfoResourceStrategyResourceAttributes uses only stored resource attributes.
+	InfoResourceStrategyResourceAttributes InfoResourceStrategy = "resource-attributes"
+	// InfoResourceStrategyHybrid combines resource attributes with target_info fallback.
+	InfoResourceStrategyHybrid InfoResourceStrategy = "hybrid"
+)
+
 // EngineOpts contains configuration options used when creating a new Engine.
 type EngineOpts struct {
 	Logger             *slog.Logger
@@ -336,8 +349,34 @@ type EngineOpts struct {
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 
+	// EnableNativeMetadata enables the native metadata path in info(), using
+	// resource attributes stored in TSDB instead of target_info metric joins.
+	EnableNativeMetadata bool
+
+	// InfoResourceStrategy controls how the info() function resolves resource
+	// attributes when native metadata is enabled:
+	//   - "target-info": use only target_info metric-join (default)
+	//   - "resource-attributes": use only stored resource attributes
+	//   - "hybrid": combine resource attributes with target_info metric-join fallback
+	// When EnableNativeMetadata is false, the strategy is forced to "target-info".
+	InfoResourceStrategy InfoResourceStrategy
+
+	// LabelNamerConfig holds configuration for translating OTel attribute names to Prometheus label names.
+	// This is used by the info() function to reverse-translate Prometheus label matchers back to OTel names.
+	LabelNamerConfig *LabelNamerConfig
+
 	// Parser is the PromQL parser instance used for parsing expressions.
 	Parser parser.Parser
+}
+
+// LabelNamerConfig holds configuration for translating OTel attribute names to Prometheus label names.
+type LabelNamerConfig struct {
+	// UTF8Allowed indicates whether UTF-8 characters are allowed in label names.
+	UTF8Allowed bool
+	// UnderscoreLabelSanitization enables prepending 'key' to labels starting with '_'.
+	UnderscoreLabelSanitization bool
+	// PreserveMultipleUnderscores enables preserving multiple consecutive underscores.
+	PreserveMultipleUnderscores bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -358,6 +397,9 @@ type Engine struct {
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
 	parser                   parser.Parser
+	enableNativeMetadata     bool
+	infoResourceStrategy     InfoResourceStrategy
+	labelNamerConfig         *LabelNamerConfig
 }
 
 // NewEngine returns a new engine.
@@ -420,6 +462,12 @@ func NewEngine(opts EngineOpts) *Engine {
 			Name:      "query_samples_total",
 			Help:      "The total number of samples loaded by all queries.",
 		}),
+		infoFunctionCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "info_function_calls_total",
+			Help:      "Total number of info() function calls by resolution mode.",
+		}, []string{"mode"}),
 		queryQueueTime:            queryResultSummary.WithLabelValues("queue_time"),
 		queryQueueTimeHistogram:   queryResultHistogram.WithLabelValues("queue_time"),
 		queryPrepareTime:          queryResultSummary.WithLabelValues("prepare_time"),
@@ -454,6 +502,7 @@ func NewEngine(opts EngineOpts) *Engine {
 			metrics.queryLogEnabled,
 			metrics.queryLogFailures,
 			metrics.querySamples,
+			metrics.infoFunctionCalls,
 			queryResultSummary,
 			queryResultHistogram,
 		)
@@ -473,7 +522,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		}
 	}
 
-	return &Engine{
+	ng := &Engine{
 		timeout:                  opts.Timeout,
 		logger:                   opts.Logger,
 		metrics:                  metrics,
@@ -487,7 +536,28 @@ func NewEngine(opts EngineOpts) *Engine {
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
 		parser:                   opts.Parser,
+		enableNativeMetadata:     opts.EnableNativeMetadata,
+		infoResourceStrategy:     opts.InfoResourceStrategy,
+		labelNamerConfig:         opts.LabelNamerConfig,
 	}
+
+	// Gate: when native metadata is disabled, force strategy to target-info.
+	// When no strategy was set (programmatic callers / tests), default to
+	// target-info for consistency with the CLI default.
+	if !ng.enableNativeMetadata || ng.infoResourceStrategy == "" {
+		ng.infoResourceStrategy = InfoResourceStrategyTargetInfo
+	}
+
+	// Validate strategy value.
+	switch ng.infoResourceStrategy {
+	case InfoResourceStrategyTargetInfo, InfoResourceStrategyResourceAttributes, InfoResourceStrategyHybrid:
+		// Valid.
+	default:
+		ng.logger.Warn("unknown info resource strategy, defaulting to target-info", "strategy", string(ng.infoResourceStrategy))
+		ng.infoResourceStrategy = InfoResourceStrategyTargetInfo
+	}
+
+	return ng
 }
 
 // Close closes ng.
@@ -801,7 +871,10 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
+			infoResourceStrategy:     ng.infoResourceStrategy,
 			querier:                  querier,
+			labelNamerConfig:         ng.labelNamerConfig,
+			metrics:                  ng.metrics,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -861,7 +934,10 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
+		infoResourceStrategy:     ng.infoResourceStrategy,
 		querier:                  querier,
+		labelNamerConfig:         ng.labelNamerConfig,
+		metrics:                  ng.metrics,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -1148,7 +1224,10 @@ type evaluator struct {
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
+	infoResourceStrategy     InfoResourceStrategy
 	querier                  storage.Querier
+	labelNamerConfig         *LabelNamerConfig
+	metrics                  *engineMetrics
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -2367,7 +2446,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
+			infoResourceStrategy:     ev.infoResourceStrategy,
 			querier:                  ev.querier,
+			labelNamerConfig:         ev.labelNamerConfig,
+			metrics:                  ev.metrics,
 		}
 
 		if e.Step != 0 {
@@ -2408,7 +2490,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
+			infoResourceStrategy:     ev.infoResourceStrategy,
 			querier:                  ev.querier,
+			labelNamerConfig:         ev.labelNamerConfig,
+			metrics:                  ev.metrics,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
 		ev.currentSamples = newEv.currentSamples

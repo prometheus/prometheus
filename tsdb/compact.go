@@ -29,11 +29,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -90,6 +92,9 @@ type LeveledCompactor struct {
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
+	enableNativeMetadata        bool
+	indexedResourceAttrs        map[string]struct{}
+	enableResourceAttrIndex     bool
 }
 
 type CompactorMetrics struct {
@@ -182,6 +187,14 @@ type LeveledCompactorOptions struct {
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
+	// EnableNativeMetadata enables persistence of OTel resource/scope attributes during compaction.
+	EnableNativeMetadata bool
+	// IndexedResourceAttrs specifies additional descriptive resource attribute
+	// names to include in the inverted index beyond identifying attributes.
+	IndexedResourceAttrs map[string]struct{}
+	// EnableResourceAttrIndex enables the resource attribute inverted index
+	// in compacted Parquet files.
+	EnableResourceAttrIndex bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -237,6 +250,9 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 		blockExcludeFunc:            opts.BlockExcludeFilter,
+		enableNativeMetadata:        opts.EnableNativeMetadata,
+		indexedResourceAttrs:        opts.IndexedResourceAttrs,
+		enableResourceAttrIndex:     opts.EnableResourceAttrIndex,
 	}, nil
 }
 
@@ -740,6 +756,19 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		return fmt.Errorf("write new tombstones file: %w", err)
 	}
 
+	// Merge and write series metadata (resources and scopes) from source blocks.
+	if c.enableNativeMetadata {
+		if err := c.mergeAndWriteSeriesMetadata(tmp, blocks, meta); err != nil {
+			return fmt.Errorf("merge and write series metadata: %w", err)
+		}
+		// Re-write meta.json if metadata stats were populated.
+		if meta.SeriesMetadata != nil {
+			if _, err = writeMetaFile(c.logger, tmp, meta); err != nil {
+				return fmt.Errorf("rewrite meta with series metadata stats: %w", err)
+			}
+		}
+	}
+
 	df, err := fileutil.OpenDir(tmp)
 	if err != nil {
 		return fmt.Errorf("open temporary block dir: %w", err)
@@ -763,6 +792,117 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	// Block successfully written, make it visible in destination dir by moving it from tmp one.
 	if err := fileutil.Replace(tmp, dir); err != nil {
 		return fmt.Errorf("rename block dir: %w", err)
+	}
+
+	return nil
+}
+
+// mergeAndWriteSeriesMetadata merges versioned resources and scopes from
+// source blocks and writes them to the new compacted block. The merged data
+// is keyed by labelsHash in memory; on write, a RefResolver built from the
+// new block's index converts labelsHash → seriesRef for Parquet mapping rows.
+// If metadata is written, meta.SeriesMetadata is populated with stats.
+func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []BlockReader, meta *BlockMeta) error {
+	output := seriesmetadata.NewMemSeriesMetadata()
+
+	for _, b := range blocks {
+		mr, err := b.SeriesMetadata()
+		if err != nil {
+			return fmt.Errorf("get series metadata from block: %w", err)
+		}
+
+		// Merge all metadata kinds from this block into the output.
+		for _, kind := range seriesmetadata.AllKinds() {
+			err = mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
+				store := output.StoreForKind(kind.ID())
+				kind.SetVersioned(store, labelsHash, versioned)
+				return nil
+			})
+			if err != nil {
+				mr.Close()
+				return fmt.Errorf("iterate %s: %w", kind.ID(), err)
+			}
+		}
+
+		mr.Close()
+	}
+
+	if output.ResourceCount() == 0 && output.ScopeCount() == 0 {
+		return nil
+	}
+
+	// Open the new block's index to build labelsHash → seriesRef mapping.
+	ir, err := index.NewFileReader(filepath.Join(tmp, indexFilename), index.DecodePostingsRaw)
+	if err != nil {
+		return fmt.Errorf("open new block index for ref resolver: %w", err)
+	}
+	defer ir.Close()
+
+	// Build labelsHash → seriesRef mapping by scanning the index.
+	// Collect hashes that need resolving from the merged metadata to avoid
+	// storing entries for series without metadata.
+	needsResolve := make(map[uint64]struct{}, output.ResourceCount()+output.ScopeCount())
+	for _, kind := range seriesmetadata.AllKinds() {
+		_ = output.IterKind(c.ctx, kind.ID(), func(labelsHash uint64, _ any) error {
+			needsResolve[labelsHash] = struct{}{}
+			return nil
+		})
+	}
+	labelsHashToRef := make(map[uint64]uint64, len(needsResolve))
+	var builder labels.ScratchBuilder
+	k, v := index.AllPostingsKey()
+	p, err := ir.Postings(c.ctx, k, v)
+	if err != nil {
+		return fmt.Errorf("get all postings for ref resolver: %w", err)
+	}
+	for p.Next() {
+		ref := p.At()
+		if err := ir.Series(ref, &builder, nil); err != nil {
+			return fmt.Errorf("read series for ref resolver: %w", err)
+		}
+		lh := labels.StableHash(builder.Labels())
+		if _, ok := needsResolve[lh]; ok {
+			labelsHashToRef[lh] = uint64(ref)
+			// Early exit if all hashes resolved.
+			if len(labelsHashToRef) == len(needsResolve) {
+				break
+			}
+		}
+	}
+	if err := p.Err(); err != nil {
+		return fmt.Errorf("iterate postings for ref resolver: %w", err)
+	}
+
+	writeStats := &seriesmetadata.WriteStats{}
+	wopts := seriesmetadata.WriterOptions{
+		EnableInvertedIndex:  c.enableResourceAttrIndex,
+		IndexedResourceAttrs: c.indexedResourceAttrs,
+		RefResolver: func(labelsHash uint64) (uint64, bool) {
+			ref, ok := labelsHashToRef[labelsHash]
+			return ref, ok
+		},
+		WriteStats: writeStats,
+	}
+	if _, err := seriesmetadata.WriteFileWithOptions(c.logger, tmp, output, wopts); err != nil {
+		return fmt.Errorf("write series metadata file: %w", err)
+	}
+
+	// Populate BlockMeta with metadata stats.
+	if len(writeStats.NamespaceRowCounts) > 0 {
+		nsCounts := make(map[string]uint64, len(writeStats.NamespaceRowCounts))
+		for k, v := range writeStats.NamespaceRowCounts {
+			nsCounts[k] = uint64(v)
+		}
+		indexedAttrs := make([]string, 0, len(c.indexedResourceAttrs))
+		for attr := range c.indexedResourceAttrs {
+			indexedAttrs = append(indexedAttrs, attr)
+		}
+		slices.Sort(indexedAttrs)
+		meta.SeriesMetadata = &BlockSeriesMetadata{
+			Enabled:              true,
+			NamespaceRowCounts:   nsCounts,
+			IndexedResourceAttrs: indexedAttrs,
+		}
 	}
 
 	return nil

@@ -1912,6 +1912,20 @@ func TestOTLPPromoteScopeMetadata(t *testing.T) {
 	})
 }
 
+func TestOTLPDisableTargetInfo(t *testing.T) {
+	t.Run("good config", func(t *testing.T) {
+		want, err := LoadFile(filepath.Join("testdata", "otlp_disable_target_info.good.yml"), false, promslog.NewNopLogger())
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(want)
+		require.NoError(t, err)
+		var got Config
+		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+
+		require.True(t, got.OTLPConfig.DisableTargetInfo)
+	})
+}
+
 func TestOTLPLabelUnderscoreSanitization(t *testing.T) {
 	t.Run("defaults to true", func(t *testing.T) {
 		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_defaults.good.yml"), false, promslog.NewNopLogger())

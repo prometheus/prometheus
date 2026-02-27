@@ -345,6 +345,21 @@ For more details, see the [design doc](https://github.com/prometheus/proposals/b
 
 **Note**: Extended Range Selectors are not supported for subqueries.
 
+## Native series metadata persistence
+
+`--enable-feature=native-metadata`
+
+> **This feature is experimental and may change in future releases.**
+
+When enabled, Prometheus persists metric metadata (TYPE, HELP, UNIT) to Parquet
+sidecar files (`series_metadata.parquet`) alongside TSDB blocks during compaction.
+This makes metadata available via `/api/v1/metadata` even after scrape targets
+are removed.
+
+Metadata is collected from the in-memory head and merged across all persisted
+blocks, deduplicated by metric name. Active scrape target metadata always takes
+precedence over persisted metadata.
+
 ## Binary operator fill modifiers
 
 `--enable-feature=promql-binop-fill-modifiers`

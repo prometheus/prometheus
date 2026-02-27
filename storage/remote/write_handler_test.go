@@ -1483,6 +1483,11 @@ func (m *mockAppendable) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, 
 	return ref, nil
 }
 
+func (*mockAppendable) UpdateResource(ref storage.SeriesRef, _ labels.Labels, _, _ map[string]string, _ []storage.EntityData, _ int64) (storage.SeriesRef, error) {
+	// No-op for mock - resources not tested in write handler tests
+	return ref, nil
+}
+
 func (m *mockAppendable) AppendSTZeroSample(_ storage.SeriesRef, l labels.Labels, t, st int64) (storage.SeriesRef, error) {
 	if m.appendSTZeroSampleErr != nil {
 		return 0, m.appendSTZeroSampleErr

@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/compression"
@@ -526,8 +527,11 @@ type erringBReader struct{}
 func (erringBReader) Index() (IndexReader, error)            { return nil, errors.New("index") }
 func (erringBReader) Chunks() (ChunkReader, error)           { return nil, errors.New("chunks") }
 func (erringBReader) Tombstones() (tombstones.Reader, error) { return nil, errors.New("tombstones") }
-func (erringBReader) Meta() BlockMeta                        { return BlockMeta{} }
-func (erringBReader) Size() int64                            { return 0 }
+func (erringBReader) SeriesMetadata() (seriesmetadata.Reader, error) {
+	return nil, errors.New("series metadata")
+}
+func (erringBReader) Meta() BlockMeta { return BlockMeta{} }
+func (erringBReader) Size() int64     { return 0 }
 
 type nopChunkWriter struct{}
 

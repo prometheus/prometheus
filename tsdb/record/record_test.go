@@ -224,6 +224,56 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	decGaugeFloatHistograms = append(decGaugeFloatHistograms, decCustomBucketsGaugeFloatHistograms...)
 	require.Equal(t, floatHistograms, decGaugeFloatHistograms)
+
+	// Resources round-trip.
+	resources := []RefResource{
+		{
+			Ref:         100,
+			MinTime:     1000,
+			MaxTime:     2000,
+			Identifying: map[string]string{"service.name": "frontend", "service.namespace": "prod"},
+			Descriptive: map[string]string{"host.name": "node-1"},
+			Entities: []RefResourceEntity{
+				{Type: "resource", ID: map[string]string{"service.name": "frontend"}, Description: map[string]string{"desc": "web frontend"}},
+			},
+		},
+		{
+			Ref:         200,
+			MinTime:     3000,
+			MaxTime:     4000,
+			Identifying: map[string]string{"service.name": "backend"},
+			Descriptive: nil,
+			Entities:    []RefResourceEntity{},
+		},
+	}
+	decResources, err := dec.Resources(enc.Resources(resources, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, resources, decResources)
+
+	// Scopes round-trip.
+	scopes := []RefScope{
+		{
+			Ref:       100,
+			MinTime:   1000,
+			MaxTime:   2000,
+			Name:      "go.opentelemetry.io/contrib/instrumentation/net/http",
+			Version:   "0.42.0",
+			SchemaURL: "https://opentelemetry.io/schemas/1.17.0",
+			Attrs:     map[string]string{"library.custom": "value"},
+		},
+		{
+			Ref:       200,
+			MinTime:   3000,
+			MaxTime:   4000,
+			Name:      "custom-lib",
+			Version:   "",
+			SchemaURL: "",
+			Attrs:     nil,
+		},
+	}
+	decScopes, err := dec.Scopes(enc.Scopes(scopes, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, scopes, decScopes)
 }
 
 func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {

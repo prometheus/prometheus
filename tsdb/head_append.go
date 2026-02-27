@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 )
 
 // initAppender is a helper to initialize the time bounds of the head
@@ -101,6 +103,15 @@ func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m 
 
 	a.app = a.head.appender()
 	return a.app.UpdateMetadata(ref, l, m)
+}
+
+func (a *initAppender) UpdateResource(ref storage.SeriesRef, l labels.Labels, identifying, descriptive map[string]string, entities []storage.EntityData, t int64) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.UpdateResource(ref, l, identifying, descriptive, entities, t)
+	}
+
+	a.app = a.head.appender()
+	return a.app.UpdateResource(ref, l, identifying, descriptive, entities, t)
 }
 
 func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, st int64) (storage.SeriesRef, error) {
@@ -298,6 +309,32 @@ func (h *Head) putMetadataBuffer(b []record.RefMetadata) {
 	h.metadataPool.Put(b[:0])
 }
 
+func (h *Head) getResourceBuffer() []record.RefResource {
+	b := h.resourcesPool.Get()
+	if b == nil {
+		return make([]record.RefResource, 0, 512)
+	}
+	return b
+}
+
+func (h *Head) putResourceBuffer(b []record.RefResource) {
+	clear(b)
+	h.resourcesPool.Put(b[:0])
+}
+
+func (h *Head) getScopeBuffer() []record.RefScope {
+	b := h.scopesPool.Get()
+	if b == nil {
+		return make([]record.RefScope, 0, 512)
+	}
+	return b
+}
+
+func (h *Head) putScopeBuffer(b []record.RefScope) {
+	clear(b)
+	h.scopesPool.Put(b[:0])
+}
+
 func (h *Head) getSeriesBuffer() []*memSeries {
 	b := h.seriesPool.Get()
 	if b == nil {
@@ -374,6 +411,10 @@ type appendBatch struct {
 	metadata             []record.RefMetadata             // New metadata held by this appender.
 	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
 	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
+	resources            []record.RefResource             // Pending resource updates held by this appender.
+	resourceSeries       []*memSeries                     // Series corresponding to the resource updates.
+	scopes               []record.RefScope                // Pending scope updates held by this appender.
+	scopeSeries          []*memSeries                     // Series corresponding to the scope updates.
 }
 
 // close returns all the slices to the pools in Head and nil's them.
@@ -396,6 +437,14 @@ func (b *appendBatch) close(h *Head) {
 	b.metadataSeries = nil
 	h.putExemplarBuffer(b.exemplars)
 	b.exemplars = nil
+	h.putResourceBuffer(b.resources)
+	b.resources = nil
+	h.putSeriesBuffer(b.resourceSeries)
+	b.resourceSeries = nil
+	h.putScopeBuffer(b.scopes)
+	b.scopes = nil
+	h.putSeriesBuffer(b.scopeSeries)
+	b.scopeSeries = nil
 }
 
 type headAppenderBase struct {
@@ -409,6 +458,14 @@ type headAppenderBase struct {
 	batches    []*appendBatch     // Holds all the other data to append. (In regular cases, there should be only one of these.)
 
 	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
+
+	// resourceRefs tracks which series have already had their resource updated
+	// in this append batch to avoid redundant work.
+	resourceRefs map[chunks.HeadSeriesRef]struct{}
+
+	// scopeRefs tracks which series have already had their scope updated
+	// in this append batch to avoid redundant work.
+	scopeRefs map[chunks.HeadSeriesRef]struct{}
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
@@ -571,6 +628,10 @@ func (a *headAppenderBase) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef
 			floatHistogramSeries: h.getSeriesBuffer(),
 			metadata:             h.getMetadataBuffer(),
 			metadataSeries:       h.getSeriesBuffer(),
+			resources:            h.getResourceBuffer(),
+			resourceSeries:       h.getSeriesBuffer(),
+			scopes:               h.getScopeBuffer(),
+			scopeSeries:          h.getSeriesBuffer(),
 		}
 
 		// Allocate the exemplars buffer only if exemplars are enabled.
@@ -1038,6 +1099,61 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	return ref, nil
 }
 
+// UpdateResource stores unified OTel resource data (attributes + entities) for the given series.
+// Supports versioning: if the resource changes, a new version is created.
+// If the resource is the same, the current version's time range is extended.
+// The update is buffered and applied during Commit().
+func (a *headAppender) UpdateResource(ref storage.SeriesRef, lset labels.Labels, identifying, descriptive map[string]string, entities []storage.EntityData, t int64) (storage.SeriesRef, error) {
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		s = a.head.series.getByHash(lset.Hash(), lset)
+		if s != nil {
+			ref = storage.SeriesRef(s.ref)
+		}
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown series when trying to add resource with HeadSeriesRef: %d and labels: %s", ref, lset)
+	}
+
+	// Deduplicate: skip if this series already had a resource update in this batch.
+	if a.resourceRefs == nil {
+		a.resourceRefs = make(map[chunks.HeadSeriesRef]struct{})
+	}
+	if _, ok := a.resourceRefs[s.ref]; ok {
+		return ref, nil
+	}
+
+	// Convert storage.EntityData to record.RefResourceEntity for WAL encoding.
+	walEntities := make([]record.RefResourceEntity, len(entities))
+	for i, e := range entities {
+		entityType := e.Type
+		if entityType == "" {
+			entityType = seriesmetadata.EntityTypeResource
+		}
+		walEntities[i] = record.RefResourceEntity{
+			Type:        entityType,
+			ID:          e.ID,
+			Description: e.Description,
+		}
+	}
+
+	// Buffer the resource update for commit-time application.
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.resources = append(b.resources, record.RefResource{
+		Ref:         s.ref,
+		MinTime:     t,
+		MaxTime:     t,
+		Identifying: identifying,
+		Descriptive: descriptive,
+		Entities:    walEntities,
+	})
+	b.resourceSeries = append(b.resourceSeries, s)
+
+	a.resourceRefs[s.ref] = struct{}{}
+
+	return ref, nil
+}
+
 var _ storage.GetRef = &headAppender{}
 
 func (a *headAppenderBase) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
@@ -1132,6 +1248,22 @@ func (a *headAppenderBase) log() error {
 
 			if err := a.head.wal.Log(rec); err != nil {
 				return fmt.Errorf("log exemplars: %w", err)
+			}
+		}
+		if len(b.resources) > 0 {
+			rec = enc.Resources(b.resources, buf)
+			buf = rec[:0]
+
+			if err := a.head.wal.Log(rec); err != nil {
+				return fmt.Errorf("log resources: %w", err)
+			}
+		}
+		if len(b.scopes) > 0 {
+			rec = enc.Scopes(b.scopes, buf)
+			buf = rec[:0]
+
+			if err := a.head.wal.Log(rec); err != nil {
+				return fmt.Errorf("log scopes: %w", err)
 			}
 		}
 	}
@@ -1694,6 +1826,149 @@ func commitMetadata(b *appendBatch) {
 	}
 }
 
+// commitResources commits the resource updates for each series in the provided batch.
+func (a *headAppenderBase) commitResources(b *appendBatch) {
+	for i, r := range b.resources {
+		s := b.resourceSeries[i]
+		s.Lock()
+		seriesmetadata.CommitResourceDirect(s, seriesmetadata.ResourceCommitData{
+			Identifying: r.Identifying,
+			Descriptive: r.Descriptive,
+			Entities:    refResourceEntitiesToCommitData(r.Entities),
+			MinTime:     r.MinTime,
+			MaxTime:     r.MaxTime,
+		})
+		a.head.updateSharedResourceMetadata(s)
+		a.head.internSeriesResource(s)
+		s.Unlock()
+	}
+}
+
+// refResourceEntitiesToCommitData converts WAL record entities to ResourceEntityData.
+func refResourceEntitiesToCommitData(entities []record.RefResourceEntity) []seriesmetadata.ResourceEntityData {
+	result := make([]seriesmetadata.ResourceEntityData, len(entities))
+	for i, e := range entities {
+		result[i] = seriesmetadata.ResourceEntityData{
+			Type:        e.Type,
+			ID:          e.ID,
+			Description: e.Description,
+		}
+	}
+	return result
+}
+
+// commitScopes commits the scope updates for each series in the provided batch.
+func (a *headAppenderBase) commitScopes(b *appendBatch) {
+	for i, sc := range b.scopes {
+		s := b.scopeSeries[i]
+		s.Lock()
+		seriesmetadata.CommitScopeDirect(s, seriesmetadata.ScopeCommitData{
+			Name:      sc.Name,
+			Version:   sc.Version,
+			SchemaURL: sc.SchemaURL,
+			Attrs:     sc.Attrs,
+			MinTime:   sc.MinTime,
+			MaxTime:   sc.MaxTime,
+		})
+		a.head.updateSharedScopeMetadata(s)
+		a.head.internSeriesScope(s)
+		s.Unlock()
+	}
+}
+
+// resourceContentUnchanged checks whether the incoming WAL resource record
+// has the same content as the current stored ResourceVersion, ignoring time range.
+func resourceContentUnchanged(cur *seriesmetadata.ResourceVersion, r record.RefResource) bool {
+	if !maps.Equal(cur.Identifying, r.Identifying) ||
+		!maps.Equal(cur.Descriptive, r.Descriptive) ||
+		len(cur.Entities) != len(r.Entities) {
+		return false
+	}
+	// Stored entities are sorted by Type; incoming may not be — pairwise match.
+	for _, ce := range cur.Entities {
+		found := false
+		for _, ie := range r.Entities {
+			if ce.Type == ie.Type && maps.Equal(ce.ID, ie.ID) && maps.Equal(ce.Description, ie.Description) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// scopeContentUnchanged checks whether the incoming WAL scope record
+// has the same content as the current stored ScopeVersion, ignoring time range.
+func scopeContentUnchanged(cur *seriesmetadata.ScopeVersion, sc record.RefScope) bool {
+	return cur.Name == sc.Name && cur.Version == sc.Version &&
+		cur.SchemaURL == sc.SchemaURL && maps.Equal(cur.Attrs, sc.Attrs)
+}
+
+// filterUnchangedResources removes entries from b.resources where the content
+// is identical to what's already stored on the series. For unchanged entries,
+// the time range is extended in-place and the shared metadata store is updated.
+// Returns the number of entries filtered out.
+func (a *headAppenderBase) filterUnchangedResources(b *appendBatch) int {
+	n := 0
+	for i, r := range b.resources {
+		s := b.resourceSeries[i]
+		s.Lock()
+		changed := true
+		if vr, ok := seriesmetadata.CollectResourceDirect(s); ok && len(vr.Versions) > 0 {
+			cur := vr.Versions[len(vr.Versions)-1]
+			if resourceContentUnchanged(cur, r) {
+				cur.UpdateTimeRange(r.MinTime, r.MaxTime)
+				a.head.updateSharedResourceMetadata(s)
+				changed = false
+			}
+		}
+		s.Unlock()
+		if changed {
+			b.resources[n] = b.resources[i]
+			b.resourceSeries[n] = b.resourceSeries[i]
+			n++
+		}
+	}
+	filtered := len(b.resources) - n
+	b.resources = b.resources[:n]
+	b.resourceSeries = b.resourceSeries[:n]
+	return filtered
+}
+
+// filterUnchangedScopes removes entries from b.scopes where the content
+// is identical to what's already stored on the series. For unchanged entries,
+// the time range is extended in-place and the shared metadata store is updated.
+// Returns the number of entries filtered out.
+func (a *headAppenderBase) filterUnchangedScopes(b *appendBatch) int {
+	n := 0
+	for i, sc := range b.scopes {
+		s := b.scopeSeries[i]
+		s.Lock()
+		changed := true
+		if vs, ok := seriesmetadata.CollectScopeDirect(s); ok && len(vs.Versions) > 0 {
+			cur := vs.Versions[len(vs.Versions)-1]
+			if scopeContentUnchanged(cur, sc) {
+				cur.UpdateTimeRange(sc.MinTime, sc.MaxTime)
+				a.head.updateSharedScopeMetadata(s)
+				changed = false
+			}
+		}
+		s.Unlock()
+		if changed {
+			b.scopes[n] = b.scopes[i]
+			b.scopeSeries[n] = b.scopeSeries[i]
+			n++
+		}
+	}
+	filtered := len(b.scopes) - n
+	b.scopes = b.scopes[:n]
+	b.scopeSeries = b.scopeSeries[:n]
+	return filtered
+}
+
 func (a *headAppenderBase) unmarkCreatedSeriesAsPendingCommit() {
 	for _, s := range a.series {
 		s.Lock()
@@ -1719,8 +1994,22 @@ func (a *headAppenderBase) Commit() (err error) {
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
+		a.resourceRefs = nil
+		a.scopeRefs = nil
 		a.closed = true
 	}()
+
+	// Count total resource/scope updates before filtering, then filter
+	// unchanged entries to avoid unnecessary WAL writes. Unchanged entries
+	// have their time range extended in-place under the series lock.
+	var resourcesTotal, scopesTotal int
+	var resourcesFiltered, scopesFiltered int
+	for _, b := range a.batches {
+		resourcesTotal += len(b.resources)
+		scopesTotal += len(b.scopes)
+		resourcesFiltered += a.filterUnchangedResources(b)
+		scopesFiltered += a.filterUnchangedScopes(b)
+	}
 
 	if err := a.log(); err != nil {
 		_ = a.Rollback() // Most likely the same error will happen again.
@@ -1767,6 +2056,8 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.commitHistograms(b, acc)
 		a.commitFloatHistograms(b, acc)
 		commitMetadata(b)
+		a.commitResources(b)
+		a.commitScopes(b)
 	}
 	// Unmark all series as pending commit after all samples have been committed.
 	a.unmarkCreatedSeriesAsPendingCommit()
@@ -1779,6 +2070,10 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
+	h.metrics.resourceUpdatesCommitted.Add(float64(resourcesTotal))
+	h.metrics.scopeUpdatesCommitted.Add(float64(scopesTotal))
+	h.metrics.resourceUpdatesWALFiltered.Add(float64(resourcesFiltered))
+	h.metrics.scopeUpdatesWALFiltered.Add(float64(scopesFiltered))
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
 	h.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
 
@@ -2254,6 +2549,8 @@ func (a *headAppenderBase) Rollback() (err error) {
 		h.putRefSeriesBuffer(a.seriesRefs)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
+		a.resourceRefs = nil
+		a.scopeRefs = nil
 	}()
 
 	var series *memSeries

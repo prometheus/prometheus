@@ -17,7 +17,13 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
+)
+
+var (
+	_ ResourceQuerier = noopQuerier{}
+	_ ResourceQuerier = noopChunkQuerier{}
 )
 
 type noopQuerier struct{}
@@ -43,6 +49,14 @@ func (noopQuerier) Close() error {
 	return nil
 }
 
+func (noopQuerier) GetResourceAt(uint64, int64) (*seriesmetadata.ResourceVersion, bool) {
+	return nil, false
+}
+
+func (noopQuerier) IterUniqueAttributeNames(func(string)) error {
+	return nil
+}
+
 type noopChunkQuerier struct{}
 
 // NoopChunkedQuerier is a ChunkQuerier that does nothing.
@@ -63,6 +77,14 @@ func (noopChunkQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matc
 }
 
 func (noopChunkQuerier) Close() error {
+	return nil
+}
+
+func (noopChunkQuerier) GetResourceAt(uint64, int64) (*seriesmetadata.ResourceVersion, bool) {
+	return nil, false
+}
+
+func (noopChunkQuerier) IterUniqueAttributeNames(func(string)) error {
 	return nil
 }
 
