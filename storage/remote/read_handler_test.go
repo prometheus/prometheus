@@ -24,6 +24,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
@@ -479,4 +480,61 @@ func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStora
 	}
 
 	require.NoError(t, app.Commit())
+}
+
+func TestReadHandlerWaitDurationMetric(t *testing.T) {
+	store := promqltest.LoadedStorage(t, `
+		load 1m
+			test_metric1{foo="bar"} 1
+	`)
+	defer store.Close()
+
+	// Create a test registry to capture metrics
+	reg := prometheus.NewRegistry()
+
+	h := NewReadHandler(nil, reg, store, func() config.Config {
+		return config.Config{}
+	}, 1e6, 1, 0)
+
+	// Create a simple remote read request
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
+	require.NoError(t, err)
+
+	query, err := ToQuery(0, 1, []*labels.Matcher{matcher}, nil)
+	require.NoError(t, err)
+
+	req := &prompb.ReadRequest{Queries: []*prompb.Query{query}}
+	data, err := proto.Marshal(req)
+	require.NoError(t, err)
+
+	// Execute a remote read request
+	compressed := snappy.Encode(nil, data)
+	request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, request)
+
+	require.Equal(t, 2, recorder.Code/100)
+
+	// Verify the wait_duration_seconds metric exists and has been recorded
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+
+	var foundMetric bool
+	for _, mf := range metricFamilies {
+		if mf.GetName() == "prometheus_remote_read_handler_wait_duration_seconds" {
+			foundMetric = true
+			require.Equal(t, "Duration spent waiting for a free remote read slot, in seconds.", mf.GetHelp())
+			require.NotEmpty(t, mf.GetMetric())
+
+			// Verify we have at least one observation
+			metric := mf.GetMetric()[0]
+			if metric.GetHistogram() != nil {
+				require.Positive(t, metric.GetHistogram().GetSampleCount())
+			}
+			break
+		}
+	}
+	require.True(t, foundMetric, "wait_duration_seconds metric not found")
 }
