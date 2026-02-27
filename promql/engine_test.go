@@ -3252,6 +3252,59 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 				},
 			},
 		},
+		{
+			input: "timestamp(metric @ 10)",
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.Call{
+					Func: parser.MustGetFunction("timestamp"),
+					Args: parser.Expressions{
+						&parser.VectorSelector{
+							Name:      "metric",
+							Timestamp: makeInt64Pointer(10000),
+							LabelMatchers: []*labels.Matcher{
+								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
+							},
+							PosRange: posrange.PositionRange{
+								Start: 10,
+								End:   21,
+							},
+						},
+					},
+					PosRange: posrange.PositionRange{Start: 0, End: 22},
+				},
+			},
+		},
+		{
+			input: "timestamp(abs(metric @ 10))",
+			expected: &parser.Call{
+				Func: parser.MustGetFunction("timestamp"),
+				Args: parser.Expressions{
+					&parser.StepInvariantExpr{
+						Expr: &parser.Call{
+							Func: parser.MustGetFunction("abs"),
+							Args: parser.Expressions{
+								&parser.VectorSelector{
+									Name:      "metric",
+									Timestamp: makeInt64Pointer(10000),
+									LabelMatchers: []*labels.Matcher{
+										parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
+									},
+									PosRange: posrange.PositionRange{
+										Start: 14,
+										End:   25,
+									},
+								},
+							},
+							PosRange: posrange.PositionRange{
+								Start: 10,
+								End:   26,
+							},
+						},
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 27},
+			},
+		},
 	}
 
 	for _, test := range testCases {
