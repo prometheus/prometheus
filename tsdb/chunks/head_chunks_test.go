@@ -579,5 +579,5 @@ func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSer
 		close(awaitCb)
 	})
 	<-awaitCb
-	return
+	return seriesRef, chunkRef, mint, maxt, chunk, isOOO
 }

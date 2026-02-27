@@ -242,13 +242,13 @@ func (a *collectResultAppender) Rollback() error {
 func (a *collectResultAppender) String() string {
 	var sb strings.Builder
 	for _, s := range a.resultFloats {
-		sb.WriteString(fmt.Sprintf("committed: %s %f %d\n", s.metric, s.f, s.t))
+		fmt.Fprintf(&sb, "committed: %s %f %d\n", s.metric, s.f, s.t)
 	}
 	for _, s := range a.pendingFloats {
-		sb.WriteString(fmt.Sprintf("pending: %s %f %d\n", s.metric, s.f, s.t))
+		fmt.Fprintf(&sb, "pending: %s %f %d\n", s.metric, s.f, s.t)
 	}
 	for _, s := range a.rolledbackFloats {
-		sb.WriteString(fmt.Sprintf("rolledback: %s %f %d\n", s.metric, s.f, s.t))
+		fmt.Fprintf(&sb, "rolledback: %s %f %d\n", s.metric, s.f, s.t)
 	}
 	return sb.String()
 }

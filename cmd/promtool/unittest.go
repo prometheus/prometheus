@@ -529,9 +529,11 @@ Outer:
 // seriesLoadingString returns the input series in PromQL notation.
 func (tg *testGroup) seriesLoadingString() string {
 	result := fmt.Sprintf("load %v\n", shortDuration(tg.Interval))
+	var resultSb532 strings.Builder
 	for _, is := range tg.InputSeries {
-		result += fmt.Sprintf("  %v %v\n", is.Series, is.Values)
+		resultSb532.WriteString(fmt.Sprintf("  %v %v\n", is.Series, is.Values))
 	}
+	result += resultSb532.String()
 	return result
 }
 
@@ -632,9 +634,11 @@ func (la labelsAndAnnotations) String() string {
 		return "[]"
 	}
 	s := "[\n0:" + indentLines("\n"+la[0].String(), "  ")
+	var sSb635 strings.Builder
 	for i, l := range la[1:] {
-		s += ",\n" + strconv.Itoa(i+1) + ":" + indentLines("\n"+l.String(), "  ")
+		sSb635.WriteString(",\n" + strconv.Itoa(i+1) + ":" + indentLines("\n"+l.String(), "  "))
 	}
+	s += sSb635.String()
 	s += "\n]"
 
 	return s
@@ -689,9 +693,11 @@ func parsedSamplesString(pss []parsedSample) string {
 		return "nil"
 	}
 	s := pss[0].String()
+	var sSb692 strings.Builder
 	for _, ps := range pss[1:] {
-		s += ", " + ps.String()
+		sSb692.WriteString(", " + ps.String())
 	}
+	s += sSb692.String()
 	return s
 }
 

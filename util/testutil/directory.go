@@ -127,7 +127,7 @@ func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
 		tester: t,
 	}
 
-	return
+	return handler
 }
 
 // DirHash returns a hash of all files attributes and their content within a directory.

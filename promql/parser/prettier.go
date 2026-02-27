@@ -112,9 +112,11 @@ func (e *EvalStmt) Pretty(_ int) string {
 func (e Expressions) Pretty(level int) string {
 	// Do not prefix the indent since respective nodes will indent itself.
 	s := ""
+	var sSb115 strings.Builder
 	for i := range e {
-		s += fmt.Sprintf("%s,\n", e[i].Pretty(level))
+		sSb115.WriteString(fmt.Sprintf("%s,\n", e[i].Pretty(level)))
 	}
+	s += sSb115.String()
 	return s[:len(s)-2]
 }
 

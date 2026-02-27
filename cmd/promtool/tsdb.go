@@ -892,5 +892,5 @@ func generateBucket(minVal, maxVal int) (start, end, step int) {
 	start = minVal - minVal%step
 	end = maxVal - maxVal%step + step
 
-	return
+	return start, end, step
 }

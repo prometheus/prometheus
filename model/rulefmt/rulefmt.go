@@ -280,7 +280,7 @@ func (r *Rule) Validate(node RuleNode) (nodes []WrappedError) {
 		nodes = append(nodes, WrappedError{err: err})
 	}
 
-	return
+	return nodes
 }
 
 // testTemplateParsing checks if the templates used in labels and annotations

@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -3033,12 +3034,14 @@ func TestPostingsForMatchers(t *testing.T) {
 
 	for _, c := range cases {
 		name := ""
+		var nameSb3036 strings.Builder
 		for i, matcher := range c.matchers {
 			if i > 0 {
-				name += ","
+				nameSb3036.WriteString(",")
 			}
-			name += matcher.String()
+			nameSb3036.WriteString(matcher.String())
 		}
+		name += nameSb3036.String()
 		t.Run(name, func(t *testing.T) {
 			exp := map[string]struct{}{}
 			for _, l := range c.exp {

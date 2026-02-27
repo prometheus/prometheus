@@ -41,9 +41,11 @@ func tree(node Node, level string) string {
 
 	level += " · · ·"
 
+	var tSb44 strings.Builder
 	for _, e := range Children(node) {
-		t += tree(e, level)
+		tSb44.WriteString(tree(e, level))
 	}
+	t += tSb44.String()
 
 	return t
 }
@@ -56,10 +58,12 @@ func (es Expressions) String() (s string) {
 	if len(es) == 0 {
 		return ""
 	}
+	var sSb59 strings.Builder
 	for _, e := range es {
-		s += e.String()
-		s += ", "
+		sSb59.WriteString(e.String())
+		sSb59.WriteString(", ")
 	}
+	s += sSb59.String()
 	return s[:len(s)-2]
 }
 
