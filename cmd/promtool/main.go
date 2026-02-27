@@ -210,6 +210,12 @@ func main() {
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 	queryLabelsMatch := queryLabelsCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
 
+	queryLabelNamesCmd := queryCmd.Command("label-names", "Run label names query.")
+	queryLabelNamesCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
+	queryLabelNamesBegin := queryLabelNamesCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
+	queryLabelNamesEnd := queryLabelNamesCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
+	queryLabelNamesMatch := queryLabelNamesCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
+
 	queryAnalyzeCfg := &QueryAnalyzeConfig{}
 	queryAnalyzeCmd := queryCmd.Command("analyze", "Run queries against your Prometheus to analyze the usage pattern of certain metrics.")
 	queryAnalyzeCmd.Flag("server", "Prometheus server to query.").Required().URLVar(&serverURL)
@@ -412,6 +418,9 @@ func main() {
 
 	case queryLabelsCmd.FullCommand():
 		os.Exit(QueryLabels(serverURL, httpRoundTripper, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
+
+	case queryLabelNamesCmd.FullCommand():
+		os.Exit(QueryLabelNames(serverURL, httpRoundTripper, *queryLabelNamesMatch, *queryLabelNamesBegin, *queryLabelNamesEnd, p))
 
 	case testRulesCmd.FullCommand():
 		results := io.Discard
@@ -1232,6 +1241,7 @@ type printer interface {
 	printValue(v model.Value)
 	printSeries(v []model.LabelSet)
 	printLabelValues(v model.LabelValues)
+	printLabelNames(v []string)
 }
 
 type promqlPrinter struct{}
@@ -1252,6 +1262,17 @@ func (*promqlPrinter) printLabelValues(val model.LabelValues) {
 	}
 }
 
+func (*promqlPrinter) printLabelNames(val []string) {
+	for _, v := range val {
+		// Handle non-legacy label names (UTF-8, special characters)
+		if !model.LegacyValidation.IsValidLabelName(v) {
+			fmt.Println(strconv.Quote(v))
+		} else {
+			fmt.Println(v)
+		}
+	}
+}
+
 type jsonPrinter struct{}
 
 func (*jsonPrinter) printValue(v model.Value) {
@@ -1265,6 +1286,11 @@ func (*jsonPrinter) printSeries(v []model.LabelSet) {
 }
 
 func (*jsonPrinter) printLabelValues(v model.LabelValues) {
+	//nolint:errcheck
+	json.NewEncoder(os.Stdout).Encode(v)
+}
+
+func (*jsonPrinter) printLabelNames(v []string) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
