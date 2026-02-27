@@ -57,7 +57,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.145.0
 	github.com/ovh/go-ovh v1.9.0
-	github.com/pb33f/libopenapi v0.33.4
+	github.com/pb33f/libopenapi v0.34.0
 	github.com/pb33f/libopenapi-validator v0.11.1
 	github.com/prometheus/alertmanager v0.31.1
 	github.com/prometheus/client_golang v1.23.2
@@ -123,7 +123,7 @@ require (
 	github.com/go-openapi/swag/typeutils v0.25.4 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.4 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
-	github.com/pb33f/jsonpath v0.7.1 // indirect
+	github.com/pb33f/jsonpath v0.8.1 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
