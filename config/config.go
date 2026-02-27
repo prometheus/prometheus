@@ -283,10 +283,10 @@ var (
 		// For backwards compatibility.
 		LabelNamePreserveMultipleUnderscores: true,
 	}
-)
 
-// DefaultTSDBRetentionConfig is the default TSDB retention configuration.
-var DefaultTSDBRetentionConfig TSDBRetentionConfig
+	// DefaultTSDBRetentionConfig is the default TSDB retention configuration.
+	DefaultTSDBRetentionConfig TSDBRetentionConfig
+)
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {

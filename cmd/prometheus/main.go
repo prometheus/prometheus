@@ -1020,8 +1020,29 @@ func main() {
 
 	reloaders := []reloader{
 		{
-			name:     "db_storage",
-			reloader: localStorage.ApplyConfig,
+			name: "db_storage",
+			reloader: func() func(*config.Config) error {
+				lastTSDBRetention := config.TSDBRetentionConfig{}
+				return func(cfg *config.Config) error {
+					err := localStorage.ApplyConfig(cfg)
+					if err != nil || agentMode || cfg.StorageConfig.TSDBConfig == nil || cfg.StorageConfig.TSDBConfig.Retention == nil {
+						return err
+					}
+
+					curr := cfg.StorageConfig.TSDBConfig.Retention
+					if *curr == lastTSDBRetention {
+						return nil
+					}
+
+					logger.Info("TSDB retention updated",
+						"duration", curr.Time,
+						"size", curr.Size,
+						"percentage", curr.Percentage,
+					)
+					lastTSDBRetention = *curr
+					return nil
+				}
+			}(),
 		}, {
 			name:     "remote_storage",
 			reloader: remoteStorage.ApplyConfig,
