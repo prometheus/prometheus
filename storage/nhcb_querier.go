@@ -26,6 +26,30 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+// Known limitations of the NHCB-to-classic conversion:
+//
+// 1. TODO: This does not support the series API (LabelNames, LabelValues, etc.).
+//    Only the Select method is wrapped. Any metadata or label introspection
+//    queries will not reflect the converted classic series.
+//
+// 2. TODO: The results are not properly sorted. When multiple NHCB series with
+//    different label values are converted, the output is grouped by the
+//    original NHCB series rather than being globally sorted by labels.
+//    For example, given two NHCB series with method="GET" and method="POST",
+//    the output order would be:
+//
+//      http_request_duration_seconds_bucket{le="0.1", method="GET"}
+//      http_request_duration_seconds_bucket{le="+Inf", method="GET"}
+//      http_request_duration_seconds_bucket{le="0.1", method="POST"}
+//      http_request_duration_seconds_bucket{le="+Inf", method="POST"}
+//
+//    But the correctly sorted order (lexicographic by labels) would be:
+//
+//      http_request_duration_seconds_bucket{le="+Inf", method="GET"}
+//      http_request_duration_seconds_bucket{le="+Inf", method="POST"}
+//      http_request_duration_seconds_bucket{le="0.1", method="GET"}
+//      http_request_duration_seconds_bucket{le="0.1", method="POST"}
+
 // NHCBAsClassicQuerier wraps a Querier and converts NHCB (Native Histogram Custom Buckets)
 // queries to classic histogram format when classic series don't exist.
 type NHCBAsClassicQuerier struct {
