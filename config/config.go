@@ -83,6 +83,13 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 		return nil, err
 	}
 
+	// When the config body is empty, UnmarshalYAML is never called, so
+	// TSDBConfig may still be nil.
+	if cfg.StorageConfig.TSDBConfig == nil {
+		retention := DefaultTSDBRetentionConfig
+		cfg.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
+	}
+
 	b := labels.NewScratchBuilder(0)
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
@@ -278,6 +285,9 @@ var (
 	}
 )
 
+// DefaultTSDBRetentionConfig is the default TSDB retention configuration.
+var DefaultTSDBRetentionConfig TSDBRetentionConfig
+
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
 	GlobalConfig      GlobalConfig    `yaml:"global"`
@@ -403,6 +413,13 @@ func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 	// We have to restore it here.
 	if c.Runtime.isZero() {
 		c.Runtime = DefaultRuntimeConfig
+	}
+
+	// If no storage.tsdb section is present, TSDBConfig is nil and its
+	// UnmarshalYAML never runs. Inject the default retention here.
+	if c.StorageConfig.TSDBConfig == nil {
+		retention := DefaultTSDBRetentionConfig
+		c.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -1097,6 +1114,22 @@ type TSDBRetentionConfig struct {
 	Percentage uint `yaml:"percentage,omitempty"`
 }
 
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TSDBRetentionConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	*t = TSDBRetentionConfig{}
+	type plain TSDBRetentionConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+	if t.Size < 0 {
+		return fmt.Errorf("'storage.tsdb.retention.size' must be greater than or equal to 0, got %v", t.Size)
+	}
+	if t.Percentage > 100 {
+		return fmt.Errorf("'storage.tsdb.retention.percentage' must be in the range [0, 100], got %v", t.Percentage)
+	}
+	return nil
+}
+
 // TSDBConfig configures runtime reloadable configuration options.
 type TSDBConfig struct {
 	// OutOfOrderTimeWindow sets how long back in time an out-of-order sample can be inserted
@@ -1126,6 +1159,11 @@ func (t *TSDBConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 
 	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
+
+	if t.Retention == nil {
+		retention := DefaultTSDBRetentionConfig
+		t.Retention = &retention
+	}
 
 	return nil
 }

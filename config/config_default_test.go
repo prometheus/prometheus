@@ -20,9 +20,10 @@ const ruleFilesConfigFile = "testdata/rules_abs_path.good.yml"
 var ruleFilesExpectedConf = &Config{
 	loaded: true,
 
-	GlobalConfig: DefaultGlobalConfig,
-	Runtime:      DefaultRuntimeConfig,
-	OTLPConfig:   DefaultOTLPConfig,
+	GlobalConfig:  DefaultGlobalConfig,
+	Runtime:       DefaultRuntimeConfig,
+	OTLPConfig:    DefaultOTLPConfig,
+	StorageConfig: StorageConfig{TSDBConfig: &TSDBConfig{Retention: &TSDBRetentionConfig{}}},
 	RuleFiles: []string{
 		"testdata/first.rules",
 		"testdata/rules/second.rules",
