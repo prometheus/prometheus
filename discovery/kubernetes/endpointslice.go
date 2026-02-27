@@ -306,10 +306,14 @@ func (e *EndpointSlice) buildEndpointSlice(eps v1.EndpointSlice) *targetgroup.Gr
 
 	addObjectMetaLabels(tg.Labels, eps.ObjectMeta, RoleEndpointSlice)
 
-	e.addServiceLabels(eps, tg)
+	svc := e.addServiceLabels(eps, tg)
 
 	if e.withNamespaceMetadata {
 		tg.Labels = addNamespaceLabels(tg.Labels, e.namespaceInf, e.logger, eps.Namespace)
+	}
+
+	if nonPrimaryIPFamilySlice(svc, eps) {
+		return tg
 	}
 
 	type podEntry struct {
@@ -504,7 +508,28 @@ func (e *EndpointSlice) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	return obj.(*apiv1.Pod)
 }
 
-func (e *EndpointSlice) addServiceLabels(esa v1.EndpointSlice, tg *targetgroup.Group) {
+// nonPrimaryIPFamilySlice reports whether eps is the secondary slice of a
+// dual-stack service, i.e. its address type does not match the service's
+// primary IP family. Targets from such slices would duplicate those of the
+// primary slice.
+func nonPrimaryIPFamilySlice(svc *apiv1.Service, eps v1.EndpointSlice) bool {
+	if svc == nil {
+		return false
+	}
+	policy := svc.Spec.IPFamilyPolicy
+	if policy == nil {
+		return false
+	}
+	if *policy != apiv1.IPFamilyPolicyPreferDualStack && *policy != apiv1.IPFamilyPolicyRequireDualStack {
+		return false
+	}
+	if len(svc.Spec.IPFamilies) == 0 {
+		return false
+	}
+	return string(eps.AddressType) != string(svc.Spec.IPFamilies[0])
+}
+
+func (e *EndpointSlice) addServiceLabels(esa v1.EndpointSlice, tg *targetgroup.Group) *apiv1.Service {
 	var (
 		found bool
 		name  string
@@ -515,18 +540,19 @@ func (e *EndpointSlice) addServiceLabels(esa v1.EndpointSlice, tg *targetgroup.G
 	// kubernetes.io/service-name label.
 	name, found = esa.Labels[v1.LabelServiceName]
 	if !found {
-		return
+		return nil
 	}
 
 	obj, exists, err := e.serviceStore.GetByKey(namespacedName(ns, name))
 	if err != nil {
 		e.logger.Error("retrieving service failed", "err", err)
-		return
+		return nil
 	}
 	if !exists {
-		return
+		return nil
 	}
 	svc := obj.(*apiv1.Service)
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
+	return svc
 }
