@@ -1597,7 +1597,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
@@ -1638,8 +1638,7 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 	}
 
 	updateGoGC(conf, logger)
-
-	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
+	noStepSubqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
 	timingsLogger.Info("Completed loading of configuration file", "filename", filename, "totalDuration", time.Since(start))
 	return nil
 }
