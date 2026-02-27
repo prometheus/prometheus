@@ -360,3 +360,24 @@ Example query:
 ```
 
 See [the fill modifiers documentation](querying/operators.md#filling-in-missing-matches) for more details and examples.
+
+## NHCB as classic histograms in PromQL
+
+`--enable-feature=promq-nhcb-as-classic`
+
+When enabled, PromQL queries for classic histogram series (e.g. `_bucket`, `_count`, `_sum`) will
+automatically convert Native Histograms with Custom Buckets (NHCB) into classic histogram series.
+
+For example, if `request_duration_seconds` is stored as an NHCB native histogram:
+
+```promql
+# Querying with a classic histogram suffix triggers the conversion:
+histogram_quantile(0.95, rate(request_duration_seconds_bucket[5m]))
+
+# Querying without a suffix returns the regular NHCB native histogram:
+rate(request_duration_seconds[5m])
+```
+
+This feature only affects PromQL query evaluation. It does not apply to remote write
+(NHCB series are not converted when being forwarded to remote endpoints) and does not
+affect the series API (the `/api/v1/series` endpoint will not return the converted classic series).
