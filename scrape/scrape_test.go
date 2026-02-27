@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/common/version"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -3752,8 +3753,9 @@ func TestRequestTraceparentHeader(t *testing.T) {
 
 func TestTargetScraperScrapeOK(t *testing.T) {
 	const (
-		configTimeout   = 1500 * time.Millisecond
-		expectedTimeout = "1.5"
+		configTimeout          = 1500 * time.Millisecond
+		expectedTimeout        = "1.5"
+		expectedAcceptEncoding = "gzip"
 	)
 
 	var (
@@ -3789,6 +3791,13 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 			timeout := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
 			require.Equal(t, expectedTimeout, timeout, "Expected scrape timeout header.")
 
+			userAgent := r.Header.Get("User-Agent")
+			require.Equal(t, version.PrometheusUserAgent(), userAgent, "Unexpected User-Agent header")
+
+			require.Equal(t, http.MethodGet, r.Method, "HTTP method should be GET")
+
+			require.Equal(t, expectedAcceptEncoding, r.Header.Get("Accept-Encoding"), "Unexpected Accept-Encoding header")
+
 			if allowUTF8 {
 				w.Header().Set("Content-Type", `text/plain; version=1.0.0; escaping=allow-utf-8`)
 			} else {
@@ -3813,9 +3822,10 @@ func TestTargetScraperScrapeOK(t *testing.T) {
 				),
 				scrapeConfig: &config.ScrapeConfig{},
 			},
-			client:       http.DefaultClient,
-			timeout:      configTimeout,
-			acceptHeader: acceptHeader,
+			client:               http.DefaultClient,
+			timeout:              configTimeout,
+			acceptHeader:         acceptHeader,
+			acceptEncodingHeader: expectedAcceptEncoding,
 		}
 		var buf bytes.Buffer
 
