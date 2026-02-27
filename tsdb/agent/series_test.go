@@ -122,6 +122,20 @@ func TestStripeSeries_Get(t *testing.T) {
 	require.Same(t, ms2, got)
 }
 
+func TestStripeSeries_GetOrSet(t *testing.T) {
+	lbl := labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+
+	ss := newStripeSeries(1)
+
+	ms, created := ss.GetOrSet(lbl.Hash(), &memSeries{ref: chunks.HeadSeriesRef(1), lset: lbl})
+	require.True(t, created)
+	require.Equal(t, lbl, ms.lset)
+
+	ms2, created := ss.GetOrSet(lbl.Hash(), &memSeries{ref: chunks.HeadSeriesRef(2), lset: lbl})
+	require.False(t, created)
+	require.Equal(t, ms, ms2)
+}
+
 func TestStripeSeries_gc(t *testing.T) {
 	s, ms1, ms2 := stripeSeriesWithCollidingSeries(t)
 	hash := ms1.lset.Hash()
