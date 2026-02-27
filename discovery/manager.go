@@ -158,6 +158,17 @@ func FeatureRegistry(fr features.Collector) func(*Manager) {
 	}
 }
 
+// SkipInitialWait configures the manager to skip the initial wait on startup.
+// This is useful for Prometheus in agent mode or serverless flavours of OTel's prometheusreceiver
+// which are sensitive to startup latencies.
+func SkipInitialWait() func(*Manager) {
+	return func(m *Manager) {
+		m.mtx.Lock()
+		defer m.mtx.Unlock()
+		m.skipStartupWait = true
+	}
+}
+
 // Manager maintains a set of discovery providers and sends each update to a map channel.
 // Targets are grouped by the target set name.
 type Manager struct {
@@ -195,6 +206,11 @@ type Manager struct {
 
 	// featureRegistry is used to track which service discovery providers are configured.
 	featureRegistry features.Collector
+
+	// skipStartupWait allows the discovery manager to skip the initial wait before sending updates
+	// to the channel. This is useful for Prometheus in agent mode or serverless flavours of OTel's prometheusreceiver
+	// which are sensitive to startup latencies.
+	skipStartupWait bool
 }
 
 // Providers returns the currently configured SD providers.
@@ -384,15 +400,34 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 
 func (m *Manager) sender() {
 	ticker := time.NewTicker(m.updatert)
-	defer func() {
-		ticker.Stop()
-		close(m.syncCh)
-	}()
+	defer ticker.Stop()
+
+	if m.skipStartupWait {
+	startupLoop:
+		for {
+			select {
+			case <-m.ctx.Done():
+				return
+			case <-ticker.C:
+				break startupLoop
+			case <-m.triggerSend:
+				m.metrics.SentUpdates.Inc()
+				select {
+				case m.syncCh <- m.allGroups():
+				case <-m.ctx.Done():
+					return
+				}
+			}
+		}
+		// We restart the ticker to ensure that no two updates are less than updatert apart.
+		ticker.Reset(m.updatert)
+	}
+
 	for {
 		select {
 		case <-m.ctx.Done():
 			return
-		case <-ticker.C: // Some discoverers send updates too often, so we throttle these with the ticker.
+		case <-ticker.C:
 			select {
 			case <-m.triggerSend:
 				m.metrics.SentUpdates.Inc()
