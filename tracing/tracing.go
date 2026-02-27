@@ -21,23 +21,19 @@ import (
 	"time"
 
 	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/common/version"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc/credentials"
 
 	"github.com/prometheus/prometheus/config"
+	promotel_common "github.com/prometheus/prometheus/util/otel"
 )
-
-const serviceName = "prometheus"
 
 // Manager is capable of building, (re)installing and shutting down
 // the tracer provider.
@@ -56,13 +52,12 @@ func NewManager(logger *slog.Logger) *Manager {
 	}
 }
 
-// Run starts the tracing manager. It registers the global text map propagator and error handler.
+// Run starts the tracing manager. Propagators, error handlers etc are handled in promotel_common.
 // It is blocking.
 func (m *Manager) Run() {
-	otel.SetTextMapPropagator(propagation.TraceContext{})
-	otel.SetErrorHandler(otelErrHandler(func(err error) {
-		m.logger.Error("OpenTelemetry handler returned an error", "err", err.Error())
-	}))
+	if !promotel_common.IsConfigured() {
+		m.logger.Warn("BUG: OpenTelemetry global settings have not been configured; this should have been done at startup by calling promotel_common.GlobalOTELSetup")
+	}
 	<-m.done
 }
 
@@ -140,16 +135,7 @@ func buildTracerProvider(ctx context.Context, tracingCfg config.TracingConfig) (
 	}
 
 	// Create a resource describing the service and the runtime.
-	res, err := resource.New(
-		ctx,
-		resource.WithSchemaURL(semconv.SchemaURL),
-		resource.WithAttributes(
-			semconv.ServiceNameKey.String(serviceName),
-			semconv.ServiceVersionKey.String(version.Version),
-		),
-		resource.WithProcessRuntimeDescription(),
-		resource.WithTelemetrySDK(),
-	)
+	res, err := promotel_common.NewOTELResource(ctx, tracingCfg.ResourceAttributes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -179,7 +165,7 @@ func buildTracerProvider(ctx context.Context, tracingCfg config.TracingConfig) (
 func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 	var client otlptrace.Client
 	switch tracingCfg.ClientType {
-	case config.TracingClientGRPC:
+	case config.OTELClientGRPC:
 		opts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(tracingCfg.Endpoint)}
 		if tracingCfg.Insecure {
 			opts = append(opts, otlptracegrpc.WithInsecure())
@@ -203,7 +189,7 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 		}
 
 		client = otlptracegrpc.NewClient(opts...)
-	case config.TracingClientHTTP:
+	case config.OTELClientHTTP:
 		opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(tracingCfg.Endpoint)}
 		if tracingCfg.Insecure {
 			opts = append(opts, otlptracehttp.WithInsecure())

@@ -54,6 +54,8 @@ func NewJSONFileLogger(s string) (*JSONFileLogger, error) {
 }
 
 // Close closes the underlying file. It implements the io.Closer interface.
+// Once the backing file for the logger is closed, logs will be silently
+// discarded.
 func (l *JSONFileLogger) Close() error {
 	return l.file.Close()
 }
@@ -66,7 +68,8 @@ func (l *JSONFileLogger) Enabled(ctx context.Context, level slog.Level) bool {
 
 // Handle takes record created by an slog.Logger and forwards it to the
 // internal slog.Handler for dispatching the log call to the backing file. It
-// implements the slog.Handler interface.
+// implements the slog.Handler interface. If called after Close(), the
+// log event will be silently discarded.
 func (l *JSONFileLogger) Handle(ctx context.Context, r slog.Record) error {
 	return l.handler.Handle(ctx, r.Clone())
 }

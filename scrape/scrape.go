@@ -75,10 +75,7 @@ var _ FailureLogger = (*logging.JSONFileLogger)(nil)
 
 // FailureLogger is an interface that can be used to log all failed
 // scrapes.
-type FailureLogger interface {
-	slog.Handler
-	io.Closer
-}
+type FailureLogger logging.CloseableLogger
 
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
