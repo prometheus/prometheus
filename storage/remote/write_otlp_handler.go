@@ -31,8 +31,8 @@ import (
 	"go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
@@ -257,8 +257,8 @@ type otlpInstrumentedAppender struct {
 	outOfOrderExemplars            prometheus.Counter
 }
 
-func (app *otlpInstrumentedAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
-	ref, err := app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+func (app *otlpInstrumentedAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val sample.Value, opts storage.AOptions) (storage.SeriesRef, error) {
+	ref, err := app.AppenderV2.Append(ref, ls, st, t, val, opts)
 	if err != nil {
 		var partialErr *storage.AppendPartialError
 		partialErr, hErr := partialErr.Handle(err)

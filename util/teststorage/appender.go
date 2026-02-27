@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -558,7 +559,7 @@ func (a *Appendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	return ret
 }
 
-func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
+func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val sample.Value, opts storage.AOptions) (_ storage.SeriesRef, err error) {
 	if err := a.checkErr(); err != nil {
 		return 0, err
 	}
@@ -595,14 +596,14 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 			M:  opts.Metadata,
 			L:  ls,
 			ST: st, T: t,
-			V: v, H: h, FH: fh,
+			V: val.F(), H: val.H(), FH: val.FH(),
 			ES: es,
 		})
 		a.a.mtx.Unlock()
 	}
 
 	if a.next != nil {
-		ref, err = a.next.Append(ref, ls, st, t, v, h, fh, opts)
+		ref, err = a.next.Append(ref, ls, st, t, val, opts)
 		if err != nil {
 			return 0, err
 		}

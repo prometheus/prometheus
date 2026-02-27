@@ -21,7 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -38,7 +38,7 @@ type appenderV2 struct {
 
 // Append appends pending sample to agent's DB.
 // TODO: Wire metadata in the Agent's appender.
-func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val sample.Value, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
 		valErr, partialErr error
@@ -46,13 +46,9 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		isStale            bool
 	)
 	// Fail fast on incorrect histograms.
-	switch {
-	case fh != nil:
+	if val.IsHistogram() {
 		sampleMetricType = sampleMetricTypeHistogram
-		valErr = fh.Validate()
-	case h != nil:
-		sampleMetricType = sampleMetricTypeHistogram
-		valErr = h.Validate()
+		valErr = val.Validate()
 	}
 	if valErr != nil {
 		return 0, valErr
@@ -74,7 +70,7 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 
 	// TODO(bwplotka): Handle ST natively (as per PROM-60).
 	if a.opts.EnableSTAsZeroSample && st != 0 {
-		a.bestEffortAppendSTZeroSample(s, ls, lastTS, st, t, h, fh)
+		a.bestEffortAppendSTZeroSample(s, ls, lastTS, st, t, val.H(), val.FH())
 	}
 
 	if t <= a.minValidTime(lastTS) {
@@ -82,33 +78,30 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 		return 0, storage.ErrOutOfOrderSample
 	}
 
-	switch {
-	case fh != nil:
-		isStale = value.IsStaleNaN(fh.Sum)
+	isStale = val.IsStale()
+	switch val.Type() {
+	case sample.TypeFloatHistogram:
 		// NOTE: always modify pendingFloatHistograms and floatHistogramSeries together
 		a.pendingFloatHistograms = append(a.pendingFloatHistograms, record.RefFloatHistogramSample{
 			Ref: s.ref,
 			T:   t,
-			FH:  fh,
+			FH:  val.FH(),
 		})
 		a.floatHistogramSeries = append(a.floatHistogramSeries, s)
-	case h != nil:
-		isStale = value.IsStaleNaN(h.Sum)
+	case sample.TypeHistogram:
 		// NOTE: always modify pendingHistograms and histogramSeries together
 		a.pendingHistograms = append(a.pendingHistograms, record.RefHistogramSample{
 			Ref: s.ref,
 			T:   t,
-			H:   h,
+			H:   val.H(),
 		})
 		a.histogramSeries = append(a.histogramSeries, s)
 	default:
-		isStale = value.IsStaleNaN(v)
-
 		// NOTE: always modify pendingSamples and sampleSeries together.
 		a.pendingSamples = append(a.pendingSamples, record.RefSample{
 			Ref: s.ref,
 			T:   t,
-			V:   v,
+			V:   val.F(),
 		})
 		a.sampleSeries = append(a.sampleSeries, s)
 	}

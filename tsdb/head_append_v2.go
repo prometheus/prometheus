@@ -21,7 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -36,12 +36,12 @@ type initAppenderV2 struct {
 
 var _ storage.GetRef = &initAppenderV2{}
 
-func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val sample.Value, opts storage.AOptions) (storage.SeriesRef, error) {
 	if a.app == nil {
 		a.head.initTime(t)
 		a.app = a.head.appenderV2()
 	}
-	return a.app.Append(ref, ls, st, t, v, h, fh, opts)
+	return a.app.Append(ref, ls, st, t, val, opts)
 }
 
 func (a *initAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
@@ -103,7 +103,7 @@ type headAppenderV2 struct {
 	headAppenderBase
 }
 
-func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val sample.Value, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
 		valErr, appErr, partialErr error
@@ -111,14 +111,9 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		isStale                    bool
 	)
 	// Fail fast on incorrect histograms.
-
-	switch {
-	case fh != nil:
+	if val.IsHistogram() {
 		sampleMetricType = sampleMetricTypeHistogram
-		valErr = fh.Validate()
-	case h != nil:
-		sampleMetricType = sampleMetricTypeHistogram
-		valErr = h.Validate()
+		valErr = val.Validate()
 	}
 	if valErr != nil {
 		return 0, valErr
@@ -142,18 +137,21 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 
 	// TODO(bwplotka): Handle ST natively (as per PROM-60).
 	if a.head.opts.EnableSTAsZeroSample && st != 0 {
-		a.bestEffortAppendSTZeroSample(s, ls, st, t, h, fh)
+		a.bestEffortAppendSTZeroSample(s, ls, st, t, val.H(), val.FH())
 	}
 
-	switch {
-	case fh != nil:
-		isStale = value.IsStaleNaN(fh.Sum)
+	switch val.Type() {
+	case sample.TypeFloatHistogram:
+		fh := val.FH()
+		isStale = val.IsStale()
 		appErr = a.appendFloatHistogram(s, t, fh, opts.RejectOutOfOrder)
-	case h != nil:
-		isStale = value.IsStaleNaN(h.Sum)
+	case sample.TypeHistogram:
+		h := val.H()
+		isStale = val.IsStale()
 		appErr = a.appendHistogram(s, t, h, opts.RejectOutOfOrder)
 	default:
-		isStale = value.IsStaleNaN(v)
+		v := val.F()
+		isStale = val.IsStale()
 		if isStale {
 			// If we have added a sample before with this same appender, we
 			// can check the previously used type and turn a stale float
@@ -164,11 +162,11 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// an optimization for the more likely case.
 			switch a.typesInBatch[s.ref] {
 			case stHistogram, stCustomBucketHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, &histogram.Histogram{Sum: v}, nil, storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, sample.Histogram(&histogram.Histogram{Sum: v}), storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			case stFloatHistogram, stCustomBucketFloatHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, 0, nil, &histogram.FloatHistogram{Sum: v}, storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, sample.FloatHistogram(&histogram.FloatHistogram{Sum: v}), storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			}
