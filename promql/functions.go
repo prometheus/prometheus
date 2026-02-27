@@ -123,7 +123,7 @@ func correctForCounterResets(left, right float64, points []FPoint) float64 {
 // the result as either per-second (if isRate is true) or overall.
 func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) (Vector, annotations.Annotations) {
 	var (
-		ms              = args[0].(*parser.MatrixSelector)
+		ms              = peekExpr(args[0]).(*parser.MatrixSelector)
 		vs              = ms.VectorSelector.(*parser.VectorSelector)
 		samples         = vals[0]
 		f               = samples.Floats
@@ -176,7 +176,7 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 // Note: If the vector selector is smoothed or anchored, it will use the
 // extendedRate function instead.
 func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) (Vector, annotations.Annotations) {
-	ms := args[0].(*parser.MatrixSelector)
+	ms := peekExpr(args[0]).(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
 	if vs.Anchored || vs.Smoothed {
 		return extendedRate(vals, args, enh, isCounter, isRate)
@@ -1858,7 +1858,7 @@ func funcHistogramQuantiles(vectorVals []Vector, _ Matrix, args parser.Expressio
 // If the vector selector is not anchored, it always returns 0, true.
 // The second return value is false if there are no samples in range (for anchored selectors).
 func pickFirstSampleIndex(floats []FPoint, args parser.Expressions, enh *EvalNodeHelper) (int, bool) {
-	ms := args[0].(*parser.MatrixSelector)
+	ms := peekExpr(args[0]).(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
 	if !vs.Anchored {
 		return 0, true
@@ -2337,7 +2337,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	b := labels.NewBuilder(labels.EmptyLabels())
 
 	var lm []*labels.Matcher
-	switch n := expr.(type) {
+	switch n := peekExpr(expr).(type) {
 	case *parser.VectorSelector:
 		lm = n.LabelMatchers
 	case *parser.MatrixSelector:
@@ -2366,7 +2366,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 }
 
 func stringFromArg(e parser.Expr) string {
-	return e.(*parser.StringLiteral).Val
+	return peekExpr(e).(*parser.StringLiteral).Val
 }
 
 func stringSliceFromArgs(args parser.Expressions) []string {
