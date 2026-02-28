@@ -231,6 +231,45 @@ func TestAzureAdConfig(t *testing.T) {
 		{
 			filename: "testdata/azuread_good_oauth_customscope.yaml",
 		},
+		// Valid certificate config.
+		{
+			filename: "testdata/azuread_good_certificate.yaml",
+		},
+		// Missing certificate client id.
+		{
+			filename: "testdata/azuread_bad_certificate_missingclientid.yaml",
+			err:      "must provide an Azure Certificate client_id in the Azure AD config",
+		},
+		// Missing certificate tenant id.
+		{
+			filename: "testdata/azuread_bad_certificate_missingtenantid.yaml",
+			err:      "must provide an Azure Certificate tenant_id in the Azure AD config",
+		},
+		// Missing certificate file.
+		{
+			filename: "testdata/azuread_bad_certificate_missingcertfile.yaml",
+			err:      "must provide an Azure Certificate certificate_file in the Azure AD config",
+		},
+		// Missing private key file.
+		{
+			filename: "testdata/azuread_bad_certificate_missingkeyfile.yaml",
+			err:      "must provide an Azure Certificate private_key_file in the Azure AD config",
+		},
+		// Invalid certificate client id.
+		{
+			filename: "testdata/azuread_bad_certificate_invalidclientid.yaml",
+			err:      "the provided Azure Certificate client_id is invalid",
+		},
+		// Invalid certificate tenant id.
+		{
+			filename: "testdata/azuread_bad_certificate_invalidtenantid.yaml",
+			err:      "the provided Azure Certificate tenant_id is invalid",
+		},
+		// Invalid config when both oauth and certificate is provided.
+		{
+			filename: "testdata/azuread_bad_oauthcertconfig.yaml",
+			err:      "cannot provide multiple authentication methods in the Azure AD config",
+		},
 	}
 	for _, c := range cases {
 		_, err := loadAzureAdConfig(c.filename)
