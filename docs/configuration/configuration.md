@@ -2222,6 +2222,7 @@ Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
 * `__meta_kubernetes_node_provider_id`: The cloud provider's name for the node object.
+* `__meta_kubernetes_node_condition_<condition_type>`: For every entry in node.Status.Conditions, a label with the condition type in lowercase. Possible values are `true`, `false`, or `unknown`. Examples: `__meta_kubernetes_node_condition_ready`, `__meta_kubernetes_node_condition_memorypressure`, `__meta_kubernetes_node_condition_diskpressure`.
 * `__meta_kubernetes_node_label_<labelname>`: Each label from the node object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
