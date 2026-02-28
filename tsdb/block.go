@@ -38,6 +38,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
+var warnV1Once sync.Once
+
+func chunkDir(dir string) string {
+	return filepath.Join(dir, "chunks")
+}
+
 // IndexWriter serializes the index for a block of series data.
 // The methods must be called in the order they are specified in.
 type IndexWriter interface {
@@ -253,18 +259,27 @@ const (
 	CompactionHintFromStaleSeries = "from-stale-series"
 )
 
-func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
-
 func readMetaFile(dir string) (*BlockMeta, int64, error) {
+
 	b, err := os.ReadFile(filepath.Join(dir, metaFilename))
 	if err != nil {
 		return nil, 0, err
 	}
-	var m BlockMeta
 
+	var m BlockMeta
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, 0, err
 	}
+
+	// ✅ Warning ONLY when V1 is used
+	if m.Version == metaVersion1 {
+		warnV1Once.Do(func() {
+			slog.Warn(
+				"TSDB V1 block format is deprecated and will be removed in a future release",
+			)
+		})
+	}
+
 	if m.Version != metaVersion1 {
 		return nil, 0, fmt.Errorf("unexpected meta file version %d", m.Version)
 	}
