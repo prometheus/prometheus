@@ -73,6 +73,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/storage/semconv"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
@@ -221,6 +222,8 @@ type flagConfig struct {
 	parserOpts parser.Options
 
 	promslogConfig promslog.Config
+
+	enableSemconvVersionedRead bool
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -321,6 +324,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "use-uncached-io":
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
+			case "semconv-versioned-read":
+				c.enableSemconvVersionedRead = true
+				logger.Info("Experimental OTel semconv versioned read enabled")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -864,6 +870,10 @@ func main() {
 		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
+
+	if cfg.enableSemconvVersionedRead {
+		fanoutStorage = semconv.AwareStorage(fanoutStorage)
+	}
 
 	var (
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
