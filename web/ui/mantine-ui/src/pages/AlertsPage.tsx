@@ -46,6 +46,7 @@ type AlertsPageData = {
     inactive: number;
     pending: number;
     firing: number;
+    expired: number;
     unknown: number;
   };
   groups: {
@@ -57,6 +58,7 @@ type AlertsPageData = {
       inactive: number;
       pending: number;
       firing: number;
+      expired: number;
       unknown: number;
     };
     rules: {
@@ -65,6 +67,7 @@ type AlertsPageData = {
       counts: {
         firing: number;
         pending: number;
+        expired: number;
       };
     }[];
   }[];
@@ -85,6 +88,7 @@ const buildAlertsPageData = (
       inactive: 0,
       pending: 0,
       firing: 0,
+      expired: 0,
       unknown: 0,
     },
     groups: [],
@@ -96,6 +100,7 @@ const buildAlertsPageData = (
       inactive: 0,
       pending: 0,
       firing: 0,
+      expired: 0,
       unknown: 0,
     };
 
@@ -113,6 +118,10 @@ const buildAlertsPageData = (
         case "pending":
           pageData.globalCounts.pending++;
           groupCounts.pending++;
+          break;
+        case "expired":
+          pageData.globalCounts.expired++;
+          groupCounts.expired++;
           break;
         case "unknown":
           pageData.globalCounts.unknown++;
@@ -138,6 +147,7 @@ const buildAlertsPageData = (
         counts: {
           firing: r.alerts.filter((a) => a.state === "firing").length,
           pending: r.alerts.filter((a) => a.state === "pending").length,
+          expired: r.alerts.filter((a) => a.state === "expired").length,
         },
       })),
     });
@@ -426,7 +436,7 @@ export default function AlertsPage() {
     <Stack mt="xs">
       <Group>
         <StateMultiSelect
-          options={["inactive", "pending", "firing", "unknown"]}
+          options={["inactive", "pending", "firing", "expired", "unknown"]}
           optionClass={(o) =>
             o === "inactive"
               ? badgeClasses.healthOk
@@ -434,7 +444,9 @@ export default function AlertsPage() {
                 ? badgeClasses.healthWarn
                 : o === "firing"
                   ? badgeClasses.healthErr
-                  : badgeClasses.healthUnknown
+                  : o === "expired"
+                    ? badgeClasses.healthOk
+                    : badgeClasses.healthUnknown
           }
           optionCount={(o) =>
             alertsPageData.globalCounts[
