@@ -355,6 +355,18 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 	if err != nil && !errors.Is(err, io.EOF) {
 		errs = append(errs, err)
 	}
+
+	// Checking for additional YAML documents.
+	var dummy any
+	err = decoder.Decode(&dummy)
+	if err == nil {
+		// Successfully decoded another document, warn the user.
+		errs = append(errs, errors.New("file contains multiple YAML documents; only the first document will be parsed"))
+	} else if !errors.Is(err, io.EOF) {
+		// Error other than EOF occurred.
+		errs = append(errs, fmt.Errorf("error checking for additional YAML documents: %w", err))
+	}
+
 	err = yaml.Unmarshal(content, &node)
 	if err != nil {
 		errs = append(errs, err)
