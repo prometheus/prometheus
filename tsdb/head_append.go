@@ -539,8 +539,8 @@ func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, create
 	if lset.IsEmpty() {
 		return nil, false, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
 	}
-	if l, dup := lset.HasDuplicateLabelNames(); dup {
-		return nil, false, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
+	if l, outOfOrder := lset.HasOutOfOrderLabel(); outOfOrder {
+		return nil, false, fmt.Errorf(`label name "%s" is out of order: %w`, l, ErrInvalidSample)
 	}
 	s, created, err = a.head.getOrCreate(lset.Hash(), lset, true)
 	if err != nil {

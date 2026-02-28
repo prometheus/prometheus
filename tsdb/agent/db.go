@@ -871,15 +871,15 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 }
 
 func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, err error) {
-	// Ensure no empty or duplicate labels have gotten through. This mirrors the
+	// Ensure no empty or out-of-order labels have gotten through. This mirrors the
 	// equivalent validation code in the TSDB's headAppender.
 	l = l.WithoutEmpty()
 	if l.IsEmpty() {
 		return nil, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
 	}
 
-	if lbl, dup := l.HasDuplicateLabelNames(); dup {
-		return nil, fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidSample)
+	if lbl, outOfOrder := l.HasOutOfOrderLabel(); outOfOrder {
+		return nil, fmt.Errorf(`label name "%s" is out of order: %w`, lbl, tsdb.ErrInvalidSample)
 	}
 
 	hash := l.Hash()
@@ -933,8 +933,8 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, _ labels.Labels, e exem
 }
 
 func (a *appenderBase) validateExemplar(ref chunks.HeadSeriesRef, e exemplar.Exemplar) error {
-	if lbl, dup := e.Labels.HasDuplicateLabelNames(); dup {
-		return fmt.Errorf(`label name "%s" is not unique: %w`, lbl, tsdb.ErrInvalidExemplar)
+	if lbl, outOfOrder := e.Labels.HasOutOfOrderLabel(); outOfOrder {
+		return fmt.Errorf(`label name "%s" is out of order: %w`, lbl, tsdb.ErrInvalidExemplar)
 	}
 
 	// Exemplar label length does not include chars involved in text rendering such as quotes
