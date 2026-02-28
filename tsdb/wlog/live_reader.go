@@ -65,7 +65,7 @@ func NewLiveReader(logger *slog.Logger, metrics *LiveReaderMetrics, r io.Reader)
 	lr := &LiveReader{
 		logger:  logger,
 		rdr:     r,
-		decBuf:  compression.NewSyncDecodeBuffer(),
+		decBuf:  compression.GetDecodeBuffer(),
 		metrics: metrics,
 
 		// Until we understand how they come about, make readers permissive
@@ -103,6 +103,14 @@ type LiveReader struct {
 	permissive bool
 
 	metrics *LiveReaderMetrics
+}
+
+// Close closes the reader and returns the decode buffer to the pool.
+func (r *LiveReader) Close() {
+	if r.decBuf != nil {
+		compression.PutDecodeBuffer(r.decBuf)
+		r.decBuf = nil
+	}
 }
 
 // Err returns any errors encountered reading the WAL.  io.EOFs are not terminal
