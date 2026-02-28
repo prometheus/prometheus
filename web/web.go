@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -277,7 +278,9 @@ type Options struct {
 	NotificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	Flags                 map[string]string
 
-	ListenAddresses            []string
+	ListenAddresses      []string
+	ProbeListenAddresses []string
+
 	CORSOrigin                 *regexp.Regexp
 	ReadTimeout                time.Duration
 	MaxConnections             int
@@ -700,6 +703,22 @@ func (h *Handler) Listeners() ([]net.Listener, error) {
 	return listeners, nil
 }
 
+func (h *Handler) ProbeListeners() ([]net.Listener, error) {
+	if len(h.options.ProbeListenAddresses) == 0 {
+		return nil, nil
+	}
+	var listeners []net.Listener
+	sem := netconnlimit.NewSharedSemaphore(h.options.MaxConnections)
+	for _, address := range h.options.ProbeListenAddresses {
+		listener, err := h.Listener(address, sem)
+		if err != nil {
+			return listeners, err
+		}
+		listeners = append(listeners, listener)
+	}
+	return listeners, nil
+}
+
 // Listener creates the TCP listener for web requests.
 func (h *Handler) Listener(address string, sem chan struct{}) (net.Listener, error) {
 	h.logger.Info("Start listening for connections", "address", address)
@@ -765,6 +784,58 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 		return e
 	case <-ctx.Done():
 		httpSrv.Shutdown(ctx)
+		return nil
+	}
+}
+
+func (h *Handler) RunProbes(ctx context.Context, listeners []net.Listener) error {
+	if len(listeners) == 0 {
+		var err error
+		listeners, err = h.ProbeListeners()
+		if err != nil || len(listeners) == 0 {
+			return err
+		}
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		fmt.Fprintf(w, "%s is Healthy.\n", h.options.AppName)
+	})
+
+	readyHandler := h.testReady(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		fmt.Fprintf(w, "%s is Ready.\n", h.options.AppName)
+	})
+
+	mux.Handle("/-/ready", readyHandler)
+	errlog := slog.NewLogLogger(h.logger.Handler(), slog.LevelError)
+	httpSrv := &http.Server{
+		Handler:     mux,
+		ErrorLog:    errlog,
+		ReadTimeout: h.options.ReadTimeout,
+	}
+
+	errCh := make(chan error, len(listeners))
+	for _, l := range listeners {
+		go func(ln net.Listener) {
+			errCh <- httpSrv.Serve(ln)
+		}(l)
+	}
+	select {
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		_ = httpSrv.Shutdown(ctx)
 		return nil
 	}
 }

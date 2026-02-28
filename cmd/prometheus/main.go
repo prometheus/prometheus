@@ -390,6 +390,8 @@ func main() {
 
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated.").
 		Default("0.0.0.0:9090").StringsVar(&cfg.web.ListenAddresses)
+	a.Flag("web.probe-listen-address", "Address to listen on for unauthenticated health probes (/-/healthy, /-/ready). Can be repeated.").
+		Default("").StringsVar(&cfg.web.ProbeListenAddresses)
 
 	a.Flag("auto-gomaxprocs", "Automatically set GOMAXPROCS to match Linux container CPU quota").
 		Default("true").BoolVar(&cfg.maxprocsEnable)
@@ -1142,6 +1144,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	probeListeners, err := webHandler.ProbeListeners()
+	if err != nil {
+		logger.Error("Unable to start probe listener", "err", err)
+		os.Exit(1)
+	}
+
 	err = toolkit_web.Validate(*webConfig)
 	if err != nil {
 		logger.Error("Unable to validate web configuration file", "err", err)
@@ -1202,6 +1210,21 @@ func main() {
 				cancelNotify()
 			},
 		)
+	}
+	{
+		if len(probeListeners) > 0 {
+			g.Add(
+				func() error {
+					if err := webHandler.RunProbes(ctxWeb, probeListeners); err != nil {
+						return fmt.Errorf("error starting the probe server: %w", err)
+					}
+					return nil
+				},
+				func(error) {
+					cancelWeb()
+				},
+			)
+		}
 	}
 	if !agentMode {
 		// Rule manager.

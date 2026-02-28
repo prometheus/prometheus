@@ -32,6 +32,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
@@ -39,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -205,6 +207,84 @@ func TestReadyAndHealthy(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 	cleanupTestResponse(t, resp)
+}
+
+func TestProbeServer(t *testing.T) {
+	logger := promslog.NewNopLogger()
+	reg := prometheus.NewRegistry()
+
+	dbDir := t.TempDir()
+	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
+	opts := &Options{
+		ListenAddresses: []string{port},
+		RoutePrefix:     "/",
+		ExternalURL: &url.URL{
+			Scheme: "http",
+			Host:   "localhost" + port,
+			Path:   "/",
+		},
+		LocalStorage:    &dbAdapter{db},
+		TSDBDir:         dbDir,
+		ScrapeManager:   &scrape.Manager{},
+		RuleManager:     &rules.Manager{},
+		Registerer:      reg,
+		Gatherer:        reg,
+		FeatureRegistry: features.DefaultRegistry,
+		AppName:         "Prometheus",
+	}
+	opts.Flags = map[string]string{}
+
+	h := New(logger, opts)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- h.RunProbes(ctx, []net.Listener{ln})
+	}()
+
+	baseURL := "http://" + ln.Addr().String()
+
+	resp, err := http.Get(baseURL + "/-/healthy")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	resp, err = http.Get(baseURL + "/-/ready")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	h.SetReady(Ready)
+	resp, err = http.Get(baseURL + "/-/ready")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	resp, err = http.Get(baseURL + "/metrics")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	cancel()
+
+	select {
+	case <-errCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("probe server did not stop")
+	}
 }
 
 func TestRoutePrefix(t *testing.T) {
