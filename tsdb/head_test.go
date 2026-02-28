@@ -1138,6 +1138,338 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 	}
 }
 
+// TestHead_WALReplayMultiRefScenarios tests handling duplicate series references during WAL replay.
+func TestHead_WALReplayMultiRefScenarios(t *testing.T) {
+	cases := []struct {
+		name             string
+		walEntries       []any
+		expectedSeries   map[string][]chunks.Sample
+		validateMultiRef func(t *testing.T, h *Head)
+	}{
+		{
+			name: "basic duplicate ref - same series with two refs",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 100, Labels: labels.FromStrings("job", "test", "instance", "a")},
+					{Ref: 200, Labels: labels.FromStrings("job", "test", "instance", "a")},
+				},
+				[]record.RefSample{
+					{Ref: 100, T: 1000, V: 1.0},
+					{Ref: 200, T: 2000, V: 2.0},
+					{Ref: 200, T: 3000, V: 3.0},
+				},
+			},
+			expectedSeries: map[string][]chunks.Sample{
+				`{instance="a", job="test"}`: {
+					sample{0, 1000, 1.0, nil, nil},
+					sample{0, 2000, 2.0, nil, nil},
+					sample{0, 3000, 3.0, nil, nil},
+				},
+			},
+			validateMultiRef: func(t *testing.T, h *Head) {
+				keepUntil, ok := h.getWALExpiry(200)
+				require.True(t, ok, "WAL expiry should be set for duplicate ref 200")
+				require.Equal(t, int64(3000), keepUntil, "Should track latest sample timestamp for duplicate ref")
+			},
+		},
+		{
+			name: "three refs for same series",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("metric", "cpu")},
+					{Ref: 2, Labels: labels.FromStrings("metric", "cpu")},
+					{Ref: 3, Labels: labels.FromStrings("metric", "cpu")},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: 100, V: 10.0},
+					{Ref: 2, T: 200, V: 20.0},
+					{Ref: 3, T: 300, V: 30.0},
+				},
+			},
+			expectedSeries: map[string][]chunks.Sample{
+				`{metric="cpu"}`: {
+					sample{0, 100, 10.0, nil, nil},
+					sample{0, 200, 20.0, nil, nil},
+					sample{0, 300, 30.0, nil, nil},
+				},
+			},
+			validateMultiRef: func(t *testing.T, h *Head) {
+				keepUntil2, ok := h.getWALExpiry(2)
+				require.True(t, ok)
+				require.Equal(t, int64(200), keepUntil2)
+
+				keepUntil3, ok := h.getWALExpiry(3)
+				require.True(t, ok)
+				require.Equal(t, int64(300), keepUntil3)
+			},
+		},
+		{
+			name: "multiple series with overlapping refs - collision scenario",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 10, Labels: labels.FromStrings("series", "A")},
+					{Ref: 20, Labels: labels.FromStrings("series", "B")},
+					{Ref: 30, Labels: labels.FromStrings("series", "A")},
+				},
+				[]record.RefSample{
+					{Ref: 10, T: 100, V: 1.0},
+					{Ref: 20, T: 150, V: 2.0},
+					{Ref: 30, T: 200, V: 3.0},
+				},
+			},
+			expectedSeries: map[string][]chunks.Sample{
+				`{series="A"}`: {
+					sample{0, 100, 1.0, nil, nil},
+					sample{0, 200, 3.0, nil, nil},
+				},
+				`{series="B"}`: {
+					sample{0, 150, 2.0, nil, nil},
+				},
+			},
+		},
+		{
+			name: "duplicate refs with all record types",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("test", "multi")},
+					{Ref: 2, Labels: labels.FromStrings("test", "multi")},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: 100, V: 1.0},
+					{Ref: 2, T: 200, V: 2.0},
+				},
+				[]record.RefHistogramSample{
+					{Ref: 1, T: 150, H: tsdbutil.GenerateTestHistogram(1)},
+					{Ref: 2, T: 250, H: tsdbutil.GenerateTestHistogram(2)},
+				},
+				[]record.RefFloatHistogramSample{
+					{Ref: 1, T: 175, FH: tsdbutil.GenerateTestFloatHistogram(1)},
+					{Ref: 2, T: 275, FH: tsdbutil.GenerateTestFloatHistogram(2)},
+				},
+				[]record.RefExemplar{
+					{Ref: 1, T: 125, V: 1.5, Labels: labels.FromStrings("trace", "abc")},
+					{Ref: 2, T: 225, V: 2.5, Labels: labels.FromStrings("trace", "def")},
+				},
+				[]tombstones.Stone{
+					{Ref: 1, Intervals: []tombstones.Interval{{Mint: 90, Maxt: 95}}},
+					{Ref: 2, Intervals: []tombstones.Interval{{Mint: 190, Maxt: 195}}},
+				},
+			},
+			validateMultiRef: func(t *testing.T, h *Head) {
+				keepUntil, ok := h.getWALExpiry(2)
+				require.True(t, ok)
+				require.Equal(t, int64(275), keepUntil, "Should track latest timestamp across all record types")
+			},
+		},
+		{
+			name: "interleaved samples for duplicate refs",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 5, Labels: labels.FromStrings("app", "web")},
+					{Ref: 10, Labels: labels.FromStrings("app", "web")},
+				},
+				[]record.RefSample{
+					{Ref: 5, T: 1000, V: 1.0},
+					{Ref: 10, T: 1500, V: 1.5},
+					{Ref: 5, T: 2000, V: 2.0},
+					{Ref: 10, T: 2500, V: 2.5},
+					{Ref: 5, T: 3000, V: 3.0},
+				},
+			},
+			expectedSeries: map[string][]chunks.Sample{
+				`{app="web"}`: {
+					sample{0, 1000, 1.0, nil, nil},
+					sample{0, 1500, 1.5, nil, nil},
+					sample{0, 2000, 2.0, nil, nil},
+					sample{0, 2500, 2.5, nil, nil},
+					sample{0, 3000, 3.0, nil, nil},
+				},
+			},
+			validateMultiRef: func(t *testing.T, h *Head) {
+				keepUntil, ok := h.getWALExpiry(10)
+				require.True(t, ok)
+				require.Equal(t, int64(2500), keepUntil, "Should track latest sample timestamp for duplicate ref")
+			},
+		},
+		{
+			name: "duplicate refs with metadata records",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("__name__", "http_requests_total")},
+					{Ref: 2, Labels: labels.FromStrings("__name__", "http_requests_total")},
+				},
+				[]record.RefMetadata{
+					{Ref: 1, Type: uint8(record.Counter), Unit: "requests", Help: "Total HTTP requests"},
+					{Ref: 2, Type: uint8(record.Counter), Unit: "requests", Help: "Total HTTP requests"},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: 1000, V: 100.0},
+					{Ref: 2, T: 2000, V: 200.0},
+				},
+			},
+			expectedSeries: map[string][]chunks.Sample{
+				`{__name__="http_requests_total"}`: {
+					sample{0, 1000, 100.0, nil, nil},
+					sample{0, 2000, 200.0, nil, nil},
+				},
+			},
+			validateMultiRef: func(t *testing.T, h *Head) {
+				keepUntil, ok := h.getWALExpiry(2)
+				require.True(t, ok)
+				require.Equal(t, int64(2000), keepUntil)
+			},
+		},
+		{
+			name: "large ref gap - realistic ref allocation",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1000, Labels: labels.FromStrings("pod", "a")},
+					{Ref: 5000, Labels: labels.FromStrings("pod", "a")},
+				},
+				[]record.RefSample{
+					{Ref: 1000, T: 10000, V: 1.0},
+					{Ref: 5000, T: 20000, V: 2.0},
+				},
+			},
+			expectedSeries: map[string][]chunks.Sample{
+				`{pod="a"}`: {
+					sample{0, 10000, 1.0, nil, nil},
+					sample{0, 20000, 2.0, nil, nil},
+				},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, w := newTestHead(t, 100000, compression.None, false)
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+
+			// Write WAL entries
+			populateTestWL(t, w, tc.walEntries, nil)
+
+			// Replay WAL
+			require.NoError(t, h.Init(0))
+
+			// Query and verify series data
+			if tc.expectedSeries != nil {
+				q, err := NewBlockQuerier(h, 0, math.MaxInt64)
+				require.NoError(t, err)
+				result := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+
+				require.Len(t, result, len(tc.expectedSeries), "Unexpected number of series")
+				for lblStr, expectedSamples := range tc.expectedSeries {
+					samples, found := result[lblStr]
+					require.True(t, found, "Series %s not found", lblStr)
+					require.Equal(t, expectedSamples, samples, "Samples mismatch for series %s", lblStr)
+				}
+			}
+
+			if tc.validateMultiRef != nil {
+				tc.validateMultiRef(t, h)
+			}
+		})
+	}
+}
+
+// TestHead_WALReplayMultiRefEdgeCases tests edge cases for multiRef handling.
+func TestHead_WALReplayMultiRefEdgeCases(t *testing.T) {
+	cases := []struct {
+		name             string
+		walEntries       []any
+		expectedSeries   map[string]int // Series label -> expected sample count
+		validateEdgeCase func(t *testing.T, h *Head)
+	}{
+		{
+			name: "samples for unknown ref are handled gracefully",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 1, Labels: labels.FromStrings("known", "series")},
+				},
+				[]record.RefSample{
+					{Ref: 1, T: 1000, V: 1.0},
+					{Ref: 999, T: 2000, V: 2.0},
+					{Ref: 1, T: 3000, V: 3.0},
+				},
+			},
+			expectedSeries: map[string]int{
+				`{known="series"}`: 2,
+			},
+		},
+		{
+			name:       "empty WAL with multiRef",
+			walEntries: []any{},
+			validateEdgeCase: func(t *testing.T, h *Head) {
+				q, err := NewBlockQuerier(h, 0, math.MaxInt64)
+				require.NoError(t, err)
+				defer q.Close()
+
+				ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+				require.False(t, ss.Next(), "Empty WAL should have no series")
+				require.NoError(t, ss.Err())
+				require.Empty(t, ss.Warnings())
+			},
+		},
+		{
+			name: "single ref without duplicates",
+			walEntries: []any{
+				[]record.RefSeries{
+					{Ref: 42, Labels: labels.FromStrings("single", "ref")},
+				},
+				[]record.RefSample{
+					{Ref: 42, T: 1000, V: 1.0},
+					{Ref: 42, T: 2000, V: 2.0},
+					{Ref: 42, T: 3000, V: 3.0},
+				},
+			},
+			expectedSeries: map[string]int{
+				`{single="ref"}`: 3,
+			},
+			validateEdgeCase: func(t *testing.T, h *Head) {
+				_, ok := h.getWALExpiry(42)
+				require.False(t, ok, "Single ref without duplicates should not have expiry set")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, w := newTestHead(t, 100000, compression.None, false)
+			defer func() {
+				require.NoError(t, h.Close())
+			}()
+
+			// Write WAL entries
+			if len(tc.walEntries) > 0 {
+				populateTestWL(t, w, tc.walEntries, nil)
+			}
+
+			// Replay WAL
+			require.NoError(t, h.Init(0))
+
+			// Verify expected series and sample counts
+			if tc.expectedSeries != nil {
+				q, err := NewBlockQuerier(h, 0, math.MaxInt64)
+				require.NoError(t, err)
+				result := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+
+				require.Len(t, result, len(tc.expectedSeries), "Unexpected number of series")
+				for lblStr, expectedCount := range tc.expectedSeries {
+					samples, found := result[lblStr]
+					require.True(t, found, "Series %s not found", lblStr)
+					require.Len(t, samples, expectedCount, "Series %s should have %d samples", lblStr, expectedCount)
+				}
+			}
+
+			if tc.validateEdgeCase != nil {
+				tc.validateEdgeCase(t, h)
+			}
+		})
+	}
+}
+
 func TestHead_KeepSeriesInWALCheckpoint(t *testing.T) {
 	existingRef := 1
 	existingLbls := labels.FromStrings("foo", "bar")
