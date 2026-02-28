@@ -1135,11 +1135,177 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_elasticache_cache_cluster_node_endpoint_port`: cache node endpoint port
 * `__meta_elasticache_cache_cluster_tag_<tagkey>`: each cache cluster tag value, keyed by tag name
 
+#### `rds`
+
+The `rds` role discovers targets from [AWS RDS](https://aws.amazon.com/rds/)
+database instances within clusters. One target is created for each DB instance
+within the specified clusters. The endpoint address and port of each instance is used by default.
+
+The IAM credentials used must have the `rds:DescribeDBClusters` and `rds:DescribeDBInstances`
+permissions to discover scrape targets.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+**Cluster labels:**
+
+* `__meta_rds_cluster_activity_stream_kinesis_stream_name`: the name of the Amazon Kinesis data stream used for database activity stream
+* `__meta_rds_cluster_activity_stream_kms_key_id`: the AWS KMS key identifier used for encrypting the database activity stream
+* `__meta_rds_cluster_activity_stream_mode`: the mode of the database activity stream (sync or async)
+* `__meta_rds_cluster_activity_stream_status`: the status of the database activity stream
+* `__meta_rds_cluster_allocated_storage`: the allocated storage size in gibibytes (GiB)
+* `__meta_rds_cluster_arn`: the Amazon Resource Name (ARN) of the DB cluster
+* `__meta_rds_cluster_auto_minor_version_upgrade`: whether automatic minor version upgrades are enabled
+* `__meta_rds_cluster_automatic_restart_time`: the time when a stopped cluster will be automatically restarted
+* `__meta_rds_cluster_aws_backup_recovery_point_arn`: the ARN of the recovery point in AWS Backup
+* `__meta_rds_cluster_backtrack_consumed_change_records`: the number of change records stored for backtrack
+* `__meta_rds_cluster_backtrack_window`: the target backtrack window in hours
+* `__meta_rds_cluster_backup_retention_period`: the number of days for which automated backups are retained
+* `__meta_rds_cluster_capacity`: the current capacity of an Aurora Serverless DB cluster
+* `__meta_rds_cluster_character_set_name`: the name of the character set
+* `__meta_rds_cluster_clone_group_id`: the ID of the clone group
+* `__meta_rds_cluster_cluster_create_time`: the time when the DB cluster was created
+* `__meta_rds_cluster_cluster_scalability_type`: the scalability type of the cluster
+* `__meta_rds_cluster_copy_tags_to_snapshot`: whether tags are copied from the cluster to snapshots
+* `__meta_rds_cluster_cross_account_clone`: whether the DB cluster is a cross-account clone
+* `__meta_rds_cluster_database_insights_mode`: the mode of Database Insights
+* `__meta_rds_cluster_database_name`: the database name
+* `__meta_rds_cluster_db_system_id`: the Oracle system ID (Oracle SID)
+* `__meta_rds_cluster_deletion_protection`: whether deletion protection is enabled
+* `__meta_rds_cluster_earliest_backtrack_time`: the earliest time to which a database can be restored with backtrack
+* `__meta_rds_cluster_earliest_restorable_time`: the earliest time to which a database can be restored
+* `__meta_rds_cluster_endpoint`: the endpoint of the DB cluster
+* `__meta_rds_cluster_engine_lifecycle_support`: the engine lifecycle support value
+* `__meta_rds_cluster_engine_mode`: the engine mode of the cluster (provisioned, serverless, etc.)
+* `__meta_rds_cluster_engine_version`: the version of the database engine
+* `__meta_rds_cluster_engine`: the database engine of the DB cluster
+* `__meta_rds_cluster_global_cluster_identifier`: the identifier of the global cluster
+* `__meta_rds_cluster_global_write_forwarding_requested`: whether global write forwarding is requested
+* `__meta_rds_cluster_global_write_forwarding_status`: the status of global write forwarding
+* `__meta_rds_cluster_hosted_zone_id`: the Route 53 hosted zone ID
+* `__meta_rds_cluster_http_endpoint_enabled`: whether the HTTP endpoint is enabled
+* `__meta_rds_cluster_iam_database_authentication_enabled`: whether the DB cluster has IAM database authentication enabled
+* `__meta_rds_cluster_identifier`: the identifier of the DB cluster
+* `__meta_rds_cluster_instance_class`: the compute and memory capacity class of the DB cluster
+* `__meta_rds_cluster_io_optimized_next_allowed_modification_time`: the time when the next IO optimization configuration change is allowed
+* `__meta_rds_cluster_iops`: the provisioned IOPS (I/O operations per second) value
+* `__meta_rds_cluster_kms_key_id`: the AWS KMS key identifier for the encrypted cluster
+* `__meta_rds_cluster_latest_restorable_time`: the latest time to which a database can be restored
+* `__meta_rds_cluster_local_write_forwarding_status`: the status of local write forwarding
+* `__meta_rds_cluster_master_username`: the master username
+* `__meta_rds_cluster_monitoring_interval`: the interval in seconds between enhanced monitoring metrics collection
+* `__meta_rds_cluster_monitoring_role_arn`: the ARN for the IAM role that permits RDS to send enhanced monitoring metrics to CloudWatch
+* `__meta_rds_cluster_multi_az`: whether the DB cluster is multi-AZ
+* `__meta_rds_cluster_network_type`: the network type (IPV4 or DUAL)
+* `__meta_rds_cluster_parameter_group`: the name of the DB cluster parameter group
+* `__meta_rds_cluster_percent_progress`: the progress percentage of the DB cluster operation
+* `__meta_rds_cluster_performance_insights_enabled`: whether Performance Insights is enabled
+* `__meta_rds_cluster_performance_insights_kms_key_id`: the AWS KMS key identifier for encrypting Performance Insights data
+* `__meta_rds_cluster_performance_insights_retention_period`: the retention period for Performance Insights data
+* `__meta_rds_cluster_port`: the port the DB cluster is listening on
+* `__meta_rds_cluster_preferred_backup_window`: the daily time range during which automated backups are created
+* `__meta_rds_cluster_preferred_maintenance_window`: the weekly time range during which system maintenance can occur
+* `__meta_rds_cluster_publicly_accessible`: whether the DB cluster is publicly accessible
+* `__meta_rds_cluster_reader_endpoint`: the reader endpoint of the DB cluster
+* `__meta_rds_cluster_replication_source_identifier`: the identifier of the source DB cluster if this is a read replica
+* `__meta_rds_cluster_resource_id`: the AWS Region-unique immutable identifier for the DB cluster
+* `__meta_rds_cluster_serverless_v2_platform_version`: the platform version of the Aurora Serverless v2 DB cluster
+* `__meta_rds_cluster_status`: the status of the DB cluster
+* `__meta_rds_cluster_storage_encrypted`: whether the DB cluster is storage encrypted
+* `__meta_rds_cluster_storage_encryption_type`: the storage encryption type
+* `__meta_rds_cluster_storage_throughput`: the storage throughput in MiBps
+* `__meta_rds_cluster_storage_type`: the storage type
+* `__meta_rds_cluster_subnet_group`: the name of the subnet group associated with the DB cluster
+* `__meta_rds_cluster_tag_<tagkey>`: each tag value of the DB cluster
+* `__meta_rds_cluster_upgrade_rollout_order`: the upgrade rollout order
+
+**Instance labels:**
+
+* `__meta_rds_instance_activity_stream_engine_native_audit_fields_included`: whether engine-native audit fields are included in the database activity stream
+* `__meta_rds_instance_activity_stream_kinesis_stream_name`: the name of the Amazon Kinesis data stream used for the database activity stream
+* `__meta_rds_instance_activity_stream_kms_key_id`: the AWS KMS key identifier used for encrypting the database activity stream
+* `__meta_rds_instance_activity_stream_mode`: the mode of the database activity stream (sync or async)
+* `__meta_rds_instance_activity_stream_policy_status`: the policy status of the database activity stream
+* `__meta_rds_instance_activity_stream_status`: the status of the database activity stream
+* `__meta_rds_instance_allocated_storage`: the allocated storage size in gibibytes (GiB)
+* `__meta_rds_instance_arn`: the Amazon Resource Name (ARN) of the DB instance
+* `__meta_rds_instance_auto_minor_version_upgrade`: whether automatic minor version upgrades are enabled
+* `__meta_rds_instance_automatic_restart_time`: the time when a stopped instance will be automatically restarted
+* `__meta_rds_instance_automation_mode`: the automation mode of the instance
+* `__meta_rds_instance_availability_zone`: the availability zone of the DB instance
+* `__meta_rds_instance_aws_backup_recovery_point_arn`: the ARN of the recovery point in AWS Backup
+* `__meta_rds_instance_backup_retention_period`: the number of days for which automated backups are retained
+* `__meta_rds_instance_backup_target`: the backup target (region or outposts)
+* `__meta_rds_instance_ca_certificate_identifier`: the identifier of the CA certificate for the DB instance
+* `__meta_rds_instance_character_set_name`: the name of the character set
+* `__meta_rds_instance_class`: the compute and memory capacity class of the DB instance
+* `__meta_rds_instance_copy_tags_to_snapshot`: whether tags are copied from the instance to snapshots
+* `__meta_rds_instance_custom_iam_instance_profile`: the instance profile associated with the underlying Amazon EC2 instance
+* `__meta_rds_instance_customer_owned_ip_enabled`: whether a customer-owned IP address (CoIP) is enabled
+* `__meta_rds_instance_database_insights_mode`: the mode of Database Insights
+* `__meta_rds_instance_db_cluster_identifier`: the identifier of the DB cluster this instance is a member of
+* `__meta_rds_instance_db_name`: the database name
+* `__meta_rds_instance_db_system_id`: the Oracle system ID (Oracle SID)
+* `__meta_rds_instance_dedicated_log_volume`: whether the DB instance has a dedicated log volume
+* `__meta_rds_instance_deletion_protection`: whether deletion protection is enabled
+* `__meta_rds_instance_endpoint_address`: the DNS address of the DB instance
+* `__meta_rds_instance_endpoint_hosted_zone_id`: the Route 53 hosted zone ID of the endpoint
+* `__meta_rds_instance_endpoint_port`: the port that the DB instance listens on
+* `__meta_rds_instance_engine_lifecycle_support`: the engine lifecycle support value
+* `__meta_rds_instance_engine_version`: the version of the database engine
+* `__meta_rds_instance_engine`: the database engine that the DB instance uses
+* `__meta_rds_instance_enhanced_monitoring_resource_arn`: the ARN of the Amazon CloudWatch Logs log stream for enhanced monitoring
+* `__meta_rds_instance_iam_database_authentication_enabled`: whether IAM database authentication is enabled
+* `__meta_rds_instance_identifier`: the identifier of the DB instance
+* `__meta_rds_instance_instance_create_time`: the time when the DB instance was created
+* `__meta_rds_instance_iops`: the provisioned IOPS (I/O operations per second) value
+* `__meta_rds_instance_is_cluster_writer`: whether the instance is the cluster writer (true/false)
+* `__meta_rds_instance_is_storage_config_upgrade_available`: whether a storage configuration upgrade is available
+* `__meta_rds_instance_kms_key_id`: the AWS KMS key identifier for the encrypted instance
+* `__meta_rds_instance_latest_restorable_time`: the latest time to which a database can be restored
+* `__meta_rds_instance_license_model`: the license model information
+* `__meta_rds_instance_listener_endpoint_address`: the DNS address of the listener endpoint
+* `__meta_rds_instance_listener_endpoint_hosted_zone_id`: the Route 53 hosted zone ID of the listener endpoint
+* `__meta_rds_instance_listener_endpoint_port`: the port that the listener endpoint listens on
+* `__meta_rds_instance_master_username`: the master username
+* `__meta_rds_instance_max_allocated_storage`: the upper limit in gibibytes to which storage can be scaled automatically
+* `__meta_rds_instance_monitoring_interval`: the interval in seconds between enhanced monitoring metrics collection
+* `__meta_rds_instance_monitoring_role_arn`: the ARN for the IAM role that permits RDS to send enhanced monitoring metrics to CloudWatch
+* `__meta_rds_instance_multi_az`: whether the DB instance is a Multi-AZ deployment
+* `__meta_rds_instance_multi_tenant`: whether the instance is in a multi-tenant configuration
+* `__meta_rds_instance_nchar_character_set_name`: the national character set name
+* `__meta_rds_instance_network_type`: the network type (IPV4 or DUAL)
+* `__meta_rds_instance_percent_progress`: the progress percentage of the DB instance operation
+* `__meta_rds_instance_performance_insights_enabled`: whether Performance Insights is enabled
+* `__meta_rds_instance_performance_insights_kms_key_id`: the AWS KMS key identifier for encrypting Performance Insights data
+* `__meta_rds_instance_performance_insights_retention_period`: the retention period for Performance Insights data
+* `__meta_rds_instance_port`: the port that the DB instance listens on
+* `__meta_rds_instance_preferred_backup_window`: the daily time range during which automated backups are created
+* `__meta_rds_instance_preferred_maintenance_window`: the weekly time range during which system maintenance can occur
+* `__meta_rds_instance_promotion_tier`: the order in which an Aurora replica is promoted to primary instance after a failure
+* `__meta_rds_instance_publicly_accessible`: whether the DB instance is publicly accessible
+* `__meta_rds_instance_read_replica_source_db_cluster_identifier`: the identifier of the source DB cluster if this instance is a read replica
+* `__meta_rds_instance_read_replica_source_db_instance_identifier`: the identifier of the source DB instance if this instance is a read replica
+* `__meta_rds_instance_replica_mode`: the replica mode (open-read-only or mounted)
+* `__meta_rds_instance_resource_id`: the AWS Region-unique immutable identifier for the DB instance
+* `__meta_rds_instance_resume_full_automation_mode_time`: the time when the DB instance will resume full automation
+* `__meta_rds_instance_secondary_availability_zone`: the secondary availability zone for Multi-AZ instances
+* `__meta_rds_instance_status`: the status of the DB instance
+* `__meta_rds_instance_storage_encrypted`: whether the DB instance is storage encrypted
+* `__meta_rds_instance_storage_encryption_type`: the storage encryption type
+* `__meta_rds_instance_storage_throughput`: the storage throughput in MiBps
+* `__meta_rds_instance_storage_type`: the storage type
+* `__meta_rds_instance_storage_volume_status`: the status of the storage volume
+* `__meta_rds_instance_subnet_group`: the name of the subnet group associated with the DB instance
+* `__meta_rds_instance_tag_<tagkey>`: each tag value of the DB instance
+* `__meta_rds_instance_tde_credential_arn`: the ARN for the TDE encryption key
+* `__meta_rds_instance_timezone`: the time zone of the DB instance
+* `__meta_rds_instance_upgrade_rollout_order`: the upgrade rollout order
+
 See below for the configuration options for AWS discovery:
 
 ```yaml
 # The AWS role to use for service discovery.
-# Must be one of: ec2, lightsail, ecs, msk, or elasticache.
+# Must be one of: ec2, lightsail, ecs, msk, elasticache, or rds.
 role: <string>
 
 # The AWS region. If blank, the region from the instance metadata is used.
@@ -1175,7 +1341,7 @@ filters:
   [ - name: <string>
       values: <string>, [...] ]
 
-# List of ECS, ElastiCache, or MSK cluster identifiers (ecs, elasticache, and msk roles only) to discover.
+# List of ECS, ElastiCache, MSK, or RDS cluster identifiers (ecs, elasticache, msk, and rds roles only) to discover.
 # A List of ARNs of clusters to discover. If empty, all clusters in the region are discovered.
 # This can significantly improve performance when you only need to monitor specific clusters/caches.
 [ clusters: [<string>, ...] ]
