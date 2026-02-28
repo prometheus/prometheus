@@ -36,6 +36,7 @@ import {
   IconSearch,
   IconServer,
   IconServerCog,
+  IconTrash,
 } from "@tabler/icons-react";
 import {
   BrowserRouter,
@@ -53,6 +54,7 @@ import RulesPage from "./pages/RulesPage";
 import TargetsPage from "./pages/targets/TargetsPage";
 import StatusPage from "./pages/StatusPage";
 import TSDBStatusPage from "./pages/TSDBStatusPage";
+import TSDBAdminPage from "./pages/TSDBAdminPage";
 import FlagsPage from "./pages/FlagsPage";
 import ConfigPage from "./pages/ConfigPage";
 import AgentPage from "./pages/AgentPage";
@@ -139,6 +141,13 @@ const serverStatusPages = [
     path: "/tsdb-status",
     icon: <IconDatabase style={navIconStyle} />,
     element: <TSDBStatusPage />,
+    inAgentMode: false,
+  },
+  {
+    title: "TSDB admin",
+    path: "/tsdb-admin",
+    icon: <IconTrash style={navIconStyle} />,
+    element: <TSDBAdminPage />,
     inAgentMode: false,
   },
   {
