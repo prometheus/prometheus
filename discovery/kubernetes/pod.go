@@ -286,6 +286,19 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 		return tg
 	}
 
+	// Filter out pods scheduled on nodes that are not in the node store, as
+	// these were filtered out by node selectors.
+	if p.withNodeMetadata {
+		_, exists, err := p.nodeInf.GetStore().GetByKey(pod.Spec.NodeName)
+		if err != nil {
+			p.logger.Error("failed to get node from store", "node", pod.Spec.NodeName, "err", err)
+			return tg
+		}
+		if !exists {
+			return tg
+		}
+	}
+
 	tg.Labels = podLabels(pod)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 	if p.withNodeMetadata {
