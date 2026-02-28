@@ -1209,6 +1209,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
 * `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
 * `__meta_azure_machine_size`: the machine size
+* `__meta_azure_machine_state`: the machine power state (`running`, `stopped`, `deallocated`, `starting`, `stopping`, `deallocating`, or empty if unavailable)
 * `__meta_azure_subscription_id`: the subscription ID
 * `__meta_azure_tenant_id`: the tenant ID
 
