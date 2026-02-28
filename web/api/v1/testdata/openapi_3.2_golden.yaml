@@ -999,6 +999,225 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+    /info_labels:
+        get:
+            tags:
+                - labels
+            summary: Get info metric labels
+            description: Returns a map of data label names to their values from info metrics.
+            operationId: info-labels
+            parameters:
+                - name: start
+                  in: query
+                  description: Start timestamp for info labels query.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: End timestamp for info labels query.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+                - name: expr
+                  in: query
+                  description: PromQL expression to extract identifying labels from.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: up{job="prometheus"}
+                - name: metric_match
+                  in: query
+                  description: 'Matcher for the info metric name (default: target_info).'
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: target_info
+                - name: search
+                  in: query
+                  description: Filter label names by substring match (case-insensitive). When provided, response includes a labelOrder array sorted by relevance.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: env
+                - name: limit
+                  in: query
+                  description: Maximum number of values per label to return.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 100
+            responses:
+                "200":
+                    description: Info labels retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/InfoLabelsOutputBody'
+                            examples:
+                                infoLabels:
+                                    summary: All info labels (no search filter)
+                                    value:
+                                        data:
+                                            labelOrder:
+                                                - commit
+                                                - go_version
+                                                - version
+                                            labels:
+                                                commit:
+                                                    - abc123
+                                                go_version:
+                                                    - go1.21.0
+                                                version:
+                                                    - 1.0.0
+                                                    - 2.0.0
+                                        status: success
+                                infoLabelsWithSearch:
+                                    summary: Info labels filtered by search (search=ver)
+                                    value:
+                                        data:
+                                            labelOrder:
+                                                - version
+                                                - go_version
+                                            labels:
+                                                go_version:
+                                                    - go1.21.0
+                                                version:
+                                                    - 1.0.0
+                                                    - 2.0.0
+                                        status: success
+                default:
+                    description: Error retrieving info labels.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+        post:
+            tags:
+                - labels
+            summary: Get info metric labels
+            description: Returns a map of data label names to their values from info metrics.
+            operationId: info-labels-post
+            requestBody:
+                description: Submit an info labels query.
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/InfoLabelsPostInputBody'
+                        examples:
+                            simpleQuery:
+                                summary: Simple info labels query
+                                value:
+                                    metric_match: target_info
+                            queryWithExpr:
+                                summary: Info labels query with expression
+                                value:
+                                    expr: up{job="prometheus"}
+                                    metric_match: target_info
+                            queryWithSearch:
+                                summary: Info labels query with search filter
+                                value:
+                                    metric_match: target_info
+                                    search: env
+                required: true
+            responses:
+                "200":
+                    description: Info labels retrieved successfully via POST.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/InfoLabelsOutputBody'
+                            examples:
+                                infoLabels:
+                                    summary: All info labels (no search filter)
+                                    value:
+                                        data:
+                                            labelOrder:
+                                                - commit
+                                                - go_version
+                                                - version
+                                            labels:
+                                                commit:
+                                                    - abc123
+                                                go_version:
+                                                    - go1.21.0
+                                                version:
+                                                    - 1.0.0
+                                                    - 2.0.0
+                                        status: success
+                                infoLabelsWithSearch:
+                                    summary: Info labels filtered by search (search=ver)
+                                    value:
+                                        data:
+                                            labelOrder:
+                                                - version
+                                                - go_version
+                                            labels:
+                                                go_version:
+                                                    - go1.21.0
+                                                version:
+                                                    - 1.0.0
+                                                    - 2.0.0
+                                        status: success
+                default:
+                    description: Error retrieving info labels via POST.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
     /series:
         get:
             tags:
@@ -3202,6 +3421,81 @@ components:
                 - data
             additionalProperties: false
             description: Response body with an array of strings.
+        InfoLabelsOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    type: object
+                    properties:
+                        labels:
+                            type: object
+                            additionalProperties:
+                                type: array
+                                items:
+                                    type: string
+                            description: Map of label names to their possible values from info metrics.
+                        labelOrder:
+                            type: array
+                            items:
+                                type: string
+                            description: Ordered list of label names. Without search, alphabetical. With search, sorted by relevance (exact > prefix > earlier substring position > alphabetical).
+                    required:
+                        - labels
+                        - labelOrder
+                    additionalProperties: false
+                    description: Info labels result containing labels map and ordered label names.
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Response body for info labels endpoint.
+        InfoLabelsPostInputBody:
+            type: object
+            properties:
+                start:
+                    type: string
+                    description: 'Form field: The start time of the query.'
+                    example: "2023-07-21T20:00:00.000Z"
+                end:
+                    type: string
+                    description: 'Form field: The end time of the query.'
+                    example: "2023-07-21T21:00:00.000Z"
+                expr:
+                    type: string
+                    description: 'Form field: PromQL expression to extract identifying labels from.'
+                    example: up{job="prometheus"}
+                metric_match:
+                    type: string
+                    description: 'Form field: Matcher for the info metric name (default: target_info).'
+                    example: target_info
+                search:
+                    type: string
+                    description: 'Form field: Filter label names by substring match (case-insensitive). When provided, labelOrder is sorted by relevance.'
+                    example: env
+                limit:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Maximum number of values per label to return.'
+                    example: 100
+            additionalProperties: false
+            description: POST request body for info labels query.
         SeriesOutputBody:
             type: object
             properties:

@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/infohelper"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/rules"
@@ -906,6 +907,284 @@ func TestLabelNames(t *testing.T) {
 				req, err := request(method, tc.limit, tc.matchers...)
 				require.NoError(t, err)
 				res := tc.api.labelNames(req.WithContext(ctx))
+				assertAPIError(t, res.err, tc.expectedErrorType)
+				if tc.expectedErrorType == errorNone {
+					assertAPIResponse(t, res.data, tc.expected)
+				}
+			}
+		})
+	}
+}
+
+func TestInfoLabels(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			target_info{job="prometheus", instance="localhost:9090", version="2.0", env="prod"} 1
+			target_info{job="prometheus", instance="localhost:9091", version="2.1", env="staging"} 1
+			target_info{job="node", instance="node1:9100", version="1.0", region="us-east"} 1
+			http_requests_total{job="prometheus", instance="localhost:9090"} 100
+			http_requests_total{job="prometheus", instance="localhost:9091"} 200
+			http_requests_total{job="node", instance="node1:9100"} 50
+			custom_info{job="app", instance="app1:8080", custom_label="custom_value"} 1
+	`)
+
+	api := &API{
+		Queryable:   storage,
+		QueryEngine: testEngine(t),
+	}
+
+	request := func(method string, params map[string][]string) (*http.Request, error) {
+		u, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		q := u.Query()
+		for key, values := range params {
+			for _, v := range values {
+				q.Add(key, v)
+			}
+		}
+		u.RawQuery = q.Encode()
+
+		r, err := http.NewRequest(method, u.String(), nil)
+		if method == http.MethodPost {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return r, err
+	}
+
+	for _, tc := range []struct {
+		name              string
+		api               *API
+		params            map[string][]string
+		expected          infohelper.InfoLabelsResult
+		expectedErrorType errorType
+	}{
+		{
+			name:   "all target_info labels without filter",
+			params: map[string][]string{"start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"1.0", "2.0", "2.1"},
+					"env":     {"prod", "staging"},
+					"region":  {"us-east"},
+				},
+				LabelOrder: []string{"env", "region", "version"},
+			},
+			api: api,
+		},
+		{
+			name:   "filter by job=prometheus using expr",
+			params: map[string][]string{"expr": {`http_requests_total{job="prometheus"}`}, "start": {"0"}, "end": {"120"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"2.0", "2.1"},
+					"env":     {"prod", "staging"},
+				},
+				LabelOrder: []string{"env", "version"},
+			},
+			api: api,
+		},
+		{
+			name:   "filter by specific instance using expr",
+			params: map[string][]string{"expr": {`http_requests_total{instance="localhost:9090"}`}, "start": {"0"}, "end": {"120"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"2.0"},
+					"env":     {"prod"},
+				},
+				LabelOrder: []string{"env", "version"},
+			},
+			api: api,
+		},
+		{
+			name:   "filter with aggregation expression",
+			params: map[string][]string{"expr": {`sum by (job, instance) (http_requests_total{job="prometheus", instance="localhost:9090"})`}, "start": {"0"}, "end": {"120"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"2.0"},
+					"env":     {"prod"},
+				},
+				LabelOrder: []string{"env", "version"},
+			},
+			api: api,
+		},
+		{
+			name:   "filter with regex in expr",
+			params: map[string][]string{"expr": {`http_requests_total{job=~"prometheus|node", instance=~"localhost:9090|node1:9100"}`}, "start": {"0"}, "end": {"120"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"1.0", "2.0"},
+					"env":     {"prod"},
+					"region":  {"us-east"},
+				},
+				LabelOrder: []string{"env", "region", "version"},
+			},
+			api: api,
+		},
+		{
+			name:   "custom info metric with metric_match",
+			params: map[string][]string{"metric_match": {"custom_info"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"custom_label": {"custom_value"},
+				},
+				LabelOrder: []string{"custom_label"},
+			},
+			api: api,
+		},
+		{
+			name:   "non-existent info metric",
+			params: map[string][]string{"metric_match": {"nonexistent_info"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels:     map[string][]string{},
+				LabelOrder: []string{},
+			},
+			api: api,
+		},
+		{
+			name:   "regex match on info metric name",
+			params: map[string][]string{"metric_match": {"~.*_info"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version":      {"1.0", "2.0", "2.1"},
+					"env":          {"prod", "staging"},
+					"region":       {"us-east"},
+					"custom_label": {"custom_value"},
+				},
+				LabelOrder: []string{"custom_label", "env", "region", "version"},
+			},
+			api: api,
+		},
+		{
+			name:   "regex match with =~ prefix",
+			params: map[string][]string{"metric_match": {"=~.*_info"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version":      {"1.0", "2.0", "2.1"},
+					"env":          {"prod", "staging"},
+					"region":       {"us-east"},
+					"custom_label": {"custom_value"},
+				},
+				LabelOrder: []string{"custom_label", "env", "region", "version"},
+			},
+			api: api,
+		},
+		{
+			name:   "negated match on info metric",
+			params: map[string][]string{"metric_match": {"!=custom_info"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"1.0", "2.0", "2.1"},
+					"env":     {"prod", "staging"},
+					"region":  {"us-east"},
+				},
+				LabelOrder: []string{"env", "region", "version"},
+			},
+			api: api,
+		},
+		{
+			name:   "no matching expr results",
+			params: map[string][]string{"expr": {`http_requests_total{job="nonexistent"}`}, "start": {"0"}, "end": {"120"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels:     map[string][]string{},
+				LabelOrder: []string{},
+			},
+			api: api,
+		},
+		{
+			name:   "with limit",
+			params: map[string][]string{"limit": {"2"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"1.0", "2.0"},
+					"env":     {"prod", "staging"},
+					"region":  {"us-east"},
+				},
+				LabelOrder: []string{"env", "region", "version"},
+			},
+			api: api,
+		},
+		{
+			name:   "search=ver matches version only",
+			params: map[string][]string{"search": {"ver"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"1.0", "2.0", "2.1"},
+				},
+				LabelOrder: []string{"version"},
+			},
+			api: api,
+		},
+		{
+			name:   "search=env exact match",
+			params: map[string][]string{"search": {"env"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"env": {"prod", "staging"},
+				},
+				LabelOrder: []string{"env"},
+			},
+			api: api,
+		},
+		{
+			name:   "search=ion position ordering",
+			params: map[string][]string{"search": {"ion"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"version": {"1.0", "2.0", "2.1"},
+					"region":  {"us-east"},
+				},
+				LabelOrder: []string{"region", "version"},
+			},
+			api: api,
+		},
+		{
+			name:   "search=zzz no matches",
+			params: map[string][]string{"search": {"zzz"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels:     map[string][]string{},
+				LabelOrder: []string{},
+			},
+			api: api,
+		},
+		{
+			name:   "search=ENV case-insensitive",
+			params: map[string][]string{"search": {"ENV"}, "start": {"0"}, "end": {"100000"}},
+			expected: infohelper.InfoLabelsResult{
+				Labels: map[string][]string{
+					"env": {"prod", "staging"},
+				},
+				LabelOrder: []string{"env"},
+			},
+			api: api,
+		},
+		{
+			name:              "exec error from queryable",
+			params:            map[string][]string{"start": {"0"}, "end": {"100000"}},
+			expectedErrorType: errorExec,
+			api: &API{
+				Queryable:   errorTestQueryable{err: errors.New("generic")},
+				QueryEngine: testEngine(t),
+			},
+		},
+		{
+			name:              "invalid expr parameter",
+			params:            map[string][]string{"expr": {`invalid{`}, "start": {"0"}, "end": {"100000"}},
+			expectedErrorType: errorBadData,
+			api:               api,
+		},
+		{
+			name:              "scalar expr returns error",
+			params:            map[string][]string{"expr": {`1+1`}, "start": {"0"}, "end": {"100000"}},
+			expectedErrorType: errorBadData,
+			api:               api,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				ctx := context.Background()
+				req, err := request(method, tc.params)
+				require.NoError(t, err)
+				res := tc.api.infoLabels(req.WithContext(ctx))
 				assertAPIError(t, res.err, tc.expectedErrorType)
 				if tc.expectedErrorType == errorNone {
 					assertAPIResponse(t, res.data, tc.expected)

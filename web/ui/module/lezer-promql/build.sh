@@ -16,10 +16,16 @@
 
 set -ex
 
+# Generate parser from grammar
 npx lezer-generator src/promql.grammar -o src/parser
 
 cat src/parser.terms.js >> src/parser.js
 
+# Generate types for parser
 bash ./generate-types.sh
 
+# Build parser bundle and client bundles
 rollup -c
+
+# Generate TypeScript declarations for client
+npx tsc --emitDeclarationOnly

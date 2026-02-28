@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/infohelper"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -440,6 +441,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/labels", wrapAgent(api.labelNames))
 	r.Post("/labels", wrapAgent(api.labelNames))
 	r.Get("/label/:name/values", wrapAgent(api.labelValues))
+
+	r.Get("/info_labels", wrapAgent(api.infoLabels))
+	r.Post("/info_labels", wrapAgent(api.infoLabels))
 
 	r.Get("/series", wrapAgent(api.series))
 	r.Post("/series", wrapAgent(api.series))
@@ -928,6 +932,166 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	}
 
 	return apiFuncResult{vals, nil, warnings, closer}
+}
+
+// infoLabels returns data label names and their values from info metrics.
+// Data labels are all labels from the info metric except __name__ and identifying labels
+// (job, instance).
+//
+// Query parameters:
+//   - metric_match: Matcher for the info metric name (default: "target_info").
+//     Supports =, =~, !=, !~ operators (e.g., "target_info", "~.*_info", "!=build_info").
+//   - expr: Optional PromQL expression. If provided, the expression is evaluated and
+//     identifying labels (job, instance) are extracted from the result to filter info metrics.
+//     Note that some use cases require for this to be optional, as they want to e.g. get all labels off of target_info.
+//   - search: Optional substring filter for label names (case-insensitive). When provided,
+//     only matching label names are returned and labelOrder is sorted by relevance.
+//   - start/end: Time range for the query (default: last 12 hours)
+//   - limit: Maximum number of values per label to return
+func (api *API) infoLabels(r *http.Request) (result apiFuncResult) {
+	ctx := r.Context()
+	extractor := infohelper.NewWithDefaults()
+
+	// Parse metric_match parameter (default: exact match on "target_info")
+	// Supported formats:
+	//   metric_match=target_info      -> __name__="target_info"
+	//   metric_match=~.*_info         -> __name__=~".*_info"
+	//   metric_match=!=target_info    -> __name__!="target_info"
+	//   metric_match=!~build_info     -> __name__!~"build_info"
+	infoMetricMatcher, err := parseInfoMetricMatch(r.FormValue("metric_match"), extractor.DefaultInfoMetric())
+	if err != nil {
+		return invalidParamError(err, "metric_match")
+	}
+
+	// Parse search parameter for label name filtering
+	search := r.FormValue("search")
+
+	// Parse limit
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
+
+	// Parse time range with 12-hour default lookback for autocomplete
+	now := time.Now()
+	defaultStart := now.Add(-12 * time.Hour)
+	defaultEnd := now
+	start, err := parseTimeParam(r, "start", defaultStart)
+	if err != nil {
+		return invalidParamError(err, "start")
+	}
+	end, err := parseTimeParam(r, "end", defaultEnd)
+	if err != nil {
+		return invalidParamError(err, "end")
+	}
+
+	// Parse expr parameter - if provided, evaluate as PromQL and extract identifying labels
+	var identifyingLabelValues map[string]map[string]struct{}
+	var exprWarnings annotations.Annotations
+	if exprParam := r.FormValue("expr"); exprParam != "" {
+		opts, err := extractQueryOpts(r)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		}
+		qry, err := api.QueryEngine.NewInstantQuery(ctx, api.Queryable, opts, exprParam, end)
+		if err != nil {
+			return invalidParamError(err, "expr")
+		}
+		defer qry.Close()
+
+		res := qry.Exec(ctx)
+		if res.Err != nil {
+			return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, nil}
+		}
+		exprWarnings = res.Warnings
+
+		// Only Vector and Matrix results have labels to extract
+		switch res.Value.Type() {
+		case parser.ValueTypeVector, parser.ValueTypeMatrix:
+			// OK - these have labels
+		default:
+			return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("expr must return series (vector or matrix), got %s", res.Value.Type())}, exprWarnings, nil}
+		}
+
+		// Extract identifying labels from the result
+		identifyingLabelValues = extractIdentifyingLabels(res.Value, extractor.IdentifyingLabels())
+
+		// If no identifying labels were found, return empty result early
+		if len(identifyingLabelValues) == 0 {
+			return apiFuncResult{infohelper.InfoLabelsResult{Labels: map[string][]string{}, LabelOrder: []string{}}, nil, exprWarnings, nil}
+		}
+	}
+
+	// Create querier
+	q, err := api.Queryable.Querier(timestamp.FromTime(start), timestamp.FromTime(end))
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), nil, nil}
+	}
+	defer func() {
+		if result.finalizer == nil {
+			q.Close()
+		}
+	}()
+	closer := func() {
+		q.Close()
+	}
+
+	hints := &storage.SelectHints{
+		Start: timestamp.FromTime(start),
+		End:   timestamp.FromTime(end),
+		Func:  "info_labels",
+	}
+
+	dataLabels, warnings, err := extractor.ExtractDataLabels(ctx, q, infoMetricMatcher, identifyingLabelValues, hints, search)
+	warnings.Merge(exprWarnings)
+	if err != nil {
+		return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+	}
+
+	// Apply limit if specified (limit applies per label)
+	if limit > 0 {
+		for name, vals := range dataLabels.Labels {
+			if len(vals) > limit {
+				dataLabels.Labels[name] = vals[:limit]
+				warnings = warnings.Add(fmt.Errorf("values for label %q truncated due to limit", name))
+			}
+		}
+	}
+
+	return apiFuncResult{dataLabels, nil, warnings, closer}
+}
+
+// extractIdentifyingLabels extracts identifying label values from a PromQL query result.
+// It iterates through Vector or Matrix results and collects all unique values for the
+// specified identifying labels (typically "job" and "instance").
+func extractIdentifyingLabels(val parser.Value, identifyingLabels []string) map[string]map[string]struct{} {
+	result := make(map[string]map[string]struct{})
+
+	switch v := val.(type) {
+	case promql.Vector:
+		for _, sample := range v {
+			for _, idLbl := range identifyingLabels {
+				if val := sample.Metric.Get(idLbl); val != "" {
+					if result[idLbl] == nil {
+						result[idLbl] = make(map[string]struct{})
+					}
+					result[idLbl][val] = struct{}{}
+				}
+			}
+		}
+	case promql.Matrix:
+		for _, series := range v {
+			for _, idLbl := range identifyingLabels {
+				if val := series.Metric.Get(idLbl); val != "" {
+					if result[idLbl] == nil {
+						result[idLbl] = make(map[string]struct{})
+					}
+					result[idLbl][val] = struct{}{}
+				}
+			}
+		}
+	}
+	return result
 }
 
 var (
@@ -2286,6 +2450,48 @@ func parseLimitParam(limitStr string) (limit int, err error) {
 	}
 
 	return limit, nil
+}
+
+// parseInfoMetricMatch parses the metric_match parameter for the info_labels endpoint.
+// It supports the following formats:
+//   - "value"      -> MatchEqual
+//   - "=~value"    -> MatchRegexp
+//   - "!=value"    -> MatchNotEqual
+//   - "!~value"    -> MatchNotRegexp
+//
+// If the input is empty, it returns a MatchEqual matcher for the defaultMetric.
+func parseInfoMetricMatch(s, defaultMetric string) (*labels.Matcher, error) {
+	if s == "" {
+		return labels.NewMatcher(labels.MatchEqual, labels.MetricName, defaultMetric)
+	}
+
+	var matchType labels.MatchType
+	var value string
+
+	switch {
+	case strings.HasPrefix(s, "!~"):
+		matchType = labels.MatchNotRegexp
+		value = s[2:]
+	case strings.HasPrefix(s, "!="):
+		matchType = labels.MatchNotEqual
+		value = s[2:]
+	case strings.HasPrefix(s, "=~"):
+		matchType = labels.MatchRegexp
+		value = s[2:]
+	case strings.HasPrefix(s, "~"):
+		// Allow "~" as shorthand for "=~"
+		matchType = labels.MatchRegexp
+		value = s[1:]
+	default:
+		matchType = labels.MatchEqual
+		value = s
+	}
+
+	if value == "" {
+		return nil, errors.New("metric_match value cannot be empty")
+	}
+
+	return labels.NewMatcher(matchType, labels.MetricName, value)
 }
 
 // toHintLimit increases the API limit, as returned by parseLimitParam, by 1.

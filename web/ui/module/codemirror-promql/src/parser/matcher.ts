@@ -12,20 +12,12 @@
 // limitations under the License.
 
 import { SyntaxNode } from '@lezer/common';
-import {
-  EqlRegex,
-  EqlSingle,
-  LabelName,
-  MatchOp,
-  Neq,
-  NeqRegex,
-  StringLiteral,
-  UnquotedLabelMatcher,
-  QuotedLabelMatcher,
-  QuotedLabelName,
-} from '@prometheus-io/lezer-promql';
+import { EqlSingle, LabelName, MatchOp, StringLiteral, UnquotedLabelMatcher, QuotedLabelMatcher, QuotedLabelName } from '@prometheus-io/lezer-promql';
 import { EditorState } from '@codemirror/state';
-import { Matcher } from '../types';
+import { Matcher } from '@prometheus-io/lezer-promql/client';
+
+// Re-export labelMatchersToString from lezer-promql/client for backwards compatibility
+export { labelMatchersToString } from '@prometheus-io/lezer-promql/client';
 
 function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
   const matcher = new Matcher(0, '', '');
@@ -92,41 +84,4 @@ export function buildLabelMatchers(labelMatchers: SyntaxNode[], state: EditorSta
     matchers.push(createMatcher(value, state));
   });
   return matchers;
-}
-
-export function labelMatchersToString(metricName: string, matchers?: Matcher[], labelName?: string): string {
-  if (!matchers || matchers.length === 0) {
-    return metricName;
-  }
-
-  let matchersAsString = '';
-  for (const matcher of matchers) {
-    if (matcher.name === labelName || matcher.value === '') {
-      continue;
-    }
-    let type = '';
-    switch (matcher.type) {
-      case EqlSingle:
-        type = '=';
-        break;
-      case Neq:
-        type = '!=';
-        break;
-      case NeqRegex:
-        type = '!~';
-        break;
-      case EqlRegex:
-        type = '=~';
-        break;
-      default:
-        type = '=';
-    }
-    const m = `${matcher.name}${type}"${matcher.value}"`;
-    if (matchersAsString === '') {
-      matchersAsString = m;
-    } else {
-      matchersAsString = `${matchersAsString},${m}`;
-    }
-  }
-  return `${metricName}{${matchersAsString}}`;
 }

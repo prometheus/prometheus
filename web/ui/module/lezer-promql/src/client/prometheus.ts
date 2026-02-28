@@ -11,15 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { FetchFn } from './index';
-import { Matcher } from '../types';
-import { labelMatchersToString } from '../parser';
+import { FetchFn, Matcher, MetricMetadata, labelMatchersToString } from './types';
 import { LRUCache } from 'lru-cache';
-
-export interface MetricMetadata {
-  type: string;
-  help: string;
-}
 
 export interface PrometheusClient {
   labelNames(metricName?: string): Promise<string[]>;
@@ -39,6 +32,14 @@ export interface PrometheusClient {
 
   // flags returns flag values that prometheus was configured with.
   flags(): Promise<Record<string, string>>;
+
+  // infoLabelPairs returns data labels from info metrics (like target_info) and their values.
+  // If expr is provided, the expression is evaluated and identifying labels (job, instance)
+  // are extracted from the result to filter which info metrics are returned.
+  // If metricMatch is provided, it specifies which info metrics to query (supports =, =~, !=, !~).
+  // If search is provided, label names are filtered by case-insensitive substring match and
+  // the returned Record preserves relevance ordering.
+  infoLabelPairs(expr?: string, metricMatch?: string, search?: string): Promise<Record<string, string[]>>;
 
   // destroy is called to release all resources held by this client
   destroy?(): void;
@@ -81,7 +82,7 @@ const serviceUnavailable = 503;
 
 // HTTPPrometheusClient is the HTTP client that should be used to get some information from the different endpoint provided by prometheus.
 export class HTTPPrometheusClient implements PrometheusClient {
-  private readonly lookbackInterval: undefined | number; //12 hours
+  private readonly lookbackInterval: undefined | number;
   private readonly url: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly errorHandler?: (error: any) => void;
@@ -203,6 +204,46 @@ export class HTTPPrometheusClient implements PrometheusClient {
     });
   }
 
+  infoLabelPairs(expr?: string, metricMatch?: string, search?: string): Promise<Record<string, string[]>> {
+    const params: URLSearchParams = new URLSearchParams();
+    if (this.lookbackInterval) {
+      const end = new Date();
+      const start = new Date(end.getTime() - this.lookbackInterval);
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
+    }
+    if (expr) {
+      params.set('expr', expr);
+    }
+    if (metricMatch) {
+      params.set('metric_match', metricMatch);
+    }
+    if (search) {
+      params.set('search', search);
+    }
+    return this.fetchAPI<{ labels: Record<string, string[]>; labelOrder: string[] }>(`${this.infoLabelsEndpoint()}?${params}`)
+      .then((data) => {
+        // Validate response structure
+        if (data === null || typeof data !== 'object' || !data.labels || !data.labelOrder) {
+          return {};
+        }
+        // Reconstruct Record in labelOrder order so Object.keys() preserves relevance/alphabetical ordering
+        const result: Record<string, string[]> = {};
+        for (const key of data.labelOrder) {
+          if (key in data.labels) {
+            result[key] = data.labels[key];
+          }
+        }
+        return result;
+      })
+      .catch((error) => {
+        if (this.errorHandler) {
+          this.errorHandler(error);
+        }
+        return {};
+      });
+  }
+
   destroy(): void {
     for (const controller of this.abortControllers) {
       controller.abort();
@@ -271,6 +312,10 @@ export class HTTPPrometheusClient implements PrometheusClient {
   private flagsEndpoint(): string {
     return `${this.apiPrefix}/status/flags`;
   }
+
+  private infoLabelsEndpoint(): string {
+    return `${this.apiPrefix}/info_labels`;
+  }
 }
 
 class Cache {
@@ -281,6 +326,7 @@ class Cache {
   private labelValues: LRUCache<string, string[]>;
   private labelNames: string[];
   private flags: Record<string, string>;
+  private infoLabelPairs: LRUCache<string, Record<string, string[]>>;
 
   constructor(config?: CacheConfig) {
     const maxAge = {
@@ -292,6 +338,7 @@ class Cache {
     this.labelValues = new LRUCache<string, string[]>(maxAge);
     this.labelNames = [];
     this.flags = {};
+    this.infoLabelPairs = new LRUCache<string, Record<string, string[]>>(maxAge);
     if (config?.initialMetricList) {
       this.setLabelValues('__name__', config.initialMetricList);
     }
@@ -399,6 +446,14 @@ class Cache {
     }
     return [];
   }
+
+  setInfoLabelPairs(cacheKey: string, labels: Record<string, string[]>): void {
+    this.infoLabelPairs.set(cacheKey, labels);
+  }
+
+  getInfoLabelPairs(cacheKey: string): Record<string, string[]> | undefined {
+    return this.infoLabelPairs.get(cacheKey);
+  }
 }
 
 export class CachedPrometheusClient implements PrometheusClient {
@@ -464,6 +519,22 @@ export class CachedPrometheusClient implements PrometheusClient {
     return this.client.flags().then((flags) => {
       this.cache.setFlags(flags);
       return flags;
+    });
+  }
+
+  infoLabelPairs(expr?: string, metricMatch?: string, search?: string): Promise<Record<string, string[]>> {
+    // Info labels are expected to be relatively stable, so we cache them.
+    // The cache key includes the expression, metric match, and search string.
+    // Use JSON.stringify to avoid collisions when parameters contain underscores.
+    const cacheKey = JSON.stringify(['infoLabels', expr || '', metricMatch || '', search || '']);
+    const cached = this.cache.getInfoLabelPairs(cacheKey);
+    if (cached !== undefined) {
+      return Promise.resolve(cached);
+    }
+
+    return this.client.infoLabelPairs(expr, metricMatch, search).then((labels) => {
+      this.cache.setInfoLabelPairs(cacheKey, labels);
+      return labels;
     });
   }
 
