@@ -21,7 +21,7 @@ import (
 
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v4"
 )
 
 // TestOpenAPIHTTPHandler verifies that the OpenAPI endpoint serves a valid specification
@@ -54,12 +54,12 @@ func TestOpenAPIHTTPHandler(t *testing.T) {
 	require.Equal(t, "3.1.0", spec["openapi"])
 
 	// Verify info section.
-	info, ok := spec["info"].(map[any]any)
+	info, ok := spec["info"].(map[string]any)
 	require.True(t, ok, "info should be a map")
 	require.Equal(t, "Prometheus API", info["title"])
 
 	// Verify paths exist.
-	paths, ok := spec["paths"].(map[any]any)
+	paths, ok := spec["paths"].(map[string]any)
 	require.True(t, ok, "paths should be a map")
 	require.NotEmpty(t, paths, "paths should not be empty")
 
@@ -128,7 +128,7 @@ func TestOpenAPIPathFiltering(t *testing.T) {
 			err := yaml.Unmarshal(rec.Body.Bytes(), &spec)
 			require.NoError(t, err)
 
-			paths, ok := spec["paths"].(map[any]any)
+			paths, ok := spec["paths"].(map[string]any)
 			require.True(t, ok, "paths should be a map")
 
 			for _, want := range tc.wantPaths {
@@ -155,10 +155,10 @@ func TestOpenAPISchemaCompleteness(t *testing.T) {
 	err := yaml.Unmarshal(rec.Body.Bytes(), &spec)
 	require.NoError(t, err)
 
-	components, ok := spec["components"].(map[any]any)
+	components, ok := spec["components"].(map[string]any)
 	require.True(t, ok, "components should be a map")
 
-	schemas, ok := components["schemas"].(map[any]any)
+	schemas, ok := components["schemas"].(map[string]any)
 	require.True(t, ok, "schemas should be a map")
 
 	// Verify essential schemas are present.
@@ -276,8 +276,8 @@ func TestOpenAPIVersionConsistency(t *testing.T) {
 	require.Equal(t, "3.2.0", spec32["openapi"])
 
 	// Verify /notifications/live is only in 3.2.
-	paths31 := spec31["paths"].(map[any]any)
-	paths32 := spec32["paths"].(map[any]any)
+	paths31 := spec31["paths"].(map[string]any)
+	paths32 := spec32["paths"].(map[string]any)
 
 	require.NotContains(t, paths31, "/notifications/live")
 

@@ -23,11 +23,11 @@ import (
 
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/sigv4"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
@@ -123,7 +123,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 }
 
 func (s *alertmanagerSet) configHash() (string, error) {
-	b, err := yaml.Marshal(s.cfg)
+	b, err := yamlutil.Marshal(s.cfg)
 	if err != nil {
 		return "", err
 	}
