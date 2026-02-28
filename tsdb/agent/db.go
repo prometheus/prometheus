@@ -560,7 +560,10 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					}
 				}
 			}
-			db.walReplaySeriesPool.Put(v)
+			for i := range v { // Zero out to avoid retaining label data.
+				v[i].Labels = labels.EmptyLabels()
+			}
+			db.walReplaySeriesPool.Put(v[:0])
 		case []record.RefSample:
 			for _, entry := range v {
 				// Update the lastTs for the series based
@@ -588,7 +591,8 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					series.lastTs = entry.T
 				}
 			}
-			db.walReplayHistogramsPool.Put(v)
+			clear(v) // Zero out to avoid retaining histogram data.
+			db.walReplayHistogramsPool.Put(v[:0])
 		case []record.RefFloatHistogramSample:
 			for _, entry := range v {
 				// Update the lastTs for the series based
@@ -602,7 +606,8 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					series.lastTs = entry.T
 				}
 			}
-			db.walReplayFloatHistogramsPool.Put(v)
+			clear(v) // Zero out to avoid retaining histogram data.
+			db.walReplayFloatHistogramsPool.Put(v[:0])
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
