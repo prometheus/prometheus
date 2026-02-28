@@ -2049,3 +2049,42 @@ eval_fail instant at 0 label_replace(overlap, "idx", "same", "idx", ".*")
 
 # Test label_join failure with overlapping timestamps (same labelset at same time).
 eval_fail instant at 0 label_join(overlap, "idx", ",", "label", "label")
+
+# Test consistency between instant vector and range vector functions
+# with non-overlapping series that have the same labelset after __name__ removal.
+# See: https://github.com/prometheus/prometheus/issues/14695
+clear
+load 6m
+  metric_1{common="label"} 0 1 _ _ 4 5
+  metric_2{common="label"} _ _ 2 3 _ 6
+
+# No conflicts with instant vector function - merge series into one output series.
+eval range from 0 to 24m step 6m ceil({__name__=~"metric_.*"})
+  {common="label"} 0 1 2 3 4
+
+# Same with conflict at T=30m (both series have values).
+eval_fail range from 0 to 30m step 6m ceil({__name__=~"metric_.*"})
+
+# Same two cases with range vector function - should behave consistently with ceil().
+# Non-overlapping timestamps should merge successfully.
+eval range from 0 to 24m step 6m max_over_time({__name__=~"metric_.*"}[5m])
+  {common="label"} 0 1 2 3 4
+
+# Same with conflict at T=30m (both series have values).
+eval_fail range from 0 to 30m step 6m max_over_time({__name__=~"metric_.*"}[5m])
+
+# Individual timestamp evaluations should all succeed.
+eval range from 0 to 0 step 1m max_over_time({__name__=~"metric_.*"}[5m])
+  {common="label"} 0
+
+eval range from 6m to 6m step 1m max_over_time({__name__=~"metric_.*"}[5m])
+  {common="label"} 1
+
+eval range from 12m to 12m step 1m max_over_time({__name__=~"metric_.*"}[5m])
+  {common="label"} 2
+
+eval range from 18m to 18m step 1m max_over_time({__name__=~"metric_.*"}[5m])
+  {common="label"} 3
+
+eval range from 24m to 24m step 1m max_over_time({__name__=~"metric_.*"}[5m])
+  {common="label"} 4

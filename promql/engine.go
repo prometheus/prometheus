@@ -2255,8 +2255,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}, warnings
 		}
 
-		if !ev.enableDelayedNameRemoval && mat.ContainsSameLabelset() {
-			ev.errorf("vector cannot contain metrics with the same labelset")
+		if !ev.enableDelayedNameRemoval {
+			mat = ev.mergeSeriesWithSameLabelset(mat)
 		}
 		return mat, warnings
 
