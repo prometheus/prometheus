@@ -734,27 +734,20 @@ func (a *HistogramAppender) writeSumDelta(v float64) {
 	xorWrite(a.b, v, a.sum, &a.leading, &a.trailing)
 }
 
-func (*HistogramAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
+func (*HistogramAppender) AppendFloatHistogram(int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a histogram chunk")
 }
 
-func (a *HistogramAppender) AppendHistogram(prev *HistogramAppender, _, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
+func (a *HistogramAppender) AppendHistogram(_, t int64, h *histogram.Histogram, appendOnly bool) (Chunk, bool, Appender, error) {
 	if a.NumSamples() == 0 {
 		a.appendHistogram(t, h)
-		if h.CounterResetHint == histogram.GaugeType {
+		switch h.CounterResetHint {
+		case histogram.GaugeType:
 			a.setCounterResetHeader(GaugeType)
-			return nil, false, a, nil
+		case histogram.CounterReset:
+			a.setCounterResetHeader(CounterReset)
 		}
 
-		switch {
-		case h.CounterResetHint == histogram.CounterReset:
-			// Always honor the explicit counter reset hint.
-			a.setCounterResetHeader(CounterReset)
-		case prev != nil:
-			// This is a new chunk, but continued from a previous one. We need to calculate the reset header unless already set.
-			_, _, _, _, _, counterReset := prev.appendable(h)
-			a.setCounterResetHeader(counterReset)
-		}
 		return nil, false, a, nil
 	}
 
