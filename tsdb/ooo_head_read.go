@@ -108,8 +108,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 			if len(c.chunk.samples) > 0 { // Empty samples happens in tests, at least.
 				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(c.minTime, c.maxTime)
 				if err != nil {
-					handleChunkWriteError(err)
-					return nil
+					return fmt.Errorf("encoding OOO head chunk for reading: %w", err)
 				}
 				for _, chk := range chks {
 					addChunk(chk.minTime, chk.maxTime, ref, chk.chunk)
@@ -347,7 +346,7 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 		}
 
 		var lastMmapRef chunks.ChunkDiskMapperRef
-		mmapRefs := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper, head.logger)
+		mmapRefs := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper, head.chunkWriteErrorCallback, head.logger)
 		if len(mmapRefs) == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
 			// Nothing was m-mapped. So take the mmapRef from the existing slice if it exists.
 			mmapRefs = []chunks.ChunkDiskMapperRef{ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref}
