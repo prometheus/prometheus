@@ -24,7 +24,7 @@ The OpenAPI specification can be used to:
 
 ## Format overview
 
-The API response format is JSON. Every successful API request returns a `2xx`
+The API response format is JSON. Every successful API request returns a `2xx` 
 status code.
 
 Invalid requests that reach the API handlers return a JSON error object
@@ -589,6 +589,39 @@ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metric
     ]
 }
 ```
+## Remote read API
+
+### /api/v1/read
+
+The /api/v1/read endpoint is used by Prometheus for remote read
+integrations, allowing it to fetch time series data from external
+storage systems.
+
+This endpoint is primarily intended for internal Prometheus usage and
+remote read backends (for example Thanos, Mimir, or Cortex), and is not a
+general-purpose user-facing query API.
+
+#### Behavior
+
+- /api/v1/read is not equivalent to /api/v1/query or
+  /api/v1/query_range.
+- Time series retrieved via remote read may not appear in the Prometheus
+  web UI (for example in the metric name dropdown).
+- Remote read data can still be queried via external systems such as
+  Grafana.
+
+#### Important notes
+
+- Global external_labels can affect remote read behavior.
+- Incompatible or conflicting external_labels may cause remote read
+  queries to return no data without visible errors.
+- Misconfiguration often fails silently in the Prometheus UI.
+
+#### Common pitfalls
+
+- Expecting remote read metrics to appear in the Prometheus UI.
+- Treating /api/v1/read as a general-purpose HTTP API.
+- Assuming failures always produce explicit errors.
 
 ## Expression query result formats
 
