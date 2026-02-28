@@ -167,6 +167,12 @@ type PromParser struct {
 	offsets []int
 
 	enableTypeAndUnitLabels bool
+
+	// metaFamilyName is the metric family name from the last TYPE/HELP/UNIT metadata.
+	// This is used to validate that series belong to the correct metric family.
+	metaFamilyName []byte
+	// metaType is the type from the last TYPE metadata.
+	metaType model.MetricType
 }
 
 // NewPromParser returns a new parser of the byte slice.
@@ -210,7 +216,13 @@ func (p *PromParser) Help() ([]byte, []byte) {
 // Must only be called after Next returned a type entry.
 // The returned byte slices become invalid after the next call to Next.
 func (p *PromParser) Type() ([]byte, model.MetricType) {
-	return p.l.b[p.offsets[0]:p.offsets[1]], p.mtype
+	m := p.l.b[p.offsets[0]:p.offsets[1]]
+
+	// Store the metric family name and type for later validation.
+	p.metaFamilyName = m
+	p.metaType = p.mtype
+
+	return m, p.mtype
 }
 
 // Unit returns the metric name and unit in the current entry.
@@ -218,6 +230,7 @@ func (p *PromParser) Type() ([]byte, model.MetricType) {
 // The returned byte slices become invalid after the next call to Next.
 func (*PromParser) Unit() ([]byte, []byte) {
 	// The Prometheus format does not have units.
+	// Note: This method exists for interface compatibility but is not used in Prometheus text format.
 	return nil, nil
 }
 
@@ -236,12 +249,17 @@ func (p *PromParser) Labels(l *labels.Labels) {
 	p.builder.Reset()
 	metricName := unreplace(s[p.offsets[0]-p.start : p.offsets[1]-p.start])
 
+	// Validate if this series belongs to the current metric family.
+	// If not, clear the metadata to prevent wrong associations.
+	metaType := p.metaType
+	if len(p.metaFamilyName) > 0 && !isSeriesPartOfFamily(metricName, p.metaFamilyName, p.metaType) {
+		// Series doesn't belong to the current metric family, use unknown type.
+		metaType = model.MetricTypeUnknown
+	}
+
 	m := schema.Metadata{
 		Name: metricName,
-		// NOTE(bwplotka): There is a known case where the type is wrong on a broken exposition
-		// (see the TestPromParse windspeed metric). Fixing it would require extra
-		// allocs and benchmarks. Since it was always broken, don't fix for now.
-		Type: p.mtype,
+		Type: metaType,
 	}
 
 	if p.enableTypeAndUnitLabels {
