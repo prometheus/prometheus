@@ -167,6 +167,9 @@ type PromParser struct {
 	offsets []int
 
 	enableTypeAndUnitLabels bool
+	lastBaseMetricName      string
+	lastSetMetricType       model.MetricType
+	typeWasSetForFamily     bool
 }
 
 // NewPromParser returns a new parser of the byte slice.
@@ -335,6 +338,8 @@ func (p *PromParser) Next() (Entry, error) {
 		}
 		switch t {
 		case tType:
+			typedMetricName := p.l.b[p.offsets[0]:p.offsets[1]]
+			typedBaseName := baseName(typedMetricName)
 			switch s := yoloString(p.text); s {
 			case "counter":
 				p.mtype = model.MetricTypeCounter
@@ -349,6 +354,9 @@ func (p *PromParser) Next() (Entry, error) {
 			default:
 				return EntryInvalid, fmt.Errorf("invalid metric type %q", s)
 			}
+			p.lastSetMetricType = p.mtype
+			p.typeWasSetForFamily = true
+			p.lastBaseMetricName = typedBaseName
 		case tHelp:
 			if !utf8.Valid(p.text) {
 				return EntryInvalid, fmt.Errorf("help text %q is not a valid utf8 string", p.text)
@@ -381,7 +389,14 @@ func (p *PromParser) Next() (Entry, error) {
 		}
 
 		p.series = p.l.b[p.start:p.l.i]
-		return p.parseMetricSuffix(p.nextToken())
+		entry, err := p.parseMetricSuffix(p.nextToken())
+		if entry == EntrySeries {
+			err := p.handleMetricFamilySwitch()
+			if err != nil {
+				return entry, err
+			}
+		}
+		return entry, err
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
 		p.series = p.l.b[p.start:p.l.i]
@@ -394,7 +409,14 @@ func (p *PromParser) Next() (Entry, error) {
 			p.series = p.l.b[p.start:p.l.i]
 			t2 = p.nextToken()
 		}
-		return p.parseMetricSuffix(t2)
+		entry, err := p.parseMetricSuffix(t2)
+		if entry == EntrySeries {
+			err := p.handleMetricFamilySwitch()
+			if err != nil {
+				return entry, err
+			}
+		}
+		return entry, err
 
 	default:
 		err = p.parseError("expected a valid start token", t)
@@ -530,4 +552,41 @@ func parseFloat(s string) (float64, error) {
 		return 0, errors.New("unsupported character in float")
 	}
 	return strconv.ParseFloat(s, 64)
+}
+
+// baseName returns the metric family name without the _suffix.
+// It uses yoloString for efficiency and avoids unnecessary allocations.
+// This is safe because the returned string is only used during the current parse step
+// and not stored for later use.
+func baseName(b []byte) string {
+	name := yoloString(b)
+	suffixes := []string{"_total", "_count", "_sum", "_bucket"}
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(name, suffix) {
+			return name[:len(name)-len(suffix)]
+		}
+	}
+	return name
+}
+
+func (p *PromParser) handleMetricFamilySwitch() error {
+	metricNameBytes := p.series[p.offsets[0]-p.start : p.offsets[1]-p.start]
+	base := baseName(metricNameBytes)
+
+	// Only do family switch logic when type and unit labels are enabled
+	if p.enableTypeAndUnitLabels {
+		// If we're switching to a new metric family
+		if base != p.lastBaseMetricName {
+			if !p.typeWasSetForFamily {
+				p.mtype = model.MetricTypeUnknown
+			} else {
+				p.mtype = p.lastSetMetricType
+			}
+		}
+		// Reset for the new family
+		p.typeWasSetForFamily = false
+	}
+
+	p.lastBaseMetricName = base
+	return nil
 }
