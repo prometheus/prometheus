@@ -254,6 +254,11 @@ Outer:
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
+				if badName, outOfOrder := walSeries.Labels.HasOutOfOrderLabel(); outOfOrder {
+					h.logger.Warn("skipping series with out-of-order labels during WAL replay", "ref", walSeries.Ref, "out_of_order_label", badName)
+					h.metrics.walReplayCorruptedSeriesTotal.Inc()
+					continue
+				}
 				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
 				if err != nil {
 					seriesCreationErr = err
@@ -1616,6 +1621,11 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 			localRefSeries := shardedRefSeries[idx]
 
 			for csr := range rc {
+				if badName, outOfOrder := csr.lset.HasOutOfOrderLabel(); outOfOrder {
+					h.logger.Warn("skipping series with out-of-order labels during chunk snapshot replay", "ref", csr.ref, "out_of_order_label", badName)
+					h.metrics.walReplayCorruptedSeriesTotal.Inc()
+					continue
+				}
 				series, _, err := h.getOrCreateWithOptionalID(csr.ref, csr.lset.Hash(), csr.lset, false)
 				if err != nil {
 					errChan <- err
