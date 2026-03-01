@@ -1,0 +1,5 @@
+remote_write:
+  - url: http://localhost:9090/api/v1/write
+    queue_config:
+      min_backoff: 10s
+      max_backoff: 1s

@@ -2415,6 +2415,18 @@ var expectedErrors = []struct {
 		errMsg:   `found multiple remote write configs with job name "queue1"`,
 	},
 	{
+		filename: "remote_write_queue_max_samples_per_send_zero.bad.yml",
+		errMsg:   `remote write queue max_samples_per_send must be positive`,
+	},
+	{
+		filename: "remote_write_queue_min_shards_greater_than_max.bad.yml",
+		errMsg:   `remote write queue min_shards must not be greater than max_shards`,
+	},
+	{
+		filename: "remote_write_queue_max_backoff_less_than_min.bad.yml",
+		errMsg:   `remote write queue max_backoff must not be less than min_backoff`,
+	},
+	{
 		filename: "remote_read_dup.bad.yml",
 		errMsg:   `found multiple remote read configs with job name "queue1"`,
 	},
