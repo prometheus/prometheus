@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -501,11 +502,8 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 	if headChunk && isOpen && copyLastChunk {
 		// The caller may ask to copy the head chunk in order to take the
 		// bytes of the chunk without causing the race between read and append.
-		b := s.headChunks.chunk.Bytes()
-		newB := make([]byte, len(b))
-		copy(newB, b) // TODO(codesome): Use bytes.Clone() when we upgrade to Go 1.20.
 		// TODO(codesome): Put back in the pool (non-trivial).
-		chk, err = h.opts.ChunkPool.Get(s.headChunks.chunk.Encoding(), newB)
+		chk, err = h.opts.ChunkPool.Get(s.headChunks.chunk.Encoding(), bytes.Clone(s.headChunks.chunk.Bytes()))
 		if err != nil {
 			return nil, 0, err
 		}
