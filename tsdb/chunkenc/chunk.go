@@ -37,6 +37,7 @@ const (
 	EncXOR2STotel
 	EncXOR18111
 	EncXOR18111ST
+	EncXOR18111ST2
 )
 
 func (e Encoding) String() string {
@@ -63,6 +64,8 @@ func (e Encoding) String() string {
 		return "XOR18111"
 	case EncXOR18111ST:
 		return "XOR18111-start-timestamp"
+	case EncXOR18111ST2:
+		return "XOR18111-start-timestamp-2"
 	}
 	return "<unknown>"
 }
@@ -324,7 +327,8 @@ type pool struct {
 	xor2st         sync.Pool
 	xor2stOtel     sync.Pool
 	xor18111       sync.Pool
-	xor18111st     sync.Pool
+	xor18111st  sync.Pool
+	xor18111st2 sync.Pool
 }
 
 // NewPool returns a new pool.
@@ -380,6 +384,11 @@ func NewPool() Pool {
 				return &XOR18111STChunk{b: bstream{}}
 			},
 		},
+		xor18111st2: sync.Pool{
+			New: func() any {
+				return &XOR18111ST2Chunk{b: bstream{}}
+			},
+		},
 	}
 }
 
@@ -406,6 +415,8 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c = p.xor18111.Get().(*XOR18111Chunk)
 	case EncXOR18111ST:
 		c = p.xor18111st.Get().(*XOR18111STChunk)
+	case EncXOR18111ST2:
+		c = p.xor18111st2.Get().(*XOR18111ST2Chunk)
 	default:
 		return nil, fmt.Errorf("invalid chunk encoding %q", e)
 	}
@@ -448,6 +459,9 @@ func (p *pool) Put(c Chunk) error {
 	case EncXOR18111ST:
 		_, ok = c.(*XOR18111STChunk)
 		sp = &p.xor18111st
+	case EncXOR18111ST2:
+		_, ok = c.(*XOR18111ST2Chunk)
+		sp = &p.xor18111st2
 	default:
 		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
@@ -488,6 +502,8 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 		return &XOR18111Chunk{b: bstream{count: 0, stream: d}}, nil
 	case EncXOR18111ST:
 		return &XOR18111STChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR18111ST2:
+		return &XOR18111ST2Chunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
@@ -515,6 +531,8 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 		return NewXOR18111Chunk(), nil
 	case EncXOR18111ST:
 		return NewXOR18111STChunk(), nil
+	case EncXOR18111ST2:
+		return NewXOR18111ST2Chunk(), nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
