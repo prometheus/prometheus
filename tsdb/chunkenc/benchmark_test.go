@@ -62,279 +62,128 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 		rFloats[i] = float64(r.Intn(100))
 	}
 
-	sampleCases := []sampleCase{
-		{
-			name: "vt=constant/st=0",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for range nSamples {
-					t += 15000
-					ret = append(ret, triple{st: 0, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
+	// tPatterns control how the regular timestamp advances.
+	type tPattern struct {
+		name string
+		next func(t int64, i int) int64
+	}
+	// vPatterns control how the value advances.
+	type vPattern struct {
+		name string
+		next func(v float64, i int) float64
+	}
+	// stPatterns compute the start timestamp from the previous t (before the
+	// step), the new t (after the step), and the sample index.
+	type stPattern struct {
+		name    string
+		compute func(prevT, newT int64, i int) int64
+	}
 
+	tPatterns := []tPattern{
 		{
-			// Cumulative with a constant ST through the whole chunk, typical case (e.g. long counting counter).
-			name: "vt=constant/st=cumulative",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for range nSamples {
-					t += 15000
-					ret = append(ret, triple{st: initST, t: t, v: v})
-				}
-				return ret
-			}(),
+			name: "t=constant",
+			next: func(t int64, _ int) int64 { return t + 15000 },
 		},
 		{
-			// Delta simulates delta type or worst case for cumulatives, where ST
-			// is changing on every sample.
-			name: "vt=constant/st=delta-exclusive",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for range nSamples {
-					st := t + 1 // ST is a tight interval after the last t+1ms.
-					t += 15000
-					ret = append(ret, triple{st: st, t: t, v: v})
-				}
-				return ret
-			}(),
+			// 15 seconds ± up to 100ms of jitter.
+			name: "t=jitter",
+			next: func(t int64, i int) int64 { return t + rInts[i] - 50 + 15000 },
+		},
+	}
+	vPatterns := []vPattern{
+		{
+			name: "v=constant",
+			next: func(v float64, _ int) float64 { return v },
+		},
+		// We are not interested in float compression we're not changing it.
+		// {
+		// 	// Varying from -50 to +50 in 100 discrete steps.
+		// 	name: "v=rand-steps",
+		// 	next: func(v float64, i int) float64 { return v + rFloats[i] - 50 },
+		// },
+		// {
+		// 	// Random increment between 0 and 1.0.
+		// 	name: "v=rand0-1",
+		// 	next: func(v float64, i int) float64 { return v + rFloats[i]/100.0 },
+		// },
+		// {
+		// 	// Random decrement between 0 and -1.0. Tests negative varint encoding;
+		// 	// see https://victoriametrics.com/blog/go-protobuf/.
+		// 	name: "v=nrand0-1",
+		// 	next: func(v float64, i int) float64 { return v - rFloats[i]/100.0 },
+		// },
+	}
+	stPatterns := []stPattern{
+		{
+			name:    "st=0",
+			compute: func(_, _ int64, _ int) int64 { return 0 },
 		},
 		{
-			// Delta simulates delta type or worst case for cumulatives, where ST
-			// is changing on every sample.
-			name: "vt=constant/st=delta-inclusive",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for range nSamples {
-					st := t // ST is the same as the previous t.
-					t += 15000
-					ret = append(ret, triple{st: st, t: t, v: v})
-				}
-				return ret
-			}(),
+			// Constant ST throughout the chunk, typical for long-running counters.
+			name:    "st=cumulative",
+			compute: func(_, _ int64, _ int) int64 { return initST },
 		},
 		{
-			name: "vt=constant/st=t",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for range nSamples {
-					t += 15000
-					ret = append(ret, triple{st: t, t: t, v: v})
-				}
-				return ret
-			}(),
+			// ST is just after the previous sample's t: tight delta interval.
+			name:    "st=delta-excl",
+			compute: func(prevT, _ int64, _ int) int64 { return prevT + 1 },
 		},
 		{
-			// Delta simulates delta type or worst case for cumulatives, where ST
-			// is changing on every sample.
-			name: "vt=constant/st=delta-jitter",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					st := t + rInts[nSamples+i] // ST is the same as the previous t + jitter of up to 100ms.
-					t += 15000
-					ret = append(ret, triple{st: st, t: t, v: v})
-				}
-				return ret
-			}(),
+			// ST equals the previous sample's t: inclusive delta interval.
+			name:    "st=delta-incl",
+			compute: func(prevT, _ int64, _ int) int64 { return prevT },
 		},
 		{
-			name: "vt=random steps/st=0",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
-					ret = append(ret, triple{st: 0, t: t, v: v})
-				}
-				return ret
-			}(),
+			// ST equals the current sample's t.
+			name:    "st=t",
+			compute: func(_, newT int64, _ int) int64 { return newT },
 		},
 		{
-			name: "vt=random steps/st=cumulative",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
-					ret = append(ret, triple{st: initST, t: t, v: v})
-				}
-				return ret
-			}(),
+			// ST is equal to the previous t plus up to 100ms of jitter.
+			name:    "st=delta-jitter",
+			compute: func(prevT, _ int64, i int) int64 { return prevT + rInts[nSamples+i] },
 		},
 		{
-			name: "vt=random steps/st=delta-exclusive",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					st := t + 1                // ST is a tight interval after the last t+1ms.
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
-					ret = append(ret, triple{st: st, t: t, v: v})
+			// Cumulative ST with periodic resets 10s before the current t.
+			name: "st=cum-resets",
+			compute: func(_, newT int64, i int) int64 {
+				if i%6 == 5 {
+					return newT - 10000
 				}
-				return ret
-			}(),
+				return initST
+			},
 		},
 		{
-			name: "vt=random steps/st=delta-inclusive",
-			samples: func() (ret []triple) {
+			// Cumulative ST with periodic zero resets.
+			name: "st=cum-zeros",
+			compute: func(_, _ int64, i int) int64 {
+				if i%6 == 5 {
+					return 0
+				}
+				return initST
+			},
+		},
+	}
+
+	var sampleCases []sampleCase
+	for _, tp := range tPatterns {
+		for _, vp := range vPatterns {
+			for _, sp := range stPatterns {
+				samples := make([]triple, 0, nSamples)
 				t, v := initT, initV
 				for i := range nSamples {
-					st := t                    // ST is equal to the previous t.
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
-					ret = append(ret, triple{st: st, t: t, v: v})
+					prevT := t
+					t = tp.next(t, i)
+					v = vp.next(v, i)
+					st := sp.compute(prevT, t, i)
+					samples = append(samples, triple{st: st, t: t, v: v})
 				}
-				return ret
-			}(),
-		},
-		{
-			name: "vt=random steps/st=t",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] - 50       // Varying from -50 to +50 in 100 discrete steps.
-					ret = append(ret, triple{st: t, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
-		{
-			name: "vt=random steps/st=delta-jittery",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					st := t + rInts[nSamples+i] // ST is equal to the previous t + jitter of up to 100ms.
-					t += rInts[i] - 50 + 15000  // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] - 50        // Varying from -50 to +50 in 100 discrete steps.
-					ret = append(ret, triple{st: st, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
-		{
-			name: "vt=random 0-1/st=0",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
-					ret = append(ret, triple{st: 0, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
-		{
-			// Are we impacted by https://victoriametrics.com/blog/go-protobuf/ negative varint issue? (zig-zag needed?)
-			name: "vt=negrandom 0-1/st=0",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v -= rFloats[i] / 100.0    // Random between 0 and 1.0.
-					ret = append(ret, triple{st: 0, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
-		{
-			name: "vt=random 0-1/st=cumulative",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
-					ret = append(ret, triple{st: initST, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
-		{
-			name: "vt=random 0-1/st=cumulative-periodic-resets",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
-					st := initST
-					if i%6 == 5 {
-						st = t - 10000 // Reset of 10s before current t.
-					}
-					ret = append(ret, triple{st: st, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
-		{
-			name: "vt=random 0-1/st=cumulative-periodic-zeros",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
-					st := initST
-					if i%6 == 5 {
-						st = 0
-					}
-					ret = append(ret, triple{st: st, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
-		{
-			name: "vt=random 0-1/st=delta-exclusive",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					st := t + 1                // ST is a tight interval after the last t+1ms.
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
-					ret = append(ret, triple{st: st, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
-		{
-			name: "vt=random 0-1/st=delta-inclusive",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					st := t                    // ST is the same as the previous t.
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
-					ret = append(ret, triple{st: st, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
-		{
-			name: "vt=random 0-1/st=t",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					t += rInts[i] - 50 + 15000 // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] / 100.0    // Random between 0 and 1.0.
-					ret = append(ret, triple{st: t, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
-		{
-			name: "vt=random 0-1/st=delta-jittery",
-			samples: func() (ret []triple) {
-				t, v := initT, initV
-				for i := range nSamples {
-					st := t + rInts[nSamples+i] // ST is equal to the previous t + jitter of up to 100ms.
-					t += rInts[i] - 50 + 15000  // 15 seconds +- up to 100ms of jitter.
-					v += rFloats[i] / 100.0     // Random between 0 and 1.0.
-					ret = append(ret, triple{st: st, t: t, v: v})
-				}
-				return ret
-			}(),
-		},
+				sampleCases = append(sampleCases, sampleCase{
+					name:    tp.name + "/" + vp.name + "/" + sp.name,
+					samples: samples,
+				})
+			}
+		}
 	}
 
 	for _, f := range []fmtCase{
