@@ -89,6 +89,23 @@ func foreachFmtSampleCase(b *testing.B, fn func(b *testing.B, f fmtCase, s sampl
 			name: "t=jitter",
 			next: func(t int64, i int) int64 { return t + rInts[i] - 50 + 15000 },
 		},
+		{
+			// First 10 samples at constant 60s, then one 10-interval gap (600s),
+			// then 60s ± 30ms jitter. The gap triggers XOR18111 full mode via
+			// multiplier encoding (dod=540000 = 9×60000). Subsequent small-jitter
+			// delta-of-deltas (≤30ms) use XOR18111's 7-bit full-mode code (9 bits
+			// total) vs XOR compact's minimum 14-bit code (16 bits total).
+			name: "t=gap-jitter",
+			next: func(t int64, i int) int64 {
+				if i < 10 {
+					return t + 60000
+				}
+				if i == 10 {
+					return t + 10*60000 // 10-interval gap; triggers XOR18111 full mode.
+				}
+				return t + 60000 + rInts[i]%61 - 30 // 60s ± 30ms jitter.
+			},
+		},
 	}
 	vPatterns := []vPattern{
 		{
