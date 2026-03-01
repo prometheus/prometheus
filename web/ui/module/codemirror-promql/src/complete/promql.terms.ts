@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Completion, snippet } from '@codemirror/autocomplete';
+import { Completion, snippetCompletion } from '@codemirror/autocomplete';
 
 export const durationTerms = [{ label: 'y' }, { label: 'w' }, { label: 'd' }, { label: 'h' }, { label: 'm' }, { label: 's' }, { label: 'ms' }];
 export const matchOpTerms = [{ label: '=' }, { label: '!=' }, { label: '=~' }, { label: '!~' }];
@@ -655,46 +655,40 @@ export const numberTerms = [
 ];
 
 export const snippets: readonly Completion[] = [
-  {
+  snippetCompletion('sum(rate(${1:__input_vector__}[5m]))', {
     label: 'sum(rate(__input_vector__[5m]))',
     type: 'function',
     detail: 'snippet',
     info: 'Sum over rates of increase',
-    apply: snippet('sum(rate(${__input_vector__}[5m]))'),
-  },
-  {
+  }),
+  snippetCompletion('histogram_quantile(${1:__quantile__}, sum by(le) (rate(${2:__histogram_metric__}[5m])))', {
     label: 'histogram_quantile(__quantile__, sum by(le) (rate(__histogram_metric__[5m])))',
     type: 'function',
     detail: 'snippet',
     info: 'Approximate a quantile value from an aggregated histogram',
-    apply: snippet('histogram_quantile(${__quantile__}, sum by(le) (rate(${__histogram_metric__}[5m])))'),
-  },
-  {
+  }),
+  snippetCompletion('label_replace(${1:__input_vector__}, "${2:__dst__}", "${3:__replacement__}", "${4:__src__}", "${5:__regex__}")', {
     label: 'label_replace(__input_vector__, "__dst__", "__replacement__", "__src__", "__regex__")',
     type: 'function',
     detail: 'snippet',
     info: 'Set or replace a label value in an input vector',
-    apply: snippet('label_replace(${__input_vector__}, "${__dst__}", "${__replacement__}", "${__src__}", "${__regex__}")'),
-  },
-  {
+  }),
+  snippetCompletion('topk(${1:__rank_number__}, ${2:__input_vector__})', {
     label: 'topk(__rank_number__, __input_vector__)',
     type: 'function',
     detail: 'snippet',
     info: 'Largest k elements by sample value',
-    apply: snippet('topk(${__rank_number__}, ${__input_vector__})'),
-  },
-  {
+  }),
+  snippetCompletion('bottomk(${1:__rank_number__}, ${2:__input_vector__})', {
     label: 'bottomk(__rank_number__, __input_vector__)',
     type: 'function',
     detail: 'snippet',
     info: 'Smallest k elements by sample value',
-    apply: snippet('bottomk(${__rank_number__}, ${__input_vector__})'),
-  },
-  {
+  }),
+  snippetCompletion('count_values("${1:__label_name__}", ${2:__metric__})', {
     label: 'count_values("__label_name__", __input_vector__)',
     type: 'function',
     detail: 'snippet',
     info: 'Count the number of series per distinct sample value',
-    apply: snippet('count_values("${__label_name__}", ${__metric__})'),
-  },
+  }),
 ];
