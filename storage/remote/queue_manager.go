@@ -1764,9 +1764,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	}
 
 	metricsUpdater := batchMetricsUpdater{
-		metrics:      s.qm.metrics,
-		storeClient:  s.qm.storeClient,
-		sentDuration: s.qm.metrics.sentBatchDuration,
+		metrics: s.qm.metrics,
 	}
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
@@ -1871,9 +1869,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	}
 
 	metricsUpdater := batchMetricsUpdater{
-		metrics:      s.qm.metrics,
-		storeClient:  s.qm.storeClient,
-		sentDuration: s.qm.metrics.sentBatchDuration,
+		metrics: s.qm.metrics,
 	}
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
@@ -2274,9 +2270,7 @@ type sendBatchContext struct {
 
 // batchMetricsUpdater encapsulates metrics update operations for batch sending.
 type batchMetricsUpdater struct {
-	metrics      *queueManagerMetrics
-	storeClient  WriteClient
-	sentDuration prometheus.Observer
+	metrics *queueManagerMetrics
 }
 
 // recordBatchAttempt records counter metrics for a batch send attempt.
@@ -2289,7 +2283,7 @@ func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext) {
 
 // recordLatency records the observed send duration for a batch attempt.
 func (b *batchMetricsUpdater) recordLatency(begin time.Time) {
-	b.sentDuration.Observe(time.Since(begin).Seconds())
+	b.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 }
 
 // recordRetry records retry metrics for a batch.
