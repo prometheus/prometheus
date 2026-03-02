@@ -186,19 +186,17 @@ type RefExemplar struct {
 }
 
 // RefHistogramSample is a histogram.
-// TODO(owilliams): Add support for ST.
 type RefHistogramSample struct {
-	Ref chunks.HeadSeriesRef
-	T   int64
-	H   *histogram.Histogram
+	Ref   chunks.HeadSeriesRef
+	ST, T int64
+	H     *histogram.Histogram
 }
 
 // RefFloatHistogramSample is a float histogram.
-// TODO(owilliams): Add support for ST.
 type RefFloatHistogramSample struct {
-	Ref chunks.HeadSeriesRef
-	T   int64
-	FH  *histogram.FloatHistogram
+	Ref   chunks.HeadSeriesRef
+	ST, T int64
+	FH    *histogram.FloatHistogram
 }
 
 // RefMmapMarker marks that the all the samples of the given series until now have been m-mapped to disk.
