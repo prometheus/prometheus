@@ -60,6 +60,14 @@ const (
 	CustomBucketsFloatHistogramSamples Type = 10
 	// SamplesV2 is an enhanced sample record with an encoding scheme that allows storing float samples with timestamp and an optional ST per sample.
 	SamplesV2 Type = 11
+	// HistogramSamplesV2 is an enhanced histogram record that supports start time per sample.
+	HistogramSamplesV2 Type = 12
+	// FloatHistogramSamplesV2 is an enhanced float histogram record that supports start time per sample.
+	FloatHistogramSamplesV2 Type = 13
+	// CustomBucketsHistogramSamplesV2 is an enhanced custom-buckets histogram record that supports start time per sample.
+	CustomBucketsHistogramSamplesV2 Type = 14
+	// CustomBucketsFloatHistogramSamplesV2 is an enhanced custom-buckets float histogram record that supports start time per sample.
+	CustomBucketsFloatHistogramSamplesV2 Type = 15
 )
 
 func (rt Type) String() string {
@@ -82,6 +90,14 @@ func (rt Type) String() string {
 		return "custom_buckets_histogram_samples"
 	case CustomBucketsFloatHistogramSamples:
 		return "custom_buckets_float_histogram_samples"
+	case HistogramSamplesV2:
+		return "histogram_samples_v2"
+	case FloatHistogramSamplesV2:
+		return "float_histogram_samples_v2"
+	case CustomBucketsHistogramSamplesV2:
+		return "custom_buckets_histogram_samples_v2"
+	case CustomBucketsFloatHistogramSamplesV2:
+		return "custom_buckets_float_histogram_samples_v2"
 	case MmapMarkers:
 		return "mmapmarkers"
 	case Metadata:
@@ -224,7 +240,9 @@ func (*Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples:
+	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata,
+		HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples,
+		HistogramSamplesV2, FloatHistogramSamplesV2, CustomBucketsHistogramSamplesV2, CustomBucketsFloatHistogramSamplesV2:
 		return t
 	}
 	return Unknown
