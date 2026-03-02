@@ -45,11 +45,11 @@ Plans:
 
 **Requirements:** DEC-01..04
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 03-01-PLAN.md -- Int-histogram V2 decoder (histogramSamplesV2 + HistogramSamples dispatch)
-- [ ] 03-02-PLAN.md -- Float-histogram V2 decoder (floatHistogramSamplesV2 + FloatHistogramSamples dispatch)
+- [x] 03-01-PLAN.md -- Int-histogram V2 decoder (histogramSamplesV2 + HistogramSamples dispatch)
+- [x] 03-02-PLAN.md -- Float-histogram V2 decoder (floatHistogramSamplesV2 + FloatHistogramSamples dispatch)
 
 **Files:** `tsdb/record/record.go`
 
@@ -88,4 +88,4 @@ Phase 1 (types/structs)
 
 ---
 *Created: 2026-03-02*
-*Last updated: 2026-03-02 after Phase 3 planning*
+*Last updated: 2026-03-02 after Phase 3 Plan 02 complete*

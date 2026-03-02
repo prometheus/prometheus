@@ -29,7 +29,7 @@
 ### Decoding
 
 - [x] **DEC-01**: Decoder.HistogramSamples() accepts both V1 and V2 record types
-- [ ] **DEC-02**: Decoder.FloatHistogramSamples() accepts both V1 and V2 record types
+- [x] **DEC-02**: Decoder.FloatHistogramSamples() accepts both V1 and V2 record types
 - [x] **DEC-03**: V2 histogram decoding correctly reads ST marker bytes and reconstructs ST values
 - [x] **DEC-04**: V1 records decoded with ST=0 (backward compat)
 
@@ -69,7 +69,7 @@
 | ENC-04 | Phase 2 | Complete |
 | ENC-05 | Phase 2 | Complete |
 | DEC-01 | Phase 3 | Complete |
-| DEC-02 | Phase 3 | Pending |
+| DEC-02 | Phase 3 | Complete |
 | DEC-03 | Phase 3 | Complete |
 | DEC-04 | Phase 3 | Complete |
 | TEST-01 | Phase 4 | Pending |
@@ -87,4 +87,4 @@
 
 ---
 *Requirements defined: 2026-03-02*
-*Last updated: 2026-03-02 after initial definition*
+*Last updated: 2026-03-02 after Phase 3 Plan 02 complete*
