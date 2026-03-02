@@ -10,7 +10,7 @@
 
 **Requirements:** STRUCT-01, STRUCT-02, TYPE-01..05
 
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 01-01-PLAN.md -- Add ST fields to histogram structs and declare V2 record type constants
