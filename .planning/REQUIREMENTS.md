@@ -20,11 +20,11 @@
 
 ### Encoding
 
-- [ ] **ENC-01**: Encoder.HistogramSamples() gates on EnableSTStorage, dispatches to V2 when enabled
+- [x] **ENC-01**: Encoder.HistogramSamples() gates on EnableSTStorage, dispatches to V2 when enabled
 - [ ] **ENC-02**: Encoder.FloatHistogramSamples() gates on EnableSTStorage, dispatches to V2 when enabled
-- [ ] **ENC-03**: Encoder.CustomBucketsHistogramSamples() gates on EnableSTStorage, dispatches to V2 when enabled
+- [x] **ENC-03**: Encoder.CustomBucketsHistogramSamples() gates on EnableSTStorage, dispatches to V2 when enabled
 - [ ] **ENC-04**: Encoder.CustomBucketsFloatHistogramSamples() gates on EnableSTStorage, dispatches to V2 when enabled
-- [ ] **ENC-05**: V2 histogram encoding uses noST/sameST/explicitST marker scheme
+- [x] **ENC-05**: V2 histogram encoding uses noST/sameST/explicitST marker scheme
 
 ### Decoding
 
@@ -63,11 +63,11 @@
 | TYPE-03 | Phase 1 | Complete |
 | TYPE-04 | Phase 1 | Complete |
 | TYPE-05 | Phase 1 | Complete |
-| ENC-01 | Phase 2 | Pending |
+| ENC-01 | Phase 2 | Complete |
 | ENC-02 | Phase 2 | Pending |
-| ENC-03 | Phase 2 | Pending |
+| ENC-03 | Phase 2 | Complete |
 | ENC-04 | Phase 2 | Pending |
-| ENC-05 | Phase 2 | Pending |
+| ENC-05 | Phase 2 | Complete |
 | DEC-01 | Phase 3 | Pending |
 | DEC-02 | Phase 3 | Pending |
 | DEC-03 | Phase 3 | Pending |
