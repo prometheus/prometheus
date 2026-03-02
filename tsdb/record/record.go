@@ -752,6 +752,114 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 	return histograms, nil
 }
 
+// floatHistogramSamplesV1 decodes V1 float-histogram records (BE64 baseRef/baseTime, varint deltas).
+func (d *Decoder) floatHistogramSamplesV1(dec *encoding.Decbuf, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
+	if dec.Len() == 0 {
+		return histograms, nil
+	}
+	var (
+		baseRef  = dec.Be64()
+		baseTime = dec.Be64int64()
+	)
+	for len(dec.B) > 0 && dec.Err() == nil {
+		dref := dec.Varint64()
+		dtime := dec.Varint64()
+
+		rh := RefFloatHistogramSample{
+			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
+			T:   baseTime + dtime,
+			FH:  &histogram.FloatHistogram{},
+		}
+
+		DecodeFloatHistogram(dec, rh.FH)
+
+		if !histogram.IsKnownSchema(rh.FH.Schema) {
+			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.FH.Schema, "timestamp", rh.T)
+			continue
+		}
+		if rh.FH.Schema > histogram.ExponentialSchemaMax && rh.FH.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// record is from a newer Prometheus version that supports higher
+			// resolution.
+			if err := rh.FH.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
+			}
+		}
+
+		histograms = append(histograms, rh)
+	}
+
+	if dec.Err() != nil {
+		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms), dec.Err())
+	}
+	if len(dec.B) > 0 {
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return histograms, nil
+}
+
+// floatHistogramSamplesV2 decodes V2 float-histogram records (all-varint, ST marker scheme).
+func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
+	if dec.Len() == 0 {
+		return histograms, nil
+	}
+	var firstT, firstST int64
+	for len(dec.B) > 0 && dec.Err() == nil {
+		var ref, t, ST int64
+
+		if len(histograms) == 0 {
+			ref = dec.Varint64()
+			firstT = dec.Varint64()
+			t = firstT
+			ST = dec.Varint64()
+			firstST = ST
+		} else {
+			prev := histograms[len(histograms)-1]
+			ref = int64(prev.Ref) + dec.Varint64()
+			t = firstT + dec.Varint64()
+			stMarker := dec.Byte()
+			switch stMarker {
+			case noST:
+			case sameST:
+				ST = prev.ST
+			default:
+				ST = firstST + dec.Varint64()
+			}
+		}
+
+		rh := RefFloatHistogramSample{
+			Ref: chunks.HeadSeriesRef(ref),
+			ST:  ST,
+			T:   t,
+			FH:  &histogram.FloatHistogram{},
+		}
+		DecodeFloatHistogram(dec, rh.FH)
+
+		if !histogram.IsKnownSchema(rh.FH.Schema) {
+			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.FH.Schema, "timestamp", rh.T)
+			continue
+		}
+		if rh.FH.Schema > histogram.ExponentialSchemaMax && rh.FH.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// record is from a newer Prometheus version that supports higher
+			// resolution.
+			if err := rh.FH.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
+			}
+		}
+
+		histograms = append(histograms, rh)
+	}
+
+	if dec.Err() != nil {
+		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms), dec.Err())
+	}
+	if len(dec.B) > 0 {
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return histograms, nil
+}
+
 // DecodeFloatHistogram decodes a Histogram from a byte slice.
 func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	fh.CounterResetHint = histogram.CounterResetHint(buf.Byte())
