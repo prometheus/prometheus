@@ -59,7 +59,7 @@ func NewHeadAndOOOIndexReader(head *Head, inoMint, mint, maxt int64, lastGarbage
 	return &HeadAndOOOIndexReader{hr, inoMint, lastGarbageCollectedMmapRef}
 }
 
-func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta, _ ...index.SeriesParam) error {
 	s := oh.head.series.getByID(chunks.HeadSeriesRef(ref))
 
 	if s == nil {
@@ -464,7 +464,7 @@ func (ir *OOOCompactionHeadIndexReader) ShardedPostings(p index.Postings, shardI
 	return hr.ShardedPostings(p, shardIndex, shardCount)
 }
 
-func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta, _ ...index.SeriesParam) error {
 	s := ir.ch.head.series.getByID(chunks.HeadSeriesRef(ref))
 
 	if s == nil {
