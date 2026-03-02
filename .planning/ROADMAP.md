@@ -13,7 +13,7 @@
 **Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 01-01-PLAN.md -- Add ST fields to histogram structs and declare V2 record type constants
+- [x] 01-01-PLAN.md -- Add ST fields to histogram structs and declare V2 record type constants
 
 **Files:** `tsdb/record/record.go`
 
@@ -27,15 +27,11 @@ Plans:
 
 **Requirements:** ENC-01..05
 
-**Tasks:**
-1. Add `histogramSamplesV2` private method (mirrors `samplesV2` pattern): first sample writes ref+T+ST+histogram, subsequent samples write dRef+dT+STmarker+[dST]+histogram
-2. Add `floatHistogramSamplesV2` private method (same pattern for float histograms)
-3. Add `customBucketsHistogramSamplesV2` private method
-4. Add `customBucketsFloatHistogramSamplesV2` private method
-5. Update `HistogramSamples()` to gate on `EnableSTStorage`, dispatch to V2
-6. Update `FloatHistogramSamples()` to gate on `EnableSTStorage`, dispatch to V2
-7. Update `CustomBucketsHistogramSamples()` to gate on `EnableSTStorage`, dispatch to V2
-8. Update `CustomBucketsFloatHistogramSamples()` to gate on `EnableSTStorage`, dispatch to V2
+**Plans:** 2 plans
+
+Plans:
+- [ ] 02-01-PLAN.md -- Int-histogram V2 encoders (HistogramSamples + CustomBucketsHistogramSamples dispatch and V2 methods)
+- [ ] 02-02-PLAN.md -- Float-histogram V2 encoders (FloatHistogramSamples + CustomBucketsFloatHistogramSamples dispatch and V2 methods)
 
 **Files:** `tsdb/record/record.go`
 
@@ -93,4 +89,4 @@ Phase 1 (types/structs)
 
 ---
 *Created: 2026-03-02*
-*Last updated: 2026-03-02 after Phase 1 planning*
+*Last updated: 2026-03-02 after Phase 2 planning*
