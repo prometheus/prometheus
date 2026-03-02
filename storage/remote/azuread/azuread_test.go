@@ -156,7 +156,7 @@ func TestAzureAdConfig(t *testing.T) {
 		// Missing managedidentity or oauth field.
 		{
 			filename: "testdata/azuread_bad_configmissing.yaml",
-			err:      "must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth or Azure SDK in the Azure AD config",
+			err:      "must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth, Azure Certificate or Azure SDK in the Azure AD config",
 		},
 		// Invalid managedidentity client id.
 		{
@@ -230,6 +230,43 @@ func TestAzureAdConfig(t *testing.T) {
 		// Valid OAuth config with custom scope.
 		{
 			filename: "testdata/azuread_good_oauth_customscope.yaml",
+		},
+		// Valid certificate config.
+		{
+			filename: "testdata/azuread_good_certificate.yaml",
+		},
+		// Valid certificate config with separate key file.
+		{
+			filename: "testdata/azuread_good_certificate_with_key.yaml",
+		},
+		// Valid certificate config with PFX.
+		{
+			filename: "testdata/azuread_good_certificate_pfx.yaml",
+		},
+		// Missing certificate client id.
+		{
+			filename: "testdata/azuread_bad_certificate_missingclientid.yaml",
+			err:      "must provide an Azure Certificate client_id in the Azure AD config",
+		},
+		// Missing certificate tenant id.
+		{
+			filename: "testdata/azuread_bad_certificate_missingtenantid.yaml",
+			err:      "must provide an Azure Certificate tenant_id in the Azure AD config",
+		},
+		// Missing certificate path.
+		{
+			filename: "testdata/azuread_bad_certificate_missingpath.yaml",
+			err:      "must provide an Azure Certificate certificate_path in the Azure AD config",
+		},
+		// Invalid certificate client id.
+		{
+			filename: "testdata/azuread_bad_certificate_invalidclientid.yaml",
+			err:      "the provided Azure Certificate client_id is invalid",
+		},
+		// Invalid config when both certificate and oauth is provided.
+		{
+			filename: "testdata/azuread_bad_certificate_oauth.yaml",
+			err:      "cannot provide multiple authentication methods in the Azure AD config",
 		},
 	}
 	for _, c := range cases {
