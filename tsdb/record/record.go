@@ -528,52 +528,14 @@ func (*Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMarke
 
 func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
-	t := Type(dec.Byte())
-	if t != HistogramSamples && t != CustomBucketsHistogramSamples {
-		return nil, errors.New("invalid record type")
+	switch typ := Type(dec.Byte()); typ {
+	case HistogramSamples, CustomBucketsHistogramSamples:
+		return d.histogramSamplesV1(&dec, histograms)
+	case HistogramSamplesV2, CustomBucketsHistogramSamplesV2:
+		return d.histogramSamplesV2(&dec, histograms)
+	default:
+		return nil, fmt.Errorf("invalid record type %v", typ)
 	}
-	if dec.Len() == 0 {
-		return histograms, nil
-	}
-	var (
-		baseRef  = dec.Be64()
-		baseTime = dec.Be64int64()
-	)
-	for len(dec.B) > 0 && dec.Err() == nil {
-		dref := dec.Varint64()
-		dtime := dec.Varint64()
-
-		rh := RefHistogramSample{
-			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
-			T:   baseTime + dtime,
-			H:   &histogram.Histogram{},
-		}
-
-		DecodeHistogram(&dec, rh.H)
-
-		if !histogram.IsKnownSchema(rh.H.Schema) {
-			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.H.Schema, "timestamp", rh.T)
-			continue
-		}
-		if rh.H.Schema > histogram.ExponentialSchemaMax && rh.H.Schema <= histogram.ExponentialSchemaMaxReserved {
-			// This is a very slow path, but it should only happen if the
-			// record is from a newer Prometheus version that supports higher
-			// resolution.
-			if err := rh.H.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
-				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
-			}
-		}
-
-		histograms = append(histograms, rh)
-	}
-
-	if dec.Err() != nil {
-		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms), dec.Err())
-	}
-	if len(dec.B) > 0 {
-		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
-	}
-	return histograms, nil
 }
 
 // histogramSamplesV1 decodes V1 int-histogram records (BE64 baseRef/baseTime, varint deltas).
