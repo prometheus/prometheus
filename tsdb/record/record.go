@@ -1128,7 +1128,14 @@ func EncodeHistogram(buf *encoding.Encbuf, h *histogram.Histogram) {
 	}
 }
 
-func (*Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
+func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
+	if e.EnableSTStorage {
+		return e.floatHistogramSamplesV2(histograms, b)
+	}
+	return e.floatHistogramSamplesV1(histograms, b)
+}
+
+func (*Encoder) floatHistogramSamplesV1(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(FloatHistogramSamples))
 
@@ -1163,7 +1170,61 @@ func (*Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []
 	return buf.Get(), customBucketsFloatHistograms
 }
 
-func (*Encoder) CustomBucketsFloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
+func (*Encoder) floatHistogramSamplesV2(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(FloatHistogramSamplesV2))
+
+	if len(histograms) == 0 {
+		return buf.Get(), nil
+	}
+
+	var customBucketsFloatHistograms []RefFloatHistogramSample
+
+	first := histograms[0]
+	buf.PutVarint64(int64(first.Ref))
+	buf.PutVarint64(first.T)
+	buf.PutVarint64(first.ST)
+	EncodeFloatHistogram(&buf, first.FH)
+
+	for i := 1; i < len(histograms); i++ {
+		h := histograms[i]
+		if h.FH.UsesCustomBuckets() {
+			customBucketsFloatHistograms = append(customBucketsFloatHistograms, h)
+			continue
+		}
+		prev := histograms[i-1]
+
+		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		switch h.ST {
+		case 0:
+			buf.PutByte(noST)
+		case prev.ST:
+			buf.PutByte(sameST)
+		default:
+			buf.PutByte(explicitST)
+			buf.PutVarint64(h.ST - first.ST)
+		}
+		EncodeFloatHistogram(&buf, h.FH)
+	}
+
+	// Reset buffer if only custom bucket histograms existed in list of histogram samples
+	if len(histograms) == len(customBucketsFloatHistograms) {
+		buf.Reset()
+	}
+
+	return buf.Get(), customBucketsFloatHistograms
+}
+
+func (e *Encoder) CustomBucketsFloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
+	if e.EnableSTStorage {
+		return e.customBucketsFloatHistogramSamplesV2(histograms, b)
+	}
+	return e.customBucketsFloatHistogramSamplesV1(histograms, b)
+}
+
+func (*Encoder) customBucketsFloatHistogramSamplesV1(histograms []RefFloatHistogramSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(CustomBucketsFloatHistogramSamples))
 
@@ -1181,6 +1242,42 @@ func (*Encoder) CustomBucketsFloatHistogramSamples(histograms []RefFloatHistogra
 		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
 		buf.PutVarint64(h.T - first.T)
 
+		EncodeFloatHistogram(&buf, h.FH)
+	}
+
+	return buf.Get()
+}
+
+func (*Encoder) customBucketsFloatHistogramSamplesV2(histograms []RefFloatHistogramSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(CustomBucketsFloatHistogramSamplesV2))
+
+	if len(histograms) == 0 {
+		return buf.Get()
+	}
+
+	first := histograms[0]
+	buf.PutVarint64(int64(first.Ref))
+	buf.PutVarint64(first.T)
+	buf.PutVarint64(first.ST)
+	EncodeFloatHistogram(&buf, first.FH)
+
+	for i := 1; i < len(histograms); i++ {
+		h := histograms[i]
+		prev := histograms[i-1]
+
+		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		switch h.ST {
+		case 0:
+			buf.PutByte(noST)
+		case prev.ST:
+			buf.PutByte(sameST)
+		default:
+			buf.PutByte(explicitST)
+			buf.PutVarint64(h.ST - first.ST)
+		}
 		EncodeFloatHistogram(&buf, h.FH)
 	}
 
