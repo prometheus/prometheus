@@ -30,8 +30,8 @@ Plans:
 **Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 02-01-PLAN.md -- Int-histogram V2 encoders (HistogramSamples + CustomBucketsHistogramSamples dispatch and V2 methods)
-- [ ] 02-02-PLAN.md -- Float-histogram V2 encoders (FloatHistogramSamples + CustomBucketsFloatHistogramSamples dispatch and V2 methods)
+- [x] 02-01-PLAN.md -- Int-histogram V2 encoders (HistogramSamples + CustomBucketsHistogramSamples dispatch and V2 methods)
+- [x] 02-02-PLAN.md -- Float-histogram V2 encoders (FloatHistogramSamples + CustomBucketsFloatHistogramSamples dispatch and V2 methods)
 
 **Files:** `tsdb/record/record.go`
 
@@ -45,12 +45,11 @@ Plans:
 
 **Requirements:** DEC-01..04
 
-**Tasks:**
-1. Add `histogramSamplesV2` private decoder method: reads first sample ref+T+ST+histogram, subsequent samples read dRef+dT+STmarker+[dST]+histogram
-2. Add `floatHistogramSamplesV2` private decoder method
-3. Update `Decoder.HistogramSamples()` to switch on record type: V1 types use existing logic, V2 types use new method
-4. Update `Decoder.FloatHistogramSamples()` similarly
-5. V1 path unchanged (ST defaults to zero value)
+**Plans:** 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md -- Int-histogram V2 decoder (histogramSamplesV2 + HistogramSamples dispatch)
+- [ ] 03-02-PLAN.md -- Float-histogram V2 decoder (floatHistogramSamplesV2 + FloatHistogramSamples dispatch)
 
 **Files:** `tsdb/record/record.go`
 
@@ -89,4 +88,4 @@ Phase 1 (types/structs)
 
 ---
 *Created: 2026-03-02*
-*Last updated: 2026-03-02 after Phase 2 planning*
+*Last updated: 2026-03-02 after Phase 3 planning*
