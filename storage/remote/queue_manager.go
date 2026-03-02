@@ -1807,10 +1807,11 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		defer span.End()
 
 		begin := time.Now()
-		metricsUpdater.recordBatchAttempt(sc, begin)
+		metricsUpdater.recordBatchAttempt(sc)
 		// Technically for v1, we will likely have empty response stats, but for
 		// newer Receivers this might be not, so used it in a best effort.
 		rs, err := s.qm.client().Store(ctx, req, try)
+		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
 		// so far we don't have those, so it's ok to potentially skew statistics.
 		addStats(rs)
@@ -1913,8 +1914,9 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		defer span.End()
 
 		begin := time.Now()
-		metricsUpdater.recordBatchAttempt(sc, begin)
+		metricsUpdater.recordBatchAttempt(sc)
 		rs, err := s.qm.client().Store(ctx, req, try)
+		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
 		// so far we don't have those, so it's ok to potentially skew statistics.
 		addStats(rs)
@@ -2277,12 +2279,16 @@ type batchMetricsUpdater struct {
 	sentDuration prometheus.Observer
 }
 
-// recordBatchAttempt records metrics for a batch send attempt.
-func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext, begin time.Time) {
+// recordBatchAttempt records counter metrics for a batch send attempt.
+func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext) {
 	b.metrics.samplesTotal.Add(float64(sc.sampleCount))
 	b.metrics.exemplarsTotal.Add(float64(sc.exemplarCount))
 	b.metrics.histogramsTotal.Add(float64(sc.histogramCount))
 	b.metrics.metadataTotal.Add(float64(sc.metadataCount))
+}
+
+// recordLatency records the observed send duration for a batch attempt.
+func (b *batchMetricsUpdater) recordLatency(begin time.Time) {
 	b.sentDuration.Observe(time.Since(begin).Seconds())
 }
 
