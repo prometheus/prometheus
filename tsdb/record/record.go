@@ -928,7 +928,14 @@ func (*Encoder) MmapMarkers(markers []RefMmapMarker, b []byte) []byte {
 	return buf.Get()
 }
 
-func (*Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
+func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
+	if e.EnableSTStorage {
+		return e.histogramSamplesV2(histograms, b)
+	}
+	return e.histogramSamplesV1(histograms, b)
+}
+
+func (*Encoder) histogramSamplesV1(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(HistogramSamples))
 
@@ -962,7 +969,63 @@ func (*Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]b
 	return buf.Get(), customBucketHistograms
 }
 
-func (*Encoder) CustomBucketsHistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
+func (*Encoder) histogramSamplesV2(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(HistogramSamplesV2))
+
+	if len(histograms) == 0 {
+		return buf.Get(), nil
+	}
+
+	var customBucketHistograms []RefHistogramSample
+
+	// First sample: full varint values, no deltas, no ST marker.
+	first := histograms[0]
+	buf.PutVarint64(int64(first.Ref))
+	buf.PutVarint64(first.T)
+	buf.PutVarint64(first.ST)
+	EncodeHistogram(&buf, first.H)
+
+	// Subsequent samples: ref delta to prev, T delta to first, ST marker.
+	for i := 1; i < len(histograms); i++ {
+		h := histograms[i]
+		if h.H.UsesCustomBuckets() {
+			customBucketHistograms = append(customBucketHistograms, h)
+			continue
+		}
+		prev := histograms[i-1]
+
+		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		switch h.ST {
+		case 0:
+			buf.PutByte(noST)
+		case prev.ST:
+			buf.PutByte(sameST)
+		default:
+			buf.PutByte(explicitST)
+			buf.PutVarint64(h.ST - first.ST)
+		}
+		EncodeHistogram(&buf, h.H)
+	}
+
+	// Reset buffer if only custom bucket histograms existed in list of histogram samples.
+	if len(histograms) == len(customBucketHistograms) {
+		buf.Reset()
+	}
+
+	return buf.Get(), customBucketHistograms
+}
+
+func (e *Encoder) CustomBucketsHistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
+	if e.EnableSTStorage {
+		return e.customBucketsHistogramSamplesV2(histograms, b)
+	}
+	return e.customBucketsHistogramSamplesV1(histograms, b)
+}
+
+func (*Encoder) customBucketsHistogramSamplesV1(histograms []RefHistogramSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(CustomBucketsHistogramSamples))
 
@@ -980,6 +1043,44 @@ func (*Encoder) CustomBucketsHistogramSamples(histograms []RefHistogramSample, b
 		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
 		buf.PutVarint64(h.T - first.T)
 
+		EncodeHistogram(&buf, h.H)
+	}
+
+	return buf.Get()
+}
+
+func (*Encoder) customBucketsHistogramSamplesV2(histograms []RefHistogramSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(CustomBucketsHistogramSamplesV2))
+
+	if len(histograms) == 0 {
+		return buf.Get()
+	}
+
+	// First sample: full varint values, no deltas, no ST marker.
+	first := histograms[0]
+	buf.PutVarint64(int64(first.Ref))
+	buf.PutVarint64(first.T)
+	buf.PutVarint64(first.ST)
+	EncodeHistogram(&buf, first.H)
+
+	// Subsequent samples: ref delta to prev, T delta to first, ST marker.
+	for i := 1; i < len(histograms); i++ {
+		h := histograms[i]
+		prev := histograms[i-1]
+
+		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		switch h.ST {
+		case 0:
+			buf.PutByte(noST)
+		case prev.ST:
+			buf.PutByte(sameST)
+		default:
+			buf.PutByte(explicitST)
+			buf.PutVarint64(h.ST - first.ST)
+		}
 		EncodeHistogram(&buf, h.H)
 	}
 
