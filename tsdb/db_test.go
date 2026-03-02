@@ -407,13 +407,13 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 			require.NoError(t, err)
 			walExemplarsCount += len(exemplars)
 
-		case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+		case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
 			var histograms []record.RefHistogramSample
 			histograms, err = dec.HistogramSamples(rec, histograms)
 			require.NoError(t, err)
 			walHistogramCount += len(histograms)
 
-		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
 			var floatHistograms []record.RefFloatHistogramSample
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
 			require.NoError(t, err)
@@ -4567,11 +4567,11 @@ func testOOOWALWrite(t *testing.T,
 				markers, err := dec.MmapMarkers(rec, nil)
 				require.NoError(t, err)
 				records = append(records, markers)
-			case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
 				histogramSamples, err := dec.HistogramSamples(rec, nil)
 				require.NoError(t, err)
 				records = append(records, histogramSamples)
-			case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+			case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
 				floatHistogramSamples, err := dec.FloatHistogramSamples(rec, nil)
 				require.NoError(t, err)
 				records = append(records, floatHistogramSamples)
