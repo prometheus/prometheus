@@ -27,7 +27,7 @@ Plans:
 
 **Requirements:** ENC-01..05
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 02-01-PLAN.md -- Int-histogram V2 encoders (HistogramSamples + CustomBucketsHistogramSamples dispatch and V2 methods)
