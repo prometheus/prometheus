@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-02T21:45:25.303Z"
+status: in-progress
+last_updated: "2026-03-02T22:05:12Z"
 progress:
-  total_phases: 2
+  total_phases: 4
   completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 4
+  completed_plans: 4
 ---
 
 # Project State: Histogram ST WAL Records
@@ -18,7 +18,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-02)
 
 **Core value:** Histogram samples carry accurate start time through the WAL
-**Current focus:** Phase 2 Plan 02 complete. Ready for Phase 3 (V2 Decoders).
+**Current focus:** Phase 3 Plan 01 complete. Continuing Phase 3 (V2 Decoders, Plan 02 next).
 
 ## Phase Progress
 
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 |-------|------|--------|
 | 1 | Struct and Type Definitions | Plan 01 complete |
 | 2 | V2 Encoders | Complete |
-| 3 | V2 Decoders | Not started |
+| 3 | V2 Decoders | Plan 01 complete |
 | 4 | Tests | Not started |
 
 ## Current Phase
 
-Phase 2 complete (Plan 01: a3d49b0ac, Plan 02: 116b10e2a). Ready for Phase 3 (V2 Decoders).
+Phase 3 in progress (Plan 01: 4c9118810, 060c6f13e). Plan 02 (float-histogram decoder) next.
 
 ## Decisions Log
 
@@ -40,9 +40,11 @@ Phase 2 complete (Plan 01: a3d49b0ac, Plan 02: 116b10e2a). Ready for Phase 3 (V2
 - **02-v2-encoders:** V2 int-histogram encoder uses all-varint first-sample, ref-delta-to-prev, T-delta-to-first, ST marker scheme (noST/sameST/explicitST). Deliberately breaks from V1 BE64 wire format.
 - **02-v2-encoders (plan 02):** V2 float-histogram encoder follows identical pattern to int-histogram V2. All four public histogram encoder methods now dispatch to V1/V2 based on EnableSTStorage.
 
+- **03-v2-decoders (plan 01):** Extracted V1 body into histogramSamplesV1 private method for clean switch dispatch. V2 decoder mirrors samplesV2 exactly.
+
 ## Blockers
 
 (None)
 
 ---
-*Last updated: 2026-03-02 after Phase 2 Plan 02 (02-02-PLAN.md)*
+*Last updated: 2026-03-02 after Phase 3 Plan 01 (03-01-PLAN.md)*

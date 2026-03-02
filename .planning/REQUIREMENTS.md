@@ -28,10 +28,10 @@
 
 ### Decoding
 
-- [ ] **DEC-01**: Decoder.HistogramSamples() accepts both V1 and V2 record types
+- [x] **DEC-01**: Decoder.HistogramSamples() accepts both V1 and V2 record types
 - [ ] **DEC-02**: Decoder.FloatHistogramSamples() accepts both V1 and V2 record types
-- [ ] **DEC-03**: V2 histogram decoding correctly reads ST marker bytes and reconstructs ST values
-- [ ] **DEC-04**: V1 records decoded with ST=0 (backward compat)
+- [x] **DEC-03**: V2 histogram decoding correctly reads ST marker bytes and reconstructs ST values
+- [x] **DEC-04**: V1 records decoded with ST=0 (backward compat)
 
 ### Testing
 
@@ -68,10 +68,10 @@
 | ENC-03 | Phase 2 | Complete |
 | ENC-04 | Phase 2 | Complete |
 | ENC-05 | Phase 2 | Complete |
-| DEC-01 | Phase 3 | Pending |
+| DEC-01 | Phase 3 | Complete |
 | DEC-02 | Phase 3 | Pending |
-| DEC-03 | Phase 3 | Pending |
-| DEC-04 | Phase 3 | Pending |
+| DEC-03 | Phase 3 | Complete |
+| DEC-04 | Phase 3 | Complete |
 | TEST-01 | Phase 4 | Pending |
 | TEST-02 | Phase 4 | Pending |
 | TEST-03 | Phase 4 | Pending |
