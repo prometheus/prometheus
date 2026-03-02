@@ -3746,3 +3746,6 @@ headers:
 tls_config:
   [ <tls_config> ]
 ```
+
+If query logging and tracing are both enabled, a traceID and spanID will be injected
+into the query log file for use in log/trace correlation.

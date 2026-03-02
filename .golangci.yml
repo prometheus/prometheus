@@ -129,6 +129,9 @@ linters:
         # Disable this check for now since it introduces too many changes in our existing codebase.
         # See https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_omitzero for more details.
         - omitzero
+        # Disable newexpr check for now since it introduces too many changes in our existing codebase.
+        # To be re-enabled as a part of https://github.com/prometheus/prometheus/issues/18066.
+        - newexpr
     perfsprint:
       # Optimizes even if it requires an int or uint type cast.
       int-conversion: true
