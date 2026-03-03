@@ -217,3 +217,218 @@ func BenchmarkDecode_Samples(b *testing.B) {
 		}
 	}
 }
+
+var (
+	histDataCases = testrecord.HistDataCases
+	histCounts    = testrecord.HistCounts
+)
+
+/*
+	go test ./tsdb/record/... \
+		-run '^$' -bench '^BenchmarkEncode_Histograms' \
+		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
+		| tee encode-hist.txt
+	benchstat -col /version encode-hist.txt
+*/
+func BenchmarkEncode_Histograms(b *testing.B) {
+	for _, ver := range versions {
+		for _, compr := range compressions {
+			for _, hcase := range histDataCases {
+				for _, count := range histCounts {
+					b.Run(fmt.Sprintf("version=%s/compr=%v/type=%s/n=%d", ver.name, compr, hcase.Name, count), func(b *testing.B) {
+						var (
+							samples = hcase.Gen(count, ver.enableST)
+							enc     = record.Encoder{EnableSTStorage: ver.enableST}
+							buf     []byte
+							cBuf    []byte
+						)
+
+						cEnc, err := compression.NewEncoder()
+						require.NoError(b, err)
+
+						// Warm up.
+						if hcase.Name == "nhcb" {
+							buf = enc.CustomBucketsHistogramSamples(samples, buf[:0])
+						} else {
+							buf, _ = enc.HistogramSamples(samples, buf[:0])
+						}
+						cBuf, _, err = cEnc.Encode(compr, buf, cBuf[:0])
+						require.NoError(b, err)
+
+						b.ReportAllocs()
+						b.ResetTimer()
+						for b.Loop() {
+							if hcase.Name == "nhcb" {
+								buf = enc.CustomBucketsHistogramSamples(samples, buf[:0])
+							} else {
+								buf, _ = enc.HistogramSamples(samples, buf[:0])
+							}
+							b.ReportMetric(float64(len(buf)), "B/rec")
+
+							cBuf, _, _ = cEnc.Encode(compr, buf, cBuf[:0])
+							b.ReportMetric(float64(len(cBuf)), "B/compressed-rec")
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+/*
+	go test ./tsdb/record/... \
+		-run '^$' -bench '^BenchmarkDecode_Histograms' \
+		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
+		| tee decode-hist.txt
+	benchstat -col /version decode-hist.txt
+*/
+func BenchmarkDecode_Histograms(b *testing.B) {
+	for _, ver := range versions {
+		for _, compr := range compressions {
+			for _, hcase := range histDataCases {
+				for _, count := range histCounts {
+					b.Run(fmt.Sprintf("version=%s/compr=%v/type=%s/n=%d", ver.name, compr, hcase.Name, count), func(b *testing.B) {
+						var (
+							samples    = hcase.Gen(count, ver.enableST)
+							enc        = record.Encoder{EnableSTStorage: ver.enableST}
+							dec        record.Decoder
+							cDec       = compression.NewDecoder()
+							cBuf       []byte
+							samplesBuf []record.RefHistogramSample
+						)
+
+						var buf []byte
+						if hcase.Name == "nhcb" {
+							buf = enc.CustomBucketsHistogramSamples(samples, nil)
+						} else {
+							buf, _ = enc.HistogramSamples(samples, nil)
+						}
+
+						cEnc, err := compression.NewEncoder()
+						require.NoError(b, err)
+						buf, _, err = cEnc.Encode(compr, buf, nil)
+						require.NoError(b, err)
+
+						// Warm up.
+						cBuf, err = cDec.Decode(compr, buf, cBuf[:0])
+						require.NoError(b, err)
+						samplesBuf, err = dec.HistogramSamples(cBuf, samplesBuf[:0])
+						require.NoError(b, err)
+
+						b.ReportAllocs()
+						b.ResetTimer()
+						for b.Loop() {
+							cBuf, _ = cDec.Decode(compr, buf, cBuf[:0])
+							samplesBuf, _ = dec.HistogramSamples(cBuf, samplesBuf[:0])
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+/*
+	go test ./tsdb/record/... \
+		-run '^$' -bench '^BenchmarkEncode_FloatHistograms' \
+		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
+		| tee encode-fhist.txt
+	benchstat -col /version encode-fhist.txt
+*/
+func BenchmarkEncode_FloatHistograms(b *testing.B) {
+	for _, ver := range versions {
+		for _, compr := range compressions {
+			for _, hcase := range histDataCases {
+				for _, count := range histCounts {
+					b.Run(fmt.Sprintf("version=%s/compr=%v/type=%s/n=%d", ver.name, compr, hcase.Name, count), func(b *testing.B) {
+						var (
+							samples = testrecord.GenFloatHistograms(hcase.Gen(count, ver.enableST))
+							enc     = record.Encoder{EnableSTStorage: ver.enableST}
+							buf     []byte
+							cBuf    []byte
+						)
+
+						cEnc, err := compression.NewEncoder()
+						require.NoError(b, err)
+
+						// Warm up.
+						if hcase.Name == "nhcb" {
+							buf = enc.CustomBucketsFloatHistogramSamples(samples, buf[:0])
+						} else {
+							buf, _ = enc.FloatHistogramSamples(samples, buf[:0])
+						}
+						cBuf, _, err = cEnc.Encode(compr, buf, cBuf[:0])
+						require.NoError(b, err)
+
+						b.ReportAllocs()
+						b.ResetTimer()
+						for b.Loop() {
+							if hcase.Name == "nhcb" {
+								buf = enc.CustomBucketsFloatHistogramSamples(samples, buf[:0])
+							} else {
+								buf, _ = enc.FloatHistogramSamples(samples, buf[:0])
+							}
+							b.ReportMetric(float64(len(buf)), "B/rec")
+
+							cBuf, _, _ = cEnc.Encode(compr, buf, cBuf[:0])
+							b.ReportMetric(float64(len(cBuf)), "B/compressed-rec")
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+/*
+	go test ./tsdb/record/... \
+		-run '^$' -bench '^BenchmarkDecode_FloatHistograms' \
+		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
+		| tee decode-fhist.txt
+	benchstat -col /version decode-fhist.txt
+*/
+func BenchmarkDecode_FloatHistograms(b *testing.B) {
+	for _, ver := range versions {
+		for _, compr := range compressions {
+			for _, hcase := range histDataCases {
+				for _, count := range histCounts {
+					b.Run(fmt.Sprintf("version=%s/compr=%v/type=%s/n=%d", ver.name, compr, hcase.Name, count), func(b *testing.B) {
+						var (
+							samples    = testrecord.GenFloatHistograms(hcase.Gen(count, ver.enableST))
+							enc        = record.Encoder{EnableSTStorage: ver.enableST}
+							dec        record.Decoder
+							cDec       = compression.NewDecoder()
+							cBuf       []byte
+							samplesBuf []record.RefFloatHistogramSample
+						)
+
+						var buf []byte
+						if hcase.Name == "nhcb" {
+							buf = enc.CustomBucketsFloatHistogramSamples(samples, nil)
+						} else {
+							buf, _ = enc.FloatHistogramSamples(samples, nil)
+						}
+
+						cEnc, err := compression.NewEncoder()
+						require.NoError(b, err)
+						buf, _, err = cEnc.Encode(compr, buf, nil)
+						require.NoError(b, err)
+
+						// Warm up.
+						cBuf, err = cDec.Decode(compr, buf, cBuf[:0])
+						require.NoError(b, err)
+						samplesBuf, err = dec.FloatHistogramSamples(cBuf, samplesBuf[:0])
+						require.NoError(b, err)
+
+						b.ReportAllocs()
+						b.ResetTimer()
+						for b.Loop() {
+							cBuf, _ = cDec.Decode(compr, buf, cBuf[:0])
+							samplesBuf, _ = dec.FloatHistogramSamples(cBuf, samplesBuf[:0])
+						}
+					})
+				}
+			}
+		}
+	}
+}

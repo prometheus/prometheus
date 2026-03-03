@@ -485,6 +485,94 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		require.Equal(t, gaugeFloatHistsV2, decFloatHistsV2)
 	})
 
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run(fmt.Sprintf("int-histogram empty slice stStorage=%v", enableSTStorage), func(t *testing.T) {
+			enc := Encoder{EnableSTStorage: enableSTStorage}
+			histBuf, customBuckets := enc.HistogramSamples(nil, nil)
+			require.Nil(t, customBuckets)
+
+			decoded, err := dec.HistogramSamples(histBuf, nil)
+			require.NoError(t, err)
+			require.Empty(t, decoded)
+		})
+
+		t.Run(fmt.Sprintf("float-histogram empty slice stStorage=%v", enableSTStorage), func(t *testing.T) {
+			enc := Encoder{EnableSTStorage: enableSTStorage}
+			floatBuf, customBucketsFloat := enc.FloatHistogramSamples(nil, nil)
+			require.Nil(t, customBucketsFloat)
+
+			decoded, err := dec.FloatHistogramSamples(floatBuf, nil)
+			require.NoError(t, err)
+			require.Empty(t, decoded)
+		})
+	}
+
+	// When all histograms are custom-bucket, HistogramSamples must return an
+	// empty buffer (buf.Reset path) and pass every sample through as custom.
+	t.Run("V2 int-histogram all custom bucket", func(t *testing.T) {
+		allCustom := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 1000, H: histograms[2].H},
+			{Ref: 67, T: 5678, ST: 1000, H: histograms[2].H},
+		}
+		histBuf, customBuckets := enc.HistogramSamples(allCustom, nil)
+		require.Empty(t, histBuf, "regular histogram buffer must be empty when all samples are custom bucket")
+		require.Equal(t, allCustom, customBuckets)
+
+		customBuf := enc.CustomBucketsHistogramSamples(customBuckets, nil)
+		decoded, err := dec.HistogramSamples(customBuf, nil)
+		require.NoError(t, err)
+		require.Equal(t, allCustom, decoded)
+	})
+
+	t.Run("V2 float-histogram all custom bucket", func(t *testing.T) {
+		allCustomFloat := []RefFloatHistogramSample{
+			{Ref: 56, T: 1234, ST: 1000, FH: histograms[2].H.ToFloat(nil)},
+			{Ref: 67, T: 5678, ST: 1000, FH: histograms[2].H.ToFloat(nil)},
+		}
+		floatBuf, customBucketsFloat := enc.FloatHistogramSamples(allCustomFloat, nil)
+		require.Empty(t, floatBuf, "regular float histogram buffer must be empty when all samples are custom bucket")
+		require.Equal(t, allCustomFloat, customBucketsFloat)
+
+		customFloatBuf := enc.CustomBucketsFloatHistogramSamples(customBucketsFloat, nil)
+		decoded, err := dec.FloatHistogramSamples(customFloatBuf, nil)
+		require.NoError(t, err)
+		require.Equal(t, allCustomFloat, decoded)
+	})
+
+	// When all histograms are custom-bucket, V1 HistogramSamples must return an
+	// empty buffer (buf.Reset path) and pass every sample through as custom.
+	t.Run("V1 int-histogram all custom bucket", func(t *testing.T) {
+		encV1 := Encoder{}
+		allCustom := []RefHistogramSample{
+			{Ref: 56, T: 1234, H: histograms[2].H},
+			{Ref: 67, T: 5678, H: histograms[2].H},
+		}
+		histBuf, customBuckets := encV1.HistogramSamples(allCustom, nil)
+		require.Empty(t, histBuf, "regular histogram buffer must be empty when all samples are custom bucket")
+		require.Equal(t, allCustom, customBuckets)
+
+		customBuf := encV1.CustomBucketsHistogramSamples(customBuckets, nil)
+		decoded, err := dec.HistogramSamples(customBuf, nil)
+		require.NoError(t, err)
+		require.Equal(t, allCustom, decoded)
+	})
+
+	t.Run("V1 float-histogram all custom bucket", func(t *testing.T) {
+		encV1 := Encoder{}
+		allCustomFloat := []RefFloatHistogramSample{
+			{Ref: 56, T: 1234, FH: histograms[2].H.ToFloat(nil)},
+			{Ref: 67, T: 5678, FH: histograms[2].H.ToFloat(nil)},
+		}
+		floatBuf, customBucketsFloat := encV1.FloatHistogramSamples(allCustomFloat, nil)
+		require.Empty(t, floatBuf, "regular float histogram buffer must be empty when all samples are custom bucket")
+		require.Equal(t, allCustomFloat, customBucketsFloat)
+
+		customFloatBuf := encV1.CustomBucketsFloatHistogramSamples(customBucketsFloat, nil)
+		decoded, err := dec.FloatHistogramSamples(customFloatBuf, nil)
+		require.NoError(t, err)
+		require.Equal(t, allCustomFloat, decoded)
+	})
+
 	// Backward compat: V1-encoded histograms decode with ST=0.
 	t.Run("V1 backward compat int-histogram ST=0", func(t *testing.T) {
 		encV1 := Encoder{}

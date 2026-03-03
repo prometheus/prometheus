@@ -1119,12 +1119,17 @@ func (*Encoder) histogramSamplesV2(histograms []RefHistogramSample, b []byte) ([
 
 	var customBucketHistograms []RefHistogramSample
 
-	// First sample: full varint values, no deltas, no ST marker.
 	first := histograms[0]
-	buf.PutVarint64(int64(first.Ref))
-	buf.PutVarint64(first.T)
-	buf.PutVarint64(first.ST)
-	EncodeHistogram(&buf, first.H)
+
+	// First sample: full varint values, no deltas, no ST marker.
+	if first.H.UsesCustomBuckets() {
+		customBucketHistograms = append(customBucketHistograms, first)
+	} else {
+		buf.PutVarint64(int64(first.Ref))
+		buf.PutVarint64(first.T)
+		buf.PutVarint64(first.ST)
+		EncodeHistogram(&buf, first.H)
+	}
 
 	// Subsequent samples: ref delta to prev, T delta to first, ST marker.
 	for i := 1; i < len(histograms); i++ {
@@ -1321,10 +1326,15 @@ func (*Encoder) floatHistogramSamplesV2(histograms []RefFloatHistogramSample, b 
 	var customBucketsFloatHistograms []RefFloatHistogramSample
 
 	first := histograms[0]
-	buf.PutVarint64(int64(first.Ref))
-	buf.PutVarint64(first.T)
-	buf.PutVarint64(first.ST)
-	EncodeFloatHistogram(&buf, first.FH)
+
+	if first.FH.UsesCustomBuckets() {
+		customBucketsFloatHistograms = append(customBucketsFloatHistograms, first)
+	} else {
+		buf.PutVarint64(int64(first.Ref))
+		buf.PutVarint64(first.T)
+		buf.PutVarint64(first.ST)
+		EncodeFloatHistogram(&buf, first.FH)
+	}
 
 	for i := 1; i < len(histograms); i++ {
 		h := histograms[i]
