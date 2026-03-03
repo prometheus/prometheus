@@ -67,6 +67,9 @@ func overwriteReadTimeout(t *testing.T, val time.Duration) {
 
 type writeToMock struct {
 	mu sync.Mutex
+	// benchMode switches mock to only record *Appends and *Stores number to avoid
+	// unrelated performance overhead.
+	benchMode bool
 
 	seriesStored            []record.RefSeries
 	metadataStored          []record.RefMetadata
@@ -88,11 +91,34 @@ type writeToMock struct {
 	delay time.Duration
 }
 
+func (wtm *writeToMock) Reset() {
+	wtm.mu.Lock()
+	defer wtm.mu.Unlock()
+
+	wtm.seriesStored = nil
+	wtm.metadataStored = nil
+	wtm.samplesAppended = nil
+	wtm.exemplarsAppended = nil
+	wtm.histogramsAppended = nil
+	wtm.floatHistogramsAppended = nil
+	wtm.seriesStores = 0
+	wtm.metadataStores = 0
+	wtm.sampleAppends = 0
+	wtm.exemplarAppends = 0
+	wtm.histogramAppends = 0
+	wtm.floatHistogramsAppends = 0
+	clear(wtm.seriesSegmentIndexes)
+}
+
 func (wtm *writeToMock) Append(s []record.RefSample) bool {
 	wtm.mu.Lock()
 	defer wtm.mu.Unlock()
 
 	wtm.sampleAppends++
+	if wtm.benchMode {
+		return true
+	}
+
 	wtm.samplesAppended = append(wtm.samplesAppended, s...)
 	time.Sleep(wtm.delay)
 	return true
@@ -102,9 +128,13 @@ func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 	wtm.mu.Lock()
 	defer wtm.mu.Unlock()
 
-	time.Sleep(wtm.delay)
 	wtm.exemplarAppends++
+	if wtm.benchMode {
+		return true
+	}
+
 	wtm.exemplarsAppended = append(wtm.exemplarsAppended, e...)
+	time.Sleep(wtm.delay)
 	return true
 }
 
@@ -112,9 +142,12 @@ func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
 	wtm.mu.Lock()
 	defer wtm.mu.Unlock()
 
-	time.Sleep(wtm.delay)
 	wtm.histogramAppends++
+	if wtm.benchMode {
+		return true
+	}
 	wtm.histogramsAppended = append(wtm.histogramsAppended, h...)
+	time.Sleep(wtm.delay)
 	return true
 }
 
@@ -122,9 +155,12 @@ func (wtm *writeToMock) AppendFloatHistograms(fh []record.RefFloatHistogramSampl
 	wtm.mu.Lock()
 	defer wtm.mu.Unlock()
 
-	time.Sleep(wtm.delay)
 	wtm.floatHistogramsAppends++
+	if wtm.benchMode {
+		return true
+	}
 	wtm.floatHistogramsAppended = append(wtm.floatHistogramsAppended, fh...)
+	time.Sleep(wtm.delay)
 	return true
 }
 
@@ -133,6 +169,9 @@ func (wtm *writeToMock) StoreSeries(series []record.RefSeries, index int) {
 	defer wtm.mu.Unlock()
 
 	wtm.seriesStores++
+	if wtm.benchMode {
+		return
+	}
 	wtm.seriesStored = append(wtm.seriesStored, series...)
 	for _, s := range series {
 		wtm.seriesSegmentIndexes[s.Ref] = index
@@ -145,11 +184,18 @@ func (wtm *writeToMock) StoreMetadata(meta []record.RefMetadata) {
 	defer wtm.mu.Unlock()
 
 	wtm.metadataStores++
+	if wtm.benchMode {
+		return
+	}
 	wtm.metadataStored = append(wtm.metadataStored, meta...)
 	time.Sleep(wtm.delay)
 }
 
 func (wtm *writeToMock) UpdateSeriesSegment(series []record.RefSeries, index int) {
+	if wtm.benchMode {
+		return
+	}
+
 	wtm.mu.Lock()
 	defer wtm.mu.Unlock()
 
@@ -159,6 +205,10 @@ func (wtm *writeToMock) UpdateSeriesSegment(series []record.RefSeries, index int
 }
 
 func (wtm *writeToMock) SeriesReset(index int) {
+	if wtm.benchMode {
+		return
+	}
+
 	// Check for series that are in segments older than the checkpoint
 	// that were not also present in the checkpoint.
 	wtm.mu.Lock()
@@ -183,6 +233,12 @@ func newWriteToMock(delay time.Duration) *writeToMock {
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		delay:                delay,
 	}
+}
+
+func newBenchWriteToMock(delay time.Duration) *writeToMock {
+	m := newWriteToMock(delay)
+	m.benchMode = true
+	return m
 }
 
 func TestWatcher_Tail(t *testing.T) {
@@ -329,6 +385,119 @@ func TestWatcher_Tail(t *testing.T) {
 				testutil.RequireEqual(t, records[i].Exemplars, wt.exemplarsAppended[i*sector:(i+1)*sector])
 			}
 		})
+	}
+}
+
+// Recommended CLI invocation:
+/*
+	export bench=watcherRead && go test ./tsdb/wlog/... \
+		-run '^$' -bench '^BenchmarkWatcher_ReadSegment' \
+		-benchtime 50x -count 6 -cpu 2 -timeout 999m \
+		| tee ${bench}.txt
+
+
+	export bench=watcherRead && go test ./tsdb/wlog/... \
+		-run '^$' -bench '^BenchmarkWatcher_ReadSegment/compress=snappy/case=1000samples$' \
+		-benchtime 100x -count 1 -cpu 2 -timeout 999m -cpuprofile=${bench}.cpu.pprof \
+		| tee ${bench}.txt
+*/
+func BenchmarkWatcher_ReadSegment(b *testing.B) {
+	for _, compress := range compression.Types() {
+		for _, recCase := range []testwal.RecordsCase{
+			// TODO(bwplotka) Improve testwal.RecordsCase, so it allows variety of scrape-like data
+			// and test here.
+			{
+				Name:               "1000samples",
+				Series:             1000,
+				SamplesPerSeries:   1,
+				ExemplarsPerSeries: 1,
+			},
+			{
+				Name:                "1000histograms",
+				Series:              1000,
+				HistogramsPerSeries: 1,
+				ExemplarsPerSeries:  1,
+			},
+		} {
+			b.Run(fmt.Sprintf("compress=%s/case=%v", compress, recCase.Name), func(b *testing.B) {
+				var (
+					now  = time.Now()
+					dir  = b.TempDir()
+					wdir = path.Join(dir, "wal")
+					enc  record.Encoder
+					recs [][]byte
+				)
+				require.NoError(b, os.Mkdir(wdir, 0o777))
+
+				// Generate and pre-encode a single segment that watcher will be reading.
+				recCase.TsFn = func(_, _ int) int64 {
+					return timestamp.FromTime(now.Add(1 * time.Second))
+				}
+				records := testwal.GenerateRecords(recCase)
+
+				// A recs represents records from a single "batch", so
+				// a set of record slices that might have come from a single scrape or RW/OTLP receive.
+				recs = append(recs, enc.Series(records.Series, nil))
+				recs = append(recs, enc.Metadata(records.Metadata, nil))
+				recs = append(recs, enc.Samples(records.Samples, nil))
+				hsRec, _ := enc.HistogramSamples(records.Histograms, nil)
+				recs = append(recs, hsRec)
+				fhsRec, _ := enc.FloatHistogramSamples(records.FloatHistograms, nil)
+				recs = append(recs, fhsRec)
+				recs = append(recs, enc.Exemplars(records.Exemplars, nil))
+
+				// Create WAL for the segment.
+				w, err := NewSize(nil, nil, wdir, DefaultSegmentSize, compress)
+				require.NoError(b, err)
+				b.Cleanup(func() {
+					_ = w.Close()
+				})
+
+				// Log a few batches for the larger segment. Enough so it's almost full, but small enough so it fits
+				// the DefaultSegmentSize without compression.
+				const batches = 1000
+				for range batches {
+					require.NoError(b, w.Log(recs...))
+				}
+				require.NoError(b, w.Close())
+
+				first, last, err := Segments(w.Dir())
+				require.NoError(b, err)
+				require.Equal(b, 0, last, "expected a single segments, got %v", last+1)
+
+				seg := SegmentName(w.Dir(), first)
+				info, err := os.Stat(seg)
+				require.NoError(b, err)
+
+				// Start watcher to that reads into a bench mock that only records sampleAppends.
+				wt := newBenchWriteToMock(0)
+				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, dir, true, true, true)
+				watcher.SetMetrics()
+				// Update the time because we just created samples around "now" time and watcher
+				// only starts watching after that time.
+				watcher.SetStartTime(now)
+
+				watcher.readNotify = make(chan struct{}, 1) // Make readNotify channel to buffer one element so we can notify and then read.
+				watcher.MaxSegment = 0                      // Limit reads to a first segment.
+
+				b.ReportAllocs()
+				b.ResetTimer()
+				for b.Loop() {
+					wt.Reset()
+					watcher.Notify()
+					require.NoError(b, watcher.Run())
+
+					// Quick check if data was actually read.
+					require.Equal(b, batches, wt.seriesStores)
+					require.Equal(b, batches, wt.metadataStores)
+					require.Equal(b, recCase.SamplesPerSeries*batches, wt.sampleAppends)
+					require.Equal(b, recCase.HistogramsPerSeries, wt.histogramAppends)
+					require.Equal(b, batches, wt.exemplarAppends)
+
+					b.ReportMetric(float64(info.Size()), "segmentBytesRead/op")
+				}
+			})
+		}
 	}
 }
 
