@@ -1119,27 +1119,39 @@ func (*Encoder) histogramSamplesV2(histograms []RefHistogramSample, b []byte) ([
 
 	var customBucketHistograms []RefHistogramSample
 
-	first := histograms[0]
-
-	// First sample: full varint values, no deltas, no ST marker.
-	if first.H.UsesCustomBuckets() {
-		customBucketHistograms = append(customBucketHistograms, first)
-	} else {
-		buf.PutVarint64(int64(first.Ref))
-		buf.PutVarint64(first.T)
-		buf.PutVarint64(first.ST)
-		EncodeHistogram(&buf, first.H)
-	}
-
-	// Subsequent samples: ref delta to prev, T delta to first, ST marker.
-	for i := 1; i < len(histograms); i++ {
-		h := histograms[i]
+	// Find the first non-custom-bucket histogram to use as anchor for deltas.
+	firstIdx := -1
+	var first RefHistogramSample
+	for i, h := range histograms {
 		if h.H.UsesCustomBuckets() {
 			customBucketHistograms = append(customBucketHistograms, h)
 			continue
 		}
-		prev := histograms[i-1]
+		firstIdx = i
+		first = h
+		break
+	}
 
+	if firstIdx == -1 {
+		// All histograms use custom buckets.
+		buf.Reset()
+		return buf.Get(), customBucketHistograms
+	}
+
+	// First non-custom-bucket sample: full varint values, no deltas, no ST marker.
+	buf.PutVarint64(int64(first.Ref))
+	buf.PutVarint64(first.T)
+	buf.PutVarint64(first.ST)
+	EncodeHistogram(&buf, first.H)
+
+	// Remaining samples: ref delta to last encoded, T delta to first, ST marker.
+	// prev tracks the last encoded non-custom-bucket histogram.
+	prev := first
+	for _, h := range histograms[firstIdx+1:] {
+		if h.H.UsesCustomBuckets() {
+			customBucketHistograms = append(customBucketHistograms, h)
+			continue
+		}
 		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
 		buf.PutVarint64(h.T - first.T)
 
@@ -1153,11 +1165,7 @@ func (*Encoder) histogramSamplesV2(histograms []RefHistogramSample, b []byte) ([
 			buf.PutVarint64(h.ST - first.ST)
 		}
 		EncodeHistogram(&buf, h.H)
-	}
-
-	// Reset buffer if only custom bucket histograms existed in list of histogram samples.
-	if len(histograms) == len(customBucketHistograms) {
-		buf.Reset()
+		prev = h
 	}
 
 	return buf.Get(), customBucketHistograms
@@ -1325,25 +1333,39 @@ func (*Encoder) floatHistogramSamplesV2(histograms []RefFloatHistogramSample, b 
 
 	var customBucketsFloatHistograms []RefFloatHistogramSample
 
-	first := histograms[0]
-
-	if first.FH.UsesCustomBuckets() {
-		customBucketsFloatHistograms = append(customBucketsFloatHistograms, first)
-	} else {
-		buf.PutVarint64(int64(first.Ref))
-		buf.PutVarint64(first.T)
-		buf.PutVarint64(first.ST)
-		EncodeFloatHistogram(&buf, first.FH)
-	}
-
-	for i := 1; i < len(histograms); i++ {
-		h := histograms[i]
+	// Find the first non-custom-bucket histogram to use as anchor for deltas.
+	firstIdx := -1
+	var first RefFloatHistogramSample
+	for i, h := range histograms {
 		if h.FH.UsesCustomBuckets() {
 			customBucketsFloatHistograms = append(customBucketsFloatHistograms, h)
 			continue
 		}
-		prev := histograms[i-1]
+		firstIdx = i
+		first = h
+		break
+	}
 
+	if firstIdx == -1 {
+		// All histograms use custom buckets.
+		buf.Reset()
+		return buf.Get(), customBucketsFloatHistograms
+	}
+
+	// First non-custom-bucket sample: full varint values, no deltas, no ST marker.
+	buf.PutVarint64(int64(first.Ref))
+	buf.PutVarint64(first.T)
+	buf.PutVarint64(first.ST)
+	EncodeFloatHistogram(&buf, first.FH)
+
+	// Remaining samples: ref delta to last encoded, T delta to first, ST marker.
+	// prev tracks the last encoded non-custom-bucket histogram.
+	prev := first
+	for _, h := range histograms[firstIdx+1:] {
+		if h.FH.UsesCustomBuckets() {
+			customBucketsFloatHistograms = append(customBucketsFloatHistograms, h)
+			continue
+		}
 		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
 		buf.PutVarint64(h.T - first.T)
 
@@ -1357,11 +1379,7 @@ func (*Encoder) floatHistogramSamplesV2(histograms []RefFloatHistogramSample, b 
 			buf.PutVarint64(h.ST - first.ST)
 		}
 		EncodeFloatHistogram(&buf, h.FH)
-	}
-
-	// Reset buffer if only custom bucket histograms existed in list of histogram samples
-	if len(histograms) == len(customBucketsFloatHistograms) {
-		buf.Reset()
+		prev = h
 	}
 
 	return buf.Get(), customBucketsFloatHistograms
