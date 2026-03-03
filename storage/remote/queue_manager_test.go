@@ -30,6 +30,7 @@ import (
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
@@ -242,6 +243,7 @@ func TestSampleDelivery(t *testing.T) {
 				qm := s.rws.queues[hash]
 
 				c := NewTestWriteClient(protoMsg)
+				c.SetStoreWait(10 * time.Millisecond)
 				qm.SetClient(c)
 
 				qm.StoreSeries(series, 0)
@@ -274,6 +276,14 @@ func TestSampleDelivery(t *testing.T) {
 				qm.AppendHistograms(histograms[len(histograms)/2:])
 				qm.AppendFloatHistograms(floatHistograms[len(floatHistograms)/2:])
 				c.waitForExpectedData(t, 30*time.Second)
+
+				// Ensure the queue metrics match what was sent
+				require.Equal(t, float64(len(samples)), client_testutil.ToFloat64(qm.metrics.samplesTotal))
+				require.Equal(t, float64(len(exemplars)), client_testutil.ToFloat64(qm.metrics.exemplarsTotal))
+				require.Equal(t, float64(len(histograms)+len(floatHistograms)), client_testutil.ToFloat64(qm.metrics.histogramsTotal))
+				var durationMetric dto.Metric
+				require.NoError(t, qm.metrics.sentBatchDuration.Write(&durationMetric))
+				require.GreaterOrEqual(t, *durationMetric.Histogram.SampleSum, (10 * time.Millisecond).Seconds())
 			})
 		}
 	}
