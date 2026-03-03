@@ -30,7 +30,7 @@ func TestOpenAPIHTTPHandler(t *testing.T) {
 	builder := NewOpenAPIBuilder(OpenAPIOptions{}, promslog.NewNopLogger())
 
 	// First request.
-	req1 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil)
+	req1 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", http.NoBody)
 	rec1 := httptest.NewRecorder()
 	builder.ServeOpenAPI(rec1, req1)
 
@@ -64,7 +64,7 @@ func TestOpenAPIHTTPHandler(t *testing.T) {
 	require.NotEmpty(t, paths, "paths should not be empty")
 
 	// Second request to verify response consistency.
-	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", http.NoBody)
 	rec2 := httptest.NewRecorder()
 	builder.ServeOpenAPI(rec2, req2)
 
@@ -118,7 +118,7 @@ func TestOpenAPIPathFiltering(t *testing.T) {
 				IncludePaths: tc.includePaths,
 			}, promslog.NewNopLogger())
 
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", http.NoBody)
 			rec := httptest.NewRecorder()
 			builder.ServeOpenAPI(rec, req)
 
@@ -147,7 +147,7 @@ func TestOpenAPIPathFiltering(t *testing.T) {
 func TestOpenAPISchemaCompleteness(t *testing.T) {
 	builder := NewOpenAPIBuilder(OpenAPIOptions{}, promslog.NewNopLogger())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", http.NoBody)
 	rec := httptest.NewRecorder()
 	builder.ServeOpenAPI(rec, req)
 
@@ -251,14 +251,14 @@ func TestOpenAPIVersionConsistency(t *testing.T) {
 	builder := NewOpenAPIBuilder(OpenAPIOptions{}, promslog.NewNopLogger())
 
 	// Fetch OpenAPI 3.1 spec (default).
-	req31 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", nil)
+	req31 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml", http.NoBody)
 	rec31 := httptest.NewRecorder()
 	builder.ServeOpenAPI(rec31, req31)
 
 	require.Equal(t, http.StatusOK, rec31.Code)
 
 	// Fetch OpenAPI 3.2 spec.
-	req32 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml?openapi_version=3.2", nil)
+	req32 := httptest.NewRequest(http.MethodGet, "/api/v1/openapi.yaml?openapi_version=3.2", http.NoBody)
 	rec32 := httptest.NewRecorder()
 	builder.ServeOpenAPI(rec32, req32)
 

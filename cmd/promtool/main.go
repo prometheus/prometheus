@@ -578,7 +578,7 @@ func CheckServerStatus(serverURL *url.URL, checkEndpoint string, roundTripper ht
 		return err
 	}
 
-	request, err := http.NewRequest(http.MethodGet, config.Address, nil)
+	request, err := http.NewRequest(http.MethodGet, config.Address, http.NoBody)
 	if err != nil {
 		return err
 	}

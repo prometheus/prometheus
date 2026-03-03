@@ -331,7 +331,7 @@ func TestDebugHandler(t *testing.T) {
 
 		w := httptest.NewRecorder()
 
-		req, err := http.NewRequest(http.MethodGet, tc.url, nil)
+		req, err := http.NewRequest(http.MethodGet, tc.url, http.NoBody)
 
 		require.NoError(t, err)
 
@@ -356,7 +356,7 @@ func TestHTTPMetrics(t *testing.T) {
 		t.Helper()
 		w := httptest.NewRecorder()
 
-		req, err := http.NewRequest(http.MethodGet, "/-/ready", nil)
+		req, err := http.NewRequest(http.MethodGet, "/-/ready", http.NoBody)
 		require.NoError(t, err)
 
 		handler.router.ServeHTTP(w, req)
@@ -592,7 +592,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		"/admin/tsdb/snapshot":         {http.MethodPost, http.MethodPut},
 	} {
 		for _, m := range methods {
-			req, err := http.NewRequest(m, baseURL+path, nil)
+			req, err := http.NewRequest(m, baseURL+path, http.NoBody)
 			require.NoError(t, err)
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
@@ -613,7 +613,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		"/status/flags":       {http.MethodGet},
 	} {
 		for _, m := range methods {
-			req, err := http.NewRequest(m, baseURL+path, nil)
+			req, err := http.NewRequest(m, baseURL+path, http.NoBody)
 			require.NoError(t, err)
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
