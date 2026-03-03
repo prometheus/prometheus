@@ -41,7 +41,7 @@
 - [x] **TEST-04**: Round-trip encode/decode for float histogram V2 (same ST scenarios)
 - [x] **TEST-05**: Round-trip encode/decode for custom buckets variants V2
 - [x] **TEST-06**: V1 records still decode correctly (backward compat test)
-- [ ] **TEST-07**: Type() correctly identifies new record types
+- [x] **TEST-07**: Type() correctly identifies new record types
 
 ## Out of Scope
 
@@ -78,7 +78,7 @@
 | TEST-04 | Phase 4 | Complete |
 | TEST-05 | Phase 4 | Complete |
 | TEST-06 | Phase 4 | Complete |
-| TEST-07 | Phase 4 | Pending |
+| TEST-07 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 23 total
