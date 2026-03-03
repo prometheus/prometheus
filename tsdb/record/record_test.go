@@ -600,6 +600,86 @@ func TestRecord_EncodeDecode(t *testing.T) {
 			require.Equal(t, int64(0), h.ST, "V1 float histogram records must decode with ST=0")
 		}
 	})
+
+	enc = Encoder{EnableSTStorage: true}
+
+	// V2 int-histogram with custom bucket as first element.
+	t.Run("V2 int-histogram leading custom bucket", func(t *testing.T) {
+		// histograms[2] uses custom buckets; placing it first exercises the
+		// code path where the anchor must be the first non-custom-bucket sample.
+		input := []RefHistogramSample{
+			{Ref: 67, T: 1000, ST: 500, H: histograms[2].H},
+			{Ref: 56, T: 2000, ST: 500, H: histograms[0].H},
+			{Ref: 42, T: 3000, ST: 600, H: histograms[1].H},
+		}
+		histBuf, customBuckets := enc.HistogramSamples(input, nil)
+		customBuf := enc.CustomBucketsHistogramSamples(customBuckets, nil)
+		decHists, err := dec.HistogramSamples(histBuf, nil)
+		require.NoError(t, err)
+		decCustom, err := dec.HistogramSamples(customBuf, nil)
+		require.NoError(t, err)
+		require.Equal(t, input[1:], decHists)
+		require.Equal(t, input[:1], decCustom)
+	})
+
+	// V2 int-histogram with custom bucket in the middle.
+	t.Run("V2 int-histogram interleaved custom bucket", func(t *testing.T) {
+		// histograms[2] uses custom buckets; placing it between regular histograms
+		// exercises the prev-tracking fix so ref deltas are computed correctly.
+		input := []RefHistogramSample{
+			{Ref: 56, T: 1000, ST: 500, H: histograms[0].H},
+			{Ref: 67, T: 2000, ST: 500, H: histograms[2].H},
+			{Ref: 42, T: 3000, ST: 600, H: histograms[1].H},
+		}
+		histBuf, customBuckets := enc.HistogramSamples(input, nil)
+		customBuf := enc.CustomBucketsHistogramSamples(customBuckets, nil)
+		decHists, err := dec.HistogramSamples(histBuf, nil)
+		require.NoError(t, err)
+		decCustom, err := dec.HistogramSamples(customBuf, nil)
+		require.NoError(t, err)
+		require.Equal(t, []RefHistogramSample{input[0], input[2]}, decHists)
+		require.Equal(t, input[1:2], decCustom)
+	})
+
+	// V2 float-histogram with custom bucket as first element.
+	t.Run("V2 float-histogram leading custom bucket", func(t *testing.T) {
+		customFH := histograms[2].H.ToFloat(nil)
+		regularFH0 := histograms[0].H.ToFloat(nil)
+		regularFH1 := histograms[1].H.ToFloat(nil)
+		input := []RefFloatHistogramSample{
+			{Ref: 67, T: 1000, ST: 500, FH: customFH},
+			{Ref: 56, T: 2000, ST: 500, FH: regularFH0},
+			{Ref: 42, T: 3000, ST: 600, FH: regularFH1},
+		}
+		floatBuf, customBuckets := enc.FloatHistogramSamples(input, nil)
+		customBuf := enc.CustomBucketsFloatHistogramSamples(customBuckets, nil)
+		decFloats, err := dec.FloatHistogramSamples(floatBuf, nil)
+		require.NoError(t, err)
+		decCustom, err := dec.FloatHistogramSamples(customBuf, nil)
+		require.NoError(t, err)
+		require.Equal(t, input[1:], decFloats)
+		require.Equal(t, input[:1], decCustom)
+	})
+
+	// V2 float-histogram with custom bucket in the middle.
+	t.Run("V2 float-histogram interleaved custom bucket", func(t *testing.T) {
+		customFH := histograms[2].H.ToFloat(nil)
+		regularFH0 := histograms[0].H.ToFloat(nil)
+		regularFH1 := histograms[1].H.ToFloat(nil)
+		input := []RefFloatHistogramSample{
+			{Ref: 56, T: 1000, ST: 500, FH: regularFH0},
+			{Ref: 67, T: 2000, ST: 500, FH: customFH},
+			{Ref: 42, T: 3000, ST: 600, FH: regularFH1},
+		}
+		floatBuf, customBuckets := enc.FloatHistogramSamples(input, nil)
+		customBuf := enc.CustomBucketsFloatHistogramSamples(customBuckets, nil)
+		decFloats, err := dec.FloatHistogramSamples(floatBuf, nil)
+		require.NoError(t, err)
+		decCustom, err := dec.FloatHistogramSamples(customBuf, nil)
+		require.NoError(t, err)
+		require.Equal(t, []RefFloatHistogramSample{input[0], input[2]}, decFloats)
+		require.Equal(t, input[1:2], decCustom)
+	})
 }
 
 func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
