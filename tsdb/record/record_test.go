@@ -837,12 +837,39 @@ func TestRecord_Type(t *testing.T) {
 			},
 		},
 	}
+	// V1 histogram type recognition (requires EnableSTStorage off).
+	enc = Encoder{}
 	hists, customBucketsHistograms := enc.HistogramSamples(histograms, nil)
 	recordType = dec.Type(hists)
 	require.Equal(t, HistogramSamples, recordType)
 	customBucketsHists := enc.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
 	recordType = dec.Type(customBucketsHists)
 	require.Equal(t, CustomBucketsHistogramSamples, recordType)
+
+	// V2 histogram type recognition.
+	enc = Encoder{EnableSTStorage: true}
+	hists, customBucketsHistograms = enc.HistogramSamples(histograms, nil)
+	recordType = dec.Type(hists)
+	require.Equal(t, HistogramSamplesV2, recordType)
+	customBucketsHists = enc.CustomBucketsHistogramSamples(customBucketsHistograms, nil)
+	recordType = dec.Type(customBucketsHists)
+	require.Equal(t, CustomBucketsHistogramSamplesV2, recordType)
+
+	// V2 float-histogram type recognition.
+	floatHistograms := make([]RefFloatHistogramSample, len(histograms))
+	for i, h := range histograms {
+		floatHistograms[i] = RefFloatHistogramSample{
+			Ref: h.Ref,
+			T:   h.T,
+			FH:  h.H.ToFloat(nil),
+		}
+	}
+	floatHists, customBucketsFloatHistograms := enc.FloatHistogramSamples(floatHistograms, nil)
+	recordType = dec.Type(floatHists)
+	require.Equal(t, FloatHistogramSamplesV2, recordType)
+	customBucketsFloatHists := enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, nil)
+	recordType = dec.Type(customBucketsFloatHists)
+	require.Equal(t, CustomBucketsFloatHistogramSamplesV2, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)
