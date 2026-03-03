@@ -35,12 +35,12 @@
 
 ### Testing
 
-- [ ] **TEST-01**: Round-trip encode/decode for histogram V2 with no ST
-- [ ] **TEST-02**: Round-trip encode/decode for histogram V2 with constant ST
-- [ ] **TEST-03**: Round-trip encode/decode for histogram V2 with varying ST
-- [ ] **TEST-04**: Round-trip encode/decode for float histogram V2 (same ST scenarios)
-- [ ] **TEST-05**: Round-trip encode/decode for custom buckets variants V2
-- [ ] **TEST-06**: V1 records still decode correctly (backward compat test)
+- [x] **TEST-01**: Round-trip encode/decode for histogram V2 with no ST
+- [x] **TEST-02**: Round-trip encode/decode for histogram V2 with constant ST
+- [x] **TEST-03**: Round-trip encode/decode for histogram V2 with varying ST
+- [x] **TEST-04**: Round-trip encode/decode for float histogram V2 (same ST scenarios)
+- [x] **TEST-05**: Round-trip encode/decode for custom buckets variants V2
+- [x] **TEST-06**: V1 records still decode correctly (backward compat test)
 - [ ] **TEST-07**: Type() correctly identifies new record types
 
 ## Out of Scope
@@ -72,12 +72,12 @@
 | DEC-02 | Phase 3 | Complete |
 | DEC-03 | Phase 3 | Complete |
 | DEC-04 | Phase 3 | Complete |
-| TEST-01 | Phase 4 | Pending |
-| TEST-02 | Phase 4 | Pending |
-| TEST-03 | Phase 4 | Pending |
-| TEST-04 | Phase 4 | Pending |
-| TEST-05 | Phase 4 | Pending |
-| TEST-06 | Phase 4 | Pending |
+| TEST-01 | Phase 4 | Complete |
+| TEST-02 | Phase 4 | Complete |
+| TEST-03 | Phase 4 | Complete |
+| TEST-04 | Phase 4 | Complete |
+| TEST-05 | Phase 4 | Complete |
+| TEST-06 | Phase 4 | Complete |
 | TEST-07 | Phase 4 | Pending |
 
 **Coverage:**

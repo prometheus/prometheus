@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-02T22:14:33.030Z"
+status: in-progress
+last_updated: "2026-03-03T14:16:38Z"
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 7
+  completed_plans: 6
 ---
 
 # Project State: Histogram ST WAL Records
@@ -18,7 +18,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-02)
 
 **Core value:** Histogram samples carry accurate start time through the WAL
-**Current focus:** Phase 3 complete. All V2 decoders done. Phase 4 (Tests) next.
+**Current focus:** Phase 4 in progress. Plan 01 (histogram round-trip tests) complete. Plan 02 (TestRecord_Type V2 assertions) next.
 
 ## Phase Progress
 
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 | 1 | Struct and Type Definitions | Plan 01 complete |
 | 2 | V2 Encoders | Complete |
 | 3 | V2 Decoders | Complete |
-| 4 | Tests | Not started |
+| 4 | Tests | Plan 01 complete |
 
 ## Current Phase
 
-Phase 3 complete (Plan 01: 4c9118810, 060c6f13e; Plan 02: c1e5db311, 02214cd2d). Phase 4 (Tests) next.
+Phase 4 in progress. Plan 01 complete (021b0d9e4, b05e0d328). Plan 02 (TestRecord_Type V2 assertions) next.
 
 ## Decisions Log
 
@@ -43,9 +43,11 @@ Phase 3 complete (Plan 01: 4c9118810, 060c6f13e; Plan 02: c1e5db311, 02214cd2d).
 - **03-v2-decoders (plan 01):** Extracted V1 body into histogramSamplesV1 private method for clean switch dispatch. V2 decoder mirrors samplesV2 exactly.
 - **03-v2-decoders (plan 02):** Extracted V1 body into floatHistogramSamplesV1 private method, mirroring Plan 01. V2 float-histogram decoder mirrors histogramSamplesV2 with FloatHistogram payload.
 
+- **04-tests (plan 01):** Used t.Run subtests for each ST scenario and gauge/backward-compat block for failure isolation. Float histogram derivation includes explicit ST copy. V2 blocks placed before gauge mutation to avoid shared pointer corruption.
+
 ## Blockers
 
 (None)
 
 ---
-*Last updated: 2026-03-02 after Phase 3 Plan 02 (03-02-PLAN.md)*
+*Last updated: 2026-03-03 after Phase 4 Plan 01 (04-01-PLAN.md)*
