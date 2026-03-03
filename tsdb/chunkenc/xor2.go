@@ -267,7 +267,7 @@ func (a *xor2Appender) Append(st, t int64, v float64) {
 				// This is the most common case for stable metrics.
 				// a.v stays correct (v == a.v), so no update needed.
 				a.b.writeBit(zero)
-			case dod >= -(1<<12) && dod <= (1<<12)-1 && vbits == math.Float64bits(a.v):
+			case dod >= -(1<<12) && dod < (1<<12) && vbits == math.Float64bits(a.v):
 				// 13-bit dod, value unchanged: the most common case for metrics with
 				// small timestamp jitter. Inline both bytes and the zero value bit to
 				// avoid calling encodeJoint and writeVDelta.
@@ -318,7 +318,7 @@ func (a *xor2Appender) Append(st, t int64, v float64) {
 					a.b.writeBit(zero)
 					putVarbitIntFast(a.b, deltaStDiff)
 				}
-			case dod >= -(1<<12) && dod <= (1<<12)-1 && vbits == math.Float64bits(a.v):
+			case dod >= -(1<<12) && dod < (1<<12) && vbits == math.Float64bits(a.v):
 				a.b.writeByte(0b110_00000 | byte(uint64(dod)>>8)&0x1F)
 				a.b.writeByte(byte(uint64(dod)))
 				// T/V ends with a 0 bit (value unchanged indicator). Fuse it with
@@ -409,11 +409,11 @@ func (a *xor2Appender) encodeJoint(dod int64, v float64) {
 	}
 
 	switch {
-	case dod >= -(1<<12) && dod <= (1<<12)-1:
+	case dod >= -(1<<12) && dod < (1<<12):
 		// 13-bit dod: prefix `110` packed with top 5 bits → 2 bytes total.
 		a.b.writeByte(0b110_00000 | byte(uint64(dod)>>8)&0x1F)
 		a.b.writeByte(byte(uint64(dod)))
-	case dod >= -(1<<19) && dod <= (1<<19)-1:
+	case dod >= -(1<<19) && dod < (1<<19):
 		// 20-bit dod: prefix `1110` packed with top 4 bits → 3 bytes total.
 		a.b.writeByte(0b1110_0000 | byte(uint64(dod)>>16)&0x0F)
 		a.b.writeByte(byte(uint64(dod) >> 8))
