@@ -27,6 +27,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -34,6 +35,8 @@ import (
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/util/compression"
 )
 
@@ -1045,4 +1048,42 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 // We do this by adding the sizes of all the files under the WAL dir.
 func (w *WL) Size() (int64, error) {
 	return fileutil.DirSize(w.Dir())
+}
+
+// PopulateTest logs recs records in the given w WAL for testing purposes.
+func PopulateTest(t testing.TB, w *WL, recs []any, buf []byte) []byte {
+	var enc record.Encoder
+	for _, r := range recs {
+		buf = buf[:0]
+		switch v := r.(type) {
+		case []record.RefSeries:
+			buf = enc.Series(v, buf)
+		case []record.RefSample:
+			buf = enc.Samples(v, buf)
+		case []tombstones.Stone:
+			buf = enc.Tombstones(v, buf)
+		case []record.RefExemplar:
+			buf = enc.Exemplars(v, buf)
+		case []record.RefHistogramSample:
+			buf, v = enc.HistogramSamples(v, buf)
+			if len(v) > 0 {
+				buf = enc.CustomBucketsHistogramSamples(v, buf)
+			}
+		case []record.RefFloatHistogramSample:
+			buf, v = enc.FloatHistogramSamples(v, buf)
+			if len(v) > 0 {
+				buf = enc.CustomBucketsFloatHistogramSamples(v, buf)
+			}
+		case []record.RefMmapMarker:
+			buf = enc.MmapMarkers(v, buf)
+		case []record.RefMetadata:
+			buf = enc.Metadata(v, buf)
+		default:
+			continue
+		}
+		if err := w.Log(buf); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return buf
 }

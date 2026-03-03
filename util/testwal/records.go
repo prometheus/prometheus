@@ -60,6 +60,29 @@ type Records struct {
 	Metadata        []record.RefMetadata
 }
 
+func (r Records) Combine() []any {
+	ret := make([]any, 0, 6)
+	if len(r.Series) > 0 {
+		ret = append(ret, r.Series)
+	}
+	if len(r.Metadata) > 0 {
+		ret = append(ret, r.Metadata)
+	}
+	if len(r.Samples) > 0 {
+		ret = append(ret, r.Samples)
+	}
+	if len(r.Histograms) > 0 {
+		ret = append(ret, r.Histograms)
+	}
+	if len(r.FloatHistograms) > 0 {
+		ret = append(ret, r.FloatHistograms)
+	}
+	if len(r.Exemplars) > 0 {
+		ret = append(ret, r.Exemplars)
+	}
+	return ret
+}
+
 func newTestHist(i int) *histogram.Histogram {
 	return &histogram.Histogram{
 		Schema:          2,

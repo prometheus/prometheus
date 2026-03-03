@@ -112,35 +112,6 @@ func BenchmarkCreateSeries(b *testing.B) {
 	}
 }
 
-func populateTestWL(t testing.TB, w *wlog.WL, recs []any, buf []byte) []byte {
-	var enc record.Encoder
-	for _, r := range recs {
-		buf = buf[:0]
-		switch v := r.(type) {
-		case []record.RefSeries:
-			buf = enc.Series(v, buf)
-		case []record.RefSample:
-			buf = enc.Samples(v, buf)
-		case []tombstones.Stone:
-			buf = enc.Tombstones(v, buf)
-		case []record.RefExemplar:
-			buf = enc.Exemplars(v, buf)
-		case []record.RefHistogramSample:
-			buf, _ = enc.HistogramSamples(v, buf)
-		case []record.RefFloatHistogramSample:
-			buf, _ = enc.FloatHistogramSamples(v, buf)
-		case []record.RefMmapMarker:
-			buf = enc.MmapMarkers(v, buf)
-		case []record.RefMetadata:
-			buf = enc.Metadata(v, buf)
-		default:
-			continue
-		}
-		require.NoError(t, w.Log(buf))
-	}
-	return buf
-}
-
 func readTestWAL(t testing.TB, dir string) (recs []any) {
 	sr, err := wlog.NewSegmentsReader(dir)
 	require.NoError(t, err)
@@ -306,7 +277,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 								writeSeries = newWriteSeries
 							}
 
-							buf = populateTestWL(b, wal, []any{writeSeries}, buf)
+							buf = wlog.PopulateTest(b, wal, []any{writeSeries}, buf)
 						}
 
 						// Write samples.
@@ -332,7 +303,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 										V:   float64(i) * 100,
 									})
 								}
-								buf = populateTestWL(b, wal, []any{refSamples}, buf)
+								buf = wlog.PopulateTest(b, wal, []any{refSamples}, buf)
 							}
 						}
 
@@ -371,7 +342,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 										Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i)),
 									})
 								}
-								buf = populateTestWL(b, wal, []any{refExemplars}, buf)
+								buf = wlog.PopulateTest(b, wal, []any{refExemplars}, buf)
 							}
 						}
 
@@ -400,10 +371,10 @@ func BenchmarkLoadWLs(b *testing.B) {
 									})
 								}
 								if shouldAddMarkers {
-									populateTestWL(b, wbl, []any{refMarkers}, buf)
+									wlog.PopulateTest(b, wbl, []any{refMarkers}, buf)
 								}
-								buf = populateTestWL(b, wal, []any{refSamples}, buf)
-								buf = populateTestWL(b, wbl, []any{refSamples}, buf)
+								buf = wlog.PopulateTest(b, wal, []any{refSamples}, buf)
+								buf = wlog.PopulateTest(b, wbl, []any{refSamples}, buf)
 							}
 						}
 
@@ -753,7 +724,7 @@ func TestHead_ReadWAL(t *testing.T) {
 
 			head, w := newTestHead(t, 1000, compress, false)
 
-			populateTestWL(t, w, entries, nil)
+			wlog.PopulateTest(t, w, entries, nil)
 
 			require.NoError(t, head.Init(math.MinInt64))
 			require.Equal(t, uint64(101), head.lastSeriesID.Load())
@@ -1103,7 +1074,7 @@ func TestHead_WALCheckpointMultiRef(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h, w := newTestHead(t, 1000, compression.None, false)
 
-			populateTestWL(t, w, tc.walEntries, nil)
+			wlog.PopulateTest(t, w, tc.walEntries, nil)
 			first, _, err := wlog.Segments(w.Dir())
 			require.NoError(t, err)
 
@@ -1702,7 +1673,7 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 			}
 			head, w := newTestHead(t, 1000, compress, false)
 
-			populateTestWL(t, w, entries, nil)
+			wlog.PopulateTest(t, w, entries, nil)
 
 			require.NoError(t, head.Init(math.MinInt64))
 
