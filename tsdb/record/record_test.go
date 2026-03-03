@@ -245,6 +245,174 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decFloatHistograms = append(decFloatHistograms, decCustomBucketsFloatHistograms...)
 	require.Equal(t, floatHistograms, decFloatHistograms)
 
+	// V2 int-histogram round-trip tests covering all ST scenarios.
+	enc = Encoder{EnableSTStorage: true}
+
+	t.Run("V2 int-histogram no ST", func(t *testing.T) {
+		histsV2NoST := []RefHistogramSample{
+			{Ref: 56, T: 1234, H: histograms[0].H},
+			{Ref: 42, T: 5678, H: histograms[1].H},
+			{Ref: 67, T: 5678, H: histograms[2].H},
+		}
+		histSamplesV2, customBucketsV2 := enc.HistogramSamples(histsV2NoST, nil)
+		customBucketsHistSamplesV2 := enc.CustomBucketsHistogramSamples(customBucketsV2, nil)
+		decHistsV2, err := dec.HistogramSamples(histSamplesV2, nil)
+		require.NoError(t, err)
+		decCustomBucketsV2, err := dec.HistogramSamples(customBucketsHistSamplesV2, nil)
+		require.NoError(t, err)
+		decHistsV2 = append(decHistsV2, decCustomBucketsV2...)
+		require.Equal(t, histsV2NoST, decHistsV2)
+	})
+
+	t.Run("V2 int-histogram constant ST", func(t *testing.T) {
+		histsV2ConstST := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 1000, H: histograms[0].H},
+			{Ref: 42, T: 5678, ST: 1000, H: histograms[1].H},
+			{Ref: 67, T: 5678, ST: 1000, H: histograms[2].H},
+		}
+		histSamplesV2, customBucketsV2 := enc.HistogramSamples(histsV2ConstST, nil)
+		customBucketsHistSamplesV2 := enc.CustomBucketsHistogramSamples(customBucketsV2, nil)
+		decHistsV2, err := dec.HistogramSamples(histSamplesV2, nil)
+		require.NoError(t, err)
+		decCustomBucketsV2, err := dec.HistogramSamples(customBucketsHistSamplesV2, nil)
+		require.NoError(t, err)
+		decHistsV2 = append(decHistsV2, decCustomBucketsV2...)
+		require.Equal(t, histsV2ConstST, decHistsV2)
+	})
+
+	t.Run("V2 int-histogram varying ST", func(t *testing.T) {
+		histsV2VarST := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 1000, H: histograms[0].H},
+			{Ref: 42, T: 5678, ST: 1234, H: histograms[1].H},
+			{Ref: 67, T: 9012, ST: 5678, H: histograms[2].H},
+		}
+		histSamplesV2, customBucketsV2 := enc.HistogramSamples(histsV2VarST, nil)
+		customBucketsHistSamplesV2 := enc.CustomBucketsHistogramSamples(customBucketsV2, nil)
+		decHistsV2, err := dec.HistogramSamples(histSamplesV2, nil)
+		require.NoError(t, err)
+		decCustomBucketsV2, err := dec.HistogramSamples(customBucketsHistSamplesV2, nil)
+		require.NoError(t, err)
+		decHistsV2 = append(decHistsV2, decCustomBucketsV2...)
+		require.Equal(t, histsV2VarST, decHistsV2)
+	})
+
+	t.Run("V2 int-histogram same ST across samples", func(t *testing.T) {
+		histsV2SameST := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 900, H: histograms[0].H},
+			{Ref: 42, T: 5678, ST: 900, H: histograms[1].H},
+			{Ref: 67, T: 9012, ST: 900, H: histograms[2].H},
+		}
+		histSamplesV2, customBucketsV2 := enc.HistogramSamples(histsV2SameST, nil)
+		customBucketsHistSamplesV2 := enc.CustomBucketsHistogramSamples(customBucketsV2, nil)
+		decHistsV2, err := dec.HistogramSamples(histSamplesV2, nil)
+		require.NoError(t, err)
+		decCustomBucketsV2, err := dec.HistogramSamples(customBucketsHistSamplesV2, nil)
+		require.NoError(t, err)
+		decHistsV2 = append(decHistsV2, decCustomBucketsV2...)
+		require.Equal(t, histsV2SameST, decHistsV2)
+	})
+
+	// V2 float-histogram round-trip tests covering all ST scenarios.
+	t.Run("V2 float-histogram no ST", func(t *testing.T) {
+		histsV2NoST := []RefHistogramSample{
+			{Ref: 56, T: 1234, H: histograms[0].H},
+			{Ref: 42, T: 5678, H: histograms[1].H},
+			{Ref: 67, T: 5678, H: histograms[2].H},
+		}
+		floatHistsV2 := make([]RefFloatHistogramSample, len(histsV2NoST))
+		for i, h := range histsV2NoST {
+			floatHistsV2[i] = RefFloatHistogramSample{
+				Ref: h.Ref,
+				T:   h.T,
+				ST:  h.ST,
+				FH:  h.H.ToFloat(nil),
+			}
+		}
+		floatHistSamplesV2, customBucketsFloatV2 := enc.FloatHistogramSamples(floatHistsV2, nil)
+		customBucketsFloatHistSamplesV2 := enc.CustomBucketsFloatHistogramSamples(customBucketsFloatV2, nil)
+		decFloatHistsV2, err := dec.FloatHistogramSamples(floatHistSamplesV2, nil)
+		require.NoError(t, err)
+		decCustomBucketsFloatV2, err := dec.FloatHistogramSamples(customBucketsFloatHistSamplesV2, nil)
+		require.NoError(t, err)
+		decFloatHistsV2 = append(decFloatHistsV2, decCustomBucketsFloatV2...)
+		require.Equal(t, floatHistsV2, decFloatHistsV2)
+	})
+
+	t.Run("V2 float-histogram constant ST", func(t *testing.T) {
+		histsV2ConstST := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 1000, H: histograms[0].H},
+			{Ref: 42, T: 5678, ST: 1000, H: histograms[1].H},
+			{Ref: 67, T: 5678, ST: 1000, H: histograms[2].H},
+		}
+		floatHistsV2 := make([]RefFloatHistogramSample, len(histsV2ConstST))
+		for i, h := range histsV2ConstST {
+			floatHistsV2[i] = RefFloatHistogramSample{
+				Ref: h.Ref,
+				T:   h.T,
+				ST:  h.ST,
+				FH:  h.H.ToFloat(nil),
+			}
+		}
+		floatHistSamplesV2, customBucketsFloatV2 := enc.FloatHistogramSamples(floatHistsV2, nil)
+		customBucketsFloatHistSamplesV2 := enc.CustomBucketsFloatHistogramSamples(customBucketsFloatV2, nil)
+		decFloatHistsV2, err := dec.FloatHistogramSamples(floatHistSamplesV2, nil)
+		require.NoError(t, err)
+		decCustomBucketsFloatV2, err := dec.FloatHistogramSamples(customBucketsFloatHistSamplesV2, nil)
+		require.NoError(t, err)
+		decFloatHistsV2 = append(decFloatHistsV2, decCustomBucketsFloatV2...)
+		require.Equal(t, floatHistsV2, decFloatHistsV2)
+	})
+
+	t.Run("V2 float-histogram varying ST", func(t *testing.T) {
+		histsV2VarST := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 1000, H: histograms[0].H},
+			{Ref: 42, T: 5678, ST: 1234, H: histograms[1].H},
+			{Ref: 67, T: 9012, ST: 5678, H: histograms[2].H},
+		}
+		floatHistsV2 := make([]RefFloatHistogramSample, len(histsV2VarST))
+		for i, h := range histsV2VarST {
+			floatHistsV2[i] = RefFloatHistogramSample{
+				Ref: h.Ref,
+				T:   h.T,
+				ST:  h.ST,
+				FH:  h.H.ToFloat(nil),
+			}
+		}
+		floatHistSamplesV2, customBucketsFloatV2 := enc.FloatHistogramSamples(floatHistsV2, nil)
+		customBucketsFloatHistSamplesV2 := enc.CustomBucketsFloatHistogramSamples(customBucketsFloatV2, nil)
+		decFloatHistsV2, err := dec.FloatHistogramSamples(floatHistSamplesV2, nil)
+		require.NoError(t, err)
+		decCustomBucketsFloatV2, err := dec.FloatHistogramSamples(customBucketsFloatHistSamplesV2, nil)
+		require.NoError(t, err)
+		decFloatHistsV2 = append(decFloatHistsV2, decCustomBucketsFloatV2...)
+		require.Equal(t, floatHistsV2, decFloatHistsV2)
+	})
+
+	t.Run("V2 float-histogram same ST across samples", func(t *testing.T) {
+		histsV2SameST := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 900, H: histograms[0].H},
+			{Ref: 42, T: 5678, ST: 900, H: histograms[1].H},
+			{Ref: 67, T: 9012, ST: 900, H: histograms[2].H},
+		}
+		floatHistsV2 := make([]RefFloatHistogramSample, len(histsV2SameST))
+		for i, h := range histsV2SameST {
+			floatHistsV2[i] = RefFloatHistogramSample{
+				Ref: h.Ref,
+				T:   h.T,
+				ST:  h.ST,
+				FH:  h.H.ToFloat(nil),
+			}
+		}
+		floatHistSamplesV2, customBucketsFloatV2 := enc.FloatHistogramSamples(floatHistsV2, nil)
+		customBucketsFloatHistSamplesV2 := enc.CustomBucketsFloatHistogramSamples(customBucketsFloatV2, nil)
+		decFloatHistsV2, err := dec.FloatHistogramSamples(floatHistSamplesV2, nil)
+		require.NoError(t, err)
+		decCustomBucketsFloatV2, err := dec.FloatHistogramSamples(customBucketsFloatHistSamplesV2, nil)
+		require.NoError(t, err)
+		decFloatHistsV2 = append(decFloatHistsV2, decCustomBucketsFloatV2...)
+		require.Equal(t, floatHistsV2, decFloatHistsV2)
+	})
+
 	// Gauge integer histograms.
 	for i := range histograms {
 		histograms[i].H.CounterResetHint = histogram.GaugeType
