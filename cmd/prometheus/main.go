@@ -77,6 +77,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/features"
@@ -319,6 +320,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.web.EnableTypeAndUnitLabels = true
 				logger.Info("Experimental type and unit labels enabled")
 			case "use-uncached-io":
+				if !fileutil.UncachedIOSupported() {
+					return errors.New("experimental Uncached IO is not supported")
+				}
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
 			default:
