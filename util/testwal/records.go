@@ -25,6 +25,8 @@ import (
 )
 
 // RecordsCase represents record generation option in a form of a test case.
+//
+// Generated Series will have refs that monotonic and deterministic, in range of [RefPadding, RefPadding+Series).
 type RecordsCase struct {
 	Name string
 
@@ -36,8 +38,16 @@ type RecordsCase struct {
 
 	ExtraLabels []labels.Label
 
-	LabelsFn func(lb *labels.ScratchBuilder, i int) labels.Labels
-	TsFn     func(i, j int) int64
+	// RefPadding represents a padding to add to Series refs.
+	RefPadding int
+	// LabelsFn allows injecting custom labels, by default it's a test_metric_%d with ExtraLabels.
+	LabelsFn func(lb *labels.ScratchBuilder, ref int) labels.Labels
+	// TsFn allows injecting custom sample timestamps. j represents the sample index within the series.
+	// By default, it injects j.
+	TsFn func(ref, j int) int64
+	// HistogramFn source histogram for histogram and float histogram records.
+	// By default, newTestHist is used (exponential bucketing)
+	HistogramFn func(ref int) *histogram.Histogram
 }
 
 // Records represents batches of generated WAL records.
@@ -90,47 +100,51 @@ func GenerateRecords(c RecordsCase) (ret Records) {
 	if c.TsFn == nil {
 		c.TsFn = func(_, j int) int64 { return int64(j) }
 	}
+	if c.HistogramFn == nil {
+		c.HistogramFn = newTestHist
+	}
 
 	lb := labels.NewScratchBuilder(1 + len(c.ExtraLabels))
 	for i := range ret.Series {
+		ref := c.RefPadding + i
 		ret.Series[i] = record.RefSeries{
-			Ref:    chunks.HeadSeriesRef(i),
-			Labels: c.LabelsFn(&lb, i),
+			Ref:    chunks.HeadSeriesRef(ref),
+			Labels: c.LabelsFn(&lb, ref),
 		}
 		ret.Metadata[i] = record.RefMetadata{
-			Ref:  chunks.HeadSeriesRef(i),
+			Ref:  chunks.HeadSeriesRef(ref),
 			Type: uint8(record.Counter),
 			Unit: "unit text",
-			Help: fmt.Sprintf("help text for %d", i),
+			Help: fmt.Sprintf("help text for %d", ref),
 		}
 		for j := range c.SamplesPerSeries {
 			ret.Samples[i*c.SamplesPerSeries+j] = record.RefSample{
-				Ref: chunks.HeadSeriesRef(i),
-				T:   c.TsFn(i, j),
-				V:   float64(i),
+				Ref: chunks.HeadSeriesRef(ref),
+				T:   c.TsFn(ref, j),
+				V:   float64(ref),
 			}
 		}
-		h := newTestHist(i)
+		h := c.HistogramFn(ref)
 		for j := range c.HistogramsPerSeries {
 			ret.Histograms[i*c.HistogramsPerSeries+j] = record.RefHistogramSample{
-				Ref: chunks.HeadSeriesRef(i),
-				T:   c.TsFn(i, j),
+				Ref: chunks.HeadSeriesRef(ref),
+				T:   c.TsFn(ref, j),
 				H:   h,
 			}
 		}
 		for j := range c.FloatHistogramsPerSeries {
 			ret.FloatHistograms[i*c.FloatHistogramsPerSeries+j] = record.RefFloatHistogramSample{
-				Ref: chunks.HeadSeriesRef(i),
-				T:   c.TsFn(i, j),
+				Ref: chunks.HeadSeriesRef(ref),
+				T:   c.TsFn(ref, j),
 				FH:  h.ToFloat(nil),
 			}
 		}
 		for j := range c.ExemplarsPerSeries {
 			ret.Exemplars[i*c.ExemplarsPerSeries+j] = record.RefExemplar{
-				Ref:    chunks.HeadSeriesRef(i),
-				T:      c.TsFn(i, j),
-				V:      float64(i),
-				Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", i)),
+				Ref:    chunks.HeadSeriesRef(ref),
+				T:      c.TsFn(ref, j),
+				V:      float64(ref),
+				Labels: labels.FromStrings("trace_id", fmt.Sprintf("trace-%d", ref)),
 			}
 		}
 	}
