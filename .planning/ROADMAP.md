@@ -63,13 +63,11 @@ Plans:
 
 **Requirements:** TEST-01..07
 
-**Tasks:**
-1. Add histogram V2 test cases to existing test structure (no ST, constant ST, varying ST, chained ST)
-2. Add float histogram V2 test cases (same ST scenarios)
-3. Add custom buckets V2 test cases (both int and float)
-4. Add backward compat test: V1-encoded records still decode with ST=0
-5. Add Type() recognition test for new record types
-6. Run full test suite: `go test ./tsdb/record/...`
+**Plans:** 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md -- V2 histogram round-trip tests (all ST scenarios, custom-bucket, gauge, backward compat)
+- [ ] 04-02-PLAN.md -- V2 histogram type recognition assertions in TestRecord_Type
 
 **Files:** `tsdb/record/record_test.go`
 
@@ -88,4 +86,4 @@ Phase 1 (types/structs)
 
 ---
 *Created: 2026-03-02*
-*Last updated: 2026-03-02 after Phase 3 Plan 02 complete*
+*Last updated: 2026-03-03 after Phase 4 planning complete*
