@@ -120,88 +120,100 @@ var (
 		testrecord.WorstCase1000,
 		testrecord.WorstCase1000WithSTSamples,
 	}
-	UseV2 = true
+	versions = []struct {
+		name      string
+		enableST  bool
+	}{
+		{"V1", false},
+		{"V2", true},
+	}
 )
 
 /*
-	export bench=encode-v2 && go test ./tsdb/record/... \
+	go test ./tsdb/record/... \
 		-run '^$' -bench '^BenchmarkEncode_Samples' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
-		| tee ${bench}.txt
+		| tee encode.txt
+	benchstat -col /version encode.txt
 */
 func BenchmarkEncode_Samples(b *testing.B) {
-	for _, compr := range compressions {
-		for _, data := range dataCases {
-			b.Run(fmt.Sprintf("compr=%v/data=%v", compr, data), func(b *testing.B) {
-				var (
-					samples = testrecord.GenTestRefSamplesCase(b, data)
-					enc     = record.Encoder{EnableSTStorage: UseV2}
-					buf     []byte
-					cBuf    []byte
-				)
+	for _, ver := range versions {
+		for _, compr := range compressions {
+			for _, data := range dataCases {
+				b.Run(fmt.Sprintf("version=%s/compr=%v/data=%v", ver.name, compr, data), func(b *testing.B) {
+					var (
+						samples = testrecord.GenTestRefSamplesCase(b, data)
+						enc     = record.Encoder{EnableSTStorage: ver.enableST}
+						buf     []byte
+						cBuf    []byte
+					)
 
-				cEnc, err := compression.NewEncoder()
-				require.NoError(b, err)
+					cEnc, err := compression.NewEncoder()
+					require.NoError(b, err)
 
-				// Warm up.
-				buf = enc.Samples(samples, buf[:0])
-				cBuf, _, err = cEnc.Encode(compr, buf, cBuf[:0])
-				require.NoError(b, err)
-
-				b.ReportAllocs()
-				b.ResetTimer()
-				for b.Loop() {
+					// Warm up.
 					buf = enc.Samples(samples, buf[:0])
-					b.ReportMetric(float64(len(buf)), "B/rec")
+					cBuf, _, err = cEnc.Encode(compr, buf, cBuf[:0])
+					require.NoError(b, err)
 
-					cBuf, _, _ = cEnc.Encode(compr, buf, cBuf[:0])
-					b.ReportMetric(float64(len(cBuf)), "B/compressed-rec")
-				}
-			})
+					b.ReportAllocs()
+					b.ResetTimer()
+					for b.Loop() {
+						buf = enc.Samples(samples, buf[:0])
+						b.ReportMetric(float64(len(buf)), "B/rec")
+
+						cBuf, _, _ = cEnc.Encode(compr, buf, cBuf[:0])
+						b.ReportMetric(float64(len(cBuf)), "B/compressed-rec")
+					}
+				})
+			}
 		}
 	}
 }
 
 /*
-	export bench=decode-v2 && go test ./tsdb/record/... \
+	go test ./tsdb/record/... \
 		-run '^$' -bench '^BenchmarkDecode_Samples' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
-		| tee ${bench}.txt
+		| tee decode.txt
+	benchstat -col /version decode.txt
 */
 func BenchmarkDecode_Samples(b *testing.B) {
-	for _, compr := range compressions {
-		for _, data := range dataCases {
-			b.Run(fmt.Sprintf("compr=%v/data=%v", compr, data), func(b *testing.B) {
-				var (
-					samples    = testrecord.GenTestRefSamplesCase(b, data)
-					enc        = record.Encoder{EnableSTStorage: UseV2}
-					dec        record.Decoder
-					cDec       = compression.NewDecoder()
-					cBuf       []byte
-					samplesBuf []record.RefSample
-				)
+	for _, ver := range versions {
+		for _, compr := range compressions {
+			for _, data := range dataCases {
+				b.Run(fmt.Sprintf("version=%s/compr=%v/data=%v", ver.name, compr, data), func(b *testing.B) {
+					var (
+						samples    = testrecord.GenTestRefSamplesCase(b, data)
+						enc        = record.Encoder{EnableSTStorage: ver.enableST}
+						dec        record.Decoder
+						cDec       = compression.NewDecoder()
+						cBuf       []byte
+						samplesBuf []record.RefSample
+					)
 
-				buf := enc.Samples(samples, nil)
+					buf := enc.Samples(samples, nil)
 
-				cEnc, err := compression.NewEncoder()
-				require.NoError(b, err)
+					cEnc, err := compression.NewEncoder()
+					require.NoError(b, err)
 
-				buf, _, err = cEnc.Encode(compr, buf, nil)
-				require.NoError(b, err)
+					buf, _, err = cEnc.Encode(compr, buf, nil)
+					require.NoError(b, err)
 
-				// Warm up.
-				cBuf, err = cDec.Decode(compr, buf, cBuf[:0])
-				require.NoError(b, err)
-				samplesBuf, err = dec.Samples(cBuf, samplesBuf[:0])
-				require.NoError(b, err)
+					// Warm up.
+					cBuf, err = cDec.Decode(compr, buf, cBuf[:0])
+					require.NoError(b, err)
+					samplesBuf, err = dec.Samples(cBuf, samplesBuf[:0])
+					require.NoError(b, err)
 
-				b.ReportAllocs()
-				b.ResetTimer()
-				for b.Loop() {
-					cBuf, _ = cDec.Decode(compr, buf, cBuf[:0])
-					samplesBuf, _ = dec.Samples(cBuf, samplesBuf[:0])
-				}
-			})
+					b.ReportAllocs()
+					b.ResetTimer()
+					for b.Loop() {
+						cBuf, _ = cDec.Decode(compr, buf, cBuf[:0])
+						samplesBuf, _ = dec.Samples(cBuf, samplesBuf[:0])
+					}
+				})
+			}
 		}
 	}
 }
