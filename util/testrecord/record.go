@@ -17,6 +17,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 )
@@ -80,6 +81,95 @@ func GenTestRefSamplesCase(t testing.TB, c RefSamplesCase) []record.RefSample {
 	}
 	return ret
 }
+
+// GenExpHistograms generates n standard exponential histograms (schema=1)
+// with incrementing refs, same timestamp, and realistic bucket distributions.
+// If withST is true, all samples get a constant ST (simulating sameST marker path).
+func GenExpHistograms(n int, withST bool) []record.RefHistogramSample {
+	out := make([]record.RefHistogramSample, n)
+	for i := range out {
+		out[i] = record.RefHistogramSample{
+			Ref: chunks.HeadSeriesRef(i),
+			T:   1709000000 + int64(i)*15,
+			H: &histogram.Histogram{
+				Count:         uint64(10 + i%100),
+				ZeroCount:     uint64(1 + i%5),
+				ZeroThreshold: 0.001,
+				Sum:           float64(100+i) * 1.5,
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 4},
+					{Offset: 2, Length: 3},
+				},
+				PositiveBuckets: []int64{1, 2, -1, 0, 3, -2, 1},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 1, -1, 0},
+			},
+		}
+		if withST {
+			out[i].ST = 1709000000
+		}
+	}
+	return out
+}
+
+// GenCustomBucketHistograms generates n custom-bucket (NHCB) histograms (schema=-53)
+// with incrementing refs. If withST is true, all samples get a constant ST.
+func GenCustomBucketHistograms(n int, withST bool) []record.RefHistogramSample {
+	out := make([]record.RefHistogramSample, n)
+	for i := range out {
+		out[i] = record.RefHistogramSample{
+			Ref: chunks.HeadSeriesRef(i),
+			T:   1709000000 + int64(i)*15,
+			H: &histogram.Histogram{
+				Count:         uint64(10 + i%100),
+				Sum:           float64(100+i) * 1.5,
+				Schema:        histogram.CustomBucketsSchema,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 8},
+				},
+				PositiveBuckets: []int64{5, -2, 3, -1, 4, 0, -3, 2},
+				CustomValues:    []float64{0.001, 0.01, 0.1, 1, 10, 100, 1000},
+			},
+		}
+		if withST {
+			out[i].ST = 1709000000
+		}
+	}
+	return out
+}
+
+// GenFloatHistograms converts int histograms to float histograms, preserving ST.
+func GenFloatHistograms(src []record.RefHistogramSample) []record.RefFloatHistogramSample {
+	out := make([]record.RefFloatHistogramSample, len(src))
+	for i, h := range src {
+		out[i] = record.RefFloatHistogramSample{
+			Ref: h.Ref,
+			ST:  h.ST,
+			T:   h.T,
+			FH:  h.H.ToFloat(nil),
+		}
+	}
+	return out
+}
+
+// HistDataCase pairs a name with a histogram generator for benchmark tables.
+type HistDataCase struct {
+	Name string
+	Gen  func(n int, withST bool) []record.RefHistogramSample
+}
+
+// HistDataCases is the standard set of histogram data cases for benchmarks.
+var HistDataCases = []HistDataCase{
+	{"exp", GenExpHistograms},
+	{"nhcb", GenCustomBucketHistograms},
+}
+
+// HistCounts is the standard set of histogram counts for benchmarks.
+var HistCounts = []int{10, 100, 1000}
 
 func highVarianceInt(i int) int64 {
 	if i%2 == 0 {
