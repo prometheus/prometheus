@@ -440,6 +440,78 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	decGaugeFloatHistograms = append(decGaugeFloatHistograms, decCustomBucketsGaugeFloatHistograms...)
 	require.Equal(t, floatHistograms, decGaugeFloatHistograms)
+
+	// V2 gauge int-histogram round-trip.
+	t.Run("V2 gauge int-histogram", func(t *testing.T) {
+		enc = Encoder{EnableSTStorage: true}
+		gaugeHistsV2 := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 1000, H: histograms[0].H},
+			{Ref: 42, T: 5678, ST: 1000, H: histograms[1].H},
+			{Ref: 67, T: 5678, ST: 1000, H: histograms[2].H},
+		}
+		histSamplesV2, customBucketsV2 := enc.HistogramSamples(gaugeHistsV2, nil)
+		customBucketsHistSamplesV2 := enc.CustomBucketsHistogramSamples(customBucketsV2, nil)
+		decHistsV2, err := dec.HistogramSamples(histSamplesV2, nil)
+		require.NoError(t, err)
+		decCustomBucketsV2, err := dec.HistogramSamples(customBucketsHistSamplesV2, nil)
+		require.NoError(t, err)
+		decHistsV2 = append(decHistsV2, decCustomBucketsV2...)
+		require.Equal(t, gaugeHistsV2, decHistsV2)
+	})
+
+	// V2 gauge float-histogram round-trip.
+	t.Run("V2 gauge float-histogram", func(t *testing.T) {
+		gaugeHistsV2 := []RefHistogramSample{
+			{Ref: 56, T: 1234, ST: 1000, H: histograms[0].H},
+			{Ref: 42, T: 5678, ST: 1000, H: histograms[1].H},
+			{Ref: 67, T: 5678, ST: 1000, H: histograms[2].H},
+		}
+		gaugeFloatHistsV2 := make([]RefFloatHistogramSample, len(gaugeHistsV2))
+		for i, h := range gaugeHistsV2 {
+			gaugeFloatHistsV2[i] = RefFloatHistogramSample{
+				Ref: h.Ref,
+				T:   h.T,
+				ST:  h.ST,
+				FH:  h.H.ToFloat(nil),
+			}
+		}
+		floatHistSamplesV2, customBucketsFloatV2 := enc.FloatHistogramSamples(gaugeFloatHistsV2, nil)
+		customBucketsFloatHistSamplesV2 := enc.CustomBucketsFloatHistogramSamples(customBucketsFloatV2, nil)
+		decFloatHistsV2, err := dec.FloatHistogramSamples(floatHistSamplesV2, nil)
+		require.NoError(t, err)
+		decCustomBucketsFloatV2, err := dec.FloatHistogramSamples(customBucketsFloatHistSamplesV2, nil)
+		require.NoError(t, err)
+		decFloatHistsV2 = append(decFloatHistsV2, decCustomBucketsFloatV2...)
+		require.Equal(t, gaugeFloatHistsV2, decFloatHistsV2)
+	})
+
+	// Backward compat: V1-encoded histograms decode with ST=0.
+	t.Run("V1 backward compat int-histogram ST=0", func(t *testing.T) {
+		encV1 := Encoder{}
+		v1HistSamples, v1CustomBucketsHists := encV1.HistogramSamples(histograms, nil)
+		v1CustomBucketsHistSamples := encV1.CustomBucketsHistogramSamples(v1CustomBucketsHists, nil)
+		decV1Hists, err := dec.HistogramSamples(v1HistSamples, nil)
+		require.NoError(t, err)
+		decV1CustomBuckets, err := dec.HistogramSamples(v1CustomBucketsHistSamples, nil)
+		require.NoError(t, err)
+		for _, h := range append(decV1Hists, decV1CustomBuckets...) {
+			require.Equal(t, int64(0), h.ST, "V1 histogram records must decode with ST=0")
+		}
+	})
+
+	// Backward compat: V1-encoded float histograms decode with ST=0.
+	t.Run("V1 backward compat float-histogram ST=0", func(t *testing.T) {
+		encV1 := Encoder{}
+		v1FloatHistSamples, v1CustomBucketsFloatHists := encV1.FloatHistogramSamples(floatHistograms, nil)
+		v1CustomBucketsFloatHistSamples := encV1.CustomBucketsFloatHistogramSamples(v1CustomBucketsFloatHists, nil)
+		decV1FloatHists, err := dec.FloatHistogramSamples(v1FloatHistSamples, nil)
+		require.NoError(t, err)
+		decV1CustomBucketsFloatHists, err := dec.FloatHistogramSamples(v1CustomBucketsFloatHistSamples, nil)
+		require.NoError(t, err)
+		for _, h := range append(decV1FloatHists, decV1CustomBucketsFloatHists...) {
+			require.Equal(t, int64(0), h.ST, "V1 float histogram records must decode with ST=0")
+		}
+	})
 }
 
 func TestRecord_DecodeInvalidHistogramSchema(t *testing.T) {
