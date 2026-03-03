@@ -108,7 +108,7 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 		expected []*targetgroup.Group
 	}{
 		{
-			name: "NoPrivateIp",
+			name: "NoPrivateIpOrIpv6",
 			ec2Data: &ec2DataStore{
 				region: "region-noprivateip",
 				azToAZID: map[string]string{
@@ -351,12 +351,76 @@ func TestEC2DiscoveryRefresh(t *testing.T) {
 							"__meta_ec2_instance_type":          model.LabelValue("instance-type-ipv6"),
 							"__meta_ec2_ipv6_addresses":         model.LabelValue(",2001:db8:2::1:1,2001:db8:2::2:1,2001:db8:2::2:2,2001:db8:2::3:1,"),
 							"__meta_ec2_owner_id":               model.LabelValue(""),
+							"__meta_ec2_default_ipv6_address":   model.LabelValue("2001:db8:2::2:2"),
 							"__meta_ec2_primary_ipv6_addresses": model.LabelValue(",,2001:db8:2::2:2,,2001:db8:2::3:1,"),
 							"__meta_ec2_primary_subnet_id":      model.LabelValue("azid-2"),
 							"__meta_ec2_private_ip":             model.LabelValue("9.10.11.12"),
 							"__meta_ec2_region":                 model.LabelValue("region-ipv6"),
 							"__meta_ec2_subnet_id":              model.LabelValue(",azid-2,azid-1,azid-3,"),
 							"__meta_ec2_vpc_id":                 model.LabelValue("vpc-ipv6"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Ipv6-Only",
+			ec2Data: &ec2DataStore{
+				region: "region-ipv6-only",
+				azToAZID: map[string]string{
+					"azname-a": "azid-1",
+					"azname-b": "azid-2",
+					"azname-c": "azid-3",
+				},
+
+				instances: []ec2Types.Instance{
+					{
+						// just the minimum needed for the refresh work
+						ImageId:      strptr("ami-ipv6-only"),
+						InstanceId:   strptr("instance-id-ipv6-only"),
+						InstanceType: "instance-type-ipv6-only",
+						Placement:    &ec2Types.Placement{AvailabilityZone: strptr("azname-b")},
+						State:        &ec2Types.InstanceState{Name: "running"},
+						SubnetId:     strptr("azid-2"),
+						VpcId:        strptr("vpc-ipv6-only"),
+						// network interfaces
+						NetworkInterfaces: []ec2Types.InstanceNetworkInterface{
+							// interface without primary IPv6, index 0
+							{
+								Attachment: &ec2Types.InstanceNetworkInterfaceAttachment{
+									DeviceIndex: aws.Int32(0),
+								},
+								Ipv6Addresses: []ec2Types.InstanceIpv6Address{
+									{
+										Ipv6Address:   strptr("2001:db8:2::1:1"),
+										IsPrimaryIpv6: boolptr(false),
+									},
+								},
+								SubnetId: strptr("azid-2"),
+							},
+						},
+					},
+				},
+			},
+			expected: []*targetgroup.Group{
+				{
+					Source: "region-ipv6-only",
+					Targets: []model.LabelSet{
+						{
+							"__address__":                     model.LabelValue("[2001:db8:2::1:1]:4242"),
+							"__meta_ec2_ami":                  model.LabelValue("ami-ipv6-only"),
+							"__meta_ec2_availability_zone":    model.LabelValue("azname-b"),
+							"__meta_ec2_availability_zone_id": model.LabelValue("azid-2"),
+							"__meta_ec2_instance_id":          model.LabelValue("instance-id-ipv6-only"),
+							"__meta_ec2_instance_state":       model.LabelValue("running"),
+							"__meta_ec2_instance_type":        model.LabelValue("instance-type-ipv6-only"),
+							"__meta_ec2_ipv6_addresses":       model.LabelValue(",2001:db8:2::1:1,"),
+							"__meta_ec2_owner_id":             model.LabelValue(""),
+							"__meta_ec2_default_ipv6_address": model.LabelValue("2001:db8:2::1:1"),
+							"__meta_ec2_primary_subnet_id":    model.LabelValue("azid-2"),
+							"__meta_ec2_region":               model.LabelValue("region-ipv6-only"),
+							"__meta_ec2_subnet_id":            model.LabelValue(",azid-2,"),
+							"__meta_ec2_vpc_id":               model.LabelValue("vpc-ipv6-only"),
 						},
 					},
 				},
