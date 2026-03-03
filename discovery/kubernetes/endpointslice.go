@@ -526,6 +526,12 @@ func nonPrimaryIPFamilySlice(svc *apiv1.Service, eps v1.EndpointSlice) bool {
 	if len(svc.Spec.IPFamilies) == 0 {
 		return false
 	}
+
+	// NOTE: For ServiceSpec.IPFamilies:
+	// * A maximum of two values (dual-stack IPFamilies) are allowed.
+	// * The field is conditionally mutable: it allows for adding or
+	// removing a secondary IPFamily, but it does not allow changing the primary
+	// IPFamily of the service.
 	return string(eps.AddressType) != string(svc.Spec.IPFamilies[0])
 }
 
