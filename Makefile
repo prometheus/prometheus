@@ -17,6 +17,7 @@ DOCKERFILE_ARCH_EXCLUSIONS ?= Dockerfile.distroless:riscv64
 DOCKER_REGISTRY_ARCH_EXCLUSIONS ?= quay.io:riscv64
 
 UI_PATH = web/ui
+BUILD_UI ?= all
 UI_NODE_MODULES_PATH = $(UI_PATH)/node_modules
 REACT_APP_NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
 
@@ -63,7 +64,11 @@ ui-install:
 
 .PHONY: ui-build
 ui-build:
+ifeq ($(BUILD_UI),mantine)
+	cd $(UI_PATH) && CI="" npm run build:mantine-ui
+else
 	cd $(UI_PATH) && CI="" npm run build
+endif
 
 .PHONY: ui-build-module
 ui-build-module:
