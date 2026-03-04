@@ -2284,6 +2284,9 @@ Available meta labels:
 * `__meta_kubernetes_pod_uid`: The UID of the pod object.
 * `__meta_kubernetes_pod_controller_kind`: Object kind of the pod controller.
 * `__meta_kubernetes_pod_controller_name`: Name of the pod controller.
+* `__meta_kubernetes_pod_deployment_name`: Name of the deployment the pod belongs to. Requires `attach_metadata: {deployment: true}`.
+* `__meta_kubernetes_pod_cronjob_name`: Name of the cronjob the pod belongs to. Requires `attach_metadata: {cronjob: true}`.
+* `__meta_kubernetes_pod_job_name`: Name of the job the pod belongs to. Requires `attach_metadata: {job: true}`.
 
 #### `endpoints`
 
@@ -2420,6 +2423,18 @@ attach_metadata:
 # Attaches namespace metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice, service, ingress.
 # When set to true, Prometheus must have permissions to list/watch Namespaces.
   [ namespace: <boolean> | default = false ]
+# Attaches deployment metadata to discovered pod targets. Valid for role: pod.
+# When set to true, Prometheus must have permissions to list/watch ReplicaSets.
+# Enables the __meta_kubernetes_pod_deployment_name label.
+  [ deployment: <boolean> | default = false ]
+# Attaches job metadata to discovered pod targets. Valid for role: pod.
+# When set to true, Prometheus must have permissions to list/watch Jobs.
+# Enables the __meta_kubernetes_pod_job_name label.
+  [ job: <boolean> | default = false ]
+# Attaches cronjob metadata to discovered pod targets. Valid for role: pod.
+# When set to true, Prometheus must have permissions to list/watch Jobs.
+# Enables the __meta_kubernetes_pod_cronjob_name label.
+  [ cronjob: <boolean> | default = false ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
