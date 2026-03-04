@@ -190,16 +190,29 @@ func (m *MemSeriesMetadata) ScopeCount() int { return m.ScopeStore().Len() }
 // Close is a no-op for in-memory storage.
 func (*MemSeriesMetadata) Close() error { return nil }
 
-// SetIndexedResourceAttrs configures which additional descriptive resource
-// attribute names are included in the inverted index. Identifying attributes
+// SetIndexedResourceAttrs replaces the set of additional descriptive resource
+// attribute names included in the inverted index. Identifying attributes
 // are always indexed regardless of this setting.
 // Thread-safe: uses the same mutex as index operations.
+// The caller must not mutate the map after passing it — the store takes
+// ownership. To change the set, call SetIndexedResourceAttrs with a new map;
+// previously returned references from GetIndexedResourceAttrs remain valid
+// and unchanged (replace-not-mutate semantics).
 // Note: changing the indexed set does NOT retroactively rebuild the index —
 // it only affects future updates. The caller should rebuild if needed.
 func (m *MemSeriesMetadata) SetIndexedResourceAttrs(attrs map[string]struct{}) {
 	m.indexedResourceAttrsMu.Lock()
 	defer m.indexedResourceAttrsMu.Unlock()
 	m.indexedResourceAttrs = attrs
+}
+
+// GetIndexedResourceAttrs returns the current set of additional descriptive
+// resource attribute names included in the inverted index.
+// The returned map must not be modified by the caller.
+func (m *MemSeriesMetadata) GetIndexedResourceAttrs() map[string]struct{} {
+	m.indexedResourceAttrsMu.RLock()
+	defer m.indexedResourceAttrsMu.RUnlock()
+	return m.indexedResourceAttrs
 }
 
 // UniqueResourceAttrNames returns a snapshot of all resource attribute names
@@ -965,6 +978,9 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 	for _, kind := range AllKinds() {
 		state := kindStates[kind.ID()]
 		err := mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
+			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
+				return nil
+			}
 			kind.IterateVersions(versioned, func(version any, minTime, maxTime int64) {
 				contentHash := kind.ContentHash(version)
 				if _, exists := state.contentTable[contentHash]; !exists {
@@ -1026,7 +1042,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 
 	// Optionally build resource attribute inverted index rows.
 	if opts.EnableInvertedIndex {
-		indexRows := buildResourceAttrIndexRows(mr, opts.RefResolver, opts.IndexedResourceAttrs)
+		indexRows := buildResourceAttrIndexRows(mr, opts.RefResolver, opts.IndexedResourceAttrs, opts.HashFilter)
 		if len(indexRows) > 0 {
 			sortMetadataRows(indexRows)
 			metadataCounts["resource_attr_index_count"] = len(indexRows)
@@ -1177,16 +1193,21 @@ func buildResourceTableRow(contentHash uint64, rv *ResourceVersion) metadataRow 
 // resource versions. Each unique (key, value, seriesRef) tuple produces one row.
 // Identifying attributes are always indexed. Descriptive attributes are only
 // indexed if their key is in indexedResourceAttrs.
-// Uses a numeric hash pair for dedup instead of string keys to reduce memory.
-func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (uint64, bool), indexedResourceAttrs map[string]struct{}) []metadataRow {
-	type dedupKey struct {
-		contentHash uint64 // attrKeyValueHash(k, v)
-		seriesRef   uint64
-	}
-	seen := make(map[dedupKey]struct{})
+//
+// Uses a per-series seen set (keyed by contentHash only, since seriesRef is
+// constant within a single callback invocation) instead of a global seen map,
+// so memory scales with max-attrs-per-series rather than total-attrs×series.
+func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (uint64, bool), indexedResourceAttrs map[string]struct{}, hashFilter func(uint64) bool) []metadataRow {
 	var rows []metadataRow
+	// Per-series dedup: seriesRef is constant within a callback invocation,
+	// so we only key by the attr hash. Hoisted outside the closure and
+	// clear()ed per series to avoid per-callback map allocation.
+	seen := make(map[uint64]struct{})
 
 	_ = mr.IterVersionedResources(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
+		if hashFilter != nil && !hashFilter(labelsHash) {
+			return nil
+		}
 		seriesRef := labelsHash
 		if refResolver != nil {
 			ref, ok := refResolver(labelsHash)
@@ -1196,13 +1217,14 @@ func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (
 			seriesRef = ref
 		}
 
+		clear(seen)
+
 		addEntry := func(k, v string) {
 			ch := attrKeyValueHash(k, v)
-			dk := dedupKey{contentHash: ch, seriesRef: seriesRef}
-			if _, exists := seen[dk]; exists {
+			if _, exists := seen[ch]; exists {
 				return
 			}
-			seen[dk] = struct{}{}
+			seen[ch] = struct{}{}
 			rows = append(rows, metadataRow{
 				Namespace:   NamespaceResourceAttrIndex,
 				SeriesRef:   seriesRef,
