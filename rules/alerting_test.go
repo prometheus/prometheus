@@ -83,7 +83,7 @@ func TestAlertingRuleState(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		rule := NewAlertingRule(test.name, nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
+		rule := NewAlertingRule(test.name, nil, 0, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 		rule.active = test.active
 		// Set evaluation timestamp to simulate that the rule has been evaluated
 		rule.SetEvaluationTimestamp(time.Now())
@@ -122,6 +122,7 @@ func TestAlertingRuleTemplateWithHistogram(t *testing.T) {
 		"HistogramAsValue",
 		expr,
 		time.Minute,
+		0,
 		0,
 		labels.FromStrings("histogram", "{{ $value }}"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
@@ -166,6 +167,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		"HTTPRequestRateLow",
 		expr,
 		time.Minute,
+		0,
 		0,
 		// Basing alerting rule labels off of a value that can change is a very bad idea.
 		// If an alert is going back and forth between two label values it will never fire.
@@ -272,6 +274,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		expr,
 		time.Minute,
 		0,
+		0,
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -282,6 +285,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		"ExternalLabelExists",
 		expr,
 		time.Minute,
+		0,
 		0,
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
 		labels.EmptyLabels(),
@@ -366,6 +370,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		expr,
 		time.Minute,
 		0,
+		0,
 		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -376,6 +381,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		"ExternalURLExists",
 		expr,
 		time.Minute,
+		0,
 		0,
 		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
 		labels.EmptyLabels(),
@@ -460,6 +466,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		expr,
 		time.Minute,
 		0,
+		0,
 		labels.FromStrings("empty_label", ""),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -515,6 +522,7 @@ func TestAlertingRuleQueryInTemplate(t *testing.T) {
 		expr,
 		time.Minute,
 		0,
+		0,
 		labels.FromStrings("label", "value"),
 		labels.FromStrings("templated_label", `{{- with "sort(sum(http_requests) by (instance))" | query -}}
 {{- range $i,$v := . -}}
@@ -561,7 +569,7 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 
 func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 	b.ReportAllocs()
-	rule := NewAlertingRule("bench", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
+	rule := NewAlertingRule("bench", nil, 0, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 	done := make(chan struct{})
 	go func() {
 		for b.Loop() {
@@ -597,6 +605,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		"foo",
 		expr,
 		time.Minute,
+		0,
 		0,
 		labels.FromStrings("test", "test"),
 		labels.EmptyLabels(),
@@ -640,6 +649,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 		"foo",
 		expr,
 		time.Minute,
+		0,
 		0,
 		labels.FromStrings("test", "test"),
 		labels.EmptyLabels(),
@@ -716,6 +726,7 @@ func TestQueryForStateSeries(t *testing.T) {
 			nil,
 			time.Minute,
 			0,
+			0,
 			labels.FromStrings("severity", "critical"),
 			labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 		)
@@ -747,6 +758,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 		"TestRule",
 		nil,
 		time.Minute,
+		0,
 		0,
 		labels.FromStrings("severity", "critical"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
@@ -793,6 +805,138 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 	testutil.RequireEqual(t, labels.FromStrings("a1", "1"), rule.active[h].Labels)
 }
 
+func TestMaxFiringFor(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75x9
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	expr, err := parser.ParseExpr(`http_requests > 50`)
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		"HTTPRequestRateHigh",
+		expr,
+		time.Minute,
+		3*time.Minute,
+		0,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	results := []promql.Vector{
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "pending",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 1,
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "firing",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 1,
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "firing",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 1,
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "firing",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 1,
+			},
+		},
+		// From now on the alert should be expired.
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "expired",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 1,
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "expired",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 1,
+			},
+		},
+		{
+			promql.Sample{
+				Metric: labels.FromStrings(
+					"__name__", "ALERTS",
+					"alertname", "HTTPRequestRateHigh",
+					"alertstate", "expired",
+					"instance", "0",
+					"job", "app-server",
+				),
+				F: 1,
+			},
+		},
+	}
+
+	ng := testEngine(t)
+	baseTime := time.Unix(0, 0)
+	for i, result := range results {
+		t.Logf("case %d", i)
+		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
+		result[0].T = timestamp.FromTime(evalTime)
+		res, err := rule.Eval(context.TODO(), 0, evalTime, EngineQueryFunc(ng, storage), nil, 0)
+		require.NoError(t, err)
+
+		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
+		for _, smpl := range res {
+			smplName := smpl.Metric.Get("__name__")
+			if smplName == "ALERTS" {
+				filteredRes = append(filteredRes, smpl)
+			} else {
+				// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+				require.Equal(t, "ALERTS_FOR_STATE", smplName)
+			}
+		}
+
+		testutil.RequireEqual(t, result, filteredRes)
+	}
+}
+
 func TestKeepFiringFor(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 		load 1m
@@ -806,6 +950,7 @@ func TestKeepFiringFor(t *testing.T) {
 		"HTTPRequestRateHigh",
 		expr,
 		time.Minute,
+		0,
 		time.Minute,
 		labels.EmptyLabels(),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
@@ -916,6 +1061,7 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 		"HTTPRequestRateHigh",
 		expr,
 		time.Minute,
+		0,
 		time.Minute,
 		labels.EmptyLabels(),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
@@ -976,6 +1122,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		name,
 		expr,
 		time.Second,
+		0,
 		time.Minute,
 		lbs,
 		labels.EmptyLabels(),
@@ -1000,6 +1147,7 @@ func TestAlertingRule_SetDependentRules(t *testing.T) {
 		"test",
 		&parser.NumberLiteral{Val: 1},
 		time.Minute,
+		0,
 		0,
 		labels.FromStrings("test", "test"),
 		labels.EmptyLabels(),
@@ -1026,6 +1174,7 @@ func TestAlertingRule_SetDependencyRules(t *testing.T) {
 		&parser.NumberLiteral{Val: 1},
 		time.Minute,
 		0,
+		0,
 		labels.FromStrings("test", "test"),
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
@@ -1048,6 +1197,7 @@ func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
 		"TestRule",
 		nil,
 		time.Minute,
+		0,
 		0,
 		labels.FromStrings("severity", "critical"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,

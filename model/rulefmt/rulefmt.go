@@ -181,6 +181,7 @@ type Rule struct {
 	Alert         string            `yaml:"alert,omitempty"`
 	Expr          string            `yaml:"expr"`
 	For           model.Duration    `yaml:"for,omitempty"`
+	MaxFiringFor  model.Duration    `yaml:"max_firing_for,omitempty"`
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
 	Labels        map[string]string `yaml:"labels,omitempty"`
 	Annotations   map[string]string `yaml:"annotations,omitempty"`
@@ -192,6 +193,7 @@ type RuleNode struct {
 	Alert         yaml.Node         `yaml:"alert,omitempty"`
 	Expr          yaml.Node         `yaml:"expr"`
 	For           model.Duration    `yaml:"for,omitempty"`
+	MaxFiringFor  model.Duration    `yaml:"max_firing_for,omitempty"`
 	KeepFiringFor model.Duration    `yaml:"keep_firing_for,omitempty"`
 	Labels        map[string]string `yaml:"labels,omitempty"`
 	Annotations   map[string]string `yaml:"annotations,omitempty"`
@@ -235,6 +237,12 @@ func (r *Rule) Validate(node RuleNode, nameValidationScheme model.ValidationSche
 		if r.For != 0 {
 			nodes = append(nodes, WrappedError{
 				err:  errors.New("invalid field 'for' in recording rule"),
+				node: &node.Record,
+			})
+		}
+		if r.MaxFiringFor != 0 {
+			nodes = append(nodes, WrappedError{
+				err:  errors.New("invalid field 'max_firing_for' in recording rule"),
 				node: &node.Record,
 			})
 		}

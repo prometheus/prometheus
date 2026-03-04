@@ -71,6 +71,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		0,
+		0,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
 		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
@@ -212,6 +213,7 @@ func TestForStateAddSamples(t *testing.T) {
 				"HTTPRequestRateLow",
 				expr,
 				time.Minute,
+				0,
 				0,
 				labels.FromStrings("severity", "{{\"c\"}}ritical"),
 				labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
@@ -388,6 +390,7 @@ func TestForStateRestore(t *testing.T) {
 				expr,
 				alertForDuration,
 				0,
+				0,
 				labels.FromStrings("severity", "critical"),
 				labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 			)
@@ -466,6 +469,7 @@ func TestForStateRestore(t *testing.T) {
 						"HTTPRequestRateLow",
 						expr,
 						alertForDuration,
+						0,
 						0,
 						labels.FromStrings("severity", "critical"),
 						labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
@@ -669,13 +673,13 @@ groups:
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert", nil, 0, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
 			NewRecordingRule("rule2", nil, labels.EmptyLabels()),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3")),
-			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert2", nil, 0, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{},
@@ -694,10 +698,10 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v0")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
 			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
-			NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert", nil, 0, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
-			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v0"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
-			NewAlertingRule("alert2", nil, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert2", nil, 0, 0, 0, labels.FromStrings("l2", "v0"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert2", nil, 0, 0, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 			NewRecordingRule("rule4", nil, labels.EmptyLabels()),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
@@ -931,7 +935,7 @@ func TestNotify(t *testing.T) {
 
 	expr, err := testParser.ParseExpr("a > 1")
 	require.NoError(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 	group := NewGroup(GroupOptions{
 		Name:          "alert",
 		Interval:      time.Second,
@@ -1252,7 +1256,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			group: &Group{
 				name: "HasAlertingRule",
 				rules: []Rule{
-					NewAlertingRule("alert", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+					NewAlertingRule("alert", nil, 0, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 					NewRecordingRule("record", nil, labels.EmptyLabels()),
 				},
 			},
@@ -1588,7 +1592,7 @@ func TestDependencyMap(t *testing.T) {
 
 	expr, err = testParser.ParseExpr("user:requests:rate1m <= 0")
 	require.NoError(t, err)
-	rule2 := NewAlertingRule("ZeroRequests", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+	rule2 := NewAlertingRule("ZeroRequests", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 
 	expr, err = testParser.ParseExpr("sum by (user) (rate(requests[5m]))")
 	require.NoError(t, err)
@@ -1774,19 +1778,19 @@ func TestDependenciesEdgeCases(t *testing.T) {
 			t.Run("rule querying alerts meta-metric with alertname", func(t *testing.T) {
 				expr, err := testParser.ParseExpr("sum(requests) > 0")
 				require.NoError(t, err)
-				rule1 := NewAlertingRule("first", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+				rule1 := NewAlertingRule("first", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 
 				expr, err = testParser.ParseExpr(fmt.Sprintf(`sum(%s{alertname="test"}) > 0`, metaMetric))
 				require.NoError(t, err)
-				rule2 := NewAlertingRule("second", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+				rule2 := NewAlertingRule("second", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 
 				expr, err = testParser.ParseExpr(fmt.Sprintf(`sum(%s{alertname=~"first.*"}) > 0`, metaMetric))
 				require.NoError(t, err)
-				rule3 := NewAlertingRule("third", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+				rule3 := NewAlertingRule("third", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 
 				expr, err = testParser.ParseExpr(fmt.Sprintf(`sum(%s{alertname!="first"}) > 0`, metaMetric))
 				require.NoError(t, err)
-				rule4 := NewAlertingRule("fourth", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+				rule4 := NewAlertingRule("fourth", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 
 				expr, err = testParser.ParseExpr("sum(failures)")
 				require.NoError(t, err)
@@ -1794,7 +1798,7 @@ func TestDependenciesEdgeCases(t *testing.T) {
 
 				expr, err = testParser.ParseExpr(fmt.Sprintf(`fifth > 0 and sum(%s{alertname="fourth"}) > 0`, metaMetric))
 				require.NoError(t, err)
-				rule6 := NewAlertingRule("sixth", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+				rule6 := NewAlertingRule("sixth", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 
 				group := NewGroup(GroupOptions{
 					Name:     "rule_group",
@@ -1837,11 +1841,11 @@ func TestDependenciesEdgeCases(t *testing.T) {
 
 				expr, err = testParser.ParseExpr(`sum(requests) > 0`)
 				require.NoError(t, err)
-				rule2 := NewAlertingRule("second", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+				rule2 := NewAlertingRule("second", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 
 				expr, err = testParser.ParseExpr(fmt.Sprintf(`sum(%s) > 0`, metaMetric))
 				require.NoError(t, err)
-				rule3 := NewAlertingRule("third", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+				rule3 := NewAlertingRule("third", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 
 				expr, err = testParser.ParseExpr("sum(failures)")
 				require.NoError(t, err)
@@ -1849,7 +1853,7 @@ func TestDependenciesEdgeCases(t *testing.T) {
 
 				expr, err = testParser.ParseExpr(fmt.Sprintf(`fourth > 0 and sum(%s) > 0`, metaMetric))
 				require.NoError(t, err)
-				rule5 := NewAlertingRule("fifth", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+				rule5 := NewAlertingRule("fifth", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 
 				group := NewGroup(GroupOptions{
 					Name:     "rule_group",
@@ -1926,7 +1930,7 @@ func TestDependentRulesWithNonMetricExpression(t *testing.T) {
 
 	expr, err = testParser.ParseExpr("user:requests:rate1m <= 0")
 	require.NoError(t, err)
-	rule2 := NewAlertingRule("ZeroRequests", expr, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
+	rule2 := NewAlertingRule("ZeroRequests", expr, 0, 0, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, promslog.NewNopLogger())
 
 	expr, err = testParser.ParseExpr("3")
 	require.NoError(t, err)

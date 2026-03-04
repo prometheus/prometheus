@@ -94,6 +94,7 @@ func TestNewRuleDetail(t *testing.T) {
 			&parser.NumberLiteral{Val: 1},
 			time.Minute,
 			0,
+			0,
 			labels.FromStrings("test", "test"),
 			labels.EmptyLabels(),
 			labels.EmptyLabels(),
