@@ -83,8 +83,6 @@ const formatLabels = (labels: { [key: string]: string }): string => `
 
 const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
   let over: HTMLDivElement;
-  let boundingLeft: number;
-  let boundingTop: number;
   let selectedSeriesIdx: number | null = null;
 
   const overlay = document.createElement("div");
@@ -110,12 +108,6 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
       // When the chart is destroyed, remove the overlay from the DOM.
       destroy: () => {
         overlay.remove();
-      },
-      // When the chart is resized, store the bounding box of the overlay.
-      setSize: () => {
-        const bbox = over.getBoundingClientRect();
-        boundingLeft = bbox.left;
-        boundingTop = bbox.top;
       },
       // When a series is selected by hovering close to it, store the
       // index of the selected series, so we can update the hover tooltip
@@ -150,8 +142,12 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
         }
         const color = series.stroke(u, selectedSeriesIdx);
 
-        const x = left + boundingLeft;
-        const y = top + boundingTop;
+        // Get the bounding rect fresh on every cursor move to account for
+        // page scrolling, which would otherwise cause a growing Y offset
+        // for charts further down the page.
+        const bbox = over.getBoundingClientRect();
+        const x = left + bbox.left;
+        const y = top + bbox.top;
 
         overlay.innerHTML = `
             <div class="date">${formatTimestamp(ts, useLocalTime)}</div>
