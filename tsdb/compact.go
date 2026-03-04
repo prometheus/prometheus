@@ -881,6 +881,10 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 			ref, ok := labelsHashToRef[labelsHash]
 			return ref, ok
 		},
+		HashFilter: func(labelsHash uint64) bool {
+			_, ok := labelsHashToRef[labelsHash]
+			return ok
+		},
 		WriteStats: writeStats,
 	}
 	if _, err := seriesmetadata.WriteFileWithOptions(c.logger, tmp, output, wopts); err != nil {
