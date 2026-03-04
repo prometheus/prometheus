@@ -1341,3 +1341,167 @@ func TestInvertedIndexDisabled(t *testing.T) {
 	require.Len(t, hashes, 1)
 	require.Contains(t, hashes, uint64(100))
 }
+
+func TestGetIndexedResourceAttrs(t *testing.T) {
+	mem := NewMemSeriesMetadata()
+
+	// Initially nil.
+	require.Nil(t, mem.GetIndexedResourceAttrs())
+
+	// Set and get back.
+	attrs1 := map[string]struct{}{"host.name": {}, "cloud.region": {}}
+	mem.SetIndexedResourceAttrs(attrs1)
+	got := mem.GetIndexedResourceAttrs()
+	require.Equal(t, attrs1, got)
+
+	// Replace with a new set — old reference must be unchanged (immutability).
+	attrs2 := map[string]struct{}{"deployment.env": {}}
+	mem.SetIndexedResourceAttrs(attrs2)
+
+	require.Equal(t, attrs2, mem.GetIndexedResourceAttrs())
+	// The previously returned map must still reflect the original set.
+	require.Equal(t, map[string]struct{}{"host.name": {}, "cloud.region": {}}, got)
+}
+
+func TestWriteFileWithOptions_HashFilter(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	// Add 4 series with resources.
+	for i := uint64(1); i <= 4; i++ {
+		rv := NewResourceVersion(
+			map[string]string{"service.name": fmt.Sprintf("svc-%d", i)},
+			map[string]string{"env": "prod"},
+			nil, 1000, 5000,
+		)
+		mem.SetResource(i, rv)
+	}
+
+	// Write with HashFilter keeping only series 2 and 4.
+	allowed := map[uint64]bool{2: true, 4: true}
+	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{
+		HashFilter: func(labelsHash uint64) bool {
+			return allowed[labelsHash]
+		},
+	})
+	require.NoError(t, err)
+
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	require.Equal(t, uint64(2), reader.TotalResources())
+
+	_, found := reader.GetResource(1)
+	require.False(t, found)
+	r, found := reader.GetResource(2)
+	require.True(t, found)
+	require.Equal(t, "svc-2", r.Identifying["service.name"])
+	_, found = reader.GetResource(3)
+	require.False(t, found)
+	r, found = reader.GetResource(4)
+	require.True(t, found)
+	require.Equal(t, "svc-4", r.Identifying["service.name"])
+}
+
+func TestWriteFileWithOptions_HashFilterWithInvertedIndex(t *testing.T) {
+	tmpdir := t.TempDir()
+
+	mem := NewMemSeriesMetadata()
+
+	for i := uint64(1); i <= 4; i++ {
+		rv := NewResourceVersion(
+			map[string]string{"service.name": fmt.Sprintf("svc-%d", i)},
+			map[string]string{"env": "prod"},
+			nil, 1000, 5000,
+		)
+		mem.SetResource(i, rv)
+	}
+
+	allowed := map[uint64]bool{1: true, 3: true}
+	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{
+		EnableInvertedIndex: true,
+		HashFilter: func(labelsHash uint64) bool {
+			return allowed[labelsHash]
+		},
+	})
+	require.NoError(t, err)
+
+	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
+	require.NoError(t, err)
+	defer reader.Close()
+
+	require.Equal(t, uint64(2), reader.TotalResources())
+
+	// Inverted index should only have the filtered series.
+	hashes := reader.LookupResourceAttr("service.name", "svc-1")
+	require.Len(t, hashes, 1)
+	require.Contains(t, hashes, uint64(1))
+
+	hashes = reader.LookupResourceAttr("service.name", "svc-2")
+	require.Empty(t, hashes)
+
+	// env=prod should match only series 1 and 3.
+	hashes = reader.LookupResourceAttr("env", "prod")
+	require.Empty(t, hashes) // env is descriptive, not in IndexedResourceAttrs
+}
+
+func TestBuildResourceAttrIndexStreaming(t *testing.T) {
+	// Verify per-series dedup produces correct output for multi-version,
+	// multi-series input with overlapping attribute values.
+	mem := NewMemSeriesMetadata()
+
+	// Series 100: two versions with same identifying attrs but different
+	// descriptive attrs across versions.
+	rv1 := NewResourceVersion(
+		map[string]string{"service.name": "svc-a"},
+		map[string]string{"host.name": "host-old"},
+		nil, 1000, 2000,
+	)
+	rv2 := NewResourceVersion(
+		map[string]string{"service.name": "svc-a"},
+		map[string]string{"host.name": "host-new"},
+		nil, 2001, 3000,
+	)
+	vr := NewVersionedResource(rv1)
+	vr.Versions = append(vr.Versions, rv2)
+	mem.SetVersionedResource(100, vr)
+
+	// Series 200: shares service.name with series 100 (different series, same
+	// attr value — must not be deduped across series).
+	rv3 := NewResourceVersion(
+		map[string]string{"service.name": "svc-a"},
+		map[string]string{"host.name": "host-new"},
+		nil, 1000, 5000,
+	)
+	mem.SetVersionedResource(200, NewVersionedResource(rv3))
+
+	indexedAttrs := map[string]struct{}{"host.name": {}}
+
+	rows := buildResourceAttrIndexRows(mem, nil, indexedAttrs, nil)
+
+	// Collect (attrKey, attrValue, seriesRef) tuples.
+	type tuple struct {
+		key, value string
+		seriesRef  uint64
+	}
+	var got []tuple
+	for _, row := range rows {
+		got = append(got, tuple{row.AttrKey, row.AttrValue, row.SeriesRef})
+	}
+
+	// Series 100: service.name=svc-a (once, deduped across versions),
+	//             host.name=host-old, host.name=host-new
+	// Series 200: service.name=svc-a (again, different series),
+	//             host.name=host-new (again, different series)
+	expected := []tuple{
+		{"service.name", "svc-a", 100},
+		{"host.name", "host-old", 100},
+		{"host.name", "host-new", 100},
+		{"service.name", "svc-a", 200},
+		{"host.name", "host-new", 200},
+	}
+
+	require.ElementsMatch(t, expected, got)
+}
