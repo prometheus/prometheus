@@ -2419,6 +2419,18 @@ var expectedErrors = []struct {
 		errMsg:   `remote write queue max_samples_per_send must be positive`,
 	},
 	{
+		filename: "remote_write_queue_max_shards_zero.bad.yml",
+		errMsg:   `remote write queue max_shards must be positive`,
+	},
+	{
+		filename: "remote_write_queue_min_shards_zero.bad.yml",
+		errMsg:   `remote write queue min_shards must be positive`,
+	},
+	{
+		filename: "remote_write_queue_capacity_zero.bad.yml",
+		errMsg:   `remote write queue capacity must be positive`,
+	},
+	{
 		filename: "remote_write_queue_min_shards_greater_than_max.bad.yml",
 		errMsg:   `remote write queue min_shards must not be greater than max_shards`,
 	},
