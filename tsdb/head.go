@@ -2145,6 +2145,16 @@ func (h *Head) SetIndexedResourceAttrs(attrs map[string]struct{}) {
 	}
 }
 
+// GetIndexedResourceAttrs returns the current set of additional descriptive
+// resource attribute names included in the inverted index. Returns nil if
+// native metadata is not enabled.
+func (h *Head) GetIndexedResourceAttrs() map[string]struct{} {
+	if h.seriesMeta != nil {
+		return h.seriesMeta.GetIndexedResourceAttrs()
+	}
+	return nil
+}
+
 // NumSeries returns the number of series tracked in the head.
 func (h *Head) NumSeries() uint64 {
 	return h.numSeries.Load()
