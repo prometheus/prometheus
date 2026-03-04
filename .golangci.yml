@@ -125,7 +125,6 @@ linters:
         - commentedOutCode
         - deferInLoop
         - docStub
-        - emptyStringTest
         - equalFold
         - evalOrder
         - exposedSyncMutex
