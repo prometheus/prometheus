@@ -64,6 +64,13 @@ type WriterOptions struct {
 	// a block index).
 	RefResolver func(labelsHash uint64) (seriesRef uint64, ok bool)
 
+	// HashFilter, when non-nil, is called for each labelsHash during write.
+	// Entries where the filter returns false are skipped entirely — no table
+	// rows, mapping rows, or inverted index rows are emitted for that series.
+	// This is more efficient than RefResolver returning !ok because it avoids
+	// version iteration and content hash computation for filtered-out entries.
+	HashFilter func(labelsHash uint64) bool
+
 	// WriteStats is populated after a successful write with namespace row
 	// counts from the written Parquet file. This allows the caller to
 	// capture stats (e.g. for BlockMeta) without parsing the footer.
