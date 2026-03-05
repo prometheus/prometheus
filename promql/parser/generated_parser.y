@@ -139,8 +139,13 @@ BOOL
 BY
 GROUP_LEFT
 GROUP_RIGHT
+FILL
+FILL_LEFT
+FILL_RIGHT
 IGNORING
 OFFSET
+SMOOTHED
+ANCHORED
 ON
 WITHOUT
 %token keywordsEnd
@@ -150,6 +155,8 @@ WITHOUT
 %token <item>
 START
 END
+STEP
+RANGE
 %token preprocessorEnd
 
 // Counter reset hints.
@@ -174,7 +181,7 @@ START_METRIC_SELECTOR
 // Type definitions for grammar rules.
 %type <matchers> label_match_list
 %type <matcher> label_matcher
-%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier counter_reset_hint
+%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors string_identifier counter_reset_hint min_max
 %type <labels> label_set metric
 %type <lblList> label_set_list
 %type <label> label_set_item
@@ -186,7 +193,7 @@ START_METRIC_SELECTOR
 %type <int> int
 %type <uint> uint
 %type <float> number series_value signed_number signed_or_unsigned_number
-%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_duration_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr offset_duration_expr
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier fill_modifiers binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers fill_value label_matchers matrix_selector number_duration_literal offset_expr anchored_expr smoothed_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector duration_expr paren_duration_expr positive_duration_expr offset_duration_expr
 
 %start start
 
@@ -229,6 +236,8 @@ expr            :
                 | matrix_selector
                 | number_duration_literal
                 | offset_expr
+                | anchored_expr
+                | smoothed_expr
                 | paren_expr
                 | string_literal
                 | subquery_expr
@@ -243,29 +252,15 @@ expr            :
  */
 
 aggregate_expr  : aggregate_op aggregate_modifier function_call_body
-                        {
-                        // Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
-                        // like 'sum (some_metric) by test'
-                        if len(yylex.(*parser).closingParens) > 1 {
-                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
-                        }
-                        $$ = yylex.(*parser).newAggregateExpr($1, $2, $3)
-                        }
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $2, $3, false) }
                 | aggregate_op function_call_body aggregate_modifier
-                        {
-                        // Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
-                        // like 'sum by test (some_metric)'
-                        if len(yylex.(*parser).closingParens) > 1 {
-                                yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
-                        }
-                        $$ = yylex.(*parser).newAggregateExpr($1, $3, $2)
-                        }
+                        { $$ = yylex.(*parser).newAggregateExpr($1, $3, $2, false) }
                 | aggregate_op function_call_body
-                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
+                        { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2, true) }
                 | aggregate_op error
                         {
                         yylex.(*parser).unexpected("aggregation","");
-                        $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, Expressions{})
+                        $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, Expressions{}, false)
                         }
                 ;
 
@@ -310,7 +305,7 @@ binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinar
 
 // Using left recursion for the modifier rules, helps to keep the parser stack small and
 // reduces allocations.
-bin_modifier    : group_modifiers;
+bin_modifier    : fill_modifiers;
 
 bool_modifier   : /* empty */
                         { $$ = &BinaryExpr{
@@ -354,6 +349,47 @@ group_modifiers: bool_modifier /* empty */
                         }
                 ;
 
+fill_modifiers: group_modifiers /* empty */
+                /* Only fill() */
+                | group_modifiers FILL fill_value
+                        {
+                        $$ = $1
+                        fill := $3.(*NumberLiteral).Val
+                        $$.(*BinaryExpr).VectorMatching.FillValues.LHS = &fill
+                        $$.(*BinaryExpr).VectorMatching.FillValues.RHS = &fill
+                        }
+                /* Only fill_left() */
+                | group_modifiers FILL_LEFT fill_value
+                        {
+                        $$ = $1
+                        fill := $3.(*NumberLiteral).Val
+                        $$.(*BinaryExpr).VectorMatching.FillValues.LHS = &fill
+                        }
+                /* Only fill_right() */
+                | group_modifiers FILL_RIGHT fill_value
+                        {
+                        $$ = $1
+                        fill := $3.(*NumberLiteral).Val
+                        $$.(*BinaryExpr).VectorMatching.FillValues.RHS = &fill
+                        }
+                /* fill_left() fill_right() */
+                | group_modifiers FILL_LEFT fill_value FILL_RIGHT fill_value
+                        {
+                        $$ = $1
+                        fill_left := $3.(*NumberLiteral).Val
+                        fill_right := $5.(*NumberLiteral).Val
+                        $$.(*BinaryExpr).VectorMatching.FillValues.LHS = &fill_left
+                        $$.(*BinaryExpr).VectorMatching.FillValues.RHS = &fill_right
+                        }
+                /* fill_right() fill_left() */
+                | group_modifiers FILL_RIGHT fill_value FILL_LEFT fill_value
+                        {
+                        fill_right := $3.(*NumberLiteral).Val
+                        fill_left := $5.(*NumberLiteral).Val
+                        $$.(*BinaryExpr).VectorMatching.FillValues.LHS = &fill_left
+                        $$.(*BinaryExpr).VectorMatching.FillValues.RHS = &fill_right
+                        }
+                ;
 
 grouping_labels : LEFT_PAREN grouping_label_list RIGHT_PAREN
                         { $$ = $2 }
@@ -377,14 +413,14 @@ grouping_label_list:
 
 grouping_label  : maybe_label
                         {
-                        if !model.LabelName($1.Val).IsValid() {
+                        if !model.UTF8Validation.IsValidLabelName($1.Val) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", $1.Val)
                         }
                         $$ = $1
                         }
                 | STRING {
                         unquoted := yylex.(*parser).unquoteString($1.Val)
-                        if !model.LabelName(unquoted).IsValid() {
+                        if !model.UTF8Validation.IsValidLabelName(unquoted) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", unquoted)
                         }
                         $$ = $1
@@ -393,6 +429,21 @@ grouping_label  : maybe_label
                         }
                 | error
                         { yylex.(*parser).unexpected("grouping opts", "label"); $$ = Item{} }
+                ;
+
+fill_value      : LEFT_PAREN number_duration_literal RIGHT_PAREN
+                        {
+                        $$ = $2.(*NumberLiteral)
+                        }
+                | LEFT_PAREN unary_op number_duration_literal RIGHT_PAREN
+                        {
+                        nl := $3.(*NumberLiteral)
+                        if $2.Typ == SUB {
+                          nl.Val *= -1
+                        }
+                        nl.PosRange.Start = $2.Pos
+                        $$ = nl
+                        }
                 ;
 
 /*
@@ -478,8 +529,22 @@ offset_expr: expr OFFSET offset_duration_expr
                         $$ = $1
                         }
                 | expr OFFSET error
-                        { yylex.(*parser).unexpected("offset", "number or duration"); $$ = $1 }
+                        { yylex.(*parser).unexpected("offset", "number, duration, step(), or range()"); $$ = $1 }
                 ;
+
+/*
+ * Anchored and smoothed modifiers
+ */
+
+anchored_expr: expr ANCHORED
+                {
+                        yylex.(*parser).setAnchored($1)
+                }
+
+smoothed_expr: expr SMOOTHED
+                {
+                        yylex.(*parser).setSmoothed($1)
+                }
 
 /*
  * @ modifiers.
@@ -574,11 +639,11 @@ subquery_expr   : expr LEFT_BRACKET positive_duration_expr COLON positive_durati
                 | expr LEFT_BRACKET positive_duration_expr COLON positive_duration_expr error
                         { yylex.(*parser).unexpected("subquery selector", "\"]\""); $$ = $1 }
                 | expr LEFT_BRACKET positive_duration_expr COLON error
-                        { yylex.(*parser).unexpected("subquery selector", "number or duration or \"]\""); $$ = $1 }
+                        { yylex.(*parser).unexpected("subquery selector", "number, duration, step(), range(), or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET positive_duration_expr error
                         { yylex.(*parser).unexpected("subquery or range", "\":\" or \"]\""); $$ = $1 }
                 | expr LEFT_BRACKET error
-		        { yylex.(*parser).unexpected("subquery selector", "number or duration"); $$ = $1 }
+		        { yylex.(*parser).unexpected("subquery or range selector", "number, duration, step(), or range()"); $$ = $1 }
                 ;
 
 /*
@@ -695,7 +760,7 @@ metric          : metric_identifier label_set
                 ;
 
 
-metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END | LIMITK | LIMIT_RATIO;
+metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | FILL | FILL_LEFT | FILL_RIGHT | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED;
 
 label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
@@ -789,14 +854,15 @@ series_item     : BLANK
                 // Histogram descriptions (part of unit testing).
                 | histogram_series_value
                         {
-                        $$ = []SequenceValue{{Histogram:$1}}
+                        $$ = []SequenceValue{yylex.(*parser).newHistogramSequenceValue($1)}
                         }
                 | histogram_series_value TIMES uint
                         {
                         $$ = []SequenceValue{}
                         // Add an additional value for time 0, which we ignore in tests.
+                        sv := yylex.(*parser).newHistogramSequenceValue($1)
                         for i:=uint64(0); i <= $3; i++{
-                                $$ = append($$, SequenceValue{Histogram:$1})
+                                $$ = append($$, sv)
                                 //$1 += $2
                         }
                         }
@@ -952,7 +1018,7 @@ counter_reset_hint : UNKNOWN_COUNTER_RESET | COUNTER_RESET | NOT_COUNTER_RESET |
 aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK | LIMITK | LIMIT_RATIO;
 
 // Inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
-maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2 | LIMITK | LIMIT_RATIO;
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | FILL | FILL_LEFT | FILL_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2 | LIMITK | LIMIT_RATIO | STEP | RANGE | ANCHORED | SMOOTHED;
 
 unary_op        : ADD | SUB;
 
@@ -1079,9 +1145,90 @@ offset_duration_expr    : number_duration_literal
                                 nl.PosRange.Start = $1.Pos
                                 $$ = nl
                                 }
+                        | STEP LEFT_PAREN RIGHT_PAREN
+                                {
+                                $$ = &DurationExpr{
+                                        Op:  STEP,
+                                        StartPos: $1.PositionRange().Start,
+                                        EndPos: $3.PositionRange().End,
+                                }
+                                }
+                        | RANGE LEFT_PAREN RIGHT_PAREN
+                                {
+                                $$ = &DurationExpr{
+                                        Op:  RANGE,
+                                        StartPos: $1.PositionRange().Start,
+                                        EndPos: $3.PositionRange().End,
+                                }
+                                }
+                        | unary_op STEP LEFT_PAREN RIGHT_PAREN
+                                {
+                                $$ = &DurationExpr{
+                                        Op:  $1.Typ,
+                                        RHS: &DurationExpr{
+                                                Op:       STEP,
+                                                StartPos: $2.PositionRange().Start,
+                                                EndPos:   $4.PositionRange().End,
+                                        },
+                                        StartPos: $1.Pos,
+                                }
+                                }
+                        | unary_op RANGE LEFT_PAREN RIGHT_PAREN
+                                {
+                                $$ = &DurationExpr{
+                                        Op:  $1.Typ,
+                                        RHS: &DurationExpr{
+                                                Op:       RANGE,
+                                                StartPos: $2.PositionRange().Start,
+                                                EndPos:   $4.PositionRange().End,
+                                        },
+                                        StartPos: $1.Pos,
+                                }
+                                }
+                        | min_max LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
+                                {
+                                    $$ = &DurationExpr{
+                                        Op:       $1.Typ,
+                                        StartPos: $1.PositionRange().Start,
+                                        EndPos:   $6.PositionRange().End,
+                                        LHS:      $3.(Expr),
+                                        RHS:      $5.(Expr),
+                                    }
+                                }
+                        | unary_op min_max LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
+                                {
+                                    $$ = &DurationExpr{
+                                        Op:       $1.Typ,
+                                        StartPos: $1.Pos,
+                                        EndPos:   $6.PositionRange().End,
+                                        RHS: &DurationExpr{
+                                                Op:       $2.Typ,
+                                                StartPos: $2.PositionRange().Start,
+                                                EndPos:   $6.PositionRange().End,
+                                                LHS:      $4.(Expr),
+                                                RHS:      $6.(Expr),
+                                        },
+                                    }
+                                }
+                        | unary_op LEFT_PAREN duration_expr RIGHT_PAREN %prec MUL
+                                {
+                                de := $3.(*DurationExpr)
+                                de.Wrapped = true
+                                if $1.Typ == SUB {
+                                        $$ = &DurationExpr{
+                                                Op: SUB,
+                                                RHS: de,
+                                                StartPos: $1.Pos,
+                                        }
+                                        break
+                                }
+                                $$ = $3
+                                }
                         | duration_expr
                         ;
-                        
+
+min_max: MIN | MAX ;
+
 duration_expr   : number_duration_literal
                         {
                         nl := $1.(*NumberLiteral)
@@ -1164,18 +1311,44 @@ duration_expr   : number_duration_literal
                             yylex.(*parser).experimentalDurationExpr($1.(Expr))
                             $$ = &DurationExpr{Op: POW, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }
+                | STEP LEFT_PAREN RIGHT_PAREN
+                        {
+                            $$ = &DurationExpr{
+                                Op:       STEP,
+                                StartPos: $1.PositionRange().Start,
+                                EndPos:   $3.PositionRange().End,
+                            }
+                        }
+                | RANGE LEFT_PAREN RIGHT_PAREN
+                        {
+                            $$ = &DurationExpr{
+                                Op:       RANGE,
+                                StartPos: $1.PositionRange().Start,
+                                EndPos:   $3.PositionRange().End,
+                            }
+                        }
+                | min_max LEFT_PAREN duration_expr COMMA duration_expr RIGHT_PAREN
+                        {
+                            $$ = &DurationExpr{
+                                Op:       $1.Typ,
+                                StartPos: $1.PositionRange().Start,
+                                EndPos:   $6.PositionRange().End,
+                                LHS: $3.(Expr),
+                                RHS: $5.(Expr),
+                            }
+                        }
                 | paren_duration_expr
                 ;
 
 paren_duration_expr : LEFT_PAREN duration_expr RIGHT_PAREN
-                        { 
+                        {
                             yylex.(*parser).experimentalDurationExpr($2.(Expr))
                             if durationExpr, ok := $2.(*DurationExpr); ok {
                                 durationExpr.Wrapped = true
                                 $$ = durationExpr
                                 break
                             }
-                            $$ = $2 
+                            $$ = $2
                         }
                 ;
 

@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -33,6 +33,6 @@ func TestNewDiscoveryError(t *testing.T) {
 		[]string{"unreachable.invalid"},
 		time.Second, []string{"/"},
 		nil,
-		func(_ []byte, _ string) (model.LabelSet, error) { return nil, nil })
+		func([]byte, string) (model.LabelSet, error) { return nil, nil })
 	require.Error(t, err)
 }

@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -40,33 +40,33 @@ func readHistogramChunkLayout(b *bstreamReader) (
 ) {
 	zeroThreshold, err = readZeroThreshold(b)
 	if err != nil {
-		return
+		return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 	}
 
 	v, err := readVarbitInt(b)
 	if err != nil {
-		return
+		return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 	}
 	schema = int32(v)
 
 	positiveSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
-		return
+		return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 	}
 
 	negativeSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
-		return
+		return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 	}
 
 	if histogram.IsCustomBucketsSchema(schema) {
 		customValues, err = readHistogramChunkLayoutCustomBounds(b)
 		if err != nil {
-			return
+			return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 		}
 	}
 
-	return
+	return schema, zeroThreshold, positiveSpans, negativeSpans, customValues, err
 }
 
 func putHistogramChunkLayoutSpans(b *bstream, spans []histogram.Span) {
@@ -284,101 +284,12 @@ type Insert struct {
 	bucketIdx int
 }
 
-// Deprecated: expandSpansForward, use expandIntSpansAndBuckets or
-// expandFloatSpansAndBuckets instead.
-// expandSpansForward is left here for reference.
-// expandSpansForward returns the inserts to expand the bucket spans 'a' so that
-// they match the spans in 'b'. 'b' must cover the same or more buckets than
-// 'a', otherwise the function will return false.
-//
-// Example:
-//
-// Let's say the old buckets look like this:
-//
-//	span syntax: [offset, length]
-//	spans      : [ 0 , 2 ]               [2,1]                   [ 3 , 2 ]                     [3,1]       [1,1]
-//	bucket idx : [0]   [1]    2     3    [4]    5     6     7    [8]   [9]    10    11    12   [13]   14   [15]
-//	raw values    6     3                 3                       2     4                       5           1
-//	deltas        6    -3                 0                      -1     2                       1          -4
-//
-// But now we introduce a new bucket layout. (Carefully chosen example where we
-// have a span appended, one unchanged[*], one prepended, and two merge - in
-// that order.)
-//
-// [*] unchanged in terms of which bucket indices they represent. but to achieve
-// that, their offset needs to change if "disrupted" by spans changing ahead of
-// them
-//
-//	                                      \/ this one is "unchanged"
-//	spans      : [  0  ,  3    ]         [1,1]       [    1    ,   4     ]                     [  3  ,   3    ]
-//	bucket idx : [0]   [1]   [2]    3    [4]    5    [6]   [7]   [8]   [9]    10    11    12   [13]  [14]  [15]
-//	raw values    6     3     0           3           0     0     2     4                       5     0     1
-//	deltas        6    -3    -3           3          -3     0     2     2                       1    -5     1
-//	delta mods:                          / \                     / \                                       / \
-//
-// Note for histograms with delta-encoded buckets: Whenever any new buckets are
-// introduced, the subsequent "old" bucket needs to readjust its delta to the
-// new base of 0. Thus, for the caller who wants to transform the set of
-// original deltas to a new set of deltas to match a new span layout that adds
-// buckets, we simply need to generate a list of inserts.
-//
-// Note: Within expandSpansForward we don't have to worry about the changes to the
-// spans themselves, thanks to the iterators we get to work with the more useful
-// bucket indices (which of course directly correspond to the buckets we have to
-// adjust).
-func expandSpansForward(a, b []histogram.Span) (forward []Insert, ok bool) {
-	ai := newBucketIterator(a)
-	bi := newBucketIterator(b)
-
-	var inserts []Insert
-
-	// When inter.num becomes > 0, this becomes a valid insert that should
-	// be yielded when we finish a streak of new buckets.
-	var inter Insert
-
-	av, aOK := ai.Next()
-	bv, bOK := bi.Next()
-loop:
-	for {
-		switch {
-		case aOK && bOK:
-			switch {
-			case av == bv: // Both have an identical value. move on!
-				// Finish WIP insert and reset.
-				if inter.num > 0 {
-					inserts = append(inserts, inter)
-				}
-				inter.num = 0
-				av, aOK = ai.Next()
-				bv, bOK = bi.Next()
-				inter.pos++
-			case av < bv: // b misses a value that is in a.
-				return inserts, false
-			case av > bv: // a misses a value that is in b. Forward b and recompare.
-				inter.num++
-				bv, bOK = bi.Next()
-			}
-		case aOK && !bOK: // b misses a value that is in a.
-			return inserts, false
-		case !aOK && bOK: // a misses a value that is in b. Forward b and recompare.
-			inter.num++
-			bv, bOK = bi.Next()
-		default: // Both iterators ran out. We're done.
-			if inter.num > 0 {
-				inserts = append(inserts, inter)
-			}
-			break loop
-		}
-	}
-
-	return inserts, true
-}
-
-// expandSpansBothWays is similar to expandSpansForward, but now b may also
-// cover an entirely different set of buckets. The function returns the
-// “forward” inserts to expand 'a' to also cover all the buckets exclusively
-// covered by 'b', and it returns the “backward” inserts to expand 'b' to also
-// cover all the buckets exclusively covered by 'a'.
+// expandSpansBothWays is similar to expandFloatSpansAndBuckets and
+// expandIntSpansAndBuckets, but now b may also cover an entirely different set
+// of buckets and counter resets are ignored. The function returns the “forward”
+// inserts to expand 'a' to also cover all the buckets exclusively covered by
+// 'b', and it returns the “backward” inserts to expand 'b' to also cover all
+// the buckets exclusively covered by 'a'.
 func expandSpansBothWays(a, b []histogram.Span) (forward, backward []Insert, mergedSpans []histogram.Span) {
 	ai := newBucketIterator(a)
 	bi := newBucketIterator(b)
@@ -488,14 +399,24 @@ func insert[BV bucketValue](in, out []BV, inserts []Insert, deltas bool) []BV {
 		ii int // The next insert to process.
 	)
 	for i, d := range in {
-		if ii < len(inserts) && i == inserts[ii].pos {
+		if ii >= len(inserts) || i != inserts[ii].pos {
+			// No inserts at this position, the original delta is still valid.
+			out[oi] = d
+			oi++
+			v += d
+			continue
+		}
+		// Process inserts.
+		firstInsert := true
+		for ii < len(inserts) && i == inserts[ii].pos {
 			// We have an insert!
 			// Add insert.num new delta values such that their
 			// bucket values equate 0. When deltas==false, it means
 			// that it is an absolute value. So we set it to 0
 			// directly.
-			if deltas {
+			if deltas && firstInsert {
 				out[oi] = -v
+				firstInsert = false // No need to go to 0 in further inserts.
 			} else {
 				out[oi] = 0
 			}
@@ -505,32 +426,30 @@ func insert[BV bucketValue](in, out []BV, inserts []Insert, deltas bool) []BV {
 				oi++
 			}
 			ii++
-
-			// Now save the value from the input. The delta value we
-			// should save is the original delta value + the last
-			// value of the point before the insert (to undo the
-			// delta that was introduced by the insert). When
-			// deltas==false, it means that it is an absolute value,
-			// so we set it directly to the value in the 'in' slice.
-			if deltas {
-				out[oi] = d + v
-			} else {
-				out[oi] = d
-			}
-			oi++
-			v = d + v
-			continue
 		}
-		// If there was no insert, the original delta is still valid.
-		out[oi] = d
+		// Now save the value from the input. The delta value we
+		// should save is the original delta value + the last
+		// value of the point before the insert (to undo the
+		// delta that was introduced by the insert). When
+		// deltas==false, it means that it is an absolute value,
+		// so we set it directly to the value in the 'in' slice.
+		if deltas {
+			out[oi] = d + v
+		} else {
+			out[oi] = d
+		}
 		oi++
 		v += d
 	}
-	switch ii {
-	case len(inserts):
-		// All inserts processed. Nothing more to do.
-	case len(inserts) - 1:
-		// One more insert to process at the end.
+	// Insert empty buckets at the end.
+	for ii < len(inserts) {
+		if inserts[ii].pos < len(in) {
+			panic("leftover inserts must be after the current buckets")
+		}
+		// Add insert.num new delta values such that their
+		// bucket values equate 0. When deltas==false, it means
+		// that it is an absolute value. So we set it to 0
+		// directly.
 		if deltas {
 			out[oi] = -v
 		} else {
@@ -541,8 +460,8 @@ func insert[BV bucketValue](in, out []BV, inserts []Insert, deltas bool) []BV {
 			out[oi] = 0
 			oi++
 		}
-	default:
-		panic("unprocessed inserts left")
+		ii++
+		v = 0
 	}
 	return out
 }
@@ -628,8 +547,8 @@ func adjustForInserts(spans []histogram.Span, inserts []Insert) (mergedSpans []h
 		}
 	}
 	for i < len(inserts) {
-		addBucket(inserts[i].bucketIdx)
+		addBucket(insertIdx)
 		consumeInsert()
 	}
-	return
+	return mergedSpans
 }

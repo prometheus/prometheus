@@ -1,4 +1,4 @@
-type RuleState = "pending" | "firing" | "inactive";
+type RuleState = "pending" | "firing" | "inactive" | "unknown";
 
 export interface Alert {
   labels: Record<string, string>;

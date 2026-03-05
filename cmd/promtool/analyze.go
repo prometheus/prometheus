@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -207,7 +207,7 @@ func calcClassicBucketStatistics(matrix model.Matrix) (*statistics, error) {
 	sortMatrix(matrix)
 
 	totalPop := 0
-	for timeIdx := 0; timeIdx < numSamples; timeIdx++ {
+	for timeIdx := range numSamples {
 		curr, err := getBucketCountsAtTime(matrix, numBuckets, timeIdx)
 		if err != nil {
 			return stats, err

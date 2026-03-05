@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -22,7 +22,7 @@ func GenerateBigTestHistograms(numHistograms, numBuckets int) []*Histogram {
 	observationCount := uint64(bucketsPerSide) * (1 + uint64(bucketsPerSide))
 
 	var histograms []*Histogram
-	for i := 0; i < numHistograms; i++ {
+	for i := range numHistograms {
 		h := &Histogram{
 			Count:           uint64(i) + observationCount,
 			ZeroCount:       uint64(i),
@@ -35,13 +35,13 @@ func GenerateBigTestHistograms(numHistograms, numBuckets int) []*Histogram {
 			PositiveBuckets: make([]int64, bucketsPerSide),
 		}
 
-		for j := 0; j < numSpans; j++ {
+		for j := range numSpans {
 			s := Span{Offset: 1, Length: spanLength}
 			h.NegativeSpans[j] = s
 			h.PositiveSpans[j] = s
 		}
 
-		for j := 0; j < bucketsPerSide; j++ {
+		for j := range bucketsPerSide {
 			h.NegativeBuckets[j] = 1
 			h.PositiveBuckets[j] = 1
 		}

@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -81,7 +81,7 @@ func (*DockerSwarmSDConfig) Name() string { return "dockerswarm" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *DockerSwarmSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -90,7 +90,7 @@ func (c *DockerSwarmSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *DockerSwarmSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *DockerSwarmSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultDockerSwarmSDConfig
 	type plain DockerSwarmSDConfig
 	err := unmarshal((*plain)(c))
@@ -124,8 +124,8 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *DockerSwarmSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*dockerswarmMetrics)
+func NewDiscovery(conf *DockerSwarmSDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*dockerswarmMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
 	}
@@ -140,7 +140,7 @@ func NewDiscovery(conf *DockerSwarmSDConfig, logger *slog.Logger, metrics discov
 		return nil, err
 	}
 
-	opts := []client.Opt{
+	clientOpts := []client.Opt{
 		client.WithHost(conf.Host),
 		client.WithAPIVersionNegotiation(),
 	}
@@ -160,7 +160,7 @@ func NewDiscovery(conf *DockerSwarmSDConfig, logger *slog.Logger, metrics discov
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts,
+		clientOpts = append(clientOpts,
 			client.WithHTTPClient(&http.Client{
 				Transport: rt,
 				Timeout:   time.Duration(conf.RefreshInterval),
@@ -172,15 +172,16 @@ func NewDiscovery(conf *DockerSwarmSDConfig, logger *slog.Logger, metrics discov
 		)
 	}
 
-	d.client, err = client.NewClientWithOpts(opts...)
+	d.client, err = client.NewClientWithOpts(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up docker swarm client: %w", err)
 	}
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "dockerswarm",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

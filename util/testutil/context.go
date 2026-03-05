@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,7 +27,7 @@ type MockContext struct {
 }
 
 // Deadline always will return not set.
-func (c *MockContext) Deadline() (deadline time.Time, ok bool) {
+func (*MockContext) Deadline() (deadline time.Time, ok bool) {
 	return time.Time{}, false
 }
 
@@ -42,7 +42,7 @@ func (c *MockContext) Err() error {
 }
 
 // Value ignores the Value and always returns nil.
-func (c *MockContext) Value(interface{}) interface{} {
+func (*MockContext) Value(any) any {
 	return nil
 }
 

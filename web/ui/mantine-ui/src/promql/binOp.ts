@@ -45,13 +45,18 @@ export type VectorMatchError =
   | MultipleMatchesOnBothSidesError
   | MultipleMatchesOnOneSideError;
 
+export type MaybeFilledInstantSample = InstantSample & {
+  // If the sample was filled in via a fill(...) modifier, this is true.
+  filled?: boolean;
+};
+
 // A single match group as produced by a vector-to-vector binary operation, with all of its
 // left-hand side and right-hand side series, as well as a result and error, if applicable.
 export type BinOpMatchGroup = {
   groupLabels: Metric;
-  rhs: InstantSample[];
+  rhs: MaybeFilledInstantSample[];
   rhsCount: number; // Number of samples before applying limits.
-  lhs: InstantSample[];
+  lhs: MaybeFilledInstantSample[];
   lhsCount: number; // Number of samples before applying limits.
   result: {
     sample: InstantSample;
@@ -336,6 +341,26 @@ export const computeVectorVectorBinOp = (
       groups[sig].lhs.push(ls);
     }
     groups[sig].lhsCount++;
+  });
+
+  // Check for any LHS / RHS with no series and fill in default values, if specified.
+  Object.values(groups).forEach((mg) => {
+    if (mg.lhs.length === 0 && matching.fillValues.lhs !== null) {
+      mg.lhs.push({
+        metric: mg.groupLabels,
+        value: [0, formatPrometheusFloat(matching.fillValues.lhs as number)],
+        filled: true,
+      });
+      mg.lhsCount = 1;
+    }
+    if (mg.rhs.length === 0 && matching.fillValues.rhs !== null) {
+      mg.rhs.push({
+        metric: mg.groupLabels,
+        value: [0, formatPrometheusFloat(matching.fillValues.rhs as number)],
+        filled: true,
+      });
+      mg.rhsCount = 1;
+    }
   });
 
   // Annotate the match groups with errors (if any) and populate the results.

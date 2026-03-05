@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -28,11 +28,16 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 type expectedBucketLayout struct {
-	wantSpans  []prompb.BucketSpan
+	wantSpans  []histogram.Span
 	wantDeltas []int64
 }
 
@@ -52,7 +57,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 1,
 							Length: 4,
@@ -61,7 +66,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -1, -1, -1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 1,
 							Length: 2,
@@ -71,7 +76,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{7, -4},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 1,
 							Length: 1,
@@ -92,7 +97,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 2,
 							Length: 4,
@@ -101,7 +106,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -1, -1, -1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 1,
 							Length: 3,
@@ -110,7 +115,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, 1, -4}, // 0+4, 3+2, 1+0 = 4, 5, 1
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 1,
 							Length: 2,
@@ -130,7 +135,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 5,
 							Length: 4,
@@ -143,7 +148,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -2, -2, 2, -1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 3,
 							Length: 2,
@@ -158,7 +163,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{6, -4, -1},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 2,
 							Length: 1,
@@ -185,7 +190,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 5,
 							Length: 4,
@@ -198,7 +203,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -2, -2, 2, -1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 3,
 							Length: 2,
@@ -213,7 +218,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{6, -4, -1},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 2,
 							Length: 4,
@@ -236,7 +241,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: -1,
 							Length: 2,
@@ -249,7 +254,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{3, -2, 0},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 0,
 							Length: 3,
@@ -260,7 +265,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -4, 1},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 0,
 							Length: 2,
@@ -282,7 +287,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: -1,
 							Length: 6,
@@ -291,7 +296,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{3, -2, -1, 1, -1, 1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 0,
 							Length: 3,
@@ -302,7 +307,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{4, -3, 0},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 0,
 							Length: 2,
@@ -324,7 +329,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 			},
 			wantLayout: map[int32]expectedBucketLayout{
 				0: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: -1,
 							Length: 7,
@@ -333,7 +338,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{3, -3, 0, 1, -1, 0, 1},
 				},
 				1: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 0,
 							Length: 4,
@@ -344,7 +349,7 @@ func TestConvertBucketsLayout(t *testing.T) {
 					wantDeltas: []int64{3, -2, -1, 1},
 				},
 				2: {
-					wantSpans: []prompb.BucketSpan{
+					wantSpans: []histogram.Span{
 						{
 							Offset: 0,
 							Length: 3,
@@ -399,7 +404,7 @@ func BenchmarkConvertBucketLayout(b *testing.B) {
 	for _, scenario := range scenarios {
 		buckets := pmetric.NewExponentialHistogramDataPointBuckets()
 		buckets.SetOffset(0)
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			if i%(scenario.gap+1) == 0 {
 				buckets.BucketCounts().Append(10)
 			} else {
@@ -407,7 +412,7 @@ func BenchmarkConvertBucketLayout(b *testing.B) {
 			}
 		}
 		b.Run(fmt.Sprintf("gap %d", scenario.gap), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				convertBucketsLayout(buckets.BucketCounts().AsRaw(), buckets.Offset(), 0, true)
 			}
 		})
@@ -418,7 +423,7 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 	tests := []struct {
 		name            string
 		exponentialHist func() pmetric.ExponentialHistogramDataPoint
-		wantNativeHist  func() prompb.Histogram
+		wantNativeHist  func() *histogram.Histogram
 		wantErrMessage  string
 	}{
 		{
@@ -440,18 +445,17 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 4},
-					Sum:            10.1,
-					Schema:         1,
-					ZeroThreshold:  defaultZeroThreshold,
-					ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 1},
-					NegativeSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
-					NegativeDeltas: []int64{1, 0},
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
-					PositiveDeltas: []int64{1, 0},
-					Timestamp:      500,
+			wantNativeHist: func() *histogram.Histogram {
+				return &histogram.Histogram{
+					Count:           4,
+					Sum:             10.1,
+					Schema:          1,
+					ZeroThreshold:   defaultZeroThreshold,
+					ZeroCount:       1,
+					NegativeSpans:   []histogram.Span{{Offset: 2, Length: 2}},
+					NegativeBuckets: []int64{1, 0},
+					PositiveSpans:   []histogram.Span{{Offset: 2, Length: 2}},
+					PositiveBuckets: []int64{1, 0},
 				}
 			},
 		},
@@ -474,17 +478,16 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 4},
-					Schema:         1,
-					ZeroThreshold:  defaultZeroThreshold,
-					ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 1},
-					NegativeSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
-					NegativeDeltas: []int64{1, 0},
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
-					PositiveDeltas: []int64{1, 0},
-					Timestamp:      500,
+			wantNativeHist: func() *histogram.Histogram {
+				return &histogram.Histogram{
+					Count:           4,
+					Schema:          1,
+					ZeroThreshold:   defaultZeroThreshold,
+					ZeroCount:       1,
+					NegativeSpans:   []histogram.Span{{Offset: 2, Length: 2}},
+					NegativeBuckets: []int64{1, 0},
+					PositiveSpans:   []histogram.Span{{Offset: 2, Length: 2}},
+					PositiveBuckets: []int64{1, 0},
 				}
 			},
 		},
@@ -515,18 +518,17 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 				pt.Negative().SetOffset(2)
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 6},
-					Sum:            10.1,
-					Schema:         8,
-					ZeroThreshold:  defaultZeroThreshold,
-					ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 1},
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 2, Length: 3}},
-					PositiveDeltas: []int64{1, 0, 0}, // 1, 1, 1
-					NegativeSpans:  []prompb.BucketSpan{{Offset: 3, Length: 3}},
-					NegativeDeltas: []int64{1, 0, 0}, // 1, 1, 1
-					Timestamp:      500,
+			wantNativeHist: func() *histogram.Histogram {
+				return &histogram.Histogram{
+					Count:           6,
+					Sum:             10.1,
+					Schema:          8,
+					ZeroThreshold:   defaultZeroThreshold,
+					ZeroCount:       1,
+					PositiveSpans:   []histogram.Span{{Offset: 2, Length: 3}},
+					PositiveBuckets: []int64{1, 0, 0}, // 1, 1, 1
+					NegativeSpans:   []histogram.Span{{Offset: 3, Length: 3}},
+					NegativeBuckets: []int64{1, 0, 0}, // 1, 1, 1
 				}
 			},
 		},
@@ -547,18 +549,17 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 				pt.Negative().SetOffset(2)
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 6},
-					Sum:            10.1,
-					Schema:         8,
-					ZeroThreshold:  defaultZeroThreshold,
-					ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 1},
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 1, Length: 2}},
-					PositiveDeltas: []int64{1, 1}, // 0+1, 1+1 = 1, 2
-					NegativeSpans:  []prompb.BucketSpan{{Offset: 2, Length: 2}},
-					NegativeDeltas: []int64{2, -1}, // 1+1, 1+0 = 2, 1
-					Timestamp:      500,
+			wantNativeHist: func() *histogram.Histogram {
+				return &histogram.Histogram{
+					Count:           6,
+					Sum:             10.1,
+					Schema:          8,
+					ZeroThreshold:   defaultZeroThreshold,
+					ZeroCount:       1,
+					PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}},
+					PositiveBuckets: []int64{1, 1}, // 0+1, 1+1 = 1, 2
+					NegativeSpans:   []histogram.Span{{Offset: 2, Length: 2}},
+					NegativeBuckets: []int64{2, -1}, // 1+1, 1+0 = 2, 1
 				}
 			},
 		},
@@ -599,20 +600,18 @@ func validateExponentialHistogramCount(t *testing.T, h pmetric.ExponentialHistog
 	require.Equal(t, h.Count(), actualCount, "exponential histogram count mismatch")
 }
 
-func validateNativeHistogramCount(t *testing.T, h prompb.Histogram) {
-	require.NotNil(t, h.Count)
-	require.IsType(t, &prompb.Histogram_CountInt{}, h.Count)
-	want := h.Count.(*prompb.Histogram_CountInt).CountInt
+func validateNativeHistogramCount(t *testing.T, h *histogram.Histogram) {
+	want := h.Count
 	var (
 		actualCount uint64
 		prevBucket  int64
 	)
-	for _, delta := range h.PositiveDeltas {
+	for _, delta := range h.PositiveBuckets {
 		prevBucket += delta
 		actualCount += uint64(prevBucket)
 	}
 	prevBucket = 0
-	for _, delta := range h.NegativeDeltas {
+	for _, delta := range h.NegativeBuckets {
 		prevBucket += delta
 		actualCount += uint64(prevBucket)
 	}
@@ -620,11 +619,92 @@ func validateNativeHistogramCount(t *testing.T, h prompb.Histogram) {
 }
 
 func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
+	scopeAttrs := pcommon.NewMap()
+	scopeAttrs.FromRaw(map[string]any{
+		"attr1": "value1",
+		"attr2": "value2",
+	})
+	defaultScope := scope{
+		name:       "test-scope",
+		version:    "1.0.0",
+		schemaURL:  "https://schema.com",
+		attributes: scopeAttrs,
+	}
 	tests := []struct {
-		name       string
-		metric     func() pmetric.Metric
-		wantSeries func() map[uint64]*prompb.TimeSeries
+		name         string
+		metric       func() pmetric.Metric
+		scope        scope
+		promoteScope bool
+		wantSeries   func() []sample
 	}{
+		{
+			name: "histogram data points with same labels and without scope promotion",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist")
+				metric.SetEmptyExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.ExponentialHistogram().DataPoints().AppendEmpty()
+				pt.SetCount(7)
+				pt.SetScale(1)
+				pt.Positive().SetOffset(-1)
+				pt.Positive().BucketCounts().FromRaw([]uint64{4, 2})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(1)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				pt = metric.ExponentialHistogram().DataPoints().AppendEmpty()
+				pt.SetCount(4)
+				pt.SetScale(1)
+				pt.Positive().SetOffset(-1)
+				pt.Positive().BucketCounts().FromRaw([]uint64{4, 2, 1})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(2)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				return metric
+			},
+			scope:        defaultScope,
+			promoteScope: false,
+			wantSeries: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist",
+					"attr", "test_attr",
+				)
+				return []sample{
+					{
+						MF: "test_hist",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           7,
+							Schema:          1,
+							ZeroThreshold:   defaultZeroThreshold,
+							ZeroCount:       0,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+							PositiveBuckets: []int64{4, -2},
+						},
+						ES: []exemplar.Exemplar{{Value: 1}},
+					},
+					{
+						MF: "test_hist",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           4,
+							Schema:          1,
+							ZeroThreshold:   defaultZeroThreshold,
+							ZeroCount:       0,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+							PositiveBuckets: []int64{4, -2, -1},
+						},
+						ES: []exemplar.Exemplar{{Value: 2}},
+					},
+				}
+			},
+		},
 		{
 			name: "histogram data points with same labels",
 			metric: func() pmetric.Metric {
@@ -650,42 +730,56 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
-			wantSeries: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist"},
-					{Name: "attr", Value: "test_attr"},
-				}
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Histograms: []prompb.Histogram{
-							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 7},
-								Schema:         1,
-								ZeroThreshold:  defaultZeroThreshold,
-								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
-								PositiveDeltas: []int64{4, -2},
-							},
-							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 4},
-								Schema:         1,
-								ZeroThreshold:  defaultZeroThreshold,
-								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
-								PositiveDeltas: []int64{4, -2, -1},
-							},
+			scope:        defaultScope,
+			promoteScope: true,
+			wantSeries: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist",
+					"attr", "test_attr",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
+				return []sample{
+					{
+						MF: "test_hist",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           7,
+							Schema:          1,
+							ZeroThreshold:   defaultZeroThreshold,
+							ZeroCount:       0,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+							PositiveBuckets: []int64{4, -2},
 						},
-						Exemplars: []prompb.Exemplar{
-							{Value: 1},
-							{Value: 2},
+						ES: []exemplar.Exemplar{{Value: 1}},
+					},
+					{
+						MF: "test_hist",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           4,
+							Schema:          1,
+							ZeroThreshold:   defaultZeroThreshold,
+							ZeroCount:       0,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+							PositiveBuckets: []int64{4, -2, -1},
 						},
+						ES: []exemplar.Exemplar{{Value: 2}},
 					},
 				}
 			},
 		},
 		{
-			name: "histogram data points with different labels",
+			name: "histogram data points with different labels and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist")
@@ -709,48 +803,50 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
-			wantSeries: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist"},
-					{Name: "attr", Value: "test_attr"},
-				}
-				labelsAnother := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist"},
-					{Name: "attr", Value: "test_attr_two"},
-				}
+			scope:        defaultScope,
+			promoteScope: false,
+			wantSeries: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist",
+					"attr", "test_attr",
+				)
+				labelsAnother := labels.FromStrings(
+					model.MetricNameLabel, "test_hist",
+					"attr", "test_attr_two",
+				)
 
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Histograms: []prompb.Histogram{
-							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 7},
-								Schema:         1,
-								ZeroThreshold:  defaultZeroThreshold,
-								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
-								PositiveDeltas: []int64{4, -2},
-							},
+				return []sample{
+					{
+						MF: "test_hist",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           7,
+							Schema:          1,
+							ZeroThreshold:   defaultZeroThreshold,
+							ZeroCount:       0,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+							PositiveBuckets: []int64{4, -2},
 						},
-						Exemplars: []prompb.Exemplar{
-							{Value: 1},
-						},
+						ES: []exemplar.Exemplar{{Value: 1}},
 					},
-					timeSeriesSignature(labelsAnother): {
-						Labels: labelsAnother,
-						Histograms: []prompb.Histogram{
-							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 4},
-								Schema:         1,
-								ZeroThreshold:  defaultZeroThreshold,
-								ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
-								NegativeSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
-								NegativeDeltas: []int64{4, -2, -1},
-							},
+					{
+						MF: "test_hist",
+						L:  labelsAnother,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           4,
+							Schema:          1,
+							ZeroThreshold:   defaultZeroThreshold,
+							ZeroCount:       0,
+							NegativeSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+							NegativeBuckets: []int64{4, -2, -1},
 						},
-						Exemplars: []prompb.Exemplar{
-							{Value: 2},
-						},
+						ES: []exemplar.Exemplar{{Value: 2}},
 					},
 				}
 			},
@@ -760,25 +856,37 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
 
-			converter := NewPrometheusConverter()
+			appTest := teststorage.NewAppendable()
+			app := appTest.AppenderV2(t.Context())
+			converter := NewPrometheusConverter(app)
 			namer := otlptranslator.MetricNamer{
 				WithMetricSuffixes: true,
 			}
+			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+			require.NoError(t, err)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
+
 			annots, err := converter.addExponentialHistogramDataPoints(
 				context.Background(),
 				metric.ExponentialHistogram().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					ExportCreatedMetric: true,
-				},
-				namer.Build(TranslatorMetricFromOtelMetric(metric)),
+				settings,
 				pmetric.AggregationTemporalityCumulative,
+				storage.AOptions{
+					MetricFamilyName: name,
+				},
 			)
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
-			require.Equal(t, tt.wantSeries(), converter.unique)
-			require.Empty(t, converter.conflicts)
+			require.NoError(t, app.Commit())
+			teststorage.RequireEqual(t, tt.wantSeries(), appTest.ResultSamples())
 		})
 	}
 }
@@ -793,7 +901,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "zero offset",
 			buckets: []uint64{4, 3, 2, 1},
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []histogram.Span{
 					{
 						Offset: 0,
 						Length: 4,
@@ -806,7 +914,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "leading empty buckets",
 			buckets: []uint64{0, 0, 1, 1, 2, 3},
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []histogram.Span{
 					{
 						Offset: 2,
 						Length: 4,
@@ -819,7 +927,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "trailing empty buckets",
 			buckets: []uint64{0, 0, 1, 1, 2, 3, 0, 0}, // TODO: add tests for 3 trailing buckets
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []histogram.Span{
 					{
 						Offset: 2,
 						Length: 6,
@@ -832,7 +940,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "bucket gap of 2",
 			buckets: []uint64{1, 2, 0, 0, 2},
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []histogram.Span{
 					{
 						Offset: 0,
 						Length: 5,
@@ -845,7 +953,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "bucket gap > 2",
 			buckets: []uint64{1, 2, 0, 0, 0, 2, 4, 4},
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []histogram.Span{
 					{
 						Offset: 0,
 						Length: 2,
@@ -862,7 +970,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 			name:    "multiple bucket gaps",
 			buckets: []uint64{0, 0, 1, 2, 0, 0, 0, 2, 4, 4, 0, 0},
 			wantLayout: expectedBucketLayout{
-				wantSpans: []prompb.BucketSpan{
+				wantSpans: []histogram.Span{
 					{
 						Offset: 2,
 						Length: 2,
@@ -901,7 +1009,7 @@ func BenchmarkConvertHistogramBucketsToNHCBLayout(b *testing.B) {
 
 	for _, scenario := range scenarios {
 		var buckets []uint64
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			if i%(scenario.gap+1) == 0 {
 				buckets = append(buckets, uint64(10))
 			} else {
@@ -909,7 +1017,7 @@ func BenchmarkConvertHistogramBucketsToNHCBLayout(b *testing.B) {
 			}
 		}
 		b.Run(fmt.Sprintf("gap %d", scenario.gap), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				offset := getBucketOffset(buckets)
 				convertBucketsLayout(buckets, int32(offset), 0, false)
 			}
@@ -921,7 +1029,7 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 	tests := []struct {
 		name           string
 		hist           func() pmetric.HistogramDataPoint
-		wantNativeHist func() prompb.Histogram
+		wantNativeHist func() *histogram.Histogram
 		wantErrMessage string
 	}{
 		{
@@ -937,15 +1045,14 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 				pt.ExplicitBounds().FromRaw([]float64{0, 1})
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 2},
-					Sum:            10.1,
-					Schema:         -53,
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
-					PositiveDeltas: []int64{1, 0},
-					CustomValues:   []float64{0, 1},
-					Timestamp:      500,
+			wantNativeHist: func() *histogram.Histogram {
+				return &histogram.Histogram{
+					Count:           2,
+					Sum:             10.1,
+					Schema:          -53,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+					PositiveBuckets: []int64{1, 0},
+					CustomValues:    []float64{0, 1},
 				}
 			},
 		},
@@ -961,14 +1068,13 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 				pt.ExplicitBounds().FromRaw([]float64{0, 1})
 				return pt
 			},
-			wantNativeHist: func() prompb.Histogram {
-				return prompb.Histogram{
-					Count:          &prompb.Histogram_CountInt{CountInt: 4},
-					Schema:         -53,
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
-					PositiveDeltas: []int64{2, 0},
-					CustomValues:   []float64{0, 1},
-					Timestamp:      500,
+			wantNativeHist: func() *histogram.Histogram {
+				return &histogram.Histogram{
+					Count:           4,
+					Schema:          -53,
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+					PositiveBuckets: []int64{2, 0},
+					CustomValues:    []float64{0, 1},
 				}
 			},
 		},
@@ -991,11 +1097,92 @@ func TestHistogramToCustomBucketsHistogram(t *testing.T) {
 }
 
 func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
+	scopeAttrs := pcommon.NewMap()
+	scopeAttrs.FromRaw(map[string]any{
+		"attr1": "value1",
+		"attr2": "value2",
+	})
+	defaultScope := scope{
+		name:       "test-scope",
+		version:    "1.0.0",
+		schemaURL:  "https://schema.com",
+		attributes: scopeAttrs,
+	}
 	tests := []struct {
-		name       string
-		metric     func() pmetric.Metric
-		wantSeries func() map[uint64]*prompb.TimeSeries
+		name         string
+		metric       func() pmetric.Metric
+		scope        scope
+		promoteScope bool
+		wantSeries   func() []sample
 	}{
+		{
+			name: "histogram data points with same labels and without scope promotion",
+			metric: func() pmetric.Metric {
+				metric := pmetric.NewMetric()
+				metric.SetName("test_hist_to_nhcb")
+				metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+				pt := metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetCount(3)
+				pt.SetSum(3)
+				pt.BucketCounts().FromRaw([]uint64{2, 0, 1})
+				pt.ExplicitBounds().FromRaw([]float64{5, 10})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(1)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				pt = metric.Histogram().DataPoints().AppendEmpty()
+				pt.SetCount(11)
+				pt.SetSum(5)
+				pt.BucketCounts().FromRaw([]uint64{3, 8, 0})
+				pt.ExplicitBounds().FromRaw([]float64{0, 1})
+				pt.Exemplars().AppendEmpty().SetDoubleValue(2)
+				pt.Attributes().PutStr("attr", "test_attr")
+
+				return metric
+			},
+			scope:        defaultScope,
+			promoteScope: false,
+			wantSeries: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb",
+					"attr", "test_attr",
+				)
+				return []sample{
+					{
+						MF: "test_hist_to_nhcb",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           3,
+							Sum:             3,
+							Schema:          -53,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+							PositiveBuckets: []int64{2, -2, 1},
+							CustomValues:    []float64{5, 10},
+						},
+						ES: []exemplar.Exemplar{{Value: 1}},
+					},
+					{
+						MF: "test_hist_to_nhcb",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           11,
+							Sum:             5,
+							Schema:          -53,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+							PositiveBuckets: []int64{3, 5, -8},
+							CustomValues:    []float64{0, 1},
+						},
+						ES: []exemplar.Exemplar{{Value: 2}},
+					},
+				}
+			},
+		},
 		{
 			name: "histogram data points with same labels",
 			metric: func() pmetric.Metric {
@@ -1021,42 +1208,56 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
-			wantSeries: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
-					{Name: "attr", Value: "test_attr"},
-				}
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Histograms: []prompb.Histogram{
-							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 3},
-								Sum:            3,
-								Schema:         -53,
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
-								PositiveDeltas: []int64{2, -2, 1},
-								CustomValues:   []float64{5, 10},
-							},
-							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 11},
-								Sum:            5,
-								Schema:         -53,
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 3}},
-								PositiveDeltas: []int64{3, 5, -8},
-								CustomValues:   []float64{0, 1},
-							},
+			scope:        defaultScope,
+			promoteScope: true,
+			wantSeries: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb",
+					"attr", "test_attr",
+					"otel_scope_name", defaultScope.name,
+					"otel_scope_schema_url", defaultScope.schemaURL,
+					"otel_scope_version", defaultScope.version,
+					"otel_scope_attr1", "value1",
+					"otel_scope_attr2", "value2",
+				)
+				return []sample{
+					{
+						MF: "test_hist_to_nhcb",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           3,
+							Sum:             3,
+							Schema:          -53,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+							PositiveBuckets: []int64{2, -2, 1},
+							CustomValues:    []float64{5, 10},
 						},
-						Exemplars: []prompb.Exemplar{
-							{Value: 1},
-							{Value: 2},
+						ES: []exemplar.Exemplar{{Value: 1}},
+					},
+					{
+						MF: "test_hist_to_nhcb",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           11,
+							Sum:             5,
+							Schema:          -53,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+							PositiveBuckets: []int64{3, 5, -8},
+							CustomValues:    []float64{0, 1},
 						},
+						ES: []exemplar.Exemplar{{Value: 2}},
 					},
 				}
 			},
 		},
 		{
-			name: "histogram data points with different labels",
+			name: "histogram data points with different labels and without scope promotion",
 			metric: func() pmetric.Metric {
 				metric := pmetric.NewMetric()
 				metric.SetName("test_hist_to_nhcb")
@@ -1080,48 +1281,50 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
-			wantSeries: func() map[uint64]*prompb.TimeSeries {
-				labels := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
-					{Name: "attr", Value: "test_attr"},
-				}
-				labelsAnother := []prompb.Label{
-					{Name: model.MetricNameLabel, Value: "test_hist_to_nhcb"},
-					{Name: "attr", Value: "test_attr_two"},
-				}
+			scope:        defaultScope,
+			promoteScope: false,
+			wantSeries: func() []sample {
+				lbls := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb",
+					"attr", "test_attr",
+				)
+				labelsAnother := labels.FromStrings(
+					model.MetricNameLabel, "test_hist_to_nhcb",
+					"attr", "test_attr_two",
+				)
 
-				return map[uint64]*prompb.TimeSeries{
-					timeSeriesSignature(labels): {
-						Labels: labels,
-						Histograms: []prompb.Histogram{
-							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 6},
-								Sum:            3,
-								Schema:         -53,
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
-								PositiveDeltas: []int64{4, -2},
-								CustomValues:   []float64{0, 1},
-							},
+				return []sample{
+					{
+						MF: "test_hist_to_nhcb",
+						L:  lbls,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           6,
+							Sum:             3,
+							Schema:          -53,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+							PositiveBuckets: []int64{4, -2},
+							CustomValues:    []float64{0, 1},
 						},
-						Exemplars: []prompb.Exemplar{
-							{Value: 1},
-						},
+						ES: []exemplar.Exemplar{{Value: 1}},
 					},
-					timeSeriesSignature(labelsAnother): {
-						Labels: labelsAnother,
-						Histograms: []prompb.Histogram{
-							{
-								Count:          &prompb.Histogram_CountInt{CountInt: 11},
-								Sum:            5,
-								Schema:         -53,
-								PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}},
-								PositiveDeltas: []int64{3, 5},
-								CustomValues:   []float64{0, 1},
-							},
+					{
+						MF: "test_hist_to_nhcb",
+						L:  labelsAnother,
+						M:  metadata.Metadata{},
+						T:  0,
+						ST: 0,
+						H: &histogram.Histogram{
+							Count:           11,
+							Sum:             5,
+							Schema:          -53,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+							PositiveBuckets: []int64{3, 5},
+							CustomValues:    []float64{0, 1},
 						},
-						Exemplars: []prompb.Exemplar{
-							{Value: 2},
-						},
+						ES: []exemplar.Exemplar{{Value: 2}},
 					},
 				}
 			},
@@ -1131,27 +1334,39 @@ func TestPrometheusConverter_addCustomBucketsHistogramDataPoints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
 
-			converter := NewPrometheusConverter()
+			appTest := teststorage.NewAppendable()
+			app := appTest.AppenderV2(t.Context())
+			converter := NewPrometheusConverter(app)
 			namer := otlptranslator.MetricNamer{
 				WithMetricSuffixes: true,
 			}
+			name, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+			require.NoError(t, err)
+			settings := Settings{
+				ConvertHistogramsToNHCB: true,
+				PromoteScopeMetadata:    tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
+
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
+
 			annots, err := converter.addCustomBucketsHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					ExportCreatedMetric:     true,
-					ConvertHistogramsToNHCB: true,
-				},
-				namer.Build(TranslatorMetricFromOtelMetric(metric)),
+				settings,
 				pmetric.AggregationTemporalityCumulative,
+				storage.AOptions{
+					MetricFamilyName: name,
+				},
 			)
 
 			require.NoError(t, err)
 			require.Empty(t, annots)
 
-			require.Equal(t, tt.wantSeries(), converter.unique)
-			require.Empty(t, converter.conflicts)
+			require.NoError(t, app.Commit())
+			teststorage.RequireEqual(t, tt.wantSeries(), appTest.ResultSamples())
 		})
 	}
 }

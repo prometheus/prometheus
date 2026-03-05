@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,13 +15,13 @@ package tsdb
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -82,20 +82,22 @@ func repairBadIndexVersion(logger *slog.Logger, dir string) error {
 
 		// Set the 5th byte to 2 to indicate the correct file format version.
 		if _, err := repl.WriteAt([]byte{2}, 4); err != nil {
-			errs := tsdb_errors.NewMulti(
-				fmt.Errorf("rewrite of index.repaired for block dir: %v: %w", d, err))
-			if err := repl.Close(); err != nil {
-				errs.Add(fmt.Errorf("close: %w", err))
+			errs := []error{
+				fmt.Errorf("rewrite of index.repaired for block dir: %v: %w", d, err),
 			}
-			return errs.Err()
+			if err := repl.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("close: %w", err))
+			}
+			return errors.Join(errs...)
 		}
 		if err := repl.Sync(); err != nil {
-			errs := tsdb_errors.NewMulti(
-				fmt.Errorf("sync of index.repaired for block dir: %v: %w", d, err))
-			if err := repl.Close(); err != nil {
-				errs.Add(fmt.Errorf("close: %w", err))
+			errs := []error{
+				fmt.Errorf("sync of index.repaired for block dir: %v: %w", d, err),
 			}
-			return errs.Err()
+			if err := repl.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("close: %w", err))
+			}
+			return errors.Join(errs...)
 		}
 		if err := repl.Close(); err != nil {
 			return fmt.Errorf("close repaired index for block dir: %v: %w", d, err)

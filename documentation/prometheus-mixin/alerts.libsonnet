@@ -212,8 +212,8 @@
               # Without max_over_time, failed scrapes could create false negatives, see
               # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
               (
-                max_over_time(prometheus_remote_storage_highest_timestamp_in_seconds{%(prometheusSelector)s}[5m])
-              - ignoring(remote_name, url) group_right
+                max_over_time(prometheus_remote_storage_queue_highest_timestamp_seconds{%(prometheusSelector)s}[5m])
+              -
                 max_over_time(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(prometheusSelector)s}[5m])
               )
               > 120

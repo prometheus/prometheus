@@ -17,6 +17,7 @@ load 5m
   testmetric1{src="a",dst="b"} 0
   testmetric2{src="a",dst="b"} 1
 
-eval_fail instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+eval instant at 0m ceil({__name__=~'testmetric1|testmetric2'})
+  expect fail
 
 clear

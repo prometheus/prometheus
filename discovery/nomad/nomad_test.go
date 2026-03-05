@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -150,7 +150,11 @@ func TestConfiguredService(t *testing.T) {
 			require.NoError(t, metrics.Register())
 			defer metrics.Unregister()
 
-			_, err := NewDiscovery(conf, nil, metrics)
+			_, err := NewDiscovery(conf, discovery.DiscovererOptions{
+				Logger:  nil,
+				Metrics: metrics,
+				SetName: "nomad",
+			})
 			if tc.acceptedURL {
 				require.NoError(t, err)
 			} else {
@@ -178,7 +182,11 @@ func TestNomadSDRefresh(t *testing.T) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: metrics,
+		SetName: "nomad",
+	})
 	require.NoError(t, err)
 
 	tgs, err := d.refresh(context.Background())

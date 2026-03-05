@@ -106,7 +106,52 @@ eval range from <start> to <end> step <step> <query>
 * `<start>` and `<end>` specify the time range of the range query, and use the same syntax as `<time>`
 * `<step>` is the step of the range query, and uses the same syntax as `<time>` (eg. `30s`) 
 * `<expect>`(optional) specifies expected annotations, errors, or result ordering.
+* `<expect range vector>` (optional) for an instant query you can specify expected range vector timestamps
+* `<expect string> "<string>"` (optional) for matching a string literal
 * `<series>` and `<points>` specify the expected values, and follow the same syntax as for `load` above
+
+### Special handling of counter reset hints in native histograms
+
+Native histograms as part of `<points>` may or may not contain an explicit
+`counter_reset_hint` property. If a `counter_reset_hint` is provided
+explicitly, the counter reset hint of the histogram is tested to have the
+provided value (`unknown`, `reset`, `not_reset`, or `gauge`). However, if no
+`counter_reset_hint` is specified, the `counter_reset_hint` is not tested at
+all (rather than testing for the usual default value `unknown`).
+
+### `expect string`
+
+This can be used to specify that a string literal is the expected result.
+
+Note that this is only supported on instant queries.
+
+For example;
+
+```
+eval instant at 50m ("Foo")
+ expect string "Foo"
+```
+
+The expected string value must be within quotes. Double or back quotes are supported.
+
+### `expect range vector`
+
+This can be used to specify the expected timestamps on a range vector resulting from an instant query.
+
+```
+expect range vector <start> to <end> step <step>
+```
+
+For example;
+```
+load 10s
+  some_metric{env="a"} 1+1x5
+  some_metric{env="b"} 2+2x5
+eval instant at 1m some_metric[1m]
+  expect range vector from 10s to 1m step 10s
+  some_metric{env="a"} 2 3 4 5 6
+  some_metric{env="b"} 4 6 8 10 12
+```
 
 ### `expect` Syntax
 

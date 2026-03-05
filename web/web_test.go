@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -52,11 +52,15 @@ type dbAdapter struct {
 	*tsdb.DB
 }
 
+func (a *dbAdapter) BlockMetas() ([]tsdb.BlockMeta, error) {
+	return a.DB.BlockMetas(), nil
+}
+
 func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	return a.Head().Stats(statsByLabelName, limit), nil
 }
 
-func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+func (*dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
 
@@ -106,8 +110,7 @@ func TestReadyAndHealthy(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -137,11 +140,32 @@ func TestReadyAndHealthy(t *testing.T) {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "false", resp.Header.Get("X-Prometheus-Stopping"))
 		cleanupTestResponse(t, resp)
 
 		resp, err = http.Head(u)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "false", resp.Header.Get("X-Prometheus-Stopping"))
+		cleanupTestResponse(t, resp)
+	}
+
+	// Set to stopping
+	webHandler.SetReady(Stopping)
+
+	for _, u := range []string{
+		baseURL + "/-/ready",
+	} {
+		resp, err = http.Get(u)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "true", resp.Header.Get("X-Prometheus-Stopping"))
+		cleanupTestResponse(t, resp)
+
+		resp, err = http.Head(u)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "true", resp.Header.Get("X-Prometheus-Stopping"))
 		cleanupTestResponse(t, resp)
 	}
 
@@ -224,8 +248,7 @@ func TestRoutePrefix(t *testing.T) {
 	if err != nil {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -305,6 +328,7 @@ func TestDebugHandler(t *testing.T) {
 				Host:   "localhost.localdomain:9090",
 				Scheme: "http",
 			},
+			Version: &PrometheusVersion{},
 		}
 		handler := New(nil, opts)
 		handler.SetReady(Ready)
@@ -330,6 +354,7 @@ func TestHTTPMetrics(t *testing.T) {
 			Host:   "localhost.localdomain:9090",
 			Scheme: "http",
 		},
+		Version: &PrometheusVersion{},
 	})
 	getReady := func() int {
 		t.Helper()
@@ -483,7 +508,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -545,8 +570,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -569,6 +593,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		"/query_range":                 {http.MethodGet, http.MethodPost},
 		"/query_exemplars":             {http.MethodGet, http.MethodPost},
 		"/status/tsdb":                 {http.MethodGet},
+		"/status/tsdb/blocks":          {http.MethodGet},
 		"/alerts":                      {http.MethodGet},
 		"/rules":                       {http.MethodGet},
 		"/admin/tsdb/delete_series":    {http.MethodPost, http.MethodPut},
@@ -678,8 +703,7 @@ func TestMultipleListenAddresses(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listener: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {

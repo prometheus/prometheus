@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -215,7 +216,7 @@ func (g *Group) run(ctx context.Context) {
 		return
 	}
 
-	ctx = promql.NewOriginContext(ctx, map[string]interface{}{
+	ctx = promql.NewOriginContext(ctx, map[string]any{
 		"ruleGroup": map[string]string{
 			"file": g.File(),
 			"name": g.Name(),
@@ -482,9 +483,7 @@ func (g *Group) CopyState(from *Group) {
 			continue
 		}
 
-		for fp, a := range far.active {
-			ar.active[fp] = a
-		}
+		maps.Copy(ar.active, far.active)
 	}
 
 	// Handle deleted and unmatched duplicate rules.
@@ -520,6 +519,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			since := time.Since(t)
 			g.metrics.EvalDuration.Observe(since.Seconds())
+			g.metrics.EvalDurationHistogram.Observe(since.Seconds())
 			rule.SetEvaluationDuration(since)
 			rule.SetEvaluationTimestamp(t)
 		}(time.Now())
@@ -790,7 +790,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 		// While not technically the same number of series we expect, it's as good of an approximation as any.
 		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
 		for sset.Next() {
-			seriesByLabels[sset.At().Labels().DropMetricName().String()] = sset.At()
+			seriesByLabels[sset.At().Labels().DropReserved(func(n string) bool { return n == labels.MetricName }).String()] = sset.At()
 		}
 
 		// No results for this alert rule.
@@ -911,19 +911,21 @@ const namespace = "prometheus"
 
 // Metrics for rule evaluation.
 type Metrics struct {
-	EvalDuration             prometheus.Summary
-	IterationDuration        prometheus.Summary
-	IterationsMissed         *prometheus.CounterVec
-	IterationsScheduled      *prometheus.CounterVec
-	EvalTotal                *prometheus.CounterVec
-	EvalFailures             *prometheus.CounterVec
-	GroupInterval            *prometheus.GaugeVec
-	GroupLastEvalTime        *prometheus.GaugeVec
-	GroupLastDuration        *prometheus.GaugeVec
-	GroupLastRuleDurationSum *prometheus.GaugeVec
-	GroupLastRestoreDuration *prometheus.GaugeVec
-	GroupRules               *prometheus.GaugeVec
-	GroupSamples             *prometheus.GaugeVec
+	EvalDuration               prometheus.Summary
+	EvalDurationHistogram      prometheus.Histogram
+	IterationDuration          prometheus.Summary
+	IterationDurationHistogram prometheus.Histogram
+	IterationsMissed           *prometheus.CounterVec
+	IterationsScheduled        *prometheus.CounterVec
+	EvalTotal                  *prometheus.CounterVec
+	EvalFailures               *prometheus.CounterVec
+	GroupInterval              *prometheus.GaugeVec
+	GroupLastEvalTime          *prometheus.GaugeVec
+	GroupLastDuration          *prometheus.GaugeVec
+	GroupLastRuleDurationSum   *prometheus.GaugeVec
+	GroupLastRestoreDuration   *prometheus.GaugeVec
+	GroupRules                 *prometheus.GaugeVec
+	GroupSamples               *prometheus.GaugeVec
 }
 
 // NewGroupMetrics creates a new instance of Metrics and registers it with the provided registerer,
@@ -937,11 +939,29 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Help:       "The duration for a rule to execute.",
 				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 			}),
+		EvalDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace:                       namespace,
+			Name:                            "rule_evaluation_duration_histogram_seconds",
+			Help:                            "The duration for a rule to execute.",
+			Buckets:                         []float64{.01, .1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}),
 		IterationDuration: prometheus.NewSummary(prometheus.SummaryOpts{
 			Namespace:  namespace,
 			Name:       "rule_group_duration_seconds",
 			Help:       "The duration of rule group evaluations.",
 			Objectives: map[float64]float64{0.01: 0.001, 0.05: 0.005, 0.5: 0.05, 0.90: 0.01, 0.99: 0.001},
+		}),
+		IterationDurationHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace:                       namespace,
+			Name:                            "rule_group_duration_histogram_seconds",
+			Help:                            "The duration of rule group evaluations.",
+			Buckets:                         []float64{.01, .1, 1, 10},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		IterationsMissed: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -1036,7 +1056,9 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 	if reg != nil {
 		reg.MustRegister(
 			m.EvalDuration,
+			m.EvalDurationHistogram,
 			m.IterationDuration,
+			m.IterationDurationHistogram,
 			m.IterationsMissed,
 			m.IterationsScheduled,
 			m.EvalTotal,
@@ -1092,13 +1114,12 @@ func (m dependencyMap) isIndependent(r Rule) bool {
 
 // buildDependencyMap builds a data-structure which contains the relationships between rules within a group.
 //
-// Alert rules, by definition, cannot have any dependents - but they can have dependencies. Any recording rule on whose
-// output an Alert rule depends will not be able to run concurrently.
+// Both Alert and RecordingRule can have dependents and dependencies. Alert can have dependents if another rule,
+// with in the group, queries ALERTS or ALERTS_FOR_NAME metrics.
 //
 // There is a class of rule expressions which are considered "indeterminate", because either relationships cannot be
 // inferred, or concurrent evaluation of rules depending on these series would produce undefined/unexpected behaviour:
 //   - wildcard queriers like {cluster="prod1"} which would match every series with that label selector
-//   - any "meta" series (series produced by Prometheus itself) like ALERTS, ALERTS_FOR_STATE
 //
 // Rules which are independent can run concurrently with no side-effects.
 func buildDependencyMap(rules []Rule) dependencyMap {
@@ -1138,22 +1159,43 @@ func buildDependencyMap(rules []Rule) dependencyMap {
 					return nil
 				}
 
-				// Rules which depend on "meta-metrics" like ALERTS and ALERTS_FOR_STATE will have undefined behaviour
-				// if they run concurrently.
-				if nameMatcher.Matches(alertMetricName) || nameMatcher.Matches(alertForStateMetricName) {
-					indeterminate = true
-					return nil
+				// Check if the vector selector is querying "meta-metrics" like ALERTS and ALERTS_FOR_STATE and, if so,
+				// find out the "alertname" label matcher (it could be missing).
+				nameMatchesAlerts := nameMatcher.Matches(alertMetricName) || nameMatcher.Matches(alertForStateMetricName)
+				var alertsNameMatcher *labels.Matcher
+				if nameMatchesAlerts {
+					for _, m := range n.LabelMatchers {
+						if m.Name == labels.AlertName {
+							alertsNameMatcher = m
+							break
+						}
+					}
 				}
 
-				// Find rules which depend on the output of this rule.
+				// Find the other rules that this rule depends on.
 				for _, other := range rules {
+					// Rules are defined in order in a rule group. Once we find our rule we can stop searching
+					// because next rules can't be considered dependencies of this rule by specification, given
+					// they are defined later in the group. The next rules can still query this rule, but they're
+					// just not strict dependencies to honor.
 					if other == rule {
-						continue
+						break
 					}
 
 					otherName := other.Name()
+
+					// If this rule vector selector matches the other rule name, then it's a dependency.
 					if nameMatcher.Matches(otherName) {
 						dependencies[other] = append(dependencies[other], rule)
+						continue
+					}
+
+					// If this rule vector selector is querying the alerts meta-metrics and the other rule
+					// is an alerting rule, then we check if the "alertname" matches. If it does, then it's a dependency.
+					if _, otherIsAlertingRule := other.(*AlertingRule); nameMatchesAlerts && otherIsAlertingRule {
+						if alertsNameMatcher == nil || alertsNameMatcher.Matches(otherName) {
+							dependencies[other] = append(dependencies[other], rule)
+						}
 					}
 				}
 			}

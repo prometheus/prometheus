@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -89,7 +89,7 @@ func (s stepStat) String() string {
 
 // MarshalJSON implements json.Marshaler.
 func (s stepStat) MarshalJSON() ([]byte, error) {
-	return json.Marshal([...]interface{}{float64(s.T) / 1000, s.V})
+	return json.Marshal([...]any{float64(s.T) / 1000, s.V})
 }
 
 // queryTimings with all query timers mapped to durations.
@@ -323,7 +323,7 @@ func NewQuerySamples(enablePerStepStats bool) *QuerySamples {
 	return &qs
 }
 
-func (qs *QuerySamples) NewChild() *QuerySamples {
+func (*QuerySamples) NewChild() *QuerySamples {
 	return NewQuerySamples(false)
 }
 

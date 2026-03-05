@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -56,7 +56,7 @@ func TestRefresh(t *testing.T) {
 	}
 
 	var i int
-	refresh := func(_ context.Context) ([]*targetgroup.Group, error) {
+	refresh := func(context.Context) ([]*targetgroup.Group, error) {
 		i++
 		switch i {
 		case 1:
@@ -76,6 +76,7 @@ func TestRefresh(t *testing.T) {
 		Options{
 			Logger:              nil,
 			Mech:                "test",
+			SetName:             "test-refresh",
 			Interval:            interval,
 			RefreshF:            refresh,
 			MetricsInstantiator: metrics,
@@ -83,8 +84,7 @@ func TestRefresh(t *testing.T) {
 	)
 
 	ch := make(chan []*targetgroup.Group)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go d.Run(ctx, ch)
 
 	tg := <-ch

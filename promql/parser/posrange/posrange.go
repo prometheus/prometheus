@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,8 +23,8 @@ type Pos int
 
 // PositionRange describes a position in the input string of the parser.
 type PositionRange struct {
-	Start Pos
-	End   Pos
+	Start Pos // Start of the range, zero-indexed.
+	End   Pos // End of the range, zero-indexed.
 }
 
 // StartPosInput uses the query string to convert the PositionRange into a

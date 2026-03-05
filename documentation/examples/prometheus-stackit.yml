@@ -12,8 +12,15 @@ scrape_configs:
 
     stackit_sd_configs:
       - project: 11111111-1111-1111-1111-111111111111
-        authorization:
-          credentials: "<replace with a STACKIT ServiceAccount Token>"
+        oauth2:
+          client_id: <credentials.sub>
+          client_certificate_key: <credentials.privateKey>
+          client_certificate_key_id: <credentials.kid>
+          iss: <credentials.iss>
+          audience: <credentials.aud>
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer"
+          token_url: "https://service-account.api.stackit.cloud/token"
+          signature_algorithm: RS512
     relabel_configs:
       # Use the public IPv4 and port 9100 to scrape the target.
       - source_labels: [__meta_stackit_public_ipv4]
@@ -25,8 +32,15 @@ scrape_configs:
 
     stackit_sd_configs:
       - project: 11111111-1111-1111-1111-111111111111
-        authorization:
-          credentials: "<replace with a STACKIT ServiceAccount Token>"
+        oauth2:
+          client_id: <credentials.sub>
+          client_certificate_key: <credentials.privateKey>
+          client_certificate_key_id: <credentials.kid>
+          iss: <credentials.iss>
+          audience: <credentials.aud>
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer"
+          token_url: "https://service-account.api.stackit.cloud/token"
+          signature_algorithm: RS512
     relabel_configs:
       # Use the private IPv4 within the STACKIT Subnet and port 9100 to scrape the target.
       - source_labels: [__meta_stackit_private_ipv4_mynet]

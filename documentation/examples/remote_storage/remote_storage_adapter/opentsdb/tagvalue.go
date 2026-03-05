@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -66,7 +66,7 @@ func (tv TagValue) MarshalJSON() ([]byte, error) {
 	// Need at least two more bytes than in tv.
 	result := bytes.NewBuffer(make([]byte, 0, length+2))
 	result.WriteByte('"')
-	for i := 0; i < length; i++ {
+	for i := range length {
 		b := tv[i]
 		switch {
 		case (b >= '-' && b <= '9') || // '-', '.', '/', 0-9

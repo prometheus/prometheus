@@ -1,0 +1,383 @@
+# ==================== fill / fill_left / fill_right modifier tests ====================
+
+# Test data for fill modifier tests: vectors with partial overlap.
+load 5m
+  left_vector{label="a"} 10
+  left_vector{label="b"} 20
+  left_vector{label="c"} 30
+  right_vector{label="a"} 100
+  right_vector{label="b"} 200
+  right_vector{label="d"} 400
+
+# ---------- Arithmetic operators with fill modifiers ----------
+
+# fill(0): Fill both sides with 0 for addition.
+eval instant at 0m left_vector + fill(0) right_vector
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} 30
+  {label="d"} 400
+
+# fill_left(0): Only fill left side with 0.
+eval instant at 0m left_vector + fill_left(0) right_vector
+  {label="a"} 110
+  {label="b"} 220
+  {label="d"} 400
+
+# fill_right(0): Only fill right side with 0.
+eval instant at 0m left_vector + fill_right(0) right_vector
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} 30
+
+# fill_left and fill_right with different values.
+eval instant at 0m left_vector + fill_left(5) fill_right(7) right_vector
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} 37
+  {label="d"} 405
+
+# fill with NaN.
+eval instant at 0m left_vector + fill(NaN) right_vector
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} NaN
+  {label="d"} NaN
+
+# fill with Inf.
+eval instant at 0m left_vector + fill(Inf) right_vector
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} +Inf
+  {label="d"} +Inf
+
+# fill with -Inf.
+eval instant at 0m left_vector + fill(-Inf) right_vector
+  {label="a"} 110
+  {label="b"} 220
+  {label="c"} -Inf
+  {label="d"} -Inf
+
+# ---------- Comparison operators with fill modifiers ----------
+
+# fill with equality comparison.
+eval instant at 0m left_vector == fill(30) right_vector
+  left_vector{label="c"} 30
+
+# fill with inequality comparison.
+eval instant at 0m left_vector != fill(30) right_vector
+  left_vector{label="a"} 10
+  left_vector{label="b"} 20
+  {label="d"} 30
+
+# fill with greater than.
+eval instant at 0m left_vector > fill(25) right_vector
+  left_vector{label="c"} 30
+
+# ---------- Comparison operators with bool modifier and fill ----------
+
+# fill with equality comparison and bool.
+eval instant at 0m left_vector == bool fill(30) right_vector
+  {label="a"} 0
+  {label="b"} 0
+  {label="c"} 1
+  {label="d"} 0
+
+# fill with inequality comparison and bool.
+eval instant at 0m left_vector != bool fill(30) right_vector
+  {label="a"} 1
+  {label="b"} 1
+  {label="c"} 0
+  {label="d"} 1
+
+# fill with greater than and bool.
+eval instant at 0m left_vector > bool fill(25) right_vector
+  {label="a"} 0
+  {label="b"} 0
+  {label="c"} 1
+  {label="d"} 0
+
+# ---------- fill with on() and ignoring() modifiers ----------
+
+clear
+
+load 5m
+  left_vector{job="foo", instance="a"} 10
+  left_vector{job="foo", instance="b"} 20
+  left_vector{job="bar", instance="a"} 30
+  right_vector{job="foo", instance="a"} 100
+  right_vector{job="foo", instance="c"} 300
+
+# fill with on().
+eval instant at 0m left_vector + on(job, instance) fill(0) right_vector
+  {job="foo", instance="a"} 110
+  {job="foo", instance="b"} 20
+  {job="bar", instance="a"} 30
+  {job="foo", instance="c"} 300
+
+# fill_right with on().
+eval instant at 0m left_vector + on(job, instance) fill_right(0) right_vector
+  {job="foo", instance="a"} 110
+  {job="foo", instance="b"} 20
+  {job="bar", instance="a"} 30
+
+# fill_left with on().
+eval instant at 0m left_vector + on(job, instance) fill_left(0) right_vector
+  {job="foo", instance="a"} 110
+  {job="foo", instance="c"} 300
+
+# fill with ignoring() - requires group_left since ignoring(job) creates many-to-one matching
+# when two left_vector series have same instance but different jobs.
+eval instant at 0m left_vector + ignoring(job) group_left fill(0) right_vector
+  {instance="a", job="foo"} 110
+  {instance="a", job="bar"} 130
+  {instance="b", job="foo"} 20
+  {instance="c"} 300
+
+# ---------- fill with group_left / group_right (many-to-one / one-to-many) ----------
+
+clear
+
+load 5m
+  requests{method="GET", status="200"} 100
+  requests{method="POST", status="200"} 200
+  requests{method="GET", status="500"} 10
+  requests{method="POST", status="500"} 20
+  limits{status="200"} 1000
+  limits{status="404"} 500
+  limits{status="500"} 50
+
+# group_left with fill_right: fill missing "one" side series.
+eval instant at 0m requests / on(status) group_left fill_right(1) limits
+  {method="GET", status="200"} 0.1
+  {method="POST", status="200"} 0.2
+  {method="GET", status="500"} 0.2
+  {method="POST", status="500"} 0.4
+
+# group_left with fill_left: fill missing "many" side series.
+# For status="404", there's no matching requests, so a single series with the match group's labels is filled
+eval instant at 0m requests + on(status) group_left fill_left(0) limits
+  {method="GET", status="200"} 1100
+  {method="POST", status="200"} 1200
+  {method="GET", status="500"} 60
+  {method="POST", status="500"} 70
+  {status="404"} 500
+
+# group_left with fill on both sides.
+eval instant at 0m requests + on(status) group_left fill(0) limits
+  {method="GET", status="200"} 1100
+  {method="POST", status="200"} 1200
+  {method="GET", status="500"} 60
+  {method="POST", status="500"} 70
+  {status="404"} 500
+
+# group_right with fill_left: fill missing "one" side series.
+clear
+
+load 5m
+  cpu_info{instance="a", cpu="0"} 1
+  cpu_info{instance="a", cpu="1"} 1
+  cpu_info{instance="b", cpu="0"} 1
+  node_meta{instance="a"} 100
+  node_meta{instance="c"} 300
+
+# fill_left fills the "one" side (node_meta) when missing for a "many" side series.
+eval instant at 0m node_meta * on(instance) group_right fill_left(1) cpu_info
+  {instance="a", cpu="0"} 100
+  {instance="a", cpu="1"} 100
+  {instance="c"} 300
+
+# group_right with fill_right: fill missing "many" side series.
+eval instant at 0m node_meta * on(instance) group_right fill_right(0) cpu_info
+  {instance="a", cpu="0"} 100
+  {instance="a", cpu="1"} 100
+  {instance="b", cpu="0"} 0
+
+# group_right with fill on both sides.
+eval instant at 0m node_meta * on(instance) group_right fill(1) cpu_info
+  {instance="a", cpu="0"} 100
+  {instance="a", cpu="1"} 100
+  {instance="b", cpu="0"} 1
+  {instance="c"} 300
+
+# ---------- fill with group_left/group_right and extra labels ----------
+
+clear
+
+load 5m
+  requests{method="GET", status="200"} 100
+  requests{method="POST", status="200"} 200
+  limits{status="200", owner="team-a"} 1000
+  limits{status="500", owner="team-b"} 50
+
+# group_left with extra label and fill_right.
+# Note: when filling the "one" side, the joined label cannot be filled.
+eval instant at 0m requests + on(status) group_left(owner) fill_right(0) limits
+  {method="GET", status="200", owner="team-a"} 1100
+  {method="POST", status="200", owner="team-a"} 1200
+
+# ---------- Edge cases ----------
+
+clear
+
+load 5m
+  only_left{label="a"} 10
+  only_left{label="b"} 20
+  only_right{label="c"} 30
+  only_right{label="d"} 40
+
+# No overlap at all - fill creates all results.
+eval instant at 0m only_left + fill(0) only_right
+  {label="a"} 10
+  {label="b"} 20
+  {label="c"} 30
+  {label="d"} 40
+
+# No overlap - fill_left only creates right side results.
+eval instant at 0m only_left + fill_left(0) only_right
+  {label="c"} 30
+  {label="d"} 40
+
+# No overlap - fill_right only creates left side results.
+eval instant at 0m only_left + fill_right(0) only_right
+  {label="a"} 10
+  {label="b"} 20
+
+# Complete overlap - fill has no effect.
+clear
+
+load 5m
+  complete_left{label="a"} 10
+  complete_left{label="b"} 20
+  complete_right{label="a"} 100
+  complete_right{label="b"} 200
+
+eval instant at 0m complete_left + fill(99) complete_right
+  {label="a"} 110
+  {label="b"} 220
+
+# ---------- fill with range queries ----------
+
+clear
+
+load 5m
+  range_left{label="a"} 1 2 3 4 5
+  range_left{label="b"} 10 20 30 40 50
+  range_right{label="a"} 100 200 300 400 500
+  range_right{label="c"} 1000 2000 3000 4000 5000
+
+eval range from 0 to 20m step 5m range_left + fill(0) range_right
+  {label="a"} 101 202 303 404 505
+  {label="b"} 10 20 30 40 50
+  {label="c"} 1000 2000 3000 4000 5000
+
+eval range from 0 to 20m step 5m range_left + fill_right(0) range_right
+  {label="a"} 101 202 303 404 505
+  {label="b"} 10 20 30 40 50
+
+eval range from 0 to 20m step 5m range_left + fill_left(0) range_right
+  {label="a"} 101 202 303 404 505
+  {label="c"} 1000 2000 3000 4000 5000
+
+# Range queries with intermittently present series.
+clear
+
+load 5m
+  intermittent_left{label="a"}  1  _  3  _  5
+  intermittent_left{label="b"}  _  20 _  40 _
+  intermittent_right{label="a"} _  200 _ 400 _
+  intermittent_right{label="b"} 100 _ 300 _ 500
+  intermittent_right{label="c"} 1000 _ _ 4000 5000
+
+# When both sides have the same label but are present at different times,
+# fill creates results at all timestamps where at least one side is present.
+eval range from 0 to 20m step 5m intermittent_left + fill(0) intermittent_right
+  {label="a"} 1 200 3 400 5
+  {label="b"} 100 20 300 40 500
+  {label="c"} 1000 _ _ 4000 5000
+
+# fill_right only fills the right side when it's missing.
+# Output only exists when left side is present (right side filled with 0 if missing).
+eval range from 0 to 20m step 5m intermittent_left + fill_right(0) intermittent_right
+  {label="a"} 1 _ 3 _ 5
+  {label="b"} _ 20 _ 40 _
+
+# fill_left only fills the left side when it's missing.
+# Output only exists when right side is present (left side filled with 0 if missing).
+eval range from 0 to 20m step 5m intermittent_left + fill_left(0) intermittent_right
+  {label="a"} _ 200 _ 400 _
+  {label="b"} 100 _ 300 _ 500
+  {label="c"} 1000 _ _ 4000 5000
+
+# ---------- fill with vectors where one side is empty ----------
+
+clear
+
+load 5m
+  non_empty{label="a"} 10
+  non_empty{label="b"} 20
+
+# Empty right side - fill_right has no effect (nothing to add).
+eval instant at 0m non_empty + fill_right(0) nonexistent
+  {label="a"} 10
+  {label="b"} 20
+
+# Empty right side - fill_left creates nothing (no right side labels to use).
+eval instant at 0m non_empty + fill_left(0) nonexistent
+
+# Empty left side - fill_left has no effect.
+eval instant at 0m nonexistent + fill_left(0) non_empty
+  {label="a"} 10
+  {label="b"} 20
+
+# Empty left side - fill_right creates nothing.
+eval instant at 0m nonexistent + fill_right(0) non_empty
+
+# fill both sides with one side empty.
+eval instant at 0m non_empty + fill(0) nonexistent
+  {label="a"} 10
+  {label="b"} 20
+
+eval instant at 0m nonexistent + fill(0) non_empty
+  {label="a"} 10
+  {label="b"} 20
+
+# ---------- Metric names that match fill modifier keywords ----------
+
+clear
+
+load 5m
+  fill{label="a"} 1
+  fill{label="b"} 2
+  fill_left{label="a"} 10
+  fill_left{label="c"} 30
+  fill_right{label="b"} 200
+  fill_right{label="d"} 400
+  other{label="a"} 1000
+  other{label="e"} 5000
+
+# Metric named "fill" on the left side.
+eval instant at 0m fill + fill(0) other
+  {label="a"} 1001
+  {label="b"} 2
+  {label="e"} 5000
+
+# Metric named "fill" on the right side without modifier.
+eval instant at 0m other + fill
+  {label="a"} 1001
+
+# Metric named "fill" on the right side with fill() modifier.
+eval instant at 0m other + fill(0) fill
+  {label="a"} 1001
+  {label="b"} 2
+  {label="e"} 5000
+
+# Metric named "fill_left" on the right side with fill_left() modifier.
+eval instant at 0m other + fill_left(0) fill_left
+  {label="a"} 1010
+  {label="c"} 30
+
+# Metric named "fill_right" on the right side with fill_right() modifier.
+eval instant at 0m other + fill_right(0) fill_right
+  {label="a"} 1000
+  {label="e"} 5000

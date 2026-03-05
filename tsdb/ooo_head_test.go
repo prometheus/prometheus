@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -33,7 +33,7 @@ func valOdd(pos int) int64  { return int64(pos*2 + 1) } // s[0]=1, s[1]=3, s[2]=
 
 func makeEvenSampleSlice(n int, sampleFunc func(ts int64) sample) []sample {
 	s := make([]sample, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		s[i] = sampleFunc(valEven(i))
 	}
 	return s

@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,14 +14,7 @@
 package remote
 
 import (
-	"bytes"
-	"context"
 	"errors"
-	"fmt"
-	"log/slog"
-	"math/rand/v2"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"reflect"
@@ -31,14 +24,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/collector/pdata/pcommon"
-	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -57,7 +47,7 @@ func testRemoteWriteConfig() *config.RemoteWriteConfig {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 }
 
@@ -73,7 +63,7 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	cfg2 := config.RemoteWriteConfig{
 		Name: "write-2",
@@ -84,7 +74,7 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	cfg3 := config.RemoteWriteConfig{
 		URL: &common_config.URL{
@@ -94,7 +84,7 @@ func TestWriteStorageApplyConfig_NoDuplicateWriteConfigs(t *testing.T) {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 
 	for _, tc := range []struct {
@@ -175,7 +165,7 @@ func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	c2 := &config.RemoteWriteConfig{
 		URL: &common_config.URL{
@@ -185,7 +175,7 @@ func TestWriteStorageApplyConfig_UpdateWithRegisterer(t *testing.T) {
 			},
 		},
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	conf := &config.Config{
 		GlobalConfig:       config.DefaultGlobalConfig,
@@ -281,10 +271,11 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 		QueueConfig:   config.DefaultQueueConfig,
 		WriteRelabelConfigs: []*relabel.Config{
 			{
-				Regex: relabel.MustNewRegexp(".+"),
+				Regex:                relabel.MustNewRegexp(".+"),
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	c1 := &config.RemoteWriteConfig{
 		RemoteTimeout: model.Duration(20 * time.Second),
@@ -292,12 +283,12 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 		HTTPClientConfig: common_config.HTTPClientConfig{
 			BearerToken: "foo",
 		},
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 	c2 := &config.RemoteWriteConfig{
 		RemoteTimeout:   model.Duration(30 * time.Second),
 		QueueConfig:     config.DefaultQueueConfig,
-		ProtobufMessage: config.RemoteWriteProtoMsgV1,
+		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 
 	conf := &config.Config{
@@ -307,9 +298,7 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	// We need to set URL's so that metric creation doesn't panic.
 	for i := range conf.RemoteWriteConfigs {
 		conf.RemoteWriteConfigs[i].URL = &common_config.URL{
-			URL: &url.URL{
-				Host: "http://test-storage.com",
-			},
+			URL: mustURLParse("http://test-storage.com"),
 		}
 	}
 	require.NoError(t, s.ApplyConfig(conf))
@@ -328,7 +317,10 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 
 	storeHashes()
 	// Update c0 and c2.
-	c0.WriteRelabelConfigs[0] = &relabel.Config{Regex: relabel.MustNewRegexp("foo")}
+	c0.WriteRelabelConfigs[0] = &relabel.Config{
+		Regex:                relabel.MustNewRegexp("foo"),
+		NameValidationScheme: model.UTF8Validation,
+	}
 	c2.RemoteTimeout = model.Duration(50 * time.Second)
 	conf = &config.Config{
 		GlobalConfig:       config.GlobalConfig{},
@@ -380,219 +372,13 @@ func TestWriteStorageApplyConfig_PartialUpdate(t *testing.T) {
 	require.NoError(t, s.Close())
 }
 
-func TestOTLPWriteHandler(t *testing.T) {
-	timestamp := time.Now()
-	exportRequest := generateOTLPWriteRequest(timestamp)
-	for _, testCase := range []struct {
-		name            string
-		otlpCfg         config.OTLPConfig
-		expectedSamples []mockSample
-	}{
-		{
-			name: "NoTranslation",
-			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.NoTranslation,
-			},
-			expectedSamples: []mockSample{
-				{
-					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter"},
-						labels.Label{Name: "foo.bar", Value: "baz"},
-						labels.Label{Name: "instance", Value: "test-instance"},
-						labels.Label{Name: "job", Value: "test-service"}),
-					t: timestamp.UnixMilli(),
-					v: 10.0,
-				},
-				{
-					l: labels.New(
-						labels.Label{Name: "__name__", Value: "target_info"},
-						labels.Label{Name: "host.name", Value: "test-host"},
-						labels.Label{Name: "instance", Value: "test-instance"},
-						labels.Label{Name: "job", Value: "test-service"},
-					),
-					t: timestamp.UnixMilli(),
-					v: 1,
-				},
-			},
-		},
-		{
-			name: "UnderscoreEscapingWithSuffixes",
-			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.UnderscoreEscapingWithSuffixes,
-			},
-			expectedSamples: []mockSample{
-				{
-					l: labels.New(labels.Label{Name: "__name__", Value: "test_counter_total"},
-						labels.Label{Name: "foo_bar", Value: "baz"},
-						labels.Label{Name: "instance", Value: "test-instance"},
-						labels.Label{Name: "job", Value: "test-service"}),
-					t: timestamp.UnixMilli(),
-					v: 10.0,
-				},
-				{
-					l: labels.New(
-						labels.Label{Name: "__name__", Value: "target_info"},
-						labels.Label{Name: "host_name", Value: "test-host"},
-						labels.Label{Name: "instance", Value: "test-instance"},
-						labels.Label{Name: "job", Value: "test-service"},
-					),
-					t: timestamp.UnixMilli(),
-					v: 1,
-				},
-			},
-		},
+func TestWriteStorage_CanRegisterMetricsAfterClosing(t *testing.T) {
+	dir := t.TempDir()
+	reg := prometheus.NewPedanticRegistry()
 
-		{
-			name: "NoUTF8EscapingWithSuffixes",
-			otlpCfg: config.OTLPConfig{
-				TranslationStrategy: config.NoUTF8EscapingWithSuffixes,
-			},
-			expectedSamples: []mockSample{
-				{
-					l: labels.New(labels.Label{Name: "__name__", Value: "test.counter_total"},
-						labels.Label{Name: "foo.bar", Value: "baz"},
-						labels.Label{Name: "instance", Value: "test-instance"},
-						labels.Label{Name: "job", Value: "test-service"}),
-					t: timestamp.UnixMilli(),
-					v: 10.0,
-				},
-				{
-					l: labels.New(
-						labels.Label{Name: "__name__", Value: "target_info"},
-						labels.Label{Name: "host.name", Value: "test-host"},
-						labels.Label{Name: "instance", Value: "test-instance"},
-						labels.Label{Name: "job", Value: "test-service"},
-					),
-					t: timestamp.UnixMilli(),
-					v: 1,
-				},
-			},
-		},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			appendable := handleOTLP(t, exportRequest, testCase.otlpCfg)
-			for _, sample := range testCase.expectedSamples {
-				requireContainsSample(t, appendable.samples, sample)
-			}
-			require.Len(t, appendable.samples, 12)   // 1 (counter) + 1 (gauge) + 1 (target_info) + 7 (hist_bucket) + 2 (hist_sum, hist_count)
-			require.Len(t, appendable.histograms, 1) // 1 (exponential histogram)
-			require.Len(t, appendable.exemplars, 1)  // 1 (exemplar)
-		})
-	}
-}
-
-func requireContainsSample(t *testing.T, actual []mockSample, expected mockSample) {
-	t.Helper()
-
-	for _, got := range actual {
-		if labels.Equal(expected.l, got.l) && expected.t == got.t && expected.v == got.v {
-			return
-		}
-	}
-	require.Fail(t, fmt.Sprintf("Sample not found: \n"+
-		"expected: %v\n"+
-		"actual  : %v", expected, actual))
-}
-
-func handleOTLP(t *testing.T, exportRequest pmetricotlp.ExportRequest, otlpCfg config.OTLPConfig) *mockAppendable {
-	buf, err := exportRequest.MarshalProto()
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("", "", bytes.NewReader(buf))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/x-protobuf")
-
-	appendable := &mockAppendable{}
-	handler := NewOTLPWriteHandler(nil, nil, appendable, func() config.Config {
-		return config.Config{
-			OTLPConfig: otlpCfg,
-		}
-	}, OTLPOptions{})
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	resp := recorder.Result()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	return appendable
-}
-
-func generateOTLPWriteRequest(timestamp time.Time) pmetricotlp.ExportRequest {
-	d := pmetric.NewMetrics()
-
-	// Generate One Counter, One Gauge, One Histogram, One Exponential-Histogram
-	// with resource attributes: service.name="test-service", service.instance.id="test-instance", host.name="test-host"
-	// with metric attribute: foo.bar="baz"
-
-	resourceMetric := d.ResourceMetrics().AppendEmpty()
-	resourceMetric.Resource().Attributes().PutStr("service.name", "test-service")
-	resourceMetric.Resource().Attributes().PutStr("service.instance.id", "test-instance")
-	resourceMetric.Resource().Attributes().PutStr("host.name", "test-host")
-
-	scopeMetric := resourceMetric.ScopeMetrics().AppendEmpty()
-
-	// Generate One Counter
-	counterMetric := scopeMetric.Metrics().AppendEmpty()
-	counterMetric.SetName("test.counter")
-	counterMetric.SetDescription("test-counter-description")
-	counterMetric.SetEmptySum()
-	counterMetric.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
-	counterMetric.Sum().SetIsMonotonic(true)
-
-	counterDataPoint := counterMetric.Sum().DataPoints().AppendEmpty()
-	counterDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
-	counterDataPoint.SetDoubleValue(10.0)
-	counterDataPoint.Attributes().PutStr("foo.bar", "baz")
-
-	counterExemplar := counterDataPoint.Exemplars().AppendEmpty()
-
-	counterExemplar.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
-	counterExemplar.SetDoubleValue(10.0)
-	counterExemplar.SetSpanID(pcommon.SpanID{0, 1, 2, 3, 4, 5, 6, 7})
-	counterExemplar.SetTraceID(pcommon.TraceID{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})
-
-	// Generate One Gauge
-	gaugeMetric := scopeMetric.Metrics().AppendEmpty()
-	gaugeMetric.SetName("test.gauge")
-	gaugeMetric.SetDescription("test-gauge-description")
-	gaugeMetric.SetEmptyGauge()
-
-	gaugeDataPoint := gaugeMetric.Gauge().DataPoints().AppendEmpty()
-	gaugeDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
-	gaugeDataPoint.SetDoubleValue(10.0)
-	gaugeDataPoint.Attributes().PutStr("foo.bar", "baz")
-
-	// Generate One Histogram
-	histogramMetric := scopeMetric.Metrics().AppendEmpty()
-	histogramMetric.SetName("test.histogram")
-	histogramMetric.SetDescription("test-histogram-description")
-	histogramMetric.SetEmptyHistogram()
-	histogramMetric.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
-
-	histogramDataPoint := histogramMetric.Histogram().DataPoints().AppendEmpty()
-	histogramDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
-	histogramDataPoint.ExplicitBounds().FromRaw([]float64{0.0, 1.0, 2.0, 3.0, 4.0, 5.0})
-	histogramDataPoint.BucketCounts().FromRaw([]uint64{2, 2, 2, 2, 2, 2})
-	histogramDataPoint.SetCount(10)
-	histogramDataPoint.SetSum(30.0)
-	histogramDataPoint.Attributes().PutStr("foo.bar", "baz")
-
-	// Generate One Exponential-Histogram
-	exponentialHistogramMetric := scopeMetric.Metrics().AppendEmpty()
-	exponentialHistogramMetric.SetName("test.exponential.histogram")
-	exponentialHistogramMetric.SetDescription("test-exponential-histogram-description")
-	exponentialHistogramMetric.SetEmptyExponentialHistogram()
-	exponentialHistogramMetric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
-
-	exponentialHistogramDataPoint := exponentialHistogramMetric.ExponentialHistogram().DataPoints().AppendEmpty()
-	exponentialHistogramDataPoint.SetTimestamp(pcommon.NewTimestampFromTime(timestamp))
-	exponentialHistogramDataPoint.SetScale(2.0)
-	exponentialHistogramDataPoint.Positive().BucketCounts().FromRaw([]uint64{2, 2, 2, 2, 2})
-	exponentialHistogramDataPoint.SetZeroCount(2)
-	exponentialHistogramDataPoint.SetCount(10)
-	exponentialHistogramDataPoint.SetSum(30.0)
-	exponentialHistogramDataPoint.Attributes().PutStr("foo.bar", "baz")
-
-	return pmetricotlp.NewExportRequestFromMetrics(d)
+	s := NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false)
+	require.NoError(t, s.Close())
+	require.NotPanics(t, func() { NewWriteStorage(nil, reg, dir, time.Millisecond, nil, false) })
 }
 
 func TestOTLPDelta(t *testing.T) {

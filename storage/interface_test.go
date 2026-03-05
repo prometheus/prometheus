@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,7 +23,7 @@ import (
 )
 
 func TestMockSeries(t *testing.T) {
-	s := storage.MockSeries([]int64{1, 2, 3}, []float64{1, 2, 3}, []string{"__name__", "foo"})
+	s := storage.MockSeries(nil, []int64{1, 2, 3}, []float64{1, 2, 3}, []string{"__name__", "foo"})
 	it := s.Iterator(nil)
 	ts := []int64{}
 	vs := []float64{}
@@ -34,4 +34,21 @@ func TestMockSeries(t *testing.T) {
 	}
 	require.Equal(t, []int64{1, 2, 3}, ts)
 	require.Equal(t, []float64{1, 2, 3}, vs)
+}
+
+func TestMockSeriesWithST(t *testing.T) {
+	s := storage.MockSeries([]int64{0, 1, 2}, []int64{1, 2, 3}, []float64{1, 2, 3}, []string{"__name__", "foo"})
+	it := s.Iterator(nil)
+	ts := []int64{}
+	vs := []float64{}
+	st := []int64{}
+	for it.Next() == chunkenc.ValFloat {
+		t, v := it.At()
+		ts = append(ts, t)
+		vs = append(vs, v)
+		st = append(st, it.AtST())
+	}
+	require.Equal(t, []int64{1, 2, 3}, ts)
+	require.Equal(t, []float64{1, 2, 3}, vs)
+	require.Equal(t, []int64{0, 1, 2}, st)
 }

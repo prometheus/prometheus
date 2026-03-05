@@ -1,6 +1,5 @@
 import jquery from 'jquery';
+import moment from 'moment';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(window as any).jQuery = jquery;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(window as any).moment = require('moment');
+window.jQuery = jquery;
+window.moment = moment;

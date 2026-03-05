@@ -15,6 +15,7 @@ import { useElementSize } from "@mantine/hooks";
 import UPlotChart, { UPlotChartRange } from "./UPlotChart";
 import ASTNode, { nodeType } from "../../promql/ast";
 import serializeNode from "../../promql/serialize";
+import { useSettings } from "../../state/settingsSlice";
 
 export interface GraphProps {
   expr: string;
@@ -24,6 +25,7 @@ export interface GraphProps {
   resolution: GraphResolution;
   showExemplars: boolean;
   displayMode: GraphDisplayMode;
+  yAxisMin: number | null;
   retriggerIdx: number;
   onSelectRange: (start: number, end: number) => void;
 }
@@ -36,11 +38,13 @@ const Graph: FC<GraphProps> = ({
   resolution,
   showExemplars,
   displayMode,
+  yAxisMin,
   retriggerIdx,
   onSelectRange,
 }) => {
   const { ref, width } = useElementSize();
   const [rerender, setRerender] = useState(true);
+  const { showQueryWarnings, showQueryInfoNotices } = useSettings();
 
   const effectiveExpr =
     node === null
@@ -54,6 +58,8 @@ const Graph: FC<GraphProps> = ({
                 offset: node.offset,
                 timestamp: node.timestamp,
                 startOrEnd: node.startOrEnd,
+                anchored: node.anchored,
+                smoothed: node.smoothed,
               }
             : node
         );
@@ -88,26 +94,28 @@ const Graph: FC<GraphProps> = ({
   const renderAlerts = (warnings?: string[], infos?: string[]) => {
     return (
       <>
-        {warnings?.map((w, idx) => (
-          <Alert
-            key={idx}
-            color="red"
-            title="Query warning"
-            icon={<IconAlertTriangle />}
-          >
-            {w}
-          </Alert>
-        ))}
-        {infos?.map((w, idx) => (
-          <Alert
-            key={idx}
-            color="yellow"
-            title="Query notice"
-            icon={<IconInfoCircle />}
-          >
-            {w}
-          </Alert>
-        ))}
+        {showQueryWarnings &&
+          warnings?.map((w, idx) => (
+            <Alert
+              key={idx}
+              color="red"
+              title="Query warning"
+              icon={<IconAlertTriangle />}
+            >
+              {w}
+            </Alert>
+          ))}
+        {showQueryInfoNotices &&
+          infos?.map((w, idx) => (
+            <Alert
+              key={idx}
+              color="yellow"
+              title="Query notice"
+              icon={<IconInfoCircle />}
+            >
+              {w}
+            </Alert>
+          ))}
       </>
     );
   };
@@ -216,6 +224,7 @@ const Graph: FC<GraphProps> = ({
           width={width}
           showExemplars={showExemplars}
           displayMode={displayMode}
+          yAxisMin={yAxisMin}
           onSelectRange={onSelectRange}
         />
       </Box>

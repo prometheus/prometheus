@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -186,7 +187,7 @@ func TestCheckDuplicates(t *testing.T) {
 		c := test
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			rgs, err := rulefmt.ParseFile(c.ruleFile, false)
+			rgs, err := rulefmt.ParseFile(c.ruleFile, false, model.UTF8Validation)
 			require.Empty(t, err)
 			dups := checkDuplicates(rgs.Groups)
 			require.Equal(t, c.expectedDups, dups)
@@ -195,11 +196,10 @@ func TestCheckDuplicates(t *testing.T) {
 }
 
 func BenchmarkCheckDuplicates(b *testing.B) {
-	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml", false)
+	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml", false, model.UTF8Validation)
 	require.Empty(b, err)
-	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		checkDuplicates(rgs.Groups)
 	}
 }
@@ -298,7 +298,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 			err: "error checking client cert file \"testdata/nonexistent_cert_file.yml\": " +
 				"stat testdata/nonexistent_cert_file.yml: no such file or directory",
 			errWindows: "error checking client cert file \"testdata\\\\nonexistent_cert_file.yml\": " +
-				"CreateFile testdata\\nonexistent_cert_file.yml: The system cannot find the file specified.",
+				"GetFileAttributesEx testdata\\nonexistent_cert_file.yml: The system cannot find the file specified.",
 		},
 		{
 			name:       "check with syntax only succeeds with nonexistent credentials file",
@@ -314,7 +314,7 @@ func TestCheckConfigSyntax(t *testing.T) {
 			err: "error checking authorization credentials or bearer token file \"/random/file/which/does/not/exist.yml\": " +
 				"stat /random/file/which/does/not/exist.yml: no such file or directory",
 			errWindows: "error checking authorization credentials or bearer token file \"testdata\\\\random\\\\file\\\\which\\\\does\\\\not\\\\exist.yml\": " +
-				"CreateFile testdata\\random\\file\\which\\does\\not\\exist.yml: The system cannot find the path specified.",
+				"GetFileAttributesEx testdata\\random\\file\\which\\does\\not\\exist.yml: The system cannot find the path specified.",
 		},
 	}
 	for _, test := range cases {
@@ -401,6 +401,99 @@ func TestCheckMetricsExtended(t *testing.T) {
 			percentage:  float64(1) / float64(27),
 		},
 	}, stats)
+}
+
+func TestCheckMetricsLintOptions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on windows")
+	}
+
+	const testMetrics = `
+# HELP testMetric_CamelCase A test metric with camelCase
+# TYPE testMetric_CamelCase gauge
+testMetric_CamelCase{label="value1"} 1
+`
+
+	tests := []struct {
+		name        string
+		lint        string
+		extended    bool
+		wantErrCode int
+		wantLint    bool
+		wantCard    bool
+	}{
+		{
+			name:        "default_all_with_extended",
+			lint:        lintOptionAll,
+			extended:    true,
+			wantErrCode: lintErrExitCode,
+			wantLint:    true,
+			wantCard:    true,
+		},
+		{
+			name:        "lint_none_with_extended",
+			lint:        lintOptionNone,
+			extended:    true,
+			wantErrCode: successExitCode,
+			wantLint:    false,
+			wantCard:    true,
+		},
+		{
+			name:        "both_disabled_fails",
+			lint:        lintOptionNone,
+			extended:    false,
+			wantErrCode: failureExitCode,
+			wantLint:    false,
+			wantCard:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, w, err := os.Pipe()
+			require.NoError(t, err)
+			_, err = w.WriteString(testMetrics)
+			require.NoError(t, err)
+			w.Close()
+
+			oldStdin := os.Stdin
+			os.Stdin = r
+			defer func() { os.Stdin = oldStdin }()
+
+			oldStdout := os.Stdout
+			oldStderr := os.Stderr
+			rOut, wOut, err := os.Pipe()
+			require.NoError(t, err)
+			rErr, wErr, err := os.Pipe()
+			require.NoError(t, err)
+			os.Stdout = wOut
+			os.Stderr = wErr
+
+			code := CheckMetrics(tt.extended, tt.lint)
+
+			wOut.Close()
+			wErr.Close()
+			os.Stdout = oldStdout
+			os.Stderr = oldStderr
+
+			var outBuf, errBuf bytes.Buffer
+			_, _ = io.Copy(&outBuf, rOut)
+			_, _ = io.Copy(&errBuf, rErr)
+
+			require.Equal(t, tt.wantErrCode, code)
+			if tt.wantLint {
+				require.Contains(t, errBuf.String(), "testMetric_CamelCase")
+			} else {
+				require.NotContains(t, errBuf.String(), "testMetric_CamelCase")
+			}
+
+			if tt.wantCard {
+				require.Contains(t, outBuf.String(), "Cardinality")
+			} else {
+				require.NotContains(t, outBuf.String(), "Cardinality")
+			}
+		})
+	}
 }
 
 func TestExitCodes(t *testing.T) {
@@ -509,7 +602,7 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false))
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false, model.UTF8Validation))
 		require.Equal(t, successExitCode, exitCode)
 	})
 
@@ -531,7 +624,7 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false))
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false, model.UTF8Validation))
 		require.Equal(t, failureExitCode, exitCode)
 	})
 
@@ -553,7 +646,7 @@ func TestCheckRules(t *testing.T) {
 		defer func(v *os.File) { os.Stdin = v }(os.Stdin)
 		os.Stdin = r
 
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false))
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false, model.UTF8Validation))
 		require.Equal(t, lintErrExitCode, exitCode)
 	})
 }
@@ -562,7 +655,7 @@ func TestCheckRulesWithFeatureFlag(t *testing.T) {
 	// As opposed to TestCheckRules calling CheckRules directly we run promtool
 	// so the feature flag parsing can be tested.
 
-	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "check", "rules", "testdata/features.yml"}
+	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "--enable-feature=promql-duration-expr", "--enable-feature=promql-extended-range-selectors", "check", "rules", "testdata/features.yml"}
 	tool := exec.Command(promtoolPath, args...)
 	err := tool.Run()
 	require.NoError(t, err)
@@ -571,19 +664,19 @@ func TestCheckRulesWithFeatureFlag(t *testing.T) {
 func TestCheckRulesWithRuleFiles(t *testing.T) {
 	t.Run("rules-good", func(t *testing.T) {
 		t.Parallel()
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false), "./testdata/rules.yml")
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false, model.UTF8Validation), "./testdata/rules.yml")
 		require.Equal(t, successExitCode, exitCode)
 	})
 
 	t.Run("rules-bad", func(t *testing.T) {
 		t.Parallel()
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false), "./testdata/rules-bad.yml")
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, false, false, model.UTF8Validation), "./testdata/rules-bad.yml")
 		require.Equal(t, failureExitCode, exitCode)
 	})
 
 	t.Run("rules-lint-fatal", func(t *testing.T) {
 		t.Parallel()
-		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false), "./testdata/prometheus-rules.lint.yml")
+		exitCode := CheckRules(newRulesLintConfig(lintOptionDuplicateRules, true, false, model.UTF8Validation), "./testdata/prometheus-rules.lint.yml")
 		require.Equal(t, lintErrExitCode, exitCode)
 	})
 }
@@ -612,20 +705,20 @@ func TestCheckScrapeConfigs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Non-fatal linting.
-			code := CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, false, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			code := CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, false, false, model.UTF8Validation, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
 			require.Equal(t, successExitCode, code, "Non-fatal linting should return success")
 			// Fatal linting.
-			code = CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			code = CheckConfig(false, false, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, false, model.UTF8Validation, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
 			if tc.expectError {
 				require.Equal(t, lintErrExitCode, code, "Fatal linting should return error")
 			} else {
 				require.Equal(t, successExitCode, code, "Fatal linting should return success when there are no problems")
 			}
 			// Check syntax only, no linting.
-			code = CheckConfig(false, true, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			code = CheckConfig(false, true, newConfigLintConfig(lintOptionTooLongScrapeInterval, true, false, model.UTF8Validation, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
 			require.Equal(t, successExitCode, code, "Fatal linting should return success when checking syntax only")
 			// Lint option "none" should disable linting.
-			code = CheckConfig(false, false, newConfigLintConfig(lintOptionNone+","+lintOptionTooLongScrapeInterval, true, false, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
+			code = CheckConfig(false, false, newConfigLintConfig(lintOptionNone+","+lintOptionTooLongScrapeInterval, true, false, model.UTF8Validation, tc.lookbackDelta), "./testdata/prometheus-config.lint.too_long_scrape_interval.yml")
 			require.Equal(t, successExitCode, code, `Fatal linting should return success when lint option "none" is specified`)
 		})
 	}
@@ -641,7 +734,6 @@ func TestTSDBDumpCommand(t *testing.T) {
 	load 1m
 		metric{foo="bar"} 1 2 3
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	for _, c := range []struct {
 		name           string

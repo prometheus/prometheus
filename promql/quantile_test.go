@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -308,10 +308,10 @@ func TestBucketQuantile_ForcedMonotonicity(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			for q, v := range tc.expectedValues {
-				res, forced, fixed := BucketQuantile(q, tc.getInput())
+				quantile, forced, fixed, _, _, _ := BucketQuantile(q, tc.getInput())
 				require.Equal(t, tc.expectedForced, forced)
 				require.Equal(t, tc.expectedFixed, fixed)
-				require.InEpsilon(t, v, res, eps)
+				require.InEpsilon(t, v, quantile, eps)
 			}
 		})
 	}
