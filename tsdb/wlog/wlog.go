@@ -85,6 +85,7 @@ type SegmentFile interface {
 	io.Writer
 	io.Reader
 	io.Closer
+	io.Seeker
 }
 
 // Segment represents a segment file.

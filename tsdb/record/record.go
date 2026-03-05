@@ -310,8 +310,45 @@ func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
 	return d.builder.Labels()
 }
 
+type Stats struct {
+	EmptyRecordsCount   int
+	SampleDecodeSizeMax int
+	SampleDecodeSizeMin int
+	SampleDecodeSizeSum int
+	SampleDecodeCount   int
+	SamplesCount        int
+}
+
+func (s *Stats) String() string {
+	panic("uncomment Decoder.Samples!")
+	if s.SampleDecodeCount == 0 {
+		return "no samples decoded"
+	}
+	return fmt.Sprintf("EmptyRecordsCount: %d, SampleDecodeSizeMax: %d, SampleDecodeSizeMin: %d, SampleDecodeSizeSum: %d, SampleDecodeCount: %d, SamplesCount: %d, AvgSizePerRecord: %f, AvgSamplesPerRecord: %f",
+		s.EmptyRecordsCount, s.SampleDecodeSizeMax, s.SampleDecodeSizeMin, s.SampleDecodeSizeSum, s.SampleDecodeCount, s.SamplesCount, float64(s.SampleDecodeSizeSum)/float64(s.SampleDecodeCount), float64(s.SamplesCount)/float64(s.SampleDecodeCount))
+}
+
+// Create string function that prints Stats and calculate average size per record
+
+var YoloStats = &Stats{}
+
 // Samples appends samples in rec to the given slice.
 func (*Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) {
+	//defer func() {
+	//	if YoloStats.SampleDecodeSizeMax == 0 || YoloStats.SampleDecodeSizeMax < len(rec) {
+	//		YoloStats.SampleDecodeSizeMax = len(rec)
+	//	}
+	//	if YoloStats.SampleDecodeSizeMin == 0 || YoloStats.SampleDecodeSizeMin > len(rec) {
+	//		YoloStats.SampleDecodeSizeMin = len(rec)
+	//	}
+	//	if len(samples) == 0 {
+	//		YoloStats.EmptyRecordsCount++
+	//	}
+	//	YoloStats.SampleDecodeSizeSum += len(rec)
+	//	YoloStats.SampleDecodeCount++
+	//	YoloStats.SamplesCount += len(samples)
+	//}()
+
 	dec := encoding.Decbuf{B: rec}
 
 	if Type(dec.Byte()) != Samples {
