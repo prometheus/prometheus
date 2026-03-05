@@ -358,8 +358,9 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 	// Check for a second document.
 	var secondDoc any
 	err = decoder.Decode(&secondDoc)
+
 	if !errors.Is(err, io.EOF) {
-    	errs = append(errs, errors.New("multidoc rule files are not supported, only the first document is processed"))
+		errs = append(errs, errors.New("multidoc rule files are not supported, only the first document is processed"))
 	}
 
 	err = yaml.Unmarshal(content, &node)
