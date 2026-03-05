@@ -1733,11 +1733,13 @@ var expectedConf = &Config{
 	},
 	StorageConfig: StorageConfig{
 		TSDBConfig: &TSDBConfig{
-			OutOfOrderTimeWindow:     30 * time.Minute.Milliseconds(),
-			OutOfOrderTimeWindowFlag: model.Duration(30 * time.Minute),
+			OutOfOrderTimeWindow:           30 * time.Minute.Milliseconds(),
+			OutOfOrderTimeWindowFlag:       model.Duration(30 * time.Minute),
+			StaleSeriesCompactionThreshold: 0.5,
 			Retention: &TSDBRetentionConfig{
-				Time: model.Duration(24 * time.Hour),
-				Size: 1 * units.GiB,
+				Time:       model.Duration(24 * time.Hour),
+				Size:       1 * units.GiB,
+				Percentage: 28,
 			},
 		},
 	},
@@ -2314,7 +2316,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "kubernetes_selectors_pod.bad.yml",
-		errMsg:   "pod role supports only pod selectors",
+		errMsg:   "pod role supports only pod, node selectors",
 	},
 	{
 		filename: "kubernetes_selectors_service.bad.yml",
@@ -2450,7 +2452,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "azure_authentication_method.bad.yml",
-		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\", \"ManagedIdentity\" or \"SDK\"",
+		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\", \"ManagedIdentity\", \"SDK\" or \"WorkloadIdentity\"",
 	},
 	{
 		filename: "azure_bearertoken_basicauth.bad.yml",
@@ -3082,7 +3084,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 			require.NoError(t, err)
 
 			scfgs, err := c.GetScrapeConfigs()
-			if len(tc.expectedError) > 0 {
+			if tc.expectedError != "" {
 				require.ErrorContains(t, err, tc.expectedError)
 			}
 			require.Equal(t, tc.expectedResult, scfgs)

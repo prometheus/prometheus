@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -1763,9 +1764,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	}
 
 	metricsUpdater := batchMetricsUpdater{
-		metrics:      s.qm.metrics,
-		storeClient:  s.qm.storeClient,
-		sentDuration: s.qm.metrics.sentBatchDuration,
+		metrics: s.qm.metrics,
 	}
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
@@ -1806,10 +1805,11 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		defer span.End()
 
 		begin := time.Now()
-		metricsUpdater.recordBatchAttempt(sc, begin)
+		metricsUpdater.recordBatchAttempt(sc)
 		// Technically for v1, we will likely have empty response stats, but for
 		// newer Receivers this might be not, so used it in a best effort.
 		rs, err := s.qm.client().Store(ctx, req, try)
+		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
 		// so far we don't have those, so it's ok to potentially skew statistics.
 		addStats(rs)
@@ -1869,9 +1869,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	}
 
 	metricsUpdater := batchMetricsUpdater{
-		metrics:      s.qm.metrics,
-		storeClient:  s.qm.storeClient,
-		sentDuration: s.qm.metrics.sentBatchDuration,
+		metrics: s.qm.metrics,
 	}
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
@@ -1912,8 +1910,9 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		defer span.End()
 
 		begin := time.Now()
-		metricsUpdater.recordBatchAttempt(sc, begin)
+		metricsUpdater.recordBatchAttempt(sc)
 		rs, err := s.qm.client().Store(ctx, req, try)
+		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
 		// so far we don't have those, so it's ok to potentially skew statistics.
 		addStats(rs)
@@ -2105,12 +2104,11 @@ func setAtomicToNewer(value *atomic.Int64, newValue int64) (previous int64, upda
 
 func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeries) bool) ([]prompb.TimeSeries, *timeSeriesStats) {
 	stats := newTimeSeriesStats()
-	keepIdx := 0
 
-	for i, ts := range timeSeries {
+	timeSeries = slices.DeleteFunc(timeSeries, func(ts prompb.TimeSeries) bool {
 		if filter != nil && filter(ts) {
 			stats.recordDropped(len(ts.Samples) > 0, len(ts.Exemplars) > 0, len(ts.Histograms) > 0)
-			continue
+			return true
 		}
 
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -2123,16 +2121,10 @@ func buildTimeSeries(timeSeries []prompb.TimeSeries, filter func(prompb.TimeSeri
 		if len(ts.Histograms) > 0 {
 			stats.updateTimestamp(ts.Histograms[0].Timestamp)
 		}
+		return false
+	})
 
-		if i != keepIdx {
-			// We have to swap the kept timeseries with the one which should be dropped.
-			// Copying any elements within timeSeries could cause data corruptions when reusing the slice in a next batch (shards.populateTimeSeries).
-			timeSeries[keepIdx], timeSeries[i] = timeSeries[i], timeSeries[keepIdx]
-		}
-		keepIdx++
-	}
-
-	return timeSeries[:keepIdx], stats
+	return timeSeries, stats
 }
 
 func buildWriteRequest(logger *slog.Logger, timeSeries []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, filter func(prompb.TimeSeries) bool, buf compression.EncodeBuffer, compr compression.Type) (_ []byte, highest, lowest int64, _ error) {
@@ -2278,18 +2270,20 @@ type sendBatchContext struct {
 
 // batchMetricsUpdater encapsulates metrics update operations for batch sending.
 type batchMetricsUpdater struct {
-	metrics      *queueManagerMetrics
-	storeClient  WriteClient
-	sentDuration prometheus.Observer
+	metrics *queueManagerMetrics
 }
 
-// recordBatchAttempt records metrics for a batch send attempt.
-func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext, begin time.Time) {
+// recordBatchAttempt records counter metrics for a batch send attempt.
+func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext) {
 	b.metrics.samplesTotal.Add(float64(sc.sampleCount))
 	b.metrics.exemplarsTotal.Add(float64(sc.exemplarCount))
 	b.metrics.histogramsTotal.Add(float64(sc.histogramCount))
 	b.metrics.metadataTotal.Add(float64(sc.metadataCount))
-	b.sentDuration.Observe(time.Since(begin).Seconds())
+}
+
+// recordLatency records the observed send duration for a batch attempt.
+func (b *batchMetricsUpdater) recordLatency(begin time.Time) {
+	b.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 }
 
 // recordRetry records retry metrics for a batch.

@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -93,6 +92,11 @@ type Options struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableSTAsZeroSample bool
+
+	// EnableSTStorage determines whether agent DB should write a Start Timestamp (ST)
+	// per sample to WAL.
+	// TODO(bwplotka): Implement this option as per PROM-60, currently it's noop.
+	EnableSTStorage bool
 }
 
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
@@ -798,7 +802,7 @@ func (db *DB) Close() error {
 
 	db.metrics.Unregister()
 
-	return tsdb_errors.NewMulti(db.locker.Release(), db.wal.Close()).Err()
+	return errors.Join(db.locker.Release(), db.wal.Close())
 }
 
 type appenderBase struct {

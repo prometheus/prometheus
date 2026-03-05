@@ -32,7 +32,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -304,7 +303,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	cdm.closers = map[int]io.Closer{}
 	defer func() {
 		if returnErr != nil {
-			returnErr = tsdb_errors.NewMulti(returnErr, closeAllFromMap(cdm.closers)).Err()
+			returnErr = errors.Join(returnErr, closeAllFromMap(cdm.closers))
 
 			cdm.mmappedChunkFiles = nil
 			cdm.closers = nil
@@ -614,7 +613,7 @@ func (cdm *ChunkDiskMapper) cut() (seq, offset int, returnErr error) {
 		// The file should not be closed if there is no error,
 		// its kept open in the ChunkDiskMapper.
 		if returnErr != nil {
-			returnErr = tsdb_errors.NewMulti(returnErr, newFile.Close()).Err()
+			returnErr = errors.Join(returnErr, newFile.Close())
 		}
 	}()
 
@@ -970,7 +969,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	}
 	cdm.readPathMtx.RUnlock()
 
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	// Cut a new file only if the current file has some chunks.
 	if cdm.curFileSize() > HeadChunkFileHeaderSize {
 		// There is a known race condition here because between the check of curFileSize() and the call to CutNewFile()
@@ -979,7 +978,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 		cdm.CutNewFile()
 	}
 	pendingDeletes, err := cdm.deleteFiles(removedFiles)
-	errs.Add(err)
+	errs = append(errs, err)
 
 	if len(chkFileIndices) == len(removedFiles) {
 		// All files were deleted. Reset the current sequence.
@@ -1003,7 +1002,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 		cdm.evtlPosMtx.Unlock()
 	}
 
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 // deleteFiles deletes the given file sequences in order of the sequence.
@@ -1098,23 +1097,23 @@ func (cdm *ChunkDiskMapper) Close() error {
 	}
 	cdm.closed = true
 
-	errs := tsdb_errors.NewMulti(
+	errs := []error{
 		closeAllFromMap(cdm.closers),
 		cdm.finalizeCurFile(),
 		cdm.dir.Close(),
-	)
+	}
 	cdm.mmappedChunkFiles = map[int]*mmappedChunkFile{}
 	cdm.closers = map[int]io.Closer{}
 
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 func closeAllFromMap(cs map[int]io.Closer) error {
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, c := range cs {
-		errs.Add(c.Close())
+		errs = append(errs, c.Close())
 	}
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 const inBufferShards = 128 // 128 is a randomly chosen number.

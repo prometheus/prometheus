@@ -16,66 +16,66 @@ package teststorage
 import (
 	"fmt"
 	"os"
+	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/util/testutil"
 )
+
+type Option func(opt *tsdb.Options)
 
 // New returns a new TestStorage for testing purposes
 // that removes all associated files on closing.
-func New(t testutil.T, outOfOrderTimeWindow ...int64) *TestStorage {
-	stor, err := NewWithError(outOfOrderTimeWindow...)
+//
+// Caller does not need to close the TestStorage after use, it's deferred via t.Cleanup.
+func New(t testing.TB, o ...Option) *TestStorage {
+	s, err := NewWithError(o...)
 	require.NoError(t, err)
-	return stor
+
+	t.Cleanup(func() {
+		_ = s.Close() // Ignore errors, as it could be a double close.
+	})
+	return s
 }
 
 // NewWithError returns a new TestStorage for user facing tests, which reports
 // errors directly.
-func NewWithError(outOfOrderTimeWindow ...int64) (*TestStorage, error) {
-	dir, err := os.MkdirTemp("", "test_storage")
-	if err != nil {
-		return nil, fmt.Errorf("opening test directory: %w", err)
-	}
-
+//
+// It's a caller responsibility to close the TestStorage after use.
+func NewWithError(o ...Option) (*TestStorage, error) {
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
 	opts := tsdb.DefaultOptions()
 	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.RetentionDuration = 0
+	opts.OutOfOrderTimeWindow = 0
 
-	// Set OutOfOrderTimeWindow if provided, otherwise use default (0)
-	if len(outOfOrderTimeWindow) > 0 {
-		opts.OutOfOrderTimeWindow = outOfOrderTimeWindow[0]
-	} else {
-		opts.OutOfOrderTimeWindow = 0 // Default value is zero
+	// Enable exemplars storage by default.
+	opts.EnableExemplarStorage = true
+	opts.MaxExemplars = 1e5
+
+	for _, opt := range o {
+		opt(opts)
+	}
+
+	dir, err := os.MkdirTemp("", "test_storage")
+	if err != nil {
+		return nil, fmt.Errorf("opening test directory: %w", err)
 	}
 
 	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
 	if err != nil {
 		return nil, fmt.Errorf("opening test storage: %w", err)
 	}
-	reg := prometheus.NewRegistry()
-	eMetrics := tsdb.NewExemplarMetrics(reg)
-
-	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics, opts.OutOfOrderTimeWindow)
-	if err != nil {
-		return nil, fmt.Errorf("opening test exemplar storage: %w", err)
-	}
-	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}, nil
+	return &TestStorage{DB: db, dir: dir}, nil
 }
 
 type TestStorage struct {
 	*tsdb.DB
-	exemplarStorage tsdb.ExemplarStorage
-	dir             string
+	dir string
 }
 
 func (s TestStorage) Close() error {
@@ -83,16 +83,4 @@ func (s TestStorage) Close() error {
 		return err
 	}
 	return os.RemoveAll(s.dir)
-}
-
-func (s TestStorage) ExemplarAppender() storage.ExemplarAppender {
-	return s
-}
-
-func (s TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
-	return s.exemplarStorage
-}
-
-func (s TestStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	return ref, s.exemplarStorage.AddExemplar(l, e)
 }

@@ -50,7 +50,7 @@ const (
 
 func parseBrokenJSON(brokenJSON []byte) (string, bool) {
 	queries := strings.ReplaceAll(string(brokenJSON), "\x00", "")
-	if len(queries) > 0 {
+	if queries != "" {
 		queries = queries[:len(queries)-1] + "]"
 	}
 
@@ -164,7 +164,7 @@ func trimStringByBytes(str string, size int) string {
 
 	trimIndex := len(bytesStr)
 	if size < len(bytesStr) {
-		for !utf8.RuneStart(bytesStr[size]) {
+		for size > 0 && !utf8.RuneStart(bytesStr[size]) {
 			size--
 		}
 		trimIndex = size

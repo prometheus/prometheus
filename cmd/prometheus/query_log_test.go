@@ -334,7 +334,8 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	p.query(t)
 
-	ql := readQueryLog(t, queryLogFile.Name())
+	// Wait for query log entry to be written (avoid race with file I/O).
+	ql := waitForQueryLog(t, queryLogFile.Name(), 1)
 	qc := len(ql)
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
@@ -361,7 +362,8 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.query(t)
 	qc++
 
-	ql = readQueryLog(t, queryLogFile.Name())
+	// Wait for query log entry to be written (avoid race with file I/O).
+	ql = waitForQueryLog(t, queryLogFile.Name(), qc)
 	if p.exactQueryCount() {
 		require.Len(t, ql, qc)
 	} else {
@@ -392,7 +394,8 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	qc++
 
-	ql = readQueryLog(t, newFile.Name())
+	// Wait for query log entry to be written (avoid race with file I/O).
+	ql = waitForQueryLog(t, newFile.Name(), qc)
 	if p.exactQueryCount() {
 		require.Len(t, ql, qc)
 	} else {
@@ -404,7 +407,8 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	p.query(t)
 
-	ql = readQueryLog(t, queryLogFile.Name())
+	// Wait for query log entry to be written (avoid race with file I/O).
+	ql = waitForQueryLog(t, queryLogFile.Name(), 1)
 	qc = len(ql)
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
@@ -443,6 +447,18 @@ func readQueryLog(t *testing.T, path string) []queryLogLine {
 		require.NoError(t, json.Unmarshal(scanner.Bytes(), &q))
 		ql = append(ql, q)
 	}
+	return ql
+}
+
+// waitForQueryLog waits for the query log to contain at least minEntries entries,
+// polling at regular intervals until the timeout is reached.
+func waitForQueryLog(t *testing.T, path string, minEntries int) []queryLogLine {
+	t.Helper()
+	var ql []queryLogLine
+	require.Eventually(t, func() bool {
+		ql = readQueryLog(t, path)
+		return len(ql) >= minEntries
+	}, 5*time.Second, 100*time.Millisecond, "timed out waiting for query log to have at least %d entries, got %d", minEntries, len(ql))
 	return ql
 }
 

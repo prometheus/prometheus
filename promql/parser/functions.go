@@ -23,9 +23,6 @@ type Function struct {
 	Experimental bool
 }
 
-// EnableExperimentalFunctions controls whether experimentalFunctions are enabled.
-var EnableExperimentalFunctions bool
-
 // Functions is a list of all functions supported by PromQL, including their types.
 var Functions = map[string]*Function{
 	"abs": {
@@ -207,6 +204,13 @@ var Functions = map[string]*Function{
 		Name:       "histogram_quantile",
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeVector},
 		ReturnType: ValueTypeVector,
+	},
+	"histogram_quantiles": {
+		Name:         "histogram_quantiles",
+		ArgTypes:     []ValueType{ValueTypeVector, ValueTypeString, ValueTypeScalar, ValueTypeScalar},
+		Variadic:     9,
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
 	},
 	"double_exponential_smoothing": {
 		Name:         "double_exponential_smoothing",

@@ -258,13 +258,16 @@ type API struct {
 	codecs []Codec
 
 	featureRegistry features.Collector
+	openAPIBuilder  *OpenAPIBuilder
+
+	parser parser.Parser
 }
 
 // NewAPI returns an initialized API type.
 func NewAPI(
 	qe promql.QueryEngine,
 	q storage.SampleAndChunkQueryable,
-	ap storage.Appendable,
+	ap storage.Appendable, apV2 storage.AppendableV2,
 	eq storage.ExemplarQueryable,
 	spsr func(context.Context) ScrapePoolsRetriever,
 	tr func(context.Context) TargetRetriever,
@@ -299,6 +302,8 @@ func NewAPI(
 	appendMetadata bool,
 	overrideErrorCode OverrideErrorCode,
 	featureRegistry features.Collector,
+	openAPIOptions OpenAPIOptions,
+	promqlParser parser.Parser,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -329,8 +334,14 @@ func NewAPI(
 		notificationsSub:    notificationsSub,
 		overrideErrorCode:   overrideErrorCode,
 		featureRegistry:     featureRegistry,
+		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
+		parser:              promqlParser,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
+	}
+
+	if a.parser == nil {
+		a.parser = parser.NewParser(parser.Options{})
 	}
 
 	a.InstallCodec(JSONCodec{})
@@ -339,7 +350,7 @@ func NewAPI(
 		a.statsRenderer = statsRenderer
 	}
 
-	if ap == nil && (rwEnabled || otlpEnabled) {
+	if (ap == nil || apV2 == nil) && (rwEnabled || otlpEnabled) {
 		panic("remote write or otlp write enabled, but no appender passed in.")
 	}
 
@@ -347,13 +358,11 @@ func NewAPI(
 		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, stZeroIngestionEnabled, enableTypeAndUnitLabels, appendMetadata)
 	}
 	if otlpEnabled {
-		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, remote.OTLPOptions{
+		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, apV2, configFunc, remote.OTLPOptions{
 			ConvertDelta:            otlpDeltaToCumulative,
 			NativeDelta:             otlpNativeDeltaIngestion,
 			LookbackDelta:           lookbackDelta,
-			IngestSTZeroSample:      stZeroIngestionEnabled,
 			EnableTypeAndUnitLabels: enableTypeAndUnitLabels,
-			AppendMetadata:          appendMetadata,
 		})
 	}
 
@@ -400,7 +409,7 @@ func (api *API) Register(r *route.Router) {
 			w.WriteHeader(http.StatusNoContent)
 		})
 		return api.ready(httputil.CompressionHandler{
-			Handler: hf,
+			Handler: api.openAPIBuilder.WrapHandler(hf),
 		}.ServeHTTP)
 	}
 
@@ -469,6 +478,9 @@ func (api *API) Register(r *route.Router) {
 	r.Put("/admin/tsdb/delete_series", wrapAgent(api.deleteSeries))
 	r.Put("/admin/tsdb/clean_tombstones", wrapAgent(api.cleanTombstones))
 	r.Put("/admin/tsdb/snapshot", wrapAgent(api.snapshot))
+
+	// OpenAPI endpoint.
+	r.Get("/openapi.yaml", api.ready(api.openAPIBuilder.ServeOpenAPI))
 }
 
 type QueryData struct {
@@ -556,8 +568,8 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}, nil, warnings, qry.Close}
 }
 
-func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
-	expr, err := parser.ParseExpr(r.FormValue("query"))
+func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
+	expr, err := api.parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -565,8 +577,8 @@ func (*API) formatQuery(r *http.Request) (result apiFuncResult) {
 	return apiFuncResult{expr.Pretty(0), nil, nil, nil}
 }
 
-func (*API) parseQuery(r *http.Request) apiFuncResult {
-	expr, err := parser.ParseExpr(r.FormValue("query"))
+func (api *API) parseQuery(r *http.Request) apiFuncResult {
+	expr, err := api.parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -695,7 +707,7 @@ func (api *API) queryExemplars(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
-	expr, err := parser.ParseExpr(r.FormValue("query"))
+	expr, err := api.parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -758,7 +770,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		return invalidParamError(err, "end")
 	}
 
-	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -846,7 +858,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "end")
 	}
 
-	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -965,7 +977,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(err, "end")
 	}
 
-	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
 	if err != nil {
 		return invalidParamError(err, "match[]")
 	}
@@ -1260,7 +1272,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	var matchers []*labels.Matcher
 	var err error
 	if matchTarget != "" {
-		matchers, err = parser.ParseMetricSelector(matchTarget)
+		matchers, err = api.parser.ParseMetricSelector(matchTarget)
 		if err != nil {
 			return invalidParamError(err, "match_target")
 		}
@@ -1346,13 +1358,19 @@ func (api *API) targetRelabelSteps(r *http.Request) apiFuncResult {
 
 	rules := scrapeConfig.RelabelConfigs
 	steps := make([]RelabelStep, len(rules))
+	lb := labels.NewBuilder(lbls)
+	keep := true
 	for i, rule := range rules {
-		outLabels, keep := relabel.Process(lbls, rules[:i+1]...)
-		steps[i] = RelabelStep{
-			Rule:   rule,
-			Output: outLabels,
-			Keep:   keep,
+		if keep {
+			keep = relabel.ProcessBuilder(lb, rule)
 		}
+
+		outLabels := labels.EmptyLabels()
+		if keep {
+			outLabels = lb.Labels()
+		}
+
+		steps[i] = RelabelStep{Rule: rule, Output: outLabels, Keep: keep}
 	}
 
 	return apiFuncResult{&RelabelStepsResponse{Steps: steps}, nil, nil, nil}
@@ -1573,7 +1591,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	rgSet := queryFormToSet(r.Form["rule_group[]"])
 	fSet := queryFormToSet(r.Form["file[]"])
 
-	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -2026,7 +2044,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 	}
 
 	for _, s := range r.Form["match[]"] {
-		matchers, err := parser.ParseMetricSelector(s)
+		matchers, err := api.parser.ParseMetricSelector(s)
 		if err != nil {
 			return invalidParamError(err, "match[]")
 		}
@@ -2235,8 +2253,8 @@ func parseDuration(s string) (time.Duration, error) {
 	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
 }
 
-func parseMatchersParam(matchers []string) ([][]*labels.Matcher, error) {
-	matcherSets, err := parser.ParseMetricSelectors(matchers)
+func (api *API) parseMatchersParam(matchers []string) ([][]*labels.Matcher, error) {
+	matcherSets, err := api.parser.ParseMetricSelectors(matchers)
 	if err != nil {
 		return nil, err
 	}

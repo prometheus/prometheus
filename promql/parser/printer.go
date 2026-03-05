@@ -38,7 +38,7 @@ func tree(node Node, level string) string {
 	typs := strings.Split(fmt.Sprintf("%T", node), ".")[1]
 
 	var t strings.Builder
-	t.WriteString(fmt.Sprintf("%s |---- %s :: %s\n", level, typs, node))
+	fmt.Fprintf(&t, "%s |---- %s :: %s\n", level, typs, node)
 
 	level += " · · ·"
 
@@ -171,6 +171,19 @@ func (node *BinaryExpr) getMatchingStr() string {
 			writeLabels(&b, vm.Include)
 			b.WriteString(")")
 			matching += b.String()
+		}
+
+		if vm.FillValues.LHS != nil || vm.FillValues.RHS != nil {
+			if vm.FillValues.LHS == vm.FillValues.RHS {
+				matching += fmt.Sprintf(" fill (%v)", *vm.FillValues.LHS)
+			} else {
+				if vm.FillValues.LHS != nil {
+					matching += fmt.Sprintf(" fill_left (%v)", *vm.FillValues.LHS)
+				}
+				if vm.FillValues.RHS != nil {
+					matching += fmt.Sprintf(" fill_right (%v)", *vm.FillValues.RHS)
+				}
+			}
 		}
 	}
 	return matching

@@ -63,6 +63,8 @@ type Storage struct {
 	localStartTimeCallback startTimeCallback
 }
 
+var _ storage.Storage = &Storage{}
+
 // NewStorage returns a remote.Storage.
 func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *Storage {
 	if l == nil {
@@ -191,6 +193,11 @@ func (s *Storage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
 // Appender implements storage.Storage.
 func (s *Storage) Appender(ctx context.Context) storage.Appender {
 	return s.rws.Appender(ctx)
+}
+
+// AppenderV2 implements storage.Storage.
+func (s *Storage) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return s.rws.AppenderV2(ctx)
 }
 
 // LowestSentTimestamp returns the lowest sent timestamp across all queues.

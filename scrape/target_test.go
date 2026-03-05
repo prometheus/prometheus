@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -610,37 +611,65 @@ func TestBucketLimitAppender(t *testing.T) {
 		},
 	}
 
-	appTest := teststorage.NewAppendable()
-
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
-				app := &bucketLimitAppender{Appender: appTest.Appender(t.Context()), limit: c.limit}
-				ts := int64(10 * time.Minute / time.Millisecond)
-				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
-				var err error
-				if floatHisto {
-					fh := c.h.Copy().ToFloat(nil)
-					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
-					if c.expectError {
-						require.Error(t, err)
+				t.Run("appV2=false", func(t *testing.T) {
+					app := &bucketLimitAppender{Appender: teststorage.NewAppendable().Appender(t.Context()), limit: c.limit}
+					ts := int64(10 * time.Minute / time.Millisecond)
+					lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+					var err error
+					if floatHisto {
+						fh := c.h.Copy().ToFloat(nil)
+						_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+						if c.expectError {
+							require.Error(t, err)
+						} else {
+							require.Equal(t, c.expectSchema, fh.Schema)
+							require.Equal(t, c.expectBucketCount, len(fh.NegativeBuckets)+len(fh.PositiveBuckets))
+							require.NoError(t, err)
+						}
 					} else {
-						require.Equal(t, c.expectSchema, fh.Schema)
-						require.Equal(t, c.expectBucketCount, len(fh.NegativeBuckets)+len(fh.PositiveBuckets))
-						require.NoError(t, err)
+						h := c.h.Copy()
+						_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+						if c.expectError {
+							require.Error(t, err)
+						} else {
+							require.Equal(t, c.expectSchema, h.Schema)
+							require.Equal(t, c.expectBucketCount, len(h.NegativeBuckets)+len(h.PositiveBuckets))
+							require.NoError(t, err)
+						}
 					}
-				} else {
-					h := c.h.Copy()
-					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
-					if c.expectError {
-						require.Error(t, err)
+					require.NoError(t, app.Commit())
+				})
+				t.Run("appV2=true", func(t *testing.T) {
+					app := &bucketLimitAppenderV2{AppenderV2: teststorage.NewAppendable().AppenderV2(t.Context()), limit: c.limit}
+					ts := int64(10 * time.Minute / time.Millisecond)
+					lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+					var err error
+					if floatHisto {
+						fh := c.h.Copy().ToFloat(nil)
+						_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, storage.AOptions{})
+						if c.expectError {
+							require.Error(t, err)
+						} else {
+							require.Equal(t, c.expectSchema, fh.Schema)
+							require.Equal(t, c.expectBucketCount, len(fh.NegativeBuckets)+len(fh.PositiveBuckets))
+							require.NoError(t, err)
+						}
 					} else {
-						require.Equal(t, c.expectSchema, h.Schema)
-						require.Equal(t, c.expectBucketCount, len(h.NegativeBuckets)+len(h.PositiveBuckets))
-						require.NoError(t, err)
+						h := c.h.Copy()
+						_, err = app.Append(0, lbls, 0, ts, 0, h, nil, storage.AOptions{})
+						if c.expectError {
+							require.Error(t, err)
+						} else {
+							require.Equal(t, c.expectSchema, h.Schema)
+							require.Equal(t, c.expectBucketCount, len(h.NegativeBuckets)+len(h.PositiveBuckets))
+							require.NoError(t, err)
+						}
 					}
-				}
-				require.NoError(t, app.Commit())
+					require.NoError(t, app.Commit())
+				})
 			})
 		}
 	}
@@ -696,27 +725,45 @@ func TestMaxSchemaAppender(t *testing.T) {
 		},
 	}
 
-	appTest := teststorage.NewAppendable()
-
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
-				app := &maxSchemaAppender{Appender: appTest.Appender(t.Context()), maxSchema: c.maxSchema}
-				ts := int64(10 * time.Minute / time.Millisecond)
-				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
-				var err error
-				if floatHisto {
-					fh := c.h.Copy().ToFloat(nil)
-					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
-					require.Equal(t, c.expectSchema, fh.Schema)
-					require.NoError(t, err)
-				} else {
-					h := c.h.Copy()
-					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
-					require.Equal(t, c.expectSchema, h.Schema)
-					require.NoError(t, err)
-				}
-				require.NoError(t, app.Commit())
+				t.Run("appV2=false", func(t *testing.T) {
+					app := &maxSchemaAppender{Appender: teststorage.NewAppendable().Appender(t.Context()), maxSchema: c.maxSchema}
+					ts := int64(10 * time.Minute / time.Millisecond)
+					lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+					var err error
+					if floatHisto {
+						fh := c.h.Copy().ToFloat(nil)
+						_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+						require.Equal(t, c.expectSchema, fh.Schema)
+						require.NoError(t, err)
+					} else {
+						h := c.h.Copy()
+						_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+						require.Equal(t, c.expectSchema, h.Schema)
+						require.NoError(t, err)
+					}
+					require.NoError(t, app.Commit())
+				})
+				t.Run("appV2=true", func(t *testing.T) {
+					app := &maxSchemaAppenderV2{AppenderV2: teststorage.NewAppendable().AppenderV2(t.Context()), maxSchema: c.maxSchema}
+					ts := int64(10 * time.Minute / time.Millisecond)
+					lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+					var err error
+					if floatHisto {
+						fh := c.h.Copy().ToFloat(nil)
+						_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, storage.AOptions{})
+						require.Equal(t, c.expectSchema, fh.Schema)
+						require.NoError(t, err)
+					} else {
+						h := c.h.Copy()
+						_, err = app.Append(0, lbls, 0, ts, 0, h, nil, storage.AOptions{})
+						require.Equal(t, c.expectSchema, h.Schema)
+						require.NoError(t, err)
+					}
+					require.NoError(t, app.Commit())
+				})
 			})
 		}
 	}
@@ -724,32 +771,65 @@ func TestMaxSchemaAppender(t *testing.T) {
 
 // Test sample_limit when a scrape contains Native Histograms.
 func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
-	appTest := teststorage.NewAppendable()
-
 	now := time.Now()
-	app := appenderWithLimits(appTest.Appender(t.Context()), 2, 0, histogram.ExponentialSchemaMax)
+	t.Run("appV2=false", func(t *testing.T) {
+		app := appenderWithLimits(teststorage.NewAppendable().Appender(t.Context()), 2, 0, histogram.ExponentialSchemaMax)
 
-	// sample_limit is set to 2, so first two scrapes should work
-	_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), timestamp.FromTime(now), 1)
-	require.NoError(t, err)
+		// sample_limit is set to 2, so first two scrapes should work
+		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), timestamp.FromTime(now), 1)
+		require.NoError(t, err)
 
-	// Second sample, should be ok.
-	_, err = app.AppendHistogram(
-		0,
-		labels.FromStrings(model.MetricNameLabel, "my_histogram1"),
-		timestamp.FromTime(now),
-		&histogram.Histogram{},
-		nil,
-	)
-	require.NoError(t, err)
+		// Second sample, should be ok.
+		_, err = app.AppendHistogram(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "my_histogram1"),
+			timestamp.FromTime(now),
+			&histogram.Histogram{},
+			nil,
+		)
+		require.NoError(t, err)
 
-	// This is third sample with sample_limit=2, it should trigger errSampleLimit.
-	_, err = app.AppendHistogram(
-		0,
-		labels.FromStrings(model.MetricNameLabel, "my_histogram2"),
-		timestamp.FromTime(now),
-		&histogram.Histogram{},
-		nil,
-	)
-	require.ErrorIs(t, err, errSampleLimit)
+		// This is third sample with sample_limit=2, it should trigger errSampleLimit.
+		_, err = app.AppendHistogram(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "my_histogram2"),
+			timestamp.FromTime(now),
+			&histogram.Histogram{},
+			nil,
+		)
+		require.ErrorIs(t, err, errSampleLimit)
+	})
+	t.Run("appV2=true", func(t *testing.T) {
+		app := appenderV2WithLimits(teststorage.NewAppendable().AppenderV2(t.Context()), 2, 0, histogram.ExponentialSchemaMax)
+
+		// sample_limit is set to 2, so first two scrapes should work
+		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), 0, timestamp.FromTime(now), 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
+		// Second sample, should be ok.
+		_, err = app.Append(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "my_histogram1"),
+			0,
+			timestamp.FromTime(now),
+			0,
+			&histogram.Histogram{},
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+
+		// This is third sample with sample_limit=2, it should trigger errSampleLimit.
+		_, err = app.Append(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "my_histogram2"),
+			0,
+			timestamp.FromTime(now),
+			0,
+			&histogram.Histogram{},
+			nil,
+			storage.AOptions{},
+		)
+		require.ErrorIs(t, err, errSampleLimit)
+	})
 }

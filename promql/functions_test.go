@@ -33,7 +33,7 @@ func TestDeriv(t *testing.T) {
 	// This requires more precision than the usual test system offers,
 	// so we test it by hand.
 	storage := teststorage.New(t)
-	defer storage.Close()
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,

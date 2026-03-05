@@ -235,4 +235,6 @@ func (h *histogramIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, 
 
 func (*histogramIterator) AtT() int64 { return 0 }
 
+func (*histogramIterator) AtST() int64 { return 0 }
+
 func (*histogramIterator) Err() error { return nil }

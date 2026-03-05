@@ -30,12 +30,18 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestCreateAttributes(t *testing.T) {
+type sample = teststorage.Sample
+
+func TestPrometheusConverter_createAttributes(t *testing.T) {
 	resourceAttrs := map[string]string{
 		"service.name":        "service name",
 		"service.instance.id": "service ID",
@@ -386,10 +392,22 @@ func TestCreateAttributes(t *testing.T) {
 				"metric_multi", "multi metric",
 			),
 		},
+		{
+			name:                      "__name__ attribute is filtered when passed in ignoreAttrs",
+			promoteResourceAttributes: nil,
+			ignoreAttrs:               []string{model.MetricNameLabel},
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"metric_attr", "metric value",
+				"metric_attr_other", "metric value other",
+			),
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := NewPrometheusConverter(&mockCombinedAppender{})
+			c := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 			settings := Settings{
 				PromoteResourceAttributes: NewPromoteResourceAttributes(config.OTLPConfig{
 					PromoteAllResourceAttributes: tc.promoteAllResourceAttributes,
@@ -413,12 +431,116 @@ func TestCreateAttributes(t *testing.T) {
 			if tc.attrs != (pcommon.Map{}) {
 				testAttrs = tc.attrs
 			}
-			lbls, err := c.createAttributes(testResource, testAttrs, tc.scope, settings, tc.ignoreAttrs, false, Metadata{}, model.MetricNameLabel, "test_metric")
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, c.setResourceContext(testResource, settings))
+			require.NoError(t, c.setScopeContext(tc.scope, settings))
+
+			lbls, err := c.createAttributes(testAttrs, settings, tc.ignoreAttrs, false, metadata.Metadata{}, model.MetricNameLabel, "test_metric")
 			require.NoError(t, err)
 
 			testutil.RequireEqual(t, tc.expectedLabels, lbls)
 		})
 	}
+
+	// Test that __name__ attributes in OTLP data are filtered out to prevent
+	// duplicate labels.
+	t.Run("__name__ attribute in OTLP data is filtered", func(t *testing.T) {
+		resource := pcommon.NewResource()
+		resource.Attributes().PutStr("service.name", "test-service")
+		resource.Attributes().PutStr("service.instance.id", "test-instance")
+
+		// Create attributes with __name__ to simulate problematic OTLP data.
+		attrsWithNameLabel := pcommon.NewMap()
+		attrsWithNameLabel.PutStr("__name__", "wrong_metric_name")
+		attrsWithNameLabel.PutStr("other_attr", "value")
+
+		c := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+		settings := Settings{}
+
+		require.NoError(t, c.setResourceContext(resource, settings))
+		require.NoError(t, c.setScopeContext(scope{}, settings))
+
+		// Call createAttributes with reservedLabelNames to filter __name__.
+		lbls, err := c.createAttributes(
+			attrsWithNameLabel,
+			settings,
+			reservedLabelNames,
+			true,
+			metadata.Metadata{},
+			model.MetricNameLabel, "correct_metric_name",
+		)
+		require.NoError(t, err)
+
+		// Verify there's exactly one __name__ label with the correct value.
+		nameCount := 0
+		var nameValue string
+		lbls.Range(func(l labels.Label) {
+			if l.Name == model.MetricNameLabel {
+				nameCount++
+				nameValue = l.Value
+			}
+		})
+
+		require.Equal(t, 1, nameCount)
+		require.Equal(t, "correct_metric_name", nameValue)
+		require.Equal(t, "value", lbls.Get("other_attr"))
+	})
+
+	// Test that __type__ and __unit__ attributes in OTLP data are overwritten
+	// by auto-generated labels from metadata when EnableTypeAndUnitLabels is true.
+	t.Run("__type__ and __unit__ attributes are overwritten by metadata", func(t *testing.T) {
+		resource := pcommon.NewResource()
+		resource.Attributes().PutStr("service.name", "test-service")
+		resource.Attributes().PutStr("service.instance.id", "test-instance")
+
+		// Create attributes with __type__ and __unit__ to simulate problematic OTLP data.
+		attrsWithTypeAndUnit := pcommon.NewMap()
+		attrsWithTypeAndUnit.PutStr(model.MetricTypeLabel, "wrong_type")
+		attrsWithTypeAndUnit.PutStr(model.MetricUnitLabel, "wrong_unit")
+		attrsWithTypeAndUnit.PutStr("other_attr", "value")
+
+		c := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
+		settings := Settings{EnableTypeAndUnitLabels: true}
+
+		require.NoError(t, c.setResourceContext(resource, settings))
+		require.NoError(t, c.setScopeContext(scope{}, settings))
+
+		// Call createAttributes with Metadata containing correct Type and Unit.
+		lbls, err := c.createAttributes(
+			attrsWithTypeAndUnit,
+			settings,
+			reservedLabelNames,
+			true,
+			metadata.Metadata{Type: model.MetricTypeGauge, Unit: "seconds"},
+			model.MetricNameLabel, "test_metric",
+		)
+		require.NoError(t, err)
+
+		// Verify there's exactly one __type__ label with the correct value (from metadata).
+		typeCount := 0
+		var typeValue string
+		lbls.Range(func(l labels.Label) {
+			if l.Name == model.MetricTypeLabel {
+				typeCount++
+				typeValue = l.Value
+			}
+		})
+		require.Equal(t, 1, typeCount)
+		require.Equal(t, "gauge", typeValue)
+
+		// Verify there's exactly one __unit__ label with the correct value (from metadata).
+		unitCount := 0
+		var unitValue string
+		lbls.Range(func(l labels.Label) {
+			if l.Name == model.MetricUnitLabel {
+				unitCount++
+				unitValue = l.Value
+			}
+		})
+		require.Equal(t, 1, unitCount)
+		require.Equal(t, "seconds", unitValue)
+		require.Equal(t, "value", lbls.Get("other_attr"))
+	})
 }
 
 func Test_convertTimeStamp(t *testing.T) {
@@ -457,7 +579,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() []combinedSample
+		want         func() []sample
 	}{
 		{
 			name: "summary with start time and without scope promotion",
@@ -474,25 +596,25 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() []combinedSample {
-				return []combinedSample{
+			want: func() []sample {
+				return []sample{
 					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(
+						MF: "test_summary",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+sumStr,
 						),
-						t:  convertTimeStamp(ts),
-						st: convertTimeStamp(ts),
-						v:  0,
+						T:  convertTimeStamp(ts),
+						ST: convertTimeStamp(ts),
+						V:  0,
 					},
 					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(
+						MF: "test_summary",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+countStr,
 						),
-						t:  convertTimeStamp(ts),
-						st: convertTimeStamp(ts),
-						v:  0,
+						T:  convertTimeStamp(ts),
+						ST: convertTimeStamp(ts),
+						V:  0,
 					},
 				}
 			},
@@ -512,7 +634,7 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() []combinedSample {
+			want: func() []sample {
 				scopeLabels := []string{
 					"otel_scope_attr1", "value1",
 					"otel_scope_attr2", "value2",
@@ -520,22 +642,22 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 					"otel_scope_schema_url", defaultScope.schemaURL,
 					"otel_scope_version", defaultScope.version,
 				}
-				return []combinedSample{
+				return []sample{
 					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(append(scopeLabels,
+						MF: "test_summary",
+						L: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_summary"+sumStr)...),
-						t:  convertTimeStamp(ts),
-						st: convertTimeStamp(ts),
-						v:  0,
+						T:  convertTimeStamp(ts),
+						ST: convertTimeStamp(ts),
+						V:  0,
 					},
 					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(append(scopeLabels,
+						MF: "test_summary",
+						L: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_summary"+countStr)...),
-						t:  convertTimeStamp(ts),
-						st: convertTimeStamp(ts),
-						v:  0,
+						T:  convertTimeStamp(ts),
+						ST: convertTimeStamp(ts),
+						V:  0,
 					},
 				}
 			},
@@ -554,23 +676,23 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() []combinedSample {
-				return []combinedSample{
+			want: func() []sample {
+				return []sample{
 					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(
+						MF: "test_summary",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+sumStr,
 						),
-						t: convertTimeStamp(ts),
-						v: 0,
+						T: convertTimeStamp(ts),
+						V: 0,
 					},
 					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(
+						MF: "test_summary",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+countStr,
 						),
-						t: convertTimeStamp(ts),
-						v: 0,
+						T: convertTimeStamp(ts),
+						V: 0,
 					},
 				}
 			},
@@ -598,41 +720,41 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() []combinedSample {
-				return []combinedSample{
+			want: func() []sample {
+				return []sample{
 					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(
+						MF: "test_summary",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+sumStr,
 						),
-						t: convertTimeStamp(ts),
-						v: 100,
+						T: convertTimeStamp(ts),
+						V: 100,
 					},
 					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(
+						MF: "test_summary",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_summary"+countStr,
 						),
-						t: convertTimeStamp(ts),
-						v: 50,
+						T: convertTimeStamp(ts),
+						V: 50,
 					},
 					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(
+						MF: "test_summary",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_summary",
 							quantileStr, "0.5",
 						),
-						t: convertTimeStamp(ts),
-						v: 30,
+						T: convertTimeStamp(ts),
+						V: 30,
 					},
 					{
-						metricFamilyName: "test_summary",
-						ls: labels.FromStrings(
+						MF: "test_summary",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_summary",
 							quantileStr, "0.9",
 						),
-						t: convertTimeStamp(ts),
-						v: 40,
+						T: convertTimeStamp(ts),
+						V: 40,
 					},
 				}
 			},
@@ -641,24 +763,28 @@ func TestPrometheusConverter_AddSummaryDataPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
-			mockAppender := &mockCombinedAppender{}
-			converter := NewPrometheusConverter(mockAppender)
+			appTest := teststorage.NewAppendable()
+			app := appTest.AppenderV2(t.Context())
+			converter := NewPrometheusConverter(app)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
 
-			converter.addSummaryDataPoints(
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
+
+			require.NoError(t, converter.addSummaryDataPoints(
 				context.Background(),
 				metric.Summary().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
-				},
-				tt.scope,
-				Metadata{
+				settings,
+				storage.AOptions{
 					MetricFamilyName: metric.Name(),
 				},
-			)
-			require.NoError(t, mockAppender.Commit())
-
-			requireEqual(t, tt.want(), mockAppender.samples)
+			))
+			require.NoError(t, app.Commit())
+			teststorage.RequireEqual(t, tt.want(), appTest.ResultSamples())
 		})
 	}
 }
@@ -681,7 +807,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 		metric       func() pmetric.Metric
 		scope        scope
 		promoteScope bool
-		want         func() []combinedSample
+		want         func() []sample
 	}{
 		{
 			name: "histogram with start time and without scope promotion",
@@ -698,26 +824,26 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: false,
-			want: func() []combinedSample {
-				return []combinedSample{
+			want: func() []sample {
+				return []sample{
 					{
-						metricFamilyName: "test_hist",
-						ls: labels.FromStrings(
+						MF: "test_hist",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_hist"+countStr,
 						),
-						t:  convertTimeStamp(ts),
-						st: convertTimeStamp(ts),
-						v:  0,
+						T:  convertTimeStamp(ts),
+						ST: convertTimeStamp(ts),
+						V:  0,
 					},
 					{
-						metricFamilyName: "test_hist",
-						ls: labels.FromStrings(
+						MF: "test_hist",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_hist_bucket",
 							model.BucketLabel, "+Inf",
 						),
-						t:  convertTimeStamp(ts),
-						st: convertTimeStamp(ts),
-						v:  0,
+						T:  convertTimeStamp(ts),
+						ST: convertTimeStamp(ts),
+						V:  0,
 					},
 				}
 			},
@@ -737,7 +863,7 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 			},
 			scope:        defaultScope,
 			promoteScope: true,
-			want: func() []combinedSample {
+			want: func() []sample {
 				scopeLabels := []string{
 					"otel_scope_attr1", "value1",
 					"otel_scope_attr2", "value2",
@@ -745,23 +871,23 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 					"otel_scope_schema_url", defaultScope.schemaURL,
 					"otel_scope_version", defaultScope.version,
 				}
-				return []combinedSample{
+				return []sample{
 					{
-						metricFamilyName: "test_hist",
-						ls: labels.FromStrings(append(scopeLabels,
+						MF: "test_hist",
+						L: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_hist"+countStr)...),
-						t:  convertTimeStamp(ts),
-						st: convertTimeStamp(ts),
-						v:  0,
+						T:  convertTimeStamp(ts),
+						ST: convertTimeStamp(ts),
+						V:  0,
 					},
 					{
-						metricFamilyName: "test_hist",
-						ls: labels.FromStrings(append(scopeLabels,
+						MF: "test_hist",
+						L: labels.FromStrings(append(scopeLabels,
 							model.MetricNameLabel, "test_hist_bucket",
 							model.BucketLabel, "+Inf")...),
-						t:  convertTimeStamp(ts),
-						st: convertTimeStamp(ts),
-						v:  0,
+						T:  convertTimeStamp(ts),
+						ST: convertTimeStamp(ts),
+						V:  0,
 					},
 				}
 			},
@@ -778,24 +904,24 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 
 				return metric
 			},
-			want: func() []combinedSample {
-				return []combinedSample{
+			want: func() []sample {
+				return []sample{
 					{
-						metricFamilyName: "test_hist",
-						ls: labels.FromStrings(
+						MF: "test_hist",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_hist"+countStr,
 						),
-						t: convertTimeStamp(ts),
-						v: 0,
+						T: convertTimeStamp(ts),
+						V: 0,
 					},
 					{
-						metricFamilyName: "test_hist",
-						ls: labels.FromStrings(
+						MF: "test_hist",
+						L: labels.FromStrings(
 							model.MetricNameLabel, "test_hist_bucket",
 							model.BucketLabel, "+Inf",
 						),
-						t: convertTimeStamp(ts),
-						v: 0,
+						T: convertTimeStamp(ts),
+						V: 0,
 					},
 				}
 			},
@@ -804,31 +930,150 @@ func TestPrometheusConverter_AddHistogramDataPoints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metric := tt.metric()
-			mockAppender := &mockCombinedAppender{}
-			converter := NewPrometheusConverter(mockAppender)
+			appTest := teststorage.NewAppendable()
+			app := appTest.AppenderV2(t.Context())
+			converter := NewPrometheusConverter(app)
+			settings := Settings{
+				PromoteScopeMetadata: tt.promoteScope,
+			}
+			resource := pcommon.NewResource()
 
-			converter.addHistogramDataPoints(
+			// Initialize resource and scope context as FromMetrics would.
+			require.NoError(t, converter.setResourceContext(resource, settings))
+			require.NoError(t, converter.setScopeContext(tt.scope, settings))
+
+			require.NoError(t, converter.addHistogramDataPoints(
 				context.Background(),
 				metric.Histogram().DataPoints(),
-				pcommon.NewResource(),
-				Settings{
-					PromoteScopeMetadata: tt.promoteScope,
-				},
-				tt.scope,
-				Metadata{
+				settings,
+				storage.AOptions{
 					MetricFamilyName: metric.Name(),
 				},
-			)
-			require.NoError(t, mockAppender.Commit())
-
-			requireEqual(t, tt.want(), mockAppender.samples)
+			))
+			require.NoError(t, app.Commit())
+			teststorage.RequireEqual(t, tt.want(), appTest.ResultSamples())
 		})
 	}
 }
 
+// TestAddHistogramDataPoints_ExemplarLeakAcrossDataPoints verifies that
+// exemplars from a previous data point don't leak into _sum/_count of the
+// next data point. Regression test for stale exemplar leak.
+func TestAddHistogramDataPoints_ExemplarLeakAcrossDataPoints(t *testing.T) {
+	ts := pcommon.Timestamp(time.Now().UnixNano())
+	exTs := pcommon.Timestamp(time.Now().Add(time.Second).UnixNano())
+
+	metric := pmetric.NewMetric()
+	metric.SetName("test_hist")
+	metric.SetEmptyHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+
+	// First data point: has buckets and an exemplar with value 200 (> bound 100, so falls into +Inf).
+	pt1 := metric.Histogram().DataPoints().AppendEmpty()
+	pt1.SetTimestamp(ts)
+	pt1.SetStartTimestamp(ts)
+	pt1.SetSum(42)
+	pt1.SetCount(10)
+	pt1.ExplicitBounds().FromRaw([]float64{100})
+	pt1.BucketCounts().FromRaw([]uint64{7, 3})
+
+	ex := pt1.Exemplars().AppendEmpty()
+	ex.SetTimestamp(exTs)
+	ex.SetDoubleValue(200) // > 100, so falls into the +Inf bucket.
+
+	// Second data point: no exemplars.
+	pt2 := metric.Histogram().DataPoints().AppendEmpty()
+	pt2.SetTimestamp(ts)
+	pt2.SetStartTimestamp(ts)
+	pt2.SetSum(84)
+	pt2.SetCount(20)
+	pt2.ExplicitBounds().FromRaw([]float64{100})
+	pt2.BucketCounts().FromRaw([]uint64{14, 6})
+
+	appTest := teststorage.NewAppendable()
+	app := appTest.AppenderV2(t.Context())
+	converter := NewPrometheusConverter(app)
+	settings := Settings{}
+	resource := pcommon.NewResource()
+
+	require.NoError(t, converter.setResourceContext(resource, settings))
+	require.NoError(t, converter.setScopeContext(scope{}, settings))
+	require.NoError(t, converter.addHistogramDataPoints(
+		context.Background(),
+		metric.Histogram().DataPoints(),
+		settings,
+		storage.AOptions{
+			MetricFamilyName: metric.Name(),
+		},
+	))
+	require.NoError(t, app.Commit())
+
+	exConverted := exemplar.Exemplar{
+		Value: 200,
+		Ts:    convertTimeStamp(exTs),
+		HasTs: true,
+	}
+	tsMs := convertTimeStamp(ts)
+
+	want := []sample{
+		// -- First data point --
+		// _sum: no exemplars.
+		{
+			MF: "test_hist",
+			L:  labels.FromStrings(model.MetricNameLabel, "test_hist_sum"),
+			T:  tsMs, ST: tsMs, V: 42,
+		},
+		// _count: no exemplars.
+		{
+			MF: "test_hist",
+			L:  labels.FromStrings(model.MetricNameLabel, "test_hist_count"),
+			T:  tsMs, ST: tsMs, V: 10,
+		},
+		// le=100 bucket: no exemplars (exemplar value 200 > 100).
+		{
+			MF: "test_hist",
+			L:  labels.FromStrings(model.MetricNameLabel, "test_hist_bucket", model.BucketLabel, "100"),
+			T:  tsMs, ST: tsMs, V: 7,
+		},
+		// le=+Inf bucket: gets the exemplar.
+		{
+			MF: "test_hist",
+			L:  labels.FromStrings(model.MetricNameLabel, "test_hist_bucket", model.BucketLabel, "+Inf"),
+			T:  tsMs, ST: tsMs, V: 10,
+			ES: []exemplar.Exemplar{exConverted},
+		},
+		// -- Second data point --
+		// _sum: NO exemplars (this is the regression check).
+		{
+			MF: "test_hist",
+			L:  labels.FromStrings(model.MetricNameLabel, "test_hist_sum"),
+			T:  tsMs, ST: tsMs, V: 84,
+		},
+		// _count: NO exemplars (this is the regression check).
+		{
+			MF: "test_hist",
+			L:  labels.FromStrings(model.MetricNameLabel, "test_hist_count"),
+			T:  tsMs, ST: tsMs, V: 20,
+		},
+		// le=100 bucket: no exemplars.
+		{
+			MF: "test_hist",
+			L:  labels.FromStrings(model.MetricNameLabel, "test_hist_bucket", model.BucketLabel, "100"),
+			T:  tsMs, ST: tsMs, V: 14,
+		},
+		// le=+Inf bucket: no exemplars.
+		{
+			MF: "test_hist",
+			L:  labels.FromStrings(model.MetricNameLabel, "test_hist_bucket", model.BucketLabel, "+Inf"),
+			T:  tsMs, ST: tsMs, V: 20,
+		},
+	}
+
+	teststorage.RequireEqual(t, want, appTest.ResultSamples())
+}
+
 func TestGetPromExemplars(t *testing.T) {
 	ctx := context.Background()
-	c := NewPrometheusConverter(&mockCombinedAppender{})
+	c := NewPrometheusConverter(teststorage.NewAppendable().AppenderV2(t.Context()))
 
 	t.Run("Exemplars with int value", func(t *testing.T) {
 		es := pmetric.NewExemplarSlice()

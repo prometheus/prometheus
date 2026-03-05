@@ -1267,6 +1267,7 @@ func genSeriesWithSample(numSeries int, ts int64) []prompb.TimeSeries {
 	return series
 }
 
+// TODO(bwplotka): Delete and switch all to teststorage.Appendable.
 type mockAppendable struct {
 	latestSample    map[uint64]int64
 	samples         []mockSample

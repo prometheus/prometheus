@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -117,10 +118,19 @@ func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
 	if !h.minTime.CompareAndSwap(math.MaxInt64, t) {
+		// Concurrent appends that are initializing.
+		// Wait until h.maxTime is swapped to avoid minTime/maxTime races.
+		antiDeadlockTimeout := time.After(500 * time.Millisecond)
+		for h.maxTime.Load() == math.MinInt64 {
+			select {
+			case <-antiDeadlockTimeout:
+				return
+			default:
+			}
+		}
 		return
 	}
 	// Ensure that max time is initialized to at least the min time we just set.
-	// Concurrent appenders may already have set it to a higher value.
 	h.maxTime.CompareAndSwap(math.MinInt64, t)
 }
 
@@ -168,8 +178,6 @@ func (h *Head) appender() *headAppender {
 		headAppenderBase: headAppenderBase{
 			head:                  h,
 			minValidTime:          minValidTime,
-			mint:                  math.MaxInt64,
-			maxt:                  math.MinInt64,
 			headMaxt:              h.MaxTime(),
 			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 			seriesRefs:            h.getRefSeriesBuffer(),
@@ -214,6 +222,9 @@ func (h *Head) getRefSeriesBuffer() []record.RefSeries {
 }
 
 func (h *Head) putRefSeriesBuffer(b []record.RefSeries) {
+	for i := range b { // Zero out to avoid retaining label data.
+		b[i].Labels = labels.EmptyLabels()
+	}
 	h.refSeriesPool.Put(b[:0])
 }
 
@@ -257,6 +268,7 @@ func (h *Head) getHistogramBuffer() []record.RefHistogramSample {
 }
 
 func (h *Head) putHistogramBuffer(b []record.RefHistogramSample) {
+	clear(b)
 	h.histogramsPool.Put(b[:0])
 }
 
@@ -269,6 +281,7 @@ func (h *Head) getFloatHistogramBuffer() []record.RefFloatHistogramSample {
 }
 
 func (h *Head) putFloatHistogramBuffer(b []record.RefFloatHistogramSample) {
+	clear(b)
 	h.floatHistogramsPool.Put(b[:0])
 }
 
@@ -281,6 +294,7 @@ func (h *Head) getMetadataBuffer() []record.RefMetadata {
 }
 
 func (h *Head) putMetadataBuffer(b []record.RefMetadata) {
+	clear(b)
 	h.metadataPool.Put(b[:0])
 }
 
@@ -387,7 +401,6 @@ func (b *appendBatch) close(h *Head) {
 type headAppenderBase struct {
 	head          *Head
 	minValidTime  int64 // No samples below this timestamp are allowed.
-	mint, maxt    int64
 	headMaxt      int64 // We track it here to not take the lock for every sample appended.
 	oooTimeWindow int64 // Use the same for the entire append, and don't load the atomic for each sample.
 
@@ -471,13 +484,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		return 0, err
 	}
 
-	if t < a.mint {
-		a.mint = t
-	}
-	if t > a.maxt {
-		a.maxt = t
-	}
-
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{
 		Ref: s.ref,
@@ -521,9 +527,6 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderST
 	}
 
-	if st > a.maxt {
-		a.maxt = st
-	}
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{Ref: s.ref, T: st, V: 0.0})
 	b.floatSeries = append(b.floatSeries, s)
@@ -897,13 +900,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		b.floatHistogramSeries = append(b.floatHistogramSeries, s)
 	}
 
-	if t < a.mint {
-		a.mint = t
-	}
-	if t > a.maxt {
-		a.maxt = t
-	}
-
 	return storage.SeriesRef(s.ref), nil
 }
 
@@ -1005,10 +1001,6 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			FH:  zeroFloatHistogram,
 		})
 		b.floatHistogramSeries = append(b.floatHistogramSeries, s)
-	}
-
-	if st > a.maxt {
-		a.maxt = st
 	}
 
 	return storage.SeriesRef(s.ref), nil
@@ -1843,7 +1835,8 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sa
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	s.app.Append(t, v)
+	// TODO(krajorama): pass ST.
+	s.app.Append(0, t, v)
 
 	c.maxTime = t
 
@@ -1885,7 +1878,8 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		prevApp = nil
 	}
 
-	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, t, h, false) // false=request a new chunk if needed
+	// TODO(krajorama): pass ST.
+	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, 0, t, h, false) // false=request a new chunk if needed
 
 	s.lastHistogramValue = h
 	s.lastFloatHistogramValue = nil
@@ -1942,7 +1936,8 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		prevApp = nil
 	}
 
-	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, t, fh, false) // False means request a new chunk if needed.
+	// TODO(krajorama): pass ST.
+	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, 0, t, fh, false) // False means request a new chunk if needed.
 
 	s.lastHistogramValue = nil
 	s.lastFloatHistogramValue = fh
@@ -2236,6 +2231,9 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 	return count
 }
 
+// TODO(bwplotka): Propagate errors correctly, even when they are async. Panicking here do occurs from time to time
+// and cause flaky tests with hidden root cause (unlocked mutexes when deferred closing).
+// We didn't have evidences of prod impact though, yet.
 func handleChunkWriteError(err error) {
 	if err != nil && !errors.Is(err, chunks.ErrChunkDiskMapperClosed) {
 		panic(err)

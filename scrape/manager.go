@@ -39,13 +39,34 @@ import (
 	"github.com/prometheus/prometheus/util/pool"
 )
 
-// NewManager is the Manager constructor using Appendable.
-func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error), appendable storage.Appendable, registerer prometheus.Registerer) (*Manager, error) {
+// NewManager is the Manager constructor using storage.Appendable or storage.AppendableV2.
+//
+// If unsure which one to use/implement, implement AppendableV2 as it significantly simplifies implementation and allows more
+// (passing ST, always-on metadata, exemplars per sample).
+//
+// NewManager returns error if both appendable and appendableV2 are specified.
+//
+// Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// storage.Appendable will be removed soon (ETA: Q2 2026).
+func NewManager(
+	o *Options,
+	logger *slog.Logger,
+	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error),
+	appendable storage.Appendable,
+	appendableV2 storage.AppendableV2,
+	registerer prometheus.Registerer,
+) (*Manager, error) {
 	if o == nil {
 		o = &Options{}
 	}
 	if logger == nil {
 		logger = promslog.NewNopLogger()
+	}
+	if appendable != nil && appendableV2 != nil {
+		return nil, errors.New("scrape.NewManager: appendable and appendableV2 cannot be provided at the same time")
+	}
+	if appendable == nil && appendableV2 == nil {
+		return nil, errors.New("scrape.NewManager: provide either appendable or appendableV2")
 	}
 
 	sm, err := newScrapeMetrics(registerer)
@@ -55,6 +76,7 @@ func NewManager(o *Options, logger *slog.Logger, newScrapeFailureLogger func(str
 
 	m := &Manager{
 		appendable:             appendable,
+		appendableV2:           appendableV2,
 		opts:                   o,
 		logger:                 logger,
 		newScrapeFailureLogger: newScrapeFailureLogger,
@@ -114,7 +136,8 @@ type Manager struct {
 	opts   *Options
 	logger *slog.Logger
 
-	appendable storage.Appendable
+	appendable   storage.Appendable
+	appendableV2 storage.AppendableV2
 
 	graceShut chan struct{}
 
@@ -196,7 +219,7 @@ func (m *Manager) reload() {
 				continue
 			}
 			m.metrics.targetScrapePools.Inc()
-			sp, err := newScrapePool(scrapeConfig, m.appendable, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
+			sp, err := newScrapePool(scrapeConfig, m.appendable, m.appendableV2, m.offsetSeed, m.logger.With("scrape_pool", setName), m.buffers, m.opts, m.metrics)
 			if err != nil {
 				m.metrics.targetScrapePoolsFailed.Inc()
 				m.logger.Error("error creating new scrape pool", "err", err, "scrape_pool", setName)

@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -199,6 +200,112 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	*chks = appendSeriesChunks(s, h.mint, h.maxt, *chks)
 
 	return nil
+}
+
+func (h *Head) staleIndex(mint, maxt int64, staleSeriesRefs []storage.SeriesRef) (*headStaleIndexReader, error) {
+	return &headStaleIndexReader{
+		headIndexReader: h.indexRange(mint, maxt),
+		staleSeriesRefs: staleSeriesRefs,
+	}, nil
+}
+
+// headStaleIndexReader gives the stale series that have no out-of-order data.
+// This is only used for stale series compaction at the moment, that will only ask for all
+// the series during compaction. So to make that efficient, this index reader requires the
+// pre-calculated list of stale series refs that can be returned without re-reading the Head.
+type headStaleIndexReader struct {
+	*headIndexReader
+	staleSeriesRefs []storage.SeriesRef
+}
+
+func (h *headStaleIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	// If all postings are requested, return the precalculated list.
+	k, v := index.AllPostingsKey()
+	if len(h.staleSeriesRefs) > 0 && name == k && len(values) == 1 && values[0] == v {
+		return index.NewListPostings(h.staleSeriesRefs), nil
+	}
+	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.Postings(ctx, name, values...))
+	if err != nil {
+		return index.ErrPostings(err), err
+	}
+	return index.NewListPostings(seriesRefs), nil
+}
+
+func (h *headStaleIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	// Unused for compaction, so we don't need to optimise.
+	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.PostingsForLabelMatching(ctx, name, match))
+	if err != nil {
+		return index.ErrPostings(err)
+	}
+	return index.NewListPostings(seriesRefs)
+}
+
+func (h *headStaleIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	// Unused for compaction, so we don't need to optimise.
+	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.PostingsForAllLabelValues(ctx, name))
+	if err != nil {
+		return index.ErrPostings(err)
+	}
+	return index.NewListPostings(seriesRefs)
+}
+
+// filterStaleSeriesAndSortPostings returns the stale series references from the given postings
+// that also do not have any out-of-order data.
+func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) ([]storage.SeriesRef, error) {
+	series := make([]*memSeries, 0, 1024)
+
+	notFoundSeriesCount := 0
+	for p.Next() {
+		s := h.series.getByID(chunks.HeadSeriesRef(p.At()))
+		if s == nil {
+			notFoundSeriesCount++
+			continue
+		}
+
+		s.Lock()
+		if s.ooo != nil {
+			// Has out-of-order data; skip it because we cannot determine if a series
+			// is stale when it's getting out-of-order data.
+			s.Unlock()
+			continue
+		}
+
+		if value.IsStaleNaN(s.lastValue) ||
+			(s.lastHistogramValue != nil && value.IsStaleNaN(s.lastHistogramValue.Sum)) ||
+			(s.lastFloatHistogramValue != nil && value.IsStaleNaN(s.lastFloatHistogramValue.Sum)) {
+			series = append(series, s)
+		}
+		s.Unlock()
+	}
+	if notFoundSeriesCount > 0 {
+		h.logger.Debug("Looked up stale series not found", "count", notFoundSeriesCount)
+	}
+	if err := p.Err(); err != nil {
+		return nil, fmt.Errorf("expand postings: %w", err)
+	}
+
+	slices.SortFunc(series, func(a, b *memSeries) int {
+		return labels.Compare(a.labels(), b.labels())
+	})
+
+	refs := make([]storage.SeriesRef, 0, len(series))
+	for _, p := range series {
+		refs = append(refs, storage.SeriesRef(p.ref))
+	}
+	return refs, nil
+}
+
+// SortedPostings returns the postings as it is because we expect any postings obtained via
+// headStaleIndexReader to be already sorted.
+func (*headStaleIndexReader) SortedPostings(p index.Postings) index.Postings {
+	// All the postings function above already give the sorted list of postings.
+	return p
+}
+
+// SortedStaleSeriesRefsNoOOOData returns all the series refs of the stale series that do not have any out-of-order data.
+func (h *Head) SortedStaleSeriesRefsNoOOOData(ctx context.Context) ([]storage.SeriesRef, error) {
+	k, v := index.AllPostingsKey()
+	return h.filterStaleSeriesAndSortPostings(h.postings.Postings(ctx, k, v))
 }
 
 func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta) []chunks.Meta {

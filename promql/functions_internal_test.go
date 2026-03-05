@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/kahansum"
 )
 
 func TestHistogramRateCounterResetHint(t *testing.T) {
@@ -79,7 +80,7 @@ func TestKahanSumInc(t *testing.T) {
 
 	runTest := func(t *testing.T, a, b, expected float64) {
 		t.Run(fmt.Sprintf("%v + %v = %v", a, b, expected), func(t *testing.T) {
-			sum, c := kahanSumInc(b, a, 0)
+			sum, c := kahansum.Inc(b, a, 0)
 			result := sum + c
 
 			if math.IsNaN(expected) {
@@ -108,13 +109,13 @@ func TestInterpolate(t *testing.T) {
 		{FPoint{T: 1, F: 100}, FPoint{T: 2, F: 200}, 1, false, 100},
 		{FPoint{T: 0, F: 100}, FPoint{T: 2, F: 200}, 1, false, 150},
 		{FPoint{T: 0, F: 200}, FPoint{T: 2, F: 100}, 1, false, 150},
-		{FPoint{T: 0, F: 200}, FPoint{T: 2, F: 0}, 1, true, 200},
-		{FPoint{T: 0, F: 200}, FPoint{T: 2, F: 100}, 1, true, 250},
-		{FPoint{T: 0, F: 500}, FPoint{T: 2, F: 100}, 1, true, 550},
-		{FPoint{T: 0, F: 500}, FPoint{T: 10, F: 0}, 1, true, 500},
+		{FPoint{T: 0, F: 200}, FPoint{T: 2, F: 0}, 1, true, 0},
+		{FPoint{T: 0, F: 200}, FPoint{T: 2, F: 100}, 1, true, 50},
+		{FPoint{T: 0, F: 500}, FPoint{T: 2, F: 100}, 1, true, 50},
+		{FPoint{T: 0, F: 500}, FPoint{T: 10, F: 0}, 1, true, 0},
 	}
 	for _, test := range tests {
-		result := interpolate(test.p1, test.p2, test.t, test.isCounter, false)
+		result := interpolate(test.p1, test.p2, test.t, test.isCounter)
 		require.Equal(t, test.expected, result)
 	}
 }

@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -101,6 +100,9 @@ var ErrPostingsOffsetTableTooLarge = errors.New("length size exceeds 4 bytes")
 
 // ErrIndexExceeds64GiB is returned when the index file would exceed the 64GiB limit.
 var ErrIndexExceeds64GiB = errors.New("exceeding max size of 64GiB")
+
+// ErrSymbolTableTooLarge is returned when the symbol table size exceeds 4 bytes (4GiB limit).
+var ErrSymbolTableTooLarge = fmt.Errorf("symbol table size exceeds %d bytes", uint32(math.MaxUint32))
 
 // The table gets initialized with sync.Once but may still cause a race
 // with any other use of the crc32 package anywhere. Thus we initialize it
@@ -551,7 +553,7 @@ func (w *Writer) finishSymbols() error {
 	symbolTableSize := w.f.pos - w.toc.Symbols - 4
 	// The symbol table's <len> part is 4 bytes. So the total symbol table size must be less than or equal to 2^32-1
 	if symbolTableSize > math.MaxUint32 {
-		return fmt.Errorf("symbol table size exceeds %d bytes: %d", uint32(math.MaxUint32), symbolTableSize)
+		return fmt.Errorf("%w: %d", ErrSymbolTableTooLarge, symbolTableSize)
 	}
 
 	// Write out the length and symbol count.
@@ -1007,10 +1009,10 @@ func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
 	}
 	r, err := newReader(realByteSlice(f.Bytes()), f, decoder)
 	if err != nil {
-		return nil, tsdb_errors.NewMulti(
+		return nil, errors.Join(
 			err,
 			f.Close(),
-		).Err()
+		)
 	}
 
 	return r, nil

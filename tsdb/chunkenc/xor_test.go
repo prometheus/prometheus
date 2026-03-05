@@ -24,7 +24,7 @@ func BenchmarkXorRead(b *testing.B) {
 	app, err := c.Appender()
 	require.NoError(b, err)
 	for i := int64(0); i < 120*1000; i += 1000 {
-		app.Append(i, float64(i)+float64(i)/10+float64(i)/100+float64(i)/1000)
+		app.Append(0, i, float64(i)+float64(i)/10+float64(i)/100+float64(i)/1000)
 	}
 
 	b.ReportAllocs()

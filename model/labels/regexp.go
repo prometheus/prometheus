@@ -67,6 +67,9 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		parsed = optimizeAlternatingSimpleContains(parsed)
+
 		m.re, err = regexp.Compile("^(?s:" + parsed.String() + ")$")
 		if err != nil {
 			return nil, err
@@ -331,7 +334,7 @@ func (m *FastRegexMatcher) GetRegexString() string {
 // this function returns an optimized StringMatcher or nil if the regex
 // cannot be optimized in this way, and a list of setMatches up to maxSetMatches.
 func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
-	if len(s) == 0 {
+	if s == "" {
 		return emptyStringMatcher{}, nil
 	}
 
@@ -367,6 +370,43 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 	multiMatcher.add(s)
 
 	return multiMatcher, multiMatcher.setMatches()
+}
+
+// optimizeAlternatingSimpleContains checks to see if a regex is a series of alternations that take the form .*literal.*
+// In these cases, the regex itself can be rewritten as .*(foo|bar).*,
+// which can result in a significant performance improvement at execution.
+func optimizeAlternatingSimpleContains(r *syntax.Regexp) *syntax.Regexp {
+	if r.Op != syntax.OpAlternate {
+		return r
+	}
+	containsLiterals := make([]*syntax.Regexp, 0, len(r.Sub))
+	for _, sub := range r.Sub {
+		// If any subexpression does not take the form .*literal.*, we should not try to optimize this
+		if sub.Op != syntax.OpConcat || len(sub.Sub) != 3 {
+			return r
+		}
+		concatSubs := sub.Sub
+		if !isCaseSensitiveLiteral(concatSubs[1]) || !isMatchAny(concatSubs[0]) || !isMatchAny(concatSubs[2]) {
+			return r
+		}
+		containsLiterals = append(containsLiterals, concatSubs[1])
+	}
+
+	// Only rewrite the regex if there's more than one literal
+	if len(containsLiterals) > 1 {
+		returnRegex := &syntax.Regexp{Op: syntax.OpConcat}
+		prefixAnyMatcher := &syntax.Regexp{Op: syntax.OpStar, Sub: []*syntax.Regexp{{Op: syntax.OpAnyChar}}, Flags: syntax.Perl | syntax.DotNL}
+		suffixAnyMatcher := &syntax.Regexp{Op: syntax.OpStar, Sub: []*syntax.Regexp{{Op: syntax.OpAnyChar}}, Flags: syntax.Perl | syntax.DotNL}
+		alts := &syntax.Regexp{Op: syntax.OpAlternate}
+		alts.Sub = containsLiterals
+		returnRegex.Sub = []*syntax.Regexp{
+			prefixAnyMatcher,
+			alts,
+			suffixAnyMatcher,
+		}
+		return returnRegex
+	}
+	return r
 }
 
 // optimizeConcatRegex returns literal prefix/suffix text that can be safely
@@ -743,7 +783,7 @@ func (m *literalSuffixStringMatcher) Matches(s string) bool {
 type emptyStringMatcher struct{}
 
 func (emptyStringMatcher) Matches(s string) bool {
-	return len(s) == 0
+	return s == ""
 }
 
 // orStringMatcher matches any of the sub-matchers.
@@ -959,12 +999,12 @@ func (m *anyNonEmptyStringMatcher) Matches(s string) bool {
 	if m.matchNL {
 		// It's OK if the string contains a newline so we just need to make
 		// sure it's non-empty.
-		return len(s) > 0
+		return s != ""
 	}
 
 	// We need to make sure it non-empty and doesn't contain a newline.
 	// Since the newline is an ASCII character, we can use strings.IndexByte().
-	return len(s) > 0 && strings.IndexByte(s, '\n') == -1
+	return s != "" && strings.IndexByte(s, '\n') == -1
 }
 
 // zeroOrOneCharacterStringMatcher is a StringMatcher which matches zero or one occurrence
@@ -984,7 +1024,7 @@ func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
 	}
 
 	// No need to check for the newline if the string is empty or matching a newline is OK.
-	if m.matchNL || len(s) == 0 {
+	if m.matchNL || s == "" {
 		return true
 	}
 

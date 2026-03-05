@@ -61,10 +61,9 @@ func TestSampleRing(t *testing.T) {
 
 		input := []fSample{}
 		for _, t := range c.input {
-			input = append(input, fSample{
-				t: t,
-				f: float64(rand.Intn(100)),
-			})
+			// Randomize start timestamp to make sure it does not affect the
+			// outcome.
+			input = append(input, fSample{st: rand.Int63(), t: t, f: float64(rand.Intn(100))})
 		}
 
 		for i, s := range input {
@@ -90,6 +89,24 @@ func TestSampleRing(t *testing.T) {
 	}
 }
 
+func TestSampleRingFloatST(t *testing.T) {
+	r := newSampleRing(10, 5, chunkenc.ValNone)
+	require.Empty(t, r.fBuf)
+	require.Empty(t, r.hBuf)
+	require.Empty(t, r.fhBuf)
+	require.Empty(t, r.iBuf)
+
+	r.addF(fSample{st: 100, t: 11, f: 3.14})
+	it := r.iterator()
+
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	ts, f := it.At()
+	require.Equal(t, int64(11), ts)
+	require.Equal(t, 3.14, f)
+	require.Equal(t, int64(100), it.AtST())
+	require.Equal(t, chunkenc.ValNone, it.Next())
+}
+
 func TestSampleRingMixed(t *testing.T) {
 	h1 := tsdbutil.GenerateTestHistogram(1)
 	h2 := tsdbutil.GenerateTestHistogram(2)
@@ -102,39 +119,43 @@ func TestSampleRingMixed(t *testing.T) {
 	require.Empty(t, r.iBuf)
 
 	// But then mixed adds should work as expected.
-	r.addF(fSample{t: 1, f: 3.14})
-	r.addH(hSample{t: 2, h: h1})
+	r.addF(fSample{st: 10, t: 11, f: 3.14})
+	r.addH(hSample{st: 20, t: 21, h: h1})
 
 	it := r.iterator()
 
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, f := it.At()
-	require.Equal(t, int64(1), ts)
+	require.Equal(t, int64(11), ts)
 	require.Equal(t, 3.14, f)
+	require.Equal(t, int64(10), it.AtST())
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
 	var h *histogram.Histogram
 	ts, h = it.AtHistogram()
-	require.Equal(t, int64(2), ts)
+	require.Equal(t, int64(21), ts)
 	require.Equal(t, h1, h)
+	require.Equal(t, int64(20), it.AtST())
 	require.Equal(t, chunkenc.ValNone, it.Next())
 
 	r.reset()
 	it = r.iterator()
 	require.Equal(t, chunkenc.ValNone, it.Next())
 
-	r.addF(fSample{t: 3, f: 4.2})
-	r.addH(hSample{t: 4, h: h2})
+	r.addF(fSample{st: 30, t: 31, f: 4.2})
+	r.addH(hSample{st: 40, t: 41, h: h2})
 
 	it = r.iterator()
 
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, f = it.At()
-	require.Equal(t, int64(3), ts)
+	require.Equal(t, int64(31), ts)
 	require.Equal(t, 4.2, f)
+	require.Equal(t, int64(30), it.AtST())
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
 	ts, h = it.AtHistogram()
-	require.Equal(t, int64(4), ts)
+	require.Equal(t, int64(41), ts)
 	require.Equal(t, h2, h)
+	require.Equal(t, int64(40), it.AtST())
 	require.Equal(t, chunkenc.ValNone, it.Next())
 }
 
@@ -160,44 +181,50 @@ func TestSampleRingAtFloatHistogram(t *testing.T) {
 	it := r.iterator()
 	require.Equal(t, chunkenc.ValNone, it.Next())
 
-	r.addFH(fhSample{t: 1, fh: fh1})
-	r.addFH(fhSample{t: 2, fh: fh2})
+	r.addFH(fhSample{st: 10, t: 11, fh: fh1})
+	r.addFH(fhSample{st: 20, t: 21, fh: fh2})
 
 	it = r.iterator()
 
 	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
 	ts, fh = it.AtFloatHistogram(fh)
-	require.Equal(t, int64(1), ts)
+	require.Equal(t, int64(11), ts)
 	require.Equal(t, fh1, fh)
+	require.Equal(t, int64(10), it.AtST())
 	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
 	ts, fh = it.AtFloatHistogram(fh)
-	require.Equal(t, int64(2), ts)
+	require.Equal(t, int64(21), ts)
 	require.Equal(t, fh2, fh)
+	require.Equal(t, int64(20), it.AtST())
 	require.Equal(t, chunkenc.ValNone, it.Next())
 
 	r.reset()
 	it = r.iterator()
 	require.Equal(t, chunkenc.ValNone, it.Next())
 
-	r.addH(hSample{t: 3, h: h1})
-	r.addH(hSample{t: 4, h: h2})
+	r.addH(hSample{st: 30, t: 31, h: h1})
+	r.addH(hSample{st: 40, t: 41, h: h2})
 
 	it = r.iterator()
 
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
 	ts, h = it.AtHistogram()
-	require.Equal(t, int64(3), ts)
+	require.Equal(t, int64(31), ts)
 	require.Equal(t, h1, h)
+	require.Equal(t, int64(30), it.AtST())
 	ts, fh = it.AtFloatHistogram(fh)
-	require.Equal(t, int64(3), ts)
+	require.Equal(t, int64(31), ts)
 	require.Equal(t, h1.ToFloat(nil), fh)
+	require.Equal(t, int64(30), it.AtST())
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
 	ts, h = it.AtHistogram()
-	require.Equal(t, int64(4), ts)
+	require.Equal(t, int64(41), ts)
 	require.Equal(t, h2, h)
+	require.Equal(t, int64(40), it.AtST())
 	ts, fh = it.AtFloatHistogram(fh)
-	require.Equal(t, int64(4), ts)
+	require.Equal(t, int64(41), ts)
 	require.Equal(t, h2.ToFloat(nil), fh)
+	require.Equal(t, int64(40), it.AtST())
 	require.Equal(t, chunkenc.ValNone, it.Next())
 }
 
@@ -209,59 +236,63 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		bit := it.Buffer()
 		for bit.Next() == chunkenc.ValFloat {
 			t, f := bit.At()
-			b = append(b, fSample{t: t, f: f})
+			st := bit.AtST()
+			b = append(b, fSample{st: st, t: t, f: f})
 		}
 		require.Equal(t, exp, b, "buffer mismatch")
 	}
-	sampleEq := func(ets int64, ev float64) {
+	sampleEq := func(est, ets int64, ev float64) {
 		ts, v := it.At()
+		st := it.AtST()
+		require.Equal(t, est, st, "start timestamp mismatch")
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		require.Equal(t, ev, v, "value mismatch")
 	}
-	prevSampleEq := func(ets int64, ev float64, eok bool) {
+	prevSampleEq := func(est, ets int64, ev float64, eok bool) {
 		s, ok := it.PeekBack(1)
 		require.Equal(t, eok, ok, "exist mismatch")
+		require.Equal(t, est, s.ST(), "start timestamp mismatch")
 		require.Equal(t, ets, s.T(), "timestamp mismatch")
 		require.Equal(t, ev, s.F(), "value mismatch")
 	}
 
 	it = NewBufferIterator(NewListSeriesIterator(samples{
-		fSample{t: 1, f: 2},
-		fSample{t: 2, f: 3},
-		fSample{t: 3, f: 4},
-		fSample{t: 4, f: 5},
-		fSample{t: 5, f: 6},
-		fSample{t: 99, f: 8},
-		fSample{t: 100, f: 9},
-		fSample{t: 101, f: 10},
+		fSample{st: -1, t: 1, f: 2},
+		fSample{st: 1, t: 2, f: 3},
+		fSample{st: 2, t: 3, f: 4},
+		fSample{st: 3, t: 4, f: 5},
+		fSample{st: 3, t: 5, f: 6},
+		fSample{st: 50, t: 99, f: 8},
+		fSample{st: 99, t: 100, f: 9},
+		fSample{st: 100, t: 101, f: 10},
 	}), 2)
 
 	require.Equal(t, chunkenc.ValFloat, it.Seek(-123), "seek failed")
-	sampleEq(1, 2)
-	prevSampleEq(0, 0, false)
+	sampleEq(-1, 1, 2)
+	prevSampleEq(0, 0, 0, false)
 	bufferEq(nil)
 
 	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
-	sampleEq(2, 3)
-	prevSampleEq(1, 2, true)
-	bufferEq([]fSample{{t: 1, f: 2}})
+	sampleEq(1, 2, 3)
+	prevSampleEq(-1, 1, 2, true)
+	bufferEq([]fSample{{st: -1, t: 1, f: 2}})
 
 	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
-	sampleEq(5, 6)
-	prevSampleEq(4, 5, true)
-	bufferEq([]fSample{{t: 2, f: 3}, {t: 3, f: 4}, {t: 4, f: 5}})
+	sampleEq(3, 5, 6)
+	prevSampleEq(3, 4, 5, true)
+	bufferEq([]fSample{{st: 1, t: 2, f: 3}, {st: 2, t: 3, f: 4}, {st: 3, t: 4, f: 5}})
 
 	require.Equal(t, chunkenc.ValFloat, it.Seek(5), "seek failed")
-	sampleEq(5, 6)
-	prevSampleEq(4, 5, true)
-	bufferEq([]fSample{{t: 2, f: 3}, {t: 3, f: 4}, {t: 4, f: 5}})
+	sampleEq(3, 5, 6)
+	prevSampleEq(3, 4, 5, true)
+	bufferEq([]fSample{{st: 1, t: 2, f: 3}, {st: 2, t: 3, f: 4}, {st: 3, t: 4, f: 5}})
 
 	require.Equal(t, chunkenc.ValFloat, it.Seek(101), "seek failed")
-	sampleEq(101, 10)
-	prevSampleEq(100, 9, true)
-	bufferEq([]fSample{{t: 99, f: 8}, {t: 100, f: 9}})
+	sampleEq(100, 101, 10)
+	prevSampleEq(99, 100, 9, true)
+	bufferEq([]fSample{{st: 50, t: 99, f: 8}, {st: 99, t: 100, f: 9}})
 
 	require.Equal(t, chunkenc.ValNone, it.Next(), "next succeeded unexpectedly")
 	require.Equal(t, chunkenc.ValNone, it.Seek(1024), "seek succeeded unexpectedly")
@@ -402,6 +433,10 @@ func (*mockSeriesIterator) AtT() int64 {
 	return 0 // Not really mocked.
 }
 
+func (*mockSeriesIterator) AtST() int64 {
+	return 0 // Not really mocked.
+}
+
 type fakeSeriesIterator struct {
 	nsamples int64
 	step     int64
@@ -426,6 +461,10 @@ func (it *fakeSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64
 
 func (it *fakeSeriesIterator) AtT() int64 {
 	return it.idx * it.step
+}
+
+func (*fakeSeriesIterator) AtST() int64 {
+	return 0 // No start timestamps in this fake iterator.
 }
 
 func (it *fakeSeriesIterator) Next() chunkenc.ValueType {

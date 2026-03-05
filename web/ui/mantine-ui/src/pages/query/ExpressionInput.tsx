@@ -11,7 +11,6 @@ import {
   useComputedColorScheme,
 } from "@mantine/core";
 import {
-  CompleteStrategy,
   PromQLExtension,
   newCompleteStrategy,
 } from "@prometheus-io/codemirror-promql";
@@ -36,12 +35,9 @@ import {
   bracketMatching,
   indentOnInput,
   syntaxHighlighting,
-  syntaxTree,
 } from "@codemirror/language";
 import classes from "./ExpressionInput.module.css";
 import {
-  CompletionContext,
-  CompletionResult,
   autocompletion,
   closeBrackets,
   closeBracketsKeymap,
@@ -71,50 +67,10 @@ import MetricsExplorer from "./MetricsExplorer/MetricsExplorer";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import { useAppSelector } from "../../state/hooks";
 import { inputIconStyle, menuIconStyle } from "../../styles";
+import { HistoryCompleteStrategy } from "./HistoryCompleteStrategy";
 
 const promqlExtension = new PromQLExtension();
 
-// Autocompletion strategy that wraps the main one and enriches
-// it with past query items.
-export class HistoryCompleteStrategy implements CompleteStrategy {
-  private complete: CompleteStrategy;
-  private queryHistory: string[];
-  constructor(complete: CompleteStrategy, queryHistory: string[]) {
-    this.complete = complete;
-    this.queryHistory = queryHistory;
-  }
-
-  promQL(
-    context: CompletionContext
-  ): Promise<CompletionResult | null> | CompletionResult | null {
-    return Promise.resolve(this.complete.promQL(context)).then((res) => {
-      const { state, pos } = context;
-      const tree = syntaxTree(state).resolve(pos, -1);
-      const start = res != null ? res.from : tree.from;
-
-      if (start !== 0) {
-        return res;
-      }
-
-      const historyItems: CompletionResult = {
-        from: start,
-        to: pos,
-        options: this.queryHistory.map((q) => ({
-          label: q.length < 80 ? q : q.slice(0, 76).concat("..."),
-          detail: "past query",
-          apply: q,
-          info: q.length < 80 ? undefined : q,
-        })),
-        validFor: /^[a-zA-Z0-9_:]+$/,
-      };
-
-      if (res !== null) {
-        historyItems.options = historyItems.options.concat(res.options);
-      }
-      return historyItems;
-    });
-  }
-}
 
 interface ExpressionInputProps {
   initialExpr: string;

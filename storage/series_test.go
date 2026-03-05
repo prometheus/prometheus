@@ -28,11 +28,11 @@ import (
 
 func TestListSeriesIterator(t *testing.T) {
 	it := NewListSeriesIterator(samples{
-		fSample{0, 0},
-		fSample{1, 1},
-		fSample{1, 1.5},
-		fSample{2, 2},
-		fSample{3, 3},
+		fSample{-10, 0, 0},
+		fSample{-9, 1, 1},
+		fSample{-8, 1, 1.5},
+		fSample{-7, 2, 2},
+		fSample{-6, 3, 3},
 	})
 
 	// Seek to the first sample with ts=1.
@@ -40,30 +40,35 @@ func TestListSeriesIterator(t *testing.T) {
 	ts, v := it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, 1., v)
+	require.Equal(t, int64(-9), it.AtST())
 
 	// Seek one further, next sample still has ts=1.
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, v = it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, 1.5, v)
+	require.Equal(t, int64(-8), it.AtST())
 
 	// Seek again to 1 and make sure we stay where we are.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
 	ts, v = it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, 1.5, v)
+	require.Equal(t, int64(-8), it.AtST())
 
 	// Another seek.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 	ts, v = it.At()
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, 3., v)
+	require.Equal(t, int64(-6), it.AtST())
 
 	// And we don't go back.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
 	ts, v = it.At()
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, 3., v)
+	require.Equal(t, int64(-6), it.AtST())
 
 	// Seek beyond the end.
 	require.Equal(t, chunkenc.ValNone, it.Seek(5))

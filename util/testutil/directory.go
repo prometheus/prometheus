@@ -60,20 +60,11 @@ type (
 	// their interactions.
 	temporaryDirectory struct {
 		path   string
-		tester T
+		tester testing.TB
 	}
 
 	callbackCloser struct {
 		fn func()
-	}
-
-	// T implements the needed methods of testing.TB so that we do not need
-	// to actually import testing (which has the side effect of adding all
-	// the test flags, which we do not want in non-test binaries even if
-	// they make use of these utilities for some reason).
-	T interface {
-		Errorf(format string, args ...any)
-		FailNow()
 	}
 )
 
@@ -113,7 +104,7 @@ func (t temporaryDirectory) Path() string {
 
 // NewTemporaryDirectory creates a new temporary directory for transient POSIX
 // activities.
-func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
+func NewTemporaryDirectory(name string, t testing.TB) (handler TemporaryDirectory) {
 	var (
 		directory string
 		err       error

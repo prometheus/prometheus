@@ -238,8 +238,20 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 // Appender implements storage.Storage.
 func (rws *WriteStorage) Appender(context.Context) storage.Appender {
 	return &timestampTracker{
-		writeStorage:         rws,
-		highestRecvTimestamp: rws.highestTimestamp,
+		baseTimestampTracker: baseTimestampTracker{
+			writeStorage:         rws,
+			highestRecvTimestamp: rws.highestTimestamp,
+		},
+	}
+}
+
+// AppenderV2 implements storage.Storage.
+func (rws *WriteStorage) AppenderV2(context.Context) storage.AppenderV2 {
+	return &timestampTrackerV2{
+		baseTimestampTracker: baseTimestampTracker{
+			writeStorage:         rws,
+			highestRecvTimestamp: rws.highestTimestamp,
+		},
 	}
 }
 
@@ -282,14 +294,20 @@ func (rws *WriteStorage) Close() error {
 	return nil
 }
 
-type timestampTracker struct {
-	writeStorage         *WriteStorage
-	appendOptions        *storage.AppendOptions
+type baseTimestampTracker struct {
+	writeStorage *WriteStorage
+
 	samples              int64
 	exemplars            int64
 	histograms           int64
 	highestTimestamp     int64
 	highestRecvTimestamp *maxTimestamp
+}
+
+type timestampTracker struct {
+	baseTimestampTracker
+
+	appendOptions *storage.AppendOptions
 }
 
 func (t *timestampTracker) SetOptions(opts *storage.AppendOptions) {
@@ -345,7 +363,7 @@ func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metada
 }
 
 // Commit implements storage.Appender.
-func (t *timestampTracker) Commit() error {
+func (t *baseTimestampTracker) Commit() error {
 	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
 
 	samplesIn.Add(float64(t.samples))
@@ -356,6 +374,25 @@ func (t *timestampTracker) Commit() error {
 }
 
 // Rollback implements storage.Appender.
-func (*timestampTracker) Rollback() error {
+func (*baseTimestampTracker) Rollback() error {
 	return nil
+}
+
+type timestampTrackerV2 struct {
+	baseTimestampTracker
+}
+
+// Append implements storage.AppenderV2.
+func (t *timestampTrackerV2) Append(ref storage.SeriesRef, _ labels.Labels, _, ts int64, _ float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	switch {
+	case fh != nil, h != nil:
+		t.histograms++
+	default:
+		t.samples++
+	}
+	if ts > t.highestTimestamp {
+		t.highestTimestamp = ts
+	}
+	t.exemplars += int64(len(opts.Exemplars))
+	return ref, nil
 }

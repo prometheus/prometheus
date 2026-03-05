@@ -1543,6 +1543,33 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  histogram_quantiles: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>histogram_quantiles(v instant-vector, quantile_label string, φ_1 scalar, φ_2 scalar, ...)</code>{" "}
+        calculates multiple (between 1 and 10) φ-quantiles (0 ≤ φ ≤ 1) from a{" "}
+        <a href="https://prometheus.io/docs/concepts/metric_types/#histogram">classic histogram</a> or from a native
+        histogram. Quantile calculation works the same way as in <code>histogram_quantile()</code>. The second argument
+        (a string) specifies the label name that is used to identify different quantiles in the query result.
+      </p>
+
+      <pre>
+        <code>
+          histogram_quantiles(sum(rate(foo[1m])), &quot;quantile&quot;, 0.9, 0.99) # =&gt; {"{"}quantile=&quot;0.9&quot;
+          {"}"} 123
+          {"{"}quantile=&quot;0.99&quot;{"}"} 128
+        </code>
+      </pre>
+    </>
+  ),
   histogram_stddev: (
     <>
       <p>
@@ -1754,6 +1781,12 @@ const funcDocs: Record<string, React.ReactNode> = {
           {"{"}__name__=&quot;target_info&quot;{"}"}
         </code>
         .
+      </p>
+
+      <p>
+        Note that if there are any time series in <code>v</code> that match the <code>data-label-selector</code> (or the
+        default <code>target_info</code> if that argument is not specified), they will be treated as info series and
+        will be returned unchanged.
       </p>
 
       <h3>Limitations</h3>

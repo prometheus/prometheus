@@ -65,7 +65,7 @@ func testChunk(t *testing.T, c Chunk) {
 			require.NoError(t, err)
 		}
 
-		app.Append(ts, v)
+		app.Append(0, ts, v)
 		exp = append(exp, pair{t: ts, v: v})
 	}
 
@@ -226,7 +226,7 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 			if j > 250 {
 				break
 			}
-			a.Append(p.t, p.v)
+			a.Append(0, p.t, p.v)
 			j++
 		}
 	}
@@ -303,7 +303,7 @@ func benchmarkAppender(b *testing.B, deltas func() (int64, float64), newChunk fu
 			b.Fatalf("get appender: %s", err)
 		}
 		for _, p := range exp {
-			a.Append(p.t, p.v)
+			a.Append(0, p.t, p.v)
 		}
 	}
 }

@@ -88,6 +88,8 @@ BinaryExpr {
   expr !eql Eql    binModifiers expr |
   expr !eql Gte    binModifiers expr |
   expr !eql Gtr    binModifiers expr |
+  expr !eql TrimUpper  binModifiers expr |
+  expr !eql TrimLower  binModifiers expr |
   expr !eql Lte    binModifiers expr |
   expr !eql Lss    binModifiers expr |
   expr !eql Neq    binModifiers expr |
@@ -101,11 +103,30 @@ MatchingModifierClause {
   ((GroupLeft | GroupRight) (!group GroupingLabels)?)?
 }
 
+FillClause {
+  Fill "(" NumberDurationLiteral ")"
+}
+
+FillLeftClause {
+  FillLeft "(" NumberDurationLiteral ")"
+}
+
+FillRightClause {
+  FillRight "(" NumberDurationLiteral ")"
+}
+
+FillModifier {
+  (FillClause | FillLeftClause | FillRightClause) |
+  (FillLeftClause FillRightClause) |
+  (FillRightClause FillLeftClause)
+}
+
 BoolModifier { Bool }
 
 binModifiers {
   BoolModifier?
   MatchingModifierClause?
+  FillModifier?
 }
 
 GroupingLabels {
@@ -148,6 +169,7 @@ FunctionIdentifier {
   HistogramCount |
   HistogramFraction |
   HistogramQuantile |
+  HistogramQuantiles |
   HistogramStdDev |
   HistogramStdVar |
   HistogramSum |
@@ -318,6 +340,8 @@ NumberDurationLiteralInDurationContext {
   Lss { "<" }
   Gte { ">=" }
   Gtr { ">" }
+  TrimUpper { "</" }
+  TrimLower { ">/" }
   EqlRegex { "=~" }
   EqlSingle { "=" }
   NeqRegex { "!~" }
@@ -366,7 +390,10 @@ NumberDurationLiteralInDurationContext {
   Start,
   End,
   Smoothed,
-  Anchored
+  Anchored,
+  Fill,
+  FillLeft,
+  FillRight
 }
 
 @external propSource promQLHighLight from "./highlight"
@@ -404,6 +431,7 @@ NumberDurationLiteralInDurationContext {
   HistogramCount { condFn<"histogram_count"> }
   HistogramFraction { condFn<"histogram_fraction"> }
   HistogramQuantile { condFn<"histogram_quantile"> }
+  HistogramQuantiles { condFn<"histogram_quantiles"> }
   HistogramStdDev { condFn<"histogram_stddev"> }
   HistogramStdVar { condFn<"histogram_stdvar"> }
   HistogramSum { condFn<"histogram_sum"> }

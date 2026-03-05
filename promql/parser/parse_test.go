@@ -31,6 +31,8 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+var testParser = NewParser(Options{})
+
 func repeatError(query string, err error, start, startStep, end, endStep, count int) (errs ParseErrors) {
 	for i := range count {
 		errs = append(errs, ParseErr{
@@ -5297,18 +5299,14 @@ func readable(s string) string {
 }
 
 func TestParseExpressions(t *testing.T) {
-	// Enable experimental functions testing.
-	EnableExperimentalFunctions = true
-	// Enable experimental duration expression parsing.
-	ExperimentalDurationExpr = true
-	t.Cleanup(func() {
-		EnableExperimentalFunctions = false
-		ExperimentalDurationExpr = false
+	optsParser := NewParser(Options{
+		EnableExperimentalFunctions: true,
+		ExperimentalDurationExpr:    true,
 	})
 
 	for _, test := range testExpr {
 		t.Run(readable(test.input), func(t *testing.T) {
-			expr, err := ParseExpr(test.input)
+			expr, err := optsParser.ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
 			require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
@@ -5436,7 +5434,7 @@ func TestParseSeriesDesc(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			l, v, err := ParseSeriesDesc(tc.input)
+			l, v, err := testParser.ParseSeriesDesc(tc.input)
 			if tc.expectError != "" {
 				require.Contains(t, err.Error(), tc.expectError)
 			} else {
@@ -5450,7 +5448,7 @@ func TestParseSeriesDesc(t *testing.T) {
 
 // NaN has no equality. Thus, we need a separate test for it.
 func TestNaNExpression(t *testing.T) {
-	expr, err := ParseExpr("NaN")
+	expr, err := testParser.ParseExpr("NaN")
 	require.NoError(t, err)
 
 	nl, ok := expr.(*NumberLiteral)
@@ -5878,7 +5876,7 @@ func TestParseHistogramSeries(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, vals, err := ParseSeriesDesc(test.input)
+			_, vals, err := testParser.ParseSeriesDesc(test.input)
 			if test.expectedError != "" {
 				require.EqualError(t, err, test.expectedError)
 				return
@@ -5950,7 +5948,7 @@ func TestHistogramTestExpression(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			expression := test.input.TestExpression()
 			require.Equal(t, test.expected, expression)
-			_, vals, err := ParseSeriesDesc("{} " + expression)
+			_, vals, err := testParser.ParseSeriesDesc("{} " + expression)
 			require.NoError(t, err)
 			require.Len(t, vals, 1)
 			canonical := vals[0].Histogram
@@ -5962,7 +5960,7 @@ func TestHistogramTestExpression(t *testing.T) {
 
 func TestParseSeries(t *testing.T) {
 	for _, test := range testSeries {
-		metric, vals, err := ParseSeriesDesc(test.input)
+		metric, vals, err := testParser.ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
 		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")
@@ -5978,7 +5976,7 @@ func TestParseSeries(t *testing.T) {
 }
 
 func TestRecoverParserRuntime(t *testing.T) {
-	p := NewParser("foo bar")
+	p := newParser("foo bar", Options{})
 	var err error
 
 	defer func() {
@@ -5991,7 +5989,7 @@ func TestRecoverParserRuntime(t *testing.T) {
 }
 
 func TestRecoverParserError(t *testing.T) {
-	p := NewParser("foo bar")
+	p := newParser("foo bar", Options{})
 	var err error
 
 	e := errors.New("custom error")
@@ -6026,12 +6024,12 @@ func TestExtractSelectors(t *testing.T) {
 			[]string{},
 		},
 	} {
-		expr, err := ParseExpr(tc.input)
+		expr, err := testParser.ParseExpr(tc.input)
 		require.NoError(t, err)
 
 		var expected [][]*labels.Matcher
 		for _, s := range tc.expected {
-			selector, err := ParseMetricSelector(s)
+			selector, err := testParser.ParseMetricSelector(s)
 			require.NoError(t, err)
 			expected = append(expected, selector)
 		}
@@ -6048,11 +6046,37 @@ func TestParseCustomFunctions(t *testing.T) {
 		ReturnType: ValueTypeVector,
 	}
 	input := "custom_func(metric[1m])"
-	p := NewParser(input, WithFunctions(funcs))
-	expr, err := p.ParseExpr()
+	p := newParserWithFunctions(input, Options{}, funcs)
+	expr, err := p.parseExpr()
 	require.NoError(t, err)
 
 	call, ok := expr.(*Call)
 	require.True(t, ok)
 	require.Equal(t, "custom_func", call.Func.Name)
+}
+
+func TestNewParser(t *testing.T) {
+	p := NewParser(Options{
+		EnableExperimentalFunctions: true,
+		ExperimentalDurationExpr:    true,
+	})
+
+	// ParseExpr should work.
+	expr, err := p.ParseExpr("up")
+	require.NoError(t, err)
+	require.NotNil(t, expr)
+
+	// ParseMetricSelector should work.
+	matchers, err := p.ParseMetricSelector(`{job="prometheus"}`)
+	require.NoError(t, err)
+	require.Len(t, matchers, 1)
+
+	// ParseMetricSelectors should work.
+	matcherSets, err := p.ParseMetricSelectors([]string{`{job="prometheus"}`, `{job="grafana"}`})
+	require.NoError(t, err)
+	require.Len(t, matcherSets, 2)
+
+	// Invalid input should return errors.
+	_, err = p.ParseExpr("===")
+	require.Error(t, err)
 }

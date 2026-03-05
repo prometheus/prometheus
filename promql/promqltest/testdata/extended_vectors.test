@@ -358,6 +358,14 @@ load 1m
 eval instant at 2m15s increase(metric[2m] smoothed)
     {} 12
 
+# Smoothed rate interpolation across a counter reset.
+clear
+load 15s
+  metric 100 10
+
+eval instant at 12s rate(metric[10s] smoothed)
+    {} 0.666666666666667
+
 clear
 eval instant at 1m deriv(foo[3m] smoothed)
     expect fail msg: smoothed modifier can only be used with: delta, increase, rate - not with deriv

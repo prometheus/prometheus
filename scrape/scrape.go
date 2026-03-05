@@ -82,11 +82,12 @@ type FailureLogger interface {
 
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
-	appendable storage.Appendable
-	logger     *slog.Logger
-	ctx        context.Context
-	cancel     context.CancelFunc
-	options    *Options
+	appendable   storage.Appendable
+	appendableV2 storage.AppendableV2
+	logger       *slog.Logger
+	ctx          context.Context
+	cancel       context.CancelFunc
+	options      *Options
 
 	// mtx must not be taken after targetMtx.
 	mtx    sync.Mutex
@@ -104,6 +105,7 @@ type scrapePool struct {
 	activeTargets       map[uint64]*Target
 	droppedTargets      []*Target // Subject to KeepDroppedTargets limit.
 	droppedTargetsCount int       // Count of all dropped targets.
+	scrapeFailureLogger FailureLogger
 
 	// newLoop injection for testing purposes.
 	injectTestNewLoop func(scrapeLoopOptions) loop
@@ -111,9 +113,6 @@ type scrapePool struct {
 	metrics    *scrapeMetrics
 	buffers    *pool.Pool
 	offsetSeed uint64
-
-	scrapeFailureLogger    FailureLogger
-	scrapeFailureLoggerMtx sync.RWMutex
 }
 
 type labelLimits struct {
@@ -139,6 +138,7 @@ type scrapeLoopAppendAdapter interface {
 func newScrapePool(
 	cfg *config.ScrapeConfig,
 	appendable storage.Appendable,
+	appendableV2 storage.AppendableV2,
 	offsetSeed uint64,
 	logger *slog.Logger,
 	buffers *pool.Pool,
@@ -171,6 +171,7 @@ func newScrapePool(
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
 		appendable:           appendable,
+		appendableV2:         appendableV2,
 		logger:               logger,
 		ctx:                  ctx,
 		cancel:               cancel,
@@ -221,24 +222,16 @@ func (sp *scrapePool) DroppedTargetsCount() int {
 }
 
 func (sp *scrapePool) SetScrapeFailureLogger(l FailureLogger) {
-	sp.scrapeFailureLoggerMtx.Lock()
-	defer sp.scrapeFailureLoggerMtx.Unlock()
+	sp.targetMtx.Lock()
+	defer sp.targetMtx.Unlock()
 	if l != nil {
 		l = slog.New(l).With("job_name", sp.config.JobName).Handler().(FailureLogger)
 	}
 	sp.scrapeFailureLogger = l
 
-	sp.targetMtx.Lock()
-	defer sp.targetMtx.Unlock()
 	for _, s := range sp.loops {
 		s.setScrapeFailureLogger(sp.scrapeFailureLogger)
 	}
-}
-
-func (sp *scrapePool) getScrapeFailureLogger() FailureLogger {
-	sp.scrapeFailureLoggerMtx.RLock()
-	defer sp.scrapeFailureLoggerMtx.RUnlock()
-	return sp.scrapeFailureLogger
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
@@ -320,6 +313,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 	sp.targetMtx.Lock()
 
 	forcedErr := sp.refreshTargetLimitErr()
+	scrapeFailureLogger := sp.scrapeFailureLogger
 	for fp, oldLoop := range sp.loops {
 		var cache *scrapeCache
 		if oc := oldLoop.getCache(); reuseCache && oc != nil {
@@ -361,7 +355,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 			wg.Done()
 
 			newLoop.setForcedError(forcedErr)
-			newLoop.setScrapeFailureLogger(sp.getScrapeFailureLogger())
+			newLoop.setScrapeFailureLogger(scrapeFailureLogger)
 			newLoop.run(nil)
 		}(oldLoop, newLoop)
 
@@ -740,7 +734,7 @@ var UserAgent = version.PrometheusUserAgent()
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
-		req, err := http.NewRequest(http.MethodGet, s.URL().String(), nil)
+		req, err := http.NewRequest(http.MethodGet, s.URL().String(), http.NoBody)
 		if err != nil {
 			return nil, err
 		}
@@ -842,11 +836,12 @@ type scrapeLoop struct {
 	scraper             scraper
 
 	// Static params per scrapePool.
-	appendable  storage.Appendable
-	buffers     *pool.Pool
-	offsetSeed  uint64
-	symbolTable *labels.SymbolTable
-	metrics     *scrapeMetrics
+	appendable   storage.Appendable
+	appendableV2 storage.AppendableV2
+	buffers      *pool.Pool
+	offsetSeed   uint64
+	symbolTable  *labels.SymbolTable
+	metrics      *scrapeMetrics
 
 	// Options from config.ScrapeConfig.
 	sampleLimit                   int
@@ -1190,11 +1185,12 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		scraper:             opts.scraper,
 
 		// Static params per scrapePool.
-		appendable:  opts.sp.appendable,
-		buffers:     opts.sp.buffers,
-		offsetSeed:  opts.sp.offsetSeed,
-		symbolTable: opts.sp.symbolTable,
-		metrics:     opts.sp.metrics,
+		appendable:   opts.sp.appendable,
+		appendableV2: opts.sp.appendableV2,
+		buffers:      opts.sp.buffers,
+		offsetSeed:   opts.sp.offsetSeed,
+		symbolTable:  opts.sp.symbolTable,
+		metrics:      opts.sp.metrics,
 
 		// config.ScrapeConfig.
 		sampleLimit: int(opts.sp.config.SampleLimit),
@@ -1303,7 +1299,9 @@ mainLoop:
 }
 
 func (sl *scrapeLoop) appender() scrapeLoopAppendAdapter {
-	// NOTE(bwplotka): Add AppenderV2 implementation, see https://github.com/prometheus/prometheus/issues/17632.
+	if sl.appendableV2 != nil {
+		return &scrapeLoopAppenderV2{scrapeLoop: sl, AppenderV2: sl.appendableV2.AppenderV2(sl.appenderCtx)}
+	}
 	return &scrapeLoopAppender{scrapeLoop: sl, Appender: sl.appendable.Appender(sl.appenderCtx)}
 }
 
@@ -1335,6 +1333,11 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 			return
 		}
 		err = app.Commit()
+		if sl.reportExtraMetrics {
+			totalDuration := time.Since(start)
+			// Record total scrape duration metric.
+			sl.metrics.targetScrapeDuration.Observe(totalDuration.Seconds())
+		}
 		if err != nil {
 			sl.l.Error("Scrape commit failed", "err", err)
 		}
@@ -1632,7 +1635,7 @@ loop:
 			break
 		}
 		switch et {
-		// TODO(bwplotka): Consider changing parser to give metadata at once instead of type, help and unit in separation, ideally on `Series()/Histogram()
+		// TODO(bwplotka): Consider changing parser to give metadata at once instead of type, help and unit in separation, ideally on `Series()/Histogram()`
 		// otherwise we can expose metadata without series on metadata API.
 		case textparse.EntryType:
 			// TODO(bwplotka): Build meta entry directly instead of locking and updating the map. This will
@@ -1748,7 +1751,7 @@ loop:
 			}
 		}
 
-		sampleAdded, err = sl.checkAddError(met, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
+		sampleAdded, err = sl.checkAddError(met, nil, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
 				sl.l.Debug("Unexpected error", "series", string(met), "err", err)
@@ -1824,7 +1827,7 @@ loop:
 			if !seriesCached || lastMeta.lastIterChange == sl.cache.iter {
 				// In majority cases we can trust that the current series/histogram is matching the lastMeta and lastMFName.
 				// However, optional TYPE etc metadata and broken OM text can break this, detect those cases here.
-				// TODO(bwplotka): Consider moving this to parser as many parser users end up doing this (e.g. ST and NHCB parsing).
+				// TODO(https://github.com/prometheus/prometheus/issues/17900): Move this to text and OM parser.
 				if isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, lastMeta.Type) {
 					if _, merr := app.UpdateMetadata(ref, lset, lastMeta.Metadata); merr != nil {
 						// No need to fail the scrape on errors appending metadata.
@@ -1866,6 +1869,7 @@ loop:
 	return total, added, seriesAdded, err
 }
 
+// TODO(https://github.com/prometheus/prometheus/issues/17900): Move this to text and OM parser.
 func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) bool {
 	mfNameStr := yoloString(mfName)
 	if !strings.HasPrefix(mName, mfNameStr) { // Fast path.
@@ -1937,7 +1941,7 @@ func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) boo
 // during normal operation (e.g., accidental cardinality explosion, sudden traffic spikes).
 // Current case ordering prevents exercising other cases when limits are exceeded.
 // Remaining error cases typically occur only a few times, often during initial setup.
-func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (sampleAdded bool, _ error) {
+func (sl *scrapeLoop) checkAddError(met []byte, exemplars []exemplar.Exemplar, err error, sampleLimitErr, bucketLimitErr *error, appErrs *appendErrors) (sampleAdded bool, _ error) {
 	switch {
 	case err == nil:
 		return true, nil
@@ -1969,6 +1973,26 @@ func (sl *scrapeLoop) checkAddError(met []byte, err error, sampleLimitErr, bucke
 	case errors.Is(err, storage.ErrNotFound):
 		return false, storage.ErrNotFound
 	default:
+		// If nothing from the above, check for partial errors. Do this here to not alloc the pErr on a hot path.
+		var pErr *storage.AppendPartialError
+		if errors.As(err, &pErr) {
+			outOfOrderExemplars := 0
+			for _, e := range pErr.ExemplarErrors {
+				if errors.Is(e, storage.ErrOutOfOrderExemplar) {
+					outOfOrderExemplars++
+				}
+				// Since exemplar storage is still experimental, we don't fail or check other errors.
+				// Debug log is emitted in TSDB already.
+			}
+			if outOfOrderExemplars > 0 && outOfOrderExemplars == len(exemplars) {
+				// Only report out of order exemplars if all are out of order, otherwise this was a partial update
+				// to some existing set of exemplars.
+				appErrs.numExemplarOutOfOrder += outOfOrderExemplars
+				sl.l.Debug("Out of order exemplars", "count", outOfOrderExemplars, "latest", fmt.Sprintf("%+v", exemplars[len(exemplars)-1]))
+				sl.metrics.targetScrapeExemplarOutOfOrder.Add(float64(outOfOrderExemplars))
+			}
+			return true, nil
+		}
 		return false, err
 	}
 }

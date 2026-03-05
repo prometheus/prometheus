@@ -1,6 +1,10 @@
 groups:
   - name: features
     rules:
-      - record: x
-        # We don't expect anything from this, just want to check the function parses.
+        # We don't expect anything from these, just want to check the syntax parses.
+      - record: promql-experimental-functions
         expr: sort_by_label(up, "instance")
+      - record: promql-duration-expr
+        expr: rate(up[1m * 2])
+      - record: promql-extended-range-selectors
+        expr: rate(up[1m] anchored)

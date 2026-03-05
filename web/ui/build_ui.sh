@@ -58,5 +58,10 @@ for i in "$@"; do
     buildModule
     shift
     ;;
+  --mantine-ui)
+    buildModule
+    buildMantineUI
+    shift
+    ;;
   esac
 done

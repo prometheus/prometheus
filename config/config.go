@@ -848,7 +848,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
 	}
-	if len(c.JobName) == 0 {
+	if c.JobName == "" {
 		return errors.New("job_name is empty")
 	}
 
@@ -1092,6 +1092,9 @@ type TSDBRetentionConfig struct {
 
 	// Maximum number of bytes that can be stored for blocks.
 	Size units.Base2Bytes `yaml:"size,omitempty"`
+
+	// Maximum percentage of disk used for TSDB storage.
+	Percentage uint `yaml:"percentage,omitempty"`
 }
 
 // TSDBConfig configures runtime reloadable configuration options.
@@ -1106,6 +1109,10 @@ type TSDBConfig struct {
 	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderTimeWindow.
 	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
 	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
+
+	// StaleSeriesCompactionThreshold is a number between 0.0-1.0 indicating the % of stale series in
+	// the in-memory Head block. If the % of stale series crosses this threshold, stale series compaction is run immediately.
+	StaleSeriesCompactionThreshold float64 `yaml:"stale_series_compaction_threshold,omitempty"`
 
 	Retention *TSDBRetentionConfig `yaml:"retention,omitempty"`
 }
