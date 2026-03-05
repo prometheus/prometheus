@@ -519,7 +519,7 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 
 func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
 	var vms []virtualMachine
-	if len(resourceGroup) == 0 {
+	if len(resourceGroup) == "" {
 		pager := client.vm.NewListAllPager(&armcompute.VirtualMachinesClientListAllOptions{
 			Expand: to.Ptr(armcompute.ExpandTypesForListVMsInstanceView),
 		})
