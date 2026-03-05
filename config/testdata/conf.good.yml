@@ -457,6 +457,7 @@ storage:
     retention:
       time: 1d
       size: 1GB
+      percentage: 28
 
 tracing:
   endpoint: "localhost:4317"

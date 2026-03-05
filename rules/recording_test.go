@@ -29,10 +29,12 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+var testParser = parser.NewParser(parser.Options{})
+
 var (
 	ruleEvaluationTime       = time.Unix(0, 0).UTC()
-	exprWithMetricName, _    = parser.ParseExpr(`sort(metric)`)
-	exprWithoutMetricName, _ = parser.ParseExpr(`sort(metric + metric)`)
+	exprWithMetricName, _    = testParser.ParseExpr(`sort(metric)`)
+	exprWithoutMetricName, _ = testParser.ParseExpr(`sort(metric + metric)`)
 )
 
 var ruleEvalTestScenarios = []struct {
@@ -170,7 +172,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 
 	now := time.Now()
 
-	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
+	expr, _ := testParser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
 	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
@@ -203,7 +205,7 @@ func TestRecordingRuleLimit(t *testing.T) {
 		},
 	}
 
-	expr, _ := parser.ParseExpr(`metric > 0`)
+	expr, _ := testParser.ParseExpr(`metric > 0`)
 	rule := NewRecordingRule(
 		"foo",
 		expr,
@@ -238,7 +240,7 @@ func TestRecordingEvalWithOrigin(t *testing.T) {
 		lbs    = labels.FromStrings("foo", "bar")
 	)
 
-	expr, err := parser.ParseExpr(query)
+	expr, err := testParser.ParseExpr(query)
 	require.NoError(t, err)
 
 	rule := NewRecordingRule(name, expr, lbs)

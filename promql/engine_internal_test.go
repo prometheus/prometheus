@@ -27,12 +27,14 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+var testParser = parser.NewParser(parser.Options{})
+
 func TestRecoverEvaluatorRuntime(t *testing.T) {
 	var output bytes.Buffer
 	logger := promslog.New(&promslog.Config{Writer: &output})
 	ev := &evaluator{logger: logger}
 
-	expr, _ := parser.ParseExpr("sum(up)")
+	expr, _ := testParser.ParseExpr("sum(up)")
 
 	var err error
 

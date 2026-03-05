@@ -26,6 +26,8 @@ export const binOpTerms = [
   { label: '>=' },
   { label: '>' },
   { label: '<' },
+  { label: '</' },
+  { label: '>/' },
   { label: '<=' },
   { label: '!=' },
   { label: 'atan2' },
@@ -241,6 +243,12 @@ export const functionIdentifierTerms = [
     label: 'histogram_quantile',
     detail: 'function',
     info: 'Calculate quantiles from native histograms and from conventional histogram buckets',
+    type: 'function',
+  },
+  {
+    label: 'histogram_quantiles',
+    detail: 'function',
+    info: 'Calculate multiple quantiles from native histograms and from conventional histogram buckets',
     type: 'function',
   },
   {

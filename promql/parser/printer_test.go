@@ -22,11 +22,10 @@ import (
 )
 
 func TestExprString(t *testing.T) {
-	ExperimentalDurationExpr = true
-	EnableBinopFillModifiers = true
-	t.Cleanup(func() {
-		ExperimentalDurationExpr = false
-		EnableBinopFillModifiers = false
+	optsParser := NewParser(Options{
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
+		EnableBinopFillModifiers:     true,
 	})
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output
@@ -320,14 +319,9 @@ func TestExprString(t *testing.T) {
 		},
 	}
 
-	EnableExtendedRangeSelectors = true
-	t.Cleanup(func() {
-		EnableExtendedRangeSelectors = false
-	})
-
 	for _, test := range inputs {
 		t.Run(test.in, func(t *testing.T) {
-			expr, err := ParseExpr(test.in)
+			expr, err := optsParser.ParseExpr(test.in)
 			require.NoError(t, err)
 
 			exp := test.in
@@ -352,7 +346,7 @@ func BenchmarkExprString(b *testing.B) {
 
 	for _, test := range inputs {
 		b.Run(readable(test), func(b *testing.B) {
-			expr, err := ParseExpr(test)
+			expr, err := testParser.ParseExpr(test)
 			require.NoError(b, err)
 			for b.Loop() {
 				_ = expr.String()
@@ -484,7 +478,7 @@ func TestBinaryExprUTF8Labels(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			expr, err := ParseExpr(tc.input)
+			expr, err := testParser.ParseExpr(tc.input)
 			if err != nil {
 				t.Fatalf("Failed to parse: %v", err)
 			}

@@ -27,6 +27,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/tsdb"
 )
@@ -71,6 +72,7 @@ func getDumpedSamples(t *testing.T, databasePath, sandboxDirRoot string, mint, m
 		maxt,
 		match,
 		formatter,
+		parser.NewParser(parser.Options{}),
 	)
 	require.NoError(t, err)
 

@@ -687,6 +687,11 @@ load 10s
 eval instant at 1m sum(data{test="ten"})
 	{} 10
 
+# Plain addition doesn't use Kahan summation, so operations involving very large magnitudes
+# (±1e+100) lose precision. The smaller values are absorbed, leading to an incorrect result.
+# eval instant at 1m sum(data{test="ten",point="a"}) + sum(data{test="ten",point="b"}) + sum(data{test="ten",point="c"}) + sum(data{test="ten",point="d"})
+#	{} 10
+
 eval instant at 1m avg(data{test="ten"})
 	{} 2.5
 

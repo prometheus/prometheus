@@ -27,7 +27,6 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/feature/ec2/imds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2Types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -125,31 +124,10 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
-	if c.Region == "" {
-		cfg, err := awsConfig.LoadDefaultConfig(context.Background())
-		if err != nil {
-			return err
-		}
-
-		if cfg.Region != "" {
-			// If the region is already set in the config, use it.
-			// This can happen if the user has set the region in the AWS config file or environment variables.
-			c.Region = cfg.Region
-		}
-
-		if c.Region == "" {
-			// Try to get the region from the instance metadata service (IMDS).
-			imdsClient := imds.NewFromConfig(cfg)
-			region, err := imdsClient.GetRegion(context.Background(), &imds.GetRegionInput{})
-			if err != nil {
-				return err
-			}
-			c.Region = region.Region
-		}
-	}
-
-	if c.Region == "" {
-		return errors.New("EC2 SD configuration requires a region")
+	// Check if the region is set, if not attempt to load it from the AWS SDK.
+	c.Region, err = loadRegion(context.Background(), c.Region)
+	if err != nil {
+		return fmt.Errorf("could not determine AWS region: %w", err)
 	}
 
 	for _, f := range c.Filters {
@@ -246,7 +224,12 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (ec2Client, error) {
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
-	d.ec2 = ec2.NewFromConfig(cfg)
+	d.ec2 = ec2.NewFromConfig(cfg, func(options *ec2.Options) {
+		if d.cfg.Endpoint != "" {
+			options.BaseEndpoint = &d.cfg.Endpoint
+		}
+		options.HTTPClient = httpClient
+	})
 
 	return d.ec2, nil
 }
@@ -256,8 +239,15 @@ func (d *EC2Discovery) refreshAZIDs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if azs.AvailabilityZones == nil {
+		d.azToAZID = make(map[string]string)
+		return nil
+	}
 	d.azToAZID = make(map[string]string, len(azs.AvailabilityZones))
 	for _, az := range azs.AvailabilityZones {
+		if az.ZoneName == nil || az.ZoneId == nil {
+			continue
+		}
 		d.azToAZID[*az.ZoneName] = *az.ZoneId
 	}
 	return nil

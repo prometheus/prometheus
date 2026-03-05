@@ -33,6 +33,8 @@ const (
 // Use package-scope symbol table to avoid memory allocation on every fuzzing operation.
 var symbolTable = labels.NewSymbolTable()
 
+var fuzzParser = parser.NewParser(parser.Options{})
+
 // FuzzParseMetricText fuzzes the metric parser with "text/plain" content type.
 //
 // Note that this is not the parser for the text-based exposition-format; that
@@ -109,7 +111,7 @@ func FuzzParseMetricSelector(f *testing.F) {
 		if len(in) > maxInputSize {
 			t.Skip()
 		}
-		_, err := parser.ParseMetricSelector(in)
+		_, err := fuzzParser.ParseMetricSelector(in)
 		// We don't care about errors, just that we don't panic.
 		_ = err
 	})
@@ -117,17 +119,6 @@ func FuzzParseMetricSelector(f *testing.F) {
 
 // FuzzParseExpr fuzzes the expression parser.
 func FuzzParseExpr(f *testing.F) {
-	parser.EnableExperimentalFunctions = true
-	parser.ExperimentalDurationExpr = true
-	parser.EnableExtendedRangeSelectors = true
-	parser.EnableBinopFillModifiers = true
-	f.Cleanup(func() {
-		parser.EnableExperimentalFunctions = false
-		parser.ExperimentalDurationExpr = false
-		parser.EnableExtendedRangeSelectors = false
-		parser.EnableBinopFillModifiers = false
-	})
-
 	// Add seed corpus from built-in test expressions
 	corpus, err := GetCorpusForFuzzParseExpr()
 	if err != nil {
@@ -141,11 +132,17 @@ func FuzzParseExpr(f *testing.F) {
 		f.Add(expr)
 	}
 
+	p := parser.NewParser(parser.Options{
+		EnableExperimentalFunctions:  true,
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
+		EnableBinopFillModifiers:     true,
+	})
 	f.Fuzz(func(t *testing.T, in string) {
 		if len(in) > maxInputSize {
 			t.Skip()
 		}
-		_, err := parser.ParseExpr(in)
+		_, err := p.ParseExpr(in)
 		// We don't care about errors, just that we don't panic.
 		_ = err
 	})

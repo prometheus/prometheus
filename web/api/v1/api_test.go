@@ -63,6 +63,8 @@ import (
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
+var testParser = parser.NewParser(parser.Options{})
+
 func testEngine(t *testing.T) *promql.Engine {
 	t.Helper()
 	return promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
@@ -250,11 +252,11 @@ type rulesRetrieverMock struct {
 }
 
 func (m *rulesRetrieverMock) CreateAlertingRules() {
-	expr1, err := parser.ParseExpr(`absent(test_metric3) != 1`)
+	expr1, err := testParser.ParseExpr(`absent(test_metric3) != 1`)
 	require.NoError(m.testing, err)
-	expr2, err := parser.ParseExpr(`up == 1`)
+	expr2, err := testParser.ParseExpr(`up == 1`)
 	require.NoError(m.testing, err)
-	expr3, err := parser.ParseExpr(`vector(1)`)
+	expr3, err := testParser.ParseExpr(`vector(1)`)
 	require.NoError(m.testing, err)
 
 	rule1 := rules.NewAlertingRule(
@@ -353,7 +355,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 		r = append(r, alertrule)
 	}
 
-	recordingExpr, err := parser.ParseExpr(`vector(1)`)
+	recordingExpr, err := testParser.ParseExpr(`vector(1)`)
 	require.NoError(m.testing, err, "unable to parse alert expression")
 	recordingRule := rules.NewRecordingRule("recording-rule-1", recordingExpr, labels.Labels{})
 	recordingRule2 := rules.NewRecordingRule("recording-rule-2", recordingExpr, labels.FromStrings("testlabel", "rule"))
@@ -506,6 +508,7 @@ func TestEndpoints(t *testing.T) {
 			config:                func() config.Config { return samplePrometheusCfg },
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
+			parser:                testParser,
 		}
 		testEndpoints(t, api, testTargetRetriever, true)
 	})
@@ -570,6 +573,7 @@ func TestEndpoints(t *testing.T) {
 			config:                func() config.Config { return samplePrometheusCfg },
 			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
 			rulesRetriever:        algr.toFactory(),
+			parser:                testParser,
 		}
 		testEndpoints(t, api, testTargetRetriever, false)
 	})
@@ -595,6 +599,7 @@ func TestGetSeries(t *testing.T) {
 
 	api := &API{
 		Queryable: s,
+		parser:    testParser,
 	}
 	request := func(method string, matchers ...string) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
@@ -605,7 +610,7 @@ func TestGetSeries(t *testing.T) {
 		}
 		u.RawQuery = q.Encode()
 
-		r, err := http.NewRequest(method, u.String(), nil)
+		r, err := http.NewRequest(method, u.String(), http.NoBody)
 		if method == http.MethodPost {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -659,6 +664,7 @@ func TestGetSeries(t *testing.T) {
 			expectedErrorType: errorExec,
 			api: &API{
 				Queryable: errorTestQueryable{err: errors.New("generic")},
+				parser:    testParser,
 			},
 		},
 		{
@@ -667,6 +673,7 @@ func TestGetSeries(t *testing.T) {
 			expectedErrorType: errorInternal,
 			api: &API{
 				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
+				parser:    testParser,
 			},
 		},
 	} {
@@ -704,13 +711,14 @@ func TestQueryExemplars(t *testing.T) {
 		Queryable:         s,
 		QueryEngine:       testEngine(t),
 		ExemplarQueryable: s,
+		parser:            testParser,
 	}
 
 	request := func(method string, qs url.Values) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
 		require.NoError(t, err)
 		u.RawQuery = qs.Encode()
-		r, err := http.NewRequest(method, u.String(), nil)
+		r, err := http.NewRequest(method, u.String(), http.NoBody)
 		if method == http.MethodPost {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -760,6 +768,7 @@ func TestQueryExemplars(t *testing.T) {
 			expectedErrorType: errorExec,
 			api: &API{
 				ExemplarQueryable: errorTestQueryable{err: errors.New("generic")},
+				parser:            testParser,
 			},
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -772,6 +781,7 @@ func TestQueryExemplars(t *testing.T) {
 			expectedErrorType: errorInternal,
 			api: &API{
 				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
+				parser:            testParser,
 			},
 			query: url.Values{
 				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
@@ -812,6 +822,7 @@ func TestLabelNames(t *testing.T) {
 
 	api := &API{
 		Queryable: s,
+		parser:    testParser,
 	}
 	request := func(method, limit string, matchers ...string) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
@@ -825,7 +836,7 @@ func TestLabelNames(t *testing.T) {
 		}
 		u.RawQuery = q.Encode()
 
-		r, err := http.NewRequest(method, u.String(), nil)
+		r, err := http.NewRequest(method, u.String(), http.NoBody)
 		if method == http.MethodPost {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -876,6 +887,7 @@ func TestLabelNames(t *testing.T) {
 			expectedErrorType: errorExec,
 			api: &API{
 				Queryable: errorTestQueryable{err: errors.New("generic")},
+				parser:    testParser,
 			},
 		},
 		{
@@ -884,6 +896,7 @@ func TestLabelNames(t *testing.T) {
 			expectedErrorType: errorInternal,
 			api: &API{
 				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: errors.New("generic")}},
+				parser:    testParser,
 			},
 		},
 	} {
@@ -916,6 +929,7 @@ func TestStats(t *testing.T) {
 	api := &API{
 		Queryable:   s,
 		QueryEngine: testEngine(t),
+		parser:      testParser,
 		now: func() time.Time {
 			return time.Unix(123, 0)
 		},
@@ -931,7 +945,7 @@ func TestStats(t *testing.T) {
 		q.Add("step", "10")
 		u.RawQuery = q.Encode()
 
-		r, err := http.NewRequest(method, u.String(), nil)
+		r, err := http.NewRequest(method, u.String(), http.NoBody)
 		if method == http.MethodPost {
 			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -3792,7 +3806,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			r.RemoteAddr = "127.0.0.1:20201"
 			return r, err
 		}
-		r, err := http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), nil)
+		r, err := http.NewRequest(m, fmt.Sprintf("http://example.com?%s", q.Encode()), http.NoBody)
 		r.RemoteAddr = "127.0.0.1:20201"
 		return r, err
 	}
@@ -4101,10 +4115,11 @@ func TestAdminEndpoints(t *testing.T) {
 				dbDir:       dir,
 				ready:       func(f http.HandlerFunc) http.HandlerFunc { return f },
 				enableAdmin: tc.enableAdmin,
+				parser:      testParser,
 			}
 
 			endpoint := tc.endpoint(api)
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), http.NoBody)
 			require.NoError(t, err)
 
 			res := setUnavailStatusOnTSDBNotReady(endpoint(req))
@@ -4184,7 +4199,7 @@ func TestRespondSuccess(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodGet, s.URL, nil)
+			req, err := http.NewRequest(http.MethodGet, s.URL, http.NoBody)
 			require.NoError(t, err)
 
 			if tc.acceptHeader != "" {
@@ -4218,7 +4233,7 @@ func TestRespondSuccess_DefaultCodecCannotEncodeResponse(t *testing.T) {
 	}))
 	defer s.Close()
 
-	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
+	req, err := http.NewRequest(http.MethodGet, s.URL, http.NoBody)
 	require.NoError(t, err)
 
 	resp, err := http.DefaultClient.Do(req)
@@ -4251,7 +4266,7 @@ func TestServeTSDBBlocks(t *testing.T) {
 		db: db,
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/status/tsdb/blocks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status/tsdb/blocks", http.NoBody)
 	w := httptest.NewRecorder()
 
 	result := api.serveTSDBBlocks(req)
@@ -4339,7 +4354,7 @@ func TestParseTimeParam(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		req, err := http.NewRequest(http.MethodGet, "localhost:42/foo?"+test.paramName+"="+test.paramValue, nil)
+		req, err := http.NewRequest(http.MethodGet, "localhost:42/foo?"+test.paramName+"="+test.paramValue, http.NoBody)
 		require.NoError(t, err)
 
 		result := test.result
@@ -4476,7 +4491,7 @@ func TestOptionsMethod(t *testing.T) {
 	s := httptest.NewServer(r)
 	defer s.Close()
 
-	req, err := http.NewRequest(http.MethodOptions, s.URL+"/any_path", nil)
+	req, err := http.NewRequest(http.MethodOptions, s.URL+"/any_path", http.NoBody)
 	require.NoError(t, err, "Error creating OPTIONS request")
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -4530,7 +4545,7 @@ func TestTSDBStatus(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
 			endpoint := tc.endpoint(api)
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), http.NoBody)
 			require.NoError(t, err, "Error when creating test request")
 			res := endpoint(req)
 			assertAPIError(t, res.err, tc.errType)
@@ -4623,7 +4638,7 @@ func BenchmarkRespond(b *testing.B) {
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
-			request, err := http.NewRequest(http.MethodGet, "/does-not-matter", nil)
+			request, err := http.NewRequest(http.MethodGet, "/does-not-matter", http.NoBody)
 			require.NoError(b, err)
 			b.ResetTimer()
 			api := API{}
@@ -4850,6 +4865,7 @@ func TestQueryTimeout(t *testing.T) {
 				now:                   func() time.Time { return now },
 				config:                func() config.Config { return samplePrometheusCfg },
 				ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
+				parser:                testParser,
 			}
 
 			query := url.Values{
@@ -4857,7 +4873,7 @@ func TestQueryTimeout(t *testing.T) {
 				"timeout": []string{"1s"},
 			}
 			ctx := context.Background()
-			req, err := http.NewRequest(tc.method, fmt.Sprintf("http://example.com?%s", query.Encode()), nil)
+			req, err := http.NewRequest(tc.method, fmt.Sprintf("http://example.com?%s", query.Encode()), http.NoBody)
 			require.NoError(t, err)
 			req.RemoteAddr = "127.0.0.1:20201"
 

@@ -1334,13 +1334,11 @@ func TestDataMissingOnQueryDuringCompaction_AppenderV2(t *testing.T) {
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// Compacting head while the querier spans the compaction time.
 		require.NoError(t, db.Compact(ctx))
 		require.NotEmpty(t, db.Blocks())
-	}()
+	})
 
 	// Give enough time for compaction to finish.
 	// We expect it to be blocked until querier is closed.

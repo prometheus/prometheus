@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/junitxml"
 )
@@ -153,7 +154,7 @@ func TestRulesUnitTest(t *testing.T) {
 		}
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := RulesUnitTest(tt.queryOpts, nil, false, false, false, tt.args.files...); got != tt.want {
+			if got := RulesUnitTest(tt.queryOpts, parser.NewParser(parser.Options{}), nil, false, false, false, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})
@@ -161,7 +162,7 @@ func TestRulesUnitTest(t *testing.T) {
 	t.Run("Junit xml output ", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
-		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, nil, false, false, false, reuseFiles...); got != 1 {
+		if got := RulesUnitTestResult(&buf, promqltest.LazyLoaderOpts{}, parser.NewParser(parser.Options{}), nil, false, false, false, reuseFiles...); got != 1 {
 			t.Errorf("RulesUnitTestResults() = %v, want 1", got)
 		}
 		var test junitxml.JUnitXML
@@ -277,7 +278,7 @@ func TestRulesUnitTestRun(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := RulesUnitTest(tt.queryOpts, tt.args.run, false, false, tt.ignoreUnknownFields, tt.args.files...)
+			got := RulesUnitTest(tt.queryOpts, parser.NewParser(parser.Options{}), tt.args.run, false, false, tt.ignoreUnknownFields, tt.args.files...)
 			require.Equal(t, tt.want, got)
 		})
 	}

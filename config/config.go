@@ -848,7 +848,7 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
 	}
-	if len(c.JobName) == 0 {
+	if c.JobName == "" {
 		return errors.New("job_name is empty")
 	}
 
@@ -1092,6 +1092,9 @@ type TSDBRetentionConfig struct {
 
 	// Maximum number of bytes that can be stored for blocks.
 	Size units.Base2Bytes `yaml:"size,omitempty"`
+
+	// Maximum percentage of disk used for TSDB storage.
+	Percentage uint `yaml:"percentage,omitempty"`
 }
 
 // TSDBConfig configures runtime reloadable configuration options.

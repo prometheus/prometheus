@@ -64,9 +64,10 @@ const (
 	azureLabelMachineScaleSet      = azureLabel + "machine_scale_set"
 	azureLabelMachineSize          = azureLabel + "machine_size"
 
-	authMethodOAuth           = "OAuth"
-	authMethodSDK             = "SDK"
-	authMethodManagedIdentity = "ManagedIdentity"
+	authMethodOAuth            = "OAuth"
+	authMethodSDK              = "SDK"
+	authMethodManagedIdentity  = "ManagedIdentity"
+	authMethodWorkloadIdentity = "WorkloadIdentity"
 )
 
 // DefaultSDConfig is the default Azure SD configuration.
@@ -131,7 +132,7 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 }
 
 func validateAuthParam(param, name string) error {
-	if len(param) == 0 {
+	if param == "" {
 		return fmt.Errorf("azure SD configuration requires a %s", name)
 	}
 	return nil
@@ -161,8 +162,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 	}
 
-	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity && c.AuthenticationMethod != authMethodSDK {
-		return fmt.Errorf("unknown authentication_type %q. Supported types are %q, %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity, authMethodSDK)
+	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity && c.AuthenticationMethod != authMethodSDK && c.AuthenticationMethod != authMethodWorkloadIdentity {
+		return fmt.Errorf("unknown authentication_type %q. Supported types are %q, %q, %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity, authMethodSDK, authMethodWorkloadIdentity)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -289,6 +290,13 @@ func (d *Discovery) createAzureClient() (client, error) {
 func newCredential(cfg SDConfig, policyClientOptions policy.ClientOptions) (azcore.TokenCredential, error) {
 	var credential azcore.TokenCredential
 	switch cfg.AuthenticationMethod {
+	case authMethodWorkloadIdentity:
+		options := &azidentity.WorkloadIdentityCredentialOptions{ClientOptions: policyClientOptions}
+		workloadIdentityCredential, err := azidentity.NewWorkloadIdentityCredential(options)
+		if err != nil {
+			return nil, err
+		}
+		credential = azcore.TokenCredential(workloadIdentityCredential)
 	case authMethodManagedIdentity:
 		options := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: policyClientOptions, ID: azidentity.ClientID(cfg.ClientID)}
 		managedIdentityCredential, err := azidentity.NewManagedIdentityCredential(options)
@@ -305,7 +313,7 @@ func newCredential(cfg SDConfig, policyClientOptions policy.ClientOptions) (azco
 		credential = azcore.TokenCredential(secretCredential)
 	case authMethodSDK:
 		options := &azidentity.DefaultAzureCredentialOptions{ClientOptions: policyClientOptions}
-		if len(cfg.TenantID) != 0 {
+		if cfg.TenantID != "" {
 			options.TenantID = cfg.TenantID
 		}
 		sdkCredential, err := azidentity.NewDefaultAzureCredential(options)
@@ -508,7 +516,7 @@ func (d *Discovery) vmToLabelSet(ctx context.Context, client client, vm virtualM
 
 func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
 	var vms []virtualMachine
-	if len(resourceGroup) == 0 {
+	if resourceGroup == "" {
 		pager := client.vm.NewListAllPager(nil)
 		for pager.More() {
 			nextResult, err := pager.NextPage(ctx)
@@ -536,7 +544,7 @@ func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]
 
 func (client *azureClient) getScaleSets(ctx context.Context, resourceGroup string) ([]armcompute.VirtualMachineScaleSet, error) {
 	var scaleSets []armcompute.VirtualMachineScaleSet
-	if len(resourceGroup) == 0 {
+	if resourceGroup == "" {
 		pager := client.vmss.NewListAllPager(nil)
 		for pager.More() {
 			nextResult, err := pager.NextPage(ctx)

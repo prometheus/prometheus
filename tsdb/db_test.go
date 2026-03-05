@@ -126,6 +126,7 @@ func newTestDB(t testing.TB, opts ...testDBOpt) (db *DB) {
 		db, err = open(o.dir, nil, nil, o.opts, o.rngs, nil)
 	}
 	require.NoError(t, err)
+
 	t.Cleanup(func() {
 		// Always close. DB is safe for close-after-close.
 		require.NoError(t, db.Close())
@@ -2407,6 +2408,7 @@ func TestBlockRanges(t *testing.T) {
 	createBlock(t, dir, genSeries(1, 1, 0, firstBlockMaxT))
 	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
 	require.NoError(t, err)
+	db.DisableCompactions()
 
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
 
@@ -2423,21 +2425,16 @@ func TestBlockRanges(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	for range 100 {
-		if len(db.Blocks()) == 2 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	require.Len(t, db.Blocks(), 2, "no new block created after the set timeout")
+	require.NoError(t, db.Compact(ctx))
+	blocks := db.Blocks()
+	require.Len(t, blocks, 2, "no new block after compaction")
 
-	require.LessOrEqual(t, db.Blocks()[1].Meta().MinTime, db.Blocks()[0].Meta().MaxTime,
-		"new block overlaps  old:%v,new:%v", db.Blocks()[0].Meta(), db.Blocks()[1].Meta())
+	require.GreaterOrEqual(t, blocks[1].Meta().MinTime, blocks[0].Meta().MaxTime,
+		"new block overlaps  old:%v,new:%v", blocks[0].Meta(), blocks[1].Meta())
 
 	// Test that wal records are skipped when an existing block covers the same time ranges
 	// and compaction doesn't create an overlapping block.
 	app = db.Appender(ctx)
-	db.DisableCompactions()
 	_, err = app.Append(0, lbl, secondBlockMaxt+1, rand.Float64())
 	require.NoError(t, err)
 	_, err = app.Append(0, lbl, secondBlockMaxt+2, rand.Float64())
@@ -2454,6 +2451,7 @@ func TestBlockRanges(t *testing.T) {
 
 	db, err = open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
 	require.NoError(t, err)
+	db.DisableCompactions()
 
 	defer db.Close()
 	require.Len(t, db.Blocks(), 3, "db doesn't include expected number of blocks")
@@ -2463,17 +2461,12 @@ func TestBlockRanges(t *testing.T) {
 	_, err = app.Append(0, lbl, thirdBlockMaxt+rangeToTriggerCompaction, rand.Float64()) // Trigger a compaction
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	for range 100 {
-		if len(db.Blocks()) == 4 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	require.NoError(t, db.Compact(ctx))
+	blocks = db.Blocks()
+	require.Len(t, blocks, 4, "no new block after compaction")
 
-	require.Len(t, db.Blocks(), 4, "no new block created after the set timeout")
-
-	require.LessOrEqual(t, db.Blocks()[3].Meta().MinTime, db.Blocks()[2].Meta().MaxTime,
-		"new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
+	require.GreaterOrEqual(t, blocks[3].Meta().MinTime, blocks[2].Meta().MaxTime,
+		"new block overlaps  old:%v,new:%v", blocks[2].Meta(), blocks[3].Meta())
 }
 
 // TestDBReadOnly ensures that opening a DB in readonly mode doesn't modify any files on the disk.
@@ -8304,32 +8297,47 @@ func testPanicOnApplyConfig(t *testing.T, scenario sampleTypeScenario) {
 
 func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 	t.Parallel()
-	for name, scenario := range sampleTypeScenarios {
-		t.Run(name, func(t *testing.T) {
-			testDiskFillingUpAfterDisablingOOO(t, scenario)
-		})
+	for _, appV2 := range []bool{true, false} {
+		for name, scenario := range sampleTypeScenarios {
+			t.Run(fmt.Sprintf("sample=%v/appV2=%v", name, appV2), func(t *testing.T) {
+				testDiskFillingUpAfterDisablingOOO(t, scenario, func(db *DB, ctx context.Context) storage.LimitedAppenderV1 {
+					if appV2 {
+						return storage.AppenderV2AsLimitedV1(db.AppenderV2(ctx))
+					}
+					return db.Appender(ctx)
+				})
+			})
+		}
 	}
 }
 
-func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenario) {
+func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenario, appenderFn func(db *DB, ctx context.Context) storage.LimitedAppenderV1) {
 	t.Parallel()
-	ctx := context.Background()
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	// Use lower SamplesPerChunk and OutOfOrderCapMax so we need fewer samples
+	// to fill chunks, reducing the overall test time significantly
+	// (important for slow CI like i386 which can be 60x+ slower).
+	opts.SamplesPerChunk = 15
+	opts.OutOfOrderCapMax = 5
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()
 
-	series1 := labels.FromStrings("foo", "bar1")
-	var allSamples []chunks.Sample
+	var (
+		ctx     = t.Context()
+		series1 = labels.FromStrings("foo", "bar1")
+	)
+
+	// Use step of 5 minutes to reduce sample count while preserving time ranges
+	// needed for compaction triggers. This reduces total samples from ~411 to ~83.
 	addSamples := func(fromMins, toMins int64) {
-		app := db.Appender(context.Background())
-		for m := fromMins; m <= toMins; m++ {
+		app := appenderFn(db, ctx)
+		for m := fromMins; m <= toMins; m += 5 {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(app, series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			allSamples = append(allSamples, s)
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -8367,21 +8375,36 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 		}
 	}
 
-	// Add in-order samples until ready for compaction..
+	// Add in-order samples until ready for compaction.
 	addSamples(301, 500)
 
 	// Check that m-map files gets deleted properly after compactions.
 
 	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
-	require.NoError(t, db.Compact(ctx))
+
+	// NOTE: We are investigating flaky errors from this compaction on i386 architecture. Compaction panics due to chunk
+	// mapper fatal error. Recover here to understand the error cause. Leaving panic recovery to test causes deadlock
+	// as t.Cleanup tries to close DB with open locks.
+	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
+	require.NotPanics(t, func() {
+		require.NoError(t, db.Compact(ctx))
+	})
+
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
 	require.Nil(t, ms.ooo, "OOO mmap chunk was not compacted")
 
 	addSamples(501, 650)
 	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
-	require.NoError(t, db.Compact(ctx))
+
+	// NOTE: We are investigating flaky errors from this compaction on i386 architecture. Compaction panics due to chunk
+	// mapper fatal error. Recover here to understand the error cause. Leaving panic recovery to test causes deadlock
+	// as t.Cleanup tries to close DB with open locks.
+	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
+	require.NotPanics(t, func() {
+		require.NoError(t, db.Compact(ctx))
+	})
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
 
 	// Verify that WBL is empty.
@@ -9584,4 +9607,40 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 
 	// Should still have no blocks since there was nothing to compact.
 	require.Empty(t, db.Blocks())
+}
+
+func TestBeyondSizeRetentionWithPercentage(t *testing.T) {
+	const maxBlock = 100
+	const numBytesChunks = 1024
+	const diskSize = maxBlock * numBytesChunks
+
+	opts := DefaultOptions()
+	opts.MaxPercentage = 10
+	opts.FsSizeFunc = func(_ string) uint64 {
+		return uint64(diskSize)
+	}
+
+	db := newTestDB(t, withOpts(opts))
+	require.Zero(t, db.Head().Size())
+
+	blocks := make([]*Block, 0, opts.MaxPercentage+1)
+	for range opts.MaxPercentage {
+		blocks = append(blocks, &Block{
+			numBytesChunks: numBytesChunks,
+			meta:           BlockMeta{ULID: ulid.Make()},
+		})
+	}
+
+	deletable := BeyondSizeRetention(db, blocks)
+	require.Empty(t, deletable)
+
+	ulid := ulid.Make()
+	blocks = append(blocks, &Block{
+		numBytesChunks: numBytesChunks,
+		meta:           BlockMeta{ULID: ulid},
+	})
+
+	deletable = BeyondSizeRetention(db, blocks)
+	require.Len(t, deletable, 1)
+	require.Contains(t, deletable, ulid)
 }

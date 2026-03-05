@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/kahansum"
 )
 
 // FunctionCall is the type of a PromQL function implementation
@@ -557,6 +558,9 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 // trend factor increases the influence. of trends. Algorithm taken from
 // https://en.wikipedia.org/wiki/Exponential_smoothing .
 func funcDoubleExponentialSmoothing(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) < 2 || len(vectorVals[0]) == 0 || len(vectorVals[1]) == 0 || len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 	// The smoothing factor argument.
 	sf := vectorVals[0][0].F
@@ -771,12 +775,18 @@ func funcScalar(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNo
 }
 
 func aggrOverTime(matrixVal Matrix, enh *EvalNodeHelper, aggrFn func(Series) float64) Vector {
+	if len(matrixVal) == 0 {
+		return enh.Out
+	}
 	el := matrixVal[0]
 
 	return append(enh.Out, Sample{F: aggrFn(el)})
 }
 
 func aggrHistOverTime(matrixVal Matrix, enh *EvalNodeHelper, aggrFn func(Series) (*histogram.FloatHistogram, error)) (Vector, error) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	el := matrixVal[0]
 	res, err := aggrFn(el)
 
@@ -785,14 +795,14 @@ func aggrHistOverTime(matrixVal Matrix, enh *EvalNodeHelper, aggrFn func(Series)
 
 // === avg_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations)  ===
 func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	firstSeries := matrixVal[0]
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(getMetricName(firstSeries.Metric), args[0].PositionRange()))
 	}
-	// For the average calculation of histograms, we use incremental mean
-	// calculation without the help of Kahan summation (but this should
-	// change, see https://github.com/prometheus/prometheus/issues/14105 ).
-	// For floats, we improve the accuracy with the help of Kahan summation.
+	// We improve the accuracy with the help of Kahan summation.
 	// For a while, we assumed that incremental mean calculation combined
 	// with Kahan summation (see
 	// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
@@ -835,23 +845,47 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				}
 			}()
 
-			mean := s.Histograms[0].H.Copy()
-			trackCounterReset(mean)
+			var (
+				sum                  = s.Histograms[0].H.Copy()
+				mean, kahanC         *histogram.FloatHistogram
+				count                = 1.
+				incrementalMean      bool
+				nhcbBoundsReconciled bool
+				err                  error
+			)
+			trackCounterReset(sum)
 			for i, h := range s.Histograms[1:] {
 				trackCounterReset(h.H)
-				count := float64(i + 2)
-				left := h.H.Copy().Div(count)
-				right := mean.Copy().Div(count)
-
-				toAdd, _, nhcbBoundsReconciled, err := left.Sub(right)
-				if err != nil {
-					return mean, err
+				count = float64(i + 2)
+				if !incrementalMean {
+					sumCopy := sum.Copy()
+					var cCopy *histogram.FloatHistogram
+					if kahanC != nil {
+						cCopy = kahanC.Copy()
+					}
+					cCopy, _, nhcbBoundsReconciled, err = sumCopy.KahanAdd(h.H, cCopy)
+					if err != nil {
+						return sumCopy.Div(count), err
+					}
+					if nhcbBoundsReconciled {
+						nhcbBoundsReconciledSeen = true
+					}
+					if !sumCopy.HasOverflow() {
+						sum, kahanC = sumCopy, cCopy
+						continue
+					}
+					incrementalMean = true
+					mean = sum.Copy().Div(count - 1)
+					if kahanC != nil {
+						kahanC.Div(count - 1)
+					}
 				}
-				if nhcbBoundsReconciled {
-					nhcbBoundsReconciledSeen = true
+				q := (count - 1) / count
+				if kahanC != nil {
+					kahanC.Mul(q)
 				}
-
-				_, _, nhcbBoundsReconciled, err = mean.Add(toAdd)
+				toAdd := h.H.Copy().Div(count)
+				kahanC, _, nhcbBoundsReconciled, err = mean.Mul(q).KahanAdd(toAdd, kahanC)
 				if err != nil {
 					return mean, err
 				}
@@ -859,7 +893,18 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					nhcbBoundsReconciledSeen = true
 				}
 			}
-			return mean, nil
+			if incrementalMean {
+				if kahanC != nil {
+					_, _, _, err := mean.Add(kahanC)
+					return mean, err
+				}
+				return mean, nil
+			}
+			if kahanC != nil {
+				_, _, _, err := sum.Div(count).Add(kahanC.Div(count))
+				return sum, err
+			}
+			return sum.Div(count), nil
 		})
 		if err != nil {
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
@@ -878,7 +923,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		for i, f := range s.Floats[1:] {
 			count = float64(i + 2)
 			if !incrementalMean {
-				newSum, newC := kahanSumInc(f.F, sum, kahanC)
+				newSum, newC := kahansum.Inc(f.F, sum, kahanC)
 				// Perform regular mean calculation as long as
 				// the sum doesn't overflow.
 				if !math.IsInf(newSum, 0) {
@@ -892,7 +937,7 @@ func funcAvgOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 				kahanC /= (count - 1)
 			}
 			q := (count - 1) / count
-			mean, kahanC = kahanSumInc(f.F/count, q*mean, q*kahanC)
+			mean, kahanC = kahansum.Inc(f.F/count, q*mean, q*kahanC)
 		}
 		if incrementalMean {
 			return mean + kahanC
@@ -910,6 +955,9 @@ func funcCountOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, enh 
 
 // === first_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	el := matrixVal[0]
 
 	var f FPoint
@@ -938,6 +986,9 @@ func funcFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *
 
 // === last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	el := matrixVal[0]
 
 	var f FPoint
@@ -964,6 +1015,9 @@ func funcLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *E
 
 // === mad_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
@@ -988,6 +1042,9 @@ func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 
 // === ts_of_first_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcTsOfFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	el := matrixVal[0]
 
 	var tf int64 = math.MaxInt64
@@ -1008,6 +1065,9 @@ func funcTsOfFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, e
 
 // === ts_of_last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
 func funcTsOfLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	el := matrixVal[0]
 
 	var tf int64
@@ -1042,6 +1102,9 @@ func funcTsOfMinOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions,
 
 // compareOverTime is a helper used by funcMaxOverTime and funcMinOverTime.
 func compareOverTime(matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper, compareFn func(float64, float64) bool, returnTimestamp bool) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
@@ -1082,6 +1145,9 @@ func funcMinOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions, enh
 
 // === sum_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	firstSeries := matrixVal[0]
 	if len(firstSeries.Floats) > 0 && len(firstSeries.Histograms) > 0 {
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(getMetricName(firstSeries.Metric), args[0].PositionRange()))
@@ -1112,9 +1178,14 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 
 			sum := s.Histograms[0].H.Copy()
 			trackCounterReset(sum)
+			var (
+				comp                 *histogram.FloatHistogram
+				nhcbBoundsReconciled bool
+				err                  error
+			)
 			for _, h := range s.Histograms[1:] {
 				trackCounterReset(h.H)
-				_, _, nhcbBoundsReconciled, err := sum.Add(h.H)
+				comp, _, nhcbBoundsReconciled, err = sum.KahanAdd(h.H, comp)
 				if err != nil {
 					return sum, err
 				}
@@ -1122,7 +1193,16 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 					nhcbBoundsReconciledSeen = true
 				}
 			}
-			return sum, nil
+			if comp != nil {
+				sum, _, nhcbBoundsReconciled, err = sum.Add(comp)
+				if err != nil {
+					return sum, err
+				}
+				if nhcbBoundsReconciled {
+					nhcbBoundsReconciledSeen = true
+				}
+			}
+			return sum, err
 		})
 		if err != nil {
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
@@ -1134,7 +1214,7 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
 		var sum, c float64
 		for _, f := range s.Floats {
-			sum, c = kahanSumInc(f.F, sum, c)
+			sum, c = kahansum.Inc(f.F, sum, c)
 		}
 		if math.IsInf(sum, 0) {
 			return sum
@@ -1145,6 +1225,9 @@ func funcSumOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 
 // === quantile_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcQuantileOverTime(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) == 0 || len(vectorVals[0]) == 0 || len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	q := vectorVals[0][0].F
 	el := matrixVal[0]
 	if len(el.Floats) == 0 {
@@ -1166,6 +1249,9 @@ func funcQuantileOverTime(vectorVals []Vector, matrixVal Matrix, args parser.Exp
 }
 
 func varianceOverTime(matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper, varianceToResult func(float64) float64) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
@@ -1181,8 +1267,8 @@ func varianceOverTime(matrixVal Matrix, args parser.Expressions, enh *EvalNodeHe
 		for _, f := range s.Floats {
 			count++
 			delta := f.F - (mean + cMean)
-			mean, cMean = kahanSumInc(delta/count, mean, cMean)
-			aux, cAux = kahanSumInc(delta*(f.F-(mean+cMean)), aux, cAux)
+			mean, cMean = kahansum.Inc(delta/count, mean, cMean)
+			aux, cAux = kahansum.Inc(delta*(f.F-(mean+cMean)), aux, cAux)
 		}
 		variance := (aux + cAux) / count
 		if varianceToResult == nil {
@@ -1395,24 +1481,6 @@ func funcTimestamp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *Eva
 	return enh.Out, nil
 }
 
-// We get incorrect results if this function is inlined; see https://github.com/prometheus/prometheus/issues/16714.
-//
-//go:noinline
-func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
-	t := sum + inc
-	switch {
-	case math.IsInf(t, 0):
-		c = 0
-
-	// Using Neumaier improvement, swap if next term larger than sum.
-	case math.Abs(sum) >= math.Abs(inc):
-		c += (sum - t) + inc
-	default:
-		c += (inc - t) + sum
-	}
-	return t, c
-}
-
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
@@ -1435,10 +1503,10 @@ func linearRegression(samples []FPoint, interceptTime int64) (slope, intercept f
 		}
 		n += 1.0
 		x := float64(sample.T-interceptTime) / 1e3
-		sumX, cX = kahanSumInc(x, sumX, cX)
-		sumY, cY = kahanSumInc(sample.F, sumY, cY)
-		sumXY, cXY = kahanSumInc(x*sample.F, sumXY, cXY)
-		sumX2, cX2 = kahanSumInc(x*x, sumX2, cX2)
+		sumX, cX = kahansum.Inc(x, sumX, cX)
+		sumY, cY = kahansum.Inc(sample.F, sumY, cY)
+		sumXY, cXY = kahansum.Inc(x*sample.F, sumXY, cXY)
+		sumX2, cX2 = kahansum.Inc(x*x, sumX2, cX2)
 	}
 	if constY {
 		if math.IsInf(initY, 0) {
@@ -1461,6 +1529,9 @@ func linearRegression(samples []FPoint, interceptTime int64) (slope, intercept f
 
 // === deriv(node parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcDeriv(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 
 	// No sense in trying to compute a derivative without at least two float points.
@@ -1485,6 +1556,9 @@ func funcDeriv(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalN
 
 // === predict_linear(node parser.ValueTypeMatrix, k parser.ValueTypeScalar) (Vector, Annotations) ===
 func funcPredictLinear(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) == 0 || len(vectorVals[0]) == 0 || len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	samples := matrixVal[0]
 	duration := vectorVals[0][0].F
 
@@ -1568,7 +1642,7 @@ func histogramVariance(vectorVals []Vector, enh *EvalNodeHelper, varianceToResul
 				}
 			}
 			delta := val - mean
-			variance, cVariance = kahanSumInc(bucket.Count*delta*delta, variance, cVariance)
+			variance, cVariance = kahansum.Inc(bucket.Count*delta*delta, variance, cVariance)
 		}
 		variance += cVariance
 		variance /= h.Count
@@ -1591,6 +1665,9 @@ func funcHistogramStdVar(vectorVals []Vector, _ Matrix, _ parser.Expressions, en
 
 // === histogram_fraction(lower, upper parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcHistogramFraction(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) < 3 || len(vectorVals[0]) == 0 || len(vectorVals[1]) == 0 {
+		return enh.Out, nil
+	}
 	lower := vectorVals[0][0].F
 	upper := vectorVals[1][0].F
 	inVec := vectorVals[2]
@@ -1636,12 +1713,15 @@ func funcHistogramFraction(vectorVals []Vector, _ Matrix, args parser.Expression
 
 // === histogram_quantile(k parser.ValueTypeScalar, Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) < 2 || len(vectorVals[0]) == 0 {
+		return enh.Out, nil
+	}
 	q := vectorVals[0][0].F
 	inVec := vectorVals[1]
 	var annos annotations.Annotations
 
-	if math.IsNaN(q) || q < 0 || q > 1 {
-		annos.Add(annotations.NewInvalidQuantileWarning(q, args[0].PositionRange()))
+	if err := validateQuantile(q, args[0]); err != nil {
+		annos.Add(err)
 	}
 	annos.Merge(enh.resetHistograms(inVec, args[1]))
 
@@ -1666,13 +1746,13 @@ func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expression
 	// Deal with classic histograms that have already been filtered for conflicting native histograms.
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
-			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
+			quantile, forcedMonotonicity, _, minBucket, maxBucket, maxDiff := BucketQuantile(q, mb.buckets)
 			if forcedMonotonicity {
+				metricName := ""
 				if enh.enableDelayedNameRemoval {
-					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(getMetricName(mb.metric), args[1].PositionRange()))
-				} else {
-					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo("", args[1].PositionRange()))
+					metricName = getMetricName(mb.metric)
 				}
+				annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(metricName, args[1].PositionRange(), enh.Ts, minBucket, maxBucket, maxDiff))
 			}
 
 			if !enh.enableDelayedNameRemoval {
@@ -1681,9 +1761,92 @@ func funcHistogramQuantile(vectorVals []Vector, _ Matrix, args parser.Expression
 
 			enh.Out = append(enh.Out, Sample{
 				Metric:   mb.metric,
-				F:        res,
+				F:        quantile,
 				DropName: true,
 			})
+		}
+	}
+
+	return enh.Out, annos
+}
+
+func validateQuantile(q float64, arg parser.Expr) error {
+	if math.IsNaN(q) || q < 0 || q > 1 {
+		return annotations.NewInvalidQuantileWarning(q, arg.PositionRange())
+	}
+	return nil
+}
+
+// === histogram_quantiles(Vector parser.ValueTypeVector, label parser.ValueTypeString, q0 parser.ValueTypeScalar, qs parser.ValueTypeScalar...) (Vector, Annotations) ===
+func funcHistogramQuantiles(vectorVals []Vector, _ Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	var (
+		inVec         = vectorVals[0]
+		quantileLabel = args[1].(*parser.StringLiteral).Val
+		numQuantiles  = len(vectorVals[2:])
+		qs            = make([]float64, 0, numQuantiles)
+
+		annos annotations.Annotations
+	)
+
+	if enh.quantileStrs == nil {
+		enh.quantileStrs = make(map[float64]string, numQuantiles)
+	}
+	for i := 2; i < len(vectorVals); i++ {
+		q := vectorVals[i][0].F
+
+		if err := validateQuantile(q, args[i]); err != nil {
+			annos.Add(err)
+		}
+
+		if _, ok := enh.quantileStrs[q]; !ok {
+			enh.quantileStrs[q] = labels.FormatOpenMetricsFloat(q)
+		}
+		qs = append(qs, q)
+	}
+
+	annos.Merge(enh.resetHistograms(inVec, args[0]))
+
+	for _, q := range qs {
+		// Deal with the native histograms.
+		for _, sample := range enh.nativeHistogramSamples {
+			if sample.H == nil {
+				// Native histogram conflicts with classic histogram at the same timestamp, ignore.
+				continue
+			}
+			if !enh.enableDelayedNameRemoval {
+				sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
+			}
+			hq, hqAnnos := HistogramQuantile(q, sample.H, sample.Metric.Get(model.MetricNameLabel), args[0].PositionRange())
+			annos.Merge(hqAnnos)
+			enh.Out = append(enh.Out, Sample{
+				Metric:   enh.getOrCreateLblsWithQuantile(sample.Metric, quantileLabel, q),
+				F:        hq,
+				DropName: true,
+			})
+		}
+
+		// Deal with classic histograms that have already been filtered for conflicting native histograms.
+		for _, mb := range enh.signatureToMetricWithBuckets {
+			if len(mb.buckets) > 0 {
+				hq, forcedMonotonicity, _, minBucket, maxBucket, maxDiff := BucketQuantile(q, mb.buckets)
+				if forcedMonotonicity {
+					metricName := ""
+					if enh.enableDelayedNameRemoval {
+						metricName = getMetricName(mb.metric)
+					}
+					annos.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(metricName, args[1].PositionRange(), enh.Ts, minBucket, maxBucket, maxDiff))
+				}
+
+				if !enh.enableDelayedNameRemoval {
+					mb.metric = mb.metric.DropReserved(schema.IsMetadataLabel)
+				}
+
+				enh.Out = append(enh.Out, Sample{
+					Metric:   enh.getOrCreateLblsWithQuantile(mb.metric, quantileLabel, q),
+					F:        hq,
+					DropName: true,
+				})
+			}
 		}
 	}
 
@@ -1709,6 +1872,9 @@ func pickFirstSampleIndex(floats []FPoint, args parser.Expressions, enh *EvalNod
 
 // === resets(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	floats := matrixVal[0].Floats
 	histograms := matrixVal[0].Histograms
 	resets := 0
@@ -1758,6 +1924,9 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 
 // === changes(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcChanges(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
 	floats := matrixVal[0].Floats
 	histograms := matrixVal[0].Histograms
 	changes := 0
@@ -2014,6 +2183,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"histogram_count":              funcHistogramCount,
 	"histogram_fraction":           funcHistogramFraction,
 	"histogram_quantile":           funcHistogramQuantile,
+	"histogram_quantiles":          funcHistogramQuantiles,
 	"histogram_sum":                funcHistogramSum,
 	"histogram_stddev":             funcHistogramStdDev,
 	"histogram_stdvar":             funcHistogramStdVar,

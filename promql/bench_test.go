@@ -36,6 +36,8 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
+var testParser = parser.NewParser(parser.Options{})
+
 func setupRangeQueryTestData(stor *teststorage.TestStorage, _ *promql.Engine, interval, numIntervals int) error {
 	ctx := context.Background()
 
@@ -332,10 +334,6 @@ func rangeQueryCases() []benchCase {
 }
 
 func BenchmarkRangeQuery(b *testing.B) {
-	parser.EnableExtendedRangeSelectors = true
-	b.Cleanup(func() {
-		parser.EnableExtendedRangeSelectors = false
-	})
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
 
@@ -344,6 +342,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		Reg:        nil,
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
+		Parser:     parser.NewParser(parser.Options{EnableExtendedRangeSelectors: true, EnableExperimentalFunctions: true}),
 	}
 	engine := promqltest.NewTestEngineWithOpts(b, opts)
 
@@ -644,6 +643,7 @@ func BenchmarkInfoFunction(b *testing.B) {
 			Timeout:              100 * time.Second,
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
+			Parser:               parser.NewParser(parser.Options{EnableExperimentalFunctions: true}),
 		}
 		engine := promql.NewEngine(opts)
 		b.Run(tc.name, func(b *testing.B) {
@@ -804,13 +804,13 @@ func BenchmarkParser(b *testing.B) {
 		b.Run(c, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				parser.ParseExpr(c)
+				testParser.ParseExpr(c)
 			}
 		})
 	}
 	for _, c := range cases {
 		b.Run("preprocess "+c, func(b *testing.B) {
-			expr, _ := parser.ParseExpr(c)
+			expr, _ := testParser.ParseExpr(c)
 			start, end := time.Now().Add(-time.Hour), time.Now()
 			for b.Loop() {
 				promql.PreprocessExpr(expr, start, end, 0)
@@ -822,7 +822,7 @@ func BenchmarkParser(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				parser.ParseExpr(c)
+				testParser.ParseExpr(c)
 			}
 		})
 	}

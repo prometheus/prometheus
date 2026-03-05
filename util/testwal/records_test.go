@@ -11,19 +11,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !goexperiment.synctest && !go1.25
-
-package synctest
+package testwal
 
 import (
 	"testing"
+
+	"github.com/prometheus/prometheus/config"
 )
 
-func Test(t *testing.T, _ func(t *testing.T)) {
-	t.Skip("goexperiment.synctest is not enabled")
-}
+// BenchmarkGenerateRecords checks data generator performance.
+// Recommended CLI:
+/*
+	export bench=genRecs && go test ./util/testwal/... \
+		-run '^$' -bench '^BenchmarkGenerateRecords' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
+func BenchmarkGenerateRecords(b *testing.B) {
+	n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
 
-func Wait() {
-	// It isn't meant to be called outside of Test().
-	panic("goexperiment.synctest is not enabled")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		// This will generate 16M samples and 4k series.
+		GenerateRecords(RecordsCase{Series: n, SamplesPerSeries: n})
+	}
 }

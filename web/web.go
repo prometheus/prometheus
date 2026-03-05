@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/felixge/fgprof"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
@@ -53,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -111,6 +113,8 @@ const (
 	Ready
 	Stopping
 )
+
+var fgprofHandler = fgprof.Handler()
 
 // withStackTracer logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
@@ -259,6 +263,7 @@ type Options struct {
 	TSDBRetentionDuration model.Duration
 	TSDBDir               string
 	TSDBMaxBytes          units.Base2Bytes
+	TSDBMaxPercentage     uint
 	LocalStorage          LocalStorage
 	Storage               storage.Storage
 	ExemplarStorage       storage.ExemplarQueryable
@@ -304,12 +309,18 @@ type Options struct {
 	Gatherer        prometheus.Gatherer
 	Registerer      prometheus.Registerer
 	FeatureRegistry features.Collector
+
+	// Parser is the PromQL parser used for parsing query expressions.
+	Parser parser.Parser
 }
 
 // New initializes a new web Handler.
 func New(logger *slog.Logger, o *Options) *Handler {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
+	}
+	if o.Parser == nil {
+		o.Parser = parser.NewParser(parser.Options{})
 	}
 
 	m := newMetrics(o.Registerer)
@@ -414,6 +425,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 			ExternalURL: o.ExternalURL.String(),
 			Version:     version,
 		},
+		o.Parser,
 	)
 
 	if r := o.FeatureRegistry; r != nil {
@@ -618,6 +630,8 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 		pprof.Symbol(w, req)
 	case "trace":
 		pprof.Trace(w, req)
+	case "fgprof":
+		fgprofHandler.ServeHTTP(w, req)
 	default:
 		req.URL.Path = "/debug/pprof/" + subpath
 		pprof.Index(w, req)
@@ -860,6 +874,12 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 			status.StorageRetention += " or "
 		}
 		status.StorageRetention += h.options.TSDBMaxBytes.String()
+	}
+	if h.options.TSDBMaxPercentage != 0 {
+		if status.StorageRetention != "" {
+			status.StorageRetention += " or "
+		}
+		status.StorageRetention = status.StorageRetention + strconv.FormatUint(uint64(h.options.TSDBMaxPercentage), 10) + "%"
 	}
 
 	metrics, err := h.gatherer.Gather()
