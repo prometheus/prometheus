@@ -6,7 +6,7 @@ WORKDIR /workspace
 COPY . .
 
 ENV PREBUILT_ASSETS_STATIC_DIR=web/ui
-RUN go mod vendor
+RUN GOWORK=off go mod vendor
 # adding the cgo flag here to not break the architecture CI builds
 RUN go install github.com/prometheus/promu@v0.17.0 && promu build -v --cgo --prefix ./
 
