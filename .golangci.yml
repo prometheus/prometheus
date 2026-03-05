@@ -133,7 +133,6 @@ linters:
         - importShadow
         - nestingReduce
         - ptrToRefParam
-        - preferStringWriter
         - rangeValCopy
         - redundantSprint
         - regexpSimplify
