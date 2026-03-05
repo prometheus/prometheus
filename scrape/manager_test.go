@@ -767,6 +767,7 @@ func TestManagerSTZeroIngestion(t *testing.T) {
 							app := teststorage.NewAppendable()
 							discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 								EnableStartTimestampZeroIngestion: testSTZeroIngest,
+								ParseST:                           testSTZeroIngest,
 								skipOffsetting:                    true,
 							}, app, nil)
 							defer scrapeManager.Stop()
@@ -953,6 +954,7 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 			app := teststorage.NewAppendable()
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 				EnableStartTimestampZeroIngestion: tc.enableSTZeroIngestion,
+				ParseST:                           tc.enableSTZeroIngestion,
 				skipOffsetting:                    true,
 			}, app, nil)
 			defer scrapeManager.Stop()
@@ -1065,6 +1067,7 @@ func TestNHCBAndSTZeroIngestion(t *testing.T) {
 	app := teststorage.NewAppendable()
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 		EnableStartTimestampZeroIngestion: true,
+		ParseST:                           true,
 		skipOffsetting:                    true,
 	}, app, nil)
 	defer scrapeManager.Stop()

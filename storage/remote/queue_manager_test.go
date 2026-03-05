@@ -140,7 +140,10 @@ func TestBasicContentNegotiation(t *testing.T) {
 			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 			defer s.Close()
 
-			recs := generateRecords(recCase{series: 1, samplesPerSeries: 1})
+			recs := generateRecords(recCase{
+				noST:   tc.senderProtoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+				series: 1, samplesPerSeries: 1,
+			})
 
 			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.senderProtoMsg
 			require.NoError(t, s.ApplyConfig(conf))
@@ -222,6 +225,7 @@ func TestSampleDelivery(t *testing.T) {
 				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 				defer s.Close()
 
+				rc.noST = protoMsg == remoteapi.WriteV1MessageType // RW1 does not support ST.
 				recs := generateRecords(rc)
 
 				var (
@@ -382,10 +386,12 @@ func TestWALMetadataDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
-	t.Parallel()
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
-			recs := generateRecords(recCase{series: 10, samplesPerSeries: 10})
+			recs := generateRecords(recCase{
+				noST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+				series: 10, samplesPerSeries: 10,
+			})
 			cfg := testDefaultQueueConfig()
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
@@ -414,7 +420,10 @@ func TestSampleDeliveryOrder(t *testing.T) {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			ts := 10
 			n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
-			recs := generateRecords(recCase{series: n, samplesPerSeries: 1})
+			recs := generateRecords(recCase{
+				noST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+				series: n, samplesPerSeries: 1,
+			})
 
 			c, m := newTestClientAndQueueManager(t, defaultFlushDeadline, protoMsg)
 			c.expectSamples(recs.samples, recs.series)
@@ -443,7 +452,10 @@ func TestShutdown(t *testing.T) {
 				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
 				// Send 2x batch size, so we know it will need at least two sends.
 				n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
-				recs := generateRecords(recCase{series: n / 1000, samplesPerSeries: 1000})
+				recs := generateRecords(recCase{
+					noST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+					series: n / 1000, samplesPerSeries: 1000,
+				})
 				m.StoreSeries(recs.series, 0)
 				m.Start()
 
@@ -512,7 +524,10 @@ func TestReshard(t *testing.T) {
 			size := 10 // Make bigger to find more races.
 			nSeries := 6
 			samplesPerSeries := config.DefaultQueueConfig.Capacity * size
-			recs := generateRecords(recCase{series: nSeries, samplesPerSeries: samplesPerSeries})
+			recs := generateRecords(recCase{
+				noST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+				series: nSeries, samplesPerSeries: samplesPerSeries,
+			})
 			t.Logf("about to send %v samples", len(recs.samples))
 
 			cfg := config.DefaultQueueConfig
@@ -588,7 +603,10 @@ func TestReshardPartialBatch(t *testing.T) {
 	t.Parallel()
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
-			recs := generateRecords(recCase{series: 1, samplesPerSeries: 10})
+			recs := generateRecords(recCase{
+				noST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+				series: 1, samplesPerSeries: 10,
+			})
 
 			c := NewTestBlockedWriteClient()
 
@@ -633,7 +651,10 @@ func TestReshardPartialBatch(t *testing.T) {
 func TestQueueFilledDeadlock(t *testing.T) {
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
-			recs := generateRecords(recCase{series: 50, samplesPerSeries: 1})
+			recs := generateRecords(recCase{
+				noST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+				series: 50, samplesPerSeries: 1,
+			})
 
 			c := NewNopWriteClient()
 
@@ -814,6 +835,8 @@ type recCase struct {
 
 	labelsFn func(lb *labels.ScratchBuilder, i int) labels.Labels
 	tsFn     func(i, j int) int64
+
+	noST bool
 }
 
 type records struct {
@@ -877,9 +900,17 @@ func generateRecords(c recCase) (ret records) {
 			Help: "help text",
 		}
 		for j := range c.samplesPerSeries {
+			ts := c.tsFn(i, j)
+			st := int64(0)
+			if !c.noST {
+				// Keep ST simple for now; we don't test the exact semantics, just
+				// if RW passes this data.
+				st = ts - 1
+			}
 			ret.samples[i*c.samplesPerSeries+j] = record.RefSample{
 				Ref: chunks.HeadSeriesRef(i),
-				T:   c.tsFn(i, j),
+				ST:  st,
+				T:   ts,
 				V:   float64(i),
 			}
 		}
@@ -960,8 +991,8 @@ func getSeriesIDFromRef(r record.RefSeries) string {
 // TestWriteClient represents write client which does not call remote storage,
 // but instead re-implements fake WriteHandler for test purposes.
 type TestWriteClient struct {
-	receivedSamples         map[string][]prompb.Sample
-	expectedSamples         map[string][]prompb.Sample
+	receivedSamples         map[string][]writev2.Sample
+	expectedSamples         map[string][]writev2.Sample
 	receivedExemplars       map[string][]prompb.Exemplar
 	expectedExemplars       map[string][]prompb.Exemplar
 	receivedHistograms      map[string][]prompb.Histogram
@@ -985,8 +1016,8 @@ type TestWriteClient struct {
 // NewTestWriteClient creates a new testing write client.
 func NewTestWriteClient(protoMsg remoteapi.WriteMessageType) *TestWriteClient {
 	return &TestWriteClient{
-		receivedSamples:  map[string][]prompb.Sample{},
-		expectedSamples:  map[string][]prompb.Sample{},
+		receivedSamples:  map[string][]writev2.Sample{},
+		expectedSamples:  map[string][]writev2.Sample{},
 		receivedMetadata: map[string][]prompb.MetricMetadata{},
 		expectedMetadata: map[string][]prompb.MetricMetadata{},
 		protoMsg:         protoMsg,
@@ -1001,18 +1032,20 @@ func (c *TestWriteClient) injectErrors(injectedErrs []error) {
 	c.retry = false
 }
 
+// expectSamples injects samples that will be expected on waitForExpectedData.
 func (c *TestWriteClient) expectSamples(ss []record.RefSample, series []record.RefSeries) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	c.expectedSamples = map[string][]prompb.Sample{}
-	c.receivedSamples = map[string][]prompb.Sample{}
+	c.expectedSamples = map[string][]writev2.Sample{}
+	c.receivedSamples = map[string][]writev2.Sample{}
 
 	for _, s := range ss {
 		tsID := getSeriesIDFromRef(series[s.Ref])
-		c.expectedSamples[tsID] = append(c.expectedSamples[tsID], prompb.Sample{
-			Timestamp: s.T,
-			Value:     s.V,
+		c.expectedSamples[tsID] = append(c.expectedSamples[tsID], writev2.Sample{
+			StartTimestamp: s.ST,
+			Timestamp:      s.T,
+			Value:          s.V,
 		})
 	}
 }
@@ -1190,7 +1223,10 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 		}
 	}
 
-	var reqProto *prompb.WriteRequest
+	var (
+		reqProto   *prompb.WriteRequest
+		reqProtoV2 *writev2.Request
+	)
 	switch c.protoMsg {
 	case remoteapi.WriteV1MessageType:
 		reqProto = &prompb.WriteRequest{}
@@ -1198,10 +1234,10 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 	case remoteapi.WriteV2MessageType:
 		// NOTE(bwplotka): v1 msg can be unmarshaled to v2 sometimes, without
 		// errors.
-		var reqProtoV2 writev2.Request
-		err = proto.Unmarshal(reqBuf, &reqProtoV2)
+		reqProtoV2 = &writev2.Request{}
+		err = proto.Unmarshal(reqBuf, reqProtoV2)
 		if err == nil {
-			reqProto, err = v2RequestToWriteRequest(&reqProtoV2)
+			reqProto, err = v2RequestToWriteRequest(reqProtoV2)
 		}
 	}
 	if err != nil {
@@ -1210,11 +1246,21 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte, _ int) (WriteResp
 
 	rs := WriteResponseStats{}
 	b := labels.NewScratchBuilder(0)
-	for _, ts := range reqProto.Timeseries {
+	for i, ts := range reqProto.Timeseries {
 		labels := ts.ToLabels(&b, nil)
 		tsID := labels.String()
-		if len(ts.Samples) > 0 {
-			c.receivedSamples[tsID] = append(c.receivedSamples[tsID], ts.Samples...)
+		for j, s := range ts.Samples {
+			st := int64(0)
+			if reqProtoV2 != nil {
+				// TODO(bwplotka): Refactor queue manager TestWriteClient for tighter validation
+				// and native support for new RW2 features. For now we inject STs in RW2 case to the existing test suite.
+				st = reqProtoV2.Timeseries[i].Samples[j].StartTimestamp
+			}
+			c.receivedSamples[tsID] = append(c.receivedSamples[tsID], writev2.Sample{
+				StartTimestamp: st,
+				Timestamp:      s.Timestamp,
+				Value:          s.Value,
+			})
 		}
 		rs.Samples += len(ts.Samples)
 
@@ -1390,6 +1436,13 @@ var extraLabels []labels.Label = []labels.Label{
 	{Name: "pod_name", Value: "some-other-name-5j8s8"},
 }
 
+// Recommended CLI invocation(s):
+/*
+	export bench=sampleSend && go test ./storage/remote/... \
+		-run '^$' -bench '^BenchmarkSampleSend' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
 func BenchmarkSampleSend(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 1
@@ -1896,6 +1949,13 @@ func createDummyTimeSeries(instances int) []timeSeries {
 	return result
 }
 
+// Recommended CLI invocation(s):
+/*
+	export bench=buildWriteRequest && go test ./storage/remote/... \
+		-run '^$' -bench '^BenchmarkBuildWriteRequest' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
 func BenchmarkBuildWriteRequest(b *testing.B) {
 	noopLogger := promslog.NewNopLogger()
 	bench := func(b *testing.B, batch []timeSeries) {
@@ -1936,6 +1996,13 @@ func BenchmarkBuildWriteRequest(b *testing.B) {
 	})
 }
 
+// Recommended CLI invocation(s):
+/*
+	export bench=buildV2WriteRequest && go test ./storage/remote/... \
+		-run '^$' -bench '^BenchmarkBuildV2WriteRequest' \
+		-benchtime 1s -count 6 -cpu 2 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+*/
 func BenchmarkBuildV2WriteRequest(b *testing.B) {
 	noopLogger := promslog.NewNopLogger()
 	bench := func(b *testing.B, batch []timeSeries) {
@@ -1985,7 +2052,9 @@ func TestDropOldTimeSeries(t *testing.T) {
 			size := 10
 			nSeries := 6
 			nSamples := config.DefaultQueueConfig.Capacity * size
+			noST := protoMsg == remoteapi.WriteV1MessageType // RW1 does not support ST.
 			pastRecs := generateRecords(recCase{
+				noST:             noST,
 				series:           nSeries,
 				samplesPerSeries: (nSamples / nSeries) / 2, // Half data is past.
 				tsFn: func(_, j int) int64 {
@@ -1994,6 +2063,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 				},
 			})
 			newRecs := generateRecords(recCase{
+				noST:             noST,
 				series:           nSeries,
 				samplesPerSeries: (nSamples / nSeries) / 2, // Half data is past.
 				tsFn: func(_, j int) int64 {
@@ -2068,6 +2138,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 				r := rand.New(rand.NewSource(99))
 
 				recs := generateRecords(recCase{
+					noST:             protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
 					series:           numberOfSeries,
 					samplesPerSeries: 1,
 					tsFn: func(_, _ int) int64 {
@@ -2092,9 +2163,10 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 				if !shouldBeDropped {
 					for _, s := range recs.samples {
 						tsID := getSeriesIDFromRef(recs.series[s.Ref])
-						c.expectedSamples[tsID] = append(c.expectedSamples[tsID], prompb.Sample{
-							Timestamp: s.T,
-							Value:     s.V,
+						c.expectedSamples[tsID] = append(c.expectedSamples[tsID], writev2.Sample{
+							StartTimestamp: s.ST,
+							Timestamp:      s.T,
+							Value:          s.V,
 						})
 					}
 				}
@@ -2615,7 +2687,10 @@ func TestHighestTimestampOnAppend(t *testing.T) {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			nSamples := 11 * config.DefaultQueueConfig.Capacity
 			nSeries := 3
-			recs := generateRecords(recCase{series: nSeries, samplesPerSeries: nSamples / nSeries})
+			recs := generateRecords(recCase{
+				noST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+				series: nSeries, samplesPerSeries: nSamples / nSeries,
+			})
 
 			_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, protoMsg)
 			m.Start()

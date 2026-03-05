@@ -65,6 +65,57 @@ Notes:
 * `padding` of 0 to 7 bits so that the whole chunk data is byte-aligned.
 * The chunk can have as few as one sample, i.e. `ts_1`, `v_1`, etc. are optional.
 
+## XOR chunk data with start timestamp
+
+This is experimental, related to supporting delta temporality metrics.
+Subject to change.
+
+The format is similar to XOR chunk data, except there's an additional one byte
+start time (ST) header and optional start time values.
+
+```
+┌──────────────────────┬───────────────────┬────────────────┬───────────────────────────────┬─-
+│ num_samples <uint16> │ st_header <uint8> | ?st_0 <varint> | ts_0 <varint> │ v_0 <float64> │
+└──────────────────────┴───────────────────┴────────────────┴───────────────────────────────┴─-
+
+-──────────────────────┬──────────────────────┬──────────────────────┬─-
+ ?st_1_delta <varint>  | ts_1_delta <uvarint> │ v_1_xor <varbit_xor> │
+-──────────────────────┴──────────────────────┴──────────────────────┴─-
+
+-──────────────────────┬──────────────────────┬──────────────────────┬─────┬─-
+ ?st_2_dod <varbit_ts> | ts_2_dod <varbit_ts> │ v_2_xor <varbit_xor> │ ... │
+-──────────────────────┴──────────────────────┴──────────────────────┴─────┴─-
+
+-──────────────────────┬──────────────────────┬──────────────────────┬──────────────────┐
+ ?st_n_dod <varbit_ts> | ts_n_dod <varbit_ts> │ v_n_xor <varbit_xor> │ padding <x bits> │
+-──────────────────────┴──────────────────────┴──────────────────────┴──────────────────┘
+```
+
+### Notes
+
+In addition to the notes from [XOR chunk data](#xor-chunk-data).
+
+* We use `st_i_dod` and `st_i` interchangeably when `i>1` in these notes.
+* `st_header` is one byte:
+   ```
+   ┌───────────────────────┬───────────────────────┐
+   │ first_st_known<1 bit> | st_changed_on<7 bits> │
+   └───────────────────────┴───────────────────────┘
+   ```
+   where the highest bit `first_st_known` indicates if `st_0` is present or not.
+   If the lower 7bits `st_changed_on` is 0, no `st_i (i>0)` is present.
+   Otherwise `st_i (i>=st_changed_on>)` is present, while
+   `st_i (0<i<st_changed_on)` is not present.
+
+   Due to the 7 bit limitation, once a chunk has at least 127 samples,
+   `st_changed_on` is set to 127 (0xEF) and the 127th and further samples will
+   have `st_i` present.
+* `st_0` is encoded as a `varint` if present.
+* `st_1` is encoded as a `varint` delta from `st_0` (or from 0 if `st_0` is not
+  present).
+* `st_i_dod` aka `st_i (i>1)` is encoded as a `varbit_ts` "delta of delta" from
+  `st_i-1` (or from 0 if `st_i-1` is not present).
+
 ## Histogram chunk data
 
 ```
