@@ -550,14 +550,15 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				// If this is a new series, create it in memory. If we never read in a
 				// sample for this series, its timestamp will remain at 0 and it will
 				// be deleted at the next GC.
-				if db.series.GetByID(entry.Ref) == nil {
-					series := &memSeries{ref: entry.Ref, lset: entry.Labels, lastTs: 0}
-					db.series.Set(entry.Labels.Hash(), series)
-					multiRef[entry.Ref] = series.ref
-					db.metrics.numActiveSeries.Inc()
-					if entry.Ref > lastRef {
-						lastRef = entry.Ref
-					}
+				if db.series.GetByID(entry.Ref) != nil {
+					continue
+				}
+				series := &memSeries{ref: entry.Ref, lset: entry.Labels, lastTs: 0}
+				db.series.Set(entry.Labels.Hash(), series)
+				multiRef[entry.Ref] = series.ref
+				db.metrics.numActiveSeries.Inc()
+				if entry.Ref > lastRef {
+					lastRef = entry.Ref
 				}
 			}
 			db.walReplaySeriesPool.Put(v)
