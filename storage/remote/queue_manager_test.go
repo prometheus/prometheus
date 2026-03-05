@@ -52,12 +52,12 @@ import (
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/prometheus/prometheus/util/testutil/synctest"
-	"github.com/prometheus/prometheus/util/testwal"
+	"github.com/prometheus/prometheus/util/testwlog"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
 
-type recCase = testwal.RecordsCase
+type recCase = testwlog.RecordsCase
 
 func newHighestTimestampMetric() *maxTimestamp {
 	return &maxTimestamp{
@@ -143,7 +143,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 			defer s.Close()
 
-			recs := testwal.GenerateRecords(recCase{Series: 1, SamplesPerSeries: 1})
+			recs := testwlog.GenerateRecords(recCase{Series: 1, SamplesPerSeries: 1})
 
 			conf.RemoteWriteConfigs[0].ProtobufMessage = tc.senderProtoMsg
 			require.NoError(t, s.ApplyConfig(conf))
@@ -225,7 +225,7 @@ func TestSampleDelivery(t *testing.T) {
 				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 				defer s.Close()
 
-				recs := testwal.GenerateRecords(rc)
+				recs := testwlog.GenerateRecords(rc)
 
 				var (
 					series          = recs.Series
@@ -362,7 +362,7 @@ func TestWALMetadataDelivery(t *testing.T) {
 	}
 
 	n := 3
-	recs := testwal.GenerateRecords(recCase{Series: n, SamplesPerSeries: n})
+	recs := testwlog.GenerateRecords(recCase{Series: n, SamplesPerSeries: n})
 
 	require.NoError(t, s.ApplyConfig(conf))
 	hash, err := toHash(writeConfig)
@@ -388,7 +388,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	t.Parallel()
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
-			recs := testwal.GenerateRecords(recCase{Series: 10, SamplesPerSeries: 10})
+			recs := testwlog.GenerateRecords(recCase{Series: 10, SamplesPerSeries: 10})
 			cfg := testDefaultQueueConfig()
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
@@ -417,7 +417,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			ts := 10
 			n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
-			recs := testwal.GenerateRecords(recCase{Series: n, SamplesPerSeries: 1})
+			recs := testwlog.GenerateRecords(recCase{Series: n, SamplesPerSeries: 1})
 
 			c, m := newTestClientAndQueueManager(t, defaultFlushDeadline, protoMsg)
 			c.expectSamples(recs.Samples, recs.Series)
@@ -446,7 +446,7 @@ func TestShutdown(t *testing.T) {
 				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
 				// Send 2x batch size, so we know it will need at least two sends.
 				n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
-				recs := testwal.GenerateRecords(recCase{Series: n / 1000, SamplesPerSeries: 1000})
+				recs := testwlog.GenerateRecords(recCase{Series: n / 1000, SamplesPerSeries: 1000})
 				m.StoreSeries(recs.Series, 0)
 				m.Start()
 
@@ -515,7 +515,7 @@ func TestReshard(t *testing.T) {
 			size := 10 // Make bigger to find more races.
 			nSeries := 6
 			samplesPerSeries := config.DefaultQueueConfig.Capacity * size
-			recs := testwal.GenerateRecords(recCase{Series: nSeries, SamplesPerSeries: samplesPerSeries})
+			recs := testwlog.GenerateRecords(recCase{Series: nSeries, SamplesPerSeries: samplesPerSeries})
 			t.Logf("about to send %v samples", len(recs.Samples))
 
 			cfg := config.DefaultQueueConfig
@@ -591,7 +591,7 @@ func TestReshardPartialBatch(t *testing.T) {
 	t.Parallel()
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
-			recs := testwal.GenerateRecords(recCase{Series: 1, SamplesPerSeries: 10})
+			recs := testwlog.GenerateRecords(recCase{Series: 1, SamplesPerSeries: 10})
 
 			c := NewTestBlockedWriteClient()
 
@@ -636,7 +636,7 @@ func TestReshardPartialBatch(t *testing.T) {
 func TestQueueFilledDeadlock(t *testing.T) {
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
-			recs := testwal.GenerateRecords(recCase{Series: 50, SamplesPerSeries: 1})
+			recs := testwlog.GenerateRecords(recCase{Series: 50, SamplesPerSeries: 1})
 
 			c := NewNopWriteClient()
 
@@ -748,7 +748,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 	defer onStoreCalled()
 
 	var (
-		recs = testwal.GenerateRecords(recCase{Series: 100, SamplesPerSeries: 100})
+		recs = testwlog.GenerateRecords(recCase{Series: 100, SamplesPerSeries: 100})
 
 		cfg        = config.DefaultQueueConfig
 		mcfg       = config.DefaultMetadataConfig
@@ -1270,7 +1270,7 @@ func BenchmarkSampleSend(b *testing.B) {
 	const numSamples = 1
 	const numSeries = 10000
 
-	recs := testwal.GenerateRecords(recCase{Series: numSeries, SamplesPerSeries: numSamples, ExtraLabels: extraLabels})
+	recs := testwlog.GenerateRecords(recCase{Series: numSeries, SamplesPerSeries: numSamples, ExtraLabels: extraLabels})
 
 	c := NewNopWriteClient()
 
@@ -1335,7 +1335,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 
 	// numSeries chosen to be big enough that StoreSeries dominates creating a new queue manager.
 	const numSeries = 1000
-	recs := testwal.GenerateRecords(recCase{Series: numSeries, SamplesPerSeries: 0, ExtraLabels: extraLabels})
+	recs := testwlog.GenerateRecords(recCase{Series: numSeries, SamplesPerSeries: 0, ExtraLabels: extraLabels})
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
@@ -1860,7 +1860,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 			size := 10
 			nSeries := 6
 			nSamples := config.DefaultQueueConfig.Capacity * size
-			pastRecs := testwal.GenerateRecords(recCase{
+			pastRecs := testwlog.GenerateRecords(recCase{
 				Series:           nSeries,
 				SamplesPerSeries: (nSamples / nSeries) / 2, // Half data is past.
 				TsFn: func(_, j int) int64 {
@@ -1868,7 +1868,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 					return past + int64(j)
 				},
 			})
-			newRecs := testwal.GenerateRecords(recCase{
+			newRecs := testwlog.GenerateRecords(recCase{
 				Series:           nSeries,
 				SamplesPerSeries: (nSamples / nSeries) / 2, // Half data is past.
 				TsFn: func(_, j int) int64 {
@@ -1942,7 +1942,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 				// Use a fixed rand source so tests are consistent.
 				r := rand.New(rand.NewSource(99))
 
-				recs := testwal.GenerateRecords(recCase{
+				recs := testwlog.GenerateRecords(recCase{
 					Series:           numberOfSeries,
 					SamplesPerSeries: 1,
 					TsFn: func(_, _ int) int64 {
@@ -2490,7 +2490,7 @@ func TestHighestTimestampOnAppend(t *testing.T) {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			nSamples := 11 * config.DefaultQueueConfig.Capacity
 			nSeries := 3
-			recs := testwal.GenerateRecords(recCase{Series: nSeries, SamplesPerSeries: nSamples / nSeries})
+			recs := testwlog.GenerateRecords(recCase{Series: nSeries, SamplesPerSeries: nSamples / nSeries})
 
 			_, m := newTestClientAndQueueManager(t, defaultFlushDeadline, protoMsg)
 			m.Start()
