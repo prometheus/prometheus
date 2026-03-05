@@ -11,19 +11,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !goexperiment.synctest && !go1.25
+//go:build windows
 
-package synctest
+package runtime
 
 import (
+	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-func Test(t *testing.T, _ func(t *testing.T)) {
-	t.Skip("goexperiment.synctest is not enabled")
+func TestFsType(t *testing.T) {
+	var fsType string
+
+	path, err := os.Getwd()
+	require.NoError(t, err)
+
+	fsType = FsType(path)
+	require.Equal(t, "unknown", fsType)
+
+	fsType = FsType("A:\\no\\where\\to\\be\\found")
+	require.Equal(t, "unknown", fsType)
 }
 
-func Wait() {
-	// It isn't meant to be called outside of Test().
-	panic("goexperiment.synctest is not enabled")
+func TestFsSize(t *testing.T) {
+	var size uint64
+
+	size = FsSize("C:\\")
+	require.Positive(t, size)
+
+	size = FsSize("c:\\no\\where\\to\\be\\found")
+	require.Equal(t, uint64(0), size)
+
+	size = FsSize("  %% not event a real path\n\n")
+	require.Equal(t, uint64(0), size)
 }

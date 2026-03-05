@@ -2110,3 +2110,337 @@ func (h *FloatHistogram) HasOverflow() bool {
 	}
 	return false
 }
+
+// TrimBuckets trims native histogram buckets.
+func (h *FloatHistogram) TrimBuckets(rhs float64, isUpperTrim bool) *FloatHistogram {
+	var (
+		trimmedHist = h.Copy()
+
+		updatedCount, updatedSum float64
+		trimmedBuckets           bool
+		isCustomBucket           = trimmedHist.UsesCustomBuckets()
+		hasPositive, hasNegative bool
+	)
+
+	if isUpperTrim {
+		// Calculate the fraction to keep for buckets that contain the trim value.
+		// For TRIM_UPPER, we keep observations below the trim point (rhs).
+		// Example: histogram </ float.
+		for i, iter := 0, trimmedHist.PositiveBucketIterator(); iter.Next(); i++ {
+			bucket := iter.At()
+			if bucket.Count == 0 {
+				continue
+			}
+			hasPositive = true
+
+			switch {
+			case bucket.Upper <= rhs:
+				// Bucket is entirely below the trim point - keep all.
+				updatedCount += bucket.Count
+				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, true, isCustomBucket)
+				updatedSum += bucketMidpoint * bucket.Count
+
+			case bucket.Lower < rhs:
+				// Bucket contains the trim point - interpolate.
+				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, true, isCustomBucket)
+
+				updatedCount += keepCount
+				updatedSum += bucketMidpoint * keepCount
+				if trimmedHist.PositiveBuckets[i] != keepCount {
+					trimmedHist.PositiveBuckets[i] = keepCount
+					trimmedBuckets = true
+				}
+
+			default:
+				// Bucket is entirely above the trim point - discard.
+				trimmedHist.PositiveBuckets[i] = 0
+				trimmedBuckets = true
+			}
+		}
+
+		for i, iter := 0, trimmedHist.NegativeBucketIterator(); iter.Next(); i++ {
+			bucket := iter.At()
+			if bucket.Count == 0 {
+				continue
+			}
+			hasNegative = true
+
+			switch {
+			case bucket.Upper <= rhs:
+				// Bucket is entirely below the trim point - keep all.
+				updatedCount += bucket.Count
+				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, false, isCustomBucket)
+				updatedSum += bucketMidpoint * bucket.Count
+
+			case bucket.Lower < rhs:
+				// Bucket contains the trim point - interpolate.
+				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, false, isCustomBucket)
+
+				updatedCount += keepCount
+				updatedSum += bucketMidpoint * keepCount
+				if trimmedHist.NegativeBuckets[i] != keepCount {
+					trimmedHist.NegativeBuckets[i] = keepCount
+					trimmedBuckets = true
+				}
+
+			default:
+				trimmedHist.NegativeBuckets[i] = 0
+				trimmedBuckets = true
+			}
+		}
+	} else { // !isUpperTrim
+		// For TRIM_LOWER, we keep observations above the trim point (rhs).
+		// Example: histogram >/ float.
+		for i, iter := 0, trimmedHist.PositiveBucketIterator(); iter.Next(); i++ {
+			bucket := iter.At()
+			if bucket.Count == 0 {
+				continue
+			}
+			hasPositive = true
+
+			switch {
+			case bucket.Lower >= rhs:
+				// Bucket is entirely below the trim point - keep all.
+				updatedCount += bucket.Count
+				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, true, isCustomBucket)
+				updatedSum += bucketMidpoint * bucket.Count
+
+			case bucket.Upper > rhs:
+				// Bucket contains the trim point - interpolate.
+				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, true, isCustomBucket)
+
+				updatedCount += keepCount
+				updatedSum += bucketMidpoint * keepCount
+				if trimmedHist.PositiveBuckets[i] != keepCount {
+					trimmedHist.PositiveBuckets[i] = keepCount
+					trimmedBuckets = true
+				}
+
+			default:
+				trimmedHist.PositiveBuckets[i] = 0
+				trimmedBuckets = true
+			}
+		}
+
+		for i, iter := 0, trimmedHist.NegativeBucketIterator(); iter.Next(); i++ {
+			bucket := iter.At()
+			if bucket.Count == 0 {
+				continue
+			}
+			hasNegative = true
+
+			switch {
+			case bucket.Lower >= rhs:
+				// Bucket is entirely below the trim point - keep all.
+				updatedCount += bucket.Count
+				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, false, isCustomBucket)
+				updatedSum += bucketMidpoint * bucket.Count
+
+			case bucket.Upper > rhs:
+				// Bucket contains the trim point - interpolate.
+				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, false, isCustomBucket)
+
+				updatedCount += keepCount
+				updatedSum += bucketMidpoint * keepCount
+				if trimmedHist.NegativeBuckets[i] != keepCount {
+					trimmedHist.NegativeBuckets[i] = keepCount
+					trimmedBuckets = true
+				}
+
+			default:
+				trimmedHist.NegativeBuckets[i] = 0
+				trimmedBuckets = true
+			}
+		}
+	}
+
+	// Handle the zero count bucket.
+	if trimmedHist.ZeroCount > 0 {
+		keepCount, bucketMidpoint := computeZeroBucketTrim(trimmedHist.ZeroBucket(), rhs, hasNegative, hasPositive, isUpperTrim)
+
+		if trimmedHist.ZeroCount != keepCount {
+			trimmedHist.ZeroCount = keepCount
+			trimmedBuckets = true
+		}
+		updatedSum += bucketMidpoint * keepCount
+		updatedCount += keepCount
+	}
+
+	if trimmedBuckets {
+		// Only update the totals in case some bucket(s) were fully (or partially) trimmed.
+		trimmedHist.Count = updatedCount
+		trimmedHist.Sum = updatedSum
+
+		trimmedHist.Compact(0)
+	}
+
+	return trimmedHist
+}
+
+func handleInfinityBuckets(isUpperTrim bool, b Bucket[float64], rhs float64) (underCount, bucketMidpoint float64) {
+	zeroIfInf := func(x float64) float64 {
+		if math.IsInf(x, 0) {
+			return 0
+		}
+		return x
+	}
+
+	// Case 1: Bucket with lower bound -Inf.
+	if math.IsInf(b.Lower, -1) {
+		// TRIM_UPPER (</) - remove values greater than rhs
+		if isUpperTrim {
+			if rhs >= b.Upper {
+				// As the rhs is greater than the upper bound, we keep the entire current bucket.
+				return b.Count, 0
+			}
+			if rhs > 0 && b.Upper > 0 && !math.IsInf(b.Upper, 1) {
+				// If upper is finite and positive, we treat lower as 0 (despite it de facto being -Inf).
+				// This is only possible with NHCB, so we can always use linear interpolation.
+				return b.Count * rhs / b.Upper, rhs / 2
+			}
+			if b.Upper <= 0 {
+				return b.Count, rhs
+			}
+			// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+			return 0, zeroIfInf(b.Upper)
+		}
+		// TRIM_LOWER (>/) - remove values less than rhs
+		if rhs <= b.Lower {
+			// Impossible to happen because the lower bound is -Inf. Returning the entire current bucket.
+			return b.Count, 0
+		}
+		if rhs >= 0 && b.Upper > rhs && !math.IsInf(b.Upper, 1) {
+			// If upper is finite and positive, we treat lower as 0 (despite it de facto being -Inf).
+			// This is only possible with NHCB, so we can always use linear interpolation.
+			return b.Count * (1 - rhs/b.Upper), (rhs + b.Upper) / 2
+		}
+		// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
+		return 0, zeroIfInf(b.Upper)
+	}
+
+	// Case 2: Bucket with upper bound +Inf.
+	if math.IsInf(b.Upper, 1) {
+		if isUpperTrim {
+			// TRIM_UPPER (</) - remove values greater than rhs.
+			// We don't care about lower here, because:
+			//   when rhs >= lower and the bucket extends to +Inf, some values in this bucket could be > rhs, so we conservatively remove the entire bucket;
+			//   when rhs < lower, all values in this bucket are >= lower > rhs, so all values should be removed.
+			return 0, zeroIfInf(b.Lower)
+		}
+		// TRIM_LOWER (>/) - remove values less than rhs.
+		if rhs >= b.Lower {
+			return b.Count, rhs
+		}
+		// lower < rhs: we are inside the infinity bucket, but as we don't know the exact distribution of values, we conservatively remove the entire bucket.
+		return 0, zeroIfInf(b.Lower)
+	}
+
+	panic(fmt.Errorf("one of the bounds must be infinite for handleInfinityBuckets, got %v", b))
+}
+
+// computeSplit calculates the portion of the bucket's count <= rhs (trim point).
+func computeSplit(b Bucket[float64], rhs float64, isPositive, isLinear bool) float64 {
+	if rhs <= b.Lower {
+		return 0
+	}
+	if rhs >= b.Upper {
+		return b.Count
+	}
+
+	var fraction float64
+	switch {
+	case isLinear:
+		fraction = (rhs - b.Lower) / (b.Upper - b.Lower)
+	default:
+		// Exponential interpolation.
+		logLower := math.Log2(math.Abs(b.Lower))
+		logUpper := math.Log2(math.Abs(b.Upper))
+		logV := math.Log2(math.Abs(rhs))
+
+		if isPositive {
+			fraction = (logV - logLower) / (logUpper - logLower)
+		} else {
+			fraction = 1 - ((logV - logUpper) / (logLower - logUpper))
+		}
+	}
+
+	return b.Count * fraction
+}
+
+func computeZeroBucketTrim(zeroBucket Bucket[float64], rhs float64, hasNegative, hasPositive, isUpperTrim bool) (float64, float64) {
+	var (
+		lower = zeroBucket.Lower
+		upper = zeroBucket.Upper
+	)
+	if hasNegative && !hasPositive {
+		upper = 0
+	}
+	if hasPositive && !hasNegative {
+		lower = 0
+	}
+
+	var fraction, midpoint float64
+
+	if isUpperTrim {
+		if rhs <= lower {
+			return 0, 0
+		}
+		if rhs >= upper {
+			return zeroBucket.Count, (lower + upper) / 2
+		}
+
+		fraction = (rhs - lower) / (upper - lower)
+		midpoint = (lower + rhs) / 2
+	} else { // lower trim
+		if rhs <= lower {
+			return zeroBucket.Count, (lower + upper) / 2
+		}
+		if rhs >= upper {
+			return 0, 0
+		}
+
+		fraction = (upper - rhs) / (upper - lower)
+		midpoint = (rhs + upper) / 2
+	}
+
+	return zeroBucket.Count * fraction, midpoint
+}
+
+func computeBucketTrim(b Bucket[float64], rhs float64, isUpperTrim, isPositive, isCustomBucket bool) (float64, float64) {
+	if math.IsInf(b.Lower, -1) || math.IsInf(b.Upper, 1) {
+		return handleInfinityBuckets(isUpperTrim, b, rhs)
+	}
+
+	underCount := computeSplit(b, rhs, isPositive, isCustomBucket)
+
+	if isUpperTrim {
+		return underCount, computeMidpoint(b.Lower, rhs, isPositive, isCustomBucket)
+	}
+
+	return b.Count - underCount, computeMidpoint(rhs, b.Upper, isPositive, isCustomBucket)
+}
+
+func computeMidpoint(survivingIntervalLowerBound, survivingIntervalUpperBound float64, isPositive, isLinear bool) float64 {
+	if math.IsInf(survivingIntervalLowerBound, 0) {
+		if math.IsInf(survivingIntervalUpperBound, 0) {
+			return 0
+		}
+		if survivingIntervalUpperBound > 0 {
+			return survivingIntervalUpperBound / 2
+		}
+		return survivingIntervalUpperBound
+	} else if math.IsInf(survivingIntervalUpperBound, 0) {
+		return survivingIntervalLowerBound
+	}
+
+	if isLinear {
+		return (survivingIntervalLowerBound + survivingIntervalUpperBound) / 2
+	}
+
+	geoMean := math.Sqrt(math.Abs(survivingIntervalLowerBound * survivingIntervalUpperBound))
+
+	if isPositive {
+		return geoMean
+	}
+	return -geoMean
+}

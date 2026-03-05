@@ -166,9 +166,9 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 		if m.Name == model.MetricNameLabel {
 			switch m.Type {
 			case prompb.LabelMatcher_EQ:
-				measurement.WriteString(fmt.Sprintf(" == \"%s\"", m.Value))
+				fmt.Fprintf(&measurement, " == \"%s\"", m.Value)
 			case prompb.LabelMatcher_RE:
-				measurement.WriteString(fmt.Sprintf(" =~ /%s/", escapeSlashes(m.Value)))
+				fmt.Fprintf(&measurement, " =~ /%s/", escapeSlashes(m.Value))
 			default:
 				// TODO: Figure out how to support these efficiently.
 				return "", errors.New("non-equal or regex-non-equal matchers are not supported on the metric name yet")

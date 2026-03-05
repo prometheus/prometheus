@@ -8316,23 +8316,28 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	// Use lower SamplesPerChunk and OutOfOrderCapMax so we need fewer samples
+	// to fill chunks, reducing the overall test time significantly
+	// (important for slow CI like i386 which can be 60x+ slower).
+	opts.SamplesPerChunk = 15
+	opts.OutOfOrderCapMax = 5
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()
 
 	var (
-		ctx        = t.Context()
-		series1    = labels.FromStrings("foo", "bar1")
-		allSamples []chunks.Sample
+		ctx     = t.Context()
+		series1 = labels.FromStrings("foo", "bar1")
 	)
 
+	// Use step of 5 minutes to reduce sample count while preserving time ranges
+	// needed for compaction triggers. This reduces total samples from ~411 to ~83.
 	addSamples := func(fromMins, toMins int64) {
 		app := appenderFn(db, ctx)
-		for m := fromMins; m <= toMins; m++ {
+		for m := fromMins; m <= toMins; m += 5 {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(app, series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			allSamples = append(allSamples, s)
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -9602,4 +9607,40 @@ func TestStaleSeriesCompactionWithZeroSeries(t *testing.T) {
 
 	// Should still have no blocks since there was nothing to compact.
 	require.Empty(t, db.Blocks())
+}
+
+func TestBeyondSizeRetentionWithPercentage(t *testing.T) {
+	const maxBlock = 100
+	const numBytesChunks = 1024
+	const diskSize = maxBlock * numBytesChunks
+
+	opts := DefaultOptions()
+	opts.MaxPercentage = 10
+	opts.FsSizeFunc = func(_ string) uint64 {
+		return uint64(diskSize)
+	}
+
+	db := newTestDB(t, withOpts(opts))
+	require.Zero(t, db.Head().Size())
+
+	blocks := make([]*Block, 0, opts.MaxPercentage+1)
+	for range opts.MaxPercentage {
+		blocks = append(blocks, &Block{
+			numBytesChunks: numBytesChunks,
+			meta:           BlockMeta{ULID: ulid.Make()},
+		})
+	}
+
+	deletable := BeyondSizeRetention(db, blocks)
+	require.Empty(t, deletable)
+
+	ulid := ulid.Make()
+	blocks = append(blocks, &Block{
+		numBytesChunks: numBytesChunks,
+		meta:           BlockMeta{ULID: ulid},
+	})
+
+	deletable = BeyondSizeRetention(db, blocks)
+	require.Len(t, deletable, 1)
+	require.Contains(t, deletable, ulid)
 }
