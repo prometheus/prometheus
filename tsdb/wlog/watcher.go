@@ -510,22 +510,16 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	series := w.recordBuf.GetRefSeries(512)
 	samples := w.recordBuf.GetSamples(512)
-	samplesToSend := w.recordBuf.GetSamples(512)
 	exemplars := w.recordBuf.GetExemplars(512)
 	histograms := w.recordBuf.GetHistograms(512)
-	histogramsToSend := w.recordBuf.GetHistograms(512)
 	floatHistograms := w.recordBuf.GetFloatHistograms(512)
-	floatHistogramsToSend := w.recordBuf.GetFloatHistograms(512)
 	metadata := w.recordBuf.GetMetadata(512)
 	defer func() {
 		w.recordBuf.PutRefSeries(series)
 		w.recordBuf.PutSamples(samples)
-		w.recordBuf.PutSamples(samplesToSend)
 		w.recordBuf.PutExemplars(exemplars)
 		w.recordBuf.PutHistograms(histograms)
-		w.recordBuf.PutHistograms(histogramsToSend)
 		w.recordBuf.PutFloatHistograms(floatHistograms)
-		w.recordBuf.PutFloatHistograms(floatHistogramsToSend)
 		w.recordBuf.PutMetadata(metadata)
 	}()
 
@@ -555,6 +549,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
+			// Reuse the underlying array for efficiency.
+			// It's valid to do, because we override elements that we no longer need to read when filtering.
+			samplesToSend := samples[:0]
 			for _, s := range samples {
 				if s.T > w.startTimestamp {
 					if !w.sendSamples {
@@ -567,7 +564,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			if len(samplesToSend) > 0 {
 				w.writer.Append(samplesToSend)
-				samplesToSend = samplesToSend[:0]
 			}
 
 		case record.Exemplars:
@@ -600,6 +596,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
+			// Reuse the underlying array for efficiency.
+			// It's valid to do, because we override elements that we no longer need to read when filtering.
+			histogramsToSend := histograms[:0]
 			for _, h := range histograms {
 				if h.T > w.startTimestamp {
 					if !w.sendSamples {
@@ -612,7 +611,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			if len(histogramsToSend) > 0 {
 				w.writer.AppendHistograms(histogramsToSend)
-				histogramsToSend = histogramsToSend[:0]
 			}
 
 		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
@@ -628,6 +626,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
+			// Reuse the underlying array for efficiency.
+			// It's valid to do, because we override elements that we no longer need to read when filtering.
+			floatHistogramsToSend := floatHistograms[:0]
 			for _, fh := range floatHistograms {
 				if fh.T > w.startTimestamp {
 					if !w.sendSamples {
@@ -640,7 +641,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			if len(floatHistogramsToSend) > 0 {
 				w.writer.AppendFloatHistograms(floatHistogramsToSend)
-				floatHistogramsToSend = floatHistogramsToSend[:0]
 			}
 
 		case record.Metadata:
