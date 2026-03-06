@@ -30,7 +30,7 @@ const (
 	EncXOR
 	EncHistogram
 	EncFloatHistogram
-	EncXOROptST
+	EncXOR2
 )
 
 func (e Encoding) String() string {
@@ -43,15 +43,15 @@ func (e Encoding) String() string {
 		return "histogram"
 	case EncFloatHistogram:
 		return "floathistogram"
-	case EncXOROptST:
-		return "XOR-start-timestamp"
+	case EncXOR2:
+		return "XOR2"
 	}
 	return "<unknown>"
 }
 
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
-	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOROptST
+	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOR2
 }
 
 const (
@@ -195,7 +195,7 @@ func (v ValueType) ChunkEncoding(storeST bool) Encoding {
 	switch v {
 	case ValFloat:
 		if storeST {
-			return EncXOROptST
+			return EncXOR2
 		}
 		return EncXOR
 	case ValHistogram:
@@ -321,7 +321,7 @@ func NewPool() Pool {
 		},
 		xoroptst: sync.Pool{
 			New: func() any {
-				return &XorOptSTChunk{b: bstream{}}
+				return &XOR2Chunk{b: bstream{}}
 			},
 		},
 	}
@@ -336,8 +336,8 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c = p.histogram.Get().(*HistogramChunk)
 	case EncFloatHistogram:
 		c = p.floatHistogram.Get().(*FloatHistogramChunk)
-	case EncXOROptST:
-		c = p.xoroptst.Get().(*XorOptSTChunk)
+	case EncXOR2:
+		c = p.xoroptst.Get().(*XOR2Chunk)
 	default:
 		return nil, fmt.Errorf("invalid chunk encoding %q", e)
 	}
@@ -359,8 +359,8 @@ func (p *pool) Put(c Chunk) error {
 	case EncFloatHistogram:
 		_, ok = c.(*FloatHistogramChunk)
 		sp = &p.floatHistogram
-	case EncXOROptST:
-		_, ok = c.(*XorOptSTChunk)
+	case EncXOR2:
+		_, ok = c.(*XOR2Chunk)
 		sp = &p.xoroptst
 	default:
 		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
@@ -388,8 +388,8 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 		return &HistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	case EncFloatHistogram:
 		return &FloatHistogramChunk{b: bstream{count: 0, stream: d}}, nil
-	case EncXOROptST:
-		return &XorOptSTChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXOR2:
+		return &XOR2Chunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
@@ -403,8 +403,8 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 		return NewHistogramChunk(), nil
 	case EncFloatHistogram:
 		return NewFloatHistogramChunk(), nil
-	case EncXOROptST:
-		return NewXOROptSTChunk(), nil
+	case EncXOR2:
+		return NewXOR2Chunk(), nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
