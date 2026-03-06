@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -72,13 +73,16 @@ type WriteNotified interface {
 	Notify()
 }
 
+// TODO(bwplotka): Refactor all those WatcherMetrics for readability.
+// It could be done in an easier way (e.g custom Collector,registry.WrapWithLabels etc).
 type WatcherMetrics struct {
-	reg                   prometheus.Registerer
-	recordsRead           *prometheus.CounterVec
-	recordDecodeFails     *prometheus.CounterVec
-	samplesSentPreTailing *prometheus.CounterVec
-	currentSegment        *prometheus.GaugeVec
-	notificationsSkipped  *prometheus.CounterVec
+	reg                  prometheus.Registerer
+	reads                *prometheus.CounterVec
+	recordsRead          *prometheus.CounterVec
+	recordDecodeFails    *prometheus.CounterVec
+	currentSegment       *prometheus.GaugeVec
+	notifications        *prometheus.CounterVec
+	notificationsSkipped *prometheus.CounterVec
 }
 
 // Watcher watches the TSDB WAL for a given WriteTo.
@@ -98,11 +102,12 @@ type Watcher struct {
 	startTimestamp int64 // the start time as a Prometheus timestamp
 	sendSamples    bool
 
-	recordsReadMetric       *prometheus.CounterVec
-	recordDecodeFailsMetric prometheus.Counter
-	samplesSentPreTailing   prometheus.Counter
-	currentSegmentMetric    prometheus.Gauge
-	notificationsSkipped    prometheus.Counter
+	reads                prometheus.Counter
+	recordsRead          *prometheus.CounterVec
+	recordDecodeFails    prometheus.Counter
+	currentSegment       prometheus.Gauge
+	notifications        prometheus.Counter
+	notificationsSkipped prometheus.Counter
 
 	readNotify chan struct{}
 	quit       chan struct{}
@@ -115,7 +120,16 @@ type Watcher struct {
 func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 	m := &WatcherMetrics{
 		reg: reg,
-		recordsRead: prometheus.NewCounterVec(
+		reads: promauto.With(reg).NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "prometheus",
+				Subsystem: "wal_watcher",
+				Name:      "reads_total",
+				Help:      "Number of WAL reads attempted; triggered by notifications, timeouts or segment changes.",
+			},
+			[]string{consumer},
+		),
+		recordsRead: promauto.With(reg).NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "prometheus",
 				Subsystem: "wal_watcher",
@@ -124,7 +138,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 			},
 			[]string{consumer, "type"},
 		),
-		recordDecodeFails: prometheus.NewCounterVec(
+		recordDecodeFails: promauto.With(reg).NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "prometheus",
 				Subsystem: "wal_watcher",
@@ -133,16 +147,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 			},
 			[]string{consumer},
 		),
-		samplesSentPreTailing: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: "prometheus",
-				Subsystem: "wal_watcher",
-				Name:      "samples_sent_pre_tailing_total",
-				Help:      "Number of sample records read by the WAL watcher and sent to remote write during replay of existing WAL.",
-			},
-			[]string{consumer},
-		),
-		currentSegment: prometheus.NewGaugeVec(
+		currentSegment: promauto.With(reg).NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: "prometheus",
 				Subsystem: "wal_watcher",
@@ -151,7 +156,16 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 			},
 			[]string{consumer},
 		),
-		notificationsSkipped: prometheus.NewCounterVec(
+		notifications: promauto.With(reg).NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "prometheus",
+				Subsystem: "wal_watcher",
+				Name:      "notifications_total",
+				Help:      "The number of WAL write notifications that the Watcher received in total; skipped or not.",
+			},
+			[]string{consumer},
+		),
+		notificationsSkipped: promauto.With(reg).NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "prometheus",
 				Subsystem: "wal_watcher",
@@ -161,15 +175,6 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 			[]string{consumer},
 		),
 	}
-
-	if reg != nil {
-		reg.MustRegister(m.recordsRead)
-		reg.MustRegister(m.recordDecodeFails)
-		reg.MustRegister(m.samplesSentPreTailing)
-		reg.MustRegister(m.currentSegment)
-		reg.MustRegister(m.notificationsSkipped)
-	}
-
 	return m
 }
 
@@ -179,10 +184,11 @@ func (m *WatcherMetrics) Unregister() {
 		return
 	}
 
+	m.reg.Unregister(m.reads)
 	m.reg.Unregister(m.recordsRead)
 	m.reg.Unregister(m.recordDecodeFails)
-	m.reg.Unregister(m.samplesSentPreTailing)
 	m.reg.Unregister(m.currentSegment)
+	m.reg.Unregister(m.notifications)
 	m.reg.Unregister(m.notificationsSkipped)
 }
 
@@ -211,12 +217,12 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 }
 
 func (w *Watcher) Notify() {
+	w.notifications.Inc()
 	select {
 	case w.readNotify <- struct{}{}:
-		return
-	default: // default so we can exit
-		// we don't need a buffered channel or any buffering since
-		// for each notification it recv's the watcher will read until EOF
+	default:
+		// We don't need a buffered channel or any buffering since
+		// for each notification it recv's the watcher will read until EOF.
 		w.notificationsSkipped.Inc()
 	}
 }
@@ -226,10 +232,11 @@ func (w *Watcher) SetMetrics() {
 	// constructor because of the ordering of creating Queue Managers's,
 	// stopping them, and then starting new ones in storage/remote/storage.go ApplyConfig.
 	if w.metrics != nil {
-		w.recordsReadMetric = w.metrics.recordsRead.MustCurryWith(prometheus.Labels{consumer: w.name})
-		w.recordDecodeFailsMetric = w.metrics.recordDecodeFails.WithLabelValues(w.name)
-		w.samplesSentPreTailing = w.metrics.samplesSentPreTailing.WithLabelValues(w.name)
-		w.currentSegmentMetric = w.metrics.currentSegment.WithLabelValues(w.name)
+		w.reads = w.metrics.reads.WithLabelValues(w.name)
+		w.recordsRead = w.metrics.recordsRead.MustCurryWith(prometheus.Labels{consumer: w.name})
+		w.recordDecodeFails = w.metrics.recordDecodeFails.WithLabelValues(w.name)
+		w.currentSegment = w.metrics.currentSegment.WithLabelValues(w.name)
+		w.notifications = w.metrics.notifications.WithLabelValues(w.name)
 		w.notificationsSkipped = w.metrics.notificationsSkipped.WithLabelValues(w.name)
 	}
 }
@@ -249,11 +256,14 @@ func (w *Watcher) Stop() {
 
 	// Records read metric has series and samples.
 	if w.metrics != nil {
+		w.metrics.reads.DeleteLabelValues(w.name)
 		w.metrics.recordsRead.DeleteLabelValues(w.name, "series")
 		w.metrics.recordsRead.DeleteLabelValues(w.name, "samples")
 		w.metrics.recordDecodeFails.DeleteLabelValues(w.name)
-		w.metrics.samplesSentPreTailing.DeleteLabelValues(w.name)
 		w.metrics.currentSegment.DeleteLabelValues(w.name)
+		w.metrics.notifications.DeleteLabelValues(w.name)
+		w.metrics.notificationsSkipped.DeleteLabelValues(w.name)
+
 	}
 
 	w.logger.Info("WAL watcher stopped", "queue", w.name)
@@ -311,7 +321,7 @@ func (w *Watcher) Run() error {
 
 	w.logger.Debug("Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
-		w.currentSegmentMetric.Set(float64(currentSegment))
+		w.currentSegment.Set(float64(currentSegment))
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
@@ -493,7 +503,14 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 // Read from a segment and pass the details to w.writer.
 // Also used with readCheckpoint - implements segmentReadFn.
 // TODO(bwplotka): Rename tail to !onlySeries; extremely confusing and easy to miss.
-func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
+func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) (err error) {
+	w.reads.Inc()
+	defer func() {
+		if err != nil {
+			w.recordDecodeFails.Inc()
+		}
+	}()
+
 	var (
 		dec                   = record.NewDecoder(labels.NewSymbolTable(), w.logger) // One table per WAL segment means it won't grow indefinitely.
 		series                []record.RefSeries
@@ -509,13 +526,12 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	for r.Next() && !isClosed(w.quit) {
 		var err error
 		rec := r.Record()
-		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
+		w.recordsRead.WithLabelValues(dec.Type(rec).String()).Inc()
 
 		switch dec.Type(rec) {
 		case record.Series:
 			series, err = dec.Series(rec, series[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
 			w.writer.StoreSeries(series, segmentNum)
@@ -528,7 +544,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			samples, err = dec.Samples(rec, samples[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
 			for _, s := range samples {
@@ -558,7 +573,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			exemplars, err = dec.Exemplars(rec, exemplars[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
 			w.writer.AppendExemplars(exemplars)
@@ -573,7 +587,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			histograms, err = dec.HistogramSamples(rec, histograms[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
 			for _, h := range histograms {
@@ -601,7 +614,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
 			for _, fh := range floatHistograms {
@@ -625,14 +637,13 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			metadata, err = dec.Metadata(rec, metadata[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
 			w.writer.StoreMetadata(metadata)
 
 		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
-			w.recordDecodeFailsMetric.Inc()
+			w.recordDecodeFails.Inc()
 
 		default:
 			// We're not interested in other types of records.
@@ -647,26 +658,28 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 // Go through all series in a segment updating the segmentNum, so we can delete older series.
 // Used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
+	w.reads.Inc()
+
 	var (
 		dec    = record.NewDecoder(labels.NewSymbolTable(), w.logger) // Needed for decoding; labels do not outlive this function.
 		series []record.RefSeries
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
-		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
+		w.recordsRead.WithLabelValues(dec.Type(rec).String()).Inc()
 
 		switch dec.Type(rec) {
 		case record.Series:
 			series, err := dec.Series(rec, series[:0])
 			if err != nil {
-				w.recordDecodeFailsMetric.Inc()
+				w.recordDecodeFails.Inc()
 				return err
 			}
 			w.writer.UpdateSeriesSegment(series, segmentNum)
 
 		case record.Unknown:
 			// Could be corruption, or reading from a WAL from a newer Prometheus.
-			w.recordDecodeFailsMetric.Inc()
+			w.recordDecodeFails.Inc()
 
 		default:
 			// We're only interested in series.
