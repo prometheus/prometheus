@@ -17,6 +17,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/util/zeropool"
+
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
 
@@ -43,6 +45,8 @@ type fakeRW2Receiver struct {
 	receivedExpectedSamples int
 	receivedRequests        int
 	done                    chan struct{}
+
+	reqPool zeropool.Pool[writev2.Request]
 }
 
 func newFakeRW2Receiver() *fakeRW2Receiver {
@@ -63,8 +67,14 @@ func (r *fakeRW2Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	rwReq := r.reqPool.Get()
+	defer func() {
+		newRWReq := writev2.Request{}
+		newRWReq.Symbols = rwReq.Symbols[:0]
+		newRWReq.Timeseries = rwReq.Timeseries[:0]
+		r.reqPool.Put(newRWReq)
+	}()
 
-	var rwReq writev2.Request
 	if err := rwReq.Unmarshal(decoded); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -117,8 +127,8 @@ func (r *fakeRW2Receiver) wait(b *testing.B, timeout time.Duration) {
 	select {
 	case <-b.Context().Done():
 	case <-done:
-		b.ReportMetric(float64(r.receivedRequests), "recv-requests")
-		b.ReportMetric(float64(r.receivedExpectedSamples), "recv-samples")
+		b.ReportMetric(float64(r.receivedRequests), "recv_requests/op")
+		b.ReportMetric(float64(r.receivedExpectedSamples), "recv_samples/op")
 	case <-time.After(timeout):
 		r.mu.Lock()
 		close(done)
@@ -140,7 +150,12 @@ func (r *fakeRW2Receiver) wait(b *testing.B, timeout time.Duration) {
 /*
 	export bench=e2erw && go test ./cmd/prometheus/... \
 		-run '^$' -bench '^BenchmarkE2EScrapeAndRemoteWriteNoChurn' \
-		-benchtime 50x -count 7 -cpu 2 -timeout 999m -benchmem \
+		-benchtime 20x -count 6 -cpu 4 -timeout 999m -benchmem \
+		| tee ${bench}.txt
+
+export bench=e2erwp && go test ./cmd/prometheus/... \
+		-run '^$' -bench '^BenchmarkE2EScrapeAndRemoteWriteNoChurn$' \
+		-benchtime 30x -count 1 -cpu 2 -timeout 999m -memprofile=${bench}.mem.pprof \
 		| tee ${bench}.txt
 */
 func BenchmarkE2EScrapeAndRemoteWriteNoChurn(b *testing.B) {
@@ -254,9 +269,9 @@ scrape_configs:
 	// Wait until RW2 endpoint receives all metrics.
 	rw.wait(b, 2*time.Minute)
 
-	toReport := map[string]map[string]float64{
-		"prometheus_wal_watcher_reads_total":         {},
-		"prometheus_wal_watcher_notifications_total": {},
+	toReport := map[string]float64{
+		"prometheus_wal_watcher_reads_total":         0,
+		"prometheus_wal_watcher_notifications_total": 0,
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -273,62 +288,25 @@ scrape_configs:
 	}
 }
 
-reads: promauto.With(reg).NewCounter(
-prometheus.CounterOpts{
-Namespace: "prometheus",
-Subsystem: "wal_watcher",
-Name:      "reads_total",
-Help:      "Number of WAL reads attempted; triggered by notifications, timeouts or segment changes.",
-},
-),
-
-notifications: promauto.With(reg).NewCounter(
-prometheus.CounterOpts{
-Namespace: "prometheus",
-Subsystem: "wal_watcher",
-Name:      "notifications_total",
-Help:      "The number of WAL write notifications that the Watcher received in total; skipped or not.",
-},
-),
-
-
-func (w *Watcher) Notify() {
-	w.notifications.Inc()
-	select {
-	case w.readNotify <- struct{}{}:
-	default:
-		// We don't need a buffered channel or any buffering since
-		// for each notification it recv's the watcher will read until EOF.
-		w.notificationsSkipped.Inc()
-	}
-}
-
-func reportMetrics(b *testing.B, g prometheus.Gatherer, counters map[string]map[string]float64) {
+func reportMetrics(b *testing.B, g prometheus.Gatherer, counters map[string]float64) {
 	got, err := g.Gather()
 	require.NoError(b, err)
 
-	ref := strings.Builder{}
 	for _, m := range got {
-		mf, ok := counters[m.GetName()]
+		v, ok := counters[m.GetName()]
 		if !ok {
 			continue
 		}
-
-		for _, metric := range m.Metric {
-			ref.Reset()
-			ref.WriteString(m.GetName())
-			ref.WriteString("{")
-			for _, label := range metric.GetLabel() {
-				ref.WriteString(label.GetName())
-				ref.WriteString(label.GetValue())
-				ref.WriteString(",")
-			}
-			ref.WriteString("}/op")
-			refStr := ref.String()
-			v := mf[refStr]
-			delta := metric.GetCounter().GetValue() - v
-			counters[m.GetName()][refStr] = metric.GetCounter().GetValue()
-			b.ReportMetric(delta, ref.String())
+		reportName := strings.TrimPrefix(m.GetName(), "prometheus_")
+		if len(m.Metric) == 0 {
+			b.ReportMetric(0, reportName)
+			continue
 		}
+		if len(m.Metric) != 1 {
+			b.Fatalf("expected 1 metric, got %d", len(m.Metric))
+		}
+		delta := m.Metric[0].GetCounter().GetValue() - v
+		counters[m.GetName()] = m.Metric[0].GetCounter().GetValue()
+		b.ReportMetric(delta, reportName)
 	}
 }
