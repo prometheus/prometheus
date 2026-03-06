@@ -74,6 +74,13 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{
+					Code: to.Ptr("PowerState/running"),
+				},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachine{
@@ -95,6 +102,7 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
 		Size:              size,
+		PowerState:        "running",
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -134,6 +142,13 @@ func TestVMToLabelSet(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{
+					Code: to.Ptr("PowerState/running"),
+				},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachine{
@@ -155,6 +170,7 @@ func TestVMToLabelSet(t *testing.T) {
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{defaultMockNetworkID},
 		Size:              size,
+		PowerState:        "running",
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -184,7 +200,7 @@ func TestVMToLabelSet(t *testing.T) {
 
 	labelSet, err := d.vmToLabelSet(context.Background(), client, actualVM)
 	require.NoError(t, err)
-	require.Len(t, labelSet, 11)
+	require.Len(t, labelSet, 12)
 }
 
 func TestMapFromVMWithEmptyOSType(t *testing.T) {
@@ -209,6 +225,13 @@ func TestMapFromVMWithEmptyOSType(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{
+					Code: to.Ptr("PowerState/running"),
+				},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachine{
@@ -229,6 +252,7 @@ func TestMapFromVMWithEmptyOSType(t *testing.T) {
 		Tags:              map[string]*string{},
 		NetworkInterfaces: []string{},
 		Size:              size,
+		PowerState:        "running",
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -264,6 +288,13 @@ func TestMapFromVMWithTags(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{
+					Code: to.Ptr("PowerState/running"),
+				},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachine{
@@ -285,6 +316,7 @@ func TestMapFromVMWithTags(t *testing.T) {
 		Tags:              tags,
 		NetworkInterfaces: []string{},
 		Size:              size,
+		PowerState:        "running",
 	}
 
 	actualVM := mapFromVM(testVM)
@@ -318,6 +350,13 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{
+					Code: to.Ptr("PowerState/running"),
+				},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachineScaleSetVM{
@@ -343,6 +382,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 		ScaleSet:          scaleSet,
 		InstanceID:        instanceID,
 		Size:              size,
+		PowerState:        "running",
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
@@ -371,6 +411,13 @@ func TestMapFromVMScaleSetVMWithEmptyOSType(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{
+					Code: to.Ptr("PowerState/running"),
+				},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachineScaleSetVM{
@@ -395,6 +442,7 @@ func TestMapFromVMScaleSetVMWithEmptyOSType(t *testing.T) {
 		ScaleSet:          scaleSet,
 		InstanceID:        instanceID,
 		Size:              size,
+		PowerState:        "running",
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
@@ -431,6 +479,13 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		HardwareProfile: &armcompute.HardwareProfile{
 			VMSize: &vmSize,
 		},
+		InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+			Statuses: []*armcompute.InstanceViewStatus{
+				{
+					Code: to.Ptr("PowerState/running"),
+				},
+			},
+		},
 	}
 
 	testVM := armcompute.VirtualMachineScaleSetVM{
@@ -456,11 +511,108 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 		ScaleSet:          scaleSet,
 		InstanceID:        instanceID,
 		Size:              size,
+		PowerState:        "running",
 	}
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
 
 	require.Equal(t, expectedVM, actualVM)
+}
+
+func TestAzureVMPowerStates(t *testing.T) {
+	testCases := []struct {
+		name          string
+		powerState    string
+		expectedLabel string
+	}{
+		{
+			name:          "running VM",
+			powerState:    "PowerState/running",
+			expectedLabel: "running",
+		},
+		{
+			name:          "stopped VM",
+			powerState:    "PowerState/stopped",
+			expectedLabel: "stopped",
+		},
+		{
+			name:          "deallocated VM",
+			powerState:    "PowerState/deallocated",
+			expectedLabel: "deallocated",
+		},
+		{
+			name:          "starting VM",
+			powerState:    "PowerState/starting",
+			expectedLabel: "starting",
+		},
+		{
+			name:          "stopping VM",
+			powerState:    "PowerState/stopping",
+			expectedLabel: "stopping",
+		},
+		{
+			name:          "deallocating VM",
+			powerState:    "PowerState/deallocating",
+			expectedLabel: "deallocating",
+		},
+		{
+			name:          "no power state",
+			powerState:    "",
+			expectedLabel: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			vmID := "test-vm-id"
+			vmName := "test-vm"
+			vmSize := armcompute.VirtualMachineSizeTypes("size")
+			osType := armcompute.OperatingSystemTypesLinux
+			location := "westus"
+			vmType := "Microsoft.Compute/virtualMachines"
+			computerName := "test-computer"
+			nicID := "test-nic-id"
+
+			properties := &armcompute.VirtualMachineProperties{
+				StorageProfile: &armcompute.StorageProfile{
+					OSDisk: &armcompute.OSDisk{
+						OSType: &osType,
+					},
+				},
+				NetworkProfile: &armcompute.NetworkProfile{
+					NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+						{ID: &nicID},
+					},
+				},
+				OSProfile: &armcompute.OSProfile{
+					ComputerName: &computerName,
+				},
+				HardwareProfile: &armcompute.HardwareProfile{
+					VMSize: &vmSize,
+				},
+			}
+
+			// Only add InstanceView if power state is specified
+			if tc.powerState != "" {
+				properties.InstanceView = &armcompute.VirtualMachineInstanceView{
+					Statuses: []*armcompute.InstanceViewStatus{
+						{Code: to.Ptr(tc.powerState)},
+					},
+				}
+			}
+
+			vm := armcompute.VirtualMachine{
+				ID:         &vmID,
+				Name:       &vmName,
+				Type:       &vmType,
+				Location:   &location,
+				Properties: properties,
+			}
+
+			result := mapFromVM(vm)
+			require.Equal(t, tc.expectedLabel, result.PowerState)
+		})
+	}
 }
 
 func TestNewAzureResourceFromID(t *testing.T) {
@@ -567,6 +719,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_private_ip":     "10.0.0.1",
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -581,6 +734,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_private_ip":     "10.0.0.1",
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -595,6 +749,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_private_ip":     "10.0.0.1",
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -609,6 +764,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_private_ip":     "10.0.0.1",
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -624,6 +780,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_scale_set":      "vmScaleSet1",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -639,6 +796,7 @@ func TestAzureRefresh(t *testing.T) {
 							"__meta_azure_machine_resource_group": "{resourceGroup}",
 							"__meta_azure_machine_scale_set":      "vmScaleSet1",
 							"__meta_azure_machine_size":           "size",
+							"__meta_azure_machine_state":          "running",
 							"__meta_azure_machine_tag_prometheus": "",
 							"__meta_azure_subscription_id":        "",
 							"__meta_azure_tenant_id":              "",
@@ -808,6 +966,13 @@ func defaultVMWithIDAndName(id, name *string) *armcompute.VirtualMachine {
 			HardwareProfile: &armcompute.HardwareProfile{
 				VMSize: &vmSize,
 			},
+			InstanceView: &armcompute.VirtualMachineInstanceView{
+				Statuses: []*armcompute.InstanceViewStatus{
+					{
+						Code: to.Ptr("PowerState/running"),
+					},
+				},
+			},
 		},
 		Tags: map[string]*string{
 			"prometheus": new(string),
@@ -850,6 +1015,13 @@ func defaultVMSSVMWithIDAndName(id, name *string) *armcompute.VirtualMachineScal
 			},
 			HardwareProfile: &armcompute.HardwareProfile{
 				VMSize: &vmSize,
+			},
+			InstanceView: &armcompute.VirtualMachineScaleSetVMInstanceView{
+				Statuses: []*armcompute.InstanceViewStatus{
+					{
+						Code: to.Ptr("PowerState/running"),
+					},
+				},
 			},
 		},
 		Tags: map[string]*string{
