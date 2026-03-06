@@ -1831,7 +1831,7 @@ type chunkOpts struct {
 // isolation for this append.)
 // Series lock must be held when calling.
 func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o)
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.ValFloat.ChunkEncoding(), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -2001,10 +2001,14 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 	}
 
 	if c.chunk.Encoding() != e {
-		// The chunk encoding expected by this append is different than the head chunk's
-		// encoding. So we cut a new chunk with the expected encoding.
-		c = s.cutNewHeadChunk(t, e, o.chunkRange)
-		chunkCreated = true
+		// Check if encodings are compatible (both float encodings).
+		// XOR and XOR2 can coexist - existing XOR chunks can continue, new chunks use XOR2.
+		if !chunkenc.EncodingsCompatible(c.chunk.Encoding(), e) {
+			// Incompatible encodings (e.g., float vs histogram) - must cut chunk.
+			c = s.cutNewHeadChunk(t, e, o.chunkRange)
+			chunkCreated = true
+		}
+		// else: encodings are compatible, continue with existing chunk.
 	}
 
 	numSamples := c.chunk.NumSamples()
@@ -2058,10 +2062,13 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 	}
 
 	if c.chunk.Encoding() != e {
-		// The chunk encoding expected by this append is different than the head chunk's
-		// encoding. So we cut a new chunk with the expected encoding.
-		c = s.cutNewHeadChunk(t, e, o.chunkRange)
-		chunkCreated = true
+		// Check if encodings are compatible.
+		if !chunkenc.EncodingsCompatible(c.chunk.Encoding(), e) {
+			// Incompatible encodings - must cut chunk.
+			c = s.cutNewHeadChunk(t, e, o.chunkRange)
+			chunkCreated = true
+		}
+		// else: encodings are compatible, continue with existing chunk.
 	}
 
 	numSamples := c.chunk.NumSamples()
