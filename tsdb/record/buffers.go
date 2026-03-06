@@ -1,3 +1,16 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package record
 
 import (
@@ -20,10 +33,10 @@ func NewBuffersPool() *BuffersPool {
 	return &BuffersPool{}
 }
 
-func (p *BuffersPool) GetRefSeries(cap int) []RefSeries {
+func (p *BuffersPool) GetRefSeries(capacity int) []RefSeries {
 	b := p.series.Get()
 	if b == nil {
-		return make([]RefSeries, 0, cap)
+		return make([]RefSeries, 0, capacity)
 	}
 	return b
 }
@@ -35,10 +48,10 @@ func (p *BuffersPool) PutRefSeries(b []RefSeries) {
 	p.series.Put(b[:0])
 }
 
-func (p *BuffersPool) GetSamples(cap int) []RefSample {
+func (p *BuffersPool) GetSamples(capacity int) []RefSample {
 	b := p.samples.Get()
 	if b == nil {
-		return make([]RefSample, 0, cap)
+		return make([]RefSample, 0, capacity)
 	}
 	return b
 }
@@ -47,10 +60,10 @@ func (p *BuffersPool) PutSamples(b []RefSample) {
 	p.samples.Put(b[:0])
 }
 
-func (p *BuffersPool) GetExemplars(cap int) []RefExemplar {
+func (p *BuffersPool) GetExemplars(capacity int) []RefExemplar {
 	b := p.exemplars.Get()
 	if b == nil {
-		return make([]RefExemplar, 0, cap)
+		return make([]RefExemplar, 0, capacity)
 	}
 	return b
 }
@@ -62,10 +75,10 @@ func (p *BuffersPool) PutExemplars(b []RefExemplar) {
 	p.exemplars.Put(b[:0])
 }
 
-func (p *BuffersPool) GetHistograms(cap int) []RefHistogramSample {
+func (p *BuffersPool) GetHistograms(capacity int) []RefHistogramSample {
 	b := p.histograms.Get()
 	if b == nil {
-		return make([]RefHistogramSample, 0, cap)
+		return make([]RefHistogramSample, 0, capacity)
 	}
 	return b
 }
@@ -75,10 +88,10 @@ func (p *BuffersPool) PutHistograms(b []RefHistogramSample) {
 	p.histograms.Put(b[:0])
 }
 
-func (p *BuffersPool) GetFloatHistograms(cap int) []RefFloatHistogramSample {
+func (p *BuffersPool) GetFloatHistograms(capacity int) []RefFloatHistogramSample {
 	b := p.floatHistograms.Get()
 	if b == nil {
-		return make([]RefFloatHistogramSample, 0, cap)
+		return make([]RefFloatHistogramSample, 0, capacity)
 	}
 	return b
 }
@@ -88,10 +101,10 @@ func (p *BuffersPool) PutFloatHistograms(b []RefFloatHistogramSample) {
 	p.floatHistograms.Put(b[:0])
 }
 
-func (p *BuffersPool) GetMetadata(cap int) []RefMetadata {
+func (p *BuffersPool) GetMetadata(capacity int) []RefMetadata {
 	b := p.metadata.Get()
 	if b == nil {
-		return make([]RefMetadata, 0, cap)
+		return make([]RefMetadata, 0, capacity)
 	}
 	return b
 }
