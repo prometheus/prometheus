@@ -36,6 +36,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"testing"
 	"time"
 
 	"github.com/KimMachineGun/automemlimit/memlimit"
@@ -346,6 +347,19 @@ func parseCompressionType(compress bool, compressType compression.Type) compress
 	return compression.None
 }
 
+var osExitT testing.TB
+
+// osExit, with osExitT allows running main in tests.
+func osExit(code int) {
+	if osExitT != nil {
+		if code != 0 {
+			osExitT.Fatal("os.Exit", code)
+		}
+		return
+	}
+	os.Exit(code)
+}
+
 func main() {
 	if os.Getenv("DEBUG") != "" {
 		runtime.SetBlockProfileRate(20)
@@ -609,10 +623,10 @@ func main() {
 
 	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(*kingpin.ParseContext) error {
 		if err := documentcli.GenerateMarkdown(a.Model(), os.Stdout); err != nil {
-			os.Exit(1)
+			osExit(1)
 			return err
 		}
-		os.Exit(0)
+		osExit(0)
 		return nil
 	}).Bool()
 
@@ -620,7 +634,7 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing command line arguments: %s\n", err)
 		a.Usage(os.Args[1:])
-		os.Exit(2)
+		osExit(2)
 	}
 
 	logger := promslog.New(&cfg.promslogConfig)
@@ -633,24 +647,24 @@ func main() {
 
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing feature list: %s\n", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	promqlParser := parser.NewParser(cfg.parserOpts)
 
 	if agentMode && len(serverOnlyFlags) > 0 {
 		fmt.Fprintf(os.Stderr, "The following flag(s) can not be used in agent mode: %q", serverOnlyFlags)
-		os.Exit(3)
+		osExit(3)
 	}
 
 	if !agentMode && len(agentOnlyFlags) > 0 {
 		fmt.Fprintf(os.Stderr, "The following flag(s) can only be used in agent mode: %q", agentOnlyFlags)
-		os.Exit(3)
+		osExit(3)
 	}
 
 	if cfg.memlimitRatio <= 0.0 || cfg.memlimitRatio > 1.0 {
 		fmt.Fprintf(os.Stderr, "--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1.")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	localStoragePath := cfg.serverStoragePath
@@ -661,13 +675,13 @@ func main() {
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
-		os.Exit(2)
+		osExit(2)
 	}
 
 	cfg.web.CORSOrigin, err = compileCORSRegexString(cfg.corsRegexString)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("could not compile CORS regex string %q: %w", cfg.corsRegexString, err))
-		os.Exit(2)
+		osExit(2)
 	}
 
 	// Throw error for invalid config before starting other components.
@@ -678,7 +692,7 @@ func main() {
 			absPath = cfg.configFile
 		}
 		logger.Error(fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "file", absPath, "err", err)
-		os.Exit(2)
+		osExit(2)
 	}
 	// Get scrape configs to validate dynamically loaded scrape_config_files.
 	// They can change over time, but do the extra validation on startup for better experience.
@@ -688,7 +702,7 @@ func main() {
 			absPath = cfg.configFile
 		}
 		logger.Error(fmt.Sprintf("Error loading dynamic scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
-		os.Exit(2)
+		osExit(2)
 	}
 
 	// Parse rule files to verify they exist and contain valid rules.
@@ -698,7 +712,7 @@ func main() {
 			absPath = cfg.configFile
 		}
 		logger.Error(fmt.Sprintf("Error loading rule file patterns from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
-		os.Exit(2)
+		osExit(2)
 	}
 
 	if cfg.tsdb.EnableExemplarStorage {
@@ -802,7 +816,7 @@ func main() {
 			}
 			if prom_runtime.FsSize(localStoragePath) == 0 {
 				fmt.Fprintln(os.Stderr, fmt.Errorf("unable to detect total capacity of metric storage at %s, please disable retention percentage (%d%%)", localStoragePath, cfg.tsdb.MaxPercentage))
-				os.Exit(2)
+				osExit(2)
 			}
 		}
 
@@ -889,25 +903,25 @@ func main() {
 	err = discovery.RegisterK8sClientMetricsWithPrometheus(prometheus.DefaultRegisterer)
 	if err != nil {
 		logger.Error("failed to register Kubernetes client metrics", "err", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(prometheus.DefaultRegisterer)
 	if err != nil {
 		logger.Error("failed to register service discovery metrics", "err", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"), discovery.FeatureRegistry(features.DefaultRegistry))
 	if discoveryManagerScrape == nil {
 		logger.Error("failed to create a discovery manager scrape")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"), discovery.FeatureRegistry(features.DefaultRegistry))
 	if discoveryManagerNotify == nil {
 		logger.Error("failed to create a discovery manager notify")
-		os.Exit(1)
+		osExit(1)
 	}
 
 	scrapeManager, err := scrape.NewManager(
@@ -919,7 +933,7 @@ func main() {
 	)
 	if err != nil {
 		logger.Error("failed to create a scrape manager", "err", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	var (
@@ -1143,13 +1157,13 @@ func main() {
 	listeners, err := webHandler.Listeners()
 	if err != nil {
 		logger.Error("Unable to start web listener", "err", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	err = toolkit_web.Validate(*webConfig)
 	if err != nil {
 		logger.Error("Unable to validate web configuration file", "err", err)
-		os.Exit(1)
+		osExit(1)
 	}
 
 	var g run.Group
@@ -1160,6 +1174,10 @@ func main() {
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
+				osExitTKillCtx := context.Background()
+				if osExitT != nil {
+					osExitTKillCtx = osExitT.Context()
+				}
 				// Don't forget to release the reloadReady channel so that waiting blocks can exit normally.
 				select {
 				case sig := <-term:
@@ -1168,6 +1186,9 @@ func main() {
 				case <-webHandler.Quit():
 					logger.Warn("Received termination request via web service, exiting gracefully...")
 				case <-cancel:
+					reloadReady.Close()
+				case <-osExitTKillCtx.Done():
+					logger.Warn("Test based kill")
 					reloadReady.Close()
 				}
 				return nil
@@ -1539,7 +1560,7 @@ func main() {
 	func() { // This function exists so the top of the stack is named 'main.main.funcxxx' and not 'oklog'.
 		if err := g.Run(); err != nil {
 			logger.Error("Fatal error", "err", err)
-			os.Exit(1)
+			osExit(1)
 		}
 	}()
 	logger.Info("See you next time!")
