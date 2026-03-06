@@ -1568,6 +1568,9 @@ func kahanAddBuckets(
 			bucketB = bucketsB[bIdxB]
 			if compensationBucketsB != nil {
 				compensationBucketB = compensationBucketsB[bIdxB]
+				if compensationBucketB != 0 {
+					panic(compensationBucketB)
+				}
 			}
 			if negative {
 				bucketB *= -1
