@@ -85,6 +85,7 @@ type WatcherMetrics struct {
 type Watcher struct {
 	name           string
 	writer         WriteTo
+	recordBuf      *record.BuffersPool
 	logger         *slog.Logger
 	walDir         string
 	lastCheckpoint string
@@ -187,12 +188,25 @@ func (m *WatcherMetrics) Unregister() {
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger *slog.Logger, name string, writer WriteTo, dir string, sendExemplars, sendHistograms, sendMetadata bool) *Watcher {
+func NewWatcher(
+	metrics *WatcherMetrics,
+	readerMetrics *LiveReaderMetrics,
+	logger *slog.Logger,
+	name string,
+	writer WriteTo,
+	dir string,
+	sendExemplars, sendHistograms, sendMetadata bool,
+	recordBuf *record.BuffersPool,
+) *Watcher {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
+	if recordBuf == nil {
+		recordBuf = record.NewBuffersPool()
+	}
 	return &Watcher{
 		logger:         logger,
+		recordBuf:      recordBuf,
 		writer:         writer,
 		metrics:        metrics,
 		readerMetrics:  readerMetrics,
@@ -492,19 +506,24 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 
 // Read from a segment and pass the details to w.writer.
 // Also used with readCheckpoint - implements segmentReadFn.
+// TODO(bwplotka): Rename tail to !onlySeries; extremely confusing and easy to miss.
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
-	var (
-		dec                   = record.NewDecoder(labels.NewSymbolTable(), w.logger) // One table per WAL segment means it won't grow indefinitely.
-		series                []record.RefSeries
-		samples               []record.RefSample
-		samplesToSend         []record.RefSample
-		exemplars             []record.RefExemplar
-		histograms            []record.RefHistogramSample
-		histogramsToSend      []record.RefHistogramSample
-		floatHistograms       []record.RefFloatHistogramSample
-		floatHistogramsToSend []record.RefFloatHistogramSample
-		metadata              []record.RefMetadata
-	)
+	series := w.recordBuf.GetRefSeries(512)
+	samples := w.recordBuf.GetSamples(512)
+	exemplars := w.recordBuf.GetExemplars(512)
+	histograms := w.recordBuf.GetHistograms(512)
+	floatHistograms := w.recordBuf.GetFloatHistograms(512)
+	metadata := w.recordBuf.GetMetadata(512)
+	defer func() {
+		w.recordBuf.PutRefSeries(series)
+		w.recordBuf.PutSamples(samples)
+		w.recordBuf.PutExemplars(exemplars)
+		w.recordBuf.PutHistograms(histograms)
+		w.recordBuf.PutFloatHistograms(floatHistograms)
+		w.recordBuf.PutMetadata(metadata)
+	}()
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), w.logger) // One table per WAL segment means it won't grow indefinitely.
 	for r.Next() && !isClosed(w.quit) {
 		var err error
 		rec := r.Record()
@@ -530,6 +549,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
+			// Reuse the underlying array for efficiency.
+			// It's valid to do, because we override elements that we no longer need to read when filtering.
+			samplesToSend := samples[:0]
 			for _, s := range samples {
 				if s.T > w.startTimestamp {
 					if !w.sendSamples {
@@ -542,7 +564,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			if len(samplesToSend) > 0 {
 				w.writer.Append(samplesToSend)
-				samplesToSend = samplesToSend[:0]
 			}
 
 		case record.Exemplars:
@@ -575,6 +596,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
+			// Reuse the underlying array for efficiency.
+			// It's valid to do, because we override elements that we no longer need to read when filtering.
+			histogramsToSend := histograms[:0]
 			for _, h := range histograms {
 				if h.T > w.startTimestamp {
 					if !w.sendSamples {
@@ -587,7 +611,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			if len(histogramsToSend) > 0 {
 				w.writer.AppendHistograms(histogramsToSend)
-				histogramsToSend = histogramsToSend[:0]
 			}
 
 		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
@@ -603,6 +626,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
+			// Reuse the underlying array for efficiency.
+			// It's valid to do, because we override elements that we no longer need to read when filtering.
+			floatHistogramsToSend := floatHistograms[:0]
 			for _, fh := range floatHistograms {
 				if fh.T > w.startTimestamp {
 					if !w.sendSamples {
@@ -615,7 +641,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			if len(floatHistogramsToSend) > 0 {
 				w.writer.AppendFloatHistograms(floatHistogramsToSend)
-				floatHistogramsToSend = floatHistogramsToSend[:0]
 			}
 
 		case record.Metadata:
@@ -637,19 +662,18 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			// We're not interested in other types of records.
 		}
 	}
-	if err := r.Err(); err != nil {
-		return fmt.Errorf("segment %d: %w", segmentNum, err)
-	}
-	return nil
+	// NOTE: r.Err == io.EOF is a common case when tailing.
+	// Don't wrap error, callers are expected to handle EOF and wrap accordingly.
+	return r.Err()
 }
 
 // Go through all series in a segment updating the segmentNum, so we can delete older series.
 // Used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
-	var (
-		dec    = record.NewDecoder(labels.NewSymbolTable(), w.logger) // Needed for decoding; labels do not outlive this function.
-		series []record.RefSeries
-	)
+	series := w.recordBuf.GetRefSeries(512)
+	defer w.recordBuf.PutRefSeries(series)
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), w.logger) // Needed for decoding; labels do not outlive this function.
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
@@ -671,10 +695,9 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 			// We're only interested in series.
 		}
 	}
-	if err := r.Err(); err != nil {
-		return fmt.Errorf("segment %d: %w", segmentNum, err)
-	}
-	return nil
+	// NOTE: r.Err == io.EOF is a common case when tailing.
+	// Don't wrap error, callers are expected to handle EOF and wrap accordingly.
+	return r.Err()
 }
 
 func (w *Watcher) SetStartTime(t time.Time) {
@@ -712,7 +735,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 		err = readFn(w, r, index, false)
 		sr.Close()
 		if err != nil && !errors.Is(err, io.EOF) {
-			return fmt.Errorf("readSegment: %w", err)
+			return fmt.Errorf("readSegment %d: %w", index, err)
 		}
 
 		if r.Offset() != size {
