@@ -539,7 +539,7 @@ func BenchmarkWatcher_ReadSegment(b *testing.B) {
 			b.Run("case=one-go", func(b *testing.B) {
 				// Start watcher to that reads into a bench mock that only records sampleAppends.
 				wt := newBenchWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true, nil)
+				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true, record.NewBuffersPool())
 				watcher.SetMetrics()
 				// Update the time because by default, watchers starts with start time=="now" time and watcher
 				// only starts reading data after that time.
@@ -552,7 +552,7 @@ func BenchmarkWatcher_ReadSegment(b *testing.B) {
 					_ = segment.Close()
 				})
 
-				// Warm any caches.
+				// Warm any caches and pools.
 				decBuf := compression.NewSyncDecodeBuffer()
 				segReader := NewLiveReader(watcher.logger, watcher.readerMetrics, segment)
 				segReader.decBuf = decBuf
@@ -580,7 +580,7 @@ func BenchmarkWatcher_ReadSegment(b *testing.B) {
 			b.Run("case=per-scrape", func(b *testing.B) {
 				// Start watcher to that reads into a bench mock that only records sampleAppends.
 				wt := newBenchWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true, nil)
+				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true, record.NewBuffersPool())
 				watcher.SetMetrics()
 				// Update the time because by default, watchers starts with start time=="now" time and watcher
 				// only starts reading data after that time.
@@ -617,6 +617,9 @@ func BenchmarkWatcher_ReadSegment(b *testing.B) {
 					}
 				}
 				limitReader := &io.LimitedReader{R: segment}
+
+				// Warm any caches and pools.
+				require.NoError(b, watcher.readAndHandleError(segReader, 0, true, int64(math.MaxInt64)))
 
 				b.ReportAllocs()
 				b.ResetTimer()
