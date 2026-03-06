@@ -89,6 +89,7 @@ type WatcherMetrics struct {
 type Watcher struct {
 	name           string
 	writer         WriteTo
+	recordBuf      *record.BuffersPool
 	logger         *slog.Logger
 	walDir         string
 	lastCheckpoint string
@@ -193,12 +194,25 @@ func (m *WatcherMetrics) Unregister() {
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger *slog.Logger, name string, writer WriteTo, dir string, sendExemplars, sendHistograms, sendMetadata bool) *Watcher {
+func NewWatcher(
+	metrics *WatcherMetrics,
+	readerMetrics *LiveReaderMetrics,
+	logger *slog.Logger,
+	name string,
+	writer WriteTo,
+	dir string,
+	sendExemplars, sendHistograms, sendMetadata bool,
+	recordBuf *record.BuffersPool,
+) *Watcher {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
+	if recordBuf == nil {
+		recordBuf = record.NewBuffersPool()
+	}
 	return &Watcher{
 		logger:         logger,
+		recordBuf:      recordBuf,
 		writer:         writer,
 		metrics:        metrics,
 		readerMetrics:  readerMetrics,
@@ -511,18 +525,28 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) (err err
 		}
 	}()
 
-	var (
-		dec                   = record.NewDecoder(labels.NewSymbolTable(), w.logger) // One table per WAL segment means it won't grow indefinitely.
-		series                []record.RefSeries
-		samples               []record.RefSample
-		samplesToSend         []record.RefSample
-		exemplars             []record.RefExemplar
-		histograms            []record.RefHistogramSample
-		histogramsToSend      []record.RefHistogramSample
-		floatHistograms       []record.RefFloatHistogramSample
-		floatHistogramsToSend []record.RefFloatHistogramSample
-		metadata              []record.RefMetadata
-	)
+	series := w.recordBuf.GetRefSeries(512)
+	samples := w.recordBuf.GetSamples(512)
+	samplesToSend := w.recordBuf.GetSamples(512)
+	exemplars := w.recordBuf.GetExemplars(512)
+	histograms := w.recordBuf.GetHistograms(512)
+	histogramsToSend := w.recordBuf.GetHistograms(512)
+	floatHistograms := w.recordBuf.GetFloatHistograms(512)
+	floatHistogramsToSend := w.recordBuf.GetFloatHistograms(512)
+	metadata := w.recordBuf.GetMetadata(512)
+	defer func() {
+		w.recordBuf.PutRefSeries(series)
+		w.recordBuf.PutSamples(samples)
+		w.recordBuf.PutSamples(samplesToSend)
+		w.recordBuf.PutExemplars(exemplars)
+		w.recordBuf.PutHistograms(histograms)
+		w.recordBuf.PutHistograms(histogramsToSend)
+		w.recordBuf.PutFloatHistograms(floatHistograms)
+		w.recordBuf.PutFloatHistograms(floatHistogramsToSend)
+		w.recordBuf.PutMetadata(metadata)
+	}()
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), w.logger) // One table per WAL segment means it won't grow indefinitely.
 	for r.Next() && !isClosed(w.quit) {
 		var err error
 		rec := r.Record()
@@ -660,10 +684,10 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) (err err
 func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
 	w.reads.Inc()
 
-	var (
-		dec    = record.NewDecoder(labels.NewSymbolTable(), w.logger) // Needed for decoding; labels do not outlive this function.
-		series []record.RefSeries
-	)
+	series := w.recordBuf.GetRefSeries(512)
+	defer w.recordBuf.PutRefSeries(series)
+
+	dec := record.NewDecoder(labels.NewSymbolTable(), w.logger) // Needed for decoding; labels do not outlive this function.
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
 		w.recordsRead.WithLabelValues(dec.Type(rec).String()).Inc()

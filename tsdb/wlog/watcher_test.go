@@ -341,7 +341,7 @@ func TestWatcher_Tail(t *testing.T) {
 
 			// Start watcher to that reads into a mock.
 			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "test", wt, dir, true, true, true)
+			watcher := NewWatcher(wMetrics, nil, nil, "test", wt, dir, true, true, true, nil)
 			// Update the time because we just created samples around "now" time and watcher
 			// only starts watching after that time.
 			watcher.SetStartTime(now)
@@ -433,7 +433,7 @@ func TestInspect(t *testing.T) {
 func inspectSeg(t testing.TB, segPath string) {
 	fmt.Println("-------", segPath, "-----")
 	wt := newWriteToMock(0)
-	watcher := NewWatcher(wMetrics, nil, nil, "test", wt, t.TempDir(), true, true, true)
+	watcher := NewWatcher(wMetrics, nil, nil, "test", wt, t.TempDir(), true, true, true, nil)
 	watcher.SetMetrics()
 	watcher.SetStartTime(timestamp.Time(math.MinInt64))
 
@@ -539,7 +539,7 @@ func BenchmarkWatcher_ReadSegment(b *testing.B) {
 			b.Run("case=one-go", func(b *testing.B) {
 				// Start watcher to that reads into a bench mock that only records sampleAppends.
 				wt := newBenchWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true)
+				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true, nil)
 				watcher.SetMetrics()
 				// Update the time because by default, watchers starts with start time=="now" time and watcher
 				// only starts reading data after that time.
@@ -580,7 +580,7 @@ func BenchmarkWatcher_ReadSegment(b *testing.B) {
 			b.Run("case=per-scrape", func(b *testing.B) {
 				// Start watcher to that reads into a bench mock that only records sampleAppends.
 				wt := newBenchWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true)
+				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, b.TempDir(), true, true, true, nil)
 				watcher.SetMetrics()
 				// Update the time because by default, watchers starts with start time=="now" time and watcher
 				// only starts reading data after that time.
@@ -697,7 +697,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil)
 			go watcher.Start()
 
 			expected := seriesCount
@@ -786,7 +786,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 			overwriteReadTimeout(t, time.Second)
 			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil)
 			go watcher.Start()
 
 			expected := seriesCount * 2
@@ -858,7 +858,7 @@ func TestReadCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil)
 			go watcher.Start()
 
 			expectedSeries := seriesCount
@@ -927,7 +927,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			}
 
 			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil)
 			watcher.MaxSegment = -1
 
 			// Set the Watcher's metrics so they're not nil pointers.
@@ -1000,7 +1000,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 			overwriteReadTimeout(t, time.Second)
 			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil)
 			watcher.MaxSegment = -1
 			go watcher.Start()
 
@@ -1080,7 +1080,7 @@ func TestRun_StartupTime(t *testing.T) {
 			require.NoError(t, w.Close())
 
 			wt := newWriteToMock(0)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil)
 			watcher.MaxSegment = segments
 
 			watcher.SetMetrics()
@@ -1151,7 +1151,7 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 
 			// Set up the watcher and run it in the background.
 			wt := newWriteToMock(time.Millisecond)
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false, false, nil)
 			watcher.SetMetrics()
 			watcher.MaxSegment = segmentsToRead
 
