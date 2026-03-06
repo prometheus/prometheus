@@ -662,10 +662,9 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			// We're not interested in other types of records.
 		}
 	}
-	if err := r.Err(); err != nil {
-		return fmt.Errorf("segment %d: %w", segmentNum, err)
-	}
-	return nil
+	// NOTE: r.Err == io.EOF is a common case when tailing.
+	// Don't wrap error, callers are expected to handle EOF and wrap accordingly.
+	return r.Err()
 }
 
 // Go through all series in a segment updating the segmentNum, so we can delete older series.
@@ -696,10 +695,9 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 			// We're only interested in series.
 		}
 	}
-	if err := r.Err(); err != nil {
-		return fmt.Errorf("segment %d: %w", segmentNum, err)
-	}
-	return nil
+	// NOTE: r.Err == io.EOF is a common case when tailing.
+	// Don't wrap error, callers are expected to handle EOF and wrap accordingly.
+	return r.Err()
 }
 
 func (w *Watcher) SetStartTime(t time.Time) {
@@ -737,7 +735,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) err
 		err = readFn(w, r, index, false)
 		sr.Close()
 		if err != nil && !errors.Is(err, io.EOF) {
-			return fmt.Errorf("readSegment: %w", err)
+			return fmt.Errorf("readSegment %d: %w", index, err)
 		}
 
 		if r.Offset() != size {
