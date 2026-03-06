@@ -80,15 +80,6 @@ type FailureLogger interface {
 	io.Closer
 }
 
-var _ FailureLogger = (*logging.JSONFileLogger)(nil)
-
-// FailureLogger is an interface that can be used to log all failed
-// scrapes.
-type FailureLogger interface {
-	slog.Handler
-	io.Closer
-}
-
 // scrapePool manages scrapes for sets of targets.
 type scrapePool struct {
 	appendable   storage.Appendable
@@ -124,9 +115,6 @@ type scrapePool struct {
 
 	scrapeFailureLogger    FailureLogger
 	scrapeFailureLoggerMtx sync.RWMutex
-
-	validationScheme model.ValidationScheme
-	escapingScheme   model.EscapingScheme
 }
 
 type labelLimits struct {
@@ -312,17 +300,6 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.config = cfg
 	oldClient := sp.client
 	sp.client = client
-	validationScheme, err := config.ToValidationScheme(cfg.MetricNameValidationScheme)
-	if err != nil {
-		return fmt.Errorf("invalid metric name validation scheme: %w", err)
-	}
-	sp.validationScheme = validationScheme
-	var escapingScheme model.EscapingScheme
-	escapingScheme, err = model.ToEscapingScheme(cfg.MetricNameEscapingScheme)
-	if err != nil {
-		return fmt.Errorf("invalid metric name escaping scheme, %w", err)
-	}
-	sp.escapingScheme = escapingScheme
 
 	// Validate scheme so we don't need to do it later.
 	if err := namevalidationutil.CheckNameValidationScheme(cfg.MetricNameValidationScheme); err != nil {
@@ -1902,71 +1879,6 @@ loop:
 }
 
 // TODO(https://github.com/prometheus/prometheus/issues/17900): Move this to text and OM parser.
-func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) bool {
-	mfNameStr := yoloString(mfName)
-	if !strings.HasPrefix(mName, mfNameStr) { // Fast path.
-		return false
-	}
-
-	var (
-		gotMFName string
-		ok        bool
-	)
-	switch typ {
-	case model.MetricTypeCounter:
-		// Prometheus allows _total, cut it from mf name to support this case.
-		mfNameStr, _ = strings.CutSuffix(mfNameStr, "_total")
-
-		gotMFName, ok = strings.CutSuffix(mName, "_total")
-		if !ok {
-			gotMFName = mName
-		}
-	case model.MetricTypeHistogram:
-		gotMFName, ok = strings.CutSuffix(mName, "_bucket")
-		if !ok {
-			gotMFName, ok = strings.CutSuffix(mName, "_sum")
-			if !ok {
-				gotMFName, ok = strings.CutSuffix(mName, "_count")
-				if !ok {
-					gotMFName = mName
-				}
-			}
-		}
-	case model.MetricTypeGaugeHistogram:
-		gotMFName, ok = strings.CutSuffix(mName, "_bucket")
-		if !ok {
-			gotMFName, ok = strings.CutSuffix(mName, "_gsum")
-			if !ok {
-				gotMFName, ok = strings.CutSuffix(mName, "_gcount")
-				if !ok {
-					gotMFName = mName
-				}
-			}
-		}
-	case model.MetricTypeSummary:
-		gotMFName, ok = strings.CutSuffix(mName, "_sum")
-		if !ok {
-			gotMFName, ok = strings.CutSuffix(mName, "_count")
-			if !ok {
-				gotMFName = mName
-			}
-		}
-	case model.MetricTypeInfo:
-		// Technically prometheus text does not support info type, but we might
-		// accidentally allow info type in prom parse, so support metric family names
-		// with the _info explicitly too.
-		mfNameStr, _ = strings.CutSuffix(mfNameStr, "_info")
-
-		gotMFName, ok = strings.CutSuffix(mName, "_info")
-		if !ok {
-			gotMFName = mName
-		}
-	default:
-		gotMFName = mName
-	}
-	return mfNameStr == gotMFName
-}
-
 func isSeriesPartOfFamily(mName string, mfName []byte, typ model.MetricType) bool {
 	mfNameStr := yoloString(mfName)
 	if !strings.HasPrefix(mName, mfNameStr) { // Fast path.

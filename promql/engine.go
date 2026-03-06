@@ -4316,7 +4316,6 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 				n.SkipHistogramBuckets = false
 				break pathLoop
 			}
-			break
 		}
 		return nil
 	})

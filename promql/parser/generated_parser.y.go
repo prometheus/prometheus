@@ -574,15 +574,6 @@ var yyPact = [...]int16{
 	68, 294, 934, 934, 688, 855, -1000, -1000, -1000, 231,
 	-1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000,
 	-1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000,
-	-1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, 664,
-	-1000, -1000, -1000, -1000, -1000, -1000, 79, 79, 32, 79,
-	94, 94, 70, 90, -1000, -1000, 285, 269, 263, 261,
-	259, 233, 211, 205, 204, 179, 176, -1000, -1000, -1000,
-	-1000, -1000, -1000, 87, -1000, -1000, -1000, 353, -1000, 231,
-	-1000, -1000, -1000, 79, -1000, 16, 15, 585, -1000, -1000,
-	-1000, 24, 194, 194, 194, 164, 129, 129, 24, 129,
-	24, -64, -1000, -1000, -1000, -1000, -1000, 79, 79, -1000,
-	-1000, -1000, 79, -1000, -1000, -1000, -1000, -1000, -1000, 194,
 	-1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000,
 	-1000, -1000, 448, -1000, 340, -1000, 996, -1000, -1000, -1000,
 	-1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000, -1000,
@@ -1211,14 +1202,16 @@ yydefault:
 	case 27:
 		yyDollar = yyS[yypt-2 : yypt+1]
 		{
-			yylex.(*parser).unexpected("aggregation", "")
-			yyVAL.node = yylex.(*parser).newAggregateExpr(yyDollar[1].item, &AggregateExpr{}, Expressions{})
+			yyVAL.node = &AggregateExpr{
+				Grouping: yyDollar[2].strings,
+			}
 		}
 	case 28:
 		yyDollar = yyS[yypt-2 : yypt+1]
 		{
 			yyVAL.node = &AggregateExpr{
 				Grouping: yyDollar[2].strings,
+				Without:  true,
 			}
 		}
 	case 29:
@@ -1474,10 +1467,9 @@ yydefault:
 				Args: yyDollar[2].node.(Expressions),
 				PosRange: posrange.PositionRange{
 					Start: yyDollar[1].item.Pos,
-					End:   yylex.(*parser).closingParens[0],
+					End:   yylex.(*parser).lastClosing,
 				},
 			}
-			yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
 		}
 	case 73:
 		yyDollar = yyS[yypt-3 : yypt+1]
@@ -1554,7 +1546,7 @@ yydefault:
 	case 84:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			yylex.(*parser).unexpected("offset", "number or duration")
+			yylex.(*parser).setTimestamp(yyDollar[1].node, yyDollar[3].float)
 			yyVAL.node = yyDollar[1].node
 		}
 	case 85:
@@ -2013,89 +2005,88 @@ yydefault:
 	case 183:
 		yyDollar = yyS[yypt-2 : yypt+1]
 		{
-			m := yylex.(*parser).newMap()
-			yyVAL.histogram = yylex.(*parser).buildHistogramFromMap(&m)
-		}
-	case 184:
-		yyDollar = yyS[yypt-3 : yypt+1]
-		{
-			m := yylex.(*parser).newMap()
-			yyVAL.histogram = yylex.(*parser).buildHistogramFromMap(&m)
-		}
-	case 185:
-		yyDollar = yyS[yypt-3 : yypt+1]
-		{
-			yyVAL.descriptors = *(yylex.(*parser).mergeMaps(&yyDollar[1].descriptors, &yyDollar[3].descriptors))
-		}
-	case 186:
-		yyDollar = yyS[yypt-3 : yypt+1]
-		{
-			yyVAL.descriptors = yyDollar[1].descriptors
-		}
-	case 187:
-		yyDollar = yyS[yypt-3 : yypt+1]
-		{
 			yylex.(*parser).unexpected("histogram description", "histogram description key, e.g. buckets:[5 10 7]")
 		}
-	case 188:
+	case 184:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.descriptors = yylex.(*parser).newMap()
 			yyVAL.descriptors["schema"] = yyDollar[3].int
 		}
-	case 189:
+	case 185:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.descriptors = yylex.(*parser).newMap()
 			yyVAL.descriptors["sum"] = yyDollar[3].float
 		}
-	case 190:
+	case 186:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.descriptors = yylex.(*parser).newMap()
 			yyVAL.descriptors["count"] = yyDollar[3].float
 		}
-	case 191:
+	case 187:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.descriptors = yylex.(*parser).newMap()
 			yyVAL.descriptors["z_bucket"] = yyDollar[3].float
 		}
-	case 192:
+	case 188:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.descriptors = yylex.(*parser).newMap()
 			yyVAL.descriptors["z_bucket_w"] = yyDollar[3].float
 		}
-	case 193:
+	case 189:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.descriptors = yylex.(*parser).newMap()
 			yyVAL.descriptors["custom_values"] = yyDollar[3].bucket_set
 		}
-	case 194:
+	case 190:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.descriptors = yylex.(*parser).newMap()
 			yyVAL.descriptors["buckets"] = yyDollar[3].bucket_set
 		}
-	case 195:
-		yyDollar = yyS[yypt-4 : yypt+1]
+	case 191:
+		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.descriptors = yylex.(*parser).newMap()
 			yyVAL.descriptors["offset"] = yyDollar[3].int
 		}
-	case 196:
+	case 192:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.descriptors = yylex.(*parser).newMap()
 			yyVAL.descriptors["n_buckets"] = yyDollar[3].bucket_set
 		}
-	case 197:
+	case 193:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.descriptors = yylex.(*parser).newMap()
 			yyVAL.descriptors["n_offset"] = yyDollar[3].int
+		}
+	case 194:
+		yyDollar = yyS[yypt-3 : yypt+1]
+		{
+			yyVAL.descriptors = yylex.(*parser).newMap()
+			yyVAL.descriptors["counter_reset_hint"] = yyDollar[3].item
+		}
+	case 195:
+		yyDollar = yyS[yypt-4 : yypt+1]
+		{
+			yyVAL.bucket_set = yyDollar[2].bucket_set
+		}
+	case 196:
+		yyDollar = yyS[yypt-3 : yypt+1]
+		{
+			yyVAL.bucket_set = yyDollar[2].bucket_set
+		}
+	case 197:
+		yyDollar = yyS[yypt-3 : yypt+1]
+		{
+			yyVAL.bucket_set = append(yyDollar[1].bucket_set, yyDollar[3].float)
 		}
 	case 198:
 		yyDollar = yyS[yypt-1 : yypt+1]

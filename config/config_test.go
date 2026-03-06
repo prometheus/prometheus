@@ -74,10 +74,6 @@ func mustParseURL(u string) *config.URL {
 	return &config.URL{URL: parsed}
 }
 
-func boolPtr(b bool) *bool {
-	return &b
-}
-
 const (
 	globBodySizeLimit         = 15 * units.MiB
 	globSampleLimit           = 1500
@@ -2790,15 +2786,6 @@ type ScrapeConfigOptions struct {
 	AlwaysScrapeClassicHistograms bool
 	ConvertClassicHistToNHCB      bool
 	ExtraScrapeMetrics            bool
-}
-
-// ScrapeConfigOptions contains options for creating a scrape config.
-type ScrapeConfigOptions struct {
-	JobName                       string
-	ScrapeInterval                model.Duration
-	ScrapeTimeout                 model.Duration
-	AlwaysScrapeClassicHistograms bool
-	ConvertClassicHistToNHCB      bool
 }
 
 func TestGetScrapeConfigs(t *testing.T) {

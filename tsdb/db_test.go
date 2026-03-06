@@ -4755,7 +4755,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	// Let's create a checkpoint.
 	first, last, err := wlog.Segments(w.Dir())
 	require.NoError(t, err)
-	keep := func(id chunks.HeadSeriesRef, _ int) bool {
+	keep := func(id chunks.HeadSeriesRef) bool {
 		return id != 3
 	}
 	_, err = wlog.Checkpoint(promslog.NewNopLogger(), w, first, last-1, keep, 0)
@@ -5003,159 +5003,6 @@ func TestMultipleEncodingsCommitOrder(t *testing.T) {
 
 	// oooCount = 35 as we've added 30 more OOO samples.
 	verifySamples(50, 160, expSamples, 35)
-}
-
-// TestMultipleEncodingsCommitOrder mainly serves to demonstrate when happens when committing a batch of samples for the
-// same series when there are multiple encodings. Commit() will process all float samples before histogram samples. This
-// means that if histograms are appended before floats, the histograms could be marked as OOO when they are committed.
-// While possible, this shouldn't happen very often - you need the same series to be ingested as both a float and a
-// histogram in a single write request.
-func TestMultipleEncodingsCommitOrder(t *testing.T) {
-	opts := DefaultOptions()
-	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
-
-	series1 := labels.FromStrings("foo", "bar1")
-
-	db := openTestDB(t, opts, nil)
-	db.DisableCompactions()
-	db.EnableNativeHistograms()
-	defer func() {
-		require.NoError(t, db.Close())
-	}()
-
-	addSample := func(app storage.Appender, ts int64, valType chunkenc.ValueType) chunks.Sample {
-		if valType == chunkenc.ValFloat {
-			_, err := app.Append(0, labels.FromStrings("foo", "bar1"), ts, float64(ts))
-			require.NoError(t, err)
-			return sample{t: ts, f: float64(ts)}
-		}
-		if valType == chunkenc.ValHistogram {
-			h := tsdbutil.GenerateTestHistogram(ts)
-			_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, h, nil)
-			require.NoError(t, err)
-			return sample{t: ts, h: h}
-		}
-		fh := tsdbutil.GenerateTestFloatHistogram(ts)
-		_, err := app.AppendHistogram(0, labels.FromStrings("foo", "bar1"), ts, nil, fh)
-		require.NoError(t, err)
-		return sample{t: ts, fh: fh}
-	}
-
-	verifySamples := func(minT, maxT int64, expSamples []chunks.Sample, oooCount int) {
-		requireEqualOOOSamples(t, oooCount, db)
-
-		// Verify samples querier.
-		querier, err := db.Querier(minT, maxT)
-		require.NoError(t, err)
-		defer querier.Close()
-
-		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
-		require.Len(t, seriesSet, 1)
-		gotSamples := seriesSet[series1.String()]
-		requireEqualSamples(t, series1.String(), expSamples, gotSamples, requireEqualSamplesIgnoreCounterResets)
-
-		// Verify chunks querier.
-		chunkQuerier, err := db.ChunkQuerier(minT, maxT)
-		require.NoError(t, err)
-		defer chunkQuerier.Close()
-
-		chks := queryChunks(t, chunkQuerier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1"))
-		require.NotNil(t, chks[series1.String()])
-		require.Len(t, chks, 1)
-		var gotChunkSamples []chunks.Sample
-		for _, chunk := range chks[series1.String()] {
-			it := chunk.Chunk.Iterator(nil)
-			smpls, err := storage.ExpandSamples(it, newSample)
-			require.NoError(t, err)
-			gotChunkSamples = append(gotChunkSamples, smpls...)
-			require.NoError(t, it.Err())
-		}
-		requireEqualSamples(t, series1.String(), expSamples, gotChunkSamples, requireEqualSamplesIgnoreCounterResets)
-	}
-
-	var expSamples []chunks.Sample
-
-	// Append samples with different encoding types and then commit them at once.
-	app := db.Appender(context.Background())
-
-	for i := 100; i < 105; i++ {
-		s := addSample(app, int64(i), chunkenc.ValFloat)
-		expSamples = append(expSamples, s)
-	}
-	// These samples will be marked as OOO as their timestamps are less than the max timestamp for float samples in the
-	// same batch.
-	for i := 110; i < 120; i++ {
-		s := addSample(app, int64(i), chunkenc.ValHistogram)
-		expSamples = append(expSamples, s)
-	}
-	// These samples will be marked as OOO as their timestamps are less than the max timestamp for float samples in the
-	// same batch.
-	for i := 120; i < 130; i++ {
-		s := addSample(app, int64(i), chunkenc.ValFloatHistogram)
-		expSamples = append(expSamples, s)
-	}
-	// These samples will be marked as in-order as their timestamps are greater than the max timestamp for float
-	// samples in the same batch.
-	for i := 140; i < 150; i++ {
-		s := addSample(app, int64(i), chunkenc.ValFloatHistogram)
-		expSamples = append(expSamples, s)
-	}
-	// These samples will be marked as in-order, even though they're appended after the float histograms from ts 140-150
-	// because float samples are processed first and these samples are in-order wrt to the float samples in the batch.
-	for i := 130; i < 135; i++ {
-		s := addSample(app, int64(i), chunkenc.ValFloat)
-		expSamples = append(expSamples, s)
-	}
-
-	require.NoError(t, app.Commit())
-
-	sort.Slice(expSamples, func(i, j int) bool {
-		return expSamples[i].T() < expSamples[j].T()
-	})
-
-	// oooCount = 20 because the histograms from 120 - 130 and float histograms from 120 - 130 are detected as OOO.
-	verifySamples(100, 150, expSamples, 20)
-
-	// Append and commit some in-order histograms by themselves.
-	app = db.Appender(context.Background())
-	for i := 150; i < 160; i++ {
-		s := addSample(app, int64(i), chunkenc.ValHistogram)
-		expSamples = append(expSamples, s)
-	}
-	require.NoError(t, app.Commit())
-
-	// oooCount remains at 20 as no new OOO samples have been added.
-	verifySamples(100, 160, expSamples, 20)
-
-	// Append and commit samples for all encoding types. This time all samples will be treated as OOO because samples
-	// with newer timestamps have already been committed.
-	app = db.Appender(context.Background())
-	for i := 50; i < 55; i++ {
-		s := addSample(app, int64(i), chunkenc.ValFloat)
-		expSamples = append(expSamples, s)
-	}
-	for i := 60; i < 70; i++ {
-		s := addSample(app, int64(i), chunkenc.ValHistogram)
-		expSamples = append(expSamples, s)
-	}
-	for i := 70; i < 75; i++ {
-		s := addSample(app, int64(i), chunkenc.ValFloat)
-		expSamples = append(expSamples, s)
-	}
-	for i := 80; i < 90; i++ {
-		s := addSample(app, int64(i), chunkenc.ValFloatHistogram)
-		expSamples = append(expSamples, s)
-	}
-	require.NoError(t, app.Commit())
-
-	// Sort samples again because OOO samples have been added.
-	sort.Slice(expSamples, func(i, j int) bool {
-		return expSamples[i].T() < expSamples[j].T()
-	})
-
-	// oooCount = 50 as we've added 30 more OOO samples.
-	verifySamples(50, 160, expSamples, 50)
 }
 
 // TODO(codesome): test more samples incoming once compaction has started. To verify new samples after the start
@@ -5481,7 +5328,6 @@ func testOOOCompactionWithDisabledWriteLog(t *testing.T, scenario sampleTypeScen
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.WALSegmentSize = -1 // disabled WAL and WBL
-	opts.EnableNativeHistograms = true
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions() // We want to manually call it.
@@ -5587,7 +5433,6 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sa
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.EnableMemorySnapshotOnShutdown = true
-	opts.EnableNativeHistograms = true
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions() // We want to manually call it.
@@ -6979,7 +6824,6 @@ func testWBLAndMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
-	opts.EnableNativeHistograms = true
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()
@@ -7897,7 +7741,6 @@ func testOOOMmapCorruption(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.EnableNativeHistograms = true
 
 	db := newTestDB(t, withOpts(opts))
 
@@ -8362,7 +8205,6 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 func testWblReplayAfterOOODisableAndRestart(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.EnableNativeHistograms = true
 
 	db := newTestDB(t, withOpts(opts))
 
@@ -8423,7 +8265,6 @@ func TestPanicOnApplyConfig(t *testing.T) {
 func testPanicOnApplyConfig(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.EnableNativeHistograms = true
 
 	db := newTestDB(t, withOpts(opts))
 

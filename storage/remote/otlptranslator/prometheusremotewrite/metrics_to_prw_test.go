@@ -19,7 +19,6 @@ package prometheusremotewrite
 import (
 	"context"
 	"fmt"
-	"sort"
 	"testing"
 	"time"
 

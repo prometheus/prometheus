@@ -285,13 +285,6 @@ func truncateToLimit(s []string, hints *LabelHints) []string {
 	return s
 }
 
-func truncateToLimit(s []string, hints *LabelHints) []string {
-	if hints != nil && hints.Limit > 0 && len(s) > hints.Limit {
-		s = s[:hints.Limit]
-	}
-	return s
-}
-
 // VerticalSeriesMergeFunc returns merged series implementation that merges series with same labels together.
 // It has to handle time-overlapped series as well.
 type VerticalSeriesMergeFunc func(...Series) Series

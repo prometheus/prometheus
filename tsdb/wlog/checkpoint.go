@@ -180,7 +180,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			// Drop irrelevant series in place.
 			repl := series[:0]
 			for _, s := range series {
-				if keep(s.Ref, to) {
+				if keep(s.Ref) {
 					repl = append(repl, s)
 				}
 			}
@@ -322,7 +322,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			// Only keep reference to the latest found metadata for each refID.
 			repl := 0
 			for _, m := range metadata {
-				if keep(m.Ref, to) {
+				if keep(m.Ref) {
 					if _, ok := latestMetadataMap[m.Ref]; !ok {
 						repl++
 					}

@@ -748,32 +748,6 @@ func main() {
 			logger, tsdbDelayCompactFilePath)
 	}
 
-	// Set Go runtime parameters before we get too far into initialization.
-	updateGoGC(cfgFile, logger)
-	if cfg.maxprocsEnable {
-		l := func(format string, a ...interface{}) {
-			logger.Info(fmt.Sprintf(strings.TrimPrefix(format, "maxprocs: "), a...), "component", "automaxprocs")
-		}
-		if _, err := maxprocs.Set(maxprocs.Logger(l)); err != nil {
-			logger.Warn("Failed to set GOMAXPROCS automatically", "component", "automaxprocs", "err", err)
-		}
-	}
-
-	if cfg.memlimitEnable {
-		if _, err := memlimit.SetGoMemLimitWithOpts(
-			memlimit.WithRatio(cfg.memlimitRatio),
-			memlimit.WithProvider(
-				memlimit.ApplyFallback(
-					memlimit.FromCgroup,
-					memlimit.FromSystem,
-				),
-			),
-			memlimit.WithLogger(logger.With("component", "automemlimit")),
-		); err != nil {
-			logger.Warn("automemlimit", "msg", "Failed to set GOMEMLIMIT automatically", "err", err)
-		}
-	}
-
 	// Now that the validity of the config is established, set the config
 	// success metrics accordingly, although the config isn't really loaded
 	// yet. This will happen later (including setting these metrics again),

@@ -43,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 	"github.com/prometheus/prometheus/storage/remote/googleiam"
-	"github.com/prometheus/prometheus/util/compression"
 )
 
 const (
@@ -271,7 +270,7 @@ func (c *Client) Store(ctx context.Context, req []byte, attempt int) (WriteRespo
 		return WriteResponseStats{}, err
 	}
 
-	httpReq.Header.Add("Content-Encoding", c.writeCompression)
+	httpReq.Header.Add("Content-Encoding", string(c.writeCompression))
 	httpReq.Header.Set("Content-Type", remoteWriteContentTypeHeaders[c.writeProtoMsg])
 	httpReq.Header.Set("User-Agent", UserAgent)
 	if c.writeProtoMsg == remoteapi.WriteV1MessageType {

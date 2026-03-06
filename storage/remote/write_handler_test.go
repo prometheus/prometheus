@@ -781,10 +781,6 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 					}
 					k++
 				}
-				if ts.CreatedTimestamp != 0 && tc.ingestCTZeroSample {
-					require.True(t, zeroHistogramIngested)
-					require.True(t, zeroFloatHistogramIngested)
-				}
 				if tc.appendExemplarErr == nil {
 					for _, e := range ts.Exemplars {
 						ex, err := e.ToExemplar(&b, writeV2RequestFixture.Symbols)

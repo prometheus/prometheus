@@ -528,15 +528,6 @@ eval instant at 1m quantile without(point)(0.8, {__name__=~"data(_histogram)?"})
 eval instant at 1m quantile(0.8, data_histogram)
   expect info
 
-# The histogram is ignored here so the result doesn't change but it has an info annotation now.
-eval_info instant at 1m quantile without(point)(0.8, {__name__=~"data(_histogram)?"})
-	{test="two samples"} 0.8
-	{test="three samples"} 1.6
-	{test="uneven samples"} 2.8
-
-# The histogram is ignored here so there is no result but it has an info annotation now.
-eval_info instant at 1m quantile(0.8, data_histogram)
-
 # Bug #5276.
 eval instant at 1m quantile without(point)(scalar(foo), data)
 	{test="two samples"} 0.8
@@ -563,12 +554,6 @@ eval range from 0m to 1m step 10s quantile without(point) (scalar(foo), data)
 	{test="three samples"} 0 2 0 2 0 2 1.6
 	{test="uneven samples"} 0 4 0 4 0 4 2.8
 	{test="NaN sample"} NaN 1 NaN 1 NaN 1 0.6
-
-# Bug #15971.
-eval range from 0m to 1m step 10s quantile without(point) (scalar(foo), data)
-	{test="two samples"} 0 1 0 1 0 1 0.8
-	{test="three samples"} 0 2 0 2 0 2 1.6
-	{test="uneven samples"} 0 4 0 4 0 4 2.8
 
 # Tests for group.
 clear

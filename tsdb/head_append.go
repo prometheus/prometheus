@@ -412,11 +412,6 @@ type headAppenderBase struct {
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
-	hints                           *storage.AppendOptions
-}
-
-func (a *headAppender) SetOptions(opts *storage.AppendOptions) {
-	a.hints = opts
 }
 type headAppender struct {
 	headAppenderBase
@@ -444,7 +439,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		}
 	}
 
-	s.Lock()
 	if value.IsStaleNaN(v) {
 		// If we have added a sample before with this same appender, we
 		// can check the previously used type and turn a stale float
@@ -830,7 +824,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 	}
 
-	var created bool
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		var err error
@@ -1010,101 +1003,6 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		b.floatHistogramSeries = append(b.floatHistogramSeries, s)
 	}
 
-	return storage.SeriesRef(s.ref), nil
-}
-
-func (a *headAppender) AppendHistogramCTZeroSample(ref storage.SeriesRef, lset labels.Labels, t, ct int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	if !a.head.opts.EnableNativeHistograms.Load() {
-		return 0, storage.ErrNativeHistogramsDisabled
-	}
-
-	if ct >= t {
-		return 0, storage.ErrCTNewerThanSample
-	}
-
-	var created bool
-	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
-	if s == nil {
-		var err error
-		s, created, err = a.getOrCreate(lset)
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	switch {
-	case h != nil:
-		zeroHistogram := &histogram.Histogram{}
-		s.Lock()
-
-		// TODO(krajorama): reorganize Commit() to handle samples in append order
-		// not floats first and then histograms. Then we would not need to do this.
-		// This whole "if" should be removed.
-		if created && s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
-			s.lastHistogramValue = zeroHistogram
-		}
-
-		// For CTZeroSamples OOO is not allowed.
-		// We set it to true to make this implementation as close as possible to the float implementation.
-		isOOO, _, err := s.appendableHistogram(ct, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
-		if err != nil {
-			s.Unlock()
-			if errors.Is(err, storage.ErrOutOfOrderSample) {
-				return 0, storage.ErrOutOfOrderCT
-			}
-		}
-		// OOO is not allowed because after the first scrape, CT will be the same for most (if not all) future samples.
-		// This is to prevent the injected zero from being marked as OOO forever.
-		if isOOO {
-			s.Unlock()
-			return 0, storage.ErrOutOfOrderCT
-		}
-		s.pendingCommit = true
-		s.Unlock()
-		a.histograms = append(a.histograms, record.RefHistogramSample{
-			Ref: s.ref,
-			T:   ct,
-			H:   zeroHistogram,
-		})
-		a.histogramSeries = append(a.histogramSeries, s)
-	case fh != nil:
-		zeroFloatHistogram := &histogram.FloatHistogram{}
-		s.Lock()
-
-		// TODO(krajorama): reorganize Commit() to handle samples in append order
-		// not floats first and then histograms. Then we would not need to do this.
-		// This whole "if" should be removed.
-		if created && s.lastHistogramValue == nil && s.lastFloatHistogramValue == nil {
-			s.lastFloatHistogramValue = zeroFloatHistogram
-		}
-
-		// We set it to true to make this implementation as close as possible to the float implementation.
-		isOOO, _, err := s.appendableFloatHistogram(ct, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for CTZeroSamples.
-		if err != nil {
-			s.Unlock()
-			if errors.Is(err, storage.ErrOutOfOrderSample) {
-				return 0, storage.ErrOutOfOrderCT
-			}
-		}
-		// OOO is not allowed because after the first scrape, CT will be the same for most (if not all) future samples.
-		// This is to prevent the injected zero from being marked as OOO forever.
-		if isOOO {
-			s.Unlock()
-			return 0, storage.ErrOutOfOrderCT
-		}
-		s.pendingCommit = true
-		s.Unlock()
-		a.floatHistograms = append(a.floatHistograms, record.RefFloatHistogramSample{
-			Ref: s.ref,
-			T:   ct,
-			FH:  zeroFloatHistogram,
-		})
-		a.floatHistogramSeries = append(a.floatHistogramSeries, s)
-	}
-
-	if ct > a.maxt {
-		a.maxt = ct
-	}
 	return storage.SeriesRef(s.ref), nil
 }
 

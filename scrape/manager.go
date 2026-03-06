@@ -120,9 +120,6 @@ type Options struct {
 	// EnableTypeAndUnitLabels represents type-and-unit-labels feature flag.
 	EnableTypeAndUnitLabels bool
 
-	// EnableTypeAndUnitLabels
-	EnableTypeAndUnitLabels bool
-
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
 

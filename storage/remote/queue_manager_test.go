@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"path"
 	"runtime/pprof"
 	"strconv"
 	"strings"

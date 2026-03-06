@@ -35,11 +35,6 @@ func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) model.MetricType 
 		if otelMetric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
 			metricType = model.MetricTypeUnknown
 		}
-		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
-		// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
-		if otelMetric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
-			metricType = prompb.MetricMetadata_UNKNOWN
-		}
 		return metricType
 	case pmetric.MetricTypeHistogram:
 		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)

@@ -305,10 +305,6 @@ type Appender interface {
 	// discarding out-of-order samples even if out-of-order is enabled in the TSDB.
 	SetOptions(opts *AppendOptions)
 
-	// SetOptions configures the appender with specific append options such as
-	// discarding out-of-order samples even if out-of-order is enabled in the TSDB.
-	SetOptions(opts *AppendOptions)
-
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater

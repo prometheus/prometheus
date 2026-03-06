@@ -895,60 +895,6 @@ func (e *expectCmd) Type() string {
 	return "pattern"
 }
 
-func (ev *evalCmd) isOrdered() bool {
-	return ev.ordered || (len(ev.expectedCmds[Ordered]) > 0)
-}
-
-func (ev *evalCmd) isFail() bool {
-	return ev.fail || (len(ev.expectedCmds[Fail]) > 0)
-}
-
-type expectCmdType byte
-
-const (
-	Ordered expectCmdType = iota
-	Fail
-	Warn
-	NoWarn
-	Info
-	NoInfo
-)
-
-var expectTypeStr = map[string]expectCmdType{
-	"fail":    Fail,
-	"ordered": Ordered,
-	"warn":    Warn,
-	"no_warn": NoWarn,
-	"info":    Info,
-	"no_info": NoInfo,
-}
-
-type expectCmd struct {
-	message string
-	regex   *regexp.Regexp
-}
-
-func (e *expectCmd) CheckMatch(str string) bool {
-	if e.regex == nil {
-		return e.message == str
-	}
-	return e.regex.MatchString(str)
-}
-
-func (e *expectCmd) String() string {
-	if e.regex == nil {
-		return e.message
-	}
-	return e.regex.String()
-}
-
-func (e *expectCmd) Type() string {
-	if e.regex == nil {
-		return "message"
-	}
-	return "pattern"
-}
-
 type entry struct {
 	pos  int
 	vals []parser.SequenceValue

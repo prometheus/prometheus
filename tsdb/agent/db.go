@@ -257,13 +257,6 @@ type DB struct {
 	walReplayHistogramsPool      zeropool.Pool[[]record.RefHistogramSample]
 	walReplayFloatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 
-	// These pools are only used during WAL replay and are reset at the end.
-	// NOTE: Adjust resetWALReplayResources() upon changes to the pools.
-	walReplaySeriesPool          zeropool.Pool[[]record.RefSeries]
-	walReplaySamplesPool         zeropool.Pool[[]record.RefSample]
-	walReplayHistogramsPool      zeropool.Pool[[]record.RefHistogramSample]
-	walReplayFloatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
-
 	nextRef *atomic.Uint64
 	series  *stripeSeries
 	// deleted is a map of (ref IDs that should be deleted from WAL) to (the WAL segment they
@@ -814,7 +807,6 @@ func (db *DB) Close() error {
 
 type appenderBase struct {
 	*DB
-	hints *storage.AppendOptions
 
 	pendingSeries          []record.RefSeries
 	pendingSamples         []record.RefSample

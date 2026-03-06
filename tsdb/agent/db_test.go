@@ -309,18 +309,6 @@ func TestRollback(t *testing.T) {
 		}
 	}
 
-	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
-
-		for i := 0; i < numHistograms; i++ {
-			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
-			require.NoError(t, err)
-		}
-	}
-
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -340,18 +328,6 @@ func TestRollback(t *testing.T) {
 		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
 		for i := range numHistograms {
-			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
-			require.NoError(t, err)
-		}
-	}
-
-	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
-
-		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
 			require.NoError(t, err)
 		}
@@ -476,19 +452,6 @@ func TestFullTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
-	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
-
-		for i := 0; i < numHistograms; i++ {
-			_, err := app.AppendHistogram(0, lset, int64(lastTs), histograms[i], nil)
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-	}
-
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -509,19 +472,6 @@ func TestFullTruncateWAL(t *testing.T) {
 		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
 		for i := range numHistograms {
-			_, err := app.AppendHistogram(0, lset, int64(lastTs), nil, floatHistograms[i])
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-	}
-
-	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
-
-		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(lastTs), nil, floatHistograms[i])
 			require.NoError(t, err)
 		}
@@ -589,19 +539,6 @@ func TestPartialTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
-	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram_batch-1", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numDatapoints)
-
-		for i := 0; i < numDatapoints; i++ {
-			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-	}
-
 	lbls = labelsForTest(t.Name()+"_float_histogram_batch-1", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -622,19 +559,6 @@ func TestPartialTruncateWAL(t *testing.T) {
 		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numDatapoints)
 
 		for i := range numDatapoints {
-			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-	}
-
-	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram_batch-1", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numDatapoints)
-
-		for i := 0; i < numDatapoints; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
 			require.NoError(t, err)
 		}
@@ -680,19 +604,6 @@ func TestPartialTruncateWAL(t *testing.T) {
 		require.NoError(t, app.Commit())
 	}
 
-	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram_batch-2", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numDatapoints)
-
-		for i := 0; i < numDatapoints; i++ {
-			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-	}
-
 	lbls = labelsForTest(t.Name()+"_float_histogram_batch-2", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -713,19 +624,6 @@ func TestPartialTruncateWAL(t *testing.T) {
 		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numDatapoints)
 
 		for i := range numDatapoints {
-			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
-			require.NoError(t, err)
-		}
-		require.NoError(t, app.Commit())
-	}
-
-	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram_batch-2", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numDatapoints)
-
-		for i := 0; i < numDatapoints; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
 			require.NoError(t, err)
 		}
@@ -785,18 +683,6 @@ func TestWALReplay(t *testing.T) {
 		}
 	}
 
-	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
-
-		for i := 0; i < numHistograms; i++ {
-			_, err := app.AppendHistogram(0, lset, lastTs, histograms[i], nil)
-			require.NoError(t, err)
-		}
-	}
-
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -816,18 +702,6 @@ func TestWALReplay(t *testing.T) {
 		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
 		for i := range numHistograms {
-			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
-			require.NoError(t, err)
-		}
-	}
-
-	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
-
-		for i := 0; i < numHistograms; i++ {
 			_, err := app.AppendHistogram(0, lset, lastTs, nil, floatHistograms[i])
 			require.NoError(t, err)
 		}
@@ -867,7 +741,7 @@ func TestLockfile(t *testing.T) {
 	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
 		logger := promslog.NewNopLogger()
 		reg := prometheus.NewRegistry()
-		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil)
+		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil, false)
 		t.Cleanup(func() {
 			require.NoError(t, rs.Close())
 		})
@@ -1183,18 +1057,6 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		}
 	}
 
-	lbls = labelsForTest(t.Name()+"_custom_buckets_histogram", numSeries*2)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		histograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
-
-		for i := 0; i < numDatapoints; i++ {
-			_, err := app.AppendHistogram(0, lset, int64(i), histograms[i], nil)
-			require.NoError(t, err)
-		}
-	}
-
 	lbls = labelsForTest(t.Name()+"_float_histogram", numSeries*2)
 	for _, l := range lbls {
 		lset := labels.New(l...)
@@ -1214,18 +1076,6 @@ func TestDBAllowOOOSamples(t *testing.T) {
 		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
 		for i := range numDatapoints {
-			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
-			require.NoError(t, err)
-		}
-	}
-
-	lbls = labelsForTest(t.Name()+"_custom_buckets_float_histogram", numSeries*2)
-	for _, l := range lbls {
-		lset := labels.New(l...)
-
-		floatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
-
-		for i := 0; i < numDatapoints; i++ {
 			_, err := app.AppendHistogram(0, lset, int64(i), nil, floatHistograms[i])
 			require.NoError(t, err)
 		}

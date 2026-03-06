@@ -793,9 +793,9 @@ func TestHead_ReadWAL(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, []sample{{0, 100, 2, nil, nil}, {0, 101, 5, nil, nil}}, expandChunk(c.chunk.Iterator(nil)))
 
-			q, err = head.ExemplarQuerier(context.Background())
+			q, err := head.ExemplarQuerier(context.Background())
 			require.NoError(t, err)
-			e, err = q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "3")})
+			e, err := q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")})
 			require.NoError(t, err)
 			require.NotEmpty(t, e)
 			require.NotEmpty(t, e[0].Exemplars)
@@ -5497,7 +5497,6 @@ func testWBLReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(30 * time.Minute.Milliseconds())
-	opts.EnableNativeHistograms.Store(true)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -5591,7 +5590,6 @@ func testOOOMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderCapMax.Store(30)
 	opts.OutOfOrderTimeWindow.Store(1000 * time.Minute.Milliseconds())
-	opts.EnableNativeHistograms.Store(true)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -5893,7 +5891,6 @@ func testOOOAppendWithNoSeries(t *testing.T, appendFunc func(appender storage.Li
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderCapMax.Store(30)
 	opts.OutOfOrderTimeWindow.Store(120 * time.Minute.Milliseconds())
-	opts.EnableNativeHistograms.Store(true)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -5984,7 +5981,6 @@ func testHeadMinOOOTimeUpdate(t *testing.T, scenario sampleTypeScenario) {
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(10 * time.Minute.Milliseconds())
-	opts.EnableNativeHistograms.Store(true)
 
 	h, err := NewHead(nil, nil, wal, oooWlog, opts, nil)
 	require.NoError(t, err)

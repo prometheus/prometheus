@@ -603,7 +603,6 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return i.Watch(ctx, options)
 				},
 			}
-			informer = d.mustNewSharedInformer(ilw, &networkv1.Ingress{}, resyncDisabled)
 			ingress := NewIngress(
 				d.logger.With("role", "ingress"),
 				d.newIndexedIngressesInformer(ilw),

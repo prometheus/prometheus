@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"math/rand"

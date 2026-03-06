@@ -114,21 +114,6 @@ npm_licenses:
 	@echo '>> skipping assets npm licenses, pre-built assets provided'
 endif
 
-.PHONY: npm_licenses
-npm_licenses: ui-install
-	@echo ">> bundling npm licenses"
-	rm -f $(REACT_APP_NPM_LICENSES_TARBALL) npm_licenses
-	ln -s . npm_licenses
-	find npm_licenses/$(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --files-from=-
-	rm -f npm_licenses
-else
-assets:
-	@echo '>> skipping assets build, pre-built assets provided'
-
-npm_licenses:
-	@echo '>> skipping assets npm licenses, pre-built assets provided'
-endif
-
 .PHONY: assets-compress
 assets-compress: assets
 	@echo '>> compressing assets'

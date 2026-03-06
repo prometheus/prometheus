@@ -204,34 +204,6 @@ func (it *listSeriesIteratorWithCopy) AtFloatHistogram(fh *histogram.FloatHistog
 	return t, fh
 }
 
-type listSeriesIteratorWithCopy struct {
-	*listSeriesIterator
-}
-
-func NewListSeriesIteratorWithCopy(samples Samples) chunkenc.Iterator {
-	return &listSeriesIteratorWithCopy{
-		listSeriesIterator: &listSeriesIterator{samples: samples, idx: -1},
-	}
-}
-
-func (it *listSeriesIteratorWithCopy) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
-	t, ih := it.listSeriesIterator.AtHistogram(nil)
-	if h == nil || ih == nil {
-		return t, ih
-	}
-	ih.CopyTo(h)
-	return t, h
-}
-
-func (it *listSeriesIteratorWithCopy) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	t, ih := it.listSeriesIterator.AtFloatHistogram(nil)
-	if fh == nil || ih == nil {
-		return t, ih
-	}
-	ih.CopyTo(fh)
-	return t, fh
-}
-
 type listChunkSeriesIterator struct {
 	chks []chunks.Meta
 	idx  int
