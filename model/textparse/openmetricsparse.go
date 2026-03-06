@@ -634,11 +634,13 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 	for {
 		curTStart := p.l.start
 		curTI := p.l.i
+		var isQString bool
 		switch t {
 		case tBraceClose:
 			return offsets, nil
 		case tLName:
 		case tQString:
+			isQString = true
 		default:
 			return nil, p.parseError("expected label name", t)
 		}
@@ -647,7 +649,7 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 		// A quoted string followed by a comma or brace is a metric name. Set the
 		// offsets and continue processing. If this is an exemplar, this format
 		// is not allowed.
-		if t == tComma || t == tBraceClose {
+		if isQString && (t == tComma || t == tBraceClose) {
 			if isExemplar {
 				return nil, p.parseError("expected label name", t)
 			}
