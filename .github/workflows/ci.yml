@@ -319,6 +319,8 @@ jobs:
           docker_hub_password: ${{ secrets.docker_hub_password }}
           quay_io_login: ${{ secrets.quay_io_login }}
           quay_io_password: ${{ secrets.quay_io_password }}
+          ghcr_io_login: ${{ secrets.ghcr_io_login }}
+          ghcr_io_password: ${{ secrets.ghcr_io_password }}
           github_token: ${{ secrets.PROMBOT_GITHUB_TOKEN }}
   publish_ui_release:
     name: Publish UI on npm Registry
