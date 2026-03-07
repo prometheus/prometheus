@@ -14,11 +14,14 @@
 package scrape
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -33,9 +36,11 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -1594,5 +1599,207 @@ scrape_configs:
 			expectedDisabled := slices.Contains(targetsToDisable, tg)
 			require.Equal(t, expectedDisabled, loop.disabledEndOfRunStalenessMarkers.Load())
 		}
+	}
+}
+
+// setupSynctestManager abstracts the boilerplate of creating a mock network,
+// starting the fake HTTP server, and configuring the scrape manager for synctest.
+func setupSynctestManager(t *testing.T, opts *Options, interval time.Duration) (*Manager, *teststorage.Appendable, func()) {
+	t.Helper()
+	app := teststorage.NewAppendable()
+
+	srvConn, cliConn := net.Pipe()
+
+	cleanup := func() {
+		srvConn.Close()
+		cliConn.Close()
+	}
+
+	go startFakeHTTPServer(t, srvConn)
+
+	if opts == nil {
+		opts = &Options{}
+	}
+	opts.skipOffsetting = true // Eliminates random jitter, making timing exact
+	opts.HTTPClientOptions = []config_util.HTTPClientOption{
+		config_util.WithDialContextFunc(func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return cliConn, nil
+		}),
+	}
+
+	scrapeManager, err := NewManager(
+		opts,
+		promslog.New(&promslog.Config{}),
+		nil, nil, app, prometheus.NewRegistry(),
+	)
+	require.NoError(t, err)
+
+	cfg := &config.Config{
+		GlobalConfig: config.GlobalConfig{
+			ScrapeInterval:  model.Duration(interval),
+			ScrapeTimeout:   model.Duration(interval),
+			ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0},
+		},
+		ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+	}
+	cfgText, err := yaml.Marshal(*cfg)
+	require.NoError(t, err)
+	cfg = loadConfiguration(t, string(cfgText))
+	require.NoError(t, scrapeManager.ApplyConfig(cfg))
+
+	scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+		"test": {{
+			Targets: []model.LabelSet{{
+				model.SchemeLabel:  "http",
+				model.AddressLabel: "test.local",
+			}},
+		}},
+	})
+
+	scrapeManager.reload()
+
+	return scrapeManager, app, cleanup
+}
+
+// Helper function to act as a fake HTTP server over a net.Conn
+func startFakeHTTPServer(t *testing.T, conn net.Conn) {
+	t.Helper()
+	reader := bufio.NewReader(conn)
+	for {
+		req, err := http.ReadRequest(reader)
+		if err != nil {
+			// net.Pipe returns io.ErrClosedPipe when closed during test teardown.
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
+				return
+			}
+			t.Errorf("fake HTTP server failed to read request: %v", err)
+			return
+		}
+
+		_, err = io.Copy(io.Discard, req.Body)
+		req.Body.Close()
+		if err != nil {
+			t.Errorf("fake HTTP server failed to read request body: %v", err)
+			return
+		}
+
+		body := "expected_metric 1\n"
+
+		response := fmt.Sprintf("HTTP/1.1 200 OK\r\n"+
+			"Content-Type: text/plain; version=0.0.4\r\n"+
+			"Content-Length: %d\r\n"+
+			"\r\n"+
+			"%s", len(body), body)
+
+		_, err = conn.Write([]byte(response))
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
+				return
+			}
+			t.Errorf("fake HTTP server failed to write response: %v", err)
+			return
+		}
+	}
+}
+
+func TestManager_InitialScrapeOffset(t *testing.T) {
+	interval := 10 * time.Second
+
+	for _, tcase := range []struct {
+		name                string
+		initialScrapeOffset time.Duration
+		runDuration         time.Duration
+		expectedSamples     int
+	}{
+		{
+			name:            "zero offset scrapes immediately",
+			expectedSamples: 1,
+		},
+		{
+			name:            "zero offset scrapes twice after one interval",
+			runDuration:     interval,
+			expectedSamples: 2,
+		},
+		{
+			name:                "large offset prevents immediate scrape",
+			initialScrapeOffset: 1 * time.Hour,
+			runDuration:         59 * time.Minute,
+		},
+		{
+			name:                "scrape happens exactly when large offset elapses",
+			initialScrapeOffset: 1 * time.Hour,
+			runDuration:         1 * time.Hour,
+			expectedSamples:     1,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				opts := &Options{InitialScrapeOffset: tcase.initialScrapeOffset}
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts, interval)
+				defer cleanupConns()
+
+				// Wait for the scrape manager to block on its timers
+				synctest.Wait()
+
+				// Fast-forward the fake clock by the test case's run duration
+				time.Sleep(tcase.runDuration)
+				synctest.Wait()
+
+				// Stop the manager to clean up background goroutines
+				scrapeManager.Stop()
+
+				require.Len(t, findSamplesForMetric(app.ResultSamples(), "expected_metric"), tcase.expectedSamples)
+			})
+		})
+	}
+}
+
+func TestManager_ScrapeOnShutdown(t *testing.T) {
+	interval := 10 * time.Second
+
+	for _, tcase := range []struct {
+		name                 string
+		scrapeOnShutdown     bool
+		runDuration          time.Duration
+		expectedSamplesTotal int
+	}{
+		{
+			name:                 "no scrape on shutdown",
+			scrapeOnShutdown:     false,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                 "scrape on shutdown",
+			scrapeOnShutdown:     true,
+			expectedSamplesTotal: 2,
+		},
+		{
+			name:                 "scrape on shutdown after some scrapes",
+			scrapeOnShutdown:     true,
+			runDuration:          interval,
+			expectedSamplesTotal: 3,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				opts := &Options{ScrapeOnShutdown: tcase.scrapeOnShutdown}
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts, interval)
+				defer cleanupConns()
+
+				// Wait for the initial scrape to happen exactly at t=0
+				synctest.Wait()
+
+				// Fast-forward fake time to simulate scheduled scrapes before shutdown
+				if tcase.runDuration > 0 {
+					time.Sleep(tcase.runDuration)
+					synctest.Wait()
+				}
+
+				// Stop the manager. This triggers the ScrapeOnShutdown logic synchronously.
+				scrapeManager.Stop()
+
+				require.Len(t, findSamplesForMetric(app.ResultSamples(), "expected_metric"), tcase.expectedSamplesTotal)
+			})
+		})
 	}
 }
