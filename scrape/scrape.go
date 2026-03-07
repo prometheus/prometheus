@@ -267,6 +267,9 @@ func (sp *scrapePool) stop() {
 	sp.targetMtx.Unlock()
 
 	wg.Wait()
+	// Cancel the pool's base context only after all loops have stopped.
+	// This ensures that loops performing a final ScrapeOnShutdown have
+	// a valid, uncanceled appender context to successfully write their data.
 	sp.cancel()
 	sp.client.CloseIdleConnections()
 
@@ -875,8 +878,9 @@ type scrapeLoop struct {
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
+	skipOffsetting          bool // For testability.
 	scrapeOnShutdown        bool
-	initialScrapeOffset     *time.Duration // For testing only: overrides the computed scrape offset.
+	initialScrapeOffset     time.Duration
 	// error injection through setForcedError.
 	forcedErr    error
 	forcedErrMtx sync.Mutex
@@ -1229,8 +1233,9 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
+		skipOffsetting:          opts.sp.options.skipOffsetting,
 		scrapeOnShutdown:        opts.sp.options.ScrapeOnShutdown,
-		initialScrapeOffset:     opts.sp.options.initialScrapeOffset,
+		initialScrapeOffset:     opts.sp.options.InitialScrapeOffset,
 	}
 }
 
@@ -1244,10 +1249,11 @@ func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 }
 
 func getScrapeOffset(sl *scrapeLoop) time.Duration {
-	if sl.initialScrapeOffset == nil {
-		return sl.scraper.offset(sl.interval, sl.offsetSeed)
+	offset := sl.scraper.offset(sl.interval, sl.offsetSeed)
+	if sl.skipOffsetting {
+		offset = time.Duration(0)
 	}
-	return *sl.initialScrapeOffset
+	return sl.initialScrapeOffset + offset
 }
 
 func (sl *scrapeLoop) run(errc chan<- error) {

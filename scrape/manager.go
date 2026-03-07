@@ -126,19 +126,27 @@ type Options struct {
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 
-	// Option to allow a final scrape before the manager is shutdown. This is useful
-	// for Prometheus in agent mode or serverless flavours of OTel's prometheusreceiver
-	// which might require a final scrape of targets before the instance is shutdown.
+	// private option for testability.
+	skipOffsetting bool
+
+	// Option to allow a final scrape before the manager closes. This is useful
+	// for Prometheus in agent mode or OTel's prometheusreceiver when used in serverless
+	// job scenarios, allowing an extra scrape for the short-living edge cases.
 	//
-	// Note: This final scrape ignores the configured scrape interval. If the time
-	// elapsed since the last scrape is short, some backends (e.g. Google Cloud Monitoring)
-	// may reject the data points due to timestamps being too close together.
+	// NOTE: This final scrape ignores the configured scrape interval.
 	ScrapeOnShutdown bool
 
-	// initialScrapeOffset is a private option strictly for testing. It overrides
-	// the standard scrape offset to manually control execution timing during
-	// test runs.
-	initialScrapeOffset *time.Duration
+	// InitialScrapeOffset applies an additional baseline delay before we begin
+	// scraping targets. By default, Prometheus calculates a specific offset for
+	// each target to spread the scraping load evenly across the server. Configuring
+	// this option adds a fixed duration to that target-specific offset. This allows
+	// tuning the initial startup delay without overriding the underlying target
+	// jitter, preserving proper load balancing across the scraper pools.
+	//
+	// NOTE: This option is not used by the standard Prometheus server. It was
+	// created for use in agent mode or in OTel's prometheusreceiver when
+	// used in serverless job scenarios.
+	InitialScrapeOffset time.Duration
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -327,8 +335,16 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 	m.scrapeFailureLoggers = scrapeFailureLoggers
 
-	if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
-		return err
+	// Skip offset seed calculation during tests.
+	// setOffsetSeed relies on osutil.GetFQDN(), which triggers a DNS lookup using
+	// a global singleflight goroutine. This cross-boundary communication breaks
+	// synctest's isolation bubble and causes a fatal panic.
+	if m.opts.skipOffsetting {
+		m.offsetSeed = 0
+	} else {
+		if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
+			return err
+		}
 	}
 
 	// Cleanup and reload pool if the configuration has changed.

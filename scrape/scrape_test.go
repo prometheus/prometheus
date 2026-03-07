@@ -6652,8 +6652,7 @@ func testNewScrapeLoopHonorLabelsWiring(t *testing.T, appV2 bool) {
 			}
 
 			sa := selectAppendable(s, appV2)
-			noOffSet := time.Duration(0)
-			sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{initialScrapeOffset: &noOffSet}, newTestScrapeMetrics(t))
+			sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{skipOffsetting: true}, newTestScrapeMetrics(t))
 			require.NoError(t, err)
 			defer sp.stop()
 
