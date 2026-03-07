@@ -290,7 +290,6 @@ func (nopIterator) Err() error  { return nil }
 
 // Pool is used to create and reuse chunk references to avoid allocations.
 type Pool interface {
-	Put(Chunk) error
 	Get(e Encoding, b []byte) (Chunk, error)
 }
 
@@ -337,34 +336,6 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 
 	c.Reset(b)
 	return c, nil
-}
-
-func (p *pool) Put(c Chunk) error {
-	var sp *sync.Pool
-	var ok bool
-	switch c.Encoding() {
-	case EncXOR:
-		_, ok = c.(*XORChunk)
-		sp = &p.xor
-	case EncHistogram:
-		_, ok = c.(*HistogramChunk)
-		sp = &p.histogram
-	case EncFloatHistogram:
-		_, ok = c.(*FloatHistogramChunk)
-		sp = &p.floatHistogram
-	default:
-		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
-	}
-	if !ok {
-		// This may happen often with wrapped chunks. Nothing we can really do about
-		// it but returning an error would cause a lot of allocations again. Thus,
-		// we just skip it.
-		return nil
-	}
-
-	c.Reset(nil)
-	sp.Put(c)
-	return nil
 }
 
 // FromData returns a chunk from a byte slice of chunk data.
