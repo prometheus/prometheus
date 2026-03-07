@@ -143,9 +143,13 @@ type Options struct {
 	// tuning the initial startup delay without overriding the underlying target
 	// jitter, preserving proper load balancing across the scraper pools.
 	//
-	// NOTE: This option is not used by the standard Prometheus server. It was
-	// created for use in agent mode or in OTel's prometheusreceiver when
-	// used in serverless job scenarios.
+	// Setting this offset (e.g., to 10s) is particularly useful in Prometheus
+	// agent mode and OTel's prometheusreceiver when used in serverless job
+	// scenarios. It helps avoid readiness races where targets might not be fully
+	// initialized immediately upon startup. It also prevents capturing
+	// intermediate state (such as applications crashing shortly after booting),
+	// and ensures backend rate limits don't drop valuable shutdown scrapes
+	// because of an early startup scrape.
 	InitialScrapeOffset time.Duration
 }
 
