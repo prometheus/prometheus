@@ -224,13 +224,6 @@ func (*OpenAPIBuilder) seriesPath() *v3.PathItem {
 			RequestBody: formRequestBodyWithExamples("SeriesPostInputBody", seriesPostExamples(), "Submit a series query. This endpoint accepts the same parameters as the GET version."),
 			Responses:   responsesWithErrorExamples("SeriesOutputBody", seriesResponseExamples(), errorResponseExamples(), "Series returned matching the provided label matchers via POST.", "Error retrieving series via POST."),
 		},
-		Delete: &v3.Operation{
-			OperationId: "delete-series",
-			Summary:     "Delete series",
-			Description: "Delete series matching selectors. Note: This is deprecated, use POST /admin/tsdb/delete_series instead.",
-			Tags:        []string{"series"},
-			Responses:   responsesWithErrorExamples("SeriesDeleteOutputBody", seriesDeleteResponseExamples(), errorResponseExamples(), "Series marked for deletion.", "Error deleting series."),
-		},
 	}
 }
 
