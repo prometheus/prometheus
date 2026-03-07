@@ -1743,7 +1743,7 @@ func TestRuntimeRetentionConfigChange(t *testing.T) {
 		StorageConfig: config.StorageConfig{
 			TSDBConfig: &config.TSDBConfig{
 				Retention: &config.TSDBRetentionConfig{
-					Time: model.Duration(shorterRetentionDuration),
+					Time: model.Duration(time.Duration(shorterRetentionDuration) * time.Millisecond),
 				},
 			},
 		},
@@ -1770,6 +1770,31 @@ func TestRuntimeRetentionConfigChange(t *testing.T) {
 	require.Equal(t, nineAndHalfHoursMs, actBlocks[1].meta.MinTime, "last remaining block should be the newest")
 
 	require.Positive(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "time retention count should be incremented")
+}
+
+// TestApplyConfigRetentionDurationMetricUnit verifies that after a config
+// reload the prometheus_tsdb_retention_limit_seconds metric reports the
+// retention in seconds.
+func TestApplyConfigRetentionDurationMetricUnit(t *testing.T) {
+	oneHourMs := int64(time.Hour / time.Millisecond)
+	db := newTestDB(t, withOpts(&Options{RetentionDuration: oneHourMs}))
+
+	cfg := &config.Config{
+		StorageConfig: config.StorageConfig{
+			TSDBConfig: &config.TSDBConfig{
+				Retention: &config.TSDBRetentionConfig{
+					Time: model.Duration(time.Hour),
+				},
+			},
+		},
+	}
+	require.NoError(t, db.ApplyConfig(cfg))
+
+	require.Equal(t, oneHourMs, db.getRetentionDuration())
+
+	gotSeconds := prom_testutil.ToFloat64(db.metrics.retentionDuration)
+	wantSeconds := time.Hour.Seconds()
+	require.Equal(t, wantSeconds, gotSeconds)
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
