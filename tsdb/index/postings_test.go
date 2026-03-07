@@ -1192,7 +1192,7 @@ func (p *postingsFailingAfterNthCall) Err() error {
 }
 
 func TestPostingsWithIndexHeap(t *testing.T) {
-	t.Run("seekHead", func(t *testing.T) {
+	t.Run("iterate", func(t *testing.T) {
 		h := postingsWithIndexHeap{
 			{index: 0, p: NewListPostings([]storage.SeriesRef{10, 20, 30})},
 			{index: 1, p: NewListPostings([]storage.SeriesRef{1, 5})},
@@ -1205,7 +1205,7 @@ func TestPostingsWithIndexHeap(t *testing.T) {
 
 		for _, expected := range []storage.SeriesRef{1, 5, 10, 20, 25, 30, 50} {
 			require.Equal(t, expected, h.at())
-			require.NoError(t, h.seekHead(h.at()+1))
+			require.NoError(t, h.next())
 		}
 		require.True(t, h.empty())
 	})
@@ -1223,7 +1223,7 @@ func TestPostingsWithIndexHeap(t *testing.T) {
 
 		for _, expected := range []storage.SeriesRef{1, 5, 10, 20} {
 			require.Equal(t, expected, h.at())
-			require.NoError(t, h.seekHead(h.at()+1))
+			require.NoError(t, h.next())
 		}
 		require.Equal(t, storage.SeriesRef(25), h.at())
 		node := heap.Pop(&h).(postingsWithIndex)
@@ -1434,28 +1434,28 @@ func BenchmarkMemPostings_PostingsForLabelMatching(b *testing.B) {
 				}
 			}
 
-			fp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString))
+			fp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", "", fast.MatchString))
 			require.NoError(b, err)
 			b.Logf("Fast matcher matches %d series", len(fp))
 			b.Run("matcher=fast", func(b *testing.B) {
 				for b.Loop() {
-					mp.PostingsForLabelMatching(context.Background(), "label", fast.MatchString).Next()
+					mp.PostingsForLabelMatching(context.Background(), "label", "",fast.MatchString).Next()
 				}
 			})
 
-			sp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString))
+			sp, err := ExpandPostings(mp.PostingsForLabelMatching(context.Background(), "label", "", slow.MatchString))
 			require.NoError(b, err)
 			b.Logf("Slow matcher matches %d series", len(sp))
 			b.Run("matcher=slow", func(b *testing.B) {
 				for b.Loop() {
-					mp.PostingsForLabelMatching(context.Background(), "label", slow.MatchString).Next()
+					mp.PostingsForLabelMatching(context.Background(), "label", "", slow.MatchString).Next()
 				}
 			})
 
 			b.Run("matcher=all", func(b *testing.B) {
 				for b.Loop() {
 					// Match everything.
-					p := mp.PostingsForLabelMatching(context.Background(), "label", func(_ string) bool { return true })
+					p := mp.PostingsForLabelMatching(context.Background(), "label", "", func(_ string) bool { return true })
 					var sum storage.SeriesRef
 					// Iterate through all results to exercise merge function.
 					for p.Next() {
@@ -1482,7 +1482,7 @@ func TestMemPostings_PostingsForLabelMatching(t *testing.T) {
 		return iv%2 == 0
 	}
 
-	p := mp.PostingsForLabelMatching(context.Background(), "foo", isEven)
+	p := mp.PostingsForLabelMatching(context.Background(), "foo", "", isEven)
 	require.NoError(t, p.Err())
 	refs, err := ExpandPostings(p)
 	require.NoError(t, err)
@@ -1513,7 +1513,7 @@ func TestMemPostings_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
 
 	failAfter := uint64(seriesCount / 2 / checkContextEveryNIterations)
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
-	p := memP.PostingsForLabelMatching(ctx, "__name__", func(string) bool {
+	p := memP.PostingsForLabelMatching(ctx, "__name__", "", func(string) bool {
 		return true
 	})
 	require.Error(t, p.Err())

@@ -448,7 +448,7 @@ func (p *MemPostings) addFor(id storage.SeriesRef, l labels.Label) {
 	}
 }
 
-func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) Postings {
+func (p *MemPostings) PostingsForLabelMatching(ctx context.Context, name string, prefix string, match func(string) bool) Postings {
 	// We'll take the label values slice and then match over that,
 	// this way we don't need to hold the mutex while we're matching,
 	// which can be slow (seconds) if the match function is a huge regex.
@@ -956,7 +956,7 @@ func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int,
 		}
 		if p.At() == h.at() {
 			indexes = append(indexes, h.popIndex())
-		} else if err := h.seekHead(p.At()); err != nil {
+		} else if err := h.next(); err != nil {
 			return nil, err
 		}
 	}
@@ -999,18 +999,20 @@ func (h *postingsWithIndexHeap) popIndex() int {
 // at provides the storage.SeriesRef where root Postings is pointing at this moment.
 func (h postingsWithIndexHeap) at() storage.SeriesRef { return h[0].p.At() }
 
-// seekHead performs the Postings.Seek() operation on the root of the heap.
-// If the root is exhausted or fails, it is removed from the heap.
-func (h *postingsWithIndexHeap) seekHead(val storage.SeriesRef) error {
+// next performs the Postings.Next() operation on the root of the heap, performing the related operation on the heap
+// and conveniently returning the result of calling Postings.Err() if the result of calling Next() was false.
+// If Next() succeeds, heap is fixed to move the root to its new position, according to its Postings.At() value.
+// If Next() returns fails and there's no error reported by Postings.Err(), then root is marked as removed and heap is fixed.
+func (h *postingsWithIndexHeap) next() error {
 	pi := (*h)[0]
-	next := pi.p.Seek(val)
+	next := pi.p.Next()
 	if next {
 		heap.Fix(h, 0)
 		return nil
 	}
 
 	if err := pi.p.Err(); err != nil {
-		return fmt.Errorf("seek postings %d: %w", pi.index, err)
+		return fmt.Errorf("postings %d: %w", pi.index, err)
 	}
 	h.popIndex()
 	return nil
