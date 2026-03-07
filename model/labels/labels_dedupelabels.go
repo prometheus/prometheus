@@ -619,11 +619,6 @@ func (b *Builder) Reset(base Labels) {
 	b.base = base
 	b.del = b.del[:0]
 	b.add = b.add[:0]
-	base.Range(func(l Label) {
-		if l.Value == "" {
-			b.del = append(b.del, l.Name)
-		}
-	})
 }
 
 // Labels returns the labels from the builder.
