@@ -4089,11 +4089,8 @@ func TestAppendHistogram(t *testing.T) {
 				_, err := app.AppendHistogram(0, l, ingestTs, h, nil)
 				require.NoError(t, err)
 				expHistograms = append(expHistograms, sample{t: ingestTs, h: h})
+				commitIfBatchIsFull(t, head, &app, ingestTs, 50)
 				ingestTs++
-				if ingestTs%50 == 0 {
-					require.NoError(t, app.Commit())
-					app = head.Appender(context.Background())
-				}
 			}
 
 			// Gauge integer histograms.
@@ -4101,11 +4098,8 @@ func TestAppendHistogram(t *testing.T) {
 				_, err := app.AppendHistogram(0, l, ingestTs, h, nil)
 				require.NoError(t, err)
 				expHistograms = append(expHistograms, sample{t: ingestTs, h: h})
+				commitIfBatchIsFull(t, head, &app, ingestTs, 50)
 				ingestTs++
-				if ingestTs%50 == 0 {
-					require.NoError(t, app.Commit())
-					app = head.Appender(context.Background())
-				}
 			}
 
 			expFloatHistograms := make([]chunks.Sample, 0, 2*numHistograms)
@@ -4115,11 +4109,8 @@ func TestAppendHistogram(t *testing.T) {
 				_, err := app.AppendHistogram(0, l, ingestTs, nil, fh)
 				require.NoError(t, err)
 				expFloatHistograms = append(expFloatHistograms, sample{t: ingestTs, fh: fh})
+				commitIfBatchIsFull(t, head, &app, ingestTs, 50)
 				ingestTs++
-				if ingestTs%50 == 0 {
-					require.NoError(t, app.Commit())
-					app = head.Appender(context.Background())
-				}
 			}
 
 			// Gauge float histograms.
@@ -4128,10 +4119,8 @@ func TestAppendHistogram(t *testing.T) {
 				require.NoError(t, err)
 				expFloatHistograms = append(expFloatHistograms, sample{t: ingestTs, fh: fh})
 				ingestTs++
-				if ingestTs%50 == 0 {
-					require.NoError(t, app.Commit())
-					app = head.Appender(context.Background())
-				}
+				commitIfBatchIsFull(t, head, &app, ingestTs, 50)
+				ingestTs++
 			}
 
 			require.NoError(t, app.Commit())
@@ -4205,11 +4194,8 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			_, err := app.AppendHistogram(0, s1, ts, h, nil)
 			require.NoError(t, err)
 			exp[k1] = append(exp[k1], sample{t: ts, h: h.Copy()})
+			commitIfBatchIsFull(t, head, &app, ts, 5)
 			ts++
-			if ts%5 == 0 {
-				require.NoError(t, app.Commit())
-				app = head.Appender(context.Background())
-			}
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -4227,11 +4213,8 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 			_, err := app.AppendHistogram(0, s1, ts, nil, h)
 			require.NoError(t, err)
 			exp[k1] = append(exp[k1], sample{t: ts, fh: h.Copy()})
+			commitIfBatchIsFull(t, head, &app, ts, 5)
 			ts++
-			if ts%5 == 0 {
-				require.NoError(t, app.Commit())
-				app = head.Appender(context.Background())
-			}
 		}
 		require.NoError(t, app.Commit())
 		head.mmapHeadChunks()
@@ -4273,10 +4256,9 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 				eh.CounterResetHint = histogram.UnknownCounterReset
 			}
 			exp[k2] = append(exp[k2], sample{t: ts, h: eh})
-			if ts%20 == 0 {
-				require.NoError(t, app.Commit())
-				app = head.Appender(context.Background())
-				// Add some float.
+
+			committed := commitIfBatchIsFull(t, head, &app, ts-1, 20)
+			if committed {
 				for range 10 {
 					ts++
 					_, err := app.Append(0, s2, ts, float64(ts))
@@ -4309,9 +4291,9 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 				eh.CounterResetHint = histogram.UnknownCounterReset
 			}
 			exp[k2] = append(exp[k2], sample{t: ts, fh: eh})
-			if ts%20 == 0 {
-				require.NoError(t, app.Commit())
-				app = head.Appender(context.Background())
+
+			committed := commitIfBatchIsFull(t, head, &app, ts-1, 20)
+			if committed {
 				// Add some float.
 				for range 10 {
 					ts++
@@ -5756,10 +5738,7 @@ func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 		for i := range 250 {
 			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
 			lastTs += interval
-			if i%10 == 0 {
-				require.NoError(t, app.Commit())
-				app = h.Appender(context.Background())
-			}
+			commitIfBatchIsFull(t, h, &app, int64(i), 10)
 		}
 		require.NoError(t, app.Commit())
 	}
@@ -5821,10 +5800,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 			expSamples = append(expSamples, sample{t: lastTs, f: float64(lastTs)})
 			require.NoError(t, err)
 			lastTs += itvl
-			if i%10 == 0 {
-				require.NoError(t, app.Commit())
-				app = h.Appender(context.Background())
-			}
+			commitIfBatchIsFull(t, h, &app, int64(i), 10)
 		}
 		require.NoError(t, app.Commit())
 	}
