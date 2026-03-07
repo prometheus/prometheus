@@ -669,7 +669,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if _, chunkCreated := ms.append(s.T, s.V, 0, appendChunkOpts); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
-				_ = ms.mmapChunks(h.chunkDiskMapper)
+				_ = ms.mmapChunks(h.chunkDiskMapper, h.chunkWriteErrorCallback)
 			}
 			if s.T > maxt {
 				maxt = s.T
@@ -1096,7 +1096,7 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 				missingSeries[s.Ref] = struct{}{}
 				continue
 			}
-			ok, chunkCreated, _ := ms.insert(s.T, s.V, nil, nil, h.chunkDiskMapper, oooCapMax, h.logger)
+			ok, chunkCreated, _ := ms.insert(s.T, s.V, nil, nil, h.chunkDiskMapper, h.chunkWriteErrorCallback, oooCapMax, h.logger)
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
@@ -1124,9 +1124,9 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 			var chunkCreated bool
 			var ok bool
 			if s.h != nil {
-				ok, chunkCreated, _ = ms.insert(s.t, 0, s.h, nil, h.chunkDiskMapper, oooCapMax, h.logger)
+				ok, chunkCreated, _ = ms.insert(s.t, 0, s.h, nil, h.chunkDiskMapper, h.chunkWriteErrorCallback, oooCapMax, h.logger)
 			} else {
-				ok, chunkCreated, _ = ms.insert(s.t, 0, nil, s.fh, h.chunkDiskMapper, oooCapMax, h.logger)
+				ok, chunkCreated, _ = ms.insert(s.t, 0, nil, s.fh, h.chunkDiskMapper, h.chunkWriteErrorCallback, oooCapMax, h.logger)
 			}
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
