@@ -140,11 +140,11 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 		disableTrimming = hints.DisableTrimming
 		if hints.Func == "series" {
 			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
-			return newBlockSeriesSet(index, newNopChunkReader(), tombstones, p, mint, maxt, disableTrimming)
+			return NewBlockSeriesSet(index, NewNopChunkReader(), tombstones, p, mint, maxt, disableTrimming)
 		}
 	}
 
-	return newBlockSeriesSet(index, chunks, tombstones, p, mint, maxt, disableTrimming)
+	return NewBlockSeriesSet(index, chunks, tombstones, p, mint, maxt, disableTrimming)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
@@ -482,7 +482,7 @@ func (s *seriesData) Labels() labels.Labels { return s.labels }
 
 // blockBaseSeriesSet allows to iterate over all series in the single block.
 // Iterated series are trimmed with given min and max time as well as tombstones.
-// See newBlockSeriesSet and NewBlockChunkSeriesSet to use it for either sample or chunk iterating.
+// See NewBlockSeriesSet and NewBlockChunkSeriesSet to use it for either sample or chunk iterating.
 type blockBaseSeriesSet struct {
 	blockID         ulid.ULID
 	p               index.Postings
@@ -1083,7 +1083,7 @@ type blockSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.SeriesSet {
+func NewBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.SeriesSet {
 	return &blockSeriesSet{
 		blockBaseSeriesSet{
 			index:           i,
@@ -1273,7 +1273,7 @@ type nopChunkReader struct {
 	emptyChunk chunkenc.Chunk
 }
 
-func newNopChunkReader() ChunkReader {
+func NewNopChunkReader() ChunkReader {
 	return nopChunkReader{
 		emptyChunk: chunkenc.NewXORChunk(),
 	}
