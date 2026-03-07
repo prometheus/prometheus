@@ -23,6 +23,7 @@ import (
 	yaml "go.yaml.in/yaml/v4"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // Helper functions for building common structures.
@@ -227,7 +228,7 @@ func pathParam(name, description string, schema *base.SchemaProxy) *v3.Parameter
 // createYAMLNode converts Go data to yaml.Node for use in examples.
 func createYAMLNode(data any) *yaml.Node {
 	node := &yaml.Node{}
-	bytes, _ := yaml.Marshal(data)
+	bytes, _ := yamlutil.Marshal(data)
 	_ = yaml.Unmarshal(bytes, node)
 	return node
 }
