@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -81,6 +82,21 @@ type OAuthConfig struct {
 	TenantID string `yaml:"tenant_id,omitempty"`
 }
 
+// CertificateConfig is used to store azure certificate-based oauth config values.
+type CertificateConfig struct {
+	// ClientID is the clientId of the azure active directory application that is being used to authenticate.
+	ClientID string `yaml:"client_id,omitempty"`
+
+	// TenantID is the tenantId of the azure active directory application that is being used to authenticate.
+	TenantID string `yaml:"tenant_id,omitempty"`
+
+	// CertificateFile is the path to the certificate file.
+	CertificateFile string `yaml:"certificate_file,omitempty"`
+
+	// PrivateKeyFile is the path to the private key file.
+	PrivateKeyFile string `yaml:"private_key_file,omitempty"`
+}
+
 // SDKConfig is used to store azure SDK config values.
 type SDKConfig struct {
 	// TenantID is the tenantId of the azure active directory application that is being used to authenticate.
@@ -97,6 +113,9 @@ type AzureADConfig struct { //nolint:revive // exported.
 
 	// OAuth is the oauth config that is being used to authenticate.
 	OAuth *OAuthConfig `yaml:"oauth,omitempty"`
+
+	// Certificate is the certificate config that is being used to authenticate.
+	Certificate *CertificateConfig `yaml:"certificate,omitempty"`
 
 	// SDK is the SDK config that is being used to authenticate.
 	SDK *SDKConfig `yaml:"sdk,omitempty"`
@@ -147,12 +166,15 @@ func (c *AzureADConfig) Validate() error {
 	if c.OAuth != nil {
 		authenticators++
 	}
+	if c.Certificate != nil {
+		authenticators++
+	}
 	if c.SDK != nil {
 		authenticators++
 	}
 
 	if authenticators == 0 {
-		return errors.New("must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth or Azure SDK in the Azure AD config")
+		return errors.New("must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth, Azure Certificate or Azure SDK in the Azure AD config")
 	}
 	if authenticators > 1 {
 		return errors.New("cannot provide multiple authentication methods in the Azure AD config")
@@ -203,6 +225,28 @@ func (c *AzureADConfig) Validate() error {
 		}
 		if _, err := regexp.MatchString("^[0-9a-zA-Z-.]+$", c.OAuth.TenantID); err != nil {
 			return errors.New("the provided Azure OAuth tenant_id is invalid")
+		}
+	}
+
+	if c.Certificate != nil {
+		if c.Certificate.ClientID == "" {
+			return errors.New("must provide an Azure Certificate client_id in the Azure AD config")
+		}
+		if c.Certificate.TenantID == "" {
+			return errors.New("must provide an Azure Certificate tenant_id in the Azure AD config")
+		}
+		if c.Certificate.CertificateFile == "" {
+			return errors.New("must provide an Azure Certificate certificate_file in the Azure AD config")
+		}
+		if c.Certificate.PrivateKeyFile == "" {
+			return errors.New("must provide an Azure Certificate private_key_file in the Azure AD config")
+		}
+
+		if _, err := uuid.Parse(c.Certificate.ClientID); err != nil {
+			return errors.New("the provided Azure Certificate client_id is invalid")
+		}
+		if _, err := regexp.MatchString("^[0-9a-zA-Z-.]+$", c.Certificate.TenantID); err != nil {
+			return errors.New("the provided Azure Certificate tenant_id is invalid")
 		}
 	}
 
@@ -314,6 +358,19 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 		}
 	}
 
+	if cfg.Certificate != nil {
+		certificateConfig := &CertificateConfig{
+			ClientID:        cfg.Certificate.ClientID,
+			TenantID:        cfg.Certificate.TenantID,
+			CertificateFile: cfg.Certificate.CertificateFile,
+			PrivateKeyFile:  cfg.Certificate.PrivateKeyFile,
+		}
+		cred, err = newCertificateTokenCredential(clientOpts, certificateConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if cfg.SDK != nil {
 		sdkConfig := &SDKConfig{
 			TenantID: cfg.SDK.TenantID,
@@ -358,6 +415,30 @@ func newWorkloadIdentityTokenCredential(clientOpts *azcore.ClientOptions, worklo
 func newOAuthTokenCredential(clientOpts *azcore.ClientOptions, oAuthConfig *OAuthConfig) (azcore.TokenCredential, error) {
 	opts := &azidentity.ClientSecretCredentialOptions{ClientOptions: *clientOpts}
 	return azidentity.NewClientSecretCredential(oAuthConfig.TenantID, oAuthConfig.ClientID, oAuthConfig.ClientSecret, opts)
+}
+
+// newCertificateTokenCredential returns new Certificate-based token credential.
+func newCertificateTokenCredential(clientOpts *azcore.ClientOptions, certificateConfig *CertificateConfig) (azcore.TokenCredential, error) {
+	// Read certificate file
+	certData, err := os.ReadFile(certificateConfig.CertificateFile)
+	if err != nil {
+		return nil, errors.New("failed to read certificate file: " + err.Error())
+	}
+
+	// Read private key file
+	keyData, err := os.ReadFile(certificateConfig.PrivateKeyFile)
+	if err != nil {
+		return nil, errors.New("failed to read private key file: " + err.Error())
+	}
+
+	// Parse the certificate and private key
+	certs, key, err := azidentity.ParseCertificates(certData, keyData, nil)
+	if err != nil {
+		return nil, errors.New("failed to parse certificate and private key: " + err.Error())
+	}
+
+	opts := &azidentity.ClientCertificateCredentialOptions{ClientOptions: *clientOpts}
+	return azidentity.NewClientCertificateCredential(certificateConfig.TenantID, certificateConfig.ClientID, certs, key, opts)
 }
 
 // newSDKTokenCredential returns new SDK token credential.
