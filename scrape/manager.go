@@ -126,8 +126,19 @@ type Options struct {
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 
-	// private option for testability.
-	skipOffsetting bool
+	// Option to allow a final scrape before the manager is shutdown. This is useful
+	// for Prometheus in agent mode or serverless flavours of OTel's prometheusreceiver
+	// which might require a final scrape of targets before the instance is shutdown.
+	//
+	// Note: This final scrape ignores the configured scrape interval. If the time
+	// elapsed since the last scrape is short, some backends (e.g. Google Cloud Monitoring)
+	// may reject the data points due to timestamps being too close together.
+	ScrapeOnShutdown bool
+
+	// initialScrapeOffset is a private option strictly for testing. It overrides
+	// the standard scrape offset to manually control execution timing during
+	// test runs.
+	initialScrapeOffset *time.Duration
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -184,14 +195,28 @@ func (m *Manager) UnregisterMetrics() {
 }
 
 func (m *Manager) reloader() {
-	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
-	if reloadIntervalDuration == model.Duration(0) {
-		reloadIntervalDuration = model.Duration(5 * time.Second)
+	reloadIntervalDuration := time.Duration(m.opts.DiscoveryReloadInterval)
+	if reloadIntervalDuration == 0 {
+		reloadIntervalDuration = 5 * time.Second
 	}
 
-	ticker := time.NewTicker(time.Duration(reloadIntervalDuration))
-
+	ticker := time.NewTicker(reloadIntervalDuration)
 	defer ticker.Stop()
+
+	if m.opts.ScrapeOnShutdown {
+	startupLoop:
+		for {
+			select {
+			case <-m.graceShut:
+				return
+			case <-ticker.C:
+				break startupLoop
+			case <-m.triggerReload:
+				m.reload()
+			}
+		}
+		ticker.Reset(reloadIntervalDuration)
+	}
 
 	for {
 		select {
