@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/sample"
 )
 
 type fanout struct {
@@ -299,17 +300,17 @@ type fanoutAppenderV2 struct {
 	secondaries []AppenderV2
 }
 
-func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AOptions) (SeriesRef, error) {
+func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, val sample.Value, opts AOptions) (SeriesRef, error) {
 	var partialErr *AppendPartialError
 
-	ref, err := f.primary.Append(ref, l, st, t, v, h, fh, opts)
+	ref, err := f.primary.Append(ref, l, st, t, val, opts)
 	partialErr, err = partialErr.Handle(err)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		_, serr := appender.Append(ref, l, st, t, v, h, fh, opts)
+		_, serr := appender.Append(ref, l, st, t, val, opts)
 		partialErr, serr = partialErr.Handle(serr)
 		if serr != nil {
 			return ref, serr
