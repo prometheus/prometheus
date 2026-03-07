@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -40,20 +41,33 @@ type readHandler struct {
 	remoteReadMaxBytesInFrame int
 	remoteReadGate            *gate.Gate
 	queries                   prometheus.Gauge
+	gateWaitDuration          prometheus.Histogram
 	marshalPool               *sync.Pool
 }
 
 // NewReadHandler creates a http.Handler that accepts remote read requests and
 // writes them to the provided queryable.
 func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
+	gateWaitDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace:                       namespace,
+		Subsystem:                       "remote_read_handler",
+		Name:                            "gate_wait_seconds",
+		Help:                            "Histogram of time spent waiting at the gate for remote read requests.",
+		Buckets:                         prometheus.DefBuckets,
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	})
+
 	h := &readHandler{
 		logger:                    logger,
 		queryable:                 queryable,
 		config:                    config,
 		remoteReadSampleLimit:     remoteReadSampleLimit,
-		remoteReadGate:            gate.New(remoteReadConcurrencyLimit),
+		remoteReadGate:            gate.NewInstrumented(remoteReadConcurrencyLimit, gateWaitDuration),
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		marshalPool:               &sync.Pool{},
+		gateWaitDuration:          gateWaitDuration,
 
 		queries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -63,7 +77,7 @@ func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable stor
 		}),
 	}
 	if r != nil {
-		r.MustRegister(h.queries)
+		r.MustRegister(h.queries, h.gateWaitDuration)
 	}
 	return h
 }

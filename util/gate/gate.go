@@ -13,11 +13,17 @@
 
 package gate
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 // A Gate controls the maximum number of concurrently running and waiting queries.
 type Gate struct {
-	ch chan struct{}
+	ch              chan struct{}
+	waitingDuration prometheus.Observer
 }
 
 // New returns a query gate that limits the number of queries
@@ -28,12 +34,27 @@ func New(length int) *Gate {
 	}
 }
 
+// NewInstrumented returns a query gate that limits the number of queries
+// being concurrently executed and records waiting duration metrics.
+func NewInstrumented(length int, waitingDuration prometheus.Observer) *Gate {
+	return &Gate{
+		ch:              make(chan struct{}, length),
+		waitingDuration: waitingDuration,
+	}
+}
+
 // Start blocks until the gate has a free spot or the context is done.
+// If the gate is instrumented, it records the time spent waiting.
 func (g *Gate) Start(ctx context.Context) error {
+	start := time.Now()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case g.ch <- struct{}{}:
+		if g.waitingDuration != nil {
+			g.waitingDuration.Observe(time.Since(start).Seconds())
+		}
 		return nil
 	}
 }
