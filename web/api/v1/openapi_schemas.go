@@ -60,6 +60,15 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("SeriesPostInputBody", b.seriesPostInputBodySchema())
 	schemas.Set("SeriesDeleteOutputBody", b.simpleResponseBodySchema())
 
+	// Resources schemas.
+	schemas.Set("ResourcesOutputBody", b.resourcesOutputBodySchema())
+	schemas.Set("ResourcesSeriesOutputBody", b.resourcesSeriesOutputBodySchema())
+	schemas.Set("ResourcesAttributesOutputBody", b.resourcesAttributesOutputBodySchema())
+	schemas.Set("ResourceAttributesResponse", b.resourceAttributesResponseSchema())
+	schemas.Set("ResourceAttributeVersion", b.resourceAttributeVersionSchema())
+	schemas.Set("ResourceAttributeData", b.resourceAttributeDataSchema())
+	schemas.Set("EntityData", b.entityDataSchema())
+
 	// Metadata schemas.
 	schemas.Set("Metadata", b.metadataSchema())
 	schemas.Set("MetadataOutputBody", b.metadataOutputBodySchema())
@@ -731,6 +740,191 @@ func (*OpenAPIBuilder) seriesPostInputBodySchema() *base.SchemaProxy {
 		Description:          "POST request body for series query.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"match[]"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) resourcesOutputBodySchema() *base.SchemaProxy {
+	// The data field is a paginated object with results array and optional nextToken cursor.
+	dataProps := orderedmap.New[string, *base.SchemaProxy]()
+	dataProps.Set("results", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/ResourceAttributesResponse")},
+		Description: "Array of resource attributes for matching time series.",
+	}))
+	dataProps.Set("nextToken", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"string"},
+		Description: "Cursor token for fetching the next page. Empty when there are no more results.",
+	}))
+
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"object"},
+		Description: "Paginated resource attributes with cursor-based pagination.",
+		Required:    []string{"results"},
+		Properties:  dataProps,
+	}))
+	props.Set("warnings", warningsSchema())
+	props.Set("infos", infosSchema())
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Response body for resources endpoint (default format).",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"status", "data"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) resourcesSeriesOutputBodySchema() *base.SchemaProxy {
+	// The data field is a paginated object with results array and optional nextToken cursor.
+	dataProps := orderedmap.New[string, *base.SchemaProxy]()
+	dataProps.Set("results", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Description: "Array of series matching the metadata criteria, with their resource and scope versions.",
+		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
+			Type:        []string{"object"},
+			Description: "A series matching the metadata criteria with its resource and scope version history.",
+		})},
+	}))
+	dataProps.Set("nextToken", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"string"},
+		Description: "Cursor token for fetching the next page. Empty when there are no more results.",
+	}))
+
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"object"},
+		Description: "Paginated series metadata with cursor-based pagination.",
+		Required:    []string{"results"},
+		Properties:  dataProps,
+	}))
+	props.Set("warnings", warningsSchema())
+	props.Set("infos", infosSchema())
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Response body for the reverse lookup endpoint.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"status", "data"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) resourcesAttributesOutputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("status", statusSchema())
+	props.Set("data", base.CreateSchemaProxy(&base.Schema{
+		Type: []string{"object"},
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
+			A: base.CreateSchemaProxy(&base.Schema{
+				Type:  []string{"array"},
+				Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+			}),
+		},
+		Description: "Map of attribute names to their unique values.",
+	}))
+	props.Set("warnings", warningsSchema())
+	props.Set("infos", infosSchema())
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Response body for resources endpoint with format=attributes (for autocomplete).",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"status", "data"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) resourceAttributesResponseSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("labels", schemaRef("#/components/schemas/Labels"))
+	props.Set("versions", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/ResourceAttributeVersion")},
+		Description: "Array of resource attribute versions for this series.",
+	}))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Resource attributes for a single time series.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"labels", "versions"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) resourceAttributeVersionSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("resource_attributes", schemaRef("#/components/schemas/ResourceAttributeData"))
+	props.Set("entities", base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"array"},
+		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/EntityData")},
+		Description: "Entities associated with this resource version.",
+	}))
+	props.Set("min_time_ms", integerSchemaWithDescription("Start timestamp of this version in milliseconds."))
+	props.Set("max_time_ms", integerSchemaWithDescription("End timestamp of this version in milliseconds."))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "A single version of resource attributes with time range.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"resource_attributes", "min_time_ms", "max_time_ms"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) resourceAttributeDataSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("identifying", base.CreateSchemaProxy(&base.Schema{
+		Type: []string{"object"},
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
+			A: stringSchema(),
+		},
+		Description: "Identifying attributes (e.g., service.name, service.namespace, service.instance.id).",
+	}))
+	props.Set("descriptive", base.CreateSchemaProxy(&base.Schema{
+		Type: []string{"object"},
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
+			A: stringSchema(),
+		},
+		Description: "Descriptive attributes providing additional context.",
+	}))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Resource attribute data with identifying and descriptive attributes.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"identifying", "descriptive"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) entityDataSchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("type", stringSchemaWithDescription("Entity type (e.g., service, host)."))
+	props.Set("identifying", base.CreateSchemaProxy(&base.Schema{
+		Type: []string{"object"},
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
+			A: stringSchema(),
+		},
+		Description: "Identifying attributes for this entity.",
+	}))
+	props.Set("descriptive", base.CreateSchemaProxy(&base.Schema{
+		Type: []string{"object"},
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
+			A: stringSchema(),
+		},
+		Description: "Descriptive attributes for this entity.",
+	}))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "Entity data with type and attributes.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"type", "identifying", "descriptive"},
 		Properties:           props,
 	})
 }

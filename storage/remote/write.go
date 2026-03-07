@@ -362,6 +362,10 @@ func (*timestampTracker) UpdateMetadata(storage.SeriesRef, labels.Labels, metada
 	return 0, nil
 }
 
+func (*timestampTracker) UpdateResource(storage.SeriesRef, labels.Labels, map[string]string, map[string]string, []storage.EntityData, int64) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
 // Commit implements storage.Appender.
 func (t *baseTimestampTracker) Commit() error {
 	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
