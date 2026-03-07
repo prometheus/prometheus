@@ -75,6 +75,9 @@ const (
 
 	// The default buffer size for points used by the matrix selector.
 	matrixSelectorSliceSize = 16
+
+	// What slog level to emit query logs at.
+	queryLogLevel = slog.LevelInfo
 )
 
 type engineMetrics struct {
@@ -125,17 +128,6 @@ func (e ErrStorage) Error() string {
 type QueryEngine interface {
 	NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error)
 	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
-}
-
-var _ QueryLogger = (*logging.JSONFileLogger)(nil)
-
-// QueryLogger is an interface that can be used to log all the queries logged
-// by the engine.
-// logging.JSONFileLogger implements this interface, downstream users may use
-// different implementations.
-type QueryLogger interface {
-	slog.Handler
-	io.Closer
 }
 
 // A Query is derived from a raw query string and can be run against an engine
@@ -348,7 +340,7 @@ type Engine struct {
 	timeout                  time.Duration
 	maxSamplesPerQuery       int
 	activeQueryTracker       QueryTracker
-	queryLogger              QueryLogger
+	queryLogger              logging.CloseableLogger
 	queryLoggerLock          sync.RWMutex
 	lookbackDelta            time.Duration
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
@@ -504,27 +496,26 @@ func (ng *Engine) Close() error {
 	return nil
 }
 
-// SetQueryLogger sets the query logger.
-func (ng *Engine) SetQueryLogger(l QueryLogger) {
+// SetQueryLogger sets the query logger and updates the query log enabled metric.
+// The previous logger is closed before the new one is installed.
+func (ng *Engine) SetQueryLogger(lf logging.QueryLoggerFactory) {
 	ng.queryLoggerLock.Lock()
 	defer ng.queryLoggerLock.Unlock()
 
 	if ng.queryLogger != nil {
-		// An error closing the old file descriptor should
-		// not make reload fail; only log a warning.
 		err := ng.queryLogger.Close()
 		if err != nil {
-			ng.logger.Warn("Error while closing the previous query log file", "err", err)
+			ng.logger.Error("failed to close previous query logger", "err", err)
 		}
 	}
 
-	ng.queryLogger = l
+	ng.queryLogger = lf.NewQueryLogger()
 
-	if l != nil {
-		ng.metrics.queryLogEnabled.Set(1)
-	} else {
-		ng.metrics.queryLogEnabled.Set(0)
+	enabled := 0.0
+	if ng.queryLogger != nil && ng.queryLogger.Enabled(context.Background(), queryLogLevel) {
+		enabled = 1.0
 	}
+	ng.metrics.queryLogEnabled.Set(enabled)
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
@@ -682,7 +673,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 
 	defer func() {
 		ng.queryLoggerLock.RLock()
-		if l := ng.queryLogger; l != nil {
+		if l := ng.queryLogger; l != nil && l.Enabled(ctx, queryLogLevel) {
 			logger := slog.New(l)
 			f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
 
@@ -711,10 +702,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 					f = append(f, slog.Any(k, v))
 				}
 			}
-			logger.LogAttrs(context.Background(), slog.LevelInfo, "promql query logged", f...)
-			// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
-			// ng.metrics.queryLogFailures.Inc()
-			// ng.logger.Error("can't log query", "err", err)
+			logger.LogAttrs(ctx, queryLogLevel, "promql query logged", f...)
 		}
 		ng.queryLoggerLock.RUnlock()
 	}()

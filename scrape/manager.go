@@ -51,7 +51,7 @@ import (
 func NewManager(
 	o *Options,
 	logger *slog.Logger,
-	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error),
+	scrapeFailureLoggerFactory logging.ScrapeFailureLoggerFactory,
 	appendable storage.Appendable,
 	appendableV2 storage.AppendableV2,
 	registerer prometheus.Registerer,
@@ -79,7 +79,7 @@ func NewManager(
 		appendableV2:           appendableV2,
 		opts:                   o,
 		logger:                 logger,
-		newScrapeFailureLogger: newScrapeFailureLogger,
+		newScrapeFailureLogger: scrapeFailureLoggerFactory,
 		scrapeConfigs:          make(map[string]*config.ScrapeConfig),
 		scrapePools:            make(map[string]*scrapePool),
 		graceShut:              make(chan struct{}),
@@ -145,7 +145,7 @@ type Manager struct {
 	mtxScrape              sync.Mutex // Guards the fields below.
 	scrapeConfigs          map[string]*config.ScrapeConfig
 	scrapePools            map[string]*scrapePool
-	newScrapeFailureLogger func(string) (*logging.JSONFileLogger, error)
+	newScrapeFailureLogger logging.ScrapeFailureLoggerFactory
 	scrapeFailureLoggers   map[string]FailureLogger
 	targetSets             map[string][]*targetgroup.Group
 	buffers                *pool.Pool
@@ -292,15 +292,12 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	for _, scfg := range scfgs {
 		c[scfg.JobName] = scfg
 		if _, ok := scrapeFailureLoggers[scfg.ScrapeFailureLogFile]; !ok {
-			// We promise to reopen the file on each reload.
+			// We promise to refresh the logger on each reload, so the backing file can be reopened, otel logger config reloaded etc.
 			var (
 				logger FailureLogger
-				err    error
 			)
 			if m.newScrapeFailureLogger != nil {
-				if logger, err = m.newScrapeFailureLogger(scfg.ScrapeFailureLogFile); err != nil {
-					return err
-				}
+				logger = m.newScrapeFailureLogger.NewScrapeFailureLogger(scfg.JobName, scfg.ScrapeFailureLogFile)
 			}
 			scrapeFailureLoggers[scfg.ScrapeFailureLogFile] = logger
 		}
