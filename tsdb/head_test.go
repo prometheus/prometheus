@@ -8087,6 +8087,7 @@ func TestHead_FindLastSeriesID(t *testing.T) {
 func TestResourceAndScopeWALReplay(t *testing.T) {
 	dir := t.TempDir()
 	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableNativeMetadata = true
 	opts.ChunkDirRoot = dir
 
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
@@ -8118,16 +8119,12 @@ func TestResourceAndScopeWALReplay(t *testing.T) {
 	require.NoError(t, appErr)
 	require.NoError(t, app.Commit())
 
-	// Verify the series has resource set.
-	s := head.series.getByID(chunks.HeadSeriesRef(ref))
-	require.NotNil(t, s)
-	s.Lock()
-	res, resOK := s.GetKindMeta(seriesmetadata.KindResource)
-	require.True(t, resOK)
-	vr := res.(*seriesmetadata.VersionedResource)
+	// Verify resource in shared MemStore.
+	hash := labels.StableHash(lset)
+	vr, vrOK := head.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vrOK)
 	require.Len(t, vr.Versions, 1)
 	require.Equal(t, "frontend", vr.Versions[0].Identifying["service.name"])
-	s.Unlock()
 
 	// Close the head and replay WAL into a new head using the same dir.
 	require.NoError(t, head.Close())
@@ -8140,21 +8137,18 @@ func TestResourceAndScopeWALReplay(t *testing.T) {
 	t.Cleanup(func() { _ = head2.Close() })
 	require.NoError(t, head2.Init(0))
 
-	// The replayed head should have the resource.
-	s2 := head2.series.getByID(chunks.HeadSeriesRef(ref))
-	require.NotNil(t, s2)
-	s2.Lock()
-	res2, res2OK := s2.GetKindMeta(seriesmetadata.KindResource)
-	require.True(t, res2OK, "resource should survive WAL replay")
-	vr2 := res2.(*seriesmetadata.VersionedResource)
+	// The replayed head should have the resource in its shared store.
+	vr2, vr2OK := head2.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vr2OK, "resource should survive WAL replay")
 	require.Len(t, vr2.Versions, 1)
 	require.Equal(t, "frontend", vr2.Versions[0].Identifying["service.name"])
 	require.Equal(t, "node-1", vr2.Versions[0].Descriptive["host.name"])
-	s2.Unlock()
 }
 
 func TestResourceAndScopeRollback(t *testing.T) {
-	head, _ := newTestHead(t, 1000, compression.None, false)
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableNativeMetadata = true
+	head, _ := newTestHeadWithOptions(t, compression.None, opts)
 	require.NoError(t, head.Init(0))
 
 	ctx := context.Background()
@@ -8179,17 +8173,16 @@ func TestResourceAndScopeRollback(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, app.Rollback())
 
-	// The series should NOT have a resource after rollback.
-	s := head.series.getByID(chunks.HeadSeriesRef(ref))
-	require.NotNil(t, s)
-	s.Lock()
-	_, resOK := s.GetKindMeta(seriesmetadata.KindResource)
+	// The shared store should NOT have a resource after rollback.
+	hash := labels.StableHash(lset)
+	_, resOK := head.seriesMeta.ResourceStore().GetVersioned(hash)
 	require.False(t, resOK, "resource must not be set after rollback")
-	s.Unlock()
 }
 
 func TestResourceDedupInV1Appender(t *testing.T) {
-	head, _ := newTestHead(t, 1000, compression.None, false)
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableNativeMetadata = true
+	head, _ := newTestHeadWithOptions(t, compression.None, opts)
 	require.NoError(t, head.Init(0))
 
 	ctx := context.Background()
@@ -8222,19 +8215,17 @@ func TestResourceDedupInV1Appender(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Only the first resource update should have been applied.
-	s := head.series.getByID(chunks.HeadSeriesRef(ref))
-	require.NotNil(t, s)
-	s.Lock()
-	res, resOK := s.GetKindMeta(seriesmetadata.KindResource)
-	require.True(t, resOK)
-	vr := res.(*seriesmetadata.VersionedResource)
+	hash := labels.StableHash(lset)
+	vr, vrOK := head.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vrOK)
 	require.Len(t, vr.Versions, 1)
 	require.Equal(t, "v1", vr.Versions[0].Identifying["service.name"])
-	s.Unlock()
 }
 
 func TestResourceAndScopeWALReplayWithScope(t *testing.T) {
-	head, w := newTestHead(t, 1000, compression.None, false)
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableNativeMetadata = true
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
 	// Manually populate the WAL with series + resource + scope records.
 	populateTestWL(t, w, []any{
 		[]record.RefSeries{
@@ -8267,23 +8258,22 @@ func TestResourceAndScopeWALReplayWithScope(t *testing.T) {
 
 	require.NoError(t, head.Init(0))
 
+	// Compute the labels hash for series ref=1.
 	s := head.series.getByID(1)
 	require.NotNil(t, s)
-
 	s.Lock()
-	defer s.Unlock()
+	hash := labels.StableHash(s.lset)
+	s.Unlock()
 
-	// Resource should be replayed.
-	res, resOK := s.GetKindMeta(seriesmetadata.KindResource)
-	require.True(t, resOK)
-	vr := res.(*seriesmetadata.VersionedResource)
+	// Resource should be replayed in shared store.
+	vr, vrOK := head.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vrOK)
 	require.Len(t, vr.Versions, 1)
 	require.Equal(t, "frontend", vr.Versions[0].Identifying["service.name"])
 
-	// Scope should be replayed.
-	sc, scOK := s.GetKindMeta(seriesmetadata.KindScope)
-	require.True(t, scOK)
-	vs := sc.(*seriesmetadata.VersionedScope)
+	// Scope should be replayed in shared store.
+	vs, vsOK := head.seriesMeta.ScopeStore().GetVersioned(hash)
+	require.True(t, vsOK)
 	require.Len(t, vs.Versions, 1)
 	require.Equal(t, "go.opentelemetry.io/instrumentation", vs.Versions[0].Name)
 	require.Equal(t, "0.42.0", vs.Versions[0].Version)
@@ -8297,6 +8287,7 @@ func TestResourceAndScopeWALReplayWithScope(t *testing.T) {
 func TestResourceAndScopeWALFilterUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableNativeMetadata = true
 	opts.ChunkDirRoot = dir
 
 	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
@@ -8322,15 +8313,11 @@ func TestResourceAndScopeWALFilterUnchanged(t *testing.T) {
 	require.NoError(t, appErr)
 	require.NoError(t, app.Commit())
 
-	// Verify resource exists.
-	s := head.series.getByID(chunks.HeadSeriesRef(ref))
-	require.NotNil(t, s)
-	s.Lock()
-	res, resOK := s.GetKindMeta(seriesmetadata.KindResource)
-	require.True(t, resOK)
-	vr := res.(*seriesmetadata.VersionedResource)
+	// Verify resource exists in shared store.
+	hash := labels.StableHash(lset)
+	vr, vrOK := head.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vrOK)
 	require.Len(t, vr.Versions, 1)
-	s.Unlock()
 
 	// No WAL filtering yet on first commit (nothing stored before).
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.resourceUpdatesWALFiltered))
@@ -8354,13 +8341,10 @@ func TestResourceAndScopeWALFilterUnchanged(t *testing.T) {
 	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.resourceUpdatesCommitted))
 
 	// Time range should have been extended in-place.
-	s.Lock()
-	res, _ = s.GetKindMeta(seriesmetadata.KindResource)
-	vr = res.(*seriesmetadata.VersionedResource)
+	vr, _ = head.seriesMeta.ResourceStore().GetVersioned(hash)
 	require.Len(t, vr.Versions, 1)
 	require.Equal(t, int64(100), vr.Versions[0].MinTime)
 	require.Equal(t, int64(200), vr.Versions[0].MaxTime)
-	s.Unlock()
 
 	// 3. Close head, replay WAL into new head. The filtered entry should
 	//    not be in the WAL, but the resource should still exist from the first record.
@@ -8374,16 +8358,11 @@ func TestResourceAndScopeWALFilterUnchanged(t *testing.T) {
 	t.Cleanup(func() { _ = head2.Close() })
 	require.NoError(t, head2.Init(0))
 
-	s2 := head2.series.getByID(chunks.HeadSeriesRef(ref))
-	require.NotNil(t, s2)
-	s2.Lock()
-	res2, res2OK := s2.GetKindMeta(seriesmetadata.KindResource)
-	require.True(t, res2OK)
-	vr2 := res2.(*seriesmetadata.VersionedResource)
+	vr2, vr2OK := head2.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vr2OK)
 	require.Len(t, vr2.Versions, 1)
 	require.Equal(t, "frontend", vr2.Versions[0].Identifying["service.name"])
 	require.Equal(t, "node-1", vr2.Versions[0].Descriptive["host.name"])
-	s2.Unlock()
 
 	// 4. Append sample + DIFFERENT resource → Commit.
 	app = head2.Appender(ctx)
@@ -8401,12 +8380,9 @@ func TestResourceAndScopeWALFilterUnchanged(t *testing.T) {
 	// Changed content should NOT be filtered.
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head2.metrics.resourceUpdatesWALFiltered))
 
-	// Two resource versions should exist.
-	s2.Lock()
-	res2, _ = s2.GetKindMeta(seriesmetadata.KindResource)
-	vr2 = res2.(*seriesmetadata.VersionedResource)
+	// Two resource versions should exist in shared store.
+	vr2, _ = head2.seriesMeta.ResourceStore().GetVersioned(hash)
 	require.Len(t, vr2.Versions, 2)
 	require.Equal(t, "frontend", vr2.Versions[0].Identifying["service.name"])
 	require.Equal(t, "backend", vr2.Versions[1].Identifying["service.name"])
-	s2.Unlock()
 }

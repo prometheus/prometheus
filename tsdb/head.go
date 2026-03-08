@@ -1884,124 +1884,21 @@ func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return h.tombstones, nil
 }
 
-// updateSharedMetadata updates the head's shared metadata store after a
-// series' kind metadata has been modified. The series lock must be held.
-func (h *Head) updateSharedMetadata(s *memSeries, kind seriesmetadata.KindDescriptor) {
-	if h.seriesMeta == nil {
-		return
-	}
-	v, ok := kind.CollectFromSeries(s)
-	if !ok {
-		return
-	}
-	hash := s.getStableHash()
-
+// updateMetaStripes updates the ref↔hash bidirectional mappings in the
+// metadata stripe tables. These mappings are used by LabelsForHash queries
+// and GC cleanup. The series lock need NOT be held since ref and hash are
+// passed as arguments.
+func (h *Head) updateMetaStripes(ref chunks.HeadSeriesRef, hash uint64) {
 	mask := uint64(len(h.metaRefStripes) - 1)
-	refShard := &h.metaRefStripes[uint64(s.ref)&mask]
+	refShard := &h.metaRefStripes[uint64(ref)&mask]
 	refShard.Lock()
-	refShard.refToHash[s.ref] = hash
+	refShard.refToHash[ref] = hash
 	refShard.Unlock()
 
 	hashShard := &h.metaHashStripes[hash&mask]
 	hashShard.Lock()
-	hashShard.hashToRef[hash] = s.ref
+	hashShard.hashToRef[hash] = ref
 	hashShard.Unlock()
-
-	// For resource kind: use SetVersionedWithDiff to get old/new in a single
-	// lock acquisition (avoids 3 separate MemStore locks: get, set, get).
-	if kind.ID() == seriesmetadata.KindResource {
-		vr := v.(*seriesmetadata.VersionedResource)
-		oldVR, newVR := h.seriesMeta.ResourceStore().SetVersionedWithDiff(hash, vr)
-		h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
-		return
-	}
-
-	// Other kinds: standard path.
-	store := h.seriesMeta.StoreForKind(kind.ID())
-	kind.SetVersioned(store, hash, v)
-}
-
-// updateSharedResourceMetadata is the type-safe hot-path version of
-// updateSharedMetadata for resource kind, avoiding interface{} boxing.
-func (h *Head) updateSharedResourceMetadata(s *memSeries) {
-	if h.seriesMeta == nil {
-		return
-	}
-	vr, ok := seriesmetadata.CollectResourceDirect(s)
-	if !ok {
-		return
-	}
-	hash := s.getStableHash()
-
-	mask := uint64(len(h.metaRefStripes) - 1)
-	refShard := &h.metaRefStripes[uint64(s.ref)&mask]
-	refShard.Lock()
-	refShard.refToHash[s.ref] = hash
-	refShard.Unlock()
-
-	hashShard := &h.metaHashStripes[hash&mask]
-	hashShard.Lock()
-	hashShard.hashToRef[hash] = s.ref
-	hashShard.Unlock()
-
-	oldVR, newVR := h.seriesMeta.ResourceStore().SetVersionedWithDiff(hash, vr)
-	h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
-}
-
-// updateSharedScopeMetadata is the type-safe hot-path version of
-// updateSharedMetadata for scope kind, avoiding interface{} boxing.
-func (h *Head) updateSharedScopeMetadata(s *memSeries) {
-	if h.seriesMeta == nil {
-		return
-	}
-	vs, ok := seriesmetadata.CollectScopeDirect(s)
-	if !ok {
-		return
-	}
-	hash := s.getStableHash()
-
-	mask := uint64(len(h.metaRefStripes) - 1)
-	refShard := &h.metaRefStripes[uint64(s.ref)&mask]
-	refShard.Lock()
-	refShard.refToHash[s.ref] = hash
-	refShard.Unlock()
-
-	hashShard := &h.metaHashStripes[hash&mask]
-	hashShard.Lock()
-	hashShard.hashToRef[hash] = s.ref
-	hashShard.Unlock()
-
-	h.seriesMeta.ScopeStore().SetVersioned(hash, vs)
-}
-
-// internSeriesResource replaces the deep-copied maps/slices on the latest per-series
-// ResourceVersion with thin copies sharing canonical pointers from the MemStore
-// content table. This deduplicates memory when many series share the same resource.
-func (h *Head) internSeriesResource(s *memSeries) {
-	if h.seriesMeta == nil {
-		return
-	}
-	vr, ok := seriesmetadata.CollectResourceDirect(s)
-	if !ok || len(vr.Versions) == 0 {
-		return
-	}
-	last := len(vr.Versions) - 1
-	vr.Versions[last] = h.seriesMeta.ResourceStore().InternVersion(vr.Versions[last])
-}
-
-// internSeriesScope replaces the deep-copied maps/slices on the latest per-series
-// ScopeVersion with thin copies sharing canonical pointers from the MemStore
-// content table.
-func (h *Head) internSeriesScope(s *memSeries) {
-	if h.seriesMeta == nil {
-		return
-	}
-	vs, ok := seriesmetadata.CollectScopeDirect(s)
-	if !ok || len(vs.Versions) == 0 {
-		return
-	}
-	last := len(vs.Versions) - 1
-	vs.Versions[last] = h.seriesMeta.ScopeStore().InternVersion(vs.Versions[last])
 }
 
 // cleanupSharedMetadata removes metadata for deleted series from the shared store.
@@ -2842,23 +2739,6 @@ func (s sample) Copy() chunks.Sample {
 	return c
 }
 
-// kindMetaEntry stores a single kind's metadata on a memSeries.
-type kindMetaEntry struct {
-	kind seriesmetadata.KindID
-	data any // *Versioned[V] for the appropriate V
-}
-
-// nativeMeta holds OTel native metadata state for a memSeries.
-// Allocated lazily on first SetKindMeta call; nil when native metadata
-// is not in use, saving 24 bytes per series (slice header + stableHash)
-// compared to storing the fields inline on memSeries.
-type nativeMeta struct {
-	// stableHash caches labels.StableHash(lset). Computed lazily on first
-	// metadata commit (lset is immutable so the hash never changes).
-	stableHash uint64
-	kindMeta   []kindMetaEntry
-}
-
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
@@ -2873,11 +2753,6 @@ type memSeries struct {
 	sync.Mutex
 
 	meta *metadata.Metadata
-
-	// nativeMeta holds OTel native metadata (stableHash cache + per-kind versioned data).
-	// nil when native metadata is not in use, saving 24 bytes per series.
-	// Allocated lazily on first SetKindMeta call.
-	nativeMeta *nativeMeta
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
 
@@ -2943,41 +2818,6 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 	return s
 }
 
-// GetKindMeta returns the metadata for a kind, or nil/false if not set.
-func (s *memSeries) GetKindMeta(id seriesmetadata.KindID) (any, bool) {
-	if s.nativeMeta == nil {
-		return nil, false
-	}
-	for _, e := range s.nativeMeta.kindMeta {
-		if e.kind == id {
-			return e.data, true
-		}
-	}
-	return nil, false
-}
-
-// SetKindMeta sets the metadata for a kind.
-func (s *memSeries) SetKindMeta(id seriesmetadata.KindID, v any) {
-	if s.nativeMeta == nil {
-		s.nativeMeta = &nativeMeta{}
-	}
-	for i, e := range s.nativeMeta.kindMeta {
-		if e.kind == id {
-			s.nativeMeta.kindMeta[i].data = v
-			return
-		}
-	}
-	s.nativeMeta.kindMeta = append(s.nativeMeta.kindMeta, kindMetaEntry{kind: id, data: v})
-}
-
-// getStableHash returns the cached labels.StableHash, computing it on first call.
-// Caller must hold s.Lock() and s.nativeMeta must be non-nil (guaranteed after SetKindMeta).
-func (s *memSeries) getStableHash() uint64 {
-	if s.nativeMeta.stableHash == 0 {
-		s.nativeMeta.stableHash = labels.StableHash(s.lset)
-	}
-	return s.nativeMeta.stableHash
-}
 
 func (s *memSeries) minTime() int64 {
 	if len(s.mmappedChunks) > 0 {
