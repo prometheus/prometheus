@@ -375,19 +375,15 @@ func (m *MemSeriesMetadata) InitResourceAttrIndex() {
 // UpdateResourceAttrIndex incrementally updates the inverted index when a
 // resource version changes. Removes stale entries from old, adds new ones.
 // old may be nil if this is the first insert for this labelsHash.
+//
+// Callers must only invoke this when content has actually changed (not for
+// time-range-only extensions). This avoids the expensive remove+add cycle
+// on the >99% hot path.
 func (m *MemSeriesMetadata) UpdateResourceAttrIndex(
 	labelsHash uint64,
 	old *VersionedResource,
 	cur *VersionedResource,
 ) {
-	// Fast path: when SetVersionedWithDiff extends a time range without
-	// changing content, it returns the same *Versioned for both old and cur.
-	// The index entries are identical — skip the expensive remove+add cycle.
-	// This covers ~90% of calls and avoids O(n) slice copies in sortedInsert/sortedRemove.
-	if old == cur {
-		return
-	}
-
 	// Track new attr names from the current version (grow-only).
 	// Always runs even without inverted index — used for autocomplete.
 	if cur != nil {
