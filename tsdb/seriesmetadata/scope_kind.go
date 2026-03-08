@@ -157,6 +157,23 @@ func CommitScopeDirect(accessor kindMetaAccessor, scd ScopeCommitData) {
 	}
 }
 
+// CommitScopeToStore builds a ScopeVersion from ScopeCommitData and
+// commits it directly to the MemStore via SetVersionedWithDiff, bypassing
+// per-series storage entirely. Returns the old and new versioned state.
+// When old and new have the same number of versions, the content was
+// unchanged (only a time range extension) and no WAL write is needed.
+func CommitScopeToStore(store *MemStore[*ScopeVersion], labelsHash uint64, scd ScopeCommitData) (old, cur *VersionedScope) {
+	sv := &ScopeVersion{
+		Name:      scd.Name,
+		Version:   scd.Version,
+		SchemaURL: scd.SchemaURL,
+		Attrs:     maps.Clone(scd.Attrs),
+		MinTime:   scd.MinTime,
+		MaxTime:   scd.MaxTime,
+	}
+	return store.SetVersionedWithDiff(labelsHash, &Versioned[*ScopeVersion]{Versions: []*ScopeVersion{sv}})
+}
+
 // CollectScopeDirect is the hot-path equivalent of CollectFromSeries
 // for scopes, avoiding interface{} boxing on the return path.
 func CollectScopeDirect(accessor kindMetaAccessor) (*VersionedScope, bool) {
