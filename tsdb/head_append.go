@@ -1862,7 +1862,7 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 		ref := s.ref
 		s.Unlock()
 
-		oldVR, newVR := seriesmetadata.CommitResourceToStore(store, hash, seriesmetadata.ResourceCommitData{
+		contentChanged, oldVR, newVR := seriesmetadata.CommitResourceToStore(store, hash, seriesmetadata.ResourceCommitData{
 			Identifying: r.Identifying,
 			Descriptive: r.Descriptive,
 			Entities:    refResourceEntitiesToCommitData(r.Entities),
@@ -1870,12 +1870,11 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 			MaxTime:     r.MaxTime,
 		})
 		a.head.updateMetaStripes(ref, hash)
-		a.head.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
 
-		// If version count unchanged, content was identical — skip WAL write.
-		if oldVR != nil && len(oldVR.Versions) == len(newVR.Versions) {
+		if !contentChanged {
 			continue
 		}
+		a.head.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
 		b.resources[n] = b.resources[i]
 		b.resourceSeries[n] = b.resourceSeries[i]
 		n++
@@ -1902,7 +1901,7 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 		ref := s.ref
 		s.Unlock()
 
-		oldVS, newVS := seriesmetadata.CommitScopeToStore(store, hash, seriesmetadata.ScopeCommitData{
+		contentChanged, _, _ := seriesmetadata.CommitScopeToStore(store, hash, seriesmetadata.ScopeCommitData{
 			Name:      sc.Name,
 			Version:   sc.Version,
 			SchemaURL: sc.SchemaURL,
@@ -1912,8 +1911,7 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 		})
 		a.head.updateMetaStripes(ref, hash)
 
-		// If version count unchanged, content was identical — skip WAL write.
-		if oldVS != nil && len(oldVS.Versions) == len(newVS.Versions) {
+		if !contentChanged {
 			continue
 		}
 		b.scopes[n] = b.scopes[i]

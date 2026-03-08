@@ -507,7 +507,7 @@ Outer:
 					ref := s.ref
 					s.Unlock()
 
-					oldVR, newVR := seriesmetadata.CommitResourceToStore(store, hash, seriesmetadata.ResourceCommitData{
+					contentChanged, oldVR, newVR := seriesmetadata.CommitResourceToStore(store, hash, seriesmetadata.ResourceCommitData{
 						Identifying: r.Identifying,
 						Descriptive: r.Descriptive,
 						Entities:    refResourceEntitiesToCommitData(r.Entities),
@@ -515,7 +515,9 @@ Outer:
 						MaxTime:     r.MaxTime,
 					})
 					h.updateMetaStripes(ref, hash)
-					h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
+					if contentChanged {
+						h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
+					}
 				}
 			}
 			h.wlReplayResourcesPool.Put(v)
