@@ -375,6 +375,14 @@ func (m *MemSeriesMetadata) UpdateResourceAttrIndex(
 	old *VersionedResource,
 	cur *VersionedResource,
 ) {
+	// Fast path: when SetVersionedWithDiff extends a time range without
+	// changing content, it returns the same *Versioned for both old and cur.
+	// The index entries are identical — skip the expensive remove+add cycle.
+	// This covers ~90% of calls and avoids O(n) slice copies in sortedInsert/sortedRemove.
+	if old == cur {
+		return
+	}
+
 	// Track new attr names from the current version (grow-only).
 	// Always runs even without inverted index — used for autocomplete.
 	if cur != nil {
