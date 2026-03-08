@@ -74,7 +74,7 @@ func BenchmarkMemStore_MemoryPerSeries(b *testing.B) {
 	var before runtime.MemStats
 	runtime.ReadMemStats(&before)
 
-	for i := 0; i < N; i++ {
+	for i := range N {
 		store.InsertVersion(uint64(i), contentHash, 0, 100, buildFull)
 	}
 
