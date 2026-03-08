@@ -289,6 +289,31 @@ func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Version
 	return nil, entry.versioned
 }
 
+// ExtendTimeRangeIfContentMatch checks whether the current (latest) version
+// for labelsHash has the given contentHash. If so, it extends the time range
+// and returns (existing versioned, true). Otherwise returns (existing or nil, false).
+// This avoids allocating a full version object + maps.Clone when content is unchanged.
+func (m *MemStore[V]) ExtendTimeRangeIfContentMatch(labelsHash, contentHash uint64, minTime, maxTime int64) (*Versioned[V], bool) {
+	if m.dedupOps == nil {
+		return nil, false
+	}
+	s := m.stripe(labelsHash)
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	entry, ok := s.byHash[labelsHash]
+	if !ok || len(entry.versioned.Versions) == 0 {
+		return nil, false
+	}
+
+	current := entry.versioned.Versions[len(entry.versioned.Versions)-1]
+	if m.dedupOps.ContentHash(current) == contentHash {
+		current.UpdateTimeRange(minTime, maxTime)
+		return entry.versioned, true
+	}
+	return entry.versioned, false
+}
+
 // Delete removes all metadata for the series.
 func (m *MemStore[V]) Delete(labelsHash uint64) {
 	s := m.stripe(labelsHash)
