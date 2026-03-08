@@ -22,10 +22,22 @@ import (
 // Must be a power of two for fast modulo via bitmask.
 const numMemStoreStripes = 256
 
-// versionedEntry stores versioned metadata with a labels hash for indexing.
+// versionedEntry stores versioned metadata for a single series.
+//
+// For single-version entries (>99% of series), the version is stored inline:
+// canonical + contentHash hold the shared content, and minTime/maxTime hold
+// the per-series time range. multi is nil. This avoids 3 heap allocations
+// per series (Versioned, []V backing, ThinCopy) that the old layout required.
+//
+// For multi-version entries (<1% of series), multi is non-nil and holds the
+// full Versioned with interned ThinCopies.
 type versionedEntry[V VersionConstraint] struct {
-	labelsHash uint64
-	versioned  *Versioned[V]
+	labelsHash  uint64
+	contentHash uint64       // cached content hash (single-version fast path)
+	canonical   V            // shared canonical content pointer (from contentStripe)
+	minTime     int64        // inline time range (single-version only)
+	maxTime     int64        // inline time range (single-version only)
+	multi       *Versioned[V] // non-nil only when >1 version or dedup disabled
 }
 
 // memStoreStripe is a single shard of a MemStore. Each stripe has its own
@@ -49,8 +61,9 @@ type contentStripe[V VersionConstraint] struct {
 //
 // When the KindOps also implements ContentDedupOps, MemStore maintains a
 // content-addressed table so that versions with identical content share
-// map/slice pointers from a single canonical entry, reducing per-version
-// memory from ~1500B to ~72B.
+// map/slice pointers from a single canonical entry. Single-version entries
+// (>99% of series) are stored inline without allocating Versioned/ThinCopy
+// objects, reducing per-series memory from ~200B to ~0B of sub-allocations.
 //
 // It is safe for concurrent use.
 type MemStore[V VersionConstraint] struct {
@@ -102,6 +115,15 @@ func (m *MemStore[V]) getOrCreateCanonical(hash uint64, v V) V {
 	return canonical
 }
 
+// getCanonical returns the canonical version for the given content hash, if it exists.
+func (m *MemStore[V]) getCanonical(hash uint64) (V, bool) {
+	cs := &m.contentStripes[hash&uint64(numMemStoreStripes-1)]
+	cs.mtx.RLock()
+	canonical, ok := cs.byHash[hash]
+	cs.mtx.RUnlock()
+	return canonical, ok
+}
+
 // internVersions replaces deep-copied versions with thin copies sharing canonical
 // map/slice pointers. No-op when dedupOps is nil.
 func (m *MemStore[V]) internVersions(vs *Versioned[V]) {
@@ -141,6 +163,20 @@ func (m *MemStore[V]) InternVersion(v V) V {
 	return m.dedupOps.ThinCopy(canonical, v)
 }
 
+// materializeEntry creates a *Versioned[V] from an entry's current state.
+// For multi-version entries, returns multi directly.
+// For single-version entries, creates a ThinCopy with the inline time range.
+// Callers must hold the stripe read or write lock.
+func (m *MemStore[V]) materializeEntry(e *versionedEntry[V]) *Versioned[V] {
+	if e.multi != nil {
+		return e.multi
+	}
+	thin := m.dedupOps.ThinCopy(e.canonical, e.canonical)
+	thin.SetMinTime(e.minTime)
+	thin.SetMaxTime(e.maxTime)
+	return &Versioned[V]{Versions: []V{thin}}
+}
+
 // TotalCanonical returns the number of unique canonical entries in the content table.
 func (m *MemStore[V]) TotalCanonical() int {
 	if m.dedupOps == nil {
@@ -174,11 +210,22 @@ func (m *MemStore[V]) Get(labelsHash uint64) (V, bool) {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 	entry, ok := s.byHash[labelsHash]
-	if !ok || len(entry.versioned.Versions) == 0 {
+	if !ok {
 		var zero V
 		return zero, false
 	}
-	return entry.versioned.CurrentVersion()
+	if entry.multi != nil {
+		if len(entry.multi.Versions) == 0 {
+			var zero V
+			return zero, false
+		}
+		return entry.multi.CurrentVersion()
+	}
+	// Single-version inline: materialize a ThinCopy.
+	thin := m.dedupOps.ThinCopy(entry.canonical, entry.canonical)
+	thin.SetMinTime(entry.minTime)
+	thin.SetMaxTime(entry.maxTime)
+	return thin, true
 }
 
 // GetVersioned returns all versions for the series.
@@ -190,7 +237,7 @@ func (m *MemStore[V]) GetVersioned(labelsHash uint64) (*Versioned[V], bool) {
 	if !ok {
 		return nil, false
 	}
-	return entry.versioned, true
+	return m.materializeEntry(entry), true
 }
 
 // GetAt returns the version active at the given timestamp.
@@ -203,7 +250,24 @@ func (m *MemStore[V]) GetAt(labelsHash uint64, timestamp int64) (V, bool) {
 		var zero V
 		return zero, false
 	}
-	return entry.versioned.VersionAt(timestamp)
+	if entry.multi != nil {
+		return entry.multi.VersionAt(timestamp)
+	}
+	// Single-version inline: check time range.
+	if timestamp >= entry.minTime && timestamp <= entry.maxTime {
+		thin := m.dedupOps.ThinCopy(entry.canonical, entry.canonical)
+		thin.SetMinTime(entry.minTime)
+		thin.SetMaxTime(entry.maxTime)
+		return thin, true
+	}
+	if timestamp > entry.maxTime {
+		thin := m.dedupOps.ThinCopy(entry.canonical, entry.canonical)
+		thin.SetMinTime(entry.minTime)
+		thin.SetMaxTime(entry.maxTime)
+		return thin, true
+	}
+	var zero V
+	return zero, false
 }
 
 // Set stores a single version for the series.
@@ -215,19 +279,53 @@ func (m *MemStore[V]) Set(labelsHash uint64, version V) {
 	defer s.mtx.Unlock()
 
 	if existing, ok := s.byHash[labelsHash]; ok {
-		prevLen := len(existing.versioned.Versions)
-		existing.versioned.AddOrExtend(m.ops, version)
-		if len(existing.versioned.Versions) > prevLen {
-			m.internLastVersion(existing.versioned)
+		if existing.multi != nil {
+			prevLen := len(existing.multi.Versions)
+			existing.multi.AddOrExtend(m.ops, version)
+			if len(existing.multi.Versions) > prevLen {
+				m.internLastVersion(existing.multi)
+			}
+			return
 		}
+		// Single-version inline: compare content with canonical.
+		if m.ops.Equal(existing.canonical, version) {
+			if version.GetMinTime() < existing.minTime {
+				existing.minTime = version.GetMinTime()
+			}
+			if version.GetMaxTime() > existing.maxTime {
+				existing.maxTime = version.GetMaxTime()
+			}
+			return
+		}
+		// Content differs: promote to multi.
+		thin1 := m.dedupOps.ThinCopy(existing.canonical, existing.canonical)
+		thin1.SetMinTime(existing.minTime)
+		thin1.SetMaxTime(existing.maxTime)
+		multi := &Versioned[V]{Versions: []V{thin1, m.ops.Copy(version)}}
+		m.internLastVersion(multi)
+		existing.multi = multi
+		return
+	}
+
+	if m.dedupOps != nil {
+		// Dedup enabled: store inline.
+		hash := m.dedupOps.ContentHash(version)
+		canonical := m.getOrCreateCanonical(hash, version)
+		entry := &versionedEntry[V]{
+			labelsHash:  labelsHash,
+			contentHash: hash,
+			canonical:   canonical,
+			minTime:     version.GetMinTime(),
+			maxTime:     version.GetMaxTime(),
+		}
+		s.byHash[labelsHash] = entry
 		return
 	}
 
 	entry := &versionedEntry[V]{
 		labelsHash: labelsHash,
-		versioned:  &Versioned[V]{Versions: []V{m.ops.Copy(version)}},
+		multi:      &Versioned[V]{Versions: []V{m.ops.Copy(version)}},
 	}
-	m.internVersions(entry.versioned)
 	s.byHash[labelsHash] = entry
 }
 
@@ -239,17 +337,37 @@ func (m *MemStore[V]) SetVersioned(labelsHash uint64, versioned *Versioned[V]) {
 	defer s.mtx.Unlock()
 
 	if existing, ok := s.byHash[labelsHash]; ok {
-		existing.versioned = MergeVersioned(m.ops, existing.versioned, versioned)
-		m.internVersions(existing.versioned)
+		existingVersioned := m.materializeEntry(existing)
+		merged := MergeVersioned(m.ops, existingVersioned, versioned)
+		m.internVersions(merged)
+		m.setFromVersioned(existing, merged)
 		return
 	}
 
 	entry := &versionedEntry[V]{
 		labelsHash: labelsHash,
-		versioned:  versioned.Copy(m.ops),
 	}
-	m.internVersions(entry.versioned)
+	copied := versioned.Copy(m.ops)
+	m.internVersions(copied)
+	m.setFromVersioned(entry, copied)
 	s.byHash[labelsHash] = entry
+}
+
+// setFromVersioned updates an entry from a Versioned. If the Versioned has
+// exactly one version and dedup is enabled, stores inline. Otherwise stores as multi.
+func (m *MemStore[V]) setFromVersioned(entry *versionedEntry[V], vs *Versioned[V]) {
+	if m.dedupOps != nil && len(vs.Versions) == 1 {
+		v := vs.Versions[0]
+		hash := m.dedupOps.ContentHash(v)
+		canonical := m.getOrCreateCanonical(hash, v)
+		entry.contentHash = hash
+		entry.canonical = canonical
+		entry.minTime = v.GetMinTime()
+		entry.maxTime = v.GetMaxTime()
+		entry.multi = nil
+		return
+	}
+	entry.multi = vs
 }
 
 // SetVersionedWithDiff atomically stores versioned data and returns the
@@ -261,32 +379,53 @@ func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Version
 	defer s.mtx.Unlock()
 
 	if existing, ok := s.byHash[labelsHash]; ok {
-		old = existing.versioned
+		old = m.materializeEntry(existing)
 
-		// Fast path: single incoming version that matches current — just extend time range.
-		// This is the common case (~90% of commits) where resource/scope content hasn't changed.
-		// Mirrors AddOrExtend (versioned.go) — zero allocations vs ~12 from MergeVersioned.
-		if len(versioned.Versions) == 1 && len(existing.versioned.Versions) > 0 {
-			current := existing.versioned.Versions[len(existing.versioned.Versions)-1]
+		if existing.multi != nil {
+			// Multi-version: fast path for single incoming that matches current.
+			if len(versioned.Versions) == 1 && len(existing.multi.Versions) > 0 {
+				current := existing.multi.Versions[len(existing.multi.Versions)-1]
+				incoming := versioned.Versions[0]
+				if m.ops.Equal(current, incoming) {
+					current.UpdateTimeRange(incoming.GetMinTime(), incoming.GetMaxTime())
+					return old, existing.multi
+				}
+			}
+			existing.multi = MergeVersioned(m.ops, existing.multi, versioned)
+			m.internVersions(existing.multi)
+			return old, existing.multi
+		}
+
+		// Single-version inline: check if incoming matches.
+		if len(versioned.Versions) == 1 {
 			incoming := versioned.Versions[0]
-			if m.ops.Equal(current, incoming) {
-				current.UpdateTimeRange(incoming.GetMinTime(), incoming.GetMaxTime())
-				return old, existing.versioned
+			if m.ops.Equal(existing.canonical, incoming) {
+				if incoming.GetMinTime() < existing.minTime {
+					existing.minTime = incoming.GetMinTime()
+				}
+				if incoming.GetMaxTime() > existing.maxTime {
+					existing.maxTime = incoming.GetMaxTime()
+				}
+				return old, m.materializeEntry(existing)
 			}
 		}
 
-		existing.versioned = MergeVersioned(m.ops, existing.versioned, versioned)
-		m.internVersions(existing.versioned)
-		return old, existing.versioned
+		// Content differs: promote to multi.
+		existingVersioned := m.materializeEntry(existing)
+		merged := MergeVersioned(m.ops, existingVersioned, versioned)
+		m.internVersions(merged)
+		m.setFromVersioned(existing, merged)
+		return old, m.materializeEntry(existing)
 	}
 
 	entry := &versionedEntry[V]{
 		labelsHash: labelsHash,
-		versioned:  versioned.Copy(m.ops),
 	}
-	m.internVersions(entry.versioned)
+	copied := versioned.Copy(m.ops)
+	m.internVersions(copied)
+	m.setFromVersioned(entry, copied)
 	s.byHash[labelsHash] = entry
-	return nil, entry.versioned
+	return nil, m.materializeEntry(entry)
 }
 
 // ExtendTimeRangeIfContentMatch checks whether the current (latest) version
@@ -302,36 +441,55 @@ func (m *MemStore[V]) ExtendTimeRangeIfContentMatch(labelsHash, contentHash uint
 	defer s.mtx.Unlock()
 
 	entry, ok := s.byHash[labelsHash]
-	if !ok || len(entry.versioned.Versions) == 0 {
+	if !ok {
 		return nil, false
 	}
 
-	current := entry.versioned.Versions[len(entry.versioned.Versions)-1]
-	if m.dedupOps.ContentHash(current) == contentHash {
-		current.UpdateTimeRange(minTime, maxTime)
-		return entry.versioned, true
+	if entry.multi != nil {
+		if len(entry.multi.Versions) == 0 {
+			return nil, false
+		}
+		current := entry.multi.Versions[len(entry.multi.Versions)-1]
+		if m.dedupOps.ContentHash(current) == contentHash {
+			current.UpdateTimeRange(minTime, maxTime)
+			return entry.multi, true
+		}
+		return entry.multi, false
 	}
-	return entry.versioned, false
+
+	// Single-version inline: compare cached contentHash directly.
+	if entry.contentHash == contentHash {
+		if minTime < entry.minTime {
+			entry.minTime = minTime
+		}
+		if maxTime > entry.maxTime {
+			entry.maxTime = maxTime
+		}
+		return m.materializeEntry(entry), true
+	}
+	return m.materializeEntry(entry), false
 }
 
 // InsertVersion inserts a version for labelsHash, using the content dedup table
 // to avoid unnecessary deep copies. The buildFull callback is only invoked if
 // no canonical with contentHash exists yet (first time seeing this content).
 //
-// For first insert when canonical exists: creates ThinCopy (one small alloc).
-// For first insert without canonical: calls buildFull() to get a deep copy,
-// registers it as canonical, and creates ThinCopy.
-// For existing entries with matching content: extends time range (zero alloc).
-// For existing entries with different content: calls buildFull(), appends, interns.
+// Returns contentChanged=false when the existing entry's content matches and only
+// the time range was extended (the >99% hot path — zero allocations).
+// Returns contentChanged=true with old/cur materialized when content actually changed.
+// For first insert: old is nil, cur is the new versioned state.
+// For content change: old and cur are both materialized.
 func (m *MemStore[V]) InsertVersion(
 	labelsHash, contentHash uint64,
 	minTime, maxTime int64,
 	buildFull func() V,
-) (old, cur *Versioned[V]) {
+) (contentChanged bool, old, cur *Versioned[V]) {
 	if m.dedupOps == nil {
 		// No dedup — fall back to building the full version and using SetVersionedWithDiff.
 		v := buildFull()
-		return m.SetVersionedWithDiff(labelsHash, &Versioned[V]{Versions: []V{v}})
+		old, cur = m.SetVersionedWithDiff(labelsHash, &Versioned[V]{Versions: []V{v}})
+		contentChanged = old == nil || len(old.Versions) != len(cur.Versions)
+		return contentChanged, old, cur
 	}
 
 	s := m.stripe(labelsHash)
@@ -339,52 +497,69 @@ func (m *MemStore[V]) InsertVersion(
 	defer s.mtx.Unlock()
 
 	if existing, ok := s.byHash[labelsHash]; ok {
-		old = existing.versioned
-
-		// Fast path: content matches current version — extend time range.
-		if len(existing.versioned.Versions) > 0 {
-			current := existing.versioned.Versions[len(existing.versioned.Versions)-1]
-			if m.dedupOps.ContentHash(current) == contentHash {
-				current.UpdateTimeRange(minTime, maxTime)
-				return old, existing.versioned
+		if existing.multi != nil {
+			// Multi-version entry: check latest version's content hash.
+			if len(existing.multi.Versions) > 0 {
+				current := existing.multi.Versions[len(existing.multi.Versions)-1]
+				if m.dedupOps.ContentHash(current) == contentHash {
+					current.UpdateTimeRange(minTime, maxTime)
+					return false, nil, nil
+				}
 			}
+			// Content differs in multi-version entry.
+			old = existing.multi
+			v := buildFull()
+			incoming := &Versioned[V]{Versions: []V{v}}
+			existing.multi = MergeVersioned[V](m.ops, existing.multi, incoming)
+			m.internVersions(existing.multi)
+			return true, old, existing.multi
 		}
 
-		// Content differs — need full version for merge.
+		// Single-version inline: compare cached contentHash directly (zero-alloc fast path).
+		if existing.contentHash == contentHash {
+			if minTime < existing.minTime {
+				existing.minTime = minTime
+			}
+			if maxTime > existing.maxTime {
+				existing.maxTime = maxTime
+			}
+			return false, nil, nil
+		}
+
+		// Content changed: promote from inline to multi.
+		old = m.materializeEntry(existing)
+		thin1 := m.dedupOps.ThinCopy(existing.canonical, existing.canonical)
+		thin1.SetMinTime(existing.minTime)
+		thin1.SetMaxTime(existing.maxTime)
+
 		v := buildFull()
-		incoming := &Versioned[V]{Versions: []V{v}}
-		existing.versioned = MergeVersioned[V](m.ops, existing.versioned, incoming)
-		m.internVersions(existing.versioned)
-		return old, existing.versioned
+		canonical := m.getOrCreateCanonical(contentHash, v)
+		thin2 := m.dedupOps.ThinCopy(canonical, v)
+
+		existing.multi = &Versioned[V]{Versions: []V{thin1, thin2}}
+		return true, old, existing.multi
 	}
 
-	// First insert: try to find canonical to avoid deep copy.
-	cs := &m.contentStripes[contentHash&uint64(numMemStoreStripes-1)]
-	cs.mtx.RLock()
-	canonical, hasCanonical := cs.byHash[contentHash]
-	cs.mtx.RUnlock()
-
-	var thin V
-	if hasCanonical {
-		// Canonical exists — create ThinCopy directly, skipping buildFull entirely.
-		// ThinCopy(canonical, v) copies canonical's content + v's time range.
-		// Use canonical as template then overwrite the time range.
-		thin = m.dedupOps.ThinCopy(canonical, canonical)
-		thin.SetMinTime(minTime)
-		thin.SetMaxTime(maxTime)
-	} else {
+	// First insert: store inline.
+	canonical, hasCanonical := m.getCanonical(contentHash)
+	if !hasCanonical {
 		// No canonical — must build full version and register it.
 		full := buildFull()
 		canonical = m.getOrCreateCanonical(contentHash, full)
-		thin = m.dedupOps.ThinCopy(canonical, full)
 	}
 
 	entry := &versionedEntry[V]{
-		labelsHash: labelsHash,
-		versioned:  &Versioned[V]{Versions: []V{thin}},
+		labelsHash:  labelsHash,
+		contentHash: contentHash,
+		canonical:   canonical,
+		minTime:     minTime,
+		maxTime:     maxTime,
 	}
 	s.byHash[labelsHash] = entry
-	return nil, entry.versioned
+
+	// Materialize cur for the caller (first insert needs attr index update).
+	cur = m.materializeEntry(entry)
+	return true, nil, cur
 }
 
 // Delete removes all metadata for the series.
@@ -438,9 +613,19 @@ func (m *MemStore[V]) Iter(ctx context.Context, f func(labelsHash uint64, versio
 				return err
 			}
 		}
-		current, ok := entry.versioned.CurrentVersion()
-		if ok {
-			if err := f(entry.labelsHash, current); err != nil {
+		if entry.multi != nil {
+			current, ok := entry.multi.CurrentVersion()
+			if ok {
+				if err := f(entry.labelsHash, current); err != nil {
+					return err
+				}
+			}
+		} else {
+			// Single-version inline: materialize a ThinCopy.
+			thin := m.dedupOps.ThinCopy(entry.canonical, entry.canonical)
+			thin.SetMinTime(entry.minTime)
+			thin.SetMaxTime(entry.maxTime)
+			if err := f(entry.labelsHash, thin); err != nil {
 				return err
 			}
 		}
@@ -459,7 +644,8 @@ func (m *MemStore[V]) IterVersioned(ctx context.Context, f func(labelsHash uint6
 				return err
 			}
 		}
-		if err := f(entry.labelsHash, entry.versioned); err != nil {
+		vs := m.materializeEntry(entry)
+		if err := f(entry.labelsHash, vs); err != nil {
 			return err
 		}
 	}
@@ -485,7 +671,11 @@ func (m *MemStore[V]) TotalVersions() uint64 {
 		s := &m.stripes[i]
 		s.mtx.RLock()
 		for _, entry := range s.byHash {
-			total += uint64(len(entry.versioned.Versions))
+			if entry.multi != nil {
+				total += uint64(len(entry.multi.Versions))
+			} else {
+				total++
+			}
 		}
 		s.mtx.RUnlock()
 	}
