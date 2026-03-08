@@ -388,7 +388,7 @@ func BenchmarkMmapHeadChunks(b *testing.B) {
 // of native metadata. Run before/after to verify savings from eliminating
 // metaRefStripes/metaHashStripes.
 func BenchmarkMetadataMemoryPerSeries(b *testing.B) {
-	for _, numSeries := range []int{1000, 10000} {
+	for _, numSeries := range []int{10000, 100000} {
 		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
 			for b.Loop() {
 				opts := newTestHeadDefaultOptions(10000, false)
@@ -418,7 +418,7 @@ func BenchmarkMetadataMemoryPerSeries(b *testing.B) {
 // BenchmarkHeadGCWithMetadata measures GC + cleanupSharedMetadata performance
 // when all series have metadata.
 func BenchmarkHeadGCWithMetadata(b *testing.B) {
-	for _, numSeries := range []int{1000, 10000} {
+	for _, numSeries := range []int{10000, 100000} {
 		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
 			for b.Loop() {
 				opts := newTestHeadDefaultOptions(1000, false)
@@ -455,7 +455,7 @@ func BenchmarkLabelsForHash(b *testing.B) {
 	opts.EnableNativeMetadata = true
 	h, _ := newTestHeadWithOptions(b, compression.None, opts)
 
-	numSeries := 10000
+	numSeries := 100000
 	hashes := make([]uint64, numSeries)
 	ctx := b.Context()
 	app := h.Appender(ctx)
