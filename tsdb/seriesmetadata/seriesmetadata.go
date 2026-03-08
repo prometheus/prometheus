@@ -111,8 +111,10 @@ func (s *shardedAttrIndex) stripe(key string) *attrIndexStripe {
 	return &s.stripes[h&uint64(numAttrIndexStripes-1)]
 }
 
-// lookup returns the sorted labelsHashes for a given index key.
-// The returned slice must not be modified by the caller (copy-on-write).
+// lookup returns a copy of the sorted labelsHashes for a given index key.
+// The returned slice is owned by the caller and safe to use after the lock is released.
+// Copy-on-read: mutations (sortedInsert/sortedRemove) operate in-place on the stored slice,
+// so readers must get a copy to avoid races.
 func (s *shardedAttrIndex) lookup(key string) []uint64 {
 	st := s.stripe(key)
 	st.mtx.RLock()
@@ -121,7 +123,7 @@ func (s *shardedAttrIndex) lookup(key string) []uint64 {
 	if len(v) == 0 {
 		return nil
 	}
-	return v
+	return slices.Clone(v)
 }
 
 // MemSeriesMetadata is an in-memory implementation of series metadata storage.
@@ -335,6 +337,8 @@ func (m *MemSeriesMetadata) TotalScopeVersions() uint64 {
 // returns results in O(1) instead of requiring a full scan.
 // Skips rebuilding if the index is already populated (e.g. from Parquet or
 // incremental updates).
+// Uses bulk append + sort instead of per-entry sortedInsert to avoid O(n²)
+// cost when building from scratch.
 func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
 	if m.resourceAttrIndex != nil {
 		return
@@ -346,11 +350,12 @@ func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
 	m.indexedResourceAttrsMu.RUnlock()
 	_ = m.ResourceStore().IterVersioned(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
 		for _, rv := range vr.Versions {
-			addToAttrIndex(idx, labelsHash, rv, extra)
+			bulkAddToAttrIndex(idx, labelsHash, rv, extra)
 			collectAttrNames(names, rv)
 		}
 		return nil
 	})
+	finalizeBulkAttrIndex(idx)
 	m.resourceAttrIndex = idx
 
 	m.uniqueAttrNamesMu.Lock()
@@ -433,33 +438,30 @@ func (m *MemSeriesMetadata) RemoveFromResourceAttrIndex(labelsHash uint64, vr *V
 	}
 }
 
-// sortedInsert inserts val into the sorted slice s using copy-on-write semantics.
-// Returns the (possibly new) slice. If val already exists, s is returned unchanged.
-// The new slice does not share backing memory with s, so readers holding old
-// slices are safe from concurrent mutation.
+// sortedInsert inserts val into the sorted slice s in-place.
+// Returns the (possibly grown) slice. If val already exists, s is returned unchanged.
+// Callers hold the stripe write lock; readers get copies via lookup (copy-on-read).
 func sortedInsert(s []uint64, val uint64) []uint64 {
 	i, found := slices.BinarySearch(s, val)
 	if found {
 		return s
 	}
-	ns := make([]uint64, len(s)+1)
-	copy(ns, s[:i])
-	ns[i] = val
-	copy(ns[i+1:], s[i:])
-	return ns
+	s = append(s, 0)
+	copy(s[i+1:], s[i:len(s)-1])
+	s[i] = val
+	return s
 }
 
-// sortedRemove removes val from the sorted slice s using copy-on-write semantics.
-// Returns the (possibly new) slice. If val is not found, s is returned unchanged.
+// sortedRemove removes val from the sorted slice s in-place.
+// Returns the (possibly shorter) slice. If val is not found, s is returned unchanged.
+// Callers hold the stripe write lock; readers get copies via lookup (copy-on-read).
 func sortedRemove(s []uint64, val uint64) []uint64 {
 	i, found := slices.BinarySearch(s, val)
 	if !found {
 		return s
 	}
-	ns := make([]uint64, len(s)-1)
-	copy(ns, s[:i])
-	copy(ns[i:], s[i+1:])
-	return ns
+	copy(s[i:], s[i+1:])
+	return s[:len(s)-1]
 }
 
 // collectAttrNames adds all attribute names from a resource version to the name set.
@@ -475,7 +477,7 @@ func collectAttrNames(names map[string]struct{}, rv *ResourceVersion) {
 // addToAttrIndex adds attribute entries for a resource version to the sharded index.
 // Identifying attributes are always indexed. Descriptive attributes are only
 // indexed if their key is in extraIndexed.
-// Uses copy-on-write sorted slices so readers holding old slices are safe.
+// Uses in-place sorted insert (copy-on-read for readers).
 // Each key routes to a single stripe — no two stripe locks are held simultaneously.
 func addToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
 	for k, v := range rv.Identifying {
@@ -500,7 +502,7 @@ func addToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersio
 // removeFromAttrIndex removes attribute entries for a resource version from the sharded index.
 // Identifying attributes are always removed. Descriptive attributes are only
 // removed if their key is in extraIndexed.
-// Uses copy-on-write sorted slices so readers holding old slices are safe.
+// Uses in-place sorted remove (copy-on-read for readers).
 // Each key routes to a single stripe — no two stripe locks are held simultaneously.
 func removeFromAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
 	for k, v := range rv.Identifying {
@@ -536,11 +538,44 @@ func removeFromAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceV
 	}
 }
 
+// bulkAddToAttrIndex appends labelsHash to posting lists without maintaining sort order.
+// Used during BuildResourceAttrIndex for O(n) build; finalizeBulkAttrIndex sorts afterward.
+func bulkAddToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
+	for k, v := range rv.Identifying {
+		key := k + "\x00" + v
+		st := idx.stripe(key)
+		st.idx[key] = append(st.idx[key], labelsHash)
+	}
+	for k, v := range rv.Descriptive {
+		if _, ok := extraIndexed[k]; !ok {
+			continue
+		}
+		key := k + "\x00" + v
+		st := idx.stripe(key)
+		st.idx[key] = append(st.idx[key], labelsHash)
+	}
+}
+
+// finalizeBulkAttrIndex sorts and deduplicates all posting lists after bulk insertion.
+func finalizeBulkAttrIndex(idx *shardedAttrIndex) {
+	for i := range idx.stripes {
+		st := &idx.stripes[i]
+		for key, s := range st.idx {
+			slices.Sort(s)
+			s = slices.Compact(s)
+			if len(s) == 0 {
+				delete(st.idx, key)
+			} else {
+				st.idx[key] = s
+			}
+		}
+	}
+}
+
 // LookupResourceAttr returns sorted labelsHashes that have a resource version
 // with the given key:value in Identifying or Descriptive attributes.
 // Returns nil if the index has not been built.
-// The returned slice is safe for concurrent use — copy-on-write ensures
-// that mutations create new slices rather than modifying existing ones.
+// The returned slice is a copy, safe for use after the call returns.
 func (m *MemSeriesMetadata) LookupResourceAttr(key, value string) []uint64 {
 	if m.resourceAttrIndex == nil {
 		return nil
