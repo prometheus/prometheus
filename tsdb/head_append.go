@@ -1860,6 +1860,7 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 		s.Lock()
 		hash := labels.StableHash(s.lset)
 		ref := s.ref
+		s.stableHash = hash
 		s.Unlock()
 
 		contentChanged, oldVR, newVR := seriesmetadata.CommitResourceToStore(store, hash, seriesmetadata.ResourceCommitData{
@@ -1869,7 +1870,7 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 			MinTime:     r.MinTime,
 			MaxTime:     r.MaxTime,
 		})
-		a.head.updateMetaStripes(ref, hash)
+		store.SetSeriesRef(hash, uint64(ref))
 
 		if !contentChanged {
 			continue
@@ -1899,6 +1900,7 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 		s.Lock()
 		hash := labels.StableHash(s.lset)
 		ref := s.ref
+		s.stableHash = hash
 		s.Unlock()
 
 		contentChanged, _, _ := seriesmetadata.CommitScopeToStore(store, hash, seriesmetadata.ScopeCommitData{
@@ -1909,7 +1911,7 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 			MinTime:   sc.MinTime,
 			MaxTime:   sc.MaxTime,
 		})
-		a.head.updateMetaStripes(ref, hash)
+		store.SetSeriesRef(hash, uint64(ref))
 
 		if !contentChanged {
 			continue
