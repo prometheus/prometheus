@@ -311,3 +311,105 @@ type failingSeriesLifecycleCallback struct{}
 func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error                     { return errors.New("failed") }
 func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)                          {}
 func (failingSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
+
+// BenchmarkMetadataMemoryPerSeries measures the per-series memory overhead
+// of native metadata. Run before/after to verify savings from eliminating
+// metaRefStripes/metaHashStripes.
+func BenchmarkMetadataMemoryPerSeries(b *testing.B) {
+	for _, numSeries := range []int{1000, 10000} {
+		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
+			for b.Loop() {
+				opts := newTestHeadDefaultOptions(10000, false)
+				opts.EnableNativeMetadata = true
+				h, _ := newTestHeadWithOptions(b, compression.None, opts)
+
+				ctx := b.Context()
+				app := h.Appender(ctx)
+				for i := range numSeries {
+					lset := labels.FromStrings("__name__", "bench", "i", strconv.Itoa(i))
+					ref, err := app.Append(0, lset, 100, float64(i))
+					require.NoError(b, err)
+					_, err = app.UpdateResource(ref, lset,
+						map[string]string{"service.name": "bench-svc"},
+						map[string]string{"host.name": "node-1"},
+						nil, 100,
+					)
+					require.NoError(b, err)
+				}
+				require.NoError(b, app.Commit())
+			}
+			b.ReportAllocs()
+		})
+	}
+}
+
+// BenchmarkHeadGCWithMetadata measures GC + cleanupSharedMetadata performance
+// when all series have metadata.
+func BenchmarkHeadGCWithMetadata(b *testing.B) {
+	for _, numSeries := range []int{1000, 10000} {
+		b.Run(fmt.Sprintf("series=%d", numSeries), func(b *testing.B) {
+			for b.Loop() {
+				opts := newTestHeadDefaultOptions(1000, false)
+				opts.EnableNativeMetadata = true
+				h, _ := newTestHeadWithOptions(b, compression.None, opts)
+
+				ctx := b.Context()
+				app := h.Appender(ctx)
+				for i := range numSeries {
+					lset := labels.FromStrings("__name__", "bench", "i", strconv.Itoa(i))
+					ref, err := app.Append(0, lset, 100, float64(i))
+					require.NoError(b, err)
+					_, err = app.UpdateResource(ref, lset,
+						map[string]string{"service.name": "bench-svc"},
+						map[string]string{"host.name": "node-1"},
+						nil, 100,
+					)
+					require.NoError(b, err)
+				}
+				require.NoError(b, app.Commit())
+
+				// Truncate to trigger GC of all series.
+				h.truncateMemory(2000)
+			}
+			b.ReportAllocs()
+		})
+	}
+}
+
+// BenchmarkLabelsForHash benchmarks the LabelsForHash hot path
+// that resolves labels hash → labels via MemStore's seriesRef.
+func BenchmarkLabelsForHash(b *testing.B) {
+	opts := newTestHeadDefaultOptions(10000, false)
+	opts.EnableNativeMetadata = true
+	h, _ := newTestHeadWithOptions(b, compression.None, opts)
+
+	numSeries := 10000
+	hashes := make([]uint64, numSeries)
+	ctx := b.Context()
+	app := h.Appender(ctx)
+	for i := range numSeries {
+		lset := labels.FromStrings("__name__", "bench", "i", strconv.Itoa(i))
+		ref, err := app.Append(0, lset, 100, float64(i))
+		require.NoError(b, err)
+		_, err = app.UpdateResource(ref, lset,
+			map[string]string{"service.name": "bench-svc"},
+			map[string]string{"host.name": "node-1"},
+			nil, 100,
+		)
+		require.NoError(b, err)
+		hashes[i] = labels.StableHash(lset)
+	}
+	require.NoError(b, app.Commit())
+
+	reader := &headMetadataReader{head: h}
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; b.Loop(); i++ {
+		hash := hashes[i%numSeries]
+		_, ok := reader.LabelsForHash(hash)
+		if !ok {
+			b.Fatal("LabelsForHash returned false for known hash")
+		}
+	}
+}
