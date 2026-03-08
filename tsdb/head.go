@@ -438,7 +438,7 @@ func (h *Head) resetInMemoryState() error {
 		// during WAL replay so that UpdateResourceAttrIndex early-returns (avoiding
 		// O(n) sortedInsert/sortedRemove churn per series). BuildResourceAttrIndex
 		// is called once after all replay completes — see Init().
-		h.metaRefStripes, h.metaHashStripes = newMetadataStripes(4096)
+		h.metaRefStripes, h.metaHashStripes = newMetadataStripes(0)
 	}
 
 	return nil
