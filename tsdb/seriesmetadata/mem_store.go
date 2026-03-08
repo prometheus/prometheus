@@ -314,6 +314,79 @@ func (m *MemStore[V]) ExtendTimeRangeIfContentMatch(labelsHash, contentHash uint
 	return entry.versioned, false
 }
 
+// InsertVersion inserts a version for labelsHash, using the content dedup table
+// to avoid unnecessary deep copies. The buildFull callback is only invoked if
+// no canonical with contentHash exists yet (first time seeing this content).
+//
+// For first insert when canonical exists: creates ThinCopy (one small alloc).
+// For first insert without canonical: calls buildFull() to get a deep copy,
+// registers it as canonical, and creates ThinCopy.
+// For existing entries with matching content: extends time range (zero alloc).
+// For existing entries with different content: calls buildFull(), appends, interns.
+func (m *MemStore[V]) InsertVersion(
+	labelsHash, contentHash uint64,
+	minTime, maxTime int64,
+	buildFull func() V,
+) (old, cur *Versioned[V]) {
+	if m.dedupOps == nil {
+		// No dedup — fall back to building the full version and using SetVersionedWithDiff.
+		v := buildFull()
+		return m.SetVersionedWithDiff(labelsHash, &Versioned[V]{Versions: []V{v}})
+	}
+
+	s := m.stripe(labelsHash)
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	if existing, ok := s.byHash[labelsHash]; ok {
+		old = existing.versioned
+
+		// Fast path: content matches current version — extend time range.
+		if len(existing.versioned.Versions) > 0 {
+			current := existing.versioned.Versions[len(existing.versioned.Versions)-1]
+			if m.dedupOps.ContentHash(current) == contentHash {
+				current.UpdateTimeRange(minTime, maxTime)
+				return old, existing.versioned
+			}
+		}
+
+		// Content differs — need full version for merge.
+		v := buildFull()
+		incoming := &Versioned[V]{Versions: []V{v}}
+		existing.versioned = MergeVersioned[V](m.ops, existing.versioned, incoming)
+		m.internVersions(existing.versioned)
+		return old, existing.versioned
+	}
+
+	// First insert: try to find canonical to avoid deep copy.
+	cs := &m.contentStripes[contentHash&uint64(numMemStoreStripes-1)]
+	cs.mtx.RLock()
+	canonical, hasCanonical := cs.byHash[contentHash]
+	cs.mtx.RUnlock()
+
+	var thin V
+	if hasCanonical {
+		// Canonical exists — create ThinCopy directly, skipping buildFull entirely.
+		// ThinCopy(canonical, v) copies canonical's content + v's time range.
+		// Use canonical as template then overwrite the time range.
+		thin = m.dedupOps.ThinCopy(canonical, canonical)
+		thin.SetMinTime(minTime)
+		thin.SetMaxTime(maxTime)
+	} else {
+		// No canonical — must build full version and register it.
+		full := buildFull()
+		canonical = m.getOrCreateCanonical(contentHash, full)
+		thin = m.dedupOps.ThinCopy(canonical, full)
+	}
+
+	entry := &versionedEntry[V]{
+		labelsHash: labelsHash,
+		versioned:  &Versioned[V]{Versions: []V{thin}},
+	}
+	s.byHash[labelsHash] = entry
+	return nil, entry.versioned
+}
+
 // Delete removes all metadata for the series.
 func (m *MemStore[V]) Delete(labelsHash uint64) {
 	s := m.stripe(labelsHash)
