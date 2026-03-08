@@ -175,12 +175,60 @@ func CommitResourceDirect(accessor kindMetaAccessor, rcd ResourceCommitData) {
 	}
 }
 
+// hashResourceCommitData computes the content hash from raw ResourceCommitData
+// without cloning any maps. The hash is identical to hashResourceContent for
+// equivalent data, including the entity default-type normalization.
+func hashResourceCommitData(rcd ResourceCommitData) uint64 {
+	h := xxhash.New()
+
+	hashAttrs(h, rcd.Identifying)
+	_, _ = h.Write([]byte{1})
+	hashAttrs(h, rcd.Descriptive)
+	_, _ = h.Write([]byte{1})
+
+	// Sort entities by type for deterministic hashing (matching hashResourceContent).
+	// Sort in-place since we'd sort anyway in the full-alloc path.
+	slices.SortFunc(rcd.Entities, func(a, b ResourceEntityData) int {
+		at, bt := a.Type, b.Type
+		if at == "" {
+			at = EntityTypeResource
+		}
+		if bt == "" {
+			bt = EntityTypeResource
+		}
+		return cmp.Compare(at, bt)
+	})
+	for _, e := range rcd.Entities {
+		entityType := e.Type
+		if entityType == "" {
+			entityType = EntityTypeResource
+		}
+		_, _ = h.WriteString(entityType)
+		_, _ = h.Write([]byte{0})
+		hashAttrs(h, e.ID)
+		_, _ = h.Write([]byte{1})
+		hashAttrs(h, e.Description)
+		_, _ = h.Write([]byte{1})
+	}
+
+	return h.Sum64()
+}
+
 // CommitResourceToStore builds a ResourceVersion from ResourceCommitData and
 // commits it directly to the MemStore via SetVersionedWithDiff, bypassing
 // per-series storage entirely. Returns the old and new versioned state for
 // index updates. When old and new have the same number of versions, the
 // content was unchanged (only a time range extension) and no WAL write is needed.
 func CommitResourceToStore(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData) (old, cur *VersionedResource) {
+	// Fast path: compute content hash from raw data (no allocations) and check
+	// if it matches the current version in the store. ~90% of calls match,
+	// avoiding ~11 GiB of temporary ResourceVersion + maps.Clone allocations.
+	contentHash := hashResourceCommitData(rcd)
+	if vr, matched := store.ExtendTimeRangeIfContentMatch(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime); matched {
+		return vr, vr
+	}
+
+	// Content differs or first insert — allocate the full version.
 	entities := make([]*Entity, len(rcd.Entities))
 	for j, e := range rcd.Entities {
 		entityType := e.Type
@@ -193,9 +241,7 @@ func CommitResourceToStore(store *MemStore[*ResourceVersion], labelsHash uint64,
 			Description: maps.Clone(e.Description),
 		}
 	}
-	slices.SortFunc(entities, func(a, b *Entity) int {
-		return cmp.Compare(a.Type, b.Type)
-	})
+	// Entities are already sorted by hashResourceCommitData above.
 
 	rv := &ResourceVersion{
 		Identifying: maps.Clone(rcd.Identifying),
