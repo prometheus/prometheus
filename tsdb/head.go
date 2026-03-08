@@ -190,12 +190,9 @@ type Head struct {
 
 	// seriesMeta holds the shared metadata store (MemStore[V] operations are
 	// internally concurrent-safe). The head does NOT populate seriesMeta.labelsMap —
-	// labels are resolved on-demand via stripeSeries.getByID.
+	// labels are resolved on-demand via stripeSeries.getByID using seriesRef
+	// stored in MemStore entries.
 	seriesMeta *seriesmetadata.MemSeriesMetadata
-	// metaRefStripes and metaHashStripes provide sharded ref↔hash mappings,
-	// eliminating the single-lock bottleneck. Sharded by ref and hash respectively.
-	metaRefStripes  []metadataRefStripe  // sharded by ref & (len-1)
-	metaHashStripes []metadataHashStripe // sharded by hash & (len-1)
 
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
@@ -461,7 +458,6 @@ func (h *Head) resetInMemoryState() error {
 		// during WAL replay so that UpdateResourceAttrIndex early-returns (avoiding
 		// O(n) sortedInsert/sortedRemove churn per series). BuildResourceAttrIndex
 		// is called once after all replay completes — see Init().
-		h.metaRefStripes, h.metaHashStripes = newMetadataStripes(0)
 	}
 
 	return nil
@@ -1975,7 +1971,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualInOrderMint, minOOOTime, minMmapFile, deletedMetaHashes := h.series.gc(mint, minOOOMmapRef)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1994,7 +1990,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.tombstones.TruncateBefore(mint)
 
 	// Clean up shared metadata for deleted series.
-	h.cleanupSharedMetadata(deleted)
+	h.cleanupSharedMetadata(deletedMetaHashes)
 
 	if h.wal != nil {
 		h.walExpiriesMtx.Lock()
@@ -2016,45 +2012,14 @@ func (h *Head) Tombstones() (tombstones.Reader, error) {
 	return h.tombstones, nil
 }
 
-// updateMetaStripes updates the ref↔hash bidirectional mappings in the
-// metadata stripe tables. These mappings are used by LabelsForHash queries
-// and GC cleanup. The series lock need NOT be held since ref and hash are
-// passed as arguments.
-func (h *Head) updateMetaStripes(ref chunks.HeadSeriesRef, hash uint64) {
-	mask := uint64(len(h.metaRefStripes) - 1)
-	refShard := &h.metaRefStripes[uint64(ref)&mask]
-	refShard.Lock()
-	refShard.refToHash[ref] = hash
-	refShard.Unlock()
-
-	hashShard := &h.metaHashStripes[hash&mask]
-	hashShard.Lock()
-	hashShard.hashToRef[hash] = ref
-	hashShard.Unlock()
-}
-
 // cleanupSharedMetadata removes metadata for deleted series from the shared store.
-func (h *Head) cleanupSharedMetadata(deleted map[storage.SeriesRef]struct{}) {
-	if h.seriesMeta == nil || len(deleted) == 0 {
+// deletedHashes contains the stableHash values collected from deleted memSeries
+// during GC while the series was still accessible.
+func (h *Head) cleanupSharedMetadata(deletedHashes map[uint64]struct{}) {
+	if h.seriesMeta == nil || len(deletedHashes) == 0 {
 		return
 	}
-	mask := uint64(len(h.metaRefStripes) - 1)
-	for ref := range deleted {
-		hRef := chunks.HeadSeriesRef(ref)
-		refShard := &h.metaRefStripes[uint64(hRef)&mask]
-		refShard.Lock()
-		hash, ok := refShard.refToHash[hRef]
-		delete(refShard.refToHash, hRef)
-		refShard.Unlock()
-		if !ok {
-			continue
-		}
-
-		hashShard := &h.metaHashStripes[hash&mask]
-		hashShard.Lock()
-		delete(hashShard.hashToRef, hash)
-		hashShard.Unlock()
-
+	for hash := range deletedHashes {
 		// Remove from inverted index before deleting from store.
 		if oldVR, ok := h.seriesMeta.GetVersionedResource(hash); ok {
 			h.seriesMeta.RemoveFromResourceAttrIndex(hash, oldVR)
@@ -2079,15 +2044,15 @@ type headMetadataReader struct {
 func (*headMetadataReader) Close() error { return nil }
 
 func (r *headMetadataReader) LabelsForHash(labelsHash uint64) (labels.Labels, bool) {
-	mask := uint64(len(r.head.metaHashStripes) - 1)
-	shard := &r.head.metaHashStripes[labelsHash&mask]
-	shard.RLock()
-	ref, ok := shard.hashToRef[labelsHash]
-	shard.RUnlock()
+	// Try resource store first (more common), then scope store.
+	ref, ok := r.head.seriesMeta.ResourceStore().GetSeriesRef(labelsHash)
+	if !ok {
+		ref, ok = r.head.seriesMeta.ScopeStore().GetSeriesRef(labelsHash)
+	}
 	if !ok {
 		return labels.EmptyLabels(), false
 	}
-	s := r.head.series.getByID(ref)
+	s := r.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		return labels.EmptyLabels(), false
 	}
@@ -2546,34 +2511,6 @@ type paddedAtomicInt32 struct {
 	_ [60]byte
 }
 
-const metadataStripeSize = 1 << 8 // 256-way sharding for metadata ref/hash maps
-
-// metadataRefStripe holds ref→hash mappings for one shard, keyed by ref.
-type metadataRefStripe struct {
-	sync.RWMutex
-	_         [40]byte // cache line padding
-	refToHash map[chunks.HeadSeriesRef]uint64
-}
-
-// metadataHashStripe holds hash→ref mappings for one shard, keyed by hash.
-type metadataHashStripe struct {
-	sync.RWMutex
-	_         [40]byte // cache line padding
-	hashToRef map[uint64]chunks.HeadSeriesRef
-}
-
-func newMetadataStripes(capacityPerStripe int) ([]metadataRefStripe, []metadataHashStripe) {
-	refs := make([]metadataRefStripe, metadataStripeSize)
-	hashes := make([]metadataHashStripe, metadataStripeSize)
-	for i := range refs {
-		refs[i].refToHash = make(map[chunks.HeadSeriesRef]uint64, capacityPerStripe)
-	}
-	for i := range hashes {
-		hashes[i].hashToRef = make(map[uint64]chunks.HeadSeriesRef, capacityPerStripe)
-	}
-	return refs, hashes
-}
-
 func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *stripeSeries {
 	s := &stripeSeries{
 		size:                    stripeSize,
@@ -2602,7 +2539,7 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int, _, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int, _, _ int64, minMmapFile int, deletedMetaHashes map[uint64]struct{}) {
 	var (
 		deleted                       = map[storage.SeriesRef]struct{}{}
 		affected                      = map[labels.Label]struct{}{}
@@ -2614,6 +2551,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		minOOOTime              int64 = math.MaxInt64
 	)
 	minMmapFile = math.MaxInt32
+	deletedMetaHashes = map[uint64]struct{}{}
 
 	// For one series, truncate old chunks and check if any chunks left. If not, mark as deleted and collect the ID.
 	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
@@ -2677,6 +2615,9 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		if series.stableHash != 0 {
+			deletedMetaHashes[series.stableHash] = struct{}{}
+		}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
@@ -2689,7 +2630,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		actualMint = mint
 	}
 
-	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualMint, minOOOTime, minMmapFile
+	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, actualMint, minOOOTime, minMmapFile, deletedMetaHashes
 }
 
 // gcSeries removes the provided series from the head index and updates head metrics,
@@ -2701,7 +2642,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) map[storage.SeriesRef]struct{} {
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, deletedMetaHashes := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -2719,7 +2660,7 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 	h.tombstones.DeleteTombstones(deleted)
 
 	// Clean up shared metadata for deleted series.
-	h.cleanupSharedMetadata(deleted)
+	h.cleanupSharedMetadata(deletedMetaHashes)
 
 	if h.wal != nil {
 		h.walExpiriesMtx.Lock()
@@ -2827,7 +2768,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 // <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the set
 // of label-name/value pairs whose postings are affected, the count of removed chunks, and
 // the number of deleted series that carried a stale-NaN last value.
-func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
+func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int, deletedMetaHashes map[uint64]struct{}) {
 	var (
 		deleted                 = map[storage.SeriesRef]struct{}{}
 		affected                = map[labels.Label]struct{}{}
@@ -2836,6 +2777,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		histogramSeriesDeleted  = 0
 		histogramBucketsDeleted = 0
 	)
+	deletedMetaHashes = map[uint64]struct{}{}
 
 	refsSet := map[storage.SeriesRef]struct{}{}
 	for _, ref := range seriesRefs {
@@ -2886,6 +2828,9 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 			histogramSeriesDeleted++
 			histogramBucketsDeleted += buckets
 		}
+		if series.stableHash != 0 {
+			deletedMetaHashes[series.stableHash] = struct{}{}
+		}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[stripe], series.ref)
@@ -2894,7 +2839,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 
 	s.iterForDeletion(check)
 
-	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted
+	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted, deletedMetaHashes
 }
 
 // The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
@@ -3044,6 +2989,11 @@ type memSeries struct {
 	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
 	// been explicitly enabled in TSDB.
 	shardHash uint64
+
+	// stableHash is labels.StableHash(lset), set on first resource/scope commit.
+	// Zero when native metadata has not been committed for this series.
+	// Immutable after first write; safe to read without lock once non-zero.
+	stableHash uint64
 
 	// Everything after here should only be accessed with the lock held.
 	sync.Mutex
