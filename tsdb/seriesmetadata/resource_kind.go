@@ -216,15 +216,15 @@ func hashResourceCommitData(rcd ResourceCommitData) uint64 {
 
 // CommitResourceToStore builds a ResourceVersion from ResourceCommitData and
 // commits it directly to the MemStore, bypassing per-series storage entirely.
-// Returns the old and new versioned state for index updates. When old and new
-// have the same number of versions, the content was unchanged (only a time
-// range extension) and no WAL write is needed.
+// Returns contentChanged=false when only the time range was extended (no WAL
+// write or attr index update needed — the >99% hot path).
+// Returns contentChanged=true with old/cur materialized when content changed.
 //
 // Uses InsertVersion to avoid deep-copying maps when a canonical already exists
 // in the content dedup table (common during WAL replay where many series share
 // the same resource). The buildFull callback is only invoked when no canonical
 // exists yet.
-func CommitResourceToStore(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData) (old, cur *VersionedResource) {
+func CommitResourceToStore(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData) (contentChanged bool, old, cur *VersionedResource) {
 	// Compute content hash from raw data (no allocations needed).
 	// hashResourceCommitData also sorts rcd.Entities in-place.
 	contentHash := hashResourceCommitData(rcd)
