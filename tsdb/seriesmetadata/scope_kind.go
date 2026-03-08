@@ -157,12 +157,35 @@ func CommitScopeDirect(accessor kindMetaAccessor, scd ScopeCommitData) {
 	}
 }
 
+// hashScopeCommitData computes the content hash from raw ScopeCommitData
+// without cloning any maps. Identical to hashScopeContent for equivalent data.
+func hashScopeCommitData(scd ScopeCommitData) uint64 {
+	h := xxhash.New()
+
+	_, _ = h.WriteString(scd.Name)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(scd.Version)
+	_, _ = h.Write([]byte{0})
+	_, _ = h.WriteString(scd.SchemaURL)
+	_, _ = h.Write([]byte{0})
+	hashAttrs(h, scd.Attrs)
+
+	return h.Sum64()
+}
+
 // CommitScopeToStore builds a ScopeVersion from ScopeCommitData and
 // commits it directly to the MemStore via SetVersionedWithDiff, bypassing
 // per-series storage entirely. Returns the old and new versioned state.
 // When old and new have the same number of versions, the content was
 // unchanged (only a time range extension) and no WAL write is needed.
 func CommitScopeToStore(store *MemStore[*ScopeVersion], labelsHash uint64, scd ScopeCommitData) (old, cur *VersionedScope) {
+	// Fast path: check content hash against current version without allocating.
+	contentHash := hashScopeCommitData(scd)
+	if vs, matched := store.ExtendTimeRangeIfContentMatch(labelsHash, contentHash, scd.MinTime, scd.MaxTime); matched {
+		return vs, vs
+	}
+
+	// Content differs or first insert — allocate.
 	sv := &ScopeVersion{
 		Name:      scd.Name,
 		Version:   scd.Version,
