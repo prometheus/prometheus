@@ -33,10 +33,11 @@ const numMemStoreStripes = 256
 // full Versioned with interned ThinCopies.
 type versionedEntry[V VersionConstraint] struct {
 	labelsHash  uint64
-	contentHash uint64       // cached content hash (single-version fast path)
-	canonical   V            // shared canonical content pointer (from contentStripe)
-	minTime     int64        // inline time range (single-version only)
-	maxTime     int64        // inline time range (single-version only)
+	contentHash uint64        // cached content hash (single-version fast path)
+	seriesRef   uint64        // series ref for LabelsForHash resolution
+	canonical   V             // shared canonical content pointer (from contentStripe)
+	minTime     int64         // inline time range (single-version only)
+	maxTime     int64         // inline time range (single-version only)
 	multi       *Versioned[V] // non-nil only when >1 version or dedup disabled
 }
 
@@ -568,6 +569,29 @@ func (m *MemStore[V]) Delete(labelsHash uint64) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	delete(s.byHash, labelsHash)
+}
+
+// SetSeriesRef stores the series ref for a given labels hash, enabling
+// hash→ref lookup for LabelsForHash resolution without external stripe maps.
+func (m *MemStore[V]) SetSeriesRef(labelsHash, ref uint64) {
+	s := m.stripe(labelsHash)
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	if entry, ok := s.byHash[labelsHash]; ok {
+		entry.seriesRef = ref
+	}
+}
+
+// GetSeriesRef returns the series ref for a given labels hash.
+func (m *MemStore[V]) GetSeriesRef(labelsHash uint64) (uint64, bool) {
+	s := m.stripe(labelsHash)
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	entry, ok := s.byHash[labelsHash]
+	if !ok {
+		return 0, false
+	}
+	return entry.seriesRef, entry.seriesRef != 0
 }
 
 // checkContextEveryNIterations controls how often ctx.Err() is checked during iteration.

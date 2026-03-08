@@ -7518,14 +7518,14 @@ func TestStripeSeries_gc(t *testing.T) {
 		require.True(t, created)
 		require.Same(t, series, got)
 
-		deleted, _, _, _, _, _, _, _, _ := s.gc(0, 0)
+		deleted, _, _, _, _, _, _, _, _, _ := s.gc(0, 0)
 		require.Empty(t, deleted)
 		require.Same(t, series, s.getByID(series.ref))
 
 		series.Lock()
 		require.True(t, series.unmarkPendingCommit())
 		series.Unlock()
-		deleted, _, _, _, _, _, _, _, _ = s.gc(0, 0)
+		deleted, _, _, _, _, _, _, _, _, _ = s.gc(0, 0)
 		require.Contains(t, deleted, storage.SeriesRef(series.ref))
 		require.Nil(t, s.getByID(series.ref))
 	})
