@@ -175,6 +175,38 @@ func CommitResourceDirect(accessor kindMetaAccessor, rcd ResourceCommitData) {
 	}
 }
 
+// CommitResourceToStore builds a ResourceVersion from ResourceCommitData and
+// commits it directly to the MemStore via SetVersionedWithDiff, bypassing
+// per-series storage entirely. Returns the old and new versioned state for
+// index updates. When old and new have the same number of versions, the
+// content was unchanged (only a time range extension) and no WAL write is needed.
+func CommitResourceToStore(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData) (old, cur *VersionedResource) {
+	entities := make([]*Entity, len(rcd.Entities))
+	for j, e := range rcd.Entities {
+		entityType := e.Type
+		if entityType == "" {
+			entityType = EntityTypeResource
+		}
+		entities[j] = &Entity{
+			Type:        entityType,
+			ID:          maps.Clone(e.ID),
+			Description: maps.Clone(e.Description),
+		}
+	}
+	slices.SortFunc(entities, func(a, b *Entity) int {
+		return cmp.Compare(a.Type, b.Type)
+	})
+
+	rv := &ResourceVersion{
+		Identifying: maps.Clone(rcd.Identifying),
+		Descriptive: maps.Clone(rcd.Descriptive),
+		Entities:    entities,
+		MinTime:     rcd.MinTime,
+		MaxTime:     rcd.MaxTime,
+	}
+	return store.SetVersionedWithDiff(labelsHash, &Versioned[*ResourceVersion]{Versions: []*ResourceVersion{rv}})
+}
+
 // CollectResourceDirect is the hot-path equivalent of CollectFromSeries
 // for resources, avoiding interface{} boxing on the return path.
 func CollectResourceDirect(accessor kindMetaAccessor) (*VersionedResource, bool) {
