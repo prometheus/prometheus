@@ -479,54 +479,63 @@ Outer:
 			}
 			h.wlReplayMetadataPool.Put(v)
 		case []record.RefResource:
-			resKind, _ := seriesmetadata.KindByID(seriesmetadata.KindResource)
-			for _, r := range v {
-				if ref, ok := multiRef[r.Ref]; ok {
-					r.Ref = ref
+			if h.seriesMeta != nil {
+				store := h.seriesMeta.ResourceStore()
+				for _, r := range v {
+					if ref, ok := multiRef[r.Ref]; ok {
+						r.Ref = ref
+					}
+					s := h.series.getByID(r.Ref)
+					if s == nil {
+						unknownResourceRefs.Inc()
+						missingSeries[r.Ref] = struct{}{}
+						continue
+					}
+					s.Lock()
+					hash := labels.StableHash(s.lset)
+					ref := s.ref
+					s.Unlock()
+
+					oldVR, newVR := seriesmetadata.CommitResourceToStore(store, hash, seriesmetadata.ResourceCommitData{
+						Identifying: r.Identifying,
+						Descriptive: r.Descriptive,
+						Entities:    refResourceEntitiesToCommitData(r.Entities),
+						MinTime:     r.MinTime,
+						MaxTime:     r.MaxTime,
+					})
+					h.updateMetaStripes(ref, hash)
+					h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
 				}
-				s := h.series.getByID(r.Ref)
-				if s == nil {
-					unknownResourceRefs.Inc()
-					missingSeries[r.Ref] = struct{}{}
-					continue
-				}
-				s.Lock()
-				resKind.CommitToSeries(s, seriesmetadata.ResourceCommitData{
-					Identifying: r.Identifying,
-					Descriptive: r.Descriptive,
-					Entities:    refResourceEntitiesToCommitData(r.Entities),
-					MinTime:     r.MinTime,
-					MaxTime:     r.MaxTime,
-				})
-				h.updateSharedMetadata(s, resKind)
-				h.internSeriesResource(s)
-				s.Unlock()
 			}
 			h.wlReplayResourcesPool.Put(v)
 		case []record.RefScope:
-			scopeKind, _ := seriesmetadata.KindByID(seriesmetadata.KindScope)
-			for _, sc := range v {
-				if ref, ok := multiRef[sc.Ref]; ok {
-					sc.Ref = ref
+			if h.seriesMeta != nil {
+				store := h.seriesMeta.ScopeStore()
+				for _, sc := range v {
+					if ref, ok := multiRef[sc.Ref]; ok {
+						sc.Ref = ref
+					}
+					s := h.series.getByID(sc.Ref)
+					if s == nil {
+						unknownScopeRefs.Inc()
+						missingSeries[sc.Ref] = struct{}{}
+						continue
+					}
+					s.Lock()
+					hash := labels.StableHash(s.lset)
+					ref := s.ref
+					s.Unlock()
+
+					seriesmetadata.CommitScopeToStore(store, hash, seriesmetadata.ScopeCommitData{
+						Name:      sc.Name,
+						Version:   sc.Version,
+						SchemaURL: sc.SchemaURL,
+						Attrs:     sc.Attrs,
+						MinTime:   sc.MinTime,
+						MaxTime:   sc.MaxTime,
+					})
+					h.updateMetaStripes(ref, hash)
 				}
-				s := h.series.getByID(sc.Ref)
-				if s == nil {
-					unknownScopeRefs.Inc()
-					missingSeries[sc.Ref] = struct{}{}
-					continue
-				}
-				s.Lock()
-				scopeKind.CommitToSeries(s, seriesmetadata.ScopeCommitData{
-					Name:      sc.Name,
-					Version:   sc.Version,
-					SchemaURL: sc.SchemaURL,
-					Attrs:     sc.Attrs,
-					MinTime:   sc.MinTime,
-					MaxTime:   sc.MaxTime,
-				})
-				h.updateSharedMetadata(s, scopeKind)
-				h.internSeriesScope(s)
-				s.Unlock()
 			}
 			h.wlReplayScopesPool.Put(v)
 		default:

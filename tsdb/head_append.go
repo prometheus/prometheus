@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"math"
 	"time"
 
@@ -1826,24 +1825,6 @@ func commitMetadata(b *appendBatch) {
 	}
 }
 
-// commitResources commits the resource updates for each series in the provided batch.
-func (a *headAppenderBase) commitResources(b *appendBatch) {
-	for i, r := range b.resources {
-		s := b.resourceSeries[i]
-		s.Lock()
-		seriesmetadata.CommitResourceDirect(s, seriesmetadata.ResourceCommitData{
-			Identifying: r.Identifying,
-			Descriptive: r.Descriptive,
-			Entities:    refResourceEntitiesToCommitData(r.Entities),
-			MinTime:     r.MinTime,
-			MaxTime:     r.MaxTime,
-		})
-		a.head.updateSharedResourceMetadata(s)
-		a.head.internSeriesResource(s)
-		s.Unlock()
-	}
-}
-
 // refResourceEntitiesToCommitData converts WAL record entities to ResourceEntityData.
 func refResourceEntitiesToCommitData(entities []record.RefResourceEntity) []seriesmetadata.ResourceEntityData {
 	result := make([]seriesmetadata.ResourceEntityData, len(entities))
@@ -1857,80 +1838,39 @@ func refResourceEntitiesToCommitData(entities []record.RefResourceEntity) []seri
 	return result
 }
 
-// commitScopes commits the scope updates for each series in the provided batch.
-func (a *headAppenderBase) commitScopes(b *appendBatch) {
-	for i, sc := range b.scopes {
-		s := b.scopeSeries[i]
-		s.Lock()
-		seriesmetadata.CommitScopeDirect(s, seriesmetadata.ScopeCommitData{
-			Name:      sc.Name,
-			Version:   sc.Version,
-			SchemaURL: sc.SchemaURL,
-			Attrs:     sc.Attrs,
-			MinTime:   sc.MinTime,
-			MaxTime:   sc.MaxTime,
-		})
-		a.head.updateSharedScopeMetadata(s)
-		a.head.internSeriesScope(s)
-		s.Unlock()
+// commitAndFilterResources commits resource data directly to the shared MemStore
+// (bypassing per-series storage) and filters out entries where the content was
+// unchanged — those need no WAL write. Returns the number of entries filtered out.
+func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
+	if a.head.seriesMeta == nil {
+		return 0
 	}
-}
-
-// resourceContentUnchanged checks whether the incoming WAL resource record
-// has the same content as the current stored ResourceVersion, ignoring time range.
-func resourceContentUnchanged(cur *seriesmetadata.ResourceVersion, r record.RefResource) bool {
-	if !maps.Equal(cur.Identifying, r.Identifying) ||
-		!maps.Equal(cur.Descriptive, r.Descriptive) ||
-		len(cur.Entities) != len(r.Entities) {
-		return false
-	}
-	// Stored entities are sorted by Type; incoming may not be — pairwise match.
-	for _, ce := range cur.Entities {
-		found := false
-		for _, ie := range r.Entities {
-			if ce.Type == ie.Type && maps.Equal(ce.ID, ie.ID) && maps.Equal(ce.Description, ie.Description) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
-// scopeContentUnchanged checks whether the incoming WAL scope record
-// has the same content as the current stored ScopeVersion, ignoring time range.
-func scopeContentUnchanged(cur *seriesmetadata.ScopeVersion, sc record.RefScope) bool {
-	return cur.Name == sc.Name && cur.Version == sc.Version &&
-		cur.SchemaURL == sc.SchemaURL && maps.Equal(cur.Attrs, sc.Attrs)
-}
-
-// filterUnchangedResources removes entries from b.resources where the content
-// is identical to what's already stored on the series. For unchanged entries,
-// the time range is extended in-place and the shared metadata store is updated.
-// Returns the number of entries filtered out.
-func (a *headAppenderBase) filterUnchangedResources(b *appendBatch) int {
+	store := a.head.seriesMeta.ResourceStore()
 	n := 0
 	for i, r := range b.resources {
 		s := b.resourceSeries[i]
 		s.Lock()
-		changed := true
-		if vr, ok := seriesmetadata.CollectResourceDirect(s); ok && len(vr.Versions) > 0 {
-			cur := vr.Versions[len(vr.Versions)-1]
-			if resourceContentUnchanged(cur, r) {
-				cur.UpdateTimeRange(r.MinTime, r.MaxTime)
-				a.head.updateSharedResourceMetadata(s)
-				changed = false
-			}
-		}
+		hash := labels.StableHash(s.lset)
+		ref := s.ref
 		s.Unlock()
-		if changed {
-			b.resources[n] = b.resources[i]
-			b.resourceSeries[n] = b.resourceSeries[i]
-			n++
+
+		oldVR, newVR := seriesmetadata.CommitResourceToStore(store, hash, seriesmetadata.ResourceCommitData{
+			Identifying: r.Identifying,
+			Descriptive: r.Descriptive,
+			Entities:    refResourceEntitiesToCommitData(r.Entities),
+			MinTime:     r.MinTime,
+			MaxTime:     r.MaxTime,
+		})
+		a.head.updateMetaStripes(ref, hash)
+		a.head.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
+
+		// If version count unchanged, content was identical — skip WAL write.
+		if oldVR != nil && len(oldVR.Versions) == len(newVR.Versions) {
+			continue
 		}
+		b.resources[n] = b.resources[i]
+		b.resourceSeries[n] = b.resourceSeries[i]
+		n++
 	}
 	filtered := len(b.resources) - n
 	b.resources = b.resources[:n]
@@ -1938,30 +1878,39 @@ func (a *headAppenderBase) filterUnchangedResources(b *appendBatch) int {
 	return filtered
 }
 
-// filterUnchangedScopes removes entries from b.scopes where the content
-// is identical to what's already stored on the series. For unchanged entries,
-// the time range is extended in-place and the shared metadata store is updated.
-// Returns the number of entries filtered out.
-func (a *headAppenderBase) filterUnchangedScopes(b *appendBatch) int {
+// commitAndFilterScopes commits scope data directly to the shared MemStore
+// (bypassing per-series storage) and filters out entries where the content was
+// unchanged. Returns the number of entries filtered out.
+func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
+	if a.head.seriesMeta == nil {
+		return 0
+	}
+	store := a.head.seriesMeta.ScopeStore()
 	n := 0
 	for i, sc := range b.scopes {
 		s := b.scopeSeries[i]
 		s.Lock()
-		changed := true
-		if vs, ok := seriesmetadata.CollectScopeDirect(s); ok && len(vs.Versions) > 0 {
-			cur := vs.Versions[len(vs.Versions)-1]
-			if scopeContentUnchanged(cur, sc) {
-				cur.UpdateTimeRange(sc.MinTime, sc.MaxTime)
-				a.head.updateSharedScopeMetadata(s)
-				changed = false
-			}
-		}
+		hash := labels.StableHash(s.lset)
+		ref := s.ref
 		s.Unlock()
-		if changed {
-			b.scopes[n] = b.scopes[i]
-			b.scopeSeries[n] = b.scopeSeries[i]
-			n++
+
+		oldVS, newVS := seriesmetadata.CommitScopeToStore(store, hash, seriesmetadata.ScopeCommitData{
+			Name:      sc.Name,
+			Version:   sc.Version,
+			SchemaURL: sc.SchemaURL,
+			Attrs:     sc.Attrs,
+			MinTime:   sc.MinTime,
+			MaxTime:   sc.MaxTime,
+		})
+		a.head.updateMetaStripes(ref, hash)
+
+		// If version count unchanged, content was identical — skip WAL write.
+		if oldVS != nil && len(oldVS.Versions) == len(newVS.Versions) {
+			continue
 		}
+		b.scopes[n] = b.scopes[i]
+		b.scopeSeries[n] = b.scopeSeries[i]
+		n++
 	}
 	filtered := len(b.scopes) - n
 	b.scopes = b.scopes[:n]
@@ -1999,16 +1948,17 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.closed = true
 	}()
 
-	// Count total resource/scope updates before filtering, then filter
-	// unchanged entries to avoid unnecessary WAL writes. Unchanged entries
-	// have their time range extended in-place under the series lock.
+	// Count total resource/scope updates before commit+filter, then commit
+	// directly to the shared MemStore and filter out unchanged entries to
+	// avoid unnecessary WAL writes. Committing to MemStore before WAL is
+	// safe: MemStore is rebuilt from WAL on crash.
 	var resourcesTotal, scopesTotal int
 	var resourcesFiltered, scopesFiltered int
 	for _, b := range a.batches {
 		resourcesTotal += len(b.resources)
 		scopesTotal += len(b.scopes)
-		resourcesFiltered += a.filterUnchangedResources(b)
-		scopesFiltered += a.filterUnchangedScopes(b)
+		resourcesFiltered += a.commitAndFilterResources(b)
+		scopesFiltered += a.commitAndFilterScopes(b)
 	}
 
 	if err := a.log(); err != nil {
@@ -2056,8 +2006,6 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.commitHistograms(b, acc)
 		a.commitFloatHistograms(b, acc)
 		commitMetadata(b)
-		a.commitResources(b)
-		a.commitScopes(b)
 	}
 	// Unmark all series as pending commit after all samples have been committed.
 	a.unmarkCreatedSeriesAsPendingCommit()
