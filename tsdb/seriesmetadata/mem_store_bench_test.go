@@ -14,6 +14,9 @@
 package seriesmetadata
 
 import (
+	"context"
+	"fmt"
+	"log/slog"
 	"runtime"
 	"testing"
 )
@@ -87,4 +90,94 @@ func BenchmarkMemStore_MemoryPerSeries(b *testing.B) {
 
 	// Prevent store from being GC'd before measurement.
 	runtime.KeepAlive(store)
+}
+
+// populateBenchStore creates a MemSeriesMetadata with numSeries entries,
+// numResources unique resource contents, and numScopes unique scope contents.
+func populateBenchStore(numSeries, numResources, numScopes int) *MemSeriesMetadata {
+	m := NewMemSeriesMetadata()
+	rs := m.ResourceStore()
+	ss := m.ScopeStore()
+
+	for i := range numSeries {
+		lh := uint64(i)
+		resIdx := i % numResources
+		rv := &ResourceVersion{
+			Identifying: map[string]string{
+				"service.name":       fmt.Sprintf("svc-%d", resIdx),
+				"k8s.namespace.name": "ns",
+			},
+			Descriptive: map[string]string{"host.name": fmt.Sprintf("host-%d", resIdx)},
+			MinTime:     0,
+			MaxTime:     100,
+		}
+		rs.Set(lh, rv)
+
+		scopeIdx := i % numScopes
+		sv := &ScopeVersion{
+			Name:    fmt.Sprintf("scope-%d", scopeIdx),
+			Version: "1.0",
+			Attrs:   map[string]string{"lib": fmt.Sprintf("lib-%d", scopeIdx)},
+			MinTime: 0,
+			MaxTime: 100,
+		}
+		ss.Set(lh, sv)
+	}
+	return m
+}
+
+func BenchmarkWriteFileWithOptions(b *testing.B) {
+	const numSeries = 100_000
+	m := populateBenchStore(numSeries, 1_000, 500)
+	dir := b.TempDir()
+	logger := slog.New(slog.DiscardHandler)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := WriteFileWithOptions(logger, dir, m, WriterOptions{})
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkMergeAndWriteSeriesMetadata(b *testing.B) {
+	const numSeries = 100_000
+	m := populateBenchStore(numSeries, 1_000, 500)
+	dir := b.TempDir()
+	logger := slog.New(slog.DiscardHandler)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		// Build needsResolve hashes via IterHashes.
+		needsResolve := make(map[uint64]struct{}, numSeries)
+		for _, kind := range AllKinds() {
+			_ = m.IterHashes(context.Background(), kind.ID(), func(labelsHash uint64) error {
+				needsResolve[labelsHash] = struct{}{}
+				return nil
+			})
+		}
+
+		// Build a simple identity ref resolver from needsResolve.
+		labelsHashToRef := make(map[uint64]uint64, len(needsResolve))
+		for lh := range needsResolve {
+			labelsHashToRef[lh] = lh // identity mapping for benchmark
+		}
+
+		_, err := WriteFileWithOptions(logger, dir, m, WriterOptions{
+			RefResolver: func(labelsHash uint64) (uint64, bool) {
+				ref, ok := labelsHashToRef[labelsHash]
+				return ref, ok
+			},
+			HashFilter: func(lh uint64) bool {
+				_, ok := needsResolve[lh]
+				return ok
+			},
+		})
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
 }

@@ -870,7 +870,7 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 	}
 	needsResolve := make(map[uint64]struct{}, hintCap)
 	for _, kind := range seriesmetadata.AllKinds() {
-		_ = source.IterKind(c.ctx, kind.ID(), func(labelsHash uint64, _ any) error {
+		_ = source.IterHashes(c.ctx, kind.ID(), func(labelsHash uint64) error {
 			needsResolve[labelsHash] = struct{}{}
 			return nil
 		})

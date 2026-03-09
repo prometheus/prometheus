@@ -55,6 +55,10 @@ type Reader interface {
 	// IterKind iterates all entries for a kind (type-erased).
 	IterKind(ctx context.Context, id KindID, f func(labelsHash uint64, versioned any) error) error
 
+	// IterHashes iterates all labelsHashes for a kind without materializing
+	// versions. Cheaper than IterKind when only the hash set is needed.
+	IterHashes(ctx context.Context, id KindID, f func(labelsHash uint64) error) error
+
 	// KindLen returns the number of entries for a kind.
 	KindLen(id KindID) int
 
@@ -253,6 +257,18 @@ func (m *MemSeriesMetadata) IterKind(ctx context.Context, id KindID, f func(labe
 		return nil
 	}
 	return kind.IterVersioned(ctx, store, f)
+}
+
+// IterHashes iterates labelsHashes for a kind without materializing versions.
+func (m *MemSeriesMetadata) IterHashes(ctx context.Context, id KindID, f func(labelsHash uint64) error) error {
+	switch id {
+	case KindResource:
+		return m.ResourceStore().IterHashes(ctx, f)
+	case KindScope:
+		return m.ScopeStore().IterHashes(ctx, f)
+	default:
+		return nil
+	}
 }
 
 // KindLen returns the number of entries for a kind.
@@ -938,6 +954,10 @@ func (r *parquetReader) IterKind(ctx context.Context, id KindID, f func(labelsHa
 	return r.mem.IterKind(ctx, id, f)
 }
 
+func (r *parquetReader) IterHashes(ctx context.Context, id KindID, f func(labelsHash uint64) error) error {
+	return r.mem.IterHashes(ctx, id, f)
+}
+
 func (r *parquetReader) LabelsForHash(labelsHash uint64) (labels.Labels, bool) {
 	return r.mem.LabelsForHash(labelsHash)
 }
@@ -1037,27 +1057,30 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 	totalRows := 0
 	metadataCounts := make(map[string]int)
 
-	// Stream rows per-kind: build table + mapping rows for one kind,
-	// write them immediately, then release before processing the next kind.
-	// This halves peak memory vs. materializing all kinds simultaneously.
-	for _, kind := range AllKinds() {
+	// Stream rows per-kind using typed iteration to avoid interface boxing.
+	// Each block builds table + mapping rows, writes them, then releases.
+
+	// --- Resources ---
+	{
 		contentTable := make(map[uint64]metadataRow)
 		var mappingRows []metadataRow
+		var keysBuf []string
 
-		err := mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
+		err := mr.IterVersionedResources(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
 			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
 				return nil
 			}
-			kind.IterateVersions(versioned, func(version any, minTime, maxTime int64) {
-				contentHash := kind.ContentHash(version)
+			for _, rv := range vr.Versions {
+				var contentHash uint64
+				contentHash, keysBuf = hashResourceContentReusable(rv, keysBuf)
 				if _, exists := contentTable[contentHash]; !exists {
-					contentTable[contentHash] = kind.BuildTableRow(contentHash, version)
+					contentTable[contentHash] = buildResourceTableRow(contentHash, rv)
 				} else {
 					existing := contentTable[contentHash]
-					existingVersion := kind.ParseTableRow(logger, &existing)
-					if !kind.VersionsEqual(existingVersion, version) {
+					existingVersion := parseResourceContent(logger, &existing)
+					if !ResourceVersionsEqual(existingVersion, rv) {
 						logger.Warn("Hash collision detected in content-addressed table",
-							"kind", string(kind.ID()), "content_hash", contentHash, "labels_hash", labelsHash)
+							"kind", string(KindResource), "content_hash", contentHash, "labels_hash", labelsHash)
 					}
 				}
 				seriesRef := labelsHash
@@ -1065,47 +1088,112 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 					ref, ok := opts.RefResolver(labelsHash)
 					if !ok {
 						logger.Warn("Skipping unresolvable labels hash in write",
-							"kind", string(kind.ID()), "labels_hash", labelsHash)
-						return
+							"kind", string(KindResource), "labels_hash", labelsHash)
+						continue
 					}
 					seriesRef = ref
 				}
 				mappingRows = append(mappingRows, metadataRow{
-					Namespace:   kind.MappingNamespace(),
+					Namespace:   NamespaceResourceMapping,
 					SeriesRef:   seriesRef,
 					ContentHash: contentHash,
-					MinTime:     minTime,
-					MaxTime:     maxTime,
+					MinTime:     rv.MinTime,
+					MaxTime:     rv.MaxTime,
 				})
-			})
+			}
 			return nil
 		})
 		if err != nil {
-			return 0, fmt.Errorf("iterate %s: %w", kind.ID(), err)
+			return 0, fmt.Errorf("iterate %s: %w", KindResource, err)
 		}
 
-		// Convert content table to sorted rows and write immediately.
 		tableRows := make([]metadataRow, 0, len(contentTable))
 		for _, row := range contentTable {
 			tableRows = append(tableRows, row)
 		}
-		// Release the content table map before sorting/writing.
 		clear(contentTable)
 
 		sortMetadataRows(tableRows)
 		sortMetadataRows(mappingRows)
 
-		metadataCounts[string(kind.ID())+"_table_count"] = len(tableRows)
-		metadataCounts[string(kind.ID())+"_mapping_count"] = len(mappingRows)
+		metadataCounts[string(KindResource)+"_table_count"] = len(tableRows)
+		metadataCounts[string(KindResource)+"_mapping_count"] = len(mappingRows)
 		totalRows += len(tableRows) + len(mappingRows)
 
 		if err := writeNamespaceRows(writer, tableRows, opts.MaxRowsPerRowGroup); err != nil {
-			return 0, fmt.Errorf("write %s table rows: %w", kind.ID(), err)
+			return 0, fmt.Errorf("write %s table rows: %w", KindResource, err)
 		}
 		if err := writeNamespaceRows(writer, mappingRows, opts.MaxRowsPerRowGroup); err != nil {
-			return 0, fmt.Errorf("write %s mapping rows: %w", kind.ID(), err)
+			return 0, fmt.Errorf("write %s mapping rows: %w", KindResource, err)
 		}
-		// tableRows and mappingRows are now unreferenced and eligible for GC.
+	}
+
+	// --- Scopes ---
+	{
+		contentTable := make(map[uint64]metadataRow)
+		var mappingRows []metadataRow
+		var keysBuf []string
+
+		err := mr.IterVersionedScopes(context.Background(), func(labelsHash uint64, vs *VersionedScope) error {
+			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
+				return nil
+			}
+			for _, sv := range vs.Versions {
+				var contentHash uint64
+				contentHash, keysBuf = hashScopeContentReusable(sv, keysBuf)
+				if _, exists := contentTable[contentHash]; !exists {
+					contentTable[contentHash] = buildScopeTableRow(contentHash, sv)
+				} else {
+					existing := contentTable[contentHash]
+					existingVersion := parseScopeContent(&existing)
+					if !ScopeVersionsEqual(existingVersion, sv) {
+						logger.Warn("Hash collision detected in content-addressed table",
+							"kind", string(KindScope), "content_hash", contentHash, "labels_hash", labelsHash)
+					}
+				}
+				seriesRef := labelsHash
+				if opts.RefResolver != nil {
+					ref, ok := opts.RefResolver(labelsHash)
+					if !ok {
+						logger.Warn("Skipping unresolvable labels hash in write",
+							"kind", string(KindScope), "labels_hash", labelsHash)
+						continue
+					}
+					seriesRef = ref
+				}
+				mappingRows = append(mappingRows, metadataRow{
+					Namespace:   NamespaceScopeMapping,
+					SeriesRef:   seriesRef,
+					ContentHash: contentHash,
+					MinTime:     sv.MinTime,
+					MaxTime:     sv.MaxTime,
+				})
+			}
+			return nil
+		})
+		if err != nil {
+			return 0, fmt.Errorf("iterate %s: %w", KindScope, err)
+		}
+
+		tableRows := make([]metadataRow, 0, len(contentTable))
+		for _, row := range contentTable {
+			tableRows = append(tableRows, row)
+		}
+		clear(contentTable)
+
+		sortMetadataRows(tableRows)
+		sortMetadataRows(mappingRows)
+
+		metadataCounts[string(KindScope)+"_table_count"] = len(tableRows)
+		metadataCounts[string(KindScope)+"_mapping_count"] = len(mappingRows)
+		totalRows += len(tableRows) + len(mappingRows)
+
+		if err := writeNamespaceRows(writer, tableRows, opts.MaxRowsPerRowGroup); err != nil {
+			return 0, fmt.Errorf("write %s table rows: %w", KindScope, err)
+		}
+		if err := writeNamespaceRows(writer, mappingRows, opts.MaxRowsPerRowGroup); err != nil {
+			return 0, fmt.Errorf("write %s mapping rows: %w", KindScope, err)
+		}
 	}
 
 	// Optionally build and write resource attribute inverted index rows.
@@ -1289,7 +1377,7 @@ func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (
 
 // attrKeyValueHash computes xxhash("key\x00value") for bloom filter skipability.
 func attrKeyValueHash(key, value string) uint64 {
-	h := xxhash.New()
+	var h xxhash.Digest
 	_, _ = h.WriteString(key)
 	_, _ = h.Write([]byte{0})
 	_, _ = h.WriteString(value)
