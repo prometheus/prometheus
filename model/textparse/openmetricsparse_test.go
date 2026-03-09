@@ -942,6 +942,10 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			err:   "expected label name, got \"=\\\"\" (\"EQUAL\") while parsing: \"empty_label_name{=\\\"\"",
 		},
 		{
+			input: "{A}0\n# EOF\n",
+			err:   "expected equal, got \"}0\" (\"BCLOSE\") while parsing: \"{A}0\"",
+		},
+		{
 			input: "foo 1_2\n\n# EOF\n",
 			err:   "unsupported character in float while parsing: \"foo 1_2\"",
 		},
@@ -971,11 +975,11 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: `custom_metric_total 1 # {bb}`,
-			err:   "expected label name, got \"}\" (\"BCLOSE\") while parsing: \"custom_metric_total 1 # {bb}\"",
+			err:   "expected equal, got \"}\" (\"BCLOSE\") while parsing: \"custom_metric_total 1 # {bb}\"",
 		},
 		{
 			input: `custom_metric_total 1 # {bb, a="dd"}`,
-			err:   "expected label name, got \", \" (\"COMMA\") while parsing: \"custom_metric_total 1 # {bb, \"",
+			err:   "expected equal, got \", \" (\"COMMA\") while parsing: \"custom_metric_total 1 # {bb, \"",
 		},
 		{
 			input: `custom_metric_total 1 # {aa="bb",,cc="dd"} 1`,
@@ -1035,6 +1039,22 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		}
 		require.Equal(t, c.err, err.Error(), "test %d: %s", i, c.input)
 	}
+}
+
+func TestOpenMetricsParseBareIdentifierInBraces(t *testing.T) {
+	require.NotPanics(t, func() {
+		p := NewOpenMetricsParser([]byte("{A} 0\n# EOF\n"), labels.NewSymbolTable(), WithOMParserSTSeriesSkipped())
+		for {
+			et, err := p.Next()
+			if err != nil {
+				break
+			}
+			if et == EntrySeries {
+				var lset labels.Labels
+				p.Labels(&lset)
+			}
+		}
+	})
 }
 
 func TestOMNullByteHandling(t *testing.T) {

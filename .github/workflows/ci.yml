@@ -16,7 +16,7 @@ jobs:
     container:
       # Whenever the Go version is updated here, .promu.yml
       # should also be updated.
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -34,7 +34,7 @@ jobs:
     name: More Go tests
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -55,8 +55,6 @@ jobs:
     env:
       # Enforce the Go version.
       GOTOOLCHAIN: local
-      # TODO: remove once 1.25 is the min version.
-      GOEXPERIMENT: synctest
     container:
       # The go version in this image should be N-1 wrt test_go.
       image: quay.io/prometheus/golang-builder:1.25-base
@@ -67,9 +65,6 @@ jobs:
       - run: make build
       # Don't run NPM build; don't run race-detector.
       - run: make test GO_ONLY=1 test-flags=""
-      # TODO: remove once 1.25 is the min version.
-      # ensure we can build without the tag.
-      - run: GOEXPERIMENT="" make build
 
   test_ui:
     name: UI tests
@@ -77,7 +72,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -104,7 +99,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: 1.25.x
+          go-version: 1.26.x
       - run: |
           $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
           go test $TestTargets -vet=off -v
@@ -116,7 +111,7 @@ jobs:
     # Whenever the Go version is updated here, .promu.yml
     # should also be updated.
     container:
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -229,7 +224,7 @@ jobs:
     name: Check generated parser
     runs-on: ubuntu-latest
     container:
-      image: quay.io/prometheus/golang-builder:1.25-base
+      image: quay.io/prometheus/golang-builder:1.26-base
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -252,7 +247,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: 1.25.x
+          go-version: 1.26.x
       - name: Install snmp_exporter/generator dependencies
         run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
         if: github.repository == 'prometheus/snmp_exporter'
@@ -267,8 +262,7 @@ jobs:
       - name: Lint with slicelabels
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
-          # goexperiment.synctest to ensure we don't miss files that depend on it.
-          args: --verbose --build-tags=slicelabels,goexperiment.synctest
+          args: --verbose --build-tags=slicelabels
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint with dedupelabels
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0

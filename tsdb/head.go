@@ -2156,24 +2156,30 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	)
 
 	for _, ref := range refs {
+		// Delete the reference from the series map.
+		// Copying getByID here to avoid locking and unlocking twice.
 		refShard := int(ref) & (h.series.size - 1)
 		h.series.locks[refShard].Lock()
-
-		// Copying getByID here to avoid locking and unlocking twice.
 		series := h.series.series[refShard][ref]
 		if series == nil {
 			h.series.locks[refShard].Unlock()
 			continue
 		}
+		delete(h.series.series[refShard], series.ref)
+		h.series.locks[refShard].Unlock()
+
+		// Delete the reference from the hash.
+		hash := series.lset.Hash()
+		hashShard := int(hash) & (h.series.size - 1)
+		h.series.locks[hashShard].Lock()
+		h.series.hashes[hashShard].del(hash, series.ref)
+		h.series.locks[hashShard].Unlock()
 
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
 			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
 			staleSeriesDeleted++
 		}
-
-		hash := series.lset.Hash()
-		hashShard := int(hash) & (h.series.size - 1)
 
 		chunksRemoved += len(series.mmappedChunks)
 		if series.headChunks != nil {
@@ -2182,10 +2188,6 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
-		h.series.hashes[hashShard].del(hash, series.ref)
-		delete(h.series.series[refShard], series.ref)
-
-		h.series.locks[refShard].Unlock()
 	}
 
 	h.metrics.seriesRemoved.Add(float64(len(deleted)))

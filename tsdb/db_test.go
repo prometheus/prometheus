@@ -8316,23 +8316,28 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	// Use lower SamplesPerChunk and OutOfOrderCapMax so we need fewer samples
+	// to fill chunks, reducing the overall test time significantly
+	// (important for slow CI like i386 which can be 60x+ slower).
+	opts.SamplesPerChunk = 15
+	opts.OutOfOrderCapMax = 5
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()
 
 	var (
-		ctx        = t.Context()
-		series1    = labels.FromStrings("foo", "bar1")
-		allSamples []chunks.Sample
+		ctx     = t.Context()
+		series1 = labels.FromStrings("foo", "bar1")
 	)
 
+	// Use step of 5 minutes to reduce sample count while preserving time ranges
+	// needed for compaction triggers. This reduces total samples from ~411 to ~83.
 	addSamples := func(fromMins, toMins int64) {
 		app := appenderFn(db, ctx)
-		for m := fromMins; m <= toMins; m++ {
+		for m := fromMins; m <= toMins; m += 5 {
 			ts := m * time.Minute.Milliseconds()
-			_, s, err := scenario.appendFunc(app, series1, ts, ts)
+			_, _, err := scenario.appendFunc(app, series1, ts, ts)
 			require.NoError(t, err)
-			allSamples = append(allSamples, s)
 		}
 		require.NoError(t, app.Commit())
 	}

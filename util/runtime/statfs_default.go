@@ -89,5 +89,6 @@ func FsSize(path string) uint64 {
 	if err != nil {
 		return 0
 	}
-	return uint64(fs.Bsize) * fs.Blocks
+	//nolint:unconvert // Blocks is int64 on some operating systems (e.g. dragonfly).
+	return uint64(fs.Bsize) * uint64(fs.Blocks)
 }

@@ -709,7 +709,11 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 			}
 			f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
 			if span := trace.SpanFromContext(ctx); span != nil {
-				f = append(f, slog.Any("spanID", span.SpanContext().SpanID()))
+				spanCtx := span.SpanContext()
+				f = append(f,
+					slog.Any("spanID", spanCtx.SpanID()),
+					slog.Any("traceID", spanCtx.TraceID()),
+				)
 			}
 			if origin := ctx.Value(QueryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]any) {
@@ -1232,16 +1236,56 @@ type EvalNodeHelper struct {
 	lblResultBuf []byte
 
 	// For binary vector matching.
-	rightSigs    map[int]Sample
-	matchedSigs  map[int]map[uint64]struct{}
-	resultMetric map[string]labels.Labels
-	numSigs      int
+	rightSigs          []Sample
+	sigsPresent        []bool
+	matchedSigs        []map[uint64]struct{}
+	matchedSigsPresent []bool
+	resultMetric       map[string]labels.Labels
+	numSigs            int
 
 	// For info series matching.
 	rightStrSigs map[string]Sample
 
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
+}
+
+func (enh *EvalNodeHelper) resetSigsPresent() []bool {
+	if len(enh.sigsPresent) == 0 {
+		enh.sigsPresent = make([]bool, enh.numSigs)
+	} else {
+		clear(enh.sigsPresent)
+	}
+	return enh.sigsPresent
+}
+
+func (enh *EvalNodeHelper) resetMatchedSigsPresent() []bool {
+	if len(enh.matchedSigsPresent) == 0 {
+		enh.matchedSigsPresent = make([]bool, enh.numSigs)
+	} else {
+		clear(enh.matchedSigsPresent)
+	}
+	return enh.matchedSigsPresent
+}
+
+func (enh *EvalNodeHelper) resetRightSigs() []Sample {
+	if enh.rightSigs == nil {
+		enh.rightSigs = make([]Sample, enh.numSigs)
+	} else {
+		clear(enh.rightSigs)
+	}
+	return enh.rightSigs
+}
+
+func (enh *EvalNodeHelper) resetMatchedSigs() []map[uint64]struct{} {
+	if enh.matchedSigs == nil {
+		enh.matchedSigs = make([]map[uint64]struct{}, enh.numSigs)
+	} else {
+		for i := range enh.matchedSigs {
+			clear(enh.matchedSigs[i])
+		}
+	}
+	return enh.matchedSigs
 }
 
 func (enh *EvalNodeHelper) resetBuilder(lbls labels.Labels) {
@@ -1938,9 +1982,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given
 			// a vector selector.
-			arg := unwrapStepInvariantExpr(e.Args[0])
-			vs, ok := arg.(*parser.VectorSelector)
-			if ok {
+			if vs, ok := e.Args[0].(*parser.VectorSelector); ok {
 				return ev.rangeEvalTimestampFunctionOverVectorSelector(ctx, vs, call, e)
 			}
 		}
@@ -2892,7 +2934,7 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 	}
 
 	// Ordinals of signatures present on the right-hand side.
-	rightSigOrdinalsPresent := make([]bool, enh.numSigs)
+	rightSigOrdinalsPresent := enh.resetSigsPresent()
 	for _, sh := range rhsh {
 		rightSigOrdinalsPresent[sh.sigOrdinal] = true
 	}
@@ -2918,7 +2960,7 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 		return enh.Out
 	}
 
-	leftSigOrdinalsPresent := make([]bool, enh.numSigs)
+	leftSigOrdinalsPresent := enh.resetSigsPresent()
 	// Add everything from the left-hand-side Vector.
 	for i, ls := range lhs {
 		leftSigOrdinalsPresent[lhsh[i].sigOrdinal] = true
@@ -2945,7 +2987,7 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	}
 
 	// Ordinals of signatures present on the right-hand side.
-	rightSigOrdinalsPresent := make([]bool, enh.numSigs)
+	rightSigOrdinalsPresent := enh.resetSigsPresent()
 	for _, sh := range rhsh {
 		rightSigOrdinalsPresent[sh.sigOrdinal] = true
 	}
@@ -2977,19 +3019,16 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	}
 
 	// All samples from the rhs by their join signature ordinal.
-	if enh.rightSigs == nil {
-		enh.rightSigs = make(map[int]Sample, len(enh.Out))
-	} else {
-		clear(enh.rightSigs)
-	}
-	rightSigs := enh.rightSigs
+	rightSigs := enh.resetRightSigs()
+	rightSigsPresent := enh.resetSigsPresent()
 
 	// Add all rhs samples to a map so we can easily find matches later.
 	for i, rs := range rhs {
 		sigOrd := rhsh[i].sigOrdinal
 		// The rhs is guaranteed to be the 'one' side. Having multiple samples
 		// with the same signature means that the matching is many-to-many.
-		if duplSample, found := rightSigs[sigOrd]; found {
+		if rightSigsPresent[sigOrd] {
+			duplSample := rightSigs[sigOrd]
 			// oneSide represents which side of the vector represents the 'one' in the many-to-one relationship.
 			oneSide := "right"
 			if matching.Card == parser.CardOneToMany {
@@ -3001,16 +3040,22 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
 		}
 		rightSigs[sigOrd] = rs
+		rightSigsPresent[sigOrd] = true
 	}
 
-	// Tracks the matching by signature ordinals. For one-to-one operations the value is nil.
-	// For many-to-one the value is a set of hashes to detect duplicated result elements.
-	if enh.matchedSigs == nil {
-		enh.matchedSigs = make(map[int]map[uint64]struct{}, len(rightSigs))
+	var (
+		// Tracks the match-signature for one-to-one operations.
+		matchedSigsPresent []bool
+
+		// Tracks the match-signature for many-to-one operations, the value is a set of signatures
+		// to detect duplicated result elements.
+		matchedSigs []map[uint64]struct{}
+	)
+	if matching.Card == parser.CardOneToOne {
+		matchedSigsPresent = enh.resetMatchedSigsPresent()
 	} else {
-		clear(enh.matchedSigs)
+		matchedSigs = enh.resetMatchedSigs()
 	}
-	matchedSigs := enh.matchedSigs
 
 	var lastErr error
 
@@ -3039,26 +3084,26 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			}
 		}
 
-		metric := resultMetric(ls.Metric, rs.Metric, op, matching, enh)
-		if !ev.enableDelayedNameRemoval && returnBool {
-			metric = metric.DropReserved(schema.IsMetadataLabel)
-		}
-		insertedSigs, exists := matchedSigs[sigOrd]
+		dropMetricName := !ev.enableDelayedNameRemoval && returnBool
+		metric := resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+
 		if matching.Card == parser.CardOneToOne {
-			if exists {
+			if matchedSigsPresent[sigOrd] {
 				ev.errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
 			}
-			matchedSigs[sigOrd] = nil // Set existence to true.
+			matchedSigsPresent[sigOrd] = true
 		} else {
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result Vector. Check whether those labels have already been added for
 			// the same matching labels.
 			insertSig := metric.Hash()
 
-			if !exists {
-				insertedSigs = map[uint64]struct{}{}
-				matchedSigs[sigOrd] = insertedSigs
-			} else if _, duplicate := insertedSigs[insertSig]; duplicate {
+			if matchedSigs[sigOrd] == nil {
+				matchedSigs[sigOrd] = map[uint64]struct{}{}
+			}
+			insertedSigs := matchedSigs[sigOrd]
+
+			if _, duplicate := insertedSigs[insertSig]; duplicate {
 				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
 			}
 			insertedSigs[insertSig] = struct{}{}
@@ -3081,8 +3126,12 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	for i, ls := range lhs {
 		sigOrd := lhsh[i].sigOrdinal
 
-		rs, found := rightSigs[sigOrd] // Look for a match in the rhs Vector.
-		if !found {
+		var rs Sample
+		if rightSigsPresent[sigOrd] {
+			// Found a match in the rhs.
+			rs = rightSigs[sigOrd]
+		} else {
+			// Have to fall back to the fill value.
 			fill := matching.FillValues.RHS
 			if fill == nil {
 				continue
@@ -3099,8 +3148,11 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	// For any rhs samples which have not been matched, check if we need to
 	// perform the operation with a fill value from the lhs.
 	if fill := matching.FillValues.LHS; fill != nil {
-		for sigOrd, rs := range rightSigs {
-			if _, matched := matchedSigs[sigOrd]; matched {
+		for i, rs := range rhs {
+			sigOrd := rhsh[i].sigOrdinal
+
+			if (matching.Card == parser.CardOneToOne && matchedSigsPresent[sigOrd]) ||
+				(matching.Card != parser.CardOneToOne && matchedSigs[sigOrd] != nil) {
 				continue // Already matched.
 			}
 			ls := Sample{
@@ -3117,7 +3169,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
-func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, enh *EvalNodeHelper) labels.Labels {
+func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) labels.Labels {
 	if enh.resultMetric == nil {
 		enh.resultMetric = make(map[string]labels.Labels, len(enh.Out))
 	}
@@ -3135,7 +3187,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 	str := string(enh.lblResultBuf)
 
 	enh.resetBuilder(lhs)
-	if changesMetricSchema(op) {
+	if dropMetricName || changesMetricSchema(op) {
 		// Setting empty Metadata causes the deletion of those if they exists.
 		schema.Metadata{}.SetToLabels(enh.lb)
 	}
@@ -3241,337 +3293,6 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
 }
 
-func handleInfinityBuckets(isUpperTrim bool, b histogram.Bucket[float64], rhs float64) (underCount, bucketMidpoint float64) {
-	zeroIfInf := func(x float64) float64 {
-		if math.IsInf(x, 0) {
-			return 0
-		}
-		return x
-	}
-
-	// Case 1: Bucket with lower bound -Inf.
-	if math.IsInf(b.Lower, -1) {
-		// TRIM_UPPER (</) - remove values greater than rhs
-		if isUpperTrim {
-			if rhs >= b.Upper {
-				// As the rhs is greater than the upper bound, we keep the entire current bucket.
-				return b.Count, 0
-			}
-			if rhs > 0 && b.Upper > 0 && !math.IsInf(b.Upper, 1) {
-				// If upper is finite and positive, we treat lower as 0 (despite it de facto being -Inf).
-				// This is only possible with NHCB, so we can always use linear interpolation.
-				return b.Count * rhs / b.Upper, rhs / 2
-			}
-			if b.Upper <= 0 {
-				return b.Count, rhs
-			}
-			// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
-			return 0, zeroIfInf(b.Upper)
-		}
-		// TRIM_LOWER (>/) - remove values less than rhs
-		if rhs <= b.Lower {
-			// Impossible to happen because the lower bound is -Inf. Returning the entire current bucket.
-			return b.Count, 0
-		}
-		if rhs >= 0 && b.Upper > rhs && !math.IsInf(b.Upper, 1) {
-			// If upper is finite and positive, we treat lower as 0 (despite it de facto being -Inf).
-			// This is only possible with NHCB, so we can always use linear interpolation.
-			return b.Count * (1 - rhs/b.Upper), (rhs + b.Upper) / 2
-		}
-		// Otherwise, we are targeting a valid trim, but as we don't know the exact distribution of values that belongs to an infinite bucket, we need to remove the entire bucket.
-		return 0, zeroIfInf(b.Upper)
-	}
-
-	// Case 2: Bucket with upper bound +Inf.
-	if math.IsInf(b.Upper, 1) {
-		if isUpperTrim {
-			// TRIM_UPPER (</) - remove values greater than rhs.
-			// We don't care about lower here, because:
-			//   when rhs >= lower and the bucket extends to +Inf, some values in this bucket could be > rhs, so we conservatively remove the entire bucket;
-			//   when rhs < lower, all values in this bucket are >= lower > rhs, so all values should be removed.
-			return 0, zeroIfInf(b.Lower)
-		}
-		// TRIM_LOWER (>/) - remove values less than rhs.
-		if rhs >= b.Lower {
-			return b.Count, rhs
-		}
-		// lower < rhs: we are inside the infinity bucket, but as we don't know the exact distribution of values, we conservatively remove the entire bucket.
-		return 0, zeroIfInf(b.Lower)
-	}
-
-	panic(fmt.Errorf("one of the bounds must be infinite for handleInfinityBuckets, got %v", b))
-}
-
-// computeSplit calculates the portion of the bucket's count <= rhs (trim point).
-func computeSplit(b histogram.Bucket[float64], rhs float64, isPositive, isLinear bool) float64 {
-	if rhs <= b.Lower {
-		return 0
-	}
-	if rhs >= b.Upper {
-		return b.Count
-	}
-
-	var fraction float64
-	switch {
-	case isLinear:
-		fraction = (rhs - b.Lower) / (b.Upper - b.Lower)
-	default:
-		// Exponential interpolation.
-		logLower := math.Log2(math.Abs(b.Lower))
-		logUpper := math.Log2(math.Abs(b.Upper))
-		logV := math.Log2(math.Abs(rhs))
-
-		if isPositive {
-			fraction = (logV - logLower) / (logUpper - logLower)
-		} else {
-			fraction = 1 - ((logV - logUpper) / (logLower - logUpper))
-		}
-	}
-
-	return b.Count * fraction
-}
-
-func computeZeroBucketTrim(zeroBucket histogram.Bucket[float64], rhs float64, hasNegative, hasPositive, isUpperTrim bool) (float64, float64) {
-	var (
-		lower = zeroBucket.Lower
-		upper = zeroBucket.Upper
-	)
-	if hasNegative && !hasPositive {
-		upper = 0
-	}
-	if hasPositive && !hasNegative {
-		lower = 0
-	}
-
-	var fraction, midpoint float64
-
-	if isUpperTrim {
-		if rhs <= lower {
-			return 0, 0
-		}
-		if rhs >= upper {
-			return zeroBucket.Count, (lower + upper) / 2
-		}
-
-		fraction = (rhs - lower) / (upper - lower)
-		midpoint = (lower + rhs) / 2
-	} else { // lower trim
-		if rhs <= lower {
-			return zeroBucket.Count, (lower + upper) / 2
-		}
-		if rhs >= upper {
-			return 0, 0
-		}
-
-		fraction = (upper - rhs) / (upper - lower)
-		midpoint = (rhs + upper) / 2
-	}
-
-	return zeroBucket.Count * fraction, midpoint
-}
-
-func computeBucketTrim(b histogram.Bucket[float64], rhs float64, isUpperTrim, isPositive, isCustomBucket bool) (float64, float64) {
-	if math.IsInf(b.Lower, -1) || math.IsInf(b.Upper, 1) {
-		return handleInfinityBuckets(isUpperTrim, b, rhs)
-	}
-
-	underCount := computeSplit(b, rhs, isPositive, isCustomBucket)
-
-	if isUpperTrim {
-		return underCount, computeMidpoint(b.Lower, rhs, isPositive, isCustomBucket)
-	}
-
-	return b.Count - underCount, computeMidpoint(rhs, b.Upper, isPositive, isCustomBucket)
-}
-
-// Helper function to trim native histogram buckets.
-// TODO: move trimHistogram to model/histogram/float_histogram.go (making it a method of FloatHistogram).
-func trimHistogram(trimmedHist *histogram.FloatHistogram, rhs float64, isUpperTrim bool) {
-	var (
-		updatedCount, updatedSum float64
-		trimmedBuckets           bool
-		isCustomBucket           = trimmedHist.UsesCustomBuckets()
-		hasPositive, hasNegative bool
-	)
-
-	if isUpperTrim {
-		// Calculate the fraction to keep for buckets that contain the trim value.
-		// For TRIM_UPPER, we keep observations below the trim point (rhs).
-		// Example: histogram </ float.
-		for i, iter := 0, trimmedHist.PositiveBucketIterator(); iter.Next(); i++ {
-			bucket := iter.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			hasPositive = true
-
-			switch {
-			case bucket.Upper <= rhs:
-				// Bucket is entirely below the trim point - keep all.
-				updatedCount += bucket.Count
-				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, true, isCustomBucket)
-				updatedSum += bucketMidpoint * bucket.Count
-
-			case bucket.Lower < rhs:
-				// Bucket contains the trim point - interpolate.
-				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, true, isCustomBucket)
-
-				updatedCount += keepCount
-				updatedSum += bucketMidpoint * keepCount
-				if trimmedHist.PositiveBuckets[i] != keepCount {
-					trimmedHist.PositiveBuckets[i] = keepCount
-					trimmedBuckets = true
-				}
-
-			default:
-				// Bucket is entirely above the trim point - discard.
-				trimmedHist.PositiveBuckets[i] = 0
-				trimmedBuckets = true
-			}
-		}
-
-		for i, iter := 0, trimmedHist.NegativeBucketIterator(); iter.Next(); i++ {
-			bucket := iter.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			hasNegative = true
-
-			switch {
-			case bucket.Upper <= rhs:
-				// Bucket is entirely below the trim point - keep all.
-				updatedCount += bucket.Count
-				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, false, isCustomBucket)
-				updatedSum += bucketMidpoint * bucket.Count
-
-			case bucket.Lower < rhs:
-				// Bucket contains the trim point - interpolate.
-				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, false, isCustomBucket)
-
-				updatedCount += keepCount
-				updatedSum += bucketMidpoint * keepCount
-				if trimmedHist.NegativeBuckets[i] != keepCount {
-					trimmedHist.NegativeBuckets[i] = keepCount
-					trimmedBuckets = true
-				}
-
-			default:
-				trimmedHist.NegativeBuckets[i] = 0
-				trimmedBuckets = true
-			}
-		}
-	} else { // !isUpperTrim
-		// For TRIM_LOWER, we keep observations above the trim point (rhs).
-		// Example: histogram >/ float.
-		for i, iter := 0, trimmedHist.PositiveBucketIterator(); iter.Next(); i++ {
-			bucket := iter.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			hasPositive = true
-
-			switch {
-			case bucket.Lower >= rhs:
-				// Bucket is entirely below the trim point - keep all.
-				updatedCount += bucket.Count
-				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, true, isCustomBucket)
-				updatedSum += bucketMidpoint * bucket.Count
-
-			case bucket.Upper > rhs:
-				// Bucket contains the trim point - interpolate.
-				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, true, isCustomBucket)
-
-				updatedCount += keepCount
-				updatedSum += bucketMidpoint * keepCount
-				if trimmedHist.PositiveBuckets[i] != keepCount {
-					trimmedHist.PositiveBuckets[i] = keepCount
-					trimmedBuckets = true
-				}
-
-			default:
-				trimmedHist.PositiveBuckets[i] = 0
-				trimmedBuckets = true
-			}
-		}
-
-		for i, iter := 0, trimmedHist.NegativeBucketIterator(); iter.Next(); i++ {
-			bucket := iter.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			hasNegative = true
-
-			switch {
-			case bucket.Lower >= rhs:
-				// Bucket is entirely below the trim point - keep all.
-				updatedCount += bucket.Count
-				bucketMidpoint := computeMidpoint(bucket.Lower, bucket.Upper, false, isCustomBucket)
-				updatedSum += bucketMidpoint * bucket.Count
-
-			case bucket.Upper > rhs:
-				// Bucket contains the trim point - interpolate.
-				keepCount, bucketMidpoint := computeBucketTrim(bucket, rhs, isUpperTrim, false, isCustomBucket)
-
-				updatedCount += keepCount
-				updatedSum += bucketMidpoint * keepCount
-				if trimmedHist.NegativeBuckets[i] != keepCount {
-					trimmedHist.NegativeBuckets[i] = keepCount
-					trimmedBuckets = true
-				}
-
-			default:
-				trimmedHist.NegativeBuckets[i] = 0
-				trimmedBuckets = true
-			}
-		}
-	}
-
-	// Handle the zero count bucket.
-	if trimmedHist.ZeroCount > 0 {
-		keepCount, bucketMidpoint := computeZeroBucketTrim(trimmedHist.ZeroBucket(), rhs, hasNegative, hasPositive, isUpperTrim)
-
-		if trimmedHist.ZeroCount != keepCount {
-			trimmedHist.ZeroCount = keepCount
-			trimmedBuckets = true
-		}
-		updatedSum += bucketMidpoint * keepCount
-		updatedCount += keepCount
-	}
-
-	if trimmedBuckets {
-		// Only update the totals in case some bucket(s) were fully (or partially) trimmed.
-		trimmedHist.Count = updatedCount
-		trimmedHist.Sum = updatedSum
-
-		trimmedHist.Compact(0)
-	}
-}
-
-func computeMidpoint(survivingIntervalLowerBound, survivingIntervalUpperBound float64, isPositive, isLinear bool) float64 {
-	if math.IsInf(survivingIntervalLowerBound, 0) {
-		if math.IsInf(survivingIntervalUpperBound, 0) {
-			return 0
-		}
-		if survivingIntervalUpperBound > 0 {
-			return survivingIntervalUpperBound / 2
-		}
-		return survivingIntervalUpperBound
-	} else if math.IsInf(survivingIntervalUpperBound, 0) {
-		return survivingIntervalLowerBound
-	}
-
-	if isLinear {
-		return (survivingIntervalLowerBound + survivingIntervalUpperBound) / 2
-	}
-
-	geoMean := math.Sqrt(math.Abs(survivingIntervalLowerBound * survivingIntervalUpperBound))
-
-	if isPositive {
-		return geoMean
-	}
-	return -geoMean
-}
-
 // vectorElemBinop evaluates a binary operation between two Vector elements.
 func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram, pos posrange.PositionRange) (res float64, resH *histogram.FloatHistogram, keep bool, info, err error) {
 	switch {
@@ -3625,13 +3346,9 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 			case parser.DIV:
 				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil, nil
 			case parser.TRIM_UPPER:
-				trimmedHist := hlhs.Copy()
-				trimHistogram(trimmedHist, rhs, true)
-				return 0, trimmedHist, true, nil, nil
+				return 0, hlhs.TrimBuckets(rhs, true), true, nil, nil
 			case parser.TRIM_LOWER:
-				trimmedHist := hlhs.Copy()
-				trimHistogram(trimmedHist, rhs, false)
-				return 0, trimmedHist, true, nil, nil
+				return 0, hlhs.TrimBuckets(rhs, false), true, nil, nil
 			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
 				return 0, nil, false, nil, annotations.NewIncompatibleTypesInBinOpInfo("histogram", parser.ItemTypeStr[op], "float", pos)
 			}
@@ -4557,13 +4274,6 @@ func unwrapParenExpr(e *parser.Expr) {
 	}
 }
 
-func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
-	if p, ok := e.(*parser.StepInvariantExpr); ok {
-		return p.Expr
-	}
-	return e
-}
-
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors, evaluates duration expressions
 // into their numeric values and removes superfluous parenthesis on parameters to functions and aggregations.
@@ -4622,15 +4332,24 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 	case *parser.Call:
 		_, ok := AtModifierUnsafeFunctions[n.Func.Name]
 		isStepInvariant := !ok
+		// A special case to allow timestamp() to be wrapped in a step invariant.
+		// timestamp() is considered AtModifierUnsafe, but it can be safe depending on its arguments.
+		// ie timestamp(metric @ 1) is step invariant, but timestamp(abs(metric @ 1)) is not.
+		isTimestampWithAllArgsStepInvariantSafe := n.Func.Name == "timestamp"
 		shouldWrap := make([]bool, len(n.Args))
 		for i := range n.Args {
 			unwrapParenExpr(&n.Args[i])
 			var argIsStepInvariant bool
 			argIsStepInvariant, shouldWrap[i] = preprocessExprHelper(n.Args[i], start, end)
 			isStepInvariant = isStepInvariant && argIsStepInvariant
+
+			_, argIsVectorSelector := n.Args[i].(*parser.VectorSelector)
+			if !argIsStepInvariant || !argIsVectorSelector {
+				isTimestampWithAllArgsStepInvariantSafe = false
+			}
 		}
 
-		if isStepInvariant {
+		if isStepInvariant || isTimestampWithAllArgsStepInvariantSafe {
 			// The function and all arguments are step invariant.
 			return true, true
 		}

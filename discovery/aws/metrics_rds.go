@@ -11,21 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build goexperiment.synctest && !go1.25
-
-package synctest
+package aws
 
 import (
-	"testing"
-	"testing/synctest"
+	"github.com/prometheus/prometheus/discovery"
 )
 
-func Test(t *testing.T, f func(t *testing.T)) {
-	synctest.Run(func() {
-		f(t)
-	})
+type rdsMetrics struct {
+	refreshMetrics discovery.RefreshMetricsInstantiator
 }
 
-func Wait() {
-	synctest.Wait()
+var _ discovery.DiscovererMetrics = (*rdsMetrics)(nil)
+
+// Register implements discovery.DiscovererMetrics.
+func (*rdsMetrics) Register() error {
+	return nil
 }
+
+// Unregister implements discovery.DiscovererMetrics.
+func (*rdsMetrics) Unregister() {}
