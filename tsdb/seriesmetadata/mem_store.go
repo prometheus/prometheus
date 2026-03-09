@@ -676,6 +676,36 @@ func (m *MemStore[V]) IterVersioned(ctx context.Context, f func(labelsHash uint6
 	return nil
 }
 
+// IterVersionedFlat calls the function for each series' versions as a flat slice,
+// avoiding the *Versioned wrapper allocation. For single-version entries (>99%),
+// a reusable buf is used instead of allocating a Versioned{Versions: []V{thin}}.
+// The versions slice passed to f must not be retained by the caller.
+func (m *MemStore[V]) IterVersionedFlat(ctx context.Context, f func(labelsHash uint64, versions []V) error) error {
+	snapshot := m.snapshotEntries()
+	buf := make([]V, 1)
+	for i, entry := range snapshot {
+		if i%checkContextEveryNIterations == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
+		if entry.multi != nil {
+			if err := f(entry.labelsHash, entry.multi.Versions); err != nil {
+				return err
+			}
+		} else {
+			thin := m.dedupOps.ThinCopy(entry.canonical, entry.canonical)
+			thin.SetMinTime(entry.minTime)
+			thin.SetMaxTime(entry.maxTime)
+			buf[0] = thin
+			if err := f(entry.labelsHash, buf); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // IterHashes calls the function for each series' labelsHash, without
 // materializing versions. This is cheaper than IterVersioned when only
 // the hash is needed (e.g., building the needsResolve set in compaction).

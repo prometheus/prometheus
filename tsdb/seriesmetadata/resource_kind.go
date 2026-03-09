@@ -186,11 +186,18 @@ func CommitResourceDirect(accessor kindMetaAccessor, rcd ResourceCommitData) {
 // without cloning any maps. The hash is identical to hashResourceContent for
 // equivalent data, including the entity default-type normalization.
 func hashResourceCommitData(rcd ResourceCommitData) uint64 {
+	hash, _ := hashResourceCommitDataReusable(rcd, nil)
+	return hash
+}
+
+// hashResourceCommitDataReusable is like hashResourceCommitData but accepts and
+// returns a reusable keys buffer to avoid per-call []string allocations.
+func hashResourceCommitDataReusable(rcd ResourceCommitData, keysBuf []string) (uint64, []string) {
 	var h xxhash.Digest
 
-	hashAttrs(&h, rcd.Identifying, nil)
+	keysBuf = hashAttrs(&h, rcd.Identifying, keysBuf)
 	_, _ = h.Write([]byte{1})
-	hashAttrs(&h, rcd.Descriptive, nil)
+	keysBuf = hashAttrs(&h, rcd.Descriptive, keysBuf)
 	_, _ = h.Write([]byte{1})
 
 	// Sort entities by type for deterministic hashing (matching hashResourceContent).
@@ -212,13 +219,13 @@ func hashResourceCommitData(rcd ResourceCommitData) uint64 {
 		}
 		_, _ = h.WriteString(entityType)
 		_, _ = h.Write([]byte{0})
-		hashAttrs(&h, e.ID, nil)
+		keysBuf = hashAttrs(&h, e.ID, keysBuf)
 		_, _ = h.Write([]byte{1})
-		hashAttrs(&h, e.Description, nil)
+		keysBuf = hashAttrs(&h, e.Description, keysBuf)
 		_, _ = h.Write([]byte{1})
 	}
 
-	return h.Sum64()
+	return h.Sum64(), keysBuf
 }
 
 // CommitResourceToStore builds a ResourceVersion from ResourceCommitData and
@@ -239,6 +246,17 @@ func CommitResourceToStore(store *MemStore[*ResourceVersion], labelsHash uint64,
 	return store.InsertVersion(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, func() *ResourceVersion {
 		return buildResourceVersion(rcd)
 	})
+}
+
+// CommitResourceToStoreReusable is like CommitResourceToStore but accepts and
+// returns a reusable keys buffer for hash computation, avoiding per-call
+// []string allocations on the ingestion hot path.
+func CommitResourceToStoreReusable(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData, keysBuf []string) (contentChanged bool, old, cur *VersionedResource, updatedKeysBuf []string) {
+	contentHash, keysBuf := hashResourceCommitDataReusable(rcd, keysBuf)
+	contentChanged, old, cur = store.InsertVersion(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, func() *ResourceVersion {
+		return buildResourceVersion(rcd)
+	})
+	return contentChanged, old, cur, keysBuf
 }
 
 // buildResourceVersion allocates a ResourceVersion with deep copies of all maps.
