@@ -527,6 +527,17 @@ func (pb *Block) SeriesMetadata() (seriesmetadata.Reader, error) {
 	return &blockSeriesMetadataReader{Reader: pb.seriesMetadata, b: pb}, nil
 }
 
+// InternalSeriesMetadata returns the block's cached series metadata reader
+// without pendingReaders tracking. The reader's lifetime is tied to the Block
+// itself (closed in Block.Close), so callers must not close it.
+// This is used by mergeBlockMetadata to avoid deep-copying block data.
+func (pb *Block) InternalSeriesMetadata() (seriesmetadata.Reader, error) {
+	pb.seriesMetadataOnce.Do(func() {
+		pb.seriesMetadata, pb.seriesMetadataErr = pb.loadSeriesMetadata()
+	})
+	return pb.seriesMetadata, pb.seriesMetadataErr
+}
+
 // loadSeriesMetadata reads the Parquet file and resolves seriesRef → labelsHash.
 func (pb *Block) loadSeriesMetadata() (seriesmetadata.Reader, error) {
 	var builder labels.ScratchBuilder
