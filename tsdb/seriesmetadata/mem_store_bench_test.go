@@ -92,6 +92,63 @@ func BenchmarkMemStore_MemoryPerSeries(b *testing.B) {
 	runtime.KeepAlive(store)
 }
 
+func BenchmarkCommitResourceToStore(b *testing.B) {
+	store := NewMemStore[*ResourceVersion](ResourceOps)
+	rcd := ResourceCommitData{
+		Identifying: map[string]string{"service.name": "svc", "k8s.namespace.name": "ns"},
+		Descriptive: map[string]string{"host.name": "host1"},
+		MinTime:     0,
+		MaxTime:     0,
+	}
+	// Seed first insert.
+	CommitResourceToStore(store, 1, rcd)
+
+	b.Run("without_reuse", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			rcd.MaxTime = int64(i)
+			CommitResourceToStore(store, 1, rcd)
+		}
+	})
+
+	b.Run("with_reuse", func(b *testing.B) {
+		b.ReportAllocs()
+		var keysBuf []string
+		for i := 0; i < b.N; i++ {
+			rcd.MaxTime = int64(i)
+			_, _, _, keysBuf = CommitResourceToStoreReusable(store, 1, rcd, keysBuf)
+		}
+	})
+}
+
+func BenchmarkIterVersionedFlat(b *testing.B) {
+	const numSeries = 100_000
+	m := populateBenchStore(numSeries, 1_000, 500)
+	ctx := context.Background()
+
+	b.Run("IterVersioned", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = m.ResourceStore().IterVersioned(ctx, func(_ uint64, vr *Versioned[*ResourceVersion]) error {
+				for range vr.Versions {
+				}
+				return nil
+			})
+		}
+	})
+
+	b.Run("IterVersionedFlat", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = m.ResourceStore().IterVersionedFlat(ctx, func(_ uint64, versions []*ResourceVersion) error {
+				for range versions {
+				}
+				return nil
+			})
+		}
+	})
+}
+
 // populateBenchStore creates a MemSeriesMetadata with numSeries entries,
 // numResources unique resource contents, and numScopes unique scope contents.
 func populateBenchStore(numSeries, numResources, numScopes int) *MemSeriesMetadata {
