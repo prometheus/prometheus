@@ -887,7 +887,7 @@ func (it *floatHistogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram)
 			if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
 				// With the checks above, this can only happen
 				// with invalid data in a chunk. As this is a
-				// rare edge case of a rare edge case, we'd
+				// rare edge case nested within a rare edge case, we'd
 				// rather not create all the plumbing to handle
 				// this error gracefully.
 				panic(err)

@@ -224,7 +224,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 				TranslationStrategy: otlptranslator.NoUTF8EscapingWithSuffixes,
 			},
 			expectedLabelsAndMFs: []sample{
-				// TODO: Counter MF name looks likea bug. Uncovered in unrelated refactor. fix it.
+				// TODO: Counter MF name looks like a bug. Uncovered in unrelated refactor. fix it.
 				{MF: "test.counter_bytes_total", L: labels.FromStrings(model.MetricNameLabel, "test.counter_bytes_total", "foo.bar", "baz", "instance", "test-instance", "job", "test-service")},
 				{MF: "test.gauge_bytes", L: labels.FromStrings(model.MetricNameLabel, "test.gauge_bytes", "foo.bar", "baz", "instance", "test-instance", "job", "test-service")},
 				{MF: "test.histogram_bytes", L: labels.FromStrings(model.MetricNameLabel, "test.histogram_bytes_sum", "foo.bar", "baz", "instance", "test-instance", "job", "test-service")},
