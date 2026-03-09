@@ -213,6 +213,22 @@ func (r *layeredMetadataReader) IterKind(ctx context.Context, id KindID, f func(
 	})
 }
 
+func (r *layeredMetadataReader) IterHashes(ctx context.Context, id KindID, f func(labelsHash uint64) error) error {
+	seen := make(map[uint64]struct{})
+	if err := r.top.IterHashes(ctx, id, func(labelsHash uint64) error {
+		seen[labelsHash] = struct{}{}
+		return f(labelsHash)
+	}); err != nil {
+		return err
+	}
+	return r.base.IterHashes(ctx, id, func(labelsHash uint64) error {
+		if _, ok := seen[labelsHash]; ok {
+			return nil
+		}
+		return f(labelsHash)
+	})
+}
+
 func (r *layeredMetadataReader) KindLen(id KindID) int {
 	return r.base.KindLen(id) + r.top.KindLen(id)
 }
