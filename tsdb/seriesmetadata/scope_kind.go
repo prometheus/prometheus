@@ -171,6 +171,13 @@ func CommitScopeDirect(accessor kindMetaAccessor, scd ScopeCommitData) {
 // hashScopeCommitData computes the content hash from raw ScopeCommitData
 // without cloning any maps. Identical to hashScopeContent for equivalent data.
 func hashScopeCommitData(scd ScopeCommitData) uint64 {
+	hash, _ := hashScopeCommitDataReusable(scd, nil)
+	return hash
+}
+
+// hashScopeCommitDataReusable is like hashScopeCommitData but accepts and
+// returns a reusable keys buffer to avoid per-call []string allocations.
+func hashScopeCommitDataReusable(scd ScopeCommitData, keysBuf []string) (uint64, []string) {
 	var h xxhash.Digest
 
 	_, _ = h.WriteString(scd.Name)
@@ -179,9 +186,9 @@ func hashScopeCommitData(scd ScopeCommitData) uint64 {
 	_, _ = h.Write([]byte{0})
 	_, _ = h.WriteString(scd.SchemaURL)
 	_, _ = h.Write([]byte{0})
-	hashAttrs(&h, scd.Attrs, nil)
+	keysBuf = hashAttrs(&h, scd.Attrs, keysBuf)
 
-	return h.Sum64()
+	return h.Sum64(), keysBuf
 }
 
 // CommitScopeToStore builds a ScopeVersion from ScopeCommitData and
@@ -198,6 +205,17 @@ func CommitScopeToStore(store *MemStore[*ScopeVersion], labelsHash uint64, scd S
 	return store.InsertVersion(labelsHash, contentHash, scd.MinTime, scd.MaxTime, func() *ScopeVersion {
 		return buildScopeVersion(scd)
 	})
+}
+
+// CommitScopeToStoreReusable is like CommitScopeToStore but accepts and
+// returns a reusable keys buffer for hash computation, avoiding per-call
+// []string allocations on the ingestion hot path.
+func CommitScopeToStoreReusable(store *MemStore[*ScopeVersion], labelsHash uint64, scd ScopeCommitData, keysBuf []string) (contentChanged bool, old, cur *VersionedScope, updatedKeysBuf []string) {
+	contentHash, keysBuf := hashScopeCommitDataReusable(scd, keysBuf)
+	contentChanged, old, cur = store.InsertVersion(labelsHash, contentHash, scd.MinTime, scd.MaxTime, func() *ScopeVersion {
+		return buildScopeVersion(scd)
+	})
+	return contentChanged, old, cur, keysBuf
 }
 
 // buildScopeVersion allocates a ScopeVersion with a deep copy of the attrs map.

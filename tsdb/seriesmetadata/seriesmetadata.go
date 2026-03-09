@@ -84,6 +84,42 @@ type UniqueAttrNameReader interface {
 	UniqueResourceAttrNames() map[string]struct{}
 }
 
+// FlatResourceIterator is optionally implemented by Reader implementations
+// that can iterate resource versions without allocating *Versioned wrappers.
+// The versions slice passed to f must not be retained by the caller.
+type FlatResourceIterator interface {
+	IterVersionedResourcesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion) error) error
+}
+
+// FlatScopeIterator is optionally implemented by Reader implementations
+// that can iterate scope versions without allocating *Versioned wrappers.
+type FlatScopeIterator interface {
+	IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion) error) error
+}
+
+// iterResourcesFlat uses FlatResourceIterator if available, otherwise falls back
+// to IterVersionedResources with a wrapper. This avoids *Versioned allocation
+// for implementations that support flat iteration.
+func iterResourcesFlat(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ResourceVersion) error) error {
+	if flat, ok := mr.(FlatResourceIterator); ok {
+		return flat.IterVersionedResourcesFlat(ctx, f)
+	}
+	return mr.IterVersionedResources(ctx, func(labelsHash uint64, vr *VersionedResource) error {
+		return f(labelsHash, vr.Versions)
+	})
+}
+
+// iterScopesFlat uses FlatScopeIterator if available, otherwise falls back
+// to IterVersionedScopes with a wrapper.
+func iterScopesFlat(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ScopeVersion) error) error {
+	if flat, ok := mr.(FlatScopeIterator); ok {
+		return flat.IterVersionedScopesFlat(ctx, f)
+	}
+	return mr.IterVersionedScopes(ctx, func(labelsHash uint64, vs *VersionedScope) error {
+		return f(labelsHash, vs.Versions)
+	})
+}
+
 // numAttrIndexStripes is the number of shards in the inverted attribute index.
 // Must be a power of two for fast modulo via bitmask.
 const numAttrIndexStripes = 256
@@ -318,6 +354,10 @@ func (m *MemSeriesMetadata) IterVersionedResources(ctx context.Context, f func(l
 	return m.ResourceStore().IterVersioned(ctx, f)
 }
 
+func (m *MemSeriesMetadata) IterVersionedResourcesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion) error) error {
+	return m.ResourceStore().IterVersionedFlat(ctx, f)
+}
+
 func (m *MemSeriesMetadata) TotalResources() uint64 {
 	return m.ResourceStore().TotalEntries()
 }
@@ -338,6 +378,10 @@ func (m *MemSeriesMetadata) SetVersionedScope(labelsHash uint64, scopes *Version
 
 func (m *MemSeriesMetadata) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
 	return m.ScopeStore().IterVersioned(ctx, f)
+}
+
+func (m *MemSeriesMetadata) IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion) error) error {
+	return m.ScopeStore().IterVersionedFlat(ctx, f)
 }
 
 func (m *MemSeriesMetadata) TotalScopes() uint64 {
@@ -364,8 +408,8 @@ func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
 	m.indexedResourceAttrsMu.RLock()
 	extra := m.indexedResourceAttrs
 	m.indexedResourceAttrsMu.RUnlock()
-	_ = m.ResourceStore().IterVersioned(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
-		for _, rv := range vr.Versions {
+	_ = m.ResourceStore().IterVersionedFlat(context.Background(), func(labelsHash uint64, versions []*ResourceVersion) error {
+		for _, rv := range versions {
 			bulkAddToAttrIndex(idx, labelsHash, rv, extra)
 			collectAttrNames(names, rv)
 		}
@@ -926,6 +970,10 @@ func (r *parquetReader) IterVersionedResources(ctx context.Context, f func(label
 	return r.mem.IterVersionedResources(ctx, f)
 }
 
+func (r *parquetReader) IterVersionedResourcesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion) error) error {
+	return r.mem.IterVersionedResourcesFlat(ctx, f)
+}
+
 func (r *parquetReader) TotalResources() uint64 {
 	return r.mem.TotalResources()
 }
@@ -940,6 +988,10 @@ func (r *parquetReader) GetVersionedScope(labelsHash uint64) (*VersionedScope, b
 
 func (r *parquetReader) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
 	return r.mem.IterVersionedScopes(ctx, f)
+}
+
+func (r *parquetReader) IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion) error) error {
+	return r.mem.IterVersionedScopesFlat(ctx, f)
 }
 
 func (r *parquetReader) TotalScopes() uint64 {
@@ -1066,11 +1118,11 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 		var mappingRows []metadataRow
 		var keysBuf []string
 
-		err := mr.IterVersionedResources(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
+		err := iterResourcesFlat(context.Background(), mr, func(labelsHash uint64, versions []*ResourceVersion) error {
 			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
 				return nil
 			}
-			for _, rv := range vr.Versions {
+			for _, rv := range versions {
 				var contentHash uint64
 				contentHash, keysBuf = hashResourceContentReusable(rv, keysBuf)
 				if _, exists := contentTable[contentHash]; !exists {
@@ -1134,11 +1186,11 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 		var mappingRows []metadataRow
 		var keysBuf []string
 
-		err := mr.IterVersionedScopes(context.Background(), func(labelsHash uint64, vs *VersionedScope) error {
+		err := iterScopesFlat(context.Background(), mr, func(labelsHash uint64, versions []*ScopeVersion) error {
 			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
 				return nil
 			}
-			for _, sv := range vs.Versions {
+			for _, sv := range versions {
 				var contentHash uint64
 				contentHash, keysBuf = hashScopeContentReusable(sv, keysBuf)
 				if _, exists := contentTable[contentHash]; !exists {
@@ -1325,7 +1377,7 @@ func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (
 	// clear()ed per series to avoid per-callback map allocation.
 	seen := make(map[uint64]struct{})
 
-	_ = mr.IterVersionedResources(context.Background(), func(labelsHash uint64, vr *VersionedResource) error {
+	_ = iterResourcesFlat(context.Background(), mr, func(labelsHash uint64, versions []*ResourceVersion) error {
 		if hashFilter != nil && !hashFilter(labelsHash) {
 			return nil
 		}
@@ -1358,7 +1410,7 @@ func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (
 			})
 		}
 
-		for _, rv := range vr.Versions {
+		for _, rv := range versions {
 			for k, v := range rv.Identifying {
 				addEntry(k, v)
 			}
