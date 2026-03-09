@@ -803,31 +803,54 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 // new block's index converts labelsHash → seriesRef for Parquet mapping rows.
 // If metadata is written, meta.SeriesMetadata is populated with stats.
 func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []BlockReader, meta *BlockMeta) error {
-	output := seriesmetadata.NewMemSeriesMetadata()
+	var source seriesmetadata.Reader
+	var closeSource func() error
 
-	for _, b := range blocks {
-		mr, err := b.SeriesMetadata()
+	if len(blocks) == 1 {
+		// Single-block fast path: use source reader directly, avoiding a
+		// full deep-copy into an intermediate MemSeriesMetadata (~2GB saved
+		// for typical head compactions).
+		mr, err := blocks[0].SeriesMetadata()
 		if err != nil {
-			return fmt.Errorf("get series metadata from block: %w", err)
+			return fmt.Errorf("get series metadata: %w", err)
 		}
-
-		// Merge all metadata kinds from this block into the output.
-		for _, kind := range seriesmetadata.AllKinds() {
-			err = mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
-				store := output.StoreForKind(kind.ID())
-				kind.SetVersioned(store, labelsHash, versioned)
-				return nil
-			})
+		source = mr
+		closeSource = mr.Close
+	} else {
+		// Multi-block: merge into new MemSeriesMetadata.
+		output := seriesmetadata.NewMemSeriesMetadata()
+		for _, b := range blocks {
+			mr, err := b.SeriesMetadata()
 			if err != nil {
-				mr.Close()
-				return fmt.Errorf("iterate %s: %w", kind.ID(), err)
+				return fmt.Errorf("get series metadata from block: %w", err)
 			}
+			for _, kind := range seriesmetadata.AllKinds() {
+				err = mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
+					store := output.StoreForKind(kind.ID())
+					kind.SetVersioned(store, labelsHash, versioned)
+					return nil
+				})
+				if err != nil {
+					mr.Close()
+					return fmt.Errorf("iterate %s: %w", kind.ID(), err)
+				}
+			}
+			mr.Close()
 		}
-
-		mr.Close()
+		source = output
+		closeSource = func() error { return nil }
 	}
+	defer closeSource() //nolint:errcheck
 
-	if output.ResourceCount() == 0 && output.ScopeCount() == 0 {
+	// Check if source has any metadata at all.
+	empty := true
+	for _, kind := range seriesmetadata.AllKinds() {
+		if source.KindLen(kind.ID()) > 0 {
+			empty = false
+			break
+		}
+	}
+	if empty {
 		return nil
 	}
 
@@ -839,11 +862,15 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 	defer ir.Close()
 
 	// Build labelsHash → seriesRef mapping by scanning the index.
-	// Collect hashes that need resolving from the merged metadata to avoid
+	// Collect hashes that need resolving from the metadata to avoid
 	// storing entries for series without metadata.
-	needsResolve := make(map[uint64]struct{}, output.ResourceCount()+output.ScopeCount())
+	var hintCap int
 	for _, kind := range seriesmetadata.AllKinds() {
-		_ = output.IterKind(c.ctx, kind.ID(), func(labelsHash uint64, _ any) error {
+		hintCap += source.KindLen(kind.ID())
+	}
+	needsResolve := make(map[uint64]struct{}, hintCap)
+	for _, kind := range seriesmetadata.AllKinds() {
+		_ = source.IterKind(c.ctx, kind.ID(), func(labelsHash uint64, _ any) error {
 			needsResolve[labelsHash] = struct{}{}
 			return nil
 		})
@@ -887,7 +914,7 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 		},
 		WriteStats: writeStats,
 	}
-	if _, err := seriesmetadata.WriteFileWithOptions(c.logger, tmp, output, wopts); err != nil {
+	if _, err := seriesmetadata.WriteFileWithOptions(c.logger, tmp, source, wopts); err != nil {
 		return fmt.Errorf("write series metadata file: %w", err)
 	}
 

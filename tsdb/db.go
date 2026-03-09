@@ -1299,41 +1299,37 @@ func blocksFingerprint(blocks []*Block) string {
 
 // mergeBlockMetadata merges metadata from all blocks into a single reader.
 // Head metadata is not included — it is layered on top at query time.
-func (db *DB) mergeBlockMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
-	merged := seriesmetadata.NewMemSeriesMetadata()
-
+//
+// Instead of deep-copying all block metadata into a single MemSeriesMetadata
+// (which doubled peak memory), this chains block readers using NewLayeredReader.
+// Each block's parquetReader already has data loaded + inverted index populated
+// from Parquet (in denormalizeRows Phase 4).
+func (*DB) mergeBlockMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
+	var readers []seriesmetadata.Reader
 	for _, b := range blocks {
-		mr, err := b.SeriesMetadata()
+		mr, err := b.InternalSeriesMetadata()
 		if err != nil {
 			return nil, fmt.Errorf("get block series metadata: %w", err)
 		}
-
+		hasData := false
 		for _, kind := range seriesmetadata.AllKinds() {
-			err = mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
-				store := merged.StoreForKind(kind.ID())
-				kind.SetVersioned(store, labelsHash, versioned)
-				if _, exists := merged.LabelsForHash(labelsHash); !exists {
-					if lset, ok := mr.LabelsForHash(labelsHash); ok {
-						merged.SetLabels(labelsHash, lset)
-					}
-				}
-				return nil
-			})
-			if err != nil {
-				mr.Close()
-				return nil, fmt.Errorf("iterate block %s: %w", kind.ID(), err)
+			if mr.KindLen(kind.ID()) > 0 {
+				hasData = true
+				break
 			}
 		}
-		mr.Close()
+		if hasData {
+			readers = append(readers, &cachedMetadataReader{mr})
+		}
 	}
-
-	// Build inverted index for blocks. With Fix 3.3 (per-block Parquet index),
-	// blocks read from new Parquet files already have the index populated and
-	// BuildResourceAttrIndex skips. Only old-format blocks need runtime build.
-	if db.opts.EnableResourceAttrIndex {
-		merged.BuildResourceAttrIndex()
+	if len(readers) == 0 {
+		return seriesmetadata.NewMemSeriesMetadata(), nil
 	}
-	return merged, nil
+	result := readers[0]
+	for _, r := range readers[1:] {
+		result = seriesmetadata.NewLayeredReader(result, r)
+	}
+	return result, nil
 }
 
 func (db *DB) run(ctx context.Context) {
