@@ -21,16 +21,22 @@ import (
 
 // hashAttrs writes a deterministic representation of a string map into a hash.
 // Keys are sorted before hashing for determinism.
-func hashAttrs(h *xxhash.Digest, attrs map[string]string) {
-	keys := make([]string, 0, len(attrs))
-	for k := range attrs {
-		keys = append(keys, k)
+// If keysBuf is non-nil, it is reused for sorting keys to avoid allocation.
+// Returns the (possibly grown) keysBuf for reuse by the caller.
+func hashAttrs(h *xxhash.Digest, attrs map[string]string, keysBuf []string) []string {
+	keysBuf = keysBuf[:0]
+	if cap(keysBuf) < len(attrs) {
+		keysBuf = make([]string, 0, len(attrs))
 	}
-	slices.Sort(keys)
-	for _, k := range keys {
+	for k := range attrs {
+		keysBuf = append(keysBuf, k)
+	}
+	slices.Sort(keysBuf)
+	for _, k := range keysBuf {
 		_, _ = h.WriteString(k)
 		_, _ = h.Write([]byte{0})
 		_, _ = h.WriteString(attrs[k])
 		_, _ = h.Write([]byte{0})
 	}
+	return keysBuf
 }
