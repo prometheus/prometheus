@@ -1966,6 +1966,10 @@ func (r *headMetadataReader) IterVersionedResources(ctx context.Context, f func(
 	return r.head.seriesMeta.IterVersionedResources(ctx, f)
 }
 
+func (r *headMetadataReader) IterVersionedResourcesFlat(ctx context.Context, f func(labelsHash uint64, versions []*seriesmetadata.ResourceVersion) error) error {
+	return r.head.seriesMeta.IterVersionedResourcesFlat(ctx, f)
+}
+
 func (r *headMetadataReader) TotalResources() uint64 {
 	return r.head.seriesMeta.TotalResources()
 }
@@ -1980,6 +1984,10 @@ func (r *headMetadataReader) GetVersionedScope(labelsHash uint64) (*seriesmetada
 
 func (r *headMetadataReader) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error) error {
 	return r.head.seriesMeta.IterVersionedScopes(ctx, f)
+}
+
+func (r *headMetadataReader) IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*seriesmetadata.ScopeVersion) error) error {
+	return r.head.seriesMeta.IterVersionedScopesFlat(ctx, f)
 }
 
 func (r *headMetadataReader) TotalScopes() uint64 {
