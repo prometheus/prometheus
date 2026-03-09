@@ -817,28 +817,48 @@ func (c *LeveledCompactor) mergeAndWriteSeriesMetadata(tmp string, blocks []Bloc
 		source = mr
 		closeSource = mr.Close
 	} else {
-		// Multi-block: merge into new MemSeriesMetadata.
-		output := seriesmetadata.NewMemSeriesMetadata()
+		// Multi-block: chain readers via NewLayeredReader (no deep copy).
+		var readers []seriesmetadata.Reader
+		var closers []io.Closer
 		for _, b := range blocks {
 			mr, err := b.SeriesMetadata()
 			if err != nil {
+				for _, c := range closers {
+					c.Close()
+				}
 				return fmt.Errorf("get series metadata from block: %w", err)
 			}
+			hasData := false
 			for _, kind := range seriesmetadata.AllKinds() {
-				err = mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
-					store := output.StoreForKind(kind.ID())
-					kind.SetVersioned(store, labelsHash, versioned)
-					return nil
-				})
-				if err != nil {
-					mr.Close()
-					return fmt.Errorf("iterate %s: %w", kind.ID(), err)
+				if mr.KindLen(kind.ID()) > 0 {
+					hasData = true
+					break
 				}
 			}
-			mr.Close()
+			if hasData {
+				readers = append(readers, mr)
+				closers = append(closers, mr)
+			} else {
+				mr.Close()
+			}
 		}
-		source = output
-		closeSource = func() error { return nil }
+		if len(readers) == 0 {
+			source = seriesmetadata.NewMemSeriesMetadata()
+			closeSource = func() error { return nil }
+		} else {
+			result := readers[0]
+			for _, r := range readers[1:] {
+				result = seriesmetadata.NewLayeredReader(result, r)
+			}
+			source = result
+			closeSource = func() error {
+				var errs []error
+				for _, c := range closers {
+					errs = append(errs, c.Close())
+				}
+				return errors.Join(errs...)
+			}
+		}
 	}
 	defer closeSource() //nolint:errcheck
 

@@ -89,11 +89,10 @@ func (r *layeredMetadataReader) IterResources(ctx context.Context, f func(labels
 }
 
 func (r *layeredMetadataReader) IterVersionedResources(ctx context.Context, f func(labelsHash uint64, resources *VersionedResource) error) error {
-	// Phase 1: Collect only the hash set from top (head). This uses
-	// map[uint64]struct{} (~16 bytes/entry) instead of storing full
-	// *VersionedResource pointers (~56+ bytes/entry), saving ~40% memory.
+	// Phase 1: Collect only the hash set from top (head). Uses IterHashes
+	// to avoid materializing versions that are immediately discarded.
 	topHashes := make(map[uint64]struct{})
-	if err := r.top.IterVersionedResources(ctx, func(labelsHash uint64, _ *VersionedResource) error {
+	if err := r.top.IterHashes(ctx, KindResource, func(labelsHash uint64) error {
 		topHashes[labelsHash] = struct{}{}
 		return nil
 	}); err != nil {
@@ -155,7 +154,7 @@ func (r *layeredMetadataReader) GetVersionedScope(labelsHash uint64) (*Versioned
 
 func (r *layeredMetadataReader) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
 	topHashes := make(map[uint64]struct{})
-	if err := r.top.IterVersionedScopes(ctx, func(labelsHash uint64, _ *VersionedScope) error {
+	if err := r.top.IterHashes(ctx, KindScope, func(labelsHash uint64) error {
 		topHashes[labelsHash] = struct{}{}
 		return nil
 	}); err != nil {
