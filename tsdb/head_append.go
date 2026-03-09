@@ -1847,6 +1847,7 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 	}
 	store := a.head.seriesMeta.ResourceStore()
 	n := 0
+	var keysBuf []string
 	for i, r := range b.resources {
 		s := b.resourceSeries[i]
 		s.Lock()
@@ -1855,13 +1856,15 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 		s.stableHash = hash
 		s.Unlock()
 
-		contentChanged, oldVR, newVR := seriesmetadata.CommitResourceToStore(store, hash, seriesmetadata.ResourceCommitData{
+		var contentChanged bool
+		var oldVR, newVR *seriesmetadata.VersionedResource
+		contentChanged, oldVR, newVR, keysBuf = seriesmetadata.CommitResourceToStoreReusable(store, hash, seriesmetadata.ResourceCommitData{
 			Identifying: r.Identifying,
 			Descriptive: r.Descriptive,
 			Entities:    refResourceEntitiesToCommitData(r.Entities),
 			MinTime:     r.MinTime,
 			MaxTime:     r.MaxTime,
-		})
+		}, keysBuf)
 		store.SetSeriesRef(hash, uint64(ref))
 
 		if !contentChanged {
@@ -1887,6 +1890,7 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 	}
 	store := a.head.seriesMeta.ScopeStore()
 	n := 0
+	var keysBuf []string
 	for i, sc := range b.scopes {
 		s := b.scopeSeries[i]
 		s.Lock()
@@ -1895,14 +1899,15 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 		s.stableHash = hash
 		s.Unlock()
 
-		contentChanged, _, _ := seriesmetadata.CommitScopeToStore(store, hash, seriesmetadata.ScopeCommitData{
+		var contentChanged bool
+		contentChanged, _, _, keysBuf = seriesmetadata.CommitScopeToStoreReusable(store, hash, seriesmetadata.ScopeCommitData{
 			Name:      sc.Name,
 			Version:   sc.Version,
 			SchemaURL: sc.SchemaURL,
 			Attrs:     sc.Attrs,
 			MinTime:   sc.MinTime,
 			MaxTime:   sc.MaxTime,
-		})
+		}, keysBuf)
 		store.SetSeriesRef(hash, uint64(ref))
 
 		if !contentChanged {
