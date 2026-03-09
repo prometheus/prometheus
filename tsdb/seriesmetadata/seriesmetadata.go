@@ -998,103 +998,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 	path := filepath.Join(dir, SeriesMetadataFilename)
 	tmp := path + ".tmp"
 
-	// Per-kind: content table (dedup) and mapping rows.
-	type kindWriteState struct {
-		kind         KindDescriptor
-		contentTable map[uint64]metadataRow // contentHash → table row
-		mappingRows  []metadataRow
-	}
-
-	kindStates := make(map[KindID]*kindWriteState)
-	for _, kind := range AllKinds() {
-		kindStates[kind.ID()] = &kindWriteState{
-			kind:         kind,
-			contentTable: make(map[uint64]metadataRow),
-		}
-	}
-
-	// Iterate all kinds and build rows.
-	for _, kind := range AllKinds() {
-		state := kindStates[kind.ID()]
-		err := mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
-			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
-				return nil
-			}
-			kind.IterateVersions(versioned, func(version any, minTime, maxTime int64) {
-				contentHash := kind.ContentHash(version)
-				if _, exists := state.contentTable[contentHash]; !exists {
-					state.contentTable[contentHash] = kind.BuildTableRow(contentHash, version)
-				} else {
-					existing := state.contentTable[contentHash]
-					existingVersion := kind.ParseTableRow(logger, &existing)
-					if !kind.VersionsEqual(existingVersion, version) {
-						logger.Warn("Hash collision detected in content-addressed table",
-							"kind", string(kind.ID()), "content_hash", contentHash, "labels_hash", labelsHash)
-					}
-				}
-				seriesRef := labelsHash
-				if opts.RefResolver != nil {
-					ref, ok := opts.RefResolver(labelsHash)
-					if !ok {
-						logger.Warn("Skipping unresolvable labels hash in write",
-							"kind", string(kind.ID()), "labels_hash", labelsHash)
-						return
-					}
-					seriesRef = ref
-				}
-				state.mappingRows = append(state.mappingRows, metadataRow{
-					Namespace:   kind.MappingNamespace(),
-					SeriesRef:   seriesRef,
-					ContentHash: contentHash,
-					MinTime:     minTime,
-					MaxTime:     maxTime,
-				})
-			})
-			return nil
-		})
-		if err != nil {
-			return 0, fmt.Errorf("iterate %s: %w", kind.ID(), err)
-		}
-	}
-
-	// Build per-namespace row slices.
-	var allNamespaceRows [][]metadataRow
-	totalRows := 0
-	metadataCounts := make(map[string]int) // for footer metadata
-
-	for _, kind := range AllKinds() {
-		state := kindStates[kind.ID()]
-
-		tableRows := make([]metadataRow, 0, len(state.contentTable))
-		for _, row := range state.contentTable {
-			tableRows = append(tableRows, row)
-		}
-		sortMetadataRows(tableRows)
-		sortMetadataRows(state.mappingRows)
-
-		metadataCounts[string(kind.ID())+"_table_count"] = len(tableRows)
-		metadataCounts[string(kind.ID())+"_mapping_count"] = len(state.mappingRows)
-		totalRows += len(tableRows) + len(state.mappingRows)
-
-		allNamespaceRows = append(allNamespaceRows, tableRows, state.mappingRows)
-	}
-
-	// Optionally build resource attribute inverted index rows.
-	if opts.EnableInvertedIndex {
-		indexRows := buildResourceAttrIndexRows(mr, opts.RefResolver, opts.IndexedResourceAttrs, opts.HashFilter)
-		if len(indexRows) > 0 {
-			sortMetadataRows(indexRows)
-			metadataCounts["resource_attr_index_count"] = len(indexRows)
-			totalRows += len(indexRows)
-			allNamespaceRows = append(allNamespaceRows, indexRows)
-		}
-	}
-
-	if totalRows == 0 {
-		return 0, nil
-	}
-
-	// Create temp file.
+	// Create temp file eagerly so we can stream rows incrementally.
 	f, err := os.Create(tmp)
 	if err != nil {
 		return 0, fmt.Errorf("create temp file: %w", err)
@@ -1112,14 +1016,11 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 		}
 	}()
 
-	// Build writer options.
+	// Build writer options (counts are added via SetKeyValueMetadata after streaming).
 	writerOpts := []parquet.WriterOption{
 		parquet.Compression(&zstd.Codec{Level: zstd.SpeedBetterCompression}),
 		parquet.KeyValueMetadata("schema_version", schemaVersion),
 		parquet.KeyValueMetadata("row_group_layout", "namespace_partitioned"),
-	}
-	for k, v := range metadataCounts {
-		writerOpts = append(writerOpts, parquet.KeyValueMetadata(k, strconv.Itoa(v)))
 	}
 	if opts.BloomFilterFormat == BloomFilterParquetNative {
 		writerOpts = append(writerOpts,
@@ -1133,11 +1034,104 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 	}
 
 	writer := parquet.NewGenericWriter[metadataRow](f, writerOpts...)
+	totalRows := 0
+	metadataCounts := make(map[string]int)
 
-	for _, nsRows := range allNamespaceRows {
-		if err := writeNamespaceRows(writer, nsRows, opts.MaxRowsPerRowGroup); err != nil {
-			return 0, fmt.Errorf("write parquet rows: %w", err)
+	// Stream rows per-kind: build table + mapping rows for one kind,
+	// write them immediately, then release before processing the next kind.
+	// This halves peak memory vs. materializing all kinds simultaneously.
+	for _, kind := range AllKinds() {
+		contentTable := make(map[uint64]metadataRow)
+		var mappingRows []metadataRow
+
+		err := mr.IterKind(context.Background(), kind.ID(), func(labelsHash uint64, versioned any) error {
+			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
+				return nil
+			}
+			kind.IterateVersions(versioned, func(version any, minTime, maxTime int64) {
+				contentHash := kind.ContentHash(version)
+				if _, exists := contentTable[contentHash]; !exists {
+					contentTable[contentHash] = kind.BuildTableRow(contentHash, version)
+				} else {
+					existing := contentTable[contentHash]
+					existingVersion := kind.ParseTableRow(logger, &existing)
+					if !kind.VersionsEqual(existingVersion, version) {
+						logger.Warn("Hash collision detected in content-addressed table",
+							"kind", string(kind.ID()), "content_hash", contentHash, "labels_hash", labelsHash)
+					}
+				}
+				seriesRef := labelsHash
+				if opts.RefResolver != nil {
+					ref, ok := opts.RefResolver(labelsHash)
+					if !ok {
+						logger.Warn("Skipping unresolvable labels hash in write",
+							"kind", string(kind.ID()), "labels_hash", labelsHash)
+						return
+					}
+					seriesRef = ref
+				}
+				mappingRows = append(mappingRows, metadataRow{
+					Namespace:   kind.MappingNamespace(),
+					SeriesRef:   seriesRef,
+					ContentHash: contentHash,
+					MinTime:     minTime,
+					MaxTime:     maxTime,
+				})
+			})
+			return nil
+		})
+		if err != nil {
+			return 0, fmt.Errorf("iterate %s: %w", kind.ID(), err)
 		}
+
+		// Convert content table to sorted rows and write immediately.
+		tableRows := make([]metadataRow, 0, len(contentTable))
+		for _, row := range contentTable {
+			tableRows = append(tableRows, row)
+		}
+		// Release the content table map before sorting/writing.
+		clear(contentTable)
+
+		sortMetadataRows(tableRows)
+		sortMetadataRows(mappingRows)
+
+		metadataCounts[string(kind.ID())+"_table_count"] = len(tableRows)
+		metadataCounts[string(kind.ID())+"_mapping_count"] = len(mappingRows)
+		totalRows += len(tableRows) + len(mappingRows)
+
+		if err := writeNamespaceRows(writer, tableRows, opts.MaxRowsPerRowGroup); err != nil {
+			return 0, fmt.Errorf("write %s table rows: %w", kind.ID(), err)
+		}
+		if err := writeNamespaceRows(writer, mappingRows, opts.MaxRowsPerRowGroup); err != nil {
+			return 0, fmt.Errorf("write %s mapping rows: %w", kind.ID(), err)
+		}
+		// tableRows and mappingRows are now unreferenced and eligible for GC.
+	}
+
+	// Optionally build and write resource attribute inverted index rows.
+	if opts.EnableInvertedIndex {
+		indexRows := buildResourceAttrIndexRows(mr, opts.RefResolver, opts.IndexedResourceAttrs, opts.HashFilter)
+		if len(indexRows) > 0 {
+			sortMetadataRows(indexRows)
+			metadataCounts["resource_attr_index_count"] = len(indexRows)
+			totalRows += len(indexRows)
+			if err := writeNamespaceRows(writer, indexRows, opts.MaxRowsPerRowGroup); err != nil {
+				return 0, fmt.Errorf("write resource attr index rows: %w", err)
+			}
+		}
+	}
+
+	if totalRows == 0 {
+		// No rows written — remove the temp file and return.
+		if err := writer.Close(); err != nil {
+			return 0, fmt.Errorf("close empty parquet writer: %w", err)
+		}
+		return 0, nil
+	}
+
+	// Set metadata counts in Parquet footer (written on Close).
+	for k, v := range metadataCounts {
+		writer.SetKeyValueMetadata(k, strconv.Itoa(v))
 	}
 
 	if err := writer.Close(); err != nil {
