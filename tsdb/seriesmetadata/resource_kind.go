@@ -51,24 +51,31 @@ var ResourceOps KindOps[*ResourceVersion] = resourceOps{}
 // The hash covers identifying attrs, descriptive attrs, and all entities.
 // It does NOT include MinTime/MaxTime since those are per-mapping, not per-content.
 func hashResourceContent(rv *ResourceVersion) uint64 {
-	h := xxhash.New()
+	hash, _ := hashResourceContentReusable(rv, nil)
+	return hash
+}
 
-	hashAttrs(h, rv.Identifying)
+// hashResourceContentReusable is like hashResourceContent but accepts and returns
+// a reusable keys buffer to avoid per-call []string allocations on the write path.
+func hashResourceContentReusable(rv *ResourceVersion, keysBuf []string) (uint64, []string) {
+	var h xxhash.Digest
+
+	keysBuf = hashAttrs(&h, rv.Identifying, keysBuf)
 	_, _ = h.Write([]byte{1}) // section separator
-	hashAttrs(h, rv.Descriptive)
+	keysBuf = hashAttrs(&h, rv.Descriptive, keysBuf)
 	_, _ = h.Write([]byte{1})
 
 	// Entities must be sorted by Type (enforced by NewResourceVersion and parseResourceContent).
 	for _, e := range rv.Entities {
 		_, _ = h.WriteString(e.Type)
 		_, _ = h.Write([]byte{0})
-		hashAttrs(h, e.ID)
+		keysBuf = hashAttrs(&h, e.ID, keysBuf)
 		_, _ = h.Write([]byte{1})
-		hashAttrs(h, e.Description)
+		keysBuf = hashAttrs(&h, e.Description, keysBuf)
 		_, _ = h.Write([]byte{1})
 	}
 
-	return h.Sum64()
+	return h.Sum64(), keysBuf
 }
 
 // resourceKindDescriptor implements KindDescriptor for OTel resources.
@@ -179,11 +186,11 @@ func CommitResourceDirect(accessor kindMetaAccessor, rcd ResourceCommitData) {
 // without cloning any maps. The hash is identical to hashResourceContent for
 // equivalent data, including the entity default-type normalization.
 func hashResourceCommitData(rcd ResourceCommitData) uint64 {
-	h := xxhash.New()
+	var h xxhash.Digest
 
-	hashAttrs(h, rcd.Identifying)
+	hashAttrs(&h, rcd.Identifying, nil)
 	_, _ = h.Write([]byte{1})
-	hashAttrs(h, rcd.Descriptive)
+	hashAttrs(&h, rcd.Descriptive, nil)
 	_, _ = h.Write([]byte{1})
 
 	// Sort entities by type for deterministic hashing (matching hashResourceContent).
@@ -205,9 +212,9 @@ func hashResourceCommitData(rcd ResourceCommitData) uint64 {
 		}
 		_, _ = h.WriteString(entityType)
 		_, _ = h.Write([]byte{0})
-		hashAttrs(h, e.ID)
+		hashAttrs(&h, e.ID, nil)
 		_, _ = h.Write([]byte{1})
-		hashAttrs(h, e.Description)
+		hashAttrs(&h, e.Description, nil)
 		_, _ = h.Write([]byte{1})
 	}
 

@@ -676,6 +676,24 @@ func (m *MemStore[V]) IterVersioned(ctx context.Context, f func(labelsHash uint6
 	return nil
 }
 
+// IterHashes calls the function for each series' labelsHash, without
+// materializing versions. This is cheaper than IterVersioned when only
+// the hash is needed (e.g., building the needsResolve set in compaction).
+func (m *MemStore[V]) IterHashes(ctx context.Context, f func(labelsHash uint64) error) error {
+	snapshot := m.snapshotEntries()
+	for i, entry := range snapshot {
+		if i%checkContextEveryNIterations == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
+		if err := f(entry.labelsHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // TotalEntries returns the count of series with metadata.
 func (m *MemStore[V]) TotalEntries() uint64 {
 	var total uint64
