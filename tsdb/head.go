@@ -1938,6 +1938,10 @@ func (r *headMetadataReader) IterKind(ctx context.Context, id seriesmetadata.Kin
 	return r.head.seriesMeta.IterKind(ctx, id, f)
 }
 
+func (r *headMetadataReader) IterHashes(ctx context.Context, id seriesmetadata.KindID, f func(labelsHash uint64) error) error {
+	return r.head.seriesMeta.IterHashes(ctx, id, f)
+}
+
 func (r *headMetadataReader) KindLen(id seriesmetadata.KindID) int {
 	return r.head.seriesMeta.KindLen(id)
 }

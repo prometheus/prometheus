@@ -52,7 +52,14 @@ var ScopeOps KindOps[*ScopeVersion] = scopeOps{}
 // The hash covers name, version, schema URL, and attributes.
 // It does NOT include MinTime/MaxTime.
 func hashScopeContent(sv *ScopeVersion) uint64 {
-	h := xxhash.New()
+	hash, _ := hashScopeContentReusable(sv, nil)
+	return hash
+}
+
+// hashScopeContentReusable is like hashScopeContent but accepts and returns
+// a reusable keys buffer to avoid per-call []string allocations on the write path.
+func hashScopeContentReusable(sv *ScopeVersion, keysBuf []string) (uint64, []string) {
+	var h xxhash.Digest
 
 	_, _ = h.WriteString(sv.Name)
 	_, _ = h.Write([]byte{0})
@@ -60,9 +67,9 @@ func hashScopeContent(sv *ScopeVersion) uint64 {
 	_, _ = h.Write([]byte{0})
 	_, _ = h.WriteString(sv.SchemaURL)
 	_, _ = h.Write([]byte{0})
-	hashAttrs(h, sv.Attrs)
+	keysBuf = hashAttrs(&h, sv.Attrs, keysBuf)
 
-	return h.Sum64()
+	return h.Sum64(), keysBuf
 }
 
 // scopeKindDescriptor implements KindDescriptor for OTel scopes.
@@ -93,7 +100,11 @@ func (*scopeKindDescriptor) ParseTableRow(_ *slog.Logger, row *metadataRow) any 
 }
 
 func (*scopeKindDescriptor) BuildTableRow(contentHash uint64, version any) metadataRow {
-	sv := version.(*ScopeVersion)
+	return buildScopeTableRow(contentHash, version.(*ScopeVersion))
+}
+
+// buildScopeTableRow converts a ScopeVersion into a content-addressed table row.
+func buildScopeTableRow(contentHash uint64, sv *ScopeVersion) metadataRow {
 	scopeAttrs := make([]EntityAttributeEntry, 0, len(sv.Attrs))
 	for k, v := range sv.Attrs {
 		scopeAttrs = append(scopeAttrs, EntityAttributeEntry{Key: k, Value: v})
@@ -160,7 +171,7 @@ func CommitScopeDirect(accessor kindMetaAccessor, scd ScopeCommitData) {
 // hashScopeCommitData computes the content hash from raw ScopeCommitData
 // without cloning any maps. Identical to hashScopeContent for equivalent data.
 func hashScopeCommitData(scd ScopeCommitData) uint64 {
-	h := xxhash.New()
+	var h xxhash.Digest
 
 	_, _ = h.WriteString(scd.Name)
 	_, _ = h.Write([]byte{0})
@@ -168,7 +179,7 @@ func hashScopeCommitData(scd ScopeCommitData) uint64 {
 	_, _ = h.Write([]byte{0})
 	_, _ = h.WriteString(scd.SchemaURL)
 	_, _ = h.Write([]byte{0})
-	hashAttrs(h, scd.Attrs)
+	hashAttrs(&h, scd.Attrs, nil)
 
 	return h.Sum64()
 }
