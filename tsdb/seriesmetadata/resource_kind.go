@@ -43,6 +43,7 @@ func (resourceOps) ThinCopy(canonical, v *ResourceVersion) *ResourceVersion {
 		MaxTime:     v.MaxTime,
 	}
 }
+
 func (resourceOps) IsInterned(canonical, v *ResourceVersion) bool {
 	return mapSameUnderlying(canonical.Identifying, v.Identifying)
 }
