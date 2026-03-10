@@ -2036,6 +2036,16 @@ func (h *Head) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
 	return h.seriesMeta.ResourceHasContentHash(labelsHash, contentHash)
 }
 
+// ScopeHasContentHash reports whether the series at labelsHash has
+// a scope version with the given contentHash. Read-only, zero-allocation.
+// Returns false if native metadata is not enabled or the series is unknown.
+func (h *Head) ScopeHasContentHash(labelsHash, contentHash uint64) bool {
+	if h.seriesMeta == nil {
+		return false
+	}
+	return h.seriesMeta.ScopeHasContentHash(labelsHash, contentHash)
+}
+
 // GetIndexedResourceAttrs returns the current set of additional descriptive
 // resource attribute names included in the inverted index. Returns nil if
 // native metadata is not enabled.

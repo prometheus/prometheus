@@ -597,6 +597,91 @@ func (m *MemStore[V]) InsertVersion(
 	return true, nil, cur
 }
 
+// InsertVersionWithRef is like InsertVersion but also sets the seriesRef on the
+// entry in the same critical section, avoiding a separate SetSeriesRef call
+// (which would require re-acquiring the stripe lock and re-looking-up the entry).
+func (m *MemStore[V]) InsertVersionWithRef(
+	labelsHash, contentHash uint64,
+	minTime, maxTime int64,
+	seriesRef uint64,
+	buildFull func() V,
+) (contentChanged bool, old, cur *Versioned[V]) {
+	if m.dedupOps == nil {
+		v := buildFull()
+		old, cur = m.SetVersionedWithDiff(labelsHash, &Versioned[V]{Versions: []V{v}})
+		contentChanged = old == nil || len(old.Versions) != len(cur.Versions)
+		// SetSeriesRef separately since SetVersionedWithDiff doesn't accept seriesRef.
+		m.SetSeriesRef(labelsHash, seriesRef)
+		return contentChanged, old, cur
+	}
+
+	s := m.stripe(labelsHash)
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	if existing, ok := s.byHash[labelsHash]; ok {
+		existing.seriesRef = seriesRef
+
+		if existing.multi != nil {
+			if len(existing.multi.Versions) > 0 {
+				current := existing.multi.Versions[len(existing.multi.Versions)-1]
+				if m.dedupOps.ContentHash(current) == contentHash {
+					current.UpdateTimeRange(minTime, maxTime)
+					return false, nil, nil
+				}
+			}
+			old = existing.multi
+			v := buildFull()
+			incoming := &Versioned[V]{Versions: []V{v}}
+			existing.multi = MergeVersioned[V](m.ops, existing.multi, incoming)
+			m.internVersions(existing.multi)
+			return true, old, existing.multi
+		}
+
+		if existing.contentHash == contentHash {
+			if minTime < existing.minTime {
+				existing.minTime = minTime
+			}
+			if maxTime > existing.maxTime {
+				existing.maxTime = maxTime
+			}
+			return false, nil, nil
+		}
+
+		old = m.materializeEntry(existing)
+		thin1 := m.dedupOps.ThinCopy(existing.canonical, existing.canonical)
+		thin1.SetMinTime(existing.minTime)
+		thin1.SetMaxTime(existing.maxTime)
+
+		v := buildFull()
+		canonical := m.getOrCreateCanonical(contentHash, v)
+		thin2 := m.dedupOps.ThinCopy(canonical, v)
+
+		existing.multi = &Versioned[V]{Versions: []V{thin1, thin2}}
+		return true, old, existing.multi
+	}
+
+	// First insert: store inline.
+	canonical, hasCanonical := m.getCanonical(contentHash)
+	if !hasCanonical {
+		full := buildFull()
+		canonical = m.getOrCreateCanonical(contentHash, full)
+	}
+
+	entry := &versionedEntry[V]{
+		labelsHash:  labelsHash,
+		contentHash: contentHash,
+		canonical:   canonical,
+		minTime:     minTime,
+		maxTime:     maxTime,
+		seriesRef:   seriesRef,
+	}
+	s.byHash[labelsHash] = entry
+
+	cur = &Versioned[V]{Versions: []V{canonical}}
+	return true, nil, cur
+}
+
 // Delete removes all metadata for the series.
 func (m *MemStore[V]) Delete(labelsHash uint64) {
 	s := m.stripe(labelsHash)
