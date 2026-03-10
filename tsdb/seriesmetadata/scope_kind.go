@@ -225,6 +225,17 @@ func CommitScopeToStoreReusable(store *MemStore[*ScopeVersion], labelsHash uint6
 	return contentChanged, old, cur, keysBuf
 }
 
+// CommitScopeToStoreReusableWithRef is like CommitScopeToStoreReusable but
+// also sets the series ref on the MemStore entry in the same critical section,
+// avoiding a separate SetSeriesRef call (1 fewer lock + map lookup per series).
+func CommitScopeToStoreReusableWithRef(store *MemStore[*ScopeVersion], labelsHash uint64, scd ScopeCommitData, seriesRef uint64, keysBuf []string) (contentChanged bool, old, cur *VersionedScope, updatedKeysBuf []string) {
+	contentHash, keysBuf := hashScopeCommitDataReusable(scd, keysBuf)
+	contentChanged, old, cur = store.InsertVersionWithRef(labelsHash, contentHash, scd.MinTime, scd.MaxTime, seriesRef, func() *ScopeVersion {
+		return buildScopeVersion(scd)
+	})
+	return contentChanged, old, cur, keysBuf
+}
+
 // buildScopeVersion allocates a ScopeVersion from commit data.
 // When scd.Owned is true, the attrs map is taken directly (zero-copy).
 // Otherwise, the attrs map is deep-copied.
