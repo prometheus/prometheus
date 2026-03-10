@@ -101,7 +101,7 @@ func readSTHeader(b []byte) (firstSTKnown bool, firstSTChangeOn uint8) {
 }
 
 // XOR2Chunk holds XOR2 encoded samples with optional start
-// timestamp per chunk or per sample. See XOROptST for the ST header format.
+// timestamp per chunk or per sample.
 type XOR2Chunk struct {
 	b bstream
 }

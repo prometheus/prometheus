@@ -7505,7 +7505,7 @@ func TestAbortBlockCompactions_AppendV2(t *testing.T) {
 }
 
 // TestCompactHeadWithSTStorage_AppendV2 ensures that when EnableSTStorage is true,
-// compacted blocks contain chunks with EncXOROptST encoding for float samples.
+// compacted blocks contain chunks with EncXOR2 encoding for float samples.
 func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	t.Parallel()
 

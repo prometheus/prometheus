@@ -77,7 +77,7 @@ type Chunk interface {
 
 	// Encoding returns the encoding type of the chunk.
 	// If the chunk is capable of storing ST (start timestamps), it should
-	// return the appropriate encoding type (e.g., EncXOROptST).
+	// return the appropriate encoding type (e.g., EncXOR2).
 	Encoding() Encoding
 
 	// Appender returns an appender to append samples to the chunk.
@@ -298,7 +298,7 @@ type pool struct {
 	xor            sync.Pool
 	histogram      sync.Pool
 	floatHistogram sync.Pool
-	xoroptst       sync.Pool
+	xo2            sync.Pool
 }
 
 // NewPool returns a new pool.
@@ -319,7 +319,7 @@ func NewPool() Pool {
 				return &FloatHistogramChunk{b: bstream{}}
 			},
 		},
-		xoroptst: sync.Pool{
+		xo2: sync.Pool{
 			New: func() any {
 				return &XOR2Chunk{b: bstream{}}
 			},
@@ -337,7 +337,7 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 	case EncFloatHistogram:
 		c = p.floatHistogram.Get().(*FloatHistogramChunk)
 	case EncXOR2:
-		c = p.xoroptst.Get().(*XOR2Chunk)
+		c = p.xo2.Get().(*XOR2Chunk)
 	default:
 		return nil, fmt.Errorf("invalid chunk encoding %q", e)
 	}
@@ -361,7 +361,7 @@ func (p *pool) Put(c Chunk) error {
 		sp = &p.floatHistogram
 	case EncXOR2:
 		_, ok = c.(*XOR2Chunk)
-		sp = &p.xoroptst
+		sp = &p.xo2
 	default:
 		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
