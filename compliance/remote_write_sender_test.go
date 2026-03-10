@@ -95,7 +95,7 @@ var _ sender.Sender = internalPrometheus{}
 
 // TestRemoteWriteSender runs remote write sender compliance tests defined in
 // https://github.com/prometheus/compliance/tree/main/remotewrite/sender against
-// both agent and sever modes.
+// both agent and server modes.
 func TestRemoteWriteSender(t *testing.T) {
 	t.Run("mode=server", func(t *testing.T) {
 		t.Parallel()

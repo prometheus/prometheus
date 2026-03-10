@@ -95,7 +95,9 @@ type Options struct {
 
 	// EnableSTStorage determines whether agent DB should write a Start Timestamp (ST)
 	// per sample to WAL.
-	// Represents 'st-storage' feature flag.
+	// Controlled by the `--enable-feature=st-storage` CLI flag; when enabled, ST is
+	// persisted to the WAL for samples that include a non-zero start timestamp in
+	// supported record types.
 	EnableSTStorage bool
 }
 
