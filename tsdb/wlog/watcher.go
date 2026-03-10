@@ -45,11 +45,15 @@ var (
 )
 
 // WriteTo is an interface used by the Watcher to send the samples it's read
-// from the WAL on to somewhere else. Functions will be called concurrently
-// and it is left to the implementer to make sure they are safe.
+// from the WAL on to somewhere else.
+//
+// Implementations must:
+// * Ensure it's safe for concurrent goroutine use.
+// * Ensure slices are not reused after method calls.
 type WriteTo interface {
-	// Append and AppendExemplar should block until the samples are fully accepted,
-	// whether enqueued in memory or successfully written to it's final destination.
+	// Append and all the rest Append* methods should block until
+	// the samples are fully accepted e.g. enqueued in memory.
+	//
 	// Once returned, the WAL Watcher will not attempt to pass that data again.
 	Append([]record.RefSample) bool
 	AppendExemplars([]record.RefExemplar) bool
@@ -60,9 +64,10 @@ type WriteTo interface {
 
 	// UpdateSeriesSegment and SeriesReset are intended for
 	// garbage-collection:
-	// First we call UpdateSeriesSegment on all current series.
+	// * First we call UpdateSeriesSegment on all current series.
+	// * Then SeriesReset is called.
 	UpdateSeriesSegment([]record.RefSeries, int)
-	// Then SeriesReset is called to allow the deletion of all series
+	// SeriesReset is called to allow the deletion of all series
 	// created in a segment lower than the argument.
 	SeriesReset(int)
 }
