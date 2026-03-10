@@ -1877,6 +1877,7 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 			Entities:    refResourceEntitiesToCommitData(r.Entities),
 			MinTime:     r.MinTime,
 			MaxTime:     r.MaxTime,
+			Owned:       true, // Maps are freshly allocated by the caller — safe to take ownership.
 		}, keysBuf)
 		store.SetSeriesRef(hash, uint64(ref))
 
@@ -1920,6 +1921,7 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 			Attrs:     sc.Attrs,
 			MinTime:   sc.MinTime,
 			MaxTime:   sc.MaxTime,
+			Owned:     true, // Attrs map is freshly allocated by the caller — safe to take ownership.
 		}, keysBuf)
 		store.SetSeriesRef(hash, uint64(ref))
 
