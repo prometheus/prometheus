@@ -44,6 +44,9 @@ func (scopeOps) ThinCopy(canonical, v *ScopeVersion) *ScopeVersion {
 		MaxTime:   v.MaxTime,
 	}
 }
+func (scopeOps) IsInterned(canonical, v *ScopeVersion) bool {
+	return mapSameUnderlying(canonical.Attrs, v.Attrs)
+}
 
 // ScopeOps is the shared KindOps instance for scopes.
 var ScopeOps KindOps[*ScopeVersion] = scopeOps{}
@@ -132,6 +135,9 @@ type ScopeCommitData struct {
 	Attrs     map[string]string
 	MinTime   int64
 	MaxTime   int64
+	// Owned indicates the caller guarantees exclusive ownership of the Attrs map.
+	// When true, buildScopeVersion takes the map directly instead of cloning.
+	Owned bool
 }
 
 func (*scopeKindDescriptor) CommitToSeries(series, walRecord any) {
@@ -218,13 +224,19 @@ func CommitScopeToStoreReusable(store *MemStore[*ScopeVersion], labelsHash uint6
 	return contentChanged, old, cur, keysBuf
 }
 
-// buildScopeVersion allocates a ScopeVersion with a deep copy of the attrs map.
+// buildScopeVersion allocates a ScopeVersion from commit data.
+// When scd.Owned is true, the attrs map is taken directly (zero-copy).
+// Otherwise, the attrs map is deep-copied.
 func buildScopeVersion(scd ScopeCommitData) *ScopeVersion {
+	attrs := scd.Attrs
+	if !scd.Owned {
+		attrs = maps.Clone(scd.Attrs)
+	}
 	return &ScopeVersion{
 		Name:      scd.Name,
 		Version:   scd.Version,
 		SchemaURL: scd.SchemaURL,
-		Attrs:     maps.Clone(scd.Attrs),
+		Attrs:     attrs,
 		MinTime:   scd.MinTime,
 		MaxTime:   scd.MaxTime,
 	}

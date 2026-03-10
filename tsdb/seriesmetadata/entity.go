@@ -18,9 +18,22 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"unsafe"
 
 	"github.com/grafana/regexp"
 )
+
+// mapSameUnderlying reports whether two maps share the same underlying hash table.
+// Used to detect whether a version has already been interned (ThinCopy'd) from
+// the canonical entry, avoiding a redundant ThinCopy allocation.
+func mapSameUnderlying(a, b map[string]string) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	// A Go map value is a pointer to the runtime hmap struct.
+	// Two maps share the same underlying data iff their pointers are equal.
+	return *(*unsafe.Pointer)(unsafe.Pointer(&a)) == *(*unsafe.Pointer)(unsafe.Pointer(&b))
+}
 
 // Entity type constants aligned with OTel semantic conventions.
 const (
