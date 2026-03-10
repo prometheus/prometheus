@@ -39,6 +39,9 @@ type KindOps[V VersionConstraint] interface {
 type ContentDedupOps[V VersionConstraint] interface {
 	ContentHash(v V) uint64
 	ThinCopy(canonical, v V) V
+	// IsInterned reports whether v already shares content pointers with canonical.
+	// When true, ThinCopy can be skipped because v is already a thin copy of canonical.
+	IsInterned(canonical, v V) bool
 }
 
 // Versioned holds multiple versions of metadata for a single series.
