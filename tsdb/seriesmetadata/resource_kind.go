@@ -267,6 +267,17 @@ func CommitResourceToStoreReusable(store *MemStore[*ResourceVersion], labelsHash
 	return contentChanged, old, cur, keysBuf
 }
 
+// CommitResourceToStoreReusableWithRef is like CommitResourceToStoreReusable but
+// also sets the series ref on the MemStore entry in the same critical section,
+// avoiding a separate SetSeriesRef call (1 fewer lock + map lookup per series).
+func CommitResourceToStoreReusableWithRef(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData, seriesRef uint64, keysBuf []string) (contentChanged bool, old, cur *VersionedResource, updatedKeysBuf []string) {
+	contentHash, keysBuf := hashResourceCommitDataReusable(rcd, keysBuf)
+	contentChanged, old, cur = store.InsertVersionWithRef(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, seriesRef, func() *ResourceVersion {
+		return buildResourceVersion(rcd)
+	})
+	return contentChanged, old, cur, keysBuf
+}
+
 // buildResourceVersion allocates a ResourceVersion from commit data.
 // When rcd.Owned is true, maps are taken directly (zero-copy).
 // Otherwise, all maps are deep-copied.
