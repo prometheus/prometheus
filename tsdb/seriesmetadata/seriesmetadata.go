@@ -98,6 +98,20 @@ type FlatScopeIterator interface {
 	IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion) error) error
 }
 
+// InlineFlatResourceIterator is optionally implemented by Reader implementations
+// that can iterate resource versions without allocating ThinCopy for single-version
+// entries. When isInline is true, the versions slice contains the canonical directly
+// and the caller should use inlineMinTime/inlineMaxTime for the time range.
+type InlineFlatResourceIterator interface {
+	IterVersionedResourcesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error
+}
+
+// InlineFlatScopeIterator is optionally implemented by Reader implementations
+// that can iterate scope versions without allocating ThinCopy for single-version entries.
+type InlineFlatScopeIterator interface {
+	IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error
+}
+
 // iterResourcesFlat uses FlatResourceIterator if available, otherwise falls back
 // to IterVersionedResources with a wrapper. This avoids *Versioned allocation
 // for implementations that support flat iteration.
@@ -118,6 +132,28 @@ func iterScopesFlat(ctx context.Context, mr Reader, f func(labelsHash uint64, ve
 	}
 	return mr.IterVersionedScopes(ctx, func(labelsHash uint64, vs *VersionedScope) error {
 		return f(labelsHash, vs.Versions)
+	})
+}
+
+// iterResourcesFlatInline uses InlineFlatResourceIterator if available, otherwise
+// falls back to iterResourcesFlat with an adapter that reads time from the version.
+func iterResourcesFlatInline(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
+	if inline, ok := mr.(InlineFlatResourceIterator); ok {
+		return inline.IterVersionedResourcesFlatInline(ctx, f)
+	}
+	return iterResourcesFlat(ctx, mr, func(labelsHash uint64, versions []*ResourceVersion) error {
+		return f(labelsHash, versions, 0, 0, false)
+	})
+}
+
+// iterScopesFlatInline uses InlineFlatScopeIterator if available, otherwise
+// falls back to iterScopesFlat with an adapter that reads time from the version.
+func iterScopesFlatInline(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
+	if inline, ok := mr.(InlineFlatScopeIterator); ok {
+		return inline.IterVersionedScopesFlatInline(ctx, f)
+	}
+	return iterScopesFlat(ctx, mr, func(labelsHash uint64, versions []*ScopeVersion) error {
+		return f(labelsHash, versions, 0, 0, false)
 	})
 }
 
@@ -381,6 +417,10 @@ func (m *MemSeriesMetadata) IterVersionedResourcesFlat(ctx context.Context, f fu
 	return m.ResourceStore().IterVersionedFlat(ctx, f)
 }
 
+func (m *MemSeriesMetadata) IterVersionedResourcesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
+	return m.ResourceStore().IterVersionedFlatInline(ctx, f)
+}
+
 func (m *MemSeriesMetadata) TotalResources() uint64 {
 	return m.ResourceStore().TotalEntries()
 }
@@ -405,6 +445,10 @@ func (m *MemSeriesMetadata) IterVersionedScopes(ctx context.Context, f func(labe
 
 func (m *MemSeriesMetadata) IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion) error) error {
 	return m.ScopeStore().IterVersionedFlat(ctx, f)
+}
+
+func (m *MemSeriesMetadata) IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
+	return m.ScopeStore().IterVersionedFlatInline(ctx, f)
 }
 
 func (m *MemSeriesMetadata) TotalScopes() uint64 {
@@ -1040,6 +1084,10 @@ func (r *parquetReader) IterVersionedResourcesFlat(ctx context.Context, f func(l
 	return r.mem.IterVersionedResourcesFlat(ctx, f)
 }
 
+func (r *parquetReader) IterVersionedResourcesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
+	return r.mem.IterVersionedResourcesFlatInline(ctx, f)
+}
+
 func (r *parquetReader) TotalResources() uint64 {
 	return r.mem.TotalResources()
 }
@@ -1058,6 +1106,10 @@ func (r *parquetReader) IterVersionedScopes(ctx context.Context, f func(labelsHa
 
 func (r *parquetReader) IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion) error) error {
 	return r.mem.IterVersionedScopesFlat(ctx, f)
+}
+
+func (r *parquetReader) IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
+	return r.mem.IterVersionedScopesFlatInline(ctx, f)
 }
 
 func (r *parquetReader) TotalScopes() uint64 {
@@ -1184,7 +1236,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 		var mappingRows []metadataRow
 		var keysBuf []string
 
-		err := iterResourcesFlat(context.Background(), mr, func(labelsHash uint64, versions []*ResourceVersion) error {
+		err := iterResourcesFlatInline(context.Background(), mr, func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
 			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
 				return nil
 			}
@@ -1211,12 +1263,16 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 					}
 					seriesRef = ref
 				}
+				minTime, maxTime := rv.MinTime, rv.MaxTime
+				if isInline {
+					minTime, maxTime = inlineMinTime, inlineMaxTime
+				}
 				mappingRows = append(mappingRows, metadataRow{
 					Namespace:   NamespaceResourceMapping,
 					SeriesRef:   seriesRef,
 					ContentHash: contentHash,
-					MinTime:     rv.MinTime,
-					MaxTime:     rv.MaxTime,
+					MinTime:     minTime,
+					MaxTime:     maxTime,
 				})
 			}
 			return nil
@@ -1252,7 +1308,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 		var mappingRows []metadataRow
 		var keysBuf []string
 
-		err := iterScopesFlat(context.Background(), mr, func(labelsHash uint64, versions []*ScopeVersion) error {
+		err := iterScopesFlatInline(context.Background(), mr, func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
 			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
 				return nil
 			}
@@ -1279,12 +1335,16 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 					}
 					seriesRef = ref
 				}
+				minTime, maxTime := sv.MinTime, sv.MaxTime
+				if isInline {
+					minTime, maxTime = inlineMinTime, inlineMaxTime
+				}
 				mappingRows = append(mappingRows, metadataRow{
 					Namespace:   NamespaceScopeMapping,
 					SeriesRef:   seriesRef,
 					ContentHash: contentHash,
-					MinTime:     sv.MinTime,
-					MaxTime:     sv.MaxTime,
+					MinTime:     minTime,
+					MaxTime:     maxTime,
 				})
 			}
 			return nil
