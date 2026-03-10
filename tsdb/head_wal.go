@@ -277,6 +277,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	// The records are always replayed from the oldest to the newest.
 	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+	var keysBuf []string // reusable keys buffer for resource/scope hash computation
 Outer:
 	for d := range decoded {
 		switch v := d.(type) {
@@ -508,14 +509,16 @@ Outer:
 					s.stableHash = hash
 					s.Unlock()
 
-					contentChanged, oldVR, newVR := seriesmetadata.CommitResourceToStore(store, hash, seriesmetadata.ResourceCommitData{
+					var contentChanged bool
+					var oldVR, newVR *seriesmetadata.VersionedResource
+					contentChanged, oldVR, newVR, keysBuf = seriesmetadata.CommitResourceToStoreReusableWithRef(store, hash, seriesmetadata.ResourceCommitData{
 						Identifying: r.Identifying,
 						Descriptive: r.Descriptive,
 						Entities:    refResourceEntitiesToCommitData(r.Entities),
 						MinTime:     r.MinTime,
 						MaxTime:     r.MaxTime,
-					})
-					store.SetSeriesRef(hash, uint64(ref))
+						Owned:       true,
+					}, uint64(ref), keysBuf)
 					if contentChanged {
 						h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
 					}
@@ -541,15 +544,15 @@ Outer:
 					s.stableHash = hash
 					s.Unlock()
 
-					seriesmetadata.CommitScopeToStore(store, hash, seriesmetadata.ScopeCommitData{
+					_, _, _, keysBuf = seriesmetadata.CommitScopeToStoreReusableWithRef(store, hash, seriesmetadata.ScopeCommitData{
 						Name:      sc.Name,
 						Version:   sc.Version,
 						SchemaURL: sc.SchemaURL,
 						Attrs:     sc.Attrs,
 						MinTime:   sc.MinTime,
 						MaxTime:   sc.MaxTime,
-					})
-					store.SetSeriesRef(hash, uint64(ref))
+						Owned:     true,
+					}, uint64(ref), keysBuf)
 				}
 			}
 			h.wlReplayScopesPool.Put(v)

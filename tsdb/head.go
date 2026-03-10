@@ -1970,6 +1970,10 @@ func (r *headMetadataReader) IterVersionedResourcesFlat(ctx context.Context, f f
 	return r.head.seriesMeta.IterVersionedResourcesFlat(ctx, f)
 }
 
+func (r *headMetadataReader) IterVersionedResourcesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*seriesmetadata.ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
+	return r.head.seriesMeta.IterVersionedResourcesFlatInline(ctx, f)
+}
+
 func (r *headMetadataReader) TotalResources() uint64 {
 	return r.head.seriesMeta.TotalResources()
 }
@@ -1988,6 +1992,10 @@ func (r *headMetadataReader) IterVersionedScopes(ctx context.Context, f func(lab
 
 func (r *headMetadataReader) IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*seriesmetadata.ScopeVersion) error) error {
 	return r.head.seriesMeta.IterVersionedScopesFlat(ctx, f)
+}
+
+func (r *headMetadataReader) IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*seriesmetadata.ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
+	return r.head.seriesMeta.IterVersionedScopesFlatInline(ctx, f)
 }
 
 func (r *headMetadataReader) TotalScopes() uint64 {
