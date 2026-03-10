@@ -14,12 +14,10 @@
 package scrape
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net"
 	"net/http"
@@ -40,7 +38,6 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"github.com/prometheus/prometheus/util/testutil/synctest"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -58,6 +55,7 @@ import (
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -772,7 +770,7 @@ func TestManagerSTZeroIngestion(t *testing.T) {
 							app := teststorage.NewAppendable()
 							discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 								EnableStartTimestampZeroIngestion: testSTZeroIngest,
-								skipOffsetting:                    true,
+								skipJitterOffsetting:              true,
 							}, app, nil)
 							defer scrapeManager.Stop()
 
@@ -958,7 +956,7 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 			app := teststorage.NewAppendable()
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 				EnableStartTimestampZeroIngestion: tc.enableSTZeroIngestion,
-				skipOffsetting:                    true,
+				skipJitterOffsetting:              true,
 			}, app, nil)
 			defer scrapeManager.Stop()
 
@@ -1070,7 +1068,7 @@ func TestNHCBAndSTZeroIngestion(t *testing.T) {
 	app := teststorage.NewAppendable()
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 		EnableStartTimestampZeroIngestion: true,
-		skipOffsetting:                    true,
+		skipJitterOffsetting:              true,
 	}, app, nil)
 	defer scrapeManager.Stop()
 
@@ -1602,28 +1600,98 @@ scrape_configs:
 	}
 }
 
+// pipeListener is an in-memory net.Listener that connects a custom DialContext
+// directly to the httptest Server without opening real OS ports.
+type pipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newPipeListener() *pipeListener {
+	return &pipeListener{
+		conns:  make(chan net.Conn),
+		closed: make(chan struct{}),
+	}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+
+// Dummy Addr implementation to satisfy the net.Listener interface.
+type pipeAddr struct{}
+
+func (pipeAddr) Network() string     { return "pipe" }
+func (pipeAddr) String() string      { return "pipe" }
+func (*pipeListener) Addr() net.Addr { return pipeAddr{} }
+
+// startFakeHTTPServer spins up a httptest.Server bound to an in-memory
+// pipeListener. It returns the listener (to be wired to a custom dialer) and a
+// cleanup function to shut down the server.
+func startFakeHTTPServer(t *testing.T) (*pipeListener, func()) {
+	t.Helper()
+
+	listener := newPipeListener()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Abort if the request context is canceled (e.g., due to a scrape timeout).
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			fmt.Fprintln(w, "expected_metric 1")
+		}
+	})
+
+	srv := httptest.NewUnstartedServer(handler)
+	srv.Listener = listener
+
+	// Background goroutines inherit the synctest bubble safely
+	srv.Start()
+
+	return listener, srv.Close
+}
+
 // setupSynctestManager abstracts the boilerplate of creating a mock network,
 // starting the fake HTTP server, and configuring the scrape manager for synctest.
 func setupSynctestManager(t *testing.T, opts *Options, interval time.Duration) (*Manager, *teststorage.Appendable, func()) {
 	t.Helper()
 	app := teststorage.NewAppendable()
 
-	srvConn, cliConn := net.Pipe()
-
-	cleanup := func() {
-		srvConn.Close()
-		cliConn.Close()
-	}
-
-	go startFakeHTTPServer(t, srvConn)
+	listener, cleanup := startFakeHTTPServer(t)
 
 	if opts == nil {
 		opts = &Options{}
 	}
-	opts.skipOffsetting = true // Eliminates random jitter, making timing exact
+	opts.skipJitterOffsetting = true
+
+	// Ensure the scraper creates a new net.Pipe on every dial attempt
+	// and hands the server-side connection to the mock server's listener.
 	opts.HTTPClientOptions = []config_util.HTTPClientOption{
-		config_util.WithDialContextFunc(func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return cliConn, nil
+		config_util.WithDialContextFunc(func(ctx context.Context, _, _ string) (net.Conn, error) {
+			srvConn, cliConn := net.Pipe()
+
+			select {
+			case listener.conns <- srvConn:
+				// Give the client side to the scraper
+				return cliConn, nil
+			case <-listener.closed:
+				return nil, net.ErrClosed
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}),
 	}
 
@@ -1659,47 +1727,6 @@ func setupSynctestManager(t *testing.T, opts *Options, interval time.Duration) (
 	scrapeManager.reload()
 
 	return scrapeManager, app, cleanup
-}
-
-// Helper function to act as a fake HTTP server over a net.Conn
-func startFakeHTTPServer(t *testing.T, conn net.Conn) {
-	t.Helper()
-	reader := bufio.NewReader(conn)
-	for {
-		req, err := http.ReadRequest(reader)
-		if err != nil {
-			// net.Pipe returns io.ErrClosedPipe when closed during test teardown.
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
-				return
-			}
-			t.Errorf("fake HTTP server failed to read request: %v", err)
-			return
-		}
-
-		_, err = io.Copy(io.Discard, req.Body)
-		req.Body.Close()
-		if err != nil {
-			t.Errorf("fake HTTP server failed to read request body: %v", err)
-			return
-		}
-
-		body := "expected_metric 1\n"
-
-		response := fmt.Sprintf("HTTP/1.1 200 OK\r\n"+
-			"Content-Type: text/plain; version=0.0.4\r\n"+
-			"Content-Length: %d\r\n"+
-			"\r\n"+
-			"%s", len(body), body)
-
-		_, err = conn.Write([]byte(response))
-		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
-				return
-			}
-			t.Errorf("fake HTTP server failed to write response: %v", err)
-			return
-		}
-	}
 }
 
 func TestManager_InitialScrapeOffset(t *testing.T) {

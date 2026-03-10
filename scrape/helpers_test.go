@@ -99,8 +99,6 @@ func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoo
 		validationScheme:    model.UTF8Validation,
 		symbolTable:         labels.NewSymbolTable(),
 		appendMetadataToWAL: true, // Tests assumes it's enabled, unless explicitly turned off.
-		initialScrapeOffset: time.Duration(0),
-		scrapeOnShutdown:    false,
 	}
 	for _, o := range opts {
 		o(sl)

@@ -126,10 +126,7 @@ type Options struct {
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 
-	// private option for testability.
-	skipOffsetting bool
-
-	// Option to allow a final scrape before the manager closes. This is useful
+	// ScrapeOnShutdown enables a final scrape before the manager closes. This is useful
 	// for Prometheus in agent mode or OTel's prometheusreceiver when used in serverless
 	// job scenarios, allowing an extra scrape for the short-living edge cases.
 	//
@@ -151,6 +148,9 @@ type Options struct {
 	// and ensures backend rate limits don't drop valuable shutdown scrapes
 	// because of an early startup scrape.
 	InitialScrapeOffset time.Duration
+
+	// private option for testability.
+	skipJitterOffsetting bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -343,7 +343,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	// setOffsetSeed relies on osutil.GetFQDN(), which triggers a DNS lookup using
 	// a global singleflight goroutine. This cross-boundary communication breaks
 	// synctest's isolation bubble and causes a fatal panic.
-	if m.opts.skipOffsetting {
+	if m.opts.skipJitterOffsetting {
 		m.offsetSeed = 0
 	} else {
 		if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {

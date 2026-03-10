@@ -878,7 +878,7 @@ type scrapeLoop struct {
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
-	skipOffsetting          bool // For testability.
+	skipJitterOffsetting    bool // For testability.
 	scrapeOnShutdown        bool
 	initialScrapeOffset     time.Duration
 	// error injection through setForcedError.
@@ -1233,7 +1233,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
-		skipOffsetting:          opts.sp.options.skipOffsetting,
+		skipJitterOffsetting:    opts.sp.options.skipJitterOffsetting,
 		scrapeOnShutdown:        opts.sp.options.ScrapeOnShutdown,
 		initialScrapeOffset:     opts.sp.options.InitialScrapeOffset,
 	}
@@ -1248,9 +1248,9 @@ func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 	sl.scrapeFailureLogger = l
 }
 
-func getScrapeOffset(sl *scrapeLoop) time.Duration {
+func (sl *scrapeLoop) getScrapeOffset() time.Duration {
 	offset := sl.scraper.offset(sl.interval, sl.offsetSeed)
-	if sl.skipOffsetting {
+	if sl.skipJitterOffsetting {
 		offset = time.Duration(0)
 	}
 	return sl.initialScrapeOffset + offset
@@ -1258,7 +1258,7 @@ func getScrapeOffset(sl *scrapeLoop) time.Duration {
 
 func (sl *scrapeLoop) run(errc chan<- error) {
 	select {
-	case <-time.After(getScrapeOffset(sl)):
+	case <-time.After(sl.getScrapeOffset()):
 		// Continue after a scraping offset.
 	case <-sl.shutdownScrape:
 		sl.cancel()
@@ -1533,7 +1533,12 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 // returned. Cancel the context to stop all writes.
 func (sl *scrapeLoop) stop() {
 	if sl.scrapeOnShutdown {
-		sl.shutdownScrape <- struct{}{}
+		select {
+		case sl.shutdownScrape <- struct{}{}:
+		case <-sl.stopped:
+			// Prevents deadlock: shutdownScrape is unbuffered. If the scrape loop
+			// has already exited, a direct send will block forever.
+		}
 	} else {
 		sl.cancel()
 	}
