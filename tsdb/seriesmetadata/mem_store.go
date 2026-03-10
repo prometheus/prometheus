@@ -436,6 +436,32 @@ func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Version
 	return nil, m.materializeEntry(entry)
 }
 
+// HasContentHash reports whether the series at labelsHash currently has a
+// version with the given contentHash. Uses a read lock only — no allocations,
+// no time-range extension. Designed for the ingester hot path to skip
+// entriesToMap when content hasn't changed.
+func (m *MemStore[V]) HasContentHash(labelsHash, contentHash uint64) bool {
+	if m.dedupOps == nil {
+		return false
+	}
+	s := m.stripe(labelsHash)
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+
+	entry, ok := s.byHash[labelsHash]
+	if !ok {
+		return false
+	}
+	if entry.multi != nil {
+		if len(entry.multi.Versions) == 0 {
+			return false
+		}
+		current := entry.multi.Versions[len(entry.multi.Versions)-1]
+		return m.dedupOps.ContentHash(current) == contentHash
+	}
+	return entry.contentHash == contentHash
+}
+
 // ExtendTimeRangeIfContentMatch checks whether the current (latest) version
 // for labelsHash has the given contentHash. If so, it extends the time range
 // and returns (existing versioned, true). Otherwise returns (existing or nil, false).

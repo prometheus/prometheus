@@ -223,6 +223,12 @@ func (m *MemSeriesMetadata) StoreForKind(id KindID) any {
 	return m.stores[id]
 }
 
+// ResourceHasContentHash reports whether the series at labelsHash has a
+// resource version with the given contentHash. Read-only, zero-allocation.
+func (m *MemSeriesMetadata) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
+	return m.ResourceStore().HasContentHash(labelsHash, contentHash)
+}
+
 // ResourceCount returns the number of unique series with resource data.
 func (m *MemSeriesMetadata) ResourceCount() int { return m.ResourceStore().Len() }
 
