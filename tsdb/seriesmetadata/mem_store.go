@@ -15,6 +15,7 @@ package seriesmetadata
 
 import (
 	"context"
+	"math"
 	"sync"
 )
 
@@ -138,6 +139,72 @@ func (m *MemStore[V]) internVersions(vs *Versioned[V]) {
 			vs.Versions[i] = m.dedupOps.ThinCopy(canonical, v)
 		}
 	}
+}
+
+// mergeVersionedInterned merges two Versioned instances and interns the result
+// in a single pass, avoiding the intermediate deep copies that MergeVersioned +
+// internVersions would create. Each merged version is produced as a ThinCopy
+// from the canonical content table directly, skipping the ops.Copy → ThinCopy
+// round-trip that wastes ~72 GB during WAL replay.
+// Falls back to MergeVersioned + internVersions when dedupOps is nil.
+func (m *MemStore[V]) mergeVersionedInterned(a, b *Versioned[V]) *Versioned[V] {
+	if m.dedupOps == nil {
+		result := MergeVersioned(m.ops, a, b)
+		m.internVersions(result)
+		return result
+	}
+	if a == nil {
+		result := b.Copy(m.ops)
+		m.internVersions(result)
+		return result
+	}
+	if b == nil {
+		result := a.Copy(m.ops)
+		m.internVersions(result)
+		return result
+	}
+
+	merged := make([]V, 0, len(a.Versions)+len(b.Versions))
+
+	// Two-pointer merge (both slices are sorted by MinTime).
+	i, j := 0, 0
+	for i < len(a.Versions) || j < len(b.Versions) {
+		var ver V
+		switch {
+		case i >= len(a.Versions):
+			ver = b.Versions[j]
+			j++
+		case j >= len(b.Versions):
+			ver = a.Versions[i]
+			i++
+		case a.Versions[i].GetMinTime() <= b.Versions[j].GetMinTime():
+			ver = a.Versions[i]
+			i++
+		default:
+			ver = b.Versions[j]
+			j++
+		}
+
+		if len(merged) > 0 {
+			last := merged[len(merged)-1]
+			if m.ops.Equal(last, ver) && (last.GetMaxTime() == math.MaxInt64 || ver.GetMinTime() <= last.GetMaxTime()+1) {
+				if ver.GetMaxTime() > last.GetMaxTime() {
+					last.SetMaxTime(ver.GetMaxTime())
+				}
+				if ver.GetMinTime() < last.GetMinTime() {
+					last.SetMinTime(ver.GetMinTime())
+				}
+				continue
+			}
+		}
+		// Intern directly: get canonical and produce a ThinCopy, avoiding the
+		// intermediate deep copy that ops.Copy would create.
+		hash := m.dedupOps.ContentHash(ver)
+		canonical := m.getOrCreateCanonical(hash, ver)
+		merged = append(merged, m.dedupOps.ThinCopy(canonical, ver))
+	}
+
+	return &Versioned[V]{Versions: merged}
 }
 
 // internLastVersion replaces only the last version with a thin copy.
@@ -346,8 +413,7 @@ func (m *MemStore[V]) SetVersioned(labelsHash uint64, versioned *Versioned[V]) {
 
 	if existing, ok := s.byHash[labelsHash]; ok {
 		existingVersioned := m.materializeEntry(existing)
-		merged := MergeVersioned(m.ops, existingVersioned, versioned)
-		m.internVersions(merged)
+		merged := m.mergeVersionedInterned(existingVersioned, versioned)
 		m.setFromVersioned(existing, merged)
 		return
 	}
@@ -399,8 +465,7 @@ func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Version
 					return old, existing.multi
 				}
 			}
-			existing.multi = MergeVersioned(m.ops, existing.multi, versioned)
-			m.internVersions(existing.multi)
+			existing.multi = m.mergeVersionedInterned(existing.multi, versioned)
 			return old, existing.multi
 		}
 
@@ -420,8 +485,7 @@ func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Version
 
 		// Content differs: promote to multi.
 		existingVersioned := m.materializeEntry(existing)
-		merged := MergeVersioned(m.ops, existingVersioned, versioned)
-		m.internVersions(merged)
+		merged := m.mergeVersionedInterned(existingVersioned, versioned)
 		m.setFromVersioned(existing, merged)
 		return old, m.materializeEntry(existing)
 	}
@@ -544,8 +608,7 @@ func (m *MemStore[V]) InsertVersion(
 			old = existing.multi
 			v := buildFull()
 			incoming := &Versioned[V]{Versions: []V{v}}
-			existing.multi = MergeVersioned[V](m.ops, existing.multi, incoming)
-			m.internVersions(existing.multi)
+			existing.multi = m.mergeVersionedInterned(existing.multi, incoming)
 			return true, old, existing.multi
 		}
 
@@ -633,8 +696,7 @@ func (m *MemStore[V]) InsertVersionWithRef(
 			old = existing.multi
 			v := buildFull()
 			incoming := &Versioned[V]{Versions: []V{v}}
-			existing.multi = MergeVersioned[V](m.ops, existing.multi, incoming)
-			m.internVersions(existing.multi)
+			existing.multi = m.mergeVersionedInterned(existing.multi, incoming)
 			return true, old, existing.multi
 		}
 
