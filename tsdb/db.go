@@ -2367,6 +2367,13 @@ func (db *DB) Head() *Head {
 	return db.head
 }
 
+// ResourceHasContentHash reports whether the series at labelsHash has
+// a resource version with the given contentHash. Convenience pass-through
+// to Head.ResourceHasContentHash.
+func (db *DB) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
+	return db.head.ResourceHasContentHash(labelsHash, contentHash)
+}
+
 // Close the partition.
 func (db *DB) Close() error {
 	// Allow close-after-close operation for simpler use (e.g. tests).
