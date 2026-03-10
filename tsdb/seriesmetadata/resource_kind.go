@@ -43,6 +43,9 @@ func (resourceOps) ThinCopy(canonical, v *ResourceVersion) *ResourceVersion {
 		MaxTime:     v.MaxTime,
 	}
 }
+func (resourceOps) IsInterned(canonical, v *ResourceVersion) bool {
+	return mapSameUnderlying(canonical.Identifying, v.Identifying)
+}
 
 // ResourceOps is the shared KindOps instance for resources.
 var ResourceOps KindOps[*ResourceVersion] = resourceOps{}
@@ -134,6 +137,10 @@ type ResourceCommitData struct {
 	Entities    []ResourceEntityData
 	MinTime     int64
 	MaxTime     int64
+	// Owned indicates the caller guarantees exclusive ownership of the maps.
+	// When true, buildResourceVersion takes the maps directly instead of cloning.
+	// Set by the ingester push path where maps are freshly allocated.
+	Owned bool
 }
 
 // CommitResourceDirect is the hot-path commit for resources.
@@ -259,8 +266,15 @@ func CommitResourceToStoreReusable(store *MemStore[*ResourceVersion], labelsHash
 	return contentChanged, old, cur, keysBuf
 }
 
-// buildResourceVersion allocates a ResourceVersion with deep copies of all maps.
+// buildResourceVersion allocates a ResourceVersion from commit data.
+// When rcd.Owned is true, maps are taken directly (zero-copy).
+// Otherwise, all maps are deep-copied.
 func buildResourceVersion(rcd ResourceCommitData) *ResourceVersion {
+	cloneMap := maps.Clone[map[string]string]
+	if rcd.Owned {
+		cloneMap = func(m map[string]string) map[string]string { return m }
+	}
+
 	entities := make([]*Entity, len(rcd.Entities))
 	for j, e := range rcd.Entities {
 		entityType := e.Type
@@ -269,14 +283,14 @@ func buildResourceVersion(rcd ResourceCommitData) *ResourceVersion {
 		}
 		entities[j] = &Entity{
 			Type:        entityType,
-			ID:          maps.Clone(e.ID),
-			Description: maps.Clone(e.Description),
+			ID:          cloneMap(e.ID),
+			Description: cloneMap(e.Description),
 		}
 	}
 	// Entities are already sorted by hashResourceCommitData.
 	return &ResourceVersion{
-		Identifying: maps.Clone(rcd.Identifying),
-		Descriptive: maps.Clone(rcd.Descriptive),
+		Identifying: cloneMap(rcd.Identifying),
+		Descriptive: cloneMap(rcd.Descriptive),
 		Entities:    entities,
 		MinTime:     rcd.MinTime,
 		MaxTime:     rcd.MaxTime,
