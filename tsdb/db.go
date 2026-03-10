@@ -2381,6 +2381,13 @@ func (db *DB) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
 	return db.head.ResourceHasContentHash(labelsHash, contentHash)
 }
 
+// ScopeHasContentHash reports whether the series at labelsHash has
+// a scope version with the given contentHash. Convenience pass-through
+// to Head.ScopeHasContentHash.
+func (db *DB) ScopeHasContentHash(labelsHash, contentHash uint64) bool {
+	return db.head.ScopeHasContentHash(labelsHash, contentHash)
+}
+
 // Close the partition.
 func (db *DB) Close() error {
 	// Allow close-after-close operation for simpler use (e.g. tests).

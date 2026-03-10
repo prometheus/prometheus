@@ -240,6 +240,12 @@ func (m *MemSeriesMetadata) ResourceHasContentHash(labelsHash, contentHash uint6
 	return m.ResourceStore().HasContentHash(labelsHash, contentHash)
 }
 
+// ScopeHasContentHash reports whether the series at labelsHash has a
+// scope version with the given contentHash. Read-only, zero-allocation.
+func (m *MemSeriesMetadata) ScopeHasContentHash(labelsHash, contentHash uint64) bool {
+	return m.ScopeStore().HasContentHash(labelsHash, contentHash)
+}
+
 // ResourceCount returns the number of unique series with resource data.
 func (m *MemSeriesMetadata) ResourceCount() int { return m.ResourceStore().Len() }
 

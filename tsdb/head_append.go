@@ -1871,15 +1871,14 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 
 		var contentChanged bool
 		var oldVR, newVR *seriesmetadata.VersionedResource
-		contentChanged, oldVR, newVR, keysBuf = seriesmetadata.CommitResourceToStoreReusable(store, hash, seriesmetadata.ResourceCommitData{
+		contentChanged, oldVR, newVR, keysBuf = seriesmetadata.CommitResourceToStoreReusableWithRef(store, hash, seriesmetadata.ResourceCommitData{
 			Identifying: r.Identifying,
 			Descriptive: r.Descriptive,
 			Entities:    refResourceEntitiesToCommitData(r.Entities),
 			MinTime:     r.MinTime,
 			MaxTime:     r.MaxTime,
 			Owned:       true, // Maps are freshly allocated by the caller — safe to take ownership.
-		}, keysBuf)
-		store.SetSeriesRef(hash, uint64(ref))
+		}, uint64(ref), keysBuf)
 
 		if !contentChanged {
 			continue
@@ -1914,7 +1913,7 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 		s.Unlock()
 
 		var contentChanged bool
-		contentChanged, _, _, keysBuf = seriesmetadata.CommitScopeToStoreReusable(store, hash, seriesmetadata.ScopeCommitData{
+		contentChanged, _, _, keysBuf = seriesmetadata.CommitScopeToStoreReusableWithRef(store, hash, seriesmetadata.ScopeCommitData{
 			Name:      sc.Name,
 			Version:   sc.Version,
 			SchemaURL: sc.SchemaURL,
@@ -1922,8 +1921,7 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 			MinTime:   sc.MinTime,
 			MaxTime:   sc.MaxTime,
 			Owned:     true, // Attrs map is freshly allocated by the caller — safe to take ownership.
-		}, keysBuf)
-		store.SetSeriesRef(hash, uint64(ref))
+		}, uint64(ref), keysBuf)
 
 		if !contentChanged {
 			continue
