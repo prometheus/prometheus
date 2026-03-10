@@ -825,6 +825,35 @@ func (m *MemStore[V]) IterVersionedFlat(ctx context.Context, f func(labelsHash u
 	return nil
 }
 
+// IterVersionedFlatInline is like IterVersionedFlat but avoids ThinCopy
+// allocations for single-version entries (>99% of entries). For single-version
+// entries, isInline is true and the caller should use inlineMinTime/inlineMaxTime
+// instead of v.GetMinTime()/v.GetMaxTime(). The canonical is passed directly
+// in the versions slice without materializing a ThinCopy.
+// The versions slice passed to f must not be retained by the caller.
+func (m *MemStore[V]) IterVersionedFlatInline(ctx context.Context, f func(labelsHash uint64, versions []V, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
+	snapshot := m.snapshotEntries()
+	buf := make([]V, 1)
+	for i, entry := range snapshot {
+		if i%checkContextEveryNIterations == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
+		if entry.multi != nil {
+			if err := f(entry.labelsHash, entry.multi.Versions, 0, 0, false); err != nil {
+				return err
+			}
+		} else {
+			buf[0] = entry.canonical
+			if err := f(entry.labelsHash, buf, entry.minTime, entry.maxTime, true); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // IterHashes calls the function for each series' labelsHash, without
 // materializing versions. This is cheaper than IterVersioned when only
 // the hash is needed (e.g., building the needsResolve set in compaction).
