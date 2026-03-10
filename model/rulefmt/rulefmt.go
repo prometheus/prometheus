@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -341,21 +342,36 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 // Parse parses and validates a set of rules.
 func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, p parser.Parser) (*RuleGroups, []error) {
 	var (
-		groups RuleGroups
-		node   ruleGroups
-		errs   []error
+		res   RuleGroups
+		node  ruleGroups
+		errs  []error
+		count int
 	)
 
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	if !ignoreUnknownFields {
 		decoder.KnownFields(true)
 	}
-	err := decoder.Decode(&groups)
-	// Ignore io.EOF which happens with empty input.
-	if err != nil && !errors.Is(err, io.EOF) {
-		errs = append(errs, err)
+
+	for {
+		count++
+		var groups RuleGroups
+		err := decoder.Decode(&groups)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			errs = append(errs, err)
+			break
+		}
+		res.Groups = append(res.Groups, groups.Groups...)
 	}
-	err = yaml.Unmarshal(content, &node)
+
+	if count > 1 {
+		slog.Warn("multi-document YAML rule file detected. Only the first document is processed. See https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/#defining-alerting-rules for supported rule file format.")
+	}
+
+	err := yaml.Unmarshal(content, &node)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -364,7 +380,7 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 		return nil, errs
 	}
 
-	return &groups, groups.Validate(node, nameValidationScheme, p)
+	return &res, res.Validate(node, nameValidationScheme, p)
 }
 
 // ParseFile reads and parses rules from a file.
