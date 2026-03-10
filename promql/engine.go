@@ -4393,31 +4393,37 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 
 	pathLoop:
 		for i := len(path) - 1; i >= 0; i-- { // Walk backwards up the path.
-			if _, ok := path[i].(*parser.SubqueryExpr); ok {
+			switch p := path[i].(type) {
+			case *parser.SubqueryExpr:
 				// If we ever see a subquery in the path, we
 				// will not skip the buckets. We need the
 				// buckets for correct counter reset detection.
 				n.SkipHistogramBuckets = false
 				break pathLoop
-			}
-			call, ok := path[i].(*parser.Call)
-			if !ok {
-				continue pathLoop
-			}
-			switch call.Func.Name {
-			case "histogram_count", "histogram_sum", "histogram_avg":
-				// We allow skipping buckets preliminarily. But
-				// we will continue through the path to see if
-				// we find a subquery (or a histogram function)
-				// further up (the latter wouldn't make sense,
-				// but no harm in detecting it).
-				n.SkipHistogramBuckets = true
-			case "histogram_quantile", "histogram_quantiles", "histogram_fraction":
-				// If we ever see a function that needs the
-				// whole histogram, we will not skip the
-				// buckets.
-				n.SkipHistogramBuckets = false
-				break pathLoop
+
+			case *parser.Call:
+				switch p.Func.Name {
+				case "histogram_count", "histogram_sum", "histogram_avg":
+					// We allow skipping buckets preliminarily. But
+					// we will continue through the path to see if
+					// we find a subquery (or a histogram function)
+					// further up (the latter wouldn't make sense,
+					// but no harm in detecting it).
+					n.SkipHistogramBuckets = true
+				case "histogram_quantile", "histogram_quantiles", "histogram_fraction":
+					// If we ever see a function that needs the
+					// whole histogram, we will not skip the
+					// buckets.
+					n.SkipHistogramBuckets = false
+					break pathLoop
+				}
+
+			case *parser.BinaryExpr:
+				if p.Op == parser.TRIM_UPPER || p.Op == parser.TRIM_LOWER {
+					// Trimming depends on buckets, we will not skip them.
+					n.SkipHistogramBuckets = false
+					break pathLoop
+				}
 			}
 		}
 		return nil
