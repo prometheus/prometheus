@@ -44,6 +44,7 @@ func (scopeOps) ThinCopy(canonical, v *ScopeVersion) *ScopeVersion {
 		MaxTime:   v.MaxTime,
 	}
 }
+
 func (scopeOps) IsInterned(canonical, v *ScopeVersion) bool {
 	return mapSameUnderlying(canonical.Attrs, v.Attrs)
 }

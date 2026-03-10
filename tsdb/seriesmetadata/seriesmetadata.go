@@ -14,6 +14,7 @@
 package seriesmetadata
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -125,9 +126,14 @@ func iterScopesFlat(ctx context.Context, mr Reader, f func(labelsHash uint64, ve
 const numAttrIndexStripes = 256
 
 // attrIndexStripe is a single shard of the inverted attribute index.
+// Values are *[]uint64 (pointer-to-slice) so the posting list can be modified
+// in-place (sortedInsert/sortedRemove) without a map write on the common path.
+// This avoids Go's map runtime replacing the stored key on assignment, which
+// would corrupt unsafe.String-backed keys — and more importantly here, it
+// avoids allocating a new string key on every map write.
 type attrIndexStripe struct {
 	mtx sync.RWMutex
-	idx map[string][]uint64
+	idx map[string]*[]uint64
 	_   [40]byte // cache-line padding to prevent false sharing
 }
 
@@ -141,13 +147,18 @@ type shardedAttrIndex struct {
 func newShardedAttrIndex() *shardedAttrIndex {
 	s := &shardedAttrIndex{}
 	for i := range s.stripes {
-		s.stripes[i].idx = make(map[string][]uint64)
+		s.stripes[i].idx = make(map[string]*[]uint64)
 	}
 	return s
 }
 
 func (s *shardedAttrIndex) stripe(key string) *attrIndexStripe {
 	h := xxhash.Sum64String(key)
+	return &s.stripes[h&uint64(numAttrIndexStripes-1)]
+}
+
+func (s *shardedAttrIndex) stripeBytes(key []byte) *attrIndexStripe {
+	h := xxhash.Sum64(key)
 	return &s.stripes[h&uint64(numAttrIndexStripes-1)]
 }
 
@@ -159,11 +170,11 @@ func (s *shardedAttrIndex) lookup(key string) []uint64 {
 	st := s.stripe(key)
 	st.mtx.RLock()
 	defer st.mtx.RUnlock()
-	v := st.idx[key]
-	if len(v) == 0 {
+	p := st.idx[key]
+	if p == nil || len(*p) == 0 {
 		return nil
 	}
-	return slices.Clone(v)
+	return slices.Clone(*p)
 }
 
 // MemSeriesMetadata is an in-memory implementation of series metadata storage.
@@ -414,9 +425,10 @@ func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
 	m.indexedResourceAttrsMu.RLock()
 	extra := m.indexedResourceAttrs
 	m.indexedResourceAttrsMu.RUnlock()
+	var buf bytes.Buffer
 	_ = m.ResourceStore().IterVersionedFlat(context.Background(), func(labelsHash uint64, versions []*ResourceVersion) error {
 		for _, rv := range versions {
-			bulkAddToAttrIndex(idx, labelsHash, rv, extra)
+			bulkAddToAttrIndex(idx, labelsHash, rv, extra, &buf)
 			collectAttrNames(names, rv)
 		}
 		return nil
@@ -470,16 +482,17 @@ func (m *MemSeriesMetadata) UpdateResourceAttrIndex(
 	extra := m.indexedResourceAttrs
 	m.indexedResourceAttrsMu.RUnlock()
 
+	var buf bytes.Buffer
 	// Remove old entries.
 	if old != nil {
 		for _, rv := range old.Versions {
-			removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv, extra)
+			removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv, extra, &buf)
 		}
 	}
 	// Add current entries.
 	if cur != nil {
 		for _, rv := range cur.Versions {
-			addToAttrIndex(m.resourceAttrIndex, labelsHash, rv, extra)
+			addToAttrIndex(m.resourceAttrIndex, labelsHash, rv, extra, &buf)
 		}
 	}
 }
@@ -495,8 +508,9 @@ func (m *MemSeriesMetadata) RemoveFromResourceAttrIndex(labelsHash uint64, vr *V
 	m.indexedResourceAttrsMu.RLock()
 	extra := m.indexedResourceAttrs
 	m.indexedResourceAttrsMu.RUnlock()
+	var buf bytes.Buffer
 	for _, rv := range vr.Versions {
-		removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv, extra)
+		removeFromAttrIndex(m.resourceAttrIndex, labelsHash, rv, extra, &buf)
 	}
 }
 
@@ -539,82 +553,116 @@ func collectAttrNames(names map[string]struct{}, rv *ResourceVersion) {
 // addToAttrIndex adds attribute entries for a resource version to the sharded index.
 // Identifying attributes are always indexed. Descriptive attributes are only
 // indexed if their key is in extraIndexed.
-// Uses in-place sorted insert (copy-on-read for readers).
+// Uses in-place sorted insert through *[]uint64 pointers (copy-on-read for readers).
 // Each key routes to a single stripe — no two stripe locks are held simultaneously.
-func addToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
+// The buf is used to build index keys without allocating; string(buf.Bytes()) in
+// map index expressions triggers Go's compiler optimization for zero-alloc lookups.
+func addToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}, buf *bytes.Buffer) {
 	for k, v := range rv.Identifying {
-		key := k + "\x00" + v
-		st := idx.stripe(key)
-		st.mtx.Lock()
-		st.idx[key] = sortedInsert(st.idx[key], labelsHash)
-		st.mtx.Unlock()
+		buf.Reset()
+		buf.WriteString(k)
+		buf.WriteByte('\x00')
+		buf.WriteString(v)
+		addToAttrIndexEntry(idx, buf.Bytes(), labelsHash)
 	}
 	for k, v := range rv.Descriptive {
 		if _, ok := extraIndexed[k]; !ok {
 			continue
 		}
-		key := k + "\x00" + v
-		st := idx.stripe(key)
-		st.mtx.Lock()
-		st.idx[key] = sortedInsert(st.idx[key], labelsHash)
-		st.mtx.Unlock()
+		buf.Reset()
+		buf.WriteString(k)
+		buf.WriteByte('\x00')
+		buf.WriteString(v)
+		addToAttrIndexEntry(idx, buf.Bytes(), labelsHash)
 	}
+}
+
+// addToAttrIndexEntry performs a single sorted insert into the sharded index.
+// On the common path (key already exists), string(key) in the map index is
+// optimized by the Go compiler to avoid allocation. Only first-time inserts
+// allocate a string for the map key.
+func addToAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
+	st := idx.stripeBytes(key)
+	st.mtx.Lock()
+	if p := st.idx[string(key)]; p != nil {
+		*p = sortedInsert(*p, labelsHash)
+	} else {
+		s := []uint64{labelsHash}
+		st.idx[string(key)] = &s
+	}
+	st.mtx.Unlock()
 }
 
 // removeFromAttrIndex removes attribute entries for a resource version from the sharded index.
 // Identifying attributes are always removed. Descriptive attributes are only
 // removed if their key is in extraIndexed.
-// Uses in-place sorted remove (copy-on-read for readers).
+// Uses in-place sorted remove through *[]uint64 pointers (copy-on-read for readers).
 // Each key routes to a single stripe — no two stripe locks are held simultaneously.
-func removeFromAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
+func removeFromAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}, buf *bytes.Buffer) {
 	for k, v := range rv.Identifying {
-		key := k + "\x00" + v
-		st := idx.stripe(key)
-		st.mtx.Lock()
-		if s, ok := st.idx[key]; ok {
-			ns := sortedRemove(s, labelsHash)
-			if len(ns) == 0 {
-				delete(st.idx, key)
-			} else {
-				st.idx[key] = ns
-			}
-		}
-		st.mtx.Unlock()
+		buf.Reset()
+		buf.WriteString(k)
+		buf.WriteByte('\x00')
+		buf.WriteString(v)
+		removeFromAttrIndexEntry(idx, buf.Bytes(), labelsHash)
 	}
 	for k, v := range rv.Descriptive {
 		if _, ok := extraIndexed[k]; !ok {
 			continue
 		}
-		key := k + "\x00" + v
-		st := idx.stripe(key)
-		st.mtx.Lock()
-		if s, ok := st.idx[key]; ok {
-			ns := sortedRemove(s, labelsHash)
-			if len(ns) == 0 {
-				delete(st.idx, key)
-			} else {
-				st.idx[key] = ns
-			}
-		}
-		st.mtx.Unlock()
+		buf.Reset()
+		buf.WriteString(k)
+		buf.WriteByte('\x00')
+		buf.WriteString(v)
+		removeFromAttrIndexEntry(idx, buf.Bytes(), labelsHash)
 	}
+}
+
+// removeFromAttrIndexEntry performs a single sorted remove from the sharded index.
+func removeFromAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
+	st := idx.stripeBytes(key)
+	st.mtx.Lock()
+	if p := st.idx[string(key)]; p != nil {
+		ns := sortedRemove(*p, labelsHash)
+		if len(ns) == 0 {
+			delete(st.idx, string(key))
+		} else {
+			*p = ns
+		}
+	}
+	st.mtx.Unlock()
 }
 
 // bulkAddToAttrIndex appends labelsHash to posting lists without maintaining sort order.
 // Used during BuildResourceAttrIndex for O(n) build; finalizeBulkAttrIndex sorts afterward.
-func bulkAddToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}) {
+func bulkAddToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}, buf *bytes.Buffer) {
 	for k, v := range rv.Identifying {
-		key := k + "\x00" + v
-		st := idx.stripe(key)
-		st.idx[key] = append(st.idx[key], labelsHash)
+		buf.Reset()
+		buf.WriteString(k)
+		buf.WriteByte('\x00')
+		buf.WriteString(v)
+		bulkAddToAttrIndexEntry(idx, buf.Bytes(), labelsHash)
 	}
 	for k, v := range rv.Descriptive {
 		if _, ok := extraIndexed[k]; !ok {
 			continue
 		}
-		key := k + "\x00" + v
-		st := idx.stripe(key)
-		st.idx[key] = append(st.idx[key], labelsHash)
+		buf.Reset()
+		buf.WriteString(k)
+		buf.WriteByte('\x00')
+		buf.WriteString(v)
+		bulkAddToAttrIndexEntry(idx, buf.Bytes(), labelsHash)
+	}
+}
+
+// bulkAddToAttrIndexEntry appends without sort order (finalize sorts later).
+func bulkAddToAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
+	st := idx.stripeBytes(key)
+	if p := st.idx[string(key)]; p != nil {
+		*p = append(*p, labelsHash)
+	} else {
+		s := []uint64{labelsHash}
+		st.idx[string(key)] = &s
 	}
 }
 
@@ -622,13 +670,14 @@ func bulkAddToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVe
 func finalizeBulkAttrIndex(idx *shardedAttrIndex) {
 	for i := range idx.stripes {
 		st := &idx.stripes[i]
-		for key, s := range st.idx {
+		for key, p := range st.idx {
+			s := *p
 			slices.Sort(s)
 			s = slices.Compact(s)
 			if len(s) == 0 {
 				delete(st.idx, key)
 			} else {
-				st.idx[key] = s
+				*p = s
 			}
 		}
 	}
@@ -785,7 +834,12 @@ func denormalizeRows(
 		// Single-threaded during Parquet load — no stripe locking needed,
 		// but use stripe routing for correct placement.
 		st := idx.stripe(key)
-		st.idx[key] = sortedInsert(st.idx[key], labelsHash)
+		if p := st.idx[key]; p != nil {
+			*p = sortedInsert(*p, labelsHash)
+		} else {
+			s := []uint64{labelsHash}
+			st.idx[key] = &s
+		}
 	}
 	if idx != nil {
 		mem.resourceAttrIndex = idx
