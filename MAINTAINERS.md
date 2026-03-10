@@ -16,6 +16,7 @@ Maintainers for specific parts of the codebase:
   * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz)
   * `stackit`: Jan-Otto Kröpke (<mail@jkroepke.de> / @jkroepke)
   * `consul`: Mohammad Varmazyar (<mrvarmazyar@gmail.com> / @mrvarmazyar)
+  * `scaleway`: (@remyleone)
 * `documentation`
   * `prometheus-mixin`: Matthias Loibl (<mail@matthiasloibl.com> / @metalmatze)
 * `storage`
