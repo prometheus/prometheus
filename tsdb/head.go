@@ -2026,6 +2026,16 @@ func (h *Head) SetIndexedResourceAttrs(attrs map[string]struct{}) {
 	}
 }
 
+// ResourceHasContentHash reports whether the series at labelsHash has
+// a resource version with the given contentHash. Read-only, zero-allocation.
+// Returns false if native metadata is not enabled or the series is unknown.
+func (h *Head) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
+	if h.seriesMeta == nil {
+		return false
+	}
+	return h.seriesMeta.ResourceHasContentHash(labelsHash, contentHash)
+}
+
 // GetIndexedResourceAttrs returns the current set of additional descriptive
 // resource attribute names included in the inverted index. Returns nil if
 // native metadata is not enabled.
