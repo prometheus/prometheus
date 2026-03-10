@@ -134,7 +134,9 @@ func (m *MemStore[V]) internVersions(vs *Versioned[V]) {
 	for i, v := range vs.Versions {
 		hash := m.dedupOps.ContentHash(v)
 		canonical := m.getOrCreateCanonical(hash, v)
-		vs.Versions[i] = m.dedupOps.ThinCopy(canonical, v)
+		if !m.dedupOps.IsInterned(canonical, v) {
+			vs.Versions[i] = m.dedupOps.ThinCopy(canonical, v)
+		}
 	}
 }
 
@@ -148,7 +150,9 @@ func (m *MemStore[V]) internLastVersion(vs *Versioned[V]) {
 	v := vs.Versions[last]
 	hash := m.dedupOps.ContentHash(v)
 	canonical := m.getOrCreateCanonical(hash, v)
-	vs.Versions[last] = m.dedupOps.ThinCopy(canonical, v)
+	if !m.dedupOps.IsInterned(canonical, v) {
+		vs.Versions[last] = m.dedupOps.ThinCopy(canonical, v)
+	}
 }
 
 // InternVersion returns a thin copy of v sharing map/slice pointers from the
@@ -161,6 +165,9 @@ func (m *MemStore[V]) InternVersion(v V) V {
 	}
 	hash := m.dedupOps.ContentHash(v)
 	canonical := m.getOrCreateCanonical(hash, v)
+	if m.dedupOps.IsInterned(canonical, v) {
+		return v
+	}
 	return m.dedupOps.ThinCopy(canonical, v)
 }
 
@@ -558,8 +565,9 @@ func (m *MemStore[V]) InsertVersion(
 	}
 	s.byHash[labelsHash] = entry
 
-	// Materialize cur for the caller (first insert needs attr index update).
-	cur = m.materializeEntry(entry)
+	// Return cur wrapping the canonical directly — no ThinCopy needed since
+	// callers only read content fields (not time ranges) from the returned version.
+	cur = &Versioned[V]{Versions: []V{canonical}}
 	return true, nil, cur
 }
 
