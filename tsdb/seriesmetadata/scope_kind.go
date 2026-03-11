@@ -287,8 +287,14 @@ func (*scopeKindDescriptor) SetVersioned(store any, labelsHash uint64, versioned
 }
 
 func (*scopeKindDescriptor) IterVersioned(ctx context.Context, store any, f func(labelsHash uint64, versioned any) error) error {
-	return store.(*MemStore[*ScopeVersion]).IterVersioned(ctx, func(labelsHash uint64, v *Versioned[*ScopeVersion]) error {
-		return f(labelsHash, v)
+	return store.(*MemStore[*ScopeVersion]).IterVersionedFlatInline(ctx, func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
+		if isInline && len(versions) == 1 {
+			thin := scopeOps{}.ThinCopy(versions[0], versions[0])
+			thin.MinTime = inlineMinTime
+			thin.MaxTime = inlineMaxTime
+			return f(labelsHash, &Versioned[*ScopeVersion]{Versions: []*ScopeVersion{thin}})
+		}
+		return f(labelsHash, &Versioned[*ScopeVersion]{Versions: versions})
 	})
 }
 
