@@ -8281,7 +8281,6 @@ func TestResourceAndScopeWALReplayWithScope(t *testing.T) {
 
 	_ = w
 	_ = seriesmetadata.EntityTypeResource // Ensure import is used.
->>>>>>> 4e4f0c4ae (feat: add OTel resource/scope attributes persistence per time series)
 }
 
 func TestResourceAndScopeWALFilterUnchanged(t *testing.T) {
