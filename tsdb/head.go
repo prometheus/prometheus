@@ -166,6 +166,11 @@ type HeadOptions struct {
 	// Represents 'st-storage' feature flag.
 	EnableSTStorage atomic.Bool
 
+	// EnableXOR2Encoding enables XOR2 chunk encoding for float samples.
+	// Represents 'xor2-encoding' feature flag. Automatically true when
+	// EnableSTStorage is true.
+	EnableXOR2Encoding atomic.Bool
+
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string

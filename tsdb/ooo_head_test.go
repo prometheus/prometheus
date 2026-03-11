@@ -367,8 +367,8 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 	}
 }
 
-// TestOOOChunks_ToEncodedChunks_WithST tests ToEncodedChunks with storeST=true and storeST=false for float samples.
-// When storeST=true, st values are preserved; when storeST=false, AtST() returns 0.
+// TestOOOChunks_ToEncodedChunks_WithST tests ToEncodedChunks with useXOR2=true and useXOR2=false for float samples.
+// When useXOR2=true, st values are preserved; when useXOR2=false, AtST() returns 0.
 // TODO(@krajorama): Add histogram test cases once ST storage is implemented for histograms.
 func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 	testCases := map[string]struct {
@@ -403,11 +403,11 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 
 	storageScenarios := []struct {
 		name             string
-		storeST          bool
+		useXOR2          bool
 		expectedEncoding chunkenc.Encoding
 	}{
-		{"storeST=true", true, chunkenc.EncXOR2},
-		{"storeST=false", false, chunkenc.EncXOR},
+		{"useXOR2=true", true, chunkenc.EncXOR2},
+		{"useXOR2=false", false, chunkenc.EncXOR},
 	}
 
 	for name, tc := range testCases {
@@ -418,7 +418,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 					oooChunk.Insert(s.st, s.t, s.f, nil, nil)
 				}
 
-				chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, ss.storeST)
+				chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, ss.useXOR2)
 				require.NoError(t, err)
 				require.Len(t, chunks, 1, "number of chunks")
 
@@ -434,12 +434,12 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 					gotT, gotF := it.At()
 					gotST := it.AtST()
 
-					if ss.storeST {
-						// When storeST=true, st values should be preserved.
+					if ss.useXOR2 {
+						// When useXOR2=true, st values should be preserved.
 						require.Equal(t, tc.samples[sampleIndex].st, gotST, "sample %d st", sampleIndex)
 					} else {
-						// When storeST=false, AtST() should return 0.
-						require.Equal(t, int64(0), gotST, "sample %d st should be 0 when storeST=false", sampleIndex)
+						// When useXOR2=false, AtST() should return 0.
+						require.Equal(t, int64(0), gotST, "sample %d st should be 0 when useXOR2=false", sampleIndex)
 					}
 					require.Equal(t, tc.samples[sampleIndex].t, gotT, "sample %d t", sampleIndex)
 					require.Equal(t, tc.samples[sampleIndex].f, gotF, "sample %d f", sampleIndex)

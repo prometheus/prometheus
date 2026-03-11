@@ -186,6 +186,7 @@ func (h *Head) appender() *headAppender {
 			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 			storeST:               h.opts.EnableSTStorage.Load(),
+			useXOR2:               h.opts.EnableXOR2Encoding.Load(),
 		},
 	}
 }
@@ -414,6 +415,7 @@ type headAppenderBase struct {
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
 	storeST                         bool
+	useXOR2                         bool
 }
 type headAppender struct {
 	headAppenderBase
@@ -1747,7 +1749,7 @@ func (a *headAppenderBase) Commit() (err error) {
 			chunkDiskMapper: h.chunkDiskMapper,
 			chunkRange:      h.chunkRange.Load(),
 			samplesPerChunk: h.opts.SamplesPerChunk,
-			storeST:         a.storeST,
+			useXOR2:         a.useXOR2,
 		},
 		oooEnc: record.Encoder{
 			EnableSTStorage: a.storeST,
@@ -1834,7 +1836,7 @@ type chunkOpts struct {
 	chunkDiskMapper *chunks.ChunkDiskMapper
 	chunkRange      int64
 	samplesPerChunk int
-	storeST         bool
+	useXOR2         bool // Selects XOR2 encoding for float chunks.
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
@@ -1842,7 +1844,7 @@ type chunkOpts struct {
 // isolation for this append.)
 // Series lock must be held when calling.
 func (s *memSeries) append(st, t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.ValFloat.ChunkEncoding(o.storeST), o)
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.ValFloat.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1873,7 +1875,7 @@ func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendI
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.HistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(o.storeST), o)
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -1930,7 +1932,7 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 	// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 	prevApp, _ := s.app.(*chunkenc.FloatHistogramAppender)
 
-	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(o.storeST), o)
+	c, sampleInOrder, chunkCreated := s.histogramsAppendPreprocessor(t, chunkenc.ValFloatHistogram.ChunkEncoding(o.useXOR2), o)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
@@ -2187,7 +2189,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(o chunkOpts, logger *slog.Logger) []
 		// OOO is not enabled or there is no head chunk, so nothing to m-map here.
 		return nil
 	}
-	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, o.storeST)
+	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, o.useXOR2)
 	if err != nil {
 		handleChunkWriteError(err)
 		return nil

@@ -2183,47 +2183,47 @@ func TestComputeChunkEndTime(t *testing.T) {
 	}
 }
 
-// TestMemSeries_append tests float appending with various storeST/st combinations.
+// TestMemSeries_append tests float appending with various useXOR2/st combinations.
 func TestMemSeries_append(t *testing.T) {
 	scenarios := []struct {
 		name    string
-		storeST bool
+		useXOR2 bool
 		stFunc  func(ts int64) int64 // Function to compute st from ts
 	}{
 		{
-			name:    "storeST=false st=0",
-			storeST: false,
+			name:    "useXOR2=false st=0",
+			useXOR2: false,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
 		{
-			name:    "storeST=true st=0",
-			storeST: true,
+			name:    "useXOR2=true st=0",
+			useXOR2: true,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
 		{
-			name:    "storeST=true st=ts",
-			storeST: true,
+			name:    "useXOR2=true st=ts",
+			useXOR2: true,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
 		{
-			name:    "storeST=true st=ts-100",
-			storeST: true,
+			name:    "useXOR2=true st=ts-100",
+			useXOR2: true,
 			stFunc:  func(ts int64) int64 { return ts - 100 },
 		},
 		{
-			name:    "storeST=false st=ts (st ignored)",
-			storeST: false,
+			name:    "useXOR2=false st=ts (st ignored)",
+			useXOR2: false,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
 	}
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			testMemSeriesAppend(t, scenario.storeST, scenario.stFunc)
+			testMemSeriesAppend(t, scenario.useXOR2, scenario.stFunc)
 		})
 	}
 }
 
-func testMemSeriesAppend(t *testing.T, storeST bool, stFunc func(ts int64) int64) {
+func testMemSeriesAppend(t *testing.T, useXOR2 bool, stFunc func(ts int64) int64) {
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
@@ -2235,7 +2235,7 @@ func testMemSeriesAppend(t *testing.T, storeST bool, stFunc func(ts int64) int64
 		chunkDiskMapper: chunkDiskMapper,
 		chunkRange:      500,
 		samplesPerChunk: DefaultSamplesPerChunk,
-		storeST:         storeST,
+		useXOR2:         useXOR2,
 	}
 
 	s := newMemSeries(labels.Labels{}, 1, 0, defaultIsolationDisabled, false)
@@ -2286,47 +2286,47 @@ func testMemSeriesAppend(t *testing.T, storeST bool, stFunc func(ts int64) int64
 	}
 }
 
-// TestMemSeries_appendHistogram tests histogram appending with various storeST/st combinations.
+// TestMemSeries_appendHistogram tests histogram appending with various useXOR2/st combinations.
 func TestMemSeries_appendHistogram(t *testing.T) {
 	scenarios := []struct {
 		name    string
-		storeST bool
+		useXOR2 bool
 		stFunc  func(ts int64) int64 // Function to compute st from ts
 	}{
 		{
-			name:    "storeST=false st=0",
-			storeST: false,
+			name:    "useXOR2=false st=0",
+			useXOR2: false,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
 		{
-			name:    "storeST=true st=0",
-			storeST: true,
+			name:    "useXOR2=true st=0",
+			useXOR2: true,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
 		{
-			name:    "storeST=true st=ts",
-			storeST: true,
+			name:    "useXOR2=true st=ts",
+			useXOR2: true,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
 		{
-			name:    "storeST=true st=ts-100",
-			storeST: true,
+			name:    "useXOR2=true st=ts-100",
+			useXOR2: true,
 			stFunc:  func(ts int64) int64 { return ts - 100 },
 		},
 		{
-			name:    "storeST=false st=ts (st ignored)",
-			storeST: false,
+			name:    "useXOR2=false st=ts (st ignored)",
+			useXOR2: false,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
 	}
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			testMemSeriesAppendHistogram(t, scenario.storeST, scenario.stFunc)
+			testMemSeriesAppendHistogram(t, scenario.useXOR2, scenario.stFunc)
 		})
 	}
 }
 
-func testMemSeriesAppendHistogram(t *testing.T, storeST bool, stFunc func(ts int64) int64) {
+func testMemSeriesAppendHistogram(t *testing.T, useXOR2 bool, stFunc func(ts int64) int64) {
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
@@ -2338,7 +2338,7 @@ func testMemSeriesAppendHistogram(t *testing.T, storeST bool, stFunc func(ts int
 		chunkDiskMapper: chunkDiskMapper,
 		chunkRange:      int64(1000),
 		samplesPerChunk: DefaultSamplesPerChunk,
-		storeST:         storeST,
+		useXOR2:         useXOR2,
 	}
 
 	s := newMemSeries(labels.Labels{}, 1, 0, defaultIsolationDisabled, false)
@@ -7354,6 +7354,7 @@ func TestHeadAppender_WALEncoder_EnableSTStorage(t *testing.T) {
 		t.Run(fmt.Sprintf("enableSTStorage=%v", enableST), func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(enableST)
+			opts.EnableXOR2Encoding.Store(enableST)
 			h, w := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")
@@ -7409,6 +7410,7 @@ func TestHeadAppender_WBLEncoder_EnableSTStorage(t *testing.T) {
 			opts.ChunkDirRoot = dir
 			opts.OutOfOrderTimeWindow.Store(60 * time.Minute.Milliseconds())
 			opts.EnableSTStorage.Store(enableST)
+			opts.EnableXOR2Encoding.Store(enableST)
 
 			h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 			require.NoError(t, err)
@@ -7527,6 +7529,7 @@ func TestHeadAppender_STStorage_Disabled(t *testing.T) {
 func TestHeadAppender_STStorage_WALReplay(t *testing.T) {
 	opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 	opts.EnableSTStorage.Store(true)
+	opts.EnableXOR2Encoding.Store(true)
 	h, w := newTestHeadWithOptions(t, compression.None, opts)
 
 	lbls := labels.FromStrings("foo", "bar")
@@ -7578,6 +7581,7 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(60 * time.Minute.Milliseconds())
 	opts.EnableSTStorage.Store(true)
+	opts.EnableXOR2Encoding.Store(true)
 
 	h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 	require.NoError(t, err)
@@ -7656,6 +7660,7 @@ func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
 		t.Run(fmt.Sprintf("EnableSTStorage=%t", enableST), func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(enableST)
+			opts.EnableXOR2Encoding.Store(enableST) // ST storage implies XOR2 encoding.
 			h, _ := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")
