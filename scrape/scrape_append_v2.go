@@ -149,12 +149,14 @@ loop:
 	for {
 		var (
 			et                       textparse.Entry
-			sampleAdded, isHistogram bool
+			shouldCache, isHistogram bool
 			met                      []byte
 			parsedTimestamp          *int64
 			val                      float64
 			h                        *histogram.Histogram
 			fh                       *histogram.FloatHistogram
+			skipAppend               bool
+			stSyn                    *stCache
 		)
 		if et, err = p.Next(); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -259,6 +261,10 @@ loop:
 				st = p.StartTimestamp()
 			}
 
+			if sl.synthesizeST && st == 0 {
+				st, val, h, fh, skipAppend, stSyn = sl.checkAndSynthesizeStartTime(st, lset, ce, lastMFName, isHistogram, val, h, fh, t)
+			}
+
 			for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 				if !e.HasTs {
 					if isHistogram {
@@ -311,34 +317,49 @@ loop:
 				}
 			}
 
-			// Append sample to the storage.
-			ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
+			if !skipAppend {
+				// Append sample to the storage.
+				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
+				if err == nil && ce != nil && ref != 0 {
+					ce.ref = ref
+				}
+			}
 		}
-		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
+		shouldCache, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
 				sl.l.Debug("Unexpected error", "series", string(met), "err", err)
 			}
 			break loop
 		}
-		if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
-			sl.cache.trackStaleness(ce.ref, ce)
-		}
 
 		// If series wasn't cached (is new, not seen on previous scrape) we need to add it to the scrape cache.
 		// But we only do this for series that were appended to TSDB without errors.
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
-		if !seriesCached && sampleAdded {
+		// However, if we generated a start time synthesis anchor (stSyn != nil), we DO need to cache it so next
+		// scrapes have the reference.
+		if !seriesCached && shouldCache {
 			ce = sl.cache.addRef(met, ref, lset, hash)
-			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
-				// Bypass staleness logic if there is an explicit timestamp.
-				// But make sure we only do this if we have a cache entry (ce) for our series.
-				sl.cache.trackStaleness(ref, ce)
-			}
+
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
 			}
+		}
+
+		// Persist the initialized synthesis state inside our cache unconditionally now that it's verified
+		if ce != nil && stSyn != nil {
+			ce.st = stSyn
+		}
+
+		// Track staleness uniformly, bypassing logic if there is an explicit timestamp.
+		// We avoid tracking staleness for newly synthesized anchors (ref == 0) to prevent
+		// emitting disconnected StaleNaNs if they disappear on the next scrape.
+		// We must track staleness if we are synthesizing a start time (stSyn != nil),
+		// otherwise the timeline could become disconnected if it disappears.
+		shouldTrackStaleness := parsedTimestamp == nil || sl.trackTimestampsStaleness || stSyn != nil
+		if ce != nil && err == nil && ce.ref != 0 && shouldTrackStaleness {
+			sl.cache.trackStaleness(ce.ref, ce)
 		}
 
 		// Increment added even if there's an error so we correctly report the
@@ -413,4 +434,55 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	default:
 		return err
 	}
+}
+
+func (sl *scrapeLoop) checkAndSynthesizeStartTime(
+	stMs int64,
+	lset labels.Labels,
+	ce *cacheEntry,
+	lastMFName []byte,
+	isHistogram bool,
+	val float64,
+	h *histogram.Histogram,
+	fh *histogram.FloatHistogram,
+	t int64,
+) (int64, float64, *histogram.Histogram, *histogram.FloatHistogram, bool, *stCache) {
+	var skipAppend bool
+	var stSyn *stCache
+
+	if stMs != 0 || !sl.synthesizeST {
+		return stMs, val, h, fh, skipAppend, stSyn
+	}
+
+	isCumulative := false
+	if ce != nil && ce.st != nil {
+		isCumulative = true
+	} else {
+		metadata, ok := sl.cache.GetMetadata(string(lastMFName))
+		if ok && isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, metadata.Type) {
+			isCumulative = (metadata.Type == model.MetricTypeCounter || metadata.Type == model.MetricTypeHistogram || metadata.Type == model.MetricTypeSummary)
+		}
+	}
+
+	if !isCumulative {
+		return stMs, val, h, fh, skipAppend, stSyn
+	}
+
+	if ce != nil && ce.st != nil {
+		stSyn = ce.st
+	} else {
+		stSyn = &stCache{}
+	}
+
+	if isHistogram {
+		if fh != nil {
+			fh, stMs, skipAppend = stSyn.synthesizeFloatHistogram(fh, t)
+			return stMs, val, h, fh, skipAppend, stSyn
+		}
+		h, stMs, skipAppend = stSyn.synthesizeHistogram(h, t)
+		return stMs, val, h, fh, skipAppend, stSyn
+	}
+
+	val, stMs, skipAppend = stSyn.synthesizeNumber(val, t)
+	return stMs, val, h, fh, skipAppend, stSyn
 }
