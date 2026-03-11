@@ -1724,6 +1724,126 @@ func TestScrapeLoopAppend_WithStorage(t *testing.T) {
 	}
 }
 
+func TestScrapeLoopAppend_StartTimeSynthesis(t *testing.T) {
+	ts := time.Now()
+
+	requireSample := func(t *testing.T, s teststorage.Sample, name string, val float64, ts, st int64, isNaN bool) {
+		t.Helper()
+		require.Equal(t, name, s.L.Get(model.MetricNameLabel))
+		require.Equal(t, ts, s.T)
+		if isNaN {
+			require.True(t, value.IsStaleNaN(s.V))
+		} else {
+			require.Equal(t, val, s.V)
+		}
+		if st != -1 {
+			require.Equal(t, st, s.ST)
+		}
+	}
+
+	for _, appV2 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appV2=%v", appV2), func(t *testing.T) {
+			s := teststorage.New(t, func(opt *tsdb.Options) {
+				opt.EnableMetadataWALRecords = true
+			})
+
+			appTest := teststorage.NewAppendable().Then(s)
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
+				sl.enableGenerateStartTimestamp = true
+				sl.enableSTZeroIngestion = true
+				sl.appendMetadataToWAL = true // needed for OM metadata
+			})
+
+			// First Scrape: anchor the start time, append is skipped
+			scrapeA := []byte(`# TYPE test_metric counter
+test_metric 10
+# TYPE test_gauge gauge
+test_gauge 10
+# EOF
+`)
+			app := sl.appender()
+			_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Gauge should have 1 point, Counter should be skipped
+			got := appTest.ResultSamples()
+			require.Len(t, got, 1)
+			requireSample(t, got[0], "test_gauge", 10, timestamp.FromTime(ts), -1, false)
+
+			// Second Scrape: Counter should yield 1 point with delta = 5, and ST = ts
+			// We intentionally omit TYPE for the counter on the second scrape to simulate missing metadata
+			ts2 := ts.Add(time.Second)
+			scrapeB := []byte(`test_metric 15
+# TYPE test_gauge gauge
+test_gauge 12
+# EOF
+`)
+			app = sl.appender()
+			_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			got = appTest.ResultSamples()
+
+			if appV2 {
+				// appV2 natively attaches `st` to the sample.
+				// We expect 3 samples: gauge(ts1), counter(ts2, st=ts1), gauge(ts2)
+				require.Len(t, got, 3)
+				requireSample(t, got[0], "test_gauge", 10, timestamp.FromTime(ts), -1, false)
+				requireSample(t, got[1], "test_metric", 5, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+				requireSample(t, got[2], "test_gauge", 12, timestamp.FromTime(ts2), -1, false)
+			} else {
+				// appV1 requires injection of an ST zero sample.
+				// We expect 4 samples: gauge(ts1), counter_stzero(ts1), counter(ts2), gauge(ts2)
+				require.Len(t, got, 4)
+				requireSample(t, got[0], "test_gauge", 10, timestamp.FromTime(ts), -1, false)
+				requireSample(t, got[1], "test_metric", 0, timestamp.FromTime(ts), -1, false) // Synthetic sample
+				requireSample(t, got[2], "test_metric", 5, timestamp.FromTime(ts2), -1, false)
+				requireSample(t, got[3], "test_gauge", 12, timestamp.FromTime(ts2), -1, false)
+			}
+
+			// Third Scrape: Simulate a Reset (value drops from 15 to 4)
+			// expected Output: ST = ts3 - 1, Delta = 4 - 0 = 4
+			ts3 := ts2.Add(time.Second)
+			scrapeC := []byte(`test_metric 4
+# EOF
+`)
+			app = sl.appender()
+			_, _, _, err = app.append(scrapeC, "application/openmetrics-text", ts3)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			got = appTest.ResultSamples()
+
+			if appV2 {
+				// V2 has 3 samples previously. 1 new Counter sample is added with ST=ts3-1
+				// and 1 NaN stales marker is added for dropped gauge series.
+				require.Len(t, got, 5)
+				requireSample(t, got[0], "test_gauge", 10, timestamp.FromTime(ts), -1, false)
+				requireSample(t, got[1], "test_metric", 5, timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+				requireSample(t, got[2], "test_gauge", 12, timestamp.FromTime(ts2), -1, false)
+				requireSample(t, got[3], "test_metric", 4, timestamp.FromTime(ts3), timestamp.FromTime(ts3)-1, false)
+				requireSample(t, got[4], "test_gauge", 0, timestamp.FromTime(ts3), -1, true)
+			} else {
+				// V1 has 4 samples previously.
+				// 1 zero-value ST synthetic sample for ts3-1
+				// 1 actual sample for ts3
+				// 1 NaN stales marker is added for dropped gauge series.
+				require.Len(t, got, 7)
+
+				requireSample(t, got[0], "test_gauge", 10, timestamp.FromTime(ts), -1, false)
+				requireSample(t, got[1], "test_metric", 0, timestamp.FromTime(ts), -1, false)
+				requireSample(t, got[2], "test_metric", 5, timestamp.FromTime(ts2), -1, false)
+				requireSample(t, got[3], "test_gauge", 12, timestamp.FromTime(ts2), -1, false)
+				requireSample(t, got[4], "test_metric", 0, timestamp.FromTime(ts3)-1, -1, false) // Synthetic sample
+				requireSample(t, got[5], "test_metric", 4, timestamp.FromTime(ts3), -1, false)   // Real sample
+				requireSample(t, got[6], "test_gauge", 0, timestamp.FromTime(ts3), -1, true)
+			}
+		})
+	}
+}
+
 // BenchmarkScrapeLoopAppend benchmarks scrape appends for typical cases.
 //
 // Benchmark compares append function run across 5 dimensions:
