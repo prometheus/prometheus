@@ -43,7 +43,7 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
-	"github.com/oklog/run"
+	okrun "github.com/oklog/run"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -1188,7 +1188,7 @@ func run(ctx context.Context, args []string, reg prometheus.Registerer) error {
 		return &ExitError{Code: 1, Err: err}
 	}
 
-	var g run.Group
+	var g okrun.Group
 	{
 		// Termination handler: responds to OS signals, web service quit, or
 		// context cancellation (allowing programmatic shutdown from tests).
