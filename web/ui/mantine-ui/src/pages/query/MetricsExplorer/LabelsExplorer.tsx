@@ -94,6 +94,8 @@ const LabelsExplorer: FC<LabelsExplorerProps> = ({
     offset: 0,
     timestamp: null,
     startOrEnd: null,
+    anchored: false,
+    smoothed: false,
   };
 
   // Based on the selected pool (if any), load the list of targets.

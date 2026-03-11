@@ -12,7 +12,7 @@ Tooling for the Prometheus monitoring system.
 | <code class="text-nowrap">-h</code>, <code class="text-nowrap">--help</code> | Show context-sensitive help (also try --help-long and --help-man). |
 | <code class="text-nowrap">--version</code> | Show application version. |
 | <code class="text-nowrap">--experimental</code> | Enable experimental commands. |
-| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...<code class="text-nowrap"> | Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details |
+| <code class="text-nowrap">--enable-feature</code> <code class="text-nowrap">...<code class="text-nowrap"> | Comma separated feature names to enable. Valid options: promql-experimental-functions, promql-delayed-name-removal, promql-duration-expr, promql-extended-range-selectors. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details |
 
 
 
@@ -59,7 +59,6 @@ Check the resources for validity.
 | Flag | Description | Default |
 | --- | --- | --- |
 | <code class="text-nowrap">--query.lookback-delta</code> | The server's maximum query lookback duration. | `5m` |
-| <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |  |
 
 
 
@@ -142,7 +141,7 @@ Check if the Prometheus server is healthy.
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |  |
 | <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
 
 
@@ -158,7 +157,7 @@ Check if the Prometheus server is ready.
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |  |
 | <code class="text-nowrap">--url</code> | The URL for the Prometheus server. | `http://localhost:9090` |
 
 
@@ -192,13 +191,25 @@ Check if the rule files are valid or not.
 
 ##### `promtool check metrics`
 
-Pass Prometheus metrics over stdin to lint them for consistency and correctness.
+Pass Prometheus metrics over stdin to lint them for consistency and correctness, and optionally perform cardinality analysis.
 
 examples:
 
 $ cat metrics.prom | promtool check metrics
 
-$ curl -s http://localhost:9090/metrics | promtool check metrics
+$ curl -s http://localhost:9090/metrics | promtool check metrics `--extended`
+
+$ curl -s http://localhost:9100/metrics | promtool check metrics `--extended` `--lint`=none
+
+
+
+###### Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| <code class="text-nowrap">--extended</code> | Print extended information related to the cardinality of the metrics. |  |
+| <code class="text-nowrap">--lint</code> | Linting checks to apply for metrics. Available options are: all, none. Use --lint=none to disable metrics linting. | `all` |
+
 
 
 
@@ -213,7 +224,7 @@ Run query against a Prometheus server.
 | Flag | Description | Default |
 | --- | --- | --- |
 | <code class="text-nowrap">-o</code>, <code class="text-nowrap">--format</code> | Output format of the query. | `promql` |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |  |
 
 
 
@@ -404,7 +415,7 @@ Push to a Prometheus server.
 
 | Flag | Description |
 | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |
 
 
 
@@ -422,6 +433,7 @@ Push metrics to a prometheus remote write (for testing purpose only).
 | <code class="text-nowrap">--label</code> | Label to attach to metrics. Can be specified multiple times. | `job=promtool` |
 | <code class="text-nowrap">--timeout</code> | The time to wait for pushing metrics. | `30s` |
 | <code class="text-nowrap">--header</code> | Prometheus remote write header. |  |
+| <code class="text-nowrap">--protobuf_message</code> | Protobuf message to use when writing (prometheus.WriteRequest or io.prometheus.write.v2.Request). | `prometheus.WriteRequest` |
 
 
 
@@ -569,7 +581,7 @@ List tsdb blocks.
 
 ##### `promtool tsdb dump`
 
-Dump samples from a TSDB.
+Dump data (series+samples or optionally just series) from a TSDB.
 
 
 
@@ -581,6 +593,7 @@ Dump samples from a TSDB.
 | <code class="text-nowrap">--min-time</code> | Minimum timestamp to dump, in milliseconds since the Unix epoch. | `-9223372036854775808` |
 | <code class="text-nowrap">--max-time</code> | Maximum timestamp to dump, in milliseconds since the Unix epoch. | `9223372036854775807` |
 | <code class="text-nowrap">--match</code> <code class="text-nowrap">...<code class="text-nowrap"> | Series selector. Can be specified multiple times. | `{__name__=~'(?s:.*)'}` |
+| <code class="text-nowrap">--format</code> | Output format of the dump (prom (default) or seriesjson). | `prom` |
 
 
 
@@ -672,7 +685,7 @@ Create blocks of data for new recording rules.
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file for promtool to connect to Prometheus. |  |
+| <code class="text-nowrap">--http.config.file</code> | HTTP client configuration file, see details at https://prometheus.io/docs/prometheus/latest/configuration/promtool |  |
 | <code class="text-nowrap">--url</code> | The URL for the Prometheus API with the data where the rule will be backfilled from. | `http://localhost:9090` |
 | <code class="text-nowrap">--start</code> | The time to start backfilling the new rule from. Must be a RFC3339 formatted date or Unix timestamp. Required. |  |
 | <code class="text-nowrap">--end</code> | If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hours ago. Must be a RFC3339 formatted date or Unix timestamp. |  |

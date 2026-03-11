@@ -270,7 +270,7 @@ export const getQueryParam = (key: string): string => {
 export const createExpressionLink = (expr: string): string => {
   return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.display_mode=${
     GraphDisplayMode.Lines
-  }&g0.show_exemplars=0.g0.range_input=1h.`;
+  }&g0.show_exemplars=0&g0.range_input=1h`;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any,

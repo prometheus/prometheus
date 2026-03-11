@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -164,7 +164,7 @@ func trimStringByBytes(str string, size int) string {
 
 	trimIndex := len(bytesStr)
 	if size < len(bytesStr) {
-		for !utf8.RuneStart(bytesStr[size]) {
+		for size > 0 && !utf8.RuneStart(bytesStr[size]) {
 			size--
 		}
 		trimIndex = size
@@ -195,7 +195,7 @@ func newJSONEntry(query string, logger *slog.Logger) []byte {
 }
 
 func (tracker ActiveQueryTracker) generateIndices(maxConcurrent int) {
-	for i := 0; i < maxConcurrent; i++ {
+	for i := range maxConcurrent {
 		tracker.getNextIndex <- 1 + (i * entrySize)
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,6 +20,24 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+var expectedSizeOfLabels = []uint64{ // Values must line up with testCaseLabels.
+	16,
+	0,
+	41,
+	270,
+	271,
+	325,
+}
+
+var expectedByteSize = []uint64{ // Values must line up with testCaseLabels.
+	8,
+	0,
+	8,
+	8,
+	8,
+	32,
+}
 
 func TestVarint(t *testing.T) {
 	cases := []struct {

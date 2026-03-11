@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,7 +20,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -747,13 +747,15 @@ func TestRelabel(t *testing.T) {
 			if cfg.Replacement == "" {
 				cfg.Replacement = DefaultRelabelConfig.Replacement
 			}
-			require.NoError(t, cfg.Validate())
+			cfg.NameValidationScheme = model.UTF8Validation
+			require.NoError(t, cfg.Validate(model.UTF8Validation))
 		}
 
-		res, keep := Process(test.input, test.relabel...)
+		lb := labels.NewBuilder(test.input)
+		keep := ProcessBuilder(lb, test.relabel...)
 		require.Equal(t, !test.drop, keep)
 		if keep {
-			testutil.RequireEqual(t, test.output, res)
+			testutil.RequireEqual(t, test.output, lb.Labels())
 		}
 	}
 }
@@ -764,59 +766,92 @@ func TestRelabelValidate(t *testing.T) {
 		expected string
 	}{
 		{
-			config:   Config{},
+			config: Config{
+				NameValidationScheme: model.UTF8Validation,
+			},
 			expected: `relabel action cannot be empty`,
 		},
 		{
 			config: Config{
-				Action: Replace,
+				Action:               Replace,
+				NameValidationScheme: model.UTF8Validation,
 			},
 			expected: `requires 'target_label' value`,
 		},
 		{
 			config: Config{
-				Action: Lowercase,
+				Action:               Lowercase,
+				NameValidationScheme: model.UTF8Validation,
 			},
 			expected: `requires 'target_label' value`,
 		},
 		{
 			config: Config{
-				Action:      Lowercase,
-				Replacement: DefaultRelabelConfig.Replacement,
-				TargetLabel: "${3}", // With UTF-8 naming, this is now a legal relabel rule.
+				Action:               Lowercase,
+				Replacement:          DefaultRelabelConfig.Replacement,
+				TargetLabel:          "${3}", // With UTF-8 naming, this is now a legal relabel rule.
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		{
 			config: Config{
-				SourceLabels: model.LabelNames{"a"},
-				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
-				Action:       Replace,
-				Replacement:  "${1}",
-				TargetLabel:  "${3}",
+				Action:               Lowercase,
+				Replacement:          DefaultRelabelConfig.Replacement,
+				TargetLabel:          "${3}", // Fails with legacy validation
+				NameValidationScheme: model.LegacyValidation,
+			},
+			expected: "\"${3}\" is invalid 'target_label' for lowercase action",
+		},
+		{
+			config: Config{
+				SourceLabels:         model.LabelNames{"a"},
+				Regex:                MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:               Replace,
+				Replacement:          "${1}",
+				TargetLabel:          "${3}",
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		{
 			config: Config{
-				SourceLabels: model.LabelNames{"a"},
-				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
-				Action:       Replace,
-				Replacement:  "${1}",
-				TargetLabel:  "0${3}", // With UTF-8 naming this targets a valid label.
+				SourceLabels:         model.LabelNames{"a"},
+				Regex:                MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:               Replace,
+				Replacement:          "${1}",
+				TargetLabel:          "0${3}", // With UTF-8 naming this targets a valid label.
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 		{
 			config: Config{
-				SourceLabels: model.LabelNames{"a"},
-				Regex:        MustNewRegexp("some-([^-]+)-([^,]+)"),
-				Action:       Replace,
-				Replacement:  "${1}",
-				TargetLabel:  "-${3}", // With UTF-8 naming this targets a valid label.
+				SourceLabels:         model.LabelNames{"a"},
+				Regex:                MustNewRegexp("some-([^-]+)-([^,]+)"),
+				Action:               Replace,
+				Replacement:          "${1}",
+				TargetLabel:          "-${3}", // With UTF-8 naming this targets a valid label.
+				NameValidationScheme: model.UTF8Validation,
+			},
+		},
+		{
+			config: Config{
+				Regex:                MustNewRegexp("__meta_kubernetes_pod_label_(strimzi_io_.+)"),
+				Action:               LabelMap,
+				Replacement:          "$1",
+				NameValidationScheme: model.LegacyValidation,
+			},
+		},
+		{
+			config: Config{
+				Regex:                MustNewRegexp("__meta_(.+)"),
+				Action:               LabelMap,
+				Replacement:          "${1}",
+				NameValidationScheme: model.LegacyValidation,
 			},
 		},
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			err := test.config.Validate()
+			err := test.config.Validate(model.UTF8Validation)
 			if test.expected == "" {
 				require.NoError(t, err)
 			} else {
@@ -1030,9 +1065,11 @@ func BenchmarkRelabel(b *testing.B) {
 		require.NoError(b, err)
 	}
 	for _, tt := range tests {
+		lb := labels.NewBuilder(labels.EmptyLabels())
 		b.Run(tt.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				_, _ = Process(tt.lbls, tt.cfgs...)
+			for b.Loop() {
+				lb.Reset(tt.lbls)
+				_ = ProcessBuilder(lb, tt.cfgs...)
 			}
 		})
 	}

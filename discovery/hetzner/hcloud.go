@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -98,13 +98,13 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			hetznerLabelRole:              model.LabelValue(HetznerRoleHcloud),
 			hetznerLabelServerID:          model.LabelValue(strconv.FormatInt(server.ID, 10)),
 			hetznerLabelServerName:        model.LabelValue(server.Name),
-			hetznerLabelDatacenter:        model.LabelValue(server.Datacenter.Name),
+			hetznerLabelDatacenter:        model.LabelValue(server.Datacenter.Name), //nolint:staticcheck // server.Datacenter is deprecated but kept for backwards compatibility until the next minor release
 			hetznerLabelPublicIPv4:        model.LabelValue(server.PublicNet.IPv4.IP.String()),
 			hetznerLabelPublicIPv6Network: model.LabelValue(server.PublicNet.IPv6.Network.String()),
 			hetznerLabelServerStatus:      model.LabelValue(server.Status),
 
-			hetznerLabelHcloudDatacenterLocation:            model.LabelValue(server.Datacenter.Location.Name),
-			hetznerLabelHcloudDatacenterLocationNetworkZone: model.LabelValue(server.Datacenter.Location.NetworkZone),
+			hetznerLabelHcloudDatacenterLocation:            model.LabelValue(server.Datacenter.Location.Name),        //nolint:staticcheck // server.Datacenter is deprecated but kept for backwards compatibility until the next minor release
+			hetznerLabelHcloudDatacenterLocationNetworkZone: model.LabelValue(server.Datacenter.Location.NetworkZone), //nolint:staticcheck // server.Datacenter is deprecated but kept for backwards compatibility until the next minor release
 			hetznerLabelHcloudType:                          model.LabelValue(server.ServerType.Name),
 			hetznerLabelHcloudCPUCores:                      model.LabelValue(strconv.Itoa(server.ServerType.Cores)),
 			hetznerLabelHcloudCPUType:                       model.LabelValue(server.ServerType.CPUType),

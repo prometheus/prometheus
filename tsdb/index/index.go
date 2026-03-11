@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,9 +15,9 @@ package index
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -95,6 +94,16 @@ func (s indexWriterStage) String() string {
 	return "<unknown>"
 }
 
+// ErrPostingsOffsetTableTooLarge is returned when the postings offset table length
+// would exceed 4 bytes (table would exceed the 4GB limit).
+var ErrPostingsOffsetTableTooLarge = errors.New("length size exceeds 4 bytes")
+
+// ErrIndexExceeds64GiB is returned when the index file would exceed the 64GiB limit.
+var ErrIndexExceeds64GiB = errors.New("exceeding max size of 64GiB")
+
+// ErrSymbolTableTooLarge is returned when the symbol table size exceeds 4 bytes (4GiB limit).
+var ErrSymbolTableTooLarge = fmt.Errorf("symbol table size exceeds %d bytes", uint32(math.MaxUint32))
+
 // The table gets initialized with sync.Once but may still cause a race
 // with any other use of the crc32 package anywhere. Thus we initialize it
 // before.
@@ -142,8 +151,7 @@ type Writer struct {
 	lastSymbol  string
 	symbolCache map[string]uint32 // From symbol to index in table.
 
-	labelIndexes []labelIndexHashEntry // Label index offsets.
-	labelNames   map[string]uint64     // Label names, and their usage.
+	labelNames map[string]uint64 // Label names, and their usage.
 
 	// Hold last series to validate that clients insert new series in order.
 	lastSeries    labels.Labels
@@ -305,7 +313,7 @@ func (fw *FileWriter) Write(bufs ...[]byte) error {
 		// Once we move to compressed/varint representations in those areas, this limitation
 		// can be lifted.
 		if fw.pos > 16*math.MaxUint32 {
-			return fmt.Errorf("%q exceeding max size of 64GiB", fw.name)
+			return fmt.Errorf("%q %w", fw.name, ErrIndexExceeds64GiB)
 		}
 	}
 	return nil
@@ -393,9 +401,6 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 		if err := w.writePostingsToTmpFiles(); err != nil {
 			return err
 		}
-		if err := w.writeLabelIndices(); err != nil {
-			return err
-		}
 
 		w.toc.Postings = w.f.pos
 		if err := w.writePostings(); err != nil {
@@ -403,9 +408,6 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 		}
 
 		w.toc.LabelIndicesTable = w.f.pos
-		if err := w.writeLabelIndexesOffsetTable(); err != nil {
-			return err
-		}
 
 		w.toc.PostingsTable = w.f.pos
 		if err := w.writePostingsOffsetTable(); err != nil {
@@ -551,7 +553,7 @@ func (w *Writer) finishSymbols() error {
 	symbolTableSize := w.f.pos - w.toc.Symbols - 4
 	// The symbol table's <len> part is 4 bytes. So the total symbol table size must be less than or equal to 2^32-1
 	if symbolTableSize > math.MaxUint32 {
-		return fmt.Errorf("symbol table size exceeds %d bytes: %d", uint32(math.MaxUint32), symbolTableSize)
+		return fmt.Errorf("%w: %d", ErrSymbolTableTooLarge, symbolTableSize)
 	}
 
 	// Write out the length and symbol count.
@@ -588,147 +590,6 @@ func (w *Writer) finishSymbols() error {
 	w.symbols, err = NewSymbols(realByteSlice(w.symbolFile.Bytes()), FormatV2, int(w.toc.Symbols))
 	if err != nil {
 		return fmt.Errorf("read symbols: %w", err)
-	}
-	return nil
-}
-
-func (w *Writer) writeLabelIndices() error {
-	if err := w.fPO.Flush(); err != nil {
-		return err
-	}
-
-	// Find all the label values in the tmp posting offset table.
-	f, err := fileutil.OpenMmapFile(w.fPO.name)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	d := encoding.NewDecbufRaw(realByteSlice(f.Bytes()), int(w.fPO.pos))
-	cnt := w.cntPO
-	current := []byte{}
-	values := []uint32{}
-	for d.Err() == nil && cnt > 0 {
-		cnt--
-		d.Uvarint()               // Keycount.
-		name := d.UvarintBytes()  // Label name.
-		value := d.UvarintBytes() // Label value.
-		d.Uvarint64()             // Offset.
-		if len(name) == 0 {
-			continue // All index is ignored.
-		}
-
-		if !bytes.Equal(name, current) && len(values) > 0 {
-			// We've reached a new label name.
-			if err := w.writeLabelIndex(string(current), values); err != nil {
-				return err
-			}
-			values = values[:0]
-		}
-		current = name
-		sid, ok := w.symbolCache[string(value)]
-		if !ok {
-			return fmt.Errorf("symbol entry for %q does not exist", string(value))
-		}
-		values = append(values, sid)
-	}
-	if d.Err() != nil {
-		return d.Err()
-	}
-
-	// Handle the last label.
-	if len(values) > 0 {
-		if err := w.writeLabelIndex(string(current), values); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (w *Writer) writeLabelIndex(name string, values []uint32) error {
-	// Align beginning to 4 bytes for more efficient index list scans.
-	if err := w.addPadding(4); err != nil {
-		return err
-	}
-
-	w.labelIndexes = append(w.labelIndexes, labelIndexHashEntry{
-		keys:   []string{name},
-		offset: w.f.pos,
-	})
-
-	startPos := w.f.pos
-	// Leave 4 bytes of space for the length, which will be calculated later.
-	if err := w.write([]byte("alen")); err != nil {
-		return err
-	}
-	w.crc32.Reset()
-
-	w.buf1.Reset()
-	w.buf1.PutBE32int(1) // Number of names.
-	w.buf1.PutBE32int(len(values))
-	w.buf1.WriteToHash(w.crc32)
-	if err := w.write(w.buf1.Get()); err != nil {
-		return err
-	}
-
-	for _, v := range values {
-		w.buf1.Reset()
-		w.buf1.PutBE32(v)
-		w.buf1.WriteToHash(w.crc32)
-		if err := w.write(w.buf1.Get()); err != nil {
-			return err
-		}
-	}
-
-	// Write out the length.
-	w.buf1.Reset()
-	l := w.f.pos - startPos - 4
-	if l > math.MaxUint32 {
-		return fmt.Errorf("label index size exceeds 4 bytes: %d", l)
-	}
-	w.buf1.PutBE32int(int(l))
-	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
-		return err
-	}
-
-	w.buf1.Reset()
-	w.buf1.PutHashSum(w.crc32)
-	return w.write(w.buf1.Get())
-}
-
-// writeLabelIndexesOffsetTable writes the label indices offset table.
-func (w *Writer) writeLabelIndexesOffsetTable() error {
-	startPos := w.f.pos
-	// Leave 4 bytes of space for the length, which will be calculated later.
-	if err := w.write([]byte("alen")); err != nil {
-		return err
-	}
-	w.crc32.Reset()
-
-	w.buf1.Reset()
-	w.buf1.PutBE32int(len(w.labelIndexes))
-	w.buf1.WriteToHash(w.crc32)
-	if err := w.write(w.buf1.Get()); err != nil {
-		return err
-	}
-
-	for _, e := range w.labelIndexes {
-		w.buf1.Reset()
-		w.buf1.PutUvarint(len(e.keys))
-		for _, k := range e.keys {
-			w.buf1.PutUvarintStr(k)
-		}
-		w.buf1.PutUvarint64(e.offset)
-		w.buf1.WriteToHash(w.crc32)
-		if err := w.write(w.buf1.Get()); err != nil {
-			return err
-		}
-	}
-
-	// Write out the length.
-	err := w.writeLengthAndHash(startPos)
-	if err != nil {
-		return fmt.Errorf("label indexes offset table length/crc32 write error: %w", err)
 	}
 	return nil
 }
@@ -809,7 +670,7 @@ func (w *Writer) writeLengthAndHash(startPos uint64) error {
 	w.buf1.Reset()
 	l := w.f.pos - startPos - 4
 	if l > math.MaxUint32 {
-		return fmt.Errorf("length size exceeds 4 bytes: %d", l)
+		return fmt.Errorf("%w: %d", ErrPostingsOffsetTableTooLarge, l)
 	}
 	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
@@ -919,7 +780,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 
 			// See if label names we want are in the series.
 			numLabels := d.Uvarint()
-			for i := 0; i < numLabels; i++ {
+			for range numLabels {
 				lno := uint32(d.Uvarint())
 				lvo := uint32(d.Uvarint())
 
@@ -1049,11 +910,6 @@ func (w *Writer) writePostings() error {
 	return nil
 }
 
-type labelIndexHashEntry struct {
-	keys   []string
-	offset uint64
-}
-
 func (w *Writer) Close() error {
 	// Even if this fails, we need to close all the files.
 	ensureErr := w.ensureStage(idxStageDone)
@@ -1153,10 +1009,10 @@ func NewFileReader(path string, decoder PostingsDecoder) (*Reader, error) {
 	}
 	r, err := newReader(realByteSlice(f.Bytes()), f, decoder)
 	if err != nil {
-		return nil, tsdb_errors.NewMulti(
+		return nil, errors.Join(
 			err,
 			f.Close(),
-		).Err()
+		)
 	}
 
 	return r, nil
@@ -1601,32 +1457,6 @@ func (r *Reader) LabelNamesFor(ctx context.Context, postings Postings) ([]string
 	return names, nil
 }
 
-// LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r *Reader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
-	offset := id
-	// In version 2 series IDs are no longer exact references but series are 16-byte padded
-	// and the ID is the multiple of 16 of the actual position.
-	if r.version != FormatV1 {
-		offset = id * seriesByteAlign
-	}
-	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
-	buf := d.Get()
-	if d.Err() != nil {
-		return "", fmt.Errorf("label values for: %w", d.Err())
-	}
-
-	value, err := r.dec.LabelValueFor(ctx, buf, label)
-	if err != nil {
-		return "", storage.ErrNotFound
-	}
-
-	if value == "" {
-		return "", storage.ErrNotFound
-	}
-
-	return value, nil
-}
-
 // Series reads the series with the given ID and writes its labels and chunks into builder and chks.
 func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	offset := id
@@ -1845,7 +1675,7 @@ func (r *Reader) postingsForLabelMatchingV1(ctx context.Context, name string, ma
 
 // SortedPostings returns the given postings list reordered so that the backing series
 // are sorted.
-func (r *Reader) SortedPostings(p Postings) Postings {
+func (*Reader) SortedPostings(p Postings) Postings {
 	return p
 }
 
@@ -1920,7 +1750,7 @@ func (s *stringListIter) Next() bool {
 	return true
 }
 func (s stringListIter) At() string { return s.cur }
-func (s stringListIter) Err() error { return nil }
+func (stringListIter) Err() error   { return nil }
 
 // Decoder provides decoding methods for the v1 and v2 index file format.
 //
@@ -1946,12 +1776,12 @@ func DecodePostingsRaw(d encoding.Decbuf) (int, Postings, error) {
 
 // LabelNamesOffsetsFor decodes the offsets of the name symbols for a given series.
 // They are returned in the same order they're stored, which should be sorted lexicographically.
-func (dec *Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
+func (*Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
 	d := encoding.Decbuf{B: b}
 	k := d.Uvarint()
 
 	offsets := make([]uint32, k)
-	for i := 0; i < k; i++ {
+	for i := range k {
 		offsets[i] = uint32(d.Uvarint())
 		_ = d.Uvarint() // skip the label value
 
@@ -1961,37 +1791,6 @@ func (dec *Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
 	}
 
 	return offsets, d.Err()
-}
-
-// LabelValueFor decodes a label for a given series.
-func (dec *Decoder) LabelValueFor(ctx context.Context, b []byte, label string) (string, error) {
-	d := encoding.Decbuf{B: b}
-	k := d.Uvarint()
-
-	for i := 0; i < k; i++ {
-		lno := uint32(d.Uvarint())
-		lvo := uint32(d.Uvarint())
-
-		if d.Err() != nil {
-			return "", fmt.Errorf("read series label offsets: %w", d.Err())
-		}
-
-		ln, err := dec.LookupSymbol(ctx, lno)
-		if err != nil {
-			return "", fmt.Errorf("lookup label name: %w", err)
-		}
-
-		if ln == label {
-			lv, err := dec.LookupSymbol(ctx, lvo)
-			if err != nil {
-				return "", fmt.Errorf("lookup label value: %w", err)
-			}
-
-			return lv, nil
-		}
-	}
-
-	return "", d.Err()
 }
 
 // Series decodes a series entry from the given byte slice into builder and chks.

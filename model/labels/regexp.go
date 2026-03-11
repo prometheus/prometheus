@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -67,19 +67,32 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Simplify the syntax tree to run faster.
-		parsed = parsed.Simplify()
 		m.re, err = regexp.Compile("^(?s:" + parsed.String() + ")$")
 		if err != nil {
 			return nil, err
 		}
+
+		// Remove any capture operations before trying to optimize the remaining operations.
+		clearCapture(parsed)
+
 		if parsed.Op == syntax.OpConcat {
 			m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
 		}
 		if matches, caseSensitive := findSetMatches(parsed); caseSensitive {
 			m.setMatches = matches
 		}
-		m.stringMatcher = stringMatcherFromRegexp(parsed)
+
+		// Check if we have a pattern like .*-.*-.*.
+		// If so, then we can rely on the containsInOrder check in compileMatchStringFunction,
+		// so no further inspection of the string is required.
+		// We can't do this in stringMatcherFromRegexpInternal as we only want to apply this
+		// if the top-level pattern satisfies this requirement.
+		if isSimpleConcatenationPattern(parsed) {
+			m.stringMatcher = trueMatcher{}
+		} else {
+			m.stringMatcher = stringMatcherFromRegexp(parsed)
+		}
+
 		m.matchString = m.compileMatchStringFunction()
 	}
 
@@ -372,7 +385,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []st
 	}
 
 	if len(sub) == 0 {
-		return
+		return prefix, suffix, contains
 	}
 
 	// Given Prometheus regex matchers are always anchored to the begin/end
@@ -393,7 +406,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []st
 		}
 	}
 
-	return
+	return prefix, suffix, contains
 }
 
 // StringMatcher is a matcher that matches a string in place of a regular expression.
@@ -568,6 +581,40 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 	return nil
 }
 
+// isSimpleConcatenationPattern returns true if re contains only literals or wildcard matchers,
+// and starts and ends with a wildcard matcher (eg. .*-.*-.*).
+func isSimpleConcatenationPattern(re *syntax.Regexp) bool {
+	if re.Op != syntax.OpConcat {
+		return false
+	}
+
+	if len(re.Sub) < 2 {
+		return false
+	}
+
+	first := re.Sub[0]
+	last := re.Sub[len(re.Sub)-1]
+	if !isMatchAny(first) || !isMatchAny(last) {
+		return false
+	}
+
+	for _, re := range re.Sub[1 : len(re.Sub)-1] {
+		if !isMatchAny(re) && !isCaseSensitiveLiteral(re) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isMatchAny(re *syntax.Regexp) bool {
+	return re.Op == syntax.OpStar && re.Sub[0].Op == syntax.OpAnyChar
+}
+
+func isCaseSensitiveLiteral(re *syntax.Regexp) bool {
+	return re.Op == syntax.OpLiteral && isCaseSensitive(re)
+}
+
 // containsStringMatcher matches a string if it contains any of the substrings.
 // If left and right are not nil, it's a contains operation where left and right must match.
 // If left is nil, it's a hasPrefix operation and right must match.
@@ -695,7 +742,7 @@ func (m *literalSuffixStringMatcher) Matches(s string) bool {
 // emptyStringMatcher matches an empty string.
 type emptyStringMatcher struct{}
 
-func (m emptyStringMatcher) Matches(s string) bool {
+func (emptyStringMatcher) Matches(s string) bool {
 	return len(s) == 0
 }
 
@@ -756,7 +803,7 @@ func (m *equalMultiStringSliceMatcher) add(s string) {
 	m.values = append(m.values, s)
 }
 
-func (m *equalMultiStringSliceMatcher) addPrefix(_ string, _ bool, _ StringMatcher) {
+func (*equalMultiStringSliceMatcher) addPrefix(string, bool, StringMatcher) {
 	panic("not implemented")
 }
 
@@ -897,7 +944,7 @@ func toNormalisedLowerSlow(s string, i int, a []byte) string {
 // (including an empty one) as far as it doesn't contain any newline character.
 type anyStringWithoutNewlineMatcher struct{}
 
-func (m anyStringWithoutNewlineMatcher) Matches(s string) bool {
+func (anyStringWithoutNewlineMatcher) Matches(s string) bool {
 	// We need to make sure it doesn't contain a newline. Since the newline is
 	// an ASCII character, we can use strings.IndexByte().
 	return strings.IndexByte(s, '\n') == -1
@@ -947,7 +994,7 @@ func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
 // trueMatcher is a stringMatcher which matches any string (always returns true).
 type trueMatcher struct{}
 
-func (m trueMatcher) Matches(_ string) bool {
+func (trueMatcher) Matches(string) bool {
 	return true
 }
 

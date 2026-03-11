@@ -31,12 +31,22 @@ expr[@isGroup=Expr] {
   MatrixSelector |
   NumberDurationLiteral |
   OffsetExpr |
+  AnchoredExpr |
+  SmoothedExpr |
   ParenExpr |
   StringLiteral |
   SubqueryExpr |
   UnaryExpr |
   VectorSelector |
   StepInvariantExpr
+}
+
+AnchoredExpr {
+  expr Anchored
+}
+
+SmoothedExpr {
+  expr Smoothed
 }
 
 AggregateExpr {
@@ -91,11 +101,30 @@ MatchingModifierClause {
   ((GroupLeft | GroupRight) (!group GroupingLabels)?)?
 }
 
+FillClause {
+  Fill "(" NumberDurationLiteral ")"
+}
+
+FillLeftClause {
+  FillLeft "(" NumberDurationLiteral ")"
+}
+
+FillRightClause {
+  FillRight "(" NumberDurationLiteral ")"
+}
+
+FillModifier {
+  (FillClause | FillLeftClause | FillRightClause) |
+  (FillLeftClause FillRightClause) |
+  (FillRightClause FillLeftClause)
+}
+
 BoolModifier { Bool }
 
 binModifiers {
   BoolModifier?
   MatchingModifierClause?
+  FillModifier?
 }
 
 GroupingLabels {
@@ -133,6 +162,7 @@ FunctionIdentifier {
   Delta |
   Deriv |
   Exp |
+  FirstOverTime |
   Floor |
   HistogramCount |
   HistogramFraction |
@@ -156,6 +186,7 @@ FunctionIdentifier {
   MadOverTime |
   MaxOverTime |
   MinOverTime |
+  TsOfFirstOverTime |
   TsOfMaxOverTime |
   TsOfMinOverTime |
   TsOfLastOverTime |
@@ -352,7 +383,12 @@ NumberDurationLiteralInDurationContext {
   Or,
   Unless,
   Start,
-  End
+  End,
+  Smoothed,
+  Anchored,
+  Fill,
+  FillLeft,
+  FillRight
 }
 
 @external propSource promQLHighLight from "./highlight"
@@ -384,6 +420,7 @@ NumberDurationLiteralInDurationContext {
   Delta { condFn<"delta"> }
   Deriv { condFn<"deriv"> }
   Exp { condFn<"exp"> }
+  FirstOverTime {condFn<"first_over_time">}
   Floor { condFn<"floor"> }
   HistogramAvg { condFn<"histogram_avg"> }
   HistogramCount { condFn<"histogram_count"> }
@@ -407,6 +444,8 @@ NumberDurationLiteralInDurationContext {
   MadOverTime { condFn<"mad_over_time"> }
   MaxOverTime { condFn<"max_over_time"> }
   MinOverTime { condFn<"min_over_time"> }
+  TsOfFirstOverTime { condFn<"ts_of_first_over_time"> }
+  TsOfMaxFirstTime { condFn<"ts_of_first_over_time"> }
   TsOfMaxOverTime { condFn<"ts_of_max_over_time"> }
   TsOfMinOverTime { condFn<"ts_of_min_over_time"> }
   TsOfLastOverTime { condFn<"ts_of_last_over_time"> }

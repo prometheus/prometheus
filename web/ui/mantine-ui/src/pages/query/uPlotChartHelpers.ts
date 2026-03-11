@@ -289,6 +289,7 @@ export const getUPlotOptions = (
   width: number,
   result: RangeSamples[],
   useLocalTime: boolean,
+  yAxisMin: number | null,
   light: boolean,
   onSelectRange: (_start: number, _end: number) => void
 ): uPlot.Options => ({
@@ -330,6 +331,17 @@ export const getUPlotOptions = (
   focus: {
     alpha: 1,
   },
+  scales:
+    yAxisMin !== null
+      ? {
+          y: {
+            range: (_u, _min, max) => {
+              const minMax = uPlot.rangeNum(yAxisMin, max, 0.1, true);
+              return [yAxisMin, minMax[1]];
+            },
+          },
+        }
+      : undefined,
   axes: [
     // X axis (time).
     {

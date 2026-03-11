@@ -79,6 +79,10 @@ export class PromQLExtension {
     return this;
   }
 
+  destroy(): void {
+    this.complete.destroy?.();
+  }
+
   asExtension(languageType = LanguageType.PromQL): Extension {
     const language = promQLLanguage(languageType);
     let extension: Extension = [language];

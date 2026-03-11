@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -340,7 +340,7 @@ func (e errSeriesSet) Err() error {
 	return e.err
 }
 
-func (e errSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // concreteSeriesSet implements storage.SeriesSet.
 type concreteSeriesSet struct {
@@ -357,11 +357,11 @@ func (c *concreteSeriesSet) At() storage.Series {
 	return c.series[c.cur-1]
 }
 
-func (c *concreteSeriesSet) Err() error {
+func (*concreteSeriesSet) Err() error {
 	return nil
 }
 
-func (c *concreteSeriesSet) Warnings() annotations.Annotations { return nil }
+func (*concreteSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // concreteSeries implements storage.Series.
 type concreteSeries struct {
@@ -388,6 +388,12 @@ type concreteSeriesIterator struct {
 	histogramsCur int
 	curValType    chunkenc.ValueType
 	series        *concreteSeries
+	err           error
+
+	// These are pre-filled with the current model histogram if curValType
+	// is ValHistogram or ValFloatHistogram, respectively.
+	curH  *histogram.Histogram
+	curFH *histogram.FloatHistogram
 }
 
 func newConcreteSeriesIterator(series *concreteSeries) chunkenc.Iterator {
@@ -404,10 +410,14 @@ func (c *concreteSeriesIterator) reset(series *concreteSeries) {
 	c.histogramsCur = -1
 	c.curValType = chunkenc.ValNone
 	c.series = series
+	c.err = nil
 }
 
 // Seek implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	if c.err != nil {
+		return chunkenc.ValNone
+	}
 	if c.floatsCur == -1 {
 		c.floatsCur = 0
 	}
@@ -439,7 +449,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		if c.series.floats[c.floatsCur].Timestamp <= c.series.histograms[c.histogramsCur].Timestamp {
 			c.curValType = chunkenc.ValFloat
 		} else {
-			c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+			c.curValType = chunkenc.ValHistogram
 		}
 		// When the timestamps do not overlap the cursor for the non-selected sample type has advanced too
 		// far; we decrement it back down here.
@@ -453,16 +463,68 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	case c.floatsCur < len(c.series.floats):
 		c.curValType = chunkenc.ValFloat
 	case c.histogramsCur < len(c.series.histograms):
-		c.curValType = getHistogramValType(&c.series.histograms[c.histogramsCur])
+		c.curValType = chunkenc.ValHistogram
+	}
+	if c.curValType == chunkenc.ValHistogram {
+		c.setCurrentHistogram()
+	}
+	if c.err != nil {
+		c.curValType = chunkenc.ValNone
 	}
 	return c.curValType
 }
 
-func getHistogramValType(h *prompb.Histogram) chunkenc.ValueType {
-	if h.IsFloatHistogram() {
-		return chunkenc.ValFloatHistogram
+// setCurrentHistogram pre-fills either the curH or the curFH field with a
+// converted model histogram and sets c.curValType accordingly. It validates the
+// histogram and sets c.err accordingly. This all has to be done in Seek() and
+// Next() already so that we know if the histogram we got from the remote-read
+// source is valid or not before we allow the AtHistogram()/AtFloatHistogram()
+// call.
+func (c *concreteSeriesIterator) setCurrentHistogram() {
+	pbH := c.series.histograms[c.histogramsCur]
+
+	// Basic schema check first.
+	schema := pbH.Schema
+	if !histogram.IsKnownSchema(schema) {
+		c.err = histogram.UnknownSchemaError(schema)
+		return
 	}
-	return chunkenc.ValHistogram
+
+	if pbH.IsFloatHistogram() {
+		c.curValType = chunkenc.ValFloatHistogram
+		mFH := pbH.ToFloatHistogram()
+		if mFH.Schema > histogram.ExponentialSchemaMax && mFH.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// sample is from a newer Prometheus version that supports higher
+			// resolution.
+			if err := mFH.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				c.err = err
+				return
+			}
+		}
+		if err := mFH.Validate(); err != nil {
+			c.err = err
+			return
+		}
+		c.curFH = mFH
+		return
+	}
+	c.curValType = chunkenc.ValHistogram
+	mH := pbH.ToIntHistogram()
+	if mH.Schema > histogram.ExponentialSchemaMax && mH.Schema <= histogram.ExponentialSchemaMaxReserved {
+		// This is a very slow path, but it should only happen if the
+		// sample is from a newer Prometheus version that supports higher
+		// resolution.
+		if err := mH.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			c.err = err
+			return
+		}
+	}
+	if err := mH.Validate(); err != nil {
+		c.err = err
+		return
+	}
+	c.curH = mH
 }
 
 // At implements chunkenc.Iterator.
@@ -479,17 +541,19 @@ func (c *concreteSeriesIterator) AtHistogram(*histogram.Histogram) (int64, *hist
 	if c.curValType != chunkenc.ValHistogram {
 		panic("iterator is not on an integer histogram sample")
 	}
-	h := c.series.histograms[c.histogramsCur]
-	return h.Timestamp, h.ToIntHistogram()
+	return c.series.histograms[c.histogramsCur].Timestamp, c.curH
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	if c.curValType == chunkenc.ValHistogram || c.curValType == chunkenc.ValFloatHistogram {
-		fh := c.series.histograms[c.histogramsCur]
-		return fh.Timestamp, fh.ToFloatHistogram() // integer will be auto-converted.
+	switch c.curValType {
+	case chunkenc.ValFloatHistogram:
+		return c.series.histograms[c.histogramsCur].Timestamp, c.curFH
+	case chunkenc.ValHistogram:
+		return c.series.histograms[c.histogramsCur].Timestamp, c.curH.ToFloat(nil)
+	default:
+		panic("iterator is not on a histogram sample")
 	}
-	panic("iterator is not on a histogram sample")
 }
 
 // AtT implements chunkenc.Iterator.
@@ -500,10 +564,19 @@ func (c *concreteSeriesIterator) AtT() int64 {
 	return c.series.floats[c.floatsCur].Timestamp
 }
 
+// TODO(krajorama): implement AtST. Maybe. concreteSeriesIterator is used
+// for turning query results into an iterable, but query results do not have ST.
+func (*concreteSeriesIterator) AtST() int64 {
+	return 0
+}
+
 const noTS = int64(math.MaxInt64)
 
 // Next implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
+	if c.err != nil {
+		return chunkenc.ValNone
+	}
 	peekFloatTS := noTS
 	if c.floatsCur+1 < len(c.series.floats) {
 		peekFloatTS = c.series.floats[c.floatsCur+1].Timestamp
@@ -532,12 +605,19 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 		c.histogramsCur++
 		c.curValType = chunkenc.ValFloat
 	}
+
+	if c.curValType == chunkenc.ValHistogram {
+		c.setCurrentHistogram()
+	}
+	if c.err != nil {
+		c.curValType = chunkenc.ValNone
+	}
 	return c.curValType
 }
 
 // Err implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) Err() error {
-	return nil
+	return c.err
 }
 
 // chunkedSeriesSet implements storage.SeriesSet.
@@ -547,8 +627,9 @@ type chunkedSeriesSet struct {
 	mint, maxt    int64
 	cancel        func(error)
 
-	current storage.Series
-	err     error
+	current   storage.Series
+	err       error
+	exhausted bool
 }
 
 func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, mint, maxt int64, cancel func(error)) storage.SeriesSet {
@@ -564,6 +645,12 @@ func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, m
 // Next return true if there is a next series and false otherwise. It will
 // block until the next series is available.
 func (s *chunkedSeriesSet) Next() bool {
+	if s.exhausted {
+		// Don't try to read the next series again.
+		// This prevents errors like "http: read on closed response body" if Next() is called after it has already returned false.
+		return false
+	}
+
 	res := &prompb.ChunkedReadResponse{}
 
 	err := s.chunkedReader.NextProto(res)
@@ -575,6 +662,7 @@ func (s *chunkedSeriesSet) Next() bool {
 
 		_ = s.respBody.Close()
 		s.cancel(err)
+		s.exhausted = true
 
 		return false
 	}
@@ -599,7 +687,7 @@ func (s *chunkedSeriesSet) Err() error {
 	return s.err
 }
 
-func (s *chunkedSeriesSet) Warnings() annotations.Annotations {
+func (*chunkedSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
@@ -750,6 +838,11 @@ func (it *chunkedSeriesIterator) AtT() int64 {
 	return it.cur.AtT()
 }
 
+// TODO(krajorama): test AtST once we have a chunk format that provides ST.
+func (it *chunkedSeriesIterator) AtST() int64 {
+	return it.cur.AtST()
+}
+
 func (it *chunkedSeriesIterator) Err() error {
 	return it.err
 }
@@ -758,10 +851,10 @@ func (it *chunkedSeriesIterator) Err() error {
 // also making sure that there are no labels with duplicate names.
 func validateLabelsAndMetricName(ls []prompb.Label) error {
 	for i, l := range ls {
-		if l.Name == labels.MetricName && !model.IsValidMetricName(model.LabelValue(l.Value)) {
+		if l.Name == labels.MetricName && !model.UTF8Validation.IsValidMetricName(l.Value) {
 			return fmt.Errorf("invalid metric name: %v", l.Value)
 		}
-		if !model.LabelName(l.Name).IsValid() {
+		if !model.UTF8Validation.IsValidLabelName(l.Name) {
 			return fmt.Errorf("invalid label name: %v", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {

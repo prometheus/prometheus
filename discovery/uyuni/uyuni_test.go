@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -47,7 +47,11 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	md, err := NewDiscovery(&conf, nil, metrics)
+	md, err := NewDiscovery(&conf, discovery.DiscovererOptions{
+		Logger:  nil,
+		Metrics: metrics,
+		SetName: "uyuni",
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +131,11 @@ func TestUyuniSDSkipLogin(t *testing.T) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	md, err := NewDiscovery(&conf, nil, metrics)
+	md, err := NewDiscovery(&conf, discovery.DiscovererOptions{
+		Logger:  nil,
+		Metrics: metrics,
+		SetName: "uyuni",
+	})
 	if err != nil {
 		t.Error(err)
 	}

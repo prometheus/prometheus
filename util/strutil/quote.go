@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -129,7 +129,7 @@ func unquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 	switch c := s[0]; {
 	case c == quote && (quote == '\'' || quote == '"'):
 		err = ErrSyntax
-		return
+		return value, multibyte, tail, err
 	case c >= utf8.RuneSelf:
 		r, size := utf8.DecodeRuneInString(s)
 		return r, true, s[size:], nil
@@ -140,7 +140,7 @@ func unquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 	// Hard case: c is backslash.
 	if len(s) <= 1 {
 		err = ErrSyntax
-		return
+		return value, multibyte, tail, err
 	}
 	c := s[1]
 	s = s[2:]
@@ -173,13 +173,13 @@ func unquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 		var v rune
 		if len(s) < n {
 			err = ErrSyntax
-			return
+			return value, multibyte, tail, err
 		}
 		for j := 0; j < n; j++ {
 			x, ok := unhex(s[j])
 			if !ok {
 				err = ErrSyntax
-				return
+				return value, multibyte, tail, err
 			}
 			v = v<<4 | x
 		}
@@ -191,7 +191,7 @@ func unquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 		}
 		if v > utf8.MaxRune {
 			err = ErrSyntax
-			return
+			return value, multibyte, tail, err
 		}
 		value = v
 		multibyte = true
@@ -199,20 +199,20 @@ func unquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 		v := rune(c) - '0'
 		if len(s) < 2 {
 			err = ErrSyntax
-			return
+			return value, multibyte, tail, err
 		}
-		for j := 0; j < 2; j++ { // One digit already; two more.
+		for j := range 2 { // One digit already; two more.
 			x := rune(s[j]) - '0'
 			if x < 0 || x > 7 {
 				err = ErrSyntax
-				return
+				return value, multibyte, tail, err
 			}
 			v = (v << 3) | x
 		}
 		s = s[2:]
 		if v > 255 {
 			err = ErrSyntax
-			return
+			return value, multibyte, tail, err
 		}
 		value = v
 	case '\\':
@@ -220,15 +220,15 @@ func unquoteChar(s string, quote byte) (value rune, multibyte bool, tail string,
 	case '\'', '"':
 		if c != quote {
 			err = ErrSyntax
-			return
+			return value, multibyte, tail, err
 		}
 		value = rune(c)
 	default:
 		err = ErrSyntax
-		return
+		return value, multibyte, tail, err
 	}
 	tail = s
-	return
+	return value, multibyte, tail, err
 }
 
 // contains reports whether the string contains the byte c.
@@ -251,5 +251,5 @@ func unhex(b byte) (v rune, ok bool) {
 	case 'A' <= c && c <= 'F':
 		return c - 'A' + 10, true
 	}
-	return
+	return v, ok
 }

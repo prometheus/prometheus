@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -176,27 +176,27 @@ func (f *clientGoWorkqueueMetricsProvider) RegisterWithK8sGoClient() {
 	workqueue.SetProvider(f)
 }
 
-func (f *clientGoWorkqueueMetricsProvider) NewDepthMetric(name string) workqueue.GaugeMetric {
+func (*clientGoWorkqueueMetricsProvider) NewDepthMetric(name string) workqueue.GaugeMetric {
 	return clientGoWorkqueueDepthMetricVec.WithLabelValues(name)
 }
 
-func (f *clientGoWorkqueueMetricsProvider) NewAddsMetric(name string) workqueue.CounterMetric {
+func (*clientGoWorkqueueMetricsProvider) NewAddsMetric(name string) workqueue.CounterMetric {
 	return clientGoWorkqueueAddsMetricVec.WithLabelValues(name)
 }
 
-func (f *clientGoWorkqueueMetricsProvider) NewLatencyMetric(name string) workqueue.HistogramMetric {
+func (*clientGoWorkqueueMetricsProvider) NewLatencyMetric(name string) workqueue.HistogramMetric {
 	return clientGoWorkqueueLatencyMetricVec.WithLabelValues(name)
 }
 
-func (f *clientGoWorkqueueMetricsProvider) NewWorkDurationMetric(name string) workqueue.HistogramMetric {
+func (*clientGoWorkqueueMetricsProvider) NewWorkDurationMetric(name string) workqueue.HistogramMetric {
 	return clientGoWorkqueueWorkDurationMetricVec.WithLabelValues(name)
 }
 
-func (f *clientGoWorkqueueMetricsProvider) NewUnfinishedWorkSecondsMetric(name string) workqueue.SettableGaugeMetric {
+func (*clientGoWorkqueueMetricsProvider) NewUnfinishedWorkSecondsMetric(name string) workqueue.SettableGaugeMetric {
 	return clientGoWorkqueueUnfinishedWorkSecondsMetricVec.WithLabelValues(name)
 }
 
-func (f *clientGoWorkqueueMetricsProvider) NewLongestRunningProcessorSecondsMetric(name string) workqueue.SettableGaugeMetric {
+func (*clientGoWorkqueueMetricsProvider) NewLongestRunningProcessorSecondsMetric(name string) workqueue.SettableGaugeMetric {
 	return clientGoWorkqueueLongestRunningProcessorMetricVec.WithLabelValues(name)
 }
 

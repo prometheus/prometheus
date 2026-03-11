@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"container/heap"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -25,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -233,10 +233,7 @@ func (q *mergeGenericQuerier) mergeResults(lq labelGenericQueriers, hints *Label
 }
 
 func mergeStrings(a, b []string) []string {
-	maxl := len(a)
-	if len(b) > len(a) {
-		maxl = len(b)
-	}
+	maxl := max(len(b), len(a))
 	res := make([]string, 0, maxl*10/9)
 
 	for len(a) > 0 && len(b) > 0 {
@@ -272,13 +269,13 @@ func (q *mergeGenericQuerier) LabelNames(ctx context.Context, hints *LabelHints,
 
 // Close releases the resources of the generic querier.
 func (q *mergeGenericQuerier) Close() error {
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, querier := range q.queriers {
 		if err := querier.Close(); err != nil {
-			errs.Add(err)
+			errs = append(errs, err)
 		}
 	}
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 func truncateToLimit(s []string, hints *LabelHints) []string {
@@ -440,11 +437,11 @@ func (h genericSeriesSetHeap) Less(i, j int) bool {
 	return labels.Compare(a, b) < 0
 }
 
-func (h *genericSeriesSetHeap) Push(x interface{}) {
+func (h *genericSeriesSetHeap) Push(x any) {
 	*h = append(*h, x.(genericSeriesSet))
 }
 
-func (h *genericSeriesSetHeap) Pop() interface{} {
+func (h *genericSeriesSetHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]
@@ -602,6 +599,13 @@ func (c *chainSampleIterator) AtT() int64 {
 	return c.curr.AtT()
 }
 
+func (c *chainSampleIterator) AtST() int64 {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtST called before first .Next or after .Next returned false.")
+	}
+	return c.curr.AtST()
+}
+
 func (c *chainSampleIterator) Next() chunkenc.ValueType {
 	var (
 		currT           int64
@@ -682,11 +686,11 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 }
 
 func (c *chainSampleIterator) Err() error {
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, iter := range c.iterators {
-		errs.Add(iter.Err())
+		errs = append(errs, iter.Err())
 	}
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 type samplesIteratorHeap []chunkenc.Iterator
@@ -698,11 +702,11 @@ func (h samplesIteratorHeap) Less(i, j int) bool {
 	return h[i].AtT() < h[j].AtT()
 }
 
-func (h *samplesIteratorHeap) Push(x interface{}) {
+func (h *samplesIteratorHeap) Push(x any) {
 	*h = append(*h, x.(chunkenc.Iterator))
 }
 
-func (h *samplesIteratorHeap) Pop() interface{} {
+func (h *samplesIteratorHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]
@@ -824,12 +828,12 @@ func (c *compactChunkIterator) Next() bool {
 }
 
 func (c *compactChunkIterator) Err() error {
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, iter := range c.iterators {
-		errs.Add(iter.Err())
+		errs = append(errs, iter.Err())
 	}
-	errs.Add(c.err)
-	return errs.Err()
+	errs = append(errs, c.err)
+	return errors.Join(errs...)
 }
 
 type chunkIteratorHeap []chunks.Iterator
@@ -846,11 +850,11 @@ func (h chunkIteratorHeap) Less(i, j int) bool {
 	return at.MinTime < bt.MinTime
 }
 
-func (h *chunkIteratorHeap) Push(x interface{}) {
+func (h *chunkIteratorHeap) Push(x any) {
 	*h = append(*h, x.(chunks.Iterator))
 }
 
-func (h *chunkIteratorHeap) Pop() interface{} {
+func (h *chunkIteratorHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]
@@ -907,9 +911,9 @@ func (c *concatenatingChunkIterator) Next() bool {
 }
 
 func (c *concatenatingChunkIterator) Err() error {
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	for _, iter := range c.iterators {
-		errs.Add(iter.Err())
+		errs = append(errs, iter.Err())
 	}
-	return errs.Err()
+	return errors.Join(errs...)
 }

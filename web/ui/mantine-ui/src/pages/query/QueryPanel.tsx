@@ -7,8 +7,12 @@ import {
   SegmentedControl,
   Stack,
   Skeleton,
+  ActionIcon,
+  Popover,
+  Checkbox,
 } from "@mantine/core";
 import {
+  IconAdjustmentsHorizontal,
   IconChartAreaFilled,
   IconChartLine,
   IconGraph,
@@ -19,6 +23,7 @@ import { FC, Suspense, useCallback, useMemo, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../state/hooks";
 import {
   addQueryToHistory,
+  duplicatePanel,
   GraphDisplayMode,
   GraphResolution,
   removePanel,
@@ -37,6 +42,7 @@ import ErrorBoundary from "../../components/ErrorBoundary";
 import ASTNode from "../../promql/ast";
 import serializeNode from "../../promql/serialize";
 import ExplainView from "./ExplainViews/ExplainView";
+import { actionIconStyle } from "../../styles";
 
 export interface PanelProps {
   idx: number;
@@ -105,6 +111,9 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
           if (!showTree) {
             setSelectedNode(null);
           }
+        }}
+        duplicatePanel={(expr: string) => {
+          dispatch(duplicatePanel({ idx, expr }));
         }}
         removePanel={() => {
           dispatch(removePanel(idx));
@@ -290,6 +299,39 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                   // },
                 ]}
               />
+              <Popover position="bottom" withArrow shadow="md">
+                <Popover.Target>
+                  <ActionIcon
+                    variant="light"
+                    color="gray"
+                    size={32}
+                    title="Graph settings"
+                  >
+                    <IconAdjustmentsHorizontal
+                      style={actionIconStyle}
+                      stroke={1.5}
+                    />
+                  </ActionIcon>
+                </Popover.Target>
+                <Popover.Dropdown p="lg">
+                  <Checkbox
+                    size="xs"
+                    checked={panel.visualizer.yAxisMin !== null}
+                    label="Start Y axis at 0"
+                    onChange={(event) =>
+                      dispatch(
+                        setVisualizer({
+                          idx,
+                          visualizer: {
+                            ...panel.visualizer,
+                            yAxisMin: event.currentTarget.checked ? 0 : null,
+                          },
+                        })
+                      )
+                    }
+                  />
+                </Popover.Dropdown>
+              </Popover>
             </Group>
           </Group>
           <Space h="lg" />
@@ -301,6 +343,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
             resolution={panel.visualizer.resolution}
             showExemplars={panel.visualizer.showExemplars}
             displayMode={panel.visualizer.displayMode}
+            yAxisMin={panel.visualizer.yAxisMin}
             retriggerIdx={retriggerIdx}
             onSelectRange={onSelectRange}
           />

@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -84,7 +84,18 @@ func relabelAlerts(relabelConfigs []*relabel.Config, externalLabels labels.Label
 		if !keep {
 			continue
 		}
-		a.Labels = lb.Labels()
+
+		// If relabeling has altered the labels, create a new Alert to preserve immutability.
+		if !labels.Equal(a.Labels, lb.Labels()) {
+			a = &Alert{
+				Labels:       lb.Labels(),
+				Annotations:  a.Annotations,
+				StartsAt:     a.StartsAt,
+				EndsAt:       a.EndsAt,
+				GeneratorURL: a.GeneratorURL,
+			}
+		}
+
 		relabeledAlerts = append(relabeledAlerts, a)
 	}
 	return relabeledAlerts

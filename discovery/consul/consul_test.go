@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -437,8 +437,8 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 }
 
 func TestUnmarshalConfig(t *testing.T) {
-	unmarshal := func(d []byte) func(interface{}) error {
-		return func(o interface{}) error {
+	unmarshal := func(d []byte) func(any) error {
+		return func(o any) error {
 			return yaml.Unmarshal(d, o)
 		}
 	}

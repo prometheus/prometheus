@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -63,8 +63,10 @@ type Storage struct {
 	localStartTimeCallback startTimeCallback
 }
 
+var _ storage.Storage = &Storage{}
+
 // NewStorage returns a remote.Storage.
-func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *Storage {
+func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *Storage {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -76,7 +78,7 @@ func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeC
 		deduper:                deduper,
 		localStartTimeCallback: stCallback,
 	}
-	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm)
+	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, enableTypeAndUnitLabels)
 	return s
 }
 
@@ -145,7 +147,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 }
 
 // StartTime implements the Storage interface.
-func (s *Storage) StartTime() (int64, error) {
+func (*Storage) StartTime() (int64, error) {
 	return int64(model.Latest), nil
 }
 
@@ -193,6 +195,11 @@ func (s *Storage) Appender(ctx context.Context) storage.Appender {
 	return s.rws.Appender(ctx)
 }
 
+// AppenderV2 implements storage.Storage.
+func (s *Storage) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return s.rws.AppenderV2(ctx)
+}
+
 // LowestSentTimestamp returns the lowest sent timestamp across all queues.
 func (s *Storage) LowestSentTimestamp() int64 {
 	return s.rws.LowestSentTimestamp()
@@ -219,7 +226,7 @@ func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
 }
 
 // Used for hashing configs and diff'ing hashes in ApplyConfig.
-func toHash(data interface{}) (string, error) {
+func toHash(data any) (string, error) {
 	bytes, err := yaml.Marshal(data)
 	if err != nil {
 		return "", err

@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,6 +14,8 @@
 package discovery
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -21,8 +23,9 @@ import (
 // We define them here in the "discovery" package in order to avoid a cyclic dependency between
 // "discovery" and "refresh".
 type RefreshMetricsVecs struct {
-	failuresVec *prometheus.CounterVec
-	durationVec *prometheus.SummaryVec
+	failuresVec     *prometheus.CounterVec
+	durationVec     *prometheus.SummaryVec
+	durationHistVec *prometheus.HistogramVec
 
 	metricRegisterer MetricRegisterer
 }
@@ -36,12 +39,22 @@ func NewRefreshMetrics(reg prometheus.Registerer) RefreshMetricsManager {
 				Name: "prometheus_sd_refresh_failures_total",
 				Help: "Number of refresh failures for the given SD mechanism.",
 			},
-			[]string{"mechanism"}),
+			[]string{"mechanism", "config"}),
 		durationVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
 				Name:       "prometheus_sd_refresh_duration_seconds",
 				Help:       "The duration of a refresh in seconds for the given SD mechanism.",
 				Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+			},
+			[]string{"mechanism", "config"}),
+		durationHistVec: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:                            "prometheus_sd_refresh_duration_histogram_seconds",
+				Help:                            "The duration of a refresh for the given SD mechanism.",
+				Buckets:                         []float64{.01, .1, 1, 10},
+				NativeHistogramBucketFactor:     1.1,
+				NativeHistogramMaxBucketNumber:  100,
+				NativeHistogramMinResetDuration: 1 * time.Hour,
 			},
 			[]string{"mechanism"}),
 	}
@@ -51,16 +64,18 @@ func NewRefreshMetrics(reg prometheus.Registerer) RefreshMetricsManager {
 	m.metricRegisterer = NewMetricRegisterer(reg, []prometheus.Collector{
 		m.failuresVec,
 		m.durationVec,
+		m.durationHistVec,
 	})
 
 	return m
 }
 
-// Instantiate returns metrics out of metric vectors.
-func (m *RefreshMetricsVecs) Instantiate(mech string) *RefreshMetrics {
+// Instantiate returns metrics out of metric vectors for a given mechanism and config.
+func (m *RefreshMetricsVecs) Instantiate(mech, config string) *RefreshMetrics {
 	return &RefreshMetrics{
-		Failures: m.failuresVec.WithLabelValues(mech),
-		Duration: m.durationVec.WithLabelValues(mech),
+		Failures:          m.failuresVec.WithLabelValues(mech, config),
+		Duration:          m.durationVec.WithLabelValues(mech, config),
+		DurationHistogram: m.durationHistVec.WithLabelValues(mech),
 	}
 }
 

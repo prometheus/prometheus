@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { analyzeCompletion, computeStartCompletePosition, ContextKind } from './hybrid';
+import { analyzeCompletion, computeStartCompletePosition, computeEndCompletePosition, ContextKind, durationWithUnitRegexp } from './hybrid';
 import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../test/utils-test';
 import { Completion, CompletionContext } from '@codemirror/autocomplete';
 import {
@@ -29,6 +29,7 @@ import {
 import { EqlSingle, Neq } from '@prometheus-io/lezer-promql';
 import { syntaxTree } from '@codemirror/language';
 import { newCompleteStrategy } from './index';
+import nock from 'nock';
 
 describe('analyzeCompletion test', () => {
   const testCases = [
@@ -300,6 +301,12 @@ describe('analyzeCompletion test', () => {
       expectedContext: [{ kind: ContextKind.LabelName, metricName: 'metric_name' }],
     },
     {
+      title: 'no label suggestions after closing matcher',
+      expr: 'up{job="prometheus"}',
+      pos: 20, // cursor is right after the closing curly bracket
+      expectedContext: [],
+    },
+    {
       title: 'continue autocomplete labelName that defined a metric',
       expr: '{myL}',
       pos: 4, // cursor is between the bracket after the string myL
@@ -554,6 +561,18 @@ describe('analyzeCompletion test', () => {
       expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
+      title: 'do not autocomplete duration when unit already present in matrixSelector',
+      expr: 'rate(foo[5m])',
+      pos: 10,
+      expectedContext: [],
+    },
+    {
+      title: 'do not autocomplete duration when multi char unit already present in matrixSelector',
+      expr: 'rate(foo[5ms])',
+      pos: 10,
+      expectedContext: [],
+    },
+    {
       title: 'autocomplete duration for a subQuery',
       expr: 'go[5d:5]',
       pos: 7,
@@ -619,7 +638,43 @@ describe('analyzeCompletion test', () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
       const result = analyzeCompletion(state, node, value.pos);
-      expect(value.expectedContext).toEqual(result);
+      expect(result).toEqual(value.expectedContext);
+    });
+  });
+});
+
+describe('durationWithUnitRegexp test', () => {
+  it('should match complete durations with units', () => {
+    const testCases = [
+      { input: '5m', expected: true },
+      { input: '30s', expected: true },
+      { input: '1h', expected: true },
+      { input: '500ms', expected: true },
+      { input: '2d', expected: true },
+      { input: '1w', expected: true },
+      { input: '1y', expected: true },
+      { input: '1d2h', expected: true },
+      { input: '2h30m', expected: true },
+      { input: '1h2m3s', expected: true },
+      { input: '250ms2s', expected: true },
+      { input: '2h3m4s5ms', expected: true },
+      { input: '5', expected: false },
+      { input: '5m5', expected: false },
+      { input: 'm', expected: false },
+      { input: 'd', expected: false },
+      { input: '', expected: false },
+      { input: '1hms', expected: false },
+      { input: '2x', expected: false },
+    ];
+    testCases.forEach(({ input, expected }) => {
+      expect(durationWithUnitRegexp.test(input)).toBe(expected);
+    });
+  });
+
+  it('should not match durations without units or partial units', () => {
+    const testCases = ['5', '30', '100', '5m5', 'm', 'd'];
+    testCases.forEach((input) => {
+      expect(durationWithUnitRegexp.test(input)).toBe(false);
     });
   });
 });
@@ -806,7 +861,146 @@ describe('computeStartCompletePosition test', () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
       const result = computeStartCompletePosition(state, node, value.pos);
-      expect(value.expectedStart).toEqual(result);
+      expect(result).toEqual(value.expectedStart);
+    });
+  });
+});
+
+describe('computeEndCompletePosition test', () => {
+  const testCases = [
+    {
+      title: 'cursor at end of metric name',
+      expr: 'metric_name',
+      pos: 11, // cursor is at the end
+      expectedEnd: 11,
+    },
+    {
+      title: 'cursor in middle of metric name - should extend to end',
+      expr: 'coredns_cache_hits_total',
+      pos: 14, // cursor is after 'coredns_cache_' (before 'hits')
+      expectedEnd: 24, // should extend to end of 'coredns_cache_hits_total'
+    },
+    {
+      title: 'cursor in middle of metric name inside rate() - should extend to end',
+      expr: 'rate(coredns_cache_hits_total[2m])',
+      pos: 19, // cursor is after 'coredns_cache_' (before 'hits')
+      expectedEnd: 29, // should extend to end of 'coredns_cache_hits_total'
+    },
+    {
+      title: 'cursor in middle of metric name inside sum(rate()) - should extend to end',
+      expr: 'sum(rate(coredns_cache_hits_total[2m]))',
+      pos: 24, // cursor is after 'coredns_cache_' (before 'hits')
+      expectedEnd: 33, // should extend to end of 'coredns_cache_hits_total'
+    },
+    {
+      title: 'cursor at beginning of metric name - should extend to end',
+      expr: 'metric_name',
+      pos: 1, // cursor after 'm'
+      expectedEnd: 11,
+    },
+    {
+      title: 'cursor in middle of incomplete function name - should extend to end',
+      expr: 'sum_ov',
+      pos: 4, // cursor after 'sum_' (before 'ov')
+      expectedEnd: 6, // should extend to end of 'sum_ov'
+    },
+    {
+      title: 'cursor in middle of incomplete function name within aggregator - should extend to end',
+      expr: 'sum(sum_ov(foo[5m]))',
+      pos: 8, // cursor after 'sum_' (before 'ov')
+      expectedEnd: 10, // should extend to end of 'sum_ov'
+    },
+    {
+      title: 'empty bracket - ends before the closing bracket',
+      expr: '{}',
+      pos: 1,
+      expectedEnd: 1,
+    },
+    {
+      title: 'cursor in label matchers - ends before the closing bracket',
+      expr: 'metric_name{label="value"}',
+      pos: 12, // cursor after '{'
+      expectedEnd: 25,
+    },
+    {
+      title: 'cursor in middle of label name in grouping clause - should extend to end',
+      expr: 'sum by (instance_name)',
+      pos: 12, // cursor after 'inst' (before 'ance')
+      expectedEnd: 21, // should extend to end of 'instance_name'
+    },
+    {
+      title: 'cursor in middle of label name in label matcher - should extend to end',
+      expr: 'metric{instance_name="value"}',
+      pos: 11, // cursor after 'inst' (before 'ance')
+      expectedEnd: 20, // should extend to end of 'instance_name'
+    },
+    {
+      title: 'cursor in middle of label name in on() modifier - should extend to end',
+      expr: 'a / on(instance_name) b',
+      pos: 11, // cursor after 'inst' (before 'ance')
+      expectedEnd: 20, // should extend to end of 'instance_name'
+    },
+    {
+      title: 'cursor in middle of label name in ignoring() modifier - should extend to end',
+      expr: 'a / ignoring(instance_name) b',
+      pos: 17, // cursor after 'inst' (before 'ance')
+      expectedEnd: 26, // should extend to end of 'instance_name'
+    },
+    {
+      title: 'cursor in middle of function name rate - should extend to end',
+      expr: 'rate(foo[5m])',
+      pos: 2, // cursor after 'ra' (before 'te')
+      expectedEnd: 4, // should extend to end of 'rate'
+    },
+    {
+      title: 'cursor in middle of function name histogram_quantile - should extend to end',
+      expr: 'histogram_quantile(0.9, rate(foo[5m]))',
+      pos: 10, // cursor after 'histogram_' (before 'quantile')
+      expectedEnd: 18, // should extend to end of 'histogram_quantile'
+    },
+    {
+      title: 'cursor in middle of aggregator sum - should extend to end',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 2, // cursor after 'su' (before 'm')
+      expectedEnd: 3, // should extend to end of 'sum'
+    },
+    {
+      title: 'cursor in middle of aggregator count_values - should extend to end',
+      expr: 'count_values("label", foo)',
+      pos: 6, // cursor after 'count_' (before 'values')
+      expectedEnd: 12, // should extend to end of 'count_values'
+    },
+    {
+      title: 'cursor in middle of nested function - should extend to end',
+      expr: 'sum(rate(foo[5m]))',
+      pos: 6, // cursor after 'ra' inside rate (before 'te')
+      expectedEnd: 8, // should extend to end of 'rate'
+    },
+    {
+      title: 'cursor at beginning of aggregator - should extend to end',
+      expr: 'avg by (instance) (rate(foo[5m]))',
+      pos: 1, // cursor after 'a' (before 'vg')
+      expectedEnd: 3, // should extend to end of 'avg'
+    },
+    {
+      title: 'cursor in middle of function name with binary op - should extend to end',
+      expr: 'rate(foo[5m]) / irate(bar[5m])',
+      pos: 17, // cursor after 'ir' inside irate (before 'ate')
+      expectedEnd: 21, // should extend to end of 'irate'
+    },
+    {
+      title: 'error node - returns pos (cursor position)',
+      expr: 'metric_name !',
+      pos: 13, // cursor at '!' (error node)
+      expectedEnd: 13, // error node returns pos
+    },
+  ];
+  testCases.forEach((value) => {
+    it(value.title, () => {
+      const state = createEditorState(value.expr);
+      const node = syntaxTree(state).resolve(value.pos, -1);
+      const result = computeEndCompletePosition(node, value.pos);
+      expect(result).toEqual(value.expectedEnd);
     });
   });
 });
@@ -857,6 +1051,28 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
         from: 4,
         to: 6,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'cursor in middle of metric name - to should extend to end (issue #15839)',
+      expr: 'sum(coredns_cache_hits_total)',
+      pos: 18, // cursor is after 'coredns_cache_' (before 'hits')
+      expectedResult: {
+        options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
+        from: 4,
+        to: 28, // should extend to end of 'coredns_cache_hits_total'
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'cursor in middle of metric name inside rate() - to should extend to end (issue #15839)',
+      expr: 'rate(coredns_cache_hits_total[2m])',
+      pos: 19, // cursor is after 'coredns_cache_' (before 'hits')
+      expectedResult: {
+        options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
+        from: 5,
+        to: 29, // should extend to end of 'coredns_cache_hits_total'
         validFor: /^[a-zA-Z0-9_:]+$/,
       },
     },
@@ -1224,6 +1440,28 @@ describe('autocomplete promQL test', () => {
       },
     },
     {
+      title: 'offline do not autocomplete duration when unit already present in matrixSelector',
+      expr: 'rate(foo[5m])',
+      pos: 10,
+      expectedResult: {
+        options: [],
+        from: 10,
+        to: 11,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'offline do not autocomplete duration when multi char unit already present in matrixSelector',
+      expr: 'rate(foo[5ms])',
+      pos: 10,
+      expectedResult: {
+        options: [],
+        from: 10,
+        to: 12,
+        validFor: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
       title: 'offline autocomplete duration for a subQuery',
       expr: 'go[5d:5]',
       pos: 7,
@@ -1374,7 +1612,39 @@ describe('autocomplete promQL test', () => {
       const context = new CompletionContext(state, value.pos, true);
       const completion = newCompleteStrategy(value.conf);
       const result = await completion.promQL(context);
-      expect(value.expectedResult).toEqual(result);
+      expect(result).toEqual(value.expectedResult);
     });
+  });
+
+  it('online autocomplete of openmetrics counter', async () => {
+    const metricName = 'direct_notifications_total';
+    const baseMetricName = 'direct_notifications';
+    nock('http://localhost:8080')
+      .get('/api/v1/label/__name__/values')
+      .query(true)
+      .reply(200, { status: 'success', data: [metricName] });
+    nock('http://localhost:8080')
+      .get('/api/v1/metadata')
+      .query(true)
+      .reply(200, {
+        status: 'success',
+        data: {
+          [baseMetricName]: [
+            {
+              type: 'counter',
+              help: 'Number of direct notifications.',
+              unit: '',
+            },
+          ],
+        },
+      });
+    const state = createEditorState(metricName);
+    const context = new CompletionContext(state, metricName.length, true);
+    const completion = newCompleteStrategy({ remote: { url: 'http://localhost:8080' } });
+    const result = await completion.promQL(context);
+    // nock only mocks the HTTP endpoints; this test just ensures remote completion works
+    // when metadata for an OpenMetrics _total counter is stored under its base metric name.
+    expect(result).not.toBeNull();
+    expect((result as NonNullable<typeof result>).options.length).toBeGreaterThan(0);
   });
 });

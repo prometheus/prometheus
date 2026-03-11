@@ -125,6 +125,7 @@ export const useSuspenseAPIQuery = <T>({ key, path, params }: QueryOptions) => {
     queryKey: key !== undefined ? key : [path, params],
     retry: false,
     refetchOnWindowFocus: false,
+    staleTime: Infinity, // Required for suspense queries since the component is briefly unmounted when loading the data, which together with a gcTime of 0 will cause the data to be garbage collected before it can be used.
     gcTime: 0,
     queryFn: createQueryFn({ pathPrefix, path, params }),
   });

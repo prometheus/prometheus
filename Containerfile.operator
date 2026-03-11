@@ -10,9 +10,9 @@ RUN cd promu && go build -mod=mod -o /cachi2/output/deps/gomod/bin/promu
 
 WORKDIR /workspace
 # adding the cgo flag here to not break the architecture CI builds
-RUN go mod vendor && \
+RUN GOWORK=off go mod vendor && \
   export PREBUILT_ASSETS_STATIC_DIR=web/ui && \
-  /cachi2/output/deps/gomod/bin/promu build -v --cgo --prefix ./
+  GOWORK=off /cachi2/output/deps/gomod/bin/promu build -v --cgo --prefix ./
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 

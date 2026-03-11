@@ -1,4 +1,4 @@
-// Copyright 2014 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,6 +19,24 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestAppendPartialErrorToError(t *testing.T) {
+	// nil receiver returns nil.
+	var nilErr *AppendPartialError
+	require.NoError(t, nilErr.ToError())
+
+	// Empty ExemplarErrors returns nil.
+	emptyErr := &AppendPartialError{}
+	require.NoError(t, emptyErr.ToError())
+
+	// Also test explicitly empty slice.
+	emptySliceErr := &AppendPartialError{ExemplarErrors: []error{}}
+	require.NoError(t, emptySliceErr.ToError())
+
+	// Non-empty ExemplarErrors returns the error.
+	nonEmptyErr := &AppendPartialError{ExemplarErrors: []error{ErrOutOfOrderExemplar}}
+	require.ErrorIs(t, nonEmptyErr.ToError(), nonEmptyErr)
+}
 
 func TestErrDuplicateSampleForTimestamp(t *testing.T) {
 	// All errDuplicateSampleForTimestamp are ErrDuplicateSampleForTimestamp

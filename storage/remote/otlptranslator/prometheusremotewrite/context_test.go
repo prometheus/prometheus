@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -26,12 +26,12 @@ func TestEveryNTimes(t *testing.T) {
 		n: n,
 	}
 
-	for i := 0; i < n; i++ {
+	for range n {
 		require.NoError(t, e.checkContext(ctx))
 	}
 
 	cancel()
-	for i := 0; i < n-1; i++ {
+	for range n - 1 {
 		require.NoError(t, e.checkContext(ctx))
 	}
 	require.EqualError(t, e.checkContext(ctx), context.Canceled.Error())

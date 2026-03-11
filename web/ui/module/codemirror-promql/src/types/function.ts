@@ -38,6 +38,7 @@ import {
   Delta,
   Deriv,
   Exp,
+  FirstOverTime,
   Floor,
   HistogramAvg,
   HistogramCount,
@@ -61,6 +62,7 @@ import {
   MadOverTime,
   MaxOverTime,
   MinOverTime,
+  TsOfFirstOverTime,
   TsOfMaxOverTime,
   TsOfMinOverTime,
   TsOfLastOverTime,
@@ -268,6 +270,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     variadic: 0,
     returnType: ValueType.vector,
   },
+  [FirstOverTime]: {
+    name: 'first_over_time',
+    argTypes: [ValueType.matrix],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
   [Floor]: {
     name: 'floor',
     argTypes: [ValueType.vector],
@@ -402,6 +410,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [MinOverTime]: {
     name: 'min_over_time',
+    argTypes: [ValueType.matrix],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [TsOfFirstOverTime]: {
+    name: 'ts_of_first_over_time',
     argTypes: [ValueType.matrix],
     variadic: 0,
     returnType: ValueType.vector,

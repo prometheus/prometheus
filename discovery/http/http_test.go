@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -49,7 +49,12 @@ func TestHTTPValidRefresh(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:            promslog.NewNopLogger(),
+		HTTPClientOptions: nil,
+		Metrics:           metrics,
+		SetName:           "http",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -94,7 +99,12 @@ func TestHTTPInvalidCode(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:            promslog.NewNopLogger(),
+		HTTPClientOptions: nil,
+		Metrics:           metrics,
+		SetName:           "http",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -123,7 +133,12 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:            promslog.NewNopLogger(),
+		HTTPClientOptions: nil,
+		Metrics:           metrics,
+		SetName:           "http",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -442,7 +457,12 @@ func TestSourceDisappeared(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, promslog.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:            promslog.NewNopLogger(),
+		HTTPClientOptions: nil,
+		Metrics:           metrics,
+		SetName:           "http",
+	})
 	require.NoError(t, err)
 	for _, test := range cases {
 		ctx := context.Background()

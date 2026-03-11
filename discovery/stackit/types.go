@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,14 +20,14 @@ type ServerListResponse struct {
 }
 
 type Server struct {
-	AvailabilityZone string                 `json:"availabilityZone"`
-	ID               string                 `json:"id"`
-	Labels           map[string]interface{} `json:"labels"`
-	MachineType      string                 `json:"machineType"`
-	Name             string                 `json:"name"`
-	Nics             []ServerNetwork        `json:"nics"`
-	PowerStatus      string                 `json:"powerStatus"`
-	Status           string                 `json:"status"`
+	AvailabilityZone string          `json:"availabilityZone"`
+	ID               string          `json:"id"`
+	Labels           map[string]any  `json:"labels"`
+	MachineType      string          `json:"machineType"`
+	Name             string          `json:"name"`
+	Nics             []ServerNetwork `json:"nics"`
+	PowerStatus      string          `json:"powerStatus"`
+	Status           string          `json:"status"`
 }
 
 // ServerNetwork Describes the object that matches servers to its networks.

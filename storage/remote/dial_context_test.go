@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -151,7 +151,7 @@ func TestDialContextWithRandomConnections(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dc := tc.setup()
 			require.NotNil(t, dc)
-			for i := 0; i < numberOfRuns; i++ {
+			for range numberOfRuns {
 				_, err := dc.dialContextFn()(context.Background(), testNetwork, tc.addr)
 				require.NoError(t, err)
 			}

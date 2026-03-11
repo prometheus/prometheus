@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,30 +20,22 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	deltatocumulative "github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
-	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/consumer"
-	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.opentelemetry.io/collector/processor"
-	"go.opentelemetry.io/otel/metric/noop"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/storage"
-	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
-	"github.com/prometheus/prometheus/util/compression"
 )
 
 type writeHandler struct {
@@ -53,27 +45,22 @@ type writeHandler struct {
 	samplesWithInvalidLabelsTotal  prometheus.Counter
 	samplesAppendedWithoutMetadata prometheus.Counter
 
-	acceptedProtoMsgs map[config.RemoteWriteProtoMsg]struct{}
-
-	ingestCTZeroSample bool
+	ingestSTZeroSample      bool
+	enableTypeAndUnitLabels bool
+	appendMetadata          bool
 }
 
 const maxAheadTime = 10 * time.Minute
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
-// the given message in acceptedProtoMsgs and writes them to the provided appendable.
+// the given message in acceptedMsgs and writes them to the provided appendable.
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedProtoMsgs []config.RemoteWriteProtoMsg, ingestCTZeroSample bool) http.Handler {
-	protoMsgs := map[config.RemoteWriteProtoMsg]struct{}{}
-	for _, acc := range acceptedProtoMsgs {
-		protoMsgs[acc] = struct{}{}
-	}
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
 	h := &writeHandler{
-		logger:            logger,
-		appendable:        appendable,
-		acceptedProtoMsgs: protoMsgs,
+		logger:     logger,
+		appendable: appendable,
 		samplesWithInvalidLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
 			Subsystem: "api",
@@ -87,139 +74,76 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 			Help:      "The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.",
 		}),
 
-		ingestCTZeroSample: ingestCTZeroSample,
+		ingestSTZeroSample:      ingestSTZeroSample,
+		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		appendMetadata:          appendMetadata,
 	}
-	return h
+	return remoteapi.NewWriteHandler(h, acceptedMsgs, remoteapi.WithWriteHandlerLogger(logger))
 }
 
-func (h *writeHandler) parseProtoMsg(contentType string) (config.RemoteWriteProtoMsg, error) {
-	contentType = strings.TrimSpace(contentType)
-
-	parts := strings.Split(contentType, ";")
-	if parts[0] != appProtoContentType {
-		return "", fmt.Errorf("expected %v as the first (media) part, got %v content-type", appProtoContentType, contentType)
-	}
-	// Parse potential https://www.rfc-editor.org/rfc/rfc9110#parameter
-	for _, p := range parts[1:] {
-		pair := strings.Split(p, "=")
-		if len(pair) != 2 {
-			return "", fmt.Errorf("as per https://www.rfc-editor.org/rfc/rfc9110#parameter expected parameters to be key-values, got %v in %v content-type", p, contentType)
-		}
-		if pair[0] == "proto" {
-			ret := config.RemoteWriteProtoMsg(pair[1])
-			if err := ret.Validate(); err != nil {
-				return "", fmt.Errorf("got %v content type; %w", contentType, err)
-			}
-			return ret, nil
-		}
-	}
-	// No "proto=" parameter, assuming v1.
-	return config.RemoteWriteProtoMsgV1, nil
+// isHistogramValidationError checks if the error is a native histogram validation error.
+func isHistogramValidationError(err error) bool {
+	var e histogram.Error
+	return errors.As(err, &e)
 }
 
-func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	contentType := r.Header.Get("Content-Type")
-	if contentType == "" {
-		// Don't break yolo 1.0 clients if not needed. This is similar to what we did
-		// before 2.0: https://github.com/prometheus/prometheus/blob/d78253319daa62c8f28ed47e40bafcad2dd8b586/storage/remote/write_handler.go#L62
-		// We could give http.StatusUnsupportedMediaType, but let's assume 1.0 message by default.
-		contentType = appProtoContentType
-	}
-
-	msgType, err := h.parseProtoMsg(contentType)
-	if err != nil {
-		h.logger.Error("Error decoding remote write request", "err", err)
-		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
-		return
-	}
-
-	if _, ok := h.acceptedProtoMsgs[msgType]; !ok {
-		err := fmt.Errorf("%v protobuf message is not accepted by this server; accepted %v", msgType, func() (ret []string) {
-			for k := range h.acceptedProtoMsgs {
-				ret = append(ret, string(k))
-			}
-			return ret
-		}())
-		h.logger.Error("Error decoding remote write request", "err", err)
-		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
-	}
-
-	enc := r.Header.Get("Content-Encoding")
-	if enc == "" {
-		// Don't break yolo 1.0 clients if not needed. This is similar to what we did
-		// before 2.0: https://github.com/prometheus/prometheus/blob/d78253319daa62c8f28ed47e40bafcad2dd8b586/storage/remote/write_handler.go#L62
-		// We could give http.StatusUnsupportedMediaType, but let's assume snappy by default.
-	} else if strings.ToLower(enc) != compression.Snappy {
-		err := fmt.Errorf("%v encoding (compression) is not accepted by this server; only %v is acceptable", enc, compression.Snappy)
-		h.logger.Error("Error decoding remote write request", "err", err)
-		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
-	}
-
-	// Read the request body.
+// Store implements remoteapi.writeStorage interface.
+// TODO(bwplotka): Improve remoteapi.Store API. Right now it's confusing if PRWv1 flows should use WriteResponse or not.
+// If it's not filled, it will be "confirmed zero" which caused partial error reporting on client side in the past.
+// Temporary fix was done to only care about WriteResponse stats for PRW2 (see https://github.com/prometheus/client_golang/pull/1927
+// but better approach would be to only confirm if explicit stats were injected.
+func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType) (*remoteapi.WriteResponse, error) {
+	// Store receives request with decompressed content in body.
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.logger.Error("Error decoding remote write request", "err", err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		h.logger.Error("Error reading remote write request body", "err", err.Error())
+		return nil, err
 	}
 
-	decompressed, err := compression.Decode(compression.Snappy, body, nil)
-	if err != nil {
-		// TODO(bwplotka): Add more context to responded error?
-		h.logger.Error("Error decompressing remote write request", "err", err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Now we have a decompressed buffer we can unmarshal it.
-
-	if msgType == config.RemoteWriteProtoMsgV1 {
+	wr := remoteapi.NewWriteResponse()
+	if msgType == remoteapi.WriteV1MessageType {
 		// PRW 1.0 flow has different proto message and no partial write handling.
 		var req prompb.WriteRequest
-		if err := proto.Unmarshal(decompressed, &req); err != nil {
+		if err := proto.Unmarshal(body, &req); err != nil {
 			// TODO(bwplotka): Add more context to responded error?
 			h.logger.Error("Error decoding v1 remote write request", "protobuf_message", msgType, "err", err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+			wr.SetStatusCode(http.StatusBadRequest)
+			return wr, err
 		}
 		if err = h.write(r.Context(), &req); err != nil {
 			switch {
 			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
 				// Indicated an out-of-order sample is a bad request to prevent retries.
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
+				wr.SetStatusCode(http.StatusBadRequest)
+				return wr, err
+			case isHistogramValidationError(err):
+				wr.SetStatusCode(http.StatusBadRequest)
+				return wr, err
 			default:
-				h.logger.Error("Error while remote writing the v1 request", "err", err.Error())
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
+				wr.SetStatusCode(http.StatusInternalServerError)
+				return wr, err
 			}
 		}
-		w.WriteHeader(http.StatusNoContent)
-		return
+		return wr, nil
 	}
 
 	// Remote Write 2.x proto message handling.
 	var req writev2.Request
-	if err := proto.Unmarshal(decompressed, &req); err != nil {
+	if err := proto.Unmarshal(body, &req); err != nil {
 		// TODO(bwplotka): Add more context to responded error?
 		h.logger.Error("Error decoding v2 remote write request", "protobuf_message", msgType, "err", err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		wr.SetStatusCode(http.StatusBadRequest)
+		return wr, err
 	}
 
 	respStats, errHTTPCode, err := h.writeV2(r.Context(), &req)
-
-	// Set required X-Prometheus-Remote-Write-Written-* response headers, in all cases.
-	respStats.SetHeaders(w)
-
+	// Add stats required X-Prometheus-Remote-Write-Written-* response headers.
+	wr.Add(respStats)
 	if err != nil {
-		if errHTTPCode/5 == 100 { // 5xx
-			h.logger.Error("Error while remote writing the v2 request", "err", err.Error())
-		}
-		http.Error(w, err.Error(), errHTTPCode)
-		return
+		wr.SetStatusCode(errHTTPCode)
+		return wr, err
 	}
-	w.WriteHeader(http.StatusNoContent)
+	return wr, nil
 }
 
 func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
@@ -227,7 +151,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	samplesWithInvalidLabels := 0
 	samplesAppended := 0
 
-	app := &timeLimitAppender{
+	app := &remoteWriteAppender{
 		Appender: h.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
@@ -341,13 +265,13 @@ func (h *writeHandler) appendV1Histograms(app storage.Appender, hh []prompb.Hist
 //
 // NOTE(bwplotka): TSDB storage is NOT idempotent, so we don't allow "partial retry-able" errors.
 // Once we have 5xx type of error, we immediately stop and rollback all appends.
-func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ WriteResponseStats, errHTTPCode int, _ error) {
-	app := &timeLimitAppender{
+func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ remoteapi.WriteResponseStats, errHTTPCode int, _ error) {
+	app := &remoteWriteAppender{
 		Appender: h.appendable.Appender(ctx),
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
 	}
 
-	s := WriteResponseStats{}
+	s := remoteapi.WriteResponseStats{}
 	samplesWithoutMetadata, errHTTPCode, err := h.appendV2(app, req, &s)
 	if err != nil {
 		if errHTTPCode/5 == 100 {
@@ -356,14 +280,14 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ Wri
 			if rerr := app.Rollback(); rerr != nil {
 				h.logger.Error("writev2 rollback failed on retry-able error", "err", rerr)
 			}
-			return WriteResponseStats{}, errHTTPCode, err
+			return remoteapi.WriteResponseStats{}, errHTTPCode, err
 		}
 
 		// Non-retriable (e.g. bad request error case). Can be partially written.
 		commitErr := app.Commit()
 		if commitErr != nil {
 			// Bad requests does not matter as we have internal error (retryable).
-			return WriteResponseStats{}, http.StatusInternalServerError, commitErr
+			return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, commitErr
 		}
 		// Bad request error happened, but rest of data (if any) was written.
 		h.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
@@ -372,13 +296,13 @@ func (h *writeHandler) writeV2(ctx context.Context, req *writev2.Request) (_ Wri
 
 	// All good just commit.
 	if err := app.Commit(); err != nil {
-		return WriteResponseStats{}, http.StatusInternalServerError, err
+		return remoteapi.WriteResponseStats{}, http.StatusInternalServerError, err
 	}
 	h.samplesAppendedWithoutMetadata.Add(float64(samplesWithoutMetadata))
 	return s, 0, nil
 }
 
-func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *WriteResponseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
+func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *remoteapi.WriteResponseStats) (samplesWithoutMetadata, errHTTPCode int, err error) {
 	var (
 		badRequestErrs                                   []error
 		outOfOrderExemplarErrs, samplesWithInvalidLabels int
@@ -386,7 +310,28 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 		b = labels.NewScratchBuilder(0)
 	)
 	for _, ts := range req.Timeseries {
-		ls := ts.ToLabels(&b, req.Symbols)
+		ls, err := ts.ToLabels(&b, req.Symbols)
+		if err != nil {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+
+		m := ts.ToMetadata(req.Symbols)
+		if h.enableTypeAndUnitLabels && (m.Type != model.MetricTypeUnknown || m.Unit != "") {
+			slb := labels.NewScratchBuilder(ls.Len() + 2) // +2 for __type__ and __unit__
+			ls.Range(func(l labels.Label) {
+				// Skip __type__ and __unit__ labels if they exist in the incoming labels.
+				// They will be added from metadata to avoid duplicates.
+				if l.Name != model.MetricTypeLabel && l.Name != model.MetricUnitLabel {
+					slb.Add(l.Name, l.Value)
+				}
+			})
+			schema.Metadata{Type: m.Type, Unit: m.Unit}.AddToLabels(&slb)
+			slb.Sort()
+			ls = slb.Labels()
+		}
+
 		// Validate series labels early.
 		// NOTE(bwplotka): While spec allows UTF-8, Prometheus Receiver may impose
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
@@ -400,22 +345,26 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			continue
 		}
 
+		// Validate that the TimeSeries has at least one sample or histogram.
+		if len(ts.Samples) == 0 && len(ts.Histograms) == 0 {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("TimeSeries must contain at least one sample or histogram for series %v", ls.String()))
+			continue
+		}
+
 		allSamplesSoFar := rs.AllSamples()
 		var ref storage.SeriesRef
-
-		// Samples.
-		if h.ingestCTZeroSample && len(ts.Samples) > 0 && ts.Samples[0].Timestamp != 0 && ts.CreatedTimestamp != 0 {
-			// CT only needs to be ingested for the first sample, it will be considered
-			// out of order for the rest.
-			ref, err = app.AppendCTZeroSample(ref, ls, ts.Samples[0].Timestamp, ts.CreatedTimestamp)
-			if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
-				// Even for the first sample OOO is a common scenario because
-				// we can't tell if a CT was already ingested in a previous request.
-				// We ignore the error.
-				h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", ts.Samples[0].Timestamp)
-			}
-		}
 		for _, s := range ts.Samples {
+			if h.ingestSTZeroSample && s.StartTimestamp != 0 && s.Timestamp != 0 {
+				ref, err = app.AppendSTZeroSample(ref, ls, s.Timestamp, s.StartTimestamp)
+				// We treat OOO errors specially as it's a common scenario given:
+				// * We can't tell if ST was already ingested in a previous request.
+				// * We don't check if ST changed for stream of samples (we typically have one though),
+				// as it's checked in the AppendSTZeroSample reliably.
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderST) {
+					h.logger.Debug("Error when appending ST from remote write request", "err", err, "series", ls.String(), "start_timestamp", s.StartTimestamp, "timestamp", s.Timestamp)
+				}
+			}
+
 			ref, err = app.Append(ref, ls, s.GetTimestamp(), s.GetValue())
 			if err == nil {
 				rs.Samples++
@@ -436,15 +385,14 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 
 		// Native Histograms.
 		for _, hp := range ts.Histograms {
-			if h.ingestCTZeroSample && hp.Timestamp != 0 && ts.CreatedTimestamp != 0 {
-				// Differently from samples, we need to handle CT for each histogram instead of just the first one.
-				// This is because histograms and float histograms are stored separately, even if they have the same labels.
-				ref, err = h.handleHistogramZeroSample(app, ref, ls, hp, ts.CreatedTimestamp)
-				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) {
-					// Even for the first sample OOO is a common scenario because
-					// we can't tell if a CT was already ingested in a previous request.
-					// We ignore the error.
-					h.logger.Debug("Error when appending CT in remote write request", "err", err, "series", ls.String(), "created_timestamp", ts.CreatedTimestamp, "timestamp", hp.Timestamp)
+			if h.ingestSTZeroSample && hp.StartTimestamp != 0 && hp.Timestamp != 0 {
+				ref, err = h.handleHistogramZeroSample(app, ref, ls, hp, hp.StartTimestamp)
+				// We treat OOO errors specially as it's a common scenario given:
+				// * We can't tell if ST was already ingested in a previous request.
+				// * We don't check if ST changed for stream of samples (we typically have one though),
+				// as it's checked in the ingestSTZeroSample reliably.
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderST) {
+					h.logger.Debug("Error when appending ST from remote write request", "err", err, "series", ls.String(), "start_timestamp", hp.StartTimestamp, "timestamp", hp.Timestamp)
 				}
 			}
 			if hp.IsFloatHistogram() {
@@ -467,12 +415,21 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
 				continue
 			}
+			if isHistogramValidationError(err) {
+				h.logger.Error("Invalid histogram received", "err", err.Error(), "series", ls.String(), "timestamp", hp.Timestamp)
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("%w for series %v", err, ls.String()))
+				continue
+			}
 			return 0, http.StatusInternalServerError, err
 		}
 
 		// Exemplars.
 		for _, ep := range ts.Exemplars {
-			e := ep.ToExemplar(&b, req.Symbols)
+			e, err := ep.ToExemplar(&b, req.Symbols)
+			if err != nil {
+				badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing exemplar for series %v: %w", ls.String(), err))
+				continue
+			}
 			ref, err = app.AppendExemplar(ref, ls, e)
 			if err == nil {
 				rs.Exemplars++
@@ -490,12 +447,15 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			h.logger.Error("failed to ingest exemplar, emitting error log, but no error for PRW caller", "err", err.Error(), "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
 		}
 
-		m := ts.ToMetadata(req.Symbols)
-		if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
-			h.logger.Debug("error while updating metadata from remote write", "err", err)
-			// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
-			// we don't report remote write error either. We increment metric instead.
-			samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
+		// Only update metadata in WAL if the metadata-wal-records feature is enabled.
+		// Without this feature, metadata is not persisted to WAL.
+		if h.appendMetadata {
+			if _, err = app.UpdateMetadata(ref, ls, m); err != nil {
+				h.logger.Debug("error while updating metadata from remote write", "err", err)
+				// Metadata is attached to each series, so since Prometheus does not reject sample without metadata information,
+				// we don't report remote write error either. We increment metric instead.
+				samplesWithoutMetadata += rs.AllSamples() - allSamplesSoFar
+			}
 		}
 	}
 
@@ -511,185 +471,27 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 	return samplesWithoutMetadata, http.StatusBadRequest, errors.Join(badRequestErrs...)
 }
 
-// handleHistogramZeroSample appends CT as a zero-value sample with CT value as the sample timestamp.
-// It doesn't return errors in case of out of order CT.
-func (h *writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, ct int64) (storage.SeriesRef, error) {
+// handleHistogramZeroSample appends ST as a zero-value sample with st value as the sample timestamp.
+// It doesn't return errors in case of out of order ST.
+func (*writeHandler) handleHistogramZeroSample(app storage.Appender, ref storage.SeriesRef, l labels.Labels, hist writev2.Histogram, st int64) (storage.SeriesRef, error) {
 	var err error
 	if hist.IsFloatHistogram() {
-		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, nil, hist.ToFloatHistogram())
+		ref, err = app.AppendHistogramSTZeroSample(ref, l, hist.Timestamp, st, nil, hist.ToFloatHistogram())
 	} else {
-		ref, err = app.AppendHistogramCTZeroSample(ref, l, hist.Timestamp, ct, hist.ToIntHistogram(), nil)
+		ref, err = app.AppendHistogramSTZeroSample(ref, l, hist.Timestamp, st, hist.ToIntHistogram(), nil)
 	}
 	return ref, err
 }
 
-type OTLPOptions struct {
-	// Convert delta samples to their cumulative equivalent by aggregating in-memory
-	ConvertDelta bool
-	// Store the raw delta samples as metrics with unknown type (we don't have a proper type for delta yet, therefore
-	// marking the metric type as unknown for now).
-	// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
-	NativeDelta bool
-}
-
-// NewOTLPWriteHandler creates a http.Handler that accepts OTLP write requests and
-// writes them to the provided appendable.
-func NewOTLPWriteHandler(logger *slog.Logger, _ prometheus.Registerer, appendable storage.Appendable, configFunc func() config.Config, opts OTLPOptions) http.Handler {
-	if opts.NativeDelta && opts.ConvertDelta {
-		// This should be validated when iterating through feature flags, so not expected to fail here.
-		panic("cannot enable native delta ingestion and delta2cumulative conversion at the same time")
-	}
-
-	ex := &rwExporter{
-		writeHandler: &writeHandler{
-			logger:     logger,
-			appendable: appendable,
-		},
-		config:                configFunc,
-		allowDeltaTemporality: opts.NativeDelta,
-	}
-
-	wh := &otlpWriteHandler{logger: logger, defaultConsumer: ex}
-
-	if opts.ConvertDelta {
-		fac := deltatocumulative.NewFactory()
-		set := processor.Settings{
-			ID:                component.NewID(fac.Type()),
-			TelemetrySettings: component.TelemetrySettings{MeterProvider: noop.NewMeterProvider()},
-		}
-		d2c, err := fac.CreateMetrics(context.Background(), set, fac.CreateDefaultConfig(), wh.defaultConsumer)
-		if err != nil {
-			// fac.CreateMetrics directly calls [deltatocumulativeprocessor.createMetricsProcessor],
-			// which only errors if:
-			//   - cfg.(type) != *Config
-			//   - telemetry.New fails due to bad set.TelemetrySettings
-			//
-			// both cannot be the case, as we pass a valid *Config and valid TelemetrySettings.
-			// as such, we assume this error to never occur.
-			// if it is, our assumptions are broken in which case a panic seems acceptable.
-			panic(fmt.Errorf("failed to create metrics processor: %w", err))
-		}
-		if err := d2c.Start(context.Background(), nil); err != nil {
-			// deltatocumulative does not error on start. see above for panic reasoning
-			panic(err)
-		}
-		wh.d2cConsumer = d2c
-	}
-
-	return wh
-}
-
-type rwExporter struct {
-	*writeHandler
-	config                func() config.Config
-	allowDeltaTemporality bool
-}
-
-func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) error {
-	otlpCfg := rw.config().OTLPConfig
-
-	converter := otlptranslator.NewPrometheusConverter()
-	annots, err := converter.FromMetrics(ctx, md, otlptranslator.Settings{
-		AddMetricSuffixes:                 otlpCfg.TranslationStrategy != config.NoTranslation,
-		AllowUTF8:                         otlpCfg.TranslationStrategy != config.UnderscoreEscapingWithSuffixes,
-		PromoteResourceAttributes:         otlptranslator.NewPromoteResourceAttributes(otlpCfg),
-		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:           otlpCfg.ConvertHistogramsToNHCB,
-		AllowDeltaTemporality:             rw.allowDeltaTemporality,
-	})
-	if err != nil {
-		rw.logger.Warn("Error translating OTLP metrics to Prometheus write request", "err", err)
-	}
-	ws, _ := annots.AsStrings("", 0, 0)
-	if len(ws) > 0 {
-		rw.logger.Warn("Warnings translating OTLP metrics to Prometheus write request", "warnings", ws)
-	}
-
-	err = rw.write(ctx, &prompb.WriteRequest{
-		Timeseries: converter.TimeSeries(),
-		Metadata:   converter.Metadata(),
-	})
-	return err
-}
-
-func (rw *rwExporter) Capabilities() consumer.Capabilities {
-	return consumer.Capabilities{MutatesData: false}
-}
-
-type otlpWriteHandler struct {
-	logger *slog.Logger
-
-	defaultConsumer consumer.Metrics // stores deltas as-is
-	d2cConsumer     consumer.Metrics // converts deltas to cumulative
-}
-
-func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	req, err := DecodeOTLPWriteRequest(r)
-	if err != nil {
-		h.logger.Error("Error decoding OTLP write request", "err", err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	md := req.Metrics()
-	// If deltatocumulative conversion enabled AND delta samples exist, use slower conversion path.
-	// While deltatocumulative can also accept cumulative metrics (and then just forwards them as-is), it currently
-	// holds a sync.Mutex when entering ConsumeMetrics. This is slow and not necessary when ingesting cumulative metrics.
-	if h.d2cConsumer != nil && hasDelta(md) {
-		err = h.d2cConsumer.ConsumeMetrics(r.Context(), md)
-	} else {
-		// Otherwise use default consumer (alongside cumulative samples, this will accept delta samples and write as-is
-		// if native-delta-support is enabled).
-		err = h.defaultConsumer.ConsumeMetrics(r.Context(), md)
-	}
-
-	switch {
-	case err == nil:
-	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
-		// Indicated an out of order sample is a bad request to prevent retries.
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	default:
-		h.logger.Error("Error appending remote write", "err", err.Error())
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
-func hasDelta(md pmetric.Metrics) bool {
-	for i := range md.ResourceMetrics().Len() {
-		sms := md.ResourceMetrics().At(i).ScopeMetrics()
-		for i := range sms.Len() {
-			ms := sms.At(i).Metrics()
-			for i := range ms.Len() {
-				temporality := pmetric.AggregationTemporalityUnspecified
-				m := ms.At(i)
-				switch ms.At(i).Type() {
-				case pmetric.MetricTypeSum:
-					temporality = m.Sum().AggregationTemporality()
-				case pmetric.MetricTypeExponentialHistogram:
-					temporality = m.ExponentialHistogram().AggregationTemporality()
-				case pmetric.MetricTypeHistogram:
-					temporality = m.Histogram().AggregationTemporality()
-				}
-				if temporality == pmetric.AggregationTemporalityDelta {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-type timeLimitAppender struct {
+// TODO(bwplotka): Consider exposing timeLimitAppender and bucketLimitAppender appenders from scrape/target.go
+// to DRY, they do the same.
+type remoteWriteAppender struct {
 	storage.Appender
 
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
@@ -701,19 +503,30 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	var err error
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
 
-	ref, err := app.Appender.AppendHistogram(ref, l, t, h, fh)
-	if err != nil {
+	if h != nil && histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > histogram.ExponentialSchemaMax {
+		if err = h.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return 0, err
+		}
+	}
+	if fh != nil && histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > histogram.ExponentialSchemaMax {
+		if err = fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return 0, err
+		}
+	}
+
+	if ref, err = app.Appender.AppendHistogram(ref, l, t, h, fh); err != nil {
 		return 0, err
 	}
 	return ref, nil
 }
 
-func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+func (app *remoteWriteAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	if e.Ts > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
@@ -723,4 +536,28 @@ func (app *timeLimitAppender) AppendExemplar(ref storage.SeriesRef, l labels.Lab
 		return 0, err
 	}
 	return ref, nil
+}
+
+type remoteWriteAppenderV2 struct {
+	storage.AppenderV2
+
+	maxTime int64
+}
+
+func (app *remoteWriteAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	if t > app.maxTime {
+		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
+	}
+
+	if h != nil && histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > histogram.ExponentialSchemaMax {
+		if err := h.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return 0, err
+		}
+	}
+	if fh != nil && histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > histogram.ExponentialSchemaMax {
+		if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return 0, err
+		}
+	}
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
 }

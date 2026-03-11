@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -39,7 +39,7 @@ type Pool[T any] struct {
 func New[T any](item func() T) Pool[T] {
 	return Pool[T]{
 		items: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				val := item()
 				return &val
 			},
