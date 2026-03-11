@@ -820,6 +820,9 @@ type cacheEntry struct {
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
+
+	// st logic state for generating start timestamp
+	st *stCache
 }
 
 type scrapeLoop struct {
@@ -848,6 +851,8 @@ type scrapeLoop struct {
 	appendable   storage.Appendable
 	appendableV2 storage.AppendableV2
 	buffers      *pool.Pool
+
+	synthesizeST bool
 	offsetSeed   uint64
 	symbolTable  *labels.SymbolTable
 	metrics      *scrapeMetrics
@@ -1005,9 +1010,6 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 }
 
 func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
-	if ref == 0 {
-		return nil
-	}
 	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
 	c.series[string(met)] = ce
 	return ce
@@ -1231,6 +1233,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		// manager, we ensure appenderV2 parseST is set on EnableStartTimestampZeroIngestion
 		// This will be removed when EnableStartTimestampZeroIngestion is removed.
 		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
+		synthesizeST:            opts.sp.options.SynthesizeST,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
