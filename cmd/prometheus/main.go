@@ -680,7 +680,7 @@ func run(ctx context.Context, args []string, reg prometheus.Registerer) error {
 	}
 
 	if cfg.memlimitRatio <= 0.0 || cfg.memlimitRatio > 1.0 {
-		err := fmt.Errorf("--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1")
+		err := errors.New("--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1")
 		fmt.Fprintln(os.Stderr, err)
 		return &ExitError{Code: 1, Err: err}
 	}
@@ -915,6 +915,9 @@ func run(ctx context.Context, args []string, reg prometheus.Registerer) error {
 		discoveryManagerScrape  *discovery.Manager
 		discoveryManagerNotify  *discovery.Manager
 	)
+	defer cancelWeb()
+	defer cancelScrape()
+	defer cancelNotify()
 
 	// Kubernetes client metrics are used by Kubernetes SD.
 	// They are registered here in the main function, because SD mechanisms
@@ -935,14 +938,14 @@ func run(ctx context.Context, args []string, reg prometheus.Registerer) error {
 
 	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), reg, sdMetrics, discovery.Name("scrape"), discovery.FeatureRegistry(features.DefaultRegistry))
 	if discoveryManagerScrape == nil {
-		err := fmt.Errorf("failed to create a discovery manager scrape")
+		err := errors.New("failed to create a discovery manager scrape")
 		logger.Error(err.Error())
 		return &ExitError{Code: 1, Err: err}
 	}
 
 	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), reg, sdMetrics, discovery.Name("notify"), discovery.FeatureRegistry(features.DefaultRegistry))
 	if discoveryManagerNotify == nil {
-		err := fmt.Errorf("failed to create a discovery manager notify")
+		err := errors.New("failed to create a discovery manager notify")
 		logger.Error(err.Error())
 		return &ExitError{Code: 1, Err: err}
 	}
@@ -1608,9 +1611,9 @@ func main() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	if err := run(ctx, os.Args[1:], prometheus.DefaultRegisterer); err != nil {
+		cancel()
 		var exitErr *ExitError
 		if errors.As(err, &exitErr) {
 			os.Exit(exitErr.Code)
@@ -1618,6 +1621,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	cancel()
 }
 
 func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
@@ -1676,7 +1680,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, agentMode bool, configSuccess, configSuccessTime prometheus.Gauge, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage, agentMode bool, configSuccess, configSuccessTime prometheus.Gauge, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
