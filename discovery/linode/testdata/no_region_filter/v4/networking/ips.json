@@ -1,0 +1,150 @@
+{
+  "page": 1,
+  "pages": 1,
+  "results": 13,
+  "data": [
+    {
+      "address": "192.53.120.25",
+      "gateway": "192.53.120.1",
+      "subnet_mask": "255.255.255.0",
+      "prefix": 24,
+      "type": "ipv4",
+      "public": true,
+      "rdns": "li2216-25.members.linode.com",
+      "linode_id": 26837938,
+      "region": "ca-central"
+    },
+    {
+      "address": "66.228.47.103",
+      "gateway": "66.228.47.1",
+      "subnet_mask": "255.255.255.0",
+      "prefix": 24,
+      "type": "ipv4",
+      "public": true,
+      "rdns": "li328-103.members.linode.com",
+      "linode_id": 26837992,
+      "region": "us-east"
+    },
+    {
+      "address": "172.104.18.104",
+      "gateway": "172.104.18.1",
+      "subnet_mask": "255.255.255.0",
+      "prefix": 24,
+      "type": "ipv4",
+      "public": true,
+      "rdns": "li1832-104.members.linode.com",
+      "linode_id": 26837992,
+      "region": "us-east"
+    },
+    {
+      "address": "192.168.148.94",
+      "gateway": null,
+      "subnet_mask": "255.255.128.0",
+      "prefix": 17,
+      "type": "ipv4",
+      "public": false,
+      "rdns": null,
+      "linode_id": 26837992,
+      "region": "us-east"
+    },
+    {
+      "address": "192.168.170.51",
+      "gateway": null,
+      "subnet_mask": "255.255.128.0",
+      "prefix": 17,
+      "type": "ipv4",
+      "public": false,
+      "rdns": null,
+      "linode_id": 26838044,
+      "region": "us-east"
+    },
+    {
+      "address": "96.126.108.16",
+      "gateway": "96.126.108.1",
+      "subnet_mask": "255.255.255.0",
+      "prefix": 24,
+      "type": "ipv4",
+      "public": true,
+      "rdns": "li365-16.members.linode.com",
+      "linode_id": 26838044,
+      "region": "us-east"
+    },
+    {
+      "address": "45.33.82.151",
+      "gateway": "45.33.82.1",
+      "subnet_mask": "255.255.255.0",
+      "prefix": 24,
+      "type": "ipv4",
+      "public": true,
+      "rdns": "li1028-151.members.linode.com",
+      "linode_id": 26838044,
+      "region": "us-east"
+    },
+    {
+      "address": "192.168.201.25",
+      "gateway": null,
+      "subnet_mask": "255.255.128.0",
+      "prefix": 17,
+      "type": "ipv4",
+      "public": false,
+      "rdns": null,
+      "linode_id": 26838044,
+      "region": "us-east"
+    },
+    {
+      "address": "139.162.196.43",
+      "gateway": "139.162.196.1",
+      "subnet_mask": "255.255.255.0",
+      "prefix": 24,
+      "type": "ipv4",
+      "public": true,
+      "rdns": "li1359-43.members.linode.com",
+      "linode_id": 26848419,
+      "region": "eu-west"
+    },
+    {
+      "address": "2600:3c04::f03c:92ff:fe1a:fb68",
+      "gateway": "fe80::1",
+      "subnet_mask": "ffff:ffff:ffff:ffff::",
+      "prefix": 64,
+      "type": "ipv6",
+      "rdns": null,
+      "linode_id": 26837938,
+      "region": "ca-central",
+      "public": true
+    },
+    {
+      "address": "2600:3c03::f03c:92ff:fe1a:fb4c",
+      "gateway": "fe80::1",
+      "subnet_mask": "ffff:ffff:ffff:ffff::",
+      "prefix": 64,
+      "type": "ipv6",
+      "rdns": null,
+      "linode_id": 26837992,
+      "region": "us-east",
+      "public": true
+    },
+    {
+      "address": "2600:3c03::f03c:92ff:fe1a:1382",
+      "gateway": "fe80::1",
+      "subnet_mask": "ffff:ffff:ffff:ffff::",
+      "prefix": 64,
+      "type": "ipv6",
+      "rdns": null,
+      "linode_id": 26838044,
+      "region": "us-east",
+      "public": true
+    },
+    {
+      "address": "2a01:7e00::f03c:92ff:fe1a:9976",
+      "gateway": "fe80::1",
+      "subnet_mask": "ffff:ffff:ffff:ffff::",
+      "prefix": 64,
+      "type": "ipv6",
+      "rdns": null,
+      "linode_id": 26848419,
+      "region": "eu-west",
+      "public": true
+    }
+  ]
+}

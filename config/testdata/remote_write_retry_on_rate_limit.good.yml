@@ -1,0 +1,5 @@
+remote_write:
+  - url: localhost:9090
+    queue_config:
+      retry_on_http_429: true
+  - url: localhost:9201

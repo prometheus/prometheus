@@ -1,0 +1,7 @@
+groups:
+  - name: yolo
+    rules:
+      - record: hola
+        expr: 1
+        labels:
+          ins-tance: localhost

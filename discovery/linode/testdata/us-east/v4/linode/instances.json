@@ -1,0 +1,97 @@
+{
+  "data": [
+    {
+      "id": 26838044,
+      "label": "prometheus-linode-sd-exporter-1",
+      "group": "",
+      "status": "running",
+      "created": "2021-05-12T04:23:44",
+      "updated": "2021-05-12T04:23:44",
+      "type": "g6-standard-2",
+      "ipv4": [
+        "45.33.82.151",
+        "96.126.108.16",
+        "192.168.170.51",
+        "192.168.201.25"
+      ],
+      "ipv6": "2600:3c03::f03c:92ff:fe1a:1382/128",
+      "image": "linode/arch",
+      "region": "us-east",
+      "specs": {
+        "disk": 81920,
+        "memory": 4096,
+        "vcpus": 2,
+        "gpus": 0,
+        "transfer": 4000
+      },
+      "alerts": {
+        "cpu": 180,
+        "network_in": 10,
+        "network_out": 10,
+        "transfer_quota": 80,
+        "io": 10000
+      },
+      "backups": {
+        "enabled": false,
+        "schedule": {
+          "day": null,
+          "window": null
+        },
+        "last_successful": null
+      },
+      "hypervisor": "kvm",
+      "watchdog_enabled": true,
+      "tags": [
+        "monitoring"
+      ]
+    },
+    {
+      "id": 26837992,
+      "label": "prometheus-linode-sd-exporter-4",
+      "group": "",
+      "status": "running",
+      "created": "2021-05-12T04:22:06",
+      "updated": "2021-05-12T04:22:06",
+      "type": "g6-nanode-1",
+      "ipv4": [
+        "66.228.47.103",
+        "172.104.18.104",
+        "192.168.148.94"
+      ],
+      "ipv6": "2600:3c03::f03c:92ff:fe1a:fb4c/128",
+      "image": "linode/ubuntu20.04",
+      "region": "us-east",
+      "specs": {
+        "disk": 25600,
+        "memory": 1024,
+        "vcpus": 1,
+        "gpus": 0,
+        "transfer": 1000
+      },
+      "alerts": {
+        "cpu": 90,
+        "network_in": 10,
+        "network_out": 10,
+        "transfer_quota": 80,
+        "io": 10000
+      },
+      "backups": {
+        "enabled": false,
+        "schedule": {
+          "day": null,
+          "window": null
+        },
+        "last_successful": null
+      },
+      "hypervisor": "kvm",
+      "watchdog_enabled": true,
+      "tags": [
+        "monitoring"
+      ]
+    }
+  ],
+  "page": 1,
+  "pages": 1,
+  "results": 2
+}
+

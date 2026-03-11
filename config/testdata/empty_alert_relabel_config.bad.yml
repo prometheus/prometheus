@@ -1,0 +1,3 @@
+alerting:
+  alert_relabel_configs:
+    -

@@ -1,0 +1,12 @@
+# TLS and basic authentication configuration example.
+
+# For `basic_auth`, use the Prometheus credentials configured earlier in the `web-config.yml` file.
+# The password must be provided in plaintext.
+# To avoid including plaintext passwords directly in this file, consider using `password_file` or `password_ref` instead.
+basic_auth:
+  username: alice
+  password: verylongpassword
+
+tls_config:
+  cert_file: server.crt
+  key_file: server.key

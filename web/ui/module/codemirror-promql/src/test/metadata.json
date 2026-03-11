@@ -1,0 +1,89 @@
+{
+  "status": "success",
+  "data": {
+    "alertmanager_alerts": [
+      {
+        "type": "gauge",
+        "help": "How many alerts by state.",
+        "unit": ""
+      }
+    ],
+    "alertmanager_alerts_invalid_total": [
+      {
+        "type": "counter",
+        "help": "The total number of received alerts that were invalid.",
+        "unit": ""
+      }
+    ],
+    "alertmanager_alerts_received_total": [
+      {
+        "type": "counter",
+        "help": "The total number of received alerts.",
+        "unit": ""
+      }
+    ],
+    "alertmanager_build_info": [
+      {
+        "type": "gauge",
+        "help": "A metric with a constant '1' value labeled by version, revision, branch, and goversion from which alertmanager was built.",
+        "unit": ""
+      }
+    ],
+    "alertmanager_cluster_enabled": [
+      {
+        "type": "gauge",
+        "help": "Indicates whether the clustering is enabled or not.",
+        "unit": ""
+      }
+    ],
+    "alertmanager_config_hash": [
+      {
+        "type": "gauge",
+        "help": "Hash of the currently loaded alertmanager configuration.",
+        "unit": ""
+      }
+    ],
+    "alertmanager_config_last_reload_success_timestamp_seconds": [
+      {
+        "type": "gauge",
+        "help": "Timestamp of the last successful configuration reload.",
+        "unit": ""
+      }
+    ],
+    "alertmanager_config_last_reload_successful": [
+      {
+        "type": "gauge",
+        "help": "Whether the last configuration reload attempt was successful.",
+        "unit": ""
+      }
+    ],
+    "alertmanager_dispatcher_aggregation_groups": [
+      {
+        "type": "gauge",
+        "help": "Number of active aggregation groups",
+        "unit": ""
+      }
+    ],
+    "alertmanager_dispatcher_alert_processing_duration_seconds": [
+      {
+        "type": "summary",
+        "help": "Summary of latencies for the processing of alerts.",
+        "unit": ""
+      }
+    ],
+    "alertmanager_http_concurrency_limit_exceeded_total": [
+      {
+        "type": "counter",
+        "help": "Total number of times an HTTP request failed because the concurrency limit was reached.",
+        "unit": ""
+      }
+    ],
+    "alertmanager_http_request_duration_seconds": [
+      {
+        "type": "histogram",
+        "help": "Histogram of latencies for HTTP requests.",
+        "unit": ""
+      }
+    ]
+  }
+}

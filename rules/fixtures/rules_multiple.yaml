@@ -1,0 +1,20 @@
+groups:
+  - name: test
+    rules:
+      # independents
+      - record: job:http_requests:rate1m
+        expr: sum by (job)(rate(http_requests_total[1m]))
+      - record: job:http_requests:rate5m
+        expr: sum by (job)(rate(http_requests_total[5m]))
+
+      # dependents because of metric is matching
+      - record: job:http_requests:rate15m
+        expr: sum by (job)(rate(http_requests_total[15m]))
+      - record: TooManyRequests
+        expr: job:http_requests:rate15m > 100
+
+      # dependents because of ALERTS is matching
+      - alert: TooManyFailures
+        expr: sum by (job)(rate(http_requests_failed_total[1m])) > 100
+      - alert: TooManyFailuresAlerts
+        expr: count(ALERTS{alertname="TooManyFailures"}) > 5

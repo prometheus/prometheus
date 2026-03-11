@@ -1,0 +1,5 @@
+remote_write:
+  - url: localhost:9090
+    name: queue1
+  - url: localhost:9091
+    name: queue1

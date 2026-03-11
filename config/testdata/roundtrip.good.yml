@@ -1,0 +1,150 @@
+alerting:
+  alertmanagers:
+    - scheme: https
+
+      file_sd_configs:
+        - files:
+            - foo/*.slow.json
+            - foo/*.slow.yml
+          refresh_interval: 10m
+        - files:
+            - bar/*.yaml
+
+      static_configs:
+        - targets:
+            - 1.2.3.4:9093
+            - 1.2.3.5:9093
+            - 1.2.3.6:9093
+
+scrape_configs:
+  - job_name: foo
+    static_configs:
+      - targets:
+          - localhost:9090
+          - localhost:9191
+        labels:
+          my: label
+          your: label
+
+  - job_name: bar
+
+    azure_sd_configs:
+      - environment: AzurePublicCloud
+        authentication_method: OAuth
+        subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11
+        tenant_id: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
+        client_id: 333333CC-3C33-3333-CCC3-33C3CCCCC33C
+        client_secret: <secret>
+        port: 9100
+
+    consul_sd_configs:
+      - server: localhost:1234
+        token: <secret>
+        services: [nginx, cache, mysql]
+        tags: [canary, v1]
+        node_meta:
+          rack: "123"
+        allow_stale: true
+        scheme: https
+        tls_config:
+          ca_file: valid_ca_file
+          cert_file: valid_cert_file
+          key_file: valid_key_file
+
+    digitalocean_sd_configs:
+      - authorization:
+          credentials: <secret>
+
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+
+    dockerswarm_sd_configs:
+      - host: http://127.0.0.1:2375
+        role: nodes
+
+    dns_sd_configs:
+      - refresh_interval: 15s
+        names:
+          - first.dns.address.domain.com
+          - second.dns.address.domain.com
+      - names:
+          - first.dns.address.domain.com
+
+    ec2_sd_configs:
+      - region: us-east-1
+        access_key: access
+        secret_key: <secret>
+        profile: profile
+        filters:
+          - name: tag:environment
+            values:
+              - prod
+          - name: tag:service
+            values:
+              - web
+              - db
+
+    file_sd_configs:
+      - files:
+          - single/file.yml
+
+    kubernetes_sd_configs:
+      - role: endpoints
+        api_server: https://localhost:1234
+        tls_config:
+          cert_file: valid_cert_file
+          key_file: valid_key_file
+        basic_auth:
+          username: username
+          password: <secret>
+      - role: endpoints
+        api_server: https://localhost:1234
+        namespaces:
+          names:
+            - default
+        basic_auth:
+          username: username
+          password_file: valid_password_file
+
+    kuma_sd_configs:
+      - server: http://kuma-control-plane.kuma-system.svc:5676
+        client_id: main-prometheus
+
+    marathon_sd_configs:
+      - servers:
+          - https://marathon.example.com:443
+        auth_token: <secret>
+        tls_config:
+          cert_file: valid_cert_file
+          key_file: valid_key_file
+
+    nerve_sd_configs:
+      - servers:
+          - localhost
+        paths:
+          - /monitoring
+
+    openstack_sd_configs:
+      - role: instance
+        region: RegionOne
+        port: 80
+        refresh_interval: 1m
+        tls_config:
+          ca_file: valid_ca_file
+          cert_file: valid_cert_file
+          key_file: valid_key_file
+
+    static_configs:
+      - targets:
+          - localhost:9093
+
+    triton_sd_configs:
+      - account: testAccount
+        dns_suffix: triton.example.com
+        endpoint: triton.example.com
+        port: 9163
+        refresh_interval: 1m
+        version: 1
+        tls_config:
+          cert_file: valid_cert_file
+          key_file: valid_key_file

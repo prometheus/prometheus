@@ -1,0 +1,746 @@
+# Numeric literals
+
+0.123e3
+
+==>
+
+PromQL(NumberDurationLiteral)
+
+# Double-quoted string literal
+
+"test string"
+
+==>
+
+PromQL(StringLiteral)
+
+# Single-quoted string literal
+
+'test string'
+
+==>
+
+PromQL(StringLiteral)
+
+# Backtick-quoted string literal
+
+`test string`
+
+==>
+
+PromQL(StringLiteral)
+
+# Backtick-quoted multi-line string literal
+
+`test
+
+string`
+
+==>
+
+PromQL(StringLiteral)
+
+# Addition
+
+1 + 2
+
+==>
+
+PromQL(BinaryExpr(NumberDurationLiteral, Add, NumberDurationLiteral))
+
+# Complex expression
+
+sum by(job, mode) (rate(node_cpu_seconds_total[1m])) / on(job) group_left sum by(job)(rate(node_cpu_seconds_total[1m]))
+
+==>
+
+PromQL(
+    BinaryExpr(
+        AggregateExpr(
+          AggregateOp(Sum),
+          AggregateModifier(
+            By,
+            GroupingLabels(
+                LabelName,
+                LabelName
+            )
+          ),
+          FunctionCallBody(
+                FunctionCall(
+                  FunctionIdentifier(Rate),
+                  FunctionCallBody(
+                        MatrixSelector(
+                            VectorSelector(
+                                Identifier
+                            ),
+                          NumberDurationLiteralInDurationContext
+                        )
+                  )
+                )
+          )
+      ),
+      Div,
+        MatchingModifierClause(
+          On,
+          GroupingLabels(
+              LabelName
+          )
+          GroupLeft
+        ),
+        AggregateExpr(
+          AggregateOp(Sum),
+          AggregateModifier(
+            By,
+            GroupingLabels(
+                LabelName
+            )
+          ),
+          FunctionCallBody(
+                FunctionCall(
+                  FunctionIdentifier(Rate),
+                  FunctionCallBody(
+                        MatrixSelector(
+                            VectorSelector(
+                                Identifier
+                            ),
+                          NumberDurationLiteralInDurationContext
+                      )
+                  )
+              )
+          )
+        )
+    )
+)
+
+# Quoted label name in grouping labels
+
+sum by("job", mode) (test_metric) / on("job") group_left sum by("job")(test_metric)
+
+==>
+
+PromQL(
+    BinaryExpr(
+        AggregateExpr(
+          AggregateOp(Sum),
+          AggregateModifier(
+            By,
+            GroupingLabels(
+                QuotedLabelName(StringLiteral),
+                LabelName
+            )
+          ),
+          FunctionCallBody(
+                VectorSelector(
+                  Identifier
+                )
+          )
+      ),
+      Div,
+        MatchingModifierClause(
+          On,
+          GroupingLabels(
+              QuotedLabelName(StringLiteral)
+          )
+          GroupLeft
+        ),
+        AggregateExpr(
+          AggregateOp(Sum),
+          AggregateModifier(
+            By,
+            GroupingLabels(
+                QuotedLabelName(StringLiteral)
+            )
+          ),
+          FunctionCallBody(
+                VectorSelector(
+                  Identifier
+                )
+          )
+        )
+    )
+)
+
+# Case insensitivity for aggregations and binop modifiers.
+
+SuM BY(testlabel1) (testmetric1) / IGNOring(testlabel2) AVG withOUT(testlabel3) (testmetric2)
+
+==>
+
+PromQL(
+    BinaryExpr(
+        AggregateExpr(
+          AggregateOp(Sum),
+          AggregateModifier(
+            By,
+            GroupingLabels(
+                LabelName
+            )
+          ),
+          FunctionCallBody(
+                VectorSelector(
+                  Identifier
+                )
+          )
+        ),
+      Div,
+        MatchingModifierClause(
+          Ignoring,
+          GroupingLabels(
+              LabelName
+          )
+        ),
+        AggregateExpr(
+          AggregateOp(Avg),
+          AggregateModifier(
+            Without,
+            GroupingLabels(
+                LabelName
+            )
+          ),
+          FunctionCallBody(
+                VectorSelector(
+                    Identifier
+                )
+          )
+      )
+  )
+)
+
+# Case insensitivity for set operators
+
+metric1 and metric2 AND metric3 unless metric4 UNLESS metric5 or metric6 OR metric7
+
+==>
+
+PromQL(
+  BinaryExpr(
+    BinaryExpr(
+      BinaryExpr(
+        BinaryExpr(
+          BinaryExpr(
+            BinaryExpr(
+              VectorSelector(Identifier),
+              And,
+              VectorSelector(Identifier)
+            ),
+            And,
+            VectorSelector(Identifier)
+          ),
+          Unless,
+          VectorSelector(Identifier)
+        ),
+        Unless,
+        VectorSelector(Identifier)
+      ),
+      Or,
+      VectorSelector(Identifier)
+    ),
+    Or,
+    VectorSelector(Identifier)
+  )
+)
+
+# NumberDurationLiteralInDurationContext units
+
+foo[1y2w3d4h5m6s7ms]
+
+==>
+
+PromQL(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext))
+
+# Incorrectly ordered NumberDurationLiteralInDurationContext units
+
+foo[1m2h]
+
+==>
+
+PromQL(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext,⚠))
+
+# Using a function name as a metric name
+
+rate
+
+==>
+
+PromQL(VectorSelector(Identifier))
+
+# Match operators
+
+metric_name{a="1",b!="2",c=~"3",d!~"4"}
+
+==>
+
+PromQL(
+    VectorSelector(
+      Identifier,
+      LabelMatchers(
+        UnquotedLabelMatcher(
+            LabelName,
+            MatchOp(EqlSingle),
+            StringLiteral
+        ),
+        UnquotedLabelMatcher(
+            LabelName,
+            MatchOp(Neq),
+            StringLiteral
+        ),
+        UnquotedLabelMatcher(
+            LabelName,
+            MatchOp(EqlRegex),
+            StringLiteral
+        ),
+        UnquotedLabelMatcher(
+            LabelName,
+            MatchOp(NeqRegex),
+            StringLiteral
+        )
+      )
+    )
+)
+
+# Binary expression with bool modifier
+
+metric_name > bool 1
+
+==>
+
+PromQL(
+    BinaryExpr(
+        VectorSelector(
+          Identifier
+        ),
+      Gtr,
+      BoolModifier(Bool),
+      NumberDurationLiteral
+    )
+)
+
+# Binary expression with group_x() labels.
+
+metric1 + on(foo) group_left(bar, baz) metric2
+
+==>
+
+PromQL(
+    BinaryExpr(
+        VectorSelector(
+          Identifier
+        ),
+      Add,
+        MatchingModifierClause(
+          On,
+          GroupingLabels(
+              LabelName
+          )
+          GroupLeft,
+          GroupingLabels(
+            LabelName,
+            LabelName
+          )
+        ),
+        VectorSelector(
+            Identifier
+        )
+  )
+)
+
+# Function last_over_time
+
+last_over_time(data[1m])
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(LastOverTime),
+      FunctionCallBody(
+            MatrixSelector(
+                VectorSelector(
+                    Identifier
+                ),
+              NumberDurationLiteralInDurationContext
+            )
+      )
+    )
+)
+
+# Function first_over_time
+
+first_over_time(data[1m])
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(FirstOverTime),
+      FunctionCallBody(
+            MatrixSelector(
+                VectorSelector(
+                    Identifier
+                ),
+              NumberDurationLiteralInDurationContext
+            )
+      )
+    )
+)
+
+# Function sgn
+
+sgn(data)
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(Sgn),
+      FunctionCallBody(
+            VectorSelector(
+                Identifier
+            )
+      )
+  )
+)
+
+# Function clamp
+
+clamp(data,0,1)
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(Clamp),
+      FunctionCallBody(
+        VectorSelector(Identifier),
+        NumberDurationLiteral,
+        NumberDurationLiteral
+      )
+    )
+)
+
+# Metric start
+
+start
+
+==>
+PromQL(VectorSelector(Identifier))
+
+# Metric end
+
+end
+
+==>
+PromQL(VectorSelector(Identifier))
+
+# Simple At start
+
+foo @ start()
+
+==>
+PromQL(
+    StepInvariantExpr(
+        VectorSelector(
+            Identifier
+        ),
+      At,
+      AtModifierPreprocessors(Start),
+    )
+)
+
+# Simple At end
+
+foo @ end()
+
+==>
+PromQL(
+    StepInvariantExpr(
+        VectorSelector(
+            Identifier
+        ),
+      At,
+      AtModifierPreprocessors(End),
+    )
+)
+
+# Simple At number
+
+foo @ 1234
+
+==>
+PromQL(
+    StepInvariantExpr(
+        VectorSelector(
+            Identifier
+        ),
+      At,
+      NumberDurationLiteral
+  )
+)
+
+# At Modifier with space between bracket
+
+foo @ start(                 )
+
+==>
+PromQL(
+    StepInvariantExpr(
+        VectorSelector(
+            Identifier
+        ),
+      At,
+      AtModifierPreprocessors(Start),
+    )
+)
+
+# Complex test with At modifier
+
+rate(process_cpu_seconds_total[1m])
+  and
+topk(7, rate(process_cpu_seconds_total[1h] @ 1234))
+
+==>
+PromQL(
+    BinaryExpr(
+        FunctionCall(
+          FunctionIdentifier(Rate),
+          FunctionCallBody(
+                MatrixSelector(
+                  VectorSelector(Identifier),
+                  NumberDurationLiteralInDurationContext
+                )
+          )
+        ),
+      And,
+        AggregateExpr(
+          AggregateOp(Topk),
+          FunctionCallBody(
+            NumberDurationLiteral,
+            FunctionCall(
+              FunctionIdentifier(Rate),
+              FunctionCallBody(
+                StepInvariantExpr(
+                  MatrixSelector(VectorSelector(Identifier), NumberDurationLiteralInDurationContext),
+                  At,
+                  NumberDurationLiteral
+                )
+              )
+            )
+          )
+        )
+    )
+)
+
+# At modifier with negative number
+
+foo @ - 1234
+
+==>
+PromQL(
+    StepInvariantExpr(
+        VectorSelector(
+            Identifier
+        ),
+      At,
+      NumberDurationLiteral
+    )
+)
+
+# At modifier with explicit positive number
+
+foo @ + 1234
+
+==>
+PromQL(
+    StepInvariantExpr(
+        VectorSelector(
+            Identifier
+        ),
+      At,
+      NumberDurationLiteral
+    )
+)
+
+# Metric prefixed by Inf
+
+infra
+
+==>
+PromQL(VectorSelector(Identifier))
+
+# Metric prefixed by Nan
+
+nananere
+
+==>
+PromQL(VectorSelector(Identifier))
+
+# Mixed-case NaN.
+
+NaN
+
+==>
+PromQL(NumberDurationLiteral)
+
+# Lower-cased NaN.
+
+nan
+
+==>
+PromQL(NumberDurationLiteral)
+
+# Inf.
+
+Inf
+
+==>
+PromQL(NumberDurationLiteral)
+
+# Negative Inf.
+
+-Inf
+
+==>
+PromQL(NumberDurationLiteral)
+
+# Positive Inf.
+
++Inf
+
+==>
+PromQL(NumberDurationLiteral)
+
+# Lower-cased Inf.
+
+inf
+
+==>
+PromQL(NumberDurationLiteral)
+
+# Upper-cased Inf.
+
+INF
+
+==>
+PromQL(NumberDurationLiteral)
+
+# Negative number literal.
+
+-42
+
+==>
+PromQL(NumberDurationLiteral)
+
+# Explicitly positive number literal.
+
++42
+
+==>
+PromQL(NumberDurationLiteral)
+
+# Trying to illegally use NaN as a metric name.
+
+NaN{foo="bar"}
+
+==>
+PromQL(BinaryExpr(NumberDurationLiteral,⚠,VectorSelector(LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
+
+# Trying to illegally use Inf as a metric name.
+
+Inf{foo="bar"}
+
+==>
+PromQL(BinaryExpr(NumberDurationLiteral,⚠,VectorSelector(LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral)))))
+
+# Negative offset
+
+foo offset -5d
+
+==>
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
+
+# Negative offset with space
+
+foo offset - 5d
+
+==>
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
+
+# Positive offset
+
+foo offset 5d
+
+==>
+PromQL(OffsetExpr(VectorSelector(Identifier), Offset, NumberDurationLiteralInDurationContext))
+
+# Parsing only metric names with alternative @top { "top": "MetricName" }
+
+sum:my_metric_name:rate5m
+
+==>
+MetricName(Identifier)
+
+# Testing Atan2 inherited precedence level
+
+1 + foo atan2 bar
+
+==>
+PromQL(BinaryExpr(NumberDurationLiteral,Add,BinaryExpr(VectorSelector(Identifier),Atan2,VectorSelector(Identifier))))
+
+# Testing quoted metric name
+
+{"metric_name"}
+
+==>
+PromQL(VectorSelector(LabelMatchers(QuotedLabelName(StringLiteral))))
+
+# Testing quoted label name
+
+{"foo"="bar"}
+
+==>
+PromQL(VectorSelector(LabelMatchers(QuotedLabelMatcher(QuotedLabelName(StringLiteral), MatchOp(EqlSingle), StringLiteral))))
+
+# Testing quoted metric name and label name
+
+{"metric_name", "foo"="bar"}
+
+==>
+PromQL(VectorSelector(LabelMatchers(QuotedLabelName(StringLiteral), QuotedLabelMatcher(QuotedLabelName(StringLiteral), MatchOp(EqlSingle), StringLiteral))))
+
+# Testing anchored keyword
+
+increase(caddy_http_requests_total[5m] anchored)
+
+==>
+PromQL(FunctionCall(FunctionIdentifier(Increase),FunctionCallBody(AnchoredExpr(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext),Anchored))))
+
+# Testing smoothed keyword
+
+rate(caddy_http_requests_total[5m] smoothed)
+
+==>
+PromQL(FunctionCall(FunctionIdentifier(Rate),FunctionCallBody(SmoothedExpr(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext),Smoothed))))
+
+# TrimUpper binary operator
+
+metric1 </ metric2
+
+==>
+
+PromQL(
+  BinaryExpr(
+    VectorSelector(Identifier),
+    TrimUpper,
+    VectorSelector(Identifier)
+  )
+)
+
+# TrimLower binary operator
+
+metric1 >/ metric2
+
+==>
+
+PromQL(
+  BinaryExpr(
+    VectorSelector(Identifier),
+    TrimLower,
+    VectorSelector(Identifier)
+  )
+)

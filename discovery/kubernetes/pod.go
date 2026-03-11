@@ -1,0 +1,505 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package kubernetes
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"strconv"
+	"strings"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+)
+
+const (
+	nodeIndex       = "node"
+	podIndex        = "pod"
+	replicaSetIndex = "replicaset"
+	jobIndex        = "job"
+)
+
+// Pod discovers new pod targets.
+type Pod struct {
+	podInf                 cache.SharedIndexInformer
+	nodeInf                cache.SharedInformer
+	withNodeMetadata       bool
+	namespaceInf           cache.SharedInformer
+	withNamespaceMetadata  bool
+	replicaSetInf          cache.SharedInformer
+	withDeploymentMetadata bool
+	jobInf                 cache.SharedInformer
+	withJobMetadata        bool
+	withCronJobMetadata    bool
+	store                  cache.Store
+	logger                 *slog.Logger
+	queue                  *workqueue.Typed[string]
+}
+
+// NewPod creates a new pod discovery.
+func NewPod(l *slog.Logger, pods cache.SharedIndexInformer, nodes, namespace, replicaSets, jobs cache.SharedInformer, withDeploymentMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *Pod {
+	if l == nil {
+		l = promslog.NewNopLogger()
+	}
+
+	podAddCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleAdd)
+	podDeleteCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleDelete)
+	podUpdateCount := eventCount.WithLabelValues(RolePod.String(), MetricLabelRoleUpdate)
+
+	p := &Pod{
+		podInf:                 pods,
+		nodeInf:                nodes,
+		withNodeMetadata:       nodes != nil,
+		namespaceInf:           namespace,
+		withNamespaceMetadata:  namespace != nil,
+		replicaSetInf:          replicaSets,
+		withDeploymentMetadata: withDeploymentMetadata,
+		jobInf:                 jobs,
+		withJobMetadata:        withJobMetadata,
+		withCronJobMetadata:    withCronJobMetadata,
+		store:                  pods.GetStore(),
+		logger:                 l,
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RolePod.String(),
+		}),
+	}
+	_, err := p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(o any) {
+			podAddCount.Inc()
+			p.enqueue(o)
+		},
+		DeleteFunc: func(o any) {
+			podDeleteCount.Inc()
+			p.enqueue(o)
+		},
+		UpdateFunc: func(_, o any) {
+			podUpdateCount.Inc()
+			p.enqueue(o)
+		},
+	})
+	if err != nil {
+		l.Error("Error adding pods event handler.", "err", err)
+	}
+
+	if p.withNodeMetadata {
+		_, err = p.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(o any) {
+				node := o.(*apiv1.Node)
+				p.enqueuePodsForNode(node.Name)
+			},
+			UpdateFunc: func(_, o any) {
+				node := o.(*apiv1.Node)
+				p.enqueuePodsForNode(node.Name)
+			},
+			DeleteFunc: func(o any) {
+				nodeName, err := nodeName(o)
+				if err != nil {
+					l.Error("Error getting Node name", "err", err)
+				}
+				p.enqueuePodsForNode(nodeName)
+			},
+		})
+		if err != nil {
+			l.Error("Error adding pods event handler.", "err", err)
+		}
+	}
+
+	if p.withNamespaceMetadata {
+		_, err = p.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(_, o any) {
+				namespace := o.(*apiv1.Namespace)
+				p.enqueuePodsForNamespace(namespace.Name)
+			},
+			// Creation and deletion will trigger events for the change handlers of the resources within the namespace.
+			// No need to have additional handlers for them here.
+		})
+		if err != nil {
+			l.Error("Error adding namespaces event handler.", "err", err)
+		}
+	}
+
+	if p.withDeploymentMetadata && p.replicaSetInf != nil {
+		fn := func(o any) {
+			rs := o.(*appsv1.ReplicaSet)
+			rsName := namespacedName(rs.Namespace, rs.Name)
+			p.enqueuePodsForReplicaSet(rsName)
+		}
+		_, err = p.replicaSetInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    func(o any) { fn(o) },
+			UpdateFunc: func(_, o any) { fn(o) },
+			DeleteFunc: func(o any) { fn(o) },
+		})
+		if err != nil {
+			l.Error("Error adding replicasets event handler.", "err", err)
+		}
+	}
+
+	if (p.withJobMetadata || p.withCronJobMetadata) && p.jobInf != nil {
+		fn := func(o any) {
+			job := o.(*batchv1.Job)
+			jobName := namespacedName(job.Namespace, job.Name)
+			p.enqueuePodsForJob(jobName)
+		}
+		_, err = p.jobInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    func(o any) { fn(o) },
+			UpdateFunc: func(_, o any) { fn(o) },
+			DeleteFunc: func(o any) { fn(o) },
+		})
+		if err != nil {
+			l.Error("Error adding jobs event handler.", "err", err)
+		}
+	}
+
+	return p
+}
+
+func (p *Pod) enqueue(obj any) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		return
+	}
+
+	p.queue.Add(key)
+}
+
+// Run implements the Discoverer interface.
+func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
+	defer p.queue.ShutDown()
+
+	cacheSyncs := []cache.InformerSynced{p.podInf.HasSynced}
+	if p.withNodeMetadata {
+		cacheSyncs = append(cacheSyncs, p.nodeInf.HasSynced)
+	}
+	if p.withNamespaceMetadata {
+		cacheSyncs = append(cacheSyncs, p.namespaceInf.HasSynced)
+	}
+	if p.withDeploymentMetadata && p.replicaSetInf != nil {
+		cacheSyncs = append(cacheSyncs, p.replicaSetInf.HasSynced)
+	}
+	if (p.withJobMetadata || p.withCronJobMetadata) && p.jobInf != nil {
+		cacheSyncs = append(cacheSyncs, p.jobInf.HasSynced)
+	}
+
+	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			p.logger.Error("pod informer unable to sync cache")
+		}
+		return
+	}
+
+	go func() {
+		for p.process(ctx, ch) {
+		}
+	}()
+
+	// Block until the target provider is explicitly canceled.
+	<-ctx.Done()
+}
+
+func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
+	key, quit := p.queue.Get()
+	if quit {
+		return false
+	}
+	defer p.queue.Done(key)
+
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return true
+	}
+
+	o, exists, err := p.store.GetByKey(key)
+	if err != nil {
+		return true
+	}
+	if !exists {
+		send(ctx, ch, &targetgroup.Group{Source: podSourceFromNamespaceAndName(namespace, name)})
+		return true
+	}
+	pod, err := convertToPod(o)
+	if err != nil {
+		p.logger.Error("converting to Pod object failed", "err", err)
+		return true
+	}
+	send(ctx, ch, p.buildPod(pod))
+	return true
+}
+
+func convertToPod(o any) (*apiv1.Pod, error) {
+	pod, ok := o.(*apiv1.Pod)
+	if ok {
+		return pod, nil
+	}
+
+	return nil, fmt.Errorf("received unexpected object: %v", o)
+}
+
+const (
+	podIPLabel                    = metaLabelPrefix + "pod_ip"
+	podContainerNameLabel         = metaLabelPrefix + "pod_container_name"
+	podContainerIDLabel           = metaLabelPrefix + "pod_container_id"
+	podContainerImageLabel        = metaLabelPrefix + "pod_container_image"
+	podContainerPortNameLabel     = metaLabelPrefix + "pod_container_port_name"
+	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
+	podContainerPortProtocolLabel = metaLabelPrefix + "pod_container_port_protocol"
+	podContainerIsInit            = metaLabelPrefix + "pod_container_init"
+	podCronJobNameLabel           = metaLabelPrefix + "pod_cronjob_name"
+	podDeploymentNameLabel        = metaLabelPrefix + "pod_deployment_name"
+	podJobNameLabel               = metaLabelPrefix + "pod_job_name"
+	podReadyLabel                 = metaLabelPrefix + "pod_ready"
+	podPhaseLabel                 = metaLabelPrefix + "pod_phase"
+	podNodeNameLabel              = metaLabelPrefix + "pod_node_name"
+	podHostIPLabel                = metaLabelPrefix + "pod_host_ip"
+	podUID                        = metaLabelPrefix + "pod_uid"
+	podControllerKind             = metaLabelPrefix + "pod_controller_kind"
+	podControllerName             = metaLabelPrefix + "pod_controller_name"
+)
+
+// GetControllerOf returns a pointer to a copy of the controllerRef if controllee has a controller
+// https://github.com/kubernetes/apimachinery/blob/cd2cae2b39fa57e8063fa1f5f13cfe9862db3d41/pkg/apis/meta/v1/controller_ref.go
+func GetControllerOf(controllee metav1.Object) *metav1.OwnerReference {
+	for _, ref := range controllee.GetOwnerReferences() {
+		if ref.Controller != nil && *ref.Controller {
+			return &ref
+		}
+	}
+	return nil
+}
+
+func podLabels(pod *apiv1.Pod, replicaSetInf, jobInf cache.SharedInformer, withDeploymentMetadata, withJobMetadata, withCronJobMetadata bool) model.LabelSet {
+	ls := model.LabelSet{
+		podIPLabel:       lv(pod.Status.PodIP),
+		podReadyLabel:    podReady(pod),
+		podPhaseLabel:    lv(string(pod.Status.Phase)),
+		podNodeNameLabel: lv(pod.Spec.NodeName),
+		podHostIPLabel:   lv(pod.Status.HostIP),
+		podUID:           lv(string(pod.UID)),
+	}
+
+	addObjectMetaLabels(ls, pod.ObjectMeta, RolePod)
+
+	createdBy := GetControllerOf(pod)
+	if createdBy != nil {
+		if createdBy.Kind != "" {
+			ls[podControllerKind] = lv(createdBy.Kind)
+		}
+		if createdBy.Name != "" {
+			ls[podControllerName] = lv(createdBy.Name)
+		}
+		switch createdBy.Kind {
+		case "ReplicaSet":
+			if replicaSetInf != nil && withDeploymentMetadata {
+				key := namespacedName(pod.Namespace, createdBy.Name)
+				obj, exists, err := replicaSetInf.GetStore().GetByKey(key)
+				if err == nil && exists {
+					if rs, ok := obj.(*appsv1.ReplicaSet); ok {
+						rsOwner := GetControllerOf(rs)
+						if rsOwner != nil && rsOwner.Kind == "Deployment" {
+							ls[podDeploymentNameLabel] = lv(rsOwner.Name)
+						}
+					}
+				}
+			}
+		case "Job":
+			if withJobMetadata {
+				ls[podJobNameLabel] = lv(createdBy.Name)
+			}
+			if jobInf != nil && withCronJobMetadata {
+				key := namespacedName(pod.Namespace, createdBy.Name)
+				obj, exists, err := jobInf.GetStore().GetByKey(key)
+				if err == nil && exists {
+					if job, ok := obj.(*batchv1.Job); ok {
+						jobOwner := GetControllerOf(job)
+						if jobOwner != nil && jobOwner.Kind == "CronJob" {
+							ls[podCronJobNameLabel] = lv(jobOwner.Name)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return ls
+}
+
+func (*Pod) findPodContainerStatus(statuses *[]apiv1.ContainerStatus, containerName string) (*apiv1.ContainerStatus, error) {
+	for _, s := range *statuses {
+		if s.Name == containerName {
+			return &s, nil
+		}
+	}
+	return nil, fmt.Errorf("cannot find container with name %v", containerName)
+}
+
+func (p *Pod) findPodContainerID(statuses *[]apiv1.ContainerStatus, containerName string) string {
+	cStatus, err := p.findPodContainerStatus(statuses, containerName)
+	if err != nil {
+		p.logger.Debug("cannot find container ID", "err", err)
+		return ""
+	}
+	return cStatus.ContainerID
+}
+
+func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
+	tg := &targetgroup.Group{
+		Source: podSource(pod),
+	}
+	// PodIP can be empty when a pod is starting or has been evicted.
+	if pod.Status.PodIP == "" {
+		return tg
+	}
+
+	// Filter out pods scheduled on nodes that are not in the node store, as
+	// these were filtered out by node selectors.
+	if p.withNodeMetadata {
+		_, exists, err := p.nodeInf.GetStore().GetByKey(pod.Spec.NodeName)
+		if err != nil {
+			p.logger.Error("failed to get node from store", "node", pod.Spec.NodeName, "err", err)
+			return tg
+		}
+		if !exists {
+			return tg
+		}
+	}
+
+	tg.Labels = podLabels(pod, p.replicaSetInf, p.jobInf, p.withDeploymentMetadata, p.withJobMetadata, p.withCronJobMetadata)
+	tg.Labels[namespaceLabel] = lv(pod.Namespace)
+	if p.withNodeMetadata {
+		tg.Labels = addNodeLabels(tg.Labels, p.nodeInf, p.logger, &pod.Spec.NodeName)
+	}
+	if p.withNamespaceMetadata {
+		tg.Labels = addNamespaceLabels(tg.Labels, p.namespaceInf, p.logger, pod.Namespace)
+	}
+
+	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
+	for i, c := range containers {
+		isInit := i >= len(pod.Spec.Containers)
+
+		cStatuses := &pod.Status.ContainerStatuses
+		if isInit {
+			cStatuses = &pod.Status.InitContainerStatuses
+		}
+		cID := p.findPodContainerID(cStatuses, c.Name)
+
+		// If no ports are defined for the container, create an anonymous
+		// target per container.
+		if len(c.Ports) == 0 {
+			// We don't have a port so we just set the address label to the pod IP.
+			// The user has to add a port manually.
+			tg.Targets = append(tg.Targets, model.LabelSet{
+				model.AddressLabel:     lv(pod.Status.PodIP),
+				podContainerNameLabel:  lv(c.Name),
+				podContainerIDLabel:    lv(cID),
+				podContainerImageLabel: lv(c.Image),
+				podContainerIsInit:     lv(strconv.FormatBool(isInit)),
+			})
+			continue
+		}
+		// Otherwise create one target for each container/port combination.
+		for _, port := range c.Ports {
+			ports := strconv.FormatUint(uint64(port.ContainerPort), 10)
+			addr := net.JoinHostPort(pod.Status.PodIP, ports)
+
+			tg.Targets = append(tg.Targets, model.LabelSet{
+				model.AddressLabel:            lv(addr),
+				podContainerNameLabel:         lv(c.Name),
+				podContainerIDLabel:           lv(cID),
+				podContainerImageLabel:        lv(c.Image),
+				podContainerPortNumberLabel:   lv(ports),
+				podContainerPortNameLabel:     lv(port.Name),
+				podContainerPortProtocolLabel: lv(string(port.Protocol)),
+				podContainerIsInit:            lv(strconv.FormatBool(isInit)),
+			})
+		}
+	}
+
+	return tg
+}
+
+func (p *Pod) enqueuePodsForReplicaSet(rsName string) {
+	pods, err := p.podInf.GetIndexer().ByIndex(replicaSetIndex, rsName)
+	if err != nil {
+		p.logger.Error("Error getting pods for replicaset", "replicaset", rsName, "err", err)
+		return
+	}
+
+	for _, pod := range pods {
+		p.enqueue(pod.(*apiv1.Pod))
+	}
+}
+
+func (p *Pod) enqueuePodsForJob(jobName string) {
+	pods, err := p.podInf.GetIndexer().ByIndex(jobIndex, jobName)
+	if err != nil {
+		p.logger.Error("Error getting pods for job", "job", jobName, "err", err)
+		return
+	}
+
+	for _, pod := range pods {
+		p.enqueue(pod.(*apiv1.Pod))
+	}
+}
+
+func (p *Pod) enqueuePodsForNode(nodeName string) {
+	pods, err := p.podInf.GetIndexer().ByIndex(nodeIndex, nodeName)
+	if err != nil {
+		p.logger.Error("Error getting pods for node", "node", nodeName, "err", err)
+		return
+	}
+
+	for _, pod := range pods {
+		p.enqueue(pod.(*apiv1.Pod))
+	}
+}
+
+func (p *Pod) enqueuePodsForNamespace(namespace string) {
+	pods, err := p.podInf.GetIndexer().ByIndex(cache.NamespaceIndex, namespace)
+	if err != nil {
+		p.logger.Error("Error getting pods in namespace", "namespace", namespace, "err", err)
+		return
+	}
+
+	for _, pod := range pods {
+		p.enqueue(pod.(*apiv1.Pod))
+	}
+}
+
+func podSource(pod *apiv1.Pod) string {
+	return podSourceFromNamespaceAndName(pod.Namespace, pod.Name)
+}
+
+func podSourceFromNamespaceAndName(namespace, name string) string {
+	return "pod/" + namespacedName(namespace, name)
+}
+
+func podReady(pod *apiv1.Pod) model.LabelValue {
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == apiv1.PodReady {
+			return lv(strings.ToLower(string(cond.Status)))
+		}
+	}
+	return lv(strings.ToLower(string(apiv1.ConditionUnknown)))
+}

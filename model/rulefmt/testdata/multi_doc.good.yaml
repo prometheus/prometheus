@@ -1,0 +1,26 @@
+groups:
+  - name: my-group-name
+    interval: 30s
+    rules:
+      - alert: HighErrors
+        expr: |
+          sum without(instance) (rate(errors_total[5m]))
+          /
+          sum without(instance) (rate(requests_total[5m]))
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          description: "stuff's happening with {{ $.labels.service }}"
+---
+groups:
+  - name: my-second-group
+    interval: 1m
+    rules:
+      - record: "new_metric"
+        expr: |
+          sum without(instance) (rate(errors_total[5m]))
+          /
+          sum without(instance) (rate(requests_total[5m]))
+        labels:
+          abc: edf

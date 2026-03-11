@@ -1,0 +1,2 @@
+otlp:
+  keep_identifying_resource_attributes: true

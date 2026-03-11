@@ -1,0 +1,507 @@
+/* This file contains styles shared by both light & dark themes.
+   Style rules can be customised using SCSS variables set in dark.scss & light.sccs.
+   How to add a rule that uses different values for each theme.
+
+   1. Add a variable in light.scss & dark.scss files, it needs to be set before
+      "@import ./shared" statement.
+      Example:
+
+      $foo = '#000';
+
+   2. Add a style rule in _shared.scss (this file) that uses new variable.
+      Example:
+
+      .my-class { background-color: $foo; }
+
+   Instead of setting custom variables you can re-use any of bootstrap SCSS variables
+   as they are all imported and ready.
+   Resources:
+   - https://getbootstrap.com/docs/4.6/getting-started/theming/
+   - https://github.com/twbs/bootstrap/blob/v4.6.0/scss/_variables.scss
+  */
+
+.alert-cell {
+  color: $alert-cell-color;
+  background: $rule-cell-bg;
+}
+
+.rule-cell {
+  background-color: $rule-cell-bg;
+}
+
+.config-yaml {
+  display: block;
+  padding: 10px;
+  font-size: 13px;
+  color: $config-yaml-color;
+  word-break: break-all;
+  background-color: $config-yaml-bg;
+  border: 1px solid $config-yaml-border;
+  border-radius: 4px;
+}
+
+.query-stats {
+  flex-grow: 1;
+  font-size: 0.7rem;
+  color: $query-stats-color;
+}
+
+.metrics-explorer.modal-dialog {
+  max-width: 750px;
+  overflow-wrap: break-word;
+}
+.metrics-explorer .metric {
+  cursor: pointer;
+  margin: 0;
+  padding: 5px;
+}
+.metrics-explorer .metric:hover {
+  background: $metrics-explorer-bg;
+}
+button.expression-input-action-btn {
+  color: $input-group-addon-color;
+  background-color: $input-group-addon-bg;
+  border: $input-border-width solid $input-group-addon-border-color;
+}
+
+.graph-controls button.clear-time-btn,
+.table-controls button.clear-time-btn {
+  background-color: $input-bg;
+  border: $input-border-width solid $input-border-color;
+  border-left: none;
+
+  &:hover {
+    color: darken($secondary, 10%);
+  }
+}
+
+button.execute-btn {
+  width: 84px;
+  border: $input-border-width solid darken($primary, 5%);
+}
+
+.expression-input .cm-expression-input {
+  border: $input-border-width solid $input-border-color;
+  flex: 1 1 auto;
+  padding: 4px 0 0 8px;
+  font-size: 15px;
+}
+
+.tab-content {
+  border-left: 1px solid $nav-tabs-border-color;
+  border-right: 1px solid $nav-tabs-border-color;
+  border-bottom: 1px solid $nav-tabs-border-color;
+  padding: 10px;
+}
+
+/* bootstrap-dark seems to break overflow on modals, making them unscrollable
+   this fixes it by allowing overflow and enabling scrolling */
+.modal.show {
+  overflow-y: auto;
+}
+
+.panel {
+  margin-bottom: 20px;
+}
+
+.navbar-brand svg {
+  padding-right: 1rem;
+  height: 1.9rem;
+  width: 2.9rem;
+}
+
+.navbar-brand svg.animate path {
+  animation: flamecolor 4s ease-in 1 forwards, flame 1s ease-in infinite;
+}
+
+.navbar-brand {
+  margin-top: 4px;
+}
+
+input[type='checkbox']:checked + label {
+  color: $checked-checkbox-color;
+}
+
+.histogram-summary-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+}
+
+.histogram-summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.histogram-y-wrapper {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  box-sizing: border-box;
+  margin: 15px 0;
+  width: 100%;
+}
+
+.histogram-y-labels {
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.histogram-y-label {
+  margin-right: 8px;
+  height: 25%;
+  text-align: right;
+}
+
+.histogram-x-wrapper {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  margin-right: 8px;
+}
+
+.histogram-x-labels {
+  display: flex;
+}
+
+.histogram-x-label {
+  position: relative;
+  margin-top: 5px;
+  width: 100%;
+  text-align: right;
+}
+
+.histogram-container {
+  margin-top: 9px;
+  position: relative;
+  height: 200px;
+}
+
+.histogram-axes {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-bottom: 1px solid $histogram-chart-axis-color;
+  border-left: 1px solid $histogram-chart-axis-color;
+  pointer-events: none;
+}
+
+.histogram-y-grid {
+  position: absolute;
+  border-bottom: 1px dashed $histogram-chart-grid-color;
+  width: 100%;
+}
+
+.histogram-y-tick {
+  position: absolute;
+  border-bottom: 1px solid $histogram-chart-axis-color;
+  left: -5px;
+  height: 0px;
+  width: 5px;
+}
+
+.histogram-x-grid {
+  position: absolute;
+  border-left: 1px dashed $histogram-chart-grid-color;
+  height: 100%;
+  width: 0;
+}
+
+.histogram-x-tick {
+  position: absolute;
+  border-left: 1px solid $histogram-chart-axis-color;
+  height: 5px;
+  width: 0;
+  bottom: -5px;
+}
+
+.histogram-bucket-slot {
+  position: absolute;
+  bottom: 0;
+  top: 0;
+}
+
+.histogram-bucket {
+  position: absolute;
+  width: 100%;
+  bottom: 0;
+  background-color: #2db453;
+  border: 1px solid #77de94;
+  pointer-events: none;
+}
+
+.histogram-bucket-slot:hover {
+  background-color: $histogram-chart-hover-color;
+}
+
+.histogram-bucket-slot:hover .histogram-bucket {
+  background-color: #88e1a1;
+  border: 1px solid #77de94;
+}
+
+.custom-control-label {
+  cursor: pointer;
+}
+
+.togglers-wrapper .form-group {
+  margin-bottom: 0.5rem;
+}
+
+[for$='-toggler'].custom-control-label::before,
+[for$='-toggler'].custom-control-label::after {
+  top: 0.28rem;
+  left: -1.3rem;
+  width: 1.12rem;
+  height: 1.12rem;
+}
+
+.capitalize-title::first-letter {
+  text-transform: capitalize;
+}
+
+/* Using a more specific selector here to be able to override Bootstrap's default input group styles. */
+.input-group.expression-input {
+  margin-bottom: 10px;
+  /* Prevent the input group from wrapping around when the editor content is too long for a line. */
+  flex-wrap: nowrap;
+}
+
+.alert {
+  padding: 10px;
+  margin-bottom: 0.2rem;
+}
+
+.nav-tabs .nav-link {
+  cursor: pointer;
+}
+
+.tab-content .alert {
+  margin-bottom: 0;
+}
+
+.data-table.table {
+  margin: 10px 0 2px 0;
+}
+
+.data-table > tbody > tr > td {
+  padding: 5px 0 5px 8px;
+  font-size: 0.8em;
+  overflow: hidden;
+}
+
+.autosuggest-dropdown {
+  position: absolute;
+  border: 1px solid #ced4da;
+  background-color: #fff;
+  color: #495057;
+  font-size: 1rem;
+  z-index: 1000;
+  left: 56px;
+  margin-top: -6px;
+}
+
+.autosuggest-dropdown-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.autosuggest-dropdown-list li {
+  width: 100%;
+  padding: 0.25rem 1.5rem;
+  clear: both;
+  white-space: nowrap;
+  background-color: transparent;
+  border: 0;
+  display: block;
+}
+
+.autosuggest-dropdown-list li.autosuggest-dropdown-header {
+  background-color: #bfdeff;
+  font-size: 10px;
+  line-height: 1.5;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.graph-controls,
+.table-controls {
+  margin-bottom: 10px;
+}
+
+.graph-controls input,
+.table-controls input {
+  text-align: center;
+}
+
+.graph-controls .range-input input {
+  width: 50px;
+}
+
+.time-input input {
+  border-right: none;
+}
+
+.time-input {
+  width: 270px !important;
+}
+
+.graph-controls input.resolution-input {
+  width: 90px;
+}
+
+.graph-controls > :not(:first-child) {
+  margin-left: 20px;
+}
+
+.graph-selected-exemplar {
+  position: relative;
+  border: 1px solid $nav-tabs-border-color;
+  margin: 15px 55px;
+  font-size: 0.75em;
+  padding: 10px 10px;
+}
+
+.graph-legend {
+  margin: 15px 55px;
+  font-size: 0.75em;
+  padding: 10px 5px;
+  display: inline-block;
+}
+
+.legend-item {
+  cursor: pointer;
+  display: flex;
+  padding: 0 5px;
+  border-radius: 3px;
+  line-height: 1.7;
+}
+.legend-item div {
+  flex-wrap: wrap;
+}
+
+.legend-swatch {
+  min-width: 7px;
+  height: 7px;
+  outline-offset: 1px;
+  outline: 1.5px solid #ccc;
+  margin: 6px 8px 2px 0;
+  display: inline-block;
+}
+
+.legend-item:hover {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.legend-metric-name {
+  margin-right: 1px;
+}
+
+.legend-label-container:hover {
+  background-color: #add6ff;
+  border-radius: 3px;
+  padding-bottom: 1px;
+  color: #495057;
+  cursor: pointer;
+}
+
+.legend-label-name {
+  font-weight: bold;
+}
+
+.graph {
+  margin: 0 5px 0 5px;
+}
+
+.graph-chart {
+  height: 500px;
+  width: 100%;
+  /* This is picked up by Flot's axis label font renderer,
+      which ignores "color" and uses "fill" instead. */
+  fill: #495057;
+  font-size: 0.8em;
+}
+
+.graph-chart .flot-overlay {
+  cursor: crosshair;
+}
+
+.graph-tooltip {
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  white-space: nowrap;
+  padding: 8px;
+  border-radius: 3px;
+}
+
+.graph-tooltip .labels {
+  font-size: 11px;
+  line-height: 11px;
+}
+
+.graph-tooltip .detail-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+}
+
+.add-panel-btn {
+  margin-bottom: 20px;
+}
+
+.target-head {
+  font-weight: 700;
+  font-size: large;
+}
+
+.group-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  margin-top: 10px;
+  padding: 10px;
+}
+
+.badges-wrapper > span {
+  margin-right: 5px;
+  max-height: 20px;
+}
+
+.rules-head {
+  font-weight: 600;
+}
+
+.rule_cell {
+  white-space: pre-wrap;
+  background-color: #f5f5f5;
+  display: block;
+  font-family: monospace;
+}
+
+@keyframes flamecolor {
+  100% {
+    fill: #e95224;
+  }
+}
+@keyframes flame {
+  0% {
+    d: path(
+      'M 56.667,0.667 C 25.372,0.667 0,26.036 0,57.332 c 0,31.295 25.372,56.666 56.667,56.666 31.295,0 56.666,-25.371 56.666,-56.666 0,-31.296 -25.372,-56.665 -56.666,-56.665 z m 0,106.055 c -8.904,0 -16.123,-5.948 -16.123,-13.283 H 72.79 c 0,7.334 -7.219,13.283 -16.123,13.283 z M 83.297,89.04 H 30.034 V 79.382 H 83.298 V 89.04 Z M 83.106,74.411 H 30.186 C 30.01,74.208 29.83,74.008 29.66,73.802 24.208,67.182 22.924,63.726 21.677,60.204 c -0.021,-0.116 6.611,1.355 11.314,2.413 0,0 2.42,0.56 5.958,1.205 -3.397,-3.982 -5.414,-9.044 -5.414,-14.218 0,-11.359 8.712,-21.285 5.569,-29.308 3.059,0.249 6.331,6.456 6.552,16.161 3.252,-4.494 4.613,-12.701 4.613,-17.733 0,-5.21 3.433,-11.262 6.867,-11.469 -3.061,5.045 0.793,9.37 4.219,20.099 1.285,4.03 1.121,10.812 2.113,15.113 C 63.797,33.534 65.333,20.5 71,16 c -2.5,5.667 0.37,12.758 2.333,16.167 3.167,5.5 5.087,9.667 5.087,17.548 0,5.284 -1.951,10.259 -5.242,14.148 3.742,-0.702 6.326,-1.335 6.326,-1.335 l 12.152,-2.371 c 10e-4,-10e-4 -1.765,7.261 -8.55,14.254 z'
+    );
+  }
+  50% {
+    d: path(
+      'M 56.667,0.667 C 25.372,0.667 0,26.036 0,57.332 c 0,31.295 25.372,56.666 56.667,56.666 31.295,0 56.666,-25.371 56.666,-56.666 0,-31.296 -25.372,-56.665 -56.666,-56.665 z m 0,106.055 c -8.904,0 -16.123,-5.948 -16.123,-13.283 H 72.79 c 0,7.334 -7.219,13.283 -16.123,13.283 z M 83.297,89.04 H 30.034 V 79.382 H 83.298 V 89.04 Z M 83.106,74.411 H 30.186 C 30.01,74.208 29.83,74.008 29.66,73.802 24.208,67.182 22.924,63.726 21.677,60.204 c -0.021,-0.116 6.611,1.355 11.314,2.413 0,0 2.42,0.56 5.958,1.205 -3.397,-3.982 -5.414,-9.044 -5.414,-14.218 0,-11.359 1.640181,-23.047128 7.294982,-29.291475 C 39.391377,29.509803 45.435,26.752 45.656,36.457 c 3.252,-4.494 7.100362,-8.366957 7.100362,-13.398957 0,-5.21 0.137393,-8.650513 -3.479689,-15.0672265 7.834063,1.6180944 8.448052,4.2381285 11.874052,14.9671285 1.285,4.03 1.325275,15.208055 2.317275,19.509055 0.329,-8.933 6.441001,-14.01461 5.163951,-21.391003 5.755224,5.771457 4.934508,10.495521 7.126537,14.288218 3.167,5.5 2.382625,7.496239 2.382625,15.377239 0,5.284 -1.672113,9.232546 -4.963113,13.121546 3.742,-0.702 6.326,-1.335 6.326,-1.335 l 12.152,-2.371 c 10e-4,-10e-4 -1.765,7.261 -8.55,14.254 z'
+    );
+  }
+  100% {
+    d: path(
+      'M 56.667,0.667 C 25.372,0.667 0,26.036 0,57.332 c 0,31.295 25.372,56.666 56.667,56.666 31.295,0 56.666,-25.371 56.666,-56.666 0,-31.296 -25.372,-56.665 -56.666,-56.665 z m 0,106.055 c -8.904,0 -16.123,-5.948 -16.123,-13.283 H 72.79 c 0,7.334 -7.219,13.283 -16.123,13.283 z M 83.297,89.04 H 30.034 V 79.382 H 83.298 V 89.04 Z M 83.106,74.411 H 30.186 C 30.01,74.208 29.83,74.008 29.66,73.802 24.208,67.182 22.924,63.726 21.677,60.204 c -0.021,-0.116 6.611,1.355 11.314,2.413 0,0 2.42,0.56 5.958,1.205 -3.397,-3.982 -5.414,-9.044 -5.414,-14.218 0,-11.359 8.712,-21.285 5.569,-29.308 3.059,0.249 6.331,6.456 6.552,16.161 3.252,-4.494 4.613,-12.701 4.613,-17.733 0,-5.21 3.433,-11.262 6.867,-11.469 -3.061,5.045 0.793,9.37 4.219,20.099 1.285,4.03 1.121,10.812 2.113,15.113 C 63.797,33.534 65.333,20.5 71,16 c -2.5,5.667 0.37,12.758 2.333,16.167 3.167,5.5 5.087,9.667 5.087,17.548 0,5.284 -1.951,10.259 -5.242,14.148 3.742,-0.702 6.326,-1.335 6.326,-1.335 l 12.152,-2.371 c 10e-4,-10e-4 -1.765,7.261 -8.55,14.254 z'
+    );
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "status": "success",
+  "data": [
+    "ALERTS",
+    "ALERTS_FOR_STATE",
+    "alertmanager_alerts",
+    "alertmanager_alerts_invalid_total",
+    "alertmanager_alerts_received_total",
+    "alertmanager_build_info",
+    "alertmanager_cluster_enabled",
+    "alertmanager_config_hash",
+    "alertmanager_config_last_reload_success_timestamp_seconds",
+    "alertmanager_config_last_reload_successful",
+    "alertmanager_dispatcher_aggregation_groups",
+    "alertmanager_dispatcher_alert_processing_duration_seconds_count",
+    "alertmanager_dispatcher_alert_processing_duration_seconds_sum",
+    "alertmanager_http_concurrency_limit_exceeded_total",
+    "alertmanager_http_request_duration_seconds_bucket",
+    "alertmanager_http_request_duration_seconds_count",
+    "alertmanager_http_request_duration_seconds_sum"
+  ]
+}
