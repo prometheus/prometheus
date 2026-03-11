@@ -193,8 +193,10 @@ func TestResourceIter(t *testing.T) {
 	}
 
 	collected := make(map[uint64]*ResourceVersion)
-	err := store.Iter(context.Background(), func(labelsHash uint64, rv *ResourceVersion) error {
-		collected[labelsHash] = rv
+	err := store.IterVersionedFlatInline(context.Background(), func(labelsHash uint64, versions []*ResourceVersion, _, _ int64, _ bool) error {
+		if len(versions) > 0 {
+			collected[labelsHash] = versions[len(versions)-1]
+		}
 		return nil
 	})
 	require.NoError(t, err)

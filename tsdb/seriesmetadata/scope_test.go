@@ -207,9 +207,9 @@ func TestMemScopeStoreIter(t *testing.T) {
 		store.Set(i, sv)
 	}
 
-	collected := make(map[uint64]*VersionedScope)
-	err := store.IterVersioned(context.Background(), func(labelsHash uint64, scopes *VersionedScope) error {
-		collected[labelsHash] = scopes
+	collected := make(map[uint64][]*ScopeVersion)
+	err := store.IterVersionedFlatInline(context.Background(), func(labelsHash uint64, versions []*ScopeVersion, _, _ int64, _ bool) error {
+		collected[labelsHash] = versions
 		return nil
 	})
 	require.NoError(t, err)

@@ -342,8 +342,14 @@ func (*resourceKindDescriptor) SetVersioned(store any, labelsHash uint64, versio
 }
 
 func (*resourceKindDescriptor) IterVersioned(ctx context.Context, store any, f func(labelsHash uint64, versioned any) error) error {
-	return store.(*MemStore[*ResourceVersion]).IterVersioned(ctx, func(labelsHash uint64, v *Versioned[*ResourceVersion]) error {
-		return f(labelsHash, v)
+	return store.(*MemStore[*ResourceVersion]).IterVersionedFlatInline(ctx, func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
+		if isInline && len(versions) == 1 {
+			thin := resourceOps{}.ThinCopy(versions[0], versions[0])
+			thin.MinTime = inlineMinTime
+			thin.MaxTime = inlineMaxTime
+			return f(labelsHash, &Versioned[*ResourceVersion]{Versions: []*ResourceVersion{thin}})
+		}
+		return f(labelsHash, &Versioned[*ResourceVersion]{Versions: versions})
 	})
 }
 

@@ -121,26 +121,15 @@ func BenchmarkCommitResourceToStore(b *testing.B) {
 	})
 }
 
-func BenchmarkIterVersionedFlat(b *testing.B) {
+func BenchmarkIterVersionedFlatInline(b *testing.B) {
 	const numSeries = 100_000
 	m := populateBenchStore(numSeries, 1_000, 500)
 	ctx := context.Background()
 
-	b.Run("IterVersioned", func(b *testing.B) {
+	b.Run("IterVersionedFlatInline", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = m.ResourceStore().IterVersioned(ctx, func(_ uint64, vr *Versioned[*ResourceVersion]) error {
-				for range vr.Versions {
-				}
-				return nil
-			})
-		}
-	})
-
-	b.Run("IterVersionedFlat", func(b *testing.B) {
-		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
-			_ = m.ResourceStore().IterVersionedFlat(ctx, func(_ uint64, versions []*ResourceVersion) error {
+			_ = m.ResourceStore().IterVersionedFlatInline(ctx, func(_ uint64, versions []*ResourceVersion, _, _ int64, _ bool) error {
 				for range versions {
 				}
 				return nil
