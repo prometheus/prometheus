@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/cespare/xxhash/v2"
 	"github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress/zstd"
@@ -85,19 +86,6 @@ type UniqueAttrNameReader interface {
 	UniqueResourceAttrNames() map[string]struct{}
 }
 
-// FlatResourceIterator is optionally implemented by Reader implementations
-// that can iterate resource versions without allocating *Versioned wrappers.
-// The versions slice passed to f must not be retained by the caller.
-type FlatResourceIterator interface {
-	IterVersionedResourcesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion) error) error
-}
-
-// FlatScopeIterator is optionally implemented by Reader implementations
-// that can iterate scope versions without allocating *Versioned wrappers.
-type FlatScopeIterator interface {
-	IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion) error) error
-}
-
 // InlineFlatResourceIterator is optionally implemented by Reader implementations
 // that can iterate resource versions without allocating ThinCopy for single-version
 // entries. When isInline is true, the versions slice contains the canonical directly
@@ -112,48 +100,25 @@ type InlineFlatScopeIterator interface {
 	IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error
 }
 
-// iterResourcesFlat uses FlatResourceIterator if available, otherwise falls back
-// to IterVersionedResources with a wrapper. This avoids *Versioned allocation
-// for implementations that support flat iteration.
-func iterResourcesFlat(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ResourceVersion) error) error {
-	if flat, ok := mr.(FlatResourceIterator); ok {
-		return flat.IterVersionedResourcesFlat(ctx, f)
-	}
-	return mr.IterVersionedResources(ctx, func(labelsHash uint64, vr *VersionedResource) error {
-		return f(labelsHash, vr.Versions)
-	})
-}
-
-// iterScopesFlat uses FlatScopeIterator if available, otherwise falls back
-// to IterVersionedScopes with a wrapper.
-func iterScopesFlat(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ScopeVersion) error) error {
-	if flat, ok := mr.(FlatScopeIterator); ok {
-		return flat.IterVersionedScopesFlat(ctx, f)
-	}
-	return mr.IterVersionedScopes(ctx, func(labelsHash uint64, vs *VersionedScope) error {
-		return f(labelsHash, vs.Versions)
-	})
-}
-
 // iterResourcesFlatInline uses InlineFlatResourceIterator if available, otherwise
-// falls back to iterResourcesFlat with an adapter that reads time from the version.
+// falls back to IterVersionedResources with an adapter.
 func iterResourcesFlatInline(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
 	if inline, ok := mr.(InlineFlatResourceIterator); ok {
 		return inline.IterVersionedResourcesFlatInline(ctx, f)
 	}
-	return iterResourcesFlat(ctx, mr, func(labelsHash uint64, versions []*ResourceVersion) error {
-		return f(labelsHash, versions, 0, 0, false)
+	return mr.IterVersionedResources(ctx, func(labelsHash uint64, vr *VersionedResource) error {
+		return f(labelsHash, vr.Versions, 0, 0, false)
 	})
 }
 
 // iterScopesFlatInline uses InlineFlatScopeIterator if available, otherwise
-// falls back to iterScopesFlat with an adapter that reads time from the version.
+// falls back to IterVersionedScopes with an adapter.
 func iterScopesFlatInline(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
 	if inline, ok := mr.(InlineFlatScopeIterator); ok {
 		return inline.IterVersionedScopesFlatInline(ctx, f)
 	}
-	return iterScopesFlat(ctx, mr, func(labelsHash uint64, versions []*ScopeVersion) error {
-		return f(labelsHash, versions, 0, 0, false)
+	return mr.IterVersionedScopes(ctx, func(labelsHash uint64, vs *VersionedScope) error {
+		return f(labelsHash, vs.Versions, 0, 0, false)
 	})
 }
 
@@ -162,14 +127,13 @@ func iterScopesFlatInline(ctx context.Context, mr Reader, f func(labelsHash uint
 const numAttrIndexStripes = 256
 
 // attrIndexStripe is a single shard of the inverted attribute index.
-// Values are *[]uint64 (pointer-to-slice) so the posting list can be modified
-// in-place (sortedInsert/sortedRemove) without a map write on the common path.
-// This avoids Go's map runtime replacing the stored key on assignment, which
-// would corrupt unsafe.String-backed keys — and more importantly here, it
-// avoids allocating a new string key on every map write.
+// Values are *roaring64.Bitmap for compressed sorted uint64 sets.
+// Roaring bitmaps provide O(log n) insert/remove, efficient set operations,
+// and much better memory efficiency than sorted slices (no excess capacity
+// from exponential growth, run-length encoding for dense ranges).
 type attrIndexStripe struct {
 	mtx sync.RWMutex
-	idx map[string]*[]uint64
+	idx map[string]*roaring64.Bitmap
 	_   [40]byte // cache-line padding to prevent false sharing
 }
 
@@ -183,7 +147,7 @@ type shardedAttrIndex struct {
 func newShardedAttrIndex() *shardedAttrIndex {
 	s := &shardedAttrIndex{}
 	for i := range s.stripes {
-		s.stripes[i].idx = make(map[string]*[]uint64)
+		s.stripes[i].idx = make(map[string]*roaring64.Bitmap)
 	}
 	return s
 }
@@ -198,19 +162,17 @@ func (s *shardedAttrIndex) stripeBytes(key []byte) *attrIndexStripe {
 	return &s.stripes[h&uint64(numAttrIndexStripes-1)]
 }
 
-// lookup returns a copy of the sorted labelsHashes for a given index key.
-// The returned slice is owned by the caller and safe to use after the lock is released.
-// Copy-on-read: mutations (sortedInsert/sortedRemove) operate in-place on the stored slice,
-// so readers must get a copy to avoid races.
+// lookup returns a sorted slice of labelsHashes for a given index key.
+// The returned slice is owned by the caller.
 func (s *shardedAttrIndex) lookup(key string) []uint64 {
 	st := s.stripe(key)
 	st.mtx.RLock()
 	defer st.mtx.RUnlock()
-	p := st.idx[key]
-	if p == nil || len(*p) == 0 {
+	bm := st.idx[key]
+	if bm == nil || bm.IsEmpty() {
 		return nil
 	}
-	return slices.Clone(*p)
+	return bm.ToArray()
 }
 
 // MemSeriesMetadata is an in-memory implementation of series metadata storage.
@@ -341,17 +303,21 @@ func (m *MemSeriesMetadata) LabelsForHash(labelsHash uint64) (labels.Labels, boo
 	return lset, ok
 }
 
-// IterKind iterates all entries for a kind.
+// IterKind iterates all entries for a kind (type-erased).
+// Uses IterVersionedResources/IterVersionedScopes under the hood.
 func (m *MemSeriesMetadata) IterKind(ctx context.Context, id KindID, f func(labelsHash uint64, versioned any) error) error {
-	kind, ok := KindByID(id)
-	if !ok {
+	switch id {
+	case KindResource:
+		return m.IterVersionedResources(ctx, func(labelsHash uint64, vr *VersionedResource) error {
+			return f(labelsHash, vr)
+		})
+	case KindScope:
+		return m.IterVersionedScopes(ctx, func(labelsHash uint64, vs *VersionedScope) error {
+			return f(labelsHash, vs)
+		})
+	default:
 		return nil
 	}
-	store, ok := m.stores[id]
-	if !ok {
-		return nil
-	}
-	return kind.IterVersioned(ctx, store, f)
 }
 
 // IterHashes iterates labelsHashes for a kind without materializing versions.
@@ -406,15 +372,24 @@ func (m *MemSeriesMetadata) DeleteResource(labelsHash uint64) {
 }
 
 func (m *MemSeriesMetadata) IterResources(ctx context.Context, f func(labelsHash uint64, resource *ResourceVersion) error) error {
-	return m.ResourceStore().Iter(ctx, f)
+	return m.ResourceStore().IterVersionedFlatInline(ctx, func(labelsHash uint64, versions []*ResourceVersion, _, _ int64, _ bool) error {
+		if len(versions) == 0 {
+			return nil
+		}
+		return f(labelsHash, versions[len(versions)-1])
+	})
 }
 
 func (m *MemSeriesMetadata) IterVersionedResources(ctx context.Context, f func(labelsHash uint64, resources *VersionedResource) error) error {
-	return m.ResourceStore().IterVersioned(ctx, f)
-}
-
-func (m *MemSeriesMetadata) IterVersionedResourcesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion) error) error {
-	return m.ResourceStore().IterVersionedFlat(ctx, f)
+	return m.ResourceStore().IterVersionedFlatInline(ctx, func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
+		if isInline && len(versions) == 1 {
+			thin := resourceOps{}.ThinCopy(versions[0], versions[0])
+			thin.MinTime = inlineMinTime
+			thin.MaxTime = inlineMaxTime
+			return f(labelsHash, &Versioned[*ResourceVersion]{Versions: []*ResourceVersion{thin}})
+		}
+		return f(labelsHash, &Versioned[*ResourceVersion]{Versions: versions})
+	})
 }
 
 func (m *MemSeriesMetadata) IterVersionedResourcesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
@@ -440,11 +415,15 @@ func (m *MemSeriesMetadata) SetVersionedScope(labelsHash uint64, scopes *Version
 }
 
 func (m *MemSeriesMetadata) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
-	return m.ScopeStore().IterVersioned(ctx, f)
-}
-
-func (m *MemSeriesMetadata) IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion) error) error {
-	return m.ScopeStore().IterVersionedFlat(ctx, f)
+	return m.ScopeStore().IterVersionedFlatInline(ctx, func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
+		if isInline && len(versions) == 1 {
+			thin := scopeOps{}.ThinCopy(versions[0], versions[0])
+			thin.MinTime = inlineMinTime
+			thin.MaxTime = inlineMaxTime
+			return f(labelsHash, &Versioned[*ScopeVersion]{Versions: []*ScopeVersion{thin}})
+		}
+		return f(labelsHash, &Versioned[*ScopeVersion]{Versions: versions})
+	})
 }
 
 func (m *MemSeriesMetadata) IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
@@ -476,7 +455,7 @@ func (m *MemSeriesMetadata) BuildResourceAttrIndex() {
 	extra := m.indexedResourceAttrs
 	m.indexedResourceAttrsMu.RUnlock()
 	var buf bytes.Buffer
-	_ = m.ResourceStore().IterVersionedFlat(context.Background(), func(labelsHash uint64, versions []*ResourceVersion) error {
+	_ = m.ResourceStore().IterVersionedFlatInline(context.Background(), func(labelsHash uint64, versions []*ResourceVersion, _, _ int64, _ bool) error {
 		for _, rv := range versions {
 			bulkAddToAttrIndex(idx, labelsHash, rv, extra, &buf)
 			collectAttrNames(names, rv)
@@ -564,31 +543,6 @@ func (m *MemSeriesMetadata) RemoveFromResourceAttrIndex(labelsHash uint64, vr *V
 	}
 }
 
-// sortedInsert inserts val into the sorted slice s in-place.
-// Returns the (possibly grown) slice. If val already exists, s is returned unchanged.
-// Callers hold the stripe write lock; readers get copies via lookup (copy-on-read).
-func sortedInsert(s []uint64, val uint64) []uint64 {
-	i, found := slices.BinarySearch(s, val)
-	if found {
-		return s
-	}
-	s = append(s, 0)
-	copy(s[i+1:], s[i:len(s)-1])
-	s[i] = val
-	return s
-}
-
-// sortedRemove removes val from the sorted slice s in-place.
-// Returns the (possibly shorter) slice. If val is not found, s is returned unchanged.
-// Callers hold the stripe write lock; readers get copies via lookup (copy-on-read).
-func sortedRemove(s []uint64, val uint64) []uint64 {
-	i, found := slices.BinarySearch(s, val)
-	if !found {
-		return s
-	}
-	copy(s[i:], s[i+1:])
-	return s[:len(s)-1]
-}
 
 // collectAttrNames adds all attribute names from a resource version to the name set.
 func collectAttrNames(names map[string]struct{}, rv *ResourceVersion) {
@@ -627,18 +581,19 @@ func addToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersio
 	}
 }
 
-// addToAttrIndexEntry performs a single sorted insert into the sharded index.
+// addToAttrIndexEntry adds a labelsHash to the bitmap for the given key.
 // On the common path (key already exists), string(key) in the map index is
 // optimized by the Go compiler to avoid allocation. Only first-time inserts
 // allocate a string for the map key.
 func addToAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
 	st := idx.stripeBytes(key)
 	st.mtx.Lock()
-	if p := st.idx[string(key)]; p != nil {
-		*p = sortedInsert(*p, labelsHash)
+	if bm := st.idx[string(key)]; bm != nil {
+		bm.Add(labelsHash)
 	} else {
-		s := []uint64{labelsHash}
-		st.idx[string(key)] = &s
+		bm = roaring64.New()
+		bm.Add(labelsHash)
+		st.idx[string(key)] = bm
 	}
 	st.mtx.Unlock()
 }
@@ -668,16 +623,15 @@ func removeFromAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceV
 	}
 }
 
-// removeFromAttrIndexEntry performs a single sorted remove from the sharded index.
+// removeFromAttrIndexEntry removes a labelsHash from the bitmap for the given key.
+// Deletes the map entry entirely if the bitmap becomes empty.
 func removeFromAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
 	st := idx.stripeBytes(key)
 	st.mtx.Lock()
-	if p := st.idx[string(key)]; p != nil {
-		ns := sortedRemove(*p, labelsHash)
-		if len(ns) == 0 {
+	if bm := st.idx[string(key)]; bm != nil {
+		bm.Remove(labelsHash)
+		if bm.IsEmpty() {
 			delete(st.idx, string(key))
-		} else {
-			*p = ns
 		}
 	}
 	st.mtx.Unlock()
@@ -705,29 +659,28 @@ func bulkAddToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVe
 	}
 }
 
-// bulkAddToAttrIndexEntry appends without sort order (finalize sorts later).
+// bulkAddToAttrIndexEntry adds to the bitmap (no finalize needed for roaring).
 func bulkAddToAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
 	st := idx.stripeBytes(key)
-	if p := st.idx[string(key)]; p != nil {
-		*p = append(*p, labelsHash)
+	if bm := st.idx[string(key)]; bm != nil {
+		bm.Add(labelsHash)
 	} else {
-		s := []uint64{labelsHash}
-		st.idx[string(key)] = &s
+		bm = roaring64.New()
+		bm.Add(labelsHash)
+		st.idx[string(key)] = bm
 	}
 }
 
-// finalizeBulkAttrIndex sorts and deduplicates all posting lists after bulk insertion.
+// finalizeBulkAttrIndex optimizes all bitmaps for memory after bulk insertion.
+// RunOptimize applies run-length encoding where beneficial.
 func finalizeBulkAttrIndex(idx *shardedAttrIndex) {
 	for i := range idx.stripes {
 		st := &idx.stripes[i]
-		for key, p := range st.idx {
-			s := *p
-			slices.Sort(s)
-			s = slices.Compact(s)
-			if len(s) == 0 {
+		for key, bm := range st.idx {
+			if bm.IsEmpty() {
 				delete(st.idx, key)
 			} else {
-				*p = s
+				bm.RunOptimize()
 			}
 		}
 	}
@@ -884,11 +837,12 @@ func denormalizeRows(
 		// Single-threaded during Parquet load — no stripe locking needed,
 		// but use stripe routing for correct placement.
 		st := idx.stripe(key)
-		if p := st.idx[key]; p != nil {
-			*p = sortedInsert(*p, labelsHash)
+		if bm := st.idx[key]; bm != nil {
+			bm.Add(labelsHash)
 		} else {
-			s := []uint64{labelsHash}
-			st.idx[key] = &s
+			bm = roaring64.New()
+			bm.Add(labelsHash)
+			st.idx[key] = bm
 		}
 	}
 	if idx != nil {
@@ -1080,10 +1034,6 @@ func (r *parquetReader) IterVersionedResources(ctx context.Context, f func(label
 	return r.mem.IterVersionedResources(ctx, f)
 }
 
-func (r *parquetReader) IterVersionedResourcesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion) error) error {
-	return r.mem.IterVersionedResourcesFlat(ctx, f)
-}
-
 func (r *parquetReader) IterVersionedResourcesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
 	return r.mem.IterVersionedResourcesFlatInline(ctx, f)
 }
@@ -1102,10 +1052,6 @@ func (r *parquetReader) GetVersionedScope(labelsHash uint64) (*VersionedScope, b
 
 func (r *parquetReader) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
 	return r.mem.IterVersionedScopes(ctx, f)
-}
-
-func (r *parquetReader) IterVersionedScopesFlat(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion) error) error {
-	return r.mem.IterVersionedScopesFlat(ctx, f)
 }
 
 func (r *parquetReader) IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
@@ -1503,7 +1449,7 @@ func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (
 	// clear()ed per series to avoid per-callback map allocation.
 	seen := make(map[uint64]struct{})
 
-	_ = iterResourcesFlat(context.Background(), mr, func(labelsHash uint64, versions []*ResourceVersion) error {
+	_ = iterResourcesFlatInline(context.Background(), mr, func(labelsHash uint64, versions []*ResourceVersion, _, _ int64, _ bool) error {
 		if hashFilter != nil && !hashFilter(labelsHash) {
 			return nil
 		}
