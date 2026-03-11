@@ -7314,3 +7314,155 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 	require.Equal(t, uint64(numNewSeries), head.NumSeries())
 	require.NoError(t, head.Close())
 }
+
+func TestMmapDirtyHeadChunks(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+	require.NoError(t, h.Init(0))
+
+	interval := DefaultBlockDuration / (4 * 120) // Same interval as other mmap tests.
+
+	countDirty := func() int {
+		n := 0
+		for i := range h.series.size {
+			h.series.locks[i].RLock()
+			n += len(h.series.dirty[i])
+			h.series.locks[i].RUnlock()
+		}
+		return n
+	}
+
+	lblsA := labels.FromStrings("__name__", "seriesA")
+	lblsB := labels.FromStrings("__name__", "seriesB")
+	lblsC := labels.FromStrings("__name__", "seriesC")
+
+	ts := int64(0)
+
+	// First chunk creation should not mark series as dirty.
+	app := h.Appender(context.Background())
+	_, err := app.Append(0, lblsA, ts, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	ts += interval
+
+	require.Equal(t, 0, countDirty(), "series with only a first chunk should not be dirty")
+
+	// Appending enough samples to trigger chunk cuts should mark series dirty.
+	var refB, refC storage.SeriesRef
+	for range 250 {
+		app := h.Appender(t.Context())
+		var err error
+		refB, err = app.Append(refB, lblsB, ts, float64(ts))
+		require.NoError(t, err)
+		refC, err = app.Append(refC, lblsC, ts, float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		ts += interval
+	}
+
+	require.Positive(t, countDirty(), "expected some series to be marked dirty")
+
+	// mmapDirtyHeadChunks should drain the dirty set and mmap chunks.
+	h.mmapDirtyHeadChunks()
+
+	for _, lbls := range []labels.Labels{lblsB, lblsC} {
+		s := h.series.getByHash(lbls.Hash(), lbls)
+		require.NotNil(t, s, "series %s not found", lbls)
+		s.Lock()
+		require.NotNil(t, s.headChunks, "series %s should have head chunks", lbls)
+		require.Nil(t, s.headChunks.prev, "series %s should have prev mmapped", lbls)
+		require.NotEmpty(t, s.mmappedChunks, "series %s should have mmapped chunks", lbls)
+		s.Unlock()
+	}
+
+	require.Equal(t, 0, countDirty(), "dirty set should be empty after mmapDirtyHeadChunks")
+
+	// A second call should be a no-op.
+	beforeMetric := prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	h.mmapDirtyHeadChunks()
+	afterMetric := prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	require.Equal(t, beforeMetric, afterMetric, "second call should mmap 0 chunks")
+
+	// Only newly dirty series should be processed.
+	for range 250 {
+		app := h.Appender(context.Background())
+		var err error
+		refB, err = app.Append(refB, lblsB, ts, float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		ts += interval
+	}
+
+	require.Equal(t, 1, countDirty(), "only series B should be dirty")
+
+	beforeMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	h.mmapDirtyHeadChunks()
+	afterMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	require.Greater(t, afterMetric, beforeMetric, "third call should mmap chunks from series B")
+}
+
+func TestMmapDirtyHeadChunks_WALReplay(t *testing.T) {
+	dir := t.TempDir()
+
+	interval := DefaultBlockDuration / (4 * 120)
+	lbls := labels.FromStrings("__name__", "hist_series")
+
+	openHead := func() *Head {
+		wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+		require.NoError(t, err)
+
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = DefaultBlockDuration
+		opts.ChunkDirRoot = dir
+		opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+
+		h, err := NewHead(nil, nil, wal, nil, opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, h.Init(0))
+		return h
+	}
+
+	countDirty := func(h *Head) int {
+		n := 0
+		for i := 0; i < h.series.size; i++ {
+			h.series.locks[i].RLock()
+			n += len(h.series.dirty[i])
+			h.series.locks[i].RUnlock()
+		}
+		return n
+	}
+
+	// Phase 1: Append enough histogram samples to cut multiple chunks, then close.
+	h := openHead()
+	ts := int64(0)
+	var ref storage.SeriesRef
+	for range 250 {
+		app := h.Appender(context.Background())
+		var err error
+		ref, err = app.AppendHistogram(ref, lbls, ts, tsdbutil.GenerateTestHistogram(ts), nil)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		ts += interval
+	}
+	require.NoError(t, h.Close())
+
+	// Phase 2: Remove mmapped chunks so replay is WAL-only.
+	require.NoError(t, os.RemoveAll(mmappedChunksDir(dir)))
+
+	// Phase 3: Reopen and verify dirty tracking from WAL replay.
+	h = openHead()
+	defer func() { require.NoError(t, h.Close()) }()
+
+	require.Positive(t, countDirty(h), "histogram series should be marked dirty from WAL replay")
+
+	h.mmapDirtyHeadChunks()
+
+	s := h.series.getByHash(lbls.Hash(), lbls)
+	require.NotNil(t, s)
+	s.Lock()
+	require.NotNil(t, s.headChunks, "series should have head chunks")
+	require.Nil(t, s.headChunks.prev, "prev chunks should be mmapped")
+	require.NotEmpty(t, s.mmappedChunks, "series should have mmapped chunks")
+	s.Unlock()
+
+	require.Equal(t, 0, countDirty(h), "dirty set should be empty after mmapDirtyHeadChunks")
+}
