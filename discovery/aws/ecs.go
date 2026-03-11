@@ -99,6 +99,7 @@ type ECSSDConfig struct {
 	SecretKey       config.Secret  `yaml:"secret_key,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
 	RoleARN         string         `yaml:"role_arn,omitempty"`
+	ExternalID      string         `yaml:"external_id,omitempty"`
 	Clusters        []string       `yaml:"clusters,omitempty"`
 	Port            int            `yaml:"port"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
@@ -241,7 +242,11 @@ func (d *ECSDiscovery) initEcsClient(ctx context.Context) error {
 
 	// If the role ARN is set, assume the role to get credentials and set the credentials provider in the config.
 	if d.cfg.RoleARN != "" {
-		assumeProvider := stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), d.cfg.RoleARN)
+		assumeProvider := stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), d.cfg.RoleARN, func(o *stscreds.AssumeRoleOptions) {
+			if d.cfg.ExternalID != "" {
+				o.ExternalID = aws.String(d.cfg.ExternalID)
+			}
+		})
 		cfg.Credentials = aws.NewCredentialsCache(assumeProvider)
 	}
 
