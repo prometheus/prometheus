@@ -143,9 +143,10 @@ func (m *MemStore[V]) internVersions(vs *Versioned[V]) {
 
 // mergeVersionedInterned merges two Versioned instances and interns the result
 // in a single pass, avoiding the intermediate deep copies that MergeVersioned +
-// internVersions would create. Each merged version is produced as a ThinCopy
-// from the canonical content table directly, skipping the ops.Copy → ThinCopy
-// round-trip that wastes ~72 GB during WAL replay.
+// internVersions would create. Versions from input a (the existing multi) are
+// reused directly since they are already-interned ThinCopies, skipping
+// ContentHash + getOrCreateCanonical + ThinCopy for the common case.
+// Only versions from input b (the new insertion) are interned.
 // Falls back to MergeVersioned + internVersions when dedupOps is nil.
 func (m *MemStore[V]) mergeVersionedInterned(a, b *Versioned[V]) *Versioned[V] {
 	if m.dedupOps == nil {
@@ -165,20 +166,24 @@ func (m *MemStore[V]) mergeVersionedInterned(a, b *Versioned[V]) *Versioned[V] {
 	}
 
 	merged := make([]V, 0, len(a.Versions)+len(b.Versions))
+	lastIsReused := false
 
 	// Two-pointer merge (both slices are sorted by MinTime).
 	i, j := 0, 0
 	for i < len(a.Versions) || j < len(b.Versions) {
 		var ver V
+		fromExisting := false
 		switch {
 		case i >= len(a.Versions):
 			ver = b.Versions[j]
 			j++
 		case j >= len(b.Versions):
 			ver = a.Versions[i]
+			fromExisting = true
 			i++
 		case a.Versions[i].GetMinTime() <= b.Versions[j].GetMinTime():
 			ver = a.Versions[i]
+			fromExisting = true
 			i++
 		default:
 			ver = b.Versions[j]
@@ -188,6 +193,16 @@ func (m *MemStore[V]) mergeVersionedInterned(a, b *Versioned[V]) *Versioned[V] {
 		if len(merged) > 0 {
 			last := merged[len(merged)-1]
 			if m.ops.Equal(last, ver) && (last.GetMaxTime() == math.MaxInt64 || ver.GetMinTime() <= last.GetMaxTime()+1) {
+				if lastIsReused {
+					// Coalescing would mutate a reused input version.
+					// Replace with a fresh ThinCopy before mutating.
+					hash := m.dedupOps.ContentHash(last)
+					canonical := m.getOrCreateCanonical(hash, last)
+					fresh := m.dedupOps.ThinCopy(canonical, last)
+					merged[len(merged)-1] = fresh
+					lastIsReused = false
+					last = fresh
+				}
 				if ver.GetMaxTime() > last.GetMaxTime() {
 					last.SetMaxTime(ver.GetMaxTime())
 				}
@@ -197,11 +212,20 @@ func (m *MemStore[V]) mergeVersionedInterned(a, b *Versioned[V]) *Versioned[V] {
 				continue
 			}
 		}
-		// Intern directly: get canonical and produce a ThinCopy, avoiding the
-		// intermediate deep copy that ops.Copy would create.
-		hash := m.dedupOps.ContentHash(ver)
-		canonical := m.getOrCreateCanonical(hash, ver)
-		merged = append(merged, m.dedupOps.ThinCopy(canonical, ver))
+
+		if fromExisting {
+			// Already-interned ThinCopy from input a — reuse directly,
+			// skipping ContentHash + getOrCreateCanonical + ThinCopy.
+			merged = append(merged, ver)
+			lastIsReused = true
+		} else {
+			// Intern directly: get canonical and produce a ThinCopy, avoiding the
+			// intermediate deep copy that ops.Copy would create.
+			hash := m.dedupOps.ContentHash(ver)
+			canonical := m.getOrCreateCanonical(hash, ver)
+			merged = append(merged, m.dedupOps.ThinCopy(canonical, ver))
+			lastIsReused = false
+		}
 	}
 
 	return &Versioned[V]{Versions: merged}
