@@ -406,7 +406,7 @@ func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
 		storeST          bool
 		expectedEncoding chunkenc.Encoding
 	}{
-		{"storeST=true", true, chunkenc.EncXOROptST},
+		{"storeST=true", true, chunkenc.EncXOR2},
 		{"storeST=false", false, chunkenc.EncXOR},
 	}
 
