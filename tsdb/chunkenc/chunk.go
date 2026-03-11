@@ -212,7 +212,6 @@ func (v ValueType) NewChunk(useXOR2 bool) (Chunk, error) {
 	return NewEmptyChunk(v.ChunkEncoding(useXOR2))
 }
 
-
 // MockSeriesIterator returns an iterator for a mock series with custom
 // start timestamp, timestamps, and values.
 // Start timestamps is optional, pass nil or empty slice to indicate no start
