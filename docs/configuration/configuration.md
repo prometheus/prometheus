@@ -1330,6 +1330,9 @@ role: <string>
 # AWS Role ARN, an alternative to using AWS API keys.
 [ role_arn: <string> ]
 
+# Optional External ID that can go along with role_arn.
+[ external_id: <string> ]
+
 # Refresh interval to re-read the targets list.
 [ refresh_interval: <duration> | default = 60s ]
 
