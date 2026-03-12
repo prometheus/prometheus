@@ -1,24 +1,31 @@
-# Minimal valid case: an empty histogram.
+# Minimal valid case: an empty exponential or custom bucket histogram.
 load 5m
-	empty_histogram	{{}}
+	empty_histogram{h="exp"} {{}}
+	empty_histogram{h="cbh"} {{schema:-53 custom_values:[-2 3]}}
 
 eval instant at 1m empty_histogram
-	{__name__="empty_histogram"} {{}}
+	empty_histogram{h="exp"} {{}}
+	empty_histogram{h="cbh"} {{schema:-53 custom_values:[-2 3]}}
 
 eval instant at 1m histogram_count(empty_histogram)
-	{} 0
+	{h="exp"} 0
+	{h="cbh"} 0
 
 eval instant at 1m histogram_sum(empty_histogram)
-	{} 0
+	{h="exp"} 0
+	{h="cbh"} 0
 
 eval instant at 1m histogram_avg(empty_histogram)
-	{} NaN
+	{h="exp"} NaN
+	{h="cbh"} NaN
 
 eval instant at 1m histogram_fraction(-Inf, +Inf, empty_histogram)
-	{} NaN
+	{h="exp"} NaN
+	{h="cbh"} NaN
 
 eval instant at 1m histogram_fraction(0, 8, empty_histogram)
-	{} NaN
+	{h="exp"} NaN
+	{h="cbh"} NaN
 
 clear
 
@@ -2377,5 +2384,146 @@ eval instant at 1m cbh_for_join >/ on (label) float_for_join
   {label="a"} {{schema:-53 count:100.8 sum:502.4 custom_values:[5] buckets:[0.8 100]}}
   {label="b"} {{schema:-53 count:200.4 sum:1001.8 custom_values:[5] buckets:[0.4 200]}}
 
+load 1m
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+# Verify that trim of  empty histogram is empty, as opposed to NaN for histogram_fraction
+eval instant at 1m empty </ -Inf
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+eval instant at 1m empty </ -5
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+eval instant at 1m empty </ 0
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+eval instant at 1m empty </ 5
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+eval instant at 1m empty </ +Inf
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+eval instant at 1m empty >/ -Inf
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+eval instant at 1m empty >/ -5
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+eval instant at 1m empty >/ 0
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+eval instant at 1m empty >/ 5
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+eval instant at 1m empty >/ +Inf
+  empty{h="exp"} {{}}
+  empty{h="cbh"} {{schema:-53 custom_values:[-3 2]}}
+
+# Verify trim operators satisfy the identity for non-empty native histograms h:
+#   h </ x  == histogram_fraction(-Inf, x, h) * histogram_count(h)
+#   h >/ x  == histogram_fraction(x, +Inf, h) * histogram_count(h)
+# Each pair of eval statements tests both sides of the identity against the same
+# expected scalar.
+
+# Exponential histogram (schema:0, count:34), bucket boundary x=2.
+eval instant at 1m histogram_count(h_test </ 2)
+  {} 10
+
+eval instant at 1m histogram_fraction(-Inf, 2, h_test) * histogram_count(h_test)
+  {} 10
+
+eval instant at 1m histogram_count(h_test >/ 2)
+  {} 24
+
+eval instant at 1m histogram_fraction(2, +Inf, h_test) * histogram_count(h_test)
+  {} 24
+
+# Exponential histogram (schema:0, count:34), negative bucket boundary x=-1.
+eval instant at 1m histogram_count(h_test </ -1)
+  {} 2
+
+eval instant at 1m histogram_fraction(-Inf, -1, h_test) * histogram_count(h_test)
+  {} 2
+
+eval instant at 1m histogram_count(h_test >/ -1)
+  {} 32
+
+eval instant at 1m histogram_fraction(-1, +Inf, h_test) * histogram_count(h_test)
+  {} 32
+
+# Exponential histogram (schema:0, count:34), zero boundary x=0.
+eval instant at 1m histogram_count(h_test </ 0)
+  {} 3.5
+
+eval instant at 1m histogram_fraction(-Inf, 0, h_test) * histogram_count(h_test)
+  {} 3.5
+
+eval instant at 1m histogram_count(h_test >/ 0)
+  {} 30.5
+
+eval instant at 1m histogram_fraction(0, +Inf, h_test) * histogram_count(h_test)
+  {} 30.5
+
+# Exponential histogram (schema:0, count:34), interior point x=sqrt(2) (sub-bucket boundary).
+eval instant at 1m histogram_count(h_test </ 1.4142135624)
+  {} 8
+
+eval instant at 1m histogram_fraction(-Inf, 1.4142135624, h_test) * histogram_count(h_test)
+  {} 8
+
+eval instant at 1m histogram_count(h_test >/ 1.4142135624)
+  {} 26
+
+eval instant at 1m histogram_fraction(1.4142135624, +Inf, h_test) * histogram_count(h_test)
+  {} 26
+
+# Higher-resolution exponential histogram (schema:2, count:28), interior point x=1.13.
+eval instant at 1m histogram_count(h_test_2 </ 1.13)
+  {} 13.410582181123704
+
+eval instant at 1m histogram_fraction(-Inf, 1.13, h_test_2) * histogram_count(h_test_2)
+  {} 13.410582181123704
+
+eval instant at 1m histogram_count(h_test_2 >/ 1.13)
+  {} 14.589417818876296
+
+eval instant at 1m histogram_fraction(1.13, +Inf, h_test_2) * histogram_count(h_test_2)
+  {} 14.589417818876296
+
+# Custom-bucket histogram (count:15), bucket boundary x=15.
+eval instant at 1m histogram_count(cbh </ 15)
+  {} 11
+
+eval instant at 1m histogram_fraction(-Inf, 15, cbh) * histogram_count(cbh)
+  {} 11
+
+eval instant at 1m histogram_count(cbh >/ 15)
+  {} 4
+
+eval instant at 1m histogram_fraction(15, +Inf, cbh) * histogram_count(cbh)
+  {} 4
+
+# Custom-bucket histogram (count:15), interior point x=13 (linear interpolation).
+eval instant at 1m histogram_count(cbh </ 13)
+  {} 9.4
+
+eval instant at 1m histogram_fraction(-Inf, 13, cbh) * histogram_count(cbh)
+  {} 9.4
+
+eval instant at 1m histogram_count(cbh >/ 13)
+  {} 5.6
+
+eval instant at 1m histogram_fraction(13, +Inf, cbh) * histogram_count(cbh)
+  {} 5.6
 
 clear
