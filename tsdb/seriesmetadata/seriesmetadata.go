@@ -126,14 +126,79 @@ func iterScopesFlatInline(ctx context.Context, mr Reader, f func(labelsHash uint
 // Must be a power of two for fast modulo via bitmask.
 const numAttrIndexStripes = 256
 
+// postingListInlineThreshold is the maximum number of entries stored in a
+// sorted []uint64 before promoting to a *roaring64.Bitmap. 16 entries use
+// 128 bytes vs 288 bytes for a roaring bitmap, saving ~160 bytes per small
+// posting list (hundreds of millions of them in production).
+const postingListInlineThreshold = 16
+
+// postingList is a hybrid posting list: small sets (≤16 entries) are stored
+// as a sorted []uint64 inline, larger sets are promoted to *roaring64.Bitmap.
+// Stored by value in the map — mutations use read-modify-write.
+type postingList struct {
+	inline []uint64          // sorted; used when bitmap==nil
+	bitmap *roaring64.Bitmap // non-nil only when promoted past threshold
+}
+
+func (p postingList) add(v uint64) postingList {
+	if p.bitmap != nil {
+		p.bitmap.Add(v)
+		return p
+	}
+	// Check if already present.
+	i, found := slices.BinarySearch(p.inline, v)
+	if found {
+		return p
+	}
+	// Insert in sorted order.
+	p.inline = slices.Insert(p.inline, i, v)
+	// Promote if threshold exceeded.
+	if len(p.inline) > postingListInlineThreshold {
+		p.bitmap = roaring64.New()
+		p.bitmap.AddMany(p.inline)
+		p.inline = nil
+	}
+	return p
+}
+
+func (p postingList) remove(v uint64) postingList {
+	if p.bitmap != nil {
+		p.bitmap.Remove(v)
+		return p
+	}
+	i, found := slices.BinarySearch(p.inline, v)
+	if found {
+		p.inline = slices.Delete(p.inline, i, i+1)
+	}
+	return p
+}
+
+func (p postingList) isEmpty() bool {
+	return len(p.inline) == 0 && (p.bitmap == nil || p.bitmap.IsEmpty())
+}
+
+// toArray returns a copy of the posting list as a sorted []uint64.
+// The returned slice is owned by the caller (safe after releasing locks).
+func (p postingList) toArray() []uint64 {
+	if p.bitmap != nil {
+		return p.bitmap.ToArray()
+	}
+	return slices.Clone(p.inline)
+}
+
+func (p postingList) runOptimize() postingList {
+	if p.bitmap != nil {
+		p.bitmap.RunOptimize()
+	}
+	return p
+}
+
 // attrIndexStripe is a single shard of the inverted attribute index.
-// Values are *roaring64.Bitmap for compressed sorted uint64 sets.
-// Roaring bitmaps provide O(log n) insert/remove, efficient set operations,
-// and much better memory efficiency than sorted slices (no excess capacity
-// from exponential growth, run-length encoding for dense ranges).
+// Values are postingList: small sets use sorted inline slices,
+// large sets use roaring bitmaps.
 type attrIndexStripe struct {
 	mtx sync.RWMutex
-	idx map[string]*roaring64.Bitmap
+	idx map[string]postingList
 	_   [40]byte // cache-line padding to prevent false sharing
 }
 
@@ -147,7 +212,7 @@ type shardedAttrIndex struct {
 func newShardedAttrIndex() *shardedAttrIndex {
 	s := &shardedAttrIndex{}
 	for i := range s.stripes {
-		s.stripes[i].idx = make(map[string]*roaring64.Bitmap)
+		s.stripes[i].idx = make(map[string]postingList)
 	}
 	return s
 }
@@ -168,11 +233,11 @@ func (s *shardedAttrIndex) lookup(key string) []uint64 {
 	st := s.stripe(key)
 	st.mtx.RLock()
 	defer st.mtx.RUnlock()
-	bm := st.idx[key]
-	if bm == nil || bm.IsEmpty() {
+	pl := st.idx[key]
+	if pl.isEmpty() {
 		return nil
 	}
-	return bm.ToArray()
+	return pl.toArray()
 }
 
 // MemSeriesMetadata is an in-memory implementation of series metadata storage.
@@ -581,19 +646,21 @@ func addToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersio
 	}
 }
 
-// addToAttrIndexEntry adds a labelsHash to the bitmap for the given key.
-// On the common path (key already exists), string(key) in the map index is
-// optimized by the Go compiler to avoid allocation. Only first-time inserts
-// allocate a string for the map key.
+// addToAttrIndexEntry adds a labelsHash to the posting list for the given key.
+// When the posting list already has a bitmap, the bitmap is mutated through its
+// pointer without a map write-back, avoiding Go's per-write string key allocation.
+// Only structural changes (inline→bitmap promotion or first insert) write to the map.
 func addToAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
 	st := idx.stripeBytes(key)
 	st.mtx.Lock()
-	if bm := st.idx[string(key)]; bm != nil {
-		bm.Add(labelsHash)
+	pl, exists := st.idx[string(key)]
+	if exists && pl.bitmap != nil {
+		// Bitmap mutation goes through the pointer — no map write needed.
+		pl.bitmap.Add(labelsHash)
 	} else {
-		bm = roaring64.New()
-		bm.Add(labelsHash)
-		st.idx[string(key)] = bm
+		// Inline or new: structural change requires write-back.
+		pl = pl.add(labelsHash)
+		st.idx[string(key)] = pl
 	}
 	st.mtx.Unlock()
 }
@@ -623,15 +690,28 @@ func removeFromAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceV
 	}
 }
 
-// removeFromAttrIndexEntry removes a labelsHash from the bitmap for the given key.
-// Deletes the map entry entirely if the bitmap becomes empty.
+// removeFromAttrIndexEntry removes a labelsHash from the posting list for the given key.
+// Deletes the map entry entirely if the posting list becomes empty.
 func removeFromAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
 	st := idx.stripeBytes(key)
 	st.mtx.Lock()
-	if bm := st.idx[string(key)]; bm != nil {
-		bm.Remove(labelsHash)
-		if bm.IsEmpty() {
+	pl, exists := st.idx[string(key)]
+	if !exists {
+		st.mtx.Unlock()
+		return
+	}
+	if pl.bitmap != nil {
+		// Bitmap mutation goes through the pointer — no map write needed.
+		pl.bitmap.Remove(labelsHash)
+		if pl.bitmap.IsEmpty() {
 			delete(st.idx, string(key))
+		}
+	} else {
+		pl = pl.remove(labelsHash)
+		if pl.isEmpty() {
+			delete(st.idx, string(key))
+		} else {
+			st.idx[string(key)] = pl
 		}
 	}
 	st.mtx.Unlock()
@@ -659,28 +739,28 @@ func bulkAddToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVe
 	}
 }
 
-// bulkAddToAttrIndexEntry adds to the bitmap (no finalize needed for roaring).
+// bulkAddToAttrIndexEntry adds to a posting list (no lock, single-threaded bulk phase).
 func bulkAddToAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
 	st := idx.stripeBytes(key)
-	if bm := st.idx[string(key)]; bm != nil {
-		bm.Add(labelsHash)
+	pl, exists := st.idx[string(key)]
+	if exists && pl.bitmap != nil {
+		pl.bitmap.Add(labelsHash)
 	} else {
-		bm = roaring64.New()
-		bm.Add(labelsHash)
-		st.idx[string(key)] = bm
+		pl = pl.add(labelsHash)
+		st.idx[string(key)] = pl
 	}
 }
 
-// finalizeBulkAttrIndex optimizes all bitmaps for memory after bulk insertion.
-// RunOptimize applies run-length encoding where beneficial.
+// finalizeBulkAttrIndex optimizes all posting lists for memory after bulk insertion.
+// RunOptimize applies run-length encoding where beneficial for promoted bitmaps.
 func finalizeBulkAttrIndex(idx *shardedAttrIndex) {
 	for i := range idx.stripes {
 		st := &idx.stripes[i]
-		for key, bm := range st.idx {
-			if bm.IsEmpty() {
+		for key, pl := range st.idx {
+			if pl.isEmpty() {
 				delete(st.idx, key)
 			} else {
-				bm.RunOptimize()
+				st.idx[key] = pl.runOptimize()
 			}
 		}
 	}
@@ -853,12 +933,12 @@ func denormalizeRows(
 		// Single-threaded during Parquet load — no stripe locking needed,
 		// but use stripe routing for correct placement.
 		st := idx.stripe(key)
-		if bm := st.idx[key]; bm != nil {
-			bm.Add(labelsHash)
+		pl, exists := st.idx[key]
+		if exists && pl.bitmap != nil {
+			pl.bitmap.Add(labelsHash)
 		} else {
-			bm = roaring64.New()
-			bm.Add(labelsHash)
-			st.idx[key] = bm
+			pl = pl.add(labelsHash)
+			st.idx[key] = pl
 		}
 	}
 	if idx != nil {
@@ -1202,6 +1282,17 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
 				return nil
 			}
+			seriesRef := labelsHash
+			if opts.RefResolver != nil {
+				ref, ok := opts.RefResolver(labelsHash)
+				if !ok {
+					return nil
+				}
+				seriesRef = ref
+			}
+			if seen != nil {
+				clear(seen)
+			}
 			for _, rv := range versions {
 				var contentHash uint64
 				contentHash, keysBuf = hashResourceContentReusable(rv, keysBuf)
@@ -1215,17 +1306,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 							"kind", string(KindResource), "content_hash", contentHash, "labels_hash", labelsHash)
 					}
 				}
-				seriesRef := labelsHash
-				if opts.RefResolver != nil {
-					ref, ok := opts.RefResolver(labelsHash)
-					if !ok {
-						logger.Warn("Skipping unresolvable labels hash in write",
-							"kind", string(KindResource), "labels_hash", labelsHash)
-						continue
-					}
-					seriesRef = ref
-				}
-				minTime, maxTime := rv.MinTime, rv.MaxTime
+					minTime, maxTime := rv.MinTime, rv.MaxTime
 				if isInline {
 					minTime, maxTime = inlineMinTime, inlineMaxTime
 				}
@@ -1236,6 +1317,44 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 					MinTime:     minTime,
 					MaxTime:     maxTime,
 				})
+				// Build inverted index rows inline (Fix 1: avoids second iteration).
+				if seen != nil {
+					for k, v := range rv.Identifying {
+						ch := attrKeyValueHash(k, v)
+						if _, exists := seen[ch]; !exists {
+							seen[ch] = struct{}{}
+							indexRows = append(indexRows, metadataRow{
+								Namespace:   NamespaceResourceAttrIndex,
+								SeriesRef:   seriesRef,
+								ContentHash: ch,
+								AttrKey:     k,
+								AttrValue:   v,
+								IdentifyingAttrs: []EntityAttributeEntry{
+									{Key: k, Value: v},
+								},
+							})
+						}
+					}
+					for k, v := range rv.Descriptive {
+						if _, ok := opts.IndexedResourceAttrs[k]; !ok {
+							continue
+						}
+						ch := attrKeyValueHash(k, v)
+						if _, exists := seen[ch]; !exists {
+							seen[ch] = struct{}{}
+							indexRows = append(indexRows, metadataRow{
+								Namespace:   NamespaceResourceAttrIndex,
+								SeriesRef:   seriesRef,
+								ContentHash: ch,
+								AttrKey:     k,
+								AttrValue:   v,
+								IdentifyingAttrs: []EntityAttributeEntry{
+									{Key: k, Value: v},
+								},
+							})
+						}
+					}
+				}
 			}
 			return nil
 		})
@@ -1274,6 +1393,14 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
 				return nil
 			}
+			seriesRef := labelsHash
+			if opts.RefResolver != nil {
+				ref, ok := opts.RefResolver(labelsHash)
+				if !ok {
+					return nil
+				}
+				seriesRef = ref
+			}
 			for _, sv := range versions {
 				var contentHash uint64
 				contentHash, keysBuf = hashScopeContentReusable(sv, keysBuf)
@@ -1287,17 +1414,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 							"kind", string(KindScope), "content_hash", contentHash, "labels_hash", labelsHash)
 					}
 				}
-				seriesRef := labelsHash
-				if opts.RefResolver != nil {
-					ref, ok := opts.RefResolver(labelsHash)
-					if !ok {
-						logger.Warn("Skipping unresolvable labels hash in write",
-							"kind", string(KindScope), "labels_hash", labelsHash)
-						continue
-					}
-					seriesRef = ref
-				}
-				minTime, maxTime := sv.MinTime, sv.MaxTime
+					minTime, maxTime := sv.MinTime, sv.MaxTime
 				if isInline {
 					minTime, maxTime = inlineMinTime, inlineMaxTime
 				}

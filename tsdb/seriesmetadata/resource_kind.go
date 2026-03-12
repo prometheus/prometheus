@@ -253,7 +253,7 @@ func CommitResourceToStore(store *MemStore[*ResourceVersion], labelsHash uint64,
 
 	return store.InsertVersion(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, func() *ResourceVersion {
 		return buildResourceVersion(rcd)
-	})
+	}, false)
 }
 
 // CommitResourceToStoreReusable is like CommitResourceToStore but accepts and
@@ -263,7 +263,7 @@ func CommitResourceToStoreReusable(store *MemStore[*ResourceVersion], labelsHash
 	contentHash, keysBuf := hashResourceCommitDataReusable(rcd, keysBuf)
 	contentChanged, old, cur = store.InsertVersion(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, func() *ResourceVersion {
 		return buildResourceVersion(rcd)
-	})
+	}, false)
 	return contentChanged, old, cur, keysBuf
 }
 
@@ -274,7 +274,7 @@ func CommitResourceToStoreReusableWithRef(store *MemStore[*ResourceVersion], lab
 	contentHash, keysBuf := hashResourceCommitDataReusable(rcd, keysBuf)
 	contentChanged, old, cur = store.InsertVersionWithRef(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, seriesRef, func() *ResourceVersion {
 		return buildResourceVersion(rcd)
-	})
+	}, rcd.Owned)
 	return contentChanged, old, cur, keysBuf
 }
 

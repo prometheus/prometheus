@@ -1507,3 +1507,112 @@ func TestBuildResourceAttrIndexStreaming(t *testing.T) {
 
 	require.ElementsMatch(t, expected, got)
 }
+
+func TestPostingList(t *testing.T) {
+	t.Run("add to empty", func(t *testing.T) {
+		var pl postingList
+		pl = pl.add(42)
+		require.False(t, pl.isEmpty())
+		require.Nil(t, pl.bitmap)
+		require.Equal(t, []uint64{42}, pl.toArray())
+	})
+
+	t.Run("sorted insert", func(t *testing.T) {
+		var pl postingList
+		pl = pl.add(30)
+		pl = pl.add(10)
+		pl = pl.add(20)
+		require.Equal(t, []uint64{10, 20, 30}, pl.toArray())
+	})
+
+	t.Run("dedup", func(t *testing.T) {
+		var pl postingList
+		pl = pl.add(10)
+		pl = pl.add(10)
+		require.Equal(t, []uint64{10}, pl.toArray())
+	})
+
+	t.Run("promotion at threshold", func(t *testing.T) {
+		var pl postingList
+		for i := uint64(0); i <= postingListInlineThreshold; i++ {
+			pl = pl.add(i)
+		}
+		require.NotNil(t, pl.bitmap, "should be promoted to bitmap")
+		require.Nil(t, pl.inline, "inline should be nil after promotion")
+		require.Equal(t, uint64(postingListInlineThreshold+1), pl.bitmap.GetCardinality())
+	})
+
+	t.Run("at threshold no promotion", func(t *testing.T) {
+		var pl postingList
+		for i := uint64(0); i < postingListInlineThreshold; i++ {
+			pl = pl.add(i)
+		}
+		require.Nil(t, pl.bitmap, "should stay inline at threshold")
+		require.Len(t, pl.inline, postingListInlineThreshold)
+	})
+
+	t.Run("remove from inline", func(t *testing.T) {
+		var pl postingList
+		pl = pl.add(10)
+		pl = pl.add(20)
+		pl = pl.add(30)
+		pl = pl.remove(20)
+		require.Equal(t, []uint64{10, 30}, pl.toArray())
+	})
+
+	t.Run("remove nonexistent", func(t *testing.T) {
+		var pl postingList
+		pl = pl.add(10)
+		pl = pl.remove(99)
+		require.Equal(t, []uint64{10}, pl.toArray())
+	})
+
+	t.Run("remove from bitmap", func(t *testing.T) {
+		var pl postingList
+		for i := uint64(0); i <= postingListInlineThreshold; i++ {
+			pl = pl.add(i)
+		}
+		require.NotNil(t, pl.bitmap)
+		pl = pl.remove(5)
+		require.Equal(t, uint64(postingListInlineThreshold), pl.bitmap.GetCardinality())
+	})
+
+	t.Run("isEmpty", func(t *testing.T) {
+		var pl postingList
+		require.True(t, pl.isEmpty())
+		pl = pl.add(1)
+		require.False(t, pl.isEmpty())
+		pl = pl.remove(1)
+		require.True(t, pl.isEmpty())
+	})
+
+	t.Run("toArray returns copy", func(t *testing.T) {
+		var pl postingList
+		pl = pl.add(10)
+		pl = pl.add(20)
+		arr := pl.toArray()
+		arr[0] = 999
+		require.Equal(t, []uint64{10, 20}, pl.toArray(), "modifying returned slice must not affect posting list")
+	})
+
+	t.Run("runOptimize inline noop", func(t *testing.T) {
+		var pl postingList
+		pl = pl.add(10)
+		pl = pl.runOptimize()
+		require.Equal(t, []uint64{10}, pl.toArray())
+	})
+
+	t.Run("runOptimize bitmap", func(t *testing.T) {
+		var pl postingList
+		for i := uint64(0); i <= postingListInlineThreshold; i++ {
+			pl = pl.add(i)
+		}
+		pl = pl.runOptimize()
+		require.NotNil(t, pl.bitmap)
+		expected := make([]uint64, postingListInlineThreshold+1)
+		for i := range expected {
+			expected[i] = uint64(i)
+		}
+		require.Equal(t, expected, pl.toArray())
+	})
+}
