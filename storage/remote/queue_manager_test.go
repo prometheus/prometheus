@@ -608,7 +608,7 @@ func TestReshardPartialBatch(t *testing.T) {
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			recs := testwal.GenerateRecords(recCase{
-				NoST:  protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+				NoST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
 				Series: 1, SamplesPerSeries: 10,
 			})
 
@@ -656,8 +656,8 @@ func TestQueueFilledDeadlock(t *testing.T) {
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			recs := testwal.GenerateRecords(recCase{
-				NoST:  protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
-				Series: 50, SamplesPerSeries: 1
+				NoST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+				Series: 50, SamplesPerSeries: 1,
 			})
 
 			c := NewNopWriteClient()
@@ -1920,7 +1920,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 			nSamples := config.DefaultQueueConfig.Capacity * size
 			noST := protoMsg == remoteapi.WriteV1MessageType // RW1
 			pastRecs := testwal.GenerateRecords(recCase{
-				NoST: noST,
+				NoST:             noST,
 				Series:           nSeries,
 				SamplesPerSeries: (nSamples / nSeries) / 2, // Half data is past.
 				TsFn: func(_, j int) int64 {
@@ -1929,7 +1929,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 				},
 			})
 			newRecs := testwal.GenerateRecords(recCase{
-				NoST: noST,
+				NoST:             noST,
 				Series:           nSeries,
 				SamplesPerSeries: (nSamples / nSeries) / 2, // Half data is past.
 				TsFn: func(_, j int) int64 {
@@ -2004,7 +2004,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 				r := rand.New(rand.NewSource(99))
 
 				recs := testwal.GenerateRecords(recCase{
-					NoST:  protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+					NoST:             protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
 					Series:           numberOfSeries,
 					SamplesPerSeries: 1,
 					TsFn: func(_, _ int) int64 {
@@ -2031,8 +2031,8 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 						tsID := getSeriesIDFromRef(recs.Series[s.Ref])
 						c.expectedSamples[tsID] = append(c.expectedSamples[tsID], writev2.Sample{
 							StartTimestamp: s.ST,
-							Timestamp: s.T,
-							Value:     s.V,
+							Timestamp:      s.T,
+							Value:          s.V,
 						})
 					}
 				}
@@ -2554,7 +2554,7 @@ func TestHighestTimestampOnAppend(t *testing.T) {
 			nSamples := 11 * config.DefaultQueueConfig.Capacity
 			nSeries := 3
 			recs := testwal.GenerateRecords(recCase{
-				NoST:  protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
+				NoST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
 				Series: nSeries, SamplesPerSeries: nSamples / nSeries,
 			})
 
