@@ -1913,6 +1913,10 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 		if !contentChanged {
 			continue
 		}
+		if oldVR == nil {
+			a.head.metrics.seriesmetadataInserts.WithLabelValues("resource").Inc()
+		}
+		a.head.metrics.seriesmetadataContentChanges.WithLabelValues("resource").Inc()
 		a.head.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
 		b.resources[n] = b.resources[i]
 		b.resourceSeries[n] = b.resourceSeries[i]
@@ -1943,7 +1947,8 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 		s.Unlock()
 
 		var contentChanged bool
-		contentChanged, _, _, keysBuf = seriesmetadata.CommitScopeToStoreReusableWithRef(store, hash, seriesmetadata.ScopeCommitData{
+		var oldVS *seriesmetadata.VersionedScope
+		contentChanged, oldVS, _, keysBuf = seriesmetadata.CommitScopeToStoreReusableWithRef(store, hash, seriesmetadata.ScopeCommitData{
 			Name:      sc.Name,
 			Version:   sc.Version,
 			SchemaURL: sc.SchemaURL,
@@ -1956,6 +1961,10 @@ func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
 		if !contentChanged {
 			continue
 		}
+		if oldVS == nil {
+			a.head.metrics.seriesmetadataInserts.WithLabelValues("scope").Inc()
+		}
+		a.head.metrics.seriesmetadataContentChanges.WithLabelValues("scope").Inc()
 		b.scopes[n] = b.scopes[i]
 		b.scopeSeries[n] = b.scopeSeries[i]
 		n++
