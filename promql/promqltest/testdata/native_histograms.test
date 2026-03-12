@@ -2359,6 +2359,12 @@ eval instant at 1m cbh_two_buckets_split_at_negative >/ 0.0
 eval instant at 1m cbh_two_buckets_split_at_negative >/ 10.0
   cbh_two_buckets_split_at_negative {{schema:-53 sum:1000.0 count:100 custom_values:[-5] buckets:[0 100]}}
 
+# Verify there is no interference from skip buckets optimization:
+eval instant at 1m histogram_sum(cbh_two_buckets_split_at_negative >/ 10.0)
+  {} 1000
+
+eval instant at 1m histogram_count(cbh_two_buckets_split_at_negative >/ 10.0)
+  {} 100
 
 load 1m
   cbh_for_join{label="a"} {{schema:-53 sum:33 count:101 custom_values:[5] buckets:[1 100]}}

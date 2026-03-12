@@ -405,7 +405,7 @@ func (db *DB) replayWAL() error {
 		return fmt.Errorf("find last checkpoint: %w", err)
 	}
 
-	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
+	duplicateRefToValidRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 
 	if err == nil {
 		sr, err := wlog.NewSegmentsReader(dir)
@@ -420,7 +420,7 @@ func (db *DB) replayWAL() error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := db.loadWAL(wlog.NewReader(sr), multiRef); err != nil {
+		if err := db.loadWAL(wlog.NewReader(sr), duplicateRefToValidRef, startFrom); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		startFrom++
@@ -441,7 +441,7 @@ func (db *DB) replayWAL() error {
 		}
 
 		sr := wlog.NewSegmentBufReader(seg)
-		err = db.loadWAL(wlog.NewReader(sr), multiRef)
+		err = db.loadWAL(wlog.NewReader(sr), duplicateRefToValidRef, i)
 		if err := sr.Close(); err != nil {
 			db.logger.Warn("error while closing the wal segments reader", "err", err)
 		}
@@ -464,7 +464,7 @@ func (db *DB) resetWALReplayResources() {
 	db.walReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
 }
 
-func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef) (err error) {
+func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, currentSegmentOrCheckpoint int) (err error) {
 	var (
 		syms    = labels.NewSymbolTable() // One table for the whole WAL.
 		dec     = record.NewDecoder(syms, db.logger)
@@ -549,29 +549,48 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, entry := range v {
-				// If this is a new series, create it in memory. If we never read in a
-				// sample for this series, its timestamp will remain at 0 and it will
-				// be deleted at the next GC.
-				if db.series.GetByID(entry.Ref) == nil {
-					series := &memSeries{ref: entry.Ref, lset: entry.Labels, lastTs: 0}
-					db.series.Set(entry.Labels.Hash(), series)
-					multiRef[entry.Ref] = series.ref
-					db.metrics.numActiveSeries.Inc()
-					if entry.Ref > lastRef {
-						lastRef = entry.Ref
+				// Make sure we don't try to reuse a Ref that already exists in the WAL.
+				if entry.Ref > lastRef {
+					lastRef = entry.Ref
+				}
+
+				series := &memSeries{ref: entry.Ref, lset: entry.Labels}
+				series, created := db.series.GetOrSet(series.lset.Hash(), series)
+
+				if !created {
+					// We don't need to check if entry.Ref exists / if the value is not series.ref because GetOrSet
+					// enforces that the same labels will always get the same Ref. If we did not create a new ref
+					// the only possible ref it should ever be in the WAL is series.ref.
+					duplicateRefToValidRef[entry.Ref] = series.ref
+
+					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+					// it remains in the checkpoint until we get past that segment.
+					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
+						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
 					}
+				} else {
+					db.metrics.numActiveSeries.Inc()
 				}
 			}
 			db.walReplaySeriesPool.Put(v)
 		case []record.RefSample:
 			for _, entry := range v {
-				// Update the lastTs for the series based
-				ref, ok := multiRef[entry.Ref]
-				if !ok {
+				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
+					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+					// it remains in the checkpoint until we get past that segment.
+					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
+						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+					}
+					entry.Ref = ref
+				}
+
+				series := db.series.GetByID(entry.Ref)
+				if series == nil {
 					nonExistentSeriesRefs.Inc()
 					continue
 				}
-				series := db.series.GetByID(ref)
+
+				// Update the lastTs for the series if this sample is newer.
 				if entry.T > series.lastTs {
 					series.lastTs = entry.T
 				}
@@ -579,13 +598,21 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 			db.walReplaySamplesPool.Put(v)
 		case []record.RefHistogramSample:
 			for _, entry := range v {
-				// Update the lastTs for the series based
-				ref, ok := multiRef[entry.Ref]
-				if !ok {
+				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
+					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+					// it remains in the checkpoint until we get past that segment.
+					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
+						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+					}
+					entry.Ref = ref
+				}
+				series := db.series.GetByID(entry.Ref)
+				if series == nil {
 					nonExistentSeriesRefs.Inc()
 					continue
 				}
-				series := db.series.GetByID(ref)
+
+				// Update the lastTs for the series if this sample is newer.
 				if entry.T > series.lastTs {
 					series.lastTs = entry.T
 				}
@@ -593,13 +620,21 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 			db.walReplayHistogramsPool.Put(v)
 		case []record.RefFloatHistogramSample:
 			for _, entry := range v {
-				// Update the lastTs for the series based
-				ref, ok := multiRef[entry.Ref]
-				if !ok {
+				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
+					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+					// it remains in the checkpoint until we get past that segment.
+					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
+						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+					}
+					entry.Ref = ref
+				}
+				series := db.series.GetByID(entry.Ref)
+				if series == nil {
 					nonExistentSeriesRefs.Inc()
 					continue
 				}
-				series := db.series.GetByID(ref)
+
+				// Update the lastTs for the series if this sample is newer.
 				if entry.T > series.lastTs {
 					series.lastTs = entry.T
 				}

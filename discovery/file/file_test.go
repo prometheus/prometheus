@@ -16,10 +16,8 @@ package file
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"sync"
 	"testing"
@@ -65,7 +63,7 @@ func newTestRunner(t *testing.T) *testRunner {
 	}
 }
 
-// copyFile atomically copies a file to the runner's directory.
+// copyFile copies a file to the runner's directory.
 func (t *testRunner) copyFile(src string) string {
 	t.Helper()
 	return t.copyFileTo(src, filepath.Base(src))
@@ -75,36 +73,50 @@ func (t *testRunner) copyFile(src string) string {
 func (t *testRunner) copyFileTo(src, name string) string {
 	t.Helper()
 
-	newf, err := os.CreateTemp(t.dir, "")
+	content, err := os.ReadFile(src)
 	require.NoError(t, err)
-
-	f, err := os.Open(src)
-	require.NoError(t, err)
-
-	_, err = io.Copy(newf, f)
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
-	require.NoError(t, newf.Close())
 
 	dst := filepath.Join(t.dir, name)
-	err = os.Rename(newf.Name(), dst)
-	require.NoError(t, err)
+	t.atomicWrite(dst, content)
 
 	return dst
 }
 
-// writeString writes atomically a string to a file.
+// writeString atomically writes a string to a file.
 func (t *testRunner) writeString(file, data string) {
 	t.Helper()
+	t.atomicWrite(file, []byte(data))
+}
 
-	newf, err := os.CreateTemp(t.dir, "")
+// atomicWrite writes data to dst atomically by writing to a temporary file
+// and renaming it. The temp file is created outside the watched directory to
+// avoid triggering spurious fsnotify events that could cause readFile to hold
+// an open handle on dst (which would make os.Rename fail on Windows).
+func (t *testRunner) atomicWrite(dst string, data []byte) {
+	t.Helper()
+
+	// Create the temp file via t.TempDir() rather than in t.dir (the watched
+	// directory). t.TempDir() returns a fresh directory on the same filesystem
+	// as t.dir, so os.Rename works, and cleanup is handled by the test framework.
+	tmp, err := os.CreateTemp(t.TempDir(), ".sd-test-*")
 	require.NoError(t, err)
 
-	_, err = newf.WriteString(data)
+	_, err = tmp.Write(data)
 	require.NoError(t, err)
-	require.NoError(t, newf.Close())
+	require.NoError(t, tmp.Close())
 
-	err = os.Rename(newf.Name(), file)
+	// On Windows, os.Rename fails if another process holds an open handle
+	// on dst. This can happen if a previous refresh cycle's readFile call
+	// hasn't released the file yet. Retry a few times to handle this;
+	// on Linux/macOS os.Rename always succeeds regardless, so the retry
+	// never triggers.
+	for retries := 0; ; retries++ {
+		err = os.Rename(tmp.Name(), dst)
+		if err == nil || retries >= 5 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	require.NoError(t, err)
 }
 
@@ -320,9 +332,6 @@ func valid2Tg(file string) []*targetgroup.Group {
 }
 
 func TestInitialUpdate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
-	}
 	for _, tc := range []string{
 		"fixtures/valid.yml",
 		"fixtures/valid.json",
@@ -365,9 +374,6 @@ func TestInvalidFile(t *testing.T) {
 }
 
 func TestNoopFileUpdate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
-	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
@@ -386,9 +392,6 @@ func TestNoopFileUpdate(t *testing.T) {
 }
 
 func TestFileUpdate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
-	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
@@ -407,9 +410,6 @@ func TestFileUpdate(t *testing.T) {
 }
 
 func TestInvalidFileUpdate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
-	}
 	t.Parallel()
 
 	runner := newTestRunner(t)
@@ -432,9 +432,6 @@ func TestInvalidFileUpdate(t *testing.T) {
 }
 
 func TestUpdateFileWithPartialWrites(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/16212")
-	}
 	t.Parallel()
 
 	runner := newTestRunner(t)

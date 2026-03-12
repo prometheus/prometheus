@@ -55,6 +55,7 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
 
@@ -77,6 +78,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/features"
@@ -321,6 +323,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.web.EnableTypeAndUnitLabels = true
 				logger.Info("Experimental type and unit labels enabled")
 			case "use-uncached-io":
+				if !fileutil.UncachedIOSupported() {
+					return errors.New("experimental Uncached IO is not supported")
+				}
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
 			default:
@@ -834,6 +839,9 @@ func main() {
 
 	klogv2.SetSlogLogger(logger.With("component", "k8s_client_runtime"))
 	klog.SetOutputBySeverity("INFO", klogv1Writer{})
+	// Avoid duplicate API deprecation warnings (e.g., "v1 Endpoints is deprecated in v1.33+...")
+	// that can pollute the logs.
+	rest.SetDefaultWarningHandlerWithContext(logging.NewDedupDeprecationWarningLogger())
 
 	modeAppName := "Prometheus Server"
 	mode := "server"

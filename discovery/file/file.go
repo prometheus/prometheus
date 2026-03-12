@@ -259,7 +259,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case event := <-d.watcher.Events:
 			// fsnotify sometimes sends a bunch of events without name or operation.
 			// It's unclear what they are and why they are sent - filter them out.
-			if len(event.Name) == 0 {
+			if event.Name == "" {
 				break
 			}
 			// Everything but a chmod requires rereading.
