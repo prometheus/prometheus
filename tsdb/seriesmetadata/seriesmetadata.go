@@ -28,7 +28,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/RoaringBitmap/roaring"
 	"github.com/cespare/xxhash/v2"
 	"github.com/parquet-go/parquet-go"
 	"github.com/parquet-go/parquet-go/compress/zstd"
@@ -162,48 +162,54 @@ func iterScopesFlatInlineWithContentHash(ctx context.Context, mr Reader, f func(
 const numAttrIndexStripes = 256
 
 // postingListInlineThreshold is the maximum number of entries stored in a
-// sorted []uint64 before promoting to a *roaring64.Bitmap. 16 entries use
-// 128 bytes vs 288 bytes for a roaring bitmap, saving ~160 bytes per small
-// posting list (hundreds of millions of them in production).
-const postingListInlineThreshold = 16
+// sorted []uint64 before promoting to a *roaring.Bitmap. 128 entries use
+// 1024 bytes inline vs ~18000 bytes for a roaring bitmap with sparse random
+// uint64-derived keys. Binary search insert is still fast at this size.
+const postingListInlineThreshold = 128
 
-// postingList is a hybrid posting list: small sets (≤16 entries) are stored
-// as a sorted []uint64 inline, larger sets are promoted to *roaring64.Bitmap.
+// postingList is a hybrid posting list: small sets (≤128 entries) are stored
+// as a sorted []uint64 inline, larger sets are promoted to *roaring.Bitmap
+// using compact uint32 IDs assigned by the owning shardedAttrIndex.
 // Stored by value in the map — mutations use read-modify-write.
 type postingList struct {
-	inline []uint64          // sorted; used when bitmap==nil
-	bitmap *roaring64.Bitmap // non-nil only when promoted past threshold
+	inline []uint64        // sorted labelsHashes; used when bitmap==nil
+	bitmap *roaring.Bitmap // 32-bit compact IDs; non-nil when promoted past threshold
 }
 
-func (p postingList) add(v uint64) postingList {
-	if p.bitmap != nil {
-		p.bitmap.Add(v)
-		return p
-	}
-	// Check if already present.
+// addInline inserts v into the inline slice. Returns the updated postingList
+// and whether promotion is needed (len exceeded threshold).
+// Must only be called when bitmap==nil.
+func (p postingList) addInline(v uint64) (postingList, bool) {
 	i, found := slices.BinarySearch(p.inline, v)
 	if found {
-		return p
+		return p, false
 	}
-	// Insert in sorted order.
 	p.inline = slices.Insert(p.inline, i, v)
-	// Promote if threshold exceeded.
-	if len(p.inline) > postingListInlineThreshold {
-		p.bitmap = roaring64.New()
-		p.bitmap.AddMany(p.inline)
-		p.inline = nil
+	return p, len(p.inline) > postingListInlineThreshold
+}
+
+// promote converts the inline slice to a roaring bitmap using compact IDs.
+func (p postingList) promote(getID func(uint64) uint32) postingList {
+	bm := roaring.New()
+	for _, h := range p.inline {
+		bm.Add(getID(h))
+	}
+	return postingList{bitmap: bm}
+}
+
+// removeInline removes v from the inline slice.
+func (p postingList) removeInline(v uint64) postingList {
+	i, found := slices.BinarySearch(p.inline, v)
+	if found {
+		p.inline = slices.Delete(p.inline, i, i+1)
 	}
 	return p
 }
 
-func (p postingList) remove(v uint64) postingList {
+// removeBitmap removes the compact ID for v from the bitmap.
+func (p postingList) removeBitmap(id uint32) postingList {
 	if p.bitmap != nil {
-		p.bitmap.Remove(v)
-		return p
-	}
-	i, found := slices.BinarySearch(p.inline, v)
-	if found {
-		p.inline = slices.Delete(p.inline, i, i+1)
+		p.bitmap.Remove(id)
 	}
 	return p
 }
@@ -213,10 +219,16 @@ func (p postingList) isEmpty() bool {
 }
 
 // toArray returns a copy of the posting list as a sorted []uint64.
+// For bitmap posting lists, compact IDs are translated back via reverse.
 // The returned slice is owned by the caller (safe after releasing locks).
-func (p postingList) toArray() []uint64 {
+func (p postingList) toArray(reverse []uint64) []uint64 {
 	if p.bitmap != nil {
-		return p.bitmap.ToArray()
+		compactIDs := p.bitmap.ToArray()
+		result := make([]uint64, len(compactIDs))
+		for i, id := range compactIDs {
+			result[i] = reverse[id]
+		}
+		return result
 	}
 	return slices.Clone(p.inline)
 }
@@ -240,16 +252,75 @@ type attrIndexStripe struct {
 // shardedAttrIndex is a 256-way sharded inverted index mapping
 // "key\x00value" → sorted []uint64 of labelsHashes. Sharding by key hash
 // eliminates the single-mutex bottleneck under high ingestion concurrency.
+//
+// Compact ID mapping: when a posting list is promoted from inline to bitmap,
+// labelsHashes (uint64) are mapped to dense sequential uint32 compact IDs.
+// Dense IDs share roaring containers efficiently (one bitmap container covers
+// 65536 entries in 8 KB), dramatically reducing per-entry overhead.
 type shardedAttrIndex struct {
 	stripes [numAttrIndexStripes]attrIndexStripe
+
+	// Compact ID mapping: labelsHash (uint64) ↔ dense uint32 ID for 32-bit roaring.
+	idMu    sync.RWMutex
+	forward map[uint64]uint32 // labelsHash → compactID
+	reverse []uint64          // compactID → labelsHash (append-only)
 }
 
 func newShardedAttrIndex() *shardedAttrIndex {
-	s := &shardedAttrIndex{}
+	s := &shardedAttrIndex{
+		forward: make(map[uint64]uint32),
+	}
 	for i := range s.stripes {
 		s.stripes[i].idx = make(map[string]postingList)
 	}
 	return s
+}
+
+// getOrAssignID returns the compact uint32 ID for a labelsHash, assigning
+// a new one if not yet mapped. Thread-safe.
+func (s *shardedAttrIndex) getOrAssignID(labelsHash uint64) uint32 {
+	s.idMu.RLock()
+	if id, ok := s.forward[labelsHash]; ok {
+		s.idMu.RUnlock()
+		return id
+	}
+	s.idMu.RUnlock()
+
+	s.idMu.Lock()
+	defer s.idMu.Unlock()
+	// Double-check after acquiring write lock.
+	if id, ok := s.forward[labelsHash]; ok {
+		return id
+	}
+	id := uint32(len(s.reverse))
+	s.forward[labelsHash] = id
+	s.reverse = append(s.reverse, labelsHash)
+	return id
+}
+
+// getOrAssignIDBulk returns the compact ID, assigning if needed.
+// NOT thread-safe — for single-threaded bulk build only.
+func (s *shardedAttrIndex) getOrAssignIDBulk(labelsHash uint64) uint32 {
+	if id, ok := s.forward[labelsHash]; ok {
+		return id
+	}
+	id := uint32(len(s.reverse))
+	s.forward[labelsHash] = id
+	s.reverse = append(s.reverse, labelsHash)
+	return id
+}
+
+// lookupID returns the compact ID for a labelsHash, if mapped. Thread-safe for reads.
+func (s *shardedAttrIndex) lookupID(labelsHash uint64) (uint32, bool) {
+	s.idMu.RLock()
+	id, ok := s.forward[labelsHash]
+	s.idMu.RUnlock()
+	return id, ok
+}
+
+// getReverseMap returns the current reverse mapping. Caller must hold idMu.RLock.
+func (s *shardedAttrIndex) getReverseMap() []uint64 {
+	return s.reverse
 }
 
 func (s *shardedAttrIndex) stripe(key string) *attrIndexStripe {
@@ -272,7 +343,10 @@ func (s *shardedAttrIndex) lookup(key string) []uint64 {
 	if pl.isEmpty() {
 		return nil
 	}
-	return pl.toArray()
+	s.idMu.RLock()
+	result := pl.toArray(s.reverse)
+	s.idMu.RUnlock()
+	return result
 }
 
 // MemSeriesMetadata is an in-memory implementation of series metadata storage.
@@ -303,6 +377,11 @@ type MemSeriesMetadata struct {
 	// and BuildResourceAttrIndex. Cardinality is typically tiny (<100 names).
 	uniqueAttrNames   map[string]struct{}
 	uniqueAttrNamesMu sync.RWMutex
+
+	// Lazy attr index build: when attrIndexEnabled is true, the first call to
+	// LookupResourceAttr triggers BuildResourceAttrIndex via sync.Once.
+	buildAttrIndexOnce sync.Once
+	attrIndexEnabled   bool
 }
 
 // NewMemSeriesMetadata creates a new in-memory series metadata store.
@@ -546,6 +625,21 @@ func (m *MemSeriesMetadata) TotalScopeVersions() uint64 {
 	return m.ScopeStore().TotalVersions()
 }
 
+// SetAttrIndexEnabled marks that the attr index should be built on first query.
+// Call this instead of BuildResourceAttrIndex to defer the expensive build
+// until it's actually needed.
+func (m *MemSeriesMetadata) SetAttrIndexEnabled(enabled bool) {
+	m.attrIndexEnabled = enabled
+}
+
+// ensureResourceAttrIndex builds the attr index on first call if enabled.
+func (m *MemSeriesMetadata) ensureResourceAttrIndex() {
+	if !m.attrIndexEnabled {
+		return
+	}
+	m.buildAttrIndexOnce.Do(m.BuildResourceAttrIndex)
+}
+
 // BuildResourceAttrIndex builds the inverted index from all resource versions.
 // Called once after merge in mergeBlockMetadata. After this, LookupResourceAttr
 // returns results in O(1) instead of requiring a full scan.
@@ -698,10 +792,14 @@ func addToAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
 	pl, exists := st.idx[string(key)]
 	if exists && pl.bitmap != nil {
 		// Bitmap mutation goes through the pointer — no map write needed.
-		pl.bitmap.Add(labelsHash)
+		pl.bitmap.Add(idx.getOrAssignID(labelsHash))
 	} else {
-		// Inline or new: structural change requires write-back.
-		pl = pl.add(labelsHash)
+		// Inline or new: try inline add first.
+		var needPromo bool
+		pl, needPromo = pl.addInline(labelsHash)
+		if needPromo {
+			pl = pl.promote(idx.getOrAssignID)
+		}
 		st.idx[string(key)] = pl
 	}
 	st.mtx.Unlock()
@@ -743,13 +841,14 @@ func removeFromAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint
 		return
 	}
 	if pl.bitmap != nil {
-		// Bitmap mutation goes through the pointer — no map write needed.
-		pl.bitmap.Remove(labelsHash)
+		if id, ok := idx.lookupID(labelsHash); ok {
+			pl.bitmap.Remove(id)
+		}
 		if pl.bitmap.IsEmpty() {
 			delete(st.idx, string(key))
 		}
 	} else {
-		pl = pl.remove(labelsHash)
+		pl = pl.removeInline(labelsHash)
 		if pl.isEmpty() {
 			delete(st.idx, string(key))
 		} else {
@@ -786,9 +885,13 @@ func bulkAddToAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint6
 	st := idx.stripeBytes(key)
 	pl, exists := st.idx[string(key)]
 	if exists && pl.bitmap != nil {
-		pl.bitmap.Add(labelsHash)
+		pl.bitmap.Add(idx.getOrAssignIDBulk(labelsHash))
 	} else {
-		pl = pl.add(labelsHash)
+		var needPromo bool
+		pl, needPromo = pl.addInline(labelsHash)
+		if needPromo {
+			pl = pl.promote(idx.getOrAssignIDBulk)
+		}
 		st.idx[string(key)] = pl
 	}
 }
@@ -826,9 +929,10 @@ func (m *MemSeriesMetadata) AttrIndexKeyCount() int {
 
 // LookupResourceAttr returns sorted labelsHashes that have a resource version
 // with the given key:value in Identifying or Descriptive attributes.
-// Returns nil if the index has not been built.
+// Returns nil if the index has not been built and lazy build is not enabled.
 // The returned slice is a copy, safe for use after the call returns.
 func (m *MemSeriesMetadata) LookupResourceAttr(key, value string) []uint64 {
+	m.ensureResourceAttrIndex()
 	if m.resourceAttrIndex == nil {
 		return nil
 	}
@@ -977,9 +1081,13 @@ func denormalizeRows(
 		st := idx.stripe(key)
 		pl, exists := st.idx[key]
 		if exists && pl.bitmap != nil {
-			pl.bitmap.Add(labelsHash)
+			pl.bitmap.Add(idx.getOrAssignIDBulk(labelsHash))
 		} else {
-			pl = pl.add(labelsHash)
+			var needPromo bool
+			pl, needPromo = pl.addInline(labelsHash)
+			if needPromo {
+				pl = pl.promote(idx.getOrAssignIDBulk)
+			}
 			st.idx[key] = pl
 		}
 	}
