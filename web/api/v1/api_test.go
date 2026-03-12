@@ -61,6 +61,7 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/web/api/testhelpers"
 )
 
 var testParser = parser.NewParser(parser.Options{})
@@ -1767,10 +1768,6 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 		{
 			endpoint: api.series,
 			errType:  errorBadData,
-		},
-		{
-			endpoint: api.dropSeries,
-			errType:  errorInternal,
 		},
 		{
 			endpoint: api.targets,
@@ -4930,4 +4927,20 @@ func (*fakeQuery) Cancel() {}
 
 func (q *fakeQuery) String() string {
 	return q.query
+}
+
+// TestDeleteSeriesEndpointRemoved verifies that the deprecated DELETE /api/v1/series
+// endpoint is no longer registered and does not return HTTP 500 "not implemented".
+func TestDeleteSeriesEndpointRemoved(t *testing.T) {
+	api := newTestAPI(t, testhelpers.APIConfig{})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/series", nil)
+	recorder := httptest.NewRecorder()
+	api.Handler.ServeHTTP(recorder, req)
+
+	// The endpoint previously returned HTTP 500 with "not implemented".
+	// After removal, the router should no longer match DELETE on /series,
+	// so we must not get the old 500 error.
+	require.NotEqual(t, http.StatusInternalServerError, recorder.Code,
+		"DELETE /api/v1/series should no longer return 500; the endpoint has been removed")
 }
