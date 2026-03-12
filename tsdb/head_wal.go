@@ -277,7 +277,8 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	// The records are always replayed from the oldest to the newest.
 	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
-	var keysBuf []string // reusable keys buffer for resource/scope hash computation
+	var keysBuf []string         // reusable keys buffer for resource/scope hash computation
+	var metaReplayDuration time.Duration // accumulated time spent on resource/scope metadata replay
 Outer:
 	for d := range decoded {
 		switch v := d.(type) {
@@ -491,6 +492,7 @@ Outer:
 			clear(v) // Zero out to avoid retaining metadata strings.
 			h.wlReplayMetadataPool.Put(v[:0])
 		case []record.RefResource:
+			metaReplayStart := time.Now()
 			if h.seriesMeta != nil {
 				store := h.seriesMeta.ResourceStore()
 				for _, r := range v {
@@ -520,12 +522,18 @@ Outer:
 						Owned:       true,
 					}, uint64(ref), keysBuf)
 					if contentChanged {
+						if oldVR == nil {
+							h.metrics.seriesmetadataInserts.WithLabelValues("resource").Inc()
+						}
+						h.metrics.seriesmetadataContentChanges.WithLabelValues("resource").Inc()
 						h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
 					}
 				}
 			}
+			metaReplayDuration += time.Since(metaReplayStart)
 			h.wlReplayResourcesPool.Put(v)
 		case []record.RefScope:
+			metaReplayStart := time.Now()
 			if h.seriesMeta != nil {
 				store := h.seriesMeta.ScopeStore()
 				for _, sc := range v {
@@ -544,7 +552,9 @@ Outer:
 					s.stableHash = hash
 					s.Unlock()
 
-					_, _, _, keysBuf = seriesmetadata.CommitScopeToStoreReusableWithRef(store, hash, seriesmetadata.ScopeCommitData{
+					var contentChanged bool
+					var oldVS *seriesmetadata.VersionedScope
+					contentChanged, oldVS, _, keysBuf = seriesmetadata.CommitScopeToStoreReusableWithRef(store, hash, seriesmetadata.ScopeCommitData{
 						Name:      sc.Name,
 						Version:   sc.Version,
 						SchemaURL: sc.SchemaURL,
@@ -553,14 +563,22 @@ Outer:
 						MaxTime:   sc.MaxTime,
 						Owned:     true,
 					}, uint64(ref), keysBuf)
+					if contentChanged {
+						if oldVS == nil {
+							h.metrics.seriesmetadataInserts.WithLabelValues("scope").Inc()
+						}
+						h.metrics.seriesmetadataContentChanges.WithLabelValues("scope").Inc()
+					}
 				}
 			}
+			metaReplayDuration += time.Since(metaReplayStart)
 			h.wlReplayScopesPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
 	}
 	unknownSeriesRefs.merge(missingSeries)
+	h.metrics.seriesmetadataWALReplayDuration.Add(metaReplayDuration.Seconds())
 
 	if decodeErr != nil {
 		return decodeErr
