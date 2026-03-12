@@ -1509,33 +1509,47 @@ func TestBuildResourceAttrIndexStreaming(t *testing.T) {
 }
 
 func TestPostingList(t *testing.T) {
+	// Helper: add to inline, promoting via idx if needed.
+	addToList := func(idx *shardedAttrIndex, pl postingList, v uint64) postingList {
+		var needPromo bool
+		pl, needPromo = pl.addInline(v)
+		if needPromo {
+			pl = pl.promote(idx.getOrAssignIDBulk)
+		}
+		return pl
+	}
+
 	t.Run("add to empty", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
-		pl = pl.add(42)
+		pl = addToList(idx, pl, 42)
 		require.False(t, pl.isEmpty())
 		require.Nil(t, pl.bitmap)
-		require.Equal(t, []uint64{42}, pl.toArray())
+		require.Equal(t, []uint64{42}, pl.toArray(nil))
 	})
 
 	t.Run("sorted insert", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
-		pl = pl.add(30)
-		pl = pl.add(10)
-		pl = pl.add(20)
-		require.Equal(t, []uint64{10, 20, 30}, pl.toArray())
+		pl = addToList(idx, pl, 30)
+		pl = addToList(idx, pl, 10)
+		pl = addToList(idx, pl, 20)
+		require.Equal(t, []uint64{10, 20, 30}, pl.toArray(nil))
 	})
 
 	t.Run("dedup", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
-		pl = pl.add(10)
-		pl = pl.add(10)
-		require.Equal(t, []uint64{10}, pl.toArray())
+		pl = addToList(idx, pl, 10)
+		pl = addToList(idx, pl, 10)
+		require.Equal(t, []uint64{10}, pl.toArray(nil))
 	})
 
 	t.Run("promotion at threshold", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
 		for i := uint64(0); i <= postingListInlineThreshold; i++ {
-			pl = pl.add(i)
+			pl = addToList(idx, pl, i)
 		}
 		require.NotNil(t, pl.bitmap, "should be promoted to bitmap")
 		require.Nil(t, pl.inline, "inline should be nil after promotion")
@@ -1543,76 +1557,84 @@ func TestPostingList(t *testing.T) {
 	})
 
 	t.Run("at threshold no promotion", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
 		for i := range uint64(postingListInlineThreshold) {
-			pl = pl.add(i)
+			pl = addToList(idx, pl, i)
 		}
 		require.Nil(t, pl.bitmap, "should stay inline at threshold")
 		require.Len(t, pl.inline, postingListInlineThreshold)
 	})
 
 	t.Run("remove from inline", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
-		pl = pl.add(10)
-		pl = pl.add(20)
-		pl = pl.add(30)
-		pl = pl.remove(20)
-		require.Equal(t, []uint64{10, 30}, pl.toArray())
+		pl = addToList(idx, pl, 10)
+		pl = addToList(idx, pl, 20)
+		pl = addToList(idx, pl, 30)
+		pl = pl.removeInline(20)
+		require.Equal(t, []uint64{10, 30}, pl.toArray(nil))
 	})
 
 	t.Run("remove nonexistent", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
-		pl = pl.add(10)
-		pl = pl.remove(99)
-		require.Equal(t, []uint64{10}, pl.toArray())
+		pl = addToList(idx, pl, 10)
+		pl = pl.removeInline(99)
+		require.Equal(t, []uint64{10}, pl.toArray(nil))
 	})
 
 	t.Run("remove from bitmap", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
 		for i := uint64(0); i <= postingListInlineThreshold; i++ {
-			pl = pl.add(i)
+			pl = addToList(idx, pl, i)
 		}
 		require.NotNil(t, pl.bitmap)
-		pl = pl.remove(5)
+		id, ok := idx.lookupID(5)
+		require.True(t, ok)
+		pl = pl.removeBitmap(id)
 		require.Equal(t, uint64(postingListInlineThreshold), pl.bitmap.GetCardinality())
 	})
 
 	t.Run("isEmpty", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
 		require.True(t, pl.isEmpty())
-		pl = pl.add(1)
+		pl = addToList(idx, pl, 1)
 		require.False(t, pl.isEmpty())
-		pl = pl.remove(1)
+		pl = pl.removeInline(1)
 		require.True(t, pl.isEmpty())
 	})
 
 	t.Run("toArray returns copy", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
-		pl = pl.add(10)
-		pl = pl.add(20)
-		arr := pl.toArray()
+		pl = addToList(idx, pl, 10)
+		pl = addToList(idx, pl, 20)
+		arr := pl.toArray(nil)
 		arr[0] = 999
-		require.Equal(t, []uint64{10, 20}, pl.toArray(), "modifying returned slice must not affect posting list")
+		require.Equal(t, []uint64{10, 20}, pl.toArray(nil), "modifying returned slice must not affect posting list")
 	})
 
 	t.Run("runOptimize inline noop", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
-		pl = pl.add(10)
+		pl = addToList(idx, pl, 10)
 		pl = pl.runOptimize()
-		require.Equal(t, []uint64{10}, pl.toArray())
+		require.Equal(t, []uint64{10}, pl.toArray(nil))
 	})
 
 	t.Run("runOptimize bitmap", func(t *testing.T) {
+		idx := newShardedAttrIndex()
 		var pl postingList
 		for i := uint64(0); i <= postingListInlineThreshold; i++ {
-			pl = pl.add(i)
+			pl = addToList(idx, pl, i)
 		}
 		pl = pl.runOptimize()
 		require.NotNil(t, pl.bitmap)
-		expected := make([]uint64, postingListInlineThreshold+1)
-		for i := range expected {
-			expected[i] = uint64(i)
-		}
-		require.Equal(t, expected, pl.toArray())
+		// Bitmap stores compact IDs — toArray with reverse mapping recovers original hashes.
+		result := pl.toArray(idx.reverse)
+		require.Len(t, result, postingListInlineThreshold+1)
 	})
 }
