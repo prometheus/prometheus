@@ -251,6 +251,7 @@
     "exemplar_storage": false,
     "isolation": true,
     "native_histograms": true,
+    "st_storage": false,
     "use_uncached_io": false
   },
   "ui": {
