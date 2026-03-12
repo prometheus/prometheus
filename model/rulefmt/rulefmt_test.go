@@ -40,6 +40,40 @@ func TestParseFileSuccess(t *testing.T) {
 	require.Empty(t, errs, "unexpected errors parsing file")
 }
 
+func TestParseFileSuccessMultiDocument(t *testing.T) {
+	rgs, errs := ParseFile("testdata/multi_doc.good.yaml", false, model.UTF8Validation, testParser)
+	require.Empty(t, errs, "unexpected errors parsing file")
+	require.Len(t, rgs.Groups, 2)
+	require.Equal(t, "my-group-name", rgs.Groups[0].Name)
+	require.Equal(t, "my-second-group", rgs.Groups[1].Name)
+	require.Len(t, rgs.Groups[0].Rules, 1)
+	require.Equal(t, "HighErrors", rgs.Groups[0].Rules[0].Alert)
+	require.Len(t, rgs.Groups[1].Rules, 1)
+	require.Equal(t, "new_metric", rgs.Groups[1].Rules[0].Record)
+}
+
+func TestParseMultiDocumentInline(t *testing.T) {
+	content := []byte(`groups:
+  - name: group-one
+    rules:
+      - record: metric_one
+        expr: up
+---
+groups:
+  - name: group-two
+    rules:
+      - record: metric_two
+        expr: up
+`)
+	rgs, errs := Parse(content, false, model.UTF8Validation, testParser)
+	require.Empty(t, errs, "unexpected errors parsing multi-document YAML")
+	require.Len(t, rgs.Groups, 2)
+	require.Equal(t, "group-one", rgs.Groups[0].Name)
+	require.Equal(t, "group-two", rgs.Groups[1].Name)
+	require.Equal(t, "metric_one", rgs.Groups[0].Rules[0].Record)
+	require.Equal(t, "metric_two", rgs.Groups[1].Rules[0].Record)
+}
+
 func TestParseFileSuccessWithAliases(t *testing.T) {
 	exprString := `sum without(instance) (rate(errors_total[5m]))
 /

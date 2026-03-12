@@ -339,6 +339,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 }
 
 // Parse parses and validates a set of rules.
+// It supports multi-document YAML files where documents are separated by "---".
 func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, p parser.Parser) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
@@ -346,18 +347,37 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 		errs   []error
 	)
 
+	// Decode typed rule groups from all YAML documents.
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	if !ignoreUnknownFields {
 		decoder.KnownFields(true)
 	}
-	err := decoder.Decode(&groups)
-	// Ignore io.EOF which happens with empty input.
-	if err != nil && !errors.Is(err, io.EOF) {
-		errs = append(errs, err)
+	for {
+		var doc RuleGroups
+		err := decoder.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			errs = append(errs, err)
+			break
+		}
+		groups.Groups = append(groups.Groups, doc.Groups...)
 	}
-	err = yaml.Unmarshal(content, &node)
-	if err != nil {
-		errs = append(errs, err)
+
+	// Decode node-based rule groups from all YAML documents.
+	nodeDecoder := yaml.NewDecoder(bytes.NewReader(content))
+	for {
+		var doc ruleGroups
+		err := nodeDecoder.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			errs = append(errs, err)
+			break
+		}
+		node.Groups = append(node.Groups, doc.Groups...)
 	}
 
 	if len(errs) > 0 {
