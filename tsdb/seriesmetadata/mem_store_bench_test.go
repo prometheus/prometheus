@@ -32,12 +32,12 @@ func BenchmarkInsertVersion_SameContent(b *testing.B) {
 	contentHash := hashResourceCommitData(rcd)
 	buildFull := func() *ResourceVersion { return buildResourceVersion(rcd) }
 	// Seed first insert.
-	store.InsertVersion(1, contentHash, 0, 0, buildFull)
+	store.InsertVersion(1, contentHash, 0, 0, buildFull, false)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		store.InsertVersion(1, contentHash, 0, int64(i), buildFull)
+		store.InsertVersion(1, contentHash, 0, int64(i), buildFull, false)
 	}
 }
 
@@ -52,12 +52,12 @@ func BenchmarkInsertVersion_ManySeriesSameContent(b *testing.B) {
 	contentHash := hashResourceCommitData(rcd)
 	buildFull := func() *ResourceVersion { return buildResourceVersion(rcd) }
 	// Seed canonical with first series.
-	store.InsertVersion(0, contentHash, 0, 100, buildFull)
+	store.InsertVersion(0, contentHash, 0, 100, buildFull, false)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		store.InsertVersion(uint64(i+1), contentHash, 0, 100, buildFull)
+		store.InsertVersion(uint64(i+1), contentHash, 0, 100, buildFull, false)
 	}
 }
 
@@ -78,7 +78,7 @@ func BenchmarkMemStore_MemoryPerSeries(b *testing.B) {
 	runtime.ReadMemStats(&before)
 
 	for i := range N {
-		store.InsertVersion(uint64(i), contentHash, 0, 100, buildFull)
+		store.InsertVersion(uint64(i), contentHash, 0, 100, buildFull, false)
 	}
 
 	runtime.GC()
