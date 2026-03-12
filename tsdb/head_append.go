@@ -1257,7 +1257,7 @@ func (a *headAppenderBase) log() error {
 				return fmt.Errorf("log resources: %w", err)
 			}
 		}
-		if len(b.scopes) > 0 {
+		if len(b.scopes) > 0 && a.head.opts.EnableScopeMetadata {
 			rec = enc.Scopes(b.scopes, buf)
 			buf = rec[:0]
 
@@ -1889,7 +1889,7 @@ func (a *headAppenderBase) commitAndFilterResources(b *appendBatch) int {
 // (bypassing per-series storage) and filters out entries where the content was
 // unchanged. Returns the number of entries filtered out.
 func (a *headAppenderBase) commitAndFilterScopes(b *appendBatch) int {
-	if a.head.seriesMeta == nil {
+	if a.head.seriesMeta == nil || !a.head.opts.EnableScopeMetadata {
 		return 0
 	}
 	store := a.head.seriesMeta.ScopeStore()

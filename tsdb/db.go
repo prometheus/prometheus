@@ -256,6 +256,12 @@ type Options struct {
 	// in Parquet-based metadata files alongside TSDB blocks.
 	EnableNativeMetadata bool
 
+	// EnableScopeMetadata controls whether scope metadata (name, version, schemaURL,
+	// custom attributes) is stored and replayed. When false, scope records are
+	// skipped during WAL replay and ingestion, saving significant memory.
+	// Requires EnableNativeMetadata to have any effect.
+	EnableScopeMetadata bool
+
 	// IndexedResourceAttrs specifies additional descriptive resource attribute
 	// names to include in the inverted index beyond identifying attributes
 	// (which are always indexed). nil means index only identifying attributes.
@@ -1115,6 +1121,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
+	headOpts.EnableScopeMetadata = opts.EnableScopeMetadata
 	headOpts.IndexedResourceAttrs = opts.IndexedResourceAttrs
 	headOpts.EnableResourceAttrIndex = opts.EnableResourceAttrIndex
 	if opts.WALReplayConcurrency > 0 {
