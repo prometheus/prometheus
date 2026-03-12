@@ -95,3 +95,7 @@ Examples:
     }
 ]
 ```
+
+## HTTP SD integrations
+
+A list of existing HTTP SD integrations can be found on the [Integrations page](https://prometheus.io/docs/operating/integrations/#http-service-discovery) in the Prometheus documentation.
