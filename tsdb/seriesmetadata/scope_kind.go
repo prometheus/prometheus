@@ -211,7 +211,7 @@ func CommitScopeToStore(store *MemStore[*ScopeVersion], labelsHash uint64, scd S
 
 	return store.InsertVersion(labelsHash, contentHash, scd.MinTime, scd.MaxTime, func() *ScopeVersion {
 		return buildScopeVersion(scd)
-	})
+	}, false)
 }
 
 // CommitScopeToStoreReusable is like CommitScopeToStore but accepts and
@@ -221,7 +221,7 @@ func CommitScopeToStoreReusable(store *MemStore[*ScopeVersion], labelsHash uint6
 	contentHash, keysBuf := hashScopeCommitDataReusable(scd, keysBuf)
 	contentChanged, old, cur = store.InsertVersion(labelsHash, contentHash, scd.MinTime, scd.MaxTime, func() *ScopeVersion {
 		return buildScopeVersion(scd)
-	})
+	}, false)
 	return contentChanged, old, cur, keysBuf
 }
 
@@ -232,7 +232,7 @@ func CommitScopeToStoreReusableWithRef(store *MemStore[*ScopeVersion], labelsHas
 	contentHash, keysBuf := hashScopeCommitDataReusable(scd, keysBuf)
 	contentChanged, old, cur = store.InsertVersionWithRef(labelsHash, contentHash, scd.MinTime, scd.MaxTime, seriesRef, func() *ScopeVersion {
 		return buildScopeVersion(scd)
-	})
+	}, scd.Owned)
 	return contentChanged, old, cur, keysBuf
 }
 
