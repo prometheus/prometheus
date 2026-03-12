@@ -20,16 +20,16 @@ import (
 // startTimeSynthesis contains the reference point and previous value
 // information needed to synthesize start times for cumulative metrics
 // (Counters, Summaries, Histograms).
+//
+// Only Counters and Histograms (Classic/Native/Float) are supported.
+//
 // It maps closely to OpenTelemetry's subtractinitial.adjuster logic.
 type startTimeSynthesis struct {
 	// For Counters / simple Floats / Summary _sum / Summary _count
 	number *numberSynthesis
 
-	// For Classic Histograms
-	histogram *histogramSynthesis
-
-	// For Native / Exponential Histograms (Float)
-	floatHistogram *floatHistogramSynthesis
+	// For Native / Exponential Histograms (Both Integer and Float natively use this state)
+	nativeHistogram *nativeHistogramSynthesis
 }
 
 type numberSynthesis struct {
@@ -38,27 +38,13 @@ type numberSynthesis struct {
 	startTime int64
 }
 
-type histogramSynthesis struct {
-	prevSum       float64
-	prevCount     uint64
-	prevZeroCount uint64
-	refSum        float64
-	refCount      uint64
-	refZeroCount  uint64
-	startTime     int64
-	refBuckets    []uint64
-}
-
-type floatHistogramSynthesis struct {
-	prevSum       float64
-	prevCount     uint64
-	prevZeroCount uint64
-	refSum        float64
-	refCount      uint64
-	refZeroCount  uint64
-	startTime     int64
-	refPosBuckets []int64
-	refNegBuckets []int64
+// nativeHistogramSynthesis handles both Native integer Histograms and FloatHistograms.
+// It works by caching the incoming histogram perfectly as a FloatHistogram
+// to leverage native DetectReset and Sub methods.
+type nativeHistogramSynthesis struct {
+	prevFloat *histogram.FloatHistogram
+	refFloat  *histogram.FloatHistogram
+	startTime int64
 }
 
 // ensureNumberSynthesis initializes or returns the number synthesis state.
@@ -94,102 +80,115 @@ func (st *startTimeSynthesis) synthesizeNumber(currentValue float64, currentTs i
 	return adjustedValue, n.startTime, false
 }
 
-// ensureHistogramSynthesis initializes or returns the classic histogram synthesis state.
-func (st *startTimeSynthesis) ensureHistogramSynthesis() *histogramSynthesis {
-	if st.histogram == nil {
-		st.histogram = &histogramSynthesis{}
+// ensureNativeHistogramSynthesis initializes or returns the unified native histogram synthesis state.
+func (st *startTimeSynthesis) ensureNativeHistogramSynthesis() *nativeHistogramSynthesis {
+	if st.nativeHistogram == nil {
+		st.nativeHistogram = &nativeHistogramSynthesis{}
 	}
-	return st.histogram
+	return st.nativeHistogram
 }
 
 // synthesizeHistogram updates the synthesis state for a classic/native Integer Histogram and returns the adjusted histogram, synthesized start time, and whether to skip append (first sample).
 func (st *startTimeSynthesis) synthesizeHistogram(current *histogram.Histogram, currentTs int64) (*histogram.Histogram, int64, bool) {
-	h := st.ensureHistogramSynthesis()
+	n := st.ensureNativeHistogramSynthesis()
+	currFloat := current.ToFloat(nil)
 
-	if h.refSum == 0 && h.refCount == 0 && h.startTime == 0 {
+	if n.startTime == 0 {
 		// First sample
-		h.prevSum = current.Sum
-		h.prevCount = current.Count
-		h.prevZeroCount = current.ZeroCount
-		h.refSum = current.Sum
-		h.refCount = current.Count
-		h.refZeroCount = current.ZeroCount
-		h.startTime = currentTs
+		n.prevFloat = currFloat.Copy()
+		n.refFloat = currFloat.Copy()
+		n.startTime = currentTs
 		return current, currentTs, true
 	}
 
-	// A reset is detected if sum or count goes down.
-	if current.Sum < h.prevSum || current.Count < h.prevCount {
-		h.refSum = 0
-		h.refCount = 0
-		h.refZeroCount = 0
-		h.refBuckets = nil
-		h.startTime = currentTs - 1
+	if currFloat.DetectReset(n.prevFloat) {
+		// Reset detected
+		n.prevFloat = currFloat.Copy()
+		n.refFloat = currFloat.Copy()
+		n.startTime = currentTs - 1
+		return current, n.startTime, false
 	}
 
-	h.prevSum = current.Sum
-	h.prevCount = current.Count
-	h.prevZeroCount = current.ZeroCount
+	n.prevFloat = currFloat.Copy()
 
-	// Construct the newly adjusted histogram
-	adjusted := current.Copy()
-	adjusted.Sum -= h.refSum
-	adjusted.Count -= h.refCount
-	adjusted.ZeroCount -= h.refZeroCount
+	// TODO(ridwanmsharif): If we implement DetectResets and Sub for Histograms, we
+	// can do this in a cleaner way without losing precision when converting to
+	// floating histograms and back. Need to look into how reset detection works
+	// natively for histograms.
 
-	return adjusted, h.startTime, false
-}
+	// Mathematically subtract the origin anchor
+	subFloat, _, _, _ := currFloat.Sub(n.refFloat)
+	subFloat = subFloat.Compact(0)
 
-// ensureFloatHistogramSynthesis initializes or returns the float histogram synthesis state.
-func (st *startTimeSynthesis) ensureFloatHistogramSynthesis() *floatHistogramSynthesis {
-	if st.floatHistogram == nil {
-		st.floatHistogram = &floatHistogramSynthesis{}
+	// Since we are synthesizing an integer histogram, we must cast the float subtraction back to ints.
+	// We've already established the risk of this approach in the comment above.
+	// We can lean on the fact that FloatHistograms retain absolute bucket structure.
+	// We will deeply construct a delta-encoded Histogram leveraging the subtracted absolute floats.
+	adjusted := &histogram.Histogram{
+		CounterResetHint: current.CounterResetHint,
+		Schema:           subFloat.Schema,
+		ZeroThreshold:    subFloat.ZeroThreshold,
+		ZeroCount:        uint64(subFloat.ZeroCount),
+		Count:            uint64(subFloat.Count),
+		Sum:              subFloat.Sum,
+		CustomValues:     subFloat.CustomValues,
 	}
-	return st.floatHistogram
+
+	if len(subFloat.PositiveSpans) > 0 {
+		adjusted.PositiveSpans = make([]histogram.Span, len(subFloat.PositiveSpans))
+		copy(adjusted.PositiveSpans, subFloat.PositiveSpans)
+
+		adjusted.PositiveBuckets = make([]int64, len(subFloat.PositiveBuckets))
+		var last uint64
+		for i, v := range subFloat.PositiveBuckets {
+			// Subtracted float buckets are absolute cumulative integers mathematically
+			absolute := uint64(v)
+			adjusted.PositiveBuckets[i] = int64(absolute - last)
+			last = absolute
+		}
+	}
+
+	if len(subFloat.NegativeSpans) > 0 {
+		adjusted.NegativeSpans = make([]histogram.Span, len(subFloat.NegativeSpans))
+		copy(adjusted.NegativeSpans, subFloat.NegativeSpans)
+
+		adjusted.NegativeBuckets = make([]int64, len(subFloat.NegativeBuckets))
+		var last uint64
+		for i, v := range subFloat.NegativeBuckets {
+			absolute := uint64(v)
+			adjusted.NegativeBuckets[i] = int64(absolute - last)
+			last = absolute
+		}
+	}
+
+	return adjusted, n.startTime, false
 }
 
 // synthesizeFloatHistogram updates the synthesis state for a FloatHistogram and returns the adjusted histogram, synthesized start time, and whether to skip append (first sample).
 func (st *startTimeSynthesis) synthesizeFloatHistogram(current *histogram.FloatHistogram, currentTs int64) (*histogram.FloatHistogram, int64, bool) {
-	fh := st.ensureFloatHistogramSynthesis()
+	n := st.ensureNativeHistogramSynthesis()
 
-	if fh.refSum == 0 && fh.refCount == 0 && fh.startTime == 0 {
+	if n.startTime == 0 {
 		// First sample
-		fh.prevSum = current.Sum
-		fh.prevCount = uint64(current.Count)
-		fh.prevZeroCount = uint64(current.ZeroCount)
-		fh.refSum = current.Sum
-		fh.refCount = uint64(current.Count)
-		fh.refZeroCount = uint64(current.ZeroCount)
-		fh.startTime = currentTs
+		n.prevFloat = current.Copy()
+		n.refFloat = current.Copy()
+		n.startTime = currentTs
 		return current, currentTs, true
 	}
 
-	if current.Sum < fh.prevSum || uint64(current.Count) < fh.prevCount {
-		fh.refSum = 0
-		fh.refCount = 0
-		fh.refZeroCount = 0
-		fh.refPosBuckets = nil
-		fh.refNegBuckets = nil
-		fh.startTime = currentTs - 1
+	if current.DetectReset(n.prevFloat) {
+		// Reset detected
+		n.prevFloat = current.Copy()
+		n.refFloat = current.Copy()
+		n.startTime = currentTs - 1
+		return current, n.startTime, false
 	}
 
-	fh.prevSum = current.Sum
-	fh.prevCount = uint64(current.Count)
-	fh.prevZeroCount = uint64(current.ZeroCount)
+	n.prevFloat = current.Copy()
 
-	// Construct the newly adjusted histogram
-	adjusted := current.Copy()
-	adjusted.Sum -= fh.refSum
-	adjusted.Count -= float64(fh.refCount)
-	adjusted.ZeroCount -= float64(fh.refZeroCount)
+	// Mathematically subtract the origin anchor
+	adjusted, _, _, _ := current.Copy().Sub(n.refFloat)
+	adjusted = adjusted.Compact(0)
 
-	// Since prometheus FloatHistogram buckets are absolute, we subtract the reference buckets.
-	// If structures differ (e.g. spans changed), OTel subtractinitial resets. For safety and simplicity,
-	// if spans differ from reference, we should ideally treat it as a reset, but prometheus scrape loop
-	// doesn't persist spanning identically across rescrapes natively if 0 counts vanish.
-	// However, we can simply subtract bucket by bucket if spans match, otherwise reset.
-	// We'll leave the bucket subtraction out of this initial minimal implementation to ensure stability,
-	// or implement a basic bucket alignment later if required. For now, we adjust sum/count accurately.
-
-	return adjusted, fh.startTime, false
+	return adjusted, n.startTime, false
 }

@@ -1844,6 +1844,292 @@ test_gauge 12
 	}
 }
 
+func requireSampleHist(t *testing.T, s teststorage.Sample, name, expectedHist string, ts, st int64, isNaN bool) {
+	t.Helper()
+	require.Equal(t, name, s.L.Get(model.MetricNameLabel))
+	require.Equal(t, ts, s.T)
+	if isNaN {
+		require.True(t, s.IsStale())
+	} else {
+		switch {
+		case s.H != nil:
+			require.Equal(t, expectedHist, s.H.String())
+		case s.FH != nil:
+			require.Equal(t, expectedHist, s.FH.String())
+		default:
+			t.Fatal("expected sample to have either H or FH")
+		}
+	}
+	if st != -1 {
+		require.Equal(t, st, s.ST)
+	}
+}
+
+func TestScrapeLoopAppend_StartTimeSynthesis_Histogram(t *testing.T) {
+	ts := time.Now()
+
+	requireSample := requireSampleHist
+
+	for _, appV2 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appV2=%v", appV2), func(t *testing.T) {
+			s := teststorage.New(t, func(opt *tsdb.Options) {
+				opt.EnableMetadataWALRecords = true
+			})
+
+			appTest := teststorage.NewAppendable().Then(s)
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
+				sl.enableGenerateStartTimestamp = true
+				sl.enableSTZeroIngestion = true
+				sl.appendMetadataToWAL = true // needed for OM metadata
+				sl.convertClassicHistToNHCB = true
+				sl.enableNativeHistogramScraping = true
+				// Avoid appending the classic bucket components so we just get the NHCB
+				sl.alwaysScrapeClassicHist = false
+			})
+
+			// First Scrape: anchor the start time, append is skipped
+			scrapeA := []byte(`# TYPE test_hist histogram
+# HELP test_hist some help
+test_hist_bucket{le="0.005"} 0
+test_hist_bucket{le="0.01"} 0
+test_hist_bucket{le="0.025"} 0
+test_hist_bucket{le="0.05"} 0
+test_hist_bucket{le="0.1"} 1
+test_hist_bucket{le="0.25"} 1
+test_hist_bucket{le="0.5"} 1
+test_hist_bucket{le="1"} 2
+test_hist_bucket{le="2.5"} 2
+test_hist_bucket{le="5"} 2
+test_hist_bucket{le="10"} 2
+test_hist_bucket{le="+Inf"} 3
+test_hist_sum 5.5
+test_hist_count 3
+# EOF
+`)
+			app := sl.appender()
+			_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			got := appTest.ResultSamples()
+			require.Empty(t, got) // Should be skipped as it just anchors
+
+			// Second Scrape: Histogram should yield points with start time
+			ts2 := ts.Add(time.Second)
+			scrapeB := []byte(`# TYPE test_hist histogram
+# HELP test_hist some help
+test_hist_bucket{le="0.005"} 0
+test_hist_bucket{le="0.01"} 0
+test_hist_bucket{le="0.025"} 0
+test_hist_bucket{le="0.05"} 0
+test_hist_bucket{le="0.1"} 2
+test_hist_bucket{le="0.25"} 2
+test_hist_bucket{le="0.5"} 2
+test_hist_bucket{le="1"} 5
+test_hist_bucket{le="2.5"} 5
+test_hist_bucket{le="5"} 5
+test_hist_bucket{le="10"} 5
+test_hist_bucket{le="+Inf"} 6
+test_hist_sum 10.5
+test_hist_count 6
+# EOF
+`)
+			app = sl.appender()
+			_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			got = appTest.ResultSamples()
+
+			if appV2 {
+				// appV2 natively attaches `st` to the sample.
+				// Delta: Count 6-3=3, Sum 10.5-5.5=5.0
+				require.Len(t, got, 1)
+				requireSample(t, got[0], "test_hist", "{count:3, sum:5, (0.05,0.1]:1, (0.5,1]:2}", timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+			} else {
+				// appV1 requires injection of an ST zero sample.
+				require.Len(t, got, 2)
+				requireSample(t, got[0], "test_hist", "{count:0, sum:0}", timestamp.FromTime(ts), -1, false) // Synthetic zero sample
+				requireSample(t, got[1], "test_hist", "{count:3, sum:5, (0.05,0.1]:1, (0.5,1]:2}", timestamp.FromTime(ts2), -1, false)
+			}
+
+			// Third Scrape: Simulate a Reset (count drops from 6 to 2)
+			ts3 := ts2.Add(time.Second)
+			scrapeC := []byte(`# TYPE test_hist histogram
+# HELP test_hist some help
+test_hist_bucket{le="0.005"} 0
+test_hist_bucket{le="0.01"} 0
+test_hist_bucket{le="0.025"} 0
+test_hist_bucket{le="0.05"} 0
+test_hist_bucket{le="0.1"} 1
+test_hist_bucket{le="0.25"} 1
+test_hist_bucket{le="0.5"} 1
+test_hist_bucket{le="1"} 2
+test_hist_bucket{le="2.5"} 2
+test_hist_bucket{le="5"} 2
+test_hist_bucket{le="10"} 2
+test_hist_bucket{le="+Inf"} 2
+test_hist_sum 4.0
+test_hist_count 2
+# EOF
+`)
+			app = sl.appender()
+			_, _, _, err = app.append(scrapeC, "application/openmetrics-text", ts3)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			got = appTest.ResultSamples()
+
+			if appV2 {
+				// V2 has 1 samples previously. 1 new sample is added with ST=ts3-1, Delta: Count 2-0=2, Sum 4.0-0=4.0
+				require.Len(t, got, 2)
+				requireSample(t, got[0], "test_hist", "{count:3, sum:5, (0.05,0.1]:1, (0.5,1]:2}", timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+				requireSample(t, got[1], "test_hist", "{count:2, sum:4, (0.05,0.1]:1, (0.5,1]:1}", timestamp.FromTime(ts3), timestamp.FromTime(ts3)-1, false)
+			} else {
+				// V1 has 2 samples previously.
+				require.Len(t, got, 4)
+				requireSample(t, got[0], "test_hist", "{count:0, sum:0}", timestamp.FromTime(ts), -1, false) // Synthetic zero sample
+				requireSample(t, got[1], "test_hist", "{count:3, sum:5, (0.05,0.1]:1, (0.5,1]:2}", timestamp.FromTime(ts2), -1, false)
+				requireSample(t, got[2], "test_hist", "{count:0, sum:0}", timestamp.FromTime(ts3)-1, -1, false)                        // Synthetic sample
+				requireSample(t, got[3], "test_hist", "{count:2, sum:4, (0.05,0.1]:1, (0.5,1]:1}", timestamp.FromTime(ts3), -1, false) // Real sample
+			}
+		})
+	}
+}
+
+func TestScrapeLoopAppend_StartTimeSynthesis_FloatHistogram(t *testing.T) {
+	ts := time.Now()
+
+	requireSample := requireSampleHist
+
+	for _, appV2 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appV2=%v", appV2), func(t *testing.T) {
+			s := teststorage.New(t, func(opt *tsdb.Options) {
+				opt.EnableMetadataWALRecords = true
+			})
+
+			appTest := teststorage.NewAppendable().Then(s)
+			sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2), func(sl *scrapeLoop) {
+				sl.enableGenerateStartTimestamp = true
+				sl.enableSTZeroIngestion = true
+				sl.enableNativeHistogramScraping = true
+				sl.alwaysScrapeClassicHist = false
+				sl.fallbackScrapeProtocol = "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"
+			})
+
+			// First Scrape: Initial Data
+			scrapeA := `name: "test_float_hist"
+help: "test help"
+type: HISTOGRAM
+metric: <
+  histogram: <
+    schema: 3
+    sample_count_float: 3.0
+    sample_sum: 5.0
+    positive_span: <
+      offset: 0
+      length: 2
+    >
+    positive_count: 1.0
+    positive_count: 2.0
+  >
+>
+`
+			bufA := &bytes.Buffer{}
+			require.NoError(t, textToProto(scrapeA, bufA))
+
+			app := sl.appender()
+			_, _, _, err := app.append(bufA.Bytes(), "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited", ts)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Second Scrape: Continuing (no reset)
+			ts2 := ts.Add(time.Second)
+			scrapeB := `name: "test_float_hist"
+help: "test help"
+type: HISTOGRAM
+metric: <
+  histogram: <
+    schema: 3
+    sample_count_float: 6.0
+    sample_sum: 10.5
+    positive_span: <
+      offset: 0
+      length: 2
+    >
+    positive_count: 2.0
+    positive_count: 4.0
+  >
+>
+`
+			bufB := &bytes.Buffer{}
+			require.NoError(t, textToProto(scrapeB, bufB))
+
+			app = sl.appender()
+			_, _, _, err = app.append(bufB.Bytes(), "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited", ts2)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			got := appTest.ResultSamples()
+
+			if appV2 {
+				// appV2 natively attaches `st` to the sample.
+				// Delta: Count 6.0-3.0=3.0, Sum 10.5-5.0=5.5
+				require.Len(t, got, 1)
+				requireSample(t, got[0], "test_float_hist", "{count:3, sum:5.5, (0.9170040432046711,1]:1, (1,1.0905077326652577]:2}", timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+			} else {
+				// appV1 requires injection of an ST zero sample.
+				require.Len(t, got, 2)
+				requireSample(t, got[0], "test_float_hist", "{count:0, sum:0}", timestamp.FromTime(ts), -1, false) // Synthetic zero sample
+				requireSample(t, got[1], "test_float_hist", "{count:3, sum:5.5, (0.9170040432046711,1]:1, (1,1.0905077326652577]:2}", timestamp.FromTime(ts2), -1, false)
+			}
+
+			// Third Scrape: Simulate a Reset (count drops from 6 to 2)
+			ts3 := ts2.Add(time.Second)
+			scrapeC := `name: "test_float_hist"
+help: "test help"
+type: HISTOGRAM
+metric: <
+  histogram: <
+    schema: 3
+    sample_count_float: 2.0
+    sample_sum: 4.0
+    positive_span: <
+      offset: 0
+      length: 2
+    >
+    positive_count: 1.0
+    positive_count: 1.0
+  >
+>
+`
+			bufC := &bytes.Buffer{}
+			require.NoError(t, textToProto(scrapeC, bufC))
+
+			app = sl.appender()
+			_, _, _, err = app.append(bufC.Bytes(), "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited", ts3)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			got = appTest.ResultSamples()
+
+			if appV2 {
+				// V2 has 1 samples previously. 1 new sample is added with ST=ts3-1, Delta: Count 2.0-0=2.0, Sum 4.0-0=4.0
+				require.Len(t, got, 2)
+				requireSample(t, got[0], "test_float_hist", "{count:3, sum:5.5, (0.9170040432046711,1]:1, (1,1.0905077326652577]:2}", timestamp.FromTime(ts2), timestamp.FromTime(ts), false)
+				requireSample(t, got[1], "test_float_hist", "{count:2, sum:4, (0.9170040432046711,1]:1, (1,1.0905077326652577]:1}", timestamp.FromTime(ts3), timestamp.FromTime(ts3)-1, false)
+			} else {
+				// V1 has 2 samples previously.
+				require.Len(t, got, 4)
+				requireSample(t, got[0], "test_float_hist", "{count:0, sum:0}", timestamp.FromTime(ts), -1, false) // Synthetic zero sample
+				requireSample(t, got[1], "test_float_hist", "{count:3, sum:5.5, (0.9170040432046711,1]:1, (1,1.0905077326652577]:2}", timestamp.FromTime(ts2), -1, false)
+				requireSample(t, got[2], "test_float_hist", "{count:0, sum:0}", timestamp.FromTime(ts3)-1, -1, false)                                                   // Synthetic sample
+				requireSample(t, got[3], "test_float_hist", "{count:2, sum:4, (0.9170040432046711,1]:1, (1,1.0905077326652577]:1}", timestamp.FromTime(ts3), -1, false) // Real sample
+			}
+		})
+	}
+}
+
 // BenchmarkScrapeLoopAppend benchmarks scrape appends for typical cases.
 //
 // Benchmark compares append function run across 5 dimensions:
