@@ -1257,13 +1257,14 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 		alignedScrapeTime = time.Now().Round(0)
 		ticker            = time.NewTicker(sl.interval)
 	)
-	defer ticker.Stop()
 	defer func() {
+		ticker.Stop()
+		if sl.scrapeOnShutdown {
+			last = sl.scrapeAndReport(last, time.Now().Round(0), errc)
+		}
+		// Let the stop() it can unblock.
 		close(sl.stopped)
 		if sl.parentCtx.Err() == nil {
-			if sl.scrapeOnShutdown {
-				last = sl.scrapeAndReport(last, time.Now().Round(0), errc)
-			}
 			if !sl.disabledEndOfRunStalenessMarkers.Load() {
 				sl.endOfRunStaleness(last, ticker, sl.interval)
 			}
@@ -1283,8 +1284,6 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 
 	for {
 		select {
-		case <-sl.parentCtx.Done():
-			return
 		case <-sl.ctx.Done():
 			return
 		default:
@@ -1311,6 +1310,12 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 		}
 
 		last = sl.scrapeAndReport(last, scrapeTime, errc)
+
+		select {
+		case <-sl.ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 
