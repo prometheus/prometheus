@@ -317,11 +317,11 @@ disk compression than the default XOR encoding for typical Prometheus workloads.
 1. **Staleness marker optimization**: When a scrape target disappears, Prometheus writes a special "staleness marker" to indicate the series has ended. Standard XOR encoding uses ~110 bits per marker; XOR2 uses only 13 bits—a **90% reduction**. For deployments with dynamic infrastructure (Kubernetes pods, auto-scaling, short-lived jobs), staleness markers can represent 10-40% of all samples.
 2. **Adaptive timestamp encoding**: XOR2 automatically optimizes for both regular and irregular scrape intervals. Regular data gets the same compression as standard XOR (zero overhead), while irregular data benefits from improved encoding that handles larger timestamp variations more efficiently.
 
+This feature also introduces the fields needed for encoding start timestamps. `xor2-encoding` is automatically enabled when `st-storage` is enabled.
+
 Chunks encoded with XOR2 **cannot be read by older Prometheus versions** that do not support
 the encoding. Once enabled and data is written, downgrading requires waiting for
 all XOR2 chunks to be compacted out of retention.
-
-This feature is automatically enabled when `st-storage` is enabled.
 
 ## Extended Range Selectors
 
