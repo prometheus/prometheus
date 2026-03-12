@@ -478,6 +478,29 @@ func (h *Histogram) Validate() error {
 	return nil
 }
 
+// SetCountFromBuckets sets h.Count to the total observation count implied by the
+// histogram's buckets and ZeroCount (the same value Validate expects for non-NaN Sum).
+// Use only for exponential-schema histograms with valid buckets; a no-op for custom buckets.
+func (h *Histogram) SetCountFromBuckets() {
+	if h.UsesCustomBuckets() {
+		return
+	}
+	var nCount, pCount uint64
+	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
+		return
+	}
+	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
+		return
+	}
+	if err := checkHistogramBuckets(h.NegativeBuckets, &nCount, true); err != nil {
+		return
+	}
+	if err := checkHistogramBuckets(h.PositiveBuckets, &pCount, true); err != nil {
+		return
+	}
+	h.Count = nCount + pCount + h.ZeroCount
+}
+
 type regularBucketIterator struct {
 	baseBucketIterator[uint64, int64]
 }
