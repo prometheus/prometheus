@@ -34,29 +34,58 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
+// metaLabelPrefix is the meta prefix used for all meta labels.
 const (
-	doLabel            = model.MetaLabelPrefix + "digitalocean_"
-	doLabelID          = doLabel + "droplet_id"
-	doLabelName        = doLabel + "droplet_name"
-	doLabelImage       = doLabel + "image"
-	doLabelImageName   = doLabel + "image_name"
-	doLabelPrivateIPv4 = doLabel + "private_ipv4"
-	doLabelPublicIPv4  = doLabel + "public_ipv4"
-	doLabelPublicIPv6  = doLabel + "public_ipv6"
-	doLabelRegion      = doLabel + "region"
-	doLabelSize        = doLabel + "size"
-	doLabelStatus      = doLabel + "status"
-	doLabelFeatures    = doLabel + "features"
-	doLabelTags        = doLabel + "tags"
-	doLabelVPC         = doLabel + "vpc"
-	separator          = ","
+	metaLabelPrefix = model.MetaLabelPrefix + "digitalocean_"
+	separator       = ","
 )
+
+const (
+	doLabelID          = metaLabelPrefix + "droplet_id"
+	doLabelName        = metaLabelPrefix + "droplet_name"
+	doLabelImage       = metaLabelPrefix + "image"
+	doLabelImageName   = metaLabelPrefix + "image_name"
+	doLabelPrivateIPv4 = metaLabelPrefix + "private_ipv4"
+	doLabelPublicIPv4  = metaLabelPrefix + "public_ipv4"
+	doLabelPublicIPv6  = metaLabelPrefix + "public_ipv6"
+	doLabelRegion      = metaLabelPrefix + "region"
+	doLabelSize        = metaLabelPrefix + "size"
+	doLabelStatus      = metaLabelPrefix + "status"
+	doLabelFeatures    = metaLabelPrefix + "features"
+	doLabelTags        = metaLabelPrefix + "tags"
+	doLabelVPC         = metaLabelPrefix + "vpc"
+)
+
+// Role is the role of the target within the DigitalOcean ecosystem.
+type Role string
+
+const (
+	// DropletsRole discovers targets from DigitalOcean Droplets.
+	DropletsRole Role = "droplets"
+
+	// DatabasesRole discovers targets from DigitalOcean Managed Databases.
+	DatabasesRole Role = "databases"
+)
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
+	if err := unmarshal((*string)(c)); err != nil {
+		return err
+	}
+	switch *c {
+	case DropletsRole, DatabasesRole:
+		return nil
+	default:
+		return fmt.Errorf("unknown DigitalOcean SD role %q", *c)
+	}
+}
 
 // DefaultSDConfig is the default DigitalOcean SD configuration.
 var DefaultSDConfig = SDConfig{
 	Port:             80,
 	RefreshInterval:  model.Duration(60 * time.Second),
 	HTTPClientConfig: config.DefaultHTTPClientConfig,
+	Role:             DropletsRole,
 }
 
 func init() {
@@ -76,6 +105,10 @@ type SDConfig struct {
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
+	Role            Role           `yaml:"role"`
+
+	// Internal field for testing.
+	HTTPClient *http.Client
 }
 
 // Name returns the name of the Config.
@@ -99,58 +132,78 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err != nil {
 		return err
 	}
+
+	if c.Role == "" {
+		return errors.New("role missing (one of: droplets, databases)")
+	}
+
 	return c.HTTPClientConfig.Validate()
 }
 
-// Discovery periodically performs DigitalOcean requests. It implements
-// the Discoverer interface.
-type Discovery struct {
-	*refresh.Discovery
-	client *godo.Client
-	port   int
-}
-
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	m, ok := opts.Metrics.(*digitaloceanMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	d := &Discovery{
-		port: conf.Port,
-	}
-
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "digitalocean_sd")
+	r, err := newRefresher(conf)
 	if err != nil {
 		return nil, err
 	}
 
-	d.client, err = godo.New(
-		&http.Client{
+	return refresh.NewDiscovery(
+		refresh.Options{
+			Logger:              opts.Logger,
+			Mech:                "digitalocean",
+			SetName:             opts.SetName,
+			Interval:            time.Duration(conf.RefreshInterval),
+			RefreshF:            r.refresh,
+			MetricsInstantiator: m.refreshMetrics,
+		},
+	), nil
+}
+
+type refresher interface {
+	refresh(context.Context) ([]*targetgroup.Group, error)
+}
+
+func newRefresher(conf *SDConfig) (refresher, error) {
+	httpClient := conf.HTTPClient
+	if httpClient == nil {
+		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "digitalocean_sd")
+		if err != nil {
+			return nil, err
+		}
+		httpClient = &http.Client{
 			Transport: rt,
 			Timeout:   time.Duration(conf.RefreshInterval),
-		},
+		}
+	}
+
+	client, err := godo.New(
+		httpClient,
 		godo.SetUserAgent(version.PrometheusUserAgent()),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up digital ocean agent: %w", err)
 	}
 
-	d.Discovery = refresh.NewDiscovery(
-		refresh.Options{
-			Logger:              opts.Logger,
-			Mech:                "digitalocean",
-			SetName:             opts.SetName,
-			Interval:            time.Duration(conf.RefreshInterval),
-			RefreshF:            d.refresh,
-			MetricsInstantiator: m.refreshMetrics,
-		},
-	)
-	return d, nil
+	switch conf.Role {
+	case DropletsRole:
+		return &dropletsDiscovery{client: client, port: conf.Port}, nil
+	case DatabasesRole:
+		return &databasesDiscovery{client: client, port: conf.Port}, nil
+	}
+	return nil, fmt.Errorf("unknown DigitalOcean SD role %q", conf.Role)
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+type dropletsDiscovery struct {
+	client *godo.Client
+	port   int
+}
+
+func (d *dropletsDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	tg := &targetgroup.Group{
 		Source: "DigitalOcean",
 	}
@@ -213,7 +266,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	return []*targetgroup.Group{tg}, nil
 }
 
-func (d *Discovery) listDroplets(ctx context.Context) ([]godo.Droplet, error) {
+func (d *dropletsDiscovery) listDroplets(ctx context.Context) ([]godo.Droplet, error) {
 	var (
 		droplets []godo.Droplet
 		opts     = &godo.ListOptions{}
