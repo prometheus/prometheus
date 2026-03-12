@@ -884,6 +884,32 @@ func (m *MemStore[V]) IterVersionedFlatInline(ctx context.Context, f func(labels
 	return nil
 }
 
+// IterVersionedFlatInlineWithContentHash is like IterVersionedFlatInline but
+// also passes the cached contentHash for single-version inline entries.
+// For multi-version entries, contentHash is 0 (caller must recompute).
+func (m *MemStore[V]) IterVersionedFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []V, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error {
+	snapshot := m.snapshotEntries()
+	buf := make([]V, 1)
+	for i, entry := range snapshot {
+		if i%checkContextEveryNIterations == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
+		if entry.multi != nil {
+			if err := f(entry.labelsHash, entry.multi.Versions, 0, 0, false, 0); err != nil {
+				return err
+			}
+		} else {
+			buf[0] = entry.canonical
+			if err := f(entry.labelsHash, buf, entry.minTime, entry.maxTime, true, entry.contentHash); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // IterHashes calls the function for each series' labelsHash, without
 // materializing versions. This is cheaper than iteration when only
 // the hash is needed (e.g., building the needsResolve set in compaction).
