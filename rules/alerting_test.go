@@ -1063,3 +1063,85 @@ func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
 
 	require.Equal(t, 1, rule.ActiveAlertsCount())
 }
+
+// TestFiringAlertResetToPendingOnHoldDurationIncrease verifies that when the
+// holdDuration ("for" duration) is increased on a rule that already has a
+// firing alert, the alert is demoted back to StatePending because the elapsed
+// time since ActiveAt no longer meets the new, larger holdDuration.
+func TestFiringAlertResetToPendingOnHoldDurationIncrease(t *testing.T) {
+	shortHold := 15 * time.Second
+	longHold := 1 * time.Hour
+
+	expr, err := testParser.ParseExpr("foo")
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		"TestResetToPending",
+		expr,
+		shortHold,
+		0,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	baseTime := time.Unix(0, 0)
+	q := func(_ context.Context, _ string, ts time.Time) (promql.Vector, error) {
+		return promql.Vector{
+			promql.Sample{
+				Metric: labels.EmptyLabels(),
+				T:      timestamp.FromTime(ts),
+				F:      1,
+			},
+		}, nil
+	}
+
+	// Eval at t=0: creates the alert in StatePending with ActiveAt = baseTime.
+	_, err = rule.Eval(context.TODO(), 0, baseTime, q, nil, 0)
+	require.NoError(t, err)
+
+	require.Len(t, rule.active, 1)
+	var alert *Alert
+	for _, a := range rule.active {
+		alert = a
+	}
+	require.Equal(t, StatePending, alert.State)
+
+	// Eval at t=15s: the short holdDuration is met, alert transitions to firing.
+	evalTime := baseTime.Add(shortHold)
+	_, err = rule.Eval(context.TODO(), 0, evalTime, q, nil, 0)
+	require.NoError(t, err)
+	require.Equal(t, StateFiring, alert.State)
+	require.False(t, alert.FiredAt.IsZero(), "FiredAt should be set after firing")
+
+	// Now increase the holdDuration to 1 hour (simulating a rule config reload).
+	rule.holdDuration = longHold
+
+	// Eval at t=30s: only 30s have elapsed since ActiveAt, which is far less
+	// than the new 1h holdDuration, so the alert must go back to pending.
+	evalTime = baseTime.Add(30 * time.Second)
+	res, err := rule.Eval(context.TODO(), 0, evalTime, q, nil, 0)
+	require.NoError(t, err)
+
+	require.Equal(t, StatePending, alert.State)
+	require.True(t, alert.FiredAt.IsZero(), "FiredAt should be reset")
+	require.True(t, alert.LastSentAt.IsZero(), "LastSentAt should be reset")
+	require.True(t, alert.KeepFiringSince.IsZero(), "KeepFiringSince should be reset")
+
+	for _, smpl := range res {
+		if smpl.Metric.Get("__name__") == "ALERTS" {
+			require.Equal(t, "pending", smpl.Metric.Get("alertstate"))
+		}
+	}
+
+	// Eval at t=1h: now the new holdDuration is met, alert fires again.
+	evalTime = baseTime.Add(longHold)
+	res, err = rule.Eval(context.TODO(), 0, evalTime, q, nil, 0)
+	require.NoError(t, err)
+	require.Equal(t, StateFiring, alert.State)
+
+	for _, smpl := range res {
+		if smpl.Metric.Get("__name__") == "ALERTS" {
+			require.Equal(t, "firing", smpl.Metric.Get("alertstate"))
+		}
+	}
+}
