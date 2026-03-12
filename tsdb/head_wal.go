@@ -276,7 +276,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	// The records are always replayed from the oldest to the newest.
 	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
-	var keysBuf []string         // reusable keys buffer for resource/scope hash computation
+	var keysBuf []string                 // reusable keys buffer for resource/scope hash computation
 	var metaReplayDuration time.Duration // accumulated time spent on resource/scope metadata replay
 Outer:
 	for d := range decoded {
