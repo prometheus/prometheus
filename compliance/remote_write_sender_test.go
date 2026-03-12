@@ -53,7 +53,9 @@ scrape_configs:
 
 var scrapeConfigTmpl = template.Must(template.New("config").Parse(scrapeConfigTemplate))
 
-type internalPrometheus struct{}
+type internalPrometheus struct {
+	agentMode bool
+}
 
 func (p internalPrometheus) Name() string { return "internal-prometheus" }
 
@@ -74,20 +76,33 @@ func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error 
 	}
 	defer os.RemoveAll(dir)
 
-	return sender.RunCommand(ctx, "../cmd/prometheus", nil,
-		"go", "run", ".",
+	args := []string{
+		"run", ".",
 		"--web.listen-address=0.0.0.0:0",
-		fmt.Sprintf("--storage.tsdb.path=%v", dir),
 		fmt.Sprintf("--config.file=%s", configFile),
 		// Set important flags for the full remote write compliance:
 		"--enable-feature=st-storage",
-	)
+	}
+	if p.agentMode {
+		args = append(args, fmt.Sprintf("--storage.agent.path=%v", dir), "--agent")
+	} else {
+		args = append(args, fmt.Sprintf("--storage.tsdb.path=%v", dir))
+	}
+	return sender.RunCommand(ctx, "../cmd/prometheus", nil, "go", args...)
 }
 
 var _ sender.Sender = internalPrometheus{}
 
 // TestRemoteWriteSender runs remote write sender compliance tests defined in
-// https://github.com/prometheus/compliance/tree/main/remotewrite/sender
+// https://github.com/prometheus/compliance/tree/main/remotewrite/sender against
+// both agent and server modes.
 func TestRemoteWriteSender(t *testing.T) {
-	sender.RunTests(t, internalPrometheus{}, sender.ComplianceTests())
+	t.Run("mode=server", func(t *testing.T) {
+		t.Parallel()
+		sender.RunTests(t, internalPrometheus{}, sender.ComplianceTests())
+	})
+	t.Run("mode=agent", func(t *testing.T) {
+		t.Parallel()
+		sender.RunTests(t, internalPrometheus{agentMode: true}, sender.ComplianceTests())
+	})
 }
