@@ -91,10 +91,7 @@ Maintainers take performance seriously. For any PERF PR:
 
 - Provide benchmark numbers in the PR body using `go test -bench` output with
   a comparison table (before vs after).
-- Consider running prombench for significant changes: comment `/prombench main`
-  to trigger the benchmarking workflow.
-- Reuse allocations where possible (slices, buffers). The WAL watcher
-  optimization (PR #18250) achieved 540x less B/op by reusing `Ref*` buffers.
+- Reuse allocations where possible (slices, buffers). 
 - When reusing buffers passed to interfaces, document that callers must copy
   the contents and must not retain references — reviewers will ask for this
   note if it is missing.
