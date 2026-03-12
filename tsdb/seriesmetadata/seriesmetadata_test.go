@@ -1544,7 +1544,7 @@ func TestPostingList(t *testing.T) {
 
 	t.Run("at threshold no promotion", func(t *testing.T) {
 		var pl postingList
-		for i := uint64(0); i < postingListInlineThreshold; i++ {
+		for i := range uint64(postingListInlineThreshold) {
 			pl = pl.add(i)
 		}
 		require.Nil(t, pl.bitmap, "should stay inline at threshold")
