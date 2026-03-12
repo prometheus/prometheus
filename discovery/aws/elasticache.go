@@ -553,7 +553,7 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 // Cache clusters are in the format arn:aws:elasticache:<REGION>:<ACCOUNT_ID>:replicationgroup:<CACHE_CLUSTER_ID>.
 func splitCacheDeploymentOptions(caches []string) (serverlessCacheIDs, cacheClusterIDs []string) {
 	for _, cacheARN := range caches {
-		if len(cacheARN) == 0 {
+		if cacheARN == "" {
 			continue
 		}
 		parts := strings.Split(cacheARN, ":")

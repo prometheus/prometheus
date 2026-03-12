@@ -3,7 +3,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -11,23 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !linux
-
-package fileutil
+package aws
 
 import (
-	"bufio"
-	"os"
+	"github.com/prometheus/prometheus/discovery"
 )
 
-func NewBufioWriterWithSize(f *os.File, size int) (BufWriter, error) {
-	return &writer{bufio.NewWriterSize(f, size)}, nil
+type rdsMetrics struct {
+	refreshMetrics discovery.RefreshMetricsInstantiator
 }
 
-func NewDirectIOWriter(*os.File, int) (BufWriter, error) {
-	return nil, errDirectIOUnsupported
+var _ discovery.DiscovererMetrics = (*rdsMetrics)(nil)
+
+// Register implements discovery.DiscovererMetrics.
+func (*rdsMetrics) Register() error {
+	return nil
 }
 
-func UncachedIOSupported() bool {
-	return false
-}
+// Unregister implements discovery.DiscovererMetrics.
+func (*rdsMetrics) Unregister() {}

@@ -86,7 +86,7 @@ jobs:
       - run: make assets-tarball
       - run: make ui-lint
       - run: make ui-test
-      - uses: ./.github/promci/actions/save_artifacts
+      - uses: prometheus/promci-artifacts/save@f9a587dbc0b2c78a0c54f8ad1cde71ea29a4b76f # v0.1.0
         with:
           directory: .tarballs
 

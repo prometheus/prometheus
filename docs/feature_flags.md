@@ -272,7 +272,7 @@ Those labels are sourced from the metadata structures of the existing scrape and
 like OpenMetrics Text, Prometheus Text, Prometheus Proto, Remote Write 2 and OTLP. All the user provided labels with
 `__type__` and `__unit__` will be overridden.
 
-PromQL layer will handle those labels the same way __name__ is handled, e.g. dropped
+PromQL layer will handle those labels the same way `__name__` is handled, e.g. dropped
 on certain operations like `-` or `+` and affected by `promql-delayed-name-removal` feature.
 
 This feature enables important metadata information to be accessible directly with samples and PromQL layer.

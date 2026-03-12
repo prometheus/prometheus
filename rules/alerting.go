@@ -523,6 +523,14 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 			a.FiredAt = ts
 		}
 
+		// If the alert is firing and the active time is less than the new hold duration, set the state to pending.
+		if a.State == StateFiring && ts.Sub(a.ActiveAt) < r.holdDuration {
+			a.State = StatePending
+			a.FiredAt = time.Time{}
+			a.LastSentAt = time.Time{}
+			a.KeepFiringSince = time.Time{}
+		}
+
 		if r.restored.Load() {
 			vec = append(vec, r.sample(a, ts.Add(-queryOffset)))
 			vec = append(vec, r.forStateSample(a, ts.Add(-queryOffset), float64(a.ActiveAt.Unix())))
