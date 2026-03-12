@@ -1753,10 +1753,10 @@ func TestManager_InitialScrapeOffset(t *testing.T) {
 			runDuration:         59 * time.Minute,
 		},
 		{
-			name:                "scrape happens exactly when large offset elapses",
+			name:                "scrape happens when large offset elapses",
 			initialScrapeOffset: 1 * time.Hour,
-			runDuration:         1 * time.Hour,
-			expectedSamples:     1,
+			runDuration:         1*time.Hour + 2*time.Second,
+			expectedSamples:     2,
 		},
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
