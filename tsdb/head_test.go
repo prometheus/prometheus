@@ -8225,6 +8225,7 @@ func TestResourceDedupInV1Appender(t *testing.T) {
 func TestResourceAndScopeWALReplayWithScope(t *testing.T) {
 	opts := newTestHeadDefaultOptions(1000, false)
 	opts.EnableNativeMetadata = true
+	opts.EnableScopeMetadata = true
 	head, w := newTestHeadWithOptions(t, compression.None, opts)
 	// Manually populate the WAL with series + resource + scope records.
 	populateTestWL(t, w, []any{

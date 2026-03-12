@@ -534,7 +534,7 @@ Outer:
 			h.wlReplayResourcesPool.Put(v)
 		case []record.RefScope:
 			metaReplayStart := time.Now()
-			if h.seriesMeta != nil {
+			if h.seriesMeta != nil && h.opts.EnableScopeMetadata {
 				store := h.seriesMeta.ScopeStore()
 				for _, sc := range v {
 					if ref, ok := multiRef[sc.Ref]; ok {

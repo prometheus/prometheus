@@ -263,6 +263,10 @@ type HeadOptions struct {
 	// When enabled, OTel resource/scope attributes are persisted per time series.
 	EnableNativeMetadata bool
 
+	// EnableScopeMetadata controls whether scope metadata is stored and replayed.
+	// When false, scope records are skipped during WAL replay and ingestion.
+	EnableScopeMetadata bool
+
 	// IndexedResourceAttrs specifies additional descriptive resource attribute
 	// names to include in the inverted index beyond identifying attributes.
 	IndexedResourceAttrs map[string]struct{}
@@ -748,18 +752,12 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		// Register GaugeFunc metrics for seriesmetadata store sizes.
 		// These read live state from the head's MemSeriesMetadata.
 		if h.seriesMeta != nil {
-			r.MustRegister(
+			metaGauges := []prometheus.Collector{
 				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 					Name: "prometheus_tsdb_head_seriesmetadata_resource_entries",
 					Help: "Number of series with resource metadata in the head block.",
 				}, func() float64 {
 					return float64(h.seriesMeta.TotalResources())
-				}),
-				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-					Name: "prometheus_tsdb_head_seriesmetadata_scope_entries",
-					Help: "Number of series with scope metadata in the head block.",
-				}, func() float64 {
-					return float64(h.seriesMeta.TotalScopes())
 				}),
 				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 					Name: "prometheus_tsdb_head_seriesmetadata_resource_versions",
@@ -768,22 +766,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 					return float64(h.seriesMeta.TotalResourceVersions())
 				}),
 				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-					Name: "prometheus_tsdb_head_seriesmetadata_scope_versions",
-					Help: "Total number of scope metadata versions across all series in the head block.",
-				}, func() float64 {
-					return float64(h.seriesMeta.TotalScopeVersions())
-				}),
-				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 					Name: "prometheus_tsdb_head_seriesmetadata_resource_canonical",
 					Help: "Number of unique canonical resource metadata entries in the head block.",
 				}, func() float64 {
 					return float64(h.seriesMeta.ResourceStore().TotalCanonical())
-				}),
-				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-					Name: "prometheus_tsdb_head_seriesmetadata_scope_canonical",
-					Help: "Number of unique canonical scope metadata entries in the head block.",
-				}, func() float64 {
-					return float64(h.seriesMeta.ScopeStore().TotalCanonical())
 				}),
 				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 					Name: "prometheus_tsdb_head_seriesmetadata_attr_index_keys",
@@ -791,7 +777,30 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				}, func() float64 {
 					return float64(h.seriesMeta.AttrIndexKeyCount())
 				}),
-			)
+			}
+			if h.opts.EnableScopeMetadata {
+				metaGauges = append(metaGauges,
+					prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+						Name: "prometheus_tsdb_head_seriesmetadata_scope_entries",
+						Help: "Number of series with scope metadata in the head block.",
+					}, func() float64 {
+						return float64(h.seriesMeta.TotalScopes())
+					}),
+					prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+						Name: "prometheus_tsdb_head_seriesmetadata_scope_versions",
+						Help: "Total number of scope metadata versions across all series in the head block.",
+					}, func() float64 {
+						return float64(h.seriesMeta.TotalScopeVersions())
+					}),
+					prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+						Name: "prometheus_tsdb_head_seriesmetadata_scope_canonical",
+						Help: "Number of unique canonical scope metadata entries in the head block.",
+					}, func() float64 {
+						return float64(h.seriesMeta.ScopeStore().TotalCanonical())
+					}),
+				)
+			}
+			r.MustRegister(metaGauges...)
 		}
 	}
 	return m
@@ -1075,10 +1084,11 @@ func (h *Head) Init(minValidTime int64) error {
 
 	wblReplayDuration := time.Since(wblReplayStart)
 
-	// Build the resource attr index in bulk now that all WAL/WBL data is loaded.
-	// This is much cheaper than incremental updates during replay (O(n) sortedInsert per series).
+	// Enable lazy attr index build: the index will be built on first
+	// LookupResourceAttr call via sync.Once, deferring the expensive
+	// O(n) build until actually needed for query.
 	if h.seriesMeta != nil && h.opts.EnableResourceAttrIndex {
-		h.seriesMeta.BuildResourceAttrIndex()
+		h.seriesMeta.SetAttrIndexEnabled(true)
 	}
 
 	totalReplayDuration := time.Since(start)
@@ -1972,7 +1982,9 @@ func (h *Head) cleanupSharedMetadata(deletedHashes map[uint64]struct{}) {
 		// If a live series shares the hash (extremely unlikely), its next
 		// commit will re-add it.
 		h.seriesMeta.DeleteResource(hash)
-		h.seriesMeta.ScopeStore().Delete(hash)
+		if h.opts.EnableScopeMetadata {
+			h.seriesMeta.ScopeStore().Delete(hash)
+		}
 	}
 }
 
@@ -1989,7 +2001,7 @@ func (*headMetadataReader) Close() error { return nil }
 func (r *headMetadataReader) LabelsForHash(labelsHash uint64) (labels.Labels, bool) {
 	// Try resource store first (more common), then scope store.
 	ref, ok := r.head.seriesMeta.ResourceStore().GetSeriesRef(labelsHash)
-	if !ok {
+	if !ok && r.head.opts.EnableScopeMetadata {
 		ref, ok = r.head.seriesMeta.ScopeStore().GetSeriesRef(labelsHash)
 	}
 	if !ok {
