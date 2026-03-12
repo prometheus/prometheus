@@ -488,6 +488,10 @@ type headMetrics struct {
 	scopeUpdatesWALFiltered    prometheus.Counter
 	walReplayUnknownRefsTotal  *prometheus.CounterVec
 	wblReplayUnknownRefsTotal  *prometheus.CounterVec
+
+	seriesmetadataContentChanges       *prometheus.CounterVec
+	seriesmetadataInserts              *prometheus.CounterVec
+	seriesmetadataWALReplayDuration    prometheus.Gauge
 }
 
 const (
@@ -649,6 +653,18 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WBL replay.",
 		}, []string{"type"}),
+		seriesmetadataContentChanges: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_seriesmetadata_content_changes_total",
+			Help: "Total number of series metadata content changes (new version created).",
+		}, []string{"kind"}),
+		seriesmetadataInserts: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_head_seriesmetadata_inserts_total",
+			Help: "Total number of first-time series metadata inserts.",
+		}, []string{"kind"}),
+		seriesmetadataWALReplayDuration: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_seriesmetadata_wal_replay_duration_seconds",
+			Help: "Time spent replaying series metadata (resources and scopes) from the WAL.",
+		}),
 	}
 
 	if r != nil {
@@ -724,7 +740,59 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			}),
 			m.walReplayUnknownRefsTotal,
 			m.wblReplayUnknownRefsTotal,
+			m.seriesmetadataContentChanges,
+			m.seriesmetadataInserts,
+			m.seriesmetadataWALReplayDuration,
 		)
+
+		// Register GaugeFunc metrics for seriesmetadata store sizes.
+		// These read live state from the head's MemSeriesMetadata.
+		if h.seriesMeta != nil {
+			r.MustRegister(
+				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_seriesmetadata_resource_entries",
+					Help: "Number of series with resource metadata in the head block.",
+				}, func() float64 {
+					return float64(h.seriesMeta.TotalResources())
+				}),
+				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_seriesmetadata_scope_entries",
+					Help: "Number of series with scope metadata in the head block.",
+				}, func() float64 {
+					return float64(h.seriesMeta.TotalScopes())
+				}),
+				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_seriesmetadata_resource_versions",
+					Help: "Total number of resource metadata versions across all series in the head block.",
+				}, func() float64 {
+					return float64(h.seriesMeta.TotalResourceVersions())
+				}),
+				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_seriesmetadata_scope_versions",
+					Help: "Total number of scope metadata versions across all series in the head block.",
+				}, func() float64 {
+					return float64(h.seriesMeta.TotalScopeVersions())
+				}),
+				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_seriesmetadata_resource_canonical",
+					Help: "Number of unique canonical resource metadata entries in the head block.",
+				}, func() float64 {
+					return float64(h.seriesMeta.ResourceStore().TotalCanonical())
+				}),
+				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_seriesmetadata_scope_canonical",
+					Help: "Number of unique canonical scope metadata entries in the head block.",
+				}, func() float64 {
+					return float64(h.seriesMeta.ScopeStore().TotalCanonical())
+				}),
+				prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+					Name: "prometheus_tsdb_head_seriesmetadata_attr_index_keys",
+					Help: "Number of distinct keys in the resource attribute inverted index.",
+				}, func() float64 {
+					return float64(h.seriesMeta.AttrIndexKeyCount())
+				}),
+			)
+		}
 	}
 	return m
 }
