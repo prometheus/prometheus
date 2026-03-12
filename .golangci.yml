@@ -135,7 +135,6 @@ linters:
         - ptrToRefParam
         - preferStringWriter
         - rangeValCopy
-        - redundantSprint
         - regexpSimplify
         - returnAfterHttpError
         - sloppyReassign
