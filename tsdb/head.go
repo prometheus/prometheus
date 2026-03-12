@@ -489,9 +489,9 @@ type headMetrics struct {
 	walReplayUnknownRefsTotal  *prometheus.CounterVec
 	wblReplayUnknownRefsTotal  *prometheus.CounterVec
 
-	seriesmetadataContentChanges       *prometheus.CounterVec
-	seriesmetadataInserts              *prometheus.CounterVec
-	seriesmetadataWALReplayDuration    prometheus.Gauge
+	seriesmetadataContentChanges    *prometheus.CounterVec
+	seriesmetadataInserts           *prometheus.CounterVec
+	seriesmetadataWALReplayDuration prometheus.Gauge
 }
 
 const (
@@ -2038,6 +2038,10 @@ func (r *headMetadataReader) IterVersionedResourcesFlatInline(ctx context.Contex
 	return r.head.seriesMeta.IterVersionedResourcesFlatInline(ctx, f)
 }
 
+func (r *headMetadataReader) IterVersionedResourcesFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []*seriesmetadata.ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error {
+	return r.head.seriesMeta.IterVersionedResourcesFlatInlineWithContentHash(ctx, f)
+}
+
 func (r *headMetadataReader) TotalResources() uint64 {
 	return r.head.seriesMeta.TotalResources()
 }
@@ -2056,6 +2060,10 @@ func (r *headMetadataReader) IterVersionedScopes(ctx context.Context, f func(lab
 
 func (r *headMetadataReader) IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*seriesmetadata.ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
 	return r.head.seriesMeta.IterVersionedScopesFlatInline(ctx, f)
+}
+
+func (r *headMetadataReader) IterVersionedScopesFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []*seriesmetadata.ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error {
+	return r.head.seriesMeta.IterVersionedScopesFlatInlineWithContentHash(ctx, f)
 }
 
 func (r *headMetadataReader) TotalScopes() uint64 {
