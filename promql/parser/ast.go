@@ -136,6 +136,12 @@ type MatrixSelector struct {
 	Range          time.Duration
 	RangeExpr      *DurationExpr
 	EndPos         posrange.Pos
+	// These fields are set when a MatrixSelector originates from an evaluated SubqueryExpr.
+	// They allow the engine to preserve the aligned subquery semantics ("[range::step]")
+	// when the subquery result is fed into functions like sum_over_time/avg_over_time during range evaluation.
+	// They are no-ops for plain range selectors.
+	AlignedFromSubquery bool
+	AlignedStep         time.Duration
 }
 
 // SubqueryExpr represents a subquery.
@@ -155,6 +161,11 @@ type SubqueryExpr struct {
 	StartOrEnd ItemType // Set when @ is used with start() or end()
 	Step       time.Duration
 	StepExpr   *DurationExpr
+
+	// Aligned indicates whether this subquery uses the aligned subquery semantics ("[range::step]")
+	// where the points are aligned to the query's end time rather than Unix epoch multiples of the step.
+	// This requires the feature flag to be enabled.
+	Aligned bool
 
 	EndPos posrange.Pos
 }

@@ -204,7 +204,7 @@ const formatNodeInternal = (
           <span className="promql-duration">
             {formatPrometheusDuration(node.range)}
           </span>
-          :
+          {node.alignEvalTime ? '::' : ':'}
           {node.step !== 0 && (
             <span className="promql-duration">
               {formatPrometheusDuration(node.step)}
