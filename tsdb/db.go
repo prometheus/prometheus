@@ -1081,9 +1081,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
-	if opts.EnableSTStorage {
-		opts.EnableXOR2Encoding = true
-	}
 	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
 	headOpts.EnableXOR2Encoding.Store(opts.EnableXOR2Encoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
