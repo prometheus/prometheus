@@ -21,7 +21,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -57,15 +56,11 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
-		Logger:  promslog.NewNopLogger(),
-		Metrics: metrics,
-		SetName: "digitalocean",
-	})
+	d, err := newRefresher(&cfg)
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
 	require.NoError(t, err)
-	d.client.BaseURL = endpoint
+	d.(*dropletsDiscovery).client.BaseURL = endpoint
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
