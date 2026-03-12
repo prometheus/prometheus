@@ -686,6 +686,22 @@ func finalizeBulkAttrIndex(idx *shardedAttrIndex) {
 	}
 }
 
+// AttrIndexKeyCount returns the total number of distinct keys across all stripes
+// of the resource attribute inverted index. Returns 0 if the index has not been built.
+func (m *MemSeriesMetadata) AttrIndexKeyCount() int {
+	if m.resourceAttrIndex == nil {
+		return 0
+	}
+	var total int
+	for i := range m.resourceAttrIndex.stripes {
+		st := &m.resourceAttrIndex.stripes[i]
+		st.mtx.RLock()
+		total += len(st.idx)
+		st.mtx.RUnlock()
+	}
+	return total
+}
+
 // LookupResourceAttr returns sorted labelsHashes that have a resource version
 // with the given key:value in Identifying or Descriptive attributes.
 // Returns nil if the index has not been built.
