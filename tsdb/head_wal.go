@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"maps"
@@ -1229,11 +1230,7 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 	enc := chunkenc.Encoding(dec.Byte())
 
 	// The underlying bytes gets re-used later, so make a copy.
-	chunkBytes := dec.UvarintBytes()
-	chunkBytesCopy := make([]byte, len(chunkBytes))
-	copy(chunkBytesCopy, chunkBytes)
-
-	chk, err := chunkenc.FromData(enc, chunkBytesCopy)
+	chk, err := chunkenc.FromData(enc, bytes.Clone(dec.UvarintBytes()))
 	if err != nil {
 		return csr, fmt.Errorf("chunk from data: %w", err)
 	}
