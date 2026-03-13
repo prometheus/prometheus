@@ -155,6 +155,8 @@ loop:
 			val                      float64
 			h                        *histogram.Histogram
 			fh                       *histogram.FloatHistogram
+			skipAppend               bool
+			stSyn                    *startTimeSynthesis
 		)
 		if et, err = p.Next(); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -259,6 +261,36 @@ loop:
 				st = p.StartTimestamp()
 			}
 
+			if sl.enableGenerateStartTimestamp && st == 0 {
+				isCumulative := false
+				if ce != nil && ce.stSynthesis != nil {
+					isCumulative = true
+				} else {
+					metadata, ok := sl.cache.GetMetadata(string(lastMFName))
+					if ok && isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, metadata.Type) {
+						isCumulative = (metadata.Type == model.MetricTypeCounter || metadata.Type == model.MetricTypeHistogram || metadata.Type == model.MetricTypeSummary)
+					}
+				}
+
+				if isCumulative {
+					if ce != nil && ce.stSynthesis != nil {
+						stSyn = ce.stSynthesis
+					} else {
+						stSyn = &startTimeSynthesis{}
+					}
+
+					if isHistogram {
+						if fh != nil {
+							fh, st, skipAppend = stSyn.synthesizeFloatHistogram(fh, t)
+						} else if h != nil {
+							h, st, skipAppend = stSyn.synthesizeHistogram(h, t)
+						}
+					} else {
+						val, st, skipAppend = stSyn.synthesizeNumber(val, t)
+					}
+				}
+			}
+
 			for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 				if !e.HasTs {
 					if isHistogram {
@@ -311,8 +343,13 @@ loop:
 				}
 			}
 
-			// Append sample to the storage.
-			ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
+			if !skipAppend {
+				// Append sample to the storage.
+				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
+				if err == nil && ce != nil && ce.ref == 0 && ref != 0 {
+					ce.ref = ref
+				}
+			}
 		}
 		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
@@ -329,14 +366,27 @@ loop:
 		// But we only do this for series that were appended to TSDB without errors.
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
-		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
-			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
+		// However, if skipAppend is true due to start time synthesis, we DO need to cache it so next
+		// scrapes have the reference.
+		if !seriesCached && (sampleAdded || skipAppend) {
+			if ref == 0 && skipAppend {
+				// We still need to cache it, so we add a special entry here because addRef natively aborts and returns nil if ref == 0.
+				// This caches the stSynthesis anchor cleanly so the next scrape can read it.
+				ce = &cacheEntry{ref: 0, lastIter: sl.cache.iter, lset: lset, hash: hash}
+				sl.cache.series[string(met)] = ce
+			} else {
+				ce = sl.cache.addRef(met, ref, lset, hash)
+			}
+			// Persist the initialized synthesis state
+			if ce != nil && stSyn != nil {
+				ce.stSynthesis = stSyn
+			}
+			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) && !skipAppend {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
 				sl.cache.trackStaleness(ref, ce)
 			}
-			if sampleLimitErr == nil && bucketLimitErr == nil {
+			if sampleLimitErr == nil && bucketLimitErr == nil && !skipAppend {
 				seriesAdded++
 			}
 		}

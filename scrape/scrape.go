@@ -817,6 +817,9 @@ type cacheEntry struct {
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
+
+	// stSynthesis logic state for generating start timestamp
+	stSynthesis *startTimeSynthesis
 }
 
 type scrapeLoop struct {
@@ -839,9 +842,11 @@ type scrapeLoop struct {
 	appendable   storage.Appendable
 	appendableV2 storage.AppendableV2
 	buffers      *pool.Pool
-	offsetSeed   uint64
-	symbolTable  *labels.SymbolTable
-	metrics      *scrapeMetrics
+
+	enableGenerateStartTimestamp bool
+	offsetSeed                   uint64
+	symbolTable                  *labels.SymbolTable
+	metrics                      *scrapeMetrics
 
 	// Options from config.ScrapeConfig.
 	sampleLimit                   int
@@ -1214,11 +1219,12 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		validationScheme:              opts.sp.config.MetricNameValidationScheme,
 
 		// scrape.Options.
-		enableSTZeroIngestion:   opts.sp.options.EnableStartTimestampZeroIngestion,
-		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
-		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
-		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
-		skipOffsetting:          opts.sp.options.skipOffsetting,
+		enableSTZeroIngestion:        opts.sp.options.EnableStartTimestampZeroIngestion,
+		enableGenerateStartTimestamp: opts.sp.options.EnableGenerateStartTimestamp,
+		enableTypeAndUnitLabels:      opts.sp.options.EnableTypeAndUnitLabels,
+		appendMetadataToWAL:          opts.sp.options.AppendMetadata,
+		passMetadataInContext:        opts.sp.options.PassMetadataInContext,
+		skipOffsetting:               opts.sp.options.skipOffsetting,
 	}
 }
 
@@ -1302,7 +1308,10 @@ func (sl *scrapeLoop) appender() scrapeLoopAppendAdapter {
 	if sl.appendableV2 != nil {
 		return &scrapeLoopAppenderV2{scrapeLoop: sl, AppenderV2: sl.appendableV2.AppenderV2(sl.appenderCtx)}
 	}
-	return &scrapeLoopAppender{scrapeLoop: sl, Appender: sl.appendable.Appender(sl.appenderCtx)}
+	return &scrapeLoopAppender{
+		scrapeLoop: sl,
+		Appender:   sl.appendable.Appender(sl.appenderCtx),
+	}
 }
 
 // scrapeAndReport performs a scrape and then appends the result to the storage
@@ -1627,6 +1636,8 @@ loop:
 			val                      float64
 			h                        *histogram.Histogram
 			fh                       *histogram.FloatHistogram
+			skipAppend               bool
+			stSyn                    *startTimeSynthesis
 		)
 		if et, err = p.Next(); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -1715,33 +1726,82 @@ loop:
 		if seriesAlreadyScraped && parsedTimestamp == nil {
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
+			stMs := int64(0)
 			if sl.enableSTZeroIngestion {
-				if stMs := p.StartTimestamp(); stMs != 0 {
-					if isHistogram {
-						if h != nil {
-							ref, err = app.AppendHistogramSTZeroSample(ref, lset, t, stMs, h, nil)
-						} else {
-							ref, err = app.AppendHistogramSTZeroSample(ref, lset, t, stMs, nil, fh)
-						}
-					} else {
-						ref, err = app.AppendSTZeroSample(ref, lset, t, stMs)
+				// p.StartTimestamp() tend to be expensive (e.g. OM1). Do it only if we care.
+				stMs = p.StartTimestamp()
+			}
+
+			// In the V1 appender, there is no point in performing synthesis calculations if we cannot ingest STZero points.
+			if stMs == 0 && sl.enableGenerateStartTimestamp && sl.enableSTZeroIngestion {
+				isCumulative := false
+				if ce != nil && ce.stSynthesis != nil {
+					isCumulative = true
+				} else {
+					metadata, ok := sl.cache.GetMetadata(string(lastMFName))
+					if ok && isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, metadata.Type) {
+						isCumulative = (metadata.Type == model.MetricTypeCounter || metadata.Type == model.MetricTypeHistogram || metadata.Type == model.MetricTypeSummary)
 					}
-					if err != nil && !errors.Is(err, storage.ErrOutOfOrderST) { // OOO is a common case, ignoring completely for now.
-						// ST is an experimental feature. For now, we don't need to fail the
-						// scrape on errors updating the created timestamp, log debug.
-						sl.l.Debug("Error when appending ST in scrape loop", "series", string(met), "ct", stMs, "t", t, "err", err)
+				}
+
+				if isCumulative {
+					// Obtain synthesis state or initialize it.
+					if ce != nil && ce.stSynthesis != nil {
+						stSyn = ce.stSynthesis
+					} else {
+						stSyn = &startTimeSynthesis{}
+					}
+
+					var synthesizedStartTime int64
+					if isHistogram {
+						if fh != nil {
+							fh, synthesizedStartTime, skipAppend = stSyn.synthesizeFloatHistogram(fh, t)
+						} else if h != nil {
+							h, synthesizedStartTime, skipAppend = stSyn.synthesizeHistogram(h, t)
+						}
+						// Classic Histograms don't yield h/fh from text parser natively, they yield series. So they are handled via `else` below.
+					} else {
+						val, synthesizedStartTime, skipAppend = stSyn.synthesizeNumber(val, t)
+					}
+
+					if synthesizedStartTime != 0 {
+						stMs = synthesizedStartTime
 					}
 				}
 			}
 
-			if isHistogram {
-				if h != nil {
-					ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+			// Centralized injection of the parsed or synthesized start time using Append*STZeroSample in V1 Appender.
+			if stMs != 0 && !skipAppend && sl.enableSTZeroIngestion {
+				if isHistogram {
+					if h != nil {
+						ref, err = app.AppendHistogramSTZeroSample(ref, lset, t, stMs, h, nil)
+					} else {
+						ref, err = app.AppendHistogramSTZeroSample(ref, lset, t, stMs, nil, fh)
+					}
 				} else {
-					ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+					ref, err = app.AppendSTZeroSample(ref, lset, t, stMs)
 				}
-			} else {
-				ref, err = app.Append(ref, lset, t, val)
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderST) {
+					sl.l.Debug("Error when appending ST in scrape loop", "series", string(met), "ct", stMs, "t", t, "err", err)
+				}
+			}
+
+			if !skipAppend {
+				if isHistogram {
+					if h != nil {
+						ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+					} else {
+						ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+					}
+				} else {
+					ref, err = app.Append(ref, lset, t, val)
+				}
+
+				// If we previously generated this cache entry during ST synthesis,
+				// it will have ref == 0. Update the ref now that we appended to it.
+				if err == nil && ce != nil && ce.ref == 0 && ref != 0 {
+					ce.ref = ref
+				}
 			}
 		}
 
@@ -1763,14 +1823,27 @@ loop:
 		// But we only do this for series that were appended to TSDB without errors.
 		// If a series was new but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
-		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(met, ref, lset, hash)
-			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
+		// However, if skipAppend is true due to start time synthesis, we DO need to cache it so next
+		// scrapes have the reference.
+		if !seriesCached && (sampleAdded || skipAppend) {
+			if ref == 0 && skipAppend {
+				// We still need to cache it, so we add a special entry here because addRef natively aborts and returns nil if ref == 0.
+				// This caches the stSynthesis anchor cleanly so the next scrape can read it.
+				ce = &cacheEntry{ref: 0, lastIter: sl.cache.iter, lset: lset, hash: hash}
+				sl.cache.series[string(met)] = ce
+			} else {
+				ce = sl.cache.addRef(met, ref, lset, hash)
+			}
+			// Persist the initialized synthesis state inside our cache now that it's created
+			if ce != nil && stSyn != nil {
+				ce.stSynthesis = stSyn
+			}
+			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) && !skipAppend {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
 				sl.cache.trackStaleness(ref, ce)
 			}
-			if sampleLimitErr == nil && bucketLimitErr == nil {
+			if sampleLimitErr == nil && bucketLimitErr == nil && !skipAppend {
 				seriesAdded++
 			}
 		}
