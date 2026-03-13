@@ -536,13 +536,17 @@ func main() {
 		"The frequency at which to truncate the WAL and remove old data.").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.agent.TruncateFrequency)
 
+	// Dynamically calculate the format strings from the tsdb/agent constants
+	agentDefaultMinWALTime := model.Duration(agent.DefaultMinWALTime * int64(time.Millisecond)).String()
+	agentDefaultMaxWALTime := model.Duration(agent.DefaultMaxWALTime * int64(time.Millisecond)).String()
+
 	agentOnlyFlag(a, "storage.agent.retention.min-time",
 		"Minimum age samples may be before being considered for deletion when the WAL is truncated").
-		SetValue(&cfg.agent.MinWALTime)
+		Default(agentDefaultMinWALTime).SetValue(&cfg.agent.MinWALTime)
 
 	agentOnlyFlag(a, "storage.agent.retention.max-time",
 		"Maximum age samples may be before being forcibly deleted when the WAL is truncated").
-		SetValue(&cfg.agent.MaxWALTime)
+		Default(agentDefaultMaxWALTime).SetValue(&cfg.agent.MaxWALTime)
 
 	agentOnlyFlag(a, "storage.agent.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.agent.NoLockfile)
