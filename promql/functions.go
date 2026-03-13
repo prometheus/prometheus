@@ -2282,7 +2282,11 @@ func (s vectorByValueHeap) Less(i, j int) bool {
 	if math.IsNaN(vi) {
 		return true
 	}
-	return vi < vj
+	if vi != vj {
+		return vi < vj
+	}
+
+	return labels.Compare(s[i].Metric, s[j].Metric) < 0
 }
 
 func (s vectorByValueHeap) Swap(i, j int) {
