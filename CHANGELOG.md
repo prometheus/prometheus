@@ -27,7 +27,6 @@ User migrating from bind mounts might need to ajust permissions too, depending o
 - [FEATURE] Web: Add OpenAPI 3.2 specification for the HTTP API at `/api/v1/openapi.yaml`. #17825
 - [FEATURE] Dockerfile: Add distroless image variant using UID/GID 65532 and no VOLUME declaration. Busybox image remains default. #17876
 - [FEATURE] Web: Add on-demand wall time profiling under `<URL>/debug/pprof/fgprof`. #18027
-- [FEATURE] Add xor2-encoding feature flag. #18276
 - [ENHANCEMENT] PromQL: Add more detail to histogram quantile monotonicity info annotations. #15578
 - [ENHANCEMENT] Alerting: Independent alertmanager sendloops. #16355
 - [ENHANCEMENT] TSDB: Experimental support for early compaction of stale series in the memory with configurable threshold `stale_series_compaction_threshold` in the config file. #16929

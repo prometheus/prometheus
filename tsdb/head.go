@@ -167,8 +167,7 @@ type HeadOptions struct {
 	EnableSTStorage atomic.Bool
 
 	// EnableXOR2Encoding enables XOR2 chunk encoding for float samples.
-	// Represents 'xor2-encoding' feature flag. Automatically true when
-	// EnableSTStorage is true.
+	// Represents 'xor2-encoding' feature flag.
 	EnableXOR2Encoding atomic.Bool
 
 	ChunkRange int64
