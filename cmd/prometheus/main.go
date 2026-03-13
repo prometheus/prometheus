@@ -43,7 +43,7 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
-	"github.com/oklog/run"
+	okrun "github.com/oklog/run"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -130,21 +130,24 @@ func (klogv1Writer) Write(p []byte) (n int, err error) {
 var (
 	appName = "prometheus"
 
-	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_config_last_reload_successful",
-		Help: "Whether the last configuration reload attempt was successful.",
-	})
-	configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_config_last_reload_success_timestamp_seconds",
-		Help: "Timestamp of the last successful configuration reload.",
-	})
-
 	defaultRetentionString   = "15d"
 	defaultRetentionDuration model.Duration
-
-	agentMode                       bool
-	agentOnlyFlags, serverOnlyFlags []string
 )
+
+// ExitError is an error that carries an exit code for use in main().
+type ExitError struct {
+	Code int
+	Err  error
+}
+
+func (e *ExitError) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("exit with code %d", e.Code)
+}
+
+func (e *ExitError) Unwrap() error { return e.Err }
 
 func init() {
 	// This can be removed when the legacy global mode is fully deprecated.
@@ -161,21 +164,21 @@ func init() {
 }
 
 // serverOnlyFlag creates server-only kingpin flag.
-func serverOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
+func serverOnlyFlag(app *kingpin.Application, name, help string, flags *[]string) *kingpin.FlagClause {
 	return app.Flag(name, fmt.Sprintf("%s Use with server mode only.", help)).
 		PreAction(func(*kingpin.ParseContext) error {
 			// This will be invoked only if flag is actually provided by user.
-			serverOnlyFlags = append(serverOnlyFlags, "--"+name)
+			*flags = append(*flags, "--"+name)
 			return nil
 		})
 }
 
 // agentOnlyFlag creates agent-only kingpin flag.
-func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
+func agentOnlyFlag(app *kingpin.Application, name, help string, flags *[]string) *kingpin.FlagClause {
 	return app.Flag(name, fmt.Sprintf("%s Use with agent mode only.", help)).
 		PreAction(func(*kingpin.ParseContext) error {
 			// This will be invoked only if flag is actually provided by user.
-			agentOnlyFlags = append(agentOnlyFlags, "--"+name)
+			*flags = append(*flags, "--"+name)
 			return nil
 		})
 }
@@ -347,32 +350,46 @@ func parseCompressionType(compress bool, compressType compression.Type) compress
 	return compression.None
 }
 
-func main() {
-	if os.Getenv("DEBUG") != "" {
-		runtime.SetBlockProfileRate(20)
-		runtime.SetMutexProfileFraction(20)
+// run is the main entry point for Prometheus. It accepts a context for
+// cancellation (e.g. from tests), a list of CLI args, and a prometheus
+// Registerer. This makes it reusable for testing and benchmarking without
+// spawning a separate process.
+func run(ctx context.Context, args []string, reg prometheus.Registerer) error {
+	var (
+		agentMode                       bool
+		agentOnlyFlags, serverOnlyFlags []string
+	)
+
+	// Derive a Gatherer from the Registerer if possible; otherwise use default.
+	var gath prometheus.Gatherer
+	if g, ok := reg.(prometheus.Gatherer); ok {
+		gath = g
+	} else {
+		gath = prometheus.DefaultGatherer
 	}
 
-	// Unregister the default GoCollector, and reregister with our defaults.
-	if prometheus.Unregister(collectors.NewGoCollector()) {
-		prometheus.MustRegister(
-			collectors.NewGoCollector(
-				collectors.WithGoCollectorRuntimeMetrics(
-					collectors.MetricsGC,
-					collectors.MetricsScheduler,
-					collectors.GoRuntimeMetricsRule{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
-				),
-			),
-		)
+	configSuccess := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_config_last_reload_successful",
+		Help: "Whether the last configuration reload attempt was successful.",
+	})
+	configSuccessTime := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_config_last_reload_success_timestamp_seconds",
+		Help: "Timestamp of the last successful configuration reload.",
+	})
+	if err := reg.Register(configSuccess); err != nil {
+		return fmt.Errorf("error registering config success gauge: %w", err)
+	}
+	if err := reg.Register(configSuccessTime); err != nil {
+		return fmt.Errorf("error registering config success time gauge: %w", err)
 	}
 
 	cfg := flagConfig{
 		notifier: notifier.Options{
-			Registerer: prometheus.DefaultRegisterer,
+			Registerer: reg,
 		},
 		web: web.Options{
-			Registerer:      prometheus.DefaultRegisterer,
-			Gatherer:        prometheus.DefaultGatherer,
+			Registerer:      reg,
+			Gatherer:        gath,
 			FeatureRegistry: features.DefaultRegistry,
 		},
 		promslogConfig: promslog.Config{},
@@ -381,7 +398,19 @@ func main() {
 		},
 	}
 
-	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server").UsageWriter(os.Stdout)
+	// Capture package-level helpers before shadowing them with local wrappers
+	// that close over the local flag slices, so call sites below do not need
+	// to be changed.
+	_serverOnlyFlag := serverOnlyFlag
+	_agentOnlyFlag := agentOnlyFlag
+	serverOnlyFlag := func(app *kingpin.Application, name, help string) *kingpin.FlagClause {
+		return _serverOnlyFlag(app, name, help, &serverOnlyFlags)
+	}
+	agentOnlyFlag := func(app *kingpin.Application, name, help string) *kingpin.FlagClause {
+		return _agentOnlyFlag(app, name, help, &agentOnlyFlags)
+	}
+
+	a := kingpin.New(appName, "The Prometheus monitoring server").UsageWriter(os.Stdout)
 
 	a.Version(version.Print(appName))
 
@@ -617,41 +646,44 @@ func main() {
 		return nil
 	}).Bool()
 
-	_, err := a.Parse(os.Args[1:])
+	_, err := a.Parse(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing command line arguments: %s\n", err)
-		a.Usage(os.Args[1:])
-		os.Exit(2)
+		a.Usage(args)
+		return &ExitError{Code: 2, Err: err}
 	}
 
 	logger := promslog.New(&cfg.promslogConfig)
 	slog.SetDefault(logger)
 
-	notifs := notifications.NewNotifications(cfg.maxNotificationsSubscribers, prometheus.DefaultRegisterer)
+	notifs := notifications.NewNotifications(cfg.maxNotificationsSubscribers, reg)
 	cfg.web.NotificationsSub = notifs.Sub
 	cfg.web.NotificationsGetter = notifs.Get
 	notifs.AddNotification(notifications.StartingUp)
 
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing feature list: %s\n", err)
-		os.Exit(1)
+		return &ExitError{Code: 1, Err: err}
 	}
 
 	promqlParser := parser.NewParser(cfg.parserOpts)
 
 	if agentMode && len(serverOnlyFlags) > 0 {
-		fmt.Fprintf(os.Stderr, "The following flag(s) can not be used in agent mode: %q", serverOnlyFlags)
-		os.Exit(3)
+		msg := fmt.Sprintf("The following flag(s) can not be used in agent mode: %q", serverOnlyFlags)
+		fmt.Fprintf(os.Stderr, "%s", msg)
+		return &ExitError{Code: 3, Err: fmt.Errorf("%s", msg)}
 	}
 
 	if !agentMode && len(agentOnlyFlags) > 0 {
-		fmt.Fprintf(os.Stderr, "The following flag(s) can only be used in agent mode: %q", agentOnlyFlags)
-		os.Exit(3)
+		msg := fmt.Sprintf("The following flag(s) can only be used in agent mode: %q", agentOnlyFlags)
+		fmt.Fprintf(os.Stderr, "%s", msg)
+		return &ExitError{Code: 3, Err: fmt.Errorf("%s", msg)}
 	}
 
 	if cfg.memlimitRatio <= 0.0 || cfg.memlimitRatio > 1.0 {
-		fmt.Fprintf(os.Stderr, "--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1.")
-		os.Exit(1)
+		err := errors.New("--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1")
+		fmt.Fprintln(os.Stderr, err)
+		return &ExitError{Code: 1, Err: err}
 	}
 
 	localStoragePath := cfg.serverStoragePath
@@ -661,14 +693,16 @@ func main() {
 
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddresses[0])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
-		os.Exit(2)
+		wrappedErr := fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err)
+		fmt.Fprintln(os.Stderr, wrappedErr)
+		return &ExitError{Code: 2, Err: wrappedErr}
 	}
 
 	cfg.web.CORSOrigin, err = compileCORSRegexString(cfg.corsRegexString)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("could not compile CORS regex string %q: %w", cfg.corsRegexString, err))
-		os.Exit(2)
+		wrappedErr := fmt.Errorf("could not compile CORS regex string %q: %w", cfg.corsRegexString, err)
+		fmt.Fprintln(os.Stderr, wrappedErr)
+		return &ExitError{Code: 2, Err: wrappedErr}
 	}
 
 	// Throw error for invalid config before starting other components.
@@ -679,7 +713,7 @@ func main() {
 			absPath = cfg.configFile
 		}
 		logger.Error(fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "file", absPath, "err", err)
-		os.Exit(2)
+		return &ExitError{Code: 2, Err: err}
 	}
 	// Get scrape configs to validate dynamically loaded scrape_config_files.
 	// They can change over time, but do the extra validation on startup for better experience.
@@ -689,7 +723,7 @@ func main() {
 			absPath = cfg.configFile
 		}
 		logger.Error(fmt.Sprintf("Error loading dynamic scrape config files from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
-		os.Exit(2)
+		return &ExitError{Code: 2, Err: err}
 	}
 
 	// Parse rule files to verify they exist and contain valid rules.
@@ -699,7 +733,7 @@ func main() {
 			absPath = cfg.configFile
 		}
 		logger.Error(fmt.Sprintf("Error loading rule file patterns from config (--config.file=%q)", cfg.configFile), "file", absPath, "err", err)
-		os.Exit(2)
+		return &ExitError{Code: 2, Err: err}
 	}
 
 	if cfg.tsdb.EnableExemplarStorage {
@@ -802,8 +836,9 @@ func main() {
 				logger.Warn("storage.tsdb.retention.size is ignored, because storage.tsdb.retention.percentage is specified")
 			}
 			if prom_runtime.FsSize(localStoragePath) == 0 {
-				fmt.Fprintln(os.Stderr, fmt.Errorf("unable to detect total capacity of metric storage at %s, please disable retention percentage (%d%%)", localStoragePath, cfg.tsdb.MaxPercentage))
-				os.Exit(2)
+				fsErr := fmt.Errorf("unable to detect total capacity of metric storage at %s, please disable retention percentage (%d%%)", localStoragePath, cfg.tsdb.MaxPercentage)
+				fmt.Fprintln(os.Stderr, fsErr)
+				return &ExitError{Code: 2, Err: fsErr}
 			}
 		}
 
@@ -869,7 +904,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(logger.With("component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
+		remoteStorage = remote.NewStorage(logger.With("component", "remote"), reg, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.scrape.EnableTypeAndUnitLabels)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -884,34 +919,39 @@ func main() {
 		discoveryManagerScrape  *discovery.Manager
 		discoveryManagerNotify  *discovery.Manager
 	)
+	defer cancelWeb()
+	defer cancelScrape()
+	defer cancelNotify()
 
 	// Kubernetes client metrics are used by Kubernetes SD.
 	// They are registered here in the main function, because SD mechanisms
 	// can only register metrics specific to a SD instance.
 	// Kubernetes client metrics are the same for the whole process -
 	// they are not specific to an SD instance.
-	err = discovery.RegisterK8sClientMetricsWithPrometheus(prometheus.DefaultRegisterer)
+	err = discovery.RegisterK8sClientMetricsWithPrometheus(reg)
 	if err != nil {
 		logger.Error("failed to register Kubernetes client metrics", "err", err)
-		os.Exit(1)
+		return &ExitError{Code: 1, Err: err}
 	}
 
-	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(prometheus.DefaultRegisterer)
+	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(reg)
 	if err != nil {
 		logger.Error("failed to register service discovery metrics", "err", err)
-		os.Exit(1)
+		return &ExitError{Code: 1, Err: err}
 	}
 
-	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("scrape"), discovery.FeatureRegistry(features.DefaultRegistry))
+	discoveryManagerScrape = discovery.NewManager(ctxScrape, logger.With("component", "discovery manager scrape"), reg, sdMetrics, discovery.Name("scrape"), discovery.FeatureRegistry(features.DefaultRegistry))
 	if discoveryManagerScrape == nil {
-		logger.Error("failed to create a discovery manager scrape")
-		os.Exit(1)
+		err := errors.New("failed to create a discovery manager scrape")
+		logger.Error(err.Error())
+		return &ExitError{Code: 1, Err: err}
 	}
 
-	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"), discovery.FeatureRegistry(features.DefaultRegistry))
+	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), reg, sdMetrics, discovery.Name("notify"), discovery.FeatureRegistry(features.DefaultRegistry))
 	if discoveryManagerNotify == nil {
-		logger.Error("failed to create a discovery manager notify")
-		os.Exit(1)
+		err := errors.New("failed to create a discovery manager notify")
+		logger.Error(err.Error())
+		return &ExitError{Code: 1, Err: err}
 	}
 
 	scrapeManager, err := scrape.NewManager(
@@ -919,11 +959,11 @@ func main() {
 		logger.With("component", "scrape manager"),
 		logging.NewJSONFileLogger,
 		nil, fanoutStorage,
-		prometheus.DefaultRegisterer,
+		reg,
 	)
 	if err != nil {
 		logger.Error("failed to create a scrape manager", "err", err)
-		os.Exit(1)
+		return &ExitError{Code: 1, Err: err}
 	}
 
 	var (
@@ -936,7 +976,7 @@ func main() {
 	if !agentMode {
 		opts := promql.EngineOpts{
 			Logger:                   logger.With("component", "query engine"),
-			Reg:                      prometheus.DefaultRegisterer,
+			Reg:                      reg,
 			MaxSamples:               cfg.queryMaxSamples,
 			Timeout:                  time.Duration(cfg.queryTimeout),
 			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, logger.With("component", "activeQueryTracker")),
@@ -963,7 +1003,7 @@ func main() {
 			NotifyFunc:             rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:                ctxRule,
 			ExternalURL:            cfg.web.ExternalURL,
-			Registerer:             prometheus.DefaultRegisterer,
+			Registerer:             reg,
 			Logger:                 logger.With("component", "rule manager"),
 			OutageTolerance:        time.Duration(cfg.outageTolerance),
 			ForGracePeriod:         time.Duration(cfg.forGracePeriod),
@@ -1121,8 +1161,7 @@ func main() {
 		},
 	}
 
-	prometheus.MustRegister(configSuccess)
-	prometheus.MustRegister(configSuccessTime)
+	// configSuccess and configSuccessTime are already registered with reg above.
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
@@ -1147,18 +1186,19 @@ func main() {
 	listeners, err := webHandler.Listeners()
 	if err != nil {
 		logger.Error("Unable to start web listener", "err", err)
-		os.Exit(1)
+		return &ExitError{Code: 1, Err: err}
 	}
 
 	err = toolkit_web.Validate(*webConfig)
 	if err != nil {
 		logger.Error("Unable to validate web configuration file", "err", err)
-		os.Exit(1)
+		return &ExitError{Code: 1, Err: err}
 	}
 
-	var g run.Group
+	var g okrun.Group
 	{
-		// Termination handler.
+		// Termination handler: responds to OS signals, web service quit, or
+		// context cancellation (allowing programmatic shutdown from tests).
 		term := make(chan os.Signal, 1)
 		signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 		cancel := make(chan struct{})
@@ -1171,12 +1211,16 @@ func main() {
 					reloadReady.Close()
 				case <-webHandler.Quit():
 					logger.Warn("Received termination request via web service, exiting gracefully...")
+				case <-ctx.Done():
+					logger.Warn("Context cancelled, exiting gracefully...")
+					reloadReady.Close()
 				case <-cancel:
 					reloadReady.Close()
 				}
 				return nil
 			},
 			func(error) {
+				signal.Stop(term)
 				close(cancel)
 				webHandler.SetReady(web.Stopping)
 				notifs.AddNotification(notifications.ShuttingDown)
@@ -1297,7 +1341,7 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, agentMode, configSuccess, configSuccessTime, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
 							checksum, err = config.GenerateChecksum(cfg.configFile)
@@ -1306,7 +1350,7 @@ func main() {
 							}
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, agentMode, configSuccess, configSuccessTime, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1331,7 +1375,7 @@ func main() {
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, agentMode, configSuccess, configSuccessTime, logger, noStepSubqueryInterval, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
@@ -1363,7 +1407,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, agentMode, configSuccess, configSuccessTime, logger, noStepSubqueryInterval, func(bool) {}, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1398,7 +1442,7 @@ func main() {
 					}
 				}
 
-				db, err := openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
+				db, err := openDBWithMetrics(localStoragePath, logger, reg, &opts, localStorage.getStats())
 				if err != nil {
 					return fmt.Errorf("opening storage failed: %w", err)
 				}
@@ -1456,7 +1500,7 @@ func main() {
 				}
 				db, err := agent.Open(
 					logger,
-					prometheus.DefaultRegisterer,
+					reg,
 					remoteStorage,
 					localStoragePath,
 					&opts,
@@ -1540,13 +1584,48 @@ func main() {
 			},
 		)
 	}
+	var runErr error
 	func() { // This function exists so the top of the stack is named 'main.main.funcxxx' and not 'oklog'.
 		if err := g.Run(); err != nil {
 			logger.Error("Fatal error", "err", err)
-			os.Exit(1)
+			runErr = &ExitError{Code: 1, Err: err}
 		}
 	}()
 	logger.Info("See you next time!")
+	return runErr
+}
+
+func main() {
+	if os.Getenv("DEBUG") != "" {
+		runtime.SetBlockProfileRate(20)
+		runtime.SetMutexProfileFraction(20)
+	}
+
+	// Unregister the default GoCollector, and reregister with our defaults.
+	if prometheus.Unregister(collectors.NewGoCollector()) {
+		prometheus.MustRegister(
+			collectors.NewGoCollector(
+				collectors.WithGoCollectorRuntimeMetrics(
+					collectors.MetricsGC,
+					collectors.MetricsScheduler,
+					collectors.GoRuntimeMetricsRule{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
+				),
+			),
+		)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if err := run(ctx, os.Args[1:], prometheus.DefaultRegisterer); err != nil {
+		cancel()
+		var exitErr *ExitError
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.Code)
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	cancel()
 }
 
 func openDBWithMetrics(dir string, logger *slog.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
@@ -1605,7 +1684,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage, agentMode bool, configSuccess, configSuccessTime prometheus.Gauge, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
