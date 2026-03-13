@@ -35,7 +35,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
