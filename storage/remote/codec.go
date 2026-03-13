@@ -350,7 +350,7 @@ type concreteSeriesSet struct {
 
 func (c *concreteSeriesSet) Next() bool {
 	c.cur++
-	return c.cur-1 < len(c.series)
+	return c.cur <= len(c.series)
 }
 
 func (c *concreteSeriesSet) At() storage.Series {
