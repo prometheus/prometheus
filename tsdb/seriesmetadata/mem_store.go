@@ -248,10 +248,11 @@ func (m *MemStore[V]) mergeVersionedInterned(a, b *Versioned[V]) *Versioned[V] {
 }
 
 // internLastVersion replaces only the last version with a thin copy.
+// Returns the content hash of the last version (0 when dedup is disabled).
 // Used after AddOrExtend appends a new version.
-func (m *MemStore[V]) internLastVersion(vs *Versioned[V]) {
+func (m *MemStore[V]) internLastVersion(vs *Versioned[V]) uint64 {
 	if m.dedupOps == nil || len(vs.Versions) == 0 {
-		return
+		return 0
 	}
 	last := len(vs.Versions) - 1
 	v := vs.Versions[last]
@@ -260,6 +261,7 @@ func (m *MemStore[V]) internLastVersion(vs *Versioned[V]) {
 	if !m.dedupOps.IsInterned(canonical, v) {
 		vs.Versions[last] = m.dedupOps.ThinCopy(canonical, v)
 	}
+	return hash
 }
 
 // InternVersion returns a thin copy of v sharing map/slice pointers from the
@@ -391,8 +393,7 @@ func (m *MemStore[V]) Set(labelsHash uint64, version V) {
 			prevLen := len(entry.multi.Versions)
 			entry.multi.AddOrExtend(m.ops, version)
 			if len(entry.multi.Versions) > prevLen {
-				m.internLastVersion(entry.multi)
-				entry.contentHash = m.latestContentHash(entry.multi)
+				entry.contentHash = m.internLastVersion(entry.multi)
 				s.byHash[labelsHash] = entry
 			}
 			return
@@ -413,9 +414,8 @@ func (m *MemStore[V]) Set(labelsHash uint64, version V) {
 		thin1.SetMinTime(entry.minTime)
 		thin1.SetMaxTime(entry.maxTime)
 		multi := &Versioned[V]{Versions: []V{thin1, m.ops.Copy(version)}}
-		m.internLastVersion(multi)
+		entry.contentHash = m.internLastVersion(multi)
 		entry.multi = multi
-		entry.contentHash = m.latestContentHash(multi)
 		s.byHash[labelsHash] = entry
 		return
 	}

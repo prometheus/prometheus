@@ -318,11 +318,6 @@ func (s *shardedAttrIndex) lookupID(labelsHash uint64) (uint32, bool) {
 	return id, ok
 }
 
-// getReverseMap returns the current reverse mapping. Caller must hold idMu.RLock.
-func (s *shardedAttrIndex) getReverseMap() []uint64 {
-	return s.reverse
-}
-
 func (s *shardedAttrIndex) stripe(key string) *attrIndexStripe {
 	h := xxhash.Sum64String(key)
 	return &s.stripes[h&uint64(numAttrIndexStripes-1)]
