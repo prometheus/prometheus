@@ -59,13 +59,9 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	}
 
 	// series references and chunk references are identical for agent mode.
-	s := a.series.GetByID(chunks.HeadSeriesRef(ref))
-	if s == nil {
-		var err error
-		s, err = a.getOrCreate(ls)
-		if err != nil {
-			return 0, err
-		}
+	s, err := a.getOrCreate(chunks.HeadSeriesRef(ref), ls)
+	if err != nil {
+		return 0, err
 	}
 
 	s.Lock()
