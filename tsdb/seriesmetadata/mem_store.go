@@ -392,8 +392,9 @@ func (m *MemStore[V]) Set(labelsHash uint64, version V) {
 			entry.multi.AddOrExtend(m.ops, version)
 			if len(entry.multi.Versions) > prevLen {
 				m.internLastVersion(entry.multi)
+				entry.contentHash = m.latestContentHash(entry.multi)
+				s.byHash[labelsHash] = entry
 			}
-			// multi is a pointer, no write-back needed for multi mutations.
 			return
 		}
 		// Single-version inline: compare content with canonical.
@@ -414,6 +415,7 @@ func (m *MemStore[V]) Set(labelsHash uint64, version V) {
 		multi := &Versioned[V]{Versions: []V{thin1, m.ops.Copy(version)}}
 		m.internLastVersion(multi)
 		entry.multi = multi
+		entry.contentHash = m.latestContentHash(multi)
 		s.byHash[labelsHash] = entry
 		return
 	}
@@ -478,6 +480,15 @@ func (m *MemStore[V]) setFromVersioned(entry *versionedEntry[V], vs *Versioned[V
 		return
 	}
 	entry.multi = vs
+	entry.contentHash = m.latestContentHash(vs)
+}
+
+// latestContentHash returns the content hash of the latest version in a Versioned.
+func (m *MemStore[V]) latestContentHash(vs *Versioned[V]) uint64 {
+	if m.dedupOps == nil || len(vs.Versions) == 0 {
+		return 0
+	}
+	return m.dedupOps.ContentHash(vs.Versions[len(vs.Versions)-1])
 }
 
 // SetVersionedWithDiff atomically stores versioned data and returns the
@@ -502,6 +513,7 @@ func (m *MemStore[V]) SetVersionedWithDiff(labelsHash uint64, versioned *Version
 				}
 			}
 			existing.multi = m.mergeVersionedInterned(existing.multi, versioned)
+			existing.contentHash = m.latestContentHash(existing.multi)
 			s.byHash[labelsHash] = existing
 			return old, existing.multi
 		}
@@ -556,13 +568,6 @@ func (m *MemStore[V]) HasContentHash(labelsHash, contentHash uint64) bool {
 	if !ok {
 		return false
 	}
-	if entry.multi != nil {
-		if len(entry.multi.Versions) == 0 {
-			return false
-		}
-		current := entry.multi.Versions[len(entry.multi.Versions)-1]
-		return m.dedupOps.ContentHash(current) == contentHash
-	}
 	return entry.contentHash == contentHash
 }
 
@@ -587,8 +592,8 @@ func (m *MemStore[V]) ExtendTimeRangeIfContentMatch(labelsHash, contentHash uint
 		if len(entry.multi.Versions) == 0 {
 			return nil, false
 		}
-		current := entry.multi.Versions[len(entry.multi.Versions)-1]
-		if m.dedupOps.ContentHash(current) == contentHash {
+		if entry.contentHash == contentHash {
+			current := entry.multi.Versions[len(entry.multi.Versions)-1]
 			current.UpdateTimeRange(minTime, maxTime)
 			return entry.multi, true
 		}
@@ -638,10 +643,10 @@ func (m *MemStore[V]) InsertVersion(
 
 	if entry, ok := s.byHash[labelsHash]; ok {
 		if entry.multi != nil {
-			// Multi-version entry: check latest version's content hash.
+			// Multi-version entry: check cached content hash.
 			if len(entry.multi.Versions) > 0 {
-				current := entry.multi.Versions[len(entry.multi.Versions)-1]
-				if m.dedupOps.ContentHash(current) == contentHash {
+				if entry.contentHash == contentHash {
+					current := entry.multi.Versions[len(entry.multi.Versions)-1]
 					current.UpdateTimeRange(minTime, maxTime)
 					return false, nil, nil
 				}
@@ -651,6 +656,7 @@ func (m *MemStore[V]) InsertVersion(
 			v := buildFull()
 			incoming := &Versioned[V]{Versions: []V{v}}
 			entry.multi = m.mergeVersionedInterned(entry.multi, incoming)
+			entry.contentHash = m.latestContentHash(entry.multi)
 			s.byHash[labelsHash] = entry
 			return true, old, entry.multi
 		}
@@ -678,6 +684,7 @@ func (m *MemStore[V]) InsertVersion(
 		thin2 := m.dedupOps.ThinCopy(canonical, v)
 
 		entry.multi = &Versioned[V]{Versions: []V{thin1, thin2}}
+		entry.contentHash = contentHash
 		s.byHash[labelsHash] = entry
 		return true, old, entry.multi
 	}
@@ -732,8 +739,8 @@ func (m *MemStore[V]) InsertVersionWithRef(
 
 		if entry.multi != nil {
 			if len(entry.multi.Versions) > 0 {
-				current := entry.multi.Versions[len(entry.multi.Versions)-1]
-				if m.dedupOps.ContentHash(current) == contentHash {
+				if entry.contentHash == contentHash {
+					current := entry.multi.Versions[len(entry.multi.Versions)-1]
 					current.UpdateTimeRange(minTime, maxTime)
 					s.byHash[labelsHash] = entry
 					return false, nil, nil
@@ -743,6 +750,7 @@ func (m *MemStore[V]) InsertVersionWithRef(
 			v := buildFull()
 			incoming := &Versioned[V]{Versions: []V{v}}
 			entry.multi = m.mergeVersionedInterned(entry.multi, incoming)
+			entry.contentHash = m.latestContentHash(entry.multi)
 			s.byHash[labelsHash] = entry
 			return true, old, entry.multi
 		}
@@ -768,6 +776,7 @@ func (m *MemStore[V]) InsertVersionWithRef(
 		thin2 := m.dedupOps.ThinCopy(canonical, v)
 
 		entry.multi = &Versioned[V]{Versions: []V{thin1, thin2}}
+		entry.contentHash = contentHash
 		s.byHash[labelsHash] = entry
 		return true, old, entry.multi
 	}
@@ -897,7 +906,7 @@ func (m *MemStore[V]) IterVersionedFlatInlineWithContentHash(ctx context.Context
 			}
 		}
 		if entry.multi != nil {
-			if err := f(entry.labelsHash, entry.multi.Versions, 0, 0, false, 0); err != nil {
+			if err := f(entry.labelsHash, entry.multi.Versions, 0, 0, false, entry.contentHash); err != nil {
 				return err
 			}
 		} else {
