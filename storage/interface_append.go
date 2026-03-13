@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/sample"
 )
 
 // AppendableV2 allows creating AppenderV2.
@@ -168,16 +169,9 @@ type AppenderV2 interface {
 	//
 	// t represents sample timestamp.
 	//
-	// v, h, fh represents sample value for each sample type.
-	// Callers MUST only provide one of the sample types (either v, h or fh).
-	// Implementations can detect the type of the sample with the following switch:
-	//
-	// switch {
-	//  case fh != nil: It's a float histogram append.
-	//  case h != nil: It's a histogram append.
-	//  default: It's a float append.
-	// }
-	// TODO(bwplotka): We plan to experiment on using generics for complex sampleType, but do it after we unify interface (derisk) and before we add native summaries.
+	// val represents the sample value as a sample.Value union type.
+	// Callers MUST construct val using one of sample.Float, sample.Histogram,
+	// or sample.FloatHistogram constructors.
 	//
 	// Implementations MUST attempt to append sample even if metadata, exemplar or (st) start timestamp appends fail.
 	// Implementations MAY return AppendPartialError as an error. Use errors.As to detect.
@@ -186,7 +180,7 @@ type AppenderV2 interface {
 	//   type and unit suffixes in metric names we start to hit cases of ls being not enough for id
 	//   of the series (metadata matters). Current solution is to enable 'type-and-unit-label' features for those cases, but we may
 	//   start to extend the id with metadata one day.
-	Append(ref SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts AppendV2Options) (SeriesRef, error)
+	Append(ref SeriesRef, ls labels.Labels, st, t int64, val sample.Value, opts AppendV2Options) (SeriesRef, error)
 }
 
 // AppenderTransaction allows transactional appends.
@@ -223,9 +217,12 @@ type limitedAppenderV1 struct {
 }
 
 func (a *limitedAppenderV1) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
-	return a.AppenderV2.Append(ref, l, 0, t, v, nil, nil, AppendV2Options{})
+	return a.AppenderV2.Append(ref, l, 0, t, sample.Float(v), AppendV2Options{})
 }
 
 func (a *limitedAppenderV1) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
-	return a.AppenderV2.Append(ref, l, 0, t, 0, h, fh, AppendV2Options{})
+	if fh != nil {
+		return a.AppenderV2.Append(ref, l, 0, t, sample.FloatHistogram(fh), AppendV2Options{})
+	}
+	return a.AppenderV2.Append(ref, l, 0, t, sample.Histogram(h), AppendV2Options{})
 }
