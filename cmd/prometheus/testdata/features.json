@@ -251,7 +251,8 @@
     "exemplar_storage": false,
     "isolation": true,
     "native_histograms": true,
-    "use_uncached_io": false
+    "use_uncached_io": false,
+    "xor2_encoding": false
   },
   "ui": {
     "ui_v2": false,

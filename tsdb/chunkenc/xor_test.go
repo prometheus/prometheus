@@ -19,6 +19,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func BenchmarkXorWrite(b *testing.B) {
+	samples := make([]struct {
+		t int64
+		v float64
+	}, 120)
+	for i := range samples {
+		samples[i].t = int64(i) * 1000
+		samples[i].v = float64(i) + float64(i)/10 + float64(i)/100 + float64(i)/1000
+	}
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		c := NewXORChunk()
+		app, _ := c.Appender()
+		for _, s := range samples {
+			app.Append(0, s.t, s.v)
+		}
+	}
+}
+
 func BenchmarkXorRead(b *testing.B) {
 	c := NewXORChunk()
 	app, err := c.Appender()
