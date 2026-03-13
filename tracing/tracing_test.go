@@ -32,7 +32,7 @@ func TestInstallingNewTracerProvider(t *testing.T) {
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
-			ClientType: config.TracingClientGRPC,
+			ClientType: config.OTELClientGRPC,
 		},
 	}
 
@@ -45,7 +45,7 @@ func TestReinstallingTracerProvider(t *testing.T) {
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
-			ClientType: config.TracingClientGRPC,
+			ClientType: config.OTELClientGRPC,
 			Headers:    map[string]string{"foo": "bar"},
 		},
 	}
@@ -60,7 +60,7 @@ func TestReinstallingTracerProvider(t *testing.T) {
 	cfg2 := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
-			ClientType: config.TracingClientHTTP,
+			ClientType: config.OTELClientHTTP,
 			Headers:    map[string]string{"bar": "foo"},
 		},
 	}
@@ -80,7 +80,7 @@ func TestReinstallingTracerProviderWithTLS(t *testing.T) {
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
-			ClientType: config.TracingClientGRPC,
+			ClientType: config.OTELClientGRPC,
 			TLSConfig: config_util.TLSConfig{
 				CAFile: "testdata/ca.cer",
 			},
@@ -100,7 +100,7 @@ func TestUninstallingTracerProvider(t *testing.T) {
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
-			ClientType: config.TracingClientGRPC,
+			ClientType: config.OTELClientGRPC,
 		},
 	}
 
@@ -122,7 +122,7 @@ func TestTracerProviderShutdown(t *testing.T) {
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
-			ClientType: config.TracingClientGRPC,
+			ClientType: config.OTELClientGRPC,
 		},
 	}
 

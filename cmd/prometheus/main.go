@@ -84,6 +84,7 @@ import (
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/notifications"
+	promotel_common "github.com/prometheus/prometheus/util/otel"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 	"github.com/prometheus/prometheus/web"
 )
@@ -841,6 +842,8 @@ func main() {
 	// that can pollute the logs.
 	rest.SetDefaultWarningHandlerWithContext(logging.NewDedupDeprecationWarningLogger())
 
+	promotel_common.GlobalOTELSetup(logger.With("component", "otel"), prometheus.DefaultRegisterer)
+
 	modeAppName := "Prometheus Server"
 	mode := "server"
 	if agentMode {
@@ -914,10 +917,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	loggingManager := logging.NewManager(logger.With("component", "logging"))
+
 	scrapeManager, err := scrape.NewManager(
 		&cfg.scrape,
 		logger.With("component", "scrape manager"),
-		logging.NewJSONFileLogger,
+		logging.ScrapeFailureLoggerFactory(loggingManager),
 		nil, fanoutStorage,
 		prometheus.DefaultRegisterer,
 	)
@@ -927,7 +932,7 @@ func main() {
 	}
 
 	var (
-		tracingManager = tracing.NewManager(logger)
+		tracingManager = tracing.NewManager(logger.With("component", "tracing"))
 
 		queryEngine *promql.Engine
 		ruleManager *rules.Manager
@@ -1029,6 +1034,7 @@ func main() {
 	// This is passed to ruleManager.Update().
 	externalURL := cfg.web.ExternalURL.String()
 
+	// Config reloaders are applied in order
 	reloaders := []reloader{
 		{
 			name:     "db_storage",
@@ -1040,23 +1046,21 @@ func main() {
 			name:     "web_handler",
 			reloader: webHandler.ApplyConfig,
 		}, {
+			// Logging manager for query and scrape logs. Must be reloaded before the
+			// query engine and scrape manager to ensure that the new loggers passed
+			// to them are up to date.
+			name:     "logging",
+			reloader: loggingManager.ApplyConfig,
+		}, {
 			name: "query_engine",
 			reloader: func(cfg *config.Config) error {
 				if agentMode {
 					// No-op in Agent mode.
 					return nil
 				}
-
-				if cfg.GlobalConfig.QueryLogFile == "" {
-					queryEngine.SetQueryLogger(nil)
-					return nil
-				}
-
-				l, err := logging.NewJSONFileLogger(cfg.GlobalConfig.QueryLogFile)
-				if err != nil {
-					return err
-				}
-				queryEngine.SetQueryLogger(l)
+				// The query engine needs to re-open the query log file on reload, refresh
+				// any otel logger provider etc.
+				queryEngine.SetQueryLogger(loggingManager)
 				return nil
 			},
 		}, {
@@ -1262,6 +1266,19 @@ func main() {
 			func(error) {
 				logger.Info("Stopping tracing manager...")
 				tracingManager.Stop()
+			},
+		)
+	}
+	{
+		// Query and scrape logging manager
+		g.Add(
+			func() error {
+				<-reloadReady.C
+				loggingManager.Run()
+				return nil
+			},
+			func(error) {
+				loggingManager.Stop()
 			},
 		)
 	}
