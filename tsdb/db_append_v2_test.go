@@ -7510,12 +7510,13 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	t.Parallel()
 
 	opts := &Options{
-		RetentionDuration: int64(time.Hour * 24 * 15 / time.Millisecond),
-		NoLockfile:        true,
-		MinBlockDuration:  int64(time.Hour * 2 / time.Millisecond),
-		MaxBlockDuration:  int64(time.Hour * 2 / time.Millisecond),
-		WALCompression:    compression.Snappy,
-		EnableSTStorage:   true,
+		RetentionDuration:  int64(time.Hour * 24 * 15 / time.Millisecond),
+		NoLockfile:         true,
+		MinBlockDuration:   int64(time.Hour * 2 / time.Millisecond),
+		MaxBlockDuration:   int64(time.Hour * 2 / time.Millisecond),
+		WALCompression:     compression.Snappy,
+		EnableSTStorage:    true,
+		EnableXOR2Encoding: true,
 	}
 	db := newTestDB(t, withOpts(opts))
 	ctx := context.Background()
@@ -7654,6 +7655,7 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 			opts.EnableSTStorage = true
+			opts.EnableXOR2Encoding = true
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions()
 

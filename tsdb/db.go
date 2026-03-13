@@ -240,6 +240,11 @@ type Options struct {
 	// is implemented.
 	EnableSTAsZeroSample bool
 
+	// EnableXOR2Encoding enables the XOR2 chunk encoding for float samples.
+	// XOR2 provides better compression than XOR, especially for stale markers.
+	// Automatically set to true when EnableSTStorage is true.
+	EnableXOR2Encoding bool
+
 	// EnableSTStorage determines whether TSDB should write a Start Timestamp (ST)
 	// per sample to WAL.
 	// TODO(bwplotka): Implement this option as per PROM-60, currently it's noop.
@@ -869,6 +874,7 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 		opts.FeatureRegistry.Set(features.TSDB, "use_uncached_io", opts.UseUncachedIO)
 		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
 		opts.FeatureRegistry.Set(features.TSDB, "st_storage", opts.EnableSTStorage)
+		opts.FeatureRegistry.Set(features.TSDB, "xor2_encoding", opts.EnableXOR2Encoding)
 	}
 
 	return open(dir, l, r, opts, rngs, stats)
@@ -1076,6 +1082,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
+	headOpts.EnableXOR2Encoding.Store(opts.EnableXOR2Encoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
