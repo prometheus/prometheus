@@ -545,28 +545,29 @@ func (d *ECSDiscovery) describeEC2Instances(ctx context.Context, instanceIDs []s
 
 		for _, reservation := range resp.Reservations {
 			for _, instance := range reservation.Instances {
-				if instance.InstanceId != nil && instance.PrivateIpAddress != nil {
-					info := ec2InstanceInfo{
-						privateIP: *instance.PrivateIpAddress,
-						tags:      make(map[string]string),
-					}
-					if instance.PublicIpAddress != nil {
-						info.publicIP = *instance.PublicIpAddress
-					}
-					if instance.SubnetId != nil {
-						info.subnetID = *instance.SubnetId
-					}
-					if instance.InstanceType != "" {
-						info.instanceType = string(instance.InstanceType)
-					}
-					// Collect EC2 instance tags
-					for _, tag := range instance.Tags {
-						if tag.Key != nil && tag.Value != nil {
-							info.tags[*tag.Key] = *tag.Value
-						}
-					}
-					instanceInfo[*instance.InstanceId] = info
+				if instance.InstanceId == nil || instance.PrivateIpAddress == nil {
+					continue
 				}
+				info := ec2InstanceInfo{
+					privateIP: *instance.PrivateIpAddress,
+					tags:      make(map[string]string),
+				}
+				if instance.PublicIpAddress != nil {
+					info.publicIP = *instance.PublicIpAddress
+				}
+				if instance.SubnetId != nil {
+					info.subnetID = *instance.SubnetId
+				}
+				if instance.InstanceType != "" {
+					info.instanceType = string(instance.InstanceType)
+				}
+				// Collect EC2 instance tags
+				for _, tag := range instance.Tags {
+					if tag.Key != nil && tag.Value != nil {
+						info.tags[*tag.Key] = *tag.Value
+					}
+				}
+				instanceInfo[*instance.InstanceId] = info
 			}
 		}
 
