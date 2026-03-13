@@ -21,6 +21,7 @@ import (
 	"math"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -101,6 +102,61 @@ func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *
 	db, err := Open(promslog.NewNopLogger(), reg, rs, dbDir, opts)
 	require.NoError(t, err)
 	return db
+}
+
+// TestConcurrentAppendSameLabels verifies that concurrent appends for the same
+// label set produce exactly one series in memory and one series record in the WAL.
+func TestConcurrentAppendSameLabels(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = math.MaxInt64
+	db := createTestAgentDB(t, nil, opts)
+	lset := labels.FromStrings("__name__", "test_metric")
+
+	const n = 100
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+
+	wg.Add(n)
+	for range n {
+		go func() {
+			defer wg.Done()
+			app := db.Appender(context.Background())
+			<-start
+			_, err := app.Append(0, lset, 1000, 1.0)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	var total int
+	for i := range db.series.size {
+		db.series.locks[i].RLock()
+		total += len(db.series.series[i])
+		db.series.locks[i].RUnlock()
+	}
+	require.Equal(t, 1, total)
+	require.NoError(t, db.Close())
+
+	sr, err := wlog.NewSegmentsReader(db.wal.Dir())
+	require.NoError(t, err)
+	defer func() { require.NoError(t, sr.Close()) }()
+
+	r := wlog.NewReader(sr)
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	var walSeries int
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) == record.Series {
+			var s []record.RefSeries
+			s, err = dec.Series(rec, s)
+			require.NoError(t, err)
+			walSeries += len(s)
+		}
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, 1, walSeries)
 }
 
 func TestUnsupportedFunctions(t *testing.T) {
@@ -1467,6 +1523,6 @@ func BenchmarkGetOrCreate(b *testing.B) {
 	b.ResetTimer()
 
 	for _, l := range lbls {
-		app.getOrCreate(l)
+		app.getOrCreate(0, l)
 	}
 }
