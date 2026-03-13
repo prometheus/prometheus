@@ -662,6 +662,45 @@ func TestCheckRulesWithFeatureFlag(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCheckConfigWithFeatureFlag(t *testing.T) {
+	// Similar to TestCheckRulesWithFeatureFlag but for "check config".
+	// The config references rule files that use experimental syntax,
+	// so feature flags must be propagated to the parser.
+	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "--enable-feature=promql-duration-expr", "--enable-feature=promql-extended-range-selectors", "check", "config", "testdata/config_with_features.yml"}
+	tool := exec.Command(promtoolPath, args...)
+	require.NoError(t, tool.Run())
+}
+
+func TestTestRulesWithFeatureFlag(t *testing.T) {
+	// Similar to TestCheckRulesWithFeatureFlag but for "test rules".
+	// The test file references rule files that use experimental syntax,
+	// so feature flags must be propagated to the rules manager's parser.
+	args := []string{"-test.main", "--enable-feature=promql-experimental-functions", "--enable-feature=promql-duration-expr", "--enable-feature=promql-extended-range-selectors", "test", "rules", "testdata/features-test.yml"}
+	tool := exec.Command(promtoolPath, args...)
+	require.NoError(t, tool.Run())
+}
+
+func TestFormatPromQLWithFeatureFlag(t *testing.T) {
+	// Ensure "promql format" respects --enable-feature flags.
+	args := []string{"-test.main", "--experimental", "--enable-feature=promql-experimental-functions", "promql", "format", `sort_by_label(up, "instance")`}
+	tool := exec.Command(promtoolPath, args...)
+	require.NoError(t, tool.Run())
+}
+
+func TestLabelsSetPromQLWithFeatureFlag(t *testing.T) {
+	// Ensure "promql labels set" respects --enable-feature flags.
+	args := []string{"-test.main", "--experimental", "--enable-feature=promql-experimental-functions", "promql", "label-matchers", "set", `sort_by_label(up, "instance")`, "job", "prometheus"}
+	tool := exec.Command(promtoolPath, args...)
+	require.NoError(t, tool.Run())
+}
+
+func TestLabelsDeletePromQLWithFeatureFlag(t *testing.T) {
+	// Ensure "promql label-matchers delete" respects --enable-feature flags.
+	args := []string{"-test.main", "--experimental", "--enable-feature=promql-experimental-functions", "promql", "label-matchers", "delete", `sort_by_label(up, "instance")`, "job"}
+	tool := exec.Command(promtoolPath, args...)
+	require.NoError(t, tool.Run())
+}
+
 func TestCheckRulesWithRuleFiles(t *testing.T) {
 	t.Run("rules-good", func(t *testing.T) {
 		t.Parallel()
