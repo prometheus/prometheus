@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -160,6 +161,7 @@ func nodeSourceFromName(name string) string {
 
 const (
 	nodeProviderIDLabel = metaLabelPrefix + "node_provider_id"
+	nodeConditionPrefix = metaLabelPrefix + "node_condition_"
 	nodeAddressPrefix   = metaLabelPrefix + "node_address_"
 )
 
@@ -168,6 +170,13 @@ func nodeLabels(n *apiv1.Node) model.LabelSet {
 	ls := make(model.LabelSet)
 
 	ls[nodeProviderIDLabel] = lv(n.Spec.ProviderID)
+
+	// Export all node conditions as individual meta labels
+	for _, condition := range n.Status.Conditions {
+		conditionType := strings.ToLower(string(condition.Type))
+		labelName := nodeConditionPrefix + strutil.SanitizeLabelName(conditionType)
+		ls[model.LabelName(labelName)] = lv(strings.ToLower(string(condition.Status)))
+	}
 
 	addObjectMetaLabels(ls, n.ObjectMeta, RoleNode)
 

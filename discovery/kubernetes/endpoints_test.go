@@ -550,8 +550,8 @@ func TestEndpointsDiscoveryWithNodeMetadata(t *testing.T) {
 	metadataConfig := AttachMetadataConfig{Node: true}
 	nodeLabels1 := map[string]string{"az": "us-east1"}
 	nodeLabels2 := map[string]string{"az": "us-west2"}
-	node1 := makeNode("foobar", "", "", nodeLabels1, nil)
-	node2 := makeNode("barbaz", "", "", nodeLabels2, nil)
+	node1 := makeNode("foobar", "", "", nodeLabels1, nil, nil)
+	node2 := makeNode("barbaz", "", "", nodeLabels2, nil, nil)
 	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
@@ -623,8 +623,8 @@ func TestEndpointsDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 	t.Parallel()
 	nodeLabels1 := map[string]string{"az": "us-east1"}
 	nodeLabels2 := map[string]string{"az": "us-west2"}
-	node1 := makeNode("foobar", "", "", nodeLabels1, nil)
-	node2 := makeNode("barbaz", "", "", nodeLabels2, nil)
+	node1 := makeNode("foobar", "", "", nodeLabels1, nil, nil)
+	node2 := makeNode("barbaz", "", "", nodeLabels2, nil, nil)
 	metadataConfig := AttachMetadataConfig{Node: true}
 	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
