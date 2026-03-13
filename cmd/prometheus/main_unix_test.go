@@ -36,9 +36,8 @@ func TestStartupInterrupt(t *testing.T) {
 	}
 	t.Parallel()
 
-	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
-
-	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+t.TempDir(), "--web.listen-address=0.0.0.0"+port)
+	port := testutil.RandomUnprivilegedPort(t)
+	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+t.TempDir(), fmt.Sprintf("--web.listen-address=0.0.0.0:%d", port))
 	err := prom.Start()
 	require.NoError(t, err)
 
@@ -50,7 +49,7 @@ func TestStartupInterrupt(t *testing.T) {
 	var startedOk bool
 	var stoppedErr error
 
-	url := "http://localhost" + port + "/graph"
+	url := fmt.Sprintf("http://localhost:%d/graph", port)
 
 Loop:
 	for range 10 {
