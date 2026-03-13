@@ -868,6 +868,7 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 		opts.FeatureRegistry.Set(features.TSDB, "isolation", !opts.IsolationDisabled)
 		opts.FeatureRegistry.Set(features.TSDB, "use_uncached_io", opts.UseUncachedIO)
 		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
+		opts.FeatureRegistry.Set(features.TSDB, "st_storage", opts.EnableSTStorage)
 	}
 
 	return open(dir, l, r, opts, rngs, stats)
@@ -1074,6 +1075,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
+	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
