@@ -391,3 +391,39 @@ func TestErrorUnwrap(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMultipleDocuments(t *testing.T) {
+	// A YAML file with two documents separated by "---".
+	multiDoc := []byte(`groups:
+  - name: first
+    rules:
+      - alert: AlwaysFiring
+        expr: 1 == 1
+---
+groups:
+  - name: second
+    rules:
+      - alert: AlsoFiring
+        expr: 2 == 2
+`)
+
+	_, errs := Parse(multiDoc, false, model.LegacyValidation, nil)
+	require.NotEmpty(t, errs, "expected an error for a multi-document YAML file")
+	require.Contains(t, errs[0].Error(), "multiple YAML documents",
+		"error message should mention multiple YAML documents")
+}
+
+func TestParseSingleDocument(t *testing.T) {
+	// A well-formed single-document YAML file must not trigger the multi-doc error.
+	singleDoc := []byte(`groups:
+  - name: test
+    rules:
+      - alert: AlwaysFiring
+        expr: 1 == 1
+`)
+
+	groups, errs := Parse(singleDoc, false, model.LegacyValidation, nil)
+	require.Empty(t, errs, "expected no errors for a single-document YAML file")
+	require.NotNil(t, groups)
+	require.Len(t, groups.Groups, 1)
+}

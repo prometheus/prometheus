@@ -355,6 +355,23 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 	if err != nil && !errors.Is(err, io.EOF) {
 		errs = append(errs, err)
 	}
+
+	// Detect and warn about additional YAML documents in the file.
+	// Only the first document is loaded by Prometheus; subsequent documents
+	// (separated by "---") are silently ignored, which can hide rule groups
+	// from operators who expect all groups to be active.
+	var extraDoc interface{}
+	if decErr := decoder.Decode(&extraDoc); decErr == nil {
+		// A second document exists — emit an error so the file is rejected.
+		// The operator must either remove the extra separator or split the
+		// groups into separate files.
+		errs = append(errs, errors.New(
+			"rule file contains multiple YAML documents separated by '---'; "+
+				"only the first document is loaded. "+
+				"Remove the document separator or split into separate files.",
+		))
+	}
+
 	err = yaml.Unmarshal(content, &node)
 	if err != nil {
 		errs = append(errs, err)
