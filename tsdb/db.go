@@ -1196,8 +1196,8 @@ func (db *DB) run(ctx context.Context) {
 			case db.compactc <- struct{}{}:
 			default:
 			}
-			// We attempt mmapping of head chunks regularly.
-			db.head.mmapHeadChunks()
+			// We attempt mmapping of dirty head chunks regularly.
+			db.head.mmapDirtyHeadChunks()
 
 			numStaleSeries, numSeries := db.Head().NumStaleSeries(), db.Head().NumSeries()
 			if db.autoCompact && numSeries > 0 && db.opts.staleSeriesCompactionThreshold.Load() > 0 {
@@ -2262,8 +2262,9 @@ func (db *DB) generateCompactionDelay() time.Duration {
 }
 
 // ForceHeadMMap is intended for use only in tests and benchmarks.
+// It calls the production mmap path (mmapDirtyHeadChunks).
 func (db *DB) ForceHeadMMap() {
-	db.head.mmapHeadChunks()
+	db.head.mmapDirtyHeadChunks()
 }
 
 // Snapshot writes the current data to the directory. If withHead is set to true it
