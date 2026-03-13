@@ -274,7 +274,13 @@ func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Poo
 		m.pool = chunkenc.NewPool()
 	}
 
-	return m, m.openMMapFiles()
+	if err := m.openMMapFiles(); err != nil {
+		if m.writeQueue != nil {
+			m.writeQueue.stop()
+		}
+		return nil, err
+	}
+	return m, nil
 }
 
 // Chunk encodings for out-of-order chunks.
