@@ -97,9 +97,11 @@ func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 func stripeSeriesWithCollidingSeries(*testing.T) (*stripeSeries, *memSeries, *memSeries) {
 	lbls1, lbls2 := labelsWithHashCollision()
 	ms1 := memSeries{
+		ref:  chunks.HeadSeriesRef(1),
 		lset: lbls1,
 	}
 	ms2 := memSeries{
+		ref:  chunks.HeadSeriesRef(2),
 		lset: lbls2,
 	}
 	hash := lbls1.Hash()
@@ -139,7 +141,7 @@ func TestStripeSeries_SetUnlessAlreadySet(t *testing.T) {
 // TestSetUnlessAlreadySetConcurrentSameLabels verifies that concurrent SetUnlessAlreadySet calls for
 // the same label set produce exactly one canonical series: all callers get the
 // same pointer, the winning ref is reachable via GetByID, and losing refs are
-// never inserted and therefore unreachable.
+// cleaned up before the call returns and are therefore unreachable.
 func TestSetUnlessAlreadySetConcurrentSameLabels(t *testing.T) {
 	// size=1 forces all goroutines into the same hash bucket.
 	ss := newStripeSeries(1)

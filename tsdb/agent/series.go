@@ -236,24 +236,43 @@ func (s *stripeSeries) GetByHash(hash uint64, lset labels.Labels) *memSeries {
 // SetUnlessAlreadySet inserts series for the given hash if no series with the
 // same label set already exists. It returns the canonical series and whether
 // it was newly inserted.
+//
+// Insertion order is refs-before-hashes. GC only discovers series via hashes,
+// so anything it finds is guaranteed to already be present in refs. We never
+// hold hashLock and refLock simultaneously, preserving the no-deadlock
+// invariant that GC relies on (it holds hashLock while acquiring refLock).
 func (s *stripeSeries) SetUnlessAlreadySet(hash uint64, series *memSeries) (*memSeries, bool) {
 	hashLock := s.hashLock(hash)
 
+	// Fast path: series already exists.
 	s.locks[hashLock].Lock()
 	if prev := s.hashes[hashLock].Get(hash, series.lset); prev != nil {
 		s.locks[hashLock].Unlock()
 		return prev, false
 	}
-	s.hashes[hashLock].Set(hash, series)
 	s.locks[hashLock].Unlock()
 
-	// Insert into s.series under its own lock. GC acquires hashLock then
-	// refLock, and we never hold both simultaneously, so no deadlock is
-	// possible.
+	// Insert into refs first. GC discovers series through hashes, so a series
+	// that is only in refs is invisible to GC and will not be removed.
 	refLock := s.refLock(series.ref)
 	s.locks[refLock].Lock()
 	s.series[refLock][series.ref] = series
 	s.locks[refLock].Unlock()
+
+	// Re-acquire hashLock to insert into hashes. A concurrent goroutine may
+	// have inserted the same label set while we were inserting into refs, so
+	// check again before committing.
+	s.locks[hashLock].Lock()
+	if prev := s.hashes[hashLock].Get(hash, series.lset); prev != nil {
+		s.locks[hashLock].Unlock()
+		// We lost the race: clean up the ref we pre-inserted.
+		s.locks[refLock].Lock()
+		delete(s.series[refLock], series.ref)
+		s.locks[refLock].Unlock()
+		return prev, false
+	}
+	s.hashes[hashLock].Set(hash, series)
+	s.locks[hashLock].Unlock()
 
 	return series, true
 }
