@@ -7423,7 +7423,7 @@ func TestChunkQuerierReadWriteRace_AppendV2(t *testing.T) {
 			it := cs.Iterator(nil)
 			for it.Next() {
 				m := it.At()
-				_ = bytes.Clone(m.Chunk.Bytes())
+				_ = bytes.Clone(m.Chunk.Bytes()) // This copying of chunk bytes detects any race.
 			}
 		}
 		require.NoError(t, ss.Err())
