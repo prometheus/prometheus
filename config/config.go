@@ -1474,6 +1474,10 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
+	if err := c.QueueConfig.Validate(); err != nil {
+		return err
+	}
+
 	return validateAuthConfigs(c)
 }
 
@@ -1564,6 +1568,29 @@ type QueueConfig struct {
 
 	// Samples older than the limit will be dropped.
 	SampleAgeLimit model.Duration `yaml:"sample_age_limit,omitempty"`
+}
+
+// Validate checks QueueConfig fields for invalid values.
+func (c *QueueConfig) Validate() error {
+	if c.MaxShards <= 0 {
+		return errors.New("remote write queue max_shards must be positive")
+	}
+	if c.MinShards <= 0 {
+		return errors.New("remote write queue min_shards must be positive")
+	}
+	if c.MinShards > c.MaxShards {
+		return errors.New("remote write queue min_shards must not be greater than max_shards")
+	}
+	if c.MaxSamplesPerSend <= 0 {
+		return errors.New("remote write queue max_samples_per_send must be positive")
+	}
+	if c.Capacity <= 0 {
+		return errors.New("remote write queue capacity must be positive")
+	}
+	if c.MaxBackoff < c.MinBackoff {
+		return errors.New("remote write queue max_backoff must not be less than min_backoff")
+	}
+	return nil
 }
 
 // MetadataConfig is the configuration for sending metadata to remote
