@@ -40,6 +40,7 @@ func (s *VultrSDTestSuite) SetupTest(t *testing.T) {
 	s.Mock.Setup()
 
 	s.Mock.HandleInstanceList()
+	s.Mock.HandleBaremetalList()
 }
 
 func TestVultrSDRefresh(t *testing.T) {
@@ -76,7 +77,7 @@ func TestVultrSDRefresh(t *testing.T) {
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Len(t, tg.Targets, 3)
+	require.Len(t, tg.Targets, 6)
 
 	for i, k := range []model.LabelSet{
 		{
@@ -134,6 +135,69 @@ func TestVultrSDRefresh(t *testing.T) {
 			"__meta_vultr_instance_ram_mb":               model.LabelValue("4096"),
 			"__meta_vultr_instance_disk_gb":              model.LabelValue("128"),
 			"__meta_vultr_instance_allowed_bandwidth_gb": model.LabelValue("3000"),
+		},
+		{
+			"__address__":                          model.LabelValue("192.0.2.123:80"),
+			"__meta_vultr_baremetal_id":            model.LabelValue("cb676a46-66fd-4dfb-b839-443f2e6c0b60"),
+			"__meta_vultr_baremetal_label":         model.LabelValue("Example Bare Metal"),
+			"__meta_vultr_baremetal_os":            model.LabelValue("Application"),
+			"__meta_vultr_baremetal_ram_mb":        model.LabelValue("32768 MB"),
+			"__meta_vultr_baremetal_disk_gb":       model.LabelValue("2x 240GB SSD"),
+			"__meta_vultr_baremetal_main_ip":       model.LabelValue("192.0.2.123"),
+			"__meta_vultr_baremetal_cpu_count":     model.LabelValue("4"),
+			"__meta_vultr_baremetal_region":        model.LabelValue("ams"),
+			"__meta_vultr_baremetal_plan":          model.LabelValue("vbm-4c-32gb"),
+			"__meta_vultr_baremetal_server_status": model.LabelValue("active"),
+			"__meta_vultr_baremetal_netmask_v4":    model.LabelValue("255.255.254.0"),
+			"__meta_vultr_baremetal_gateway_v4":    model.LabelValue("192.0.2.1"),
+			"__meta_vultr_baremetal_main_ipv6":     model.LabelValue("2001:0db8:5001:3990:0ec4:7aff:fe8e:f97a"),
+			"__meta_vultr_baremetal_os_id":         model.LabelValue("186"),
+			"__meta_vultr_baremetal_app_id":        model.LabelValue("3"),
+			"__meta_vultr_baremetal_image_id":      model.LabelValue(""),
+			"__meta_vultr_baremetal_features":      model.LabelValue(",backups,"),
+			"__meta_vultr_baremetal_tags":          model.LabelValue(",tag1,tag2,tag3,"),
+		},
+		{
+			"__address__":                          model.LabelValue("192.0.2.124:80"),
+			"__meta_vultr_baremetal_id":            model.LabelValue("sdfgsdfgsdfg-66fd-4dfb-b839-443f2e6c0b60"),
+			"__meta_vultr_baremetal_label":         model.LabelValue("Example Bare Metal 2"),
+			"__meta_vultr_baremetal_os":            model.LabelValue("Application"),
+			"__meta_vultr_baremetal_ram_mb":        model.LabelValue("32768 MB"),
+			"__meta_vultr_baremetal_disk_gb":       model.LabelValue("2x 240GB SSD"),
+			"__meta_vultr_baremetal_main_ip":       model.LabelValue("192.0.2.124"),
+			"__meta_vultr_baremetal_cpu_count":     model.LabelValue("4"),
+			"__meta_vultr_baremetal_region":        model.LabelValue("ams"),
+			"__meta_vultr_baremetal_plan":          model.LabelValue("vbm-4c-32gb"),
+			"__meta_vultr_baremetal_server_status": model.LabelValue("active"),
+			"__meta_vultr_baremetal_netmask_v4":    model.LabelValue("255.255.254.0"),
+			"__meta_vultr_baremetal_gateway_v4":    model.LabelValue("192.0.2.1"),
+			"__meta_vultr_baremetal_main_ipv6":     model.LabelValue("2001:0db8:5001:3990:0ec4:7aff:fe8e:f97a"),
+			"__meta_vultr_baremetal_os_id":         model.LabelValue("186"),
+			"__meta_vultr_baremetal_app_id":        model.LabelValue("3"),
+			"__meta_vultr_baremetal_image_id":      model.LabelValue(""),
+			"__meta_vultr_baremetal_features":      model.LabelValue(",backups,"),
+			"__meta_vultr_baremetal_tags":          model.LabelValue(",tag1,tag2,tag3,"),
+		},
+		{
+			"__address__":                          model.LabelValue("192.0.2.125:80"),
+			"__meta_vultr_baremetal_id":            model.LabelValue("wertwery6-66fd-4dfb-b839-443f2e6c0b60"),
+			"__meta_vultr_baremetal_label":         model.LabelValue("Example Bare Metal 3"),
+			"__meta_vultr_baremetal_os":            model.LabelValue("Application"),
+			"__meta_vultr_baremetal_ram_mb":        model.LabelValue("32768 MB"),
+			"__meta_vultr_baremetal_disk_gb":       model.LabelValue("2x 240GB SSD"),
+			"__meta_vultr_baremetal_main_ip":       model.LabelValue("192.0.2.125"),
+			"__meta_vultr_baremetal_cpu_count":     model.LabelValue("4"),
+			"__meta_vultr_baremetal_region":        model.LabelValue("ams"),
+			"__meta_vultr_baremetal_plan":          model.LabelValue("vbm-4c-32gb"),
+			"__meta_vultr_baremetal_server_status": model.LabelValue("active"),
+			"__meta_vultr_baremetal_netmask_v4":    model.LabelValue("255.255.254.0"),
+			"__meta_vultr_baremetal_gateway_v4":    model.LabelValue("192.0.2.1"),
+			"__meta_vultr_baremetal_main_ipv6":     model.LabelValue("2001:0db8:5001:3990:0ec4:7aff:fe8e:f97a"),
+			"__meta_vultr_baremetal_os_id":         model.LabelValue("186"),
+			"__meta_vultr_baremetal_app_id":        model.LabelValue("3"),
+			"__meta_vultr_baremetal_image_id":      model.LabelValue(""),
+			"__meta_vultr_baremetal_features":      model.LabelValue(",backups,"),
+			"__meta_vultr_baremetal_tags":          model.LabelValue(",tag1,tag2,tag3,"),
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
