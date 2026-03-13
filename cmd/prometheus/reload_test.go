@@ -16,6 +16,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -111,6 +112,7 @@ func runTestSteps(t *testing.T, steps []struct {
 	expectedMetric   float64
 },
 ) {
+	tmpDir := t.TempDir()
 	configDir := t.TempDir()
 	configFilePath := filepath.Join(configDir, "prometheus.yml")
 
@@ -119,7 +121,14 @@ func runTestSteps(t *testing.T, steps []struct {
 	require.NoError(t, os.WriteFile(configFilePath, []byte(steps[0].configText), 0o644), "Failed to write initial config file")
 
 	port := testutil.RandomUnprivilegedPort(t)
-	prom := prometheusCommandWithLogging(t, configFilePath, port, "--enable-feature=auto-reload-config", "--config.auto-reload-interval=1s")
+	prom := prometheusCommandWithLogging(
+		t,
+		configFilePath,
+		port,
+		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+		"--enable-feature=auto-reload-config",
+		"--config.auto-reload-interval=1s",
+	)
 	require.NoError(t, prom.Start())
 
 	baseURL := "http://localhost:" + strconv.Itoa(port)
@@ -209,6 +218,7 @@ func prometheusCommandWithLogging(t *testing.T, configFilePath string, port int,
 		"-test.main",
 		"--config.file=" + configFilePath,
 		"--web.listen-address=0.0.0.0:" + strconv.Itoa(port),
+		"--log.level=debug",
 	}
 	args = append(args, extraArgs...)
 	prom := exec.Command(promPath, args...)

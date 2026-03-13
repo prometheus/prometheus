@@ -28,7 +28,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -133,10 +132,16 @@ func TestFailedStartupExitCode(t *testing.T) {
 	}
 	t.Parallel()
 
+	tmpDir := t.TempDir()
 	fakeInputFile := "fake-input-file"
 	expectedExitStatus := 2
 
-	prom := exec.Command(promPath, "-test.main", "--web.listen-address=0.0.0.0:0", "--config.file="+fakeInputFile)
+	prom := prometheusCommandWithLogging(
+		t,
+		fakeInputFile,
+		0,
+		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+	)
 	err := prom.Run()
 	require.Error(t, err)
 
@@ -247,23 +252,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 		t.Run(tc.size, func(t *testing.T) {
 			t.Parallel()
 			prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+tc.size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
-
-			// Log stderr in case of failure.
-			stderr, err := prom.StderrPipe()
-			require.NoError(t, err)
-
-			// WaitGroup is used to ensure that we don't call t.Log() after the test has finished.
-			var wg sync.WaitGroup
-			wg.Add(1)
-			defer wg.Wait()
-
-			go func() {
-				defer wg.Done()
-				slurp, _ := io.ReadAll(stderr)
-				t.Log(string(slurp))
-			}()
-
-			err = prom.Start()
+			err := prom.Start()
 			require.NoError(t, err)
 
 			if tc.exitCode == 0 {
@@ -311,23 +300,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 		t.Run(tc.size, func(t *testing.T) {
 			t.Parallel()
 			prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+tc.size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
-
-			// Log stderr in case of failure.
-			stderr, err := prom.StderrPipe()
-			require.NoError(t, err)
-
-			// WaitGroup is used to ensure that we don't call t.Log() after the test has finished.
-			var wg sync.WaitGroup
-			wg.Add(1)
-			defer wg.Wait()
-
-			go func() {
-				defer wg.Done()
-				slurp, _ := io.ReadAll(stderr)
-				t.Log(string(slurp))
-			}()
-
-			err = prom.Start()
+			err := prom.Start()
 			require.NoError(t, err)
 
 			if tc.exitCode == 0 {
@@ -504,8 +477,8 @@ func TestModeSpecificFlags(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(fmt.Sprintf("%s mode with option %s", tc.mode, tc.arg), func(t *testing.T) {
 			t.Parallel()
-			args := []string{"-test.main", tc.arg, t.TempDir(), "--web.listen-address=0.0.0.0:0"}
 
+			args := []string{"-test.main", tc.arg, t.TempDir(), "--web.listen-address=0.0.0.0:0"}
 			if tc.mode == "agent" {
 				args = append(args, "--agent", "--config.file="+agentConfig)
 			} else {
@@ -514,22 +487,7 @@ func TestModeSpecificFlags(t *testing.T) {
 
 			prom := exec.Command(promPath, args...)
 
-			// Log stderr in case of failure.
-			stderr, err := prom.StderrPipe()
-			require.NoError(t, err)
-
-			// WaitGroup is used to ensure that we don't call t.Log() after the test has finished.
-			var wg sync.WaitGroup
-			wg.Add(1)
-			defer wg.Wait()
-
-			go func() {
-				defer wg.Done()
-				slurp, _ := io.ReadAll(stderr)
-				t.Log(string(slurp))
-			}()
-
-			err = prom.Start()
+			err := prom.Start()
 			require.NoError(t, err)
 
 			if tc.exitStatus == 0 {
@@ -1014,7 +972,6 @@ remote_write:
 		configFile,
 		port,
 		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
-		"--log.level=debug",
 	)
 	require.NoError(t, prom.Start())
 
