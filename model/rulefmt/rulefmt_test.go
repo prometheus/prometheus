@@ -130,6 +130,71 @@ func TestParseFileFailure(t *testing.T) {
 	}
 }
 
+func TestParseMultipleDocuments(t *testing.T) {
+	tests := []struct {
+		name          string
+		content       string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "single document - valid",
+			content: `
+groups:
+  - name: group1
+    rules:
+      - alert: TestAlert
+        expr: up == 0
+`,
+			expectError: false,
+		},
+		{
+			name: "multiple documents - should warn",
+			content: `
+groups:
+  - name: group1
+    rules:
+      - alert: TestAlert
+        expr: up == 0
+---
+groups:
+  - name: group2
+    rules:
+      - alert: AnotherAlert
+        expr: up == 1
+`,
+			expectError:   true,
+			errorContains: "multiple YAML documents",
+		},
+		{
+			name: "multiple documents with empty second - should warn",
+			content: `
+groups:
+  - name: group1
+    rules:
+      - alert: TestAlert
+        expr: up == 0
+---
+`,
+			expectError:   true,
+			errorContains: "multiple YAML documents",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, errs := Parse([]byte(tt.content), false, model.UTF8Validation)
+
+			if tt.expectError {
+				require.NotEmpty(t, errs, "expected error for %s, got none", tt.name)
+				require.ErrorContains(t, errs[0], tt.errorContains)
+			} else {
+				require.Empty(t, errs, "unexpected errors for %s: %v", tt.name, errs)
+			}
+		})
+	}
+}
+
 func TestTemplateParsing(t *testing.T) {
 	tests := []struct {
 		ruleString string
