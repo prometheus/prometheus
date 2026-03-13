@@ -14,7 +14,6 @@
 package promql
 
 import (
-	"bytes"
 	"container/heap"
 	"context"
 	"errors"
@@ -1205,6 +1204,38 @@ type EvalSeriesHelper struct {
 	// metric{job="a", instance="1", other="y"} -> sigOrdinal 0
 	// metric{job="a", instance="2", other="x"} -> sigOrdinal 1
 	sigOrdinal int
+
+	// Using lazy initialization to memoize metric hashes because there are cases when hashes are not needed for some metrics.
+	lazyHash *lazyHashValue
+}
+
+type lazyHashValue uint64
+
+func (h *lazyHashValue) getOrCompute(metric labels.Labels) uint64 {
+	if hash := *h; hash != 0 {
+		return uint64(hash)
+	}
+	hash := metric.Hash()
+	*h = lazyHashValue(hash)
+	return hash
+}
+
+type metricHashes []uint64
+
+type metricWithHash struct {
+	metric labels.Labels
+	hash   uint64
+}
+
+type sampleWithHash struct {
+	sample Sample
+
+	// Using lazy initialization to memoize metric hashes because there are cases when hashes are not needed for some metrics.
+	lazyHash *lazyHashValue
+}
+
+type hashPair struct {
+	l, r uint64
 }
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
@@ -1214,6 +1245,8 @@ type EvalNodeHelper struct {
 	// Vector that can be used for output.
 	Out Vector
 
+	outHashes metricHashes
+
 	// Caches.
 	// funcHistogramQuantile and funcHistogramFraction for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
@@ -1222,16 +1255,15 @@ type EvalNodeHelper struct {
 	quantileStrs                  map[float64]string
 	signatureToLabelsWithQuantile map[string]map[float64]labels.Labels
 
-	lb           *labels.Builder
-	lblBuf       []byte
-	lblResultBuf []byte
+	lb     *labels.Builder
+	lblBuf []byte
 
 	// For binary vector matching.
-	rightSigs          []Sample
+	rightSigs          []sampleWithHash
 	sigsPresent        []bool
 	matchedSigs        []map[uint64]struct{}
 	matchedSigsPresent []bool
-	resultMetric       map[string]labels.Labels
+	resultMetric       map[hashPair]metricWithHash
 	numSigs            int
 
 	// For info series matching.
@@ -1259,9 +1291,9 @@ func (enh *EvalNodeHelper) resetMatchedSigsPresent() []bool {
 	return enh.matchedSigsPresent
 }
 
-func (enh *EvalNodeHelper) resetRightSigs() []Sample {
+func (enh *EvalNodeHelper) resetRightSigs() []sampleWithHash {
 	if enh.rightSigs == nil {
-		enh.rightSigs = make([]Sample, enh.numSigs)
+		enh.rightSigs = make([]sampleWithHash, enh.numSigs)
 	} else {
 		clear(enh.rightSigs)
 	}
@@ -1387,7 +1419,7 @@ func (enh *EvalNodeHelper) getOrCreateLblsWithQuantile(lbls labels.Labels, quant
 // function call results.
 // The matching (if provided) can be used to prepare the helper
 // for each series, then passed to each call funcCall.
-func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatching, funcCall func([]Vector, Matrix, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
+func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatching, funcCall func([]Vector, Matrix, [][]EvalSeriesHelper, *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations), exprs ...parser.Expr) (Matrix, annotations.Annotations) {
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 	matrixes := make([]Matrix, len(exprs))
 	origMatrixes := make([]Matrix, len(exprs))
@@ -1429,8 +1461,9 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 	tempNumSamples := ev.currentSamples
 
 	var (
-		seriesHelpers [][]EvalSeriesHelper
-		bufHelpers    [][]EvalSeriesHelper // Buffer updated on each step
+		signatures [][]int
+		lazyHashes [][]lazyHashValue
+		bufHelpers [][]EvalSeriesHelper // Buffer updated on each step
 	)
 
 	if useSignatures {
@@ -1453,25 +1486,27 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 			}
 		}
 
-		seriesHelpers = make([][]EvalSeriesHelper, len(exprs))
+		signatures = make([][]int, len(exprs))
+		lazyHashes = make([][]lazyHashValue, len(exprs))
 		bufHelpers = make([][]EvalSeriesHelper, len(exprs))
 
 		signatureToOrdinal := make(map[string]int)
 
 		for i := range exprs {
-			seriesHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
+			signatures[i] = make([]int, len(matrixes[i]))
+			lazyHashes[i] = make([]lazyHashValue, len(matrixes[i]))
 			bufHelpers[i] = make([]EvalSeriesHelper, len(matrixes[i]))
 
 			for si, series := range matrixes[i] {
 				strSig := sigf(series.Metric)
 
 				if sigOrd, ok := signatureToOrdinal[strSig]; ok {
-					seriesHelpers[i][si] = EvalSeriesHelper{sigOrdinal: sigOrd}
+					signatures[i][si] = sigOrd
 					continue
 				}
 
 				signatureToOrdinal[strSig] = enh.numSigs
-				seriesHelpers[i][si] = EvalSeriesHelper{sigOrdinal: enh.numSigs}
+				signatures[i][si] = enh.numSigs
 				enh.numSigs++
 			}
 		}
@@ -1485,13 +1520,17 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		ev.currentSamples = tempNumSamples
 		// Gather input vectors for this timestamp.
 		for i := range exprs {
-			var bh []EvalSeriesHelper
-			var sh []EvalSeriesHelper
+			var (
+				bh      []EvalSeriesHelper
+				sigs    []int
+				lHashes []lazyHashValue
+			)
 			if useSignatures {
 				bh = bufHelpers[i][:0]
-				sh = seriesHelpers[i]
+				sigs = signatures[i]
+				lHashes = lazyHashes[i]
 			}
-			vectors[i], bh = ev.gatherVector(ts, matrixes[i], vectors[i], bh, sh)
+			vectors[i], bh = ev.gatherVector(ts, matrixes[i], vectors[i], bh, sigs, lHashes)
 			if useSignatures {
 				bufHelpers[i] = bh
 			}
@@ -1499,8 +1538,8 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 
 		// Make the function call.
 		enh.Ts = ts
-		result, ws := funcCall(vectors, nil, bufHelpers, enh)
-		enh.Out = result[:0] // Reuse result vector.
+		result, outHashes, ws := funcCall(vectors, nil, bufHelpers, enh)
+		enh.Out, enh.outHashes = result[:0], outHashes[:0] // Reuse result vector.
 		warnings.Merge(ws)
 
 		vecNumSamples := result.TotalSamples()
@@ -1533,8 +1572,13 @@ func (ev *evaluator) rangeEval(ctx context.Context, matching *parser.VectorMatch
 		}
 
 		// Add samples in output vector to output series.
-		for _, sample := range result {
-			h := sample.Metric.Hash()
+		for i, sample := range result {
+			var h uint64
+			if len(outHashes) > 0 {
+				h = outHashes[i]
+			} else {
+				h = sample.Metric.Hash()
+			}
 			ss, ok := seriess[h]
 			if ok {
 				if ss.ts == ts { // If we've seen this output series before at this timestamp, it's a duplicate.
@@ -1937,7 +1981,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				sortedGrouping = append(sortedGrouping, valueLabel.Val)
 				slices.Sort(sortedGrouping)
 			}
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 				return ev.aggregationCountValues(e, sortedGrouping, valueLabel.Val, v[0], enh)
 			}, e.Expr)
 		}
@@ -2012,9 +2056,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if !matrixArg {
 			// Does not have a matrix argument.
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 				vec, annos := call(v, nil, e.Args, enh)
-				return vec, warnings.Merge(annos)
+				return vec, nil, warnings.Merge(annos)
 			}, e.Args...)
 		}
 
@@ -2286,48 +2330,51 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	case *parser.BinaryExpr:
 		switch lt, rt := e.LHS.Type(), e.RHS.Type(); {
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 				val := scalarBinop(e.Op, v[0][0].F, v[1][0].F)
-				return append(enh.Out, Sample{F: val}), nil
+				return append(enh.Out, Sample{F: val}), nil, nil
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
 			switch e.Op {
 			case parser.LAND:
-				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorAnd(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
+					vec, hashes := ev.VectorAnd(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh)
+					return vec, hashes, nil
 				}, e.LHS, e.RHS)
 			case parser.LOR:
-				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorOr(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
+					vec, hashes := ev.VectorOr(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh)
+					return vec, hashes, nil
 				}, e.LHS, e.RHS)
 			case parser.LUNLESS:
-				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					return ev.VectorUnless(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh), nil
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
+					vec, hashes := ev.VectorUnless(v[0], v[1], e.VectorMatching, sh[0], sh[1], enh)
+					return vec, hashes, nil
 				}, e.LHS, e.RHS)
 			default:
-				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-					vec, err := ev.VectorBinop(e.Op, v[0], v[1], e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh, e.PositionRange())
-					return vec, handleVectorBinopError(err, e)
+				return ev.rangeEval(ctx, e.VectorMatching, func(v []Vector, _ Matrix, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
+					vec, hashes, err := ev.VectorBinop(e.Op, v[0], v[1], e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh, e.PositionRange())
+					return vec, hashes, handleVectorBinopError(err, e)
 				}, e.LHS, e.RHS)
 			}
 
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeScalar:
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 				vec, err := ev.VectorscalarBinop(e.Op, v[0], Scalar{V: v[1][0].F}, false, e.ReturnBool, enh, e.PositionRange())
-				return vec, handleVectorBinopError(err, e)
+				return vec, nil, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 
 		case lt == parser.ValueTypeScalar && rt == parser.ValueTypeVector:
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 				vec, err := ev.VectorscalarBinop(e.Op, v[1], Scalar{V: v[0][0].F}, true, e.ReturnBool, enh, e.PositionRange())
-				return vec, handleVectorBinopError(err, e)
+				return vec, nil, handleVectorBinopError(err, e)
 			}, e.LHS, e.RHS)
 		}
 
 	case *parser.NumberLiteral:
 		span.SetAttributes(attribute.Float64("value", e.Val))
-		return ev.rangeEval(ctx, nil, func(_ []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-			return append(enh.Out, Sample{F: e.Val, Metric: labels.EmptyLabels()}), nil
+		return ev.rangeEval(ctx, nil, func(_ []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
+			return append(enh.Out, Sample{F: e.Val, Metric: labels.EmptyLabels()}), nil, nil
 		})
 
 	case *parser.StringLiteral:
@@ -2496,7 +2543,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta)-1)
 	}
 
-	return ev.rangeEval(ctx, nil, func(_ []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return ev.rangeEval(ctx, nil, func(_ []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 		if vs.Timestamp != nil {
 			// This is a special case for "timestamp()" when the @ modifier is used, to ensure that
 			// we return a point for each time step in this case.
@@ -2526,7 +2573,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		}
 		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		vec, annos := call([]Vector{vec}, nil, e.Args, enh)
-		return vec, ws.Merge(annos)
+		return vec, nil, ws.Merge(annos)
 	})
 }
 
@@ -2868,12 +2915,12 @@ loop:
 	return floats, histograms
 }
 
-func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
+func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes) {
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
 	if len(lhs) == 0 || len(rhs) == 0 {
-		return nil // Short-circuit: AND with nothing is nothing.
+		return nil, nil // Short-circuit: AND with nothing is nothing.
 	}
 
 	// Ordinals of signatures present on the right-hand side.
@@ -2886,21 +2933,28 @@ func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lh
 		// If there's a matching entry in the right-hand side Vector, add the sample.
 		if rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
+			enh.outHashes = append(enh.outHashes, lhsh[i].lazyHash.getOrCompute(ls.Metric))
 		}
 	}
-	return enh.Out
+	return enh.Out, enh.outHashes
 }
 
-func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
+func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes) {
 	switch {
 	case matching.Card != parser.CardManyToMany:
 		panic("set operations must only use many-to-many matching")
 	case len(lhs) == 0: // Short-circuit.
 		enh.Out = append(enh.Out, rhs...)
-		return enh.Out
+		for i, rs := range rhs {
+			enh.outHashes = append(enh.outHashes, rhsh[i].lazyHash.getOrCompute(rs.Metric))
+		}
+		return enh.Out, enh.outHashes
 	case len(rhs) == 0:
 		enh.Out = append(enh.Out, lhs...)
-		return enh.Out
+		for i, ls := range lhs {
+			enh.outHashes = append(enh.outHashes, lhsh[i].lazyHash.getOrCompute(ls.Metric))
+		}
+		return enh.Out, enh.outHashes
 	}
 
 	leftSigOrdinalsPresent := enh.resetSigsPresent()
@@ -2908,17 +2962,19 @@ func (*evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhs
 	for i, ls := range lhs {
 		leftSigOrdinalsPresent[lhsh[i].sigOrdinal] = true
 		enh.Out = append(enh.Out, ls)
+		enh.outHashes = append(enh.outHashes, lhsh[i].lazyHash.getOrCompute(ls.Metric))
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
 	for j, rs := range rhs {
 		if !leftSigOrdinalsPresent[rhsh[j].sigOrdinal] {
 			enh.Out = append(enh.Out, rs)
+			enh.outHashes = append(enh.outHashes, rhsh[j].lazyHash.getOrCompute(rs.Metric))
 		}
 	}
-	return enh.Out
+	return enh.Out, enh.outHashes
 }
 
-func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
+func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) (Vector, metricHashes) {
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
@@ -2926,7 +2982,10 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	// empty lhs means we will return empty - don't need to build a map.
 	if len(lhs) == 0 || len(rhs) == 0 {
 		enh.Out = append(enh.Out, lhs...)
-		return enh.Out
+		for i, ls := range lhs {
+			enh.outHashes = append(enh.outHashes, lhsh[i].lazyHash.getOrCompute(ls.Metric))
+		}
+		return enh.Out, enh.outHashes
 	}
 
 	// Ordinals of signatures present on the right-hand side.
@@ -2938,19 +2997,20 @@ func (*evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching,
 	for i, ls := range lhs {
 		if !rightSigOrdinalsPresent[lhsh[i].sigOrdinal] {
 			enh.Out = append(enh.Out, ls)
+			enh.outHashes = append(enh.outHashes, lhsh[i].lazyHash.getOrCompute(ls.Metric))
 		}
 	}
-	return enh.Out
+	return enh.Out, enh.outHashes
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
-func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper, pos posrange.PositionRange) (Vector, error) {
+func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper, pos posrange.PositionRange) (Vector, metricHashes, error) {
 	if matching.Card == parser.CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
 	if (len(lhs) == 0 && len(rhs) == 0) ||
 		((len(lhs) == 0 || len(rhs) == 0) && matching.FillValues.RHS == nil && matching.FillValues.LHS == nil) {
-		return nil, nil // Short-circuit: nothing is going to match.
+		return nil, nil, nil // Short-circuit: nothing is going to match.
 	}
 
 	// The control flow below handles one-to-one or many-to-one matching.
@@ -2967,7 +3027,8 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	// Add all rhs samples to a map so we can easily find matches later.
 	for i, rs := range rhs {
-		sigOrd := rhsh[i].sigOrdinal
+		rh := rhsh[i]
+		sigOrd := rh.sigOrdinal
 		// The rhs is guaranteed to be the 'one' side. Having multiple samples
 		// with the same signature means that the matching is many-to-many.
 		if rightSigsPresent[sigOrd] {
@@ -2980,9 +3041,12 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			matchedLabels := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
 			// Many-to-many matching not allowed.
 			ev.errorf("found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]"+
-				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.Metric.String())
+				";many-to-many matching not allowed: matching labels must be unique on one side", matchedLabels.String(), oneSide, rs.Metric.String(), duplSample.sample.Metric.String())
 		}
-		rightSigs[sigOrd] = rs
+		rightSigs[sigOrd] = sampleWithHash{
+			sample:   rs,
+			lazyHash: rh.lazyHash,
+		}
 		rightSigsPresent[sigOrd] = true
 	}
 
@@ -3002,10 +3066,10 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	var lastErr error
 
-	doBinOp := func(ls, rs Sample, sigOrd int) {
+	doBinOp := func(ls, rs sampleWithHash, sigOrd int) {
 		// Account for potentially swapped sidedness.
-		fl, fr := ls.F, rs.F
-		hl, hr := ls.H, rs.H
+		fl, fr := ls.sample.F, rs.sample.F
+		hl, hr := ls.sample.H, rs.sample.H
 		if matching.Card == parser.CardOneToMany {
 			fl, fr = fr, fl
 			hl, hr = hr, hl
@@ -3027,8 +3091,13 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			}
 		}
 
-		dropMetricName := !ev.enableDelayedNameRemoval && returnBool
-		metric := resultMetric(ls.Metric, rs.Metric, op, matching, dropMetricName, enh)
+		var (
+			lHash = ls.lazyHash.getOrCompute(ls.sample.Metric)
+			rHash = rs.lazyHash.getOrCompute(rs.sample.Metric)
+
+			dropMetricName = !ev.enableDelayedNameRemoval && returnBool
+		)
+		metric := resultMetric(ls.sample.Metric, rs.sample.Metric, lHash, rHash, op, matching, dropMetricName, enh)
 
 		if matching.Card == parser.CardOneToOne {
 			if matchedSigsPresent[sigOrd] {
@@ -3039,7 +3108,7 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			// In many-to-one matching the grouping labels have to ensure a unique metric
 			// for the result Vector. Check whether those labels have already been added for
 			// the same matching labels.
-			insertSig := metric.Hash()
+			insertSig := metric.hash
 
 			if matchedSigs[sigOrd] == nil {
 				matchedSigs[sigOrd] = map[uint64]struct{}{}
@@ -3057,19 +3126,21 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 		}
 
 		enh.Out = append(enh.Out, Sample{
-			Metric:   metric,
+			Metric:   metric.metric,
 			F:        floatValue,
 			H:        histogramValue,
 			DropName: returnBool,
 		})
+		enh.outHashes = append(enh.outHashes, metric.hash)
 	}
 
 	// For all lhs samples, find a respective rhs sample and perform
 	// the binary operation.
 	for i, ls := range lhs {
-		sigOrd := lhsh[i].sigOrdinal
+		lh := lhsh[i]
+		sigOrd := lh.sigOrdinal
 
-		var rs Sample
+		var rs sampleWithHash
 		if rightSigsPresent[sigOrd] {
 			// Found a match in the rhs.
 			rs = rightSigs[sigOrd]
@@ -3079,55 +3150,64 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			if fill == nil {
 				continue
 			}
-			rs = Sample{
-				Metric: ls.Metric.MatchLabels(matching.On, matching.MatchingLabels...),
-				F:      *fill,
+			metric := ls.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
+			var lazyHash *lazyHashValue
+			hash := lazyHashValue(metric.Hash())
+			lazyHash = &hash
+			rs = sampleWithHash{
+				sample: Sample{
+					Metric: metric,
+					F:      *fill,
+				},
+				lazyHash: lazyHash, // FIXME: memoize?
 			}
 		}
 
-		doBinOp(ls, rs, sigOrd)
+		doBinOp(sampleWithHash{ls, lh.lazyHash}, rs, sigOrd)
 	}
 
 	// For any rhs samples which have not been matched, check if we need to
 	// perform the operation with a fill value from the lhs.
 	if fill := matching.FillValues.LHS; fill != nil {
 		for i, rs := range rhs {
+			rh := rhsh[i]
 			sigOrd := rhsh[i].sigOrdinal
 
 			if (matching.Card == parser.CardOneToOne && matchedSigsPresent[sigOrd]) ||
 				(matching.Card != parser.CardOneToOne && matchedSigs[sigOrd] != nil) {
 				continue // Already matched.
 			}
-			ls := Sample{
-				Metric: rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...),
-				F:      *fill,
+
+			metric := rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...)
+			var lazyHash *lazyHashValue
+			hash := lazyHashValue(metric.Hash())
+			lazyHash = &hash
+			ls := sampleWithHash{
+				sample: Sample{
+					Metric: rs.Metric.MatchLabels(matching.On, matching.MatchingLabels...),
+					F:      *fill,
+				},
+				lazyHash: lazyHash, // FIXME: memoize?
 			}
 
-			doBinOp(ls, rs, sigOrd)
+			doBinOp(ls, sampleWithHash{rs, rh.lazyHash}, sigOrd)
 		}
 	}
 
-	return enh.Out, lastErr
+	return enh.Out, enh.outHashes, lastErr
 }
 
 // resultMetric returns the metric for the given sample(s) based on the Vector
 // binary operation and the matching options.
-func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) labels.Labels {
+func resultMetric(lhs, rhs labels.Labels, lHash, rHash uint64, op parser.ItemType, matching *parser.VectorMatching, dropMetricName bool, enh *EvalNodeHelper) metricWithHash {
 	if enh.resultMetric == nil {
-		enh.resultMetric = make(map[string]labels.Labels, len(enh.Out))
+		enh.resultMetric = make(map[hashPair]metricWithHash, len(enh.Out))
 	}
 
-	buf := bytes.NewBuffer(enh.lblResultBuf[:0])
-	enh.lblBuf = lhs.Bytes(enh.lblBuf)
-	buf.Write(enh.lblBuf)
-	enh.lblBuf = rhs.Bytes(enh.lblBuf)
-	buf.Write(enh.lblBuf)
-	enh.lblResultBuf = buf.Bytes()
-
-	if ret, ok := enh.resultMetric[string(enh.lblResultBuf)]; ok {
+	hashKey := hashPair{l: lHash, r: rHash}
+	if ret, ok := enh.resultMetric[hashKey]; ok {
 		return ret
 	}
-	str := string(enh.lblResultBuf)
 
 	enh.resetBuilder(lhs)
 	if dropMetricName || changesMetricSchema(op) {
@@ -3151,8 +3231,13 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 		}
 	}
 
-	ret := enh.lb.Labels()
-	enh.resultMetric[str] = ret
+	metric := enh.lb.Labels()
+	ret := metricWithHash{
+		metric: metric,
+		hash:   metric.Hash(),
+	}
+	enh.resultMetric[hashKey] = ret
+
 	return ret
 }
 
@@ -3959,7 +4044,7 @@ seriesLoop:
 
 // aggregationCountValues evaluates count_values on vec.
 // Outputs as many series per group as there are values in the input.
-func (*evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []string, valueLabel string, vec Vector, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+func (*evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []string, valueLabel string, vec Vector, enh *EvalNodeHelper) (Vector, metricHashes, annotations.Annotations) {
 	type groupCount struct {
 		labels labels.Labels
 		count  int
@@ -4002,7 +4087,7 @@ func (*evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []str
 			F:      float64(aggr.count),
 		})
 	}
-	return enh.Out, nil
+	return enh.Out, nil, nil
 }
 
 func (ev *evaluator) cleanupMetricLabels(v parser.Value) parser.Value {
@@ -4539,7 +4624,7 @@ func (s histogramStatsSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 // output is used as a buffer.
 // If bufHelpers and seriesHelpers are provided, seriesHelpers[i] is appended to bufHelpers for every input index i.
 // The gathered Vector and bufHelper are returned.
-func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelpers, seriesHelpers []EvalSeriesHelper) (Vector, []EvalSeriesHelper) {
+func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelpers []EvalSeriesHelper, signatures []int, lazyHashes []lazyHashValue) (Vector, []EvalSeriesHelper) {
 	output = output[:0]
 	for i, series := range input {
 		switch {
@@ -4556,8 +4641,11 @@ func (ev *evaluator) gatherVector(ts int64, input Matrix, output Vector, bufHelp
 		default:
 			continue
 		}
-		if len(seriesHelpers) > 0 {
-			bufHelpers = append(bufHelpers, seriesHelpers[i])
+		if len(signatures) > 0 {
+			bufHelpers = append(bufHelpers, EvalSeriesHelper{
+				sigOrdinal: signatures[i],
+				lazyHash:   &lazyHashes[i],
+			})
 		}
 
 		// Don't add histogram size here because we only
