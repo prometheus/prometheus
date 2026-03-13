@@ -30,6 +30,67 @@ jobs:
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
 
+  go-test:
+    name: Go tests - ${{ matrix.config.name }} - inst${{ matrix.instance }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "long-timeout"
+            tcp_fin_timeout: 1200
+            tcp_tw_reuse: 0
+            port_range: "60000 60999"
+          - name: "short-timeout"
+            tcp_fin_timeout: 0
+            tcp_tw_reuse: 0
+            port_range: "32768 60999"
+        instance: [1, 2, 3]
+    container:
+      image: quay.io/prometheus/golang-builder:1.24-base
+      options: >-
+        --sysctl net.ipv4.tcp_fin_timeout=${{ matrix.config.tcp_fin_timeout }}
+        --sysctl net.ipv4.tcp_tw_reuse=${{ matrix.config.tcp_tw_reuse }}
+        --sysctl net.ipv4.ip_local_port_range="${{ matrix.config.port_range }}"
+        --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            /go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Run Go tests - ${{ matrix.config.name }} - inst${{ matrix.instance }}
+        shell: bash
+        run: |
+          start_time=$(date +%s)
+          log_file="/tmp/test_output_${{ matrix.config.name }}_inst${{ matrix.instance }}.log"
+          touch "$log_file"
+          echo "Writing test logs to $log_file"
+          echo "TCP settings applied via Docker options:"
+          echo "  FIN timeout: ${{ matrix.config.tcp_fin_timeout }}"
+          echo "  TW reuse: ${{ matrix.config.tcp_tw_reuse }}"
+          echo "  Port range: ${{ matrix.config.port_range }}"
+
+          for i in {1..10}; do
+            echo "Run #$i with ${{ matrix.config.name }}" | tee -a "$log_file"
+            go test --tags=dedupelabels -failfast -count=1 ./cmd/prometheus/... 2>&1 | tee -a "$log_file"
+          done
+
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+          echo "Total test duration for ${{ matrix.config.name }}: ${duration} seconds" | tee -a "$log_file"
+
   test_go_more:
     name: More Go tests
     runs-on: ubuntu-latest
