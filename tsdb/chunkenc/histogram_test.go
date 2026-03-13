@@ -64,7 +64,7 @@ func TestFirstHistogramExplicitCounterReset(t *testing.T) {
 			chk := NewHistogramChunk()
 			app, err := chk.Appender()
 			require.NoError(t, err)
-			newChk, recoded, newApp, err := app.AppendHistogram(nil, 0, 0, h, false)
+			newChk, recoded, newApp, err := app.AppendHistogram(0, 0, h, false)
 			require.NoError(t, err)
 			require.Nil(t, newChk)
 			require.False(t, recoded)
@@ -102,7 +102,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 		},
 		NegativeBuckets: []int64{2, 1, -1, -1}, // counts: 2, 3, 2, 1 (total 8)
 	}
-	chk, _, app, err := app.AppendHistogram(nil, 0, ts, h, false)
+	chk, _, app, err := app.AppendHistogram(0, ts, h, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 	exp = append(exp, result{t: ts, h: h, fh: h.ToFloat(nil)})
@@ -116,7 +116,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	h.Sum = 24.4
 	h.PositiveBuckets = []int64{5, -2, 1, -2} // counts: 5, 3, 4, 2 (total 14)
 	h.NegativeBuckets = []int64{4, -1, 1, -1} // counts: 4, 3, 4, 4 (total 15)
-	chk, _, _, err = app.AppendHistogram(nil, 0, ts, h, false)
+	chk, _, _, err = app.AppendHistogram(0, ts, h, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 	hExp := h.Copy()
@@ -135,7 +135,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	h.Sum = 24.4
 	h.PositiveBuckets = []int64{6, 1, -3, 6} // counts: 6, 7, 4, 10 (total 27)
 	h.NegativeBuckets = []int64{5, 1, -2, 3} // counts: 5, 6, 4, 7 (total 22)
-	chk, _, _, err = app.AppendHistogram(nil, 0, ts, h, false)
+	chk, _, _, err = app.AppendHistogram(0, ts, h, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 	hExp = h.Copy()
@@ -235,7 +235,7 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 		NegativeBuckets: []int64{1},
 	}
 
-	chk, _, app, err := app.AppendHistogram(nil, 0, ts1, h1, false)
+	chk, _, app, err := app.AppendHistogram(0, ts1, h1, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 	require.Equal(t, 1, c.NumSamples())
@@ -271,7 +271,7 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 	require.True(t, ok) // Only new buckets came in.
 	require.Equal(t, NotCounterReset, cr)
 	c, app = hApp.recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
-	chk, _, _, err = app.AppendHistogram(nil, 0, ts2, h2, false)
+	chk, _, _, err = app.AppendHistogram(0, ts2, h2, false)
 	require.NoError(t, err)
 	require.Nil(t, chk)
 
@@ -344,7 +344,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 
 		ts := int64(1234567890)
 
-		chk, _, app, err := app.AppendHistogram(nil, 0, ts, h.Copy(), false)
+		chk, _, app, err := app.AppendHistogram(0, ts, h.Copy(), false)
 		require.NoError(t, err)
 		require.Nil(t, chk)
 		require.Equal(t, 1, c.NumSamples())
@@ -574,71 +574,6 @@ func TestHistogramChunkAppendable(t *testing.T) {
 		assertNewHistogramChunkOnAppend(t, c, hApp, ts+1, h2, CounterReset, histogram.UnknownCounterReset)
 	}
 
-	{ // Start new chunk explicitly, and append a new histogram that is considered appendable to the previous chunk.
-		_, hApp, ts, h1 := setup(eh)
-		h2 := h1.Copy() // Identity is appendable.
-
-		nextChunk := NewHistogramChunk()
-		app, err := nextChunk.Appender()
-		require.NoError(t, err)
-		newChunk, recoded, newApp, err := app.AppendHistogram(hApp, 0, ts+1, h2, false)
-		require.NoError(t, err)
-		require.Nil(t, newChunk)
-		require.False(t, recoded)
-		require.Equal(t, app, newApp)
-		assertSampleCount(t, nextChunk, 1, ValHistogram)
-		require.Equal(t, NotCounterReset, nextChunk.GetCounterResetHeader())
-		assertFirstIntHistogramSampleHint(t, nextChunk, histogram.UnknownCounterReset)
-	}
-
-	{ // Start new chunk explicitly, and append a new histogram that is not considered appendable to the previous chunk.
-		_, hApp, ts, h1 := setup(eh)
-		h2 := h1.Copy()
-		h2.Count-- // Make this not appendable due to counter reset.
-
-		nextChunk := NewHistogramChunk()
-		app, err := nextChunk.Appender()
-		require.NoError(t, err)
-		newChunk, recoded, newApp, err := app.AppendHistogram(hApp, 0, ts+1, h2, false)
-		require.NoError(t, err)
-		require.Nil(t, newChunk)
-		require.False(t, recoded)
-		require.Equal(t, app, newApp)
-		assertSampleCount(t, nextChunk, 1, ValHistogram)
-		require.Equal(t, CounterReset, nextChunk.GetCounterResetHeader())
-		assertFirstIntHistogramSampleHint(t, nextChunk, histogram.UnknownCounterReset)
-	}
-
-	{ // Start new chunk explicitly, and append a new histogram that would need recoding if we added it to the chunk.
-		_, hApp, ts, h1 := setup(eh)
-		h2 := h1.Copy()
-		h2.PositiveSpans = []histogram.Span{
-			{Offset: 0, Length: 3},
-			{Offset: 1, Length: 1},
-			{Offset: 1, Length: 4},
-			{Offset: 3, Length: 3},
-		}
-		h2.Count += 9
-		h2.ZeroCount++
-		h2.Sum = 30
-		// Existing histogram should get values converted from the above to:
-		//   6 3 0 3 0 0 2 4 5 0 1 (previous values with some new empty buckets in between)
-		// so the new histogram should have new counts >= these per-bucket counts, e.g.:
-		h2.PositiveBuckets = []int64{7, -2, -4, 2, -2, -1, 2, 3, 0, -5, 1} // 7 5 1 3 1 0 2 5 5 0 1 (total 30)
-
-		nextChunk := NewHistogramChunk()
-		app, err := nextChunk.Appender()
-		require.NoError(t, err)
-		newChunk, recoded, newApp, err := app.AppendHistogram(hApp, 0, ts+1, h2, false)
-		require.NoError(t, err)
-		require.Nil(t, newChunk)
-		require.False(t, recoded)
-		require.Equal(t, app, newApp)
-		assertSampleCount(t, nextChunk, 1, ValHistogram)
-		require.Equal(t, NotCounterReset, nextChunk.GetCounterResetHeader())
-		assertFirstIntHistogramSampleHint(t, nextChunk, histogram.UnknownCounterReset)
-	}
-
 	{
 		// Start a new chunk with a histogram that has an empty bucket.
 		// Add a histogram that has the same bucket missing.
@@ -776,7 +711,7 @@ func TestHistogramChunkAppendable(t *testing.T) {
 
 func assertNewHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *HistogramAppender, ts int64, h *histogram.Histogram, expectHeader CounterResetHeader, expectHint histogram.CounterResetHint) {
 	oldChunkBytes := oldChunk.Bytes()
-	newChunk, recoded, newAppender, err := hApp.AppendHistogram(nil, 0, ts, h, false)
+	newChunk, recoded, newAppender, err := hApp.AppendHistogram(0, ts, h, false)
 	require.Equal(t, oldChunkBytes, oldChunk.Bytes()) // Sanity check that previous chunk is untouched.
 	require.NoError(t, err)
 	require.NotNil(t, newChunk)
@@ -791,7 +726,7 @@ func assertNewHistogramChunkOnAppend(t *testing.T, oldChunk Chunk, hApp *Histogr
 
 func assertNoNewHistogramChunkOnAppend(t *testing.T, currChunk Chunk, hApp *HistogramAppender, ts int64, h *histogram.Histogram, expectHeader CounterResetHeader) {
 	prevChunkBytes := currChunk.Bytes()
-	newChunk, recoded, newAppender, err := hApp.AppendHistogram(nil, 0, ts, h, false)
+	newChunk, recoded, newAppender, err := hApp.AppendHistogram(0, ts, h, false)
 	require.Greater(t, len(currChunk.Bytes()), len(prevChunkBytes)) // Check that current chunk is bigger than previously.
 	require.NoError(t, err)
 	require.Nil(t, newChunk)
@@ -804,7 +739,7 @@ func assertNoNewHistogramChunkOnAppend(t *testing.T, currChunk Chunk, hApp *Hist
 
 func assertRecodedHistogramChunkOnAppend(t *testing.T, prevChunk Chunk, hApp *HistogramAppender, ts int64, h *histogram.Histogram, expectHeader CounterResetHeader) {
 	prevChunkBytes := prevChunk.Bytes()
-	newChunk, recoded, newAppender, err := hApp.AppendHistogram(nil, 0, ts, h, false)
+	newChunk, recoded, newAppender, err := hApp.AppendHistogram(0, ts, h, false)
 	require.Equal(t, prevChunkBytes, prevChunk.Bytes()) // Sanity check that previous chunk is untouched. This may change in the future if we implement in-place recoding.
 	require.NoError(t, err)
 	require.NotNil(t, newChunk)
@@ -1029,7 +964,7 @@ func TestHistogramChunkAppendableWithEmptySpan(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 0, c.NumSamples())
 
-			_, _, _, err = app.AppendHistogram(nil, 1, 0, tc.h1, true)
+			_, _, _, err = app.AppendHistogram(1, 0, tc.h1, true)
 			require.NoError(t, err)
 			require.Equal(t, 1, c.NumSamples())
 			hApp, _ := app.(*HistogramAppender)
@@ -1172,7 +1107,7 @@ func TestAtFloatHistogram(t *testing.T) {
 	app, err := chk.Appender()
 	require.NoError(t, err)
 	for i := range input {
-		newc, _, _, err := app.AppendHistogram(nil, 0, int64(i), &input[i], false)
+		newc, _, _, err := app.AppendHistogram(0, int64(i), &input[i], false)
 		require.NoError(t, err)
 		require.Nil(t, newc)
 	}
@@ -1230,7 +1165,7 @@ func TestHistogramChunkAppendableGauge(t *testing.T) {
 
 		ts := int64(1234567890)
 
-		chk, _, app, err := app.AppendHistogram(nil, 0, ts, h.Copy(), false)
+		chk, _, app, err := app.AppendHistogram(0, ts, h.Copy(), false)
 		require.NoError(t, err)
 		require.Nil(t, chk)
 		require.Equal(t, 1, c.NumSamples())
@@ -1471,7 +1406,7 @@ func TestHistogramAppendOnlyErrors(t *testing.T) {
 
 		h := tsdbutil.GenerateTestHistogram(0)
 		var isRecoded bool
-		c, isRecoded, app, err = app.AppendHistogram(nil, 0, 1, h, true)
+		c, isRecoded, app, err = app.AppendHistogram(0, 1, h, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)
 		require.NoError(t, err)
@@ -1479,7 +1414,7 @@ func TestHistogramAppendOnlyErrors(t *testing.T) {
 		// Add erroring histogram.
 		h2 := h.Copy()
 		h2.Schema++
-		c, isRecoded, _, err = app.AppendHistogram(nil, 0, 2, h2, true)
+		c, isRecoded, _, err = app.AppendHistogram(0, 2, h2, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)
 		require.EqualError(t, err, "histogram schema change")
@@ -1493,7 +1428,7 @@ func TestHistogramAppendOnlyErrors(t *testing.T) {
 
 		h := tsdbutil.GenerateTestHistogram(0)
 		var isRecoded bool
-		c, isRecoded, app, err = app.AppendHistogram(nil, 0, 1, h, true)
+		c, isRecoded, app, err = app.AppendHistogram(0, 1, h, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)
 		require.NoError(t, err)
@@ -1501,7 +1436,7 @@ func TestHistogramAppendOnlyErrors(t *testing.T) {
 		// Add erroring histogram.
 		h2 := h.Copy()
 		h2.CounterResetHint = histogram.CounterReset
-		c, isRecoded, _, err = app.AppendHistogram(nil, 0, 2, h2, true)
+		c, isRecoded, _, err = app.AppendHistogram(0, 2, h2, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)
 		require.EqualError(t, err, "histogram counter reset")
@@ -1515,7 +1450,7 @@ func TestHistogramAppendOnlyErrors(t *testing.T) {
 
 		h := tsdbutil.GenerateTestCustomBucketsHistogram(0)
 		var isRecoded bool
-		c, isRecoded, app, err = app.AppendHistogram(nil, 0, 1, h, true)
+		c, isRecoded, app, err = app.AppendHistogram(0, 1, h, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)
 		require.NoError(t, err)
@@ -1523,7 +1458,7 @@ func TestHistogramAppendOnlyErrors(t *testing.T) {
 		// Add erroring histogram.
 		h2 := h.Copy()
 		h2.CustomValues = []float64{0, 1, 2, 3, 4, 5, 6, 7}
-		c, isRecoded, _, err = app.AppendHistogram(nil, 0, 2, h2, true)
+		c, isRecoded, _, err = app.AppendHistogram(0, 2, h2, true)
 		require.Nil(t, c)
 		require.False(t, isRecoded)
 		require.EqualError(t, err, "histogram counter reset")
@@ -1556,10 +1491,10 @@ func TestHistogramUniqueSpansAfterNextWithAtHistogram(t *testing.T) {
 	app, err := c.Appender()
 	require.NoError(t, err)
 
-	_, _, _, err = app.AppendHistogram(nil, 0, 0, h1, false)
+	_, _, _, err = app.AppendHistogram(0, 0, h1, false)
 	require.NoError(t, err)
 
-	_, _, _, err = app.AppendHistogram(nil, 0, 1, h2, false)
+	_, _, _, err = app.AppendHistogram(0, 1, h2, false)
 	require.NoError(t, err)
 
 	// Create an iterator and advance to the first histogram.
@@ -1607,10 +1542,10 @@ func TestHistogramUniqueSpansAfterNextWithAtFloatHistogram(t *testing.T) {
 	app, err := c.Appender()
 	require.NoError(t, err)
 
-	_, _, _, err = app.AppendHistogram(nil, 0, 0, h1, false)
+	_, _, _, err = app.AppendHistogram(0, 0, h1, false)
 	require.NoError(t, err)
 
-	_, _, _, err = app.AppendHistogram(nil, 0, 1, h2, false)
+	_, _, _, err = app.AppendHistogram(0, 1, h2, false)
 	require.NoError(t, err)
 
 	// Create an iterator and advance to the first histogram.
@@ -1653,10 +1588,10 @@ func TestHistogramCustomValuesInternedAfterNextWithAtHistogram(t *testing.T) {
 	app, err := c.Appender()
 	require.NoError(t, err)
 
-	_, _, _, err = app.AppendHistogram(nil, 0, 0, h1, false)
+	_, _, _, err = app.AppendHistogram(0, 0, h1, false)
 	require.NoError(t, err)
 
-	_, _, _, err = app.AppendHistogram(nil, 0, 1, h2, false)
+	_, _, _, err = app.AppendHistogram(0, 1, h2, false)
 	require.NoError(t, err)
 
 	// Create an iterator and advance to the first histogram.
@@ -1699,10 +1634,10 @@ func TestHistogramCustomValuesInternedAfterNextWithAtFloatHistogram(t *testing.T
 	app, err := c.Appender()
 	require.NoError(t, err)
 
-	_, _, _, err = app.AppendHistogram(nil, 0, 0, h1, false)
+	_, _, _, err = app.AppendHistogram(0, 0, h1, false)
 	require.NoError(t, err)
 
-	_, _, _, err = app.AppendHistogram(nil, 0, 1, h2, false)
+	_, _, _, err = app.AppendHistogram(0, 1, h2, false)
 	require.NoError(t, err)
 
 	// Create an iterator and advance to the first histogram.
@@ -1754,7 +1689,7 @@ func BenchmarkAppendable(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	_, _, _, err = app.AppendHistogram(nil, 0, 1, h, true)
+	_, _, _, err = app.AppendHistogram(0, 1, h, true)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -1791,7 +1726,7 @@ func TestIntHistogramEmptyBucketsWithGaps(t *testing.T) {
 	c := NewHistogramChunk()
 	app, err := c.Appender()
 	require.NoError(t, err)
-	_, _, _, err = app.AppendHistogram(nil, 0, 1, h1, false)
+	_, _, _, err = app.AppendHistogram(0, 1, h1, false)
 	require.NoError(t, err)
 
 	h2 := &histogram.Histogram{
@@ -1804,7 +1739,7 @@ func TestIntHistogramEmptyBucketsWithGaps(t *testing.T) {
 	}
 	require.NoError(t, h2.Validate())
 
-	newC, recoded, _, err := app.AppendHistogram(nil, 0, 2, h2, false)
+	newC, recoded, _, err := app.AppendHistogram(0, 2, h2, false)
 	require.NoError(t, err)
 	require.True(t, recoded)
 	require.NotNil(t, newC)
@@ -1839,7 +1774,7 @@ func TestHistogramIteratorFailIfSchemaInValid(t *testing.T) {
 			app, err := c.Appender()
 			require.NoError(t, err)
 
-			_, _, _, err = app.AppendHistogram(nil, 0, 1, h, false)
+			_, _, _, err = app.AppendHistogram(0, 1, h, false)
 			require.NoError(t, err)
 
 			it := c.Iterator(nil)
@@ -1868,7 +1803,7 @@ func TestHistogramIteratorReduceSchema(t *testing.T) {
 			app, err := c.Appender()
 			require.NoError(t, err)
 
-			_, _, _, err = app.AppendHistogram(nil, 0, 1, h, false)
+			_, _, _, err = app.AppendHistogram(0, 1, h, false)
 			require.NoError(t, err)
 
 			it := c.Iterator(nil)
