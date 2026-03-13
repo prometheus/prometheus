@@ -35,6 +35,9 @@ import (
 // checkContextEveryNIterations is used in some tight loops to check if the context is done.
 const checkContextEveryNIterations = 100
 
+// Compile-time assertion that blockBaseQuerier implements storage.Searcher.
+var _ storage.Searcher = &blockBaseQuerier{}
+
 type blockBaseQuerier struct {
 	blockID    ulid.ULID
 	index      IndexReader
@@ -81,9 +84,122 @@ func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, hints *
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, err := q.index.LabelNames(ctx, matchers...)
-	return res, nil, err
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Apply limit if specified.
+	if hints != nil && hints.Limit > 0 && len(res) > hints.Limit {
+		res = res[:hints.Limit]
+	}
+
+	return res, nil, nil
+}
+
+// SearchLabelNames implements storage.Searcher.
+func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) ([]storage.SearchResult, error) {
+	if hints == nil {
+		hints = &storage.SearchHints{}
+	}
+
+	// Get label names using existing index method.
+	labelHints := &storage.LabelHints{
+		Limit: 0, // Don't limit at index level if we need to re-sort.
+	}
+	if hints.CompareFunc == nil {
+		labelHints.Limit = hints.Limit
+	}
+
+	names, err := q.index.LabelNames(ctx, matchers...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply filter and collect scores.
+	var results []storage.SearchResult
+	for _, name := range names {
+		if hints.Filter != nil {
+			accepted, score := hints.Filter.Accept(name)
+			if accepted {
+				results = append(results, storage.SearchResult{
+					Value: name,
+					Score: score,
+				})
+			}
+		} else {
+			// No filter means accept all with perfect score.
+			results = append(results, storage.SearchResult{
+				Value: name,
+				Score: 1.0,
+			})
+		}
+	}
+
+	// Sort results using comparator if provided.
+	if hints.CompareFunc != nil {
+		slices.SortFunc(results, hints.CompareFunc.Compare)
+	}
+	// else: keep natural order from index.
+
+	// Apply limit after sorting.
+	if hints.Limit > 0 && len(results) > hints.Limit {
+		results = results[:hints.Limit]
+	}
+
+	return results, nil
+}
+
+// SearchLabelValues implements storage.Searcher.
+func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) ([]storage.SearchResult, error) {
+	if hints == nil {
+		hints = &storage.SearchHints{}
+	}
+
+	// Get label values using existing index method.
+	labelHints := &storage.LabelHints{
+		Limit: 0, // Don't limit at index level if we need to re-sort.
+	}
+	if hints.CompareFunc == nil {
+		labelHints.Limit = hints.Limit
+	}
+
+	values, err := q.index.SortedLabelValues(ctx, name, labelHints, matchers...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply filter and collect scores.
+	var results []storage.SearchResult
+	for _, value := range values {
+		if hints.Filter != nil {
+			accepted, score := hints.Filter.Accept(value)
+			if accepted {
+				results = append(results, storage.SearchResult{
+					Value: value,
+					Score: score,
+				})
+			}
+		} else {
+			results = append(results, storage.SearchResult{
+				Value: value,
+				Score: 1.0,
+			})
+		}
+	}
+
+	// Sort results using comparator if provided.
+	if hints.CompareFunc != nil {
+		slices.SortFunc(results, hints.CompareFunc.Compare)
+	}
+
+	// Apply limit after sorting.
+	if hints.Limit > 0 && len(results) > hints.Limit {
+		results = results[:hints.Limit]
+	}
+
+	return results, nil
 }
 
 func (q *blockBaseQuerier) Close() error {

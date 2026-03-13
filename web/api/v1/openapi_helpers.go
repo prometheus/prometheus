@@ -73,6 +73,10 @@ func integerSchema() *base.SchemaProxy {
 	})
 }
 
+func booleanSchema() *base.SchemaProxy {
+	return schemaFromType("boolean")
+}
+
 func stringSchemaWithDescription(description string) *base.SchemaProxy {
 	return base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"string"},
@@ -102,6 +106,13 @@ func integerSchemaWithDescriptionAndExample(description string, example any) *ba
 		Format:      "int64",
 		Description: description,
 		Example:     createYAMLNode(example),
+	})
+}
+
+func booleanSchemaWithDescription(description string) *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:        []string{"boolean"},
+		Description: description,
 	})
 }
 
@@ -263,6 +274,30 @@ func jsonResponseWithExamples(schemaRef string, examples *orderedmap.Map[string,
 		Description: description,
 		Content:     content,
 	}
+}
+
+// textResponseWithExamples creates a text response with examples.
+func textResponseWithExamples(contentType string, schema *base.SchemaProxy, examples *orderedmap.Map[string, *base.Example], description string) *v3.Response {
+	content := orderedmap.New[string, *v3.MediaType]()
+	mediaType := &v3.MediaType{
+		Schema: schema,
+	}
+	if examples != nil {
+		mediaType.Examples = examples
+	}
+	content.Set(contentType, mediaType)
+	return &v3.Response{
+		Description: description,
+		Content:     content,
+	}
+}
+
+// ndjsonResponsesWithErrorExamples creates responses for NDJSON streaming endpoints.
+func ndjsonResponsesWithErrorExamples(successExamples, errorExamples *orderedmap.Map[string, *base.Example], successDescription, errorDescription string) *v3.Responses {
+	codes := orderedmap.New[string, *v3.Response]()
+	codes.Set("200", textResponseWithExamples("application/x-ndjson", stringSchemaWithDescription("NDJSON response stream."), successExamples, successDescription))
+	codes.Set("default", jsonResponseWithExamples("Error", errorExamples, errorDescription))
+	return &v3.Responses{Codes: codes}
 }
 
 // responsesWithErrorExamples creates responses with both success and error examples.

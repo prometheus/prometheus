@@ -54,6 +54,9 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("LabelsOutputBody", b.stringArrayResponseBodySchema())
 	schemas.Set("LabelsPostInputBody", b.labelsPostInputBodySchema())
 	schemas.Set("LabelValuesOutputBody", b.stringArrayResponseBodySchema())
+	schemas.Set("SearchMetricNamesPostInputBody", b.searchMetricNamesPostInputBodySchema())
+	schemas.Set("SearchLabelNamesPostInputBody", b.searchLabelNamesPostInputBodySchema())
+	schemas.Set("SearchLabelValuesPostInputBody", b.searchLabelValuesPostInputBodySchema())
 
 	// Series schemas.
 	schemas.Set("SeriesOutputBody", b.labelsArrayResponseBodySchema())
@@ -731,6 +734,79 @@ func (*OpenAPIBuilder) seriesPostInputBodySchema() *base.SchemaProxy {
 		Description:          "POST request body for series query.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"match[]"},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) searchMetricNamesPostInputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope metric discovery.", []string{"{job=\"prometheus\"}"}))
+	props.Set("search", stringSchemaWithDescriptionAndExample("Form field: Search string matched against metric names.", "http_req"))
+	props.Set("fuzz_threshold", integerSchemaWithDescriptionAndExample("Form field: Fuzzy threshold in the range 0-100.", 80))
+	props.Set("fuzz_alg", stringSchemaWithDescriptionAndExample("Form field: Fuzzy algorithm. Supported values are subsequence and jarowinkler.", "subsequence"))
+	props.Set("case_sensitive", booleanSchemaWithDescription("Form field: Whether matching is case-sensitive."))
+	props.Set("sort_by", stringSchemaWithDescriptionAndExample("Form field: Sort mode. Supported values are alpha, cardinality, and score.", "score"))
+	props.Set("sort_dir", stringSchemaWithDescriptionAndExample("Form field: Sort direction. Supported values are asc and dsc.", "asc"))
+	props.Set("include_cardinality", booleanSchemaWithDescription("Form field: Include metric cardinality in each result."))
+	props.Set("include_metadata", booleanSchemaWithDescription("Form field: Include metric metadata in each result."))
+	props.Set("start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2026-01-02T12:37:00.000Z"))
+	props.Set("end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2026-01-02T13:37:00.000Z"))
+	props.Set("limit", integerSchemaWithDescriptionAndExample("Form field: The maximum number of results to return.", 20))
+	props.Set("batch_size", integerSchemaWithDescriptionAndExample("Form field: Preferred number of results per NDJSON batch.", 20))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for metric name search.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) searchLabelNamesPostInputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label discovery.", []string{"{__name__=\"up\"}"}))
+	props.Set("search", stringSchemaWithDescriptionAndExample("Form field: Search string matched against label names.", "inst"))
+	props.Set("fuzz_threshold", integerSchemaWithDescriptionAndExample("Form field: Fuzzy threshold in the range 0-100.", 80))
+	props.Set("fuzz_alg", stringSchemaWithDescriptionAndExample("Form field: Fuzzy algorithm. Supported values are subsequence and jarowinkler.", "subsequence"))
+	props.Set("case_sensitive", booleanSchemaWithDescription("Form field: Whether matching is case-sensitive."))
+	props.Set("sort_by", stringSchemaWithDescriptionAndExample("Form field: Sort mode. Supported values are alpha, cardinality, frequency, and score.", "score"))
+	props.Set("sort_dir", stringSchemaWithDescriptionAndExample("Form field: Sort direction. Supported values are asc and dsc.", "asc"))
+	props.Set("include_frequency", booleanSchemaWithDescription("Form field: Include label frequency in each result."))
+	props.Set("include_cardinality", booleanSchemaWithDescription("Form field: Include label cardinality in each result."))
+	props.Set("start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2026-01-02T12:37:00.000Z"))
+	props.Set("end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2026-01-02T13:37:00.000Z"))
+	props.Set("limit", integerSchemaWithDescriptionAndExample("Form field: The maximum number of results to return.", 20))
+	props.Set("batch_size", integerSchemaWithDescriptionAndExample("Form field: Preferred number of results per NDJSON batch.", 20))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for label name search.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           props,
+	})
+}
+
+func (*OpenAPIBuilder) searchLabelValuesPostInputBodySchema() *base.SchemaProxy {
+	props := orderedmap.New[string, *base.SchemaProxy]()
+	props.Set("label", stringSchemaWithDescriptionAndExample("Form field: Label name whose values should be searched.", "instance"))
+	props.Set("match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label value discovery.", []string{"up"}))
+	props.Set("search", stringSchemaWithDescriptionAndExample("Form field: Search string matched against label values.", "909"))
+	props.Set("fuzz_threshold", integerSchemaWithDescriptionAndExample("Form field: Fuzzy threshold in the range 0-100.", 80))
+	props.Set("fuzz_alg", stringSchemaWithDescriptionAndExample("Form field: Fuzzy algorithm. Supported values are subsequence and jarowinkler.", "subsequence"))
+	props.Set("case_sensitive", booleanSchemaWithDescription("Form field: Whether matching is case-sensitive."))
+	props.Set("sort_by", stringSchemaWithDescriptionAndExample("Form field: Sort mode. Supported values are alpha, frequency, and score.", "score"))
+	props.Set("sort_dir", stringSchemaWithDescriptionAndExample("Form field: Sort direction. Supported values are asc and dsc.", "asc"))
+	props.Set("include_frequency", booleanSchemaWithDescription("Form field: Include value frequency in each result."))
+	props.Set("start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2026-01-02T12:37:00.000Z"))
+	props.Set("end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2026-01-02T13:37:00.000Z"))
+	props.Set("limit", integerSchemaWithDescriptionAndExample("Form field: The maximum number of results to return.", 20))
+	props.Set("batch_size", integerSchemaWithDescriptionAndExample("Form field: Preferred number of results per NDJSON batch.", 20))
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for label value search.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"label"},
 		Properties:           props,
 	})
 }
