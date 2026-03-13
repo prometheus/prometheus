@@ -30,11 +30,10 @@ convention.
 
 ## Commits
 
-- Each commit must compile and pass tests independently.
+- Each commit must compile and pass tests independently, except when one commit adds a test to expose a bug and then the next commit fixes the bug.
 - Keep commits small and focused. Do not bundle unrelated changes in one commit.
 - Sign off every commit with `git commit -s` to satisfy the DCO requirement.
-- Do not include unrelated local changes in the PR (reviewers will ask you to
-  remove them — see PR #18223).
+- Do not include unrelated local changes in the PR.
 
 ---
 
