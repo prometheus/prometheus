@@ -418,3 +418,28 @@ eval instant at 45s withreset smoothed
 
 eval instant at 30s notregular smoothed
     notregular 2
+
+clear
+load 1m
+    metric _ _ _ _ _ _ 1
+
+# smoothed rate with a single point after the range beyond
+# lookback delta returns nothing.
+eval instant at 0m rate(metric[1m] smoothed)
+
+# smoothed rate with a single point after the range within
+# lookback delta is zero.
+# TODO(beorn7): Is this intended? Maybe it should return nothing.
+# See also below.
+eval instant at 3m rate(metric[1m] smoothed)
+    {} 0
+
+# smoothed rate with a single point before the range beyond
+# lookback delta returns nothing.
+eval instant at 15m rate(metric[1m] smoothed)
+
+# smoothed rate with a single point before the range within
+# lookback delta returns nothing.
+# TODO(beorn7): Is this intended? Maybe it should be zero.
+# See also above.
+eval instant at 8m rate(metric[1m] smoothed)
