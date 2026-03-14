@@ -248,7 +248,6 @@ func (sp *scrapePool) getScrapeFailureLogger() FailureLogger {
 func (sp *scrapePool) stop() {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
-	sp.cancel()
 	var wg sync.WaitGroup
 
 	sp.targetMtx.Lock()
@@ -268,6 +267,10 @@ func (sp *scrapePool) stop() {
 	sp.targetMtx.Unlock()
 
 	wg.Wait()
+	// Cancel the context after all loops have stopped. This is required for
+	// scrapeOnShutdown to work properly, as the shutdown scrape uses this
+	// context (via sl.parentCtx) and would fail if the context was cancelled early.
+	sp.cancel()
 	sp.client.CloseIdleConnections()
 
 	if sp.config != nil {
@@ -829,11 +832,17 @@ type cacheEntry struct {
 }
 
 type scrapeLoop struct {
-	// Parameters.
-	ctx         context.Context
-	cancel      func()
-	stopped     chan struct{}
-	parentCtx   context.Context
+	// ctx represents a local context that is cancellable via s.cancel.
+	// It's meant to synchronize run() with stop().
+	// It inherits parentCtx.
+	ctx     context.Context
+	cancel  func()
+	stopped chan struct{}
+	// parentCtx represents manager-level context, typically connected
+	// to process shutdown.
+	parentCtx context.Context
+	// appenderCtx is a parentCtx with some extra context for appender
+	// implementations. Potentially remove-able with removal of AppenderV1.
 	appenderCtx context.Context
 	l           *slog.Logger
 	cache       *scrapeCache
@@ -1258,7 +1267,6 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 		ticker            = time.NewTicker(sl.interval)
 	)
 	defer func() {
-		ticker.Stop()
 		if sl.scrapeOnShutdown {
 			last = sl.scrapeAndReport(last, time.Now().Round(0), errc)
 		}
@@ -1269,6 +1277,7 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 				sl.endOfRunStaleness(last, ticker, sl.interval)
 			}
 		}
+		ticker.Stop()
 	}()
 
 	// Initial offset and jitter offset, if any.
