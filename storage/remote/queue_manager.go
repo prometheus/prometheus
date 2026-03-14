@@ -488,6 +488,7 @@ func NewQueueManager(
 	enableNativeHistogramRemoteWrite bool,
 	enableTypeAndUnitLabels bool,
 	protoMsg remoteapi.WriteMessageType,
+	recordBuf *record.BuffersPool,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -537,7 +538,7 @@ func NewQueueManager(
 
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
-	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata)
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
@@ -1764,9 +1765,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	}
 
 	metricsUpdater := batchMetricsUpdater{
-		metrics:      s.qm.metrics,
-		storeClient:  s.qm.storeClient,
-		sentDuration: s.qm.metrics.sentBatchDuration,
+		metrics: s.qm.metrics,
 	}
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
@@ -1807,10 +1806,11 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		defer span.End()
 
 		begin := time.Now()
-		metricsUpdater.recordBatchAttempt(sc, begin)
+		metricsUpdater.recordBatchAttempt(sc)
 		// Technically for v1, we will likely have empty response stats, but for
 		// newer Receivers this might be not, so used it in a best effort.
 		rs, err := s.qm.client().Store(ctx, req, try)
+		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
 		// so far we don't have those, so it's ok to potentially skew statistics.
 		addStats(rs)
@@ -1870,9 +1870,7 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 	}
 
 	metricsUpdater := batchMetricsUpdater{
-		metrics:      s.qm.metrics,
-		storeClient:  s.qm.storeClient,
-		sentDuration: s.qm.metrics.sentBatchDuration,
+		metrics: s.qm.metrics,
 	}
 
 	// Since we retry writes via attemptStore and sendWriteRequestWithBackoff we need
@@ -1913,8 +1911,9 @@ func (s *shards) sendV2SamplesWithBackoff(ctx context.Context, samples []writev2
 		defer span.End()
 
 		begin := time.Now()
-		metricsUpdater.recordBatchAttempt(sc, begin)
+		metricsUpdater.recordBatchAttempt(sc)
 		rs, err := s.qm.client().Store(ctx, req, try)
+		metricsUpdater.recordLatency(begin)
 		// TODO(bwplotka): Revisit this once we have Receivers doing retriable partial error
 		// so far we don't have those, so it's ok to potentially skew statistics.
 		addStats(rs)
@@ -2272,18 +2271,20 @@ type sendBatchContext struct {
 
 // batchMetricsUpdater encapsulates metrics update operations for batch sending.
 type batchMetricsUpdater struct {
-	metrics      *queueManagerMetrics
-	storeClient  WriteClient
-	sentDuration prometheus.Observer
+	metrics *queueManagerMetrics
 }
 
-// recordBatchAttempt records metrics for a batch send attempt.
-func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext, begin time.Time) {
+// recordBatchAttempt records counter metrics for a batch send attempt.
+func (b *batchMetricsUpdater) recordBatchAttempt(sc sendBatchContext) {
 	b.metrics.samplesTotal.Add(float64(sc.sampleCount))
 	b.metrics.exemplarsTotal.Add(float64(sc.exemplarCount))
 	b.metrics.histogramsTotal.Add(float64(sc.histogramCount))
 	b.metrics.metadataTotal.Add(float64(sc.metadataCount))
-	b.sentDuration.Observe(time.Since(begin).Seconds())
+}
+
+// recordLatency records the observed send duration for a batch attempt.
+func (b *batchMetricsUpdater) recordLatency(begin time.Time) {
+	b.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 }
 
 // recordRetry records retry metrics for a batch.

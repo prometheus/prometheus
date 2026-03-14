@@ -101,7 +101,7 @@ URL query parameters:
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Doesn't affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
-- `lookback_delta=<number>`: Override the the [lookback period](#staleness) just for this query. Optional.
+- `lookback_delta=<duration | float>`: Override the the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics. Optional.
 
 The current server time is used if the `time` parameter is omitted.
@@ -175,7 +175,7 @@ URL query parameters:
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
-- `lookback_delta=<number>`: Override the the [lookback period](#staleness) just for this query. Optional.
+- `lookback_delta=<duration | float>`: Override the the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. If set to `all`, includes detailed statistics. Optional.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and

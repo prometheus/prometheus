@@ -151,7 +151,7 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 }
 
 func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	req, err := http.NewRequest(http.MethodGet, d.url, nil)
+	req, err := http.NewRequest(http.MethodGet, d.url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

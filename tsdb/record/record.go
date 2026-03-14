@@ -781,6 +781,8 @@ func (*Encoder) MmapMarkers(markers []RefMmapMarker, b []byte) []byte {
 	return buf.Get()
 }
 
+// HistogramSamples encode exponential histograms while returning all the excluded custom bucket histograms.
+// Callers can encode the returned custom bucket histograms via CustomBucketsHistogramSamples.
 func (*Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(HistogramSamples))
@@ -815,6 +817,7 @@ func (*Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]b
 	return buf.Get(), customBucketHistograms
 }
 
+// CustomBucketsHistogramSamples encodes given histograms as custom bucket histograms.
 func (*Encoder) CustomBucketsHistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(CustomBucketsHistogramSamples))
@@ -880,6 +883,8 @@ func EncodeHistogram(buf *encoding.Encbuf, h *histogram.Histogram) {
 	}
 }
 
+// FloatHistogramSamples encode exponential float histograms while returning all the excluded custom bucket float histograms.
+// Callers can encode the returned custom bucket float histograms via CustomBucketsFloatHistogramSamples.
 func (*Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(FloatHistogramSamples))
@@ -915,6 +920,7 @@ func (*Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []
 	return buf.Get(), customBucketsFloatHistograms
 }
 
+// CustomBucketsFloatHistogramSamples encodes given float histograms as custom bucket float histograms.
 func (*Encoder) CustomBucketsFloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(CustomBucketsFloatHistogramSamples))
