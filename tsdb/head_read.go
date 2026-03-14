@@ -622,7 +622,8 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	if headChunksLen == 1 {
 		return s.headChunks, true, true, nil
 	}
-	// Walk from newest (offset 0) to target.
+	// Walk from newest (offset 0) to target. The list is newest-first,
+	// but ix is oldest-first, so reverse the offset.
 	offset := headChunksLen - ix - 1
 	elem := s.headChunks
 	for range offset {

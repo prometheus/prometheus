@@ -568,6 +568,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
 	mSeries.nextAt = 0
 	mSeries.headChunks = nil
+	mSeries.headChunksLen = 0
 	mSeries.app = nil
 	return overlapped
 }
@@ -1635,6 +1636,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
 				series.headChunks = csr.mc
+				series.headChunksLen = csr.mc.len()
 				series.lastValue = csr.lastValue
 				series.lastHistogramValue = csr.lastHistogramValue
 				series.lastFloatHistogramValue = csr.lastFloatHistogramValue
