@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"sync"
 	"testing"
@@ -515,7 +516,8 @@ func TestHeadChunkReaderCache(t *testing.T) {
 	})
 }
 
-var benchSink *memChunk
+// benchSink prevents the compiler from eliding benchmark calls.
+var benchSink any
 
 // BenchmarkSeriesChunkIteration measures iterating all N head chunks of a series
 // oldest-to-newest (the real query pattern) using the cached head-chunks slice.
@@ -538,6 +540,20 @@ func BenchmarkSeriesChunkIteration(b *testing.B) {
 	}
 }
 
+// buildHeadChunks creates a linked list of N head chunks with non-overlapping time ranges.
+func buildHeadChunks(n int) *memChunk {
+	var head *memChunk
+	for i := range n {
+		head = &memChunk{
+			chunk:   chunkenc.NewXORChunk(),
+			minTime: int64(i) * 1000,
+			maxTime: int64(i)*1000 + 999,
+			prev:    head,
+		}
+	}
+	return head
+}
+
 // buildHeadChunksLight creates a linked list like buildHeadChunks but without
 // allocating chunk encodings. Suitable for benchmarks that only need the
 // linked-list structure and time ranges (e.g. truncation).
@@ -551,4 +567,129 @@ func buildHeadChunksLight(n int) *memChunk {
 		}
 	}
 	return head
+}
+
+func BenchmarkAppendSeriesChunks(b *testing.B) {
+	for _, numHeadChunks := range []int{1, 4, 16, 64, 256} {
+		b.Run(fmt.Sprintf("headOnly/%d", numHeadChunks), func(b *testing.B) {
+			s := &memSeries{
+				ref:        1,
+				headChunks: buildHeadChunks(numHeadChunks),
+			}
+			mint := int64(0)
+			maxt := int64(numHeadChunks) * 1000
+			chks := make([]chunks.Meta, 0, numHeadChunks)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				chks = appendSeriesChunks(s, mint, maxt, chks[:0])
+			}
+			benchSink = chks
+		})
+
+		b.Run(fmt.Sprintf("withMmapped/%d", numHeadChunks), func(b *testing.B) {
+			// Same number of mmapped chunks as head chunks.
+			mmapped := make([]*mmappedChunk, numHeadChunks)
+			for i := range numHeadChunks {
+				mmapped[i] = &mmappedChunk{
+					minTime: int64(i) * 1000,
+					maxTime: int64(i)*1000 + 999,
+				}
+			}
+			s := &memSeries{
+				ref:           1,
+				headChunks:    buildHeadChunks(numHeadChunks),
+				mmappedChunks: mmapped,
+			}
+			totalChunks := numHeadChunks * 2
+			mint := int64(0)
+			maxt := int64(totalChunks) * 1000
+			chks := make([]chunks.Meta, 0, totalChunks)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				chks = appendSeriesChunks(s, mint, maxt, chks[:0])
+			}
+			benchSink = chks
+		})
+	}
+}
+
+func BenchmarkCollectHeadChunks(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			head := buildHeadChunks(n)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				var buf [16]*memChunk
+				benchSink = collectHeadChunks(head, buf[:0])
+			}
+		})
+	}
+}
+
+func BenchmarkSeriesChunk(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			s := &memSeries{
+				ref:          1,
+				firstChunkID: 0,
+				headChunks:   buildHeadChunks(n),
+			}
+			// Request the oldest head chunk (HeadChunkID 0) — worst case.
+			id := chunks.HeadChunkID(0)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				c, _, _, err := s.chunk(id, nil, nil, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				benchSink = c
+			}
+		})
+	}
+}
+
+func BenchmarkChunkLookup(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			s := &memSeries{
+				ref:          1,
+				firstChunkID: 0,
+				headChunks:   buildHeadChunks(n),
+			}
+			// Request a mid-position chunk (complements BenchmarkSeriesChunk which does worst-case oldest).
+			id := chunks.HeadChunkID(n / 2)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				c, _, _, err := s.chunk(id, nil, nil, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				benchSink = c
+			}
+		})
+	}
+}
+
+func BenchmarkTruncateChunksBefore(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			// mint truncates the oldest half of head chunks.
+			mint := int64(n/2) * 1000
+
+			b.ReportAllocs()
+			for b.Loop() {
+				// Rebuild each iteration since truncate is destructive.
+				s := &memSeries{
+					firstChunkID: 0,
+					headChunks:   buildHeadChunks(n),
+				}
+				s.truncateChunksBefore(mint, 0)
+			}
+		})
+	}
 }
