@@ -100,6 +100,13 @@ func newTestHeadWithOptions(t testing.TB, compressWAL compression.Type, opts *He
 	return h, wal
 }
 
+func mustMmapChunks(t testing.TB, s *memSeries, chunkDiskMapper *chunks.ChunkDiskMapper) {
+	t.Helper()
+
+	_, err := s.mmapChunks(chunkDiskMapper)
+	require.NoError(t, err)
+}
+
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
 	h, _ := newTestHead(b, 10000, compression.None, false)
@@ -353,7 +360,7 @@ func BenchmarkLoadWLs(b *testing.B) {
 								// ignores the latest chunk, so we need to cut a new head chunk to guarantee the chunk with
 								// the sample at c.mmappedChunkT is mmapped.
 								s.cutNewHeadChunk(c.mmappedChunkT, chunkenc.EncXOR, c.mmappedChunkT)
-								s.mmapChunks(chunkDiskMapper)
+								mustMmapChunks(b, s, chunkDiskMapper)
 							}
 							require.NoError(b, chunkDiskMapper.Close())
 						}
@@ -1490,7 +1497,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		ok, _ := s.append(int64(i), float64(i), 0, cOpts)
 		require.True(t, ok, "sample append failed")
 	}
-	s.mmapChunks(chunkDiskMapper)
+	mustMmapChunks(t, s, chunkDiskMapper)
 
 	// Check that truncate removes half of the chunks and afterwards
 	// that the ID of the last chunk still gives us the same chunk afterwards.
@@ -1640,7 +1647,7 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 					ok, _ := series.append(int64(i), float64(i), 0, cOpts)
 					require.True(t, ok, "sample append failed")
 				}
-				series.mmapChunks(chunkDiskMapper)
+				mustMmapChunks(t, series, chunkDiskMapper)
 			}
 
 			if tc.headChunks == 0 {
@@ -2202,7 +2209,7 @@ func TestMemSeries_append(t *testing.T) {
 	ok, chunkCreated = s.append(999, 2, 0, cOpts)
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
-	s.mmapChunks(chunkDiskMapper)
+	mustMmapChunks(t, s, chunkDiskMapper)
 
 	ok, chunkCreated = s.append(1000, 3, 0, cOpts)
 	require.True(t, ok, "append failed")
@@ -2212,7 +2219,7 @@ func TestMemSeries_append(t *testing.T) {
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
-	s.mmapChunks(chunkDiskMapper)
+	mustMmapChunks(t, s, chunkDiskMapper)
 	require.Len(t, s.mmappedChunks, 1, "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
@@ -2225,7 +2232,7 @@ func TestMemSeries_append(t *testing.T) {
 		ok, _ := s.append(1001+int64(i), float64(i), 0, cOpts)
 		require.True(t, ok, "append failed")
 	}
-	s.mmapChunks(chunkDiskMapper)
+	mustMmapChunks(t, s, chunkDiskMapper)
 
 	require.Greater(t, len(s.mmappedChunks)+1, 7, "expected intermediate chunks")
 
@@ -2235,6 +2242,145 @@ func TestMemSeries_append(t *testing.T) {
 		require.NoError(t, err)
 		require.Greater(t, chk.NumSamples(), 100, "unexpected small chunk %d of length %d", i, chk.NumSamples())
 	}
+}
+
+func TestMemSeries_mmapChunksKeepsHeadChunksOnWriteError(t *testing.T) {
+	dir := t.TempDir()
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+	require.NoError(t, err)
+
+	cOpts := chunkOpts{
+		chunkDiskMapper: chunkDiskMapper,
+		chunkRange:      500,
+		samplesPerChunk: DefaultSamplesPerChunk,
+	}
+
+	s := newMemSeries(labels.Labels{}, 1, 0, defaultIsolationDisabled, false)
+
+	ok, chunkCreated := s.append(998, 1, 0, cOpts)
+	require.True(t, ok)
+	require.True(t, chunkCreated)
+
+	ok, chunkCreated = s.append(999, 2, 0, cOpts)
+	require.True(t, ok)
+	require.False(t, chunkCreated)
+
+	ok, chunkCreated = s.append(1000, 3, 0, cOpts)
+	require.True(t, ok)
+	require.True(t, chunkCreated)
+
+	ok, chunkCreated = s.append(1001, 4, 0, cOpts)
+	require.True(t, ok)
+	require.False(t, chunkCreated)
+
+	require.Empty(t, s.mmappedChunks)
+	require.Equal(t, 2, s.headChunks.len())
+
+	oldestHeadChunk := s.headChunks.prev
+	require.NotNil(t, oldestHeadChunk)
+
+	require.NoError(t, chunkDiskMapper.Close())
+
+	count, err := s.mmapChunks(chunkDiskMapper)
+	require.ErrorIs(t, err, chunks.ErrChunkDiskMapperClosed)
+	require.Zero(t, count)
+	require.Empty(t, s.mmappedChunks)
+	require.Equal(t, 2, s.headChunks.len())
+	require.Same(t, oldestHeadChunk, s.headChunks.prev)
+	require.Equal(t, int64(998), s.headChunks.prev.minTime)
+	require.Equal(t, int64(999), s.headChunks.prev.maxTime)
+	require.Equal(t, int64(1000), s.headChunks.minTime)
+	require.Equal(t, int64(1001), s.headChunks.maxTime)
+}
+
+func TestMemSeries_insertObservesOOOHeadChunkWriteError(t *testing.T) {
+	dir := t.TempDir()
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+	require.NoError(t, err)
+
+	s := newMemSeries(labels.Labels{}, 1, 0, defaultIsolationDisabled, false)
+
+	res := s.insert(100, 1, nil, nil, chunkDiskMapper, 1, promslog.NewNopLogger())
+	require.True(t, res.inserted)
+	require.True(t, res.chunkCreated)
+	require.Empty(t, res.mmapRefs)
+	require.NoError(t, res.deferredErr)
+
+	require.NoError(t, chunkDiskMapper.Close())
+
+	res = s.insert(101, 2, nil, nil, chunkDiskMapper, 1, promslog.NewNopLogger())
+	require.True(t, res.inserted)
+	require.False(t, res.chunkCreated)
+	require.Nil(t, res.mmapRefs)
+	require.ErrorIs(t, res.deferredErr, chunks.ErrChunkDiskMapperClosed)
+}
+
+func TestMemSeries_insertKeepsOOOHeadChunkOnWriteError(t *testing.T) {
+	dir := t.TempDir()
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+	require.NoError(t, err)
+
+	s := newMemSeries(labels.Labels{}, 1, 0, defaultIsolationDisabled, false)
+
+	res := s.insert(100, 1, nil, nil, chunkDiskMapper, 1, promslog.NewNopLogger())
+	require.True(t, res.inserted)
+	require.True(t, res.chunkCreated)
+	require.Empty(t, res.mmapRefs)
+	require.NoError(t, res.deferredErr)
+	require.NotNil(t, s.ooo)
+	require.NotNil(t, s.ooo.oooHeadChunk)
+
+	oldOOOHeadChunk := s.ooo.oooHeadChunk
+
+	require.NoError(t, chunkDiskMapper.Close())
+
+	res = s.insert(101, 2, nil, nil, chunkDiskMapper, 1, promslog.NewNopLogger())
+	require.True(t, res.inserted)
+	require.False(t, res.chunkCreated)
+	require.Nil(t, res.mmapRefs)
+	require.ErrorIs(t, res.deferredErr, chunks.ErrChunkDiskMapperClosed)
+	require.Same(t, oldOOOHeadChunk, s.ooo.oooHeadChunk)
+	require.Empty(t, s.ooo.oooMmappedChunks)
+	require.Equal(t, 2, s.ooo.oooHeadChunk.chunk.NumSamples())
+	require.Equal(t, int64(100), s.ooo.oooHeadChunk.minTime)
+	require.Equal(t, int64(101), s.ooo.oooHeadChunk.maxTime)
+}
+
+func TestWBLSubsetProcessorPreservesOOOSampleOnRolloverWriteError(t *testing.T) {
+	h, _ := newTestHead(t, 1000, compression.None, true)
+	h.opts.OutOfOrderCapMax.Store(1)
+	require.NoError(t, h.Init(0))
+
+	ms, _, err := h.getOrCreate(labels.FromStrings("a", "b").Hash(), labels.FromStrings("a", "b"), false)
+	require.NoError(t, err)
+
+	ms.ooo = &memSeriesOOOFields{
+		oooHeadChunk: &oooHeadChunk{
+			chunk:   NewOOOChunk(),
+			minTime: 100,
+			maxTime: 100,
+		},
+	}
+	require.True(t, ms.ooo.oooHeadChunk.chunk.Insert(100, 1, nil, nil))
+
+	require.NoError(t, h.chunkDiskMapper.Close())
+
+	var wp wblSubsetProcessor
+	wp.setup()
+	wp.input <- wblSubsetProcessorInputItem{
+		samples: []record.RefSample{{Ref: ms.ref, T: 101, V: 2}},
+	}
+	close(wp.input)
+
+	missingSeries, unknownSampleRefs, unknownHistogramRefs := wp.processWBLSamples(h)
+	require.Empty(t, missingSeries)
+	require.Zero(t, unknownSampleRefs)
+	require.Zero(t, unknownHistogramRefs)
+	require.NotNil(t, ms.ooo.oooHeadChunk)
+	require.Empty(t, ms.ooo.oooMmappedChunks)
+	require.Equal(t, 2, ms.ooo.oooHeadChunk.chunk.NumSamples())
+	require.Equal(t, int64(100), ms.ooo.oooHeadChunk.minTime)
+	require.Equal(t, int64(101), ms.ooo.oooHeadChunk.maxTime)
 }
 
 func TestMemSeries_appendHistogram(t *testing.T) {
@@ -2279,7 +2425,7 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
-	s.mmapChunks(chunkDiskMapper)
+	mustMmapChunks(t, s, chunkDiskMapper)
 	require.Len(t, s.mmappedChunks, 1, "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
@@ -2290,7 +2436,7 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "third sample should trigger a re-encoded chunk")
 
-	s.mmapChunks(chunkDiskMapper)
+	mustMmapChunks(t, s, chunkDiskMapper)
 	require.Len(t, s.mmappedChunks, 1, "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
@@ -2339,7 +2485,7 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 	require.True(t, ok, "new chunk sample was not appended")
 	require.True(t, chunkCreated, "sample at block duration timestamp should create a new chunk")
 
-	s.mmapChunks(chunkDiskMapper)
+	mustMmapChunks(t, s, chunkDiskMapper)
 	var totalSamplesInChunks int
 	for i, c := range s.mmappedChunks {
 		totalSamplesInChunks += int(c.numSamples)
@@ -2769,7 +2915,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 			require.True(t, ok, "series append failed")
 			require.False(t, chunkCreated, "chunk was created")
 			h.chunkDiskMapper.CutNewFile()
-			s.mmapChunks(h.chunkDiskMapper)
+			mustMmapChunks(t, s, h.chunkDiskMapper)
 		}
 		require.NoError(t, h.Close())
 
@@ -4987,7 +5133,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 
 				ms, _, err := head.getOrCreate(l.Hash(), l, false)
 				require.NoError(t, err)
-				ms.mmapChunks(head.chunkDiskMapper)
+				mustMmapChunks(t, ms, head.chunkDiskMapper)
 				require.Len(t, ms.mmappedChunks, len(expHeaders)-1) // One is the head chunk.
 
 				for i, mmapChunk := range ms.mmappedChunks {
@@ -5690,7 +5836,7 @@ func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 	require.False(t, created, "should already exist")
 	require.NotNil(t, series, "should return the series we created above")
 
-	series.mmapChunks(h.chunkDiskMapper)
+	mustMmapChunks(t, series, h.chunkDiskMapper)
 	expChunks := make([]*mmappedChunk, len(series.mmappedChunks))
 	copy(expChunks, series.mmappedChunks)
 

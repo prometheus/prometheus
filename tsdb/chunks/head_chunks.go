@@ -472,6 +472,21 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64
 	return ref
 }
 
+// WriteChunkSync writes the chunk to disk synchronously and returns an error if the write fails.
+// It bypasses the async write queue so callers can safely mutate in-memory state only after a
+// successful write.
+func (cdm *ChunkDiskMapper) WriteChunkSync(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, isOOO bool) (chkRef ChunkDiskMapperRef, err error) {
+	cdm.evtlPosMtx.Lock()
+	defer cdm.evtlPosMtx.Unlock()
+
+	ref, cutFile := cdm.evtlPos.getNextChunkRef(chk)
+	if err = cdm.writeChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile); err != nil {
+		return 0, err
+	}
+
+	return ref, nil
+}
+
 func (cdm *ChunkDiskMapper) writeChunkViaQueue(ref ChunkDiskMapperRef, isOOO, cutFile bool, seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, callback func(err error)) (chkRef ChunkDiskMapperRef) {
 	var err error
 	if callback != nil {

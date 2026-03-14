@@ -2712,7 +2712,7 @@ func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
 
 		// The RW Head should have no problem cutting its own chunk,
 		// this also proves that a chunk needed to be cut.
-		require.NotPanics(t, func() { db.ForceHeadMMap() })
+		db.ForceHeadMMap()
 		require.Equal(t, 1, countChunks(db.Dir()))
 	})
 
@@ -8383,13 +8383,7 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
 
-	// NOTE: We are investigating flaky errors from this compaction on i386 architecture. Compaction panics due to chunk
-	// mapper fatal error. Recover here to understand the error cause. Leaving panic recovery to test causes deadlock
-	// as t.Cleanup tries to close DB with open locks.
-	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
-	require.NotPanics(t, func() {
-		require.NoError(t, db.Compact(ctx))
-	})
+	require.NoError(t, db.Compact(ctx))
 
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
 	require.Nil(t, ms.ooo, "OOO mmap chunk was not compacted")
@@ -8398,13 +8392,7 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 	db.head.mmapHeadChunks()
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
 
-	// NOTE: We are investigating flaky errors from this compaction on i386 architecture. Compaction panics due to chunk
-	// mapper fatal error. Recover here to understand the error cause. Leaving panic recovery to test causes deadlock
-	// as t.Cleanup tries to close DB with open locks.
-	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
-	require.NotPanics(t, func() {
-		require.NoError(t, db.Compact(ctx))
-	})
+	require.NoError(t, db.Compact(ctx))
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
 
 	// Verify that WBL is empty.

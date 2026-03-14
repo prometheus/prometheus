@@ -1312,6 +1312,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 	var series *memSeries
 
 	for i, s := range b.floats {
+		ok, chunkCreated = false, false
 		series = b.floatSeries[i]
 		series.Lock()
 
@@ -1382,12 +1383,15 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 
 		switch {
 		case err != nil:
-			// Do nothing here.
+		// Do nothing here.
 		case oooSample:
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
-			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(s.T, s.V, nil, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			res := series.insert(s.T, s.V, nil, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated = res.inserted, res.chunkCreated
+			if res.deferredErr != nil {
+				a.head.chunkWriteErrorCallback(res.deferredErr)
+			}
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1403,9 +1407,9 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				if acc.oooMmapMarkers == nil {
 					acc.oooMmapMarkers = make(map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef)
 				}
-				if len(mmapRefs) > 0 {
-					acc.oooMmapMarkers[series.ref] = mmapRefs
-					acc.oooMmapMarkersCount += len(mmapRefs)
+				if len(res.mmapRefs) > 0 {
+					acc.oooMmapMarkers[series.ref] = res.mmapRefs
+					acc.oooMmapMarkersCount += len(res.mmapRefs)
 				} else {
 					// No chunk was written to disk, so we need to set an initial marker for this series.
 					acc.oooMmapMarkers[series.ref] = []chunks.ChunkDiskMapperRef{0}
@@ -1468,6 +1472,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 	var series *memSeries
 
 	for i, s := range b.histograms {
+		ok, chunkCreated = false, false
 		series = b.histogramSeries[i]
 		series.Lock()
 
@@ -1487,12 +1492,15 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 
 		switch {
 		case err != nil:
-			// Do nothing here.
+		// Do nothing here.
 		case oooSample:
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
-			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(s.T, 0, s.H, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			res := series.insert(s.T, 0, s.H, nil, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated = res.inserted, res.chunkCreated
+			if res.deferredErr != nil {
+				a.head.chunkWriteErrorCallback(res.deferredErr)
+			}
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1508,9 +1516,9 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				if acc.oooMmapMarkers == nil {
 					acc.oooMmapMarkers = make(map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef)
 				}
-				if len(mmapRefs) > 0 {
-					acc.oooMmapMarkers[series.ref] = mmapRefs
-					acc.oooMmapMarkersCount += len(mmapRefs)
+				if len(res.mmapRefs) > 0 {
+					acc.oooMmapMarkers[series.ref] = res.mmapRefs
+					acc.oooMmapMarkersCount += len(res.mmapRefs)
 				} else {
 					// No chunk was written to disk, so we need to set an initial marker for this series.
 					acc.oooMmapMarkers[series.ref] = []chunks.ChunkDiskMapperRef{0}
@@ -1577,6 +1585,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 	var series *memSeries
 
 	for i, s := range b.floatHistograms {
+		ok, chunkCreated = false, false
 		series = b.floatHistogramSeries[i]
 		series.Lock()
 
@@ -1596,12 +1605,15 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 
 		switch {
 		case err != nil:
-			// Do nothing here.
+		// Do nothing here.
 		case oooSample:
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
-			var mmapRefs []chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRefs = series.insert(s.T, 0, nil, s.FH, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			res := series.insert(s.T, 0, nil, s.FH, a.head.chunkDiskMapper, acc.oooCapMax, a.head.logger)
+			ok, chunkCreated = res.inserted, res.chunkCreated
+			if res.deferredErr != nil {
+				a.head.chunkWriteErrorCallback(res.deferredErr)
+			}
 			if chunkCreated {
 				r, ok := acc.oooMmapMarkers[series.ref]
 				if !ok || r != nil {
@@ -1617,9 +1629,9 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				if acc.oooMmapMarkers == nil {
 					acc.oooMmapMarkers = make(map[chunks.HeadSeriesRef][]chunks.ChunkDiskMapperRef)
 				}
-				if len(mmapRefs) > 0 {
-					acc.oooMmapMarkers[series.ref] = mmapRefs
-					acc.oooMmapMarkersCount += len(mmapRefs)
+				if len(res.mmapRefs) > 0 {
+					acc.oooMmapMarkers[series.ref] = res.mmapRefs
+					acc.oooMmapMarkersCount += len(res.mmapRefs)
 				} else {
 					// No chunk was written to disk, so we need to set an initial marker for this series.
 					acc.oooMmapMarkers[series.ref] = []chunks.ChunkDiskMapperRef{0}
@@ -1795,28 +1807,53 @@ func (a *headAppenderBase) Commit() (err error) {
 	return nil
 }
 
+type insertResult struct {
+	inserted     bool
+	chunkCreated bool
+	mmapRefs     []chunks.ChunkDiskMapperRef
+	deferredErr  error
+}
+
 // insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64, logger *slog.Logger) (inserted, chunkCreated bool, mmapRefs []chunks.ChunkDiskMapperRef) {
+func (s *memSeries) insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64, logger *slog.Logger) insertResult {
 	if s.ooo == nil {
 		s.ooo = &memSeriesOOOFields{}
 	}
 	c := s.ooo.oooHeadChunk
-	if c == nil || c.chunk.NumSamples() == int(oooCapMax) {
+	var res insertResult
+	if c == nil {
+		s.ooo.oooHeadChunk = &oooHeadChunk{
+			chunk:   NewOOOChunk(),
+			minTime: t,
+			maxTime: math.MinInt64,
+		}
+		c = s.ooo.oooHeadChunk
+		res.chunkCreated = true
+	} else if c.chunk.NumSamples() >= int(oooCapMax) {
 		// Note: If no new samples come in then we rely on compaction to clean up stale in-memory OOO chunks.
-		c, mmapRefs = s.cutNewOOOHeadChunk(t, chunkDiskMapper, logger)
-		chunkCreated = true
+		// If the rollover write fails, keep appending to the current in-memory chunk and retry on a later sample
+		// instead of dropping the current sample.
+		var err error
+		c, res.mmapRefs, err = s.cutNewOOOHeadChunk(t, chunkDiskMapper, logger)
+		if err != nil {
+			res.deferredErr = err
+			c = s.ooo.oooHeadChunk
+			res.mmapRefs = nil
+		} else {
+			res.chunkCreated = true
+		}
 	}
 
-	ok := c.chunk.Insert(t, v, h, fh)
-	if ok {
-		if chunkCreated || t < c.minTime {
+	res.inserted = c.chunk.Insert(t, v, h, fh)
+	if res.inserted {
+		if res.chunkCreated || t < c.minTime {
 			c.minTime = t
 		}
-		if chunkCreated || t > c.maxTime {
+		if res.chunkCreated || t > c.maxTime {
 			c.maxTime = t
 		}
 	}
-	return ok, chunkCreated, mmapRefs
+	return res
 }
 
 // chunkOpts are chunk-level options that are passed when appending to a memSeries.
@@ -2161,8 +2198,11 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 
 // cutNewOOOHeadChunk cuts a new OOO chunk and m-maps the old chunk.
 // The caller must ensure that s is locked and s.ooo is not nil.
-func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) (*oooHeadChunk, []chunks.ChunkDiskMapperRef) {
-	ref := s.mmapCurrentOOOHeadChunk(chunkDiskMapper, logger)
+func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) (*oooHeadChunk, []chunks.ChunkDiskMapperRef, error) {
+	ref, err := s.mmapCurrentOOOHeadChunk(chunkDiskMapper, logger)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	s.ooo.oooHeadChunk = &oooHeadChunk{
 		chunk:   NewOOOChunk(),
@@ -2170,53 +2210,67 @@ func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.Chunk
 		maxTime: math.MinInt64,
 	}
 
-	return s.ooo.oooHeadChunk, ref
+	return s.ooo.oooHeadChunk, ref, nil
 }
 
 // s must be locked when calling.
-func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) []chunks.ChunkDiskMapperRef {
+func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper, logger *slog.Logger) ([]chunks.ChunkDiskMapperRef, error) {
 	if s.ooo == nil || s.ooo.oooHeadChunk == nil {
 		// OOO is not enabled or there is no head chunk, so nothing to m-map here.
-		return nil
+		return nil, nil
 	}
 	chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64)
 	if err != nil {
-		handleChunkWriteError(err)
-		return nil
+		return nil, err
 	}
 	chunkRefs := make([]chunks.ChunkDiskMapperRef, 0, len(chks))
+	stagedChunks := make([]*mmappedChunk, 0, len(chks))
+	// This must be synchronous: we only publish mmap refs and detach the OOO
+	// head chunk after persistence has definitely succeeded.
 	for _, memchunk := range chks {
-		if len(s.ooo.oooMmappedChunks) >= (oooChunkIDMask - 1) {
+		if len(s.ooo.oooMmappedChunks)+len(stagedChunks) >= (oooChunkIDMask - 1) {
 			logger.Error("Too many OOO chunks, dropping data", "series", s.lset.String())
 			break
 		}
-		chunkRef := chunkDiskMapper.WriteChunk(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true, handleChunkWriteError)
+		chunkRef, err := chunkDiskMapper.WriteChunkSync(s.ref, memchunk.minTime, memchunk.maxTime, memchunk.chunk, true)
+		if err != nil {
+			return nil, err
+		}
+
 		chunkRefs = append(chunkRefs, chunkRef)
-		s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, &mmappedChunk{
+		stagedChunks = append(stagedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			numSamples: uint16(memchunk.chunk.NumSamples()),
 			minTime:    memchunk.minTime,
 			maxTime:    memchunk.maxTime,
 		})
 	}
+	s.ooo.oooMmappedChunks = append(s.ooo.oooMmappedChunks, stagedChunks...)
 	s.ooo.oooHeadChunk = nil
-	return chunkRefs
+	return chunkRefs, nil
 }
 
 // mmapChunks will m-map all but first chunk on s.headChunks list.
-func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count int) {
+func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count int, err error) {
 	if s.headChunks == nil || s.headChunks.prev == nil {
 		// There is none or only one head chunk, so nothing to m-map here.
-		return count
+		return count, nil
 	}
 
 	// Write chunks starting from the oldest one and stop before we get to current s.headChunks.
 	// If we have this chain: s.headChunks{t4} -> t3 -> t2 -> t1 -> t0
 	// then we need to write chunks t0 to t3, but skip s.headChunks.
+	stagedChunks := make([]*mmappedChunk, 0, s.headChunks.len()-1)
+	// This must be synchronous: we only publish mmap refs and detach the old
+	// head chunks after persistence has definitely succeeded.
 	for i := s.headChunks.len() - 1; i > 0; i-- {
 		chk := s.headChunks.atOffset(i)
-		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false, handleChunkWriteError)
-		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
+		chunkRef, err := chunkDiskMapper.WriteChunkSync(s.ref, chk.minTime, chk.maxTime, chk.chunk, false)
+		if err != nil {
+			return 0, err
+		}
+
+		stagedChunks = append(stagedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			numSamples: uint16(chk.chunk.NumSamples()),
 			minTime:    chk.minTime,
@@ -2225,19 +2279,11 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		count++
 	}
 
+	s.mmappedChunks = append(s.mmappedChunks, stagedChunks...)
 	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunk.
 	s.headChunks.prev = nil
 
-	return count
-}
-
-// TODO(bwplotka): Propagate errors correctly, even when they are async. Panicking here do occurs from time to time
-// and cause flaky tests with hidden root cause (unlocked mutexes when deferred closing).
-// We didn't have evidences of prod impact though, yet.
-func handleChunkWriteError(err error) {
-	if err != nil && !errors.Is(err, chunks.ErrChunkDiskMapperClosed) {
-		panic(err)
-	}
+	return count, nil
 }
 
 // Rollback removes the samples and exemplars from headAppender and writes any series to WAL.

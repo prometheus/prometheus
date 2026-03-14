@@ -108,8 +108,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 			if len(c.chunk.samples) > 0 { // Empty samples happens in tests, at least.
 				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(c.minTime, c.maxTime)
 				if err != nil {
-					handleChunkWriteError(err)
-					return nil
+					return fmt.Errorf("encoding OOO head chunk for reading: %w", err)
 				}
 				for _, chk := range chks {
 					addChunk(chk.minTime, chk.maxTime, ref, chk.chunk)
@@ -336,46 +335,59 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 			continue
 		}
 
-		// M-map the in-memory chunk and keep track of the last one.
-		// Also build the block ranges -> series map.
-		// TODO: consider having a lock specifically for ooo data.
-		ms.Lock()
-
-		if ms.ooo == nil {
-			ms.Unlock()
-			continue
+		if err := ch.mmapOOOSeriesChunk(head, ms, seriesRef, &lastSeq, &lastOff); err != nil {
+			return nil, err
 		}
-
-		var lastMmapRef chunks.ChunkDiskMapperRef
-		mmapRefs := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper, head.logger)
-		if len(mmapRefs) == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
-			// Nothing was m-mapped. So take the mmapRef from the existing slice if it exists.
-			mmapRefs = []chunks.ChunkDiskMapperRef{ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref}
-		}
-		if len(mmapRefs) == 0 {
-			lastMmapRef = 0
-		} else {
-			lastMmapRef = mmapRefs[len(mmapRefs)-1]
-		}
-		seq, off := lastMmapRef.Unpack()
-		if seq > lastSeq || (seq == lastSeq && off > lastOff) {
-			ch.lastMmapRef, lastSeq, lastOff = lastMmapRef, seq, off
-		}
-		if len(ms.ooo.oooMmappedChunks) > 0 {
-			ch.postings = append(ch.postings, seriesRef)
-			for _, c := range ms.ooo.oooMmappedChunks {
-				if c.minTime < ch.mint {
-					ch.mint = c.minTime
-				}
-				if c.maxTime > ch.maxt {
-					ch.maxt = c.maxTime
-				}
-			}
-		}
-		ms.Unlock()
 	}
 
 	return ch, nil
+}
+
+// mmapOOOSeriesChunk m-maps OOO chunks for a single series during compaction head creation.
+// It uses deferred unlocking so the series lock is released even if chunk
+// mapping panics unexpectedly during compaction head creation.
+func (ch *OOOCompactionHead) mmapOOOSeriesChunk(head *Head, ms *memSeries, seriesRef storage.SeriesRef, lastSeq, lastOff *int) error {
+	// M-map the in-memory chunk and keep track of the last one.
+	// Also build the block ranges -> series map.
+	// TODO: consider having a lock specifically for ooo data.
+	ms.Lock()
+	defer ms.Unlock()
+
+	if ms.ooo == nil {
+		return nil
+	}
+
+	var lastMmapRef chunks.ChunkDiskMapperRef
+	mmapRefs, err := ms.mmapCurrentOOOHeadChunk(head.chunkDiskMapper, head.logger)
+	if err != nil {
+		return fmt.Errorf("mmap OOO chunks for series %d: %w", seriesRef, err)
+	}
+	if len(mmapRefs) == 0 && len(ms.ooo.oooMmappedChunks) > 0 {
+		// Nothing was m-mapped. So take the mmapRef from the existing slice if it exists.
+		mmapRefs = []chunks.ChunkDiskMapperRef{ms.ooo.oooMmappedChunks[len(ms.ooo.oooMmappedChunks)-1].ref}
+	}
+	if len(mmapRefs) == 0 {
+		lastMmapRef = 0
+	} else {
+		lastMmapRef = mmapRefs[len(mmapRefs)-1]
+	}
+	seq, off := lastMmapRef.Unpack()
+	if seq > *lastSeq || (seq == *lastSeq && off > *lastOff) {
+		ch.lastMmapRef, *lastSeq, *lastOff = lastMmapRef, seq, off
+	}
+	if len(ms.ooo.oooMmappedChunks) > 0 {
+		ch.postings = append(ch.postings, seriesRef)
+		for _, c := range ms.ooo.oooMmappedChunks {
+			if c.minTime < ch.mint {
+				ch.mint = c.minTime
+			}
+			if c.maxTime > ch.maxt {
+				ch.maxt = c.maxTime
+			}
+		}
+	}
+
+	return nil
 }
 
 func (ch *OOOCompactionHead) Index() (IndexReader, error) {
