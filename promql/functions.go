@@ -216,21 +216,26 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		numSamplesMinusOne = len(samples.Floats) - 1
 		firstT = samples.Floats[0].T
 		lastT = samples.Floats[numSamplesMinusOne].T
-		resultFloat = samples.Floats[numSamplesMinusOne].F - samples.Floats[0].F
+		// Use Kahen's summation algorithm for better precision with large values
+		var summer kahansum.Summer
+		summer.Add(samples.Floats[numSamplesMinusOne].F)
+		summer.Add(-samples.Floats[0].F)
+		resultFloat = summer.Sum()
 		if !isCounter {
 			break
 		}
-		// Handle counter resets:
+		// Handle counter resets with high precision:
 		prevValue := samples.Floats[0].F
 		for _, currPoint := range samples.Floats[1:] {
 			if currPoint.F < prevValue {
-				resultFloat += prevValue
+				summer.Add(prevValue)
 			}
 			prevValue = currPoint.F
 		}
+		resultFloat = summer.Sum()
 	default:
-		// TODO: add RangeTooShortWarning
-		return enh.Out, annos
+		// Range too short - need at least two samples for rate calculation
+		return enh.Out, annos.Add(annotations.NewRangeTooShortWarning(getMetricName(samples.Metric), args[0].PositionRange()))
 	}
 
 	// Duration between first/last samples and boundary of range.
@@ -432,10 +437,9 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 	)
 
 	// No sense in trying to compute a rate without at least two points. Drop
-	// this Vector element.
-	// TODO: add RangeTooShortWarning
+	// this Vector element with appropriate warning.
 	if len(samples.Floats)+len(samples.Histograms) < 2 {
-		return out, nil
+		return out, annotations.New().Add(annotations.NewRangeTooShortWarning(getMetricName(samples.Metric), args[0].PositionRange()))
 	}
 
 	// Add the last 2 float samples if they exist.
@@ -570,10 +574,10 @@ func funcDoubleExponentialSmoothing(vectorVals []Vector, matrixVal Matrix, args 
 
 	// Check that the input parameters are valid.
 	if sf <= 0 || sf >= 1 {
-		panic(fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf))
+		return enh.Out, annotations.New().Add(annotations.NewInvalidValueWarning(fmt.Sprintf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf), args[1].PositionRange()))
 	}
 	if tf <= 0 || tf >= 1 {
-		panic(fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf))
+		return enh.Out, annotations.New().Add(annotations.NewInvalidValueWarning(fmt.Sprintf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf), args[2].PositionRange()))
 	}
 
 	l := len(samples.Floats)
@@ -1985,10 +1989,10 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 
 	regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
 	if err != nil {
-		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
+		return nil, annotations.New().Add(annotations.NewInvalidValueWarning(fmt.Sprintf("invalid regular expression in label_replace(): %s", regexStr), args[2].PositionRange()))
 	}
 	if !model.UTF8Validation.IsValidLabelName(dst) {
-		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
+		return nil, annotations.New().Add(annotations.NewInvalidValueWarning(fmt.Sprintf("invalid destination label name in label_replace(): %s", dst), args[1].PositionRange()))
 	}
 
 	val, ws := ev.eval(ctx, args[0])
@@ -2033,12 +2037,12 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 	for i := 3; i < len(args); i++ {
 		src := stringFromArg(args[i])
 		if !model.UTF8Validation.IsValidLabelName(src) {
-			panic(fmt.Errorf("invalid source label name in label_join(): %s", src))
+			return nil, annotations.New().Add(annotations.NewInvalidValueWarning(fmt.Sprintf("invalid source label name in label_join(): %s", src), args[i].PositionRange()))
 		}
 		srcLabels[i-3] = src
 	}
 	if !model.UTF8Validation.IsValidLabelName(dst) {
-		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
+		return nil, annotations.New().Add(annotations.NewInvalidValueWarning(fmt.Sprintf("invalid destination label name in label_join(): %s", dst), args[1].PositionRange()))
 	}
 
 	val, ws := ev.eval(ctx, args[0])
