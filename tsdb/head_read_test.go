@@ -15,6 +15,8 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -429,4 +431,104 @@ func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 		require.NoError(t, err)
 		return ir
 	})
+}
+
+// benchSink prevents the compiler from eliding benchmark calls.
+var benchSink any
+
+// buildHeadChunks creates a linked list of N head chunks with non-overlapping time ranges.
+func buildHeadChunks(n int) *memChunk {
+	var head *memChunk
+	for i := range n {
+		head = &memChunk{
+			chunk:   chunkenc.NewXORChunk(),
+			minTime: int64(i) * 1000,
+			maxTime: int64(i)*1000 + 999,
+			prev:    head,
+		}
+	}
+	return head
+}
+
+func BenchmarkAppendSeriesChunks(b *testing.B) {
+	for _, numHeadChunks := range []int{1, 4, 16, 64, 256} {
+		b.Run(fmt.Sprintf("headOnly/%d", numHeadChunks), func(b *testing.B) {
+			s := &memSeries{
+				ref:        1,
+				headChunks: buildHeadChunks(numHeadChunks),
+			}
+			mint := int64(0)
+			maxt := int64(numHeadChunks) * 1000
+			chks := make([]chunks.Meta, 0, numHeadChunks)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				chks = appendSeriesChunks(s, mint, maxt, chks[:0])
+			}
+			benchSink = chks
+		})
+
+		b.Run(fmt.Sprintf("withMmapped/%d", numHeadChunks), func(b *testing.B) {
+			// Same number of mmapped chunks as head chunks.
+			mmapped := make([]*mmappedChunk, numHeadChunks)
+			for i := range numHeadChunks {
+				mmapped[i] = &mmappedChunk{
+					minTime: int64(i) * 1000,
+					maxTime: int64(i)*1000 + 999,
+				}
+			}
+			s := &memSeries{
+				ref:           1,
+				headChunks:    buildHeadChunks(numHeadChunks),
+				mmappedChunks: mmapped,
+			}
+			totalChunks := numHeadChunks * 2
+			mint := int64(0)
+			maxt := int64(totalChunks) * 1000
+			chks := make([]chunks.Meta, 0, totalChunks)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				chks = appendSeriesChunks(s, mint, maxt, chks[:0])
+			}
+			benchSink = chks
+		})
+	}
+}
+
+func BenchmarkCollectHeadChunks(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			head := buildHeadChunks(n)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				var buf [10]*memChunk
+				benchSink = collectHeadChunks(head, buf[:0])
+			}
+		})
+	}
+}
+
+func BenchmarkSeriesChunk(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			s := &memSeries{
+				ref:          1,
+				firstChunkID: 0,
+				headChunks:   buildHeadChunks(n),
+			}
+			// Request the oldest head chunk (HeadChunkID 0) — worst case.
+			id := chunks.HeadChunkID(0)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				c, _, _, err := s.chunk(id, nil, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				benchSink = c
+			}
+		})
+	}
 }
