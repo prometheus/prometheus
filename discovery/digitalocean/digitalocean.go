@@ -61,6 +61,7 @@ var DefaultSDConfig = SDConfig{
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
+	discovery.RegisterConfig(&DBSDConfig{})
 }
 
 // NewDiscovererMetrics implements discovery.Config.
