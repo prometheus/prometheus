@@ -1905,6 +1905,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		maxTime: t,
 		prev:    s.headChunks,
 	}
+	s.headChunksLen++
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
 }
@@ -1963,6 +1964,7 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		maxTime: t,
 		prev:    s.headChunks,
 	}
+	s.headChunksLen++
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
 }
@@ -2136,6 +2138,7 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 		maxTime: math.MinInt64,
 		prev:    s.headChunks,
 	}
+	s.headChunksLen++
 
 	if chunkenc.IsValidEncoding(e) {
 		var err error
@@ -2228,6 +2231,7 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 
 	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunk.
 	s.headChunks.prev = nil
+	s.headChunksLen = 1
 
 	return count
 }

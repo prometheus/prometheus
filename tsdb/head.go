@@ -981,6 +981,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			// Hence remove this chunk.
 			ms.nextAt = 0
 			ms.headChunks = nil
+			ms.headChunksLen = 0
 			ms.app = nil
 		}
 		return nil
@@ -2184,9 +2185,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		}
 
 		chunksRemoved += len(series.mmappedChunks)
-		for chk := series.headChunks; chk != nil; chk = chk.prev {
-			chunksRemoved++
-		}
+		chunksRemoved += series.headChunksLen
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
@@ -2241,9 +2240,7 @@ func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64)
 			return
 		}
 
-		for chk := series.headChunks; chk != nil; chk = chk.prev {
-			rmChunks++
-		}
+		rmChunks += series.headChunksLen
 		rmChunks += len(series.mmappedChunks)
 
 		// The series is gone entirely. We need to keep the series lock
@@ -2411,8 +2408,9 @@ type memSeries struct {
 	// Most recent chunks in memory that are still being built or waiting to be mmapped.
 	// This is a linked list, headChunks points to the most recent chunk, headChunks.next points
 	// to older chunk and so on.
-	headChunks   *memChunk
-	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
+	headChunks    *memChunk
+	headChunksLen int                // Cached length of headChunks linked list.
+	firstChunkID  chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
 	ooo *memSeriesOOOFields
 
@@ -2487,23 +2485,27 @@ func (s *memSeries) maxTime() int64 {
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
 	if s.headChunks != nil {
-		var buf [16]*memChunk
-		hc := collectHeadChunks(s.headChunks, buf[:0])
-		// hc is oldest-first: hc[0]=oldest, hc[len-1]=newest (s.headChunks).
-		// Walk newest→oldest to find the first chunk to truncate.
-		for i := len(hc) - 1; i >= 0; i-- {
-			if hc[i].maxTime < mint {
-				// hc[0..i] all get removed, plus all mmapped chunks.
-				removedInOrder = (i + 1) + len(s.mmappedChunks)
+		var i int
+		var nextChk *memChunk
+		chk := s.headChunks
+		for chk != nil {
+			if chk.maxTime < mint {
+				tailLen := s.headChunksLen - i
+				removedInOrder = tailLen + len(s.mmappedChunks)
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
-				if i == len(hc)-1 {
-					s.headChunks = nil // removed all head chunks
+				if i == 0 {
+					s.headChunks = nil
+					s.headChunksLen = 0
 				} else {
-					hc[i+1].prev = nil // unlink from the chunk that stays
+					nextChk.prev = nil
+					s.headChunksLen = i
 				}
 				s.mmappedChunks = nil
 				break
 			}
+			nextChk = chk
+			chk = chk.prev
+			i++
 		}
 	}
 	if len(s.mmappedChunks) > 0 {

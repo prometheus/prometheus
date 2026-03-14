@@ -569,14 +569,24 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 		return mc, false, false, nil
 	}
 
-	// Head chunk lookup — collect once, index directly.
-	var buf [16]*memChunk
-	hc := collectHeadChunks(s.headChunks, buf[:0])
+	// Head chunk lookup — walk directly (no collect+reverse needed).
 	ix -= len(s.mmappedChunks)
-	if ix >= len(hc) {
+	headChunksLen := s.headChunksLen
+	if ix >= headChunksLen {
 		return nil, false, false, storage.ErrNotFound
 	}
-	return hc[ix], true, ix == len(hc)-1, nil
+	// Fast path: single head chunk (the common case).
+	if headChunksLen == 1 {
+		return s.headChunks, true, true, nil
+	}
+	// Walk from newest (offset 0) to target. The list is newest-first,
+	// but ix is oldest-first, so reverse the offset.
+	offset := headChunksLen - ix - 1
+	elem := s.headChunks
+	for range offset {
+		elem = elem.prev
+	}
+	return elem, true, offset == 0, nil
 }
 
 // oooChunk returns the chunk for the HeadChunkID by m-mapping it from the disk.

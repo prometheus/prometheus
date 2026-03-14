@@ -168,6 +168,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
 				require.Equal(t, (chunkRange*4)-chunkStep, s.headChunks.maxTime, "wrong maxTime on first headChunks element")
 				s.headChunks = nil
+				s.headChunksLen = 0
 			},
 			inputID:  0,
 			expected: outMmappedChunk,
@@ -182,6 +183,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
 				require.Equal(t, (chunkRange*4)-chunkStep, s.headChunks.maxTime, "wrong maxTime on first headChunks element")
 				s.headChunks = nil
+				s.headChunksLen = 0
 			},
 			inputID:  2,
 			expected: outMmappedChunk,
@@ -196,6 +198,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
 				require.Equal(t, (chunkRange*4)-chunkStep, s.headChunks.maxTime, "wrong maxTime on first headChunks element")
 				s.headChunks = nil
+				s.headChunksLen = 0
 			},
 			inputID:  3,
 			expected: outErr,
@@ -454,8 +457,9 @@ func BenchmarkAppendSeriesChunks(b *testing.B) {
 	for _, numHeadChunks := range []int{1, 4, 16, 64, 256} {
 		b.Run(fmt.Sprintf("headOnly/%d", numHeadChunks), func(b *testing.B) {
 			s := &memSeries{
-				ref:        1,
-				headChunks: buildHeadChunks(numHeadChunks),
+				ref:           1,
+				headChunks:    buildHeadChunks(numHeadChunks),
+				headChunksLen: numHeadChunks,
 			}
 			mint := int64(0)
 			maxt := int64(numHeadChunks) * 1000
@@ -480,6 +484,7 @@ func BenchmarkAppendSeriesChunks(b *testing.B) {
 			s := &memSeries{
 				ref:           1,
 				headChunks:    buildHeadChunks(numHeadChunks),
+				headChunksLen: numHeadChunks,
 				mmappedChunks: mmapped,
 			}
 			totalChunks := numHeadChunks * 2
@@ -514,9 +519,10 @@ func BenchmarkSeriesChunk(b *testing.B) {
 	for _, n := range []int{1, 4, 16, 64, 256} {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			s := &memSeries{
-				ref:          1,
-				firstChunkID: 0,
-				headChunks:   buildHeadChunks(n),
+				ref:           1,
+				firstChunkID:  0,
+				headChunks:    buildHeadChunks(n),
+				headChunksLen: n,
 			}
 			// Request the oldest head chunk (HeadChunkID 0) — worst case.
 			id := chunks.HeadChunkID(0)
@@ -537,9 +543,10 @@ func BenchmarkChunkLookup(b *testing.B) {
 	for _, n := range []int{1, 4, 16, 64, 256} {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			s := &memSeries{
-				ref:          1,
-				firstChunkID: 0,
-				headChunks:   buildHeadChunks(n),
+				ref:           1,
+				firstChunkID:  0,
+				headChunks:    buildHeadChunks(n),
+				headChunksLen: n,
 			}
 			// Request a mid-position chunk (complements BenchmarkSeriesChunk which does worst-case oldest).
 			id := chunks.HeadChunkID(n / 2)
@@ -566,8 +573,9 @@ func BenchmarkTruncateChunksBefore(b *testing.B) {
 			for b.Loop() {
 				// Rebuild each iteration since truncate is destructive.
 				s := &memSeries{
-					firstChunkID: 0,
-					headChunks:   buildHeadChunks(n),
+					firstChunkID:  0,
+					headChunks:    buildHeadChunks(n),
+					headChunksLen: n,
 				}
 				s.truncateChunksBefore(mint, 0)
 			}

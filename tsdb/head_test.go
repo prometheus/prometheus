@@ -1645,6 +1645,7 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 
 			if tc.headChunks == 0 {
 				series.headChunks = nil
+				series.headChunksLen = 0
 			} else {
 				for i := headStart; i < chunkRange*(tc.mmappedChunks+tc.headChunks); i += chunkStep {
 					ok, _ := series.append(int64(i), float64(i), 0, cOpts)
