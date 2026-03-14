@@ -22,6 +22,7 @@ import (
 	"math"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -2183,8 +2184,8 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		}
 
 		chunksRemoved += len(series.mmappedChunks)
-		if series.headChunks != nil {
-			chunksRemoved += series.headChunks.len()
+		for chk := series.headChunks; chk != nil; chk = chk.prev {
+			chunksRemoved++
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
@@ -2240,8 +2241,8 @@ func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64)
 			return
 		}
 
-		if series.headChunks != nil {
-			rmChunks += series.headChunks.len()
+		for chk := series.headChunks; chk != nil; chk = chk.prev {
+			rmChunks++
 		}
 		rmChunks += len(series.mmappedChunks)
 
@@ -2486,27 +2487,23 @@ func (s *memSeries) maxTime() int64 {
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
 	if s.headChunks != nil {
-		var i int
-		var nextChk *memChunk
-		chk := s.headChunks
-		for chk != nil {
-			if chk.maxTime < mint {
-				// If any head chunk is truncated, we can truncate all mmapped chunks.
-				removedInOrder = chk.len() + len(s.mmappedChunks)
+		var buf [16]*memChunk
+		hc := collectHeadChunks(s.headChunks, buf[:0])
+		// hc is oldest-first: hc[0]=oldest, hc[len-1]=newest (s.headChunks).
+		// Walk newest→oldest to find the first chunk to truncate.
+		for i := len(hc) - 1; i >= 0; i-- {
+			if hc[i].maxTime < mint {
+				// hc[0..i] all get removed, plus all mmapped chunks.
+				removedInOrder = (i + 1) + len(s.mmappedChunks)
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
-				if i == 0 {
-					// This is the first chunk on the list so we need to remove the entire list.
-					s.headChunks = nil
+				if i == len(hc)-1 {
+					s.headChunks = nil // removed all head chunks
 				} else {
-					// This is NOT the first chunk, unlink it from parent.
-					nextChk.prev = nil
+					hc[i+1].prev = nil // unlink from the chunk that stays
 				}
 				s.mmappedChunks = nil
 				break
 			}
-			nextChk = chk
-			chk = chk.prev
-			i++
 		}
 	}
 	if len(s.mmappedChunks) > 0 {
@@ -2580,28 +2577,21 @@ func (mc *memChunk) oldest() (elem *memChunk) {
 	return elem
 }
 
-// atOffset returns a memChunk that's Nth element on the linked list.
-func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
-	if offset == 0 {
-		return mc
-	}
-	if offset == 1 {
-		return mc.prev
-	}
-	if offset < 0 {
+// collectHeadChunks walks the headChunks linked list once and returns a slice
+// in oldest-first order (matching mmappedChunks ordering). The linked list is
+// newest-first (via prev pointers), so the slice is built in reverse.
+// buf is a caller-provided slice (typically backed by a stack-allocated array)
+// that avoids heap allocation when len ≤ cap(buf).
+func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
+	if head == nil {
 		return nil
 	}
-
-	var i int
-	elem = mc
-	for i < offset {
-		i++
-		elem = elem.prev
-		if elem == nil {
-			break
-		}
+	hc := buf
+	for elem := head; elem != nil; elem = elem.prev {
+		hc = append(hc, elem)
 	}
-	return elem
+	slices.Reverse(hc)
+	return hc
 }
 
 type oooHeadChunk struct {
