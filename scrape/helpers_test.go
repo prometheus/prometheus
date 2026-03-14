@@ -18,17 +18,24 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -232,4 +239,133 @@ func TestSelectAppendable(t *testing.T) {
 			t.Fatal("too many iterations")
 		}
 	})
+}
+
+// pipeListener is an in-memory net.Listener that connects a custom DialContext
+// directly to the httptest Server without opening real OS ports.
+type pipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newPipeListener() *pipeListener {
+	return &pipeListener{
+		conns:  make(chan net.Conn),
+		closed: make(chan struct{}),
+	}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+
+// Dummy Addr implementation to satisfy the net.Listener interface.
+type pipeAddr struct{}
+
+func (pipeAddr) Network() string     { return "pipe" }
+func (pipeAddr) String() string      { return "pipe" }
+func (*pipeListener) Addr() net.Addr { return pipeAddr{} }
+
+// startFakeHTTPServer spins up a httptest.Server bound to an in-memory
+// pipeListener. It returns the listener (to be wired to a custom dialer) and a
+// cleanup function to shut down the server.
+func startFakeHTTPServer(t *testing.T) (*pipeListener, func()) {
+	t.Helper()
+
+	listener := newPipeListener()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Abort if the request context is canceled (e.g., due to a scrape timeout).
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			fmt.Fprintln(w, "expected_metric 1")
+		}
+	})
+
+	srv := httptest.NewUnstartedServer(handler)
+	srv.Listener = listener
+
+	// Background goroutines inherit the synctest bubble safely.
+	srv.Start()
+
+	return listener, srv.Close
+}
+
+// setupSynctestManager abstracts the boilerplate of creating a mock network,
+// starting the fake HTTP server, and configuring the scrape manager for synctest.
+func setupSynctestManager(t *testing.T, opts *Options, interval time.Duration) (*Manager, *teststorage.Appendable, func()) {
+	t.Helper()
+	app := teststorage.NewAppendable()
+
+	listener, cleanup := startFakeHTTPServer(t)
+
+	if opts == nil {
+		opts = &Options{}
+	}
+	opts.skipJitterOffsetting = true
+
+	// Ensure the scraper creates a new net.Pipe on every dial attempt
+	// and hands the server-side connection to the mock server's listener.
+	opts.HTTPClientOptions = []config_util.HTTPClientOption{
+		config_util.WithDialContextFunc(func(ctx context.Context, _, _ string) (net.Conn, error) {
+			srvConn, cliConn := net.Pipe()
+
+			select {
+			case listener.conns <- srvConn:
+				// Give the client side to the scraper.
+				return cliConn, nil
+			case <-listener.closed:
+				return nil, net.ErrClosed
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}),
+	}
+
+	scrapeManager, err := NewManager(
+		opts,
+		promslog.New(&promslog.Config{}),
+		nil, nil, app, prometheus.NewRegistry(),
+	)
+	require.NoError(t, err)
+
+	cfg := &config.Config{
+		GlobalConfig: config.GlobalConfig{
+			ScrapeInterval:  model.Duration(interval),
+			ScrapeTimeout:   model.Duration(interval),
+			ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0},
+		},
+		ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+	}
+	cfgText, err := yaml.Marshal(*cfg)
+	require.NoError(t, err)
+	cfg = loadConfiguration(t, string(cfgText))
+	require.NoError(t, scrapeManager.ApplyConfig(cfg))
+
+	scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+		"test": {{
+			Targets: []model.LabelSet{{
+				model.SchemeLabel:  "http",
+				model.AddressLabel: "test.local",
+			}},
+		}},
+	})
+
+	scrapeManager.reload()
+
+	return scrapeManager, app, cleanup
 }
