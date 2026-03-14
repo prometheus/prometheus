@@ -22,6 +22,7 @@ import (
 	"math"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -2955,28 +2956,21 @@ func (mc *memChunk) oldest() (elem *memChunk) {
 	return elem
 }
 
-// atOffset returns a memChunk that's Nth element on the linked list.
-func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
-	if offset == 0 {
-		return mc
-	}
-	if offset == 1 {
-		return mc.prev
-	}
-	if offset < 0 {
+// collectHeadChunks walks the headChunks linked list once and returns a slice
+// in oldest-first order (matching mmappedChunks ordering). The linked list is
+// newest-first (via prev pointers), so the slice is built in reverse.
+// buf is a caller-provided slice (typically backed by a stack-allocated array)
+// that avoids heap allocation when len ≤ cap(buf).
+func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
+	if head == nil {
 		return nil
 	}
-
-	var i int
-	elem = mc
-	for i < offset {
-		i++
-		elem = elem.prev
-		if elem == nil {
-			break
-		}
+	hc := buf
+	for elem := head; elem != nil; elem = elem.prev {
+		hc = append(hc, elem)
 	}
-	return elem
+	slices.Reverse(hc)
+	return hc
 }
 
 type oooHeadChunk struct {

@@ -322,24 +322,36 @@ func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta) []ch
 	}
 
 	if s.headChunks != nil {
-		var maxTime int64
-		var i, j int
-		for i = s.headChunks.len() - 1; i >= 0; i-- {
-			chk := s.headChunks.atOffset(i)
-			if i == 0 {
-				// Set the head chunk as open (being appended to) for the first headChunk.
-				maxTime = math.MaxInt64
-			} else {
-				maxTime = chk.maxTime
-			}
+		if s.headChunks.prev == nil {
+			// Fast path: single head chunk (the common case).
+			chk := s.headChunks
 			if chk.OverlapsClosedInterval(mint, maxt) {
 				chks = append(chks, chunks.Meta{
 					MinTime: chk.minTime,
-					MaxTime: maxTime,
-					Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)+j))),
+					MaxTime: math.MaxInt64,
+					Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)))),
 				})
 			}
-			j++
+		} else {
+			// Multiple head chunks: collect into buffer (O(n), zero-alloc for N ≤ 10).
+			var buf [10]*memChunk
+			hc := collectHeadChunks(s.headChunks, buf[:0])
+			for j, chk := range hc {
+				var maxTime int64
+				if j == len(hc)-1 {
+					// Set the head chunk as open (being appended to) for the newest headChunk.
+					maxTime = math.MaxInt64
+				} else {
+					maxTime = chk.maxTime
+				}
+				if chk.OverlapsClosedInterval(mint, maxt) {
+					chks = append(chks, chunks.Meta{
+						MinTime: chk.minTime,
+						MaxTime: maxTime,
+						Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)+j))),
+					})
+				}
+			}
 		}
 	}
 	return chks
@@ -563,20 +575,13 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 		return mc, false, false, nil
 	}
 
+	// Walk the linked list directly to the target position (zero allocation).
 	ix -= len(s.mmappedChunks)
-
-	offset := headChunksLen - ix - 1
-	// headChunks is a linked list where first element is the most recent one and the last one is the oldest.
-	// This order is reversed when compared with mmappedChunks, since mmappedChunks[0] is the oldest chunk,
-	// while headChunk.atOffset(0) would give us the most recent chunk.
-	// So when calling headChunk.atOffset() we need to reverse the value of ix.
-	elem := s.headChunks.atOffset(offset)
-	if elem == nil {
-		// This should never really happen and would mean that headChunksLen value is NOT equal
-		// to the length of the headChunks list.
-		return nil, false, false, storage.ErrNotFound
+	elem := s.headChunks
+	for i := headChunksLen - 1; i > ix; i-- {
+		elem = elem.prev
 	}
-	return elem, true, offset == 0, nil
+	return elem, true, ix == headChunksLen-1, nil
 }
 
 // oooChunk returns the chunk for the HeadChunkID by m-mapping it from the disk.
@@ -630,16 +635,13 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 
 		ix -= len(s.mmappedChunks)
 		if s.headChunks != nil {
-			// Iterate all head chunks from the oldest to the newest.
-			headChunksLen := s.headChunks.len()
-			for j := headChunksLen - 1; j >= 0; j-- {
-				chk := s.headChunks.atOffset(j)
+			// Iterate all head chunks from the oldest to the newest (O(n) instead of O(n²)).
+			var buf [10]*memChunk
+			hc := collectHeadChunks(s.headChunks, buf[:0])
+			for j, chk := range hc {
 				chkSamples := chk.chunk.NumSamples()
 				totalSamples += chkSamples
-				// Chunk ID is len(s.mmappedChunks) + $(headChunks list position).
-				// Where $(headChunks list position) is zero for the oldest chunk and $(s.headChunks.len() - 1)
-				// for the newest (open) chunk.
-				if headChunksLen-1-j < ix {
+				if j < ix {
 					previousSamples += chkSamples
 				}
 			}
