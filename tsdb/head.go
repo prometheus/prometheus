@@ -137,7 +137,7 @@ type Head struct {
 	closedMtx sync.Mutex
 	closed    bool
 
-	// For running the background goroutine which updates series_state.json
+	// For running the background goroutine which updates series_state.json.
 	seriesStateQuit chan struct{}
 	seriesStateWg   sync.WaitGroup
 
@@ -898,7 +898,7 @@ func (h *Head) Init(minValidTime int64) error {
 		"total_replay_duration", totalReplayDuration.String(),
 	)
 
-	// Start the background goroutine that writes to series_state.json
+	// Start the background goroutine that writes to series_state.json.
 	h.seriesStateWg.Add(1)
 	go h.runSeriesStateTicker()
 
@@ -2691,27 +2691,27 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	h.stats.WALReplayStatus.Current = current
 }
 
-// Name of the file used to store the state
+// Name of the file used to store the state.
 const seriesStateFilename = "series_state.json"
 
-// The information held in the series_state.json file
+// The information held in the series_state.json file.
 type SeriesLifecycleState struct {
 	LastSeriesID   uint64 `json:"last_series_id"`
 	LastWALSegment int    `json:"last_wal_segment"`
 	CleanShutdown  bool   `json:"clean_shutdown"`
 }
 
-// Atomically writes the current series state to disk
+// Atomically writes the current series state to disk.
 func (h *Head) writeSeriesState(cleanShutdown bool) {
 	if h.wal == nil {
 		return
 	}
 
-	// Find the last segment number by checking the wal/ directory
+	// Find the last segment number by checking the wal/ directory.
 	_, last, err := wlog.Segments(h.wal.Dir())
 	if err != nil {
 		h.logger.Warn("Failed to get WAL segments for series state", "err", err)
-		last = -1 // Fallback so we at least save the Series ID
+		last = -1
 	}
 
 	state := SeriesLifecycleState{
