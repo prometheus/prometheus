@@ -290,8 +290,8 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 				return &memChunk{}
 			},
 		},
-		stats: stats,
-		reg:   r,
+		stats:           stats,
+		reg:             r,
 		seriesStateQuit: make(chan struct{}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
@@ -2694,7 +2694,7 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 // Name of the file used to store the state.
 const seriesStateFilename = "series_state.json"
 
-// The information held in the series_state.json file.
+// SeriesLifecycleState descibes the information we record in the series_state.json file.
 type SeriesLifecycleState struct {
 	LastSeriesID   uint64 `json:"last_series_id"`
 	LastWALSegment int    `json:"last_wal_segment"`
@@ -2729,7 +2729,7 @@ func (h *Head) writeSeriesState(cleanShutdown bool) {
 	path := filepath.Join(h.wal.Dir(), seriesStateFilename)
 	tmpPath := path + ".tmp"
 
-	if err := os.WriteFile(tmpPath, b, 0666); err != nil {
+	if err := os.WriteFile(tmpPath, b, 0o666); err != nil {
 		h.logger.Warn("Failed to write series state to tmp file", "err", err)
 		return
 	}
