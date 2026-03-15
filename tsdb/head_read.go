@@ -425,6 +425,12 @@ type headChunkReader struct {
 	head       *Head
 	mint, maxt int64
 	isoState   *isolationState
+	// Cache for head chunks — avoids O(n²) linked-list walks when
+	// iterating all chunks of a series oldest-to-newest.
+	cachedSeriesRef      storage.SeriesRef
+	cachedHeadChunks     []*memChunk
+	cachedHeadChunksHead *memChunk
+	cachedMmapLen        int
 }
 
 func (h *headChunkReader) Close() error {
@@ -432,6 +438,29 @@ func (h *headChunkReader) Close() error {
 		h.isoState.Close()
 	}
 	return nil
+}
+
+func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
+	// Single head chunk (or none): the linked-list walk is O(1), so skip the
+	// cache to avoid per-series overhead that dominates for typical workloads.
+	if s.headChunks == nil || s.headChunks.prev == nil {
+		return nil
+	}
+	ref := storage.SeriesRef(s.ref)
+	if ref == h.cachedSeriesRef && s.headChunks == h.cachedHeadChunksHead && h.cachedMmapLen == len(s.mmappedChunks) {
+		return h.cachedHeadChunks
+	}
+	var buf []*memChunk
+	if h.cachedHeadChunks != nil {
+		buf = h.cachedHeadChunks[:0]
+	}
+	h.cachedHeadChunks = collectHeadChunks(s.headChunks, buf)
+	// Allow GC of *memChunk pointers left over from a previous, longer collection.
+	clear(h.cachedHeadChunks[len(h.cachedHeadChunks):cap(h.cachedHeadChunks)])
+	h.cachedSeriesRef = ref
+	h.cachedHeadChunksHead = s.headChunks
+	h.cachedMmapLen = len(s.mmappedChunks)
+	return h.cachedHeadChunks
 }
 
 // ChunkOrIterable returns the chunk for the reference number.
@@ -465,7 +494,11 @@ func (h *headChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.
 
 	s.Lock()
 	defer s.Unlock()
-	return h.head.chunkFromSeries(s, cid, isOOO, h.mint, h.maxt, h.isoState, copyLastChunk)
+	var headChunks []*memChunk
+	if !isOOO {
+		headChunks = h.getOrCollectHeadChunks(s)
+	}
+	return h.head.chunkFromSeries(s, cid, isOOO, h.mint, h.maxt, h.isoState, copyLastChunk, headChunks)
 }
 
 // Dumb thing to defeat chunk pool.
@@ -474,12 +507,12 @@ type wrapOOOHeadChunk struct {
 }
 
 // Call with s locked.
-func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool, mint, maxt int64, isoState *isolationState, copyLastChunk bool) (chunkenc.Chunk, int64, error) {
+func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool, mint, maxt int64, isoState *isolationState, copyLastChunk bool, headChunks []*memChunk) (chunkenc.Chunk, int64, error) {
 	if isOOO {
 		chk, maxTime, err := s.oooChunk(cid, h.chunkDiskMapper, &h.memChunkPool)
 		return wrapOOOHeadChunk{chk}, maxTime, err
 	}
-	c, headChunk, isOpen, err := s.chunk(cid, h.chunkDiskMapper, &h.memChunkPool)
+	c, headChunk, isOpen, err := s.chunk(cid, h.chunkDiskMapper, &h.memChunkPool, headChunks)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -523,7 +556,7 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 // If headChunk is false, it means that the returned *memChunk
 // (and not the chunkenc.Chunk inside it) can be garbage collected after its usage.
 // if isOpen is true, it means that the returned *memChunk is used for appends.
-func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool) (chunk *memChunk, headChunk, isOpen bool, err error) {
+func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, headChunks []*memChunk) (chunk *memChunk, headChunk, isOpen bool, err error) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
 	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
@@ -539,7 +572,9 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	ix := int(id) - int(s.firstChunkID)
 
 	var headChunksLen int
-	if s.headChunks != nil {
+	if headChunks != nil {
+		headChunksLen = len(headChunks)
+	} else if s.headChunks != nil {
 		headChunksLen = s.headChunks.len()
 	}
 
@@ -563,7 +598,18 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 		return mc, false, false, nil
 	}
 
+	// Head chunk lookup.
 	ix -= len(s.mmappedChunks)
+
+	// Fast path: use pre-collected slice for O(1) indexed lookup.
+	if headChunks != nil {
+		if ix >= len(headChunks) {
+			return nil, false, false, storage.ErrNotFound
+		}
+		return headChunks[ix], true, ix == len(headChunks)-1, nil
+	}
+
+	// Fallback: walk the linked list.
 
 	offset := headChunksLen - ix - 1
 	// headChunks is a linked list where first element is the most recent one and the last one is the oldest.
