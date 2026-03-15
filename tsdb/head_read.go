@@ -48,6 +48,9 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 type headIndexReader struct {
 	head       *Head
 	mint, maxt int64
+	// Reusable buffer for collectHeadChunks inside appendSeriesChunks,
+	// avoiding a per-series allocation during iteration.
+	headChunksBuf []*memChunk
 }
 
 func (*headIndexReader) Close() error {
@@ -197,7 +200,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	defer s.Unlock()
 
 	*chks = (*chks)[:0]
-	*chks = appendSeriesChunks(s, h.mint, h.maxt, *chks)
+	*chks, h.headChunksBuf = appendSeriesChunks(s, h.mint, h.maxt, *chks, h.headChunksBuf)
 
 	return nil
 }
@@ -308,7 +311,10 @@ func (h *Head) SortedStaleSeriesRefsNoOOOData(ctx context.Context) ([]storage.Se
 	return h.filterStaleSeriesAndSortPostings(h.postings.Postings(ctx, k, v))
 }
 
-func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta) []chunks.Meta {
+// appendSeriesChunks appends chunk metadata for s to chks.
+// headChunksBuf is a reusable buffer for collectHeadChunks; the (possibly grown) buffer is returned
+// so callers can pass it back on the next call to avoid per-series allocations.
+func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta, headChunksBuf []*memChunk) ([]chunks.Meta, []*memChunk) {
 	for i, c := range s.mmappedChunks {
 		// Do not expose chunks that are outside of the specified range.
 		if !c.OverlapsClosedInterval(mint, maxt) {
@@ -321,28 +327,38 @@ func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta) []ch
 		})
 	}
 
-	if s.headChunks != nil {
-		var maxTime int64
-		var i, j int
-		for i = s.headChunks.len() - 1; i >= 0; i-- {
-			chk := s.headChunks.atOffset(i)
-			if i == 0 {
-				// Set the head chunk as open (being appended to) for the first headChunk.
-				maxTime = math.MaxInt64
-			} else {
-				maxTime = chk.maxTime
-			}
-			if chk.OverlapsClosedInterval(mint, maxt) {
-				chks = append(chks, chunks.Meta{
-					MinTime: chk.minTime,
-					MaxTime: maxTime,
-					Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)+j))),
-				})
-			}
-			j++
+	if s.headChunks == nil {
+		return chks, headChunksBuf
+	}
+
+	// Fast path: single head chunk — no allocation, no linked-list walk.
+	if s.headChunks.prev == nil {
+		if s.headChunks.OverlapsClosedInterval(mint, maxt) {
+			chks = append(chks, chunks.Meta{
+				MinTime: s.headChunks.minTime,
+				MaxTime: math.MaxInt64,
+				Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)))),
+			})
+		}
+		return chks, headChunksBuf
+	}
+
+	// Multiple head chunks: collect once O(N), iterate O(N).
+	headChunksBuf = collectHeadChunks(s.headChunks, headChunksBuf[:0])
+	for j, chk := range headChunksBuf {
+		maxTime := chk.maxTime
+		if j == len(headChunksBuf)-1 {
+			maxTime = math.MaxInt64 // open (newest) chunk
+		}
+		if chk.OverlapsClosedInterval(mint, maxt) {
+			chks = append(chks, chunks.Meta{
+				MinTime: chk.minTime,
+				MaxTime: maxTime,
+				Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)+j))),
+			})
 		}
 	}
-	return chks
+	return chks, headChunksBuf
 }
 
 // headChunkID returns the HeadChunkID referred to by the given position.
@@ -425,6 +441,10 @@ type headChunkReader struct {
 	head       *Head
 	mint, maxt int64
 	isoState   *isolationState
+	// enableCache gates the head-chunks cache. Range queries benefit from
+	// caching because they look up every chunk of a series; instant queries
+	// only need one chunk per series, so the cache is wasted overhead.
+	enableCache bool
 	// Cache for head chunks — avoids O(n²) linked-list walks when
 	// iterating all chunks of a series oldest-to-newest.
 	cachedSeriesRef      storage.SeriesRef
@@ -443,7 +463,8 @@ func (h *headChunkReader) Close() error {
 func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	// Single head chunk (or none): the linked-list walk is O(1), so skip the
 	// cache to avoid per-series overhead that dominates for typical workloads.
-	if s.headChunks == nil || s.headChunks.prev == nil {
+	// Also skip if the cache is disabled (instant queries).
+	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
 		return nil
 	}
 	ref := storage.SeriesRef(s.ref)

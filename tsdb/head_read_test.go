@@ -471,9 +471,10 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		newestRef := chunks.NewHeadChunkRef(s.ref, newestCID)
 		s.Unlock()
 
-		// Create a headChunkReader and query the newest head chunk to populate the cache.
+		// Create a headChunkReader with cache enabled and query the newest head chunk to populate the cache.
 		cr, err := h.chunksRange(0, 10000, nil)
 		require.NoError(t, err)
+		cr.enableCache = true
 
 		chk1, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
 		require.NoError(t, err)
