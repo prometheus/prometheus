@@ -2605,6 +2605,9 @@ func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
 	if head == nil {
 		return buf
 	}
+	// Single walk: append in linked-list order, then reverse.
+	// Pointer-chasing the linked list is the expensive part; slices.Reverse
+	// on a contiguous array is essentially free by comparison.
 	hc := buf
 	for elem := head; elem != nil; elem = elem.prev {
 		hc = append(hc, elem)

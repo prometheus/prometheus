@@ -78,9 +78,12 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 
 	if s.ooo != nil {
 		oh.headChunksBuf = getOOOSeriesChunks(s, oh.head.opts.EnableXOR2Encoding.Load(), oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, oh.inoMint, chks, oh.headChunksBuf)
-		return nil
+	} else {
+		*chks, oh.headChunksBuf = appendSeriesChunks(s, oh.inoMint, oh.maxt, *chks, oh.headChunksBuf)
 	}
-	*chks, oh.headChunksBuf = appendSeriesChunks(s, oh.inoMint, oh.maxt, *chks, oh.headChunksBuf)
+	if cap(oh.headChunksBuf) > headChunksBufMaxCap {
+		oh.headChunksBuf = nil
+	}
 	return nil
 }
 
@@ -209,11 +212,12 @@ func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
 }
 
 type HeadAndOOOChunkReader struct {
-	head        *Head
-	mint, maxt  int64
-	cr          *headChunkReader // If nil, only read OOO chunks.
-	maxMmapRef  chunks.ChunkDiskMapperRef
-	oooIsoState *oooIsolationState
+	head          *Head
+	mint, maxt    int64
+	cr            *headChunkReader // If nil, only read OOO chunks.
+	maxMmapRef    chunks.ChunkDiskMapperRef
+	oooIsoState   *oooIsolationState
+	headChunksBuf []*memChunk // Reusable buffer for collectHeadChunks when cr is nil.
 }
 
 func NewHeadAndOOOChunkReader(head *Head, mint, maxt int64, cr *headChunkReader, oooIsoState *oooIsolationState, maxMmapRef chunks.ChunkDiskMapperRef) *HeadAndOOOChunkReader {
@@ -259,7 +263,12 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 			if cr.cr != nil {
 				headChunks = cr.cr.getOrCollectHeadChunks(s)
 			} else {
-				headChunks = collectHeadChunks(s.headChunks, nil)
+				cr.headChunksBuf = collectHeadChunks(s.headChunks, cr.headChunksBuf[:0])
+				clear(cr.headChunksBuf[len(cr.headChunksBuf):cap(cr.headChunksBuf)])
+				headChunks = cr.headChunksBuf
+				if cap(cr.headChunksBuf) > headChunksBufMaxCap {
+					cr.headChunksBuf = nil
+				}
 			}
 		}
 		c, maxt, err := cr.head.chunkFromSeries(s, cid, isOOO, meta.MinTime, meta.MaxTime, isoState, copyLastChunk, headChunks)
@@ -282,7 +291,12 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 				if cr.cr != nil {
 					headChunks = cr.cr.getOrCollectHeadChunks(s)
 				} else {
-					headChunks = collectHeadChunks(s.headChunks, nil)
+					cr.headChunksBuf = collectHeadChunks(s.headChunks, cr.headChunksBuf[:0])
+					clear(cr.headChunksBuf[len(cr.headChunksBuf):cap(cr.headChunksBuf)])
+					headChunks = cr.headChunksBuf
+					if cap(cr.headChunksBuf) > headChunksBufMaxCap {
+						cr.headChunksBuf = nil
+					}
 				}
 			}
 			iterable, _, err := cr.head.chunkFromSeries(s, cid, isOOO, m.MinTime, m.MaxTime, isoState, copyLastChunk, headChunks)
