@@ -29,6 +29,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
+// headChunksBufMaxCap is the maximum capacity for the reusable headChunksBuf
+// slice. If the buffer grows beyond this, it is released to avoid holding
+// oversized backing arrays across many series iterations.
+const headChunksBufMaxCap = 256
+
 func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	return h.exemplars.ExemplarQuerier(ctx)
 }
@@ -201,6 +206,9 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 
 	*chks = (*chks)[:0]
 	*chks, h.headChunksBuf = appendSeriesChunks(s, h.mint, h.maxt, *chks, h.headChunksBuf)
+	if cap(h.headChunksBuf) > headChunksBufMaxCap {
+		h.headChunksBuf = nil
+	}
 
 	return nil
 }
@@ -345,6 +353,7 @@ func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta, head
 
 	// Multiple head chunks: collect once O(N), iterate O(N).
 	headChunksBuf = collectHeadChunks(s.headChunks, headChunksBuf[:0])
+	clear(headChunksBuf[len(headChunksBuf):cap(headChunksBuf)])
 	for j, chk := range headChunksBuf {
 		maxTime := chk.maxTime
 		if j == len(headChunksBuf)-1 {
@@ -464,6 +473,12 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	// Single head chunk (or none): the linked-list walk is O(1), so skip the
 	// cache to avoid per-series overhead that dominates for typical workloads.
 	// Also skip if the cache is disabled (instant queries).
+	//
+	// The prev==nil guard also provides implicit cache invalidation after
+	// mmapChunks(): once all but the latest head chunk have been mmapped,
+	// the linked list collapses to a single element (prev==nil), so we
+	// bypass the stale cache and fall through to the non-cached path.
+	// Do not remove this guard without adding explicit cache invalidation.
 	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
 		return nil
 	}
