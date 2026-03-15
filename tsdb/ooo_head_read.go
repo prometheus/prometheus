@@ -252,7 +252,15 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 	defer s.Unlock()
 
 	if meta.Chunk == nil {
-		c, maxt, err := cr.head.chunkFromSeries(s, cid, isOOO, meta.MinTime, meta.MaxTime, isoState, copyLastChunk)
+		var headChunks []*memChunk
+		if !isOOO {
+			if cr.cr != nil {
+				headChunks = cr.cr.getOrCollectHeadChunks(s)
+			} else {
+				headChunks = collectHeadChunks(s.headChunks, nil)
+			}
+		}
+		c, maxt, err := cr.head.chunkFromSeries(s, cid, isOOO, meta.MinTime, meta.MaxTime, isoState, copyLastChunk, headChunks)
 		return c, nil, maxt, err
 	}
 	mm, ok := meta.Chunk.(*multiMeta)
@@ -261,13 +269,21 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 	}
 	// We have a composite meta: construct a composite iterable.
 	mc := &mergedOOOChunks{}
+	var headChunks []*memChunk
 	for _, m := range mm.metas {
 		switch {
 		case m.Chunk != nil:
 			mc.chunkIterables = append(mc.chunkIterables, m.Chunk)
 		default:
 			_, cid, isOOO := unpackHeadChunkRef(m.Ref)
-			iterable, _, err := cr.head.chunkFromSeries(s, cid, isOOO, m.MinTime, m.MaxTime, isoState, copyLastChunk)
+			if !isOOO && headChunks == nil {
+				if cr.cr != nil {
+					headChunks = cr.cr.getOrCollectHeadChunks(s)
+				} else {
+					headChunks = collectHeadChunks(s.headChunks, nil)
+				}
+			}
+			iterable, _, err := cr.head.chunkFromSeries(s, cid, isOOO, m.MinTime, m.MaxTime, isoState, copyLastChunk, headChunks)
 			if err != nil {
 				return nil, nil, 0, fmt.Errorf("invalid head chunk: %w", err)
 			}
