@@ -15,11 +15,13 @@ package tsdb
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"math"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -134,6 +136,10 @@ type Head struct {
 
 	closedMtx sync.Mutex
 	closed    bool
+
+	// For running the background goroutine which updates series_state.json
+	seriesStateQuit chan struct{}
+	seriesStateWg   sync.WaitGroup
 
 	stats *HeadStats
 	reg   prometheus.Registerer
@@ -286,6 +292,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		},
 		stats: stats,
 		reg:   r,
+		seriesStateQuit: make(chan struct{}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -890,6 +897,10 @@ func (h *Head) Init(minValidTime int64) error {
 		"mmap_chunk_replay_duration", mmapChunkReplayDuration.String(),
 		"total_replay_duration", totalReplayDuration.String(),
 	)
+
+	// Start the background goroutine that writes to series_state.json
+	h.seriesStateWg.Add(1)
+	go h.runSeriesStateTicker()
 
 	return nil
 }
@@ -1807,6 +1818,14 @@ func (h *Head) Close() error {
 	defer h.closedMtx.Unlock()
 	h.closed = true
 
+	// Stop the background series_state.json writer
+	if h.seriesStateQuit != nil {
+		close(h.seriesStateQuit)
+		h.seriesStateWg.Wait()
+		// Flush the final clean state
+		h.writeSeriesState(true)
+	}
+
 	// mmap all but last chunk in case we're performing snapshot since that only
 	// takes samples from most recent head chunk.
 	h.mmapHeadChunks()
@@ -2670,4 +2689,67 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	defer h.stats.WALReplayStatus.Unlock()
 
 	h.stats.WALReplayStatus.Current = current
+}
+
+// Name of the file used to store the state
+const seriesStateFilename = "series_state.json"
+
+// The information held in the series_state.json file
+type SeriesLifecycleState struct {
+	LastSeriesID   uint64 `json:"last_series_id"`
+	LastWALSegment int    `json:"last_wal_segment"`
+	CleanShutdown  bool   `json:"clean_shutdown"`
+}
+
+// Atomically writes the current series state to disk
+func (h *Head) writeSeriesState(cleanShutdown bool) {
+	if h.wal == nil {
+		return
+	}
+
+	// Find the last segment number by checking the wal/ directory
+	_, last, err := wlog.Segments(h.wal.Dir())
+	if err != nil {
+		h.logger.Warn("Failed to get WAL segments for series state", "err", err)
+		last = -1 // Fallback so we at least save the Series ID
+	}
+
+	state := SeriesLifecycleState{
+		LastSeriesID:   h.lastSeriesID.Load(),
+		LastWALSegment: last,
+		CleanShutdown:  cleanShutdown,
+	}
+
+	b, err := json.Marshal(state)
+	if err != nil {
+		h.logger.Warn("Failed to marshal series state", "err", err)
+		return
+	}
+
+	path := filepath.Join(h.wal.Dir(), seriesStateFilename)
+	tmpPath := path + ".tmp"
+
+	if err := os.WriteFile(tmpPath, b, 0666); err != nil {
+		h.logger.Warn("Failed to write series state to tmp file", "err", err)
+		return
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		h.logger.Warn("Failed to rename series state file", "err", err)
+	}
+}
+
+// runSeriesStateTicker writes the series state to disk every second.
+func (h *Head) runSeriesStateTicker() {
+	defer h.seriesStateWg.Done()
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			h.writeSeriesState(false)
+		case <-h.seriesStateQuit:
+			return
+		}
+	}
 }
