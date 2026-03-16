@@ -23,7 +23,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -53,15 +52,7 @@ func TestFeaturesAPI(t *testing.T) {
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 
-	// Wait for Prometheus to be ready.
-	require.Eventually(t, func() bool {
-		resp, err := http.Get(baseURL + "/-/ready")
-		if err != nil {
-			return false
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
-	}, 10*time.Second, 100*time.Millisecond, "Prometheus didn't become ready in time")
+	ensurePrometheusIsReady(t, baseURL)
 
 	// Fetch features from the API.
 	resp, err := http.Get(baseURL + "/api/v1/features")

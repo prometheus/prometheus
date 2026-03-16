@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/pprofutil"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
 
@@ -217,6 +218,9 @@ type HeadOptions struct {
 
 	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
+
+	// HeapPprofPath is the base directory for periodic heap pprof snapshots.
+	HeapPprofPath string
 }
 
 const (
@@ -681,6 +685,14 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // It should be called before using an appender so that it
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
+	if h.opts.HeapPprofPath != "" {
+		stop, err := startHeapPprofCollector(h.opts.HeapPprofPath, "head_init", h.logger)
+		if err != nil {
+			return err
+		}
+		defer stop()
+	}
+
 	h.minValidTime.Store(minValidTime)
 	defer h.resetWLReplayResources()
 	defer func() {
@@ -694,7 +706,6 @@ func (h *Head) Init(minValidTime int64) error {
 			h.minTime.Store(h.minValidTime.Load())
 		}
 	}()
-
 	h.logger.Info("Replaying on-disk memory mappable chunks if any")
 	start := time.Now()
 
@@ -2704,4 +2715,18 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	defer h.stats.WALReplayStatus.Unlock()
 
 	h.stats.WALReplayStatus.Current = current
+}
+
+func startHeapPprofCollector(path, name string, logger *slog.Logger) (func(), error) {
+	collector, err := pprofutil.NewHeapPprofCollector(path, name, logger)
+	if err != nil {
+		return nil, fmt.Errorf("initialize %s pprof collector: %w", name, err)
+	}
+	old := runtime.MemProfileRate
+	runtime.MemProfileRate = 1
+	collector.Start()
+	return func() {
+		collector.Stop()
+		runtime.MemProfileRate = old
+	}, nil
 }
