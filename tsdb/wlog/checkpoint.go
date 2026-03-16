@@ -82,8 +82,8 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 	return errors.Join(errs...)
 }
 
-// checkpointTempFileSuffix is the suffix used when creating temporary checkpoint files.
-const checkpointTempFileSuffix = ".tmp"
+// CheckpointTempFileSuffix is the suffix used when creating temporary checkpoint files.
+const CheckpointTempFileSuffix = ".tmp"
 
 // DeleteTempCheckpoints deletes all temporary checkpoint directories in the given directory.
 func DeleteTempCheckpoints(logger *slog.Logger, dir string) error {
@@ -138,7 +138,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 	}
 
 	cpdir := CheckpointDir(w.Dir(), to)
-	cpdirtmp := cpdir + checkpointTempFileSuffix
+	cpdirtmp := cpdir + CheckpointTempFileSuffix
 
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return nil, fmt.Errorf("create checkpoint dir: %w", err)
@@ -446,5 +446,5 @@ func listCheckpoints(dir string) (refs []checkpointRef, err error) {
 }
 
 func isTempDir(fi fs.DirEntry) bool {
-	return strings.HasPrefix(fi.Name(), checkpointPrefix) && strings.HasSuffix(fi.Name(), checkpointTempFileSuffix)
+	return strings.HasPrefix(fi.Name(), checkpointPrefix) && strings.HasSuffix(fi.Name(), CheckpointTempFileSuffix)
 }
