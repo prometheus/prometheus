@@ -5676,6 +5676,13 @@ func TestWALReplayMmapsChunks(t *testing.T) {
 				return err
 			},
 		},
+		{
+			name: "float histograms",
+			append: func(app storage.Appender, l labels.Labels, ts int64) error {
+				_, err := app.AppendHistogram(0, l, ts, nil, tsdbutil.GenerateTestFloatHistogram(ts))
+				return err
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
