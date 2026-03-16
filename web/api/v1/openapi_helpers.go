@@ -174,15 +174,15 @@ func durationSchema() *base.SchemaProxy {
 			base.CreateSchemaProxy(&base.Schema{
 				Type:        []string{"string"},
 				Format:      "duration",
-				Description: "Human-readable form accepted by Go's time.Duration.ParseDuration(), such as 15s or 2m30s.",
+				Description: "Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).",
 			}),
 			base.CreateSchemaProxy(&base.Schema{
 				Type:        []string{"number"},
 				Format:      "float",
-				Description: "Fractional number of seconds, such as 2 or 4.5.",
+				Description: "Fractional number of seconds.",
 			}),
 		},
-		Description: "Duration in humand-readable or numeric format.",
+		Description: "Duration in human-readable or numeric format.",
 	})
 }
 
