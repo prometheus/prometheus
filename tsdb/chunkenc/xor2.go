@@ -17,25 +17,10 @@ import (
 	"encoding/binary"
 	"math"
 	"math/bits"
-	"sync"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/value"
 )
-
-// xor2ChunkPool pools XOR2Chunk structs including their backing byte slices.
-// Chunks are returned to the pool after being written to disk (mmap'd), at which
-// point the in-memory struct is no longer needed. On reuse, the grown backing
-// slice avoids repeated growSlice allocations for the new chunk's samples.
-var xor2ChunkPool = sync.Pool{
-	New: func() any {
-		return &XOR2Chunk{b: bstream{stream: make([]byte, chunkHeaderSize, chunkAllocationSize)}}
-	},
-}
-
-// xor2MaxPooledCapacity caps which chunks are returned to the pool to avoid
-// retaining excessively large backing slices.
-const xor2MaxPooledCapacity = 4096
 
 // XOR2Chunk implements XOR encoding with joint timestamp+value control bits
 // and byte-packed dod encoding for efficient appending.
@@ -69,22 +54,8 @@ type XOR2Chunk struct {
 }
 
 // NewXOR2Chunk returns a new chunk with XOR2 encoding.
-// It draws from xor2ChunkPool when possible to reuse the grown backing slice.
 func NewXOR2Chunk() *XOR2Chunk {
-	c := xor2ChunkPool.Get().(*XOR2Chunk)
-	c.b.stream = c.b.stream[:chunkHeaderSize]
-	c.b.stream[0] = 0
-	c.b.stream[1] = 0
-	c.b.count = 0
-	return c
-}
-
-// ReleaseXOR2Chunk returns c to the pool after it has been fully written to disk.
-// The caller must not access c after this call.
-func ReleaseXOR2Chunk(c *XOR2Chunk) {
-	if cap(c.b.stream) <= xor2MaxPooledCapacity {
-		xor2ChunkPool.Put(c)
-	}
+	return &XOR2Chunk{b: bstream{stream: make([]byte, chunkHeaderSize, chunkAllocationSize)}}
 }
 
 func (c *XOR2Chunk) Reset(stream []byte) {
@@ -135,6 +106,7 @@ func (c *XOR2Chunk) Appender() (Appender, error) {
 
 	c.app = xor2Appender{
 		b:        &c.b,
+		num:      it.numTotal,
 		t:        it.t,
 		v:        it.baselineV,
 		tDelta:   it.tDelta,
@@ -165,6 +137,8 @@ func (c *XOR2Chunk) Iterator(it Iterator) Iterator {
 type xor2Appender struct {
 	b *bstream
 
+	num uint16 // Number of samples appended so far; mirrors bytes[0:2] to avoid per-sample Uint16 reads.
+
 	t      int64
 	v      float64
 	tDelta uint64
@@ -175,7 +149,7 @@ type xor2Appender struct {
 
 func (a *xor2Appender) Append(_, t int64, v float64) {
 	var tDelta uint64
-	num := binary.BigEndian.Uint16(a.b.bytes())
+	num := a.num
 	switch num {
 	case 0:
 		var buf [binary.MaxVarintLen64]byte
@@ -214,6 +188,7 @@ func (a *xor2Appender) Append(_, t int64, v float64) {
 				a.v = v
 				a.t = t
 				binary.BigEndian.PutUint16(a.b.bytes(), num+1)
+				a.num++
 				a.tDelta = tDelta
 				return
 			}
@@ -243,6 +218,7 @@ func (a *xor2Appender) Append(_, t int64, v float64) {
 		a.v = v
 	}
 	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
+	a.num++
 	a.tDelta = tDelta
 }
 
@@ -508,7 +484,53 @@ func (it *xor2Iterator) readDod(w uint8) error {
 }
 
 func (it *xor2Iterator) readValue() ValueType {
-	// First bit: `0` = value unchanged, `1` = value changed.
+	// Fast path: 3 bits available — read the full control prefix in one shot.
+	// Encoding: `0`=unchanged, `10`=reuse window, `110`=new window, `111`=stale NaN.
+	if it.br.valid >= 3 {
+		ctrl := (it.br.buffer >> (it.br.valid - 3)) & 0x7
+		if ctrl&0x4 == 0 {
+			// `0xx`: value unchanged, consume 1 bit.
+			it.br.valid--
+			it.val = it.baselineV
+			it.numRead++
+			return ValFloat
+		}
+		if ctrl&0x6 == 0x4 {
+			// `10x`: reuse previous leading/trailing window, consume 2 bits.
+			it.br.valid -= 2
+			sz := uint8(64 - int(it.leading) - int(it.trailing))
+			var valueBits uint64
+			if it.br.valid >= sz {
+				it.br.valid -= sz
+				valueBits = (it.br.buffer >> it.br.valid) & ((uint64(1) << sz) - 1)
+			} else {
+				var err error
+				valueBits, err = it.br.readBits(sz)
+				if err != nil {
+					it.err = err
+					return ValNone
+				}
+			}
+			vbits := math.Float64bits(it.baselineV)
+			vbits ^= valueBits << it.trailing
+			it.val = math.Float64frombits(vbits)
+			it.baselineV = it.val
+			it.numRead++
+			return ValFloat
+		}
+		// `11x`: consume 3 bits.
+		it.br.valid -= 3
+		if ctrl == 0x6 {
+			// `110`: new leading/trailing window.
+			return it.readNewLeadingTrailing()
+		}
+		// `111`: stale NaN.
+		it.val = math.Float64frombits(value.StaleNaN)
+		it.numRead++
+		return ValFloat
+	}
+
+	// Slow path: fewer than 3 bits buffered (rare, only near buffer refills).
 	var bit bit
 	if it.br.valid > 0 {
 		it.br.valid--
@@ -523,13 +545,12 @@ func (it *xor2Iterator) readValue() ValueType {
 	}
 
 	if bit == zero {
-		// `0` = value unchanged.
+		// `0`: value unchanged.
 		it.val = it.baselineV
 		it.numRead++
 		return ValFloat
 	}
 
-	// Second bit: `10` = reuse window, `11x` = new window or stale.
 	if it.br.valid > 0 {
 		it.br.valid--
 		bit = (it.br.buffer & (uint64(1) << it.br.valid)) != 0
@@ -543,7 +564,7 @@ func (it *xor2Iterator) readValue() ValueType {
 	}
 
 	if bit == zero {
-		// `10` = reuse previous leading/trailing window.
+		// `10`: reuse previous leading/trailing window.
 		sz := uint8(64 - int(it.leading) - int(it.trailing))
 		var valueBits uint64
 		if it.br.valid >= sz {
@@ -557,7 +578,6 @@ func (it *xor2Iterator) readValue() ValueType {
 				return ValNone
 			}
 		}
-
 		vbits := math.Float64bits(it.baselineV)
 		vbits ^= valueBits << it.trailing
 		it.val = math.Float64frombits(vbits)
@@ -566,7 +586,6 @@ func (it *xor2Iterator) readValue() ValueType {
 		return ValFloat
 	}
 
-	// Third bit: `110` = new window, `111` = stale NaN.
 	if it.br.valid > 0 {
 		it.br.valid--
 		bit = (it.br.buffer & (uint64(1) << it.br.valid)) != 0
@@ -580,11 +599,11 @@ func (it *xor2Iterator) readValue() ValueType {
 	}
 
 	if bit == zero {
-		// `110` = new leading/trailing window.
+		// `110`: new leading/trailing window.
 		return it.readNewLeadingTrailing()
 	}
 
-	// `111` = stale NaN.
+	// `111`: stale NaN.
 	it.val = math.Float64frombits(value.StaleNaN)
 	it.numRead++
 	return ValFloat

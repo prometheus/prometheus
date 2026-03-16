@@ -2229,9 +2229,6 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 			minTime:    chk.minTime,
 			maxTime:    chk.maxTime,
 		})
-		if xor2c, ok := chk.chunk.(*chunkenc.XOR2Chunk); ok {
-			chunkenc.ReleaseXOR2Chunk(xor2c)
-		}
 		count++
 	}
 
