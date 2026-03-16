@@ -74,9 +74,12 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 		return nil
 	}
 
-	// TODO: cleanup old temp checkpoints
+	if err := wlog.DeleteTempCheckpoints(logger, w.Dir()); err != nil {
+		return fmt.Errorf("failed to cleanup temporary checkpoints: %w", err)
+	}
+
 	cpDir := wlog.CheckpointDir(w.Dir(), p.AtIndex)
-	cpTmpDir := cpDir + ".tmp"
+	cpTmpDir := cpDir + wlog.CheckpointTempFileSuffix
 	if err := os.RemoveAll(cpTmpDir); err != nil {
 		return fmt.Errorf("remove previous temporary checkpoint dir: %w", err)
 	}
@@ -108,7 +111,8 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 		return fmt.Errorf("close checkpoint: %w", err)
 	}
 
-	// Sync temporary directory before rename.
+	// The original wlog.Checkpoint syncs temporary directory before rename.
+	// See tsdb/wlog/checkpoint.go:390
 	df, err := fileutil.OpenDir(cpTmpDir)
 	if err != nil {
 		return fmt.Errorf("open temporary checkpoint directory: %w", err)
