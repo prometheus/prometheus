@@ -15,6 +15,7 @@ package chunks
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -34,6 +35,13 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
+
+func cloneRetainedXOR2Chunk(chk chunkenc.Chunk) (chunkenc.Chunk, error) {
+	if chk.Encoding() != chunkenc.EncXOR2 {
+		return chk, nil
+	}
+	return chunkenc.FromData(chunkenc.EncXOR2, bytes.Clone(chk.Bytes()))
+}
 
 // Head chunk file header fields constants.
 const (
@@ -482,6 +490,11 @@ func (cdm *ChunkDiskMapper) writeChunkViaQueue(ref ChunkDiskMapperRef, isOOO, cu
 		}()
 	}
 
+	chk, err = cloneRetainedXOR2Chunk(chk)
+	if err != nil {
+		return ref
+	}
+
 	err = cdm.writeQueue.addJob(chunkWriteJob{
 		cutFile:   cutFile,
 		seriesRef: seriesRef,
@@ -551,7 +564,12 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 		cdm.curFileMaxt = maxt
 	}
 
-	cdm.chunkBuffer.put(ref, chk)
+	chkForBuffer, err := cloneRetainedXOR2Chunk(chk)
+	if err != nil {
+		return err
+	}
+
+	cdm.chunkBuffer.put(ref, chkForBuffer)
 
 	if len(chk.Bytes())+MaxHeadChunkMetaSize >= cdm.writeBufferSize {
 		// The chunk was bigger than the buffer itself.

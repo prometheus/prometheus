@@ -28,6 +28,21 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
+func makeXOR2Chunk(t *testing.T, samples []struct {
+	ts int64
+	v  float64
+}) *chunkenc.XOR2Chunk {
+	t.Helper()
+
+	c := chunkenc.NewXOR2Chunk()
+	app, err := c.Appender()
+	require.NoError(t, err)
+	for _, sample := range samples {
+		app.Append(0, sample.ts, sample.v)
+	}
+	return c
+}
+
 var writeQueueSize int
 
 func TestMain(m *testing.M) {
@@ -410,6 +425,125 @@ func TestChunkDiskMapper_Truncate_WriteQueueRaceCondition(t *testing.T) {
 	require.Equal(t, 2, seq)
 
 	wg.Wait()
+}
+
+func TestChunkDiskMapper_WriteChunkViaQueue_CopiesXOR2Chunk(t *testing.T) {
+	t.Parallel()
+
+	hrw := createChunkDiskMapper(t, "")
+	t.Cleanup(func() {
+		require.NoError(t, hrw.Close())
+	})
+
+	if hrw.writeQueue == nil {
+		t.Skip("This test should only run when the queue is enabled")
+	}
+
+	origWriteChunk := hrw.writeQueue.writeChunk
+	blockWrite := make(chan struct{})
+	hrw.writeQueue.writeChunk = func(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, ref ChunkDiskMapperRef, isOOO, cutFile bool) error {
+		<-blockWrite
+		return origWriteChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile)
+	}
+
+	originalSamples := []struct {
+		ts int64
+		v  float64
+	}{
+		{1000, 1},
+		{2000, 2},
+	}
+	chk := makeXOR2Chunk(t, originalSamples)
+
+	done := make(chan error, 1)
+	ref := hrw.WriteChunk(1, 1000, 2000, chk, false, func(err error) {
+		done <- err
+	})
+
+	chunkenc.ReleaseXOR2Chunk(chk)
+
+	reused := chunkenc.NewXOR2Chunk()
+	if chk != reused {
+		t.Skip("sync.Pool returned a different XOR2 chunk instance")
+	}
+	app, err := reused.Appender()
+	require.NoError(t, err)
+	app.Append(0, 3000, 30)
+	app.Append(0, 4000, 40)
+
+	queuedChunk, err := hrw.Chunk(ref)
+	require.NoError(t, err)
+	require.Equal(t, 2, queuedChunk.NumSamples())
+
+	close(blockWrite)
+	require.NoError(t, <-done)
+
+	storedChunk, err := hrw.Chunk(ref)
+	require.NoError(t, err)
+	require.Equal(t, 2, storedChunk.NumSamples())
+
+	it := storedChunk.Iterator(nil)
+	for _, sample := range originalSamples {
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		ts, v := it.At()
+		require.Equal(t, sample.ts, ts)
+		require.Equal(t, sample.v, v)
+	}
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.NoError(t, it.Err())
+}
+
+func TestChunkDiskMapper_WriteChunk_RetainsIndependentXOR2Chunk(t *testing.T) {
+	t.Parallel()
+
+	if writeQueueSize != 0 {
+		t.Skip("This test covers the synchronous write path only")
+	}
+
+	hrw := createChunkDiskMapper(t, "")
+	t.Cleanup(func() {
+		require.NoError(t, hrw.Close())
+	})
+
+	originalSamples := []struct {
+		ts int64
+		v  float64
+	}{
+		{1000, 1},
+		{2000, 2},
+	}
+	chk := makeXOR2Chunk(t, originalSamples)
+
+	done := make(chan error, 1)
+	ref := hrw.WriteChunk(1, 1000, 2000, chk, false, func(err error) {
+		done <- err
+	})
+	require.NoError(t, <-done)
+
+	chunkenc.ReleaseXOR2Chunk(chk)
+
+	reused := chunkenc.NewXOR2Chunk()
+	if chk != reused {
+		t.Skip("sync.Pool returned a different XOR2 chunk instance")
+	}
+	app, err := reused.Appender()
+	require.NoError(t, err)
+	app.Append(0, 3000, 30)
+	app.Append(0, 4000, 40)
+
+	storedChunk, err := hrw.Chunk(ref)
+	require.NoError(t, err)
+	require.Equal(t, 2, storedChunk.NumSamples())
+
+	it := storedChunk.Iterator(nil)
+	for _, sample := range originalSamples {
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		ts, v := it.At()
+		require.Equal(t, sample.ts, ts)
+		require.Equal(t, sample.v, v)
+	}
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.NoError(t, it.Err())
 }
 
 // TestHeadReadWriter_TruncateAfterFailedIterateChunks tests for
