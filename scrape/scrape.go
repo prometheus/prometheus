@@ -1270,7 +1270,7 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 		if sl.scrapeOnShutdown {
 			last = sl.scrapeAndReport(last, time.Now().Round(0), errc)
 		}
-		// Let the stop() it can unblock.
+		// Let the stop() know it can continue.
 		close(sl.stopped)
 		if sl.parentCtx.Err() == nil {
 			if !sl.disabledEndOfRunStalenessMarkers.Load() {
