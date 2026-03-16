@@ -159,12 +159,6 @@ global:
   # native histogram with custom buckets.
   [ always_scrape_classic_histograms: <boolean> | default = false ]
 
-  # When enabled, Prometheus stores additional time series for each scrape:
-  # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
-  # These metrics help monitor how close targets are to their configured limits.
-  # This option can be overridden per scrape config.
-  [ extra_scrape_metrics: <boolean> | default = false ]
-
   # The following explains the various combinations of the last three options
   # in various exposition cases.
   #
@@ -200,6 +194,12 @@ global:
   # convert_classic_histograms_to_nhcb is set to (it would collide with the
   # actual native histogram). However, there will be a classic histogram if (and
   # only if) always_scrape_classic_histograms is set to true.
+
+  # When enabled, Prometheus stores additional time series for each scrape:
+  # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
+  # These metrics help monitor how close targets are to their configured limits.
+  # This option can be overridden per scrape config.
+  [ extra_scrape_metrics: <boolean> | default = false ]
 
 runtime:
   # Configure the Go garbage collector GOGC parameter
@@ -653,14 +653,14 @@ metric_relabel_configs:
 # native histogram with custom buckets.
 [ always_scrape_classic_histograms: <boolean> | default = <global.always_scrape_classic_histograms> ]
 
+# See global configuration above for further explanations of how the last three
+# options combine their effects.
+
 # When enabled, Prometheus stores additional time series for this scrape job:
 # scrape_timeout_seconds, scrape_sample_limit, and scrape_body_size_bytes.
 # These metrics help monitor how close targets are to their configured limits.
 # If not set, inherits the value from the global configuration.
 [ extra_scrape_metrics: <boolean> | default = <global.extra_scrape_metrics> ]
-
-# See global configuration above for further explanations of how the last three
-# options combine their effects.
 
 ```
 
