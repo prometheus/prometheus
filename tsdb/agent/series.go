@@ -333,9 +333,17 @@ type seriesSnapshot struct {
 	lastTs int64
 }
 
-func (s *seriesSnapshot) Ref() chunks.HeadSeriesRef { return s.ref }
-func (s *seriesSnapshot) Labels() labels.Labels      { return s.lset }
-func (s *seriesSnapshot) LastSampleTimestamp() int64  { return s.lastTs }
+func (s *seriesSnapshot) Ref() chunks.HeadSeriesRef {
+	return s.ref
+}
+
+func (s *seriesSnapshot) Labels() labels.Labels {
+	return s.lset
+}
+
+func (s *seriesSnapshot) LastSampleTimestamp() int64 {
+	return s.lastTs
+}
 
 func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
 	return func(yield func(ActiveSeries) bool) {
