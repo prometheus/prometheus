@@ -49,8 +49,7 @@ import (
 //	0 → reuse previous leading/trailing window
 //	1 → new leading/trailing window
 type XOR2Chunk struct {
-	b   bstream
-	app xor2Appender
+	b bstream
 }
 
 // NewXOR2Chunk returns a new chunk with XOR2 encoding.
@@ -89,12 +88,7 @@ func (c *XOR2Chunk) Compact() {
 // Appender implements the Chunk interface.
 func (c *XOR2Chunk) Appender() (Appender, error) {
 	if len(c.b.stream) == chunkHeaderSize {
-		c.app = xor2Appender{
-			b:       &c.b,
-			t:       math.MinInt64,
-			leading: 0xff,
-		}
-		return &c.app, nil
+		return &xor2Appender{b: &c.b, t: math.MinInt64, leading: 0xff}, nil
 	}
 	it := c.iterator(nil)
 
@@ -104,7 +98,7 @@ func (c *XOR2Chunk) Appender() (Appender, error) {
 		return nil, err
 	}
 
-	c.app = xor2Appender{
+	return &xor2Appender{
 		b:        &c.b,
 		num:      it.numTotal,
 		t:        it.t,
@@ -112,8 +106,7 @@ func (c *XOR2Chunk) Appender() (Appender, error) {
 		tDelta:   it.tDelta,
 		leading:  it.leading,
 		trailing: it.trailing,
-	}
-	return &c.app, nil
+	}, nil
 }
 
 func (c *XOR2Chunk) iterator(it Iterator) *xor2Iterator {
