@@ -636,7 +636,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		chunkDiskMapper: h.chunkDiskMapper,
 		chunkRange:      h.chunkRange.Load(),
 		samplesPerChunk: h.opts.SamplesPerChunk,
-		storeST:         h.opts.EnableSTStorage.Load(),
+		useXOR2:         h.opts.EnableXOR2Encoding.Load(),
 	}
 
 	for in := range wp.input {
@@ -1084,7 +1084,7 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 		chunkDiskMapper: h.chunkDiskMapper,
 		chunkRange:      h.chunkRange.Load(),
 		samplesPerChunk: h.opts.SamplesPerChunk,
-		storeST:         h.opts.EnableSTStorage.Load(),
+		useXOR2:         h.opts.EnableXOR2Encoding.Load(),
 	}
 	// We don't check for minValidTime for ooo samples.
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
@@ -1251,7 +1251,7 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 	csr.mc.chunk = chk
 
 	switch enc {
-	case chunkenc.EncXOR:
+	case chunkenc.EncXOR, chunkenc.EncXOR2:
 		// Backwards-compatibility for old sampleBuf which had last 4 samples.
 		for range 3 {
 			_ = dec.Be64int64()

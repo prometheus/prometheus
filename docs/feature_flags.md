@@ -306,6 +306,17 @@ This is currently implemented using direct I/O.
 
 For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
 
+## XOR2 chunk encoding
+
+`--enable-feature=xor2-encoding`
+
+> WARNING: This is highly experimental and risky setting:
+> * Chunks encoded with XOR2 **cannot be read by older Prometheus versions** that do not support the encoding. Once enabled and data is written, you need to **manually delete blocks from the disk**, otherwise Prometheus will return error on all queries.
+> * We are still experimenting on the final encoding. As of now this encoding can change in any Prometheus version. All your persistent block data will be lost between versions.
+> * This is encoding is new, meaning downstream tools and LTS systems might now support it yet (e.g. Thanos sidecar uploaded blocks).
+
+This setting enables the new XOR2 chunk encoding for float samples, which provides better disk compression than the default XOR encoding for typical Prometheus workloads. This format also allow storing Start Timestamp (ST).
+
 ## Extended Range Selectors
 
 `--enable-feature=promql-extended-range-selectors`

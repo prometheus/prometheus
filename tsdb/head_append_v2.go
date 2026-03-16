@@ -96,6 +96,7 @@ func (h *Head) appenderV2() *headAppenderV2 {
 			appendID:              appendID,
 			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 			storeST:               h.opts.EnableSTStorage.Load(),
+			useXOR2:               h.opts.EnableXOR2Encoding.Load(),
 		},
 	}
 }
