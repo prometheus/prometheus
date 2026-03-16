@@ -5654,6 +5654,93 @@ func testOOOMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	require.NoError(t, h.Close())
 }
 
+// TestWALReplayMmapsChunks is a regression test ensuring that
+// chunks are mmapped during WAL replay, not accumulated in the
+// in-memory linked list.
+func TestWALReplayMmapsChunks(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		append func(app storage.Appender, l labels.Labels, ts int64) error
+	}{
+		{
+			name: "floats",
+			append: func(app storage.Appender, l labels.Labels, ts int64) error {
+				_, err := app.Append(0, l, ts, float64(ts))
+				return err
+			},
+		},
+		{
+			name: "histograms",
+			append: func(app storage.Appender, l labels.Labels, ts int64) error {
+				_, err := app.AppendHistogram(0, l, ts, tsdbutil.GenerateTestHistogram(ts), nil)
+				return err
+			},
+		},
+		{
+			name: "float histograms",
+			append: func(app storage.Appender, l labels.Labels, ts int64) error {
+				_, err := app.AppendHistogram(0, l, ts, nil, tsdbutil.GenerateTestFloatHistogram(ts))
+				return err
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
+			require.NoError(t, err)
+
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.ChunkDirRoot = dir
+
+			h, err := NewHead(nil, nil, wal, nil, opts, nil)
+			require.NoError(t, err)
+			require.NoError(t, h.Init(0))
+
+			l := labels.FromStrings("foo", "bar")
+
+			// Append 250 samples at 1-minute intervals. With ChunkRange=1000 and
+			// DefaultSamplesPerChunk=120, this creates multiple chunks that should
+			// be mmapped during WAL replay.
+			app := h.Appender(context.Background())
+			for i := range 250 {
+				require.NoError(t, tc.append(app, l, int64(i)*time.Minute.Milliseconds()))
+			}
+			require.NoError(t, app.Commit())
+
+			require.NoError(t, h.Close())
+
+			// Remove mmapped chunk files so WAL replay must recreate all chunks.
+			require.NoError(t, os.RemoveAll(filepath.Join(dir, "chunks_head")))
+
+			// Reopen Head — WAL replay happens in Init.
+			wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
+			require.NoError(t, err)
+			h, err = NewHead(nil, nil, wal, nil, opts, nil)
+			require.NoError(t, err)
+			require.NoError(t, h.Init(0))
+
+			ms, ok, err := h.getOrCreate(l.Hash(), l, false)
+			require.NoError(t, err)
+			require.False(t, ok)
+			require.NotNil(t, ms)
+
+			// Chunks must be mmapped during replay, not left in the head linked list.
+			require.NotEmpty(t, ms.mmappedChunks, "expected chunks to be mmapped during WAL replay")
+			require.Equal(t, 1, ms.headChunks.len(), "expected only one head chunk after replay")
+
+			// Verify each mmapped chunk is readable from disk.
+			for _, m := range ms.mmappedChunks {
+				chk, err := h.chunkDiskMapper.Chunk(m.ref)
+				require.NoError(t, err)
+				require.Equal(t, int(m.numSamples), chk.NumSamples())
+			}
+
+			require.NoError(t, h.Close())
+		})
+	}
+}
+
 func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 	h, _ := newTestHead(t, 1000, compression.None, false)
 
