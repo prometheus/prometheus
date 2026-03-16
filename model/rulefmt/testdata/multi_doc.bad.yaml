@@ -1,0 +1,13 @@
+groups:
+  - name: first-group
+    rules:
+      - alert: TestAlert
+        expr: up == 0
+        for: 5m
+---
+groups:
+  - name: second-group
+    rules:
+      - alert: TestAlert2
+        expr: up == 1
+        for: 5m

@@ -355,6 +355,14 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 	if err != nil && !errors.Is(err, io.EOF) {
 		errs = append(errs, err)
 	}
+
+	// Check for additional YAML documents. Multi-document YAML rule files are not supported
+	// as extra documents would be silently ignored, which can lead to confusion.
+	var extra any
+	if err = decoder.Decode(&extra); err == nil && extra != nil {
+		errs = append(errs, errors.New("rule file must not contain multiple YAML documents"))
+	}
+
 	err = yaml.Unmarshal(content, &node)
 	if err != nil {
 		errs = append(errs, err)

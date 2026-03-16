@@ -118,6 +118,10 @@ func TestParseFileFailure(t *testing.T) {
 			nameValidationScheme: model.LegacyValidation,
 			errMsg:               "invalid annotation name: ins-tance",
 		},
+		{
+			filename: "multi_doc.bad.yaml",
+			errMsg:   "rule file must not contain multiple YAML documents",
+		},
 	} {
 		t.Run(c.filename, func(t *testing.T) {
 			if c.nameValidationScheme == model.UnsetValidation {
