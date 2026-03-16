@@ -62,7 +62,14 @@ paths:
                   required: false
                   explode: false
                   schema:
-                    type: string
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form accepted by Go's time.Duration.ParseDuration(), such as 15s or 2m30s.
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds, such as 2 or 4.5.
+                    description: Duration in humand-readable or numeric format.
                   examples:
                     example:
                         value: 30s
@@ -72,7 +79,14 @@ paths:
                   required: false
                   explode: false
                   schema:
-                    type: string
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form accepted by Go's time.Duration.ParseDuration(), such as 15s or 2m30s.
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds, such as 2 or 4.5.
+                    description: Duration in humand-readable or numeric format.
                   examples:
                     example:
                         value: 5m
@@ -248,7 +262,14 @@ paths:
                   required: true
                   explode: false
                   schema:
-                    type: string
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form accepted by Go's time.Duration.ParseDuration(), such as 15s or 2m30s.
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds, such as 2 or 4.5.
+                    description: Duration in humand-readable or numeric format.
                   examples:
                     example:
                         value: 15s
@@ -268,7 +289,14 @@ paths:
                   required: false
                   explode: false
                   schema:
-                    type: string
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form accepted by Go's time.Duration.ParseDuration(), such as 15s or 2m30s.
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds, such as 2 or 4.5.
+                    description: Duration in humand-readable or numeric format.
                   examples:
                     example:
                         value: 30s
@@ -278,7 +306,14 @@ paths:
                   required: false
                   explode: false
                   schema:
-                    type: string
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form accepted by Go's time.Duration.ParseDuration(), such as 15s or 2m30s.
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds, such as 2 or 4.5.
+                    description: Duration in humand-readable or numeric format.
                   examples:
                     example:
                         value: 5m
