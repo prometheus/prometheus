@@ -334,18 +334,11 @@ func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
 			for _, series := range s.series[i] {
 				series.Lock()
 
-				j := int(s.hashLock(series.lset.Hash()))
-				if i != j {
-					s.locks[j].RLock()
-				}
-
+				// Extra hash lock is skipped as we don't need to read the hashes map.
 				if !yield(series) {
 					stop = true
 				}
 
-				if i != j {
-					s.locks[j].RUnlock()
-				}
 				series.Unlock()
 
 				if stop {
