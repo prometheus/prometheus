@@ -325,6 +325,18 @@ func (s *stripeSeries) refLock(ref chunks.HeadSeriesRef) uint64 {
 	return uint64(ref) & uint64(s.size-1)
 }
 
+// seriesSnapshot is a point-in-time copy of a memSeries fields.
+// It is used to avoid holding series locks during checkpoint I/O.
+type seriesSnapshot struct {
+	ref    chunks.HeadSeriesRef
+	lset   labels.Labels
+	lastTs int64
+}
+
+func (s *seriesSnapshot) Ref() chunks.HeadSeriesRef { return s.ref }
+func (s *seriesSnapshot) Labels() labels.Labels      { return s.lset }
+func (s *seriesSnapshot) LastSampleTimestamp() int64  { return s.lastTs }
+
 func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
 	return func(yield func(ActiveSeries) bool) {
 		stop := false
@@ -332,16 +344,19 @@ func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
 			s.locks[i].RLock()
 
 			for _, series := range s.series[i] {
+				// Copy fields under the series lock, then release it
+				// before yielding so that disk I/O in the consumer
+				// does not block appends to this series.
 				series.Lock()
-
-				// Extra hash lock is skipped as we don't need to read the hashes map.
-				if !yield(series) {
-					stop = true
+				snapshot := seriesSnapshot{
+					ref:    series.ref,
+					lset:   series.lset,
+					lastTs: series.lastTs,
 				}
-
 				series.Unlock()
 
-				if stop {
+				if !yield(&snapshot) {
+					stop = true
 					break
 				}
 			}
