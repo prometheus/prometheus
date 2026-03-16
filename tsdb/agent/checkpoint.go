@@ -29,7 +29,8 @@ import (
 const defaultBatchSize = 1000
 
 type CheckpointParams struct {
-	// AtIndex is index at which a checkpoint should be created.
+	// AtIndex is the WAL segment index to name this checkpoint after.
+	// If a checkpoint at given index or higher already exists, creation is skipped.
 	AtIndex int
 
 	// BatchSize is size of a single WAL log entry chunk to be flushed.
