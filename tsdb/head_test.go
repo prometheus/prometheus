@@ -7915,3 +7915,92 @@ func TestHead_FastStartupStateFile(t *testing.T) {
 	require.Equal(t, uint64(1), state.LastSeriesID, "LastSeriesID should remain 1")
 	require.Equal(t, 0, state.LastWALSegment, "LastWALSegment should remain 0")
 }
+
+func TestMmapDirtyHeadChunks(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+	require.NoError(t, h.Init(0))
+
+	interval := DefaultBlockDuration / (4 * 120) // Same interval as other mmap tests.
+
+	countDirty := func() int {
+		n := 0
+		for i := range h.series.size {
+			h.series.locks[i].RLock()
+			for _, s := range h.series.series[i] {
+				if s.dirtyForMmap.Load() {
+					n++
+				}
+			}
+			h.series.locks[i].RUnlock()
+		}
+		return n
+	}
+
+	lblsA := labels.FromStrings("__name__", "seriesA")
+	lblsB := labels.FromStrings("__name__", "seriesB")
+	lblsC := labels.FromStrings("__name__", "seriesC")
+
+	ts := int64(0)
+
+	// First chunk creation should not mark series as dirty.
+	app := h.Appender(context.Background())
+	_, err := app.Append(0, lblsA, ts, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	ts += interval
+
+	require.Equal(t, 0, countDirty(), "series with only a first chunk should not be dirty")
+
+	// Appending enough samples to trigger chunk cuts should mark series dirty.
+	var refB, refC storage.SeriesRef
+	for range 250 {
+		app := h.Appender(t.Context())
+		var err error
+		refB, err = app.Append(refB, lblsB, ts, float64(ts))
+		require.NoError(t, err)
+		refC, err = app.Append(refC, lblsC, ts, float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		ts += interval
+	}
+
+	require.Positive(t, countDirty(), "expected some series to be marked dirty")
+
+	// mmapDirtyHeadChunks should drain the dirty set and mmap chunks.
+	h.mmapDirtyHeadChunks()
+
+	for _, lbls := range []labels.Labels{lblsB, lblsC} {
+		s := h.series.getByHash(lbls.Hash(), lbls)
+		require.NotNil(t, s, "series %s not found", lbls)
+		s.Lock()
+		require.NotNil(t, s.headChunks, "series %s should have head chunks", lbls)
+		require.Nil(t, s.headChunks.prev, "series %s should have prev mmapped", lbls)
+		require.NotEmpty(t, s.mmappedChunks, "series %s should have mmapped chunks", lbls)
+		s.Unlock()
+	}
+
+	require.Equal(t, 0, countDirty(), "dirty set should be empty after mmapDirtyHeadChunks")
+
+	// A second call should be a no-op.
+	beforeMetric := prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	h.mmapDirtyHeadChunks()
+	afterMetric := prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	require.Equal(t, beforeMetric, afterMetric, "second call should mmap 0 chunks")
+
+	// Only newly dirty series should be processed.
+	for range 250 {
+		app := h.Appender(context.Background())
+		var err error
+		refB, err = app.Append(refB, lblsB, ts, float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		ts += interval
+	}
+
+	require.Equal(t, 1, countDirty(), "only series B should be dirty")
+
+	beforeMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	h.mmapDirtyHeadChunks()
+	afterMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	require.Greater(t, afterMetric, beforeMetric, "third call should mmap chunks from series B")
+}
