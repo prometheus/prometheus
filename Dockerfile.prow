@@ -1,4 +1,4 @@
-# Copyright Contributors to the Open Cluster Management project
+# Copyright Contributors to the Open Cluster Management project test
 
 FROM registry.ci.openshift.org/stolostron/builder:go1.25-linux AS builder
 
