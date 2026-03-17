@@ -77,6 +77,35 @@ Therefore, when `created-timestamp-zero-ingestion` is enabled Prometheus changes
 
 Besides enabling this feature in Prometheus, start timestamps need to be exposed by the application being scraped.
 
+## Start timestamp (ST) native storage
+
+`--enable-feature=st-storage`
+
+> WARNING: This is a highly experimental and risky setting.
+> * The new SamplesV2 WAL records cannot be replayed with Prometheus versions that do not support them.
+> * This feature uses XOR2 encoded chunks, which cannot be read by older Prometheus versions that do not support the encoding.
+> * XOR2 encoding is new, meaning downstream tools and LTS systems might now support it yet (e.g. Thanos sidecar uploaded blocks).
+
+> See [PROM-60](https://github.com/prometheus/proposals/pull/60) for the full
+design proposal.
+
+Enables the storage of start timestamps (ST) natively per sample, instead of injecting synthetic 0 valued samples (as `created-timestamp-zero-ingestion` does).
+Native storage of start timestamps preserves the exact ST values without adding extra samples.
+
+Currently, native start timestamp storage is only supported for float samples; support for histograms will be added in the future.
+Additionally, start timestamp values are not yet used by the PromQL engine for queries.
+
+Currently, Prometheus supports start timestamps on:
+
+* `PrometheusProto`
+* `OpenMetrics1.0.0`
+
+`PrometheusProto` is recommended. 
+
+Besides enabling this feature in Prometheus, start timestamps need to be exposed by the application being scraped.
+
+Enabling this feature flag automatically enables the xor2-encoding flag.
+
 ## Concurrent evaluation of independent rules
 
 `--enable-feature=concurrent-rule-eval`
