@@ -191,10 +191,10 @@ func (v ValueType) String() string {
 	}
 }
 
-func (v ValueType) ChunkEncoding(storeST bool) Encoding {
+func (v ValueType) ChunkEncoding(useXOR2 bool) Encoding {
 	switch v {
 	case ValFloat:
-		if storeST {
+		if useXOR2 {
 			return EncXOR2
 		}
 		return EncXOR
@@ -207,8 +207,9 @@ func (v ValueType) ChunkEncoding(storeST bool) Encoding {
 	}
 }
 
-func (v ValueType) NewChunk(storeST bool) (Chunk, error) {
-	return NewEmptyChunk(v.ChunkEncoding(storeST))
+// NewChunk returns a new empty chunk for the given value type.
+func (v ValueType) NewChunk(useXOR2 bool) (Chunk, error) {
+	return NewEmptyChunk(v.ChunkEncoding(useXOR2))
 }
 
 // MockSeriesIterator returns an iterator for a mock series with custom
