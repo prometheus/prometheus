@@ -2314,6 +2314,10 @@ Each target has a meta label `__meta_url` during the
 [relabeling phase](#relabel_config). Its value is set to the
 URL from which the target was extracted.
 
+There is a list of
+[integrations](https://prometheus.io/docs/operating/integrations/#http-service-discovery) with this
+discovery mechanism.
+
 ```yaml
 # URL from which the targets are fetched.
 url: <string>

@@ -724,6 +724,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
+				_ = ms.mmapChunks(h.chunkDiskMapper)
 			}
 			if s.t > maxt {
 				maxt = s.t
