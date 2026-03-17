@@ -822,11 +822,11 @@ func TestHeadCompactionWhileScraping(t *testing.T) {
 			config := fmt.Sprintf(`
 scrape_configs:
   - job_name: 'self1'
-    scrape_interval: 100ms
+    scrape_interval: 101ms
     static_configs:
       - targets: ['localhost:%d']
   - job_name: 'self2'
-    scrape_interval: 150ms
+    scrape_interval: 103ms
     static_configs:
       - targets: ['localhost:%d']
 `, port, port)
@@ -874,7 +874,7 @@ scrape_configs:
 				require.NoError(t, err)
 				require.Zero(t, failures)
 				return true
-			}, 60*time.Second, 500*time.Millisecond)
+			}, 30*time.Second, 500*time.Millisecond)
 		})
 	}
 }
