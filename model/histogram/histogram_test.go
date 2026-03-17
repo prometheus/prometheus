@@ -1810,3 +1810,70 @@ func TestHistogramReduceResolution(t *testing.T) {
 		})
 	}
 }
+
+func TestHistogramSub(t *testing.T) {
+	h1 := &Histogram{
+		Count:           10,
+		ZeroCount:       2,
+		ZeroThreshold:   1e-128,
+		Sum:             10.5,
+		Schema:          1,
+		PositiveSpans:   []Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []int64{3, 1}, // absolute 3, 4
+		NegativeSpans:   []Span{{Offset: 0, Length: 1}},
+		NegativeBuckets: []int64{1}, // absolute 1
+	}
+	h2 := &Histogram{
+		Count:           5,
+		ZeroCount:       1,
+		ZeroThreshold:   1e-128,
+		Sum:             5.2,
+		Schema:          1,
+		PositiveSpans:   []Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []int64{1, 1}, // absolute 1, 2
+		NegativeSpans:   []Span{{Offset: 0, Length: 1}},
+		NegativeBuckets: []int64{1}, // absolute 1
+	}
+
+	h3, counterReset, nhcb, err := h1.Copy().Sub(h2)
+	require.NoError(t, err)
+	require.False(t, counterReset)
+	require.False(t, nhcb)
+	require.Equal(t, uint64(5), h3.Count)
+	require.Equal(t, uint64(1), h3.ZeroCount)
+	require.InDelta(t, 5.3, h3.Sum, 0.0001)
+
+	require.Equal(t, []int64{2, 0}, h3.PositiveBuckets) // absolute 2, 2
+	iter := h3.PositiveBucketIterator()
+	var posCounts []uint64
+	for iter.Next() {
+		posCounts = append(posCounts, iter.At().Count)
+	}
+	require.Equal(t, []uint64{2, 2}, posCounts)
+
+	require.Equal(t, []int64(nil), h3.NegativeBuckets) // delta decoding 0 removes the bucket?
+	// Wait! map merge for negative buckets: h1=1, h2=1 -> h1-h2 = 0.
+	// So negative span should be empty.
+	require.Empty(t, h3.NegativeSpans)
+}
+
+func TestHistogramDetectReset(t *testing.T) {
+	h1 := &Histogram{
+		Count:           10,
+		ZeroCount:       2,
+		ZeroThreshold:   1e-128,
+		Sum:             10.5,
+		Schema:          1,
+		PositiveSpans:   []Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []int64{3, 1}, // 3, 4
+	}
+	h2 := h1.Copy()
+	require.False(t, h2.DetectReset(h1))
+
+	h2.Count = 9 // Count lowered, reset!
+	require.True(t, h2.DetectReset(h1))
+
+	h2 = h1.Copy()
+	h2.PositiveBuckets = []int64{2, 1} // 2, 3 -> less than 3, 4
+	require.True(t, h2.DetectReset(h1))
+}
