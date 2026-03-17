@@ -1,10 +1,11 @@
 {
   "name": "prometheus-io",
   "description": "Monorepo for the Prometheus UI",
-  "version": "0.309.1",
+  "version": "0.310.0",
   "private": true,
   "scripts": {
     "build": "bash build_ui.sh --all",
+    "build:mantine-ui": "bash build_ui.sh --mantine-ui",
     "build:module": "bash build_ui.sh --build-module",
     "start": "npm run start -w mantine-ui",
     "test": "npm run test --workspaces",

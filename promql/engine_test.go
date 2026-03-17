@@ -94,11 +94,9 @@ func TestQueryConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	for range maxConcurrency {
 		q := engine.NewTestQuery(f)
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			q.Exec(ctx)
-			wg.Done()
-		}()
+		})
 		select {
 		case <-processing:
 			// Expected.
@@ -108,11 +106,9 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	q := engine.NewTestQuery(f)
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		q.Exec(ctx)
-		wg.Done()
-	}()
+	})
 
 	select {
 	case <-processing:
@@ -3254,6 +3250,59 @@ func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
 					Start: 0,
 					End:   31,
 				},
+			},
+		},
+		{
+			input: "timestamp(metric @ 10)",
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.Call{
+					Func: parser.MustGetFunction("timestamp"),
+					Args: parser.Expressions{
+						&parser.VectorSelector{
+							Name:      "metric",
+							Timestamp: makeInt64Pointer(10000),
+							LabelMatchers: []*labels.Matcher{
+								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
+							},
+							PosRange: posrange.PositionRange{
+								Start: 10,
+								End:   21,
+							},
+						},
+					},
+					PosRange: posrange.PositionRange{Start: 0, End: 22},
+				},
+			},
+		},
+		{
+			input: "timestamp(abs(metric @ 10))",
+			expected: &parser.Call{
+				Func: parser.MustGetFunction("timestamp"),
+				Args: parser.Expressions{
+					&parser.StepInvariantExpr{
+						Expr: &parser.Call{
+							Func: parser.MustGetFunction("abs"),
+							Args: parser.Expressions{
+								&parser.VectorSelector{
+									Name:      "metric",
+									Timestamp: makeInt64Pointer(10000),
+									LabelMatchers: []*labels.Matcher{
+										parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
+									},
+									PosRange: posrange.PositionRange{
+										Start: 14,
+										End:   25,
+									},
+								},
+							},
+							PosRange: posrange.PositionRange{
+								Start: 10,
+								End:   26,
+							},
+						},
+					},
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 27},
 			},
 		},
 	}

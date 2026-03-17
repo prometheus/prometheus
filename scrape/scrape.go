@@ -105,6 +105,7 @@ type scrapePool struct {
 	activeTargets       map[uint64]*Target
 	droppedTargets      []*Target // Subject to KeepDroppedTargets limit.
 	droppedTargetsCount int       // Count of all dropped targets.
+	scrapeFailureLogger FailureLogger
 
 	// newLoop injection for testing purposes.
 	injectTestNewLoop func(scrapeLoopOptions) loop
@@ -112,9 +113,6 @@ type scrapePool struct {
 	metrics    *scrapeMetrics
 	buffers    *pool.Pool
 	offsetSeed uint64
-
-	scrapeFailureLogger    FailureLogger
-	scrapeFailureLoggerMtx sync.RWMutex
 }
 
 type labelLimits struct {
@@ -224,24 +222,16 @@ func (sp *scrapePool) DroppedTargetsCount() int {
 }
 
 func (sp *scrapePool) SetScrapeFailureLogger(l FailureLogger) {
-	sp.scrapeFailureLoggerMtx.Lock()
-	defer sp.scrapeFailureLoggerMtx.Unlock()
+	sp.targetMtx.Lock()
+	defer sp.targetMtx.Unlock()
 	if l != nil {
 		l = slog.New(l).With("job_name", sp.config.JobName).Handler().(FailureLogger)
 	}
 	sp.scrapeFailureLogger = l
 
-	sp.targetMtx.Lock()
-	defer sp.targetMtx.Unlock()
 	for _, s := range sp.loops {
 		s.setScrapeFailureLogger(sp.scrapeFailureLogger)
 	}
-}
-
-func (sp *scrapePool) getScrapeFailureLogger() FailureLogger {
-	sp.scrapeFailureLoggerMtx.RLock()
-	defer sp.scrapeFailureLoggerMtx.RUnlock()
-	return sp.scrapeFailureLogger
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
@@ -267,6 +257,9 @@ func (sp *scrapePool) stop() {
 	sp.targetMtx.Unlock()
 
 	wg.Wait()
+	// Cancel the context after all loops have stopped. This is required for
+	// scrapeOnShutdown to work properly, as the shutdown scrape uses this
+	// context (via sl.parentCtx) and would fail if the context was cancelled early.
 	sp.cancel()
 	sp.client.CloseIdleConnections()
 
@@ -323,6 +316,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 	sp.targetMtx.Lock()
 
 	forcedErr := sp.refreshTargetLimitErr()
+	scrapeFailureLogger := sp.scrapeFailureLogger
 	for fp, oldLoop := range sp.loops {
 		var cache *scrapeCache
 		if oc := oldLoop.getCache(); reuseCache && oc != nil {
@@ -364,7 +358,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 			wg.Done()
 
 			newLoop.setForcedError(forcedErr)
-			newLoop.setScrapeFailureLogger(sp.getScrapeFailureLogger())
+			newLoop.setScrapeFailureLogger(scrapeFailureLogger)
 			newLoop.run(nil)
 		}(oldLoop, newLoop)
 
@@ -743,7 +737,7 @@ var UserAgent = version.PrometheusUserAgent()
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
-		req, err := http.NewRequest(http.MethodGet, s.URL().String(), nil)
+		req, err := http.NewRequest(http.MethodGet, s.URL().String(), http.NoBody)
 		if err != nil {
 			return nil, err
 		}
@@ -829,15 +823,20 @@ type cacheEntry struct {
 }
 
 type scrapeLoop struct {
-	// Parameters.
-	ctx            context.Context
-	cancel         func()
-	stopped        chan struct{}
-	shutdownScrape chan struct{}
-	parentCtx      context.Context
-	appenderCtx    context.Context
-	l              *slog.Logger
-	cache          *scrapeCache
+	// ctx represents a local context that is cancellable via s.cancel.
+	// It's meant to synchronize run() with stop().
+	// It inherits parentCtx.
+	ctx     context.Context
+	cancel  func()
+	stopped chan struct{}
+	// parentCtx represents manager-level context, typically connected
+	// to process shutdown.
+	parentCtx context.Context
+	// appenderCtx is a parentCtx with some extra context for appender
+	// implementations. Potentially remove-able with removal of AppenderV1.
+	appenderCtx context.Context
+	l           *slog.Logger
+	cache       *scrapeCache
 
 	interval            time.Duration
 	timeout             time.Duration
@@ -875,8 +874,9 @@ type scrapeLoop struct {
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
+	skipJitterOffsetting    bool // For testability.
 	scrapeOnShutdown        bool
-	initialScrapeOffset     *time.Duration // For testing only: overrides the computed scrape offset.
+	initialScrapeOffset     time.Duration
 	// error injection through setForcedError.
 	forcedErr    error
 	forcedErrMtx sync.Mutex
@@ -1178,14 +1178,13 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 
 	ctx, cancel := context.WithCancel(opts.sp.ctx)
 	return &scrapeLoop{
-		ctx:            ctx,
-		cancel:         cancel,
-		stopped:        make(chan struct{}),
-		shutdownScrape: make(chan struct{}),
-		parentCtx:      opts.sp.ctx,
-		appenderCtx:    appenderCtx,
-		l:              opts.sp.logger.With("target", opts.target),
-		cache:          opts.cache,
+		ctx:         ctx,
+		cancel:      cancel,
+		stopped:     make(chan struct{}),
+		parentCtx:   opts.sp.ctx,
+		appenderCtx: appenderCtx,
+		l:           opts.sp.logger.With("target", opts.target),
+		cache:       opts.cache,
 
 		interval: opts.interval,
 		timeout:  opts.timeout,
@@ -1229,8 +1228,9 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
+		skipJitterOffsetting:    opts.sp.options.skipJitterOffsetting,
 		scrapeOnShutdown:        opts.sp.options.ScrapeOnShutdown,
-		initialScrapeOffset:     opts.sp.options.initialScrapeOffset,
+		initialScrapeOffset:     opts.sp.options.InitialScrapeOffset,
 	}
 }
 
@@ -1243,32 +1243,52 @@ func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 	sl.scrapeFailureLogger = l
 }
 
-func getScrapeOffset(sl *scrapeLoop) time.Duration {
-	if sl.initialScrapeOffset == nil {
-		return sl.scraper.offset(sl.interval, sl.offsetSeed)
+func (sl *scrapeLoop) getScrapeOffset() time.Duration {
+	offset := sl.scraper.offset(sl.interval, sl.offsetSeed)
+	if sl.skipJitterOffsetting {
+		offset = time.Duration(0)
 	}
-	return *sl.initialScrapeOffset
+	return sl.initialScrapeOffset + offset
 }
 
 func (sl *scrapeLoop) run(errc chan<- error) {
-	select {
-	case <-time.After(getScrapeOffset(sl)):
-		// Continue after a scraping offset.
-	case <-sl.shutdownScrape:
-		sl.cancel()
-	case <-sl.ctx.Done():
+	var (
+		last              time.Time
+		alignedScrapeTime = time.Now().Round(0)
+		ticker            = time.NewTicker(sl.interval)
+	)
+	defer func() {
+		if sl.scrapeOnShutdown {
+			last = sl.scrapeAndReport(last, time.Now().Round(0), errc)
+		}
+		// Let the stop() know it can continue.
 		close(sl.stopped)
-		return
+		if sl.parentCtx.Err() == nil {
+			if !sl.disabledEndOfRunStalenessMarkers.Load() {
+				sl.endOfRunStaleness(last, ticker, sl.interval)
+			}
+		}
+		ticker.Stop()
+	}()
+
+	// Initial offset and jitter offset, if any.
+	offset := sl.getScrapeOffset()
+	if offset > 0 {
+		select {
+		case <-time.After(offset):
+			// Continue after a scraping offset.
+		case <-sl.ctx.Done():
+			return
+		}
 	}
 
-	var last time.Time
-
-	alignedScrapeTime := time.Now().Round(0)
-	ticker := time.NewTicker(sl.interval)
-	defer ticker.Stop()
-
-mainLoop:
 	for {
+		select {
+		case <-sl.ctx.Done():
+			return
+		default:
+		}
+
 		// Temporary workaround for a jitter in go timers that causes disk space
 		// increase in TSDB.
 		// See https://github.com/prometheus/prometheus/issues/7846
@@ -1292,21 +1312,10 @@ mainLoop:
 		last = sl.scrapeAndReport(last, scrapeTime, errc)
 
 		select {
-		case <-sl.parentCtx.Done():
-			close(sl.stopped)
-			return
 		case <-sl.ctx.Done():
-			break mainLoop
-		case <-sl.shutdownScrape:
-			sl.cancel()
+			return
 		case <-ticker.C:
 		}
-	}
-
-	close(sl.stopped)
-
-	if !sl.disabledEndOfRunStalenessMarkers.Load() {
-		sl.endOfRunStaleness(last, ticker, sl.interval)
 	}
 }
 
@@ -1526,11 +1535,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 // Stop the scraping. May still write data and stale markers after it has
 // returned. Cancel the context to stop all writes.
 func (sl *scrapeLoop) stop() {
-	if sl.scrapeOnShutdown {
-		sl.shutdownScrape <- struct{}{}
-	} else {
-		sl.cancel()
-	}
+	sl.cancel()
 	<-sl.stopped
 }
 

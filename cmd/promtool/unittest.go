@@ -255,6 +255,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 		Context:    context.Background(),
 		NotifyFunc: func(context.Context, string, ...*rules.Alert) {},
 		Logger:     promslog.NewNopLogger(),
+		Parser:     tg.parser,
 	}
 	m := rules.NewManager(opts)
 	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, nil, ignoreUnknownFields, ruleFiles...)
@@ -560,9 +561,9 @@ Outer:
 // seriesLoadingString returns the input series in PromQL notation.
 func (tg *testGroup) seriesLoadingString() string {
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("load %v\n", shortDuration(tg.Interval)))
+	fmt.Fprintf(&result, "load %v\n", shortDuration(tg.Interval))
 	for _, is := range tg.InputSeries {
-		result.WriteString(fmt.Sprintf("  %v %v\n", is.Series, is.Values))
+		fmt.Fprintf(&result, "  %v %v\n", is.Series, is.Values)
 	}
 	return result.String()
 }

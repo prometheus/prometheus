@@ -1835,6 +1835,7 @@ func TestBlockRanges_AppendV2(t *testing.T) {
 	createBlock(t, dir, genSeries(1, 1, 0, firstBlockMaxT))
 	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
 	require.NoError(t, err)
+	db.DisableCompactions()
 
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
 
@@ -1851,21 +1852,16 @@ func TestBlockRanges_AppendV2(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	for range 100 {
-		if len(db.Blocks()) == 2 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	require.Len(t, db.Blocks(), 2, "no new block created after the set timeout")
+	require.NoError(t, db.Compact(ctx))
+	blocks := db.Blocks()
+	require.Len(t, blocks, 2, "no new block after compaction")
 
-	require.LessOrEqual(t, db.Blocks()[1].Meta().MinTime, db.Blocks()[0].Meta().MaxTime,
-		"new block overlaps  old:%v,new:%v", db.Blocks()[0].Meta(), db.Blocks()[1].Meta())
+	require.GreaterOrEqual(t, blocks[1].Meta().MinTime, blocks[0].Meta().MaxTime,
+		"new block overlaps  old:%v,new:%v", blocks[0].Meta(), blocks[1].Meta())
 
 	// Test that wal records are skipped when an existing block covers the same time ranges
 	// and compaction doesn't create an overlapping block.
 	app = db.AppenderV2(ctx)
-	db.DisableCompactions()
 	_, err = app.Append(0, lbl, 0, secondBlockMaxt+1, rand.Float64(), nil, nil, storage.AOptions{})
 	require.NoError(t, err)
 	_, err = app.Append(0, lbl, 0, secondBlockMaxt+2, rand.Float64(), nil, nil, storage.AOptions{})
@@ -1882,6 +1878,7 @@ func TestBlockRanges_AppendV2(t *testing.T) {
 
 	db, err = open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
 	require.NoError(t, err)
+	db.DisableCompactions()
 
 	defer db.Close()
 	require.Len(t, db.Blocks(), 3, "db doesn't include expected number of blocks")
@@ -1891,17 +1888,12 @@ func TestBlockRanges_AppendV2(t *testing.T) {
 	_, err = app.Append(0, lbl, 0, thirdBlockMaxt+rangeToTriggerCompaction, rand.Float64(), nil, nil, storage.AOptions{}) // Trigger a compaction
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	for range 100 {
-		if len(db.Blocks()) == 4 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	require.NoError(t, db.Compact(ctx))
+	blocks = db.Blocks()
+	require.Len(t, blocks, 4, "no new block after compaction")
 
-	require.Len(t, db.Blocks(), 4, "no new block created after the set timeout")
-
-	require.LessOrEqual(t, db.Blocks()[3].Meta().MinTime, db.Blocks()[2].Meta().MaxTime,
-		"new block overlaps  old:%v,new:%v", db.Blocks()[2].Meta(), db.Blocks()[3].Meta())
+	require.GreaterOrEqual(t, blocks[3].Meta().MinTime, blocks[2].Meta().MaxTime,
+		"new block overlaps  old:%v,new:%v", blocks[2].Meta(), blocks[3].Meta())
 }
 
 // TestDBReadOnly ensures that opening a DB in readonly mode doesn't modify any files on the disk.

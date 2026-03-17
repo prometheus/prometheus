@@ -69,7 +69,7 @@ func GET(t *testing.T, api *APIWrapper, path string, queryParams ...string) *Res
 		fullPath = path + "?" + values.Encode()
 	}
 
-	req := httptest.NewRequest(http.MethodGet, fullPath, nil)
+	req := httptest.NewRequest(http.MethodGet, fullPath, http.NoBody)
 	return executeRequest(t, api, req)
 }
 

@@ -62,6 +62,7 @@ func (q *writeJobQueue) assertInvariants(t *testing.T) {
 }
 
 func TestQueuePushPopSingleGoroutine(t *testing.T) {
+	t.Parallel()
 	seed := time.Now().UnixNano()
 	t.Log("seed:", seed)
 	r := rand.New(rand.NewSource(seed))
@@ -115,6 +116,7 @@ func TestQueuePushPopSingleGoroutine(t *testing.T) {
 }
 
 func TestQueuePushBlocksOnFullQueue(t *testing.T) {
+	t.Parallel()
 	queue := newWriteJobQueue(5, 5)
 
 	pushTime := make(chan time.Time)
@@ -152,6 +154,7 @@ func TestQueuePushBlocksOnFullQueue(t *testing.T) {
 }
 
 func TestQueuePopBlocksOnEmptyQueue(t *testing.T) {
+	t.Parallel()
 	queue := newWriteJobQueue(5, 5)
 
 	popTime := make(chan time.Time)
@@ -192,6 +195,7 @@ func TestQueuePopBlocksOnEmptyQueue(t *testing.T) {
 }
 
 func TestQueuePopUnblocksOnClose(t *testing.T) {
+	t.Parallel()
 	queue := newWriteJobQueue(5, 5)
 
 	popTime := make(chan time.Time)
@@ -231,6 +235,7 @@ func TestQueuePopUnblocksOnClose(t *testing.T) {
 }
 
 func TestQueuePopAfterCloseReturnsAllElements(t *testing.T) {
+	t.Parallel()
 	const count = 10
 
 	queue := newWriteJobQueue(count, count)
@@ -257,6 +262,7 @@ func TestQueuePopAfterCloseReturnsAllElements(t *testing.T) {
 }
 
 func TestQueuePushPopManyGoroutines(t *testing.T) {
+	t.Parallel()
 	const readGoroutines = 5
 	const writeGoroutines = 10
 	const writes = 500
@@ -269,34 +275,26 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 
 	readersWG := sync.WaitGroup{}
 	for range readGoroutines {
-		readersWG.Add(1)
-
-		go func() {
-			defer readersWG.Done()
-
+		readersWG.Go(func() {
 			for j, ok := queue.pop(); ok; j, ok = queue.pop() {
 				refsMx.Lock()
 				refs[j.seriesRef] = true
 				refsMx.Unlock()
 			}
-		}()
+		})
 	}
 
 	id := atomic.Uint64{}
 
 	writersWG := sync.WaitGroup{}
 	for range writeGoroutines {
-		writersWG.Add(1)
-
-		go func() {
-			defer writersWG.Done()
-
+		writersWG.Go(func() {
 			for range writes {
 				ref := id.Inc()
 
 				require.True(t, queue.push(chunkWriteJob{seriesRef: HeadSeriesRef(ref)}))
 			}
-		}()
+		})
 	}
 
 	// Wait until all writes are done.
@@ -311,6 +309,7 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 }
 
 func TestQueueSegmentIsKeptEvenIfEmpty(t *testing.T) {
+	t.Parallel()
 	queue := newWriteJobQueue(1024, 64)
 
 	require.True(t, queue.push(chunkWriteJob{seriesRef: 1}))
