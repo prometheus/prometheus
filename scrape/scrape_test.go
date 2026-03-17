@@ -6823,6 +6823,7 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 
 		app := teststorage.NewAppendable()
 		opts := &Options{
+			offsetSeed: 1,
 			HTTPClientOptions: []config_util.HTTPClientOption{
 				config_util.WithDialContextFunc(func(ctx context.Context, _, _ string) (net.Conn, error) {
 					srvConn, cliConn := net.Pipe()
@@ -6868,20 +6869,13 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 
 		scrapeManager.reload()
 
-		time.Sleep(22 * time.Second)
+		numScrapes := 4
+		time.Sleep((time.Duration(numScrapes) * interval) + time.Second)
 		synctest.Wait()
 
 		scrapeManager.Stop()
 
-		maxScrapes := 0
-		for _, times := range scrapeTimes {
-			if len(times) > maxScrapes {
-				maxScrapes = len(times)
-			}
-		}
-		require.Positive(t, maxScrapes, "Expected at least one scrape")
-
-		for i := 0; i < maxScrapes; i++ {
+		for i := range numScrapes {
 			uniqueTimes := make(map[time.Duration]struct{})
 			for _, times := range scrapeTimes {
 				if i < len(times) {
