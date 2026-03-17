@@ -81,30 +81,25 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 
 `--enable-feature=st-storage`
 
-> WARNING: This is a highly experimental and risky setting.
-> * The new SamplesV2 WAL records cannot be replayed with Prometheus versions that do not support them.
-> * This feature uses XOR2 encoded chunks, which cannot be read by older Prometheus versions that do not support the encoding.
-> * XOR2 encoding is new, meaning downstream tools and LTS systems might now support it yet (e.g. Thanos sidecar uploaded blocks).
-
-> See [PROM-60](https://github.com/prometheus/proposals/pull/60) for the full
-design proposal.
-
-Enables the storage of start timestamps (ST) natively per sample, instead of injecting synthetic 0 valued samples (as `created-timestamp-zero-ingestion` does).
-Native storage of start timestamps preserves the exact ST values without adding extra samples.
-
-Currently, native start timestamp storage is only supported for float samples; support for histograms will be added in the future.
-Additionally, start timestamp values are not yet used by the PromQL engine for queries.
+Enables the storage of start timestamps (ST) per sample, through WAL, TSDB/Agent and Remote Write 2. This option
+allows preserving the exact ST value as it was presented from scrape and receive protocols. This feature
+is meant to be a replacement of `created-timestamp-zero-ingestion` which injects synthetic 0 samples.
 
 Currently, Prometheus supports start timestamps on:
 
 * `PrometheusProto`
 * `OpenMetrics1.0.0`
 
-`PrometheusProto` is recommended. 
+`PrometheusProto` is recommended, due to efficiency of ST passing. OpenMetrics 2.0 should fix this problem in the future. 
 
 Besides enabling this feature in Prometheus, start timestamps need to be exposed by the application being scraped.
 
-Enabling this feature flag automatically enables the xor2-encoding flag.
+> NOTE: This is an experimental feature with known limitations until fully implemented.
+> * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.10+ versions.
+> * For persistent storage support (TSDB blocks), you need to manually opt-in for XOR2 chunk format ([`xor2-encoding` flag](#xor2-chunk-encoding)). 
+> This might change later once we finish experimentation phase with XOR2.
+> * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
+> * PromQL use of ST is out of scope of this feature.
 
 ## Concurrent evaluation of independent rules
 
