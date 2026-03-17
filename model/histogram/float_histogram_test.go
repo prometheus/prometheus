@@ -4420,13 +4420,10 @@ func BenchmarkFloatHistogramDetectReset(b *testing.B) {
 
 func BenchmarkFloatHistogramAdd(b *testing.B) {
 	var (
-		rng = rand.New(rand.NewSource(0))
-
+		rng           = rand.New(rand.NewSource(0))
 		numHistograms = 120
-
-		err error
-
-		fhs = make([]*FloatHistogram, 0, numHistograms)
+		err           error
+		fhs           = make([]*FloatHistogram, 0, numHistograms)
 	)
 
 	for range numHistograms {
