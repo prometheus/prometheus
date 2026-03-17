@@ -126,8 +126,31 @@ type Options struct {
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 
+	// ScrapeOnShutdown enables a final scrape before the manager closes. This is useful
+	// for Prometheus in agent mode or OTel's prometheusreceiver when used in serverless
+	// job scenarios, allowing an extra scrape for the short-living edge cases.
+	//
+	// NOTE: This final scrape ignores the configured scrape interval.
+	ScrapeOnShutdown bool
+
+	// InitialScrapeOffset applies an additional baseline delay before we begin
+	// scraping targets. By default, Prometheus calculates a specific offset for
+	// each target to spread the scraping load evenly across the server. Configuring
+	// this option adds a fixed duration to that target-specific offset. This allows
+	// tuning the initial startup delay without overriding the underlying target
+	// jitter, preserving proper load balancing across the scraper pools.
+	//
+	// Setting this offset (e.g., to 10s) is particularly useful in Prometheus
+	// agent mode and OTel's prometheusreceiver when used in serverless job
+	// scenarios. It helps avoid readiness races where targets might not be fully
+	// initialized immediately upon startup. It also prevents capturing
+	// intermediate state (such as applications crashing shortly after booting),
+	// and ensures backend rate limits don't drop valuable shutdown scrapes
+	// because of an early startup scrape.
+	InitialScrapeOffset time.Duration
+
 	// private option for testability.
-	skipOffsetting bool
+	skipJitterOffsetting bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -316,8 +339,16 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 	m.scrapeFailureLoggers = scrapeFailureLoggers
 
-	if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
-		return err
+	// Skip offset seed calculation during tests.
+	// setOffsetSeed relies on osutil.GetFQDN(), which triggers a DNS lookup using
+	// a global singleflight goroutine. This cross-boundary communication breaks
+	// synctest's isolation bubble and causes a fatal panic.
+	if m.opts.skipJitterOffsetting {
+		m.offsetSeed = 0
+	} else {
+		if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
+			return err
+		}
 	}
 
 	// Cleanup and reload pool if the configuration has changed.

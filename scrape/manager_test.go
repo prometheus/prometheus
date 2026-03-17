@@ -53,6 +53,7 @@ import (
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -767,7 +768,7 @@ func TestManagerSTZeroIngestion(t *testing.T) {
 							app := teststorage.NewAppendable()
 							discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 								EnableStartTimestampZeroIngestion: testSTZeroIngest,
-								skipOffsetting:                    true,
+								skipJitterOffsetting:              true,
 							}, app, nil)
 							defer scrapeManager.Stop()
 
@@ -953,7 +954,7 @@ func TestManagerSTZeroIngestionHistogram(t *testing.T) {
 			app := teststorage.NewAppendable()
 			discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 				EnableStartTimestampZeroIngestion: tc.enableSTZeroIngestion,
-				skipOffsetting:                    true,
+				skipJitterOffsetting:              true,
 			}, app, nil)
 			defer scrapeManager.Stop()
 
@@ -1065,7 +1066,7 @@ func TestNHCBAndSTZeroIngestion(t *testing.T) {
 	app := teststorage.NewAppendable()
 	discoveryManager, scrapeManager := runManagers(t, ctx, &Options{
 		EnableStartTimestampZeroIngestion: true,
-		skipOffsetting:                    true,
+		skipJitterOffsetting:              true,
 	}, app, nil)
 	defer scrapeManager.Stop()
 
@@ -1584,7 +1585,7 @@ scrape_configs:
 
 	// Disable end of run staleness markers for some targets.
 	m.DisableEndOfRunStalenessMarkers("one", targetsToDisable)
-	// This should be a no-op
+	// This should be a no-op.
 	m.DisableEndOfRunStalenessMarkers("non-existent-job", targetsToDisable)
 
 	// Check that the end of run staleness markers are disabled for the correct targets.
@@ -1594,5 +1595,119 @@ scrape_configs:
 			expectedDisabled := slices.Contains(targetsToDisable, tg)
 			require.Equal(t, expectedDisabled, loop.disabledEndOfRunStalenessMarkers.Load())
 		}
+	}
+}
+
+func TestManager_InitialScrapeOffset(t *testing.T) {
+	interval := 10 * time.Second
+
+	for _, tcase := range []struct {
+		name                string
+		initialScrapeOffset time.Duration
+		runDuration         time.Duration
+		expectedSamples     int
+	}{
+		{
+			name:            "zero offset scrapes immediately",
+			expectedSamples: 1,
+		},
+		{
+			name:            "zero offset scrapes twice after one interval",
+			runDuration:     interval,
+			expectedSamples: 2,
+		},
+		{
+			name:                "large offset prevents immediate scrape",
+			initialScrapeOffset: 1 * time.Hour,
+			runDuration:         59 * time.Minute,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				opts := &Options{InitialScrapeOffset: tcase.initialScrapeOffset}
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts, interval)
+				defer cleanupConns()
+
+				// Wait for the scrape manager to block on its timers.
+				synctest.Wait()
+
+				// Fast-forward the fake clock by the test case's run duration.
+				time.Sleep(tcase.runDuration)
+				synctest.Wait()
+
+				// Stop the manager to clean up background goroutines.
+				scrapeManager.Stop()
+
+				require.Len(t, findSamplesForMetric(app.ResultSamples(), "expected_metric"), tcase.expectedSamples)
+			})
+		})
+	}
+}
+
+func TestManager_ScrapeOnShutdown(t *testing.T) {
+	interval := 10 * time.Second
+
+	for _, tcase := range []struct {
+		name                 string
+		scrapeOnShutdown     bool
+		initialScrapeOffset  time.Duration
+		runDuration          time.Duration
+		expectedSamplesTotal int
+	}{
+		{
+			name:                 "no scrape on shutdown",
+			scrapeOnShutdown:     false,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                 "scrape on shutdown",
+			scrapeOnShutdown:     true,
+			expectedSamplesTotal: 2,
+		},
+		{
+			name:                 "scrape on shutdown after some scrapes",
+			scrapeOnShutdown:     true,
+			runDuration:          interval,
+			expectedSamplesTotal: 3,
+		},
+		{
+			name:                 "scrape on shutdown with initial offset",
+			scrapeOnShutdown:     true,
+			initialScrapeOffset:  10 * time.Second,
+			runDuration:          5 * time.Second,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                 "scrape on shutdown with short running instance (offset 5s)",
+			scrapeOnShutdown:     true,
+			initialScrapeOffset:  5 * time.Second,
+			runDuration:          8 * time.Second,
+			expectedSamplesTotal: 2,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				opts := &Options{
+					ScrapeOnShutdown:    tcase.scrapeOnShutdown,
+					InitialScrapeOffset: tcase.initialScrapeOffset,
+				}
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts, interval)
+				defer cleanupConns()
+
+				// Wait for the initial scrape to happen exactly at t=0.
+				synctest.Wait()
+
+				// Fast-forward fake time to simulate scheduled scrapes before shutdown.
+				if tcase.runDuration > 0 {
+					time.Sleep(tcase.runDuration)
+					synctest.Wait()
+				}
+
+				// Stop the manager. This triggers the ScrapeOnShutdown logic synchronously.
+				scrapeManager.Stop()
+
+				require.Len(t, findSamplesForMetric(app.ResultSamples(), "expected_metric"), tcase.expectedSamplesTotal)
+			})
+		})
 	}
 }

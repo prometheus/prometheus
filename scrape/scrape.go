@@ -238,7 +238,6 @@ func (sp *scrapePool) SetScrapeFailureLogger(l FailureLogger) {
 func (sp *scrapePool) stop() {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
-	sp.cancel()
 	var wg sync.WaitGroup
 
 	sp.targetMtx.Lock()
@@ -258,6 +257,10 @@ func (sp *scrapePool) stop() {
 	sp.targetMtx.Unlock()
 
 	wg.Wait()
+	// Cancel the context after all loops have stopped. This is required for
+	// scrapeOnShutdown to work properly, as the shutdown scrape uses this
+	// context (via sl.parentCtx) and would fail if the context was cancelled early.
+	sp.cancel()
 	sp.client.CloseIdleConnections()
 
 	if sp.config != nil {
@@ -820,11 +823,17 @@ type cacheEntry struct {
 }
 
 type scrapeLoop struct {
-	// Parameters.
-	ctx         context.Context
-	cancel      func()
-	stopped     chan struct{}
-	parentCtx   context.Context
+	// ctx represents a local context that is cancellable via s.cancel.
+	// It's meant to synchronize run() with stop().
+	// It inherits parentCtx.
+	ctx     context.Context
+	cancel  func()
+	stopped chan struct{}
+	// parentCtx represents manager-level context, typically connected
+	// to process shutdown.
+	parentCtx context.Context
+	// appenderCtx is a parentCtx with some extra context for appender
+	// implementations. Potentially remove-able with removal of AppenderV1.
 	appenderCtx context.Context
 	l           *slog.Logger
 	cache       *scrapeCache
@@ -865,8 +874,9 @@ type scrapeLoop struct {
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
-	skipOffsetting          bool // For testability.
-
+	skipJitterOffsetting    bool // For testability.
+	scrapeOnShutdown        bool
+	initialScrapeOffset     time.Duration
 	// error injection through setForcedError.
 	forcedErr    error
 	forcedErrMtx sync.Mutex
@@ -1218,7 +1228,9 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
-		skipOffsetting:          opts.sp.options.skipOffsetting,
+		skipJitterOffsetting:    opts.sp.options.skipJitterOffsetting,
+		scrapeOnShutdown:        opts.sp.options.ScrapeOnShutdown,
+		initialScrapeOffset:     opts.sp.options.InitialScrapeOffset,
 	}
 }
 
@@ -1231,31 +1243,49 @@ func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 	sl.scrapeFailureLogger = l
 }
 
+func (sl *scrapeLoop) getScrapeOffset() time.Duration {
+	offset := sl.scraper.offset(sl.interval, sl.offsetSeed)
+	if sl.skipJitterOffsetting {
+		offset = time.Duration(0)
+	}
+	return sl.initialScrapeOffset + offset
+}
+
 func (sl *scrapeLoop) run(errc chan<- error) {
-	if !sl.skipOffsetting {
+	var (
+		last              time.Time
+		alignedScrapeTime = time.Now().Round(0)
+		ticker            = time.NewTicker(sl.interval)
+	)
+	defer func() {
+		if sl.scrapeOnShutdown {
+			last = sl.scrapeAndReport(last, time.Now().Round(0), errc)
+		}
+		// Let the stop() know it can continue.
+		close(sl.stopped)
+		if sl.parentCtx.Err() == nil {
+			if !sl.disabledEndOfRunStalenessMarkers.Load() {
+				sl.endOfRunStaleness(last, ticker, sl.interval)
+			}
+		}
+		ticker.Stop()
+	}()
+
+	// Initial offset and jitter offset, if any.
+	offset := sl.getScrapeOffset()
+	if offset > 0 {
 		select {
-		case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
+		case <-time.After(offset):
 			// Continue after a scraping offset.
 		case <-sl.ctx.Done():
-			close(sl.stopped)
 			return
 		}
 	}
 
-	var last time.Time
-
-	alignedScrapeTime := time.Now().Round(0)
-	ticker := time.NewTicker(sl.interval)
-	defer ticker.Stop()
-
-mainLoop:
 	for {
 		select {
-		case <-sl.parentCtx.Done():
-			close(sl.stopped)
-			return
 		case <-sl.ctx.Done():
-			break mainLoop
+			return
 		default:
 		}
 
@@ -1282,19 +1312,10 @@ mainLoop:
 		last = sl.scrapeAndReport(last, scrapeTime, errc)
 
 		select {
-		case <-sl.parentCtx.Done():
-			close(sl.stopped)
-			return
 		case <-sl.ctx.Done():
-			break mainLoop
+			return
 		case <-ticker.C:
 		}
-	}
-
-	close(sl.stopped)
-
-	if !sl.disabledEndOfRunStalenessMarkers.Load() {
-		sl.endOfRunStaleness(last, ticker, sl.interval)
 	}
 }
 
