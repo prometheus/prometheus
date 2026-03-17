@@ -149,7 +149,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	externalLabelsUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
 
 	newQueues := make(map[string]*QueueManager)
-	newHashes := map[string]struct{}{}
 	for _, rwConf := range conf.RemoteWriteConfigs {
 		hash, err := toHash(rwConf)
 		if err != nil {
@@ -219,8 +218,6 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.ProtobufMessage,
 			rws.recordBuf,
 		)
-		// Keep track of which queues are new so we know which to start.
-		newHashes[hash] = struct{}{}
 	}
 
 	// All validation passed - now safe to modify state.
@@ -234,8 +231,10 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		}
 	}
 
-	for hash := range newHashes {
-		newQueues[hash].Start()
+	for hash, q := range newQueues {
+		if rws.queues[hash] != q {
+			q.Start()
+		}
 	}
 
 	rws.queues = newQueues
