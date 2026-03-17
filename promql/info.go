@@ -204,13 +204,13 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	// to select info metrics, while negative matchers (!=, !~) are used to filter.
 	// Only positive matchers can positively identify info metrics; negative matchers
 	// alone would incorrectly select non-info metrics as info sources.
-	var positiveNameMatcher *labels.Matcher
+	var positiveNameMatchers []*labels.Matcher
 	var negativeNameMatchers []*labels.Matcher
 	for _, ms := range dataLabelMatchers {
 		for _, m := range ms {
 			if m.Name == model.MetricNameLabel {
 				if m.Type == labels.MatchEqual || m.Type == labels.MatchRegexp {
-					positiveNameMatcher = m
+					positiveNameMatchers = append(positiveNameMatchers, m)
 				} else {
 					negativeNameMatchers = append(negativeNameMatchers, m)
 				}
@@ -222,9 +222,10 @@ func (ev *evaluator) fetchInfoSeries(ctx context.Context, mat Matrix, ignoreSeri
 	}
 	removeNameFromDataLabelMatchers()
 	switch {
-	case positiveNameMatcher != nil:
-		// Use the positive __name__ matcher to select info metrics.
-		infoLabelMatchers = append(infoLabelMatchers, positiveNameMatcher)
+	case len(positiveNameMatchers) > 0:
+		// Use the positive __name__ matchers to select info metrics.
+		infoLabelMatchers = append(infoLabelMatchers, positiveNameMatchers...)
+		infoLabelMatchers = append(infoLabelMatchers, negativeNameMatchers...)
 	case len(negativeNameMatchers) > 0:
 		// Only negative matchers: use a broad pattern to match info metrics,
 		// then filter with the negative matchers.
