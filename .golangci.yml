@@ -39,6 +39,7 @@ linters:
     - predeclared
     - revive
     - sloglint
+    - staticcheck
     - testifylint
     - unconvert
     - unused
@@ -63,9 +64,6 @@ linters:
         # We have stopped at some point to write doc comments on exported symbols.
         # TODO(beorn7): Maybe we should enforce this again? There are ~500 offenders right now.
         text: exported (.+) should have comment( \(or a comment on this block\))? or be unexported
-      - linters:
-          - gocritic
-        text: "appendAssign"
       - linters:
           - errcheck
         path: _test.go
@@ -117,6 +115,42 @@ linters:
         - (*net/http.Server).Shutdown
         # Never check for rollback errors as Rollback() is called when a previous error was detected.
         - (github.com/prometheus/prometheus/storage.Appender).Rollback
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - appendAssign
+        - appendCombine
+        - badLock
+        - boolExprSimplify
+        - commentedOutCode
+        - deferInLoop
+        - docStub
+        - equalFold
+        - evalOrder
+        - exposedSyncMutex
+        - hexLiteral
+        - hugeParam
+        - importShadow
+        - nestingReduce
+        - ptrToRefParam
+        - preferStringWriter
+        - rangeValCopy
+        - redundantSprint
+        - regexpSimplify
+        - returnAfterHttpError
+        - sloppyReassign
+        - sprintfQuotedString
+        - stringsCompare
+        - todoCommentWithoutDetail
+        - tooManyResultsChecker
+        - typeUnparen
+        - truncateCmp
+        - typeDefFirst
+        - unlabelStmt
+        - unnamedResult
+        - unnecessaryBlock
+        - unnecessaryDefer
+        - whyNoLint
     govet:
       disable:
         - shadow
@@ -128,8 +162,9 @@ linters:
         # Disable this check for now since it introduces too many changes in our existing codebase.
         # See https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_omitzero for more details.
         - omitzero
-        # Disable waitgroup check until we really move to Go 1.25.
-        - waitgroup
+        # Disable newexpr check for now since it introduces too many changes in our existing codebase.
+        # To be re-enabled as a part of https://github.com/prometheus/prometheus/issues/18066.
+        - newexpr
     perfsprint:
       # Optimizes even if it requires an int or uint type cast.
       int-conversion: true

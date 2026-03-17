@@ -6,21 +6,25 @@ General maintainers:
 * Bryan Boreham (bjboreham@gmail.com / @bboreham)
 * Ayoub Mrini (ayoubmrini424@gmail.com / @machine424)
 * Julien Pivotto (roidelapluie@prometheus.io / @roidelapluie)
+* György Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
+* Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka)
+* Arve Knudsen (<arve.knudsen@gmail.com> / @aknuds1)
 
 Maintainers for specific parts of the codebase:
 * `cmd`
   * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
 * `discovery`
-  * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz)
+  * `hetzner`: (@jooola) (@apricote)
+  * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz), Pranshu Srivastava (<rexagod@gmail.com> / @rexagod)
   * `stackit`: Jan-Otto Kröpke (<mail@jkroepke.de> / @jkroepke)
+  * `consul`: Mohammad Varmazyar (<mrvarmazyar@gmail.com> / @mrvarmazyar)
+  * `scaleway`: Rémy Léone (rleone@scaleway.com / @remyleone)
 * `documentation`
   * `prometheus-mixin`: Matthias Loibl (<mail@matthiasloibl.com> / @metalmatze)
-* `model/histogram` and other code related to native histograms: Björn Rabenstein (<beorn@grafana.com> / @beorn7),
-George Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
 * `storage`
-  * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (tom.wilkie@gmail.com / @tomwilkie), Alex Greenbank (<alexgreenbank@yahoo.com> / @alexgreenbank)
-    * `otlptranslator`: Arthur Silva Sens (<arthursens2005@gmail.com> / @ArthurSens), Arve Knudsen (<arve.knudsen@gmail.com> / @aknuds1), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
-* `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez), George Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
+  * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Tom Wilkie (tom.wilkie@gmail.com / @tomwilkie), Alex Greenbank (<alexgreenbank@yahoo.com> / @alexgreenbank)
+    * `otlptranslator`: Arthur Silva Sens (<arthursens2005@gmail.com> / @ArthurSens, Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
+* `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
 * `web`
   * `ui`: Julius Volz (<julius.volz@gmail.com> / @juliusv)
     * `module`: Augustin Husson (<husson.augustin@gmail.com> / @nexucis)

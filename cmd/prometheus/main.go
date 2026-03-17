@@ -55,6 +55,7 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
 
@@ -77,6 +78,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/features"
@@ -319,6 +321,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.web.EnableTypeAndUnitLabels = true
 				logger.Info("Experimental type and unit labels enabled")
 			case "use-uncached-io":
+				if !fileutil.UncachedIOSupported() {
+					return errors.New("experimental Uncached IO is not supported")
+				}
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
 			default:
@@ -717,6 +722,9 @@ func main() {
 			if cfgFile.StorageConfig.TSDBConfig.Retention.Size > 0 {
 				cfg.tsdb.MaxBytes = cfgFile.StorageConfig.TSDBConfig.Retention.Size
 			}
+			if cfgFile.StorageConfig.TSDBConfig.Retention.Percentage > 0 {
+				cfg.tsdb.MaxPercentage = cfgFile.StorageConfig.TSDBConfig.Retention.Percentage
+			}
 		}
 	}
 
@@ -770,9 +778,9 @@ func main() {
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
 	if !agentMode {
-		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 {
+		if cfg.tsdb.RetentionDuration == 0 && cfg.tsdb.MaxBytes == 0 && cfg.tsdb.MaxPercentage == 0 {
 			cfg.tsdb.RetentionDuration = defaultRetentionDuration
-			logger.Info("No time or size retention was set so using the default time retention", "duration", defaultRetentionDuration)
+			logger.Info("No time, size or percentage retention was set so using the default time retention", "duration", defaultRetentionDuration)
 		}
 
 		// Check for overflows. This limits our max retention to 100y.
@@ -783,6 +791,20 @@ func main() {
 			}
 			cfg.tsdb.RetentionDuration = y
 			logger.Warn("Time retention value is too high. Limiting to: " + y.String())
+		}
+
+		if cfg.tsdb.MaxPercentage > 100 {
+			cfg.tsdb.MaxPercentage = 100
+			logger.Warn("Percentage retention value is too high. Limiting to: 100%")
+		}
+		if cfg.tsdb.MaxPercentage > 0 {
+			if cfg.tsdb.MaxBytes > 0 {
+				logger.Warn("storage.tsdb.retention.size is ignored, because storage.tsdb.retention.percentage is specified")
+			}
+			if prom_runtime.FsSize(localStoragePath) == 0 {
+				fmt.Fprintln(os.Stderr, fmt.Errorf("unable to detect total capacity of metric storage at %s, please disable retention percentage (%d%%)", localStoragePath, cfg.tsdb.MaxPercentage))
+				os.Exit(2)
+			}
 		}
 
 		// Max block size settings.
@@ -815,6 +837,9 @@ func main() {
 
 	klogv2.SetSlogLogger(logger.With("component", "k8s_client_runtime"))
 	klog.SetOutputBySeverity("INFO", klogv1Writer{})
+	// Avoid duplicate API deprecation warnings (e.g., "v1 Endpoints is deprecated in v1.33+...")
+	// that can pollute the logs.
+	rest.SetDefaultWarningHandlerWithContext(logging.NewDedupDeprecationWarningLogger())
 
 	modeAppName := "Prometheus Server"
 	mode := "server"
@@ -958,6 +983,7 @@ func main() {
 	cfg.web.Context = ctxWeb
 	cfg.web.TSDBRetentionDuration = cfg.tsdb.RetentionDuration
 	cfg.web.TSDBMaxBytes = cfg.tsdb.MaxBytes
+	cfg.web.TSDBMaxPercentage = cfg.tsdb.MaxPercentage
 	cfg.web.TSDBDir = localStoragePath
 	cfg.web.LocalStorage = localStorage
 	cfg.web.Storage = fanoutStorage
@@ -1191,9 +1217,11 @@ func main() {
 			func() error {
 				<-reloadReady.C
 				ruleManager.Run()
+				logger.Info("Rule manager stopped")
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping rule manager manager...")
 				ruleManager.Stop()
 			},
 		)
@@ -1228,9 +1256,11 @@ func main() {
 			func() error {
 				<-reloadReady.C
 				tracingManager.Run()
+				logger.Info("Tracing manager stopped")
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping tracing manager...")
 				tracingManager.Stop()
 			},
 		)
@@ -1307,6 +1337,7 @@ func main() {
 							checksum = currentChecksum
 						}
 					case <-cancel:
+						logger.Info("Reloaders stopped")
 						return nil
 					}
 				}
@@ -1314,6 +1345,7 @@ func main() {
 			func(error) {
 				// Wait for any in-progress reloads to complete to avoid
 				// reloading things after they have been shutdown.
+				logger.Info("Stopping reloaders...")
 				cancel <- struct{}{}
 			},
 		)
@@ -1371,7 +1403,7 @@ func main() {
 					return fmt.Errorf("opening storage failed: %w", err)
 				}
 
-				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
+				switch fsType := prom_runtime.FsType(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					logger.Warn("This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.", "fs_type", fsType)
 				default:
@@ -1383,6 +1415,7 @@ func main() {
 					"MinBlockDuration", cfg.tsdb.MinBlockDuration,
 					"MaxBlockDuration", cfg.tsdb.MaxBlockDuration,
 					"MaxBytes", cfg.tsdb.MaxBytes,
+					"MaxPercentage", cfg.tsdb.MaxPercentage,
 					"NoLockfile", cfg.tsdb.NoLockfile,
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
@@ -1397,9 +1430,11 @@ func main() {
 				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
+				logger.Info("TSDB stopped")
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping storage...")
 				if err := fanoutStorage.Close(); err != nil {
 					logger.Error("Error stopping storage", "err", err)
 				}
@@ -1430,7 +1465,7 @@ func main() {
 					return fmt.Errorf("opening storage failed: %w", err)
 				}
 
-				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
+				switch fsType := prom_runtime.FsType(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					logger.Warn(fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
 				default:
@@ -1454,9 +1489,11 @@ func main() {
 				db.SetWriteNotified(remoteStorage)
 				close(dbOpen)
 				<-cancel
+				logger.Info("Agent WAL storage stopped")
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping agent WAL storage...")
 				if err := fanoutStorage.Close(); err != nil {
 					logger.Error("Error stopping storage", "err", err)
 				}
@@ -1471,9 +1508,11 @@ func main() {
 				if err := webHandler.Run(ctxWeb, listeners, *webConfig); err != nil {
 					return fmt.Errorf("error starting web server: %w", err)
 				}
+				logger.Info("Web handler stopped")
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping web handler...")
 				cancelWeb()
 			},
 		)
@@ -1496,6 +1535,7 @@ func main() {
 				return nil
 			},
 			func(error) {
+				logger.Info("Stopping notifier manager...")
 				notifierManager.Stop()
 			},
 		)
@@ -1565,7 +1605,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
@@ -1606,8 +1646,7 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 	}
 
 	updateGoGC(conf, logger)
-
-	noStepSuqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
+	noStepSubqueryInterval.Set(conf.GlobalConfig.EvaluationInterval)
 	timingsLogger.Info("Completed loading of configuration file", "filename", filename, "totalDuration", time.Since(start))
 	return nil
 }
@@ -1950,6 +1989,7 @@ type tsdbOptions struct {
 	MaxBlockChunkSegmentSize       units.Base2Bytes
 	RetentionDuration              model.Duration
 	MaxBytes                       units.Base2Bytes
+	MaxPercentage                  uint
 	NoLockfile                     bool
 	WALCompressionType             compression.Type
 	HeadChunksWriteQueueSize       int
@@ -1978,6 +2018,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		MaxBlockChunkSegmentSize:       int64(opts.MaxBlockChunkSegmentSize),
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
+		MaxPercentage:                  opts.MaxPercentage,
 		NoLockfile:                     opts.NoLockfile,
 		WALCompression:                 opts.WALCompressionType,
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,

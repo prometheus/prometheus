@@ -38,7 +38,7 @@ func tree(node Node, level string) string {
 	typs := strings.Split(fmt.Sprintf("%T", node), ".")[1]
 
 	var t strings.Builder
-	t.WriteString(fmt.Sprintf("%s |---- %s :: %s\n", level, typs, node))
+	fmt.Fprintf(&t, "%s |---- %s :: %s\n", level, typs, node)
 
 	level += " · · ·"
 

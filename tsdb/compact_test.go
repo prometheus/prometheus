@@ -1717,10 +1717,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 
 				var wg sync.WaitGroup
 
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-
+				wg.Go(func() {
 					// Ingest sparse histograms.
 					for _, ah := range allSparseSeries {
 						var (
@@ -1743,7 +1740,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					sparseULIDs, err = compactor.Write(sparseHead.opts.ChunkDirRoot, sparseHead, mint, maxt, nil)
 					require.NoError(t, err)
 					require.Len(t, sparseULIDs, 1)
-				}()
+				})
 
 				wg.Add(1)
 				go func(c testcase) {

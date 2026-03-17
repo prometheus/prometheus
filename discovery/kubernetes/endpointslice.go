@@ -38,13 +38,18 @@ const serviceIndex = "service"
 type EndpointSlice struct {
 	logger *slog.Logger
 
-	endpointSliceInf      cache.SharedIndexInformer
-	serviceInf            cache.SharedInformer
-	podInf                cache.SharedInformer
-	nodeInf               cache.SharedInformer
-	withNodeMetadata      bool
-	namespaceInf          cache.SharedInformer
-	withNamespaceMetadata bool
+	endpointSliceInf       cache.SharedIndexInformer
+	serviceInf             cache.SharedInformer
+	podInf                 cache.SharedInformer
+	nodeInf                cache.SharedInformer
+	withNodeMetadata       bool
+	namespaceInf           cache.SharedInformer
+	withNamespaceMetadata  bool
+	replicaSetInf          cache.SharedInformer
+	withDeploymentMetadata bool
+	jobInf                 cache.SharedInformer
+	withJobMetadata        bool
+	withCronJobMetadata    bool
 
 	podStore           cache.Store
 	endpointSliceStore cache.Store
@@ -54,7 +59,7 @@ type EndpointSlice struct {
 }
 
 // NewEndpointSlice returns a new endpointslice discovery.
-func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace cache.SharedInformer, eventCount *prometheus.CounterVec) *EndpointSlice {
+func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace, rs, job cache.SharedInformer, withDeploymentMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *EndpointSlice {
 	if l == nil {
 		l = promslog.NewNopLogger()
 	}
@@ -68,17 +73,22 @@ func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, n
 	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
 
 	e := &EndpointSlice{
-		logger:                l,
-		endpointSliceInf:      eps,
-		endpointSliceStore:    eps.GetStore(),
-		serviceInf:            svc,
-		serviceStore:          svc.GetStore(),
-		podInf:                pod,
-		podStore:              pod.GetStore(),
-		nodeInf:               node,
-		withNodeMetadata:      node != nil,
-		namespaceInf:          namespace,
-		withNamespaceMetadata: namespace != nil,
+		logger:                 l,
+		endpointSliceInf:       eps,
+		endpointSliceStore:     eps.GetStore(),
+		serviceInf:             svc,
+		serviceStore:           svc.GetStore(),
+		podInf:                 pod,
+		podStore:               pod.GetStore(),
+		nodeInf:                node,
+		withNodeMetadata:       node != nil,
+		namespaceInf:           namespace,
+		withNamespaceMetadata:  namespace != nil,
+		replicaSetInf:          rs,
+		withDeploymentMetadata: withDeploymentMetadata,
+		jobInf:                 job,
+		withJobMetadata:        withJobMetadata,
+		withCronJobMetadata:    withCronJobMetadata,
 		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
 			Name: RoleEndpointSlice.String(),
 		}),
@@ -306,10 +316,14 @@ func (e *EndpointSlice) buildEndpointSlice(eps v1.EndpointSlice) *targetgroup.Gr
 
 	addObjectMetaLabels(tg.Labels, eps.ObjectMeta, RoleEndpointSlice)
 
-	e.addServiceLabels(eps, tg)
+	svc := e.addServiceLabels(eps, tg)
 
 	if e.withNamespaceMetadata {
 		tg.Labels = addNamespaceLabels(tg.Labels, e.namespaceInf, e.logger, eps.Namespace)
+	}
+
+	if nonPrimaryIPFamilySlice(svc, eps) {
+		return tg
 	}
 
 	type podEntry struct {
@@ -402,7 +416,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps v1.EndpointSlice) *targetgroup.Gr
 		}
 
 		// Attach standard pod labels.
-		target = target.Merge(podLabels(pod))
+		target = target.Merge(podLabels(pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withJobMetadata, e.withCronJobMetadata))
 
 		// Attach potential container port labels matching the endpoint port.
 		containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
@@ -445,7 +459,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps v1.EndpointSlice) *targetgroup.Gr
 	// by one of the service endpoints, generate targets for them.
 	for _, pe := range seenPods {
 		// PodIP can be empty when a pod is starting or has been evicted.
-		if len(pe.pod.Status.PodIP) == 0 {
+		if pe.pod.Status.PodIP == "" {
 			continue
 		}
 
@@ -480,7 +494,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps v1.EndpointSlice) *targetgroup.Gr
 					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
 					podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
+				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withJobMetadata, e.withCronJobMetadata)))
 			}
 		}
 	}
@@ -504,7 +518,34 @@ func (e *EndpointSlice) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	return obj.(*apiv1.Pod)
 }
 
-func (e *EndpointSlice) addServiceLabels(esa v1.EndpointSlice, tg *targetgroup.Group) {
+// nonPrimaryIPFamilySlice reports whether eps is the secondary slice of a
+// dual-stack service, i.e. its address type does not match the service's
+// primary IP family. Targets from such slices would duplicate those of the
+// primary slice.
+func nonPrimaryIPFamilySlice(svc *apiv1.Service, eps v1.EndpointSlice) bool {
+	if svc == nil {
+		return false
+	}
+	policy := svc.Spec.IPFamilyPolicy
+	if policy == nil {
+		return false
+	}
+	if *policy != apiv1.IPFamilyPolicyPreferDualStack && *policy != apiv1.IPFamilyPolicyRequireDualStack {
+		return false
+	}
+	if len(svc.Spec.IPFamilies) == 0 {
+		return false
+	}
+
+	// NOTE: For ServiceSpec.IPFamilies:
+	// * A maximum of two values (dual-stack IPFamilies) are allowed.
+	// * The field is conditionally mutable: it allows for adding or
+	// removing a secondary IPFamily, but it does not allow changing the primary
+	// IPFamily of the service.
+	return string(eps.AddressType) != string(svc.Spec.IPFamilies[0])
+}
+
+func (e *EndpointSlice) addServiceLabels(esa v1.EndpointSlice, tg *targetgroup.Group) *apiv1.Service {
 	var (
 		found bool
 		name  string
@@ -515,18 +556,19 @@ func (e *EndpointSlice) addServiceLabels(esa v1.EndpointSlice, tg *targetgroup.G
 	// kubernetes.io/service-name label.
 	name, found = esa.Labels[v1.LabelServiceName]
 	if !found {
-		return
+		return nil
 	}
 
 	obj, exists, err := e.serviceStore.GetByKey(namespacedName(ns, name))
 	if err != nil {
 		e.logger.Error("retrieving service failed", "err", err)
-		return
+		return nil
 	}
 	if !exists {
-		return
+		return nil
 	}
 	svc := obj.(*apiv1.Service)
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
+	return svc
 }

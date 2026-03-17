@@ -1192,7 +1192,7 @@ func (p *postingsFailingAfterNthCall) Err() error {
 }
 
 func TestPostingsWithIndexHeap(t *testing.T) {
-	t.Run("iterate", func(t *testing.T) {
+	t.Run("seekHead", func(t *testing.T) {
 		h := postingsWithIndexHeap{
 			{index: 0, p: NewListPostings([]storage.SeriesRef{10, 20, 30})},
 			{index: 1, p: NewListPostings([]storage.SeriesRef{1, 5})},
@@ -1205,7 +1205,7 @@ func TestPostingsWithIndexHeap(t *testing.T) {
 
 		for _, expected := range []storage.SeriesRef{1, 5, 10, 20, 25, 30, 50} {
 			require.Equal(t, expected, h.at())
-			require.NoError(t, h.next())
+			require.NoError(t, h.seekHead(h.at()+1))
 		}
 		require.True(t, h.empty())
 	})
@@ -1223,7 +1223,7 @@ func TestPostingsWithIndexHeap(t *testing.T) {
 
 		for _, expected := range []storage.SeriesRef{1, 5, 10, 20} {
 			require.Equal(t, expected, h.at())
-			require.NoError(t, h.next())
+			require.NoError(t, h.seekHead(h.at()+1))
 		}
 		require.Equal(t, storage.SeriesRef(25), h.at())
 		node := heap.Pop(&h).(postingsWithIndex)
