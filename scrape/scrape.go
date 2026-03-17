@@ -1282,6 +1282,9 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 		}
 	}
 
+	// Reset the ticker so target scrape times are aligned to the offset+intervals.
+	ticker.Reset(sl.interval)
+
 	for {
 		select {
 		case <-sl.ctx.Done():
