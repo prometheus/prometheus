@@ -15,6 +15,8 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -166,6 +168,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
 				require.Equal(t, (chunkRange*4)-chunkStep, s.headChunks.maxTime, "wrong maxTime on first headChunks element")
 				s.headChunks = nil
+				s.headChunksLen = 0
 			},
 			inputID:  0,
 			expected: outMmappedChunk,
@@ -180,6 +183,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
 				require.Equal(t, (chunkRange*4)-chunkStep, s.headChunks.maxTime, "wrong maxTime on first headChunks element")
 				s.headChunks = nil
+				s.headChunksLen = 0
 			},
 			inputID:  2,
 			expected: outMmappedChunk,
@@ -194,6 +198,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.Equal(t, chunkRange*3, s.headChunks.oldest().minTime, "wrong minTime on last headChunks element")
 				require.Equal(t, (chunkRange*4)-chunkStep, s.headChunks.maxTime, "wrong maxTime on first headChunks element")
 				s.headChunks = nil
+				s.headChunksLen = 0
 			},
 			inputID:  3,
 			expected: outErr,
@@ -388,7 +393,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				tc.setup(t, series, chunkDiskMapper)
 			}
 
-			chk, headChunk, isOpen, err := series.chunk(tc.inputID, chunkDiskMapper, memChunkPool)
+			chk, headChunk, isOpen, err := series.chunk(tc.inputID, chunkDiskMapper, memChunkPool, nil)
 			switch tc.expected {
 			case outOpenHeadChunk:
 				require.NoError(t, err, "unexpected error")
@@ -429,4 +434,272 @@ func TestHeadIndexReader_PostingsForLabelMatching(t *testing.T) {
 		require.NoError(t, err)
 		return ir
 	})
+}
+
+func TestHeadChunkReaderCache(t *testing.T) {
+	t.Run("invalidated_after_mmap", func(t *testing.T) {
+		// Regression test: after mmapChunks(), the head-chunks cache must be
+		// invalidated even though s.headChunks (the pointer) doesn't change.
+		// mmapChunks severs the linked list (prev=nil, len=1) but
+		// keeps the same head pointer, so a pointer-only check would return
+		// a stale cache with chunks that have been mmapped.
+
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 100
+		opts.ChunkDirRoot = t.TempDir()
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+		// Append enough samples to create multiple head chunks.
+		// With ChunkRange=100 and DefaultSamplesPerChunk=120, each chunk
+		// holds ~20 samples (range/step = 100/5). We want >=3 head chunks.
+		app := h.Appender(t.Context())
+		lbls := labels.FromStrings("__name__", "test")
+		for i := int64(0); i < 500; i += 5 {
+			_, err := app.Append(0, lbls, i, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		// Look up the series and verify we have multiple head chunks.
+		s := h.series.getByID(1)
+		require.NotNil(t, s)
+		s.Lock()
+		require.Greater(t, s.headChunks.len(), 1, "need multiple head chunks for the test")
+		headChunksLenBefore := s.headChunks.len()
+		newestChunkMinTime := s.headChunks.minTime
+		// The chunk ID for the newest head chunk:
+		// firstChunkID + len(mmapped) + headChunksLen - 1
+		newestCID := s.firstChunkID + chunks.HeadChunkID(len(s.mmappedChunks)) + chunks.HeadChunkID(s.headChunks.len()) - 1
+		newestRef := chunks.NewHeadChunkRef(s.ref, newestCID)
+		s.Unlock()
+
+		// Create a headChunkReader and query the newest head chunk to populate the cache.
+		cr, err := h.chunksRange(0, 10000, nil)
+		require.NoError(t, err)
+
+		chk1, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		require.NoError(t, err)
+		require.NotNil(t, chk1)
+
+		// Verify cache is populated.
+		require.NotNil(t, cr.cachedHeadChunks)
+		require.Len(t, cr.cachedHeadChunks, headChunksLenBefore)
+
+		// Now mmap all but the newest head chunk — this severs the linked list.
+		s.Lock()
+		headPtrBefore := s.headChunks
+		s.mmapChunks(h.chunkDiskMapper)
+		require.Equal(t, 1, s.headChunks.len(), "after mmap, should have exactly 1 head chunk")
+		require.Same(t, headPtrBefore, s.headChunks, "head pointer should not change (the bug scenario)")
+		require.Equal(t, newestChunkMinTime, s.headChunks.minTime, "newest chunk should be the remaining head chunk")
+
+		// Recompute the newest chunk ID after mmap: more mmapped chunks now.
+		newestCID = s.firstChunkID + chunks.HeadChunkID(len(s.mmappedChunks)) + chunks.HeadChunkID(s.headChunks.len()) - 1
+		newestRef = chunks.NewHeadChunkRef(s.ref, newestCID)
+		s.Unlock()
+
+		// Query the newest head chunk again. With the bug, the stale cache
+		// would be used and return a wrong (mmapped) chunk.
+		chk2, _, err := cr.chunk(chunks.Meta{Ref: chunks.ChunkRef(newestRef)}, false)
+		require.NoError(t, err)
+		require.NotNil(t, chk2)
+
+		// After mmap, only 1 head chunk remains. The cache is skipped for
+		// single-chunk series (fast path), so it should still hold the stale
+		// slice from before — but it was NOT consulted for the lookup above.
+		require.Len(t, cr.cachedHeadChunks, headChunksLenBefore, "stale cache not cleared, but also not used")
+
+		// Verify the returned chunk is actually the newest head chunk, not a stale cached entry.
+		it := chk2.Iterator(nil)
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		ts, _ := it.At()
+		require.Equal(t, newestChunkMinTime, ts, "returned chunk should be the newest head chunk, not a stale cached entry")
+	})
+}
+
+// benchSink prevents the compiler from eliding benchmark calls.
+var benchSink any
+
+// BenchmarkSeriesChunkIteration measures iterating all N head chunks of a series
+// oldest-to-newest (the real query pattern) using the cached head-chunks slice.
+func BenchmarkSeriesChunkIteration(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			s := &memSeries{
+				ref:          1,
+				firstChunkID: 0,
+				headChunks:   buildHeadChunksLight(n),
+			}
+			hc := collectHeadChunks(s.headChunks, nil)
+			b.ReportAllocs()
+			for b.Loop() {
+				for i := range n {
+					benchSink, _, _, _ = s.chunk(chunks.HeadChunkID(i), nil, nil, hc)
+				}
+			}
+		})
+	}
+}
+
+// buildHeadChunks creates a linked list of N head chunks with non-overlapping time ranges.
+func buildHeadChunks(n int) *memChunk {
+	var head *memChunk
+	for i := range n {
+		head = &memChunk{
+			chunk:   chunkenc.NewXORChunk(),
+			minTime: int64(i) * 1000,
+			maxTime: int64(i)*1000 + 999,
+			prev:    head,
+		}
+	}
+	return head
+}
+
+// buildHeadChunksLight creates a linked list like buildHeadChunks but without
+// allocating chunk encodings. Suitable for benchmarks that only need the
+// linked-list structure and time ranges (e.g. truncation).
+func buildHeadChunksLight(n int) *memChunk {
+	var head *memChunk
+	for i := range n {
+		head = &memChunk{
+			minTime: int64(i) * 1000,
+			maxTime: int64(i)*1000 + 999,
+			prev:    head,
+		}
+	}
+	return head
+}
+
+func BenchmarkAppendSeriesChunks(b *testing.B) {
+	for _, numHeadChunks := range []int{1, 4, 16, 64, 256} {
+		b.Run(fmt.Sprintf("headOnly/%d", numHeadChunks), func(b *testing.B) {
+			s := &memSeries{
+				ref:           1,
+				headChunks:    buildHeadChunksLight(numHeadChunks),
+				headChunksLen: numHeadChunks,
+			}
+			mint := int64(0)
+			maxt := int64(numHeadChunks) * 1000
+			chks := make([]chunks.Meta, 0, numHeadChunks)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				chks = appendSeriesChunks(s, mint, maxt, chks[:0])
+			}
+			benchSink = chks
+		})
+
+		b.Run(fmt.Sprintf("withMmapped/%d", numHeadChunks), func(b *testing.B) {
+			// Same number of mmapped chunks as head chunks.
+			mmapped := make([]*mmappedChunk, numHeadChunks)
+			for i := range numHeadChunks {
+				mmapped[i] = &mmappedChunk{
+					minTime: int64(i) * 1000,
+					maxTime: int64(i)*1000 + 999,
+				}
+			}
+			s := &memSeries{
+				ref:           1,
+				headChunks:    buildHeadChunksLight(numHeadChunks),
+				headChunksLen: numHeadChunks,
+				mmappedChunks: mmapped,
+			}
+			totalChunks := numHeadChunks * 2
+			mint := int64(0)
+			maxt := int64(totalChunks) * 1000
+			chks := make([]chunks.Meta, 0, totalChunks)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				chks = appendSeriesChunks(s, mint, maxt, chks[:0])
+			}
+			benchSink = chks
+		})
+	}
+}
+
+func BenchmarkCollectHeadChunks(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			head := buildHeadChunks(n)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				var buf [16]*memChunk
+				benchSink = collectHeadChunks(head, buf[:0])
+			}
+		})
+	}
+}
+
+func BenchmarkSeriesChunk(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			s := &memSeries{
+				ref:           1,
+				firstChunkID:  0,
+				headChunks:    buildHeadChunksLight(n),
+				headChunksLen: n,
+			}
+			// Request the oldest head chunk (HeadChunkID 0) — worst case.
+			id := chunks.HeadChunkID(0)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				c, _, _, err := s.chunk(id, nil, nil, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				benchSink = c
+			}
+		})
+	}
+}
+
+func BenchmarkChunkLookup(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			s := &memSeries{
+				ref:           1,
+				firstChunkID:  0,
+				headChunks:    buildHeadChunksLight(n),
+				headChunksLen: n,
+			}
+			// Request a mid-position chunk (complements BenchmarkSeriesChunk which does worst-case oldest).
+			id := chunks.HeadChunkID(n / 2)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				c, _, _, err := s.chunk(id, nil, nil, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				benchSink = c
+			}
+		})
+	}
+}
+
+func BenchmarkTruncateChunksBefore(b *testing.B) {
+	for _, n := range []int{1, 4, 16, 64, 256} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			// mint truncates the oldest half of head chunks.
+			mint := int64(n/2) * 1000
+
+			b.ReportAllocs()
+			for b.Loop() {
+				// Rebuild each iteration since truncate is destructive.
+				// Use lightweight chunks (nil chunk field) since truncation
+				// only reads maxTime and follows prev pointers.
+				s := &memSeries{
+					firstChunkID:  0,
+					headChunks:    buildHeadChunksLight(n),
+					headChunksLen: n,
+				}
+				s.truncateChunksBefore(mint, 0)
+			}
+		})
+	}
 }

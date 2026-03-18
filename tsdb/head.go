@@ -22,6 +22,7 @@ import (
 	"math"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -980,6 +981,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			// Hence remove this chunk.
 			ms.nextAt = 0
 			ms.headChunks = nil
+			ms.headChunksLen = 0
 			ms.app = nil
 		}
 		return nil
@@ -2183,9 +2185,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		}
 
 		chunksRemoved += len(series.mmappedChunks)
-		if series.headChunks != nil {
-			chunksRemoved += series.headChunks.len()
-		}
+		chunksRemoved += series.headChunksLen
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
@@ -2240,9 +2240,7 @@ func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64)
 			return
 		}
 
-		if series.headChunks != nil {
-			rmChunks += series.headChunks.len()
-		}
+		rmChunks += series.headChunksLen
 		rmChunks += len(series.mmappedChunks)
 
 		// The series is gone entirely. We need to keep the series lock
@@ -2410,8 +2408,9 @@ type memSeries struct {
 	// Most recent chunks in memory that are still being built or waiting to be mmapped.
 	// This is a linked list, headChunks points to the most recent chunk, headChunks.next points
 	// to older chunk and so on.
-	headChunks   *memChunk
-	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
+	headChunks    *memChunk
+	headChunksLen int                // Cached length of headChunks linked list.
+	firstChunkID  chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
 	ooo *memSeriesOOOFields
 
@@ -2491,15 +2490,15 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 		chk := s.headChunks
 		for chk != nil {
 			if chk.maxTime < mint {
-				// If any head chunk is truncated, we can truncate all mmapped chunks.
-				removedInOrder = chk.len() + len(s.mmappedChunks)
+				tailLen := s.headChunksLen - i
+				removedInOrder = tailLen + len(s.mmappedChunks)
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
 				if i == 0 {
-					// This is the first chunk on the list so we need to remove the entire list.
 					s.headChunks = nil
+					s.headChunksLen = 0
 				} else {
-					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
+					s.headChunksLen = i
 				}
 				s.mmappedChunks = nil
 				break
@@ -2567,6 +2566,18 @@ func (mc *memChunk) len() (count int) {
 	return count
 }
 
+func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
+	if head == nil {
+		return buf
+	}
+	hc := buf
+	for elem := head; elem != nil; elem = elem.prev {
+		hc = append(hc, elem)
+	}
+	slices.Reverse(hc)
+	return hc
+}
+
 // oldest returns the oldest element on the list.
 // For single element list this will be the same memChunk oldest() was called on.
 func (mc *memChunk) oldest() (elem *memChunk) {
@@ -2576,30 +2587,6 @@ func (mc *memChunk) oldest() (elem *memChunk) {
 	elem = mc
 	for elem.prev != nil {
 		elem = elem.prev
-	}
-	return elem
-}
-
-// atOffset returns a memChunk that's Nth element on the linked list.
-func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
-	if offset == 0 {
-		return mc
-	}
-	if offset == 1 {
-		return mc.prev
-	}
-	if offset < 0 {
-		return nil
-	}
-
-	var i int
-	elem = mc
-	for i < offset {
-		i++
-		elem = elem.prev
-		if elem == nil {
-			break
-		}
 	}
 	return elem
 }
