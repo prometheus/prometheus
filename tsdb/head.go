@@ -1908,13 +1908,13 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	return s, true, nil
 }
 
-// mmapHeadChunks will iterate all memSeries stored on Head and call mmapHeadChunks() on each of them.
+// mmapHeadChunks iterates all memSeries stored on Head ready for m-mapping and calls
+// mmapHeadChunks() on each of them.
 //
 // There are two types of chunks that store samples for each memSeries:
 // A) Head chunk - stored on Go heap, when new samples are appended they go there.
 // B) M-mapped chunks - memory mapped chunks, kernel manages the memory for us on-demand, these chunks
-//
-//	are read-only.
+// are read-only.
 //
 // Calling mmapHeadChunks() will iterate all memSeries and m-mmap all chunks that should be m-mapped.
 // The m-mapping operation is needs to be serialised and so it goes via central lock.
@@ -1925,38 +1925,20 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 // (potentially) a long time, since that could eventually delay next scrape and/or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
-	for i := 0; i < h.series.size; i++ {
-		h.series.locks[i].RLock()
-		for _, series := range h.series.series[i] {
-			series.Lock()
-			count += series.mmapChunks(h.chunkDiskMapper)
-			series.Unlock()
-		}
-		h.series.locks[i].RUnlock()
-	}
-	h.metrics.mmapChunksTotal.Add(float64(count))
-}
-
-// mmapDirtyHeadChunks only mmaps head chunks for series that have been marked
-// dirty since the last call. It uses a lock-free atomic Load to skip clean
-// series (the common case), only acquiring the series lock for dirty ones.
-func (h *Head) mmapDirtyHeadChunks() {
-	var count int
 	for i := range h.series.size {
 		h.series.locks[i].RLock()
 		for _, series := range h.series.series[i] {
-			if !series.dirtyForMmap.Load() {
+			if !series.readyForMmap.Load() {
 				continue
 			}
 
 			series.Lock()
-			series.dirtyForMmap.Store(false)
+			series.readyForMmap.Store(false)
 			count += series.mmapChunks(h.chunkDiskMapper)
 			series.Unlock()
 		}
 		h.series.locks[i].RUnlock()
 	}
-
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
@@ -2467,7 +2449,7 @@ type memSeries struct {
 	// Most recent chunks in memory that are still being built or waiting to be mmapped.
 	// This is a linked list, headChunks points to the most recent chunk, headChunks.next points
 	// to older chunk and so on.
-	// Please note that the dirtyForMmap field needs to be set to true when cutting a new head chunk.
+	// Please note that the readyForMmap field needs to be set to true when cutting a new head chunk.
 	headChunks   *memChunk
 	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
@@ -2478,10 +2460,10 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
-	// dirtyForMmap is set when a new head chunk is cut, signaling that this series is ready for mmapping.
+	// readyForMmap is set when a new head chunk is cut to signal that the series is ready for mmapping.
 	// Explicitly uses sync/atomic.Bool (4 bytes) rather than go.uber.org/atomic (8 bytes), to fit in the existing padding
 	// between two bools and a float64.
-	dirtyForMmap stdatomic.Bool
+	readyForMmap stdatomic.Bool
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64

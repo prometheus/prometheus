@@ -314,9 +314,9 @@ func (failingSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labe
 
 func BenchmarkMmapHeadChunks(b *testing.B) {
 	for _, seriesCount := range []int{1000, 10000, 100000} {
-		for _, dirtyPct := range []float64{0.01, 0.1, 1.0} {
-			dirtyCount := max(int(float64(seriesCount)*dirtyPct), 1)
-			b.Run(fmt.Sprintf("series=%d/dirty=%d", seriesCount, dirtyCount), func(b *testing.B) {
+		for _, readyPct := range []float64{0.01, 0.1, 1.0} {
+			readyCount := max(int(float64(seriesCount)*readyPct), 1)
+			b.Run(fmt.Sprintf("series=%d/ready=%d", seriesCount, readyCount), func(b *testing.B) {
 				db := newTestDB(b)
 				db.DisableCompactions()
 				chunkRange := DefaultBlockDuration
@@ -339,19 +339,19 @@ func BenchmarkMmapHeadChunks(b *testing.B) {
 					require.NoError(b, app.Commit())
 				}
 
-				// Pick a random, spread-out set of series to dirty each iteration.
+				// Pick a random, spread-out set of series to make ready each iteration.
 				// Using a Fisher-Yates shuffle prefix ensures coverage across stripes.
 				rng := rand.New(rand.NewSource(42))
 				perm := rng.Perm(seriesCount)
-				dirtyIndices := perm[:dirtyCount]
+				readyIndices := perm[:readyCount]
 
-				// makeDirty appends a sample past the chunk range boundary to
-				// trigger a new head chunk on each dirty series. Two appends
+				// makeReady appends a sample past the chunk range boundary to
+				// trigger a new head chunk on each ready series. Two appends
 				// suffice: one near the current ts, one past nextAt.
-				makeDirty := func() {
+				makeReady := func() {
 					ts++ // small increment for first sample
 					app := db.Appender(b.Context())
-					for _, idx := range dirtyIndices {
+					for _, idx := range readyIndices {
 						var err error
 						refs[idx], err = app.Append(refs[idx], lblsPerSeries[idx], ts, float64(ts))
 						require.NoError(b, err)
@@ -360,7 +360,7 @@ func BenchmarkMmapHeadChunks(b *testing.B) {
 
 					ts += chunkRange // jump past nextAt to force chunk cut
 					app = db.Appender(b.Context())
-					for _, idx := range dirtyIndices {
+					for _, idx := range readyIndices {
 						var err error
 						refs[idx], err = app.Append(refs[idx], lblsPerSeries[idx], ts, float64(ts))
 						require.NoError(b, err)
@@ -368,7 +368,7 @@ func BenchmarkMmapHeadChunks(b *testing.B) {
 					require.NoError(b, app.Commit())
 				}
 
-				makeDirty()
+				makeReady()
 
 				b.ResetTimer()
 				b.ReportAllocs()
@@ -376,7 +376,7 @@ func BenchmarkMmapHeadChunks(b *testing.B) {
 				for range b.N {
 					db.ForceHeadMMap()
 					b.StopTimer()
-					makeDirty()
+					makeReady()
 					b.StartTimer()
 				}
 			})
