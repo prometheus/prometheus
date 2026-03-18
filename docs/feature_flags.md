@@ -95,7 +95,7 @@ Currently, Prometheus supports start timestamps on:
 Besides enabling this feature in Prometheus, start timestamps need to be exposed by the application being scraped.
 
 > NOTE: This is an experimental feature with known limitations until fully implemented.
-> * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.10+ versions.
+> * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.11 or later versions.
 > * For persistent storage support (TSDB blocks), you need to manually opt-in for XOR2 chunk format ([`xor2-encoding` flag](#xor2-chunk-encoding)). 
 > This might change later once we finish experimentation phase with XOR2.
 > * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
