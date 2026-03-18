@@ -6,7 +6,7 @@ FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.25 AS bui
 WORKDIR /workspace
 COPY . .
 
-RUN cd promu && go build -mod=mod -o /cachi2/output/deps/gomod/bin/promu
+RUN cd promu && GOWORK=off go build -mod=mod -o /cachi2/output/deps/gomod/bin/promu
 
 WORKDIR /workspace
 # adding the cgo flag here to not break the architecture CI builds
