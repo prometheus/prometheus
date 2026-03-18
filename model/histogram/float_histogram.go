@@ -1619,6 +1619,34 @@ func kahanAddBuckets(
 					// Bucket is in current span.
 					iBucket += int(deltaIndex)
 					iInSpan += deltaIndex
+
+					// Batch-add contiguous buckets from B that fall within the same span of A.
+					// Within a span of B, bucket indices are consecutive, and if they also
+					// fall within the current span of A, they map to consecutive positions in bucketsA.
+					// Processing them in a single IncSlice call amortizes the noinline function call overhead.
+					batchSize := min(int(spansA[iSpan].Length)-int(iInSpan), int(spanB.Length)-j)
+					if batchSize > 1 && !negative {
+						kahansum.IncSlice(
+							bucketsB[bIdxB:bIdxB+batchSize],
+							bucketsA[iBucket:iBucket+batchSize],
+							compensationBucketsA[iBucket:iBucket+batchSize],
+						)
+						if compensationBucketsB != nil {
+							kahansum.IncSlice(
+								compensationBucketsB[bIdxB:bIdxB+batchSize],
+								bucketsA[iBucket:iBucket+batchSize],
+								compensationBucketsA[iBucket:iBucket+batchSize],
+							)
+						}
+						advance := batchSize - 1
+						iBucket += advance
+						iInSpan += int32(advance)
+						j += advance
+						bIdxB += advance
+						indexB += int32(advance)
+						break
+					}
+
 					bucketsA[iBucket], compensationBucketsA[iBucket] = kahansum.Inc(bucketB, bucketsA[iBucket], compensationBucketsA[iBucket])
 					if compensationBucketB != 0 {
 						bucketsA[iBucket], compensationBucketsA[iBucket] = kahansum.Inc(compensationBucketB, bucketsA[iBucket], compensationBucketsA[iBucket])

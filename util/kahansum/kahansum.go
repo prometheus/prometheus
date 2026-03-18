@@ -37,3 +37,23 @@ func Inc(inc, sum, c float64) (newSum, newC float64) {
 func Dec(dec, sum, c float64) (newSum, newC float64) {
 	return Inc(-dec, sum, c)
 }
+
+// IncSlice is the slice version of Inc. It element-wise adds inc into sum using
+// the Kahan summation algorithm, with c holding the compensation values.
+// inc, sum, and c must have the same length.
+func IncSlice(inc, sum, c []float64) {
+	for i, v := range inc {
+		t := sum[i] + v
+		switch {
+		case math.IsInf(t, 0):
+			c[i] = 0
+
+			// Using Neumaier improvement, swap if next term larger than sum.
+		case math.Abs(sum[i]) >= math.Abs(v):
+			c[i] += (sum[i] - t) + v
+		default:
+			c[i] += (v - t) + sum[i]
+		}
+		sum[i] = t
+	}
+}
