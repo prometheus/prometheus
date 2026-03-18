@@ -90,7 +90,7 @@ Currently, Prometheus supports start timestamps on:
 * `PrometheusProto`
 * `OpenMetrics1.0.0`
 
-`PrometheusProto` is recommended, due to efficiency of ST passing. OpenMetrics 2.0 should fix this problem in the future. 
+`PrometheusProto` is recommended, due to efficiency of ST passing.
 
 Besides enabling this feature in Prometheus, start timestamps need to be exposed by the application being scraped.
 
