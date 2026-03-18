@@ -81,7 +81,7 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 
 `--enable-feature=st-storage`
 
-Enables the storage of start timestamps (ST) per sample, through WAL, TSDB/Agent and Remote Write 2. This option
+Enables the storage of start timestamps (ST) per sample, through WAL, TSDB/Agent and Remote-Write 2.0. This option
 allows preserving the exact ST value as it was presented from scrape and receive protocols. This feature
 is meant to be a replacement of `created-timestamp-zero-ingestion` which injects synthetic 0 samples.
 
