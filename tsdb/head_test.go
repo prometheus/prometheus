@@ -8067,7 +8067,7 @@ func TestHead_FindLastSeriesID(t *testing.T) {
 	require.Equal(t, uint64(2), id, "Should find ID 2 even when state file's last segment is the newest segment")
 }
 
-func TestMmapDirtyHeadChunks(t *testing.T) {
+func TestHead_mmapDirtyHeadChunks(t *testing.T) {
 	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 	require.NoError(t, h.Init(0))
 
@@ -8094,7 +8094,7 @@ func TestMmapDirtyHeadChunks(t *testing.T) {
 	ts := int64(0)
 
 	// First chunk creation should not mark series as dirty.
-	app := h.Appender(context.Background())
+	app := h.Appender(t.Context())
 	_, err := app.Append(0, lblsA, ts, 1.0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
@@ -8102,20 +8102,22 @@ func TestMmapDirtyHeadChunks(t *testing.T) {
 
 	require.Equal(t, 0, countDirty(), "series with only a first chunk should not be dirty")
 
+	const chunkCutIterations = 2*DefaultSamplesPerChunk + 10
+
 	// Appending enough samples to trigger chunk cuts should mark series dirty.
 	var refB, refC storage.SeriesRef
-	for range 250 {
-		app := h.Appender(t.Context())
+	app = h.Appender(t.Context())
+	for range chunkCutIterations {
 		var err error
 		refB, err = app.Append(refB, lblsB, ts, float64(ts))
 		require.NoError(t, err)
 		refC, err = app.Append(refC, lblsC, ts, float64(ts))
 		require.NoError(t, err)
-		require.NoError(t, app.Commit())
 		ts += interval
 	}
+	require.NoError(t, app.Commit())
 
-	require.Positive(t, countDirty(), "expected some series to be marked dirty")
+	require.Equal(t, 2, countDirty(), "expected both series to be marked dirty")
 
 	// mmapDirtyHeadChunks should drain the dirty set and mmap chunks.
 	h.mmapDirtyHeadChunks()
@@ -8125,7 +8127,7 @@ func TestMmapDirtyHeadChunks(t *testing.T) {
 		require.NotNil(t, s, "series %s not found", lbls)
 		s.Lock()
 		require.NotNil(t, s.headChunks, "series %s should have head chunks", lbls)
-		require.Nil(t, s.headChunks.prev, "series %s should have prev mmapped", lbls)
+		require.Nil(t, s.headChunks.prev, "series %s should not have prev mmapped", lbls)
 		require.NotEmpty(t, s.mmappedChunks, "series %s should have mmapped chunks", lbls)
 		s.Unlock()
 	}
@@ -8139,14 +8141,14 @@ func TestMmapDirtyHeadChunks(t *testing.T) {
 	require.Equal(t, beforeMetric, afterMetric, "second call should mmap 0 chunks")
 
 	// Only newly dirty series should be processed.
-	for range 250 {
-		app := h.Appender(context.Background())
+	app = h.Appender(t.Context())
+	for range chunkCutIterations {
 		var err error
 		refB, err = app.Append(refB, lblsB, ts, float64(ts))
 		require.NoError(t, err)
-		require.NoError(t, app.Commit())
 		ts += interval
 	}
+	require.NoError(t, app.Commit())
 
 	require.Equal(t, 1, countDirty(), "only series B should be dirty")
 
