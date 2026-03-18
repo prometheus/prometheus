@@ -24,7 +24,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
-	stdatomic "sync/atomic" //nolint:depguard // atomic.Bool is 8 bytes (nocmp alignment); stdatomic.Bool is 4 and fits in struct padding.
+	stdatomic "sync/atomic" //nolint:depguard
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -1960,17 +1960,6 @@ func (h *Head) mmapDirtyHeadChunks() {
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
-// markDirtyForMmap marks a series as having head chunks that need to be mmapped.
-// Callers must hold the series lock, since it reads series.headChunks without
-// acquiring it. WAL replay is exempt (single-threaded per shard).
-func markDirtyForMmap(series *memSeries) {
-	if series.headChunks == nil || series.headChunks.prev == nil {
-		return
-	}
-
-	series.dirtyForMmap.Store(true)
-}
-
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
 // There is one map for the common case where the hash value is unique, and a
 // second map for the case that two series have the same hash value.
@@ -2488,11 +2477,9 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
-	// dirtyForMmap is set when a new head chunk is cut, signaling that
-	// mmapDirtyHeadChunks should process this series. Uses sync/atomic.Bool
-	// (4 bytes, align 4) which fits in the existing padding before lastValue
-	// with no struct size increase. Must be sync/atomic (not go.uber.org/atomic
-	// which is 8 bytes and would grow the struct).
+	// dirtyForMmap is set when a new head chunk is cut, signaling that this series is ready for mmapping.
+	// Explicitly uses sync/atomic.Bool (4 bytes) rather than go.uber.org/atomic (8 bytes), to fit in the existing padding
+	// between two bools and a float64.
 	dirtyForMmap stdatomic.Bool
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.

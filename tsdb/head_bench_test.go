@@ -312,13 +312,6 @@ func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error          
 func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)                          {}
 func (failingSeriesLifecycleCallback) PostDeletion(map[chunks.HeadSeriesRef]labels.Labels) {}
 
-/*
-export bench=mmap && go test \
-
-	-run '^$' -bench '^BenchmarkMmapHeadChunks$' \
-	-benchtime 5s -count 6 -cpu 2 -timeout 999m \
-	| tee ${bench}.txt
-*/
 func BenchmarkMmapHeadChunks(b *testing.B) {
 	for _, seriesCount := range []int{1000, 10000, 100000} {
 		for _, dirtyPct := range []float64{0.01, 0.1, 1.0} {

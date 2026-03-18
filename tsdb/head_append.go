@@ -1456,9 +1456,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 
 		if chunkCreated {
-			a.head.metrics.chunks.Inc()
-			a.head.metrics.chunksCreated.Inc()
-			markDirtyForMmap(series)
+			a.observeChunkCreated(series)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1568,9 +1566,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		}
 
 		if chunkCreated {
-			a.head.metrics.chunks.Inc()
-			a.head.metrics.chunksCreated.Inc()
-			markDirtyForMmap(series)
+			a.observeChunkCreated(series)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1680,14 +1676,26 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		}
 
 		if chunkCreated {
-			a.head.metrics.chunks.Inc()
-			a.head.metrics.chunksCreated.Inc()
-			markDirtyForMmap(series)
+			a.observeChunkCreated(series)
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
 		series.Unlock()
+	}
+}
+
+// observeChunkCreated observes that chunk is created for a series, by incrementing
+// a.head.metrics.chunks and a.head.metrics.chunksCreated.
+//
+// If the series has more than one head chunk, it's marked as dirty and in need of mmapping.
+// Callers must ensure this cannot be called concurrently on the same series.
+func (a *headAppenderBase) observeChunkCreated(series *memSeries) {
+	a.head.metrics.chunks.Inc()
+	a.head.metrics.chunksCreated.Inc()
+
+	if series.headChunks != nil && series.headChunks.prev != nil {
+		series.dirtyForMmap.Store(true)
 	}
 }
 
