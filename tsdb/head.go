@@ -2467,6 +2467,7 @@ type memSeries struct {
 	// Most recent chunks in memory that are still being built or waiting to be mmapped.
 	// This is a linked list, headChunks points to the most recent chunk, headChunks.next points
 	// to older chunk and so on.
+	// Please note that the dirtyForMmap field needs to be set to true when cutting a new head chunk.
 	headChunks   *memChunk
 	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
