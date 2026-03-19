@@ -77,6 +77,30 @@ Therefore, when `created-timestamp-zero-ingestion` is enabled Prometheus changes
 
 Besides enabling this feature in Prometheus, start timestamps need to be exposed by the application being scraped.
 
+## Start timestamp (ST) native storage
+
+`--enable-feature=st-storage`
+
+Enables the storage of start timestamps (ST) per sample, through WAL, TSDB/Agent and Remote-Write 2.0. This option
+allows preserving the exact ST value as it was presented from scrape and receive protocols. In the future this feature
+is meant to be a replacement of `created-timestamp-zero-ingestion` which injects synthetic 0 samples.
+
+Currently, Prometheus supports start timestamps on:
+
+* `PrometheusProto`
+* `OpenMetrics1.0.0`
+
+`PrometheusProto` is recommended, due to efficiency of ST passing.
+
+Besides enabling this feature in Prometheus, start timestamps need to be exposed by the application being scraped.
+
+> NOTE: This is an experimental feature with known limitations until fully implemented.
+> * It introduces new WAL record type (SamplesV2) that can only be replayed with Prometheus 3.11 or later versions.
+> * For persistent storage support (TSDB blocks), you need to manually opt-in for XOR2 chunk format ([`xor2-encoding` flag](#xor2-chunk-encoding)). 
+> This might change later once we finish experimentation phase with XOR2.
+> * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
+> * PromQL use of ST is out of scope of this feature.
+
 ## Concurrent evaluation of independent rules
 
 `--enable-feature=concurrent-rule-eval`
@@ -305,6 +329,17 @@ memory in response to misleading cache growth.
 This is currently implemented using direct I/O.
 
 For more details, see the [proposal](https://github.com/prometheus/proposals/pull/45).
+
+## XOR2 chunk encoding
+
+`--enable-feature=xor2-encoding`
+
+> WARNING: This is highly experimental and risky setting:
+> * Chunks encoded with XOR2 **cannot be read by older Prometheus versions** that do not support the encoding. Once enabled and data is written, you need to **manually delete blocks from the disk**, otherwise Prometheus will return error on all queries.
+> * We are still experimenting on the final encoding. As of now this encoding can change in any Prometheus version. All your persistent block data will be lost between versions.
+> * This is encoding is new, meaning downstream tools and LTS systems might now support it yet (e.g. Thanos sidecar uploaded blocks).
+
+This setting enables the new XOR2 chunk encoding for float samples, which provides better disk compression than the default XOR encoding for typical Prometheus workloads. This format also allow storing Start Timestamp (ST).
 
 ## Extended Range Selectors
 

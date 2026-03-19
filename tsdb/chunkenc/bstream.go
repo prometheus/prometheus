@@ -215,6 +215,95 @@ func (b *bstreamReader) ReadByte() (byte, error) {
 	return byte(v), nil
 }
 
+// readXOR2Control reads the XOR2 variable-length joint control prefix
+// and returns 0-5 mapping to the six encoding cases:
+//
+//	0 → '0'     dod=0, val=0               (1 bit consumed)
+//	1 → '10'    dod=0, val≠0               (2 bits consumed)
+//	2 → '110'   dod≠0, 13-bit signed dod   (3 bits consumed)
+//	3 → '1110'  dod≠0, 20-bit signed dod   (4 bits consumed)
+//	4 → '11110' dod≠0, 64-bit escape       (5 bits consumed)
+//	5 → '11111' dod=0, stale NaN           (5 bits consumed)
+//
+// The fast path peeks at 4 bits from the internal buffer; for the '1111'
+// prefix a fifth bit is read to distinguish cases 4 and 5.
+func (b *bstreamReader) readXOR2Control() (uint8, error) {
+	if b.valid >= 4 {
+		top4 := uint8((b.buffer >> (b.valid - 4)) & 0xf)
+		if top4 < 8 { // '0xxx' → case 0.
+			b.valid--
+			return 0, nil
+		}
+		if top4 < 12 { // '10xx' → case 1.
+			b.valid -= 2
+			return 1, nil
+		}
+		if top4 < 14 { // '110x' → case 2.
+			b.valid -= 3
+			return 2, nil
+		}
+		if top4 == 14 { // '1110' → case 3.
+			b.valid -= 4
+			return 3, nil
+		}
+		// '1111': need fifth bit to distinguish cases 4 and 5.
+		if b.valid >= 5 {
+			bit4 := uint8((b.buffer >> (b.valid - 5)) & 1)
+			b.valid -= 5
+			return 4 + bit4, nil
+		}
+		// Fifth bit spans a buffer boundary; consume the four known bits
+		// and read the fifth from the stream.
+		b.valid -= 4
+		bit4, err := b.readBit()
+		if err != nil {
+			return 0, err
+		}
+		if bit4 == zero {
+			return 4, nil
+		}
+		return 5, nil
+	}
+
+	// Slow path: bits may span buffer boundaries, read one at a time.
+	bit0, err := b.readBit()
+	if err != nil {
+		return 0, err
+	}
+	if bit0 == zero {
+		return 0, nil
+	}
+	bit1, err := b.readBit()
+	if err != nil {
+		return 0, err
+	}
+	if bit1 == zero {
+		return 1, nil
+	}
+	bit2, err := b.readBit()
+	if err != nil {
+		return 0, err
+	}
+	if bit2 == zero {
+		return 2, nil
+	}
+	bit3, err := b.readBit()
+	if err != nil {
+		return 0, err
+	}
+	if bit3 == zero {
+		return 3, nil
+	}
+	bit4, err := b.readBit()
+	if err != nil {
+		return 0, err
+	}
+	if bit4 == zero {
+		return 4, nil
+	}
+	return 5, nil
+}
+
 // loadNextBuffer loads the next bytes from the stream into the internal buffer.
 // The input nbits is the minimum number of bits that must be read, but the implementation
 // can read more (if possible) to improve performances.
