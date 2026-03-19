@@ -287,7 +287,6 @@ func benchCheckpoint(b testing.TB, p benchCheckpointParams) {
 	require.NoError(b, app.Commit())
 
 	// Trigger checkpoint call.
-	// err = db.truncate(timestamp.FromTime(time.Now()))
 	err = db.truncate(-1)
 	require.NoError(b, err, "db.truncate")
 	require.NoError(b, db.Close())
