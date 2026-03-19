@@ -14,6 +14,7 @@
 package agent
 
 import (
+	"fmt"
 	"io/fs"
 	"math"
 	"os"
@@ -158,6 +159,10 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	require.Equal(t, oldAfterSeries, newAfterSeries, "agent.Checkpoint vs wlog.Checkpoint post-replay state doesn't match")
 }
 
+// To run the benchmark and display a diff, use the following command:
+//
+//	go test -bench="BenchmarkCheckpoint" . -run ^$ -benchmem -count 6 -benchtime 5s | tee benchmarks
+//	benchstat -col '/checkpoint' benchmarks
 func BenchmarkCheckpoint(b *testing.B) {
 	// Prepare in advance samples and labels that will be written into appender.
 	samples := genCheckpointTestSamples(checkpointTestSamplesParams{
@@ -178,34 +183,46 @@ func BenchmarkCheckpoint(b *testing.B) {
 		seriesLabels: samples.datapointLabels,
 	})
 
-	// Check what checkpoint implementation to use from a feature flag.
-	checkpointImpl := os.Getenv("TEST_CHECKPOINT_IMPL")
-	isNewCheckpointEnabled := checkpointImpl != "wlog"
+	configs := []struct {
+		name               string
+		useAgentCheckpoint bool
+	}{
+		{
+			name:               "wlog",
+			useAgentCheckpoint: false,
+		},
+		{
+			name:               "agent",
+			useAgentCheckpoint: true,
+		},
+	}
 
-	// Run the bench.
-	b.Run("checkpoint", func(b *testing.B) {
-		// Copy initial wlog state into a scratch directory for test.
-		// wlog.Open expects to have a "wal" subdirectory
-		wlogDir := filepath.Join(b.TempDir(), "testdata", "wal")
-		err := os.CopyFS(wlogDir, os.DirFS(testSamplesSrcDir))
-		require.NoErrorf(b, err, "failed to copy test samples from %q to %q", testSamplesSrcDir, wlogDir)
-		storageDir := filepath.Dir(wlogDir)
+	for _, cfg := range configs {
+		tname := fmt.Sprintf("checkpoint=%s", cfg.name)
+		b.Run(tname, func(b *testing.B) {
+			// Copy initial wlog state into a scratch directory for test.
+			// wlog.Open expects to have a "wal" subdirectory
+			wlogDir := filepath.Join(b.TempDir(), "testdata", "wal")
+			err := os.CopyFS(wlogDir, os.DirFS(testSamplesSrcDir))
+			require.NoErrorf(b, err, "failed to copy test samples from %q to %q", testSamplesSrcDir, wlogDir)
+			storageDir := filepath.Dir(wlogDir)
 
-		b.ReportAllocs()
-		b.ResetTimer()
+			b.ReportAllocs()
+			b.ResetTimer()
 
-		for b.Loop() {
-			benchCheckpoint(b, benchCheckpointParams{
-				storageDir:                  storageDir,
-				samples:                     samples,
-				skipCurrentCheckpointReRead: isNewCheckpointEnabled,
-			})
+			for b.Loop() {
+				benchCheckpoint(b, benchCheckpointParams{
+					storageDir:                  storageDir,
+					samples:                     samples,
+					skipCurrentCheckpointReRead: cfg.useAgentCheckpoint,
+				})
 
-			// Get the size of the checkpoint directory
-			checkpointSize := getCheckpointSize(b, wlogDir)
-			b.ReportMetric(float64(checkpointSize), "checkpoint_size")
-		}
-	})
+				// Get the size of the checkpoint directory
+				checkpointSize := getCheckpointSize(b, wlogDir)
+				b.ReportMetric(float64(checkpointSize), "checkpoint_size")
+			}
+		})
+	}
 }
 
 func getCheckpointSize(b testing.TB, walDir string) int64 {
