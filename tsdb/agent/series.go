@@ -347,14 +347,20 @@ func (s *seriesSnapshot) LastSampleTimestamp() int64 {
 
 func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
 	return func(yield func(ActiveSeries) bool) {
-		stop := false
+		var buf []*memSeries
 		for i := 0; i < s.size; i++ {
+			// Collect pointers under RLock to avoid blocking appenders during I/O.
 			s.locks[i].RLock()
-
+			buf = buf[:0]
 			for _, series := range s.series[i] {
-				// Copy fields under the series lock, then release it
-				// before yielding so that disk I/O in the consumer
-				// does not block appends to this series.
+				buf = append(buf, series)
+			}
+			s.locks[i].RUnlock()
+
+			// Snapshot and yield outside the stripe lock so that
+			// slow consumers (e.g. checkpoint disk I/O) do not
+			// block appends that need a write lock on this stripe.
+			for _, series := range buf {
 				series.Lock()
 				snapshot := seriesSnapshot{
 					ref:    series.ref,
@@ -364,14 +370,8 @@ func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
 				series.Unlock()
 
 				if !yield(&snapshot) {
-					stop = true
-					break
+					return
 				}
-			}
-
-			s.locks[i].RUnlock()
-			if stop {
-				return
 			}
 		}
 	}
