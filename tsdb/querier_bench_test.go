@@ -26,8 +26,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
-// Make entries ~50B in size, to emulate real-world high cardinality.
 const (
+	// Make entries ~50B in size, to emulate real-world high cardinality.
 	postingsBenchSuffix = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
 )
 
@@ -265,6 +265,32 @@ func BenchmarkMergedStringIter(b *testing.B) {
 	b.ReportAllocs()
 }
 
+type dbReadWriteHandler interface {
+	~*Head | ~*DB
+	Appender(ctx context.Context) storage.Appender
+	AppenderV2(ctx context.Context) storage.AppenderV2
+}
+
+func commitIfBatchIsFull[RWH dbReadWriteHandler](tb testing.TB, db RWH, app *storage.Appender, i int64, batchSize int) bool {
+	if (i+1)%int64(batchSize) == 0 {
+		err := (*app).Commit()
+		require.NoError(tb, err)
+		*app = db.Appender(context.Background())
+		return true
+	}
+	return false
+}
+
+func commitIfBatchIsFullV2[RWH dbReadWriteHandler](tb testing.TB, db RWH, app *storage.AppenderV2, i int64, batchSize int) bool {
+	if (i+1)%int64(batchSize) == 0 {
+		err := (*app).Commit()
+		require.NoError(tb, err)
+		*app = db.AppenderV2(context.Background())
+		return true
+	}
+	return false
+}
+
 func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(app storage.Appender, i int)) (*Head, *DB) {
 	dir := b.TempDir()
 	opts := DefaultOptions()
@@ -280,10 +306,7 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	app := h.Appender(context.Background())
 	for i := range numSeries {
 		addSeries(app, i)
-		if i%1000 == 999 { // Commit every so often, so the appender doesn't get too big.
-			require.NoError(b, app.Commit())
-			app = h.Appender(context.Background())
-		}
+		commitIfBatchIsFull(b, db, &app, int64(i), 1000)
 	}
 	require.NoError(b, app.Commit())
 	return h, db
