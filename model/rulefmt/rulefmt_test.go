@@ -20,23 +20,27 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-var testParser = parser.NewParser(parser.Options{})
+var (
+	testParser = parser.NewParser(parser.Options{})
+	testLogger = promslog.NewNopLogger()
+)
 
 func TestParseFileSuccess(t *testing.T) {
-	_, errs := ParseFile("testdata/test.yaml", false, model.UTF8Validation, testParser)
+	_, errs := ParseFile(testLogger, "testdata/test.yaml", false, model.UTF8Validation, testParser)
 	require.Empty(t, errs, "unexpected errors parsing file")
 
-	_, errs = ParseFile("testdata/utf-8_lname.good.yaml", false, model.UTF8Validation, testParser)
+	_, errs = ParseFile(testLogger, "testdata/utf-8_lname.good.yaml", false, model.UTF8Validation, testParser)
 	require.Empty(t, errs, "unexpected errors parsing file")
-	_, errs = ParseFile("testdata/utf-8_annotation.good.yaml", false, model.UTF8Validation, testParser)
+	_, errs = ParseFile(testLogger, "testdata/utf-8_annotation.good.yaml", false, model.UTF8Validation, testParser)
 	require.Empty(t, errs, "unexpected errors parsing file")
-	_, errs = ParseFile("testdata/legacy_validation_annotation.good.yaml", false, model.LegacyValidation, testParser)
+	_, errs = ParseFile(testLogger, "testdata/legacy_validation_annotation.good.yaml", false, model.LegacyValidation, testParser)
 	require.Empty(t, errs, "unexpected errors parsing file")
 }
 
@@ -45,7 +49,7 @@ func TestParseFileSuccessWithAliases(t *testing.T) {
 /
 sum without(instance) (rate(requests_total[5m]))
 `
-	rgs, errs := ParseFile("testdata/test_aliases.yaml", false, model.UTF8Validation, testParser)
+	rgs, errs := ParseFile(testLogger, "testdata/test_aliases.yaml", false, model.UTF8Validation, testParser)
 	require.Empty(t, errs, "unexpected errors parsing file")
 	for _, rg := range rgs.Groups {
 		require.Equal(t, "HighAlert", rg.Rules[0].Alert)
@@ -123,7 +127,7 @@ func TestParseFileFailure(t *testing.T) {
 			if c.nameValidationScheme == model.UnsetValidation {
 				c.nameValidationScheme = model.UTF8Validation
 			}
-			_, errs := ParseFile(filepath.Join("testdata", c.filename), false, c.nameValidationScheme, testParser)
+			_, errs := ParseFile(testLogger, filepath.Join("testdata", c.filename), false, c.nameValidationScheme, testParser)
 			require.NotEmpty(t, errs, "Expected error parsing %s but got none", c.filename)
 			require.ErrorContainsf(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
 		})
@@ -219,7 +223,7 @@ groups:
 	}
 
 	for _, tst := range tests {
-		rgs, errs := Parse([]byte(tst.ruleString), false, model.UTF8Validation, testParser)
+		rgs, errs := Parse(testLogger, []byte(tst.ruleString), false, model.UTF8Validation, testParser)
 		require.NotNil(t, rgs, "Rule parsing, rule=\n"+tst.ruleString)
 		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
 		require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
@@ -246,7 +250,7 @@ groups:
     annotations:
       summary: "Instance {{ $labels.instance }} up"
 `
-	_, errs := Parse([]byte(group), false, model.UTF8Validation, testParser)
+	_, errs := Parse(testLogger, []byte(group), false, model.UTF8Validation, testParser)
 	require.Len(t, errs, 2, "Expected two errors")
 	var err00 *Error
 	require.ErrorAs(t, errs[0], &err00)
@@ -390,4 +394,52 @@ func TestErrorUnwrap(t *testing.T) {
 			require.ErrorIs(t, tt.wrappedError, tt.unwrappedError)
 		})
 	}
+}
+
+func TestMultiDocParse(t *testing.T) {
+	const (
+		valid = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+`
+		multi = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+---
+groups:
+- name: example2
+  rules:
+  - alert: InstanceDown2
+    expr: up == 0
+`
+		multiEmpty = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+---
+`
+	)
+
+	rgs, errs := Parse(testLogger, []byte(valid), false, model.UTF8Validation, testParser)
+	require.Empty(t, errs)
+	require.NotNil(t, rgs)
+	require.Len(t, rgs.Groups, 1)
+
+	rgs, errs = Parse(testLogger, []byte(multi), false, model.UTF8Validation, testParser)
+	require.Empty(t, errs)
+	require.NotNil(t, rgs)
+	require.Len(t, rgs.Groups, 1)
+
+	rgs, errs = Parse(testLogger, []byte(multiEmpty), false, model.UTF8Validation, testParser)
+	require.Empty(t, errs)
+	require.NotNil(t, rgs)
+	require.Len(t, rgs.Groups, 1)
 }

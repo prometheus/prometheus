@@ -1257,7 +1257,7 @@ const funcDocs: Record<string, React.ReactNode> = {
     <>
       <p>
         <code>histogram_avg(v instant-vector)</code> returns the arithmetic average of observed values stored in each
-        histogram sample in <code>v</code>. Float samples are ignored and do not show up in the returned vector.
+        native histogram sample in <code>v</code>. Float samples are ignored and do not show up in the returned vector.
       </p>
 
       <p>
@@ -1283,13 +1283,13 @@ const funcDocs: Record<string, React.ReactNode> = {
   histogram_count: (
     <>
       <p>
-        <code>histogram_count(v instant-vector)</code> returns the count of observations stored in each histogram sample
-        in <code>v</code>. Float samples are ignored and do not show up in the returned vector.
+        <code>histogram_count(v instant-vector)</code> returns the count of observations stored in each native histogram
+        sample in <code>v</code>. Float samples are ignored and do not show up in the returned vector.
       </p>
 
       <p>
-        Similarly, <code>histogram_sum(v instant-vector)</code> returns the sum of observations stored in each histogram
-        sample.
+        Similarly, <code>histogram_sum(v instant-vector)</code> returns the sum of observations stored in each native
+        histogram sample.
       </p>
 
       <p>
@@ -1574,15 +1574,15 @@ const funcDocs: Record<string, React.ReactNode> = {
     <>
       <p>
         <code>histogram_stddev(v instant-vector)</code> returns the estimated standard deviation of observations for
-        each histogram sample in <code>v</code>. For this estimation, all observations in a bucket are assumed to have
-        the value of the mean of the bucket boundaries. For the zero bucket and for buckets with custom boundaries, the
-        arithmetic mean is used. For the usual exponential buckets, the geometric mean is used. Float samples are
+        each native histogram sample in <code>v</code>. For this estimation, all observations in a bucket are assumed to
+        have the value of the mean of the bucket boundaries. For the zero bucket and for buckets with custom boundaries,
+        the arithmetic mean is used. For the usual exponential buckets, the geometric mean is used. Float samples are
         ignored and do not show up in the returned vector.
       </p>
 
       <p>
         Similarly, <code>histogram_stdvar(v instant-vector)</code> returns the estimated standard variance of
-        observations for each histogram sample in <code>v</code>.
+        observations for each native histogram sample in <code>v</code>.
       </p>
     </>
   ),
@@ -1590,28 +1590,28 @@ const funcDocs: Record<string, React.ReactNode> = {
     <>
       <p>
         <code>histogram_stddev(v instant-vector)</code> returns the estimated standard deviation of observations for
-        each histogram sample in <code>v</code>. For this estimation, all observations in a bucket are assumed to have
-        the value of the mean of the bucket boundaries. For the zero bucket and for buckets with custom boundaries, the
-        arithmetic mean is used. For the usual exponential buckets, the geometric mean is used. Float samples are
+        each native histogram sample in <code>v</code>. For this estimation, all observations in a bucket are assumed to
+        have the value of the mean of the bucket boundaries. For the zero bucket and for buckets with custom boundaries,
+        the arithmetic mean is used. For the usual exponential buckets, the geometric mean is used. Float samples are
         ignored and do not show up in the returned vector.
       </p>
 
       <p>
         Similarly, <code>histogram_stdvar(v instant-vector)</code> returns the estimated standard variance of
-        observations for each histogram sample in <code>v</code>.
+        observations for each native histogram sample in <code>v</code>.
       </p>
     </>
   ),
   histogram_sum: (
     <>
       <p>
-        <code>histogram_count(v instant-vector)</code> returns the count of observations stored in each histogram sample
-        in <code>v</code>. Float samples are ignored and do not show up in the returned vector.
+        <code>histogram_count(v instant-vector)</code> returns the count of observations stored in each native histogram
+        sample in <code>v</code>. Float samples are ignored and do not show up in the returned vector.
       </p>
 
       <p>
-        Similarly, <code>histogram_sum(v instant-vector)</code> returns the sum of observations stored in each histogram
-        sample.
+        Similarly, <code>histogram_sum(v instant-vector)</code> returns the sum of observations stored in each native
+        histogram sample.
       </p>
 
       <p>

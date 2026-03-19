@@ -219,7 +219,7 @@ to their original value. Histogram samples in the input vector are ignored silen
 ## `histogram_avg()`
 
 `histogram_avg(v instant-vector)` returns the arithmetic average of observed
-values stored in each histogram sample in `v`. Float samples are ignored and do
+values stored in each native histogram sample in `v`. Float samples are ignored and do
 not show up in the returned vector.
 
 Use `histogram_avg` as demonstrated below to compute the average request duration
@@ -236,11 +236,11 @@ Which is equivalent to the following query:
 ## `histogram_count()` and `histogram_sum()`
 
 `histogram_count(v instant-vector)` returns the count of observations stored in
-each histogram sample in `v`. Float samples are ignored and do not show up in
+each native histogram sample in `v`. Float samples are ignored and do not show up in
 the returned vector.
 
 Similarly, `histogram_sum(v instant-vector)` returns the sum of observations
-stored in each histogram sample.
+stored in each native histogram sample.
 
 Use `histogram_count` in the following way to calculate a rate of observations
 (in this case corresponding to “requests per second”) from a series of
@@ -453,14 +453,14 @@ histogram_quantiles(sum(rate(foo[1m])), "quantile", 0.9, 0.99)
 ## `histogram_stddev()` and `histogram_stdvar()`
 
 `histogram_stddev(v instant-vector)` returns the estimated standard deviation
-of observations for each histogram sample in `v`. For this estimation, all observations
+of observations for each native histogram sample in `v`. For this estimation, all observations
 in a bucket are assumed to have the value of the mean of the bucket boundaries. For
 the zero bucket and for buckets with custom boundaries, the arithmetic mean is used.
 For the usual exponential buckets, the geometric mean is used. Float samples are ignored
 and do not show up in the returned vector.
 
 Similarly, `histogram_stdvar(v instant-vector)` returns the estimated standard
-variance of observations for each histogram sample in `v`.
+variance of observations for each native histogram sample in `v`.
 
 ## `hour()`
 

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -619,7 +620,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig,
 		if !checkSyntaxOnly {
 			scrapeConfigsFailed := lintScrapeConfigs(scrapeConfigs, lintSettings)
 			failed = failed || scrapeConfigsFailed
-			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig, p)
+			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig, p, promslog.New(&promslog.Config{}))
 			failed = failed || rulesFailed
 			hasErrors = hasErrors || rulesHaveErrors
 		}
@@ -850,9 +851,9 @@ func CheckRules(ls rulesLintConfig, p parser.Parser, files ...string) int {
 	failed := false
 	hasErrors := false
 	if len(files) == 0 {
-		failed, hasErrors = checkRulesFromStdin(ls, p)
+		failed, hasErrors = checkRulesFromStdin(ls, p, promslog.New(&promslog.Config{}))
 	} else {
-		failed, hasErrors = checkRules(files, ls, p)
+		failed, hasErrors = checkRules(files, ls, p, promslog.New(&promslog.Config{}))
 	}
 
 	if failed && hasErrors {
@@ -866,7 +867,7 @@ func CheckRules(ls rulesLintConfig, p parser.Parser, files ...string) int {
 }
 
 // checkRulesFromStdin validates rule from stdin.
-func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser) (bool, bool) {
+func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser, logger *slog.Logger) (bool, bool) {
 	failed := false
 	hasErrors := false
 	fmt.Println("Checking standard input")
@@ -875,7 +876,7 @@ func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser) (bool, bool) {
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
-	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme, p)
+	rgs, errs := rulefmt.Parse(logger, data, ls.ignoreUnknownFields, ls.nameValidationScheme, p)
 	if errs != nil {
 		failed = true
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -904,12 +905,12 @@ func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser) (bool, bool) {
 }
 
 // checkRules validates rule files.
-func checkRules(files []string, ls rulesLintConfig, p parser.Parser) (bool, bool) {
+func checkRules(files []string, ls rulesLintConfig, p parser.Parser, logger *slog.Logger) (bool, bool) {
 	failed := false
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme, p)
+		rgs, errs := rulefmt.ParseFile(logger, f, ls.ignoreUnknownFields, ls.nameValidationScheme, p)
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")

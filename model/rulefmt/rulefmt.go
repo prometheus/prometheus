@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -339,7 +340,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 }
 
 // Parse parses and validates a set of rules.
-func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, p parser.Parser) (*RuleGroups, []error) {
+func Parse(logger *slog.Logger, content []byte, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, p parser.Parser) (*RuleGroups, []error) {
 	var (
 		groups RuleGroups
 		node   ruleGroups
@@ -355,6 +356,16 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 	if err != nil && !errors.Is(err, io.EOF) {
 		errs = append(errs, err)
 	}
+	// Check for a second document.
+	var secondDoc any
+	err = decoder.Decode(&secondDoc)
+	if !errors.Is(err, io.EOF) {
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Warn("Multiple document yaml rules files are not supported, only the first document is processed")
+	}
+
 	err = yaml.Unmarshal(content, &node)
 	if err != nil {
 		errs = append(errs, err)
@@ -368,12 +379,12 @@ func Parse(content []byte, ignoreUnknownFields bool, nameValidationScheme model.
 }
 
 // ParseFile reads and parses rules from a file.
-func ParseFile(file string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, p parser.Parser) (*RuleGroups, []error) {
+func ParseFile(logger *slog.Logger, file string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme, p parser.Parser) (*RuleGroups, []error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
-	rgs, errs := Parse(b, ignoreUnknownFields, nameValidationScheme, p)
+	rgs, errs := Parse(logger, b, ignoreUnknownFields, nameValidationScheme, p)
 	for i := range errs {
 		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}
