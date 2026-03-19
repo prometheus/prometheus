@@ -25,7 +25,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/sample"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -77,7 +77,7 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(
 
 		appOpts.Exemplars = exemplars
 		// OTel exponential histograms are always integer histograms.
-		if _, err = c.appender.Append(0, lbls, st, ts, sample.Histogram(hp), appOpts); err != nil {
+		if _, err = c.appender.Append(0, lbls, st, ts, samplemod.Histogram(hp), appOpts); err != nil {
 			return annots, err
 		}
 	}
@@ -298,7 +298,7 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(
 		}
 
 		appOpts.Exemplars = exemplars
-		if _, err = c.appender.Append(0, lbls, st, ts, sample.Histogram(hp), appOpts); err != nil {
+		if _, err = c.appender.Append(0, lbls, st, ts, samplemod.Histogram(hp), appOpts); err != nil {
 			return annots, err
 		}
 	}

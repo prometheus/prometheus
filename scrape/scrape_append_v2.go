@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/sample"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -68,7 +68,7 @@ func appenderV2WithLimits(app storage.AppenderV2, sampleLimit, bucketLimit int, 
 func (sl *scrapeLoop) updateStaleMarkersV2(app storage.AppenderV2, defTime int64) (err error) {
 	sl.cache.forEachStale(func(ref storage.SeriesRef, lset labels.Labels) bool {
 		// Series no longer exposed, mark it stale.
-		_, err = app.Append(ref, lset, 0, defTime, sample.Float(math.Float64frombits(value.StaleNaN)), storage.AOptions{RejectOutOfOrder: true})
+		_, err = app.Append(ref, lset, 0, defTime, samplemod.Float(math.Float64frombits(value.StaleNaN)), storage.AOptions{RejectOutOfOrder: true})
 		switch {
 		case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 			// Do not count these in logging, as this is expected if a target
@@ -313,14 +313,14 @@ loop:
 			}
 
 			// Append sample to the storage.
-			var sv sample.Value
+			var sv samplemod.Value
 			switch {
 			case fh != nil:
-				sv = sample.FloatHistogram(fh)
+				sv = samplemod.FloatHistogram(fh)
 			case h != nil:
-				sv = sample.Histogram(h)
+				sv = samplemod.Histogram(h)
 			default:
-				sv = sample.Float(val)
+				sv = samplemod.Float(val)
 			}
 			ref, err = app.Append(ref, lset, st, t, sv, appOpts)
 		}
@@ -405,7 +405,7 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 		lset = sl.reportSampleMutator(b.Labels())
 	}
 
-	ref, err = sl.Append(ref, lset, 0, t, sample.Float(v), storage.AOptions{
+	ref, err = sl.Append(ref, lset, 0, t, samplemod.Float(v), storage.AOptions{
 		MetricFamilyName: yoloString(s.name),
 		Metadata:         s.Metadata,
 		RejectOutOfOrder: rejectOOO,

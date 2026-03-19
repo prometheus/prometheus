@@ -31,7 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/sample"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
@@ -548,20 +548,20 @@ type remoteWriteAppenderV2 struct {
 	maxTime int64
 }
 
-func (app *remoteWriteAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val sample.Value, opts storage.AOptions) (storage.SeriesRef, error) {
+func (app *remoteWriteAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val samplemod.Value, opts storage.AOptions) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, fmt.Errorf("%w: timestamp is too far in the future", storage.ErrOutOfBounds)
 	}
 
 	switch val.Type() {
-	case sample.TypeHistogram:
+	case samplemod.TypeHistogram:
 		h := val.H()
 		if histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > histogram.ExponentialSchemaMax {
 			if err := h.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
 				return 0, err
 			}
 		}
-	case sample.TypeFloatHistogram:
+	case samplemod.TypeFloatHistogram:
 		fh := val.FH()
 		if histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > histogram.ExponentialSchemaMax {
 			if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {

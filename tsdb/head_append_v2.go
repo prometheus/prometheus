@@ -21,7 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/sample"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -36,7 +36,7 @@ type initAppenderV2 struct {
 
 var _ storage.GetRef = &initAppenderV2{}
 
-func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val sample.Value, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *initAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val samplemod.Value, opts storage.AOptions) (storage.SeriesRef, error) {
 	if a.app == nil {
 		a.head.initTime(t)
 		a.app = a.head.appenderV2()
@@ -105,7 +105,7 @@ type headAppenderV2 struct {
 	headAppenderBase
 }
 
-func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val sample.Value, opts storage.AOptions) (storage.SeriesRef, error) {
+func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, val samplemod.Value, opts storage.AOptions) (storage.SeriesRef, error) {
 	var (
 		// Avoid shadowing err variables for reliability.
 		valErr, appErr, partialErr error
@@ -142,11 +142,11 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	}
 
 	switch val.Type() {
-	case sample.TypeFloatHistogram:
+	case samplemod.TypeFloatHistogram:
 		fh := val.FH()
 		isStale = val.IsStale()
 		appErr = a.appendFloatHistogram(s, t, fh, opts.RejectOutOfOrder)
-	case sample.TypeHistogram:
+	case samplemod.TypeHistogram:
 		h := val.H()
 		isStale = val.IsStale()
 		appErr = a.appendHistogram(s, t, h, opts.RejectOutOfOrder)
@@ -163,11 +163,11 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 			// an optimization for the more likely case.
 			switch a.typesInBatch[s.ref] {
 			case stHistogram, stCustomBucketHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, sample.Histogram(&histogram.Histogram{Sum: v}), storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, samplemod.Histogram(&histogram.Histogram{Sum: v}), storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			case stFloatHistogram, stCustomBucketFloatHistogram:
-				return a.Append(storage.SeriesRef(s.ref), ls, st, t, sample.FloatHistogram(&histogram.FloatHistogram{Sum: v}), storage.AOptions{
+				return a.Append(storage.SeriesRef(s.ref), ls, st, t, samplemod.FloatHistogram(&histogram.FloatHistogram{Sum: v}), storage.AOptions{
 					RejectOutOfOrder: opts.RejectOutOfOrder,
 				})
 			}

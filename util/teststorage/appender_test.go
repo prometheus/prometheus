@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -89,7 +90,7 @@ func testAppendableV2(t *testing.T, appTest *Appendable, a storage.AppendableV2)
 
 		m1 := metadata.Metadata{Type: "gauge", Unit: "", Help: "other help text"}
 		e1 := exemplar.Exemplar{Labels: labels.FromStrings(model.MetricNameLabel, "yolo"), HasTs: true, Ts: 1}
-		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric1", "app", "v2"), -1, 1, 2, nil, nil, storage.AOptions{
+		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric1", "app", "v2"), -1, 1, sample.Float(2), storage.AOptions{
 			MetricFamilyName: "test_metric1",
 			Metadata:         m1,
 			Exemplars:        []exemplar.Exemplar{e1},
@@ -97,11 +98,11 @@ func testAppendableV2(t *testing.T, appTest *Appendable, a storage.AppendableV2)
 		require.NoError(t, err)
 
 		h := tsdbutil.GenerateTestHistogram(0)
-		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric2", "app", "v2"), -2, 2, 0, h, nil, storage.AOptions{})
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric2", "app", "v2"), -2, 2, sample.Histogram(h), storage.AOptions{})
 		require.NoError(t, err)
 
 		fh := tsdbutil.GenerateTestFloatHistogram(0)
-		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric3", "app", "v2"), -3, 3, 0, nil, fh, storage.AOptions{})
+		_, err = app.Append(0, labels.FromStrings(model.MetricNameLabel, "test_metric3", "app", "v2"), -3, 3, sample.FloatHistogram(fh), storage.AOptions{})
 		require.NoError(t, err)
 
 		exp := []Sample{
@@ -301,7 +302,7 @@ func TestConcurrentAppenderV2_ReturnsErrAppender(t *testing.T) {
 	// Concurrent use should return appender that errors.
 	_ = a.AppenderV2(t.Context())
 	app = a.AppenderV2(t.Context())
-	_, err := app.Append(0, labels.EmptyLabels(), 0, 0, 0, nil, nil, storage.AOptions{})
+	_, err := app.Append(0, labels.EmptyLabels(), 0, 0, sample.Float(0), storage.AOptions{})
 	require.Error(t, err)
 	require.Error(t, app.Commit())
 	require.Error(t, app.Rollback())

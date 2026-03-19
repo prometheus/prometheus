@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
@@ -579,7 +580,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 							app := head.AppenderV2(ctx)
 							for i := range workerLabelSets {
 								// We also use the timestamp as the sample value.
-								if _, err := app.Append(0, workerLabelSets[i], 0, int64(ts), float64(ts), nil, nil, storage.AOptions{}); err != nil {
+								if _, err := app.Append(0, workerLabelSets[i], 0, int64(ts), samplemod.Float(float64(ts)), storage.AOptions{}); err != nil {
 									return false, fmt.Errorf("error when appending (V2) to head: %w", err)
 								}
 							}

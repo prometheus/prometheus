@@ -38,7 +38,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/model/sample"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
@@ -248,7 +248,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 				val = math.Float64frombits(value.StaleNaN)
 			}
 			sumLabels := c.addLabels(appOpts.MetricFamilyName+sumStr, baseLabels)
-			if _, err := c.appender.Append(0, sumLabels, startTimestamp, timestamp, sample.Float(val), appOpts); err != nil {
+			if _, err := c.appender.Append(0, sumLabels, startTimestamp, timestamp, samplemod.Float(val), appOpts); err != nil {
 				return err
 			}
 		}
@@ -259,7 +259,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		countLabels := c.addLabels(appOpts.MetricFamilyName+countStr, baseLabels)
-		if _, err := c.appender.Append(0, countLabels, startTimestamp, timestamp, sample.Float(val), appOpts); err != nil {
+		if _, err := c.appender.Append(0, countLabels, startTimestamp, timestamp, samplemod.Float(val), appOpts); err != nil {
 			return err
 		}
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
@@ -297,7 +297,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 			}
 			boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 			bucketLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, boundStr)
-			if _, err := c.appender.Append(0, bucketLabels, startTimestamp, timestamp, sample.Float(val), appOpts); err != nil {
+			if _, err := c.appender.Append(0, bucketLabels, startTimestamp, timestamp, samplemod.Float(val), appOpts); err != nil {
 				return err
 			}
 		}
@@ -309,7 +309,7 @@ func (c *PrometheusConverter) addHistogramDataPoints(
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		infLabels := c.addLabels(appOpts.MetricFamilyName+bucketStr, baseLabels, leStr, pInfStr)
-		if _, err := c.appender.Append(0, infLabels, startTimestamp, timestamp, sample.Float(val), appOpts); err != nil {
+		if _, err := c.appender.Append(0, infLabels, startTimestamp, timestamp, samplemod.Float(val), appOpts); err != nil {
 			return err
 		}
 	}
@@ -448,7 +448,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		sumLabels := c.addLabels(appOpts.MetricFamilyName+sumStr, baseLabels)
-		if _, err := c.appender.Append(0, sumLabels, startTimestamp, timestamp, sample.Float(val), appOpts); err != nil {
+		if _, err := c.appender.Append(0, sumLabels, startTimestamp, timestamp, samplemod.Float(val), appOpts); err != nil {
 			return err
 		}
 
@@ -458,7 +458,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(
 			val = math.Float64frombits(value.StaleNaN)
 		}
 		countLabels := c.addLabels(appOpts.MetricFamilyName+countStr, baseLabels)
-		if _, err := c.appender.Append(0, countLabels, startTimestamp, timestamp, sample.Float(val), appOpts); err != nil {
+		if _, err := c.appender.Append(0, countLabels, startTimestamp, timestamp, samplemod.Float(val), appOpts); err != nil {
 			return err
 		}
 
@@ -471,7 +471,7 @@ func (c *PrometheusConverter) addSummaryDataPoints(
 			}
 			percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
 			qtlabels := c.addLabels(appOpts.MetricFamilyName, baseLabels, quantileStr, percentileStr)
-			if _, err := c.appender.Append(0, qtlabels, startTimestamp, timestamp, sample.Float(val), appOpts); err != nil {
+			if _, err := c.appender.Append(0, qtlabels, startTimestamp, timestamp, samplemod.Float(val), appOpts); err != nil {
 				return err
 			}
 		}
@@ -584,7 +584,7 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		}
 
 		c.seenTargetInfo[key] = struct{}{}
-		_, err = c.appender.Append(0, lbls, 0, timestampMs, sample.Float(1.0), appOpts)
+		_, err = c.appender.Append(0, lbls, 0, timestampMs, samplemod.Float(1.0), appOpts)
 		if err != nil {
 			return err
 		}
@@ -601,7 +601,7 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 	}
 
 	c.seenTargetInfo[key] = struct{}{}
-	_, err = c.appender.Append(0, lbls, 0, finalTimestampMs, sample.Float(1.0), appOpts)
+	_, err = c.appender.Append(0, lbls, 0, finalTimestampMs, samplemod.Float(1.0), appOpts)
 	return err
 }
 
