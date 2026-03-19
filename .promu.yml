@@ -32,6 +32,7 @@ tarball:
         - npm_licenses.tar.bz2
 crossbuild:
     platforms:
+        - aix
         - darwin
         - dragonfly
         - freebsd
