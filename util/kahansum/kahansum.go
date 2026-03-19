@@ -18,7 +18,7 @@ import "math"
 // Inc performs addition of two floating-point numbers using the Kahan summation algorithm.
 func Inc(inc, sum, c float64) (newSum, newC float64) {
 	// We've seen Kahan summation return less accurate results when Inc function is
-	// allowed to beinlined (see https://github.com/prometheus/prometheus/pull/16895).
+	// allowed to be inlined (see https://github.com/prometheus/prometheus/pull/16895).
 	// Go permits fusing float operations (e.g. using fused multiply-add, which allows
 	// calculating a*b+c without rounding the result of a*b to precision available in float64),
 	// and Kahan sum is sensitive to float rounding behavior. Instead of forbidding inlining
