@@ -141,7 +141,6 @@ type checkpointFlusher struct {
 
 	seriesRecords []record.RefSeries
 	sampleRecords []record.RefSample
-	offset        int
 	batchSize     int
 }
 
@@ -149,8 +148,8 @@ func newCheckpointFlusher(checkpoint *wlog.WL, batchSize int) *checkpointFlusher
 	return &checkpointFlusher{
 		batchSize:     batchSize,
 		checkpoint:    checkpoint,
-		seriesRecords: make([]record.RefSeries, batchSize),
-		sampleRecords: make([]record.RefSample, batchSize),
+		seriesRecords: make([]record.RefSeries, 0, batchSize),
+		sampleRecords: make([]record.RefSample, 0, batchSize),
 	}
 }
 
@@ -172,36 +171,35 @@ func (cf *checkpointFlusher) flushRecords() error {
 
 	cf.seriesBuff = cf.seriesBuff[:0]
 	cf.samplesBuff = cf.samplesBuff[:0]
-	cf.offset = 0
+	cf.seriesRecords = cf.seriesRecords[:0]
+	cf.sampleRecords = cf.sampleRecords[:0]
 	return nil
 }
 
 func (cf *checkpointFlusher) writeSeries(seriesIter iter.Seq[ActiveSeries]) error {
 	for series := range seriesIter {
 		// If we filled the buffers, write them out and reset.
-		if cf.offset == cf.batchSize {
+		if len(cf.seriesRecords) == cf.batchSize {
 			if err := cf.flushRecords(); err != nil {
 				return fmt.Errorf("flush active series: %w", err)
 			}
 		}
 
-		cf.seriesRecords[cf.offset] = record.RefSeries{
+		cf.seriesRecords = append(cf.seriesRecords, record.RefSeries{
 			Ref:    series.Ref(),
 			Labels: series.Labels(),
-		}
+		})
 
 		// Sample value is irrelevant, we only need the timestamp.
-		cf.sampleRecords[cf.offset] = record.RefSample{
+		cf.sampleRecords = append(cf.sampleRecords, record.RefSample{
 			Ref: series.Ref(),
 			T:   series.LastSampleTimestamp(),
 			V:   0,
-		}
-
-		cf.offset++
+		})
 	}
 
 	// Clear the last batch if we have one
-	if cf.offset != 0 {
+	if len(cf.seriesRecords) != 0 {
 		return cf.flushRecords()
 	}
 
@@ -211,22 +209,20 @@ func (cf *checkpointFlusher) writeSeries(seriesIter iter.Seq[ActiveSeries]) erro
 func (cf *checkpointFlusher) writeDeletedRecords(seriesRefIter iter.Seq[chunks.HeadSeriesRef]) error {
 	for ref := range seriesRefIter {
 		// If we filled the buffers, write them out and reset.
-		if cf.offset == cf.batchSize {
+		if len(cf.seriesRecords) == cf.batchSize {
 			if err := cf.flushRecords(); err != nil {
 				return fmt.Errorf("flush deleted series: %w", err)
 			}
 		}
 
 		// We don't care about timestamps here, so no samples.
-		cf.seriesRecords[cf.offset] = record.RefSeries{
+		cf.seriesRecords = append(cf.seriesRecords, record.RefSeries{
 			Ref: ref,
-		}
-
-		cf.offset++
+		})
 	}
 
 	// Clear the last batch if we have one
-	if cf.offset != 0 {
+	if len(cf.seriesRecords) != 0 {
 		return cf.flushRecords()
 	}
 
