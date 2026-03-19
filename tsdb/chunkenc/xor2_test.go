@@ -14,13 +14,64 @@
 package chunkenc
 
 import (
+	"fmt"
 	"math"
+	"math/bits"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/value"
 )
+
+func newXOR2IteratorForPayload(t *testing.T, padding int, payload func(*bstream), setup func(*xor2Iterator)) *xor2Iterator {
+	t.Helper()
+
+	var bs bstream
+	if padding > 0 {
+		bs.writeBitsFast(0, padding)
+	}
+	payload(&bs)
+	// Add tail bytes so the reader initially fills a full 64-bit buffer.
+	bs.writeBitsFast(0, 64)
+
+	it := &xor2Iterator{}
+	if setup != nil {
+		setup(it)
+	}
+	it.br = newBReader(bs.bytes())
+
+	if padding > 0 {
+		_, err := it.br.readBits(uint8(padding))
+		require.NoError(t, err)
+	}
+
+	return it
+}
+
+func writeXOR2NewWindowPayload(bs *bstream, delta uint64) (leading, trailing uint8) {
+	leading, trailing, sigbits := xor2DeltaWindow(delta)
+	encodedSigbits := sigbits
+	if sigbits == 64 {
+		encodedSigbits = 0
+	}
+
+	bs.writeBitsFast(uint64(leading), 5)
+	bs.writeBitsFast(uint64(encodedSigbits), 6)
+	bs.writeBitsFast(delta>>trailing, int(sigbits))
+
+	return leading, trailing
+}
+
+func xor2DeltaWindow(delta uint64) (leading, trailing, sigbits uint8) {
+	leading = uint8(bits.LeadingZeros64(delta))
+	trailing = uint8(bits.TrailingZeros64(delta))
+	if leading >= 32 {
+		leading = 31
+	}
+
+	return leading, trailing, 64 - leading - trailing
+}
 
 func BenchmarkXor2Write(b *testing.B) {
 	samples := make([]struct {
@@ -275,5 +326,202 @@ func TestXOR2Chunk_MoreThan127Samples(t *testing.T) {
 
 		require.Equal(t, ValNone, it.Next())
 		require.NoError(t, it.Err())
+	})
+}
+
+// TestXOR2DecodeFunctionsAcrossPadding exercises decodeValue,
+// decodeValueKnownNonZero, and decodeNewLeadingTrailing across all logical
+// cases × all 64 bit-buffer alignments (padding 0..63). Padding controls the
+// number of bits that precede the payload in the stream, which determines
+// how many bits remain in the 64-bit read buffer when the decode function is
+// called. This Cartesian product ensures both the fast path (enough bits
+// buffered for a single-shot read) and the slow path (bits span a buffer
+// refill) are exercised for every case.
+func TestXOR2DecodeFunctionsAcrossPadding(t *testing.T) {
+	const baseline = 1234.5
+
+	type testCase struct {
+		name    string
+		payload func(*bstream)
+		setup   func(*xor2Iterator)
+		assert  func(*testing.T, *xor2Iterator)
+	}
+
+	runCases := func(t *testing.T, cases []testCase, fn func(*xor2Iterator) error) {
+		t.Helper()
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				for padding := range 64 {
+					t.Run(fmt.Sprintf("padding=%d", padding), func(t *testing.T) {
+						it := newXOR2IteratorForPayload(t, padding, tc.payload, tc.setup)
+						require.NoError(t, fn(it))
+						tc.assert(t, it)
+					})
+				}
+			})
+		}
+	}
+
+	// decodeValue: `0`=unchanged, `10`=reuse window, `110`=new window, `111`=stale NaN.
+	t.Run("decodeValue", func(t *testing.T) {
+		reuseD := uint64(0x000ABCDE000000)
+		rL, rT, rS := xor2DeltaWindow(reuseD)
+
+		// Two new-window variants: full-width sigbits (encoded as 0) and small
+		// sigbits, to cover both value-bits read paths inside decodeNewLeadingTrailing.
+		newDFull := uint64(0xFEDCBA9876543211)
+		nLFull, nTFull, _ := xor2DeltaWindow(newDFull)
+		newDSmall := uint64(0x000ABCDE000000)
+		nLSmall, nTSmall, _ := xor2DeltaWindow(newDSmall)
+
+		runCases(t, []testCase{
+			{
+				name:    "unchanged",
+				payload: func(bs *bstream) { bs.writeBit(zero) },
+				setup:   func(it *xor2Iterator) { it.baselineV = baseline },
+				assert: func(t *testing.T, it *xor2Iterator) {
+					require.Equal(t, baseline, it.val)
+					require.Equal(t, baseline, it.baselineV)
+				},
+			},
+			{
+				name: "reuse_window",
+				payload: func(bs *bstream) {
+					bs.writeBitsFast(0b10, 2)
+					bs.writeBitsFast(reuseD>>rT, int(rS))
+				},
+				setup: func(it *xor2Iterator) {
+					it.baselineV = baseline
+					it.leading, it.trailing = rL, rT
+				},
+				assert: func(t *testing.T, it *xor2Iterator) {
+					expected := math.Float64frombits(math.Float64bits(baseline) ^ reuseD)
+					require.Equal(t, expected, it.val)
+					require.Equal(t, expected, it.baselineV)
+					require.Equal(t, rL, it.leading)
+					require.Equal(t, rT, it.trailing)
+				},
+			},
+			{
+				name: "new_window_full_sigbits",
+				payload: func(bs *bstream) {
+					bs.writeBitsFast(0b110, 3)
+					writeXOR2NewWindowPayload(bs, newDFull)
+				},
+				setup: func(it *xor2Iterator) { it.baselineV = baseline },
+				assert: func(t *testing.T, it *xor2Iterator) {
+					expected := math.Float64frombits(math.Float64bits(baseline) ^ newDFull)
+					require.Equal(t, expected, it.val)
+					require.Equal(t, expected, it.baselineV)
+					require.Equal(t, nLFull, it.leading)
+					require.Equal(t, nTFull, it.trailing)
+				},
+			},
+			{
+				name: "new_window_small_sigbits",
+				payload: func(bs *bstream) {
+					bs.writeBitsFast(0b110, 3)
+					writeXOR2NewWindowPayload(bs, newDSmall)
+				},
+				setup: func(it *xor2Iterator) { it.baselineV = baseline },
+				assert: func(t *testing.T, it *xor2Iterator) {
+					expected := math.Float64frombits(math.Float64bits(baseline) ^ newDSmall)
+					require.Equal(t, expected, it.val)
+					require.Equal(t, expected, it.baselineV)
+					require.Equal(t, nLSmall, it.leading)
+					require.Equal(t, nTSmall, it.trailing)
+				},
+			},
+			{
+				name:    "stale_nan",
+				payload: func(bs *bstream) { bs.writeBitsFast(0b111, 3) },
+				setup:   func(it *xor2Iterator) { it.baselineV = baseline },
+				assert: func(t *testing.T, it *xor2Iterator) {
+					require.True(t, value.IsStaleNaN(it.val))
+					require.Equal(t, baseline, it.baselineV)
+				},
+			},
+		}, (*xor2Iterator).decodeValue)
+	})
+
+	// decodeValueKnownNonZero: `0`=reuse window, `1`=new window.
+	// The new_window case uses real leading/trailing (not 0xff) so that sz is
+	// small enough for the fast path (valid >= 1+sz) to be reached with ctrlBit=1.
+	t.Run("decodeValueKnownNonZero", func(t *testing.T) {
+		delta := uint64(0x000ABCDE000000)
+		dL, dT, dS := xor2DeltaWindow(delta)
+
+		runCases(t, []testCase{
+			{
+				name: "reuse_window",
+				payload: func(bs *bstream) {
+					bs.writeBit(zero)
+					bs.writeBitsFast(delta>>dT, int(dS))
+				},
+				setup: func(it *xor2Iterator) {
+					it.baselineV = baseline
+					it.leading, it.trailing = dL, dT
+				},
+				assert: func(t *testing.T, it *xor2Iterator) {
+					expected := math.Float64frombits(math.Float64bits(baseline) ^ delta)
+					require.Equal(t, expected, it.val)
+					require.Equal(t, expected, it.baselineV)
+				},
+			},
+			{
+				name: "new_window",
+				payload: func(bs *bstream) {
+					bs.writeBit(one)
+					writeXOR2NewWindowPayload(bs, delta)
+				},
+				setup: func(it *xor2Iterator) {
+					it.baselineV = baseline
+					it.leading, it.trailing = dL, dT
+				},
+				assert: func(t *testing.T, it *xor2Iterator) {
+					expected := math.Float64frombits(math.Float64bits(baseline) ^ delta)
+					require.Equal(t, expected, it.val)
+					require.Equal(t, expected, it.baselineV)
+					require.Equal(t, dL, it.leading)
+					require.Equal(t, dT, it.trailing)
+				},
+			},
+		}, (*xor2Iterator).decodeValueKnownNonZero)
+	})
+
+	// decodeNewLeadingTrailing: exercises the 11-bit header fast path, the
+	// value-bits fast path (small sigbits), and full-width sigbits (encoded as 0).
+	t.Run("decodeNewLeadingTrailing", func(t *testing.T) {
+		smallD := uint64(0x000ABCDE000000)
+		sL, sT, _ := xor2DeltaWindow(smallD)
+		fullD := uint64(0xFEDCBA9876543211)
+		fL, fT, _ := xor2DeltaWindow(fullD)
+
+		runCases(t, []testCase{
+			{
+				name:    "small_sigbits",
+				payload: func(bs *bstream) { writeXOR2NewWindowPayload(bs, smallD) },
+				setup:   func(it *xor2Iterator) { it.baselineV = baseline },
+				assert: func(t *testing.T, it *xor2Iterator) {
+					require.Equal(t, sL, it.leading)
+					require.Equal(t, sT, it.trailing)
+					expected := math.Float64frombits(math.Float64bits(baseline) ^ smallD)
+					require.Equal(t, expected, it.val)
+					require.Equal(t, expected, it.baselineV)
+				},
+			},
+			{
+				name:    "full_width_sigbits",
+				payload: func(bs *bstream) { writeXOR2NewWindowPayload(bs, fullD) },
+				setup:   func(it *xor2Iterator) { it.baselineV = baseline },
+				assert: func(t *testing.T, it *xor2Iterator) {
+					require.Equal(t, fL, it.leading)
+					require.Equal(t, fT, it.trailing)
+					expected := math.Float64frombits(math.Float64bits(baseline) ^ fullD)
+					require.Equal(t, expected, it.val)
+					require.Equal(t, expected, it.baselineV)
+				},
+			},
+		}, (*xor2Iterator).decodeNewLeadingTrailing)
 	})
 }

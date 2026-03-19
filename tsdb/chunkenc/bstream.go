@@ -249,33 +249,33 @@ func (b *bstreamReader) ReadByte() (byte, error) {
 	return byte(v), nil
 }
 
-// readXOR2ControlFast is like readXOR2Control but returns io.EOF when the
+// readXOR2ControlFast is like readXOR2Control but returns false when the
 // internal buffer has fewer than 4 valid bits, or when the control prefix
 // indicates cases 4 or 5 (top4 == 0xf). The caller should retry with
 // readXOR2Control. This function must be kept small and a leaf in order to
 // help the compiler inlining it and further improve performance.
-func (b *bstreamReader) readXOR2ControlFast() (uint8, error) {
+func (b *bstreamReader) readXOR2ControlFast() (uint8, bool) {
 	if b.valid < 4 {
-		return 0, io.EOF
+		return 0, false
 	}
 	top4 := uint8((b.buffer >> (b.valid - 4)) & 0xf)
 	if top4 < 8 { // '0xxx': dod=0, val=0 (case 0).
 		b.valid--
-		return 0, nil
+		return 0, true
 	}
 	if top4 < 12 { // '10xx': dod=0, val changed (case 1).
 		b.valid -= 2
-		return 1, nil
+		return 1, true
 	}
 	if top4 < 14 { // '110x': small dod (case 2).
 		b.valid -= 3
-		return 2, nil
+		return 2, true
 	}
 	if top4 == 14 { // '1110': medium dod (case 3).
 		b.valid -= 4
-		return 3, nil
+		return 3, true
 	}
-	return 0, io.EOF
+	return 0, false
 }
 
 // readXOR2Control reads the XOR2 variable-length joint control prefix

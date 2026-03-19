@@ -300,13 +300,13 @@ func (a *xor2Appender) Append(st, t int64, v float64) {
 // samples >= 2.
 func (a *xor2Appender) encodeJoint(dod int64, v float64) {
 	if dod == 0 {
-		vbits := math.Float64bits(v) ^ math.Float64bits(a.v)
-		switch {
-		case value.IsStaleNaN(v):
+		if value.IsStaleNaN(v) {
 			a.b.writeBitsFast(0b11111, 5)
-		case vbits == 0:
+			return
+		}
+		if vbits := math.Float64bits(v) ^ math.Float64bits(a.v); vbits == 0 {
 			a.b.writeBit(zero)
-		default:
+		} else {
 			a.b.writeBitsFast(0b10, 2)
 			a.writeVDeltaKnownNonZero(vbits)
 		}
@@ -369,7 +369,7 @@ func (a *xor2Appender) writeVDelta(v float64) {
 }
 
 // writeVDeltaKnownNonZero encodes a precomputed value XOR delta for the
-// dod=0, value-changed case. delta must be non-zero; stale NaN with dod=0 is
+// dod=0, value-changed case. delta must be non-zero or staleNaN. Stale NaN with dod=0 is
 // handled at the joint control level (`11111`) and never reaches this function.
 //
 // Encoding:
@@ -555,8 +555,9 @@ func (it *xor2Iterator) Next() ValueType {
 	prevT := it.t
 	savedNumRead := it.numRead
 
-	ctrl, err := it.br.readXOR2ControlFast()
-	if err != nil {
+	ctrl, ok := it.br.readXOR2ControlFast()
+	if !ok {
+		var err error
 		ctrl, err = it.br.readXOR2Control()
 		if err != nil {
 			it.err = err
