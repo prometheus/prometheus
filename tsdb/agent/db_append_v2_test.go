@@ -121,13 +121,13 @@ func TestCommit_AppendV2(t *testing.T) {
 				lset := labels.New(l...)
 
 				for i := range numDatapoints {
-					sample := chunks.GenerateSamples(0, 1)
+					samples := chunks.GenerateSamples(0, 1)
 					st := int64(i + 1234)
-					_, err := app.Append(0, lset, st, sample[0].T()+2000, sample.Float(sample[0].F()), storage.AOptions{
+					_, err := app.Append(0, lset, st, samples[0].T()+2000, sample.Float(samples[0].F()), storage.AOptions{
 						Exemplars: []exemplar.Exemplar{{
 							Labels: lset,
-							Ts:     sample[0].T() + int64(i) + 2000,
-							Value:  sample[0].F(),
+							Ts:     samples[0].T() + int64(i) + 2000,
+							Value:  samples[0].F(),
 							HasTs:  true,
 						}},
 					})
@@ -288,8 +288,8 @@ func TestRollbackAppendV2(t *testing.T) {
 			lset := labels.New(l...)
 
 			for i := range numDatapoints {
-				sample := chunks.GenerateSamples(0, 1)
-				_, err := app.Append(0, lset, int64(i), sample[0].T()+2000, sample.Float(sample[0].F()), storage.AOptions{})
+				samples := chunks.GenerateSamples(0, 1)
+				_, err := app.Append(0, lset, int64(i), samples[0].T()+2000, sample.Float(samples[0].F()), storage.AOptions{})
 				require.NoError(t, err)
 			}
 		}
@@ -1167,10 +1167,10 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 			opts.EnableSTAsZeroSample = true
 			s := createTestAgentDB(t, reg, opts)
 
-			for _, sample := range tc.inputSamples {
+			for _, smpl := range tc.inputSamples {
 				// Simulate one sample per series logic we have in all our ingestion paths in Prometheus.
 				app := s.AppenderV2(t.Context())
-				_, err := app.Append(0, sample.lbls, sample.st, sample.t, sample.Histogram(sample.h), storage.AOptions{})
+				_, err := app.Append(0, smpl.lbls, smpl.st, smpl.t, sample.Histogram(smpl.h), storage.AOptions{})
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
 			}
