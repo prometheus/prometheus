@@ -266,6 +266,10 @@ type Options struct {
 
 	// FsSizeFunc is a function returning the total disk size for a given path.
 	FsSizeFunc FsSizeFunc
+
+	// EnableFastStartup enables writing the last series ID to disk
+	// for WAL replay in parallel with scraping.
+	EnableFastStartup bool
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -1075,6 +1079,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
+	headOpts.EnableFastStartup = opts.EnableFastStartup
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}

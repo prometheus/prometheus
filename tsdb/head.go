@@ -206,6 +206,10 @@ type HeadOptions struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableMetadataWALRecords bool
+
+	// EnableFastStartup enables writing the last series ID to disk
+	// for WAL replay in parallel with scraping.
+	EnableFastStartup bool
 }
 
 const (
@@ -898,9 +902,11 @@ func (h *Head) Init(minValidTime int64) error {
 		"total_replay_duration", totalReplayDuration.String(),
 	)
 
-	// Start the background goroutine that writes to series_state.json.
-	h.seriesStateWg.Add(1)
-	go h.runSeriesStateTicker()
+	if h.opts.EnableFastStartup {
+		// Start the background goroutine that writes to series_state.json.
+		h.seriesStateWg.Add(1)
+		go h.runSeriesStateTicker()
+	}
 
 	return nil
 }
@@ -1819,7 +1825,7 @@ func (h *Head) Close() error {
 	h.closed = true
 
 	// Stop the background series_state.json writer
-	if h.seriesStateQuit != nil {
+	if h.opts.EnableFastStartup && h.seriesStateQuit != nil {
 		close(h.seriesStateQuit)
 		h.seriesStateWg.Wait()
 		// Flush the final clean state
