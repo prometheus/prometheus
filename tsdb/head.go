@@ -1827,6 +1827,7 @@ func (h *Head) Close() error {
 	// Stop the background series_state.json writer
 	if h.opts.EnableFastStartup && h.seriesStateQuit != nil {
 		close(h.seriesStateQuit)
+		h.seriesStateQuit = nil
 		h.seriesStateWg.Wait()
 		// Flush the final clean state
 		h.writeSeriesState(true)
@@ -2740,7 +2741,7 @@ func (h *Head) writeSeriesState(cleanShutdown bool) {
 		f.Close()
 		return
 	}
-	
+
 	f.Close()
 
 	if err := os.Rename(tmpPath, path); err != nil {

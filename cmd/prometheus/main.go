@@ -2005,7 +2005,7 @@ type tsdbOptions struct {
 	EnableSTAsZeroSample           bool
 	EnableSTStorage                bool
 	StaleSeriesCompactionThreshold float64
-	EnableFastStartup 			   bool
+	EnableFastStartup              bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
