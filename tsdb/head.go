@@ -2726,21 +2726,25 @@ func (h *Head) writeSeriesState(cleanShutdown bool) {
 		CleanShutdown:  cleanShutdown,
 	}
 
-	b, err := json.Marshal(state)
-	if err != nil {
-		h.logger.Warn("Failed to marshal series state", "err", err)
-		return
-	}
-
 	path := filepath.Join(h.wal.Dir(), seriesStateFilename)
 	tmpPath := path + ".tmp"
 
-	if err := os.WriteFile(tmpPath, b, 0o666); err != nil {
-		h.logger.Warn("Failed to write series state to tmp file", "err", err)
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		h.logger.Warn("Failed to create temp series state file", "err", err)
 		return
 	}
+
+	if err := json.NewEncoder(f).Encode(state); err != nil {
+		h.logger.Warn("Failed to encode series state", "err", err)
+		f.Close()
+		return
+	}
+	
+	f.Close()
+
 	if err := os.Rename(tmpPath, path); err != nil {
-		h.logger.Warn("Failed to rename series state file", "err", err)
+		h.logger.Warn("Failed to rename series state file; WAL replay might be slightly slower next time", "err", err)
 	}
 }
 
