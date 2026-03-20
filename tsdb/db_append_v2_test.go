@@ -7665,11 +7665,12 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			for _, s := range tc.appendSamples {
 				app := db.AppenderV2(context.Background())
 				var val samplemod.Value
-				if s.H() != nil {
+				switch {
+				case s.H() != nil:
 					val = samplemod.Histogram(s.H())
-				} else if s.FH() != nil {
+				case s.FH() != nil:
 					val = samplemod.FloatHistogram(s.FH())
-				} else {
+				default:
 					val = samplemod.Float(s.F())
 				}
 				_, err := app.Append(0, lbls, s.ST(), s.T(), val, storage.AOptions{})

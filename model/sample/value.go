@@ -18,6 +18,7 @@
 package sample
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -129,12 +130,12 @@ func (v Value) Validate() error {
 	switch v.typ {
 	case TypeHistogram:
 		if v.h == nil {
-			return fmt.Errorf("nil histogram for TypeHistogram value")
+			return errors.New("nil histogram for TypeHistogram value")
 		}
 		return v.h.Validate()
 	case TypeFloatHistogram:
 		if v.fh == nil {
-			return fmt.Errorf("nil float histogram for TypeFloatHistogram value")
+			return errors.New("nil float histogram for TypeFloatHistogram value")
 		}
 		return v.fh.Validate()
 	case TypeFloat:

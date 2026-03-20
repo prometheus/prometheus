@@ -2852,11 +2852,12 @@ func TestHeadAppenderV2_Append_DifferentEncodingSameSeries(t *testing.T) {
 		app := db.AppenderV2(context.Background())
 		for _, s := range a.samples {
 			var val samplemod.Value
-			if s.H() != nil {
+			switch {
+			case s.H() != nil:
 				val = samplemod.Histogram(s.H())
-			} else if s.FH() != nil {
+			case s.FH() != nil:
 				val = samplemod.FloatHistogram(s.FH())
-			} else {
+			default:
 				val = samplemod.Float(s.F())
 			}
 			_, err := app.Append(0, lbls, 0, s.T(), val, storage.AOptions{})
@@ -4454,11 +4455,12 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 
 			for _, s := range tc.appendableSamples {
 				var val samplemod.Value
-				if s.h != nil {
+				switch {
+				case s.h != nil:
 					val = samplemod.Histogram(s.h)
-				} else if s.fh != nil {
+				case s.fh != nil:
 					val = samplemod.FloatHistogram(s.fh)
-				} else {
+				default:
 					val = samplemod.Float(s.fSample)
 				}
 				_, err := a.Append(0, lbls, s.st, s.ts, val, storage.AOptions{})
