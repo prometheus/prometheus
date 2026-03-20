@@ -2238,7 +2238,10 @@ The following meta labels are available on all targets during [relabeling](#rela
 * `__meta_hetzner_server_status`: the status of the server
 * `__meta_hetzner_public_ipv4`: the public ipv4 address of the server
 * `__meta_hetzner_public_ipv6_network`: the public ipv6 network (/64) of the server
-* `__meta_hetzner_datacenter`: the datacenter of the server
+
+Note that the `__meta_hetzner_datacenter` label is deprecated for both roles `robot` and `hcloud`:
+- For the `robot` role, the replacement label is `__meta_hetzner_robot_datacenter`.
+- For the `hcloud` role, the label will be removed after 1 July 2026. For more details, see the [changelog](https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters).
 
 The labels below are only available for targets with `role` set to `hcloud`:
 
@@ -2246,8 +2249,10 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_image_os_flavor`: the OS flavor of the server image
 * `__meta_hetzner_hcloud_image_os_version`: the OS version of the server image
-* `__meta_hetzner_hcloud_datacenter_location`: the location of the server
-* `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server
+* `__meta_hetzner_hcloud_location`: the location of the server
+* `__meta_hetzner_hcloud_location_network_zone`: the network zone of the server
+* `__meta_hetzner_hcloud_datacenter_location`: the location of the server (deprecated in favor of `__meta_hetzner_hcloud_location`)
+* `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server (deprecated in favor of `__meta_hetzner_hcloud_location_network_zone`)
 * `__meta_hetzner_hcloud_server_type`: the type of the server
 * `__meta_hetzner_hcloud_cpu_cores`: the CPU cores count of the server
 * `__meta_hetzner_hcloud_cpu_type`: the CPU type of the server (shared or dedicated)
@@ -2259,6 +2264,7 @@ The labels below are only available for targets with `role` set to `hcloud`:
 
 The labels below are only available for targets with `role` set to `robot`:
 
+* `__meta_hetzner_robot_datacenter`: the datacenter of the server
 * `__meta_hetzner_robot_product`: the product of the server
 * `__meta_hetzner_robot_cancelled`: the server cancellation status
 
@@ -3871,9 +3877,9 @@ with this feature.
 # or when a compaction completes, whichever comes first.
 [ retention: <retention> ] :
   # How long to retain samples in storage. If neither this option nor the size option
-  # is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms.
+  # is set, the retention time defaults to 15d. Setting this to 0 disables time-based retention.
   # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.time.
-  [ time: <duration> | default = 15d ]
+  [ time: <duration> ]
 
   # Maximum number of bytes that can be stored for blocks. A unit is required,
   # supported units: B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B.

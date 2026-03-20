@@ -38,8 +38,10 @@ const (
 	hetznerLabelHcloudImageOSVersion                = hetznerHcloudLabelPrefix + "image_os_version"
 	hetznerLabelHcloudImageOSFlavor                 = hetznerHcloudLabelPrefix + "image_os_flavor"
 	hetznerLabelHcloudPrivateIPv4                   = hetznerHcloudLabelPrefix + "private_ipv4_"
-	hetznerLabelHcloudDatacenterLocation            = hetznerHcloudLabelPrefix + "datacenter_location"
-	hetznerLabelHcloudDatacenterLocationNetworkZone = hetznerHcloudLabelPrefix + "datacenter_location_network_zone"
+	hetznerLabelHcloudLocation                      = hetznerHcloudLabelPrefix + "location"
+	hetznerLabelHcloudLocationNetworkZone           = hetznerHcloudLabelPrefix + "location_network_zone"
+	hetznerLabelHcloudDatacenterLocation            = hetznerHcloudLabelPrefix + "datacenter_location"              // Label name kept for backward compatibility
+	hetznerLabelHcloudDatacenterLocationNetworkZone = hetznerHcloudLabelPrefix + "datacenter_location_network_zone" // Label name kept for backward compatibility
 	hetznerLabelHcloudCPUCores                      = hetznerHcloudLabelPrefix + "cpu_cores"
 	hetznerLabelHcloudCPUType                       = hetznerHcloudLabelPrefix + "cpu_type"
 	hetznerLabelHcloudMemoryGB                      = hetznerHcloudLabelPrefix + "memory_size_gb"
@@ -98,13 +100,14 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			hetznerLabelRole:              model.LabelValue(HetznerRoleHcloud),
 			hetznerLabelServerID:          model.LabelValue(strconv.FormatInt(server.ID, 10)),
 			hetznerLabelServerName:        model.LabelValue(server.Name),
-			hetznerLabelDatacenter:        model.LabelValue(server.Datacenter.Name), //nolint:staticcheck // server.Datacenter is deprecated but kept for backwards compatibility until the next minor release
 			hetznerLabelPublicIPv4:        model.LabelValue(server.PublicNet.IPv4.IP.String()),
 			hetznerLabelPublicIPv6Network: model.LabelValue(server.PublicNet.IPv6.Network.String()),
 			hetznerLabelServerStatus:      model.LabelValue(server.Status),
 
-			hetznerLabelHcloudDatacenterLocation:            model.LabelValue(server.Datacenter.Location.Name),        //nolint:staticcheck // server.Datacenter is deprecated but kept for backwards compatibility until the next minor release
-			hetznerLabelHcloudDatacenterLocationNetworkZone: model.LabelValue(server.Datacenter.Location.NetworkZone), //nolint:staticcheck // server.Datacenter is deprecated but kept for backwards compatibility until the next minor release
+			hetznerLabelHcloudLocation:                      model.LabelValue(server.Location.Name),
+			hetznerLabelHcloudLocationNetworkZone:           model.LabelValue(server.Location.NetworkZone),
+			hetznerLabelHcloudDatacenterLocation:            model.LabelValue(server.Location.Name),        // Label name kept for backward compatibility
+			hetznerLabelHcloudDatacenterLocationNetworkZone: model.LabelValue(server.Location.NetworkZone), // Label name kept for backward compatibility
 			hetznerLabelHcloudType:                          model.LabelValue(server.ServerType.Name),
 			hetznerLabelHcloudCPUCores:                      model.LabelValue(strconv.Itoa(server.ServerType.Cores)),
 			hetznerLabelHcloudCPUType:                       model.LabelValue(server.ServerType.CPUType),
@@ -112,6 +115,12 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			hetznerLabelHcloudDiskGB:                        model.LabelValue(strconv.Itoa(server.ServerType.Disk)),
 
 			model.AddressLabel: model.LabelValue(net.JoinHostPort(server.PublicNet.IPv4.IP.String(), strconv.FormatUint(uint64(d.port), 10))),
+		}
+
+		// [hcloud.Server.Datacenter] is deprecated and will be removed after 1 July 2026.
+		// See https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters
+		if server.Datacenter != nil { // nolint: staticcheck
+			labels[hetznerLabelDatacenter] = model.LabelValue(server.Datacenter.Name) // nolint: staticcheck
 		}
 
 		if server.Image != nil {
