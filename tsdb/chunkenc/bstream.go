@@ -101,6 +101,7 @@ func (b *bstream) writeByte(byt byte) {
 
 // writeBits writes the nbits right-most bits of u to the stream
 // in left-to-right order.
+// TODO: Once XOR2 stabilizes, replace writeBits with the writeBitsFast implementation and remove writeBitsFast.
 func (b *bstream) writeBits(u uint64, nbits int) {
 	u <<= 64 - uint(nbits)
 	for nbits >= 8 {
@@ -114,6 +115,40 @@ func (b *bstream) writeBits(u uint64, nbits int) {
 		b.writeBit((u >> 63) == 1)
 		u <<= 1
 		nbits--
+	}
+}
+
+// writeBitsFast is like writeBits but handles the partial last byte inline to
+// avoid per-byte writeByte calls, and writes complete bytes directly to the
+// stream slice.
+func (b *bstream) writeBitsFast(u uint64, nbits int) {
+	u <<= 64 - uint(nbits)
+
+	// If the last byte is partial, fill its remaining bits first.
+	if b.count > 0 {
+		free := int(b.count)
+		last := len(b.stream) - 1
+		b.stream[last] |= byte(u >> uint(64-free))
+		if nbits < free {
+			b.count = uint8(free - nbits)
+			return
+		}
+		u <<= uint(free)
+		nbits -= free
+		b.count = 0
+	}
+
+	// Write complete bytes directly, avoiding per-byte function call overhead.
+	for nbits >= 8 {
+		b.stream = append(b.stream, byte(u>>56))
+		u <<= 8
+		nbits -= 8
+	}
+
+	// Write any remaining bits as a partial final byte.
+	if nbits > 0 {
+		b.stream = append(b.stream, byte(u>>56))
+		b.count = uint8(8 - nbits)
 	}
 }
 
@@ -215,6 +250,35 @@ func (b *bstreamReader) ReadByte() (byte, error) {
 	return byte(v), nil
 }
 
+// readXOR2ControlFast is like readXOR2Control but returns false when the
+// internal buffer has fewer than 4 valid bits, or when the control prefix
+// indicates cases 4 or 5 (top4 == 0xf). The caller should retry with
+// readXOR2Control. This function must be kept small and a leaf in order to
+// help the compiler inlining it and further improve performance.
+func (b *bstreamReader) readXOR2ControlFast() (uint8, bool) {
+	if b.valid < 4 {
+		return 0, false
+	}
+	top4 := uint8((b.buffer >> (b.valid - 4)) & 0xf)
+	if top4 < 8 { // '0xxx': dod=0, val=0 (case 0).
+		b.valid--
+		return 0, true
+	}
+	if top4 < 12 { // '10xx': dod=0, val changed (case 1).
+		b.valid -= 2
+		return 1, true
+	}
+	if top4 < 14 { // '110x': small dod (case 2).
+		b.valid -= 3
+		return 2, true
+	}
+	if top4 == 14 { // '1110': medium dod (case 3).
+		b.valid -= 4
+		return 3, true
+	}
+	return 0, false
+}
+
 // readXOR2Control reads the XOR2 variable-length joint control prefix
 // and returns 0-5 mapping to the six encoding cases:
 //
@@ -302,6 +366,38 @@ func (b *bstreamReader) readXOR2Control() (uint8, error) {
 		return 4, nil
 	}
 	return 5, nil
+}
+
+// readUvarint decodes a varint-encoded uint64 using direct method calls,
+// avoiding the io.ByteReader interface dispatch used by binary.ReadUvarint,
+// which causes the receiver to escape to the heap.
+func (b *bstreamReader) readUvarint() (uint64, error) {
+	var x uint64
+	var s uint
+	for range binary.MaxVarintLen64 {
+		byt, err := b.ReadByte()
+		if err != nil {
+			return x, err
+		}
+		if byt < 0x80 {
+			return x | uint64(byt)<<s, nil
+		}
+		x |= uint64(byt&0x7f) << s
+		s += 7
+	}
+	return x, io.ErrUnexpectedEOF
+}
+
+// readVarint decodes a varint-encoded int64 using direct method calls,
+// avoiding the io.ByteReader interface dispatch used by binary.ReadVarint,
+// which causes the receiver to escape to the heap.
+func (b *bstreamReader) readVarint() (int64, error) {
+	ux, err := b.readUvarint()
+	x := int64(ux >> 1)
+	if ux&1 != 0 {
+		x = ^x
+	}
+	return x, err
 }
 
 // loadNextBuffer loads the next bytes from the stream into the internal buffer.
