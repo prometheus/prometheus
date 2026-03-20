@@ -257,11 +257,28 @@ func (a *xor2Appender) Append(st, t int64, v float64) {
 
 		// Fast path: no ST involvement at all.
 		if st == 0 && a.numTotal != maxFirstSTChangeOn && a.firstSTChangeOn == 0 && !a.firstSTKnown {
-			a.encodeJoint(dod, v)
-			a.t = t
-			if !value.IsStaleNaN(v) {
-				a.v = v
+			vbits := math.Float64bits(v)
+			isStale := vbits == value.StaleNaN
+			if !isStale && vbits == math.Float64bits(a.v) {
+				// Value unchanged: inline the common timestamp encodings to avoid
+				// two function calls (encodeJoint + writeVDelta) for hot paths.
+				if dod == 0 {
+					a.b.writeBit(zero)
+				} else if dod >= -(1<<12) && dod <= (1<<12)-1 {
+					a.b.writeByte(0b110_00000 | byte(uint64(dod)>>8)&0x1F)
+					a.b.writeByte(byte(uint64(dod)))
+					a.b.writeBit(zero) // value unchanged.
+				} else {
+					a.encodeJoint(dod, v)
+				}
+				// a.v is not updated since v == a.v.
+			} else {
+				a.encodeJoint(dod, v)
+				if !isStale {
+					a.v = v
+				}
 			}
+			a.t = t
 			a.tDelta = tDelta
 			a.numTotal++
 			binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
