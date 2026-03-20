@@ -4835,7 +4835,14 @@ func TestHeadAppenderV2_STStorage(t *testing.T) {
 
 			a := h.AppenderV2(context.Background())
 			for _, s := range tc.samples {
-				_, err := a.Append(0, lbls, s.st, s.ts, samplemod.Histogram(s.h), storage.AOptions{})
+				var val samplemod.Value
+				switch {
+				case s.h != nil:
+					val = samplemod.Histogram(s.h)
+				default:
+					val = samplemod.Float(s.fSample)
+				}
+				_, err := a.Append(0, lbls, s.st, s.ts, val, storage.AOptions{})
 				require.NoError(t, err)
 			}
 			require.NoError(t, a.Commit())
