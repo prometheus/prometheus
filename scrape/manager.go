@@ -149,9 +149,8 @@ type Options struct {
 	// because of an early startup scrape.
 	InitialScrapeOffset time.Duration
 
-	// private options for testability.
+	// private option for testability.
 	skipJitterOffsetting bool
-	offsetSeed           uint64
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -270,11 +269,6 @@ func (m *Manager) reload() {
 
 // setOffsetSeed calculates a global offsetSeed per server relying on extra label set.
 func (m *Manager) setOffsetSeed(labels labels.Labels) error {
-	if m.opts.offsetSeed != 0 {
-		m.offsetSeed = m.opts.offsetSeed
-		return nil
-	}
-
 	h := fnv.New64a()
 	hostname, err := osutil.GetFQDN()
 	if err != nil {

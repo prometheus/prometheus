@@ -1253,9 +1253,8 @@ func (sl *scrapeLoop) getScrapeOffset() time.Duration {
 
 func (sl *scrapeLoop) run(errc chan<- error) {
 	var (
-		last              time.Time
-		alignedScrapeTime = time.Now().Round(0)
-		ticker            = time.NewTicker(sl.interval)
+		last   time.Time
+		ticker = time.NewTicker(sl.interval)
 	)
 	defer func() {
 		if sl.scrapeOnShutdown {
@@ -1284,6 +1283,7 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 
 	// Reset the ticker so target scrape times are aligned to the offset+intervals.
 	ticker.Reset(sl.interval)
+	alignedScrapeTime := time.Now().Round(0)
 
 	for {
 		select {

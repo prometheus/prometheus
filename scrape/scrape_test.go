@@ -6823,7 +6823,6 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 
 		app := teststorage.NewAppendable()
 		opts := &Options{
-			offsetSeed: 1,
 			HTTPClientOptions: []config_util.HTTPClientOption{
 				config_util.WithDialContextFunc(func(ctx context.Context, _, _ string) (net.Conn, error) {
 					srvConn, cliConn := net.Pipe()
@@ -6839,6 +6838,7 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 			},
 		}
 		scrapeManager, err := NewManager(opts, promslog.NewNopLogger(), nil, app, nil, prometheus.NewRegistry())
+		scrapeManager.offsetSeed = 1 // Set a fixed offset seed for deterministic testing.
 		require.NoError(t, err)
 
 		var targets []model.LabelSet
