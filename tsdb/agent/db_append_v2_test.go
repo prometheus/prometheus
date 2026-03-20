@@ -1170,7 +1170,13 @@ func TestDB_EnableSTZeroInjection_AppendV2(t *testing.T) {
 			for _, smpl := range tc.inputSamples {
 				// Simulate one sample per series logic we have in all our ingestion paths in Prometheus.
 				app := s.AppenderV2(t.Context())
-				_, err := app.Append(0, smpl.lbls, smpl.st, smpl.t, sample.Histogram(smpl.h), storage.AOptions{})
+				var val sample.Value
+				if smpl.h != nil {
+					val = sample.Histogram(smpl.h)
+				} else {
+					val = sample.Float(smpl.v)
+				}
+				_, err := app.Append(0, smpl.lbls, smpl.st, smpl.t, val, storage.AOptions{})
 				require.NoError(t, err)
 				require.NoError(t, app.Commit())
 			}

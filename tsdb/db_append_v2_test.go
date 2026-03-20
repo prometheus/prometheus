@@ -149,15 +149,15 @@ func TestDataNotAvailableAfterRollback_AppendV2(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = app.Append(
-		0, labels.FromStrings("type", "histogram"), 0, 0, 0,
-		&histogram.Histogram{Count: 42, Sum: math.NaN()}, nil,
+		0, labels.FromStrings("type", "histogram"), 0, 0,
+		samplemod.Histogram(&histogram.Histogram{Count: 42, Sum: math.NaN()}),
 		storage.AOptions{},
 	)
 	require.NoError(t, err)
 
 	_, err = app.Append(
-		0, labels.FromStrings("type", "floathistogram"), 0, 0, 0,
-		nil, &histogram.FloatHistogram{Count: 42, Sum: math.NaN()},
+		0, labels.FromStrings("type", "floathistogram"), 0, 0,
+		samplemod.FloatHistogram(&histogram.FloatHistogram{Count: 42, Sum: math.NaN()}),
 		storage.AOptions{},
 	)
 	require.NoError(t, err)
