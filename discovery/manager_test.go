@@ -791,7 +791,7 @@ func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics, SkipInitialWait())
 	require.NotNil(t, discoveryManager)
 
-	// Set the updatert to a super long time so we can verify that the skip worked correctly.
+	// Set the updatert to a long time so we can verify that the skip worked correctly.
 	discoveryManager.updatert = 100 * time.Hour
 	go discoveryManager.Run()
 
@@ -802,15 +802,15 @@ func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 	}
 	discoveryManager.ApplyConfig(c)
 
+	// Wait for the single bypassed send
 	syncedTargets := <-discoveryManager.SyncCh()
-	require.Len(t, syncedTargets, 1)
 
-	syncedTargets = <-discoveryManager.SyncCh()
+	// Assertions on the targets received from the channel
 	require.Len(t, syncedTargets, 1)
 	require.Len(t, syncedTargets["prometheus"], 1)
-
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 
+	// Assertions on the manager's internal state
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	require.Len(t, discoveryManager.targets, 1)

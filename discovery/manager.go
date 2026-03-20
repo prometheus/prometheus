@@ -253,6 +253,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	var (
 		wg           sync.WaitGroup
 		newProviders []*Provider
+		keep         bool
 	)
 	for _, prov := range m.providers {
 		// Cancel obsolete providers if it has no new subs and it has a cancel function.
@@ -267,6 +268,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 
 			prov.cancel()
 			prov.mu.RUnlock()
+			keep = true // Trigger send to notify downstream of dropped targets
 			continue
 		}
 		prov.mu.RUnlock()
@@ -278,6 +280,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 
 		m.targetsMtx.Lock()
 		for s := range prov.subs {
+			keep = true // Trigger send because this is an existing provider (reload)
 			refTargets = m.targets[poolKey{s, prov.name}]
 			// Remove obsolete subs' targets.
 			if _, ok := prov.newSubs[s]; !ok {
@@ -310,7 +313,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	// See https://github.com/prometheus/prometheus/pull/8639 for details.
 	// This also helps making the downstream managers drop stale targets as soon as possible.
 	// See https://github.com/prometheus/prometheus/pull/13147 for details.
-	if len(m.providers) > 0 {
+	if keep {
 		select {
 		case m.triggerSend <- struct{}{}:
 		default:
@@ -398,28 +401,34 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 	}
 }
 
+func (m *Manager) flushUpdates(timeout <-chan time.Time) {
+	m.metrics.SentUpdates.Inc()
+	select {
+	case m.syncCh <- m.allGroups():
+	case <-timeout:
+		m.metrics.DelayedUpdates.Inc()
+		m.logger.Debug("Discovery receiver's channel was full so will retry the next cycle")
+		select {
+		case m.triggerSend <- struct{}{}:
+		default:
+		}
+	}
+}
+
 func (m *Manager) sender() {
 	ticker := time.NewTicker(m.updatert)
-	defer ticker.Stop()
+	defer func() {
+		ticker.Stop()
+		close(m.syncCh)
+	}()
 
 	if m.skipStartupWait {
-	startupLoop:
-		for {
-			select {
-			case <-m.ctx.Done():
-				return
-			case <-ticker.C:
-				break startupLoop
-			case <-m.triggerSend:
-				m.metrics.SentUpdates.Inc()
-				select {
-				case m.syncCh <- m.allGroups():
-				case <-m.ctx.Done():
-					return
-				}
-			}
+		select {
+		case <-m.triggerSend:
+			m.flushUpdates(ticker.C)
+		case <-m.ctx.Done():
+			return
 		}
-		// We restart the ticker to ensure that no two updates are less than updatert apart.
 		ticker.Reset(m.updatert)
 	}
 

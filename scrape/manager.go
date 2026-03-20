@@ -234,16 +234,11 @@ func (m *Manager) reloader() {
 	defer ticker.Stop()
 
 	if m.opts.ScrapeOnShutdown {
-	startupLoop:
-		for {
-			select {
-			case <-m.graceShut:
-				return
-			case <-ticker.C:
-				break startupLoop
-			case <-m.triggerReload:
-				m.reload()
-			}
+		select {
+		case <-m.graceShut:
+			return
+		case <-m.triggerReload:
+			m.reload()
 		}
 		ticker.Reset(reloadIntervalDuration)
 	}
