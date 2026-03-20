@@ -304,12 +304,13 @@ func (a *xor2Appender) encodeJoint(dod int64, v float64) {
 			a.b.writeBitsFast(0b11111, 5)
 			return
 		}
-		if vbits := math.Float64bits(v) ^ math.Float64bits(a.v); vbits == 0 {
+		vbits := math.Float64bits(v) ^ math.Float64bits(a.v)
+		if vbits == 0 {
 			a.b.writeBit(zero)
-		} else {
-			a.b.writeBitsFast(0b10, 2)
-			a.writeVDeltaKnownNonZero(vbits)
+			return
 		}
+		a.b.writeBitsFast(0b10, 2)
+		a.writeVDeltaKnownNonZero(vbits)
 		return
 	}
 

@@ -101,6 +101,7 @@ func (b *bstream) writeByte(byt byte) {
 
 // writeBits writes the nbits right-most bits of u to the stream
 // in left-to-right order.
+// TODO: Once XOR2 stabilizes, replace writeBits with the writeBitsFast implementation and remove writeBitsFast.
 func (b *bstream) writeBits(u uint64, nbits int) {
 	u <<= 64 - uint(nbits)
 	for nbits >= 8 {
@@ -368,9 +369,8 @@ func (b *bstreamReader) readXOR2Control() (uint8, error) {
 }
 
 // readUvarint decodes a varint-encoded uint64 using direct method calls,
-// avoiding the io.ByteReader interface dispatch used by binary.ReadUvarint.
-// This prevents interior pointer references on goroutine stacks that the GC
-// must trace via findObject, reducing GC overhead.
+// avoiding the io.ByteReader interface dispatch used by binary.ReadUvarint,
+// which causes the receiver to escape to the heap.
 func (b *bstreamReader) readUvarint() (uint64, error) {
 	var x uint64
 	var s uint
@@ -389,7 +389,8 @@ func (b *bstreamReader) readUvarint() (uint64, error) {
 }
 
 // readVarint decodes a varint-encoded int64 using direct method calls,
-// avoiding the io.ByteReader interface dispatch used by binary.ReadVarint.
+// avoiding the io.ByteReader interface dispatch used by binary.ReadVarint,
+// which causes the receiver to escape to the heap.
 func (b *bstreamReader) readVarint() (int64, error) {
 	ux, err := b.readUvarint()
 	x := int64(ux >> 1)
