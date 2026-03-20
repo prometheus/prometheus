@@ -20,7 +20,8 @@ Please see [the v2.55 RELEASE.md](https://github.com/prometheus/prometheus/blob/
 | v3.8           | 2025-11-06                                 | Jan Fajerski (GitHub: @jan--f)                                          |
 | v3.9           | 2025-12-18                                 | Bryan Boreham (GitHub: @bboreham)                                       |
 | v3.10          | 2026-02-05                                 | Ganesh Vernekar (Github: @codesome)                                     |
-| v3.11          | 2026-03-19                                 | **volunteer welcome**                                                   |
+| v3.11          | 2026-03-25                                 | Julien Pivotto (GitHub: @roidelapluie)                                  |
+| v3.12          | 2026-05-06                                 | **volunteer welcome**                                                   |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
