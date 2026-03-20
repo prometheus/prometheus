@@ -1,0 +1,13 @@
+/.vscode/
+/release/**/*.test.js
+/release/**/test/
+/scripts/
+/.circleci/
+/test/
+/examples/
+/gulpfile.js
+/tsconfig.json
+/.npmignore
+/.gitignore
+/.eslintrc.js
+/.nyc_output

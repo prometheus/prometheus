@@ -1,0 +1,5 @@
+scrape_configs:
+  - job_name: prometheus
+    relabel_configs:
+      - modulus: 8
+        action: labelkeep

@@ -1,0 +1,64 @@
+[
+  {
+    "Name": "mon_net",
+    "Id": "npq2closzy836m07eaq1425k3",
+    "Created": "2020-06-20T22:08:52.666829786Z",
+    "Scope": "swarm",
+    "Driver": "overlay",
+    "EnableIPv6": false,
+    "IPAM": {
+      "Driver": "default",
+      "Options": null,
+      "Config": [
+        {
+          "Subnet": "10.0.1.0/24",
+          "Gateway": "10.0.1.1"
+        }
+      ]
+    },
+    "Internal": false,
+    "Attachable": true,
+    "Ingress": false,
+    "ConfigFrom": {
+      "Network": ""
+    },
+    "ConfigOnly": false,
+    "Containers": null,
+    "Options": {
+      "com.docker.network.driver.overlay.vxlanid_list": "4097"
+    },
+    "Labels": {
+      "com.docker.stack.namespace": "mon"
+    }
+  },
+  {
+    "Name": "ingress",
+    "Id": "qvwhwd6p61k4o0ulsknqb066z",
+    "Created": "2020-06-20T20:50:07.413991571Z",
+    "Scope": "swarm",
+    "Driver": "overlay",
+    "EnableIPv6": false,
+    "IPAM": {
+      "Driver": "default",
+      "Options": null,
+      "Config": [
+        {
+          "Subnet": "10.0.0.0/24",
+          "Gateway": "10.0.0.1"
+        }
+      ]
+    },
+    "Internal": false,
+    "Attachable": false,
+    "Ingress": true,
+    "ConfigFrom": {
+      "Network": ""
+    },
+    "ConfigOnly": false,
+    "Containers": null,
+    "Options": {
+      "com.docker.network.driver.overlay.vxlanid_list": "4096"
+    },
+    "Labels": null
+  }
+]

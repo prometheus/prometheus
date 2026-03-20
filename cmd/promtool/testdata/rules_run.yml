@@ -1,0 +1,30 @@
+rule_files:
+  - rules.yml
+
+evaluation_interval: 1m
+
+# Minimal test cases to check focus on a rule group.
+tests:
+  - name: correct test
+    input_series:
+      - series: test
+        values: 1
+
+    promql_expr_test:
+      - expr: test
+        eval_time: 0
+        exp_samples:
+          - value: 1
+            labels: test
+
+  - name: wrong test
+    input_series:
+      - series: test
+        values: 0
+
+    promql_expr_test:
+      - expr: test
+        eval_time: 0
+        exp_samples:
+          - value: 1
+            labels: test

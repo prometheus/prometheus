@@ -1,0 +1,6 @@
+scrape_configs:
+  - job_name: foo
+    lightsail_sd_configs:
+      - region: us-east-1
+        bearer_token: foo
+        bearer_token_file: foo

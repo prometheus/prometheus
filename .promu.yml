@@ -1,0 +1,41 @@
+go:
+    # Whenever the Go version is updated here,
+    # .github/workflows should also be updated.
+    version: 1.26
+repository:
+    path: github.com/prometheus/prometheus
+build:
+    binaries:
+        - name: prometheus
+          path: ./cmd/prometheus
+        - name: promtool
+          path: ./cmd/promtool
+    tags:
+        all:
+            - netgo
+            - builtinassets
+        windows:
+            - builtinassets
+    ldflags: |
+        -X github.com/prometheus/common/version.Version={{.Version}}
+        -X github.com/prometheus/common/version.Revision={{.Revision}}
+        -X github.com/prometheus/common/version.Branch={{.Branch}}
+        -X github.com/prometheus/common/version.BuildUser={{user}}@{{host}}
+        -X github.com/prometheus/common/version.BuildDate={{date "20060102-15:04:05"}}
+tarball:
+    # Whenever there are new files to include in the tarball,
+    # remember to make sure the new files will be generated after `make build`.
+    files:
+        - documentation/examples/prometheus.yml
+        - LICENSE
+        - NOTICE
+        - npm_licenses.tar.bz2
+crossbuild:
+    platforms:
+        - darwin
+        - dragonfly
+        - freebsd
+        - illumos
+        - linux
+        - netbsd
+        - windows

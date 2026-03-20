@@ -1,0 +1,3 @@
+scrape_configs:
+  - job_name: prometheus
+    body_size_limit: 100

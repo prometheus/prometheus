@@ -1,0 +1,72 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 1 (0x1)
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C = XX, L = Default City, O = Default Company Ltd, CN = Prometheus Test CA
+        Validity
+            Not Before: Aug 12 19:58:32 2020 GMT
+            Not After : Nov 27 19:58:32 2041 GMT
+        Subject: C = XX, ST = State, L = City, O = Prom Test Inc., CN = Test
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                RSA Public-Key: (2048 bit)
+                Modulus:
+                    00:ca:58:23:ba:98:7f:ce:08:b5:03:62:92:d0:8c:
+                    3f:ef:7c:dd:a2:6e:38:f4:6c:3e:0c:04:c0:a4:bd:
+                    6c:29:85:13:01:50:64:d2:e0:e9:11:92:30:7e:e6:
+                    04:03:3e:91:6f:30:60:cd:d6:30:d7:47:26:0c:20:
+                    c3:6f:49:4d:4c:11:78:57:4f:1b:18:05:dc:61:e2:
+                    64:2a:72:07:45:9a:6b:4c:fb:3b:3d:60:1a:8b:58:
+                    c4:d0:7e:a9:87:e4:e1:b8:78:21:3e:4b:bb:38:07:
+                    b2:4e:f6:32:b7:98:b4:8e:45:36:be:02:d2:3d:af:
+                    70:2d:c8:82:7e:fc:2d:77:a4:b5:82:cb:61:7c:49:
+                    7c:62:c2:87:88:45:44:fb:98:78:9c:b8:f3:a7:c3:
+                    08:80:60:4d:3e:1c:d0:bf:05:bc:c7:a6:e9:d3:08:
+                    6e:57:33:85:44:74:75:54:17:8a:e6:bc:46:d0:b6:
+                    c2:55:4d:d0:e6:83:d5:48:bb:91:4e:48:d0:ea:f3:
+                    6d:9b:fa:99:3d:3c:36:98:02:e3:a5:15:2b:37:16:
+                    c0:e3:9d:da:13:7d:df:a0:91:db:de:01:7c:e5:b4:
+                    ad:eb:b1:7b:82:51:70:c3:9b:2a:1a:dc:53:8a:3b:
+                    bc:b7:c8:0d:cb:b5:15:d1:13:a5:92:80:bb:a3:5a:
+                    4c:b3
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Subject Alternative Name: 
+                DNS:prometheus.rocks
+    Signature Algorithm: sha256WithRSAEncryption
+         00:12:d7:ac:b7:ef:64:83:22:bb:34:3b:48:1e:c1:2c:e7:57:
+         fd:cd:0e:9a:fa:91:7c:f2:a7:72:45:ac:9c:8d:1b:ef:eb:5b:
+         62:5a:c3:a3:f2:53:75:23:25:6b:6c:ec:6e:c0:de:92:f6:11:
+         17:93:6d:b6:0d:e4:13:a3:eb:c5:ee:33:2e:f9:97:73:65:d2:
+         b2:23:c0:87:63:67:02:78:a4:28:4b:df:f2:c5:47:dc:49:27:
+         06:53:12:d7:6d:53:95:eb:01:e3:58:6e:0c:44:43:30:bc:b0:
+         d7:0b:14:c7:81:8e:0d:a3:44:ee:2c:89:32:ab:8d:21:54:ed:
+         8d:9a:fb:2f:f5:53:1d:ec:43:d4:ef:76:c7:5b:dd:3c:54:df:
+         29:f7:64:34:e9:7e:98:49:1b:26:3c:52:77:43:70:f8:2c:8c:
+         2f:af:24:cc:81:58:be:8d:b9:6e:2e:e8:75:9a:27:6e:24:05:
+         eb:dc:df:c6:23:93:5b:f1:03:c6:0a:4d:ad:d7:0e:cd:bc:e9:
+         6e:38:c7:7f:ba:af:1b:91:1c:37:77:b6:0c:4d:81:da:04:3a:
+         eb:4a:c4:8a:41:29:9f:45:a0:0f:1b:d1:32:28:48:77:5d:f4:
+         3a:71:7d:87:b0:98:c4:c3:94:e1:cf:65:cf:12:e2:90:02:48:
+         a8:b7:a1:5d
+-----BEGIN CERTIFICATE-----
+MIIDTTCCAjWgAwIBAgIBATANBgkqhkiG9w0BAQsFADBfMQswCQYDVQQGEwJYWDEV
+MBMGA1UEBwwMRGVmYXVsdCBDaXR5MRwwGgYDVQQKDBNEZWZhdWx0IENvbXBhbnkg
+THRkMRswGQYDVQQDDBJQcm9tZXRoZXVzIFRlc3QgQ0EwHhcNMjAwODEyMTk1ODMy
+WhcNNDExMTI3MTk1ODMyWjBUMQswCQYDVQQGEwJYWDEOMAwGA1UECAwFU3RhdGUx
+DTALBgNVBAcMBENpdHkxFzAVBgNVBAoMDlByb20gVGVzdCBJbmMuMQ0wCwYDVQQD
+DARUZXN0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAylgjuph/zgi1
+A2KS0Iw/73zdom449Gw+DATApL1sKYUTAVBk0uDpEZIwfuYEAz6RbzBgzdYw10cm
+DCDDb0lNTBF4V08bGAXcYeJkKnIHRZprTPs7PWAai1jE0H6ph+ThuHghPku7OAey
+TvYyt5i0jkU2vgLSPa9wLciCfvwtd6S1gsthfEl8YsKHiEVE+5h4nLjzp8MIgGBN
+PhzQvwW8x6bp0whuVzOFRHR1VBeK5rxG0LbCVU3Q5oPVSLuRTkjQ6vNtm/qZPTw2
+mALjpRUrNxbA453aE33foJHb3gF85bSt67F7glFww5sqGtxTiju8t8gNy7UV0ROl
+koC7o1pMswIDAQABox8wHTAbBgNVHREEFDASghBwcm9tZXRoZXVzLnJvY2tzMA0G
+CSqGSIb3DQEBCwUAA4IBAQAAEtest+9kgyK7NDtIHsEs51f9zQ6a+pF88qdyRayc
+jRvv61tiWsOj8lN1IyVrbOxuwN6S9hEXk222DeQTo+vF7jMu+ZdzZdKyI8CHY2cC
+eKQoS9/yxUfcSScGUxLXbVOV6wHjWG4MREMwvLDXCxTHgY4No0TuLIkyq40hVO2N
+mvsv9VMd7EPU73bHW908VN8p92Q06X6YSRsmPFJ3Q3D4LIwvryTMgVi+jbluLuh1
+miduJAXr3N/GI5Nb8QPGCk2t1w7NvOluOMd/uq8bkRw3d7YMTYHaBDrrSsSKQSmf
+RaAPG9EyKEh3XfQ6cX2HsJjEw5Thz2XPEuKQAkiot6Fd
+-----END CERTIFICATE-----

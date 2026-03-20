@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 15s
+
+scrape_configs:
+  - job_name: prometheus
+
+    scrape_interval: 5s
+
+    dns_sd_configs:
+      - refresh_interval: 15s
+        names:
+          - first.dns.address.domain.com
+          - second.dns.address.domain.com
+      - names:
+          - first.dns.address.domain.com

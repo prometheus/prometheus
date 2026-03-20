@@ -1,0 +1,143 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`AlertsContent matches a snapshot 1`] = `
+<Fragment>
+  <Row
+    className="align-items-center"
+    tag="div"
+    widths={
+      Array [
+        "xs",
+        "sm",
+        "md",
+        "lg",
+        "xl",
+      ]
+    }
+  >
+    <Col
+      className="d-flex"
+      lg="4"
+      md="5"
+      tag="div"
+      widths={
+        Array [
+          "xs",
+          "sm",
+          "md",
+          "lg",
+          "xl",
+        ]
+      }
+    >
+      <Memo(Checkbox)
+        checked={true}
+        id="inactive-toggler"
+        key="inactive"
+        onChange={[Function]}
+      >
+        <Badge
+          className="text-capitalize"
+          color="success"
+          pill={false}
+          tag="span"
+        >
+          inactive
+           (
+          0
+          )
+        </Badge>
+      </Memo(Checkbox)>
+      <Memo(Checkbox)
+        checked={true}
+        id="pending-toggler"
+        key="pending"
+        onChange={[Function]}
+      >
+        <Badge
+          className="text-capitalize"
+          color="warning"
+          pill={false}
+          tag="span"
+        >
+          pending
+           (
+          0
+          )
+        </Badge>
+      </Memo(Checkbox)>
+      <Memo(Checkbox)
+        checked={true}
+        id="firing-toggler"
+        key="firing"
+        onChange={[Function]}
+      >
+        <Badge
+          className="text-capitalize"
+          color="danger"
+          pill={false}
+          tag="span"
+        >
+          firing
+           (
+          0
+          )
+        </Badge>
+      </Memo(Checkbox)>
+    </Col>
+    <Col
+      lg="5"
+      md="4"
+      tag="div"
+      widths={
+        Array [
+          "xs",
+          "sm",
+          "md",
+          "lg",
+          "xl",
+        ]
+      }
+    >
+      <SearchBar
+        defaultValue=""
+        handleChange={[Function]}
+        placeholder="Filter by name or labels"
+      />
+    </Col>
+    <Col
+      className="d-flex flex-row-reverse"
+      md="3"
+      tag="div"
+      widths={
+        Array [
+          "xs",
+          "sm",
+          "md",
+          "lg",
+          "xl",
+        ]
+      }
+    >
+      <Memo(Checkbox)
+        checked={false}
+        id="show-annotations-toggler"
+        onChange={[Function]}
+      >
+        <span
+          style={
+            Object {
+              "display": "inline-block",
+              "fontSize": "0.9rem",
+              "lineHeight": 1.9,
+              "whiteSpace": "nowrap",
+            }
+          }
+        >
+          Show annotations
+        </span>
+      </Memo(Checkbox)>
+    </Col>
+  </Row>
+</Fragment>
+`;

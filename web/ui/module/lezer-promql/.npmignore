@@ -1,0 +1,5 @@
+build.sh
+generate-types.sh
+jest.config.cjs
+rollup.config.js
+/test/

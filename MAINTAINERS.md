@@ -1,0 +1,47 @@
+# Maintainers
+
+## Please keep this file in sync with the CODEOWNERS file!
+
+General maintainers:
+* Bryan Boreham (bjboreham@gmail.com / @bboreham)
+* Ayoub Mrini (ayoubmrini424@gmail.com / @machine424)
+* Julien Pivotto (roidelapluie@prometheus.io / @roidelapluie)
+* György Krajcsovits (<gyorgy.krajcsovits@grafana.com> / @krajorama)
+* Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka)
+* Arve Knudsen (<arve.knudsen@gmail.com> / @aknuds1)
+
+Maintainers for specific parts of the codebase:
+* `cmd`
+  * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
+* `discovery`
+  * `hetzner`: (@jooola) (@apricote)
+  * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz), Pranshu Srivastava (<rexagod@gmail.com> / @rexagod)
+  * `stackit`: Jan-Otto Kröpke (<mail@jkroepke.de> / @jkroepke)
+  * `consul`: Mohammad Varmazyar (<mrvarmazyar@gmail.com> / @mrvarmazyar)
+  * `scaleway`: Rémy Léone (rleone@scaleway.com / @remyleone)
+* `documentation`
+  * `prometheus-mixin`: Matthias Loibl (<mail@matthiasloibl.com> / @metalmatze)
+* `storage`
+  * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Tom Wilkie (tom.wilkie@gmail.com / @tomwilkie), Alex Greenbank (<alexgreenbank@yahoo.com> / @alexgreenbank)
+    * `otlptranslator`: Arthur Silva Sens (<arthursens2005@gmail.com> / @ArthurSens, Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
+* `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
+* `web`
+  * `ui`: Julius Volz (<julius.volz@gmail.com> / @juliusv)
+    * `module`: Augustin Husson (<husson.augustin@gmail.com> / @nexucis)
+* `Makefile` and related build configuration: Simon Pasquier (<pasquier.simon@gmail.com> / @simonpasquier), Ben Kochie (<superq@gmail.com> / @SuperQ)
+
+For the sake of brevity, not all subtrees are explicitly listed. Due to the
+size of this repository, the natural changes in focus of maintainers over time,
+and nuances of where particular features live, this list will always be
+incomplete and out of date. However the listed maintainer(s) should be able to
+direct a PR/question to the right person.
+
+v3 release coordinators:
+* Alex Greenbank (<alexgreenbank@yahoo.com> / @alexgreenbank)
+* Carrie Edwards (<carrie.edwards@grafana.com> / @carrieedwards)
+* Fiona Liao (<fiona.liao@grafana.com> / @fionaliao)
+* Jan Fajerski (<github@fajerski.name> / @jan--f)
+* Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
+* Nico Pazos (<nicolas.pazos-mendez@grafana.com> / @npazosmendez)
+* Owen Williams (<owen.williams@grafana.com> / @ywwg)
+* Tom Braack (<me@shorez.de> / @sh0rez)

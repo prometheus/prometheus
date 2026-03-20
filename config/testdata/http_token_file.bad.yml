@@ -1,0 +1,6 @@
+scrape_configs:
+  - job_name: foo
+    http_sd_configs:
+      - url: http://foo
+        bearer_token: foo
+        bearer_token_file: foo

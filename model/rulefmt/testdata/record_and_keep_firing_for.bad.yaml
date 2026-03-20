@@ -1,0 +1,6 @@
+groups:
+  - name: yolo
+    rules:
+      - record: Hello
+        expr: 1
+        keep_firing_for: 1m

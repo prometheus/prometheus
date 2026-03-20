@@ -1,0 +1,3 @@
+rule_files:
+  - 'my_rule' # fine
+  - 'my/*/rule' # bad

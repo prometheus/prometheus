@@ -1,0 +1,20 @@
+{
+  "ip": "1.2.3.4",
+  "newUpgradeSystem": true,
+  "commercialRange": "Advance-1 Gen 2",
+  "rack": "TESTRACK",
+  "rescueMail": null,
+  "supportLevel": "pro",
+  "bootId": 1,
+  "linkSpeed": 123,
+  "professionalUse": false,
+  "monitoring": true,
+  "noIntervention": false,
+  "name": "abcde",
+  "rootDevice": null,
+  "state": "test",
+  "datacenter": "gra3",
+  "os": "debian11_64",
+  "reverse": "abcde-rev",
+  "serverId": 1234
+}
