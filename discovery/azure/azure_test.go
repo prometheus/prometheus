@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	azfake "github.com/Azure/azure-sdk-for-go/sdk/azcore/fake"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	fake "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5/fake"
@@ -488,6 +489,27 @@ func TestNewAzureResourceFromID(t *testing.T) {
 		require.Equal(t, tc.expected.Name, actual.Name)
 		require.Equal(t, tc.expected.ResourceGroupName, actual.ResourceGroupName)
 	}
+}
+
+func TestNewCredentialManagedIdentity(t *testing.T) {
+	// Test that system-assigned managed identity (empty ClientID) creates
+	// a valid credential. Previously, an empty ClientID was passed as
+	// azidentity.ClientID("") which is not nil and caused Azure SDK to
+	// look up a non-existent user-assigned identity instead of falling
+	// back to system-assigned identity.
+	cfg := SDConfig{
+		AuthenticationMethod: authMethodManagedIdentity,
+		ClientID:             "",
+	}
+	cred, err := newCredential(cfg, policy.ClientOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, cred)
+
+	// Test that user-assigned managed identity (non-empty ClientID) also works.
+	cfg.ClientID = "00000000-0000-0000-0000-000000000000"
+	cred, err = newCredential(cfg, policy.ClientOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, cred)
 }
 
 func TestAzureRefresh(t *testing.T) {

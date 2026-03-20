@@ -870,6 +870,7 @@ type scrapeLoop struct {
 
 	// Options from scrape.Options.
 	enableSTZeroIngestion   bool
+	parseST                 bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
@@ -1224,7 +1225,12 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		validationScheme:              opts.sp.config.MetricNameValidationScheme,
 
 		// scrape.Options.
-		enableSTZeroIngestion:   opts.sp.options.EnableStartTimestampZeroIngestion,
+		enableSTZeroIngestion: opts.sp.options.EnableStartTimestampZeroIngestion,
+		// parseST was added recently. Before EnableStartTimestampZeroIngestion
+		// was enabling parsing ST. For non-Prometheus users of the scrape
+		// manager, we ensure appenderV2 parseST is set on EnableStartTimestampZeroIngestion
+		// This will be removed when EnableStartTimestampZeroIngestion is removed.
+		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
@@ -1253,9 +1259,8 @@ func (sl *scrapeLoop) getScrapeOffset() time.Duration {
 
 func (sl *scrapeLoop) run(errc chan<- error) {
 	var (
-		last              time.Time
-		alignedScrapeTime = time.Now().Round(0)
-		ticker            = time.NewTicker(sl.interval)
+		last   time.Time
+		ticker = time.NewTicker(sl.interval)
 	)
 	defer func() {
 		if sl.scrapeOnShutdown {
@@ -1281,6 +1286,10 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 			return
 		}
 	}
+
+	// Reset the ticker so target scrape times are aligned to the offset+intervals.
+	ticker.Reset(sl.interval)
+	alignedScrapeTime := time.Now().Round(0)
 
 	for {
 		select {

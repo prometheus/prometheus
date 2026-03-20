@@ -16,10 +16,21 @@ package kahansum
 import "math"
 
 // Inc performs addition of two floating-point numbers using the Kahan summation algorithm.
-// We get incorrect results if this function is inlined; see https://github.com/prometheus/prometheus/issues/16714.
-//
-//go:noinline
 func Inc(inc, sum, c float64) (newSum, newC float64) {
+	// We've seen Kahan summation return less accurate results when Inc function is
+	// allowed to be inlined (see https://github.com/prometheus/prometheus/pull/16895).
+	// Go permits fusing float operations (e.g. using fused multiply-add, which allows
+	// calculating a*b+c without rounding the result of a*b to precision available in float64),
+	// and Kahan sum is sensitive to float rounding behavior. Instead of forbidding inlining
+	// (which only disallows fusing operations outside of Inc with operations  happening inside)
+	// and eating the performance cost of non-inlined function calls, we forbid just the fusing
+	// across Inc call boundary. We can do that by explicitly requesting Inc arguments and results
+	// to be rounded to float64 precision, as documented in go spec (https://go.dev/ref/spec#Floating_point_operators).
+	// The following casts are not no-ops!
+	inc = float64(inc)
+	sum = float64(sum)
+	c = float64(c)
+
 	t := sum + inc
 	switch {
 	case math.IsInf(t, 0):
@@ -31,6 +42,9 @@ func Inc(inc, sum, c float64) (newSum, newC float64) {
 	default:
 		c += (inc - t) + sum
 	}
+
+	t = float64(t)
+	c = float64(c)
 	return t, c
 }
 
