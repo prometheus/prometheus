@@ -1,0 +1,111 @@
+You are performing a security review of Prometheus — a Go-based systems monitoring and alerting toolkit. Prometheus scrapes metrics from HTTP endpoints, stores them in a time-series database, evaluates alerting rules, and exposes a query API. It runs as a long-lived server process typically deployed in infrastructure monitoring roles.
+
+Focus your review on the following security-critical areas, ordered by impact:
+
+## 1. Authentication and Authorization Bypass
+
+Prometheus previously suffered CVE-2022-46146, a high-severity authentication bypass through bcrypt cache poisoning. Check for:
+
+- Authentication logic that uses caching — verify cache keys cannot be manipulated by attackers to bypass authentication.
+- Middleware ordering issues where authentication checks can be skipped.
+- API endpoints that are unintentionally exposed without authentication.
+- Changes to the web server routing that might expose new unauthenticated paths.
+- Bearer token or basic auth handling that could be bypassed through header manipulation.
+
+## 2. Open Redirect and URL Handling
+
+Prometheus previously suffered CVE-2021-29622, an open redirect vulnerability. Check for:
+
+- HTTP redirect responses where the target URL is derived from user input without validation.
+- URL path manipulation that could redirect users to external domains.
+- Any `http.Redirect()` calls where the destination is not validated against an allowlist.
+- Query parameters or path components used to construct redirect URLs.
+
+## 3. Server-Side Request Forgery (SSRF) in Service Discovery
+
+Prometheus connects to numerous external systems for service discovery. Check for:
+
+- HTTP service discovery (`discovery/http/`) — verify URL scheme validation (only http/https) cannot be bypassed.
+- Any new service discovery implementation that accepts URLs from external sources without validation.
+- Scrape target URLs that could be manipulated to access internal services.
+- Relabel rules that could modify target URLs to point to unintended destinations.
+- Proxy configurations that could be abused to reach internal networks.
+
+## 4. Path Traversal in File Operations
+
+Check for:
+
+- File-based service discovery — verify file path patterns cannot escape the intended directory.
+- Configuration file loading — verify included or referenced file paths are properly validated.
+- TSDB storage paths — verify that metric names or label values cannot be used to construct paths that escape the storage directory.
+- Rule file loading — verify rule file paths cannot traverse outside expected directories.
+- Any use of `os.Open`, `os.ReadFile`, `os.Create`, or `os.WriteFile` where the path includes user-controlled components.
+
+## 5. Denial of Service through Resource Exhaustion
+
+Prometheus processes untrusted input from scrape targets and API queries. Check for:
+
+- PromQL queries that could cause excessive memory allocation or CPU usage without proper limits.
+- Scrape responses with extremely large numbers of metrics or labels.
+- API requests with unbounded result sets.
+- Regular expressions from relabel rules that could cause catastrophic backtracking (ReDoS).
+- Decompression bombs in gzip-compressed scrape responses.
+- Unbounded goroutine creation from concurrent requests.
+
+## 6. Credential Exposure
+
+Check for:
+
+- Credentials (passwords, tokens, API keys) being logged at any log level, including debug.
+- Credentials appearing in error messages returned to API clients.
+- Credentials included in metrics labels or metric values.
+- Credentials persisted to disk outside of the intended configuration file.
+- Authentication headers forwarded across redirect boundaries to different origins.
+- Secrets visible in the `/api/v1/status/config` endpoint response.
+
+## 7. Injection Vulnerabilities
+
+Check for:
+
+- Command injection — any use of `os/exec` where arguments include user-controlled input.
+- Header injection — HTTP response headers constructed from user input without CRLF sanitization.
+- Log injection — log messages that include unsanitized external input enabling log forging.
+- Label injection — metric labels constructed from external input that could corrupt the TSDB or bypass security boundaries.
+
+## 8. Cross-Site Scripting (XSS) in Web UI
+
+Prometheus serves a web UI. Check for:
+
+- API responses with `Content-Type: text/html` that include unsanitized user input.
+- Template rendering that uses `text/template` instead of `html/template` for HTML output.
+- JavaScript or HTML in metric names, label names, or label values that could be rendered unsanitized in the UI.
+- CORS configuration changes that could widen the attack surface.
+
+## 9. Remote Write/Read Protocol Security
+
+Prometheus supports remote write and remote read for federation. Check for:
+
+- Protobuf deserialization of untrusted remote write payloads without size limits.
+- Remote read responses that could be crafted to cause excessive memory allocation.
+- Missing authentication on remote write endpoints.
+- Header injection through remote write HTTP headers.
+
+## 10. Concurrency Safety Issues with Security Impact
+
+Check for:
+
+- Race conditions in authentication or authorization checks.
+- TOCTOU (time-of-check-time-of-use) issues in file operations or credential validation.
+- Shared state modifications without proper locking that could lead to security bypasses.
+- Goroutine leaks from malicious input that could lead to resource exhaustion.
+
+## General Go Security Patterns
+
+Additionally, check for these common Go security issues:
+
+- Use of `net/http` default client (no timeouts) for outbound requests.
+- Missing `defer resp.Body.Close()` leading to connection leaks.
+- Integer overflow in size calculations before memory allocation.
+- Incorrect use of `crypto/rand` vs `math/rand` for security-sensitive random values.
+- Improper TLS configuration (e.g., `InsecureSkipVerify: true` in production code).
+- Use of deprecated or vulnerable standard library functions.

@@ -1,0 +1,43 @@
+name: 'Barry AI Security Review'
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release-*
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  barry-ai-security-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      pull-requests: write
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v6
+
+      - name: 'Run Barry AI Security Review'
+        id: barry
+        uses: ccojocar/barry@main
+        continue-on-error: true
+        with:
+          google-api-key: ${{ secrets.GOOGLE_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          false-positive-filtering-instructions: ".github/barry/prometheus-false-positive-filter"
+          custom-security-scan-instructions: ".github/barry/prometheus-security-scan-instructions"
+          validator-model: gemini-3-flash-preview
+          autofix-model: gemini-3-flash-preview
+          output-format: sarif
+
+      - name: 'Upload SARIF to GitHub Security Center'
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: ${{ github.workspace }}/barry-results.sarif
