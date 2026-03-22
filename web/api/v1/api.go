@@ -210,6 +210,7 @@ type TSDBAdminStats interface {
 	Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error
 	Snapshot(dir string, withHead bool) error
 	Stats(statsByLabelName string, limit int) (*tsdb.Stats, error)
+	StatsForMatchers(ctx context.Context, statsByLabelName string, limit int, matchers []*labels.Matcher) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 	BlockMetas() ([]tsdb.BlockMeta, error)
 }
@@ -1895,9 +1896,30 @@ func (api *API) serveTSDBStatus(r *http.Request) apiFuncResult {
 			return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("limit must not exceed %d", maxTSDBLimit)}, nil, nil}
 		}
 	}
-	s, err := api.db.Stats(labels.MetricName, limit)
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+
+	var s *tsdb.Stats
+	if matcherNames := r.Form["match[]"]; len(matcherNames) > 0 {
+		matcherSets, err := api.parseMatchersParam(matcherNames)
+		if err != nil {
+			return invalidParamError(err, "match[]")
+		}
+		// Flatten multiple match[] selectors into a single matchers list.
+		// Each selector is an independent series selector; we take the union
+		// of all matched series by running StatsForMatchers with all matchers combined.
+		var matchers []*labels.Matcher
+		for _, ms := range matcherSets {
+			matchers = append(matchers, ms...)
+		}
+		s, err = api.db.StatsForMatchers(r.Context(), labels.MetricName, limit, matchers)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+		}
+	} else {
+		var err error
+		s, err = api.db.Stats(labels.MetricName, limit)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
+		}
 	}
 	metrics, err := api.gatherer.Gather()
 	if err != nil {
