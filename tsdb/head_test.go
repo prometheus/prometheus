@@ -7915,3 +7915,102 @@ func TestHead_FastStartupStateFile(t *testing.T) {
 	require.Equal(t, uint64(1), state.LastSeriesID, "LastSeriesID should remain 1")
 	require.Equal(t, 0, state.LastWALSegment, "LastWALSegment should remain 0")
 }
+
+func TestHead_ReadSeriesState(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+
+	// Fresh boot case.
+	// Should return nil state and no error.
+	state, err := head.readSeriesState()
+	require.NoError(t, err, "reading non-existent state file should not error")
+	require.Nil(t, state, "state should be nil when file does not exist")
+
+	// Valid file case.
+	expectedState := SeriesLifecycleState{
+		LastSeriesID:   42000,
+		LastWALSegment: 5,
+		CleanShutdown:  true,
+	}
+
+	b, err := json.Marshal(expectedState)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(w.Dir(), "series_state.json"), b, 0o666)
+	require.NoError(t, err)
+
+	state, err = head.readSeriesState()
+	require.NoError(t, err, "reading valid state file should not error")
+	require.NotNil(t, state, "state should not be nil")
+	require.Equal(t, expectedState, *state, "read state should match written state")
+}
+
+func TestHead_FindLastSeriesIDBounded(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+
+	// Write to Segment 0.
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("metric", "A"), 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Force the WAL to cut a new segment file (Segment 1).
+	_, err = w.NextSegment()
+	require.NoError(t, err)
+
+	// Write to Segment 1.
+	app = head.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("metric", "B"), 200, 2.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Get the current max segment number.
+	endSegment, _, err := head.wal.LastSegmentAndOffset()
+	require.NoError(t, err)
+	require.Equal(t, 1, endSegment)
+
+	// Simulate an unclean shutdown state from Segment 0.
+	// The state file thinks the max ID is 1, and the last segment was 0.
+	// But the actual max ID is 2 (created in Segment 1).
+	mockState := &SeriesLifecycleState{
+		LastSeriesID:   1,
+		LastWALSegment: 0,
+		CleanShutdown:  false,
+	}
+
+	// Reset head's counter to 0 for sanity.
+	head.lastSeriesID.Store(0)
+
+	err = head.findLastSeriesID(mockState, endSegment)
+	require.NoError(t, err)
+
+	require.Equal(t, uint64(2), head.lastSeriesID.Load(), "Bounded scan should find the highest ID (2) from segment 1")
+}
+
+func TestHead_FastStartup_CleanShutdown(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableFastStartup = true
+
+	// Start Head 1.
+	head1, w1 := newTestHeadWithOptions(t, compression.None, opts)
+
+	// Add a series.
+	app := head1.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("metric", "A"), 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Shut down cleanly.
+	require.NoError(t, head1.Close())
+
+	// Start Head 2 on the exact same WAL directory
+	w2, err := wlog.NewSize(nil, nil, w1.Dir(), 32768, compression.None)
+	require.NoError(t, err)
+	head2, err := NewHead(nil, nil, w2, nil, opts, nil)
+	require.NoError(t, err)
+
+	require.NoError(t, head2.Init(0))
+	require.Equal(t, uint64(1), head2.lastSeriesID.Load(), "Head should instantly restore ID 1 from the clean state file")
+
+	require.NoError(t, head2.Close())
+}

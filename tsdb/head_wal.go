@@ -1829,7 +1829,7 @@ func (h *Head) readSeriesState() (*SeriesLifecycleState, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// This is a fresh node, or the feature was disabled before this.
-			return nil, nil 
+			return nil, nil
 		}
 		return nil, fmt.Errorf("open series state file: %w", err)
 	}
@@ -1953,7 +1953,7 @@ func (h *Head) findLastSeriesID(state *SeriesLifecycleState, endSegment int) err
 		}
 	}
 
-	// If we scanned the segments and found no series records, 
+	// If we scanned the segments and found no series records,
 	// the ID from our state file has to be used.
 	h.lastSeriesID.Store(state.LastSeriesID)
 	return nil
