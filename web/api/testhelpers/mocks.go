@@ -464,6 +464,10 @@ func (*FakeTSDBAdminStats) Stats(_ string, _ int) (*tsdb.Stats, error) {
 	return &tsdb.Stats{}, nil
 }
 
+func (*FakeTSDBAdminStats) StatsForMatchers(_ context.Context, _ string, _ int, _ []*labels.Matcher) (*tsdb.Stats, error) {
+	return &tsdb.Stats{}, nil
+}
+
 func (*FakeTSDBAdminStats) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
