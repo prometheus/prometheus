@@ -804,6 +804,25 @@ func (h *Head) Init(minValidTime int64) error {
 		return fmt.Errorf("finding WAL segments: %w", e)
 	}
 
+	if h.opts.EnableFastStartup {
+		state, err := h.readSeriesState()
+		if err != nil {
+			h.logger.Warn("Failed to read series state file, falling back to slow ID initialization", "err", err)
+		} else if state != nil {
+			if state.CleanShutdown {
+				h.lastSeriesID.Store(state.LastSeriesID)
+				h.logger.Info("Fast startup: clean shutdown detected, restored last series ID", "id", state.LastSeriesID)
+			} else {
+				h.logger.Info("Fast startup: unclean shutdown detected, performing bounded reverse scan", "from_segment", endAt, "to_segment", state.LastWALSegment)
+				if err := h.findLastSeriesID(state, endAt); err != nil {
+					h.logger.Warn("Bounded reverse scan failed, falling back to slow ID initialization", "err", err)
+				} else {
+					h.logger.Info("Fast startup: bounded reverse scan completed", "id", h.lastSeriesID.Load())
+				}
+			}
+		}
+	}
+
 	h.startWALReplayStatus(startFrom, endAt)
 
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
