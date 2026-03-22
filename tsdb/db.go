@@ -267,8 +267,7 @@ type Options struct {
 	// FsSizeFunc is a function returning the total disk size for a given path.
 	FsSizeFunc FsSizeFunc
 
-	// EnableFastStartup enables writing the last series ID to disk
-	// for WAL replay in parallel with scraping.
+	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
 }
 

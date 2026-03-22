@@ -1800,7 +1800,7 @@ func (h *Head) writeSeriesState(cleanShutdown bool) {
 	}
 
 	// Find the last segment number by checking the wal/ directory.
-	_, last, err := wlog.Segments(h.wal.Dir())
+	last, _, err := h.wal.LastSegmentAndOffset()
 	if err != nil {
 		h.logger.Warn("Failed to get WAL segments for series state", "err", err)
 		last = -1
@@ -1817,12 +1817,12 @@ func (h *Head) writeSeriesState(cleanShutdown bool) {
 
 	f, err := os.Create(tmpPath)
 	if err != nil {
-		h.logger.Warn("Failed to create temp series state file", "err", err)
+		h.logger.Error("Failed to create temp series state file", "err", err)
 		return
 	}
 
 	if err := json.NewEncoder(f).Encode(state); err != nil {
-		h.logger.Warn("Failed to encode series state", "err", err)
+		h.logger.Error("Failed to encode series state", "err", err)
 		f.Close()
 		return
 	}
@@ -1830,7 +1830,7 @@ func (h *Head) writeSeriesState(cleanShutdown bool) {
 	f.Close()
 
 	if err := os.Rename(tmpPath, path); err != nil {
-		h.logger.Warn("Failed to rename series state file; WAL replay might be slightly slower next time", "err", err)
+		h.logger.Error("Failed to rename the temporary series state file", "err", err)
 	}
 }
 

@@ -205,8 +205,7 @@ type HeadOptions struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
-	// EnableFastStartup enables writing the last series ID to disk
-	// for WAL replay in parallel with scraping.
+	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
 	EnableFastStartup bool
 }
 
@@ -900,6 +899,7 @@ func (h *Head) Init(minValidTime int64) error {
 		"total_replay_duration", totalReplayDuration.String(),
 	)
 
+	// TODO(RushabhMehta2005): Remove this 'if' block and always run the series state ticker when the feature is fully implemented.
 	if h.opts.EnableFastStartup {
 		// Start the background goroutine that writes to series_state.json.
 		h.seriesStateWg.Add(1)
@@ -1822,12 +1822,12 @@ func (h *Head) Close() error {
 	defer h.closedMtx.Unlock()
 	h.closed = true
 
-	// Stop the background series_state.json writer
+	// Stop the background series_state.json writer.
 	if h.opts.EnableFastStartup && h.seriesStateQuit != nil {
 		close(h.seriesStateQuit)
-		h.seriesStateQuit = nil
 		h.seriesStateWg.Wait()
-		// Flush the final clean state
+		h.seriesStateQuit = nil
+		// Flush the final clean state.
 		h.writeSeriesState(true)
 	}
 
