@@ -563,7 +563,7 @@ an info-level annotation.
 
 #### `stdvar`
 
-`stdvar(v)` returns the standard deviation of `v`.
+`stdvar(v)` returns the standard variance of `v`.
 
 `stdvar` only works with float samples, following IEEE 754 floating
 point arithmetic. Histogram samples in the input vector are ignored, flagged by
