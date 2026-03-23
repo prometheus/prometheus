@@ -1713,6 +1713,12 @@ loop:
 			lset = ce.lset
 			hash = ce.hash
 		} else {
+			// The label encoding format cannot represent strings longer than
+			// 2^24-1 bytes. Reject before constructing Labels to avoid a panic.
+			if len(met) > 1<<24 {
+				err = fmt.Errorf("metric string too long to encode (%d bytes)", len(met))
+				break loop
+			}
 			p.Labels(&lset)
 			hash = lset.Hash()
 

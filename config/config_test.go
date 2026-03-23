@@ -2843,6 +2843,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 			AlwaysScrapeClassicHistograms:  boolPtr(opts.AlwaysScrapeClassicHistograms),
 			ConvertClassicHistogramsToNHCB: boolPtr(opts.ConvertClassicHistToNHCB),
 			ExtraScrapeMetrics:             boolPtr(opts.ExtraScrapeMetrics),
+			LabelNameLengthLimit:           DefaultGlobalConfig.LabelNameLengthLimit,
+			LabelValueLengthLimit:          DefaultGlobalConfig.LabelValueLengthLimit,
 		}
 		if opts.ScrapeProtocols == nil {
 			sc.ScrapeProtocols = DefaultScrapeProtocols
@@ -2927,6 +2929,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
 					ExtraScrapeMetrics:             boolPtr(false),
+					LabelNameLengthLimit:           DefaultGlobalConfig.LabelNameLengthLimit,
+					LabelValueLengthLimit:          DefaultGlobalConfig.LabelValueLengthLimit,
 
 					MetricsPath: DefaultScrapeConfig.MetricsPath,
 					Scheme:      DefaultScrapeConfig.Scheme,
@@ -2966,6 +2970,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 					AlwaysScrapeClassicHistograms:  boolPtr(false),
 					ConvertClassicHistogramsToNHCB: boolPtr(false),
 					ExtraScrapeMetrics:             boolPtr(false),
+					LabelNameLengthLimit:           DefaultGlobalConfig.LabelNameLengthLimit,
+					LabelValueLengthLimit:          DefaultGlobalConfig.LabelValueLengthLimit,
 
 					HTTPClientConfig: config.HTTPClientConfig{
 						TLSConfig: config.TLSConfig{

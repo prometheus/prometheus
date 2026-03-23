@@ -2000,6 +2000,9 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 		indexes := regex.FindStringSubmatchIndex(srcVal)
 		if indexes != nil { // Only replace when regexp matches.
 			res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
+			if len(res) > 1<<24 {
+				ev.errorf("label_replace: replacement value too long (%d bytes)", len(res))
+			}
 			lb.Reset(el.Metric)
 			lb.Set(dst, string(res))
 			matrix[i].Metric = lb.Labels()
@@ -2051,6 +2054,9 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 			srcVals[i] = el.Metric.Get(src)
 		}
 		strval := strings.Join(srcVals, sep)
+		if len(strval) > 1<<24 {
+			ev.errorf("label_join: joined value too long (%d bytes)", len(strval))
+		}
 		lb.Reset(el.Metric)
 		lb.Set(dst, strval)
 		matrix[i].Metric = lb.Labels()

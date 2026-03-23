@@ -189,6 +189,9 @@ var (
 		ExtraScrapeMetrics:             boolPtr(false),
 		MetricNameValidationScheme:     model.UTF8Validation,
 		MetricNameEscapingScheme:       model.AllowUTF8,
+		// Default to 1 MiB to avoid crashes from the 16 MiB encoding limit.
+		LabelNameLengthLimit:  1 << 20,
+		LabelValueLengthLimit: 1 << 20,
 	}
 
 	DefaultRuntimeConfig = RuntimeConfig{
@@ -697,6 +700,12 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if err := validateAcceptScrapeProtocols(gc.ScrapeProtocols); err != nil {
 			return fmt.Errorf("%w for global config", err)
 		}
+	}
+	if gc.LabelNameLengthLimit == 0 {
+		gc.LabelNameLengthLimit = DefaultGlobalConfig.LabelNameLengthLimit
+	}
+	if gc.LabelValueLengthLimit == 0 {
+		gc.LabelValueLengthLimit = DefaultGlobalConfig.LabelValueLengthLimit
 	}
 
 	*c = *gc

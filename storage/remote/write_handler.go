@@ -48,6 +48,9 @@ type writeHandler struct {
 	ingestSTZeroSample      bool
 	enableTypeAndUnitLabels bool
 	appendMetadata          bool
+
+	labelNameLengthLimit  int
+	labelValueLengthLimit int
 }
 
 const maxAheadTime = 10 * time.Minute
@@ -57,7 +60,7 @@ const maxAheadTime = 10 * time.Minute
 //
 // NOTE(bwplotka): When accepting v2 proto and spec, partial writes are possible
 // as per https://prometheus.io/docs/specs/remote_write_spec_2_0/#partial-write.
-func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool) http.Handler {
+func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable storage.Appendable, acceptedMsgs remoteapi.MessageTypes, ingestSTZeroSample, enableTypeAndUnitLabels, appendMetadata bool, labelNameLengthLimit, labelValueLengthLimit int) http.Handler {
 	h := &writeHandler{
 		logger:     logger,
 		appendable: appendable,
@@ -77,6 +80,9 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendable 
 		ingestSTZeroSample:      ingestSTZeroSample,
 		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
 		appendMetadata:          appendMetadata,
+
+		labelNameLengthLimit:  labelNameLengthLimit,
+		labelValueLengthLimit: labelValueLengthLimit,
 	}
 	return remoteapi.NewWriteHandler(h, acceptedMsgs, remoteapi.WithWriteHandlerLogger(logger))
 }
@@ -146,6 +152,23 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 	return wr, nil
 }
 
+// checkLabelLengths returns an error if any label name or value in lset exceeds
+// the configured limits. A limit of 0 means no limit.
+func (h *writeHandler) checkLabelLengths(lset labels.Labels) error {
+	if h.labelNameLengthLimit == 0 && h.labelValueLengthLimit == 0 {
+		return nil
+	}
+	return lset.Validate(func(l labels.Label) error {
+		if h.labelNameLengthLimit > 0 && len(l.Name) > h.labelNameLengthLimit {
+			return fmt.Errorf("label name too long (label: %.50s, length: %d, limit: %d)", l.Name, len(l.Name), h.labelNameLengthLimit)
+		}
+		if h.labelValueLengthLimit > 0 && len(l.Value) > h.labelValueLengthLimit {
+			return fmt.Errorf("label value too long (label: %.50s, length: %d, limit: %d)", l.Name, len(l.Value), h.labelValueLengthLimit)
+		}
+		return nil
+	})
+}
+
 func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
 	outOfOrderExemplarErrs := 0
 	samplesWithInvalidLabels := 0
@@ -179,6 +202,10 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			continue
 		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
 			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
+			samplesWithInvalidLabels++
+			continue
+		} else if err := h.checkLabelLengths(ls); err != nil {
+			h.logger.Warn("Label length limit exceeded", "err", err)
 			samplesWithInvalidLabels++
 			continue
 		}
@@ -343,6 +370,10 @@ func (h *writeHandler) appendV2(app storage.Appender, req *writev2.Request, rs *
 			continue
 		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
+		} else if err := h.checkLabelLengths(ls); err != nil {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("label length limit exceeded for series %v: %w", ls.String(), err))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
