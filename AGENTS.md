@@ -72,15 +72,9 @@ Example:
 
 - Bug fixes require a test that reproduces the bug.
 - New behaviour or exported API changes require unit or e2e tests.
+- Tests should attempt to mirror realistic data and/or behaviour.
 - Use only exported APIs in tests where possible — this keeps tests closer to
   real library usage and simplifies review.
-- Performance improvements require a benchmark that proves the improvement
-  (maintainers will ask for one if missing — see PR #18252).
-- When refactoring test utilities for reuse, move them to a dedicated package
-  (e.g. `util/testwal`) rather than duplicating them — see PR #18218.
-- Test helpers that interact with the filesystem should use atomic writes
-  (`os.WriteFile` → temp file + `os.Rename`) to avoid race conditions with
-  file watchers — see PR #18259.
 
 ---
 
@@ -88,12 +82,13 @@ Example:
 
 Maintainers take performance seriously. For any PERF PR:
 
-- Provide benchmark numbers in the PR body using `go test -bench` output with
-  a comparison table (before vs after).
-- Reuse allocations where possible (slices, buffers). 
+- Performance improvements require a benchmark that demonstrates the improvement.
+- Run benchmarks before and after the change using `go test -count=6 -benchmem -bench <directory changed in PR>`
+- Provide benchmark numbers in the PR body using `benchstat` output.
+- If a subset of benchmark results show a regression, address this or explain why the case is not important.
+- Reuse allocations in hot paths where possible (slices, buffers). 
 - When reusing buffers passed to interfaces, document that callers must copy
-  the contents and must not retain references — reviewers will ask for this
-  note if it is missing.
+  the contents and must not retain references.
 - Link to supporting analysis (Google Doc, issue, etc.) for complex changes.
 
 ---
@@ -103,6 +98,9 @@ Maintainers take performance seriously. For any PERF PR:
 - Follow [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments)
   and the formatting/style section of
   [Go: Best Practices for Production Environments](https://peter.bourgon.org/go-in-production/#formatting-and-style).
+- State your assumptions.
+- Interface contracts: when ownership or lifetime semantics (e.g. buffer reuse) are important,
+  document it at the interface definition, not just in the implementation.
 - All exposed objects must have a doc comment.
 - All comments must start with a capital letter and end with a full stop.
 - Run `make lint` before submitting. The project uses `golangci-lint` including
@@ -121,19 +119,12 @@ automatically on merge:
 Fixes #18243
 ```
 
-or
-
-```
-Fixes https://github.com/prometheus/prometheus/issues/18243
-```
-
 ---
 
 ## Scope Discipline
 
-- Do not include unrelated changes in a PR. Reviewers notice and will ask for
-  them to be removed (PR #18223: "there seem to be a bunch of unrelated local
-  changes that got checked in").
+- Do not include unrelated changes in a PR; make a separate PR instead.
+- If a refactor is necessary to make a change, do those in separate commits.
 - If a PR is large, split it into preparatory and follow-up PRs and reference
   them with "Part of #NNNN" or "Depends on #NNNN".
 
@@ -144,39 +135,14 @@ Fixes https://github.com/prometheus/prometheus/issues/18243
 - Docs PRs are welcome for clarifying ambiguous parameter descriptions,
   fixing Markdown formatting, and keeping the OpenAPI spec consistent with
   the implementation.
-- When changing documented behaviour, check whether the OpenAPI spec also
-  needs updating (reviewers will ask — see PR #18245).
+- When changing documented behaviour, update any relevant text in the docs/ directory.
+  Check whether the OpenAPI spec also needs updating.
 
 ---
 
 ## CI / Workflow Changes
 
 - Workflow files need the correct GitHub token permissions declared explicitly.
-  Missing permissions (e.g. `statuses: write`) cause silent 403 failures
-  (PR #18246).
-- Use the official `prometheus/promci-artifacts` action for artifact uploads
-  rather than deprecated alternatives (PR #18277).
+  Missing permissions (e.g. `statuses: write`) cause silent 403 failures.
 
 ---
-
-## What Maintainers Notice
-
-These observations come directly from reviewer comments on merged PRs:
-
-- **Allocations in hot paths** — maintainers profile and benchmark carefully;
-  unnecessary allocations in WAL, PromQL evaluation, or chunk encoding will be caught.
-- **Correctness of optimization assumptions** — if you skip work because a
-  value is "always zero", show why that is true in the PR description
-  (PR #18252 documents exactly why `otherC` buckets are always zero).
-- **Interface contracts** — when a performance change changes ownership or
-  lifetime semantics (e.g. buffer reuse), document it at the interface
-  definition, not just in the implementation.
-- **Test realism** — tests should mirror production startup/shutdown sequences,
-  not reach into internal methods (PR #18220).
-- **Benchmark regressions** — unusual regression numbers in benchmark output
-  will be questioned; address them or explain why the case is not realistic
-  (PR #18247).
-- **AI-generated code** — maintainers have noted that AI assistants
-  (including Claude) can confidently produce incorrect analyses of unfamiliar
-  algorithms (PR #18252 review). Do not blindly apply AI-suggested changes to
-  numeric or algorithmic code without understanding the invariants.
