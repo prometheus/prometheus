@@ -264,22 +264,6 @@ func (m *MemStore[V]) internLastVersion(vs *Versioned[V]) uint64 {
 	return hash
 }
 
-// InternVersion returns a thin copy of v sharing map/slice pointers from the
-// canonical entry in the content table. Used for per-series interning from
-// the head commit and WAL replay paths.
-// Returns v unchanged when dedup is not enabled.
-func (m *MemStore[V]) InternVersion(v V) V {
-	if m.dedupOps == nil {
-		return v
-	}
-	hash := m.dedupOps.ContentHash(v)
-	canonical := m.getOrCreateCanonical(hash, v, false)
-	if m.dedupOps.IsInterned(canonical, v) {
-		return v
-	}
-	return m.dedupOps.ThinCopy(canonical, v)
-}
-
 // materializeEntry creates a *Versioned[V] from an entry's current state.
 // For multi-version entries, returns multi directly.
 // For single-version entries, creates a ThinCopy with the inline time range.
@@ -569,49 +553,6 @@ func (m *MemStore[V]) HasContentHash(labelsHash, contentHash uint64) bool {
 		return false
 	}
 	return entry.contentHash == contentHash
-}
-
-// ExtendTimeRangeIfContentMatch checks whether the current (latest) version
-// for labelsHash has the given contentHash. If so, it extends the time range
-// and returns (existing versioned, true). Otherwise returns (existing or nil, false).
-// This avoids allocating a full version object + maps.Clone when content is unchanged.
-func (m *MemStore[V]) ExtendTimeRangeIfContentMatch(labelsHash, contentHash uint64, minTime, maxTime int64) (*Versioned[V], bool) {
-	if m.dedupOps == nil {
-		return nil, false
-	}
-	s := m.stripe(labelsHash)
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
-	entry, ok := s.byHash[labelsHash]
-	if !ok {
-		return nil, false
-	}
-
-	if entry.multi != nil {
-		if len(entry.multi.Versions) == 0 {
-			return nil, false
-		}
-		if entry.contentHash == contentHash {
-			current := entry.multi.Versions[len(entry.multi.Versions)-1]
-			current.UpdateTimeRange(minTime, maxTime)
-			return entry.multi, true
-		}
-		return entry.multi, false
-	}
-
-	// Single-version inline: compare cached contentHash directly.
-	if entry.contentHash == contentHash {
-		if minTime < entry.minTime {
-			entry.minTime = minTime
-		}
-		if maxTime > entry.maxTime {
-			entry.maxTime = maxTime
-		}
-		s.byHash[labelsHash] = entry
-		return m.materializeEntry(entry), true
-	}
-	return m.materializeEntry(entry), false
 }
 
 // InsertVersion inserts a version for labelsHash, using the content dedup table
