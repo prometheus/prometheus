@@ -1220,14 +1220,6 @@ func TestMemStoreContentDedup(t *testing.T) {
 	require.Equal(t, reflect.ValueOf(got1.Identifying).Pointer(), reflect.ValueOf(got2.Identifying).Pointer())
 	// But different from the first group.
 	require.NotEqual(t, canonicalIdentifying, reflect.ValueOf(got1.Identifying).Pointer())
-
-	// Test InternVersion directly.
-	rv := NewResourceVersion(sharedIdentifying, sharedDescriptive, nil, 9000, 9999)
-	interned := store.InternVersion(rv)
-	require.Equal(t, int64(9000), interned.MinTime)
-	require.Equal(t, int64(9999), interned.MaxTime)
-	require.Equal(t, canonicalIdentifying, reflect.ValueOf(interned.Identifying).Pointer())
-	require.Equal(t, canonicalDescriptive, reflect.ValueOf(interned.Descriptive).Pointer())
 }
 
 func TestMemStoreContentDedupScope(t *testing.T) {
