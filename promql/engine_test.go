@@ -2340,58 +2340,53 @@ func TestQueryLogger_basic(t *testing.T) {
 	}
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
-	queryExec := func() {
+	queryExec := func(querytag string) {
 		ctx, cancelCtx := context.WithCancel(context.Background())
 		defer cancelCtx()
 		query := engine.NewTestQuery(func(ctx context.Context) error {
-			return contextDone(ctx, "test statement execution")
+			return contextDone(ctx, querytag)
 		})
 		res := query.Exec(ctx)
 		require.NoError(t, res.Err)
 	}
 
 	// promql.Query works without query log initialized.
-	queryExec()
+	queryExec("test statement before log init")
 
 	tmpDir := t.TempDir()
 	ql1File := filepath.Join(tmpDir, "query1.log")
-	f1, err := logging.NewJSONFileLogger(ql1File)
-	require.NoError(t, err)
 
-	engine.SetQueryLogger(f1)
-	queryExec()
+	cfg := logging.ConfigForTest(nil)
+	cfg.GlobalConfig.QueryLogFile = ql1File
+	lmgr, cleanup := logging.NewTestLogManager(&cfg)
+	defer cleanup()
+	engine.SetQueryLogger(logging.QueryLoggerFactory(lmgr))
+
+	queryExec("test statement")
 	logLines := getLogLines(t, ql1File)
 	require.Contains(t, logLines[0], "params", map[string]any{"query": "test statement"})
 	require.Len(t, logLines, 1)
 
 	l := len(logLines)
-	queryExec()
+	queryExec("test statement 2")
 	logLines = getLogLines(t, ql1File)
 	l2 := len(logLines)
 	require.Equal(t, l2, 2*l)
+	require.Contains(t, logLines[1], "params", map[string]any{"query": "test statement 2"})
 
-	// Test that we close the query logger when unsetting it. The following
-	// attempt to close the file should error.
-	engine.SetQueryLogger(nil)
-	err = f1.Close()
-	require.ErrorContains(t, err, "file already closed", "expected f1 to be closed, got open")
-	queryExec()
-
-	// Test that we close the query logger when swapping.
+	// Full log rotation is exercised in the logmanager tests, so only check
+	// the basics here. This rotation is usually done by the reloader callbacks.
 	ql2File := filepath.Join(tmpDir, "query2.log")
-	f2, err := logging.NewJSONFileLogger(ql2File)
-	require.NoError(t, err)
-	ql3File := filepath.Join(tmpDir, "query3.log")
-	f3, err := logging.NewJSONFileLogger(ql3File)
-	require.NoError(t, err)
-	engine.SetQueryLogger(f2)
-	queryExec()
-	engine.SetQueryLogger(f3)
-	err = f2.Close()
-	require.ErrorContains(t, err, "file already closed", "expected f2 to be closed, got open")
-	queryExec()
-	err = f3.Close()
-	require.NoError(t, err)
+	cfg.GlobalConfig.QueryLogFile = ql2File
+	lmgr.ApplyConfig(&cfg)
+	engine.SetQueryLogger(lmgr)
+
+	queryExec("test statement after rotation")
+	logLines = getLogLines(t, ql1File)
+	require.Len(t, logLines, l2, "old log file should still have the old entries after rotation")
+	logLines2 := getLogLines(t, ql2File)
+	require.Len(t, logLines2, 1, "new log file should have the new entry after rotation")
+	require.Contains(t, logLines2[0], "params", map[string]any{"query": "test statement after rotation"})
 }
 
 func TestQueryLogger_fields(t *testing.T) {
@@ -2405,13 +2400,12 @@ func TestQueryLogger_fields(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	ql1File := filepath.Join(tmpDir, "query1.log")
-	f1, err := logging.NewJSONFileLogger(ql1File)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, f1.Close())
-	})
 
-	engine.SetQueryLogger(f1)
+	cfg := logging.ConfigForTest(nil)
+	cfg.GlobalConfig.QueryLogFile = ql1File
+	lmgr, cleanup := logging.NewTestLogManager(&cfg)
+	defer cleanup()
+	engine.SetQueryLogger(logging.QueryLoggerFactory(lmgr))
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
@@ -2438,13 +2432,12 @@ func TestQueryLogger_error(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	ql1File := filepath.Join(tmpDir, "query1.log")
-	f1, err := logging.NewJSONFileLogger(ql1File)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, f1.Close())
-	})
 
-	engine.SetQueryLogger(f1)
+	cfg := logging.ConfigForTest(nil)
+	cfg.GlobalConfig.QueryLogFile = ql1File
+	lmgr, cleanup := logging.NewTestLogManager(&cfg)
+	defer cleanup()
+	engine.SetQueryLogger(logging.QueryLoggerFactory(lmgr))
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	ctx = promql.NewOriginContext(ctx, map[string]any{"foo": "bar"})
