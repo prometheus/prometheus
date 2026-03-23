@@ -206,7 +206,12 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		firstT = samples.Histograms[0].T
 		lastT = samples.Histograms[numSamplesMinusOne].T
 		var newAnnos annotations.Annotations
-		resultHistogram, newAnnos = histogramRate(samples.Histograms, isCounter, samples.Metric, args[0].PositionRange())
+		var startTimestamps []int64
+		if enh.StartTimestamps != nil {
+			startTimestamps = enh.StartTimestamps.Histograms
+		}
+		resultHistogram, newAnnos = histogramRate(samples.Histograms, startTimestamps, isCounter,
+			samples.Metric, args[0].PositionRange())
 		annos.Merge(newAnnos)
 		if resultHistogram == nil {
 			// The histograms are not compatible with each other.
@@ -221,12 +226,26 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 			break
 		}
 		// Handle counter resets:
-		prevValue := samples.Floats[0].F
-		for _, currPoint := range samples.Floats[1:] {
-			if currPoint.F < prevValue {
-				resultFloat += prevValue
+		var startTimestamps []int64
+		if enh.StartTimestamps != nil {
+			startTimestamps = enh.StartTimestamps.Floats
+		}
+		for i, currPoint := range samples.Floats {
+			if i == 0 {
+				continue
 			}
-			prevValue = currPoint.F
+
+			var (
+				prevPoint      = samples.Floats[i-1]
+				prevSt, currSt int64
+			)
+			if i < len(startTimestamps) {
+				prevSt = startTimestamps[i-1]
+				currSt = startTimestamps[i]
+			}
+			if currPoint.F < prevPoint.F || isStartTimestampReset(prevSt, prevPoint.T, currSt, currPoint.T) {
+				resultFloat += prevPoint.F
+			}
 		}
 	default:
 		// TODO: add RangeTooShortWarning
@@ -300,7 +319,13 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 // points[0] to be a histogram. It returns nil if any other Point in points is
 // not a histogram, and a warning wrapped in an annotation in that case.
 // Otherwise, it returns the calculated histogram and an empty annotation.
-func histogramRate(points []HPoint, isCounter bool, labels labels.Labels, pos posrange.PositionRange) (*histogram.FloatHistogram, annotations.Annotations) {
+func histogramRate(
+	points []HPoint,
+	startTimestamps []int64,
+	isCounter bool,
+	labels labels.Labels,
+	pos posrange.PositionRange,
+) (*histogram.FloatHistogram, annotations.Annotations) {
 	var (
 		prev               = points[0].H
 		usingCustomBuckets = prev.UsesCustomBuckets()
@@ -375,9 +400,23 @@ func histogramRate(points []HPoint, isCounter bool, labels labels.Labels, pos po
 
 	if isCounter {
 		// Second iteration to deal with counter resets.
-		for _, currPoint := range points[1:] {
-			curr := currPoint.H
-			if curr.DetectReset(prev) {
+		for i, currPoint := range points {
+			if i == 0 {
+				continue
+			}
+			var (
+				prevPoint = points[i-1]
+				curr      = currPoint.H
+
+				prevSt, currSt int64
+			)
+			if i < len(startTimestamps) {
+				prevSt = startTimestamps[i-1]
+				currSt = startTimestamps[i]
+			}
+
+			// Check start timestamps first since it's potentially cheaper.
+			if isStartTimestampReset(prevSt, prevPoint.T, currSt, currPoint.T) || curr.DetectReset(prev) {
 				// Counter reset conflict ignored here for the same reason as above.
 				_, _, nhcbBoundsReconciled, err := h.Add(prev)
 				if err != nil {
@@ -397,6 +436,25 @@ func histogramRate(points []HPoint, isCounter bool, labels labels.Labels, pos po
 
 	h.CounterResetHint = histogram.GaugeType
 	return h.Compact(0), annos
+}
+
+// isStartTimestampReset tells whether there was a counter reset by checking the start timestamp value.
+func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp, currTimestamp int64) bool {
+	if currStartTimestamp == 0 || currStartTimestamp > currTimestamp {
+		// No reset if start timestamp is not set (value is 0), or if it is clearly invalid.
+		return false
+	}
+
+	if currStartTimestamp < prevTimestamp {
+		return false
+	}
+
+	if currStartTimestamp > prevTimestamp {
+		return true
+	}
+
+	// Check that this isn't OTel's cumulative sequence with unknown timestamp.
+	return prevStartTimestamp != 0
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===

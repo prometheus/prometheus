@@ -397,6 +397,24 @@ func (r *Result) String() string {
 	return r.Value.String()
 }
 
+// StartTimestamps stores sample start timestamps aligned with points.
+type StartTimestamps struct {
+	// Floats stores start timestamps for float samples.
+	Floats []int64
+	// Histograms stores start timestamps for histogram samples.
+	Histograms []int64
+}
+
+// Reset clears the start timestamps while keeping the slice capacity for reuse.
+func (st *StartTimestamps) Reset() {
+	if st.Floats != nil {
+		st.Floats = st.Floats[:0]
+	}
+	if st.Histograms != nil {
+		st.Histograms = st.Histograms[:0]
+	}
+}
+
 // StorageSeries simulates promql.Series as storage.Series.
 type StorageSeries struct {
 	series Series
