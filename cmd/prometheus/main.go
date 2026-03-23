@@ -353,7 +353,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
-			case "promq-nhcb-as-classic":
+			case "promql-nhcb-as-classic":
 				c.enableNHCBasClassic = true
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
