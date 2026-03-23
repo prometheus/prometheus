@@ -16,13 +16,55 @@ if [[ "$content" == "NONE" ]]; then
     exit 0
 fi
 
-prefixes='FEATURE|ENHANCEMENT|PERF|BUGFIX|SECURITY|CHANGE'
+types=(
+    FEATURE
+    ENHANCEMENT
+    PERF
+    BUGFIX
+    SECURITY
+    CHANGE
+)
+
+components=(
+    PromQL
+    TSDB
+
+    Scraping
+    OTLP
+    Relabeling
+
+    "Remote-write"
+    Federation
+
+    Alerting
+    Rules
+
+    Discovery
+
+    Config
+    Tracing
+    Dockerfile
+
+    API
+    UI
+    Templates
+
+    Promtool
+    Mixin
+)
+
+types_re=$(IFS='|'; printf '%s' "${types[*]}")
+components_re=$(IFS='|'; printf '%s' "${components[*]}")
+
+# Expected format: [TYPE] Component: description
+pattern="^\[($types_re)\] ($components_re): .+"
 
 while IFS= read -r line; do
-  if [[ ! $line =~ ^\[($prefixes)\] ]]; then
-    echo "Error: Invalid prefix in '$line'"
-    # Convert pipes to brackets
-    echo "Content should be NONE or entries should start with one of: [${prefixes//|/] [}]"
+  if [[ ! $line =~ $pattern ]]; then
+    echo "Error: '$line' does not match the expected format."
+    echo "Expected: NONE or [TYPE] Component: description"
+    echo "Valid types: [${types_re//|/] [}]"
+    echo "Valid components: ${components_re//|/, }"
     exit 1
   fi
 done <<<"$content"
