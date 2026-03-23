@@ -322,7 +322,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "use-uncached-io":
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
-			case "promq-nhcb-as-classic":
+			case "promql-nhcb-as-classic":
 				c.enableNHCBasClassic = true
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
