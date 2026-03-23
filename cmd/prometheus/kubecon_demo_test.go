@@ -1,3 +1,5 @@
+//go:build demo
+
 package main
 
 import (
@@ -10,6 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Demo for https://sched.co/2EF4F
+// Recommended way:
+//
+//   - Start Prom:
+//     go test -tags demo -run "TestMain_PromQLCompatDemo/normal" ./cmd/prometheus/... # Will run forever and open 3 browser tabs (localhost:1234)
+//
+//   - In another terminal, start Prom with compatibility flag on:
+//     go test -tags demo -run "TestMain_PromQLCompatDemo/compatibility" ./cmd/prometheus/...  # Will run forever and open 3 browser tabs (localhost:1235)
 func TestMain_PromQLCompatDemo(t *testing.T) {
 	dir, err := os.Getwd()
 	require.NoError(t, err)
