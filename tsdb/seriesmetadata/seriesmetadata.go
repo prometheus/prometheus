@@ -418,12 +418,6 @@ func (m *MemSeriesMetadata) ScopeHasContentHash(labelsHash, contentHash uint64) 
 	return m.ScopeStore().HasContentHash(labelsHash, contentHash)
 }
 
-// ResourceCount returns the number of unique series with resource data.
-func (m *MemSeriesMetadata) ResourceCount() int { return m.ResourceStore().Len() }
-
-// ScopeCount returns the number of unique series with scope data.
-func (m *MemSeriesMetadata) ScopeCount() int { return m.ScopeStore().Len() }
-
 // Close is a no-op for in-memory storage.
 func (*MemSeriesMetadata) Close() error { return nil }
 
@@ -464,11 +458,6 @@ func (m *MemSeriesMetadata) UniqueResourceAttrNames() map[string]struct{} {
 // SetLabels associates a labels set with a labels hash for later lookup.
 func (m *MemSeriesMetadata) SetLabels(labelsHash uint64, lset labels.Labels) {
 	m.labelsMap[labelsHash] = lset
-}
-
-// DeleteLabels removes the labels mapping for a given hash.
-func (m *MemSeriesMetadata) DeleteLabels(labelsHash uint64) {
-	delete(m.labelsMap, labelsHash)
 }
 
 // LabelsForHash returns the labels for a given labels hash, if available.
