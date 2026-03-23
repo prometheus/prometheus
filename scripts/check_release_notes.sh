@@ -34,6 +34,7 @@ components=(
     Relabeling
 
     "Remote-write"
+    "Remote-read"
     Federation
 
     Alerting
@@ -44,6 +45,7 @@ components=(
     Config
     Tracing
     Dockerfile
+    Agent
 
     API
     UI
