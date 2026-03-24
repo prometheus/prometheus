@@ -428,7 +428,7 @@ func NewIncompatibleBucketLayoutInBinOpWarning(operator string, pos posrange.Pos
 // NewSortInRangeQueryWarning is used when sort or sort_desc functions are used
 // in range queries where they have no effect since results are always ordered by labels.
 func NewSortInRangeQueryWarning(pos posrange.PositionRange) error {
-	return annoErr{
+	return &annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w", SortInRangeQueryWarning),
 	}
