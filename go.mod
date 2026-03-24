@@ -72,7 +72,7 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c
 	github.com/stackitcloud/stackit-sdk-go/core v0.21.1
 	github.com/stretchr/testify v1.11.1
-	github.com/vultr/govultr/v2 v2.17.2
+	github.com/vultr/govultr/v3 v3.28.1
 	go.opentelemetry.io/collector/component v1.51.0
 	go.opentelemetry.io/collector/consumer v1.51.0
 	go.opentelemetry.io/collector/pdata v1.51.0
@@ -193,7 +193,7 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/hashicorp/golang-lru v0.6.0 // indirect

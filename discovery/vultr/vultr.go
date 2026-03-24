@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	"github.com/vultr/govultr/v2"
+	"github.com/vultr/govultr/v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -206,7 +206,7 @@ func (d *Discovery) listInstances(ctx context.Context) ([]govultr.Instance, erro
 	}
 
 	for {
-		pagedInstances, meta, err := d.client.Instance.List(ctx, listOptions)
+		pagedInstances, meta, _, err := d.client.Instance.List(ctx, listOptions)
 		if err != nil {
 			return nil, err
 		}
