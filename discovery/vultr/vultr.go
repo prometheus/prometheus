@@ -212,7 +212,7 @@ func (d *Discovery) listInstances(ctx context.Context) ([]govultr.Instance, erro
 			return nil, err
 		}
 		if resp != nil && resp.StatusCode/100 != 2 {
-			return nil, fmt.Errorf("Vultr API returned unexpected status %d", resp.StatusCode)
+			return nil, fmt.Errorf("vultr API returned unexpected status %d", resp.StatusCode)
 		}
 		instances = append(instances, pagedInstances...)
 
