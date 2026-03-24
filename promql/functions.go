@@ -481,18 +481,25 @@ func funcIncrease(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *E
 
 // === irate(node parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcIrate(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return instantValue(matrixVals, args, enh.Out, true)
+	return instantValue(matrixVals, args, enh, true)
 }
 
 // === idelta(node model.ValMatrix) (Vector, Annotations) ===
 func funcIdelta(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return instantValue(matrixVals, args, enh.Out, false)
+	return instantValue(matrixVals, args, enh, false)
 }
 
-func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool) (Vector, annotations.Annotations) {
+func instantValue(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isRate bool) (Vector, annotations.Annotations) {
+	type sampleWithSt struct {
+		Sample
+
+		ST int64
+	}
+
 	var (
 		samples = vals[0]
-		ss      = make([]Sample, 0, 2)
+		out     = enh.Out
+		ss      = make([]sampleWithSt, 0, 2)
 		annos   annotations.Annotations
 	)
 
@@ -505,24 +512,35 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 
 	// Add the last 2 float samples if they exist.
 	for i := max(0, len(samples.Floats)-2); i < len(samples.Floats); i++ {
-		ss = append(ss, Sample{
-			F: samples.Floats[i].F,
-			T: samples.Floats[i].T,
-		})
+		s := sampleWithSt{
+			Sample: Sample{
+				F: samples.Floats[i].F,
+				T: samples.Floats[i].T,
+			},
+		}
+		if sts := enh.StartTimestamps; sts != nil && i < len(sts.Floats) {
+			s.ST = sts.Floats[i]
+		}
+		ss = append(ss, s)
 	}
 
 	// Add the last 2 histogram samples into their correct position if they exist.
 	for i := max(0, len(samples.Histograms)-2); i < len(samples.Histograms); i++ {
-		s := Sample{
-			H: samples.Histograms[i].H,
-			T: samples.Histograms[i].T,
+		s := sampleWithSt{
+			Sample: Sample{
+				H: samples.Histograms[i].H,
+				T: samples.Histograms[i].T,
+			},
+		}
+		if sts := enh.StartTimestamps; sts != nil && i < len(sts.Histograms) {
+			s.ST = sts.Histograms[i]
 		}
 		switch {
 		case len(ss) == 0:
 			ss = append(ss, s)
 		case len(ss) == 1:
 			if s.T < ss[0].T {
-				ss = append([]Sample{s}, ss...)
+				ss = append([]sampleWithSt{s}, ss...)
 			} else {
 				ss = append(ss, s)
 			}
@@ -548,7 +566,7 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 	}
 	switch {
 	case ss[1].H == nil && ss[0].H == nil:
-		if !isRate || !(ss[1].F < ss[0].F) {
+		if !isRate || !(ss[1].F < ss[0].F || isStartTimestampReset(ss[0].ST, ss[0].T, ss[1].ST, ss[1].T)) {
 			// Gauge, or counter without reset, or counter with NaN value.
 			resultSample.F = ss[1].F - ss[0].F
 		}
@@ -565,7 +583,7 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 		if !isRate && (ss[1].H.CounterResetHint != histogram.GaugeType || ss[0].H.CounterResetHint != histogram.GaugeType) {
 			annos.Add(annotations.NewNativeHistogramNotGaugeWarning(getMetricName(samples.Metric), args.PositionRange()))
 		}
-		if !isRate || !ss[1].H.DetectReset(ss[0].H) {
+		if !isRate || (!isStartTimestampReset(ss[0].ST, ss[0].T, ss[1].ST, ss[1].T) && !ss[1].H.DetectReset(ss[0].H)) {
 			// This subtraction may deliberately include conflicting
 			// counter resets. Counter resets are treated explicitly
 			// in this function, so the information about
@@ -594,7 +612,7 @@ func instantValue(vals Matrix, args parser.Expressions, out Vector, isRate bool)
 		}
 	}
 
-	return append(out, resultSample), annos
+	return append(out, resultSample.Sample), annos
 }
 
 // Calculate the trend value at the given index i in raw data d.

@@ -3924,17 +3924,39 @@ func TestStartTimestampsUsageInIncreaseFunction(t *testing.T) {
 		Parser:                   parser.NewParser(promqltest.TestParserOpts),
 	})
 
-	q, err := engine.NewRangeQuery(t.Context(), s, nil, `increase(some_metric[5s])`, time.Unix(5, 0), time.Unix(10, 0), time.Second)
-	require.NoError(t, err)
+	testCases := []struct {
+		query                   string
+		expectedDatapointValues float64
+	}{
+		{
+			query:                   `increase(some_metric[5s])`,
+			expectedDatapointValues: 5.0,
+		},
+		{
+			query:                   `rate(some_metric[5s])`,
+			expectedDatapointValues: 1.0,
+		},
+		{
+			query:                   `irate(some_metric[5s])`,
+			expectedDatapointValues: 1.0,
+		},
+	}
 
-	res := q.Exec(t.Context())
-	require.NoError(t, res.Err)
-	mat, ok := res.Value.(promql.Matrix)
-	require.True(t, ok)
-	require.Len(t, mat, 1)
-	require.Len(t, mat[0].Floats, 6)
-	for _, v := range mat[0].Floats {
-		require.NotEqual(t, 5.0, v)
+	for _, testCase := range testCases {
+		t.Run(testCase.query, func(t *testing.T) {
+			q, err := engine.NewRangeQuery(t.Context(), s, nil, testCase.query, time.Unix(5, 0), time.Unix(10, 0), time.Second)
+			require.NoError(t, err)
+
+			res := q.Exec(t.Context())
+			require.NoError(t, res.Err)
+			mat, ok := res.Value.(promql.Matrix)
+			require.True(t, ok)
+			require.Len(t, mat, 1)
+			require.Len(t, mat[0].Floats, 6)
+			for _, p := range mat[0].Floats {
+				require.InDelta(t, testCase.expectedDatapointValues, p.F, 1e-8)
+			}
+		})
 	}
 }
 
