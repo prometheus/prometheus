@@ -16,6 +16,7 @@ package vultr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -206,9 +207,12 @@ func (d *Discovery) listInstances(ctx context.Context) ([]govultr.Instance, erro
 	}
 
 	for {
-		pagedInstances, meta, _, err := d.client.Instance.List(ctx, listOptions)
+		pagedInstances, meta, resp, err := d.client.Instance.List(ctx, listOptions)
 		if err != nil {
 			return nil, err
+		}
+		if resp != nil && resp.StatusCode/100 != 2 {
+			return nil, fmt.Errorf("Vultr API returned unexpected status %d", resp.StatusCode)
 		}
 		instances = append(instances, pagedInstances...)
 
