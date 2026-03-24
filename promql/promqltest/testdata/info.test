@@ -121,6 +121,17 @@ eval range from 0m to 10m step 5m info(metric)
 
 clear
 
+# When a data label matcher doesn't match the empty string, samples at timestamps
+# without a matching info series should be dropped.
+load 5m
+    metric{instance="a", job="1", label="value"} 0 1 2
+    target_info{instance="a", job="1", data="info"} 1 1 stale
+
+eval range from 0m to 10m step 5m info(metric, {data=~".+"})
+    metric{data="info", instance="a", job="1", label="value"} 0 1 _
+
+clear
+
 # Info series selector matches histogram series, info metrics should be float type.
 load 5m
     metric{instance="a", job="1", label="value"} 0 1 2
