@@ -738,7 +738,6 @@ func TestPostingsForLabelMatchingWithPrefix(t *testing.T) {
 	require.NoError(t, err)
 	defer ir.Close()
 
-	// Ground truth: use plain PostingsForLabelMatching.
 	p2 := ir.PostingsForLabelMatching(ctx, "job", func(v string) bool {
 		return strings.HasPrefix(v, "foo")
 	})
@@ -802,7 +801,7 @@ func BenchmarkPostingsForLabelMatchingWithPrefix(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			p := ir.PostingsForLabelMatching(ctx, "job", matchFn)
 			for p.Next() {
-			} //nolint:revive
+			} 
 			_ = p.Err()
 		}
 	})
@@ -811,7 +810,7 @@ func BenchmarkPostingsForLabelMatchingWithPrefix(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			p := ir.PostingsForLabelMatchingWithPrefix(ctx, "job", "prometheus_", matchFn)
 			for p.Next() {
-			} //nolint:revive
+			} 
 			_ = p.Err()
 		}
 	})
