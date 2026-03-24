@@ -330,6 +330,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				}
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
+			case "fast-startup":
+				c.tsdb.EnableFastStartup = true
+				logger.Info("Experimental fast startup is enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -2033,6 +2036,7 @@ type tsdbOptions struct {
 	EnableSTStorage                bool
 	EnableXOR2Encoding             bool
 	StaleSeriesCompactionThreshold float64
+	EnableFastStartup              bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2064,6 +2068,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableSTStorage:                opts.EnableSTStorage,
 		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
+		EnableFastStartup:              opts.EnableFastStartup,
 	}
 }
 

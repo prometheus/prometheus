@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -7870,4 +7871,47 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 	require.Equal(t, uint64(0), head.NumStaleSeries())
 	require.Equal(t, uint64(numNewSeries), head.NumSeries())
 	require.NoError(t, head.Close())
+}
+
+func TestHead_FastStartupStateFile(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	// Enable the fast startup feature.
+	opts.EnableFastStartup = true
+
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+	require.NoError(t, head.Init(0))
+
+	// Add a single sample to the Head.
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("fast", "startup"), 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Wait for the ticker to update the series state file.
+	time.Sleep(1500 * time.Millisecond)
+
+	stateFilePath := filepath.Join(w.Dir(), "series_state.json")
+
+	b, err := os.ReadFile(stateFilePath)
+	require.NoError(t, err, "series_state.json should exist after ticker runs")
+
+	var state SeriesLifecycleState
+	require.NoError(t, json.Unmarshal(b, &state), "file should be valid JSON")
+
+	// The ticker should write an unclean state.
+	require.False(t, state.CleanShutdown, "ticker should write CleanShutdown: false")
+	require.Equal(t, uint64(1), state.LastSeriesID, "LastSeriesID should be 1 after adding our sample")
+	require.Equal(t, 0, state.LastWALSegment, "LastWALSegment should be 0 on a fresh WAL")
+
+	// Perform a clean shutdown.
+	require.NoError(t, head.Close())
+
+	b, err = os.ReadFile(stateFilePath)
+	require.NoError(t, err, "series_state.json should still exist after Close()")
+	require.NoError(t, json.Unmarshal(b, &state))
+
+	// Calling head.Close() should put us in the clean state.
+	require.True(t, state.CleanShutdown, "Close() should write CleanShutdown: true")
+	require.Equal(t, uint64(1), state.LastSeriesID, "LastSeriesID should remain 1")
+	require.Equal(t, 0, state.LastWALSegment, "LastWALSegment should remain 0")
 }
