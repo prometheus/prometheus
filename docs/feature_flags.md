@@ -105,7 +105,7 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 
 `--enable-feature=use-start-timestamps`
 
-Enables the storage of start timestamps (ST) in PromQL functions such as `rate()` and `increase()`.
+Enables the use of start timestamps (ST) in PromQL functions such as `rate()` and `increase()`.
 
 ## Concurrent evaluation of independent rules
 

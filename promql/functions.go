@@ -453,7 +453,14 @@ func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp
 		return true
 	}
 
-	// Check that this isn't OTel's cumulative sequence with unknown timestamp.
+	// If this place is reached, then it means that the current datapoint start timestamp is pointing
+	// to a previous datapoint. In OTel, this should only happen in two cases:
+	// * this is a delta series,
+	// * or this is a cumulative series with unknown start timestamp.
+	//
+	// This should be treated as a reset for deltas, but it is not a reset for cumulative series
+	// with unknown start timestamp. Thus we have to check whether the start timestamp
+	// of the previous datapoint is known.
 	return prevStartTimestamp != 0
 }
 
