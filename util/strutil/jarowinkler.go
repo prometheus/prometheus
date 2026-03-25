@@ -82,6 +82,6 @@ func JaroWinkler(s1, s2 string) float64 {
 		prefixLen++
 	}
 
-	const p = 0.1 // Winkler prefix scaling factor.
+	const p = 0.1 // Standard Winkler prefix scaling factor; not intended to be user-configurable.
 	return jaro + float64(prefixLen)*p*(1.0-jaro)
 }

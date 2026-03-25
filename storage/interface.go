@@ -262,6 +262,43 @@ type Comparator interface {
 	Compare(a, b SearchResult) int
 }
 
+// SearchResultSet is an iterator over search results.
+// Callers must call Close when done, regardless of whether all results were consumed.
+type SearchResultSet interface {
+	// Next advances the iterator. Returns false when exhausted or on error.
+	Next() bool
+	// At returns the current search result. Must only be called after a successful Next.
+	At() SearchResult
+	// Warnings returns any warnings accumulated during iteration.
+	Warnings() annotations.Annotations
+	// Err returns any error that caused iteration to stop.
+	Err() error
+	// Close releases resources associated with this result set.
+	Close() error
+}
+
+type emptySearchResultSet struct{}
+
+func (emptySearchResultSet) Next() bool                        { return false }
+func (emptySearchResultSet) At() SearchResult                  { return SearchResult{} }
+func (emptySearchResultSet) Warnings() annotations.Annotations { return nil }
+func (emptySearchResultSet) Err() error                        { return nil }
+func (emptySearchResultSet) Close() error                      { return nil }
+
+// EmptySearchResultSet returns a SearchResultSet that contains no results.
+func EmptySearchResultSet() SearchResultSet { return emptySearchResultSet{} }
+
+type errSearchResultSet struct{ err error }
+
+func (errSearchResultSet) Next() bool                        { return false }
+func (errSearchResultSet) At() SearchResult                  { return SearchResult{} }
+func (errSearchResultSet) Warnings() annotations.Annotations { return nil }
+func (s errSearchResultSet) Err() error                      { return s.err }
+func (s errSearchResultSet) Close() error                    { return nil }
+
+// ErrSearchResultSet returns a SearchResultSet that immediately returns the given error.
+func ErrSearchResultSet(err error) SearchResultSet { return errSearchResultSet{err: err} }
+
 // LabelHints specifies hints passed for label reads.
 // This is used only as an option for implementation to use.
 // Results are returned in natural (alphabetical) order.
@@ -285,7 +322,7 @@ type SearchHints struct {
 	// CompareFunc is used for ordering results.
 	// It receives full SearchResult values, allowing comparison by value,
 	// score, or any combination.
-	// A nil value means alphabetical ordering by value.
+	// A nil value means no sorting is applied; results are returned in natural order.
 	CompareFunc Comparator
 }
 
@@ -303,13 +340,15 @@ type SearchResult struct {
 // This interface is designed for autocomplete and search UIs that need
 // to rank results by relevance rather than just filter them.
 type Searcher interface {
-	// SearchLabelNames returns label names matching the search criteria.
+	// SearchLabelNames returns an iterator over label names matching the search criteria.
 	// Results include relevance scores based on the Filter.
-	SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) ([]SearchResult, error)
+	// The caller must call Close on the returned SearchResultSet when done.
+	SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet
 
-	// SearchLabelValues returns label values for the given label name.
+	// SearchLabelValues returns an iterator over label values for the given label name.
 	// Results include relevance scores based on the Filter.
-	SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) ([]SearchResult, error)
+	// The caller must call Close on the returned SearchResultSet when done.
+	SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet
 }
 
 // QueryableFunc is an adapter to allow the use of ordinary functions as

@@ -99,22 +99,14 @@ func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelH
 }
 
 // SearchLabelNames implements storage.Searcher.
-func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) ([]storage.SearchResult, error) {
+func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
 	if hints == nil {
 		hints = &storage.SearchHints{}
 	}
 
-	// Get label names using existing index method.
-	labelHints := &storage.LabelHints{
-		Limit: 0, // Don't limit at index level if we need to re-sort.
-	}
-	if hints.CompareFunc == nil {
-		labelHints.Limit = hints.Limit
-	}
-
 	names, err := q.index.LabelNames(ctx, matchers...)
 	if err != nil {
-		return nil, err
+		return storage.ErrSearchResultSet(err)
 	}
 
 	// Apply filter and collect scores.
@@ -123,51 +115,43 @@ func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.
 		if hints.Filter != nil {
 			accepted, score := hints.Filter.Accept(name)
 			if accepted {
-				results = append(results, storage.SearchResult{
-					Value: name,
-					Score: score,
-				})
+				results = append(results, storage.SearchResult{Value: name, Score: score})
 			}
 		} else {
 			// No filter means accept all with perfect score.
-			results = append(results, storage.SearchResult{
-				Value: name,
-				Score: 1.0,
-			})
+			results = append(results, storage.SearchResult{Value: name, Score: 1.0})
 		}
 	}
 
-	// Sort results using comparator if provided.
+	// Sort results using comparator if provided; otherwise preserve index order.
 	if hints.CompareFunc != nil {
 		slices.SortFunc(results, hints.CompareFunc.Compare)
 	}
-	// else: keep natural order from index.
 
 	// Apply limit after sorting.
 	if hints.Limit > 0 && len(results) > hints.Limit {
 		results = results[:hints.Limit]
 	}
 
-	return results, nil
+	return storage.NewSearchResultSetFromSlice(results, nil)
 }
 
 // SearchLabelValues implements storage.Searcher.
-func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) ([]storage.SearchResult, error) {
+func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
 	if hints == nil {
 		hints = &storage.SearchHints{}
 	}
 
-	// Get label values using existing index method.
-	labelHints := &storage.LabelHints{
-		Limit: 0, // Don't limit at index level if we need to re-sort.
-	}
+	// Fetch all values without limit when sorting is needed; limiting early only when
+	// natural order is preserved (no comparator).
+	labelHints := &storage.LabelHints{}
 	if hints.CompareFunc == nil {
 		labelHints.Limit = hints.Limit
 	}
 
 	values, err := q.index.SortedLabelValues(ctx, name, labelHints, matchers...)
 	if err != nil {
-		return nil, err
+		return storage.ErrSearchResultSet(err)
 	}
 
 	// Apply filter and collect scores.
@@ -176,20 +160,14 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 		if hints.Filter != nil {
 			accepted, score := hints.Filter.Accept(value)
 			if accepted {
-				results = append(results, storage.SearchResult{
-					Value: value,
-					Score: score,
-				})
+				results = append(results, storage.SearchResult{Value: value, Score: score})
 			}
 		} else {
-			results = append(results, storage.SearchResult{
-				Value: value,
-				Score: 1.0,
-			})
+			results = append(results, storage.SearchResult{Value: value, Score: 1.0})
 		}
 	}
 
-	// Sort results using comparator if provided.
+	// Sort results using comparator if provided; otherwise preserve index order.
 	if hints.CompareFunc != nil {
 		slices.SortFunc(results, hints.CompareFunc.Compare)
 	}
@@ -199,7 +177,7 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 		results = results[:hints.Limit]
 	}
 
-	return results, nil
+	return storage.NewSearchResultSetFromSlice(results, nil)
 }
 
 func (q *blockBaseQuerier) Close() error {

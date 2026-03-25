@@ -69,10 +69,13 @@ func newSearchTestAPI(t *testing.T) *API {
 		},
 	}))
 
+	// The test data is loaded from t=0 to t=6000s (100 minutes at 1m intervals).
+	// Use a fixed now at t=7200s so the default 1-hour lookback [3600s, 7200s] covers the data.
+	fixedNow := time.Unix(7200, 0)
 	return &API{
 		Queryable:       s,
 		targetRetriever: tr.toFactory(),
-		now:             time.Now,
+		now:             func() time.Time { return fixedNow },
 		config:          func() config.Config { return samplePrometheusCfg },
 		ready:           func(f http.HandlerFunc) http.HandlerFunc { return f },
 		parser:          parser.NewParser(parser.Options{}),
@@ -114,7 +117,7 @@ func TestSearchMetricNames(t *testing.T) {
 
 	t.Run("basic search", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-			"search": []string{"go_gc"},
+			"search[]": []string{"go_gc"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
 		require.Equal(t, "application/x-ndjson; charset=utf-8", rec.Header().Get("Content-Type"))
@@ -167,7 +170,7 @@ func TestSearchMetricNames(t *testing.T) {
 
 	t.Run("with metadata", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-			"search":           []string{"go_gc_duration"},
+			"search[]":         []string{"go_gc_duration"},
 			"include_metadata": []string{"true"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
@@ -182,9 +185,41 @@ func TestSearchMetricNames(t *testing.T) {
 		require.Equal(t, "seconds", batch.Results[0].Unit)
 	})
 
-	t.Run("with cardinality", func(t *testing.T) {
+	t.Run("with include_score", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-			"search":              []string{"up"},
+			"search[]":      []string{"go_gc"},
+			"include_score": []string{"true"},
+		})
+		require.Equal(t, http.StatusOK, rec.Code)
+
+		lines := parseNDJSON(t, rec.Body.String())
+		var batch searchBatch[searchMetricNameResult]
+		require.NoError(t, json.Unmarshal(lines[0], &batch))
+		require.NotEmpty(t, batch.Results)
+		for _, r := range batch.Results {
+			require.NotNil(t, r.Score, "score should be set when include_score=true")
+		}
+	})
+
+	t.Run("without include_score score is absent", func(t *testing.T) {
+		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
+			"search[]": []string{"go_gc"},
+		})
+		require.Equal(t, http.StatusOK, rec.Code)
+
+		lines := parseNDJSON(t, rec.Body.String())
+		var batch searchBatch[searchMetricNameResult]
+		require.NoError(t, json.Unmarshal(lines[0], &batch))
+		require.NotEmpty(t, batch.Results)
+		for _, r := range batch.Results {
+			require.Nil(t, r.Score, "score should be absent when include_score is not set")
+		}
+	})
+
+	t.Run("unknown params are ignored", func(t *testing.T) {
+		// include_cardinality is no longer supported; the endpoint should succeed and ignore it.
+		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
+			"search[]":            []string{"up"},
 			"include_cardinality": []string{"true"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
@@ -194,8 +229,6 @@ func TestSearchMetricNames(t *testing.T) {
 		require.NoError(t, json.Unmarshal(lines[0], &batch))
 		require.Len(t, batch.Results, 1)
 		require.Equal(t, "up", batch.Results[0].Name)
-		require.NotNil(t, batch.Results[0].Cardinality)
-		require.Equal(t, 2, *batch.Results[0].Cardinality) // Two "up" series.
 	})
 
 	t.Run("sort by alpha ascending", func(t *testing.T) {
@@ -227,9 +260,16 @@ func TestSearchMetricNames(t *testing.T) {
 		}
 	})
 
+	t.Run("sort_by=score without search[] is rejected", func(t *testing.T) {
+		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
+			"sort_by": []string{"score"},
+		})
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
 	t.Run("case insensitive search", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-			"search":         []string{"GO_GC"},
+			"search[]":       []string{"GO_GC"},
 			"case_sensitive": []string{"false"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
@@ -245,7 +285,7 @@ func TestSearchMetricNames(t *testing.T) {
 
 	t.Run("fuzzy search", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-			"search":         []string{"go_goroutins"},
+			"search[]":       []string{"go_goroutins"},
 			"fuzz_threshold": []string{"80"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
@@ -300,7 +340,7 @@ func TestSearchMetricNames(t *testing.T) {
 
 	t.Run("valid fuzz_alg", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-			"search":   []string{"go_gc"},
+			"search[]": []string{"go_gc"},
 			"fuzz_alg": []string{"jarowinkler"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
@@ -317,20 +357,12 @@ func TestSearchMetricNames(t *testing.T) {
 		require.Len(t, lines, 2)
 	})
 
-	t.Run("sort_by cardinality auto-enables include_cardinality", func(t *testing.T) {
+	t.Run("sort_by cardinality is invalid", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-			"search":   []string{"up"},
+			"search[]": []string{"up"},
 			"sort_by":  []string{"cardinality"},
-			"sort_dir": []string{"dsc"},
 		})
-		require.Equal(t, http.StatusOK, rec.Code)
-
-		lines := parseNDJSON(t, rec.Body.String())
-		var batch searchBatch[searchMetricNameResult]
-		require.NoError(t, json.Unmarshal(lines[0], &batch))
-		require.Len(t, batch.Results, 1)
-		// Cardinality should be populated even without include_cardinality=true.
-		require.NotNil(t, batch.Results[0].Cardinality)
+		require.Equal(t, http.StatusBadRequest, rec.Code)
 	})
 
 	t.Run("batch_size splitting", func(t *testing.T) {
@@ -344,7 +376,7 @@ func TestSearchMetricNames(t *testing.T) {
 		require.Len(t, lines, 4)
 
 		// First two batches should have 2 results each.
-		for range 2 {
+		for i := range 2 {
 			var batch searchBatch[searchMetricNameResult]
 			require.NoError(t, json.Unmarshal(lines[i], &batch))
 			require.Len(t, batch.Results, 2)
@@ -361,7 +393,7 @@ func TestSearchLabelNames(t *testing.T) {
 
 	t.Run("basic search", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/label_names", url.Values{
-			"search": []string{"inst"},
+			"search[]": []string{"inst"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
 
@@ -389,10 +421,9 @@ func TestSearchLabelNames(t *testing.T) {
 		require.GreaterOrEqual(t, len(batch.Results), 3)
 	})
 
-	t.Run("with frequency", func(t *testing.T) {
+	t.Run("search by exact name", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/label_names", url.Values{
-			"search":            []string{"job"},
-			"include_frequency": []string{"true"},
+			"search[]": []string{"job"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
 
@@ -401,23 +432,6 @@ func TestSearchLabelNames(t *testing.T) {
 		require.NoError(t, json.Unmarshal(lines[0], &batch))
 		require.Len(t, batch.Results, 1)
 		require.Equal(t, "job", batch.Results[0].Name)
-		require.NotNil(t, batch.Results[0].Frequency)
-		require.Equal(t, 6, *batch.Results[0].Frequency) // All 6 series have job.
-	})
-
-	t.Run("with cardinality", func(t *testing.T) {
-		rec := doSearchRequest(t, api, "/search/label_names", url.Values{
-			"search":              []string{"job"},
-			"include_cardinality": []string{"true"},
-		})
-		require.Equal(t, http.StatusOK, rec.Code)
-
-		lines := parseNDJSON(t, rec.Body.String())
-		var batch searchBatch[searchLabelNameResult]
-		require.NoError(t, json.Unmarshal(lines[0], &batch))
-		require.Len(t, batch.Results, 1)
-		require.NotNil(t, batch.Results[0].Cardinality)
-		require.Equal(t, 2, *batch.Results[0].Cardinality) // "prometheus" and "node".
 	})
 
 	t.Run("sort by alpha", func(t *testing.T) {
@@ -447,8 +461,8 @@ func TestSearchLabelValues(t *testing.T) {
 
 	t.Run("basic search", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/label_values", url.Values{
-			"label":  []string{"job"},
-			"search": []string{"prom"},
+			"label":    []string{"job"},
+			"search[]": []string{"prom"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
 
@@ -476,11 +490,10 @@ func TestSearchLabelValues(t *testing.T) {
 		require.Len(t, batch.Results, 2) // "prometheus" and "node".
 	})
 
-	t.Run("with frequency", func(t *testing.T) {
+	t.Run("search exact value", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/label_values", url.Values{
-			"label":             []string{"job"},
-			"search":            []string{"prometheus"},
-			"include_frequency": []string{"true"},
+			"label":    []string{"job"},
+			"search[]": []string{"prometheus"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
 
@@ -488,9 +501,7 @@ func TestSearchLabelValues(t *testing.T) {
 		var batch searchBatch[searchLabelValueResult]
 		require.NoError(t, json.Unmarshal(lines[0], &batch))
 		require.Len(t, batch.Results, 1)
-		require.NotNil(t, batch.Results[0].Frequency)
-		// 5 series have job="prometheus" (all except the node one).
-		require.Equal(t, 5, *batch.Results[0].Frequency)
+		require.Equal(t, "prometheus", batch.Results[0].Name)
 	})
 
 	t.Run("sort by alpha descending", func(t *testing.T) {
@@ -534,22 +545,26 @@ func TestSearchLabelValues(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 	})
 
-	t.Run("sort_by frequency auto-enables include_frequency", func(t *testing.T) {
+	t.Run("sort_by frequency is invalid", func(t *testing.T) {
+		rec := doSearchRequest(t, api, "/search/label_values", url.Values{
+			"label":   []string{"job"},
+			"sort_by": []string{"frequency"},
+		})
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
+	t.Run("multiple search terms OR logic", func(t *testing.T) {
 		rec := doSearchRequest(t, api, "/search/label_values", url.Values{
 			"label":    []string{"job"},
-			"sort_by":  []string{"frequency"},
-			"sort_dir": []string{"dsc"},
+			"search[]": []string{"prometheus", "node"},
 		})
 		require.Equal(t, http.StatusOK, rec.Code)
 
 		lines := parseNDJSON(t, rec.Body.String())
 		var batch searchBatch[searchLabelValueResult]
 		require.NoError(t, json.Unmarshal(lines[0], &batch))
+		// Both "prometheus" and "node" should be returned.
 		require.Len(t, batch.Results, 2)
-		// Frequency should be populated even without include_frequency=true.
-		require.NotNil(t, batch.Results[0].Frequency)
-		// Sorted descending by frequency: prometheus (5 series) before node (1 series).
-		require.Equal(t, "prometheus", batch.Results[0].Name)
 	})
 }
 

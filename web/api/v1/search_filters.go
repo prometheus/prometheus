@@ -148,6 +148,7 @@ func NewSubsequenceFilter(query string, threshold float64, caseSensitive bool) *
 }
 
 // Accept returns true if the value matches the subsequence query above the threshold.
+// Prefix matches always score 1.0 for consistency with SubstringFilter.
 func (f *SubsequenceFilter) Accept(value string) (bool, float64) {
 	if f.query == "" {
 		return true, 1.0
@@ -156,6 +157,11 @@ func (f *SubsequenceFilter) Accept(value string) (bool, float64) {
 	compareValue := value
 	if !f.caseSensitive {
 		compareValue = strings.ToLower(value)
+	}
+
+	// Prefix match always scores 1.0.
+	if strings.HasPrefix(compareValue, f.query) {
+		return true, 1.0
 	}
 
 	score := strutil.SubsequenceScore(f.query, compareValue)
@@ -196,6 +202,32 @@ func (f *ChainFilter) Accept(value string) (bool, float64) {
 	}
 
 	return true, minScore
+}
+
+// orSearchesFilter combines multiple per-term filters with OR logic.
+// Returns true if any term filter accepts the value.
+// The returned score is the maximum score from all accepting filters.
+type orSearchesFilter struct {
+	filters []storage.Filter
+}
+
+func newOrSearchesFilter(filters ...storage.Filter) *orSearchesFilter {
+	return &orSearchesFilter{filters: filters}
+}
+
+// Accept returns true if any of the per-term filters accepts the value.
+func (f *orSearchesFilter) Accept(value string) (bool, float64) {
+	var maxScore float64
+	accepted := false
+	for _, filter := range f.filters {
+		if ok, score := filter.Accept(value); ok {
+			accepted = true
+			if score > maxScore {
+				maxScore = score
+			}
+		}
+	}
+	return accepted, maxScore
 }
 
 // orFilter combines substring and fuzzy filters with OR logic.

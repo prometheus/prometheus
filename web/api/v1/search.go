@@ -35,12 +35,13 @@ import (
 // searchParams holds the common parsed parameters for all search endpoints.
 type searchParams struct {
 	matcherSets   [][]*labels.Matcher
-	search        string
-	fuzzThreshold int    // 0-100, default 0 (accepts any subsequence match).
-	fuzzAlg       string // "subsequence" (default) or "jarowinkler".
+	searches      []string
+	fuzzThreshold int    // 0-100, default 0 (no fuzz matching).
+	fuzzAlg       string // "jarowinkler" (default) or "subsequence".
 	caseSensitive bool   // Default true.
 	sortBy        string
 	sortDir       string // "asc" (default) or "dsc".
+	includeScore  bool   // Include relevance score in each result record.
 	start, end    time.Time
 	limit         int // Default 100.
 	batchSize     int // Default 100.
@@ -48,24 +49,23 @@ type searchParams struct {
 
 // searchMetricNameResult is a single result record for the metric_names endpoint.
 type searchMetricNameResult struct {
-	Name        string `json:"name"`
-	Cardinality *int   `json:"cardinality,omitempty"`
-	Type        string `json:"type,omitempty"`
-	Help        string `json:"help,omitempty"`
-	Unit        string `json:"unit,omitempty"`
+	Name  string   `json:"name"`
+	Score *float64 `json:"score,omitempty"`
+	Type  string   `json:"type,omitempty"`
+	Help  string   `json:"help,omitempty"`
+	Unit  string   `json:"unit,omitempty"`
 }
 
 // searchLabelNameResult is a single result record for the label_names endpoint.
 type searchLabelNameResult struct {
-	Name        string `json:"name"`
-	Frequency   *int   `json:"frequency,omitempty"`
-	Cardinality *int   `json:"cardinality,omitempty"`
+	Name  string   `json:"name"`
+	Score *float64 `json:"score,omitempty"`
 }
 
 // searchLabelValueResult is a single result record for the label_values endpoint.
 type searchLabelValueResult struct {
-	Name      string `json:"name"`
-	Frequency *int   `json:"frequency,omitempty"`
+	Name  string   `json:"name"`
+	Score *float64 `json:"score,omitempty"`
 }
 
 // searchBatch is a single NDJSON batch line containing results and optional warnings.
@@ -129,13 +129,14 @@ func (nw *ndjsonWriter) writeLine(v any) error {
 func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 	var sp searchParams
 
-	start, err := parseTimeParam(r, "start", MinTime)
+	now := api.now()
+	start, err := parseTimeParam(r, "start", now.Add(-time.Hour))
 	if err != nil {
 		return sp, &apiError{errorBadData, err}
 	}
 	sp.start = start
 
-	end, err := parseTimeParam(r, "end", MaxTime)
+	end, err := parseTimeParam(r, "end", now)
 	if err != nil {
 		return sp, &apiError{errorBadData, err}
 	}
@@ -149,7 +150,7 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 		sp.matcherSets = matcherSets
 	}
 
-	sp.search = r.FormValue("search")
+	sp.searches = r.Form["search[]"]
 
 	sp.fuzzThreshold = 0
 	if v := r.FormValue("fuzz_threshold"); v != "" {
@@ -160,10 +161,11 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 		sp.fuzzThreshold = ft
 	}
 
-	// Validate fuzz_alg if provided; "subsequence" and "jarowinkler" are supported.
+	// Validate fuzz_alg if provided; "jarowinkler" (default) and "subsequence" are supported.
+	sp.fuzzAlg = "jarowinkler"
 	if v := r.FormValue("fuzz_alg"); v != "" {
 		if v != "subsequence" && v != "jarowinkler" {
-			return sp, &apiError{errorBadData, fmt.Errorf("unsupported fuzz_alg %q: must be \"subsequence\" or \"jarowinkler\"", v)}
+			return sp, &apiError{errorBadData, fmt.Errorf("unsupported fuzz_alg %q: must be \"jarowinkler\" or \"subsequence\"", v)}
 		}
 		sp.fuzzAlg = v
 	}
@@ -177,6 +179,14 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 		sp.caseSensitive = b
 	}
 
+	if v := r.FormValue("include_score"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return sp, &apiError{errorBadData, fmt.Errorf("invalid include_score %q: must be boolean", v)}
+		}
+		sp.includeScore = b
+	}
+
 	sp.sortBy = r.FormValue("sort_by")
 	sp.sortDir = r.FormValue("sort_dir")
 	if sp.sortDir != "" && sp.sortBy == "" {
@@ -187,6 +197,9 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 	}
 	if sp.sortDir != "asc" && sp.sortDir != "dsc" {
 		return sp, &apiError{errorBadData, fmt.Errorf("invalid sort_dir %q: must be \"asc\" or \"dsc\"", sp.sortDir)}
+	}
+	if sp.sortBy == "score" && len(sp.searches) == 0 {
+		return sp, &apiError{errorBadData, errors.New("sort_by=score requires search[] to be set")}
 	}
 
 	sp.limit = 100
@@ -213,42 +226,6 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 	}
 
 	return sp, nil
-}
-
-// countSeries counts series matching the given matchers.
-func countSeries(ctx context.Context, q storage.Querier, matchers ...*labels.Matcher) (int, error) {
-	ss := q.Select(ctx, false, nil, matchers...)
-	count := 0
-	for ss.Next() {
-		count++
-	}
-	if err := ss.Err(); err != nil {
-		return 0, err
-	}
-	return count, nil
-}
-
-// countSeriesMultiMatch counts series matching any of the given matcher sets (union).
-func countSeriesMultiMatch(ctx context.Context, q storage.Querier, matcherSets [][]*labels.Matcher, extraMatchers []*labels.Matcher) (int, error) {
-	if len(matcherSets) <= 1 {
-		// Single or no matcher set: combine and count directly.
-		matchers := combineMatchers(extraMatchers, matcherSets)
-		return countSeries(ctx, q, matchers...)
-	}
-
-	// Multiple matcher sets: collect series labels to deduplicate.
-	seriesSet := make(map[string]struct{})
-	for _, matchers := range matcherSets {
-		combined := append(slices.Clone(matchers), extraMatchers...)
-		ss := q.Select(ctx, false, nil, combined...)
-		for ss.Next() {
-			seriesSet[ss.At().Labels().String()] = struct{}{}
-		}
-		if err := ss.Err(); err != nil {
-			return 0, err
-		}
-	}
-	return len(seriesSet), nil
 }
 
 // getMetricMetadata retrieves type, help, and unit metadata for a metric name.
@@ -279,10 +256,15 @@ func (scoreDescComparator) Compare(a, b storage.SearchResult) int {
 	return cmp.Compare(a.Value, b.Value) // Ascending alphabetical tie-breaker.
 }
 
-// scored pairs a result with its search relevance score.
-type scored[T any] struct {
-	result T
-	score  float64
+// alphaComparator sorts search results alphabetically by value.
+type alphaComparator struct{ desc bool }
+
+// Compare implements storage.Comparator.
+func (c alphaComparator) Compare(a, b storage.SearchResult) int {
+	if c.desc {
+		return cmp.Compare(b.Value, a.Value)
+	}
+	return cmp.Compare(a.Value, b.Value)
 }
 
 // streamBatches writes results in batch_size chunks as NDJSON lines.
@@ -308,137 +290,123 @@ func streamBatches[T any](nw *ndjsonWriter, results []T, batchSize int, warnings
 	return nil
 }
 
-// getLabelValues retrieves label values across multiple matcher sets, deduplicating results.
-func getLabelValues(ctx context.Context, q storage.Querier, name string, matcherSets [][]*labels.Matcher, hints *storage.LabelHints) ([]string, []string, error) {
+// drainSearchResultSet consumes a SearchResultSet into a slice, collecting warnings.
+// Closes the set when done.
+func drainSearchResultSet(rs storage.SearchResultSet) ([]storage.SearchResult, []string, error) {
+	var results []storage.SearchResult
+	var warnings []string
+	for rs.Next() {
+		results = append(results, rs.At())
+	}
+	for _, w := range rs.Warnings() {
+		warnings = append(warnings, w.Error())
+	}
+	err := rs.Err()
+	_ = rs.Close()
+	return results, warnings, err
+}
+
+// searchLabelValues retrieves label values using the Searcher interface.
+// For multiple matcher sets it unions results from each, taking the max score per value.
+func searchLabelValues(ctx context.Context, searcher storage.Searcher, name string, matcherSets [][]*labels.Matcher, hints *storage.SearchHints) ([]storage.SearchResult, []string, error) {
 	if len(matcherSets) > 1 {
-		valuesSet := make(map[string]struct{})
+		valuesMap := make(map[string]float64)
 		var warnings []string
 		for _, matchers := range matcherSets {
-			vals, w, err := q.LabelValues(ctx, name, hints, matchers...)
+			results, w, err := drainSearchResultSet(searcher.SearchLabelValues(ctx, name, hints, matchers...))
 			if err != nil {
 				return nil, nil, err
 			}
-			for _, s := range w {
-				warnings = append(warnings, s.Error())
-			}
-			for _, v := range vals {
-				valuesSet[v] = struct{}{}
-			}
-		}
-		result := make([]string, 0, len(valuesSet))
-		for v := range valuesSet {
-			result = append(result, v)
-		}
-		// Sort for deterministic ordering.
-		slices.Sort(result)
-		return result, warnings, nil
-	}
-
-	var matchers []*labels.Matcher
-	if len(matcherSets) == 1 {
-		matchers = matcherSets[0]
-	}
-	vals, w, err := q.LabelValues(ctx, name, hints, matchers...)
-	if err != nil {
-		return nil, nil, err
-	}
-	var warnings []string
-	for _, s := range w {
-		warnings = append(warnings, s.Error())
-	}
-	return vals, warnings, nil
-}
-
-// searchLabelValuesWithScores retrieves label values with scores using the Searcher interface.
-// It handles multiple matcher sets by merging results and taking the maximum score for duplicates.
-func searchLabelValuesWithScores(ctx context.Context, searcher storage.Searcher, name string, matcherSets [][]*labels.Matcher, hints *storage.SearchHints) ([]storage.SearchResult, error) {
-	if len(matcherSets) > 1 {
-		valuesMap := make(map[string]float64) // Track max score for each value.
-		for _, matchers := range matcherSets {
-			results, err := searcher.SearchLabelValues(ctx, name, hints, matchers...)
-			if err != nil {
-				return nil, err
-			}
-			for _, result := range results {
-				if existing, ok := valuesMap[result.Value]; !ok || result.Score > existing {
-					valuesMap[result.Value] = result.Score
+			warnings = append(warnings, w...)
+			for _, r := range results {
+				if existing, ok := valuesMap[r.Value]; !ok || r.Score > existing {
+					valuesMap[r.Value] = r.Score
 				}
 			}
 		}
-		results := make([]storage.SearchResult, 0, len(valuesMap))
+		merged := make([]storage.SearchResult, 0, len(valuesMap))
 		for value, score := range valuesMap {
-			results = append(results, storage.SearchResult{Value: value, Score: score})
+			merged = append(merged, storage.SearchResult{Value: value, Score: score})
 		}
-		sortSearchResults(results, hints)
-		return results, nil
+		if hints != nil && hints.CompareFunc != nil {
+			slices.SortFunc(merged, hints.CompareFunc.Compare)
+		}
+		return merged, warnings, nil
 	}
 
 	var matchers []*labels.Matcher
 	if len(matcherSets) == 1 {
 		matchers = matcherSets[0]
 	}
-	return searcher.SearchLabelValues(ctx, name, hints, matchers...)
+	return drainSearchResultSet(searcher.SearchLabelValues(ctx, name, hints, matchers...))
 }
 
-// searchLabelNamesWithScores retrieves label names with scores using the Searcher interface.
-// It handles multiple matcher sets by merging results and taking the maximum score for duplicates.
-func searchLabelNamesWithScores(ctx context.Context, searcher storage.Searcher, matcherSets [][]*labels.Matcher, hints *storage.SearchHints) ([]storage.SearchResult, error) {
+// searchLabelNames retrieves label names using the Searcher interface.
+// For multiple matcher sets it unions results from each, taking the max score per name.
+func searchLabelNames(ctx context.Context, searcher storage.Searcher, matcherSets [][]*labels.Matcher, hints *storage.SearchHints) ([]storage.SearchResult, []string, error) {
 	if len(matcherSets) > 1 {
-		namesMap := make(map[string]float64) // Track max score for each name.
+		namesMap := make(map[string]float64)
+		var warnings []string
 		for _, matchers := range matcherSets {
-			results, err := searcher.SearchLabelNames(ctx, hints, matchers...)
+			results, w, err := drainSearchResultSet(searcher.SearchLabelNames(ctx, hints, matchers...))
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			for _, result := range results {
-				if existing, ok := namesMap[result.Value]; !ok || result.Score > existing {
-					namesMap[result.Value] = result.Score
+			warnings = append(warnings, w...)
+			for _, r := range results {
+				if existing, ok := namesMap[r.Value]; !ok || r.Score > existing {
+					namesMap[r.Value] = r.Score
 				}
 			}
 		}
-		results := make([]storage.SearchResult, 0, len(namesMap))
+		merged := make([]storage.SearchResult, 0, len(namesMap))
 		for name, score := range namesMap {
-			results = append(results, storage.SearchResult{Value: name, Score: score})
+			merged = append(merged, storage.SearchResult{Value: name, Score: score})
 		}
-		sortSearchResults(results, hints)
-		return results, nil
+		if hints != nil && hints.CompareFunc != nil {
+			slices.SortFunc(merged, hints.CompareFunc.Compare)
+		}
+		return merged, warnings, nil
 	}
 
 	var matchers []*labels.Matcher
 	if len(matcherSets) == 1 {
 		matchers = matcherSets[0]
 	}
-	return searcher.SearchLabelNames(ctx, hints, matchers...)
+	return drainSearchResultSet(searcher.SearchLabelNames(ctx, hints, matchers...))
 }
 
-// sortSearchResults sorts results using the comparator from hints,
-// or alphabetically by value if no comparator is set.
-func sortSearchResults(results []storage.SearchResult, hints *storage.SearchHints) {
-	if hints != nil && hints.CompareFunc != nil {
-		slices.SortFunc(results, hints.CompareFunc.Compare)
-	} else {
-		slices.SortFunc(results, func(a, b storage.SearchResult) int {
-			return cmp.Compare(a.Value, b.Value)
-		})
+// buildSearchFilter builds a Filter for the given search terms and fuzzy settings.
+// When multiple search terms are given, results matching any term are accepted (OR logic).
+// Returns nil when no search terms are provided.
+func buildSearchFilter(searches []string, fuzzThreshold int, fuzzAlg string, caseSensitive bool) storage.Filter {
+	if len(searches) == 0 {
+		return nil
 	}
-}
-
-// combineMatchers returns a flat matcher slice that combines the given matchers
-// with those from all matcherSets (intersected). If matcherSets is empty, only
-// the given matchers are returned.
-// For multi-matcher sets, this returns only the extra matchers since enrichment
-// queries should count series across the union of all matcher sets.
-func combineMatchers(extra []*labels.Matcher, matcherSets [][]*labels.Matcher) []*labels.Matcher {
-	if len(matcherSets) == 0 {
-		return extra
+	threshold := float64(fuzzThreshold) / 100.0
+	filters := make([]storage.Filter, 0, len(searches))
+	for _, s := range searches {
+		var f storage.Filter
+		if fuzzAlg == "subsequence" {
+			f = NewSubsequenceFilter(s, threshold, caseSensitive)
+		} else {
+			// jarowinkler: substring OR jaro-winkler fuzzy.
+			substringFilter := NewSubstringFilter(s, caseSensitive)
+			var fuzzyFilter *FuzzyFilter
+			if fuzzThreshold > 0 {
+				fuzzyFilter = NewFuzzyFilter(s, threshold, caseSensitive)
+			}
+			f = &orFilter{
+				substringFilter: substringFilter,
+				fuzzyFilter:     fuzzyFilter,
+			}
+		}
+		filters = append(filters, f)
 	}
-	// For single matcher set, combine with extra matchers.
-	if len(matcherSets) == 1 {
-		return append(slices.Clone(matcherSets[0]), extra...)
+	if len(filters) == 1 {
+		return filters[0]
 	}
-	// For multiple matcher sets, return only extra matchers.
-	// The caller should query across all matcher sets separately and union results.
-	return extra
+	return newOrSearchesFilter(filters...)
 }
 
 // searchMetricNames handles GET/POST /api/v1/search/metric_names.
@@ -461,18 +429,12 @@ func (api *API) searchMetricNames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeCardinality := r.FormValue("include_cardinality") == "true"
 	includeMetadata := r.FormValue("include_metadata") == "true"
 
 	// Validate sort_by.
-	if sp.sortBy != "" && sp.sortBy != "alpha" && sp.sortBy != "cardinality" && sp.sortBy != "score" {
-		api.respondError(w, &apiError{errorBadData, fmt.Errorf("invalid sort_by %q for metric_names: must be alpha, cardinality, or score", sp.sortBy)}, nil)
+	if sp.sortBy != "" && sp.sortBy != "alpha" && sp.sortBy != "score" {
+		api.respondError(w, &apiError{errorBadData, fmt.Errorf("invalid sort_by %q for metric_names: must be \"alpha\" or \"score\"", sp.sortBy)}, nil)
 		return
-	}
-
-	// Sorting by cardinality implicitly requires cardinality data.
-	if sp.sortBy == "cardinality" {
-		includeCardinality = true
 	}
 
 	ctx := r.Context()
@@ -490,94 +452,45 @@ func (api *API) searchMetricNames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build filters for search.
-	var filter storage.Filter
-	if sp.search != "" {
-		threshold := float64(sp.fuzzThreshold) / 100.0
-		if sp.fuzzAlg == "jarowinkler" {
-			// Jarowinkler: substring and Jaro-Winkler fuzzy filters OR'd together.
-			substringFilter := NewSubstringFilter(sp.search, sp.caseSensitive)
-			var fuzzyFilter *FuzzyFilter
-			if sp.fuzzThreshold < 100 {
-				fuzzyFilter = NewFuzzyFilter(sp.search, threshold, sp.caseSensitive)
-			}
-			filter = &orFilter{
-				substringFilter: substringFilter,
-				fuzzyFilter:     fuzzyFilter,
-			}
-		} else {
-			// Default: subsequence algorithm handles all match types natively.
-			filter = NewSubsequenceFilter(sp.search, threshold, sp.caseSensitive)
-		}
-	}
-
-	// Create search hints.
 	searchHints := &storage.SearchHints{
-		Filter: filter,
-		Limit:  0, // Don't limit yet if we need to enrich with cardinality/metadata.
+		Filter: buildSearchFilter(sp.searches, sp.fuzzThreshold, sp.fuzzAlg, sp.caseSensitive),
+		Limit:  sp.limit + 1, // Fetch one extra to detect has_more.
 	}
-	if sp.sortBy == "score" {
+	switch sp.sortBy {
+	case "score":
 		searchHints.CompareFunc = scoreDescComparator{}
+	case "alpha":
+		searchHints.CompareFunc = alphaComparator{desc: sp.sortDir == "dsc"}
 	}
 
-	// Get metric names with scores from storage.
-	searchResults, err := searchLabelValuesWithScores(ctx, searcher, labels.MetricName, sp.matcherSets, searchHints)
+	searchResults, warnings, err := searchLabelValues(ctx, searcher, labels.MetricName, sp.matcherSets, searchHints)
 	if err != nil {
 		api.respondError(w, &apiError{errorExec, err}, nil)
 		return
 	}
 
-	// Build enriched results.
-	type scoredResult = scored[searchMetricNameResult]
-	var scoredResults []scoredResult
-
-	for _, searchResult := range searchResults {
-		result := searchMetricNameResult{Name: searchResult.Value}
-
-		if includeCardinality {
-			matcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, searchResult.Value)
-			if err == nil {
-				// Count series across all match[] sets (union).
-				c, err := countSeriesMultiMatch(ctx, q, sp.matcherSets, []*labels.Matcher{matcher})
-				if err == nil {
-					result.Cardinality = &c
-				}
-			}
-		}
-
-		if includeMetadata {
-			if typ, help, unit, ok := api.getMetricMetadata(ctx, searchResult.Value); ok {
-				result.Type = typ
-				result.Help = help
-				result.Unit = unit
-			}
-		}
-
-		scoredResults = append(scoredResults, scoredResult{result: result, score: searchResult.Score})
-	}
-
-	// Sort if needed (if not already sorted by score).
-	if sp.sortBy != "" && sp.sortBy != "score" {
-		sortScoredResults(scoredResults, sp.sortBy, sp.sortDir, func(r *searchMetricNameResult) (string, int, int) {
-			card := 0
-			if r.Cardinality != nil {
-				card = *r.Cardinality
-			}
-			return r.Name, card, 0
-		})
-	}
-
 	// Apply limit.
 	hasMore := false
-	if sp.limit > 0 && len(scoredResults) > sp.limit {
-		scoredResults = scoredResults[:sp.limit]
+	if sp.limit > 0 && len(searchResults) > sp.limit {
+		searchResults = searchResults[:sp.limit]
 		hasMore = true
 	}
 
-	// Extract results.
-	results := make([]searchMetricNameResult, len(scoredResults))
-	for i, sr := range scoredResults {
-		results[i] = sr.result
+	// Build results with optional score and metadata enrichment.
+	results := make([]searchMetricNameResult, len(searchResults))
+	for i, sr := range searchResults {
+		results[i] = searchMetricNameResult{Name: sr.Value}
+		if sp.includeScore {
+			score := sr.Score
+			results[i].Score = &score
+		}
+		if includeMetadata {
+			if typ, help, unit, ok := api.getMetricMetadata(ctx, sr.Value); ok {
+				results[i].Type = typ
+				results[i].Help = help
+				results[i].Unit = unit
+			}
+		}
 	}
 
 	// Stream NDJSON.
@@ -587,7 +500,7 @@ func (api *API) searchMetricNames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := streamBatches(nw, results, sp.batchSize, nil); err != nil {
+	if err := streamBatches(nw, results, sp.batchSize, warnings); err != nil {
 		// Cannot send error via respondError since headers are already sent.
 		_ = nw.writeLine(searchErrorResponse{Status: "error", ErrorType: "internal", Error: err.Error()})
 		return
@@ -616,21 +529,10 @@ func (api *API) searchLabelNames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeFrequency := r.FormValue("include_frequency") == "true"
-	includeCardinality := r.FormValue("include_cardinality") == "true"
-
 	// Validate sort_by.
-	if sp.sortBy != "" && sp.sortBy != "alpha" && sp.sortBy != "cardinality" && sp.sortBy != "frequency" && sp.sortBy != "score" {
-		api.respondError(w, &apiError{errorBadData, fmt.Errorf("invalid sort_by %q for label_names: must be alpha, cardinality, frequency, or score", sp.sortBy)}, nil)
+	if sp.sortBy != "" && sp.sortBy != "alpha" && sp.sortBy != "score" {
+		api.respondError(w, &apiError{errorBadData, fmt.Errorf("invalid sort_by %q for label_names: must be \"alpha\" or \"score\"", sp.sortBy)}, nil)
 		return
-	}
-
-	// Sorting by cardinality/frequency implicitly requires the corresponding data.
-	if sp.sortBy == "cardinality" {
-		includeCardinality = true
-	}
-	if sp.sortBy == "frequency" {
-		includeFrequency = true
 	}
 
 	ctx := r.Context()
@@ -648,99 +550,37 @@ func (api *API) searchLabelNames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build filters for search.
-	var filter storage.Filter
-	if sp.search != "" {
-		threshold := float64(sp.fuzzThreshold) / 100.0
-		if sp.fuzzAlg == "jarowinkler" {
-			// Jarowinkler: substring and Jaro-Winkler fuzzy filters OR'd together.
-			substringFilter := NewSubstringFilter(sp.search, sp.caseSensitive)
-			var fuzzyFilter *FuzzyFilter
-			if sp.fuzzThreshold < 100 {
-				fuzzyFilter = NewFuzzyFilter(sp.search, threshold, sp.caseSensitive)
-			}
-			filter = &orFilter{
-				substringFilter: substringFilter,
-				fuzzyFilter:     fuzzyFilter,
-			}
-		} else {
-			// Default: subsequence algorithm handles all match types natively.
-			filter = NewSubsequenceFilter(sp.search, threshold, sp.caseSensitive)
-		}
-	}
-
-	// Create search hints.
 	searchHints := &storage.SearchHints{
-		Filter: filter,
-		Limit:  0, // Don't limit yet if we need to enrich with frequency/cardinality.
+		Filter: buildSearchFilter(sp.searches, sp.fuzzThreshold, sp.fuzzAlg, sp.caseSensitive),
+		Limit:  sp.limit + 1, // Fetch one extra to detect has_more.
 	}
-	if sp.sortBy == "score" {
+	switch sp.sortBy {
+	case "score":
 		searchHints.CompareFunc = scoreDescComparator{}
+	case "alpha":
+		searchHints.CompareFunc = alphaComparator{desc: sp.sortDir == "dsc"}
 	}
 
-	// Get label names with scores from storage.
-	searchResults, err := searchLabelNamesWithScores(ctx, searcher, sp.matcherSets, searchHints)
+	searchResults, warnings, err := searchLabelNames(ctx, searcher, sp.matcherSets, searchHints)
 	if err != nil {
 		api.respondError(w, &apiError{errorExec, err}, nil)
 		return
 	}
 
-	// Build enriched results.
-	type scoredResult = scored[searchLabelNameResult]
-	var scoredResults []scoredResult
-
-	for _, searchResult := range searchResults {
-		result := searchLabelNameResult{Name: searchResult.Value}
-
-		if includeFrequency {
-			matcher, err := labels.NewMatcher(labels.MatchRegexp, searchResult.Value, ".+")
-			if err == nil {
-				// Count series across all match[] sets (union).
-				freq, err := countSeriesMultiMatch(ctx, q, sp.matcherSets, []*labels.Matcher{matcher})
-				if err == nil {
-					result.Frequency = &freq
-				}
-			}
-		}
-
-		if includeCardinality {
-			// Get label values across all match[] sets (union).
-			vals, _, err := getLabelValues(ctx, q, searchResult.Value, sp.matcherSets, nil)
-			if err == nil {
-				card := len(vals)
-				result.Cardinality = &card
-			}
-		}
-
-		scoredResults = append(scoredResults, scoredResult{result: result, score: searchResult.Score})
-	}
-
-	// Sort if needed (if not already sorted by score).
-	if sp.sortBy != "" && sp.sortBy != "score" {
-		sortScoredResults(scoredResults, sp.sortBy, sp.sortDir, func(r *searchLabelNameResult) (string, int, int) {
-			card := 0
-			if r.Cardinality != nil {
-				card = *r.Cardinality
-			}
-			freq := 0
-			if r.Frequency != nil {
-				freq = *r.Frequency
-			}
-			return r.Name, card, freq
-		})
-	}
-
 	// Apply limit.
 	hasMore := false
-	if sp.limit > 0 && len(scoredResults) > sp.limit {
-		scoredResults = scoredResults[:sp.limit]
+	if sp.limit > 0 && len(searchResults) > sp.limit {
+		searchResults = searchResults[:sp.limit]
 		hasMore = true
 	}
 
-	// Extract results.
-	results := make([]searchLabelNameResult, len(scoredResults))
-	for i, sr := range scoredResults {
-		results[i] = sr.result
+	results := make([]searchLabelNameResult, len(searchResults))
+	for i, sr := range searchResults {
+		results[i] = searchLabelNameResult{Name: sr.Value}
+		if sp.includeScore {
+			score := sr.Score
+			results[i].Score = &score
+		}
 	}
 
 	// Stream NDJSON.
@@ -750,7 +590,7 @@ func (api *API) searchLabelNames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := streamBatches(nw, results, sp.batchSize, nil); err != nil {
+	if err := streamBatches(nw, results, sp.batchSize, warnings); err != nil {
 		_ = nw.writeLine(searchErrorResponse{Status: "error", ErrorType: "internal", Error: err.Error()})
 		return
 	}
@@ -784,17 +624,10 @@ func (api *API) searchLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeFrequency := r.FormValue("include_frequency") == "true"
-
 	// Validate sort_by.
-	if sp.sortBy != "" && sp.sortBy != "alpha" && sp.sortBy != "frequency" && sp.sortBy != "score" {
-		api.respondError(w, &apiError{errorBadData, fmt.Errorf("invalid sort_by %q for label_values: must be alpha, frequency, or score", sp.sortBy)}, nil)
+	if sp.sortBy != "" && sp.sortBy != "alpha" && sp.sortBy != "score" {
+		api.respondError(w, &apiError{errorBadData, fmt.Errorf("invalid sort_by %q for label_values: must be \"alpha\" or \"score\"", sp.sortBy)}, nil)
 		return
-	}
-
-	// Sorting by frequency implicitly requires frequency data.
-	if sp.sortBy == "frequency" {
-		includeFrequency = true
 	}
 
 	ctx := r.Context()
@@ -812,86 +645,37 @@ func (api *API) searchLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build filters for search.
-	var filter storage.Filter
-	if sp.search != "" {
-		threshold := float64(sp.fuzzThreshold) / 100.0
-		if sp.fuzzAlg == "jarowinkler" {
-			// Jarowinkler: substring and Jaro-Winkler fuzzy filters OR'd together.
-			substringFilter := NewSubstringFilter(sp.search, sp.caseSensitive)
-			var fuzzyFilter *FuzzyFilter
-			if sp.fuzzThreshold < 100 {
-				fuzzyFilter = NewFuzzyFilter(sp.search, threshold, sp.caseSensitive)
-			}
-			filter = &orFilter{
-				substringFilter: substringFilter,
-				fuzzyFilter:     fuzzyFilter,
-			}
-		} else {
-			// Default: subsequence algorithm handles all match types natively.
-			filter = NewSubsequenceFilter(sp.search, threshold, sp.caseSensitive)
-		}
-	}
-
-	// Create search hints.
 	searchHints := &storage.SearchHints{
-		Filter: filter,
-		Limit:  0, // Don't limit yet if we need to enrich with frequency.
+		Filter: buildSearchFilter(sp.searches, sp.fuzzThreshold, sp.fuzzAlg, sp.caseSensitive),
+		Limit:  sp.limit + 1, // Fetch one extra to detect has_more.
 	}
-	if sp.sortBy == "score" {
+	switch sp.sortBy {
+	case "score":
 		searchHints.CompareFunc = scoreDescComparator{}
+	case "alpha":
+		searchHints.CompareFunc = alphaComparator{desc: sp.sortDir == "dsc"}
 	}
 
-	// Get label values with scores from storage.
-	searchResults, err := searchLabelValuesWithScores(ctx, searcher, labelName, sp.matcherSets, searchHints)
+	searchResults, warnings, err := searchLabelValues(ctx, searcher, labelName, sp.matcherSets, searchHints)
 	if err != nil {
 		api.respondError(w, &apiError{errorExec, err}, nil)
 		return
 	}
 
-	// Build enriched results.
-	type scoredResult = scored[searchLabelValueResult]
-	var scoredResults []scoredResult
-
-	for _, searchResult := range searchResults {
-		result := searchLabelValueResult{Name: searchResult.Value}
-
-		if includeFrequency {
-			matcher, err := labels.NewMatcher(labels.MatchEqual, labelName, searchResult.Value)
-			if err == nil {
-				// Count series across all match[] sets (union).
-				freq, err := countSeriesMultiMatch(ctx, q, sp.matcherSets, []*labels.Matcher{matcher})
-				if err == nil {
-					result.Frequency = &freq
-				}
-			}
-		}
-
-		scoredResults = append(scoredResults, scoredResult{result: result, score: searchResult.Score})
-	}
-
-	// Sort if needed (if not already sorted by score).
-	if sp.sortBy != "" && sp.sortBy != "score" {
-		sortScoredResults(scoredResults, sp.sortBy, sp.sortDir, func(r *searchLabelValueResult) (string, int, int) {
-			freq := 0
-			if r.Frequency != nil {
-				freq = *r.Frequency
-			}
-			return r.Name, 0, freq
-		})
-	}
-
 	// Apply limit.
 	hasMore := false
-	if sp.limit > 0 && len(scoredResults) > sp.limit {
-		scoredResults = scoredResults[:sp.limit]
+	if sp.limit > 0 && len(searchResults) > sp.limit {
+		searchResults = searchResults[:sp.limit]
 		hasMore = true
 	}
 
-	// Extract results.
-	results := make([]searchLabelValueResult, len(scoredResults))
-	for i, sr := range scoredResults {
-		results[i] = sr.result
+	results := make([]searchLabelValueResult, len(searchResults))
+	for i, sr := range searchResults {
+		results[i] = searchLabelValueResult{Name: sr.Value}
+		if sp.includeScore {
+			score := sr.Score
+			results[i].Score = &score
+		}
 	}
 
 	// Stream NDJSON.
@@ -901,41 +685,12 @@ func (api *API) searchLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := streamBatches(nw, results, sp.batchSize, nil); err != nil {
+	if err := streamBatches(nw, results, sp.batchSize, warnings); err != nil {
 		_ = nw.writeLine(searchErrorResponse{Status: "error", ErrorType: "internal", Error: err.Error()})
 		return
 	}
 
 	_ = nw.writeLine(searchTrailer{Status: "success", HasMore: hasMore})
-}
-
-// sortScoredResults sorts scored results by the given sort_by and sort_dir.
-// The accessor function extracts (name, cardinality, frequency) from a result.
-func sortScoredResults[T any](results []scored[T], sortBy, sortDir string, accessor func(*T) (name string, cardinality, frequency int)) {
-	desc := sortDir == "dsc"
-	slices.SortStableFunc(results, func(a, b scored[T]) int {
-		var c int
-		switch sortBy {
-		case "alpha":
-			nameA, _, _ := accessor(&a.result)
-			nameB, _, _ := accessor(&b.result)
-			c = cmp.Compare(nameA, nameB)
-		case "cardinality":
-			_, cardA, _ := accessor(&a.result)
-			_, cardB, _ := accessor(&b.result)
-			c = cmp.Compare(cardA, cardB)
-		case "frequency":
-			_, _, freqA := accessor(&a.result)
-			_, _, freqB := accessor(&b.result)
-			c = cmp.Compare(freqA, freqB)
-		case "score":
-			c = cmp.Compare(a.score, b.score)
-		}
-		if desc {
-			return -c
-		}
-		return c
-	})
 }
 
 // Ensure scrape.Target implements the metadata methods we need.
