@@ -22,6 +22,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
@@ -1097,6 +1098,155 @@ eval instant at 0m http_requests
 			} else {
 				require.EqualError(t, err, testCase.expectedError)
 			}
+		})
+	}
+}
+
+func TestParseSTSequence(t *testing.T) {
+	const msec = 1
+
+	cases := []struct {
+		input    string
+		expected []parser.SequenceValue
+		wantErr  bool
+	}{
+		{
+			input:    "_",
+			expected: []parser.SequenceValue{{Omitted: true}},
+		},
+		{
+			input: "_x3",
+			expected: []parser.SequenceValue{
+				{Omitted: true}, {Omitted: true}, {Omitted: true},
+			},
+		},
+		{
+			input:    "0s",
+			expected: []parser.SequenceValue{{Value: 0}},
+		},
+		{
+			input:    "-1m",
+			expected: []parser.SequenceValue{{Value: float64(-60 * 1000 * msec)}},
+		},
+		{
+			input: "-1mx2",
+			expected: []parser.SequenceValue{
+				{Value: float64(-60000)},
+				{Value: float64(-60000)},
+				{Value: float64(-60000)},
+			},
+		},
+		{
+			input: "-1m+15sx2",
+			expected: []parser.SequenceValue{
+				{Value: float64(-60000)},
+				{Value: float64(-60000 + 15000)},
+				{Value: float64(-60000 + 30000)},
+			},
+		},
+		{
+			input: "30s-10sx2",
+			expected: []parser.SequenceValue{
+				{Value: float64(30000)},
+				{Value: float64(20000)},
+				{Value: float64(10000)},
+			},
+		},
+		{
+			// Mixed: blank then value.
+			input: "_ -1m",
+			expected: []parser.SequenceValue{
+				{Omitted: true},
+				{Value: float64(-60000)},
+			},
+		},
+		{input: "", expected: nil},
+		{input: "badunit", wantErr: true},
+		{input: "_x0", wantErr: true},
+		{input: "-1m+15s", wantErr: true}, // step without xN
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			got, err := parseSTSequence(tc.input)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, got)
+		})
+	}
+}
+
+func TestParseLoad_STLine(t *testing.T) {
+	// Verify that @st lines are accepted and that the resulting samples carry
+	// the correct absolute start timestamps (ST = position_timestamp + offset).
+	const step = 5 * time.Minute
+	stepMs := step.Milliseconds()
+
+	lines := []string{
+		"load 5m",
+		"  my_counter@st -1mx4",
+		"  my_counter 0+1x4",
+	}
+	_, cmd, err := parseLoad(lines, 0, testStartTime)
+	require.NoError(t, err)
+
+	metric := labels.FromStrings("__name__", "my_counter")
+	smpls := cmd.defs[metric.Hash()]
+	require.Len(t, smpls, 5)
+
+	for i, s := range smpls {
+		wantT := int64(i) * stepMs
+		wantST := wantT - 60000 // -1m in ms
+		require.Equal(t, wantT, s.T, "sample %d timestamp", i)
+		require.Equal(t, wantST, s.ST, "sample %d start timestamp", i)
+	}
+}
+
+func TestParseLoad_STLineMismatch(t *testing.T) {
+	cases := []struct {
+		name  string
+		lines []string
+	}{
+		{
+			name: "count mismatch",
+			lines: []string{
+				"load 5m",
+				"  my_counter@st -1mx3",
+				"  my_counter 0+1x4",
+			},
+		},
+		{
+			name: "metric mismatch",
+			lines: []string{
+				"load 5m",
+				"  other_metric@st -1mx4",
+				"  my_counter 0+1x4",
+			},
+		},
+		{
+			name: "orphan @st line",
+			lines: []string{
+				"load 5m",
+				"  my_counter@st -1mx4",
+			},
+		},
+		{
+			name: "double @st line",
+			lines: []string{
+				"load 5m",
+				"  my_counter@st -1mx4",
+				"  my_counter@st -1mx4",
+				"  my_counter 0+1x4",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := parseLoad(tc.lines, 0, testStartTime)
+			require.Error(t, err)
 		})
 	}
 }
