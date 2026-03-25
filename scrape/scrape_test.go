@@ -1445,15 +1445,54 @@ func readTextParseTestMetrics(t testing.TB) []byte {
 	return bytes.ReplaceAll(b, []byte{'\r'}, nil)
 }
 
-func makeTestGauges(n int) []byte {
+func makeTestMetricFamily(n int, name, typ string) []byte {
 	sb := bytes.Buffer{}
-	sb.WriteString("# TYPE metric_a gauge\n")
-	sb.WriteString("# HELP metric_a help text\n")
+	_, _ = fmt.Fprintf(&sb, "# TYPE %s %s\n", name, typ)
+	_, _ = fmt.Fprintf(&sb, "# HELP %s help text\n", name)
 	for i := range n {
-		_, _ = fmt.Fprintf(&sb, "metric_a{foo=\"%d\",bar=\"%d\"} 1\n", i, i*100)
+		_, _ = fmt.Fprintf(&sb, "%s{foo=\"%d\",bar=\"%d\"} 1\n", name, i, i*100)
 	}
 	sb.WriteString("# EOF\n")
 	return sb.Bytes()
+}
+
+func makeTestGauges(n int) []byte {
+	return makeTestMetricFamily(n, "metric_a", "gauge")
+}
+
+func makeTestCounters(n int) []byte {
+	return makeTestMetricFamily(n, "metric_b", "counter")
+}
+
+func makeTestFloatHistograms(n int) []byte {
+	var sb strings.Builder
+	sb.WriteString(`name: "test_float_hist"
+help: "test help"
+type: HISTOGRAM
+`)
+	for i := range n {
+		_, _ = fmt.Fprintf(&sb, `metric: <
+  label: < name: "foo" value: "%d" >
+  label: < name: "bar" value: "%d" >
+  histogram: <
+    schema: 3
+    sample_count_float: 3.0
+    sample_sum: 5.0
+    positive_span: <
+      offset: 0
+      length: 2
+    >
+    positive_count: 1.0
+    positive_count: 2.0
+  >
+>
+`, i, i*100)
+	}
+	buf := &bytes.Buffer{}
+	if err := textToProto(sb.String(), buf); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
 }
 
 func makeTestHistogramsWithExemplars(n int) []byte {
@@ -2135,11 +2174,33 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 							{name: "PromProto", contentType: "application/vnd.google.protobuf", parsable: metricsProto},
 						} {
 							b.Run(fmt.Sprintf("fmt=%v", bcase.name), func(b *testing.B) {
-								benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false)
+								benchScrapeLoopAppend(b, withStorage, appV2, bcase.parsable, bcase.contentType, appendMetadataToWAL, false, false, false)
 							})
 						}
 					})
 				}
+			}
+		}
+	}
+}
+
+func BenchmarkScrapeLoopAppend_STSynthesis(b *testing.B) {
+	for _, withStorage := range []bool{false, true} {
+		for _, synthesizeST := range []bool{false, true} {
+			for _, data := range []struct {
+				name          string
+				parsableText  []byte
+				contentType   string
+				convertToNHCB bool
+			}{
+				{name: "100Counters", parsableText: makeTestCounters(100), contentType: "application/openmetrics-text"},
+				{name: "100Histograms", parsableText: makeTestHistogramsWithExemplars(100), contentType: "application/openmetrics-text"},
+				{name: "100IntHistograms", parsableText: makeTestHistogramsWithExemplars(100), contentType: "application/openmetrics-text", convertToNHCB: true},
+				{name: "100FloatHistograms", parsableText: makeTestFloatHistograms(100), contentType: "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited"},
+			} {
+				b.Run(fmt.Sprintf("withStorage=%v/synthesizeST=%v/data=%v", withStorage, synthesizeST, data.name), func(b *testing.B) {
+					benchScrapeLoopAppend(b, withStorage, true, data.parsableText, data.contentType, false, false, synthesizeST, data.convertToNHCB)
+				})
 			}
 		}
 	}
@@ -2153,6 +2214,8 @@ func benchScrapeLoopAppend(
 	contentType string,
 	appendMetadataToWAL bool,
 	enableExemplarStorage bool,
+	synthesizeST bool,
+	convertToNHCB bool,
 ) {
 	var a compatAppendable = teststorage.NewAppendable().SkipRecording(true) // Make it noop for benchmark purposes.
 	if withStorage {
@@ -2166,6 +2229,10 @@ func benchScrapeLoopAppend(
 	}
 	sl, _ := newTestScrapeLoop(b, withAppendable(a, appV2), func(sl *scrapeLoop) {
 		sl.appendMetadataToWAL = appendMetadataToWAL
+		sl.synthesizeST = synthesizeST
+		sl.enableNativeHistogramScraping = true
+		sl.convertClassicHistToNHCB = convertToNHCB
+		sl.alwaysScrapeClassicHist = false
 	})
 	ts := time.Time{}
 
@@ -2201,7 +2268,7 @@ func BenchmarkScrapeLoopAppend_HistogramsWithExemplars(b *testing.B) {
 	for _, appV2 := range []bool{false, true} {
 		b.Run(fmt.Sprintf("appV2=%v", appV2), func(b *testing.B) {
 			parsable := makeTestHistogramsWithExemplars(100) // ~255.8 KB in OM text.
-			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true)
+			benchScrapeLoopAppend(b, true, appV2, parsable, "application/openmetrics-text", false, true, false, false)
 		})
 	}
 }
