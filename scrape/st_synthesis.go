@@ -96,7 +96,7 @@ func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs i
 	if n.startTime == 0 {
 		// First sample
 		n.prevFloat = currFloat.Copy()
-		n.refFloat = currFloat.Copy()
+		n.refFloat = n.prevFloat
 		n.startTime = currentTs
 		return current, currentTs, true
 	}
@@ -104,7 +104,7 @@ func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs i
 	if currFloat.DetectReset(n.prevFloat) {
 		// Reset detected
 		n.prevFloat = currFloat.Copy()
-		n.refFloat = currFloat.Copy()
+		n.refFloat = n.prevFloat
 		n.startTime = currentTs - 1
 		return current, n.startTime, false
 	}
@@ -171,7 +171,7 @@ func (st *stCache) synthesizeFloatHistogram(current *histogram.FloatHistogram, c
 	if n.startTime == 0 {
 		// First sample
 		n.prevFloat = current.Copy()
-		n.refFloat = current.Copy()
+		n.refFloat = n.prevFloat
 		n.startTime = currentTs
 		return current, currentTs, true
 	}
@@ -179,12 +179,12 @@ func (st *stCache) synthesizeFloatHistogram(current *histogram.FloatHistogram, c
 	if current.DetectReset(n.prevFloat) {
 		// Reset detected
 		n.prevFloat = current.Copy()
-		n.refFloat = current.Copy()
+		n.refFloat = n.prevFloat
 		n.startTime = currentTs - 1
 		return current, n.startTime, false
 	}
 
-	n.prevFloat = current.Copy()
+	n.prevFloat = current
 
 	// Mathematically subtract the origin anchor
 	adjusted, _, _, _ := current.Copy().Sub(n.refFloat)
