@@ -116,6 +116,29 @@ func BenchmarkXor2Read(b *testing.B) {
 	}
 }
 
+func requireXOR2Samples(t *testing.T, samples []triple) {
+	t.Helper()
+
+	chunk := NewXOR2Chunk()
+	app, err := chunk.Appender()
+	require.NoError(t, err)
+
+	for _, sample := range samples {
+		app.Append(sample.st, sample.t, sample.v)
+	}
+
+	it := chunk.Iterator(nil)
+	for _, want := range samples {
+		require.Equal(t, ValFloat, it.Next())
+		require.Equal(t, want.st, it.AtST())
+		ts, v := it.At()
+		require.Equal(t, want.t, ts)
+		require.Equal(t, want.v, v)
+	}
+	require.Equal(t, ValNone, it.Next())
+	require.NoError(t, it.Err())
+}
+
 func TestXOR2Basic(t *testing.T) {
 	c := NewXOR2Chunk()
 	app, err := c.Appender()
@@ -266,6 +289,53 @@ func TestXOR2LargeDod(t *testing.T) {
 		require.Equal(t, expected, ts)
 	}
 	require.Equal(t, ValNone, it.Next())
+}
+
+func TestXOR2LargeDodWithActiveST(t *testing.T) {
+	requireXOR2Samples(t, []triple{
+		{st: 0, t: 0, v: 1.0},
+		{st: 900, t: 1000, v: 2.0},
+		{st: 1000, t: 2000, v: 3.0},
+		{st: 1047576, t: 1050576, v: 4.0},
+	})
+}
+
+func TestXOR2ActiveSTFastPathBoundaries(t *testing.T) {
+	requireXOR2Samples(t, []triple{
+		{st: 0, t: 1000, v: 1.0},
+		{st: 1990, t: 2000, v: 1.0},
+		{st: 2986, t: 3000, v: 1.0},
+		{st: 3954, t: 4000, v: 1.0},
+		{st: 4698, t: 5000, v: 1.0},
+	})
+}
+
+func TestXOR2EncodeJointValueUnchangedThenChanged(t *testing.T) {
+	requireXOR2Samples(t, []triple{
+		{st: 0, t: 1000, v: 1.0},
+		{st: 0, t: 2000, v: 2.0},
+		{st: 0, t: 7096, v: 2.0},
+		{st: 0, t: 12192, v: 3.0},
+	})
+}
+
+func TestXOR2ConstantNonZeroSTFastPath(t *testing.T) {
+	requireXOR2Samples(t, []triple{
+		{st: 500, t: 1000, v: 1.0},
+		{st: 500, t: 2000, v: 2.0},
+		{st: 500, t: 3000, v: 2.0},
+		{st: 500, t: 4050, v: 2.0},
+		{st: 500, t: 5100, v: 3.0},
+	})
+}
+
+func TestXOR2ActiveSTDodZeroValueChange(t *testing.T) {
+	requireXOR2Samples(t, []triple{
+		{st: 0, t: 1000, v: 1.0},
+		{st: 500, t: 2000, v: 2.0},
+		{st: 500, t: 3000, v: 3.0}, // dod=0, value changed.
+		{st: 500, t: 4000, v: 4.0}, // dod=0, value changed.
+	})
 }
 
 func TestXOR2ChunkST(t *testing.T) {

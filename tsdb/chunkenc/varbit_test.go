@@ -20,8 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVarbitInt(t *testing.T) {
-	numbers := []int64{
+func testVarbitIntBoundaryValues() []int64 {
+	return []int64{
 		math.MinInt64,
 		-36028797018963968, -36028797018963967,
 		-16777216, -16777215,
@@ -40,6 +40,10 @@ func TestVarbitInt(t *testing.T) {
 		36028797018963968, 36028797018963969,
 		math.MaxInt64,
 	}
+}
+
+func TestVarbitInt(t *testing.T) {
+	numbers := testVarbitIntBoundaryValues()
 
 	bs := bstream{}
 
@@ -54,6 +58,36 @@ func TestVarbitInt(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	}
+}
+
+func TestVarbitIntFast(t *testing.T) {
+	numbers := testVarbitIntBoundaryValues()
+
+	bs := bstream{}
+
+	for _, n := range numbers {
+		putVarbitIntFast(&bs, n)
+	}
+
+	bsr := newBReader(bs.bytes())
+
+	for _, want := range numbers {
+		got, err := readVarbitInt(&bsr)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+}
+
+func TestVarbitIntAndFastProduceIdenticalOutput(t *testing.T) {
+	numbers := testVarbitIntBoundaryValues()
+
+	var slow, fast bstream
+	for _, n := range numbers {
+		putVarbitInt(&slow, n)
+		putVarbitIntFast(&fast, n)
+	}
+
+	require.Equal(t, slow.bytes(), fast.bytes())
 }
 
 func TestVarbitUint(t *testing.T) {
