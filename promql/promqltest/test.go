@@ -281,9 +281,9 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 	cmd := newLoadCmd(time.Duration(gap), withNHCB)
 	cmd.startTime = startTime
 	var (
-		pendingSTVals       []parser.SequenceValue
-		pendingSTMetricHash uint64
-		pendingSTLine       int
+		pendingSTVals   []parser.SequenceValue
+		pendingSTMetric labels.Labels
+		pendingSTLine   int
 	)
 	for i+1 < len(lines) {
 		i++
@@ -301,7 +301,7 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 				return i, nil, err
 			}
 			pendingSTVals = stVals
-			pendingSTMetricHash = stMetric.Hash()
+			pendingSTMetric = stMetric
 			pendingSTLine = i
 			continue
 		}
@@ -310,7 +310,7 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 			return i, nil, err
 		}
 		if pendingSTVals != nil {
-			if metric.Hash() != pendingSTMetricHash {
+			if !labels.Equal(metric, pendingSTMetric) {
 				return i, nil, raise(pendingSTLine, "@st metric does not match the following sample line metric")
 			}
 			if len(pendingSTVals) != len(vals) {
