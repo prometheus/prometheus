@@ -3636,7 +3636,7 @@ url: <string>
 # * The `prometheus.WriteRequest` represents the message introduced in Remote Write 1.0, which
 # will be deprecated eventually.
 # * The `io.prometheus.write.v2.Request` was introduced in Remote Write 2.0 and replaces the former,
-# by improving efficiency and sending metadata, created timestamp and native histograms by default.
+# by improving efficiency and sending metadata, start timestamp and native histograms by default.
 #
 # Before changing this value, consult with your remote storage provider (or test) what message it supports.
 # Read more on https://prometheus.io/docs/specs/remote_write_spec_2_0/#io-prometheus-write-v2-request
