@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
@@ -253,7 +254,12 @@ func newTest(t testing.TB, input string, testingMode bool, newStorage func(testi
 	return test, err
 }
 
-func newTestStorage(t testing.TB) storage.Storage { return teststorage.New(t) }
+func newTestStorage(t testing.TB) storage.Storage {
+	return teststorage.New(t, func(opts *tsdb.Options) {
+		opts.EnableSTStorage = true
+		opts.EnableXOR2Encoding = true
+	})
+}
 
 //go:embed testdata
 var testsFs embed.FS
