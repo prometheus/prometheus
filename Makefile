@@ -203,7 +203,7 @@ update-features-testdata:
 	@echo ">> updating features testdata"
 	@$(GO) test ./cmd/prometheus -run TestFeaturesAPI -update-features
 
-GO_SUBMODULE_DIRS := documentation/examples/remote_storage internal/tools web/ui/mantine-ui/src/promql/tools
+GO_SUBMODULE_DIRS := documentation/examples/remote_storage internal/tools web/ui/mantine-ui/src/promql/tools compliance
 
 .PHONY: update-all-go-deps
 update-all-go-deps: update-go-deps
