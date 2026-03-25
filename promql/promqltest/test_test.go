@@ -24,8 +24,19 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
+
+func init() {
+	testStorageOptions = []teststorage.Option{
+		func(opts *tsdb.Options) {
+			opts.EnableSTStorage = true
+			opts.EnableXOR2Encoding = true
+		},
+	}
+}
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
 	type testCase struct {
