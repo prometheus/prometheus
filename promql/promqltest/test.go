@@ -1446,7 +1446,7 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
 	case *loadCmd:
 		app := t.storage.AppenderV2(t.context)
 		if err := cmd.append(app); err != nil {
-			app.Rollback()
+			_ = app.Rollback()
 			return err
 		}
 
