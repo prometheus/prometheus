@@ -14,6 +14,7 @@
 package promqltest
 
 import (
+	"context"
 	"math"
 	"testing"
 	"time"
@@ -23,7 +24,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
@@ -1249,6 +1252,53 @@ func TestParseLoad_STLineMismatch(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestLoadSTLine_StorageRoundtrip(t *testing.T) {
+	// Parse and load samples with @st offsets into a real TSDB instance,
+	// then read them back via chunkenc Iterator to verify the start timestamps
+	// were stored and retrieved correctly.
+	store := teststorage.New(t, func(opts *tsdb.Options) {
+		opts.EnableSTStorage = true
+		opts.EnableXOR2Encoding = true
+	})
+
+	const step = 5 * time.Minute
+	lines := []string{
+		"load 5m",
+		"  my_counter@st -1mx4",
+		"  my_counter 0+1x4",
+	}
+	_, cmd, err := parseLoad(lines, 0, testStartTime)
+	require.NoError(t, err)
+
+	app := store.AppenderV2(context.Background())
+	require.NoError(t, cmd.append(app))
+	require.NoError(t, app.Commit())
+
+	q, err := store.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, q.Close()) }()
+
+	ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "my_counter"))
+	require.True(t, ss.Next(), "expected one series")
+
+	var it chunkenc.Iterator
+	it = ss.At().Iterator(it)
+
+	stepMs := step.Milliseconds()
+	for i := range 5 {
+		require.Equal(t, chunkenc.ValFloat, it.Next(), "sample %d", i)
+		wantT := int64(i) * stepMs
+		wantST := wantT - 60_000 // -1m offset in ms
+		gotT, _ := it.At()
+		gotST := it.AtST()
+		require.Equal(t, wantT, gotT, "sample %d timestamp", i)
+		require.Equal(t, wantST, gotST, "sample %d start timestamp", i)
+	}
+	require.Equal(t, chunkenc.ValNone, it.Next(), "expected no more samples")
+	require.NoError(t, it.Err())
+	require.False(t, ss.Next(), "expected only one series")
 }
 
 func TestAssertMatrixSorted(t *testing.T) {
