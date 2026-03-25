@@ -253,7 +253,8 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	var (
 		wg           sync.WaitGroup
 		newProviders []*Provider
-		keep         bool
+		// triggerSync shows if we should trigger send to notify downstream of changes.
+		triggerSync bool
 	)
 	for _, prov := range m.providers {
 		// Cancel obsolete providers if it has no new subs and it has a cancel function.
@@ -268,7 +269,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 
 			prov.cancel()
 			prov.mu.RUnlock()
-			keep = true // Trigger send to notify downstream of dropped targets
+			triggerSync = true // Trigger send to notify downstream of dropped targets
 			continue
 		}
 		prov.mu.RUnlock()
@@ -280,7 +281,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 
 		m.targetsMtx.Lock()
 		for s := range prov.subs {
-			keep = true // Trigger send because this is an existing provider (reload)
+			triggerSync = true // Trigger send because this is an existing provider (reload)
 			refTargets = m.targets[poolKey{s, prov.name}]
 			// Remove obsolete subs' targets.
 			if _, ok := prov.newSubs[s]; !ok {
@@ -313,7 +314,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	// See https://github.com/prometheus/prometheus/pull/8639 for details.
 	// This also helps making the downstream managers drop stale targets as soon as possible.
 	// See https://github.com/prometheus/prometheus/pull/13147 for details.
-	if keep {
+	if triggerSync {
 		select {
 		case m.triggerSend <- struct{}{}:
 		default:

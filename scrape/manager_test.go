@@ -1714,3 +1714,127 @@ func TestManager_ScrapeOnShutdown(t *testing.T) {
 		})
 	}
 }
+
+func TestManagerReloader(t *testing.T) {
+	for _, tcase := range []struct {
+		name                    string
+		scrapeOnShutdown        bool
+		discoveryReloadInterval time.Duration
+		updateTarget            bool
+		runDuration             time.Duration
+		expectedSamplesTotal    int
+	}{
+		{
+			name:                 "no scrape on shutdown with default interval",
+			runDuration:          6 * time.Second,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                    "no scrape on shutdown",
+			discoveryReloadInterval: 1 * time.Second,
+			runDuration:             1 * time.Second,
+			expectedSamplesTotal:    1,
+		},
+		{
+			name:                 "no scrape on shutdown with default interval and update",
+			updateTarget:         true,
+			runDuration:          12 * time.Second,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                    "no scrape on shutdown after ticker",
+			discoveryReloadInterval: 1 * time.Second,
+			updateTarget:            true,
+			runDuration:             2 * time.Second,
+			expectedSamplesTotal:    1,
+		},
+		{
+			name:                 "no scrape on shutdown with default interval after ticker",
+			updateTarget:         true,
+			runDuration:          6 * time.Second,
+			expectedSamplesTotal: 1,
+		},
+		{
+			name:                 "scrape on shutdown without updates",
+			scrapeOnShutdown:     true,
+			runDuration:          2 * time.Second,
+			expectedSamplesTotal: 2,
+		},
+		{
+			name:                 "scrape on shutdown with updates",
+			scrapeOnShutdown:     true,
+			updateTarget:         true,
+			runDuration:          2 * time.Second,
+			expectedSamplesTotal: 2,
+		},
+		{
+			name:                 "scrape on shutdown default interval after ticker",
+			scrapeOnShutdown:     true,
+			runDuration:          6 * time.Second,
+			expectedSamplesTotal: 2,
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				opts := &Options{
+					ScrapeOnShutdown:        tcase.scrapeOnShutdown,
+					DiscoveryReloadInterval: model.Duration(tcase.discoveryReloadInterval),
+				}
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts, 0) // Pass 0 to skip setup config
+				defer cleanupConns()
+
+				cfg := &config.Config{
+					GlobalConfig: config.GlobalConfig{
+						ScrapeInterval:  model.Duration(10 * time.Second),
+						ScrapeTimeout:   model.Duration(10 * time.Second),
+						ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0},
+					},
+					ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+				}
+				cfgText, err := yaml.Marshal(*cfg)
+				require.NoError(t, err)
+				cfg = loadConfiguration(t, string(cfgText))
+				require.NoError(t, scrapeManager.ApplyConfig(cfg))
+
+				tsetsCh := make(chan map[string][]*targetgroup.Group)
+				go scrapeManager.Run(tsetsCh)
+
+				// Send initial target to trigger the first reload via the normal flow.
+				initialTargetLabels := model.LabelSet{
+					model.SchemeLabel:  "http",
+					model.AddressLabel: "test.local",
+				}
+				tsetsCh <- map[string][]*targetgroup.Group{
+					"test": {{
+						Targets: []model.LabelSet{initialTargetLabels},
+					}},
+				}
+				synctest.Wait() // Wait for Run to process tsetsCh and for reloader to trigger reload.
+
+				if tcase.updateTarget {
+					newTargetLabels := model.LabelSet{
+						model.SchemeLabel:  "http",
+						model.AddressLabel: "test-updated.local",
+					}
+					tsetsCh <- map[string][]*targetgroup.Group{
+						"test": {{
+							Source:  "test",
+							Targets: []model.LabelSet{newTargetLabels},
+						}},
+					}
+					synctest.Wait() // Wait for Run to process tsetsCh.
+				}
+
+				if tcase.runDuration > 0 {
+					time.Sleep(tcase.runDuration)
+					synctest.Wait()
+				}
+
+				scrapeManager.Stop()
+				synctest.Wait()
+
+				require.Len(t, findSamplesForMetric(app.ResultSamples(), "expected_metric"), tcase.expectedSamplesTotal)
+			})
+		})
+	}
+}

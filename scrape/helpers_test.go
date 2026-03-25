@@ -345,6 +345,10 @@ func setupSynctestManager(t *testing.T, opts *Options, interval time.Duration) (
 	)
 	require.NoError(t, err)
 
+	if interval <= 0 {
+		return scrapeManager, app, cleanup
+	}
+
 	cfg := &config.Config{
 		GlobalConfig: config.GlobalConfig{
 			ScrapeInterval:  model.Duration(interval),
