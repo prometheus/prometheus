@@ -24,9 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
@@ -1258,11 +1256,7 @@ func TestLoadSTLine_StorageRoundtrip(t *testing.T) {
 	// Parse and load samples with @st offsets into a real TSDB instance,
 	// then read them back via chunkenc Iterator to verify the start timestamps
 	// were stored and retrieved correctly.
-	store := teststorage.New(t, func(opts *tsdb.Options) {
-		opts.EnableSTStorage = true
-		opts.EnableXOR2Encoding = true
-	})
-
+	store := newTestStorage(t)
 	const step = 5 * time.Minute
 	lines := []string{
 		"load 5m",
