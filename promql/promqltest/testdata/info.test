@@ -100,6 +100,19 @@ eval range from 0m to 10m step 5m info(build_info, {__name__=~"target_.+", __nam
 
 clear
 
+# Test that a series matching positive __name__ matchers but excluded by negative
+# matchers is NOT ignored — it should be treated as a regular metric and enriched.
+load 5m
+    websvc_thing{instance="a", job="1", label="value"} 0 1 2
+    websvc_stuff_info{instance="a", job="1", build_data="build"} 2 3 4
+    target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 1
+
+eval range from 0m to 10m step 5m info({__name__=~"websvc_.+"}, {__name__=~".+_info", __name__!~"websvc_.+"})
+    websvc_thing{instance="a", job="1", label="value", data="info", another_data="another info"} 0 1 2
+    websvc_stuff_info{instance="a", job="1", build_data="build", data="info", another_data="another info"} 2 3 4
+
+clear
+
 load 5m
     metric{instance="a", job="1", label="value"} 0 1 2
     target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 1
