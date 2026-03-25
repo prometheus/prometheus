@@ -1717,68 +1717,89 @@ func TestManager_ScrapeOnShutdown(t *testing.T) {
 
 func TestManagerReloader(t *testing.T) {
 	for _, tcase := range []struct {
-		name                    string
-		scrapeOnShutdown        bool
-		discoveryReloadInterval time.Duration
-		updateTarget            bool
-		runDuration             time.Duration
-		expectedSamplesTotal    int
+		name                     string
+		discoveryReloadOnStartup bool
+		scrapeOnShutdown         bool
+		discoveryReloadInterval  time.Duration
+		updateTarget             bool
+		runDuration              time.Duration
+		expectedSamplesTotal     int
 	}{
 		{
-			name:                 "no scrape on shutdown with default interval",
+			name:                 "no startup reload default interval",
 			runDuration:          6 * time.Second,
 			expectedSamplesTotal: 1,
 		},
 		{
-			name:                    "no scrape on shutdown",
+			name:                    "no startup reload short interval",
 			discoveryReloadInterval: 1 * time.Second,
 			runDuration:             1 * time.Second,
 			expectedSamplesTotal:    1,
 		},
 		{
-			name:                 "no scrape on shutdown with default interval and update",
+			name:                 "no startup reload default interval with target update",
 			updateTarget:         true,
 			runDuration:          12 * time.Second,
 			expectedSamplesTotal: 1,
 		},
 		{
-			name:                    "no scrape on shutdown after ticker",
+			name:                    "no startup reload short interval after ticker",
 			discoveryReloadInterval: 1 * time.Second,
 			updateTarget:            true,
 			runDuration:             2 * time.Second,
 			expectedSamplesTotal:    1,
 		},
 		{
-			name:                 "no scrape on shutdown with default interval after ticker",
+			name:                 "no startup reload default interval after ticker with update",
 			updateTarget:         true,
 			runDuration:          6 * time.Second,
 			expectedSamplesTotal: 1,
 		},
 		{
-			name:                 "scrape on shutdown without updates",
-			scrapeOnShutdown:     true,
-			runDuration:          2 * time.Second,
-			expectedSamplesTotal: 2,
+			name:                     "startup reload",
+			discoveryReloadOnStartup: true,
+			runDuration:              2 * time.Second,
+			expectedSamplesTotal:     1,
 		},
 		{
-			name:                 "scrape on shutdown with updates",
-			scrapeOnShutdown:     true,
-			updateTarget:         true,
-			runDuration:          2 * time.Second,
-			expectedSamplesTotal: 2,
+			name:                     "startup reload with target update",
+			discoveryReloadOnStartup: true,
+			updateTarget:             true,
+			runDuration:              2 * time.Second,
+			expectedSamplesTotal:     1,
 		},
 		{
-			name:                 "scrape on shutdown default interval after ticker",
+			name:                     "startup reload with update after ticker",
+			discoveryReloadOnStartup: true,
+			runDuration:              6 * time.Second,
+			expectedSamplesTotal:     1,
+		},
+		{
+			name:                 "no startup reload with scrape on shutdown after reload",
 			scrapeOnShutdown:     true,
 			runDuration:          6 * time.Second,
 			expectedSamplesTotal: 2,
+		},
+		{
+			name:                 "stop before no startup reload",
+			scrapeOnShutdown:     true,
+			runDuration:          2 * time.Second,
+			expectedSamplesTotal: 0,
+		},
+		{
+			name:                     "startup reload and scrape on shutdown",
+			discoveryReloadOnStartup: true,
+			scrapeOnShutdown:         true,
+			runDuration:              2 * time.Second,
+			expectedSamplesTotal:     2,
 		},
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				opts := &Options{
-					ScrapeOnShutdown:        tcase.scrapeOnShutdown,
-					DiscoveryReloadInterval: model.Duration(tcase.discoveryReloadInterval),
+					DiscoveryReloadOnStartup: tcase.discoveryReloadOnStartup,
+					ScrapeOnShutdown:         tcase.scrapeOnShutdown,
+					DiscoveryReloadInterval:  model.Duration(tcase.discoveryReloadInterval),
 				}
 				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts, 0) // Pass 0 to skip setup config
 				defer cleanupConns()

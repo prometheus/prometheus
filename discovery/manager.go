@@ -158,10 +158,10 @@ func FeatureRegistry(fr features.Collector) func(*Manager) {
 	}
 }
 
-// SkipInitialWait configures the manager to skip the initial wait on startup.
+// SkipStartupWait configures the manager to skip the initial wait on startup.
 // This is useful for Prometheus in agent mode or serverless flavours of OTel's prometheusreceiver
 // which are sensitive to startup latencies.
-func SkipInitialWait() func(*Manager) {
+func SkipStartupWait() func(*Manager) {
 	return func(m *Manager) {
 		m.mtx.Lock()
 		defer m.mtx.Unlock()
@@ -402,7 +402,7 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 	}
 }
 
-func (m *Manager) flushUpdates(timeout <-chan time.Time) {
+func (m *Manager) flushUpdates(ctx context.Context, timeout <-chan time.Time) {
 	m.metrics.SentUpdates.Inc()
 	select {
 	case m.syncCh <- m.allGroups():
@@ -411,6 +411,8 @@ func (m *Manager) flushUpdates(timeout <-chan time.Time) {
 		m.logger.Debug("Discovery receiver's channel was full so will retry the next cycle")
 		select {
 		case m.triggerSend <- struct{}{}:
+		case <-ctx.Done():
+			return
 		default:
 		}
 	}
@@ -426,7 +428,7 @@ func (m *Manager) sender() {
 	if m.skipStartupWait {
 		select {
 		case <-m.triggerSend:
-			m.flushUpdates(ticker.C)
+			m.flushUpdates(m.ctx, ticker.C)
 		case <-m.ctx.Done():
 			return
 		}
@@ -437,7 +439,7 @@ func (m *Manager) sender() {
 		select {
 		case <-m.ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticker.C: // Some discoverers send updates too often, so we throttle these with the ticker.
 			select {
 			case <-m.triggerSend:
 				m.metrics.SentUpdates.Inc()

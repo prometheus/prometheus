@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 func TestMain(m *testing.M) {
@@ -783,37 +784,82 @@ func pk(provider, setName string, n int) poolKey {
 }
 
 func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
-	ctx := t.Context()
-
-	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
-
-	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics, SkipInitialWait())
-	require.NotNil(t, discoveryManager)
-
-	// Set the updatert to a long time so we can verify that the skip worked correctly.
-	discoveryManager.updatert = 100 * time.Hour
-	go discoveryManager.Run()
-
-	c := map[string]Configs{
-		"prometheus": {
-			staticConfig("foo:9090"),
+	testCases := []struct {
+		name            string
+		skipInitialWait bool
+		updatert        time.Duration
+		readTimeout     time.Duration
+		expectedTargets int
+	}{
+		{
+			name:        "startup wait with long interval times out",
+			updatert:    100 * time.Hour,
+			readTimeout: 10 * time.Millisecond,
+		},
+		{
+			name:            "startup wait with short interval succeeds",
+			updatert:        10 * time.Millisecond,
+			readTimeout:     100 * time.Millisecond,
+			expectedTargets: 1,
+		},
+		{
+			name:            "skip startup wait",
+			skipInitialWait: true,
+			updatert:        100 * time.Hour,
+			readTimeout:     100 * time.Millisecond,
+			expectedTargets: 1,
 		},
 	}
-	discoveryManager.ApplyConfig(c)
 
-	// Wait for the single bypassed send
-	syncedTargets := <-discoveryManager.SyncCh()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx := t.Context()
 
-	// Assertions on the targets received from the channel
-	require.Len(t, syncedTargets, 1)
-	require.Len(t, syncedTargets["prometheus"], 1)
-	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+				reg := prometheus.NewRegistry()
+				_, sdMetrics := NewTestMetrics(t, reg)
 
-	// Assertions on the manager's internal state
-	p := pk("static", "prometheus", 0)
-	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	require.Len(t, discoveryManager.targets, 1)
+				var opts []func(*Manager)
+				if tc.skipInitialWait {
+					opts = append(opts, SkipStartupWait())
+				}
+
+				discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics, opts...)
+				require.NotNil(t, discoveryManager)
+
+				discoveryManager.updatert = tc.updatert
+				go discoveryManager.Run()
+
+				c := map[string]Configs{
+					"prometheus": {
+						staticConfig("foo:9090"),
+					},
+				}
+				discoveryManager.ApplyConfig(c)
+
+				synctest.Wait()
+
+				var syncedTargets map[string][]*targetgroup.Group
+				select {
+				case syncedTargets = <-discoveryManager.SyncCh():
+				case <-time.After(tc.readTimeout):
+				}
+
+				if tc.expectedTargets == 0 {
+					require.Nil(t, syncedTargets)
+					return
+				}
+
+				require.Len(t, syncedTargets, 1)
+				require.Len(t, syncedTargets["prometheus"], tc.expectedTargets)
+				verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+
+				p := pk("static", "prometheus", 0)
+				verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+				require.Len(t, discoveryManager.targets, 1)
+			})
+		})
+	}
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
