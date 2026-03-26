@@ -292,6 +292,79 @@ const (
 	}
 }
 
+func TestScanDirReflectsSourceChanges(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write initial source with one metric.
+	writeFile(t, filepath.Join(dir, "metrics.go"), `package example
+
+import "github.com/prometheus/client_golang/prometheus"
+
+var m = prometheus.NewCounter(prometheus.CounterOpts{
+	Namespace: "prometheus",
+	Name:      "requests_total",
+	Help:      "Total requests.",
+})
+`)
+
+	consts1, err := collectPkgConstants(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics1, err := scanDir(dir, consts1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metrics1) != 1 {
+		t.Fatalf("initial scan: got %d metrics, want 1", len(metrics1))
+	}
+	if got := metrics1[0].fqName(); got != "prometheus_requests_total" {
+		t.Errorf("initial metric fqName = %q, want %q", got, "prometheus_requests_total")
+	}
+
+	// Add a second metric to simulate a source change.
+	writeFile(t, filepath.Join(dir, "metrics.go"), `package example
+
+import "github.com/prometheus/client_golang/prometheus"
+
+var m = prometheus.NewCounter(prometheus.CounterOpts{
+	Namespace: "prometheus",
+	Name:      "requests_total",
+	Help:      "Total requests.",
+})
+
+var m2 = prometheus.NewGauge(prometheus.GaugeOpts{
+	Namespace: "prometheus",
+	Name:      "ready",
+	Help:      "Whether the server is ready.",
+})
+`)
+
+	consts2, err := collectPkgConstants(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics2, err := scanDir(dir, consts2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metrics2) != 2 {
+		t.Fatalf("after change: got %d metrics, want 2", len(metrics2))
+	}
+
+	// Verify both metrics are present.
+	names := map[string]bool{}
+	for _, m := range metrics2 {
+		names[m.fqName()] = true
+	}
+	if !names["prometheus_requests_total"] {
+		t.Error("missing prometheus_requests_total after change")
+	}
+	if !names["prometheus_ready"] {
+		t.Error("missing prometheus_ready after change")
+	}
+}
+
 // parseTestSource writes source to a temp file and parses it with no
 // pre-existing constants.
 func parseTestSource(t *testing.T, src string) []metric {
