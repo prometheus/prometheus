@@ -9663,8 +9663,8 @@ func TestBeyondSizeRetentionWithPercentage(t *testing.T) {
 	db := newTestDB(t, withOpts(opts))
 	require.Zero(t, db.Head().Size())
 
-	blocks := make([]*Block, 0, opts.MaxPercentage+1)
-	for range opts.MaxPercentage {
+	blocks := make([]*Block, 0, int(opts.MaxPercentage)+1)
+	for range int(opts.MaxPercentage) {
 		blocks = append(blocks, &Block{
 			numBytesChunks: numBytesChunks,
 			meta:           BlockMeta{ULID: ulid.Make()},
