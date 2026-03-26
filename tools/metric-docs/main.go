@@ -89,15 +89,12 @@ func main() {
 	// WrapRegistererWithPrefix that cannot be detected by static analysis.
 	for i := range metrics {
 		m := &metrics[i]
-		if m.Namespace == "" && m.Subsystem == "" {
-			switch m.Package {
-			case "tsdb/wlog":
-				// WL uses WrapRegistererWithPrefix("prometheus_tsdb_wal_", reg).
-				// Out-of-order WBL uses "prometheus_tsdb_out_of_order_wbl_" but
-				// registers the same metric names, so we document the WAL variant.
-				m.Namespace = "prometheus"
-				m.Subsystem = "tsdb_wal"
-			}
+		if m.Namespace == "" && m.Subsystem == "" && m.Package == "tsdb/wlog" {
+			// WL uses WrapRegistererWithPrefix("prometheus_tsdb_wal_", reg).
+			// Out-of-order WBL uses "prometheus_tsdb_out_of_order_wbl_" but
+			// registers the same metric names, so we document the WAL variant.
+			m.Namespace = "prometheus"
+			m.Subsystem = "tsdb_wal"
 		}
 	}
 
@@ -427,29 +424,6 @@ func resolveStringValue(expr ast.Expr, consts map[string]string, allConsts map[s
 		if v.Op == token.ADD {
 			left := resolveStringValue(v.X, consts, allConsts)
 			right := resolveStringValue(v.Y, consts, allConsts)
-			if left != "" || right != "" {
-				return left + right
-			}
-		}
-	}
-	return ""
-}
-
-// extractStringValue is a simpler version that only handles literals.
-func extractStringValue(expr ast.Expr) string {
-	switch v := expr.(type) {
-	case *ast.BasicLit:
-		if v.Kind == token.STRING {
-			s := v.Value
-			if len(s) >= 2 {
-				s = s[1 : len(s)-1]
-			}
-			return s
-		}
-	case *ast.BinaryExpr:
-		if v.Op == token.ADD {
-			left := extractStringValue(v.X)
-			right := extractStringValue(v.Y)
 			if left != "" || right != "" {
 				return left + right
 			}
