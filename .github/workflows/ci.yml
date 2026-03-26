@@ -43,15 +43,8 @@ jobs:
       - run: go test --tags=slicelabels -race ./cmd/prometheus ./model/textparse ./prompb/...
       - run: go test --tags=forcedirectio -race ./tsdb/
       - run: GOARCH=386 go test ./...
-      - run: |
-          VERSION="3.15.8"
-          env
-          set -x
-          curl -s -L https://github.com/protocolbuffers/protobuf/releases/download/v${VERSION}/protoc-${VERSION}-linux-x86_64.zip > /tmp/protoc.zip
-          unzip -d /tmp /tmp/protoc.zip
-          chmod +x /tmp/bin/protoc
-          export PATH=/tmp/bin:$PATH
-          make proto
+      - run: make protoc
+      - run: make proto
       - run: git diff --exit-code
 
   test_go_oldest:
