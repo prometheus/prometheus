@@ -32,3 +32,4 @@ npm_licenses.tar.bz2
 
 # Ignore parser debug
 y.output
+docs/internal-metrics.md
