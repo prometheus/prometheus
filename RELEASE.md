@@ -115,13 +115,7 @@ Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a p
 
 Use [`scripts/generate_release_notes.sh`](scripts/generate_release_notes.sh) to produce a starting point for the `CHANGELOG.md` entries. It requires the [`release-notes`](https://github.com/kubernetes/release/tree/master/cmd/release-notes) tool and a `GITHUB_TOKEN` with read access to the repository:
 
-Minor release (any RC or final, e.g. `v3.11.0-rc.0`, `v3.11.0-rc.1`, `v3.11.0`):
-
-```bash
-GITHUB_TOKEN=<token> scripts/generate_release_notes.sh 3.Y_SET_ME.0
-```
-
-Patch release (e.g. `v3.11.2`):
+Run it for the target release version (RC, final, or patch; for example `v3.11.0-rc.0`, `v3.11.0`, or `v3.11.1`):
 
 ```bash
 GITHUB_TOKEN=<token> scripts/generate_release_notes.sh 3.Y_SET_ME.Z_SET_ME
@@ -131,7 +125,6 @@ Review the output carefully before adding it to `CHANGELOG.md`:
 
 - Remove entries already present in a previous release's Changelog. Duplicates can appear for fixes merged to the previous release branch.
 - `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
-- For release candidates, continue updating `CHANGELOG.md`. When you cut the final release, consolidate all changes from the pre-releases into a single final entry.
 
 Then bump the UI module version:
 
