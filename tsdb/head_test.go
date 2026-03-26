@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -2183,47 +2184,47 @@ func TestComputeChunkEndTime(t *testing.T) {
 	}
 }
 
-// TestMemSeries_append tests float appending with various storeST/st combinations.
+// TestMemSeries_append tests float appending with various useXOR2/st combinations.
 func TestMemSeries_append(t *testing.T) {
 	scenarios := []struct {
 		name    string
-		storeST bool
+		useXOR2 bool
 		stFunc  func(ts int64) int64 // Function to compute st from ts
 	}{
 		{
-			name:    "storeST=false st=0",
-			storeST: false,
+			name:    "useXOR2=false st=0",
+			useXOR2: false,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
 		{
-			name:    "storeST=true st=0",
-			storeST: true,
+			name:    "useXOR2=true st=0",
+			useXOR2: true,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
 		{
-			name:    "storeST=true st=ts",
-			storeST: true,
+			name:    "useXOR2=true st=ts",
+			useXOR2: true,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
 		{
-			name:    "storeST=true st=ts-100",
-			storeST: true,
+			name:    "useXOR2=true st=ts-100",
+			useXOR2: true,
 			stFunc:  func(ts int64) int64 { return ts - 100 },
 		},
 		{
-			name:    "storeST=false st=ts (st ignored)",
-			storeST: false,
+			name:    "useXOR2=false st=ts (st ignored)",
+			useXOR2: false,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
 	}
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			testMemSeriesAppend(t, scenario.storeST, scenario.stFunc)
+			testMemSeriesAppend(t, scenario.useXOR2, scenario.stFunc)
 		})
 	}
 }
 
-func testMemSeriesAppend(t *testing.T, storeST bool, stFunc func(ts int64) int64) {
+func testMemSeriesAppend(t *testing.T, useXOR2 bool, stFunc func(ts int64) int64) {
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
@@ -2235,7 +2236,7 @@ func testMemSeriesAppend(t *testing.T, storeST bool, stFunc func(ts int64) int64
 		chunkDiskMapper: chunkDiskMapper,
 		chunkRange:      500,
 		samplesPerChunk: DefaultSamplesPerChunk,
-		storeST:         storeST,
+		useXOR2:         useXOR2,
 	}
 
 	s := newMemSeries(labels.Labels{}, 1, 0, defaultIsolationDisabled, false)
@@ -2286,47 +2287,47 @@ func testMemSeriesAppend(t *testing.T, storeST bool, stFunc func(ts int64) int64
 	}
 }
 
-// TestMemSeries_appendHistogram tests histogram appending with various storeST/st combinations.
+// TestMemSeries_appendHistogram tests histogram appending with various useXOR2/st combinations.
 func TestMemSeries_appendHistogram(t *testing.T) {
 	scenarios := []struct {
 		name    string
-		storeST bool
+		useXOR2 bool
 		stFunc  func(ts int64) int64 // Function to compute st from ts
 	}{
 		{
-			name:    "storeST=false st=0",
-			storeST: false,
+			name:    "useXOR2=false st=0",
+			useXOR2: false,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
 		{
-			name:    "storeST=true st=0",
-			storeST: true,
+			name:    "useXOR2=true st=0",
+			useXOR2: true,
 			stFunc:  func(_ int64) int64 { return 0 },
 		},
 		{
-			name:    "storeST=true st=ts",
-			storeST: true,
+			name:    "useXOR2=true st=ts",
+			useXOR2: true,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
 		{
-			name:    "storeST=true st=ts-100",
-			storeST: true,
+			name:    "useXOR2=true st=ts-100",
+			useXOR2: true,
 			stFunc:  func(ts int64) int64 { return ts - 100 },
 		},
 		{
-			name:    "storeST=false st=ts (st ignored)",
-			storeST: false,
+			name:    "useXOR2=false st=ts (st ignored)",
+			useXOR2: false,
 			stFunc:  func(ts int64) int64 { return ts },
 		},
 	}
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			testMemSeriesAppendHistogram(t, scenario.storeST, scenario.stFunc)
+			testMemSeriesAppendHistogram(t, scenario.useXOR2, scenario.stFunc)
 		})
 	}
 }
 
-func testMemSeriesAppendHistogram(t *testing.T, storeST bool, stFunc func(ts int64) int64) {
+func testMemSeriesAppendHistogram(t *testing.T, useXOR2 bool, stFunc func(ts int64) int64) {
 	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
@@ -2338,7 +2339,7 @@ func testMemSeriesAppendHistogram(t *testing.T, storeST bool, stFunc func(ts int
 		chunkDiskMapper: chunkDiskMapper,
 		chunkRange:      int64(1000),
 		samplesPerChunk: DefaultSamplesPerChunk,
-		storeST:         storeST,
+		useXOR2:         useXOR2,
 	}
 
 	s := newMemSeries(labels.Labels{}, 1, 0, defaultIsolationDisabled, false)
@@ -5758,6 +5759,93 @@ func testOOOMmapReplay(t *testing.T, scenario sampleTypeScenario) {
 	require.NoError(t, h.Close())
 }
 
+// TestWALReplayMmapsChunks is a regression test ensuring that
+// chunks are mmapped during WAL replay, not accumulated in the
+// in-memory linked list.
+func TestWALReplayMmapsChunks(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		append func(app storage.Appender, l labels.Labels, ts int64) error
+	}{
+		{
+			name: "floats",
+			append: func(app storage.Appender, l labels.Labels, ts int64) error {
+				_, err := app.Append(0, l, ts, float64(ts))
+				return err
+			},
+		},
+		{
+			name: "histograms",
+			append: func(app storage.Appender, l labels.Labels, ts int64) error {
+				_, err := app.AppendHistogram(0, l, ts, tsdbutil.GenerateTestHistogram(ts), nil)
+				return err
+			},
+		},
+		{
+			name: "float histograms",
+			append: func(app storage.Appender, l labels.Labels, ts int64) error {
+				_, err := app.AppendHistogram(0, l, ts, nil, tsdbutil.GenerateTestFloatHistogram(ts))
+				return err
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
+			require.NoError(t, err)
+
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = 1000
+			opts.ChunkDirRoot = dir
+
+			h, err := NewHead(nil, nil, wal, nil, opts, nil)
+			require.NoError(t, err)
+			require.NoError(t, h.Init(0))
+
+			l := labels.FromStrings("foo", "bar")
+
+			// Append 250 samples at 1-minute intervals. With ChunkRange=1000 and
+			// DefaultSamplesPerChunk=120, this creates multiple chunks that should
+			// be mmapped during WAL replay.
+			app := h.Appender(context.Background())
+			for i := range 250 {
+				require.NoError(t, tc.append(app, l, int64(i)*time.Minute.Milliseconds()))
+			}
+			require.NoError(t, app.Commit())
+
+			require.NoError(t, h.Close())
+
+			// Remove mmapped chunk files so WAL replay must recreate all chunks.
+			require.NoError(t, os.RemoveAll(filepath.Join(dir, "chunks_head")))
+
+			// Reopen Head — WAL replay happens in Init.
+			wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
+			require.NoError(t, err)
+			h, err = NewHead(nil, nil, wal, nil, opts, nil)
+			require.NoError(t, err)
+			require.NoError(t, h.Init(0))
+
+			ms, ok, err := h.getOrCreate(l.Hash(), l, false)
+			require.NoError(t, err)
+			require.False(t, ok)
+			require.NotNil(t, ms)
+
+			// Chunks must be mmapped during replay, not left in the head linked list.
+			require.NotEmpty(t, ms.mmappedChunks, "expected chunks to be mmapped during WAL replay")
+			require.Equal(t, 1, ms.headChunks.len(), "expected only one head chunk after replay")
+
+			// Verify each mmapped chunk is readable from disk.
+			for _, m := range ms.mmappedChunks {
+				chk, err := h.chunkDiskMapper.Chunk(m.ref)
+				require.NoError(t, err)
+				require.Equal(t, int(m.numSamples), chk.NumSamples())
+			}
+
+			require.NoError(t, h.Close())
+		})
+	}
+}
+
 func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 	h, _ := newTestHead(t, 1000, compression.None, false)
 
@@ -7354,6 +7442,7 @@ func TestHeadAppender_WALEncoder_EnableSTStorage(t *testing.T) {
 		t.Run(fmt.Sprintf("enableSTStorage=%v", enableST), func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(enableST)
+			opts.EnableXOR2Encoding.Store(enableST)
 			h, w := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")
@@ -7409,6 +7498,7 @@ func TestHeadAppender_WBLEncoder_EnableSTStorage(t *testing.T) {
 			opts.ChunkDirRoot = dir
 			opts.OutOfOrderTimeWindow.Store(60 * time.Minute.Milliseconds())
 			opts.EnableSTStorage.Store(enableST)
+			opts.EnableXOR2Encoding.Store(enableST)
 
 			h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 			require.NoError(t, err)
@@ -7527,6 +7617,7 @@ func TestHeadAppender_STStorage_Disabled(t *testing.T) {
 func TestHeadAppender_STStorage_WALReplay(t *testing.T) {
 	opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 	opts.EnableSTStorage.Store(true)
+	opts.EnableXOR2Encoding.Store(true)
 	h, w := newTestHeadWithOptions(t, compression.None, opts)
 
 	lbls := labels.FromStrings("foo", "bar")
@@ -7578,6 +7669,7 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(60 * time.Minute.Milliseconds())
 	opts.EnableSTStorage.Store(true)
+	opts.EnableXOR2Encoding.Store(true)
 
 	h, err := NewHead(nil, nil, wal, wbl, opts, nil)
 	require.NoError(t, err)
@@ -7656,6 +7748,7 @@ func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
 		t.Run(fmt.Sprintf("EnableSTStorage=%t", enableST), func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
 			opts.EnableSTStorage.Store(enableST)
+			opts.EnableXOR2Encoding.Store(enableST) // ST storage implies XOR2 encoding.
 			h, _ := newTestHeadWithOptions(t, compression.None, opts)
 
 			lbls := labels.FromStrings("foo", "bar")
@@ -7695,7 +7788,7 @@ func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
 
 				encoding := chk.Encoding()
 				if enableST {
-					require.Equal(t, chunkenc.EncXOROptST, encoding,
+					require.Equal(t, chunkenc.EncXOR2, encoding,
 						"Expected ST-capable encoding when EnableSTStorage is true")
 				} else {
 					require.Equal(t, chunkenc.EncXOR, encoding,
@@ -7778,4 +7871,47 @@ func TestWALReplayRaceWithStaleSeriesCompaction(t *testing.T) {
 	require.Equal(t, uint64(0), head.NumStaleSeries())
 	require.Equal(t, uint64(numNewSeries), head.NumSeries())
 	require.NoError(t, head.Close())
+}
+
+func TestHead_FastStartupStateFile(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	// Enable the fast startup feature.
+	opts.EnableFastStartup = true
+
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+	require.NoError(t, head.Init(0))
+
+	// Add a single sample to the Head.
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("fast", "startup"), 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Wait for the ticker to update the series state file.
+	time.Sleep(1500 * time.Millisecond)
+
+	stateFilePath := filepath.Join(w.Dir(), "series_state.json")
+
+	b, err := os.ReadFile(stateFilePath)
+	require.NoError(t, err, "series_state.json should exist after ticker runs")
+
+	var state SeriesLifecycleState
+	require.NoError(t, json.Unmarshal(b, &state), "file should be valid JSON")
+
+	// The ticker should write an unclean state.
+	require.False(t, state.CleanShutdown, "ticker should write CleanShutdown: false")
+	require.Equal(t, uint64(1), state.LastSeriesID, "LastSeriesID should be 1 after adding our sample")
+	require.Equal(t, 0, state.LastWALSegment, "LastWALSegment should be 0 on a fresh WAL")
+
+	// Perform a clean shutdown.
+	require.NoError(t, head.Close())
+
+	b, err = os.ReadFile(stateFilePath)
+	require.NoError(t, err, "series_state.json should still exist after Close()")
+	require.NoError(t, json.Unmarshal(b, &state))
+
+	// Calling head.Close() should put us in the clean state.
+	require.True(t, state.CleanShutdown, "Close() should write CleanShutdown: true")
+	require.Equal(t, uint64(1), state.LastSeriesID, "LastSeriesID should remain 1")
+	require.Equal(t, 0, state.LastWALSegment, "LastWALSegment should remain 0")
 }

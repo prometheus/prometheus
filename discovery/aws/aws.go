@@ -48,6 +48,7 @@ const (
 	RoleElasticache Role = "elasticache"
 	RoleLightsail   Role = "lightsail"
 	RoleMSK         Role = "msk"
+	RoleRDS         Role = "rds"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -56,7 +57,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	switch *c {
-	case RoleEC2, RoleECS, RoleElasticache, RoleLightsail, RoleMSK:
+	case RoleEC2, RoleECS, RoleElasticache, RoleLightsail, RoleMSK, RoleRDS:
 		return nil
 	default:
 		return fmt.Errorf("unknown AWS SD role %q", *c)
@@ -92,6 +93,7 @@ type SDConfig struct {
 	*ElasticacheSDConfig `yaml:"-"`
 	*LightsailSDConfig   `yaml:"-"`
 	*MSKSDConfig         `yaml:"-"`
+	*RDSSDConfig         `yaml:"-"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for SDConfig.
@@ -264,6 +266,37 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.Clusters != nil {
 			c.MSKSDConfig.Clusters = c.Clusters
 		}
+	case RoleRDS:
+		if c.RDSSDConfig == nil {
+			rdsConfig := DefaultRDSSDConfig
+			c.RDSSDConfig = &rdsConfig
+		}
+		c.RDSSDConfig.HTTPClientConfig = c.HTTPClientConfig
+		c.RDSSDConfig.Region = c.Region
+		if c.Endpoint != "" {
+			c.RDSSDConfig.Endpoint = c.Endpoint
+		}
+		if c.AccessKey != "" {
+			c.RDSSDConfig.AccessKey = c.AccessKey
+		}
+		if c.SecretKey != "" {
+			c.RDSSDConfig.SecretKey = c.SecretKey
+		}
+		if c.Profile != "" {
+			c.RDSSDConfig.Profile = c.Profile
+		}
+		if c.RoleARN != "" {
+			c.RDSSDConfig.RoleARN = c.RoleARN
+		}
+		if c.Port != 0 {
+			c.RDSSDConfig.Port = c.Port
+		}
+		if c.RefreshInterval != 0 {
+			c.RDSSDConfig.RefreshInterval = c.RefreshInterval
+		}
+		if c.Clusters != nil {
+			c.RDSSDConfig.Clusters = c.Clusters
+		}
 	default:
 		return fmt.Errorf("unknown AWS SD role %q", c.Role)
 	}
@@ -301,6 +334,9 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 	case RoleMSK:
 		opts.Metrics = &mskMetrics{refreshMetrics: awsMetrics.refreshMetrics}
 		return NewMSKDiscovery(c.MSKSDConfig, opts)
+	case RoleRDS:
+		opts.Metrics = &rdsMetrics{refreshMetrics: awsMetrics.refreshMetrics}
+		return NewRDSDiscovery(c.RDSSDConfig, opts)
 	default:
 		return nil, fmt.Errorf("unknown AWS SD role %q", c.Role)
 	}

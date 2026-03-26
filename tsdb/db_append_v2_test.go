@@ -7505,17 +7505,18 @@ func TestAbortBlockCompactions_AppendV2(t *testing.T) {
 }
 
 // TestCompactHeadWithSTStorage_AppendV2 ensures that when EnableSTStorage is true,
-// compacted blocks contain chunks with EncXOROptST encoding for float samples.
+// compacted blocks contain chunks with EncXOR2 encoding for float samples.
 func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 	t.Parallel()
 
 	opts := &Options{
-		RetentionDuration: int64(time.Hour * 24 * 15 / time.Millisecond),
-		NoLockfile:        true,
-		MinBlockDuration:  int64(time.Hour * 2 / time.Millisecond),
-		MaxBlockDuration:  int64(time.Hour * 2 / time.Millisecond),
-		WALCompression:    compression.Snappy,
-		EnableSTStorage:   true,
+		RetentionDuration:  int64(time.Hour * 24 * 15 / time.Millisecond),
+		NoLockfile:         true,
+		MinBlockDuration:   int64(time.Hour * 2 / time.Millisecond),
+		MaxBlockDuration:   int64(time.Hour * 2 / time.Millisecond),
+		WALCompression:     compression.Snappy,
+		EnableSTStorage:    true,
+		EnableXOR2Encoding: true,
 	}
 	db := newTestDB(t, withOpts(opts))
 	ctx := context.Background()
@@ -7553,7 +7554,7 @@ func TestCompactHeadWithSTStorage_AppendV2(t *testing.T) {
 		for _, chk := range chks {
 			c, _, err := chunkr.ChunkOrIterable(chk)
 			require.NoError(t, err)
-			require.Equal(t, chunkenc.EncXOROptST, c.Encoding(),
+			require.Equal(t, chunkenc.EncXOR2, c.Encoding(),
 				"unexpected chunk encoding, got %s", c.Encoding())
 			chunkCount++
 		}
@@ -7654,6 +7655,7 @@ func TestDBAppenderV2_STStorage_OutOfOrder(t *testing.T) {
 			opts := DefaultOptions()
 			opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 			opts.EnableSTStorage = true
+			opts.EnableXOR2Encoding = true
 			db := newTestDB(t, withOpts(opts))
 			db.DisableCompactions()
 

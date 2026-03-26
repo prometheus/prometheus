@@ -85,14 +85,16 @@ export function setStackedOpts(opts: uPlot.Options, data: uPlot.AlignedData) {
     },
   };
 
-  // restack on toggle
+  // restack on toggle (but not on focus/hover)
   opts.hooks = opts.hooks || {};
   opts.hooks.setSeries = opts.hooks.setSeries || [];
-  opts.hooks.setSeries.push((u, _i) => {
-    const stacked = stack(data, (i) => !u.series[i].show);
-    u.delBand(null);
-    stacked.bands.forEach((b) => u.addBand(b));
-    u.setData(stacked.data);
+  opts.hooks.setSeries.push((u, _i, opts) => {
+    if (opts.show != null) {
+      const stacked = stack(data, (i) => !u.series[i].show);
+      u.delBand(null);
+      stacked.bands.forEach((b) => u.addBand(b));
+      u.setData(stacked.data);
+    }
   });
 
   return { opts, data: stacked.data };

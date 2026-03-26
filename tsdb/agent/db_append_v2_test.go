@@ -90,6 +90,9 @@ func TestDB_InvalidSeries_AppendV2(t *testing.T) {
 	})
 }
 
+// TestCommit_AppendV2 tests Appender commit.
+// TODO(bwplotka): Rewrite this so Refs are generated, then appended, then expected so we test the
+// exact data durability.
 func TestCommit_AppendV2(t *testing.T) {
 	const (
 		numDatapoints = 1000
@@ -102,15 +105,24 @@ func TestCommit_AppendV2(t *testing.T) {
 			opts.EnableSTStorage = enableSTStorage
 			s := createTestAgentDB(t, nil, opts)
 
-			app := s.AppenderV2(context.TODO())
+			var (
+				expectedSampleSTs []int64
+				gotSampleSTs      []int64
+			)
+			if enableSTStorage {
+				expectedSampleSTs = make([]int64, 0, numSeries*numDatapoints)
+				gotSampleSTs = make([]int64, 0, numSeries*numDatapoints)
+			}
 
+			app := s.AppenderV2(t.Context())
 			lbls := labelsForTest(t.Name(), numSeries)
 			for _, l := range lbls {
 				lset := labels.New(l...)
 
 				for i := range numDatapoints {
 					sample := chunks.GenerateSamples(0, 1)
-					_, err := app.Append(0, lset, int64(i), sample[0].T()+2000, sample[0].F(), nil, nil, storage.AOptions{
+					st := int64(i + 1234)
+					_, err := app.Append(0, lset, st, sample[0].T()+2000, sample[0].F(), nil, nil, storage.AOptions{
 						Exemplars: []exemplar.Exemplar{{
 							Labels: lset,
 							Ts:     sample[0].T() + int64(i) + 2000,
@@ -119,6 +131,9 @@ func TestCommit_AppendV2(t *testing.T) {
 						}},
 					})
 					require.NoError(t, err)
+					if enableSTStorage {
+						expectedSampleSTs = append(expectedSampleSTs, st)
+					}
 				}
 			}
 
@@ -129,7 +144,7 @@ func TestCommit_AppendV2(t *testing.T) {
 				histograms := tsdbutil.GenerateTestHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, histograms[i], nil, storage.AOptions{})
+					_, err := app.Append(0, lset, int64(i+2234), int64(i+2000), 0, histograms[i], nil, storage.AOptions{})
 					require.NoError(t, err)
 				}
 			}
@@ -141,7 +156,7 @@ func TestCommit_AppendV2(t *testing.T) {
 				customBucketHistograms := tsdbutil.GenerateTestCustomBucketsHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, customBucketHistograms[i], nil, storage.AOptions{})
+					_, err := app.Append(0, lset, int64(i+3234), int64(i+2000), 0, customBucketHistograms[i], nil, storage.AOptions{})
 					require.NoError(t, err)
 				}
 			}
@@ -153,7 +168,7 @@ func TestCommit_AppendV2(t *testing.T) {
 				floatHistograms := tsdbutil.GenerateTestFloatHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, nil, floatHistograms[i], storage.AOptions{})
+					_, err := app.Append(0, lset, int64(i+4234), int64(i+2000), 0, nil, floatHistograms[i], storage.AOptions{})
 					require.NoError(t, err)
 				}
 			}
@@ -165,7 +180,7 @@ func TestCommit_AppendV2(t *testing.T) {
 				customBucketFloatHistograms := tsdbutil.GenerateTestCustomBucketsFloatHistograms(numHistograms)
 
 				for i := range numHistograms {
-					_, err := app.Append(0, lset, int64(i), int64(i+2000), 0, nil, customBucketFloatHistograms[i], storage.AOptions{})
+					_, err := app.Append(0, lset, int64(i+5234), int64(i+2000), 0, nil, customBucketFloatHistograms[i], storage.AOptions{})
 					require.NoError(t, err)
 				}
 			}
@@ -203,7 +218,6 @@ func TestCommit_AppendV2(t *testing.T) {
 					samples, err = dec.Samples(rec, samples)
 					require.NoError(t, err)
 					walSamplesCount += len(samples)
-
 				case record.SamplesV2:
 					if !enableSTStorage {
 						t.Errorf("Got V2 Samples when ST disabled")
@@ -211,6 +225,10 @@ func TestCommit_AppendV2(t *testing.T) {
 					var samples []record.RefSample
 					samples, err = dec.Samples(rec, samples)
 					require.NoError(t, err)
+
+					for _, s := range samples {
+						gotSampleSTs = append(gotSampleSTs, s.ST)
+					}
 					walSamplesCount += len(samples)
 
 				case record.HistogramSamples, record.CustomBucketsHistogramSamples:
@@ -238,13 +256,15 @@ func TestCommit_AppendV2(t *testing.T) {
 			// Check that the WAL contained the same number of committed series/samples/exemplars.
 			require.Equal(t, numSeries*5, walSeriesCount, "unexpected number of series")
 			require.Equal(t, numSeries*numDatapoints, walSamplesCount, "unexpected number of samples")
+			require.Equal(t, expectedSampleSTs, gotSampleSTs, "unexpected STs received")
 			require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
 			require.Equal(t, numSeries*numHistograms*2, walHistogramCount, "unexpected number of histograms")
 			require.Equal(t, numSeries*numHistograms*2, walFloatHistogramCount, "unexpected number of float histograms")
 
-			// Check that we can still create both kinds of Appender - see https://github.com/prometheus/prometheus/issues/17800.
-			_ = s.Appender(context.TODO())
-			_ = s.AppenderV2(context.TODO())
+			// Check that we can still create both kinds of Appender.
+			// Regression test against https://github.com/prometheus/prometheus/issues/17800.
+			_ = s.Appender(t.Context())
+			_ = s.AppenderV2(t.Context())
 		})
 	}
 }

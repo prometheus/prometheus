@@ -73,7 +73,7 @@ func (o *OOOChunk) NumSamples() int {
 // ToEncodedChunks returns chunks with the samples in the OOOChunk.
 //
 //nolint:revive
-func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, storeST bool) (chks []memChunk, err error) {
+func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memChunk, err error) {
 	if len(o.samples) == 0 {
 		return nil, nil
 	}
@@ -93,7 +93,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, storeST bool) (chks []memCh
 		if s.t > maxt {
 			break
 		}
-		encoding := chunkenc.ValFloat.ChunkEncoding(storeST)
+		encoding := chunkenc.ValFloat.ChunkEncoding(useXOR2)
 		switch {
 		case s.h != nil:
 			// TODO(krajorama): use ST capable histogram chunk.
@@ -123,7 +123,7 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, storeST bool) (chks []memCh
 			}
 		}
 		switch encoding {
-		case chunkenc.EncXOR, chunkenc.EncXOROptST:
+		case chunkenc.EncXOR, chunkenc.EncXOR2:
 			app.Append(s.st, s.t, s.f)
 		case chunkenc.EncHistogram:
 			// TODO(krajorama): handle ST capable histogram chunk.

@@ -24,6 +24,8 @@ jobs:
   benchmark_start:
     name: Benchmark Start
     if: github.event.action == 'prombench_start'
+    permissions:
+      statuses: write
     runs-on: ubuntu-latest
     steps:
       - name: Update status to pending
@@ -59,6 +61,8 @@ jobs:
   benchmark_cancel:
     name: Benchmark Cancel
     if: github.event.action == 'prombench_stop'
+    permissions:
+      statuses: write
     runs-on: ubuntu-latest
     steps:
       - name: Update status to pending
@@ -94,6 +98,8 @@ jobs:
   benchmark_restart:
     name: Benchmark Restart
     if: github.event.action == 'prombench_restart'
+    permissions:
+      statuses: write
     runs-on: ubuntu-latest
     steps:
       - name: Update status to pending

@@ -67,6 +67,20 @@ func run() error {
 	}
 	fmt.Printf("Generated fuzzParseOpenMetric_seed_corpus.zip with %d entries.\n", len(openMetrics))
 
+	// Generate FuzzXORChunk seed corpus.
+	xorSeeds := fuzzing.GetCorpusForFuzzXORChunk()
+	if err := generateZipFromXORChunkSeeds("fuzzXORChunk", xorSeeds); err != nil {
+		return fmt.Errorf("failed to generate fuzzXORChunk_seed_corpus.zip: %w", err)
+	}
+	fmt.Printf("Generated fuzzXORChunk_seed_corpus.zip with %d entries.\n", len(xorSeeds))
+
+	// Generate FuzzXOR2Chunk seed corpus.
+	xor2Seeds := fuzzing.GetCorpusForFuzzXOR2Chunk()
+	if err := generateZipFromXOR2ChunkSeeds("fuzzXOR2Chunk", xor2Seeds); err != nil {
+		return fmt.Errorf("failed to generate fuzzXOR2Chunk_seed_corpus.zip: %w", err)
+	}
+	fmt.Printf("Generated fuzzXOR2Chunk_seed_corpus.zip with %d entries.\n", len(xor2Seeds))
+
 	return nil
 }
 
@@ -107,10 +121,60 @@ func generateZipFromBytes(fuzzName string, corpus [][]byte) error {
 
 // generateZipFromStrings creates a seed corpus ZIP file from a slice of strings.
 func generateZipFromStrings(fuzzName string, corpus []string) error {
-	// Convert []string to [][]byte and delegate to generateZipFromBytes
+	// Convert []string to [][]byte and delegate to generateZipFromBytes.
 	byteCorpus := make([][]byte, len(corpus))
 	for i, s := range corpus {
 		byteCorpus[i] = []byte(s)
 	}
 	return generateZipFromBytes(fuzzName, byteCorpus)
+}
+
+// generateZipFromSeedEntries creates a seed corpus ZIP file from pre-serialised
+// Go fuzz corpus entries. Entries are sorted deterministically before writing.
+func generateZipFromSeedEntries(fuzzName string, entries [][]byte) error {
+	sort.Slice(entries, func(i, j int) bool {
+		return string(entries[i]) < string(entries[j])
+	})
+
+	zipPath := filepath.Join("..", fuzzName+"_seed_corpus.zip")
+	zipFile, err := os.Create(zipPath)
+	if err != nil {
+		return fmt.Errorf("failed to create zip file: %w", err)
+	}
+	defer zipFile.Close()
+
+	zipWriter := zip.NewWriter(zipFile)
+	defer zipWriter.Close()
+
+	for i, entry := range entries {
+		fileName := fmt.Sprintf("seed%d", i)
+		writer, err := zipWriter.Create(fileName)
+		if err != nil {
+			return fmt.Errorf("failed to create zip entry %s: %w", fileName, err)
+		}
+		if _, err := writer.Write(entry); err != nil {
+			return fmt.Errorf("failed to write zip entry %s: %w", fileName, err)
+		}
+	}
+
+	return nil
+}
+
+// generateZipFromXORChunkSeeds creates a seed corpus ZIP file for fuzz functions
+// with signature (int64, uint8, uint64), using the Go fuzz corpus file format.
+func generateZipFromXORChunkSeeds(fuzzName string, seeds []fuzzing.ChunkFuzzSeed) error {
+	entries := make([][]byte, len(seeds))
+	for i, s := range seeds {
+		entries[i] = []byte(fmt.Sprintf("go test fuzz v1\nint64(%d)\nuint8(%d)\nuint64(%d)\n", s.Seed, s.N, s.NaNMask))
+	}
+	return generateZipFromSeedEntries(fuzzName, entries)
+}
+
+// generateZipFromXOR2ChunkSeeds creates a seed corpus ZIP file for FuzzXOR2Chunk.
+func generateZipFromXOR2ChunkSeeds(fuzzName string, seeds []fuzzing.XOR2ChunkFuzzSeed) error {
+	entries := make([][]byte, len(seeds))
+	for i, s := range seeds {
+		entries[i] = []byte(fmt.Sprintf("go test fuzz v1\nint64(%d)\nuint8(%d)\nuint64(%d)\nuint8(%d)\n", s.Seed, s.N, s.NaNMask, s.STMode))
+	}
+	return generateZipFromSeedEntries(fuzzName, entries)
 }

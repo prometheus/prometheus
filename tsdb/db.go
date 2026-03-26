@@ -240,6 +240,11 @@ type Options struct {
 	// is implemented.
 	EnableSTAsZeroSample bool
 
+	// EnableXOR2Encoding enables the XOR2 chunk encoding for float samples.
+	// XOR2 provides better compression than XOR, especially for stale markers.
+	// Automatically set to true when EnableSTStorage is true.
+	EnableXOR2Encoding bool
+
 	// EnableSTStorage determines whether TSDB should write a Start Timestamp (ST)
 	// per sample to WAL.
 	// TODO(bwplotka): Implement this option as per PROM-60, currently it's noop.
@@ -266,6 +271,9 @@ type Options struct {
 
 	// FsSizeFunc is a function returning the total disk size for a given path.
 	FsSizeFunc FsSizeFunc
+
+	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
+	EnableFastStartup bool
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -868,6 +876,8 @@ func Open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, st
 		opts.FeatureRegistry.Set(features.TSDB, "isolation", !opts.IsolationDisabled)
 		opts.FeatureRegistry.Set(features.TSDB, "use_uncached_io", opts.UseUncachedIO)
 		opts.FeatureRegistry.Enable(features.TSDB, "native_histograms")
+		opts.FeatureRegistry.Set(features.TSDB, "st_storage", opts.EnableSTStorage)
+		opts.FeatureRegistry.Set(features.TSDB, "xor2_encoding", opts.EnableXOR2Encoding)
 	}
 
 	return open(dir, l, r, opts, rngs, stats)
@@ -1075,7 +1085,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.EnableSTAsZeroSample = opts.EnableSTAsZeroSample
 	headOpts.EnableSTStorage.Store(opts.EnableSTStorage)
+	headOpts.EnableXOR2Encoding.Store(opts.EnableXOR2Encoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
+	headOpts.EnableFastStartup = opts.EnableFastStartup
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1278,18 +1290,12 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 		// Update retention configuration if provided.
 		if conf.StorageConfig.TSDBConfig.Retention != nil {
 			db.retentionMtx.Lock()
-			if conf.StorageConfig.TSDBConfig.Retention.Time > 0 {
-				db.opts.RetentionDuration = int64(conf.StorageConfig.TSDBConfig.Retention.Time)
-				db.metrics.retentionDuration.Set((time.Duration(db.opts.RetentionDuration) * time.Millisecond).Seconds())
-			}
-			if conf.StorageConfig.TSDBConfig.Retention.Size > 0 {
-				db.opts.MaxBytes = int64(conf.StorageConfig.TSDBConfig.Retention.Size)
-				db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
-			}
-			if conf.StorageConfig.TSDBConfig.Retention.Percentage > 0 {
-				db.opts.MaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
-				db.metrics.maxPercentage.Set(float64(db.opts.MaxPercentage))
-			}
+			db.opts.RetentionDuration = int64(time.Duration(conf.StorageConfig.TSDBConfig.Retention.Time) / time.Millisecond)
+			db.metrics.retentionDuration.Set((time.Duration(db.opts.RetentionDuration) * time.Millisecond).Seconds())
+			db.opts.MaxBytes = int64(conf.StorageConfig.TSDBConfig.Retention.Size)
+			db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
+			db.opts.MaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
+			db.metrics.maxPercentage.Set(float64(db.opts.MaxPercentage))
 			db.retentionMtx.Unlock()
 		}
 	} else {
