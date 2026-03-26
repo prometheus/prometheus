@@ -282,6 +282,11 @@ func (r *AlertingRule) QueryForStateSeries(ctx context.Context, q storage.Querie
 	smpl := r.forStateSample(nil, time.Now(), 0)
 	var matchers []*labels.Matcher
 	smpl.Metric.Range(func(l labels.Label) {
+		// Skip labels with template syntax: their values are expanded per alert
+		// instance and would not match the stored series.
+		if strings.Contains(l.Value, "{{") {
+			return
+		}
 		mt, err := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
 		if err != nil {
 			panic(err)
