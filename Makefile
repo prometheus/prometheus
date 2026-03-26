@@ -193,6 +193,16 @@ cli-documentation:
 	$(GO) run ./cmd/prometheus/ --write-documentation > docs/command-line/prometheus.md
 	$(GO) run ./cmd/promtool/ write-documentation > docs/command-line/promtool.md
 
+.PHONY: internal-metrics-docs
+internal-metrics-docs:
+	@echo ">> generating internal metrics documentation"
+	$(GO) run ./tools/metric-docs > docs/internal-metrics.md
+
+.PHONY: check-internal-metrics-docs
+check-internal-metrics-docs: internal-metrics-docs
+	@echo ">> checking generated internal metrics docs"
+	@git diff --exit-code -- docs/internal-metrics.md || (echo "Generated internal metrics docs are out of date. Please run 'make internal-metrics-docs' and commit the changes." && false)
+
 .PHONY: check-go-mod-version
 check-go-mod-version:
 	@echo ">> checking go.mod version matching"
