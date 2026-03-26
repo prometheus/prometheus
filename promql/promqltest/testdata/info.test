@@ -22,6 +22,10 @@ eval range from 0m to 10m step 5m info(metric_not_matching_target_info)
 eval range from 0m to 10m step 5m info(metric_not_matching_target_info, {data=~".*"})
     metric_not_matching_target_info{instance="a", job="2", label="value"} 0 1 2
 
+# Non-matching identifying labels with a data label matcher that doesn't match empty string.
+# The series should be dropped since no info series matches and the matcher requires a non-empty value.
+eval range from 0m to 10m step 5m info(metric_not_matching_target_info, {data=~".+"})
+
 # Try including a certain info metric data label with a non-matching matcher not accepting empty labels.
 # Metric is ignored, due there being a data label matcher not matching empty labels,
 # and there being no info series matches.
