@@ -27,13 +27,10 @@ eval range from 0m to 10m step 5m info(metric_not_matching_target_info, {data=~"
 # and there being no info series matches.
 eval range from 0m to 10m step 5m info(metric, {non_existent=~".+"})
 
-# Include a certain info metric data label together with a non-matching matcher accepting empty labels.
-# Since the non_existent matcher matches empty labels, it's simply ignored when there's no match.
-# XXX: This case has to include a matcher not matching empty labels, due the PromQL limitation
-# that vector selectors have to contain at least one matcher not accepting empty labels.
-# We might need another construct than vector selector to get around this limitation.
-eval range from 0m to 10m step 5m info(metric, {data=~".+", non_existent=~".*"})
-    metric{data="info", instance="a", job="1", label="value"} 0 1 2
+# A data matcher accepting empty labels. The metric is returned unchanged
+# since non_existent doesn't exist on target_info but the matcher accepts empty strings.
+eval range from 0m to 10m step 5m info(metric, {non_existent=~".*"})
+    metric{instance="a", job="1", label="value"} 0 1 2
 
 # Info series data labels overlapping with those of base series are ignored.
 eval range from 0m to 10m step 5m info(metric_with_overlapping_label)
