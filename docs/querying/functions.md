@@ -459,7 +459,7 @@ the zero bucket and for buckets with custom boundaries, the arithmetic mean is u
 For the usual exponential buckets, the geometric mean is used. Float samples are ignored
 and do not show up in the returned vector.
 
-Similarly, `histogram_stdvar(v instant-vector)` returns the estimated standard
+Similarly, `histogram_stdvar(v instant-vector)` returns the estimated
 variance of observations for each native histogram sample in `v`.
 
 ## `hour()`
@@ -866,7 +866,7 @@ over time and return an instant vector with per-series aggregation results:
 * `count_over_time(range-vector)`: the count of all samples in the specified interval.
 * `quantile_over_time(scalar, range-vector)`: the φ-quantile (0 ≤ φ ≤ 1) of all float samples in the specified interval.
 * `stddev_over_time(range-vector)`: the population standard deviation of all float samples in the specified interval.
-* `stdvar_over_time(range-vector)`: the population standard variance of all float samples in the specified interval.
+* `stdvar_over_time(range-vector)`: the population variance of all float samples in the specified interval.
 * `last_over_time(range-vector)`: the most recent sample in the specified interval.
 * `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
 
