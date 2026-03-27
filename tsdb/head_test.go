@@ -7921,10 +7921,11 @@ func TestHead_ReadSeriesStateFile(t *testing.T) {
 	head, w := newTestHeadWithOptions(t, compression.None, opts)
 
 	// Fresh boot case.
-	// Should return nil state and no error.
+	// Should return 0 valued state and os.ErrNotExist.
 	state, err := head.readSeriesStateFile()
-	require.NoError(t, err, "reading non-existent state file should not error")
-	require.Nil(t, state, "state should be nil when file does not exist")
+	require.Error(t, err, "reading non-existent state file should return an error")
+	require.True(t, os.IsNotExist(err), "error should be of type os.ErrNotExist")
+	require.Equal(t, SeriesLifecycleState{}, state, "state should be zero-valued when file does not exist")
 
 	// Valid file case.
 	expectedState := SeriesLifecycleState{
@@ -7940,7 +7941,6 @@ func TestHead_ReadSeriesStateFile(t *testing.T) {
 
 	state, err = head.readSeriesStateFile()
 	require.NoError(t, err, "reading valid state file should not error")
-	require.NotNil(t, state, "state should not be nil")
 	require.Equal(t, expectedState, state, "read state should match written state")
 }
 
