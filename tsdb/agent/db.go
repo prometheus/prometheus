@@ -539,6 +539,7 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 					Segment: r.Segment(),
 					Offset:  r.Offset(),
 				}
+				return
 			}
 		}
 	}()
@@ -558,15 +559,14 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 				series, created := db.series.GetOrSet(series.lset.Hash(), series)
 
 				if !created {
-					// We don't need to check if entry.Ref exists / if the value is not series.ref because GetOrSet
-					// enforces that the same labels will always get the same Ref. If we did not create a new ref
-					// the only possible ref it should ever be in the WAL is series.ref.
-					duplicateRefToValidRef[entry.Ref] = series.ref
+					if entry.Ref != series.ref {
+						duplicateRefToValidRef[entry.Ref] = series.ref
 
-					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
-					// it remains in the checkpoint until we get past that segment.
-					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
-						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+						// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+						// it remains in the checkpoint until we get past that segment.
+						if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
+							db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+						}
 					}
 				} else {
 					db.metrics.numActiveSeries.Inc()

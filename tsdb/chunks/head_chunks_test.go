@@ -412,6 +412,112 @@ func TestChunkDiskMapper_Truncate_WriteQueueRaceCondition(t *testing.T) {
 	wg.Wait()
 }
 
+func TestChunkDiskMapper_WriteChunkSync_PreservesQueueOrder(t *testing.T) {
+	t.Parallel()
+	hrw := createChunkDiskMapper(t, "")
+	t.Cleanup(func() {
+		require.NoError(t, hrw.Close())
+	})
+
+	if hrw.writeQueue == nil {
+		t.Skip("This test should only run when the queue is enabled")
+	}
+
+	var (
+		mu          sync.Mutex
+		writtenRefs []ChunkDiskMapperRef
+		firstRef    ChunkDiskMapperRef
+	)
+	firstWriteStarted := make(chan struct{})
+	allowFirstWrite := make(chan struct{})
+
+	origWriteChunk := hrw.writeQueue.writeChunk
+	hrw.writeQueue.writeChunk = func(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, ref ChunkDiskMapperRef, isOOO, cutFile bool) error {
+		mu.Lock()
+		writtenRefs = append(writtenRefs, ref)
+		mu.Unlock()
+		if ref == firstRef {
+			close(firstWriteStarted)
+			<-allowFirstWrite
+		}
+		return origWriteChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile)
+	}
+
+	firstWriteDone := make(chan error, 1)
+	firstRef = hrw.WriteChunk(1, 0, 10, randomChunk(t), false, func(err error) {
+		firstWriteDone <- err
+	})
+
+	<-firstWriteStarted
+
+	var (
+		secondRef ChunkDiskMapperRef
+		syncErr   error
+	)
+	secondWriteDone := make(chan struct{})
+	go func() {
+		secondRef, syncErr = hrw.WriteChunkSync(1, 11, 20, randomChunk(t), false)
+		close(secondWriteDone)
+	}()
+
+	select {
+	case <-secondWriteDone:
+		t.Fatal("WriteChunkSync returned before the earlier queued write completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(allowFirstWrite)
+
+	require.NoError(t, <-firstWriteDone)
+	<-secondWriteDone
+	require.NoError(t, syncErr)
+
+	mu.Lock()
+	require.Equal(t, []ChunkDiskMapperRef{firstRef, secondRef}, writtenRefs)
+	mu.Unlock()
+}
+
+func TestChunkDiskMapper_WriteChunkSync_RecoversAfterWriteError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	hrw, err := NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, hrw.Close())
+	})
+
+	injectedErr := errors.New("injected chunk write failure")
+	var calls int
+	origWriteChunk := hrw.writeQueue.writeChunk
+	hrw.writeQueue.writeChunk = func(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, ref ChunkDiskMapperRef, isOOO, cutFile bool) error {
+		calls++
+		if calls == 1 {
+			return injectedErr
+		}
+		return origWriteChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile)
+	}
+
+	firstRef, err := hrw.WriteChunkSync(1, 0, 10, randomChunk(t), false)
+	require.Zero(t, firstRef)
+	require.ErrorIs(t, err, injectedErr)
+
+	secondRef, err := hrw.WriteChunkSync(1, 11, 20, randomChunk(t), false)
+	require.NoError(t, err)
+	require.Equal(t, newChunkDiskMapperRef(1, HeadChunkFileHeaderSize), secondRef)
+
+	thirdRef, err := hrw.WriteChunkSync(1, 21, 30, randomChunk(t), false)
+	require.NoError(t, err)
+	require.Greater(t, thirdRef, secondRef)
+
+	var written int
+	require.NoError(t, hrw.IterateAllChunks(func(HeadSeriesRef, ChunkDiskMapperRef, int64, int64, uint16, chunkenc.Encoding, bool) error {
+		written++
+		return nil
+	}))
+	require.Equal(t, 2, written)
+}
+
 // TestHeadReadWriter_TruncateAfterFailedIterateChunks tests for
 // https://github.com/prometheus/prometheus/issues/7753
 func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {

@@ -1592,7 +1592,7 @@ func TestSizeRetention(t *testing.T) {
 				}
 			}
 			require.NoError(t, headApp.Commit())
-			db.Head().mmapHeadChunks()
+			db.Head().mmapHeadChunks(true)
 
 			require.Eventually(t, func() bool {
 				return db.Head().chunkDiskMapper.IsQueueEmpty()
@@ -2748,7 +2748,7 @@ func TestDBReadOnly_Querier_NoAlteration(t *testing.T) {
 
 		// The RW Head should have no problem cutting its own chunk,
 		// this also proves that a chunk needed to be cut.
-		require.NotPanics(t, func() { db.ForceHeadMMap() })
+		db.ForceHeadMMap()
 		require.Equal(t, 1, countChunks(db.Dir()))
 	})
 
@@ -5446,6 +5446,228 @@ func testOOOCompactionWithDisabledWriteLog(t *testing.T, scenario sampleTypeScen
 	verifySamples(db.Blocks()[1], 250, 350)
 }
 
+func TestOOOQueueEnabledRolloverPersistsAcrossRestartAndCompaction(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 1
+	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	opts.HeadChunksWriteQueueSize = 1
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	series := labels.FromStrings("foo", "bar")
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, series, 300, 300)
+	require.NoError(t, err)
+	_, err = app.Append(0, series, 250, 250)
+	require.NoError(t, err)
+	_, err = app.Append(0, series, 240, 240)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	expSamples := map[string][]chunks.Sample{
+		series.String(): {
+			sample{t: 240, f: 240},
+			sample{t: 250, f: 250},
+			sample{t: 300, f: 300},
+		},
+	}
+	verifyQuery := func() {
+		q, err := db.Querier(0, 400)
+		require.NoError(t, err)
+		requireEqualSeries(t, expSamples, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")), true)
+	}
+	verifySeriesState := func(mmapped, closed int, headChunk bool) {
+		ms, created, err := db.head.getOrCreate(series.Hash(), series, false)
+		require.NoError(t, err)
+		require.False(t, created)
+		require.NotNil(t, ms.ooo)
+		require.Len(t, ms.ooo.oooMmappedChunks, mmapped)
+		require.Len(t, ms.ooo.oooClosedChunks, closed)
+		if headChunk {
+			require.NotNil(t, ms.ooo.oooHeadChunk)
+		} else {
+			require.Nil(t, ms.ooo.oooHeadChunk)
+		}
+	}
+
+	verifyQuery()
+	verifySeriesState(0, 1, true)
+
+	dbDir := db.Dir()
+	require.NoError(t, db.Close())
+
+	db = newTestDB(t, withDir(dbDir), withOpts(opts))
+	db.DisableCompactions()
+	verifyQuery()
+	verifySeriesState(2, 0, false)
+
+	_, err = NewOOOCompactionHead(context.Background(), db.head)
+	require.NoError(t, err)
+	verifyQuery()
+	verifySeriesState(2, 0, false)
+
+	require.NoError(t, db.Close())
+
+	db = newTestDB(t, withDir(dbDir), withOpts(opts))
+	db.DisableCompactions()
+	verifyQuery()
+	verifySeriesState(2, 0, false)
+}
+
+func TestOOOReplayDropsUnmarkedMmappedChunks(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 1
+	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	opts.HeadChunksWriteQueueSize = 1
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	series := labels.FromStrings("foo", "bar")
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, series, 300, 300)
+	require.NoError(t, err)
+	_, err = app.Append(0, series, 250, 250)
+	require.NoError(t, err)
+	_, err = app.Append(0, series, 240, 240)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	ms, created, err := db.head.getOrCreate(series.Hash(), series, false)
+	require.NoError(t, err)
+	require.False(t, created)
+
+	orphan := chunkenc.NewXORChunk()
+	appender, err := orphan.Appender()
+	require.NoError(t, err)
+	appender.Append(0, 230, 230)
+	_, err = db.head.chunkDiskMapper.WriteChunkSync(ms.ref, 230, 230, orphan, true)
+	require.NoError(t, err)
+
+	dbDir := db.Dir()
+	require.NoError(t, db.Close())
+
+	db = newTestDB(t, withDir(dbDir), withOpts(opts))
+	db.DisableCompactions()
+
+	q, err := db.Querier(0, 400)
+	require.NoError(t, err)
+	requireEqualSeries(t, map[string][]chunks.Sample{
+		series.String(): {
+			sample{t: 240, f: 240},
+			sample{t: 250, f: 250},
+			sample{t: 300, f: 300},
+		},
+	}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")), true)
+}
+
+func TestOOOQueueEnabledBackgroundMmapFlushesAndReplays(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 1
+	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	opts.HeadChunksWriteQueueSize = 1
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	series := labels.FromStrings("foo", "bar")
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, series, 300, 300)
+	require.NoError(t, err)
+	_, err = app.Append(0, series, 250, 250)
+	require.NoError(t, err)
+	_, err = app.Append(0, series, 240, 240)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	db.head.mmapHeadChunks(false)
+
+	ms, created, err := db.head.getOrCreate(series.Hash(), series, false)
+	require.NoError(t, err)
+	require.False(t, created)
+	require.NotNil(t, ms.ooo)
+	require.Len(t, ms.ooo.oooMmappedChunks, 1)
+	require.Empty(t, ms.ooo.oooClosedChunks)
+	require.NotNil(t, ms.ooo.oooHeadChunk)
+
+	dbDir := db.Dir()
+	require.NoError(t, db.Close())
+
+	db = newTestDB(t, withDir(dbDir), withOpts(opts))
+	db.DisableCompactions()
+
+	ms, created, err = db.head.getOrCreate(series.Hash(), series, false)
+	require.NoError(t, err)
+	require.False(t, created)
+	require.NotNil(t, ms.ooo)
+	require.Len(t, ms.ooo.oooMmappedChunks, 2)
+	require.Empty(t, ms.ooo.oooClosedChunks)
+	require.Nil(t, ms.ooo.oooHeadChunk)
+
+	q, err := db.Querier(0, 400)
+	require.NoError(t, err)
+	requireEqualSeries(t, map[string][]chunks.Sample{
+		series.String(): {
+			sample{t: 240, f: 240},
+			sample{t: 250, f: 250},
+			sample{t: 300, f: 300},
+		},
+	}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")), true)
+}
+
+func TestOOOPartialBackgroundMmapFailureKeepsMarkedPrefixAfterRestart(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 1
+	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	opts.HeadChunksWriteQueueSize = 1
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	series := labels.FromStrings("foo", "bar")
+	app := db.Appender(context.Background())
+	_, err := app.Append(0, series, 300, 300)
+	require.NoError(t, err)
+	_, err = app.Append(0, series, 250, 250)
+	require.NoError(t, err)
+	_, err = app.Append(0, series, 240, 240)
+	require.NoError(t, err)
+	_, err = app.Append(0, series, 230, 230)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	injectedErr := errors.New("injected chunk write failure")
+	failNthChunkWrite(t, db.head.chunkDiskMapper, 2, injectedErr)
+
+	db.head.mmapHeadChunks(false)
+
+	ms, created, err := db.head.getOrCreate(series.Hash(), series, false)
+	require.NoError(t, err)
+	require.False(t, created)
+	require.NotNil(t, ms.ooo)
+	require.Len(t, ms.ooo.oooMmappedChunks, 1)
+	require.Len(t, ms.ooo.oooClosedChunks, 1)
+	require.NotNil(t, ms.ooo.oooHeadChunk)
+
+	dbDir := db.Dir()
+	require.NoError(t, db.Close())
+
+	db = newTestDB(t, withDir(dbDir), withOpts(opts))
+	db.DisableCompactions()
+
+	q, err := db.Querier(0, 400)
+	require.NoError(t, err)
+	requireEqualSeries(t, map[string][]chunks.Sample{
+		series.String(): {
+			sample{t: 230, f: 230},
+			sample{t: 240, f: 240},
+			sample{t: 250, f: 250},
+			sample{t: 300, f: 300},
+		},
+	}, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")), true)
+}
+
 // TestOOOQueryAfterRestartWithSnapshotAndRemovedWBL tests the scenario where the WBL goes
 // missing after a restart while snapshot was enabled, but the query still returns the right
 // data from the mmap chunks.
@@ -5513,8 +5735,8 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sa
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls, false)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Len(t, ms.ooo.oooMmappedChunks, 2)
-		require.Equal(t, 109*time.Minute.Milliseconds(), ms.ooo.oooMmappedChunks[1].maxTime)
+		require.Len(t, ms.ooo.oooMmappedChunks, 3)
+		require.Equal(t, 110*time.Minute.Milliseconds(), ms.ooo.oooMmappedChunks[2].maxTime)
 		require.Nil(t, ms.ooo.oooHeadChunk) // Because of missing wbl.
 	}
 
@@ -5539,7 +5761,7 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sa
 	}
 
 	// Checking for expected ooo data from mmap chunks.
-	verifySamples(90, 109)
+	verifySamples(90, 110)
 
 	// Compaction should also work fine.
 	require.Empty(t, db.Blocks())
@@ -5556,7 +5778,7 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBL(t *testing.T, scenario sa
 		require.Nil(t, ms.ooo)
 	}
 
-	verifySamples(90, 109)
+	verifySamples(90, 110)
 }
 
 func TestQuerierOOOQuery(t *testing.T) {
@@ -8420,31 +8642,19 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 
 	// Check that m-map files gets deleted properly after compactions.
 
-	db.head.mmapHeadChunks()
+	db.head.mmapHeadChunks(true)
 	checkMmapFileContents([]string{"000001", "000002"}, nil)
 
-	// NOTE: We are investigating flaky errors from this compaction on i386 architecture. Compaction panics due to chunk
-	// mapper fatal error. Recover here to understand the error cause. Leaving panic recovery to test causes deadlock
-	// as t.Cleanup tries to close DB with open locks.
-	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
-	require.NotPanics(t, func() {
-		require.NoError(t, db.Compact(ctx))
-	})
+	require.NoError(t, db.Compact(ctx))
 
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
 	require.Nil(t, ms.ooo, "OOO mmap chunk was not compacted")
 
 	addSamples(501, 650)
-	db.head.mmapHeadChunks()
+	db.head.mmapHeadChunks(true)
 	checkMmapFileContents([]string{"000002", "000003"}, []string{"000001"})
 
-	// NOTE: We are investigating flaky errors from this compaction on i386 architecture. Compaction panics due to chunk
-	// mapper fatal error. Recover here to understand the error cause. Leaving panic recovery to test causes deadlock
-	// as t.Cleanup tries to close DB with open locks.
-	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
-	require.NotPanics(t, func() {
-		require.NoError(t, db.Compact(ctx))
-	})
+	require.NoError(t, db.Compact(ctx))
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
 
 	// Verify that WBL is empty.
