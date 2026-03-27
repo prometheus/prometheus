@@ -77,7 +77,7 @@ func (rt Type) String() string {
 	case Samples:
 		return "samples"
 	case SamplesV2:
-		return "samples-v2"
+		return "samples_v2"
 	case Tombstones:
 		return "tombstones"
 	case Exemplars:

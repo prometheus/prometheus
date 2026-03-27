@@ -82,10 +82,46 @@ func GenTestRefSamplesCase(t testing.TB, c RefSamplesCase) []record.RefSample {
 	return ret
 }
 
+// HistSTCase selects the start-time pattern for histogram test data generators.
+type HistSTCase string
+
+const (
+	HistNoST       HistSTCase = "no-st"
+	HistConstST    HistSTCase = "const-st"
+	HistPrevTST    HistSTCase = "prevt-st"
+	HistVariableST HistSTCase = "var-st"
+)
+
+// HistSTCases is the standard set of histogram ST cases for benchmarks.
+var HistSTCases = []HistSTCase{HistNoST, HistConstST, HistPrevTST, HistVariableST}
+
+// applyHistST sets the ST field on histogram samples according to the given case.
+func applyHistST(out []record.RefHistogramSample, stCase HistSTCase) {
+	switch stCase {
+	case HistNoST:
+		// Nothing to do.
+	case HistConstST:
+		for i := range out {
+			out[i].ST = 1709000000
+		}
+	case HistPrevTST:
+		for i := range out {
+			if i == 0 {
+				continue
+			}
+			out[i].ST = out[i-1].T
+		}
+	case HistVariableST:
+		for i := range out {
+			out[i].ST = highVarianceInt(i+1) / 1024
+		}
+	}
+}
+
 // GenExpHistograms generates n standard exponential histograms (schema=1)
 // with incrementing refs, same timestamp, and realistic bucket distributions.
-// If withST is true, all samples get a constant ST (simulating sameST marker path).
-func GenExpHistograms(n int, withST bool) []record.RefHistogramSample {
+// The stCase parameter controls how the ST field is populated.
+func GenExpHistograms(n int, stCase HistSTCase) []record.RefHistogramSample {
 	out := make([]record.RefHistogramSample, n)
 	for i := range out {
 		out[i] = record.RefHistogramSample{
@@ -109,16 +145,14 @@ func GenExpHistograms(n int, withST bool) []record.RefHistogramSample {
 				NegativeBuckets: []int64{1, 1, -1, 0},
 			},
 		}
-		if withST {
-			out[i].ST = 1709000000
-		}
 	}
+	applyHistST(out, stCase)
 	return out
 }
 
 // GenCustomBucketHistograms generates n custom-bucket (NHCB) histograms (schema=-53)
-// with incrementing refs. If withST is true, all samples get a constant ST.
-func GenCustomBucketHistograms(n int, withST bool) []record.RefHistogramSample {
+// with incrementing refs. The stCase parameter controls how the ST field is populated.
+func GenCustomBucketHistograms(n int, stCase HistSTCase) []record.RefHistogramSample {
 	out := make([]record.RefHistogramSample, n)
 	for i := range out {
 		out[i] = record.RefHistogramSample{
@@ -135,10 +169,8 @@ func GenCustomBucketHistograms(n int, withST bool) []record.RefHistogramSample {
 				CustomValues:    []float64{0.001, 0.01, 0.1, 1, 10, 100, 1000},
 			},
 		}
-		if withST {
-			out[i].ST = 1709000000
-		}
 	}
+	applyHistST(out, stCase)
 	return out
 }
 
@@ -159,7 +191,7 @@ func GenFloatHistograms(src []record.RefHistogramSample) []record.RefFloatHistog
 // HistDataCase pairs a name with a histogram generator for benchmark tables.
 type HistDataCase struct {
 	Name string
-	Gen  func(n int, withST bool) []record.RefHistogramSample
+	Gen  func(n int, stCase HistSTCase) []record.RefHistogramSample
 }
 
 // HistDataCases is the standard set of histogram data cases for benchmarks.
