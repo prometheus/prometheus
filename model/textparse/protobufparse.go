@@ -674,6 +674,10 @@ func (p *ProtobufParser) getMagicLabel() (bool, string, string) {
 	switch p.dec.GetType() {
 	case dto.MetricType_SUMMARY:
 		qq := p.dec.GetSummary().GetQuantile()
+		if p.fieldPos >= len(qq) {
+			p.fieldsDone = true
+			return false, "", ""
+		}
 		q := qq[p.fieldPos]
 		p.fieldsDone = p.fieldPos == len(qq)-1
 		return true, model.QuantileLabel, labels.FormatOpenMetricsFloat(q.GetQuantile())
