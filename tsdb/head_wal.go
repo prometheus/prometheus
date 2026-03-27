@@ -1817,30 +1817,25 @@ type SeriesLifecycleState struct {
 	CleanShutdown  bool   `json:"clean_shutdown"`
 }
 
-// readSeriesState reads the series lifecycle state from disk.
-// It returns nil, nil if the file does not exist.
-func (h *Head) readSeriesState() (*SeriesLifecycleState, error) {
+// readSeriesStateFile reads the series lifecycle state from disk.
+func (h *Head) readSeriesStateFile() (SeriesLifecycleState, error) {
 	if h.wal == nil {
-		return nil, nil
+		return SeriesLifecycleState{}, os.ErrNotExist
 	}
 
 	path := filepath.Join(h.wal.Dir(), seriesStateFilename)
 	f, err := os.Open(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			// This is a fresh node, or the feature was disabled before this.
-			return nil, nil
-		}
-		return nil, fmt.Errorf("open series state file: %w", err)
+		return SeriesLifecycleState{}, err
 	}
 	defer f.Close()
 
 	var state SeriesLifecycleState
 	if err := json.NewDecoder(f).Decode(&state); err != nil {
-		return nil, fmt.Errorf("decode series state: %w", err)
+		return SeriesLifecycleState{}, fmt.Errorf("decode series state: %w", err)
 	}
 
-	return &state, nil
+	return state, nil
 }
 
 // Atomically writes the current series state to disk.
@@ -1900,8 +1895,8 @@ func (h *Head) runSeriesStateTicker() {
 	}
 }
 
-// findLastSeriesIDBounded performs a bounded reverse scan of WAL segments to find the highest series ID.
-func (h *Head) findLastSeriesID(state *SeriesLifecycleState, endSegment int) error {
+// findLastSeriesID performs a bounded reverse scan of WAL segments to find the highest series ID.
+func (h *Head) findLastSeriesID(state SeriesLifecycleState, endSegment int) (uint64, error) {
 	startSegment := state.LastWALSegment
 	startSegment = max(0, startSegment)
 
@@ -1914,7 +1909,7 @@ func (h *Head) findLastSeriesID(state *SeriesLifecycleState, endSegment int) err
 			continue // Segment might have been deleted, we skip it.
 		}
 		if err != nil {
-			return fmt.Errorf("open WAL segment %d: %w", i, err)
+			return 0, fmt.Errorf("open WAL segment %d: %w", i, err)
 		}
 
 		sr := wlog.NewSegmentBufReader(s)
@@ -1928,15 +1923,17 @@ func (h *Head) findLastSeriesID(state *SeriesLifecycleState, endSegment int) err
 		for r.Next() {
 			rec := r.Record()
 			// We only care about Series records.
-			if dec.Type(rec) == record.Series {
-				series, err := dec.Series(rec, nil)
-				if err != nil {
-					s.Close()
-					return fmt.Errorf("decode series in segment %d: %w", i, err)
-				}
-				for _, ws := range series {
-					highestID = max(highestID, ws.Ref)
-				}
+			if dec.Type(rec) != record.Series {
+				continue
+			}
+
+			series, err := dec.Series(rec, nil)
+			if err != nil {
+				s.Close()
+				return 0, fmt.Errorf("decode series in segment %d: %w", i, err)
+			}
+			for _, ws := range series {
+				highestID = max(highestID, ws.Ref)
 				found = true
 			}
 		}
@@ -1944,17 +1941,15 @@ func (h *Head) findLastSeriesID(state *SeriesLifecycleState, endSegment int) err
 		err = r.Err()
 		s.Close()
 		if err != nil {
-			return fmt.Errorf("read WAL segment %d: %w", i, err)
+			return 0, fmt.Errorf("read WAL segment %d: %w", i, err)
 		}
 
 		if found {
-			h.lastSeriesID.Store(uint64(highestID))
-			return nil
+			return uint64(highestID), nil
 		}
 	}
 
 	// If we scanned the segments and found no series records,
 	// the ID from our state file has to be used.
-	h.lastSeriesID.Store(state.LastSeriesID)
-	return nil
+	return state.LastSeriesID, nil
 }

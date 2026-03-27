@@ -20,6 +20,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -805,19 +806,22 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	if h.opts.EnableFastStartup {
-		state, err := h.readSeriesState()
-		if err != nil {
-			h.logger.Warn("Failed to read series state file, falling back to slow ID initialization", "err", err)
-		} else if state != nil {
+		state, err := h.readSeriesStateFile()
+		if err != nil && !os.IsNotExist(err) {
+			h.logger.Warn("Failed to read series state file, skipping the fast startup", "err", err)
+		}
+		if err == nil {
 			if state.CleanShutdown {
 				h.lastSeriesID.Store(state.LastSeriesID)
-				h.logger.Info("Fast startup: clean shutdown detected, restored last series ID", "id", state.LastSeriesID)
+				h.logger.Info("Fast startup: clean shutdown detected, restored last series ID", "last_series_id", state.LastSeriesID)
 			} else {
-				h.logger.Info("Fast startup: unclean shutdown detected, performing bounded reverse scan", "from_segment", endAt, "to_segment", state.LastWALSegment)
-				if err := h.findLastSeriesID(state, endAt); err != nil {
-					h.logger.Warn("Bounded reverse scan failed, falling back to slow ID initialization", "err", err)
+				h.logger.Info("Fast startup: unclean shutdown detected, performing WAL scan", "from_segment", endAt, "to_segment", state.LastWALSegment)
+				id, scanErr := h.findLastSeriesID(state, endAt)
+				if scanErr != nil {
+					h.logger.Error("Fast startup: WAL scan failed, skipping fast startup", "err", err)
 				} else {
-					h.logger.Info("Fast startup: bounded reverse scan completed", "id", h.lastSeriesID.Load())
+					h.lastSeriesID.Store(id)
+					h.logger.Info("Fast startup: WAL scan completed", "last_series_id", id)
 				}
 			}
 		}
