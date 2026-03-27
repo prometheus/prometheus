@@ -434,6 +434,7 @@ Push metrics to a prometheus remote write (for testing purpose only).
 | <code class="text-nowrap">--timeout</code> | The time to wait for pushing metrics. | `30s` |
 | <code class="text-nowrap">--header</code> | Prometheus remote write header. |  |
 | <code class="text-nowrap">--protobuf_message</code> | Protobuf message to use when writing (prometheus.WriteRequest or io.prometheus.write.v2.Request). | `prometheus.WriteRequest` |
+| <code class="text-nowrap">--api-path</code> | Override the default remote write API path (/api/v1/write). |  |
 
 
 
