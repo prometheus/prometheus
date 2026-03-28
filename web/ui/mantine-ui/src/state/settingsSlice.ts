@@ -59,6 +59,7 @@ const getPathPrefix = (path: string) => {
     "/config",
     "/alertmanager-discovery",
     "/agent",
+    "/delete-series",
   ];
 
   const pagePath = pagePaths.find((p) => path.endsWith(p));
