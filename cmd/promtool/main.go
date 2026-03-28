@@ -65,6 +65,7 @@ import (
 var (
 	promqlEnableDelayedNameRemoval = false
 	promtoolParserOpts             parser.Options
+	logger                         = promslog.New(&promslog.Config{})
 )
 
 func init() {
@@ -620,7 +621,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings configLintConfig,
 		if !checkSyntaxOnly {
 			scrapeConfigsFailed := lintScrapeConfigs(scrapeConfigs, lintSettings)
 			failed = failed || scrapeConfigsFailed
-			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig, p, promslog.New(&promslog.Config{}))
+			rulesFailed, rulesHaveErrors := checkRules(ruleFiles, lintSettings.rulesLintConfig, p, logger)
 			failed = failed || rulesFailed
 			hasErrors = hasErrors || rulesHaveErrors
 		}
@@ -664,7 +665,7 @@ func checkFileExists(fn string) error {
 func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, []*config.ScrapeConfig, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename, agentMode, promslog.NewNopLogger())
+	cfg, err := config.LoadFile(filename, agentMode, logger)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -851,9 +852,9 @@ func CheckRules(ls rulesLintConfig, p parser.Parser, files ...string) int {
 	failed := false
 	hasErrors := false
 	if len(files) == 0 {
-		failed, hasErrors = checkRulesFromStdin(ls, p, promslog.New(&promslog.Config{}))
+		failed, hasErrors = checkRulesFromStdin(ls, p, logger)
 	} else {
-		failed, hasErrors = checkRules(files, ls, p, promslog.New(&promslog.Config{}))
+		failed, hasErrors = checkRules(files, ls, p, logger)
 	}
 
 	if failed && hasErrors {
@@ -876,7 +877,7 @@ func checkRulesFromStdin(ls rulesLintConfig, p parser.Parser, logger *slog.Logge
 		fmt.Fprintln(os.Stderr, "  FAILED:", err)
 		return true, true
 	}
-	rgs, errs := rulefmt.Parse(logger, data, ls.ignoreUnknownFields, ls.nameValidationScheme, p)
+	rgs, errs := rulefmt.Parse(data, ls.ignoreUnknownFields, ls.nameValidationScheme, p, logger)
 	if errs != nil {
 		failed = true
 		fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -910,7 +911,7 @@ func checkRules(files []string, ls rulesLintConfig, p parser.Parser, logger *slo
 	hasErrors := false
 	for _, f := range files {
 		fmt.Println("Checking", f)
-		rgs, errs := rulefmt.ParseFile(logger, f, ls.ignoreUnknownFields, ls.nameValidationScheme, p)
+		rgs, errs := rulefmt.ParseFile(f, ls.ignoreUnknownFields, ls.nameValidationScheme, p, logger)
 		if errs != nil {
 			failed = true
 			fmt.Fprintln(os.Stderr, "  FAILED:")
@@ -1307,7 +1308,7 @@ func importRules(url *url.URL, roundTripper http.RoundTripper, start, end, outpu
 		return fmt.Errorf("new api client error: %w", err)
 	}
 
-	ruleImporter := newRuleImporter(promslog.New(&promslog.Config{}), cfg, api)
+	ruleImporter := newRuleImporter(logger, cfg, api)
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {

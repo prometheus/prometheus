@@ -14,8 +14,10 @@
 package rulefmt
 
 import (
+	"bytes"
 	"errors"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"testing"
 
@@ -33,14 +35,14 @@ var (
 )
 
 func TestParseFileSuccess(t *testing.T) {
-	_, errs := ParseFile(testLogger, "testdata/test.yaml", false, model.UTF8Validation, testParser)
+	_, errs := ParseFile("testdata/test.yaml", false, model.UTF8Validation, testParser, testLogger)
 	require.Empty(t, errs, "unexpected errors parsing file")
 
-	_, errs = ParseFile(testLogger, "testdata/utf-8_lname.good.yaml", false, model.UTF8Validation, testParser)
+	_, errs = ParseFile("testdata/utf-8_lname.good.yaml", false, model.UTF8Validation, testParser, testLogger)
 	require.Empty(t, errs, "unexpected errors parsing file")
-	_, errs = ParseFile(testLogger, "testdata/utf-8_annotation.good.yaml", false, model.UTF8Validation, testParser)
+	_, errs = ParseFile("testdata/utf-8_annotation.good.yaml", false, model.UTF8Validation, testParser, testLogger)
 	require.Empty(t, errs, "unexpected errors parsing file")
-	_, errs = ParseFile(testLogger, "testdata/legacy_validation_annotation.good.yaml", false, model.LegacyValidation, testParser)
+	_, errs = ParseFile("testdata/legacy_validation_annotation.good.yaml", false, model.LegacyValidation, testParser, testLogger)
 	require.Empty(t, errs, "unexpected errors parsing file")
 }
 
@@ -49,7 +51,7 @@ func TestParseFileSuccessWithAliases(t *testing.T) {
 /
 sum without(instance) (rate(requests_total[5m]))
 `
-	rgs, errs := ParseFile(testLogger, "testdata/test_aliases.yaml", false, model.UTF8Validation, testParser)
+	rgs, errs := ParseFile("testdata/test_aliases.yaml", false, model.UTF8Validation, testParser, testLogger)
 	require.Empty(t, errs, "unexpected errors parsing file")
 	for _, rg := range rgs.Groups {
 		require.Equal(t, "HighAlert", rg.Rules[0].Alert)
@@ -127,7 +129,7 @@ func TestParseFileFailure(t *testing.T) {
 			if c.nameValidationScheme == model.UnsetValidation {
 				c.nameValidationScheme = model.UTF8Validation
 			}
-			_, errs := ParseFile(testLogger, filepath.Join("testdata", c.filename), false, c.nameValidationScheme, testParser)
+			_, errs := ParseFile(filepath.Join("testdata", c.filename), false, c.nameValidationScheme, testParser, testLogger)
 			require.NotEmpty(t, errs, "Expected error parsing %s but got none", c.filename)
 			require.ErrorContainsf(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
 		})
@@ -223,7 +225,7 @@ groups:
 	}
 
 	for _, tst := range tests {
-		rgs, errs := Parse(testLogger, []byte(tst.ruleString), false, model.UTF8Validation, testParser)
+		rgs, errs := Parse([]byte(tst.ruleString), false, model.UTF8Validation, testParser, testLogger)
 		require.NotNil(t, rgs, "Rule parsing, rule=\n"+tst.ruleString)
 		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
 		require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
@@ -250,7 +252,7 @@ groups:
     annotations:
       summary: "Instance {{ $labels.instance }} up"
 `
-	_, errs := Parse(testLogger, []byte(group), false, model.UTF8Validation, testParser)
+	_, errs := Parse([]byte(group), false, model.UTF8Validation, testParser, testLogger)
 	require.Len(t, errs, 2, "Expected two errors")
 	var err00 *Error
 	require.ErrorAs(t, errs[0], &err00)
@@ -428,18 +430,26 @@ groups:
 `
 	)
 
-	rgs, errs := Parse(testLogger, []byte(valid), false, model.UTF8Validation, testParser)
-	require.Empty(t, errs)
-	require.NotNil(t, rgs)
-	require.Len(t, rgs.Groups, 1)
+	var buf bytes.Buffer
+	bufLogger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	rgs, errs = Parse(testLogger, []byte(multi), false, model.UTF8Validation, testParser)
+	rgs, errs := Parse([]byte(valid), false, model.UTF8Validation, testParser, bufLogger)
 	require.Empty(t, errs)
 	require.NotNil(t, rgs)
 	require.Len(t, rgs.Groups, 1)
+	require.NotContains(t, buf.String(), "Multiple document yaml rules files are not supported")
+	buf.Reset()
 
-	rgs, errs = Parse(testLogger, []byte(multiEmpty), false, model.UTF8Validation, testParser)
+	rgs, errs = Parse([]byte(multi), false, model.UTF8Validation, testParser, bufLogger)
 	require.Empty(t, errs)
 	require.NotNil(t, rgs)
 	require.Len(t, rgs.Groups, 1)
+	require.Contains(t, buf.String(), "Multiple document yaml rules files are not supported")
+	buf.Reset()
+
+	rgs, errs = Parse([]byte(multiEmpty), false, model.UTF8Validation, testParser, bufLogger)
+	require.Empty(t, errs)
+	require.NotNil(t, rgs)
+	require.Len(t, rgs.Groups, 1)
+	require.Contains(t, buf.String(), "Multiple document yaml rules files are not supported")
 }

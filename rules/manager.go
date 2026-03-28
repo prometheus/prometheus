@@ -334,7 +334,7 @@ type FileLoader struct {
 }
 
 func (fl FileLoader) Load(identifier string, ignoreUnknownFields bool, nameValidationScheme model.ValidationScheme) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(fl.logger, identifier, ignoreUnknownFields, nameValidationScheme, fl.parser)
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields, nameValidationScheme, fl.parser, fl.logger)
 }
 
 func (fl FileLoader) Parse(query string) (parser.Expr, error) {
@@ -618,7 +618,12 @@ func FromMaps(maps ...map[string]string) labels.Labels {
 }
 
 // ParseFiles parses the rule files corresponding to glob patterns.
-func ParseFiles(logger *slog.Logger, patterns []string, nameValidationScheme model.ValidationScheme, p parser.Parser) error {
+func ParseFiles(
+	patterns []string,
+	nameValidationScheme model.ValidationScheme,
+	p parser.Parser,
+	logger *slog.Logger,
+) error {
 	files := map[string]string{}
 	for _, pat := range patterns {
 		fns, err := filepath.Glob(pat)
@@ -638,7 +643,7 @@ func ParseFiles(logger *slog.Logger, patterns []string, nameValidationScheme mod
 		}
 	}
 	for fn, pat := range files {
-		_, errs := rulefmt.ParseFile(logger, fn, false, nameValidationScheme, p)
+		_, errs := rulefmt.ParseFile(fn, false, nameValidationScheme, p, logger)
 		if len(errs) > 0 {
 			return fmt.Errorf("parse rules from file %q (pattern: %q): %w", fn, pat, errors.Join(errs...))
 		}
