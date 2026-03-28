@@ -115,7 +115,25 @@ type Options struct {
 
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
+	//
+	// NOTE: This option has no effect for AppenderV2 and will be removed with the AppenderV1
+	// removal.
 	EnableStartTimestampZeroIngestion bool
+
+	// ParseST controls if ST should be parsed and appended from the scrape formats.
+	// This should be by default true, but it's opt-in for OpenMetrics (OM) 1.0 reasons and might be moved
+	// to OM  1.0 only flow.
+	//
+	// Specifically for OpenMetrics 1.0 flow, it can have some additional effects that might not be desired for non-ST users:
+	//
+	// * OpenMetrics 1.0 <metric>_created series will be parsed as ST instead of normal sample. Could be breaking
+	// if downstream user depends on _created metric. TODO(bwplotka): Add "preserveOMLines" hidden option?
+	// * Add relatively small (but still) overhead.
+	// * Can yield wrong ST values in rare edge cases (unknown metadata and metric name collisions).
+	//
+	// This only applies to AppenderV2 flow (Prometheus default).
+	// TODO: Move this option to OM1 parser and use only on OM1 flow.
+	ParseST bool
 
 	// EnableTypeAndUnitLabels represents type-and-unit-labels feature flag.
 	EnableTypeAndUnitLabels bool
@@ -126,8 +144,31 @@ type Options struct {
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 
+	// ScrapeOnShutdown enables a final scrape before the manager closes. This is useful
+	// for Prometheus in agent mode or OTel's prometheusreceiver when used in serverless
+	// job scenarios, allowing an extra scrape for the short-living edge cases.
+	//
+	// NOTE: This final scrape ignores the configured scrape interval.
+	ScrapeOnShutdown bool
+
+	// InitialScrapeOffset applies an additional baseline delay before we begin
+	// scraping targets. By default, Prometheus calculates a specific offset for
+	// each target to spread the scraping load evenly across the server. Configuring
+	// this option adds a fixed duration to that target-specific offset. This allows
+	// tuning the initial startup delay without overriding the underlying target
+	// jitter, preserving proper load balancing across the scraper pools.
+	//
+	// Setting this offset (e.g., to 10s) is particularly useful in Prometheus
+	// agent mode and OTel's prometheusreceiver when used in serverless job
+	// scenarios. It helps avoid readiness races where targets might not be fully
+	// initialized immediately upon startup. It also prevents capturing
+	// intermediate state (such as applications crashing shortly after booting),
+	// and ensures backend rate limits don't drop valuable shutdown scrapes
+	// because of an early startup scrape.
+	InitialScrapeOffset time.Duration
+
 	// private option for testability.
-	skipOffsetting bool
+	skipJitterOffsetting bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -316,8 +357,16 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 	m.scrapeFailureLoggers = scrapeFailureLoggers
 
-	if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
-		return err
+	// Skip offset seed calculation during tests.
+	// setOffsetSeed relies on osutil.GetFQDN(), which triggers a DNS lookup using
+	// a global singleflight goroutine. This cross-boundary communication breaks
+	// synctest's isolation bubble and causes a fatal panic.
+	if m.opts.skipJitterOffsetting {
+		m.offsetSeed = 0
+	} else {
+		if err := m.setOffsetSeed(cfg.GlobalConfig.ExternalLabels); err != nil {
+			return err
+		}
 	}
 
 	// Cleanup and reload pool if the configuration has changed.

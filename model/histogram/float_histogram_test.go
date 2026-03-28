@@ -4418,6 +4418,48 @@ func BenchmarkFloatHistogramDetectReset(b *testing.B) {
 	}
 }
 
+func BenchmarkFloatHistogramAdd(b *testing.B) {
+	var (
+		rng           = rand.New(rand.NewSource(0))
+		numHistograms = 120
+		err           error
+		fhs           = make([]*FloatHistogram, 0, numHistograms)
+	)
+
+	for range numHistograms {
+		fhs = append(fhs, createRandomFloatHistogram(rng, 5))
+	}
+
+	b.Run("Add", func(b *testing.B) {
+		res := fhs[0].Copy()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			for _, hist := range fhs[1:] {
+				res, _, _, err = res.Add(hist)
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		}
+	})
+
+	b.Run("KahanAdd", func(b *testing.B) {
+		res := fhs[0].Copy()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			var c *FloatHistogram
+			for _, hist := range fhs[1:] {
+				c, _, _, err = res.KahanAdd(hist, c)
+				if err != nil {
+					require.NoError(b, err)
+				}
+			}
+		}
+	})
+}
+
 func createRandomFloatHistogram(rng *rand.Rand, spanNum int32) *FloatHistogram {
 	f := &FloatHistogram{}
 	f.PositiveSpans, f.PositiveBuckets = createRandomSpans(rng, spanNum)

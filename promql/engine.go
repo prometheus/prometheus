@@ -1965,9 +1965,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given
 			// a vector selector.
-			arg := unwrapStepInvariantExpr(e.Args[0])
-			vs, ok := arg.(*parser.VectorSelector)
-			if ok {
+			if vs, ok := e.Args[0].(*parser.VectorSelector); ok {
 				return ev.rangeEvalTimestampFunctionOverVectorSelector(ctx, vs, call, e)
 			}
 		}
@@ -4219,13 +4217,6 @@ func unwrapParenExpr(e *parser.Expr) {
 	}
 }
 
-func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
-	if p, ok := e.(*parser.StepInvariantExpr); ok {
-		return p.Expr
-	}
-	return e
-}
-
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors, evaluates duration expressions
 // into their numeric values and removes superfluous parenthesis on parameters to functions and aggregations.
@@ -4284,15 +4275,24 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) (isStepInvaria
 	case *parser.Call:
 		_, ok := AtModifierUnsafeFunctions[n.Func.Name]
 		isStepInvariant := !ok
+		// A special case to allow timestamp() to be wrapped in a step invariant.
+		// timestamp() is considered AtModifierUnsafe, but it can be safe depending on its arguments.
+		// ie timestamp(metric @ 1) is step invariant, but timestamp(abs(metric @ 1)) is not.
+		isTimestampWithAllArgsStepInvariantSafe := n.Func.Name == "timestamp"
 		shouldWrap := make([]bool, len(n.Args))
 		for i := range n.Args {
 			unwrapParenExpr(&n.Args[i])
 			var argIsStepInvariant bool
 			argIsStepInvariant, shouldWrap[i] = preprocessExprHelper(n.Args[i], start, end)
 			isStepInvariant = isStepInvariant && argIsStepInvariant
+
+			_, argIsVectorSelector := n.Args[i].(*parser.VectorSelector)
+			if !argIsStepInvariant || !argIsVectorSelector {
+				isTimestampWithAllArgsStepInvariantSafe = false
+			}
 		}
 
-		if isStepInvariant {
+		if isStepInvariant || isTimestampWithAllArgsStepInvariantSafe {
 			// The function and all arguments are step invariant.
 			return true, true
 		}
@@ -4393,31 +4393,37 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 
 	pathLoop:
 		for i := len(path) - 1; i >= 0; i-- { // Walk backwards up the path.
-			if _, ok := path[i].(*parser.SubqueryExpr); ok {
+			switch p := path[i].(type) {
+			case *parser.SubqueryExpr:
 				// If we ever see a subquery in the path, we
 				// will not skip the buckets. We need the
 				// buckets for correct counter reset detection.
 				n.SkipHistogramBuckets = false
 				break pathLoop
-			}
-			call, ok := path[i].(*parser.Call)
-			if !ok {
-				continue pathLoop
-			}
-			switch call.Func.Name {
-			case "histogram_count", "histogram_sum", "histogram_avg":
-				// We allow skipping buckets preliminarily. But
-				// we will continue through the path to see if
-				// we find a subquery (or a histogram function)
-				// further up (the latter wouldn't make sense,
-				// but no harm in detecting it).
-				n.SkipHistogramBuckets = true
-			case "histogram_quantile", "histogram_quantiles", "histogram_fraction":
-				// If we ever see a function that needs the
-				// whole histogram, we will not skip the
-				// buckets.
-				n.SkipHistogramBuckets = false
-				break pathLoop
+
+			case *parser.Call:
+				switch p.Func.Name {
+				case "histogram_count", "histogram_sum", "histogram_avg":
+					// We allow skipping buckets preliminarily. But
+					// we will continue through the path to see if
+					// we find a subquery (or a histogram function)
+					// further up (the latter wouldn't make sense,
+					// but no harm in detecting it).
+					n.SkipHistogramBuckets = true
+				case "histogram_quantile", "histogram_quantiles", "histogram_fraction":
+					// If we ever see a function that needs the
+					// whole histogram, we will not skip the
+					// buckets.
+					n.SkipHistogramBuckets = false
+					break pathLoop
+				}
+
+			case *parser.BinaryExpr:
+				if p.Op == parser.TRIM_UPPER || p.Op == parser.TRIM_LOWER {
+					// Trimming depends on buckets, we will not skip them.
+					n.SkipHistogramBuckets = false
+					break pathLoop
+				}
 			}
 		}
 		return nil

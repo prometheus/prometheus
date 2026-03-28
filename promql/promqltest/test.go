@@ -283,7 +283,7 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
-		if len(defLine) == 0 {
+		if defLine == "" {
 			i--
 			break
 		}
@@ -488,7 +488,7 @@ func (t *test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 	for j := 1; i+1 < len(lines); j++ {
 		i++
 		defLine := lines[i]
-		if len(defLine) == 0 {
+		if defLine == "" {
 			i--
 			break
 		}
@@ -574,7 +574,7 @@ func parseAsStringLiteral(line string) (string, error) {
 	}
 
 	str := strings.TrimPrefix(line, expectStringPrefix+" ")
-	if len(str) == 0 {
+	if str == "" {
 		return "", errors.New("expected string literal not valid - a quoted string literal is required")
 	}
 
@@ -606,7 +606,7 @@ func (t *test) parse(input string) error {
 	// Scan for steps line by line.
 	for i := 0; i < len(lines); i++ {
 		l := lines[i]
-		if len(l) == 0 {
+		if l == "" {
 			continue
 		}
 		var cmd testCommand
@@ -686,7 +686,7 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 }
 
 // append the defined time series to the storage.
-func (cmd *loadCmd) append(a storage.Appender) error {
+func (cmd *loadCmd) append(a storage.AppenderV2) error {
 	for h, smpls := range cmd.defs {
 		m := cmd.metrics[h]
 
@@ -737,7 +737,7 @@ func processClassicHistogramSeries(m labels.Labels, name string, histogramMap ma
 
 // If classic histograms are defined, convert them into native histograms with custom
 // bounds and append the defined time series to the storage.
-func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
+func (cmd *loadCmd) appendCustomHistogram(a storage.AppenderV2) error {
 	histogramMap := map[uint64]tempHistogramWrapper{}
 
 	// Go through all the time series to collate classic histogram data
@@ -800,17 +800,13 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	return nil
 }
 
-func appendSample(a storage.Appender, s promql.Sample, m labels.Labels) error {
+func appendSample(a storage.AppenderV2, s promql.Sample, m labels.Labels) error {
 	if s.H != nil {
-		if _, err := a.AppendHistogram(0, m, s.T, nil, s.H); err != nil {
-			return err
-		}
-	} else {
-		if _, err := a.Append(0, m, s.T, s.F); err != nil {
-			return err
-		}
+		_, err := a.Append(0, m, 0, s.T, 0, nil, s.H, storage.AppendV2Options{})
+		return err
 	}
-	return nil
+	_, err := a.Append(0, m, 0, s.T, s.F, nil, nil, storage.AppendV2Options{})
+	return err
 }
 
 // evalCmd is a command that evaluates an expression for the given time (range)
@@ -1448,9 +1444,9 @@ func (t *test) exec(tc testCommand, engine promql.QueryEngine) error {
 		t.clear()
 
 	case *loadCmd:
-		app := t.storage.Appender(t.context)
+		app := t.storage.AppenderV2(t.context)
 		if err := cmd.append(app); err != nil {
-			app.Rollback()
+			_ = app.Rollback()
 			return err
 		}
 
@@ -1716,7 +1712,7 @@ func (ll *LazyLoader) parse(input string) error {
 	// Accepts only 'load' command.
 	for i := range lines {
 		l := lines[i]
-		if len(l) == 0 {
+		if l == "" {
 			continue
 		}
 		if strings.HasPrefix(strings.ToLower(patSpace.Split(l, 2)[0]), "load") {
@@ -1772,7 +1768,7 @@ func (ll *LazyLoader) clear() error {
 
 // appendTill appends the defined time series to the storage till the given timestamp (in milliseconds).
 func (ll *LazyLoader) appendTill(ts int64) error {
-	app := ll.storage.Appender(ll.Context())
+	app := ll.storage.AppenderV2(ll.Context())
 	for h, smpls := range ll.loadCmd.defs {
 		m := ll.loadCmd.metrics[h]
 		for i, s := range smpls {
