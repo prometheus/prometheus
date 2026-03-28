@@ -311,9 +311,10 @@ type Options struct {
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
 
-	Gatherer        prometheus.Gatherer
-	Registerer      prometheus.Registerer
-	FeatureRegistry features.Collector
+	Gatherer             prometheus.Gatherer
+	Registerer           prometheus.Registerer
+	FeatureRegistry      features.Collector
+	RemoteWriteStatuser  api_v1.RemoteWriteStatuser
 
 	// Parser is the PromQL parser used for parsing query expressions.
 	Parser parser.Parser
@@ -431,6 +432,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 			Version:     version,
 		},
 		o.Parser,
+		o.RemoteWriteStatuser,
 	)
 
 	if r := o.FeatureRegistry; r != nil {
