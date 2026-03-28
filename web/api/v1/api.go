@@ -148,6 +148,11 @@ type RulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+// RemoteWriteStatuser provides status information about remote write queues.
+type RemoteWriteStatuser interface {
+	RemoteWriteStatus() remote.RemoteWriteStatus
+}
+
 // StatsRenderer converts engine statistics into a format suitable for the API.
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
@@ -252,9 +257,10 @@ type API struct {
 	// Allows customizing the default mapping
 	overrideErrorCode OverrideErrorCode
 
-	remoteWriteHandler http.Handler
-	remoteReadHandler  http.Handler
-	otlpWriteHandler   http.Handler
+	remoteWriteHandler   http.Handler
+	remoteReadHandler    http.Handler
+	otlpWriteHandler     http.Handler
+	remoteWriteStatuser  RemoteWriteStatuser
 
 	codecs []Codec
 
@@ -305,6 +311,7 @@ func NewAPI(
 	featureRegistry features.Collector,
 	openAPIOptions OpenAPIOptions,
 	promqlParser parser.Parser,
+	rwStatuser RemoteWriteStatuser,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -337,6 +344,7 @@ func NewAPI(
 		featureRegistry:     featureRegistry,
 		openAPIBuilder:      NewOpenAPIBuilder(openAPIOptions, logger),
 		parser:              promqlParser,
+		remoteWriteStatuser: rwStatuser,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -462,6 +470,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/self_metrics", wrap(api.selfMetrics))
 	r.Get("/features", wrap(api.features))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
+	r.Get("/status/remote_write", wrapAgent(api.serveRemoteWriteStatus))
 	r.Get("/notifications", api.notifications)
 	r.Get("/notifications/live", api.notificationsSSE)
 	r.Post("/read", api.ready(api.remoteRead))
@@ -1974,6 +1983,13 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 		Max:     status.Max,
 		Current: status.Current,
 	}, nil, "")
+}
+
+func (api *API) serveRemoteWriteStatus(*http.Request) apiFuncResult {
+	if api.remoteWriteStatuser == nil {
+		return apiFuncResult{data: remote.RemoteWriteStatus{Queues: []remote.QueueStatus{}}}
+	}
+	return apiFuncResult{data: api.remoteWriteStatuser.RemoteWriteStatus()}
 }
 
 func (api *API) notifications(w http.ResponseWriter, r *http.Request) {
