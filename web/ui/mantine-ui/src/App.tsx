@@ -36,6 +36,7 @@ import {
   IconSearch,
   IconServer,
   IconServerCog,
+  IconTrash,
 } from "@tabler/icons-react";
 import {
   BrowserRouter,
@@ -56,6 +57,7 @@ import TSDBStatusPage from "./pages/TSDBStatusPage";
 import FlagsPage from "./pages/FlagsPage";
 import ConfigPage from "./pages/ConfigPage";
 import AgentPage from "./pages/AgentPage";
+import DeleteSeriesPage from "./pages/DeleteSeriesPage";
 import { Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeSelector } from "./components/ThemeSelector";
@@ -160,6 +162,13 @@ const serverStatusPages = [
     path: "/alertmanager-discovery",
     icon: <IconBell style={navIconStyle} />,
     element: <AlertmanagerDiscoveryPage />,
+    inAgentMode: false,
+  },
+  {
+    title: "Delete series",
+    path: "/delete-series",
+    icon: <IconTrash style={navIconStyle} />,
+    element: <DeleteSeriesPage />,
     inAgentMode: false,
   },
 ];
