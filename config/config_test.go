@@ -2626,6 +2626,22 @@ var expectedErrors = []struct {
 		filename: "stackit_endpoint.bad.yml",
 		errMsg:   "invalid endpoint",
 	},
+	{
+		filename: "tsdb_retention_time.bad.yml",
+		errMsg:   `not a valid duration string: "-1h"`,
+	},
+	{
+		filename: "tsdb_retention_size.bad.yml",
+		errMsg:   `'storage.tsdb.retention.size' must be greater than or equal to 0`,
+	},
+	{
+		filename: "tsdb_retention_percentage.bad.yml",
+		errMsg:   `'storage.tsdb.retention.percentage' must be in the range [0, 100]`,
+	},
+	{
+		filename: "tsdb_retention_percentage_negative.bad.yml",
+		errMsg:   "'storage.tsdb.retention.percentage' must be in the range [0, 100]",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -2634,6 +2650,12 @@ func TestBadConfigs(t *testing.T) {
 		require.ErrorContains(t, err, ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
+}
+
+func TestTSDBRetentionPercentageFloat(t *testing.T) {
+	c, err := LoadFile("testdata/tsdb_retention_percentage_float.good.yml", false, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, 0.5, c.StorageConfig.TSDBConfig.Retention.Percentage)
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
@@ -2649,6 +2671,8 @@ func TestEmptyConfig(t *testing.T) {
 	require.NoError(t, err)
 	exp := DefaultConfig
 	exp.loaded = true
+	retention := DefaultTSDBRetentionConfig
+	exp.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 	require.Equal(t, exp, *c)
 	require.Equal(t, 75, c.Runtime.GoGC)
 }
@@ -2700,6 +2724,10 @@ func TestGlobalConfig(t *testing.T) {
 		require.NoError(t, err)
 		exp := DefaultConfig
 		exp.loaded = true
+		// TSDBConfig is always injected by Config.UnmarshalYAML even when no
+		// storage.tsdb section is present, so the expected config must include it.
+		retention := DefaultTSDBRetentionConfig
+		exp.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 		require.Equal(t, exp, *c)
 	})
 

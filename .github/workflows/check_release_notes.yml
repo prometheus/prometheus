@@ -1,8 +1,7 @@
 name: 'Check release notes'
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main, 'release-*']
     types:
       - opened
       - reopened

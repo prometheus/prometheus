@@ -14,6 +14,7 @@
 package chunkenc
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,44 @@ func TestBstream_Reset(t *testing.T) {
 		stream: []byte("was reset"),
 		count:  0,
 	}, bs)
+}
+
+// BenchmarkWriteBits benchmarks writeBits for various bit widths.
+func BenchmarkWriteBits(b *testing.B) {
+	sizes := []int{1, 8, 17, 32, 52, 64}
+	for _, nbits := range sizes {
+		b.Run(fmt.Sprintf("nbits=%d", nbits), func(b *testing.B) {
+			b.ReportAllocs()
+			var bs bstream
+			bs.stream = make([]byte, 0, 1024)
+			for range b.N {
+				bs.stream = bs.stream[:0]
+				bs.count = 0
+				for j := range 100 {
+					bs.writeBits(uint64(j), nbits)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkWriteBitsFast benchmarks writeBitsFast for various bit widths.
+func BenchmarkWriteBitsFast(b *testing.B) {
+	sizes := []int{1, 8, 17, 32, 52, 64}
+	for _, nbits := range sizes {
+		b.Run(fmt.Sprintf("nbits=%d", nbits), func(b *testing.B) {
+			b.ReportAllocs()
+			var bs bstream
+			bs.stream = make([]byte, 0, 1024)
+			for range b.N {
+				bs.stream = bs.stream[:0]
+				bs.count = 0
+				for j := range 100 {
+					bs.writeBitsFast(uint64(j), nbits)
+				}
+			}
+		})
+	}
 }
 
 func TestBstreamReader(t *testing.T) {

@@ -3877,9 +3877,9 @@ with this feature.
 # or when a compaction completes, whichever comes first.
 [ retention: <retention> ] :
   # How long to retain samples in storage. If neither this option nor the size option
-  # is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms.
+  # is set, the retention time defaults to 15d. Setting this to 0 disables time-based retention.
   # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.time.
-  [ time: <duration> | default = 15d ]
+  [ time: <duration> ]
 
   # Maximum number of bytes that can be stored for blocks. A unit is required,
   # supported units: B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B.

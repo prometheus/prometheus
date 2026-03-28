@@ -126,7 +126,8 @@ load 5m
     metric{instance="a", job="1", label="value"} 0 1 2
     histogram{instance="a", job="1"} {{schema:1 sum:3 count:22 buckets:[5 10 7]}}
 
-eval_fail range from 0m to 10m step 5m info(metric, {__name__="histogram"})
+eval range from 0m to 10m step 5m info(metric, {__name__="histogram"})
+	expect fail
 
 clear
 
@@ -218,3 +219,25 @@ eval range from 0 to 2m step 1m info(data_metric, {__name__="info_metric"})
 	data_metric{instance="a"} 4 5 6
 	data_metric{job="1"} 7 8 9
 	data_metric{instance="a", job="1"} 10 20 30
+
+clear
+
+# When inner series are missing one identifying label (e.g. job) but info series
+# match on the present identifying label, enrichment should still happen.
+load 1m
+	metric{instance="a"} 1 2 3
+	custom_info{instance="a", enriched="yes"} 1 1 1
+
+eval range from 0m to 2m step 1m info(metric, {__name__="custom_info"})
+	metric{instance="a", enriched="yes"} 1 2 3
+
+clear
+
+# Conflicting labels across different info metrics should error.
+load 1m
+	metric{instance="a", job="1"} 1 2 3
+	target_info{instance="a", job="1", x="from_target"} 1 1 1
+	build_info{instance="a", job="1", x="from_build"} 1 1 1
+
+eval range from 0m to 2m step 1m info(metric, {__name__=~".+_info"})
+	expect fail regex: conflicting label

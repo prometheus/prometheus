@@ -298,7 +298,10 @@ func newCredential(cfg SDConfig, policyClientOptions policy.ClientOptions) (azco
 		}
 		credential = azcore.TokenCredential(workloadIdentityCredential)
 	case authMethodManagedIdentity:
-		options := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: policyClientOptions, ID: azidentity.ClientID(cfg.ClientID)}
+		options := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: policyClientOptions}
+		if cfg.ClientID != "" {
+			options.ID = azidentity.ClientID(cfg.ClientID)
+		}
 		managedIdentityCredential, err := azidentity.NewManagedIdentityCredential(options)
 		if err != nil {
 			return nil, err
