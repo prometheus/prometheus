@@ -34,6 +34,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -448,6 +449,91 @@ func TestPopulateLabels(t *testing.T) {
 				model.JobLabel:            "job",
 				model.ScrapeIntervalLabel: "1s",
 				model.ScrapeTimeoutLabel:  "1s",
+			}),
+		},
+		// proxy_url from scrape config.
+		{
+			in: model.LabelSet{
+				model.AddressLabel: "1.2.3.4:1000",
+			},
+			cfg: &config.ScrapeConfig{
+				Scheme:         "http",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+				HTTPClientConfig: config_util.HTTPClientConfig{
+					ProxyConfig: config_util.ProxyConfig{
+						ProxyURL: config_util.URL{URL: &url.URL{Scheme: "http", Host: "proxy.example.com:8080"}},
+					},
+				},
+			},
+			res: labels.FromMap(map[string]string{
+				model.AddressLabel:        "1.2.3.4:1000",
+				model.InstanceLabel:       "1.2.3.4:1000",
+				model.SchemeLabel:         "http",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
+				proxyURLLabel:             "http://proxy.example.com:8080",
+			}),
+			resOrig: labels.FromMap(map[string]string{
+				model.AddressLabel:        "1.2.3.4:1000",
+				model.SchemeLabel:         "http",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
+				proxyURLLabel:             "http://proxy.example.com:8080",
+			}),
+		},
+		// proxy_url overridden via relabeling.
+		{
+			in: model.LabelSet{
+				model.AddressLabel:         "1.2.3.4:1000",
+				"__meta_custom_proxy_host": "other-proxy.example.com:3128",
+			},
+			cfg: &config.ScrapeConfig{
+				Scheme:         "http",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+				HTTPClientConfig: config_util.HTTPClientConfig{
+					ProxyConfig: config_util.ProxyConfig{
+						ProxyURL: config_util.URL{URL: &url.URL{Scheme: "http", Host: "proxy.example.com:8080"}},
+					},
+				},
+				RelabelConfigs: []*relabel.Config{
+					{
+						SourceLabels: model.LabelNames{"__meta_custom_proxy_host"},
+						Regex:        relabel.MustNewRegexp("(.+)"),
+						Replacement:  "http://${1}",
+						TargetLabel:  proxyURLLabel,
+						Action:       relabel.Replace,
+					},
+				},
+			},
+			res: labels.FromMap(map[string]string{
+				model.AddressLabel:        "1.2.3.4:1000",
+				model.InstanceLabel:       "1.2.3.4:1000",
+				model.SchemeLabel:         "http",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
+				proxyURLLabel:             "http://other-proxy.example.com:3128",
+			}),
+			resOrig: labels.FromMap(map[string]string{
+				model.AddressLabel:         "1.2.3.4:1000",
+				model.SchemeLabel:          "http",
+				model.MetricsPathLabel:     "/metrics",
+				model.JobLabel:             "job",
+				model.ScrapeIntervalLabel:  "1s",
+				model.ScrapeTimeoutLabel:   "1s",
+				proxyURLLabel:              "http://proxy.example.com:8080",
+				"__meta_custom_proxy_host": "other-proxy.example.com:3128",
 			}),
 		},
 	}
