@@ -17,42 +17,35 @@ if [[ "$content" == "NONE" ]]; then
 fi
 
 types=(
-    FEATURE
-    ENHANCEMENT
-    PERF
     BUGFIX
-    SECURITY
     CHANGE
+    ENHANCEMENT
+    FEATURE
+    PERF
+    SECURITY
 )
 
 components=(
-    PromQL
-    TSDB
-
-    Scraping
-    OTLP
-    Relabeling
-
-    "Remote-write"
-    "Remote-read"
-    Federation
-
-    Alerting
-    Rules
-
-    Discovery
-
-    Config
-    Tracing
-    Dockerfile
     Agent
-
+    Alerting
     API
-    UI
-    Templates
-
-    Promtool
+    Config
+    Discovery
+    Dockerfile
+    Federation
     Mixin
+    OTLP
+    PromQL
+    Promtool
+    Relabeling
+    "Remote-read"
+    "Remote-write"
+    Rules
+    Scraping
+    Templates
+    Tracing
+    TSDB
+    UI
 )
 
 types_re=$(IFS='|'; printf '%s' "${types[*]}")
@@ -64,7 +57,7 @@ pattern="^\[($types_re)\] ($components_re): .+"
 while IFS= read -r line; do
   if [[ ! $line =~ $pattern ]]; then
     echo "Error: '$line' does not match the expected format."
-    echo "Expected: NONE or [TYPE] Component: description"
+    echo "Expected: NONE or [TYPE] Component: Description"
     echo "Valid types: [${types_re//|/] [}]"
     echo "Valid components: ${components_re//|/, }"
     exit 1
