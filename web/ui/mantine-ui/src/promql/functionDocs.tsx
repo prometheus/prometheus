@@ -1710,6 +1710,23 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
+        If there is no matching info series for a given time series in <code>v</code> at a particular timestamp (e.g.
+        because the info series has gone stale), the behavior depends on the data label matchers: If the{" "}
+        <code>data-label-selector</code>
+        contains any matcher that does not match the empty string (e.g.
+        <code>
+          {"{"}data=~&quot;.+&quot;{"}"}
+        </code>
+        ), then that time series is dropped from the result at that timestamp, because the required enrichment is
+        unavailable. If all matchers match the empty string (e.g.{" "}
+        <code>
+          {"{"}data=~&quot;.*&quot;{"}"}
+        </code>
+        ), or if no <code>data-label-selector</code>
+        is provided, the time series is returned without enrichment.
+      </p>
+
+      <p>
         Identifying labels of an info series are the subset of labels that uniquely identify the info series. The
         remaining labels are considered
         <em>data labels</em> (also called non-identifying). (Note that Prometheus&rsquo;s concept of time series

@@ -526,6 +526,15 @@ It must start and end with curly braces (`{ ... }`) and may only contain label m
 The label matchers are used to constrain which info series to consider
 and which data labels to add to `v`.
 
+If there is no matching info series for a given time series in `v` at a
+particular timestamp (e.g. because the info series has gone stale), the
+behavior depends on the data label matchers: If the `data-label-selector`
+contains any matcher that does not match the empty string (e.g.
+`{data=~".+"}`), then that time series is dropped from the result at that
+timestamp, because the required enrichment is unavailable. If all matchers
+match the empty string (e.g. `{data=~".*"}`), or if no `data-label-selector`
+is provided, the time series is returned without enrichment.
+
 Identifying labels of an info series are the subset of labels that uniquely
 identify the info series. The remaining labels are considered
 _data labels_ (also called non-identifying). (Note that Prometheus's concept
