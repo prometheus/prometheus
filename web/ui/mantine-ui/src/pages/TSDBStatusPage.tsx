@@ -10,12 +10,16 @@ import {
 } from "@mantine/core";
 import { DateTimePicker } from "@mantine/dates";
 import { IconAlertTriangle, IconCheck, IconTrash } from "@tabler/icons-react";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
 import { useSuspenseAPIQuery, API_PATH } from "../api/api";
 import { TSDBStatusResult } from "../api/responseTypes/tsdbStatus";
 import { formatTimestamp } from "../lib/formatTime";
 import { useSettings } from "../state/settingsSlice";
 import InfoPageStack from "../components/InfoPageStack";
 import InfoPageCard from "../components/InfoPageCard";
+
+dayjs.extend(utc);
 
 export default function TSDBStatusPage() {
   const {
@@ -55,8 +59,8 @@ export default function TSDBStatusPage() {
 
   // Delete series state
   const [matchers, setMatchers] = useState("");
-  const [startTime, setStartTime] = useState<string | null>(null);
-  const [endTime, setEndTime] = useState<string | null>(null);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [endTime, setEndTime] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSuccess, setDeleteSuccess] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -84,11 +88,11 @@ export default function TSDBStatusPage() {
     for (const m of matchList) {
       params.append("match[]", m);
     }
-    if (startTime) {
-      params.append("start", (new Date(startTime).getTime() / 1000).toString());
+    if (startTime !== null) {
+      params.append("start", (startTime / 1000).toString());
     }
-    if (endTime) {
-      params.append("end", (new Date(endTime).getTime() / 1000).toString());
+    if (endTime !== null) {
+      params.append("end", (endTime / 1000).toString());
     }
 
     setDeleting(true);
@@ -259,16 +263,52 @@ export default function TSDBStatusPage() {
               label="Start time"
               description="Optional"
               placeholder="Select start time"
-              value={startTime}
-              onChange={setStartTime}
+              valueFormat="YYYY-MM-DD HH:mm:ss"
+              withSeconds
+              value={
+                startTime !== null
+                  ? useLocalTime
+                    ? dayjs(startTime).format()
+                    : dayjs(startTime)
+                        .subtract(dayjs().utcOffset(), "minutes")
+                        .format()
+                  : undefined
+              }
+              onChange={(value) =>
+                setStartTime(
+                  value
+                    ? useLocalTime
+                      ? new Date(value).getTime()
+                      : dayjs.utc(value).valueOf()
+                    : null
+                )
+              }
               clearable
             />
             <DateTimePicker
               label="End time"
               description="Optional"
               placeholder="Select end time"
-              value={endTime}
-              onChange={setEndTime}
+              valueFormat="YYYY-MM-DD HH:mm:ss"
+              withSeconds
+              value={
+                endTime !== null
+                  ? useLocalTime
+                    ? dayjs(endTime).format()
+                    : dayjs(endTime)
+                        .subtract(dayjs().utcOffset(), "minutes")
+                        .format()
+                  : undefined
+              }
+              onChange={(value) =>
+                setEndTime(
+                  value
+                    ? useLocalTime
+                      ? new Date(value).getTime()
+                      : dayjs.utc(value).valueOf()
+                    : null
+                )
+              }
               clearable
             />
           </Group>
