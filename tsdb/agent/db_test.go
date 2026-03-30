@@ -1509,20 +1509,56 @@ func readWALSamples(t *testing.T, walDir string) []walSample {
 }
 
 func BenchmarkGetOrCreate(b *testing.B) {
-	s := createTestAgentDB(b, nil, DefaultOptions())
-	defer s.Close()
-
 	// NOTE: This benchmarks appenderBase, so it does not matter if it's V1 or V2.
-	app := s.Appender(context.Background()).(*appender)
-	lbls := make([]labels.Labels, b.N)
+	const n = 1_000
 
-	for i, l := range labelsForTest("benchmark", b.N) {
-		lbls[i] = labels.New(l...)
-	}
+	b.Run("new", func(b *testing.B) {
+		s := createTestAgentDB(b, nil, DefaultOptions())
+		defer s.Close()
+		app := s.Appender(context.Background()).(*appender)
 
-	b.ResetTimer()
+		// Fixed-size label set. Before each pass through the set we GC all series
+		// (they are created with lastTs==math.MinInt64, so mint=math.MaxInt64
+		// evicts everything) so every timed getOrCreate call takes the creation
+		// path. This keeps the stripe-series table at a stable size regardless of
+		// b.N, preventing per-op cost from growing with the benchmark iteration
+		// count.
+		lbls := make([]labels.Labels, n)
+		for i, l := range labelsForTest("benchmark_new", n) {
+			lbls[i] = labels.New(l...)
+		}
 
-	for _, l := range lbls {
-		app.getOrCreate(0, l)
-	}
+		b.ResetTimer()
+
+		for i := range b.N {
+			if i%n == 0 && i > 0 {
+				b.StopTimer()
+				_ = s.series.GC(math.MaxInt64)
+				b.StartTimer()
+			}
+			app.getOrCreate(0, lbls[i%n])
+		}
+	})
+
+	b.Run("existing", func(b *testing.B) {
+		s := createTestAgentDB(b, nil, DefaultOptions())
+		defer s.Close()
+		app := s.Appender(context.Background()).(*appender)
+
+		lbls := make([]labels.Labels, n)
+		for i, l := range labelsForTest("benchmark_existing", n) {
+			lbls[i] = labels.New(l...)
+		}
+
+		// Pre-populate all series so every timed call finds an existing series.
+		for _, l := range lbls {
+			app.getOrCreate(0, l)
+		}
+
+		b.ResetTimer()
+
+		for i := range b.N {
+			app.getOrCreate(0, lbls[i%n])
+		}
+	})
 }

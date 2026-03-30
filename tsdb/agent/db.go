@@ -557,8 +557,9 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 
 				if !created {
 					// We don't need to check if entry.Ref exists / if the value is not series.ref because
-					// SetUnlessAlreadySet enforces that the same labels will always get the same Ref. If we
-					// did not create a new ref the only possible ref it should ever be in the WAL is series.ref.
+					// SetUnlessAlreadySet is "first insertion wins": during single-threaded WAL replay the
+					// first ref written for a given label set is the canonical one. Any later WAL record for
+					// the same labels must carry that same ref, so series.ref is the only valid ref here.
 					duplicateRefToValidRef[entry.Ref] = series.ref
 
 					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
@@ -935,6 +936,11 @@ func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (s
 		return series, nil
 	}
 
+	// Known limitation: unlike the TSDB head, agent memSeries has no
+	// pendingCommit flag. Between this point and the first sample write that
+	// updates series.lastTs, GC may remove the series (lastTs == math.MinInt64
+	// satisfies mint > lastTs). The WAL record appended below would then
+	// reference a ref with no corresponding in-memory series.
 	a.pendingSeries = append(a.pendingSeries, record.RefSeries{
 		Ref:    series.ref,
 		Labels: l,
