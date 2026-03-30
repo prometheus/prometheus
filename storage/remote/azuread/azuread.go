@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -27,8 +28,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/google/uuid"
 	"github.com/grafana/regexp"
-
-	"github.com/prometheus/prometheus/util/certutil"
 )
 
 // Clouds.
@@ -434,21 +433,28 @@ func newSDKTokenCredential(clientOpts *azcore.ClientOptions, sdkConfig *SDKConfi
 
 // newCertificateTokenCredential returns new certificate-based token credential.
 func newCertificateTokenCredential(clientOpts *azcore.ClientOptions, certConfig *CertificateConfig) (azcore.TokenCredential, error) {
-	// Use certutil to parse the certificate files
-	certData, err := certutil.ParseCertificateFiles(
-		certConfig.CertificatePath,
-		certConfig.CertificateKeyPath,
-		certConfig.CertificatePassword,
-	)
+	certData, err := os.ReadFile(certConfig.CertificatePath)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("failed to read certificate file " + certConfig.CertificatePath + ": " + err.Error())
 	}
 
-	if len(certData.Certificates) == 0 {
-		return nil, errors.New("no certificates found in certificate file")
+	// If a separate key file is provided, append it to the cert data so ParseCertificates can find the private key.
+	if certConfig.CertificateKeyPath != "" {
+		keyData, err := os.ReadFile(certConfig.CertificateKeyPath)
+		if err != nil {
+			return nil, errors.New("failed to read private key file " + certConfig.CertificateKeyPath + ": " + err.Error())
+		}
+		certData = append(append(certData, '\n'), keyData...)
 	}
-	if certData.PrivateKey == nil {
-		return nil, errors.New("no private key found")
+
+	var password []byte
+	if certConfig.CertificatePassword != "" {
+		password = []byte(certConfig.CertificatePassword)
+	}
+
+	certs, key, err := azidentity.ParseCertificates(certData, password)
+	if err != nil {
+		return nil, errors.New("failed to parse certificate data: " + err.Error())
 	}
 
 	opts := &azidentity.ClientCertificateCredentialOptions{
@@ -459,8 +465,8 @@ func newCertificateTokenCredential(clientOpts *azcore.ClientOptions, certConfig 
 	return azidentity.NewClientCertificateCredential(
 		certConfig.TenantID,
 		certConfig.ClientID,
-		certData.Certificates,
-		certData.PrivateKey,
+		certs,
+		key,
 		opts,
 	)
 }
