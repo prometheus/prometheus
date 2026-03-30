@@ -47,11 +47,15 @@ type readHandler struct {
 // writes them to the provided queryable.
 func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
 	h := &readHandler{
-		logger:                    logger,
-		queryable:                 queryable,
-		config:                    config,
-		remoteReadSampleLimit:     remoteReadSampleLimit,
-		remoteReadGate:            gate.New(remoteReadConcurrencyLimit),
+		logger:                logger,
+		queryable:             queryable,
+		config:                config,
+		remoteReadSampleLimit: remoteReadSampleLimit,
+		remoteReadGate: gate.New(
+			remoteReadConcurrencyLimit,
+			r,
+			"prometheus_remote_read_handler",
+		),
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		marshalPool:               &sync.Pool{},
 
