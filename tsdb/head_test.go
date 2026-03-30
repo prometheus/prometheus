@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -58,7 +59,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
-	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 // newTestHeadDefaultOptions returns the HeadOptions that should be used by default in unit tests.

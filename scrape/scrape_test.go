@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"text/template"
 	"time"
 
@@ -71,7 +72,6 @@ import (
 	"github.com/prometheus/prometheus/util/pool"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
-	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 func TestMain(m *testing.M) {
