@@ -43,6 +43,16 @@ func (noopQuerier) Close() error {
 	return nil
 }
 
+func (noopQuerier) SearchLabelNames(_ context.Context, _ *SearchHints, _ ...*labels.Matcher) SearchResultSet {
+	return nil
+}
+
+func (noopQuerier) SearchLabelValues(_ context.Context, _ string, _ *SearchHints, _ ...*labels.Matcher) SearchResultSet {
+	return nil
+}
+
+var _ Searcher = noopQuerier{}
+
 type noopChunkQuerier struct{}
 
 // NoopChunkedQuerier is a ChunkQuerier that does nothing.

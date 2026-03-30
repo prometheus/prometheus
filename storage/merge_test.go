@@ -1723,3 +1723,491 @@ func (errIterator) AtST() int64 {
 func (e errIterator) Err() error {
 	return e.err
 }
+
+// searchQuerier is a Querier that also implements Searcher, for testing merge behaviour.
+type searchQuerier struct {
+	mockQuerier
+	names       []SearchResult
+	values      []SearchResult
+	searchWarns annotations.Annotations
+	err         error
+}
+
+func (q *searchQuerier) SearchLabelNames(_ context.Context, _ *SearchHints, _ ...*labels.Matcher) SearchResultSet {
+	if q.err != nil {
+		return ErrSearchResultSet(q.err)
+	}
+	return NewSearchResultSetFromSlice(q.names, q.searchWarns)
+}
+
+func (q *searchQuerier) SearchLabelValues(_ context.Context, _ string, _ *SearchHints, _ ...*labels.Matcher) SearchResultSet {
+	if q.err != nil {
+		return ErrSearchResultSet(q.err)
+	}
+	return NewSearchResultSetFromSlice(q.values, q.searchWarns)
+}
+
+// partialErrSearchQuerier is a Querier+Searcher that yields partial results
+// then returns an error, for testing secondary querier mid-stream failure.
+type partialErrSearchQuerier struct {
+	mockQuerier
+	names  []SearchResult
+	values []SearchResult
+	err    error
+}
+
+func (q *partialErrSearchQuerier) SearchLabelNames(_ context.Context, _ *SearchHints, _ ...*labels.Matcher) SearchResultSet {
+	return newErrAfterResultsSet(q.names, q.err)
+}
+
+func (q *partialErrSearchQuerier) SearchLabelValues(_ context.Context, _ string, _ *SearchHints, _ ...*labels.Matcher) SearchResultSet {
+	return newErrAfterResultsSet(q.values, q.err)
+}
+
+// errAfterResultsSet is a SearchResultSet that yields results then returns an error.
+type errAfterResultsSet struct {
+	results []SearchResult
+	idx     int // starts at -1; incremented by Next.
+	err     error
+}
+
+func newErrAfterResultsSet(results []SearchResult, err error) *errAfterResultsSet {
+	return &errAfterResultsSet{results: results, err: err, idx: -1}
+}
+
+func (s *errAfterResultsSet) Next() bool {
+	s.idx++
+	return s.idx < len(s.results)
+}
+
+func (s *errAfterResultsSet) At() SearchResult { return s.results[s.idx] }
+
+func (*errAfterResultsSet) Warnings() annotations.Annotations { return nil }
+
+func (s *errAfterResultsSet) Err() error {
+	if s.idx >= len(s.results) {
+		return s.err
+	}
+	return nil
+}
+
+func (*errAfterResultsSet) Close() error { return nil }
+
+func collectSearchResults(t *testing.T, rs SearchResultSet) []SearchResult {
+	t.Helper()
+	var got []SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	require.NoError(t, rs.Err())
+	require.NoError(t, rs.Close())
+	return got
+}
+
+func TestMergeQuerierSearch(t *testing.T) {
+	ctx := t.Context()
+
+	// newMerged creates a merged querier from two queriers, ensuring the querierAdapter
+	// path is always taken (NewMergeQuerier returns the single querier directly if only
+	// one is provided).
+	newMerged := func(a, b Querier) Querier {
+		return NewMergeQuerier([]Querier{a, b}, nil, ChainedSeriesMerge)
+	}
+
+	t.Run("results from both searchers are merged", func(t *testing.T) {
+		q1 := &searchQuerier{
+			names:  []SearchResult{{Value: "env", Score: 0.9}},
+			values: []SearchResult{{Value: "prod", Score: 1.0}},
+		}
+		q2 := &searchQuerier{
+			names:  []SearchResult{{Value: "job", Score: 0.5}},
+			values: []SearchResult{{Value: "dev", Score: 0.8}},
+		}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, nil))
+		require.Len(t, got, 2)
+
+		got = collectSearchResults(t, merged.(Searcher).SearchLabelValues(ctx, "env", nil))
+		require.Len(t, got, 2)
+	})
+
+	t.Run("duplicate values keep max score", func(t *testing.T) {
+		q1 := &searchQuerier{
+			names: []SearchResult{{Value: "env", Score: 0.6}, {Value: "job", Score: 0.9}},
+		}
+		q2 := &searchQuerier{
+			names: []SearchResult{{Value: "env", Score: 0.8}, {Value: "region", Score: 0.5}},
+		}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, nil))
+		require.Len(t, got, 3)
+		scores := make(map[string]float64, len(got))
+		for _, r := range got {
+			scores[r.Value] = r.Score
+		}
+		// "env" appears in both; max score wins.
+		require.Equal(t, 0.8, scores["env"])
+		require.Equal(t, 0.9, scores["job"])
+		require.Equal(t, 0.5, scores["region"])
+	})
+
+	t.Run("natural order is preserved for merged searchers", func(t *testing.T) {
+		q1 := &searchQuerier{
+			names: []SearchResult{{Value: "region", Score: 0.5}, {Value: "zone", Score: 0.4}},
+		}
+		q2 := &searchQuerier{
+			names: []SearchResult{{Value: "env", Score: 0.8}, {Value: "job", Score: 0.9}},
+		}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, nil))
+		require.Equal(t, []SearchResult{
+			{Value: "env", Score: 0.8},
+			{Value: "job", Score: 0.9},
+			{Value: "region", Score: 0.5},
+			{Value: "zone", Score: 0.4},
+		}, got)
+	})
+
+	t.Run("secondary search errors become warnings", func(t *testing.T) {
+		primary := &searchQuerier{
+			names: []SearchResult{{Value: "env", Score: 1.0}},
+		}
+		secondary := &searchQuerier{err: errors.New("secondary search failed")}
+		merged := NewMergeQuerier([]Querier{primary}, []Querier{secondary}, ChainedSeriesMerge)
+		defer merged.Close()
+
+		rs := merged.(Searcher).SearchLabelNames(ctx, nil)
+		got := collectSearchResults(t, rs)
+		require.Equal(t, []SearchResult{{Value: "env", Score: 1.0}}, got)
+		warnings := rs.Warnings().AsErrors()
+		require.Len(t, warnings, 1)
+		require.Contains(t, warnings[0].Error(), "secondary search failed")
+	})
+
+	t.Run("secondary partial label names followed by error become warnings", func(t *testing.T) {
+		primary := &searchQuerier{
+			names: []SearchResult{{Value: "env", Score: 1.0}},
+		}
+		secondary := &partialErrSearchQuerier{
+			names: []SearchResult{{Value: "zone", Score: 0.5}},
+			err:   errors.New("partial secondary failure"),
+		}
+		merged := NewMergeQuerier([]Querier{primary}, []Querier{secondary}, ChainedSeriesMerge)
+		defer merged.Close()
+
+		rs := merged.(Searcher).SearchLabelNames(ctx, nil)
+		for rs.Next() {
+		}
+		require.NoError(t, rs.Err())
+		warnings := rs.Warnings().AsErrors()
+		require.Len(t, warnings, 1)
+		require.Contains(t, warnings[0].Error(), "partial secondary failure")
+		require.NoError(t, rs.Close())
+	})
+
+	t.Run("warnings accessible after early Close", func(t *testing.T) {
+		// Exercises the internal warningsOnErrorSearchSet lifecycle when
+		// the caller closes before exhaustion. This cannot be tested
+		// through the public API because the error-to-warning conversion
+		// only fires on exhaustion.
+		inner := newErrAfterResultsSet(
+			[]SearchResult{{Value: "zone", Score: 0.5}},
+			errors.New("early close failure"),
+		)
+		rs := warningsOnErrorSearchResultSet(inner)
+		require.True(t, rs.Next())
+		// Do not call Next again; close early.
+		require.NoError(t, rs.Close())
+		// Inner set has no warnings yet (error only fires after exhaustion),
+		// but Close must not panic and Warnings must be callable.
+		require.NoError(t, rs.Err())
+		_ = rs.Warnings()
+		// Calling Close a second time must be a no-op.
+		require.NoError(t, rs.Close())
+	})
+
+	t.Run("secondary partial label values followed by error become warnings", func(t *testing.T) {
+		primary := &searchQuerier{
+			values: []SearchResult{{Value: "prod", Score: 1.0}},
+		}
+		secondary := &partialErrSearchQuerier{
+			values: []SearchResult{{Value: "staging", Score: 0.5}},
+			err:    errors.New("partial secondary failure"),
+		}
+		merged := NewMergeQuerier([]Querier{primary}, []Querier{secondary}, ChainedSeriesMerge)
+		defer merged.Close()
+
+		rs := merged.(Searcher).SearchLabelValues(ctx, "env", nil)
+		for rs.Next() {
+		}
+		require.NoError(t, rs.Err())
+		warnings := rs.Warnings().AsErrors()
+		require.Len(t, warnings, 1)
+		require.Contains(t, warnings[0].Error(), "partial secondary failure")
+		require.NoError(t, rs.Close())
+	})
+
+	t.Run("non-searcher querier is skipped", func(t *testing.T) {
+		q1 := &searchQuerier{
+			names: []SearchResult{{Value: "env", Score: 1.0}},
+		}
+		q2 := &mockQuerier{resp: []string{"should_be_ignored"}}
+		// Verify precondition: mockQuerier does not implement Searcher.
+		_, isSearcher := (Querier)(q2).(Searcher)
+		require.False(t, isSearcher)
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, nil))
+		require.Len(t, got, 1)
+		require.Equal(t, "env", got[0].Value)
+	})
+
+	t.Run("no searcher queriers returns empty", func(t *testing.T) {
+		// Two non-searcher queriers force the querierAdapter path.
+		q1 := &mockQuerier{resp: []string{"a", "b"}}
+		q2 := &mockQuerier{resp: []string{"c", "d"}}
+		// Verify precondition.
+		_, isSearcher := (Querier)(q1).(Searcher)
+		require.False(t, isSearcher)
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, nil))
+		require.Empty(t, got)
+	})
+
+	t.Run("OrderByScoreDesc overrides natural ordering", func(t *testing.T) {
+		// Each searcher must emit in the requested order; score-desc
+		// rearranges the overall result stream. The inputs below are
+		// already score-desc within each searcher.
+		q1 := &searchQuerier{
+			names: []SearchResult{{Value: "job", Score: 0.9}, {Value: "env", Score: 0.3}},
+		}
+		q2 := &searchQuerier{
+			names: []SearchResult{{Value: "region", Score: 0.5}},
+		}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		hints := &SearchHints{OrderBy: OrderByScoreDesc}
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, hints))
+		require.Equal(t, []SearchResult{
+			{Value: "job", Score: 0.9},
+			{Value: "region", Score: 0.5},
+			{Value: "env", Score: 0.3},
+		}, got)
+	})
+
+	t.Run("OrderByScoreDesc error preserves warnings", func(t *testing.T) {
+		var ws annotations.Annotations
+		ws.Add(errors.New("prior warning"))
+		q1 := &searchQuerier{
+			names:       []SearchResult{{Value: "env", Score: 1.0}},
+			searchWarns: ws,
+		}
+		q2 := &searchQuerier{err: errors.New("score path failure")}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		hints := &SearchHints{OrderBy: OrderByScoreDesc}
+		rs := merged.(Searcher).SearchLabelNames(ctx, hints)
+		// Drain to completion so that the failing searcher's error
+		// surfaces. Streaming may emit some results before the error.
+		for rs.Next() {
+		}
+		require.Error(t, rs.Err())
+		require.Contains(t, rs.Err().Error(), "score path failure")
+		warnings := rs.Warnings().AsErrors()
+		require.Len(t, warnings, 1)
+		require.Contains(t, warnings[0].Error(), "prior warning")
+		require.NoError(t, rs.Close())
+	})
+
+	t.Run("OrderByValueDesc reverses natural ordering", func(t *testing.T) {
+		// Each searcher must emit in descending-Value order.
+		q1 := &searchQuerier{
+			names: []SearchResult{{Value: "job", Score: 1.0}, {Value: "env", Score: 1.0}},
+		}
+		q2 := &searchQuerier{
+			names: []SearchResult{{Value: "region", Score: 1.0}, {Value: "cluster", Score: 1.0}},
+		}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		hints := &SearchHints{OrderBy: OrderByValueDesc}
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, hints))
+		require.Equal(t, []SearchResult{
+			{Value: "region", Score: 1.0},
+			{Value: "job", Score: 1.0},
+			{Value: "env", Score: 1.0},
+			{Value: "cluster", Score: 1.0},
+		}, got)
+	})
+
+	t.Run("primary error preserves warnings from prior searchers", func(t *testing.T) {
+		var ws annotations.Annotations
+		ws.Add(errors.New("prior warning"))
+		q1 := &searchQuerier{
+			names:       []SearchResult{{Value: "env", Score: 1.0}},
+			searchWarns: ws,
+		}
+		q2 := &searchQuerier{err: errors.New("primary failure")}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		rs := merged.(Searcher).SearchLabelNames(ctx, nil)
+		// Iteration should see no results because the merge errored.
+		require.False(t, rs.Next())
+		require.Error(t, rs.Err())
+		require.Contains(t, rs.Err().Error(), "primary failure")
+		// Warnings from the successful first searcher must be preserved.
+		warnings := rs.Warnings().AsErrors()
+		require.Len(t, warnings, 1)
+		require.Contains(t, warnings[0].Error(), "prior warning")
+		require.NoError(t, rs.Close())
+	})
+
+	t.Run("limit is applied at merge level", func(t *testing.T) {
+		q1 := &searchQuerier{
+			names: []SearchResult{{Value: "a", Score: 1.0}, {Value: "b", Score: 0.9}},
+		}
+		q2 := &searchQuerier{
+			names: []SearchResult{{Value: "c", Score: 0.8}},
+		}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, &SearchHints{Limit: 2}))
+		require.Len(t, got, 2)
+		// Alphabetical order, limited to 2.
+		require.Equal(t, "a", got[0].Value)
+		require.Equal(t, "b", got[1].Value)
+	})
+
+	t.Run("empty searchers", func(t *testing.T) {
+		q1 := &searchQuerier{}
+		q2 := &searchQuerier{}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, nil))
+		require.Empty(t, got)
+	})
+
+	t.Run("single searcher passthrough", func(t *testing.T) {
+		// NewMergeQuerier with one querier returns it directly, so use two
+		// where one is empty to force the merge path.
+		q1 := &searchQuerier{
+			names: []SearchResult{
+				{Value: "a", Score: 1.0},
+				{Value: "b", Score: 1.0},
+				{Value: "c", Score: 1.0},
+			},
+		}
+		q2 := &searchQuerier{}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, nil))
+		require.Equal(t, []SearchResult{
+			{Value: "a", Score: 1.0},
+			{Value: "b", Score: 1.0},
+			{Value: "c", Score: 1.0},
+		}, got)
+	})
+
+	t.Run("overlapping values are deduplicated", func(t *testing.T) {
+		q1 := &searchQuerier{
+			names: []SearchResult{
+				{Value: "a", Score: 1.0},
+				{Value: "b", Score: 1.0},
+			},
+		}
+		q2 := &searchQuerier{
+			names: []SearchResult{
+				{Value: "b", Score: 1.0},
+				{Value: "c", Score: 1.0},
+			},
+		}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, nil))
+		require.Equal(t, []SearchResult{
+			{Value: "a", Score: 1.0},
+			{Value: "b", Score: 1.0},
+			{Value: "c", Score: 1.0},
+		}, got)
+	})
+
+	t.Run("interleaved values with limit", func(t *testing.T) {
+		q1 := &searchQuerier{
+			names: []SearchResult{
+				{Value: "a", Score: 1.0},
+				{Value: "c", Score: 1.0},
+				{Value: "e", Score: 1.0},
+			},
+		}
+		q2 := &searchQuerier{
+			names: []SearchResult{
+				{Value: "b", Score: 1.0},
+				{Value: "d", Score: 1.0},
+			},
+		}
+		merged := newMerged(q1, q2)
+		defer merged.Close()
+
+		got := collectSearchResults(t, merged.(Searcher).SearchLabelNames(ctx, &SearchHints{Limit: 3}))
+		require.Equal(t, []SearchResult{
+			{Value: "a", Score: 1.0},
+			{Value: "b", Score: 1.0},
+			{Value: "c", Score: 1.0},
+		}, got)
+	})
+}
+
+func BenchmarkMergeSearchSets(b *testing.B) {
+	// Build N searchers each returning M sorted results with no overlap.
+	const nSearchers = 4
+	const resultsPerSearcher = 10000
+	queriers := make([]Querier, nSearchers)
+	for i := range nSearchers {
+		names := make([]SearchResult, resultsPerSearcher)
+		for j := range resultsPerSearcher {
+			names[j] = SearchResult{Value: fmt.Sprintf("label_%04d_%06d", i, j), Score: 1.0}
+		}
+		queriers[i] = &searchQuerier{names: names}
+	}
+
+	b.Run("no_limit", func(b *testing.B) {
+		for b.Loop() {
+			merged := NewMergeQuerier(queriers, nil, ChainedSeriesMerge)
+			rs := merged.(Searcher).SearchLabelNames(context.Background(), nil)
+			for rs.Next() {
+			}
+			require.NoError(b, rs.Err())
+			rs.Close()
+			merged.Close()
+		}
+	})
+
+	b.Run("limit_100", func(b *testing.B) {
+		hints := &SearchHints{Limit: 100}
+		for b.Loop() {
+			merged := NewMergeQuerier(queriers, nil, ChainedSeriesMerge)
+			rs := merged.(Searcher).SearchLabelNames(context.Background(), hints)
+			for rs.Next() {
+			}
+			require.NoError(b, rs.Err())
+			rs.Close()
+			merged.Close()
+		}
+	})
+}
