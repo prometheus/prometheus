@@ -51,7 +51,7 @@
 // chunk has no additional bits in it.
 //
 // When ST is present, the ST delta (prevT - st) is appended after each
-// sample's joint timestamp+value encoding using putVarbitInt.
+// sample's joint timestamp+value encoding using putVarbitIntFast.
 
 package chunkenc
 
@@ -194,7 +194,7 @@ func (c *XOR2Chunk) Iterator(it Iterator) Iterator {
 
 // xor2Appender appends samples with optional start timestamps using
 // the XOR2 joint control bit encoding for regular timestamp and value,
-// and putVarbitInt for the start timestamp delta.
+// and putVarbitIntFast for the start timestamp delta.
 type xor2Appender struct {
 	b *bstream
 
@@ -248,40 +248,134 @@ func (a *xor2Appender) Append(st, t int64, v float64) {
 			stDiff = a.t - st
 			a.firstSTChangeOn = 1
 			writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], 1)
-			putVarbitInt(a.b, stDiff)
+			putVarbitIntFast(a.b, stDiff)
 		}
 
 	default:
 		tDelta = uint64(t - a.t)
 		dod := int64(tDelta - a.tDelta)
 
-		// Fast path: no ST involvement at all.
-		if st == 0 && a.numTotal != maxFirstSTChangeOn && a.firstSTChangeOn == 0 && !a.firstSTKnown {
-			a.encodeJoint(dod, v)
-			a.t = t
-			if !value.IsStaleNaN(v) {
-				a.v = v
+		// Fast path: no new ST data to write for this sample.
+		// Covers: ST never seen (st=0 always), or ST recorded initially but unchanged.
+		// Must use the slow path at maxFirstSTChangeOn so the header remains valid
+		// even if ST changes on a later sample (index > maxFirstSTChangeOn).
+		if a.firstSTChangeOn == 0 && st == a.st && a.numTotal != maxFirstSTChangeOn {
+			vbits := math.Float64bits(v)
+			switch {
+			case dod == 0 && vbits == math.Float64bits(a.v):
+				// Unchanged value and timestamp: write a single 0 bit.
+				// This is the most common case for stable metrics.
+				// a.v stays correct (v == a.v), so no update needed.
+				a.b.writeBit(zero)
+			case dod >= -(1<<12) && dod <= (1<<12)-1 && vbits == math.Float64bits(a.v):
+				// 13-bit dod, value unchanged: the most common case for metrics with
+				// small timestamp jitter. Inline both bytes and the zero value bit to
+				// avoid calling encodeJoint and writeVDelta.
+				a.b.writeByte(0b110_00000 | byte(uint64(dod)>>8)&0x1F)
+				a.b.writeByte(byte(uint64(dod)))
+				a.b.writeBit(zero)
+			default:
+				a.encodeJoint(dod, v)
+				if !value.IsStaleNaN(v) {
+					a.v = v
+				}
 			}
+			a.t = t
 			a.tDelta = tDelta
 			a.numTotal++
 			binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
 			return
 		}
 
-		// Slow path: ST may be involved.
+		// Active-ST fast path: firstSTChangeOn is set, so every sample needs a
+		// per-sample ST delta. Inline T+V encoding and the zero-delta ST case to
+		// avoid two non-inlined function calls (encodeJoint + putVarbitIntFast).
+		if a.firstSTChangeOn > 0 {
+			newStDiff := a.t - st
+			deltaStDiff := newStDiff - a.stDiff
+			vbits := math.Float64bits(v)
+			switch {
+			case dod == 0 && vbits == math.Float64bits(a.v):
+				// T/V: single 0 bit (dod=0, value unchanged). For non-zero ST deltas
+				// we fuse this bit with the ST delta write into a single writeBitsFast
+				// call, saving a non-inlined writeBit call. For deltaStDiff=0 we use
+				// two writeBit calls because writeBit has a smaller body than
+				// writeBitsFast, making it faster for writing just 1 bit.
+				switch {
+				case deltaStDiff == 0:
+					a.b.writeBit(zero)
+					a.b.writeBit(zero)
+				case deltaStDiff >= -3 && deltaStDiff <= 4:
+					// 0 (T/V) + 5-bit ST = 6 bits.
+					a.b.writeBitsFast((0b10<<3)|(uint64(deltaStDiff)&0x7), 6)
+				case deltaStDiff >= -31 && deltaStDiff <= 32:
+					// 0 (T/V) + 9-bit ST = 10 bits.
+					a.b.writeBitsFast((0b110<<6)|(uint64(deltaStDiff)&0x3F), 10)
+				case deltaStDiff >= -255 && deltaStDiff <= 256:
+					// 0 (T/V) + 13-bit ST = 14 bits.
+					a.b.writeBitsFast((0b1110<<9)|(uint64(deltaStDiff)&0x1FF), 14)
+				default:
+					a.b.writeBit(zero)
+					putVarbitIntFast(a.b, deltaStDiff)
+				}
+			case dod >= -(1<<12) && dod <= (1<<12)-1 && vbits == math.Float64bits(a.v):
+				a.b.writeByte(0b110_00000 | byte(uint64(dod)>>8)&0x1F)
+				a.b.writeByte(byte(uint64(dod)))
+				// T/V ends with a 0 bit (value unchanged indicator). Fuse it with
+				// non-zero ST deltas to save a writeBit call; for deltaStDiff=0 keep
+				// two cheap writeBit calls (faster than one writeBitsFast for 2 bits).
+				switch {
+				case deltaStDiff == 0:
+					a.b.writeBit(zero)
+					a.b.writeBit(zero)
+				case deltaStDiff >= -3 && deltaStDiff <= 4:
+					a.b.writeBitsFast((0b10<<3)|(uint64(deltaStDiff)&0x7), 6)
+				case deltaStDiff >= -31 && deltaStDiff <= 32:
+					a.b.writeBitsFast((0b110<<6)|(uint64(deltaStDiff)&0x3F), 10)
+				case deltaStDiff >= -255 && deltaStDiff <= 256:
+					a.b.writeBitsFast((0b1110<<9)|(uint64(deltaStDiff)&0x1FF), 14)
+				default:
+					a.b.writeBit(zero)
+					putVarbitIntFast(a.b, deltaStDiff)
+				}
+			default:
+				a.encodeJoint(dod, v)
+				if !value.IsStaleNaN(v) {
+					a.v = v
+				}
+				// Inline the three most common ST delta ranges to avoid the
+				// non-inlineable putVarbitIntFast call for typical small-jitter STs.
+				switch {
+				case deltaStDiff == 0:
+					a.b.writeBit(zero)
+				case deltaStDiff >= -3 && deltaStDiff <= 4:
+					a.b.writeBitsFast((0b10<<3)|(uint64(deltaStDiff)&0x7), 5)
+				case deltaStDiff >= -31 && deltaStDiff <= 32:
+					a.b.writeBitsFast((0b110<<6)|(uint64(deltaStDiff)&0x3F), 9)
+				case deltaStDiff >= -255 && deltaStDiff <= 256:
+					a.b.writeBitsFast((0b1110<<9)|(uint64(deltaStDiff)&0x1FF), 13)
+				default:
+					putVarbitIntFast(a.b, deltaStDiff)
+				}
+			}
+			a.stDiff = newStDiff
+			a.st = st
+			a.t = t
+			a.tDelta = tDelta
+			a.numTotal++
+			binary.BigEndian.PutUint16(a.b.bytes(), a.numTotal)
+			return
+		}
+
+		// Full slow path: firstSTChangeOn == 0 and ST may be initialised here.
 		a.encodeJoint(dod, v)
 
-		if a.firstSTChangeOn == 0 {
-			if st != a.st || a.numTotal == maxFirstSTChangeOn {
-				// First ST change: record prevT - st.
-				stDiff = a.t - st
-				a.firstSTChangeOn = a.numTotal
-				writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.numTotal)
-				putVarbitInt(a.b, stDiff)
-			}
-		} else {
+		if st != a.st || a.numTotal == maxFirstSTChangeOn {
+			// First ST change: record prevT - st.
 			stDiff = a.t - st
-			putVarbitInt(a.b, stDiff-a.stDiff)
+			a.firstSTChangeOn = a.numTotal
+			writeHeaderFirstSTChangeOn(a.b.bytes()[chunkHeaderSize:], a.numTotal)
+			putVarbitIntFast(a.b, stDiff)
 		}
 	}
 
@@ -329,7 +423,12 @@ func (a *xor2Appender) encodeJoint(dod int64, v float64) {
 		a.b.writeBitsFast(0b11110, 5)
 		a.b.writeBitsFast(uint64(dod), 64)
 	}
-	a.writeVDelta(v)
+	// Inline the most common value-unchanged case to avoid a function call.
+	if math.Float64bits(v) == math.Float64bits(a.v) {
+		a.b.writeBit(zero)
+	} else {
+		a.writeVDelta(v)
+	}
 }
 
 // writeVDelta encodes the value delta for the dod≠0 case.

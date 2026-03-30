@@ -334,6 +334,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				}
 				c.tsdb.UseUncachedIO = true
 				logger.Info("Experimental Uncached IO is enabled.")
+			case "fast-startup":
+				c.tsdb.EnableFastStartup = true
+				logger.Info("Experimental fast startup is enabled.")
 			default:
 				logger.Warn("Unknown option for --enable-feature", "option", o)
 			}
@@ -798,16 +801,12 @@ func main() {
 			logger.Warn("Time retention value is too high. Limiting to: " + y.String())
 		}
 
-		if cfg.tsdb.MaxPercentage > 100 {
-			cfg.tsdb.MaxPercentage = 100
-			logger.Warn("Percentage retention value is too high. Limiting to: 100%")
-		}
 		if cfg.tsdb.MaxPercentage > 0 {
 			if cfg.tsdb.MaxBytes > 0 {
 				logger.Warn("storage.tsdb.retention.size is ignored, because storage.tsdb.retention.percentage is specified")
 			}
 			if prom_runtime.FsSize(localStoragePath) == 0 {
-				fmt.Fprintln(os.Stderr, fmt.Errorf("unable to detect total capacity of metric storage at %s, please disable retention percentage (%d%%)", localStoragePath, cfg.tsdb.MaxPercentage))
+				fmt.Fprintln(os.Stderr, fmt.Errorf("unable to detect total capacity of metric storage at %s, please disable retention percentage (%g%%)", localStoragePath, cfg.tsdb.MaxPercentage))
 				os.Exit(2)
 			}
 		}
@@ -2016,7 +2015,7 @@ type tsdbOptions struct {
 	MaxBlockChunkSegmentSize       units.Base2Bytes
 	RetentionDuration              model.Duration
 	MaxBytes                       units.Base2Bytes
-	MaxPercentage                  uint
+	MaxPercentage                  float64
 	NoLockfile                     bool
 	WALCompressionType             compression.Type
 	HeadChunksWriteQueueSize       int
@@ -2038,6 +2037,7 @@ type tsdbOptions struct {
 	EnableSTStorage                bool
 	EnableXOR2Encoding             bool
 	StaleSeriesCompactionThreshold float64
+	EnableFastStartup              bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2069,6 +2069,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableSTStorage:                opts.EnableSTStorage,
 		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
+		EnableFastStartup:              opts.EnableFastStartup,
 	}
 }
 

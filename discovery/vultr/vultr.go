@@ -16,6 +16,7 @@ package vultr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -26,7 +27,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	"github.com/vultr/govultr/v2"
+	"github.com/vultr/govultr/v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -206,9 +207,12 @@ func (d *Discovery) listInstances(ctx context.Context) ([]govultr.Instance, erro
 	}
 
 	for {
-		pagedInstances, meta, err := d.client.Instance.List(ctx, listOptions)
+		pagedInstances, meta, resp, err := d.client.Instance.List(ctx, listOptions)
 		if err != nil {
 			return nil, err
+		}
+		if resp != nil && resp.StatusCode/100 != 2 {
+			return nil, fmt.Errorf("vultr API returned unexpected status %d", resp.StatusCode)
 		}
 		instances = append(instances, pagedInstances...)
 
