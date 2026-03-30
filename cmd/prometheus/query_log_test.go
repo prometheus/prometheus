@@ -68,16 +68,16 @@ func (p *queryLogTest) skip(t *testing.T) {
 }
 
 // waitForPrometheus waits for Prometheus to be ready.
-func (p *queryLogTest) waitForPrometheus() error {
-	var err error
-	for range 20 {
-		var r *http.Response
-		if r, err = http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix)); err == nil && r.StatusCode == http.StatusOK {
-			break
+func (p *queryLogTest) waitForPrometheus(t *testing.T) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		r, err := http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix))
+		if err != nil {
+			return false
 		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return err
+		r.Body.Close()
+		return r.StatusCode == http.StatusOK
+	}, 20*time.Second, 500*time.Millisecond, "prometheus at %s:%d did not become ready in time", p.host, p.port)
 }
 
 // setQueryLog alters the configuration file to enable or disable the query log,
@@ -250,7 +250,7 @@ func (p *queryLogTest) params() []string {
 		s = append(s, "--web.route-prefix="+p.prefix)
 	}
 	if p.origin == consoleOrigin {
-		s = append(s, "--web.console.templates="+filepath.Join("testdata", "consoles"))
+		s = append(s, "--web.console.templates="+filepath.Join(p.cwd, "testdata", "consoles"))
 	}
 	return s
 }
@@ -323,7 +323,7 @@ func (p *queryLogTest) run(t *testing.T) {
 		prom.Process.Kill()
 		prom.Wait()
 	}()
-	require.NoError(t, p.waitForPrometheus())
+	p.waitForPrometheus(t)
 
 	if !p.enabledAtStart {
 		p.query(t)
