@@ -107,6 +107,7 @@ func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Du
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 		EnableDelayedNameRemoval: true,
+		UseStartTimestamps:       true,
 		Parser:                   parser.NewParser(TestParserOpts),
 	})
 }
