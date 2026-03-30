@@ -562,6 +562,8 @@ type HeadAndOOOQuerier struct {
 	querier    storage.Querier // Used for LabelNames, LabelValues, but may be nil if head was truncated in the mean time, in which case we ignore it and not close it in the end.
 }
 
+var _ storage.Searcher = &HeadAndOOOQuerier{}
+
 func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
 	cr := &headChunkReader{
 		head:     head,
@@ -591,6 +593,28 @@ func (q *HeadAndOOOQuerier) LabelNames(ctx context.Context, hints *storage.Label
 		return nil, nil, nil
 	}
 	return q.querier.LabelNames(ctx, hints, matchers...)
+}
+
+// SearchLabelNames implements storage.Searcher by delegating to the inner querier.
+func (q *HeadAndOOOQuerier) SearchLabelNames(ctx context.Context, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	if q.querier == nil {
+		return storage.EmptySearchResultSet()
+	}
+	if s, ok := q.querier.(storage.Searcher); ok {
+		return s.SearchLabelNames(ctx, hints, matchers...)
+	}
+	return storage.EmptySearchResultSet()
+}
+
+// SearchLabelValues implements storage.Searcher by delegating to the inner querier.
+func (q *HeadAndOOOQuerier) SearchLabelValues(ctx context.Context, name string, hints *storage.SearchHints, matchers ...*labels.Matcher) storage.SearchResultSet {
+	if q.querier == nil {
+		return storage.EmptySearchResultSet()
+	}
+	if s, ok := q.querier.(storage.Searcher); ok {
+		return s.SearchLabelValues(ctx, name, hints, matchers...)
+	}
+	return storage.EmptySearchResultSet()
 }
 
 func (q *HeadAndOOOQuerier) Close() error {

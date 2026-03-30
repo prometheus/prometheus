@@ -4046,3 +4046,138 @@ func TestMergeQuerierConcurrentSelectMatchers(t *testing.T) {
 
 	require.Equal(t, originalMatchers, matchers)
 }
+
+// prefixFilter accepts values that start with the given prefix and scores them 1.0.
+type prefixFilter struct{ prefix string }
+
+func (f prefixFilter) Accept(v string) (bool, float64) {
+	if strings.HasPrefix(v, f.prefix) {
+		return true, 1.0
+	}
+	return false, 0
+}
+
+func newBlockBaseQuerierForSearch(t *testing.T, labelSets ...labels.Labels) *blockBaseQuerier {
+	t.Helper()
+	ix := newMockIndex()
+	// Group series refs by label for writing postings.
+	postings := make(map[labels.Label][]storage.SeriesRef)
+	for i, ls := range labelSets {
+		ref := storage.SeriesRef(i)
+		require.NoError(t, ix.AddSeries(ref, ls))
+		ls.Range(func(lbl labels.Label) {
+			postings[lbl] = append(postings[lbl], ref)
+		})
+	}
+	for lbl, refs := range postings {
+		require.NoError(t, ix.WritePostings(lbl.Name, lbl.Value, index.NewListPostings(refs)))
+	}
+	return &blockBaseQuerier{index: ix, chunks: nil, tombstones: tombstones.NewMemTombstones()}
+}
+
+func collectSearchResultSet(t *testing.T, rs storage.SearchResultSet) []storage.SearchResult {
+	t.Helper()
+	var got []storage.SearchResult
+	for rs.Next() {
+		got = append(got, rs.At())
+	}
+	require.NoError(t, rs.Err())
+	require.NoError(t, rs.Close())
+	return got
+}
+
+func TestBlockBaseQuerierSearchLabelNames(t *testing.T) {
+	ctx := t.Context()
+	q := newBlockBaseQuerierForSearch(t,
+		labels.FromStrings("env", "prod", "job", "api"),
+		labels.FromStrings("env", "dev", "job", "api"),
+		labels.FromStrings("region", "eu"),
+	)
+
+	t.Run("no filter returns all names", func(t *testing.T) {
+		rs := q.SearchLabelNames(ctx, nil)
+		got := collectSearchResultSet(t, rs)
+		gotValues := make([]string, len(got))
+		for i, r := range got {
+			gotValues[i] = r.Value
+			require.Equal(t, 1.0, r.Score)
+		}
+		slices.Sort(gotValues)
+		require.Equal(t, []string{"env", "job", "region"}, gotValues)
+	})
+
+	t.Run("filter selects matching names", func(t *testing.T) {
+		rs := q.SearchLabelNames(ctx, &storage.SearchHints{Filter: prefixFilter{"e"}})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 1)
+		require.Equal(t, "env", got[0].Value)
+	})
+
+	t.Run("limit is applied", func(t *testing.T) {
+		rs := q.SearchLabelNames(ctx, &storage.SearchHints{Limit: 1})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 1)
+	})
+}
+
+func TestBlockBaseQuerierSearchLabelValues(t *testing.T) {
+	ctx := t.Context()
+	q := newBlockBaseQuerierForSearch(t,
+		labels.FromStrings("env", "prod"),
+		labels.FromStrings("env", "dev"),
+		labels.FromStrings("env", "staging"),
+	)
+
+	t.Run("no filter returns all values", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", nil)
+		got := collectSearchResultSet(t, rs)
+		gotValues := make([]string, len(got))
+		for i, r := range got {
+			gotValues[i] = r.Value
+			require.Equal(t, 1.0, r.Score)
+		}
+		slices.Sort(gotValues)
+		require.Equal(t, []string{"dev", "prod", "staging"}, gotValues)
+	})
+
+	t.Run("filter selects matching values", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{Filter: prefixFilter{"p"}})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 1)
+		require.Equal(t, "prod", got[0].Value)
+	})
+
+	t.Run("limit is applied after filtering", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{
+			Filter: prefixFilter{"p"},
+			Limit:  1,
+		})
+		got := collectSearchResultSet(t, rs)
+		require.Equal(t, []storage.SearchResult{{Value: "prod", Score: 1.0}}, got)
+	})
+
+	t.Run("limit is applied", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{Limit: 2})
+		got := collectSearchResultSet(t, rs)
+		require.Len(t, got, 2)
+	})
+
+	t.Run("unknown label name returns empty", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "unknown", nil)
+		got := collectSearchResultSet(t, rs)
+		require.Empty(t, got)
+	})
+
+	t.Run("OrderByValueDesc returns values in reverse alphabetical order", func(t *testing.T) {
+		rs := q.SearchLabelValues(ctx, "env", &storage.SearchHints{
+			OrderBy: storage.OrderByValueDesc,
+		})
+		got := collectSearchResultSet(t, rs)
+		gotValues := make([]string, len(got))
+		for i, r := range got {
+			gotValues[i] = r.Value
+			require.Equal(t, 1.0, r.Score)
+		}
+		require.Equal(t, []string{"staging", "prod", "dev"}, gotValues)
+	})
+}
