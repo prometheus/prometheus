@@ -741,6 +741,45 @@ func TestQueryForStateSeries(t *testing.T) {
 	}
 }
 
+// TestQueryForStateSeriesTemplateLabels verifies that labels containing Go
+// template syntax are excluded from the matchers used to query ALERTS_FOR_STATE,
+// so that per-instance expanded values stored in the series can still be found.
+func TestQueryForStateSeriesTemplateLabels(t *testing.T) {
+	var gotMatchers []*labels.Matcher
+	querier := &storage.MockQuerier{
+		SelectMockFunction: func(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			gotMatchers = matchers
+			return storage.EmptySeriesSet()
+		},
+	}
+
+	rule := NewAlertingRule(
+		"TestRule",
+		nil,
+		time.Minute,
+		0,
+		labels.FromStrings("severity", "critical", "instance_ext", "instance_{{ $labels.instance }}"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	_, err := rule.QueryForStateSeries(context.Background(), querier)
+	require.NoError(t, err)
+
+	for _, m := range gotMatchers {
+		require.NotContains(t, m.Value, "{{", "template label %q must not appear in Select matchers", m.Name)
+	}
+
+	// The static label must still be present.
+	found := false
+	for _, m := range gotMatchers {
+		if m.Name == "severity" && m.Value == "critical" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "static label severity=critical must be present in Select matchers")
+}
+
 // TestSendAlertsDontAffectActiveAlerts tests a fix for https://github.com/prometheus/prometheus/issues/11424.
 func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 	rule := NewAlertingRule(

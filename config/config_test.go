@@ -1151,6 +1151,7 @@ var expectedConf = &Config{
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
+					Role:            "droplets",
 				},
 			},
 		},
@@ -2640,7 +2641,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "tsdb_retention_percentage_negative.bad.yml",
-		errMsg:   "cannot unmarshal !!int `-1` into uint",
+		errMsg:   "'storage.tsdb.retention.percentage' must be in the range [0, 100]",
 	},
 }
 
@@ -2650,6 +2651,12 @@ func TestBadConfigs(t *testing.T) {
 		require.ErrorContains(t, err, ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
+}
+
+func TestTSDBRetentionPercentageFloat(t *testing.T) {
+	c, err := LoadFile("testdata/tsdb_retention_percentage_float.good.yml", false, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, 0.5, c.StorageConfig.TSDBConfig.Retention.Percentage)
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {

@@ -1111,7 +1111,7 @@ type TSDBRetentionConfig struct {
 	Size units.Base2Bytes `yaml:"size,omitempty"`
 
 	// Maximum percentage of disk used for TSDB storage.
-	Percentage uint `yaml:"percentage,omitempty"`
+	Percentage float64 `yaml:"percentage,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -1124,7 +1124,7 @@ func (t *TSDBRetentionConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if t.Size < 0 {
 		return fmt.Errorf("'storage.tsdb.retention.size' must be greater than or equal to 0, got %v", t.Size)
 	}
-	if t.Percentage > 100 {
+	if t.Percentage < 0 || t.Percentage > 100 {
 		return fmt.Errorf("'storage.tsdb.retention.percentage' must be in the range [0, 100], got %v", t.Percentage)
 	}
 	return nil

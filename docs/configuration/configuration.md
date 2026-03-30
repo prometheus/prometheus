@@ -1501,10 +1501,15 @@ metadata and a single tag).
 ### `<digitalocean_sd_config>`
 
 DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
-Droplets API.
-This service discovery uses the public IPv4 address by default, by that can be
-changed with relabeling, as demonstrated in [the Prometheus digitalocean-sd
-configuration file](/documentation/examples/prometheus-digitalocean.yml).
+API.
+This service discovery supports multiple roles through the `role` parameter.
+
+One of the following `role` types can be configured to discover targets:
+
+#### `droplets`
+
+The `droplets` role discovers targets from DigitalOcean Droplets. The public IPv4 address is used by default,
+but may be changed with relabeling.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -1522,11 +1527,33 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_digitalocean_tags`: the comma-separated list of tags of the droplet
 * `__meta_digitalocean_vpc`: the id of the droplet's VPC
 
+#### `databases`
+
+The `databases` role discovers targets from DigitalOcean Managed Databases.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_digitalocean_db_id`: the id of the database cluster
+* `__meta_digitalocean_db_name`: the name of the database cluster
+* `__meta_digitalocean_db_engine`: the engine of the database cluster (e.g., `pg`, `mysql`, `redis`, `mongodb`)
+* `__meta_digitalocean_db_version`: the version of the engine
+* `__meta_digitalocean_db_status`: the status of the database cluster
+* `__meta_digitalocean_db_region`: the region of the database cluster
+* `__meta_digitalocean_db_size`: the size of the database cluster
+* `__meta_digitalocean_db_num_nodes`: the number of nodes in the database cluster
+* `__meta_digitalocean_db_host`: the public host of the database cluster
+* `__meta_digitalocean_db_private_host`: the private host of the database cluster
+* `__meta_digitalocean_db_tag_<tagname>`: each tag of the database cluster, with its value set to `true`
+
 ```yaml
+# The DigitalOcean role to use for service discovery.
+# Must be one of: droplets or databases.
+[ role: <string> | default = droplets ]
+
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
 
-# The time after which the droplets are refreshed.
+# The time after which the targets are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 
 # HTTP client settings, including authentication methods (such as basic auth and

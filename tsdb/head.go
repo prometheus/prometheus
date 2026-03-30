@@ -136,6 +136,10 @@ type Head struct {
 	closedMtx sync.Mutex
 	closed    bool
 
+	// For running the background goroutine which updates series_state.json.
+	seriesStateQuit chan struct{}
+	seriesStateWg   sync.WaitGroup
+
 	stats *HeadStats
 	reg   prometheus.Registerer
 
@@ -210,6 +214,9 @@ type HeadOptions struct {
 	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
 	// is implemented.
 	EnableMetadataWALRecords bool
+
+	// EnableFastStartup enables scraping in parallel with WAL replay but with queries still disabled.
+	EnableFastStartup bool
 }
 
 const (
@@ -294,8 +301,9 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 				return &memChunk{}
 			},
 		},
-		stats: stats,
-		reg:   r,
+		stats:           stats,
+		reg:             r,
+		seriesStateQuit: make(chan struct{}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -900,6 +908,13 @@ func (h *Head) Init(minValidTime int64) error {
 		"mmap_chunk_replay_duration", mmapChunkReplayDuration.String(),
 		"total_replay_duration", totalReplayDuration.String(),
 	)
+
+	// TODO(RushabhMehta2005): Remove this 'if' block and always run the series state ticker when the feature is fully implemented.
+	if h.opts.EnableFastStartup {
+		// Start the background goroutine that writes to series_state.json.
+		h.seriesStateWg.Add(1)
+		go h.runSeriesStateTicker()
+	}
 
 	return nil
 }
@@ -1816,6 +1831,15 @@ func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
+
+	// Stop the background series_state.json writer.
+	if h.opts.EnableFastStartup && h.seriesStateQuit != nil {
+		close(h.seriesStateQuit)
+		h.seriesStateWg.Wait()
+		h.seriesStateQuit = nil
+		// Flush the final clean state.
+		h.writeSeriesState(true)
+	}
 
 	// mmap all but last chunk in case we're performing snapshot since that only
 	// takes samples from most recent head chunk.
