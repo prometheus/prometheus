@@ -1563,8 +1563,6 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 ### `<docker_sd_config>`
 
-### `<docker_sd_config>`
-
 Docker SD configurations allow retrieving scrape targets from [Docker Engine](https://docs.docker.com/engine/) hosts.
 
 This SD discovers "containers" and will create a target for each network IP and port the container is configured to expose.
