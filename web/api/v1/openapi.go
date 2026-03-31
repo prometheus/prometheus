@@ -298,6 +298,7 @@ func (b *OpenAPIBuilder) getAllPathDefinitions() *orderedmap.Map[string, *v3.Pat
 	paths.Set("/status/tsdb", b.statusTSDBPath())
 	paths.Set("/status/tsdb/blocks", b.statusTSDBBlocksPath())
 	paths.Set("/status/walreplay", b.statusWALReplayPath())
+	paths.Set("/status/self_metrics", b.statusSelfMetricsPath())
 
 	// Admin endpoints.
 	paths.Set("/admin/tsdb/delete_series", b.adminDeleteSeriesPath())

@@ -886,6 +886,51 @@ func statusWALReplayResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// statusSelfMetricsResponseExamples returns examples for /status/self_metrics response.
+func statusSelfMetricsResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("selfMetrics", &base.Example{
+		Summary: "Prometheus self-instrumentation metrics",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": []map[string]any{
+				{
+					"name": "prometheus_build_info",
+					"help": "A metric with a constant '1' value labeled by version, revision, branch, goversion from which prometheus was built, and the goos and goarch for the build.",
+					"type": "GAUGE",
+					"metrics": []map[string]any{
+						{
+							"labels": map[string]string{
+								"branch":    "HEAD",
+								"goarch":    "amd64",
+								"goos":      "linux",
+								"goversion": "go1.23.0",
+								"revision":  "abc1234",
+								"tags":      "netgo,builtinassets,stringlabels",
+								"version":   "3.0.0",
+							},
+							"value": "1",
+						},
+					},
+				},
+				{
+					"name": "prometheus_tsdb_head_chunks",
+					"help": "Total number of chunks in the head block.",
+					"type": "GAUGE",
+					"metrics": []map[string]any{
+						{
+							"value": "1024",
+						},
+					},
+				},
+			},
+		}),
+	})
+
+	return examples
+}
+
 // deleteSeriesResponseExamples returns examples for /admin/tsdb/delete_series response.
 func deleteSeriesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
