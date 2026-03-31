@@ -1368,8 +1368,8 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 	return r.LabelValuesFiltered(ctx, name, hints, nil)
 }
 
-// LabelValues returns label values for which the filter function returns true.
-// Accepts filter==nil meaning all values, to avoid repeating all the code for LabelValues()
+// LabelValuesFiltered returns label values for which the filter function returns true.
+// Accepts filter==nil meaning all values, to avoid repeating all the code for LabelValues().
 func (r *Reader) LabelValuesFiltered(ctx context.Context, name string, hints *storage.LabelHints, filter func(string) bool) ([]string, error) {
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]

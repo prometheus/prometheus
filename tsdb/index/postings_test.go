@@ -1530,7 +1530,7 @@ func TestMemPostings_LabelValuesFilteredHonorsContextCancel(t *testing.T) {
 	failAfter := uint64(seriesCount / 2 / checkContextEveryNIterations)
 	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
 
-	_, err := memP.LabelValuesFiltered(ctx, "__name__", nil, func(s string) bool { return true })
+	_, err := memP.LabelValuesFiltered(ctx, "__name__", nil, func(string) bool { return true })
 
 	require.Error(t, err)
 	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.

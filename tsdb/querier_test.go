@@ -3337,7 +3337,7 @@ func (mockMatcherIndex) LabelNamesFor(context.Context, index.Postings) ([]string
 	return nil, errors.New("label names for called")
 }
 
-func (m mockMatcherIndex) LabelValuesFiltered(_ context.Context, name string, hints *storage.LabelHints, filter func(string) bool) ([]string, error) {
+func (mockMatcherIndex) LabelValuesFiltered(context.Context, string, *storage.LabelHints, func(string) bool) ([]string, error) {
 	return []string{}, errors.New("label values filtered called")
 }
 
