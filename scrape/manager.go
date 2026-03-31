@@ -135,7 +135,7 @@ type Options struct {
 	// TODO: Move this option to OM1 parser and use only on OM1 flow.
 	ParseST bool
 
-	// Option to enable the synthesis of start timestamp for cumulative metrics.
+	// SynthesizeST enables the synthesis of start timestamp for cumulative metrics.
 	SynthesizeST bool
 
 	// EnableTypeAndUnitLabels represents type-and-unit-labels feature flag.

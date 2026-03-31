@@ -821,7 +821,7 @@ type cacheEntry struct {
 	hash     uint64
 	lset     labels.Labels
 
-	// st logic state for generating start timestamp
+	// st is an optional state for ST synthesis.
 	st *stCache
 }
 
