@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 
 	"github.com/prometheus/prometheus/util/fuzzing"
 )
@@ -80,6 +81,16 @@ func run() error {
 		return fmt.Errorf("failed to generate fuzzXOR2Chunk_seed_corpus.zip: %w", err)
 	}
 	fmt.Printf("Generated fuzzXOR2Chunk_seed_corpus.zip with %d entries.\n", len(xor2Seeds))
+
+	// Generate FuzzParseProtobuf seed corpus.
+	protobufSeeds, err := fuzzing.GetCorpusForFuzzParseProtobuf()
+	if err != nil {
+		return fmt.Errorf("failed to get corpus for FuzzParseProtobuf: %w", err)
+	}
+	if err := generateZipFromProtobufSeeds("fuzzParseProtobuf", protobufSeeds); err != nil {
+		return fmt.Errorf("failed to generate fuzzParseProtobuf_seed_corpus.zip: %w", err)
+	}
+	fmt.Printf("Generated fuzzParseProtobuf_seed_corpus.zip with %d entries.\n", len(protobufSeeds))
 
 	return nil
 }
@@ -175,6 +186,22 @@ func generateZipFromXOR2ChunkSeeds(fuzzName string, seeds []fuzzing.XOR2ChunkFuz
 	entries := make([][]byte, len(seeds))
 	for i, s := range seeds {
 		entries[i] = []byte(fmt.Sprintf("go test fuzz v1\nint64(%d)\nuint8(%d)\nuint64(%d)\nuint8(%d)\n", s.Seed, s.N, s.NaNMask, s.STMode))
+	}
+	return generateZipFromSeedEntries(fuzzName, entries)
+}
+
+// generateZipFromProtobufSeeds creates a seed corpus ZIP file for FuzzParseProtobuf.
+func generateZipFromProtobufSeeds(fuzzName string, seeds []fuzzing.ProtobufCorpusSeed) error {
+	entries := make([][]byte, len(seeds))
+	for i, s := range seeds {
+		entries[i] = []byte(fmt.Sprintf(
+			"go test fuzz v1\n[]byte(%s)\nbool(%v)\nbool(%v)\nbool(%v)\nbool(%v)\n",
+			strconv.Quote(string(s.Data)),
+			s.IgnoreNative,
+			s.ParseClassic,
+			s.ConvertNHCB,
+			s.TypeAndUnit,
+		))
 	}
 	return generateZipFromSeedEntries(fuzzName, entries)
 }

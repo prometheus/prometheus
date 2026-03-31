@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        fuzz_test: [FuzzParseMetricText, FuzzParseOpenMetric, FuzzParseMetricSelector, FuzzParseExpr, FuzzXORChunk, FuzzXOR2Chunk]
+        fuzz_test: [FuzzParseMetricText, FuzzParseOpenMetric, FuzzParseMetricSelector, FuzzParseExpr, FuzzXORChunk, FuzzXOR2Chunk, FuzzParseProtobuf]
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -21,7 +21,7 @@ jobs:
         with:
           go-version: 1.26.x
       - name: Run Fuzzing
-        run: go test -fuzz=${{ matrix.fuzz_test }}$ -fuzztime=5m ./util/fuzzing
+        run: go test -fuzz=${{ matrix.fuzz_test }}$ -fuzztime=4m ./util/fuzzing
         continue-on-error: true
         id: fuzz
       - name: Upload Crash Artifacts
