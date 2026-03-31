@@ -309,7 +309,7 @@ func startFakeHTTPServer(t *testing.T) (*pipeListener, func()) {
 
 // setupSynctestManager abstracts the boilerplate of creating a mock network,
 // starting the fake HTTP server, and configuring the scrape manager for synctest.
-func setupSynctestManager(t *testing.T, opts *Options, interval time.Duration) (*Manager, *teststorage.Appendable, func()) {
+func setupSynctestManager(t *testing.T, opts *Options, interval time.Duration, initConfig bool) (*Manager, *teststorage.Appendable, func()) {
 	t.Helper()
 	app := teststorage.NewAppendable()
 
@@ -345,7 +345,7 @@ func setupSynctestManager(t *testing.T, opts *Options, interval time.Duration) (
 	)
 	require.NoError(t, err)
 
-	if interval <= 0 {
+	if !initConfig {
 		return scrapeManager, app, cleanup
 	}
 

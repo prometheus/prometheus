@@ -786,7 +786,6 @@ func pk(provider, setName string, n int) poolKey {
 func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 	testCases := []struct {
 		name            string
-		skipInitialWait bool
 		updatert        time.Duration
 		readTimeout     time.Duration
 		expectedTargets int
@@ -799,14 +798,13 @@ func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 		{
 			name:            "startup wait with short interval succeeds",
 			updatert:        10 * time.Millisecond,
-			readTimeout:     100 * time.Millisecond,
+			readTimeout:     300 * time.Millisecond,
 			expectedTargets: 1,
 		},
 		{
 			name:            "skip startup wait",
-			skipInitialWait: true,
 			updatert:        100 * time.Hour,
-			readTimeout:     100 * time.Millisecond,
+			readTimeout:     300 * time.Millisecond,
 			expectedTargets: 1,
 		},
 	}
@@ -819,11 +817,7 @@ func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 				reg := prometheus.NewRegistry()
 				_, sdMetrics := NewTestMetrics(t, reg)
 
-				var opts []func(*Manager)
-				if tc.skipInitialWait {
-					opts = append(opts, SkipStartupWait())
-				}
-
+				opts := make([]func(*Manager), 0)
 				discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics, opts...)
 				require.NotNil(t, discoveryManager)
 
@@ -839,20 +833,25 @@ func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 
 				synctest.Wait()
 
-				var syncedTargets map[string][]*targetgroup.Group
-				select {
-				case syncedTargets = <-discoveryManager.SyncCh():
-				case <-time.After(tc.readTimeout):
+				timeout := time.After(tc.readTimeout)
+				var lastSyncedTargets map[string][]*targetgroup.Group
+			testFor:
+				for {
+					select {
+					case <-timeout:
+						break testFor
+					case lastSyncedTargets = <-discoveryManager.SyncCh():
+					}
 				}
 
 				if tc.expectedTargets == 0 {
-					require.Nil(t, syncedTargets)
+					require.Nil(t, lastSyncedTargets)
 					return
 				}
 
-				require.Len(t, syncedTargets, 1)
-				require.Len(t, syncedTargets["prometheus"], tc.expectedTargets)
-				verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+				require.Len(t, lastSyncedTargets, 1)
+				require.Len(t, lastSyncedTargets["prometheus"], tc.expectedTargets)
+				verifySyncedPresence(t, lastSyncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 
 				p := pk("static", "prometheus", 0)
 				verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
