@@ -47,6 +47,10 @@ eval instant at 10m last_over_time(metric_total{env="1"}[10m])
 eval instant at 10m first_over_time(metric_total{env="1"}[10m])
 	metric_total{env="1"} 60
 
+# However, when a subquery contains a name-dropping function, that should be respected.
+eval instant at 10m last_over_time(abs(metric_total{env="1"})[10m:])
+	{env="1"} 120
+
 # Drops name for other _over_time functions.
 eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120

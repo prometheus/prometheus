@@ -2087,6 +2087,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		// offset; thus, they should keep the metric name.  For all the
 		// other range vector functions, the only change needed is to
 		// drop the metric name in the output.
+		// However, if the input series (e.g., from a subquery) already has
+		// DropName set, we should respect that.
 		dropName := (e.Func.Name != "last_over_time" && e.Func.Name != "first_over_time")
 		vectorVals := make([]Vector, len(e.Args)-1)
 		for i, s := range selVS.Series {
@@ -2102,13 +2104,23 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}
 			chkIter = s.Iterator(chkIter)
 			it.Reset(chkIter)
+
+			// Check if input series already wants to drop the name (e.g., from subquery).
+			inputDropName := false
+			if storageSeries, ok := s.(*StorageSeries); ok {
+				inputDropName = storageSeries.series.DropName
+			}
+
+			// Use OR logic: drop name if either the function wants it OR the input wants it.
+			seriesDropName := dropName || inputDropName
+
 			metric := selVS.Series[i].Labels()
-			if !ev.enableDelayedNameRemoval && dropName {
+			if !ev.enableDelayedNameRemoval && seriesDropName {
 				metric = metric.DropReserved(schema.IsMetadataLabel)
 			}
 			ss := Series{
 				Metric:   metric,
-				DropName: dropName,
+				DropName: seriesDropName,
 			}
 			inMatrix[0].Metric = selVS.Series[i].Labels()
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
