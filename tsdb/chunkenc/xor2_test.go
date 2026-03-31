@@ -310,6 +310,19 @@ func TestXOR2ActiveSTFastPathBoundaries(t *testing.T) {
 	})
 }
 
+func TestXOR2ActiveST13BitDodValueUnchangedSTDeltaBranches(t *testing.T) {
+	requireXOR2Samples(t, []triple{
+		{st: 0, t: 1000, v: 1.0},
+		{st: 0, t: 2000, v: 1.0},
+		{st: 1500, t: 3000, v: 1.0}, // First ST change: stDiff=500.
+		{st: 2500, t: 4001, v: 1.0}, // Active ST, dod=1, deltaStDiff=0.
+		{st: 3497, t: 5003, v: 1.0}, // Active ST, dod=1, deltaStDiff=4.
+		{st: 4467, t: 6004, v: 1.0}, // Active ST, dod=-1, deltaStDiff=32.
+		{st: 5212, t: 7007, v: 1.0}, // Active ST, dod=2, deltaStDiff=256.
+		{st: 5915, t: 8008, v: 1.0}, // Active ST, dod=-2, deltaStDiff=300.
+	})
+}
+
 func TestXOR2EncodeJointValueUnchangedThenChanged(t *testing.T) {
 	requireXOR2Samples(t, []triple{
 		{st: 0, t: 1000, v: 1.0},
@@ -335,6 +348,28 @@ func TestXOR2ActiveSTDodZeroValueChange(t *testing.T) {
 		{st: 500, t: 2000, v: 2.0},
 		{st: 500, t: 3000, v: 3.0}, // dod=0, value changed.
 		{st: 500, t: 4000, v: 4.0}, // dod=0, value changed.
+	})
+}
+
+func TestXOR2ActiveSTDodZeroValueUnchangedZeroSTDelta(t *testing.T) {
+	requireXOR2Samples(t, []triple{
+		{st: 0, t: 1000, v: 1.0},
+		{st: 0, t: 2000, v: 1.0},
+		{st: 1500, t: 3000, v: 1.0}, // First ST change: stDiff=500.
+		{st: 2500, t: 4000, v: 1.0}, // Active ST, dod=0, value unchanged, deltaStDiff=0.
+		{st: 3500, t: 5000, v: 1.0}, // Repeat to keep the path live on consecutive samples.
+	})
+}
+
+func TestXOR2ActiveSTValueChangeInlineSTDeltaBranches(t *testing.T) {
+	requireXOR2Samples(t, []triple{
+		{st: 0, t: 1000, v: 1.0},
+		{st: 0, t: 2000, v: 2.0},
+		{st: 1500, t: 3000, v: 3.0}, // First ST change: stDiff=500.
+		{st: 2500, t: 4000, v: 4.0}, // Active ST default case, deltaStDiff=0.
+		{st: 3497, t: 5000, v: 5.0}, // Active ST default case, deltaStDiff=3.
+		{st: 4466, t: 6000, v: 6.0}, // Active ST default case, deltaStDiff=31.
+		{st: 5211, t: 7000, v: 7.0}, // Active ST default case, deltaStDiff=255.
 	})
 }
 
