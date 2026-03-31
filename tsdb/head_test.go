@@ -927,10 +927,10 @@ func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
 	}
 
 	// Append samples across chunk boundaries to give ref1 3 m-mapped chunks + 1 active head chunk.
-	ref1 := appendSample(100, 1)  // nextAt=1000
-	appendSample(1200, 2)         // ≥1000 → chunk 2, nextAt=2000
-	appendSample(2300, 3)         // ≥2000 → chunk 3, nextAt=3000
-	appendSample(3400, 4)         // ≥3000 → chunk 4 (active head)
+	ref1 := appendSample(100, 1) // nextAt=1000
+	appendSample(1200, 2)        // ≥1000 → chunk 2, nextAt=2000
+	appendSample(2300, 3)        // ≥2000 → chunk 3, nextAt=3000
+	appendSample(3400, 4)        // ≥3000 → chunk 4 (active head)
 
 	// Mark ref1 as stale.
 	appendSample(3500, math.Float64frombits(value.StaleNaN))
