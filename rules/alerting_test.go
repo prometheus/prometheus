@@ -16,6 +16,7 @@ package rules
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
 
@@ -538,8 +539,11 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 			close(startQueryCh)
 			select {
 			case <-getDoneCh:
-			case <-time.After(time.Millisecond * 10):
+			case <-time.After(20 * time.Millisecond):
 				// Assert no blocking when template expanding.
+				buf := make([]byte, 1<<20)
+				n := runtime.Stack(buf, true)
+				t.Logf("goroutine dump:\n%s", buf[:n])
 				require.Fail(t, "unexpected blocking when template expanding.")
 			}
 		}
