@@ -332,6 +332,10 @@ func compactBuckets[IBC InternalBucketCount](
 	spans = spans[:iSpan]
 	iSpan = 0
 
+	if len(spans) == 0 {
+		return primaryBuckets[:0], compensationBuckets[:0], spans
+	}
+
 	// Cut out empty buckets from start and end of spans, no matter
 	// what. Also cut out empty buckets from the middle of a span but only
 	// if there are more than maxEmptyBuckets consecutive empty buckets.

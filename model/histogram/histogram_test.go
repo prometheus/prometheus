@@ -1339,6 +1339,22 @@ func TestHistogramCompact(t *testing.T) {
 			},
 		},
 		{
+			"all zero-length spans with non-empty buckets",
+			&Histogram{
+				PositiveSpans:   []Span{{0, 0}, {2, 0}},
+				PositiveBuckets: []int64{1, 3},
+				NegativeSpans:   []Span{{1, 0}},
+				NegativeBuckets: []int64{2},
+			},
+			0,
+			&Histogram{
+				PositiveSpans:   []Span{},
+				PositiveBuckets: []int64{},
+				NegativeSpans:   []Span{},
+				NegativeBuckets: []int64{},
+			},
+		},
+		{
 			"eliminate multiple zero length spans with custom buckets",
 			&Histogram{
 				Schema:          CustomBucketsSchema,
