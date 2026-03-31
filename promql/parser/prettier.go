@@ -111,11 +111,11 @@ func (e *EvalStmt) Pretty(int) string {
 
 func (e Expressions) Pretty(level int) string {
 	// Do not prefix the indent since respective nodes will indent itself.
-	s := ""
+	var s strings.Builder
 	for i := range e {
-		s += fmt.Sprintf("%s,\n", e[i].Pretty(level))
+		fmt.Fprintf(&s, "%s,\n", e[i].Pretty(level))
 	}
-	return s[:len(s)-2]
+	return s.String()[:len(s.String())-2]
 }
 
 func (e *ParenExpr) Pretty(level int) string {

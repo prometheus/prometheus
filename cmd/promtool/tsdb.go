@@ -525,7 +525,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		postingInfos = append(postingInfos, postingInfo{k, uint64(float64(m) / float64(meta.MaxTime-meta.MinTime))})
 	}
 
-	fmt.Printf("\nLabel pairs most involved in churning:\n")
+	fmt.Print("\nLabel pairs most involved in churning:\n")
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
@@ -533,7 +533,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		postingInfos = append(postingInfos, postingInfo{k, uint64(float64(m) / float64(meta.MaxTime-meta.MinTime))})
 	}
 
-	fmt.Printf("\nLabel names most involved in churning:\n")
+	fmt.Print("\nLabel names most involved in churning:\n")
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
@@ -541,7 +541,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		postingInfos = append(postingInfos, postingInfo{k, m})
 	}
 
-	fmt.Printf("\nMost common label pairs:\n")
+	fmt.Print("\nMost common label pairs:\n")
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
@@ -557,7 +557,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		postingInfos = append(postingInfos, postingInfo{n, cumulativeLength})
 	}
 
-	fmt.Printf("\nLabel names with highest cumulative label value length:\n")
+	fmt.Print("\nLabel names with highest cumulative label value length:\n")
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
@@ -568,7 +568,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		}
 		postingInfos = append(postingInfos, postingInfo{n, uint64(len(lv))})
 	}
-	fmt.Printf("\nHighest cardinality labels:\n")
+	fmt.Print("\nHighest cardinality labels:\n")
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
@@ -594,7 +594,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		}
 		postingInfos = append(postingInfos, postingInfo{n, uint64(count)})
 	}
-	fmt.Printf("\nHighest cardinality metric names:\n")
+	fmt.Print("\nHighest cardinality metric names:\n")
 	printInfo(postingInfos)
 
 	if runExtended {
@@ -687,7 +687,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 		}
 	}
 
-	fmt.Printf("\nCompaction analysis:\n")
+	fmt.Print("\nCompaction analysis:\n")
 	fmt.Println()
 	displayHistogram("samples per float chunk", floatChunkSamplesCount, totalChunks)
 
