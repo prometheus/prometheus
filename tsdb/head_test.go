@@ -918,45 +918,40 @@ func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	lset := labels.FromStrings("foo", "bar")
-	appendSample := func(ts int64, v float64) {
+	appendSample := func(ts int64, v float64) storage.SeriesRef {
 		app := head.Appender(context.Background())
-		_, err := app.Append(0, lset, ts, v)
+		ref, err := app.Append(0, lset, ts, v)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
+		return ref
 	}
 
-	// Append samples to create 3 m-mapped chunks for ref1.
-	// With chunkRange=1000, each sample >1000ms after the chunk start forces a new chunk.
-	appendSample(100, 1)  // chunk 1 (nextAt≈1100)
-	appendSample(1200, 2) // chunk 1 mmapped, chunk 2 starts
-	appendSample(2300, 3) // chunk 2 mmapped, chunk 3 starts
-	appendSample(3400, 4) // chunk 3 mmapped, chunk 4 starts
-	// Ref1 now has 3 m-mapped chunks + 1 active head chunk.
+	// Append samples to create 3 m-mapped chunks + 1 active head chunk for ref1.
+	// With chunkRange=1000, each sample that crosses an aligned 1000ms boundary
+	// forces a new chunk (rangeForTimestamp(mint, 1000) = (mint/1000)*1000 + 1000).
+	ref1 := appendSample(100, 1)
+	appendSample(1200, 2)
+	appendSample(2300, 3)
+	appendSample(3400, 4)
 
 	// Mark ref1 as stale.
 	appendSample(3500, math.Float64frombits(value.StaleNaN))
 
 	// Truncate stale series: removes ref1 from the head and writes a
 	// [MinInt64, MaxInt64] tombstone record to the WAL.
-	ms := head.series.getByHash(lset.Hash(), lset)
-	require.NotNil(t, ms)
-	ref1 := ms.ref
-	require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{storage.SeriesRef(ref1)}, 3500))
+	require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{ref1}, 3500))
 
 	// Append a single sample with the same labels to create ref2.
 	// Ref2 has 0 m-mapped chunks, fewer than ref1's 3.
-	app := head.Appender(context.Background())
-	ref2, err := app.Append(0, lset, 5000, 5)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.NotEqual(t, chunks.HeadSeriesRef(ref2), ref1, "refs must differ after stale truncation and recreation")
+	ref2 := appendSample(5000, 5)
+	require.NotEqual(t, ref1, ref2, "refs must differ after stale truncation and recreation")
 
 	require.NoError(t, head.Close())
 
 	// Reopen the head to trigger WAL replay. The WAL contains (in order):
 	//   series(ref1) → tombstone(ref1, [MinInt64,MaxInt64]) → series(ref2) → sample(ref2)
 	// Without the fix, replay drives prometheus_tsdb_head_chunks negative.
-	w, err = wlog.New(nil, nil, w.Dir(), compression.None)
+	w, err := wlog.New(nil, nil, w.Dir(), compression.None)
 	require.NoError(t, err)
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
@@ -969,8 +964,7 @@ func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
 	}()
 
 	chunksGauge := prom_testutil.ToFloat64(head.metrics.chunks)
-	require.GreaterOrEqualf(t, chunksGauge, 0.0,
-		"prometheus_tsdb_head_chunks gauge must not be negative after WAL replay, got %v", chunksGauge)
+	require.GreaterOrEqual(t, chunksGauge, 0.0, "prometheus_tsdb_head_chunks gauge must not be negative after WAL replay")
 }
 
 func TestHead_WALCheckpointMultiRef(t *testing.T) {
