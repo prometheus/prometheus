@@ -150,7 +150,7 @@ loop:
 		var (
 			et                       textparse.Entry
 			shouldCache, isHistogram bool
-			st, explicitST           int64
+			st                       int64
 			met                      []byte
 			parsedTimestamp          *int64
 			val                      float64
@@ -256,12 +256,10 @@ loop:
 				break loop
 			}
 
-			explicitST = 0
 			if sl.parseST {
 				// p.StartTimestamp() tend to be expensive (e.g. OM1). Do it only if we care.
-				explicitST = p.StartTimestamp()
+				st = p.StartTimestamp()
 			}
-			st = explicitST
 
 			if sl.synthesizeST && st == 0 {
 				st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce, lastMFName, val, h, fh, t)
@@ -349,12 +347,8 @@ loop:
 			}
 		}
 
-		if ce != nil {
-			if sl.synthesizeST && explicitST != 0 {
-				ce.st = nil // Reset cache if explicit ST provided.
-			} else if stCache != nil {
-				ce.st = stCache
-			}
+		if ce != nil && sl.synthesizeST {
+			ce.st = stCache
 		}
 
 		// Track staleness uniformly, bypassing logic if there is an explicit timestamp.
