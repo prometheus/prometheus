@@ -47,6 +47,18 @@ eval instant at 10m last_over_time(metric_total{env="1"}[10m])
 eval instant at 10m first_over_time(metric_total{env="1"}[10m])
 	metric_total{env="1"} 60
 
+# Bug: When abs() is used with last_over_time in a range selector, it should drop __name__.
+# This test demonstrates the issue where the metric name is NOT dropped as expected.
+eval instant at 10m abs(metric_total{env="1"})
+	{env="1"} 120
+
+eval instant at 10m abs(last_over_time(metric_total{env="1"}[10m]))
+	{env="1"} 120
+
+# BUG: This should drop the metric name but doesn't.
+eval instant at 10m last_over_time(abs(metric_total{env="1"})[10m:])
+	{env="1"} 120
+
 # Drops name for other _over_time functions.
 eval instant at 10m max_over_time(metric_total{env="1"}[10m])
 	{env="1"} 120
