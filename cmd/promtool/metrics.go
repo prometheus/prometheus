@@ -73,9 +73,9 @@ func PushMetrics(url *url.URL, roundTripper http.RoundTripper, headers map[strin
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			return failureExitCode
 		}
-		fmt.Printf("Parsing standard input\n")
+		fmt.Print("Parsing standard input\n")
 		if parseAndPushMetrics(writeAPI, messageType, data, labels) {
-			fmt.Printf("  SUCCESS: metrics pushed to remote write.\n")
+			fmt.Print("  SUCCESS: metrics pushed to remote write.\n")
 			return successExitCode
 		}
 		return failureExitCode
