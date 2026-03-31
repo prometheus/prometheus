@@ -7915,3 +7915,94 @@ func TestHead_FastStartupStateFile(t *testing.T) {
 	require.Equal(t, uint64(1), state.LastSeriesID, "LastSeriesID should remain 1")
 	require.Equal(t, 0, state.LastWALSegment, "LastWALSegment should remain 0")
 }
+
+func TestHead_mmapHeadChunks(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+	require.NoError(t, h.Init(0))
+
+	interval := DefaultBlockDuration / (4 * 120) // Same interval as other mmap tests.
+
+	countReady := func() int {
+		n := 0
+		for i := range h.series.size {
+			h.series.locks[i].RLock()
+			for _, s := range h.series.series[i] {
+				if s.readyForMmap.Load() {
+					n++
+				}
+			}
+			h.series.locks[i].RUnlock()
+		}
+		return n
+	}
+
+	lblsA := labels.FromStrings("__name__", "seriesA")
+	lblsB := labels.FromStrings("__name__", "seriesB")
+	lblsC := labels.FromStrings("__name__", "seriesC")
+
+	ts := int64(0)
+
+	// First chunk creation should not mark series as ready.
+	app := h.Appender(t.Context())
+	_, err := app.Append(0, lblsA, ts, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	ts += interval
+
+	require.Equal(t, 0, countReady(), "series with only a first chunk should not be ready")
+
+	const chunkCutIterations = 2*DefaultSamplesPerChunk + 10
+
+	// Appending enough samples to trigger chunk cuts should mark series ready.
+	var refB, refC storage.SeriesRef
+	app = h.Appender(t.Context())
+	for range chunkCutIterations {
+		var err error
+		refB, err = app.Append(refB, lblsB, ts, float64(ts))
+		require.NoError(t, err)
+		refC, err = app.Append(refC, lblsC, ts, float64(ts))
+		require.NoError(t, err)
+		ts += interval
+	}
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, 2, countReady(), "expected both series to be marked ready")
+
+	// mmapHeadChunks should drain the ready set and mmap chunks.
+	h.mmapHeadChunks()
+
+	for _, lbls := range []labels.Labels{lblsB, lblsC} {
+		s := h.series.getByHash(lbls.Hash(), lbls)
+		require.NotNil(t, s, "series %s not found", lbls)
+		s.Lock()
+		require.NotNil(t, s.headChunks, "series %s should have head chunks", lbls)
+		require.Nil(t, s.headChunks.prev, "series %s should not have prev mmapped", lbls)
+		require.NotEmpty(t, s.mmappedChunks, "series %s should have mmapped chunks", lbls)
+		s.Unlock()
+	}
+
+	require.Equal(t, 0, countReady(), "ready set should be empty after mmapHeadChunks")
+
+	// A second call should be a no-op.
+	beforeMetric := prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	h.mmapHeadChunks()
+	afterMetric := prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	require.Equal(t, beforeMetric, afterMetric, "second call should mmap 0 chunks")
+
+	// Only newly ready series should be processed.
+	app = h.Appender(t.Context())
+	for range chunkCutIterations {
+		var err error
+		refB, err = app.Append(refB, lblsB, ts, float64(ts))
+		require.NoError(t, err)
+		ts += interval
+	}
+	require.NoError(t, app.Commit())
+
+	require.Equal(t, 1, countReady(), "only series B should be ready")
+
+	beforeMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	h.mmapHeadChunks()
+	afterMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
+	require.Greater(t, afterMetric, beforeMetric, "third call should mmap chunks from series B")
+}
