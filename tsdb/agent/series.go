@@ -161,10 +161,9 @@ func newStripeSeries(stripeSize int) *stripeSeries {
 // GC garbage collects old series that have not received a sample after mint
 // and will fully delete them.
 func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
-	// NOTE(rfratto): GC will grab two locks, one for the hash and the other for
-	// series. It's not valid for any other function to grab both locks,
-	// otherwise a deadlock might occur when running GC in parallel with
-	// appending.
+	// gcMut serializes GC calls. Within a single GC pass, the check function
+	// holds hashLock and then acquires refLock — callers must never hold both
+	// simultaneously, which SetUnlessAlreadySet satisfies.
 	s.gcMut.Lock()
 	defer s.gcMut.Unlock()
 
@@ -234,31 +233,18 @@ func (s *stripeSeries) GetByHash(hash uint64, lset labels.Labels) *memSeries {
 	return s.hashes[hashLock].Get(hash, lset)
 }
 
-func (s *stripeSeries) Set(hash uint64, series *memSeries) {
-	var (
-		hashLock = s.hashLock(hash)
-		refLock  = s.refLock(series.ref)
-	)
-
-	// We can't hold both locks at once otherwise we might deadlock with a
-	// simultaneous call to GC.
-	//
-	// We update s.series first because GC expects anything in s.hashes to
-	// already exist in s.series.
-	s.locks[refLock].Lock()
-	s.series[refLock][series.ref] = series
-	s.locks[refLock].Unlock()
-
-	s.locks[hashLock].Lock()
-	s.hashes[hashLock].Set(hash, series)
-	s.locks[hashLock].Unlock()
-}
-
-// GetOrSet returns the existing series for the given label set, or sets it if it does not exist.
-// It returns the series and a boolean indicating whether it was newly created.
-func (s *stripeSeries) GetOrSet(hash uint64, series *memSeries) (*memSeries, bool) {
+// SetUnlessAlreadySet inserts series for the given hash if no series with the
+// same label set already exists. It returns the canonical series and whether
+// it was newly inserted.
+//
+// Insertion order is refs-before-hashes. GC only discovers series via hashes,
+// so anything it finds is guaranteed to already be present in refs. We never
+// hold hashLock and refLock simultaneously, preserving the no-deadlock
+// invariant that GC relies on (it holds hashLock while acquiring refLock).
+func (s *stripeSeries) SetUnlessAlreadySet(hash uint64, series *memSeries) (*memSeries, bool) {
 	hashLock := s.hashLock(hash)
 
+	// Fast path: series already exists.
 	s.locks[hashLock].Lock()
 	if prev := s.hashes[hashLock].Get(hash, series.lset); prev != nil {
 		s.locks[hashLock].Unlock()
@@ -266,7 +252,28 @@ func (s *stripeSeries) GetOrSet(hash uint64, series *memSeries) (*memSeries, boo
 	}
 	s.locks[hashLock].Unlock()
 
-	s.Set(hash, series)
+	// Insert into refs first. GC discovers series through hashes, so a series
+	// that is only in refs is invisible to GC and will not be removed.
+	refLock := s.refLock(series.ref)
+	s.locks[refLock].Lock()
+	s.series[refLock][series.ref] = series
+	s.locks[refLock].Unlock()
+
+	// Re-acquire hashLock to insert into hashes. A concurrent goroutine may
+	// have inserted the same label set while we were inserting into refs, so
+	// check again before committing.
+	s.locks[hashLock].Lock()
+	if prev := s.hashes[hashLock].Get(hash, series.lset); prev != nil {
+		s.locks[hashLock].Unlock()
+		// We lost the race: clean up the ref we pre-inserted.
+		s.locks[refLock].Lock()
+		delete(s.series[refLock], series.ref)
+		s.locks[refLock].Unlock()
+		return prev, false
+	}
+	s.hashes[hashLock].Set(hash, series)
+	s.locks[hashLock].Unlock()
+
 	return series, true
 }
 
