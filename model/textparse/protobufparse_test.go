@@ -5911,6 +5911,32 @@ func generateValidMetricName(r *rand.Rand) string {
 	return generateString(r, validFirstRunes, validMetricNameRunes)
 }
 
+// TestProtobufParseSummaryNoQuantilesNoPanic is a regression test for a panic
+// when Next() is called without Series() on a summary with no quantiles.
+func TestProtobufParseSummaryNoQuantilesNoPanic(t *testing.T) {
+	buf := metricFamiliesToProtobuf(t, []string{`
+name: "no_quantile_summary"
+help: "A summary with no quantile entries."
+type: SUMMARY
+metric: <
+  summary: <
+    sample_count: 10
+    sample_sum: 1.5
+  >
+>
+`})
+
+	p := NewProtobufParser(buf.Bytes(), false, false, false, false, labels.NewSymbolTable())
+	require.NotPanics(t, func() {
+		for {
+			_, err := p.Next()
+			if errors.Is(err, io.EOF) || err != nil {
+				break
+			}
+		}
+	})
+}
+
 func generateString(r *rand.Rand, firstRunes, restRunes []rune) string {
 	result := make([]rune, 1+r.Intn(20))
 	for i := range result {
