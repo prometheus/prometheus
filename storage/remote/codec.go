@@ -1000,7 +1000,7 @@ func DecodeOTLPWriteRequest(r *http.Request) (pmetricotlp.ExportRequest, error) 
 		return pmetricotlp.NewExportRequest(), fmt.Errorf("unsupported compression: %s. Only \"gzip\" or no compression supported", r.Header.Get("Content-Encoding"))
 	}
 
-	body, err := io.ReadAll(reader)
+	body, err := io.ReadAll(io.LimitReader(reader, decodeReadLimit))
 	if err != nil {
 		r.Body.Close()
 		return pmetricotlp.NewExportRequest(), err

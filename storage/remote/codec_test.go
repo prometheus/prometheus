@@ -15,9 +15,12 @@ package remote
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"testing"
 
@@ -25,6 +28,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -727,6 +732,37 @@ func TestMergeLabels(t *testing.T) {
 	} {
 		require.Equal(t, tc.expected, MergeLabels(tc.primary, tc.secondary))
 	}
+}
+
+func TestDecodeOTLPWriteRequestGzipSizeLimit(t *testing.T) {
+	// Build a valid OTLP request whose serialized protobuf exceeds decodeReadLimit.
+	// A metric description filled with repeated characters compresses very
+	// efficiently, so the gzip payload is small while the decompressed form is
+	// larger than the 32 MiB limit.
+	d := pmetric.NewMetrics()
+	m := d.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("test_metric")
+	m.SetDescription(strings.Repeat("a", decodeReadLimit+1))
+	m.SetEmptyGauge()
+
+	proto, err := pmetricotlp.NewExportRequestFromMetrics(d).MarshalProto()
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	_, err = gz.Write(proto)
+	require.NoError(t, err)
+	require.NoError(t, gz.Close())
+
+	req, err := http.NewRequest(http.MethodPost, "/", &buf)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", pbContentType)
+	req.Header.Set("Content-Encoding", "gzip")
+
+	// The decompressed payload exceeds decodeReadLimit and is truncated, so the
+	// protobuf cannot be parsed into a valid ExportRequest.
+	_, err = DecodeOTLPWriteRequest(req)
+	require.Error(t, err)
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
