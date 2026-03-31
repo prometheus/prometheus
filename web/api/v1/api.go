@@ -459,6 +459,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
 	r.Get("/status/tsdb/blocks", wrapAgent(api.serveTSDBBlocks))
+	r.Get("/status/self_metrics", wrap(api.selfMetrics))
 	r.Get("/features", wrap(api.features))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Get("/notifications", api.notifications)
@@ -1868,6 +1869,106 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 		result = append(result, item)
 	}
 	return result
+}
+
+// SelfMetricFamily represents a single metric family from Prometheus' own instrumentation registry.
+type SelfMetricFamily struct {
+	Name    string       `json:"name"`
+	Help    string       `json:"help"`
+	Type    string       `json:"type"`
+	Unit    string       `json:"unit,omitempty"`
+	Metrics []SelfMetric `json:"metrics"`
+}
+
+// SelfMetric represents a single metric sample within a metric family.
+type SelfMetric struct {
+	Labels    map[string]string    `json:"labels,omitempty"`
+	Value     string               `json:"value,omitempty"`
+	Quantiles []SelfMetricQuantile `json:"quantiles,omitempty"`
+	Buckets   []SelfMetricBucket   `json:"buckets,omitempty"`
+}
+
+// SelfMetricQuantile represents a single quantile within a summary metric.
+type SelfMetricQuantile struct {
+	Quantile string `json:"quantile"`
+	Value    string `json:"value"`
+}
+
+// SelfMetricBucket represents a single bucket within a histogram metric.
+type SelfMetricBucket struct {
+	UpperBound      string `json:"upperBound"`
+	CumulativeCount string `json:"cumulativeCount"`
+}
+
+func (api *API) selfMetrics(r *http.Request) apiFuncResult {
+	metricNameFilter := r.FormValue("metric_name")
+
+	mfs, err := api.gatherer.Gather()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error gathering self metrics: %w", err)}, nil, nil}
+	}
+
+	result := make([]SelfMetricFamily, 0, len(mfs))
+	for _, mf := range mfs {
+		name := mf.GetName()
+		if metricNameFilter != "" && !strings.HasPrefix(name, metricNameFilter) {
+			continue
+		}
+
+		family := SelfMetricFamily{
+			Name:    name,
+			Help:    mf.GetHelp(),
+			Type:    mf.GetType().String(),
+			Unit:    mf.GetUnit(),
+			Metrics: make([]SelfMetric, 0, len(mf.GetMetric())),
+		}
+
+		for _, m := range mf.GetMetric() {
+			sm := SelfMetric{}
+
+			if len(m.GetLabel()) > 0 {
+				sm.Labels = make(map[string]string, len(m.GetLabel()))
+				for _, l := range m.GetLabel() {
+					sm.Labels[l.GetName()] = l.GetValue()
+				}
+			}
+
+			switch {
+			case m.Gauge != nil:
+				sm.Value = strconv.FormatFloat(m.GetGauge().GetValue(), 'g', -1, 64)
+			case m.Counter != nil:
+				sm.Value = strconv.FormatFloat(m.GetCounter().GetValue(), 'g', -1, 64)
+			case m.Untyped != nil:
+				sm.Value = strconv.FormatFloat(m.GetUntyped().GetValue(), 'g', -1, 64)
+			case m.Summary != nil:
+				s := m.GetSummary()
+				sm.Value = strconv.FormatFloat(s.GetSampleSum(), 'g', -1, 64) + " (sum), " + strconv.FormatUint(s.GetSampleCount(), 10) + " (count)"
+				sm.Quantiles = make([]SelfMetricQuantile, 0, len(s.GetQuantile()))
+				for _, q := range s.GetQuantile() {
+					sm.Quantiles = append(sm.Quantiles, SelfMetricQuantile{
+						Quantile: strconv.FormatFloat(q.GetQuantile(), 'g', -1, 64),
+						Value:    strconv.FormatFloat(q.GetValue(), 'g', -1, 64),
+					})
+				}
+			case m.Histogram != nil:
+				h := m.GetHistogram()
+				sm.Value = strconv.FormatFloat(h.GetSampleSum(), 'g', -1, 64) + " (sum), " + strconv.FormatUint(h.GetSampleCount(), 10) + " (count)"
+				sm.Buckets = make([]SelfMetricBucket, 0, len(h.GetBucket()))
+				for _, b := range h.GetBucket() {
+					sm.Buckets = append(sm.Buckets, SelfMetricBucket{
+						UpperBound:      strconv.FormatFloat(b.GetUpperBound(), 'g', -1, 64),
+						CumulativeCount: strconv.FormatUint(b.GetCumulativeCount(), 10),
+					})
+				}
+			}
+
+			family.Metrics = append(family.Metrics, sm)
+		}
+
+		result = append(result, family)
+	}
+
+	return apiFuncResult{result, nil, nil, nil}
 }
 
 func (api *API) serveTSDBBlocks(*http.Request) apiFuncResult {

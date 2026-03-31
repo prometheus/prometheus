@@ -2105,6 +2105,68 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+    /status/self_metrics:
+        get:
+            tags:
+                - status
+            summary: Get Prometheus self-instrumentation metrics
+            description: Returns Prometheus' own instrumentation metrics from its internal client registry, as structured JSON. Supports optional prefix filtering via the metric_name parameter.
+            operationId: get-status-self-metrics
+            parameters:
+                - name: metric_name
+                  in: query
+                  description: Filter metrics by name prefix.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: prometheus_tsdb
+            responses:
+                "200":
+                    description: Self metrics retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/StatusSelfMetricsOutputBody'
+                            examples:
+                                selfMetrics:
+                                    summary: Prometheus self-instrumentation metrics
+                                    value:
+                                        data:
+                                            - help: A metric with a constant '1' value labeled by version, revision, branch, goversion from which prometheus was built, and the goos and goarch for the build.
+                                              metrics:
+                                                - labels:
+                                                    branch: HEAD
+                                                    goarch: amd64
+                                                    goos: linux
+                                                    goversion: go1.23.0
+                                                    revision: abc1234
+                                                    tags: netgo,builtinassets,stringlabels
+                                                    version: 3.0.0
+                                                  value: "1"
+                                              name: prometheus_build_info
+                                              type: GAUGE
+                                            - help: Total number of chunks in the head block.
+                                              metrics:
+                                                - value: "1024"
+                                              name: prometheus_tsdb_head_chunks
+                                              type: GAUGE
+                                        status: success
+                default:
+                    description: Error retrieving self metrics.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
     /admin/tsdb/delete_series:
         put:
             tags:

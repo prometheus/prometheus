@@ -4553,6 +4553,60 @@ func TestTSDBStatus(t *testing.T) {
 	}
 }
 
+func TestSelfMetrics(t *testing.T) {
+	api := &API{gatherer: prometheus.DefaultGatherer}
+
+	t.Run("returns all metrics without filter", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "", http.NoBody)
+		require.NoError(t, err)
+		res := api.selfMetrics(req)
+		assertAPIError(t, res.err, errorNone)
+		families, ok := res.data.([]SelfMetricFamily)
+		require.True(t, ok, "expected []SelfMetricFamily")
+		require.NotEmpty(t, families, "expected at least one metric family from default gatherer")
+	})
+
+	t.Run("filters metrics by prefix", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "?metric_name=go_", http.NoBody)
+		require.NoError(t, err)
+		req.Form = url.Values{"metric_name": {"go_"}}
+		res := api.selfMetrics(req)
+		assertAPIError(t, res.err, errorNone)
+		families, ok := res.data.([]SelfMetricFamily)
+		require.True(t, ok, "expected []SelfMetricFamily")
+		for _, f := range families {
+			require.True(t, strings.HasPrefix(f.Name, "go_"), "expected metric name to start with 'go_', got %q", f.Name)
+		}
+	})
+
+	t.Run("non-matching prefix returns empty", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "?metric_name=nonexistent_prefix_xyz_", http.NoBody)
+		require.NoError(t, err)
+		req.Form = url.Values{"metric_name": {"nonexistent_prefix_xyz_"}}
+		res := api.selfMetrics(req)
+		assertAPIError(t, res.err, errorNone)
+		families, ok := res.data.([]SelfMetricFamily)
+		require.True(t, ok, "expected []SelfMetricFamily")
+		require.Empty(t, families)
+	})
+
+	t.Run("metric families have expected structure", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "", http.NoBody)
+		require.NoError(t, err)
+		res := api.selfMetrics(req)
+		assertAPIError(t, res.err, errorNone)
+		families := res.data.([]SelfMetricFamily)
+		for _, f := range families {
+			require.NotEmpty(t, f.Name, "metric family name should not be empty")
+			require.NotEmpty(t, f.Type, "metric family type should not be empty")
+			for _, m := range f.Metrics {
+				// Every metric should have a value set.
+				require.NotEmpty(t, m.Value, "metric value should not be empty for %s", f.Name)
+			}
+		}
+	})
+}
+
 func TestReturnAPIError(t *testing.T) {
 	cases := []struct {
 		err      error

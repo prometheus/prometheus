@@ -448,6 +448,22 @@ func (*OpenAPIBuilder) statusWALReplayPath() *v3.PathItem {
 	}
 }
 
+func (*OpenAPIBuilder) statusSelfMetricsPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("metric_name", "Filter metrics by name prefix.", false, stringSchema(), []example{{"example", "prometheus_tsdb"}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "get-status-self-metrics",
+			Summary:     "Get Prometheus self-instrumentation metrics",
+			Description: "Returns Prometheus' own instrumentation metrics from its internal client registry, as structured JSON. Supports optional prefix filtering via the metric_name parameter.",
+			Tags:        []string{"status"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("StatusSelfMetricsOutputBody", statusSelfMetricsResponseExamples(), errorResponseExamples(), "Self metrics retrieved successfully.", "Error retrieving self metrics."),
+		},
+	}
+}
+
 func (*OpenAPIBuilder) adminDeleteSeriesPath() *v3.PathItem {
 	params := []*v3.Parameter{
 		queryParamWithExample("match[]", "Series selectors to identify series to delete.", true, base.CreateSchemaProxy(&base.Schema{
