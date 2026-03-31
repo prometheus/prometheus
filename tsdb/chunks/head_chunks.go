@@ -226,7 +226,9 @@ type ChunkDiskMapper struct {
 	// This is done after iterating through all the chunks in those files using the IterateAllChunks method.
 	fileMaxtSet bool
 
-	writeQueue *chunkWriteQueue
+	writeQueue  *chunkWriteQueue
+	writeErrMtx sync.RWMutex
+	writeErr    error // Set only when mapper recovery fails and the mapper must stay failed.
 
 	closed bool
 }
@@ -458,18 +460,144 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64
 	// cdm.evtlPosMtx must be held to serialize the calls to cdm.evtlPos.getNextChunkRef() and the writing of the chunk (either with or without queue).
 	cdm.evtlPosMtx.Lock()
 	defer cdm.evtlPosMtx.Unlock()
+	if err := cdm.getWriteError(); err != nil {
+		if callback != nil {
+			callback(err)
+		}
+		return 0
+	}
+	prevPos := cdm.evtlPos
 	ref, cutFile := cdm.evtlPos.getNextChunkRef(chk)
 
 	if cdm.writeQueue != nil {
-		return cdm.writeChunkViaQueue(ref, isOOO, cutFile, seriesRef, mint, maxt, chk, callback)
+		chkRef = cdm.writeChunkViaQueue(ref, isOOO, cutFile, seriesRef, mint, maxt, chk, callback)
+		if chkRef == 0 {
+			cdm.evtlPos = prevPos
+		}
+		return chkRef
 	}
 
 	err := cdm.writeChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile)
+	if err != nil {
+		if repairErr := cdm.recoverWriteError(prevPos); repairErr != nil {
+			err = errors.Join(err, repairErr)
+		}
+	}
 	if callback != nil {
 		callback(err)
 	}
+	if err != nil {
+		return 0
+	}
 
 	return ref
+}
+
+// WriteChunkSync writes the chunk to disk synchronously, flushes pending writes, and returns an
+// error if the write fails. When the async write queue is enabled, this still preserves queue
+// order by enqueueing the write and waiting for completion before returning.
+func (cdm *ChunkDiskMapper) WriteChunkSync(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, isOOO bool) (chkRef ChunkDiskMapperRef, err error) {
+	ref, _, err := cdm.WriteChunkSyncNoFlush(seriesRef, mint, maxt, chk, isOOO)
+	if err != nil {
+		return 0, err
+	}
+	if err = cdm.FlushWrites(); err != nil {
+		return 0, err
+	}
+	return ref, nil
+}
+
+// WriteChunkSyncNoFlush writes the chunk to disk synchronously but does not flush buffered writes.
+// The caller must call FlushWrites to ensure data is persisted. When the async write queue is
+// enabled, this still preserves queue order by enqueueing the write and waiting for completion.
+//
+// On error, lastValidRef is the post-recovery write position captured under the lock.
+// Callers can use it to filter stale refs without a separate LastWrittenRef() call,
+// avoiding a TOCTOU race where a concurrent writer advances the position between calls.
+func (cdm *ChunkDiskMapper) WriteChunkSyncNoFlush(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, isOOO bool) (chkRef, lastValidRef ChunkDiskMapperRef, err error) {
+	cdm.evtlPosMtx.Lock()
+	defer cdm.evtlPosMtx.Unlock()
+	if err = cdm.getWriteError(); err != nil {
+		return 0, 0, err
+	}
+
+	prevPos := cdm.evtlPos
+	ref, cutFile := cdm.evtlPos.getNextChunkRef(chk)
+	if cdm.writeQueue != nil {
+		done := make(chan error, 1)
+		if err = cdm.writeQueue.addJob(chunkWriteJob{
+			cutFile:   cutFile,
+			seriesRef: seriesRef,
+			mint:      mint,
+			maxt:      maxt,
+			chk:       chk,
+			ref:       ref,
+			isOOO:     isOOO,
+			callback: func(err error) {
+				done <- err
+			},
+		}); err != nil {
+			cdm.evtlPos = prevPos
+			return 0, 0, err
+		}
+		// Hold the lock while waiting. Even though getNextChunkRef reserved our ref,
+		// releasing the lock would allow a concurrent writer to enqueue after us;
+		// if our write fails and recoverWriteError truncates, it would destroy
+		// the concurrent writer's valid data.
+		err = <-done
+		if err != nil {
+			if repairErr := cdm.recoverWriteError(prevPos); repairErr != nil {
+				err = errors.Join(err, repairErr)
+			}
+			return 0, newChunkDiskMapperRef(cdm.evtlPos.seq, cdm.evtlPos.offset), err
+		}
+		return ref, 0, nil
+	}
+
+	if err = cdm.writeChunk(seriesRef, mint, maxt, chk, ref, isOOO, cutFile); err != nil {
+		if repairErr := cdm.recoverWriteError(prevPos); repairErr != nil {
+			err = errors.Join(err, repairErr)
+		}
+		return 0, newChunkDiskMapperRef(cdm.evtlPos.seq, cdm.evtlPos.offset), err
+	}
+
+	return ref, 0, nil
+}
+
+// FlushWrites flushes any buffered chunk writes to disk. It should be called after one or more
+// WriteChunkSyncNoFlush calls to ensure data is persisted.
+func (cdm *ChunkDiskMapper) FlushWrites() error {
+	cdm.evtlPosMtx.Lock()
+	defer cdm.evtlPosMtx.Unlock()
+	if err := cdm.getWriteError(); err != nil {
+		return err
+	}
+	prevPos := cdm.evtlPos
+	if err := cdm.flushPendingWrites(); err != nil {
+		if repairErr := cdm.recoverWriteError(prevPos); repairErr != nil {
+			err = errors.Join(err, repairErr)
+		}
+		return err
+	}
+	return nil
+}
+
+func (cdm *ChunkDiskMapper) WriteQueueEnabled() bool {
+	return cdm.writeQueue != nil
+}
+
+// SetWriteChunkFuncForTesting replaces the write queue's writeChunk function with f and returns
+// the previous function. Panics if the write queue is not enabled.
+// Must be called before any writes are enqueued or after the queue is drained.
+func (cdm *ChunkDiskMapper) SetWriteChunkFuncForTesting(
+	f func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error,
+) func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool, bool) error {
+	if cdm.writeQueue == nil {
+		panic("SetWriteChunkFuncForTesting requires write queue")
+	}
+	prev := cdm.writeQueue.writeChunk
+	cdm.writeQueue.writeChunk = f
+	return prev
 }
 
 func (cdm *ChunkDiskMapper) writeChunkViaQueue(ref ChunkDiskMapperRef, isOOO, cutFile bool, seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, callback func(err error)) (chkRef ChunkDiskMapperRef) {
@@ -492,6 +620,9 @@ func (cdm *ChunkDiskMapper) writeChunkViaQueue(ref ChunkDiskMapperRef, isOOO, cu
 		isOOO:     isOOO,
 		callback:  callback,
 	})
+	if err != nil {
+		return 0
+	}
 
 	return ref
 }
@@ -502,6 +633,9 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 
 	if cdm.closed {
 		return ErrChunkDiskMapperClosed
+	}
+	if err := cdm.getWriteError(); err != nil {
+		return err
 	}
 
 	if cutFile {
@@ -562,6 +696,23 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 	}
 
 	return nil
+}
+
+func (cdm *ChunkDiskMapper) getWriteError() error {
+	cdm.writeErrMtx.RLock()
+	defer cdm.writeErrMtx.RUnlock()
+
+	return cdm.writeErr
+}
+
+func (cdm *ChunkDiskMapper) setWriteError(err error) error {
+	cdm.writeErrMtx.Lock()
+	defer cdm.writeErrMtx.Unlock()
+
+	if cdm.writeErr == nil {
+		cdm.writeErr = err
+	}
+	return cdm.writeErr
 }
 
 // CutNewFile makes that a new file will be created the next time a chunk is written.
@@ -643,7 +794,7 @@ func (cdm *ChunkDiskMapper) cut() (seq, offset int, returnErr error) {
 	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: realByteSlice(mmapFile.Bytes())}
 	cdm.readPathMtx.Unlock()
 
-	cdm.curFileMaxt = 0
+	cdm.curFileMaxt = math.MinInt64
 
 	return seq, offset, nil
 }
@@ -692,6 +843,164 @@ func (cdm *ChunkDiskMapper) flushBuffer() error {
 	}
 	cdm.chunkBuffer.clear()
 	return nil
+}
+
+func (cdm *ChunkDiskMapper) flushPendingWrites() error {
+	cdm.writePathMtx.Lock()
+	defer cdm.writePathMtx.Unlock()
+
+	if cdm.closed || cdm.chkWriter == nil || cdm.chkWriter.Buffered() == 0 {
+		return nil
+	}
+	return cdm.flushBuffer()
+}
+
+func (cdm *ChunkDiskMapper) recoverWriteError(prevPos chunkPos) error {
+	if err := cdm.getWriteError(); err != nil {
+		return err
+	}
+
+	cdm.writePathMtx.Lock()
+	defer cdm.writePathMtx.Unlock()
+
+	if cdm.closed {
+		return ErrChunkDiskMapperClosed
+	}
+
+	// Best-effort flush: write buffered data to disk so that lastValidChunkEnd can
+	// see any complete chunks that were successfully written before the error.
+	// We ignore flush errors here because recovery will truncate to the last valid
+	// chunk boundary anyway.
+	if cdm.chkWriter != nil {
+		_ = cdm.chkWriter.Flush()
+		cdm.chkWriter.Reset(io.Discard)
+	}
+	cdm.chunkBuffer.clear()
+
+	seq := cdm.curFileSequence
+	if seq == 0 {
+		cdm.evtlPos = prevPos
+		return nil
+	}
+
+	lastValidOffset, maxt, err := cdm.lastValidChunkEnd(seq, int(cdm.curFileSize()))
+	if err != nil {
+		return cdm.setWriteError(err)
+	}
+
+	if cdm.curFile != nil {
+		if closeErr := cdm.curFile.Close(); closeErr != nil {
+			return cdm.setWriteError(closeErr)
+		}
+		cdm.curFile = nil
+	}
+
+	f, err := os.OpenFile(segmentFile(cdm.dir.Name(), seq), os.O_RDWR, 0o666)
+	if err != nil {
+		return cdm.setWriteError(err)
+	}
+	if _, err := f.Seek(int64(lastValidOffset), io.SeekStart); err != nil {
+		_ = f.Close()
+		return cdm.setWriteError(err)
+	}
+	if err := f.Truncate(int64(lastValidOffset)); err != nil {
+		_ = f.Close()
+		return cdm.setWriteError(err)
+	}
+
+	cdm.curFile = f
+	cdm.curFileOffset.Store(uint64(lastValidOffset))
+	cdm.curFileMaxt = maxt
+	if cdm.chkWriter != nil {
+		cdm.chkWriter.Reset(f)
+	} else {
+		cdm.chkWriter = bufio.NewWriterSize(f, cdm.writeBufferSize)
+	}
+	cdm.evtlPos = chunkPos{
+		seq:    uint64(seq),
+		offset: uint64(lastValidOffset),
+	}
+
+	cdm.readPathMtx.Lock()
+	if mmapped := cdm.mmappedChunkFiles[seq]; mmapped != nil {
+		mmapped.maxt = maxt
+	}
+	cdm.readPathMtx.Unlock()
+	return nil
+}
+
+func (cdm *ChunkDiskMapper) lastValidChunkEnd(seq, fileEnd int) (lastValidOffset int, maxt int64, err error) {
+	cdm.readPathMtx.RLock()
+	mmapFile := cdm.mmappedChunkFiles[seq]
+	cdm.readPathMtx.RUnlock()
+	if mmapFile == nil {
+		return 0, math.MinInt64, fmt.Errorf("head chunk file %d not mapped", seq)
+	}
+
+	lastValidOffset = HeadChunkFileHeaderSize
+	if fileEnd < lastValidOffset {
+		return 0, math.MinInt64, fmt.Errorf("head chunk file %d too small: %d", seq, fileEnd)
+	}
+
+	seenChunk := false
+	idx := HeadChunkFileHeaderSize
+	for idx < fileEnd {
+		if fileEnd-idx < MaxHeadChunkMetaSize {
+			if zeroFilled(mmapFile.byteSlice.Range(idx, fileEnd)) {
+				break
+			}
+			return lastValidOffset, maxt, nil
+		}
+
+		startIdx := idx
+		seriesRef := HeadSeriesRef(binary.BigEndian.Uint64(mmapFile.byteSlice.Range(idx, idx+SeriesRefSize)))
+		idx += SeriesRefSize
+		mint := int64(binary.BigEndian.Uint64(mmapFile.byteSlice.Range(idx, idx+MintMaxtSize)))
+		idx += MintMaxtSize
+		chunkMaxt := int64(binary.BigEndian.Uint64(mmapFile.byteSlice.Range(idx, idx+MintMaxtSize)))
+		idx += MintMaxtSize
+
+		if seriesRef == 0 && mint == 0 && chunkMaxt == 0 {
+			break
+		}
+
+		idx += ChunkEncodingSize
+		dataLen, n := binary.Uvarint(mmapFile.byteSlice.Range(idx, idx+MaxChunkLengthFieldSize))
+		if n <= 0 {
+			return lastValidOffset, maxt, nil
+		}
+		idx += n
+		if dataLen > uint64(fileEnd-idx) {
+			return lastValidOffset, maxt, nil
+		}
+		idx += int(dataLen)
+		if idx+CRCSize > fileEnd {
+			return lastValidOffset, maxt, nil
+		}
+		if err := checkCRC32(mmapFile.byteSlice.Range(startIdx, idx), mmapFile.byteSlice.Range(idx, idx+CRCSize)); err != nil {
+			return lastValidOffset, maxt, nil
+		}
+		idx += CRCSize
+		lastValidOffset = idx
+		if !seenChunk || chunkMaxt > maxt {
+			maxt = chunkMaxt
+		}
+		seenChunk = true
+	}
+
+	if !seenChunk {
+		maxt = math.MinInt64
+	}
+	return lastValidOffset, maxt, nil
+}
+
+func zeroFilled(b []byte) bool {
+	for _, v := range b {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // Chunk returns a chunk from a given reference.

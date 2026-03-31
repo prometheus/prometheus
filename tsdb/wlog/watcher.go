@@ -679,13 +679,14 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 	defer w.recordBuf.PutRefSeries(series)
 
 	dec := record.NewDecoder(labels.NewSymbolTable(), w.logger) // Needed for decoding; labels do not outlive this function.
+	var err error
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
 		switch dec.Type(rec) {
 		case record.Series:
-			series, err := dec.Series(rec, series[:0])
+			series, err = dec.Series(rec, series[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
 				return err

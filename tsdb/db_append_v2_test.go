@@ -1218,7 +1218,7 @@ func TestSizeRetention_AppendV2(t *testing.T) {
 				}
 			}
 			require.NoError(t, headApp.Commit())
-			db.Head().mmapHeadChunks()
+			db.Head().mmapHeadChunks(true)
 
 			require.Eventually(t, func() bool {
 				return db.Head().chunkDiskMapper.IsQueueEmpty()
@@ -4242,8 +4242,8 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, sce
 		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls, false)
 		require.NoError(t, err)
 		require.False(t, created)
-		require.Len(t, ms.ooo.oooMmappedChunks, 2)
-		require.Equal(t, 109*time.Minute.Milliseconds(), ms.ooo.oooMmappedChunks[1].maxTime)
+		require.Len(t, ms.ooo.oooMmappedChunks, 3)
+		require.Equal(t, 110*time.Minute.Milliseconds(), ms.ooo.oooMmappedChunks[2].maxTime)
 		require.Nil(t, ms.ooo.oooHeadChunk) // Because of missing wbl.
 	}
 
@@ -4268,7 +4268,7 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, sce
 	}
 
 	// Checking for expected ooo data from mmap chunks.
-	verifySamples(90, 109)
+	verifySamples(90, 110)
 
 	// Compaction should also work fine.
 	require.Empty(t, db.Blocks())
@@ -4285,7 +4285,7 @@ func testOOOQueryAfterRestartWithSnapshotAndRemovedWBLAppendV2(t *testing.T, sce
 		require.Nil(t, ms.ooo)
 	}
 
-	verifySamples(90, 109)
+	verifySamples(90, 110)
 }
 
 func TestQuerierOOOQuery_AppendV2(t *testing.T) {

@@ -554,6 +554,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 			mSeries.ooo = &memSeriesOOOFields{}
 		}
 		*mSeries.ooo = memSeriesOOOFields{oooMmappedChunks: oooMmc}
+		mSeries.recomputeOOOMinTime()
 	}
 	// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject.
 	if len(mmc) == 0 {
@@ -681,7 +682,9 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if _, chunkCreated := ms.append(s.ST, s.T, s.V, 0, appendChunkOpts); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
-				_ = ms.mmapChunks(h.chunkDiskMapper)
+				if _, err := ms.mmapChunks(h.chunkDiskMapper); err != nil {
+					h.chunkWriteErrorCallback(err)
+				}
 			}
 			if s.T > maxt {
 				maxt = s.T
@@ -735,7 +738,9 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
-				_ = ms.mmapChunks(h.chunkDiskMapper)
+				if _, err := ms.mmapChunks(h.chunkDiskMapper); err != nil {
+					h.chunkWriteErrorCallback(err)
+				}
 			}
 			if s.t > maxt {
 				maxt = s.t
@@ -759,6 +764,80 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 	return missingSeries, unknownSampleRefs, unknownHistogramRefs, mmapOverlappingChunks
 }
 
+func (h *Head) dropUnmarkedOOOMmapChunks(markedRefs map[chunks.HeadSeriesRef]map[chunks.ChunkDiskMapperRef]struct{}, lastMmapRef chunks.ChunkDiskMapperRef) {
+	lastSeq, lastOff := lastMmapRef.Unpack()
+	for i := range h.series.size {
+		h.series.locks[i].RLock()
+		for _, series := range h.series.series[i] {
+			series.Lock()
+			if series.ooo == nil || len(series.ooo.oooMmappedChunks) == 0 {
+				series.Unlock()
+				continue
+			}
+
+			refsForSeries, ok := markedRefs[series.ref]
+			if !ok {
+				// No markers at all for this series — all chunks predate this
+				// WBL session (their markers may have been truncated by a prior
+				// compaction cycle). Keep everything.
+				series.Unlock()
+				continue
+			}
+
+			// Find minimum real (non-zero) marker ref as session boundary.
+			// Chunks written before this ref predate the current WBL session
+			// and should be kept — their markers may have been truncated by
+			// a prior compaction cycle.
+			var minMarkerRef chunks.ChunkDiskMapperRef
+			for ref := range refsForSeries {
+				if ref != 0 && (minMarkerRef == 0 || !ref.GreaterThanOrEqualTo(minMarkerRef)) {
+					minMarkerRef = ref
+				}
+			}
+
+			kept := series.ooo.oooMmappedChunks[:0]
+			for _, mmc := range series.ooo.oooMmappedChunks {
+				seq, off := mmc.ref.Unpack()
+				createdDuringReplay := seq > lastSeq || (seq == lastSeq && off > lastOff)
+				if createdDuringReplay {
+					// Chunks created during WBL replay have no markers; always keep them.
+					kept = append(kept, mmc)
+				} else if minMarkerRef == 0 || minMarkerRef.GreaterThan(mmc.ref) {
+					// No real markers (only {0} initial marker), or chunk predates the
+					// first real marker — from a prior session. Keep.
+					kept = append(kept, mmc)
+				} else if _, ok := refsForSeries[mmc.ref]; ok {
+					kept = append(kept, mmc)
+				}
+			}
+
+			if len(kept) == len(series.ooo.oooMmappedChunks) {
+				series.Unlock()
+				continue
+			}
+
+			removed := len(series.ooo.oooMmappedChunks) - len(kept)
+			h.metrics.chunksRemoved.Add(float64(removed))
+			h.metrics.chunks.Sub(float64(removed))
+			if len(kept) == 0 {
+				series.ooo.oooMmappedChunks = nil
+				series.ooo.firstOOOChunkID = 0
+				if len(series.ooo.oooClosedChunks) == 0 && series.ooo.oooHeadChunk == nil {
+					series.ooo = nil
+				} else {
+					series.recomputeOOOMinTime()
+				}
+			} else {
+				series.ooo.oooMmappedChunks = kept
+				series.ooo.firstOOOChunkID = 0
+				series.recomputeOOOMinTime()
+			}
+			series.Unlock()
+		}
+		h.series.locks[i].RUnlock()
+	}
+}
+
 func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
 	// Track number of missing series records that were referenced by other records.
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
@@ -769,9 +848,10 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	lastSeq, lastOff := lastMmapRef.Unpack()
 	// Start workers that each process samples for a partition of the series ID space.
 	var (
-		wg          sync.WaitGroup
-		concurrency = h.opts.WALReplayConcurrency
-		processors  = make([]wblSubsetProcessor, concurrency)
+		wg                sync.WaitGroup
+		concurrency       = h.opts.WALReplayConcurrency
+		processors        = make([]wblSubsetProcessor, concurrency)
+		markedOOOMmapRefs = make(map[chunks.HeadSeriesRef]map[chunks.ChunkDiskMapperRef]struct{})
 
 		shards          = make([][]record.RefSample, concurrency)
 		histogramShards = make([][]histogramRecord, concurrency)
@@ -914,6 +994,10 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				if r, ok := multiRef[rm.Ref]; ok {
 					rm.Ref = r
 				}
+				if _, ok := markedOOOMmapRefs[rm.Ref]; !ok {
+					markedOOOMmapRefs[rm.Ref] = make(map[chunks.ChunkDiskMapperRef]struct{}, 1)
+				}
+				markedOOOMmapRefs[rm.Ref][rm.MmapRef] = struct{}{}
 
 				ms := h.series.getByID(rm.Ref)
 				if ms == nil {
@@ -999,6 +1083,8 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].closeAndDrain()
 	}
 	wg.Wait()
+
+	h.dropUnmarkedOOOMmapChunks(markedOOOMmapRefs, lastMmapRef)
 
 	if err := r.Err(); err != nil {
 		return fmt.Errorf("read records: %w", err)
@@ -1104,12 +1190,12 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 	for in := range wp.input {
 		if in.mmappedSeries != nil && in.mmappedSeries.ooo != nil {
-			// All samples till now have been m-mapped. Hence clear out the headChunk.
-			// In case some samples slipped through and went into m-map chunks because of changed
-			// chunk size parameters, we are not taking care of that here.
-			// TODO(codesome): see if there is a way to avoid duplicate m-map chunks if
-			// the size of ooo chunk was reduced between restart.
-			in.mmappedSeries.ooo.oooHeadChunk = nil
+			// The marker tells us that all preceding samples were m-mapped in
+			// the original run. Clear closed chunks (replay duplicates), but
+			// keep oooHeadChunk: it may hold samples inserted after the last
+			// m-map that have no marker yet and would otherwise be lost.
+			in.mmappedSeries.ooo.oooClosedChunks = nil
+			in.mmappedSeries.recomputeOOOMinTime()
 			continue
 		}
 		for _, s := range in.samples {
@@ -1119,12 +1205,15 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 				missingSeries[s.Ref] = struct{}{}
 				continue
 			}
-			ok, chunkCreated, _ := ms.insert(s.ST, s.T, s.V, nil, nil, appendChunkOpts, oooCapMax, h.logger)
-			if chunkCreated {
+			res := ms.insert(s.ST, s.T, s.V, nil, nil, appendChunkOpts, oooCapMax, h.logger)
+			if res.deferredErr != nil {
+				h.chunkWriteErrorCallback(res.deferredErr)
+			}
+			if res.chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
 			}
-			if ok {
+			if res.inserted {
 				if s.T < mint {
 					mint = s.T
 				}
@@ -1144,20 +1233,22 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 				missingSeries[s.ref] = struct{}{}
 				continue
 			}
-			var chunkCreated bool
-			var ok bool
+			var res insertResult
 			if s.h != nil {
 				// TODO(krajorama,ywwg): Pass ST when available in WBL.
-				ok, chunkCreated, _ = ms.insert(0, s.t, 0, s.h, nil, appendChunkOpts, oooCapMax, h.logger)
+				res = ms.insert(0, s.t, 0, s.h, nil, appendChunkOpts, oooCapMax, h.logger)
 			} else {
 				// TODO(krajorama,ywwg): Pass ST when available in WBL.
-				ok, chunkCreated, _ = ms.insert(0, s.t, 0, nil, s.fh, appendChunkOpts, oooCapMax, h.logger)
+				res = ms.insert(0, s.t, 0, nil, s.fh, appendChunkOpts, oooCapMax, h.logger)
 			}
-			if chunkCreated {
+			if res.deferredErr != nil {
+				h.chunkWriteErrorCallback(res.deferredErr)
+			}
+			if res.chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
 			}
-			if ok {
+			if res.inserted {
 				if s.t > maxt {
 					maxt = s.t
 				}

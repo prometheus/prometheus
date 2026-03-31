@@ -840,7 +840,7 @@ func TestHeadAppenderV2_MemSeriesIsolation(t *testing.T) {
 			_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, int64(i), float64(i), nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
-			h.mmapHeadChunks()
+			h.mmapHeadChunks(true)
 		}
 		return i
 	}
@@ -1740,7 +1740,7 @@ func TestHistogramInWALAndMmapChunk_AppenderV2(t *testing.T) {
 			}
 		}
 		require.NoError(t, app.Commit())
-		head.mmapHeadChunks()
+		head.mmapHeadChunks(true)
 	}
 
 	// There should be 20 mmap chunks in s1.
@@ -2463,7 +2463,7 @@ func testHeadAppenderV2AppendStaleHistogram(t *testing.T, floatHistogram bool) {
 		expHistograms = append(expHistograms, timedHistogram{t: 100*int64(len(expHistograms)) + 1, h: &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	}
 	require.NoError(t, app.Commit())
-	head.mmapHeadChunks()
+	head.mmapHeadChunks(true)
 
 	// Total 2 chunks, 1 m-mapped.
 	s = head.series.getByHash(l.Hash(), l)
@@ -2504,7 +2504,7 @@ func TestHeadAppenderV2_Append_CounterResetHeader(t *testing.T) {
 
 				ms, _, err := head.getOrCreate(l.Hash(), l, false)
 				require.NoError(t, err)
-				ms.mmapChunks(head.chunkDiskMapper)
+				mustMmapChunks(t, ms, head.chunkDiskMapper)
 				require.Len(t, ms.mmappedChunks, len(expHeaders)-1) // One is the head chunk.
 
 				for i, mmapChunk := range ms.mmappedChunks {
@@ -2949,29 +2949,27 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	require.NoError(t, err)
 	require.NoError(t, h.Init(0))
 
-	var expOOOSamples []chunks.Sample
+	var expAllSamples []chunks.Sample
 	l := labels.FromStrings("foo", "bar")
-	appendSample := func(mins int64, _ float64, isOOO bool) {
+	appendSample := func(mins int64) {
 		app := h.AppenderV2(context.Background())
 		_, s, err := scenario.appendFunc(storage.AppenderV2AsLimitedV1(app), l, mins*time.Minute.Milliseconds(), mins)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 
-		if isOOO {
-			expOOOSamples = append(expOOOSamples, s)
-		}
+		expAllSamples = append(expAllSamples, s)
 	}
 
 	// In-order sample.
-	appendSample(60, 60, false)
+	appendSample(60)
 
 	// Out of order samples.
-	appendSample(40, 40, true)
-	appendSample(35, 35, true)
-	appendSample(50, 50, true)
-	appendSample(55, 55, true)
-	appendSample(59, 59, true)
-	appendSample(31, 31, true)
+	appendSample(40)
+	appendSample(35)
+	appendSample(50)
+	appendSample(55)
+	appendSample(59)
+	appendSample(31)
 
 	// Check that Head's time ranges are set properly.
 	require.Equal(t, 60*time.Minute.Milliseconds(), h.MinTime())
@@ -2989,29 +2987,50 @@ func testWBLReplayAppenderV2(t *testing.T, scenario sampleTypeScenario, enableST
 	require.NoError(t, err)
 	require.NoError(t, h.Init(0)) // Replay happens here.
 
-	// Get the ooo samples from the Head.
+	// After restart, OOO head chunk may have been mmapped during Close.
+	// Collect OOO samples from both mmapped chunks and in-memory head chunk.
 	ms, ok, err := h.getOrCreate(l.Hash(), l, false)
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, h.opts.EnableXOR2Encoding.Load())
-	require.NoError(t, err)
-	require.Len(t, chks, 1)
+	var actOOOSamples []chunks.Sample
+	for _, m := range ms.ooo.oooMmappedChunks {
+		chk, err := h.chunkDiskMapper.Chunk(m.ref)
+		require.NoError(t, err)
+		it := chk.Iterator(nil)
+		samples, err := storage.ExpandSamples(it, nil)
+		require.NoError(t, err)
+		actOOOSamples = append(actOOOSamples, samples...)
+	}
+	if ms.ooo.oooHeadChunk != nil {
+		chks, err := ms.ooo.oooHeadChunk.chunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, h.opts.EnableXOR2Encoding.Load())
+		require.NoError(t, err)
+		for _, c := range chks {
+			it := c.chunk.Iterator(nil)
+			samples, err := storage.ExpandSamples(it, nil)
+			require.NoError(t, err)
+			actOOOSamples = append(actOOOSamples, samples...)
+		}
+	}
 
-	it := chks[0].chunk.Iterator(nil)
-	actOOOSamples, err := storage.ExpandSamples(it, nil)
-	require.NoError(t, err)
-
-	// OOO chunk will be sorted. Hence sort the expected samples.
-	sort.Slice(expOOOSamples, func(i, j int) bool {
-		return expOOOSamples[i].T() < expOOOSamples[j].T()
+	// Sort expected OOO samples by time.
+	sort.Slice(expAllSamples, func(i, j int) bool {
+		return expAllSamples[i].T() < expAllSamples[j].T()
 	})
+
+	// Remove the in-order sample from expectations (it's not in OOO chunks).
+	var expOOOOnly []chunks.Sample
+	for _, s := range expAllSamples {
+		if s.T() != 60*time.Minute.Milliseconds() {
+			expOOOOnly = append(expOOOOnly, s)
+		}
+	}
 
 	// Passing in true for the 'ignoreCounterResets' parameter prevents differences in counter reset headers
 	// from being factored in to the sample comparison
 	// TODO(fionaliao): understand counter reset behaviour, might want to modify this later
-	requireEqualSamples(t, l.String(), expOOOSamples, actOOOSamples, requireEqualSamplesIgnoreCounterResets)
+	requireEqualSamples(t, l.String(), expOOOOnly, actOOOSamples, requireEqualSamplesIgnoreCounterResets)
 
 	require.NoError(t, h.Close())
 }
@@ -3071,10 +3090,17 @@ func testOOOMmapReplayAppenderV2(t *testing.T, scenario sampleTypeScenario) {
 		require.Equal(t, int(m.numSamples), chk.NumSamples())
 	}
 
-	expMmapChunks := make([]*mmappedChunk, 3)
-	copy(expMmapChunks, ms.ooo.oooMmappedChunks)
+	// Count total samples across mmapped and in-memory OOO chunks.
+	var expTotalSamples int
+	for _, m := range ms.ooo.oooMmappedChunks {
+		expTotalSamples += int(m.numSamples)
+	}
+	if ms.ooo.oooHeadChunk != nil {
+		expTotalSamples += ms.ooo.oooHeadChunk.chunk.NumSamples()
+	}
 
-	// Restart head.
+	// Restart head. Close mmaps all OOO chunks including the head chunk,
+	// so after restart there will be one more mmapped chunk than before.
 	require.NoError(t, h.Close())
 
 	wal, err = wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.Snappy)
@@ -3091,18 +3117,17 @@ func testOOOMmapReplayAppenderV2(t *testing.T, scenario sampleTypeScenario) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	require.Len(t, ms.ooo.oooMmappedChunks, len(expMmapChunks))
-	// Verify that we can access the chunks without error.
+	// Verify that we can access the chunks without error and that the total
+	// sample count matches (the chunk count may differ from before due to
+	// the head chunk being mmapped during Close).
+	var actTotalSamples int
 	for _, m := range ms.ooo.oooMmappedChunks {
 		chk, err := h.chunkDiskMapper.Chunk(m.ref)
 		require.NoError(t, err)
 		require.Equal(t, int(m.numSamples), chk.NumSamples())
+		actTotalSamples += int(m.numSamples)
 	}
-
-	actMmapChunks := make([]*mmappedChunk, len(expMmapChunks))
-	copy(actMmapChunks, ms.ooo.oooMmappedChunks)
-
-	require.Equal(t, expMmapChunks, actMmapChunks)
+	require.Equal(t, expTotalSamples, actTotalSamples)
 
 	require.NoError(t, h.Close())
 }
@@ -3146,7 +3171,7 @@ func TestHead_Init_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 	require.False(t, created, "should already exist")
 	require.NotNil(t, series, "should return the series we created above")
 
-	series.mmapChunks(h.chunkDiskMapper)
+	mustMmapChunks(t, series, h.chunkDiskMapper)
 	expChunks := make([]*mmappedChunk, len(series.mmappedChunks))
 	copy(expChunks, series.mmappedChunks)
 
@@ -3286,7 +3311,7 @@ func TestReplayAfterMmapReplayError_AppenderV2(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	openHead()
-	h.mmapHeadChunks()
+	h.mmapHeadChunks(true)
 
 	// There should be less m-map files due to corruption.
 	files, err = os.ReadDir(filepath.Join(dir, "chunks_head"))
@@ -3473,7 +3498,7 @@ func TestGaugeHistogramWALAndChunkHeader_AppenderV2(t *testing.T) {
 	appendHistogram(hists[4])
 
 	checkHeaders := func() {
-		head.mmapHeadChunks()
+		head.mmapHeadChunks(true)
 		ms, _, err := head.getOrCreate(l.Hash(), l, false)
 		require.NoError(t, err)
 		require.Len(t, ms.mmappedChunks, 3)
@@ -3551,7 +3576,7 @@ func TestGaugeFloatHistogramWALAndChunkHeader_AppenderV2(t *testing.T) {
 	checkHeaders := func() {
 		ms, _, err := head.getOrCreate(l.Hash(), l, false)
 		require.NoError(t, err)
-		head.mmapHeadChunks()
+		head.mmapHeadChunks(true)
 		require.Len(t, ms.mmappedChunks, 3)
 		expHeaders := []chunkenc.CounterResetHeader{
 			chunkenc.UnknownCounterReset,
