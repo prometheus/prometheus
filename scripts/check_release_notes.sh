@@ -38,8 +38,8 @@ components=(
     PromQL
     Promtool
     Relabeling
-    "Remote-read"
-    "Remote-write"
+    "Remote-Read"
+    "Remote-Write"
     Rules
     Scraping
     Templates
