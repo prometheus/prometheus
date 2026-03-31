@@ -484,6 +484,9 @@ func (p *ProtobufParser) Next() (Entry, error) {
 				p.fieldPos = -3 // We have not returned anything, let p.Next() increment it to -2.
 				return p.Next()
 			}
+			if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
+				return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
+			}
 			p.state = EntryHistogram
 		} else {
 			p.state = EntrySeries
@@ -527,6 +530,9 @@ func (p *ProtobufParser) Next() (Entry, error) {
 			// it means we might need to do NHCB conversion.
 			if t == dto.MetricType_HISTOGRAM || t == dto.MetricType_GAUGE_HISTOGRAM {
 				if !isClassicHistogram {
+					if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
+						return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
+					}
 					p.state = EntryHistogram
 				} else if p.convertClassicHistogramsToNHCB {
 					// We still need to spit out the NHCB.
@@ -747,4 +753,37 @@ func (p *ProtobufParser) convertToNHCB(t dto.MetricType) (*histogram.Histogram, 
 		}
 	}
 	return ch, cfh, nil
+}
+
+// checkNativeHistogramConsistency returns an error if the span bucket counts
+// do not match the number of bucket values in a native histogram protobuf
+// message. It catches malformed input before it reaches compactBuckets, where
+// a mismatch would cause a panic.
+func checkNativeHistogramConsistency(h *dto.Histogram) error {
+	isFloat := h.GetSampleCountFloat() > 0 || h.GetZeroCountFloat() > 0
+	var positiveBuckets, negativeBuckets int
+	if isFloat {
+		positiveBuckets = len(h.GetPositiveCount())
+		negativeBuckets = len(h.GetNegativeCount())
+	} else {
+		positiveBuckets = len(h.GetPositiveDelta())
+		negativeBuckets = len(h.GetNegativeDelta())
+	}
+	if err := checkProtoSpanBucketConsistency("positive", h.GetPositiveSpan(), positiveBuckets); err != nil {
+		return err
+	}
+	return checkProtoSpanBucketConsistency("negative", h.GetNegativeSpan(), negativeBuckets)
+}
+
+// checkProtoSpanBucketConsistency returns an error when the total length
+// described by spans does not match numBuckets.
+func checkProtoSpanBucketConsistency(side string, spans []dto.BucketSpan, numBuckets int) error {
+	var total int
+	for _, s := range spans {
+		total += int(s.GetLength())
+	}
+	if total != numBuckets {
+		return fmt.Errorf("%s side: spans require %d buckets, have %d", side, total, numBuckets)
+	}
+	return nil
 }

@@ -5937,6 +5937,85 @@ metric: <
 	})
 }
 
+func TestProtobufParseHistogramSpanBucketMismatch(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "all zero-length positive spans with non-empty positive deltas",
+			input: `name: "test_histogram"
+help: "Test."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 2
+    sample_sum: 1.0
+    schema: 1
+    zero_threshold: 0
+    zero_count: 0
+    positive_span: <
+      offset: 0
+      length: 0
+    >
+    positive_span: <
+      offset: 2
+      length: 0
+    >
+    positive_delta: 1
+    positive_delta: 3
+  >
+>
+`,
+		},
+		{
+			name: "more positive deltas than positive spans account for",
+			input: `name: "test_histogram"
+help: "Test."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 10
+    sample_sum: 1.0
+    schema: 1
+    zero_threshold: 0
+    zero_count: 0
+    positive_span: <
+      offset: 0
+      length: 1
+    >
+    positive_span: <
+      offset: 2
+      length: 1
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: 3
+    positive_delta: 4
+  >
+>
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := metricFamiliesToProtobuf(t, []string{tc.input})
+			p := NewProtobufParser(buf.Bytes(), false, false, false, false, labels.NewSymbolTable())
+			var gotErr error
+			for {
+				_, err := p.Next()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					gotErr = err
+					break
+				}
+			}
+			require.ErrorContains(t, gotErr, "positive side")
+		})
+	}
+}
+
 func generateString(r *rand.Rand, firstRunes, restRunes []rune) string {
 	result := make([]rune, 1+r.Intn(20))
 	for i := range result {
