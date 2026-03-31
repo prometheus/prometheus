@@ -27,7 +27,7 @@ require (
 	github.com/dennwc/varint v1.0.0
 	github.com/digitalocean/godo v1.178.0
 	github.com/docker/docker v28.5.2+incompatible
-	github.com/edsrzf/mmap-go v1.2.0
+	github.com/edsrzf/mmap-go v1.2.1-0.20241212181136-fad1cd13edbd
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
 	github.com/envoyproxy/protoc-gen-validate v1.3.3
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
