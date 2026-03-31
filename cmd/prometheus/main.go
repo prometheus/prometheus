@@ -285,6 +285,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.tsdb.EnableXOR2Encoding = true
 				logger.Info("Experimental XOR2 chunk encoding enabled.")
 			case "st-synthesis":
+				// TODO(ridwanmsharif): Move this to scrape configuration once stable.
 				c.scrape.SynthesizeST = true
 				features.Enable(features.Scrape, "st-synthesis")
 				logger.Info("Experimental start timestamp synthesis enabled.")

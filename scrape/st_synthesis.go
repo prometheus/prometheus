@@ -23,13 +23,12 @@ import (
 //
 // Only Counters and Histograms (Classic/Native/Float) are supported.
 //
-// It maps closely to OpenTelemetry's subtractinitial.adjuster logic.
+// It maps closely to OpenTelemetry's cumulative-to-delta conversion patterns,
+// similar to what is done in the OpenTelemetry Collector's `metricstarttimeprocessor`.
+// See https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/metricstarttimeprocessor.
 type stCache struct {
-	// For Counters / simple Floats / Summary _sum / Summary _count
-	counter *floatSynthesis
-
-	// For Native / Exponential Histograms (Both Integer and Float natively use this state)
-	nativeHistogram *nativeHistogramSynthesis
+	f *floatSynthesis
+	h *histogramSynthesis
 }
 
 type floatSynthesis struct {
@@ -38,30 +37,24 @@ type floatSynthesis struct {
 	startTime int64
 }
 
-// nativeHistogramSynthesis handles both Native integer Histograms and FloatHistograms.
+// histogramSynthesis handles both Native integer Histograms and FloatHistograms.
 // It works by caching the incoming histogram perfectly as a FloatHistogram
 // to leverage native DetectReset and Sub methods.
-type nativeHistogramSynthesis struct {
+type histogramSynthesis struct {
 	prevFloat *histogram.FloatHistogram
 	refFloat  *histogram.FloatHistogram
 	startTime int64
 }
 
-// ensureNumberSynthesis initializes or returns the number synthesis state.
-func (st *stCache) ensureNumberSynthesis() *floatSynthesis {
-	if st.counter == nil {
-		st.counter = &floatSynthesis{}
+// synthesizeFloat updates the synthesis cache for a float and returns the adjusted value, synthesized start time, and whether to skip append (for first sample).
+func (st *stCache) synthesizeFloat(currentValue float64, currentTs int64) (float64, int64, bool) {
+	if st.f == nil {
+		st.f = &floatSynthesis{}
 	}
-	return st.counter
-}
-
-// synthesizeNumber updates the synthesis state for a number (Counter/Gauge) and returns the adjusted value, synthesized start time, and whether to skip append (first sample).
-// It detects resets if the current value is less than the previous value.
-func (st *stCache) synthesizeNumber(currentValue float64, currentTs int64) (float64, int64, bool) {
-	n := st.ensureNumberSynthesis()
+	n := st.f
 
 	if n.startTime == 0 {
-		// First sample
+		// First sample.
 		n.prevValue = currentValue
 		n.refValue = currentValue
 		n.startTime = currentTs
@@ -69,8 +62,10 @@ func (st *stCache) synthesizeNumber(currentValue float64, currentTs int64) (floa
 	}
 
 	if currentValue < n.prevValue {
-		// Reset detected
+		// Reset detected.
 		n.refValue = 0
+		// ST is somewhere between prev timestamp and current timestamp.
+		// Pick the least risky guess: 1ms before the current timestamp.
 		n.startTime = currentTs - 1
 	}
 
@@ -80,21 +75,16 @@ func (st *stCache) synthesizeNumber(currentValue float64, currentTs int64) (floa
 	return adjustedValue, n.startTime, false
 }
 
-// ensureNativeHistogramSynthesis initializes or returns the unified native histogram synthesis state.
-func (st *stCache) ensureNativeHistogramSynthesis() *nativeHistogramSynthesis {
-	if st.nativeHistogram == nil {
-		st.nativeHistogram = &nativeHistogramSynthesis{}
-	}
-	return st.nativeHistogram
-}
-
-// synthesizeHistogram updates the synthesis state for a classic/native Integer Histogram and returns the adjusted histogram, synthesized start time, and whether to skip append (first sample).
+// synthesizeHistogram updates the synthesis state for a classic/native Integer Histogram and returns the adjusted histogram, synthesized start time, and whether to skip append (for first sample).
 func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs int64) (*histogram.Histogram, int64, bool) {
-	n := st.ensureNativeHistogramSynthesis()
+	if st.h == nil {
+		st.h = &histogramSynthesis{}
+	}
+	n := st.h
 	currFloat := current.ToFloat(nil)
 
 	if n.startTime == 0 {
-		// First sample
+		// First sample.
 		n.prevFloat = currFloat.Copy()
 		n.refFloat = n.prevFloat
 		n.startTime = currentTs
@@ -102,9 +92,11 @@ func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs i
 	}
 
 	if currFloat.DetectReset(n.prevFloat) {
-		// Reset detected
+		// Reset detected.
 		n.prevFloat = currFloat.Copy()
 		n.refFloat = n.prevFloat
+		// ST is somewhere between prev timestamp and current timestamp.
+		// Pick the least risky guess: 1ms before the current timestamp.
 		n.startTime = currentTs - 1
 		return current, n.startTime, false
 	}
@@ -116,7 +108,7 @@ func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs i
 	// floating histograms and back. Need to look into how reset detection works
 	// natively for histograms.
 
-	// Mathematically subtract the origin anchor
+	// Mathematically subtract the origin anchor.
 	subFloat, _, _, _ := currFloat.Sub(n.refFloat)
 	subFloat = subFloat.Compact(0)
 
@@ -141,7 +133,7 @@ func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs i
 		adjusted.PositiveBuckets = make([]int64, len(subFloat.PositiveBuckets))
 		var last uint64
 		for i, v := range subFloat.PositiveBuckets {
-			// Subtracted float buckets are absolute cumulative integers mathematically
+			// Subtracted float buckets are absolute cumulative integers mathematically.
 			absolute := uint64(v)
 			adjusted.PositiveBuckets[i] = int64(absolute - last)
 			last = absolute
@@ -164,12 +156,15 @@ func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs i
 	return adjusted, n.startTime, false
 }
 
-// synthesizeFloatHistogram updates the synthesis state for a FloatHistogram and returns the adjusted histogram, synthesized start time, and whether to skip append (first sample).
+// synthesizeFloatHistogram updates the synthesis state for a FloatHistogram and returns the adjusted histogram, synthesized start time, and whether to skip append (for first sample).
 func (st *stCache) synthesizeFloatHistogram(current *histogram.FloatHistogram, currentTs int64) (*histogram.FloatHistogram, int64, bool) {
-	n := st.ensureNativeHistogramSynthesis()
+	if st.h == nil {
+		st.h = &histogramSynthesis{}
+	}
+	n := st.h
 
 	if n.startTime == 0 {
-		// First sample
+		// First sample.
 		n.prevFloat = current.Copy()
 		n.refFloat = n.prevFloat
 		n.startTime = currentTs
@@ -177,16 +172,18 @@ func (st *stCache) synthesizeFloatHistogram(current *histogram.FloatHistogram, c
 	}
 
 	if current.DetectReset(n.prevFloat) {
-		// Reset detected
+		// Reset detected.
 		n.prevFloat = current.Copy()
 		n.refFloat = n.prevFloat
+		// ST is somewhere between prev timestamp and current timestamp.
+		// Pick the least risky guess: 1ms before the current timestamp.
 		n.startTime = currentTs - 1
 		return current, n.startTime, false
 	}
 
 	n.prevFloat = current
 
-	// Mathematically subtract the origin anchor
+	// Mathematically subtract the origin anchor.
 	adjusted, _, _, _ := current.Copy().Sub(n.refFloat)
 	adjusted = adjusted.Compact(0)
 
