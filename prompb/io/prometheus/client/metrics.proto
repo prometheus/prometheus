@@ -52,7 +52,7 @@ message Counter {
   double   value    = 1;
   Exemplar exemplar = 2;
 
-  google.protobuf.Timestamp  created_timestamp = 3;
+  google.protobuf.Timestamp  start_timestamp = 3;
 }
 
 message Quantile {
@@ -65,7 +65,7 @@ message Summary {
   double            sample_sum   = 2;
   repeated Quantile quantile     = 3 [(gogoproto.nullable) = false];
 
-  google.protobuf.Timestamp  created_timestamp = 4;
+  google.protobuf.Timestamp  start_timestamp = 4;
 }
 
 message Untyped {
@@ -79,7 +79,7 @@ message Histogram {
   // Buckets for the classic histogram.
   repeated Bucket bucket = 3 [(gogoproto.nullable) = false]; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
 
-  google.protobuf.Timestamp created_timestamp = 15;
+  google.protobuf.Timestamp start_timestamp = 15;
 
   // Everything below here is for native histograms (formerly known as sparse histograms).
 

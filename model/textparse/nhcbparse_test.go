@@ -773,7 +773,7 @@ help: "Test histogram 1"
 type: HISTOGRAM
 metric: <
   histogram: <
-		created_timestamp: <
+		start_timestamp: <
       seconds: 1
       nanos: 1
     >
@@ -798,7 +798,7 @@ help: "Test histogram 2"
 type: HISTOGRAM
 metric: <
   histogram: <
-		created_timestamp: <
+		start_timestamp: <
       seconds: 1
       nanos: 1
     >
@@ -851,7 +851,7 @@ help: "Test histogram 3"
 type: HISTOGRAM
 metric: <
   histogram: <
-		created_timestamp: <
+		start_timestamp: <
       seconds: 1
       nanos: 1
     >
@@ -969,7 +969,7 @@ help: "Test histogram 1"
 type: HISTOGRAM
 metric: <
   histogram: <
-		created_timestamp: <
+		start_timestamp: <
       seconds: 1
       nanos: 1
     >
@@ -1012,7 +1012,7 @@ help: "Test histogram 2"
 type: HISTOGRAM
 metric: <
   histogram: <
-		created_timestamp: <
+		start_timestamp: <
       seconds: 1
       nanos: 1
     >

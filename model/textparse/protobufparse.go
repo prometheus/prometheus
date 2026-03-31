@@ -404,11 +404,11 @@ func (p *ProtobufParser) StartTimestamp() int64 {
 	var st *types.Timestamp
 	switch p.dec.GetType() {
 	case dto.MetricType_COUNTER:
-		st = p.dec.GetCounter().GetCreatedTimestamp()
+		st = p.dec.GetCounter().GetStartTimestamp()
 	case dto.MetricType_SUMMARY:
-		st = p.dec.GetSummary().GetCreatedTimestamp()
+		st = p.dec.GetSummary().GetStartTimestamp()
 	case dto.MetricType_HISTOGRAM, dto.MetricType_GAUGE_HISTOGRAM:
-		st = p.dec.GetHistogram().GetCreatedTimestamp()
+		st = p.dec.GetHistogram().GetStartTimestamp()
 	default:
 	}
 	if st == nil {

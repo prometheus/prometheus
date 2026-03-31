@@ -608,7 +608,7 @@ type: COUNTER
 metric: <
   counter: <
     value: 42
-    created_timestamp: <
+    start_timestamp: <
       seconds: 1625851153
       nanos: 146848499
     >
@@ -623,7 +623,7 @@ metric: <
   summary: <
     sample_count: 42
     sample_sum: 1.234
-    created_timestamp: <
+    start_timestamp: <
       seconds: 1625851153
       nanos: 146848499
     >
@@ -636,7 +636,7 @@ help: "A histogram with a created timestamp."
 type: HISTOGRAM
 metric: <
   histogram: <
-    created_timestamp: <
+    start_timestamp: <
       seconds: 1625851153
       nanos: 146848499
     >
@@ -653,7 +653,7 @@ help: "A gauge histogram with a created timestamp."
 type: GAUGE_HISTOGRAM
 metric: <
   histogram: <
-    created_timestamp: <
+    start_timestamp: <
       seconds: 1625851153
       nanos: 146848499
     >
