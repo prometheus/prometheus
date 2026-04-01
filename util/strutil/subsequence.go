@@ -17,6 +17,8 @@
 
 package strutil
 
+import "strings"
+
 // SubsequenceScore computes a fuzzy match score between pattern and text using
 // a greedy character matching algorithm. Characters in pattern must appear in
 // text in order (subsequence matching).
@@ -49,11 +51,17 @@ func SubsequenceScore(pattern, text string) float64 {
 		return 0.0
 	}
 
-	// For ASCII strings, use byte slices to avoid the 4x memory overhead of rune conversion.
-	if isASCII(pattern) && isASCII(text) {
-		return matchSubsequence([]byte(pattern), []byte(text))
+	// For ASCII strings, use the string-native path that avoids []byte conversion.
+	// If pattern has non-ASCII runes but text is pure ASCII, no non-ASCII
+	// pattern rune can ever match, so the pattern cannot be a subsequence.
+	patternASCII, textASCII := isASCII(pattern), isASCII(text)
+	switch {
+	case patternASCII && textASCII:
+		return matchSubsequenceString(pattern, text)
+	case !patternASCII && textASCII:
+		return 0.0
 	}
-	return matchSubsequence([]rune(pattern), []rune(text))
+	return matchSubsequenceRunes([]rune(pattern), []rune(text))
 }
 
 // isASCII reports whether s contains only ASCII characters.
@@ -66,11 +74,106 @@ func isASCII(s string) bool {
 	return true
 }
 
-// matchSubsequence implements the scoring algorithm over a pre-converted
-// character slice. T is either byte (ASCII path) or rune (Unicode path).
-func matchSubsequence[T byte | rune](patternSlice, textSlice []T) float64 {
+// clamp returns v clamped to [0.0, 1.0].
+func clamp(v float64) float64 {
+	return min(max(v, 0.0), 1.0)
+}
+
+// matchSubsequenceString is the string-native implementation of the scoring
+// algorithm for ASCII inputs. It uses strings.IndexByte for character scanning,
+// with divisions by textLen replaced by a precomputed reciprocal multiply.
+func matchSubsequenceString(pattern, text string) float64 {
+	patternLen := len(pattern)
+	textLen := len(text)
+	invTextLen := 1.0 / float64(textLen)
+	maxStart := textLen - patternLen
+
+	// scoreFrom scores a match starting at startPos, where
+	// text[startPos] == pattern[0] is guaranteed by the caller.
+	scoreFrom := func(startPos int) (float64, bool) {
+		i := startPos
+		from := i
+		to := i
+		patternIdx := 1
+		i++
+		// Extend the initial consecutive run.
+		for patternIdx < patternLen && i < textLen && text[i] == pattern[patternIdx] {
+			to = i
+			patternIdx++
+			i++
+		}
+		var score float64
+		if from > 0 {
+			score -= float64(from) * invTextLen
+		}
+		size := to - from + 1
+		score += float64(size * size)
+		prevTo := to
+
+		for patternIdx < patternLen {
+			// Jump to the next occurrence of pattern[patternIdx].
+			j := strings.IndexByte(text[i:], pattern[patternIdx])
+			if j < 0 {
+				return 0, false
+			}
+			i += j
+			from = i
+			to = i
+			patternIdx++
+			i++
+			// Extend the consecutive run.
+			for patternIdx < patternLen && i < textLen && text[i] == pattern[patternIdx] {
+				to = i
+				patternIdx++
+				i++
+			}
+			if gap := from - prevTo - 1; gap > 0 {
+				score -= float64(gap) * invTextLen
+			}
+			size = to - from + 1
+			score += float64(size * size)
+			prevTo = to
+		}
+
+		// Penalise unmatched trailing characters at half the leading/inner rate.
+		if trailing := textLen - 1 - prevTo; trailing > 0 {
+			score -= float64(trailing) * invTextLen * 0.5
+		}
+		return score, true
+	}
+
+	bestScore := -1.0
+	for i := 0; i <= maxStart; {
+		// Scan for the first pattern character.
+		j := strings.IndexByte(text[i:maxStart+1], pattern[0])
+		if j < 0 {
+			break
+		}
+		i += j
+		s, matched := scoreFrom(i)
+		if !matched {
+			// If the pattern cannot be completed from i, no later start can
+			// succeed: text[i+1:] is a strict subset of text[i:].
+			break
+		}
+		if s > bestScore {
+			bestScore = s
+		}
+		i++
+	}
+
+	if bestScore < 0 {
+		return 0.0
+	}
+	return clamp(bestScore / float64(patternLen*patternLen))
+}
+
+// matchSubsequenceRunes implements the scoring algorithm over pre-converted
+// rune slices for the Unicode path.
+func matchSubsequenceRunes(patternSlice, textSlice []rune) float64 {
 	patternLen := len(patternSlice)
 	textLen := len(textSlice)
+	invTextLen := 1.0 / float64(textLen)
 
 	// matchFromPos tries to match all pattern characters as a subsequence of
 	// text starting at startPos. Returns the raw score and true on success, or
@@ -100,7 +203,7 @@ func matchSubsequence[T byte | rune](patternSlice, textSlice []T) float64 {
 					gapSize = from - prevTo - 1
 				}
 				if gapSize > 0 {
-					score -= float64(gapSize) / float64(textLen)
+					score -= float64(gapSize) * invTextLen
 				}
 				size := to - from + 1
 				score += float64(size * size)
@@ -117,7 +220,7 @@ func matchSubsequence[T byte | rune](patternSlice, textSlice []T) float64 {
 		// Penalize unmatched trailing characters at half the leading/inner gap rate.
 		trailingGap := textLen - 1 - prevTo
 		if trailingGap > 0 {
-			score -= float64(trailingGap) / float64(2*textLen)
+			score -= float64(trailingGap) * invTextLen * 0.5
 		}
 
 		return score, true
@@ -146,9 +249,5 @@ func matchSubsequence[T byte | rune](patternSlice, textSlice []T) float64 {
 	}
 
 	// Normalize by pattern_length² (the maximum possible raw score).
-	normalized := bestScore / float64(patternLen*patternLen)
-	if normalized > 1.0 {
-		normalized = 1.0
-	}
-	return normalized
+	return clamp(bestScore / float64(patternLen*patternLen))
 }

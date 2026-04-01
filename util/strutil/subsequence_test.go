@@ -44,12 +44,54 @@ func generateNames(n int) []string {
 	return names
 }
 
-func BenchmarkSubsequenceScore(b *testing.B) {
+// generateNamesRunes returns n synthetic names containing non-ASCII characters
+// for benchmarking the rune path. Non-ASCII characters are inserted at varying
+// positions and with varying characters across prefixes, so the benchmark
+// exercises both matching and non-matching rune paths.
+func generateNamesRunes(n int) []string {
+	names := make([]string, 0, n)
+	prefixes := []string{
+		"é_http_requests_total",   // é prepended; matches "éhttp_total"
+		"process_écu_seconds",     // é mid-name; no match
+		"go_goroutines",           // ASCII; no match
+		"énode_memory_bytes",      // é prepended, different root; no match
+		"prometheus_tsdb_head",    // ASCII; no match
+		"grpc_sérveur_handled",    // é mid-name; no match
+		"é_http_container_total",  // é prepended; matches "éhttp_total"
+		"kube_pod_status",         // ASCII; no match
+		"ñup",                     // other non-ASCII; no match
+		"scrape_duration_séconds", // é near end; no match
+	}
+	for i := range n {
+		base := prefixes[i%len(prefixes)]
+		names = append(names, fmt.Sprintf("%s_%d", base, i/len(prefixes)))
+	}
+	return names
+}
+
+func BenchmarkSubsequenceScoreString(b *testing.B) {
 	// A 10-character query that partially matches many of the generated names.
 	const query = "http_total"
 
 	for _, n := range []int{1000, 2000, 10000, 100000, 1000000} {
 		names := generateNames(n)
+		b.Run(fmt.Sprintf("names=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				for _, name := range names {
+					SubsequenceScore(query, name)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkSubsequenceScoreRunes(b *testing.B) {
+	// Non-ASCII query to force the rune path; matches a subset of the generated names.
+	const query = "éhttp_total"
+
+	for _, n := range []int{1000, 2000, 10000, 100000, 1000000} {
+		names := generateNamesRunes(n)
 		b.Run(fmt.Sprintf("names=%d", n), func(b *testing.B) {
 			b.ReportAllocs()
 			for range b.N {
@@ -159,7 +201,7 @@ func TestSubsequenceScore(t *testing.T) {
 			wantScore: 23.0 / 24.0,
 		},
 		{
-			name:    "unicode chars sharing leading utf-8 byte do not match",
+			name: "unicode chars sharing leading utf-8 byte do not match",
 			// 'é' (U+00E9) encodes as [0xC3 0xA9] and 'ã' (U+00E3) as [0xC3 0xA3].
 			// They share the leading byte but must not be treated as equal.
 			pattern:  "é",
