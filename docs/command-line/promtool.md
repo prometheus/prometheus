@@ -240,6 +240,7 @@ Run instant query.
 | Flag | Description |
 | --- | --- |
 | <code class="text-nowrap">--time</code> | Query evaluation time (RFC3339 or Unix timestamp). |
+| <code class="text-nowrap">--header</code> | Extra headers to send to server. |
 
 
 

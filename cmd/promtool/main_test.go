@@ -95,12 +95,28 @@ func TestQueryInstant(t *testing.T) {
 	require.NoError(t, err)
 
 	p := &promqlPrinter{}
-	exitCode := QueryInstant(urlObject, http.DefaultTransport, "up", "300", p)
+	exitCode := QueryInstant(urlObject, http.DefaultTransport, map[string]string{}, "up", "300", p)
 	require.Equal(t, "/api/v1/query", getRequest().URL.Path)
 	form := getRequest().Form
 	require.Equal(t, "up", form.Get("query"))
 	require.Equal(t, "300", form.Get("time"))
 	require.Equal(t, 0, exitCode)
+}
+
+func TestQueryInstantHeaders(t *testing.T) {
+	t.Parallel()
+	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "vector", "result": []}}`)
+	defer s.Close()
+
+	urlObject, err := url.Parse(s.URL)
+	require.NoError(t, err)
+
+	p := &promqlPrinter{}
+	headers := map[string]string{"X-Scope-OrgID": "prom", "X-Custom": "value"}
+	exitCode := QueryInstant(urlObject, http.DefaultTransport, headers, "up", "300", p)
+	require.Equal(t, 0, exitCode)
+	require.Equal(t, "prom", getRequest().Header.Get("X-Scope-OrgID"))
+	require.Equal(t, "value", getRequest().Header.Get("X-Custom"))
 }
 
 func mockServer(code int, body string) (*httptest.Server, func() *http.Request) {
