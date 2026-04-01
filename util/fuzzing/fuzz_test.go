@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/value"
@@ -281,6 +282,67 @@ func FuzzXOR2Chunk(f *testing.F) {
 		if err := it.Err(); err != nil {
 			t.Fatal(err)
 		}
+	})
+}
+
+// FuzzParseProtobuf fuzzes the protobuf exposition-format parser. The four bool
+// parameters exercise different combinations of parser options:
+//
+//   - ignoreNative: ignore native histogram parts of the payload
+//   - parseClassic: also emit the classic representation when a native histogram is present
+//   - convertNHCB: convert classic histograms to native histograms with custom buckets
+//   - typeAndUnit: include type and unit labels on each series
+func FuzzParseProtobuf(f *testing.F) {
+	corpus, err := GetCorpusForFuzzParseProtobuf()
+	if err != nil {
+		f.Fatal(err)
+	}
+	for _, s := range corpus {
+		f.Add(s.Data, s.IgnoreNative, s.ParseClassic, s.ConvertNHCB, s.TypeAndUnit)
+	}
+
+	f.Fuzz(func(t *testing.T, in []byte, ignoreNative, parseClassic, convertNHCB, typeAndUnit bool) {
+		if len(in) > maxInputSize {
+			t.Skip()
+		}
+		p := textparse.NewProtobufParser(in, ignoreNative, parseClassic, convertNHCB, typeAndUnit, symbolTable)
+		var err error
+		for {
+			entry, nextErr := p.Next()
+			err = nextErr
+			if err != nil {
+				break
+			}
+			switch entry {
+			case textparse.EntryHelp:
+				_, _ = p.Help()
+			case textparse.EntryType:
+				_, _ = p.Type()
+			case textparse.EntryUnit:
+				_, _ = p.Unit()
+			case textparse.EntrySeries:
+				var lbs labels.Labels
+				p.Labels(&lbs)
+				_, _, _ = p.Series()
+				_ = p.StartTimestamp()
+				var ex exemplar.Exemplar
+				for p.Exemplar(&ex) {
+				}
+			case textparse.EntryHistogram:
+				var lbs labels.Labels
+				p.Labels(&lbs)
+				_, _, _, _ = p.Histogram()
+				_ = p.StartTimestamp()
+				var ex exemplar.Exemplar
+				for p.Exemplar(&ex) {
+				}
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			err = nil
+		}
+		// We don't care about errors, just that we don't panic.
+		_ = err
 	})
 }
 
