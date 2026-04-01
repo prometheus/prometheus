@@ -14,6 +14,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"math"
@@ -74,7 +75,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		labelPrefix:   t.Name(),
 		numDatapoints: 3,
 		numHistograms: 3,
-		numSeries:     3,
+		numSeries:     300,
 	})
 
 	appendData := func(app storage.Appender) {
@@ -124,6 +125,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		require.NoError(t, err, "db.truncate")
 		require.NoError(t, db.Close())
 	})
+	assertCheckpointExists(t, wlogWalDir, 1)
 
 	// Restore the database from the checkpoint.
 	wlogParams.isNewCheckpoint = true
@@ -151,12 +153,29 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		require.NoError(t, db.Close())
 	})
 
+	assertCheckpointExists(t, wlogWalDir, 1)
 	openDBAndDo(newParams, func(db *DB) {
 		defer db.Close()
 		agentAfterSeries = db.series
 	})
 
 	require.Equal(t, wlogAfterSeries, agentAfterSeries, "agent.Checkpoint vs wlog.Checkpoint post-replay state doesn't match")
+}
+
+func assertCheckpointExists(t *testing.T, walDir string, checkpointID int) {
+	d := wlog.CheckpointDir(walDir, checkpointID)
+	v, err := os.Stat(d)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("checkpoint doesn't exists in WAL dir %q", walDir)
+			return
+		}
+
+		t.Fatalf("can't stat checkpoint dir %q", err)
+		return
+	}
+
+	require.True(t, v.IsDir(), "checkpoint should be a dir")
 }
 
 // To run the benchmark and display a diff, use the following command:
