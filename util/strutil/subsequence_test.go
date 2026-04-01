@@ -14,11 +14,52 @@
 package strutil
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+// generateNames returns n synthetic metric-style names for benchmarking.
+// Names are varied: some share characters with the query, some do not.
+func generateNames(n int) []string {
+	names := make([]string, 0, n)
+	prefixes := []string{
+		"http_requests_total",
+		"process_cpu_seconds",
+		"go_goroutines",
+		"node_memory_bytes",
+		"prometheus_tsdb_head",
+		"grpc_server_handled",
+		"container_cpu_usage",
+		"kube_pod_status",
+		"up",
+		"scrape_duration_seconds",
+	}
+	for i := range n {
+		base := prefixes[i%len(prefixes)]
+		names = append(names, fmt.Sprintf("%s_%d", base, i/len(prefixes)))
+	}
+	return names
+}
+
+func BenchmarkSubsequenceScore(b *testing.B) {
+	// A 10-character query that partially matches many of the generated names.
+	const query = "http_total"
+
+	for _, n := range []int{1000, 2000, 10000, 100000, 1000000} {
+		names := generateNames(n)
+		b.Run(fmt.Sprintf("names=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				for _, name := range names {
+					SubsequenceScore(query, name)
+				}
+			}
+		})
+	}
+}
 
 func TestSubsequenceScore(t *testing.T) {
 	tests := []struct {
@@ -116,6 +157,14 @@ func TestSubsequenceScore(t *testing.T) {
 			text:    "aéb",
 			// intervals [0,1], leading=0, trailing=1. raw = 4 - 1/6, normalized by 4.
 			wantScore: 23.0 / 24.0,
+		},
+		{
+			name:    "unicode chars sharing leading utf-8 byte do not match",
+			// 'é' (U+00E9) encodes as [0xC3 0xA9] and 'ã' (U+00E3) as [0xC3 0xA3].
+			// They share the leading byte but must not be treated as equal.
+			pattern:  "é",
+			text:     "ã",
+			wantZero: true,
 		},
 		{
 			name:      "single char exact match",
