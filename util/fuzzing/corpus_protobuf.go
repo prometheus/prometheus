@@ -316,7 +316,7 @@ func getRawProtobufCorpus() ([][]byte, error) {
 		return nil, err
 	}
 
-	// Counter: with created_timestamp.
+	// Counter: with start_timestamp.
 	if result, err = appendSerializedProtobufSeed(result, dto.MetricFamily{
 		Name: "process_cpu_seconds_total",
 		Help: "Total user and system CPU time spent.",
@@ -324,8 +324,8 @@ func getRawProtobufCorpus() ([][]byte, error) {
 		Metric: []dto.Metric{
 			{
 				Counter: &dto.Counter{
-					Value:            12.5,
-					CreatedTimestamp: &types.Timestamp{Seconds: 1625000000},
+					Value:          12.5,
+					StartTimestamp: &types.Timestamp{Seconds: 1625000000},
 				},
 			},
 		},
@@ -400,17 +400,17 @@ func getRawProtobufCorpus() ([][]byte, error) {
 		return nil, err
 	}
 
-	// Summary: with created_timestamp.
+	// Summary: with start_timestamp.
 	if result, err = appendSerializedProtobufSeed(result, dto.MetricFamily{
 		Name: "summary_with_ct",
-		Help: "Summary with created timestamp.",
+		Help: "Summary with start timestamp.",
 		Type: dto.MetricType_SUMMARY,
 		Metric: []dto.Metric{
 			{
 				Summary: &dto.Summary{
-					SampleCount:      200,
-					SampleSum:        1000,
-					CreatedTimestamp: &types.Timestamp{Seconds: 1625000000},
+					SampleCount:    200,
+					SampleSum:      1000,
+					StartTimestamp: &types.Timestamp{Seconds: 1625000000},
 					Quantile: []dto.Quantile{
 						{Quantile: 0.5, Value: 5},
 						{Quantile: 0.99, Value: 10},
@@ -1251,36 +1251,36 @@ metric: <
   >
 >
 `,
-		// Summary with created_timestamp.
+		// Summary with start_timestamp.
 		`name: "test_summary_with_createdtimestamp"
-help: "A summary with a created timestamp."
+help: "A summary with a start timestamp."
 type: SUMMARY
 metric: <
   summary: <
     sample_count: 42
     sample_sum: 1.234
-    created_timestamp: < seconds: 1625851153 nanos: 146848499 >
+    start_timestamp: < seconds: 1625851153 nanos: 146848499 >
   >
 >
 `,
-		// Native histogram with created_timestamp.
+		// Native histogram with start_timestamp.
 		`name: "test_histogram_with_createdtimestamp"
-help: "A histogram with a created timestamp."
+help: "A histogram with a start timestamp."
 type: HISTOGRAM
 metric: <
   histogram: <
-    created_timestamp: < seconds: 1625851153 nanos: 146848499 >
+    start_timestamp: < seconds: 1625851153 nanos: 146848499 >
     positive_span: < offset: 0 length: 0 >
   >
 >
 `,
-		// Gauge histogram with created_timestamp.
+		// Gauge histogram with start_timestamp.
 		`name: "test_gaugehistogram_with_createdtimestamp"
-help: "A gauge histogram with a created timestamp."
+help: "A gauge histogram with a start timestamp."
 type: GAUGE_HISTOGRAM
 metric: <
   histogram: <
-    created_timestamp: < seconds: 1625851153 nanos: 146848499 >
+    start_timestamp: < seconds: 1625851153 nanos: 146848499 >
     positive_span: < offset: 0 length: 0 >
   >
 >
