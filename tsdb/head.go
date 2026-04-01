@@ -2242,6 +2242,10 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		if series.headChunks != nil {
 			chunksRemoved += series.headChunks.len()
 		}
+		// Clear to prevent a double-subtraction from the chunksRemoved gauge if
+		// resetSeriesWithMMappedChunks is queued on the same WAL-replay processor
+		// after this deletion (it would otherwise subtract len(mmappedChunks) again).
+		series.mmappedChunks = nil
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })

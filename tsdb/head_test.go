@@ -897,6 +897,74 @@ func TestHead_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
+// TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative is a regression test
+// for https://github.com/prometheus/prometheus/issues/10884.
+//
+// When a stale series is deleted via truncateStaleSeries (which writes a
+// [MinInt64, MaxInt64] tombstone to the WAL) and then re-created under the same
+// labels (producing a new WAL ref), the WAL replay processes for the shared
+// processor shard look like:
+//
+//	reset(mSeries, oldRef_chunks, oldRef)
+//	deleteSeriesByID(oldRef)           ← removes chunks from gauge
+//	reset(mSeries, newRef_chunks, newRef) ← was double-subtracting old chunks
+//
+// Without the fix, deleteSeriesByID removes M chunks from the gauge but leaves
+// series.mmappedChunks non-nil. The subsequent reset then subtracts those M
+// chunks a second time, driving prometheus_tsdb_head_chunks negative when M
+// exceeds the new series' chunk count.
+func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
+	head, w := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, head.Init(0))
+
+	lset := labels.FromStrings("foo", "bar")
+	appendSample := func(ts int64, v float64) storage.SeriesRef {
+		app := head.Appender(context.Background())
+		ref, err := app.Append(0, lset, ts, v)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		return ref
+	}
+
+	// Append samples across chunk boundaries to give ref1 3 m-mapped chunks + 1 active head chunk.
+	ref1 := appendSample(100, 1) // nextAt=1000
+	appendSample(1200, 2)        // ≥1000 → chunk 2, nextAt=2000
+	appendSample(2300, 3)        // ≥2000 → chunk 3, nextAt=3000
+	appendSample(3400, 4)        // ≥3000 → chunk 4 (active head)
+
+	// Mark ref1 as stale.
+	appendSample(3500, math.Float64frombits(value.StaleNaN))
+
+	// Truncate stale series: removes ref1 from the head and writes a
+	// [MinInt64, MaxInt64] tombstone record to the WAL.
+	require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{ref1}, 3500))
+
+	// Append a single sample with the same labels to create ref2.
+	// Ref2 has 0 m-mapped chunks, fewer than ref1's 3.
+	ref2 := appendSample(5000, 5)
+	require.NotEqual(t, ref1, ref2, "refs must differ after stale truncation and recreation")
+
+	require.NoError(t, head.Close())
+
+	// Reopen the head to trigger WAL replay. The WAL contains (in order):
+	//   series(ref1) → tombstone(ref1, [MinInt64,MaxInt64]) → series(ref2) → sample(ref2)
+	// Without the fix, replay drives prometheus_tsdb_head_chunks negative.
+	w, err := wlog.New(nil, nil, w.Dir(), compression.None)
+	require.NoError(t, err)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = head.opts.ChunkDirRoot
+	head, err = NewHead(nil, nil, w, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	chunksGauge := prom_testutil.ToFloat64(head.metrics.chunks)
+	require.GreaterOrEqual(t, chunksGauge, 0.0, "prometheus_tsdb_head_chunks gauge must not be negative after WAL replay")
+}
+
 func TestHead_WALCheckpointMultiRef(t *testing.T) {
 	cases := []struct {
 		name               string
