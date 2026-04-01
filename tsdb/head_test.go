@@ -7915,3 +7915,86 @@ func TestHead_FastStartupStateFile(t *testing.T) {
 	require.Equal(t, uint64(1), state.LastSeriesID, "LastSeriesID should remain 1")
 	require.Equal(t, 0, state.LastWALSegment, "LastWALSegment should remain 0")
 }
+
+func TestHead_ReadSeriesStateFile(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+
+	// Fresh boot case.
+	// Should return 0 valued state and os.ErrNotExist.
+	state, err := head.readSeriesStateFile()
+	require.Error(t, err, "reading non-existent state file should return an error")
+	require.True(t, os.IsNotExist(err), "error should be of type os.ErrNotExist")
+	require.Equal(t, SeriesLifecycleState{}, state, "state should be zero-valued when file does not exist")
+
+	// Valid file case.
+	expectedState := SeriesLifecycleState{
+		LastSeriesID:   42000,
+		LastWALSegment: 5,
+		CleanShutdown:  true,
+	}
+
+	b, err := json.Marshal(expectedState)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(w.Dir(), "series_state.json"), b, 0o666)
+	require.NoError(t, err)
+
+	state, err = head.readSeriesStateFile()
+	require.NoError(t, err, "reading valid state file should not error")
+	require.Equal(t, expectedState, state, "read state should match written state")
+}
+
+func TestHead_FindLastSeriesID(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+
+	// Write Series A to first segment.
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("metric", "A"), 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Force the WAL to cut a new segment file (second segment).
+	_, err = w.NextSegment()
+	require.NoError(t, err)
+
+	// Write new sample for series A to second segment.
+	app = head.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("metric", "A"), 200, 2.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Get the current max segment number.
+	first, last, err := wlog.Segments(w.Dir())
+	require.NoError(t, err)
+
+	mockState := SeriesLifecycleState{
+		LastSeriesID:   1,
+		LastWALSegment: first,
+		CleanShutdown:  false,
+	}
+
+	// Should return 1 as there is only 1 series created so far.
+	id, err := head.findLastSeriesID(mockState, last)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), id, "Should find ID 1 as no new series were created in segment 2")
+
+	// Write Series B to the second segment
+	app = head.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("metric", "B"), 300, 3.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Scanning both files should now return 2
+	id, err = head.findLastSeriesID(mockState, last)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), id, "Should find ID 2 after new series was created in segment 2")
+
+	// Simulate state file knowing about latest segment.
+	mockState.LastWALSegment = last
+
+	// Should return 2 as it should scan the last file and find series B.
+	id, err = head.findLastSeriesID(mockState, last)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), id, "Should find ID 2 even when state file's last segment is the newest segment")
+}
