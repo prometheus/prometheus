@@ -815,7 +815,7 @@ func (h *Head) Init(minValidTime int64) error {
 				h.lastSeriesID.Store(state.LastSeriesID)
 				h.logger.Info("Fast startup: clean shutdown detected, restored last series ID", "last_series_id", state.LastSeriesID)
 			} else {
-				h.logger.Info("Fast startup: unclean shutdown detected, performing WAL scan", "from_segment", endAt, "to_segment", state.LastWALSegment)
+				h.logger.Info("Fast startup: unclean shutdown detected, performing WAL scan", "from_segment", state.LastWALSegment, "to_segment", endAt)
 				id, scanErr := h.findLastSeriesID(state, endAt)
 				if scanErr != nil {
 					h.logger.Error("Fast startup: WAL scan failed, skipping fast startup", "err", scanErr)

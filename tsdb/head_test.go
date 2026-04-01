@@ -7989,4 +7989,12 @@ func TestHead_FindLastSeriesID(t *testing.T) {
 	id, err = head.findLastSeriesID(mockState, last)
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), id, "Should find ID 2 after new series was created in segment 2")
+
+	// Simulate state file knowing about latest segment.
+	mockState.LastWALSegment = last
+
+	// Should return 2 as it should scan the last file and find series B.
+	id, err = head.findLastSeriesID(mockState, last)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), id, "Should find ID 2 even when state file's last segment is the newest segment")
 }

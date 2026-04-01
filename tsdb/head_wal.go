@@ -1919,7 +1919,7 @@ func (h *Head) findLastSeriesID(state SeriesLifecycleState, endSegment int) (uin
 		var highestID chunks.HeadSeriesRef
 		var found bool
 
-		// Read the segment forwards
+		// Read the segment forwards.
 		for r.Next() {
 			rec := r.Record()
 			// We only care about Series records.
