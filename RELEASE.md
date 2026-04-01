@@ -44,7 +44,7 @@ These instructions are currently valid for the Prometheus server, i.e. the [prom
 
 We use [Semantic Versioning](https://semver.org/).
 
-We maintain a separate branch for each minor release, named `release-<major>.<minor>`, e.g. `release-1.1`, `release-2.0`.
+We maintain a separate branch for each minor release, named `release-<major>.<minor>`, e.g. `release-2.1`, `release-3.0`.
 
 Note that branch protection kicks in automatically for any branches whose name starts with `release-`. Never use names starting with `release-` for branches that are not release branches.
 
@@ -107,26 +107,24 @@ though this may be done at convenient times (e.g. by the UI maintainers) that ar
 
 ### 1. Prepare your release
 
-At the start of a new major or minor release cycle create the corresponding release branch based on the main branch. For example if we're releasing `2.17.0` and the previous stable release is `2.16.0` we need to create a `release-2.17` branch. Note that all releases are handled in protected release branches, see the above `Branch management and versioning` section. Release candidates and patch releases for any given major or minor release happen in the same `release-<major>.<minor>` branch. Do not create `release-<version>` for patch or release candidate releases.
+At the start of a new major or minor release cycle create the corresponding release branch based on the main branch. For example if we're releasing `3.7.0` and the previous stable release is `3.6.0` we need to create a `release-3.7` branch. Note that all releases are handled in protected release branches, see the [Branch management and versioning strategy](#branch-management-and-versioning-strategy) section. Release candidates and patch releases for any given major or minor release happen in the same `release-<major>.<minor>` branch. Do not create `release-<version>` for patch or release candidate releases.
 
 Changes for a patch release or release candidate should be merged into the previously mentioned release branch via pull request.
 
-Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to the changelog in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
+Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to `CHANGELOG.md` in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
 
-When updating the `CHANGELOG.md` look at all PRs included in the release since the last release and verify if they need a changelog entry. Most PRs will have their changelog entries specified in the `release-notes` blocks within their PR descriptions.
+Use [`scripts/generate_release_notes.sh`](scripts/generate_release_notes.sh) to produce a starting point for the `CHANGELOG.md` entries. It requires the [`release-notes`](https://github.com/kubernetes/release/tree/master/cmd/release-notes) tool and a `GITHUB_TOKEN` with read access to the repository:
 
-Note that `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
+Run it for the target release version (RC, final, or patch; for example `v3.11.0-rc.0`, `v3.11.0`, or `v3.11.1`):
 
-For release candidates still update `CHANGELOG.md`, but when you cut the final release later, merge all the changes from the pre-releases into the one final update.
+```bash
+GITHUB_TOKEN=<token> scripts/generate_release_notes.sh 3.Y_SET_ME.Z_SET_ME
+```
 
-Entries in the `CHANGELOG.md` are meant to be in this order:
+Review the output carefully before adding it to `CHANGELOG.md`:
 
-* `[SECURITY]` - A bugfix that specifically fixes a security issue.
-* `[CHANGE]`
-* `[FEATURE]`
-* `[ENHANCEMENT]`
-* `[PERF]`
-* `[BUGFIX]`
+- Remove entries already present in a previous release's Changelog. Duplicates can appear for fixes merged to the previous release branch.
+- `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
 
 Then bump the UI module version:
 
@@ -180,7 +178,7 @@ git push origin "${tag}"
 
 ### 4. Wrapping up
 
-For release candidate versions (`v2.16.0-rc.0`), run the benchmark for 3 days using the `/prombench vX.Y.Z` command, `vX.Y.Z` being the latest stable patch release's tag of the previous minor release series, such as `v2.15.2`.
+For release candidate versions (`v3.6.0-rc.0`), run the benchmark for 3 days using the `/prombench vX.Y.Z` command, `vX.Y.Z` being the latest stable patch release's tag of the previous minor release series, such as `v3.5.2`.
 
 If the release has happened in the latest release branch, merge the changes into main.
 

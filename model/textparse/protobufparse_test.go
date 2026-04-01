@@ -608,7 +608,7 @@ type: COUNTER
 metric: <
   counter: <
     value: 42
-    created_timestamp: <
+    start_timestamp: <
       seconds: 1625851153
       nanos: 146848499
     >
@@ -623,7 +623,7 @@ metric: <
   summary: <
     sample_count: 42
     sample_sum: 1.234
-    created_timestamp: <
+    start_timestamp: <
       seconds: 1625851153
       nanos: 146848499
     >
@@ -636,7 +636,7 @@ help: "A histogram with a created timestamp."
 type: HISTOGRAM
 metric: <
   histogram: <
-    created_timestamp: <
+    start_timestamp: <
       seconds: 1625851153
       nanos: 146848499
     >
@@ -653,7 +653,7 @@ help: "A gauge histogram with a created timestamp."
 type: GAUGE_HISTOGRAM
 metric: <
   histogram: <
-    created_timestamp: <
+    start_timestamp: <
       seconds: 1625851153
       nanos: 146848499
     >
@@ -5909,6 +5909,111 @@ func generateValidLabelName(r *rand.Rand) string {
 
 func generateValidMetricName(r *rand.Rand) string {
 	return generateString(r, validFirstRunes, validMetricNameRunes)
+}
+
+// TestProtobufParseSummaryNoQuantilesNoPanic is a regression test for a panic
+// when Next() is called without Series() on a summary with no quantiles.
+func TestProtobufParseSummaryNoQuantilesNoPanic(t *testing.T) {
+	buf := metricFamiliesToProtobuf(t, []string{`
+name: "no_quantile_summary"
+help: "A summary with no quantile entries."
+type: SUMMARY
+metric: <
+  summary: <
+    sample_count: 10
+    sample_sum: 1.5
+  >
+>
+`})
+
+	p := NewProtobufParser(buf.Bytes(), false, false, false, false, labels.NewSymbolTable())
+	require.NotPanics(t, func() {
+		for {
+			_, err := p.Next()
+			if errors.Is(err, io.EOF) || err != nil {
+				break
+			}
+		}
+	})
+}
+
+func TestProtobufParseHistogramSpanBucketMismatch(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "all zero-length positive spans with non-empty positive deltas",
+			input: `name: "test_histogram"
+help: "Test."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 2
+    sample_sum: 1.0
+    schema: 1
+    zero_threshold: 0
+    zero_count: 0
+    positive_span: <
+      offset: 0
+      length: 0
+    >
+    positive_span: <
+      offset: 2
+      length: 0
+    >
+    positive_delta: 1
+    positive_delta: 3
+  >
+>
+`,
+		},
+		{
+			name: "more positive deltas than positive spans account for",
+			input: `name: "test_histogram"
+help: "Test."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 10
+    sample_sum: 1.0
+    schema: 1
+    zero_threshold: 0
+    zero_count: 0
+    positive_span: <
+      offset: 0
+      length: 1
+    >
+    positive_span: <
+      offset: 2
+      length: 1
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: 3
+    positive_delta: 4
+  >
+>
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := metricFamiliesToProtobuf(t, []string{tc.input})
+			p := NewProtobufParser(buf.Bytes(), false, false, false, false, labels.NewSymbolTable())
+			var gotErr error
+			for {
+				_, err := p.Next()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					gotErr = err
+					break
+				}
+			}
+			require.ErrorContains(t, gotErr, "positive side")
+		})
+	}
 }
 
 func generateString(r *rand.Rand, firstRunes, restRunes []rune) string {

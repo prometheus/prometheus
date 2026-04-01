@@ -11,17 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package synctest
+package outscale
 
 import (
-	"testing"
-	"testing/synctest"
+	"github.com/prometheus/prometheus/discovery"
 )
 
-func Test(t *testing.T, f func(t *testing.T)) {
-	synctest.Test(t, f)
+var _ discovery.DiscovererMetrics = (*outscaleMetrics)(nil)
+
+type outscaleMetrics struct {
+	refreshMetrics discovery.RefreshMetricsInstantiator
 }
 
-func Wait() {
-	synctest.Wait()
+// Register implements discovery.DiscovererMetrics.
+func (*outscaleMetrics) Register() error {
+	return nil
 }
+
+// Unregister implements discovery.DiscovererMetrics.
+func (*outscaleMetrics) Unregister() {}

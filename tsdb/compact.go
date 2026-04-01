@@ -171,7 +171,7 @@ type LeveledCompactorOptions struct {
 	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
 	MergeFunc storage.VerticalChunkSeriesMergeFunc
 
-	// BlockExcludeFilter is used to decide which blocks are exluded from compactions.
+	// BlockExcludeFilter is used to decide which blocks are excluded from compactions.
 	BlockExcludeFilter BlockExcludeFilterFunc
 
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.

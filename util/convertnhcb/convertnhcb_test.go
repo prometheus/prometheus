@@ -147,6 +147,19 @@ func TestNHCBConvert(t *testing.T) {
 			},
 			expectedErr: errNegativeCount,
 		},
+		"NaN bucket upper bound": {
+			setup: func() *TempHistogram {
+				h := NewTempHistogram()
+				// Add a real bucket first so that the NaN call reaches the
+				// default branch of the switch in SetBucketCount; without an
+				// existing bucket, len(h.buckets)==0 and the NaN is silently
+				// appended without triggering the panic.
+				h.SetBucketCount(1.0, 5)
+				h.SetBucketCount(math.NaN(), 10)
+				return &h
+			},
+			expectedErr: errNaNBucket,
+		},
 		"mixed order": {
 			setup: func() *TempHistogram {
 				h := NewTempHistogram()

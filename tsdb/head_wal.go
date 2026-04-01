@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -1804,4 +1805,151 @@ Outer:
 	}
 
 	return snapIdx, snapOffset, refSeries, nil
+}
+
+// Name of the file used to store the state.
+const seriesStateFilename = "series_state.json"
+
+// SeriesLifecycleState descibes the information we record in the series_state.json file.
+type SeriesLifecycleState struct {
+	LastSeriesID   uint64 `json:"last_series_id"`
+	LastWALSegment int    `json:"last_wal_segment"`
+	CleanShutdown  bool   `json:"clean_shutdown"`
+}
+
+// readSeriesStateFile reads the series lifecycle state from disk.
+func (h *Head) readSeriesStateFile() (SeriesLifecycleState, error) {
+	if h.wal == nil {
+		return SeriesLifecycleState{}, os.ErrNotExist
+	}
+
+	path := filepath.Join(h.wal.Dir(), seriesStateFilename)
+	f, err := os.Open(path)
+	if err != nil {
+		return SeriesLifecycleState{}, err
+	}
+	defer f.Close()
+
+	var state SeriesLifecycleState
+	if err := json.NewDecoder(f).Decode(&state); err != nil {
+		return SeriesLifecycleState{}, fmt.Errorf("decode series state: %w", err)
+	}
+
+	return state, nil
+}
+
+// Atomically writes the current series state to disk.
+func (h *Head) writeSeriesState(cleanShutdown bool) {
+	if h.wal == nil {
+		return
+	}
+
+	// Find the last segment number by checking the wal/ directory.
+	last, _, err := h.wal.LastSegmentAndOffset()
+	if err != nil {
+		h.logger.Warn("Failed to get WAL segments for series state", "err", err)
+		last = -1
+	}
+
+	state := SeriesLifecycleState{
+		LastSeriesID:   h.lastSeriesID.Load(),
+		LastWALSegment: last,
+		CleanShutdown:  cleanShutdown,
+	}
+
+	path := filepath.Join(h.wal.Dir(), seriesStateFilename)
+	tmpPath := path + ".tmp"
+
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		h.logger.Error("Failed to create temp series state file", "err", err)
+		return
+	}
+
+	if err := json.NewEncoder(f).Encode(state); err != nil {
+		h.logger.Error("Failed to encode series state", "err", err)
+		f.Close()
+		return
+	}
+
+	f.Close()
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		h.logger.Error("Failed to rename the temporary series state file", "err", err)
+	}
+}
+
+// runSeriesStateTicker writes the series state to disk every second.
+func (h *Head) runSeriesStateTicker() {
+	defer h.seriesStateWg.Done()
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			h.writeSeriesState(false)
+		case <-h.seriesStateQuit:
+			return
+		}
+	}
+}
+
+// findLastSeriesID performs a bounded reverse scan of WAL segments to find the highest series ID.
+func (h *Head) findLastSeriesID(state SeriesLifecycleState, endSegment int) (uint64, error) {
+	startSegment := state.LastWALSegment
+	startSegment = max(0, startSegment)
+
+	syms := labels.NewSymbolTable()
+
+	// Iterate backwards from the newest segment to the oldest allowed segment.
+	for i := endSegment; i >= startSegment; i-- {
+		s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wal.Dir(), i))
+		if os.IsNotExist(err) {
+			continue // Segment might have been deleted, we skip it.
+		}
+		if err != nil {
+			return 0, fmt.Errorf("open WAL segment %d: %w", i, err)
+		}
+
+		sr := wlog.NewSegmentBufReader(s)
+		r := wlog.NewReader(sr)
+		dec := record.NewDecoder(syms, h.logger)
+
+		var highestID chunks.HeadSeriesRef
+		var found bool
+
+		// Read the segment forwards.
+		for r.Next() {
+			rec := r.Record()
+			// We only care about Series records.
+			if dec.Type(rec) != record.Series {
+				continue
+			}
+
+			series, err := dec.Series(rec, nil)
+			if err != nil {
+				s.Close()
+				return 0, fmt.Errorf("decode series in segment %d: %w", i, err)
+			}
+			for _, ws := range series {
+				highestID = max(highestID, ws.Ref)
+				found = true
+			}
+		}
+
+		err = r.Err()
+		s.Close()
+		if err != nil {
+			return 0, fmt.Errorf("read WAL segment %d: %w", i, err)
+		}
+
+		if found {
+			return uint64(highestID), nil
+		}
+	}
+
+	// If we scanned the segments and found no series records,
+	// the ID from our state file has to be used.
+	return state.LastSeriesID, nil
 }
