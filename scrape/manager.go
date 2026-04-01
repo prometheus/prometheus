@@ -391,22 +391,23 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 				wg.Done()
 				<-canReload
 			}()
-			switch {
-			case !ok:
+			if !ok {
 				sp.stop()
 				toDelete.Store(name, struct{}{})
-			case !reflect.DeepEqual(sp.config, cfg):
+				return
+			}
+			// Update the scrape failure logger before reloading so that
+			// restartLoops captures the new logger when starting new loops.
+			if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
+				sp.SetScrapeFailureLogger(l)
+			} else {
+				sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
+			}
+			if !reflect.DeepEqual(sp.config, cfg) {
 				err := sp.reload(cfg)
 				if err != nil {
 					m.logger.Error("error reloading scrape pool", "err", err, "scrape_pool", name)
 					failed.Store(true)
-				}
-				fallthrough
-			case ok:
-				if l, ok := m.scrapeFailureLoggers[cfg.ScrapeFailureLogFile]; ok {
-					sp.SetScrapeFailureLogger(l)
-				} else {
-					sp.logger.Error("No logger found. This is a bug in Prometheus that should be reported upstream.", "scrape_pool", name)
 				}
 			}
 		}(poolName, pool, cfg, ok)
