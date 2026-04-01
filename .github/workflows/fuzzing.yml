@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        fuzz_test: [FuzzParseMetricText, FuzzParseOpenMetric, FuzzParseMetricSelector, FuzzParseExpr, FuzzXORChunk, FuzzXOR2Chunk, FuzzParseProtobuf]
+        fuzz_test: [[FuzzParseMetricText, FuzzParseOpenMetric], [FuzzParseMetricSelector, FuzzParseExpr], [FuzzXORChunk, FuzzXOR2Chunk], [FuzzParseProtobuf]]
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -21,15 +21,17 @@ jobs:
         with:
           go-version: 1.26.x
       - name: Run Fuzzing
-        run: go test -fuzz=${{ matrix.fuzz_test }}$ -fuzztime=4m ./util/fuzzing
-        continue-on-error: true
+        run: |
+          for fuzz_test in ${{ join(matrix.fuzz_test, ' ') }}; do
+            go test -fuzz="${fuzz_test}$" -fuzztime=4m ./util/fuzzing
+          done
         id: fuzz
       - name: Upload Crash Artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: failure()
         with:
-          name: fuzz-artifacts-${{ matrix.fuzz_test }}
-          path: util/fuzzing/testdata/fuzz/${{ matrix.fuzz_test }}
+          name: fuzz-artifacts-${{ join(matrix.fuzz_test, '-') }}
+          path: util/fuzzing/testdata/fuzz/
   fuzzing_status:
     # This status check aggregates the individual matrix jobs of the fuzzing
     # step into a final status. Fails if a single matrix job fails, succeeds if
