@@ -52,7 +52,7 @@ func (p CheckpointParams) withDefaults() CheckpointParams {
 }
 
 // Checkpoint creates an unindexed checkpoint containing record.RefSeries and
-// record.RefSample for ActiveSeries and a record.RefSeries for the recentlyDeleted series.
+// last timestamp for ActiveSeries and a record.RefSeries for the recentlyDeleted series.
 //
 // The difference between this implementation and [wlog.Checkpoint] is that it skips re-read current checkpoint + segments
 // and relies on data in memory.
@@ -94,9 +94,12 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 		return fmt.Errorf("open checkpoint: %w", err)
 	}
 
+	success := false
 	defer func() {
 		os.RemoveAll(cpTmpDir)
-		cp.Close()
+		if !success {
+			cp.Close()
+		}
 	}()
 
 	flusher := newCheckpointFlusher(cp, p.BatchSize)
@@ -108,6 +111,7 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 		return err
 	}
 
+	success = true
 	if err := cp.Close(); err != nil {
 		return fmt.Errorf("close checkpoint: %w", err)
 	}

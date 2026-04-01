@@ -41,8 +41,8 @@ const walSegmentSize = 32 << 10 // must be aligned to the page size
 func TestCheckpointReplayCompatibility(t *testing.T) {
 	// Test to ensure that WAL replay between wlog.Checkpoint and agent.Checkpoint are the same.
 	var (
-		oldAfterSeries *stripeSeries
-		newAfterSeries *stripeSeries
+		wlogAfterSeries  *stripeSeries
+		agentAfterSeries *stripeSeries
 	)
 
 	type openDBParams struct {
@@ -106,16 +106,16 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	// Write and replay for old wlog.Checkpoint
 
 	// wlog.Open expects to have a "wal" subdirectory
-	oldStateRoot := filepath.Join(t.TempDir(), "state-old")
-	oldWalDir := filepath.Join(oldStateRoot, "wal")
-	require.NoError(t, os.MkdirAll(oldWalDir, os.ModePerm))
+	wlogStateRoot := filepath.Join(t.TempDir(), "state-wlog")
+	wlogWalDir := filepath.Join(wlogStateRoot, "wal")
+	require.NoError(t, os.MkdirAll(wlogWalDir, os.ModePerm))
 
-	oldParams := openDBParams{
+	wlogParams := openDBParams{
 		isNewCheckpoint: false,
-		storageDir:      oldStateRoot,
+		storageDir:      wlogStateRoot,
 	}
 
-	openDBAndDo(oldParams, func(db *DB) {
+	openDBAndDo(wlogParams, func(db *DB) {
 		app := db.Appender(t.Context())
 		appendData(app)
 
@@ -126,20 +126,20 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	})
 
 	// Restore the database from the checkpoint.
-	oldParams.isNewCheckpoint = true
-	openDBAndDo(oldParams, func(db *DB) {
+	wlogParams.isNewCheckpoint = true
+	openDBAndDo(wlogParams, func(db *DB) {
 		defer db.Close()
-		oldAfterSeries = db.series
+		wlogAfterSeries = db.series
 	})
 
 	// Write and replay using agent.Checkpoint:
-	newStateRoot := filepath.Join(t.TempDir(), "state-new")
-	newWalDir := filepath.Join(newStateRoot, "wal")
-	require.NoError(t, os.MkdirAll(newWalDir, os.ModePerm))
+	agentStateRoot := filepath.Join(t.TempDir(), "state-agent")
+	agentWalDir := filepath.Join(agentStateRoot, "wal")
+	require.NoError(t, os.MkdirAll(agentWalDir, os.ModePerm))
 
 	newParams := openDBParams{
 		isNewCheckpoint: true,
-		storageDir:      newStateRoot,
+		storageDir:      agentStateRoot,
 	}
 
 	openDBAndDo(newParams, func(db *DB) {
@@ -153,10 +153,10 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 
 	openDBAndDo(newParams, func(db *DB) {
 		defer db.Close()
-		newAfterSeries = db.series
+		agentAfterSeries = db.series
 	})
 
-	require.Equal(t, oldAfterSeries, newAfterSeries, "agent.Checkpoint vs wlog.Checkpoint post-replay state doesn't match")
+	require.Equal(t, wlogAfterSeries, agentAfterSeries, "agent.Checkpoint vs wlog.Checkpoint post-replay state doesn't match")
 }
 
 // To run the benchmark and display a diff, use the following command:
