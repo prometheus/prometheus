@@ -633,8 +633,8 @@ func TestPodDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
 func TestPodDiscoveryWithNodeSelector(t *testing.T) {
 	t.Parallel()
 
-	workerNode := makeNode("worker-node", "10.0.0.1", "", map[string]string{"node-type": "worker"}, nil)
-	filteredNode := makeNode("filtered-node", "10.0.0.2", "", map[string]string{"node-type": "master"}, nil)
+	workerNode := makeNode("worker-node", "10.0.0.1", "", map[string]string{"node-type": "worker"}, nil, nil)
+	filteredNode := makeNode("filtered-node", "10.0.0.2", "", map[string]string{"node-type": "master"}, nil, nil)
 
 	attachMetadata := AttachMetadataConfig{
 		Node: true, // necessary for node role selectos to work for pod role
