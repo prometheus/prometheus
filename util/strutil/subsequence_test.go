@@ -77,9 +77,10 @@ func BenchmarkSubsequenceScoreString(b *testing.B) {
 		names := generateNames(n)
 		b.Run(fmt.Sprintf("names=%d", n), func(b *testing.B) {
 			b.ReportAllocs()
+			m := NewSubsequenceMatcher(query)
 			for range b.N {
 				for _, name := range names {
-					SubsequenceScore(query, name)
+					m.Score(name)
 				}
 			}
 		})
@@ -94,9 +95,10 @@ func BenchmarkSubsequenceScoreRunes(b *testing.B) {
 		names := generateNamesRunes(n)
 		b.Run(fmt.Sprintf("names=%d", n), func(b *testing.B) {
 			b.ReportAllocs()
+			m := NewSubsequenceMatcher(query)
 			for range b.N {
 				for _, name := range names {
-					SubsequenceScore(query, name)
+					m.Score(name)
 				}
 			}
 		})
@@ -236,7 +238,7 @@ func TestSubsequenceScore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := SubsequenceScore(tt.pattern, tt.text)
+			got := NewSubsequenceMatcher(tt.pattern).Score(tt.text)
 			if tt.wantZero {
 				require.Equal(t, 0.0, got)
 				return
@@ -249,10 +251,10 @@ func TestSubsequenceScore(t *testing.T) {
 func TestSubsequenceScoreProperties(t *testing.T) {
 	// Prefix match scores below 1.0; only exact match scores 1.0.
 	// "pro" in "prometheus": intervals [0,2], trailing=7. raw = 9 - 7/20, normalized by 9.
-	require.InDelta(t, 173.0/180.0, SubsequenceScore("pro", "prometheus"), 1e-9)
+	require.InDelta(t, 173.0/180.0, NewSubsequenceMatcher("pro").Score("prometheus"), 1e-9)
 
 	// Exact match always scores 1.0.
-	require.Equal(t, 1.0, SubsequenceScore("prometheus", "prometheus"))
+	require.Equal(t, 1.0, NewSubsequenceMatcher("prometheus").Score("prometheus"))
 
 	// Score is always in [0, 1].
 	cases := [][2]string{
@@ -262,19 +264,19 @@ func TestSubsequenceScoreProperties(t *testing.T) {
 		{"met", "my awesome text"},
 	}
 	for _, c := range cases {
-		score := SubsequenceScore(c[0], c[1])
+		score := NewSubsequenceMatcher(c[0]).Score(c[1])
 		require.True(t, score >= 0.0 && score <= 1.0,
 			"score %v out of range for pattern=%q text=%q", score, c[0], c[1])
 		require.False(t, math.IsNaN(score))
 	}
 
 	// Prefix scores higher than non-prefix substring.
-	prefixScore := SubsequenceScore("abc", "abcdef")
-	suffixScore := SubsequenceScore("abc", "defabc")
+	prefixScore := NewSubsequenceMatcher("abc").Score("abcdef")
+	suffixScore := NewSubsequenceMatcher("abc").Score("defabc")
 	require.Greater(t, prefixScore, suffixScore)
 
 	// Consecutive chars score higher than scattered.
-	consecutiveScore := SubsequenceScore("abc", "xabcx")
-	scatteredScore := SubsequenceScore("abc", "xaxbxcx")
+	consecutiveScore := NewSubsequenceMatcher("abc").Score("xabcx")
+	scatteredScore := NewSubsequenceMatcher("abc").Score("xaxbxcx")
 	require.Greater(t, consecutiveScore, scatteredScore)
 }

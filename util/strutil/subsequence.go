@@ -19,9 +19,29 @@ package strutil
 
 import "strings"
 
-// SubsequenceScore computes a fuzzy match score between pattern and text using
-// a greedy character matching algorithm. Characters in pattern must appear in
-// text in order (subsequence matching).
+// SubsequenceMatcher pre-computes the encoding of a fixed search pattern so
+// that it can be scored against many candidate strings without repeating the
+// ASCII check or rune conversion on the pattern for every call. The first
+// Score call with a Unicode candidate lazily caches the pattern's rune slice.
+// It is not safe for concurrent use.
+type SubsequenceMatcher struct {
+	pattern      string
+	patternLen   int    // byte length; used for the pre-check len(pattern) > len(text)
+	patternASCII bool   // whether pattern is pure ASCII
+	patternRunes []rune // pre-converted runes; set when !patternASCII or on first Unicode text
+}
+
+// NewSubsequenceMatcher returns a matcher for the given pattern.
+func NewSubsequenceMatcher(pattern string) *SubsequenceMatcher {
+	if isASCII(pattern) {
+		return &SubsequenceMatcher{pattern: pattern, patternLen: len(pattern), patternASCII: true}
+	}
+	return &SubsequenceMatcher{pattern: pattern, patternLen: len(pattern), patternRunes: []rune(pattern)}
+}
+
+// Score computes a fuzzy match score between the matcher's pattern and text
+// using a greedy character matching algorithm. Characters in pattern must
+// appear in text in order (subsequence matching).
 // The score is normalized to [0.0, 1.0] where:
 //   - 1.0 means exact match only.
 //   - 0.0 means no match (pattern is not a subsequence of text).
@@ -33,8 +53,8 @@ import "strings"
 //
 // The raw scoring formula is: Σ(interval_size²) − Σ(gap_size / text_length) − trailing_gap / (2 * text_length).
 // The result is normalized by pattern_length² (the maximum possible raw score).
-func SubsequenceScore(pattern, text string) float64 {
-	if pattern == "" {
+func (m *SubsequenceMatcher) Score(text string) float64 {
+	if m.pattern == "" {
 		return 1.0
 	}
 	if text == "" {
@@ -42,26 +62,30 @@ func SubsequenceScore(pattern, text string) float64 {
 	}
 
 	// Exact match: perfect score, checked before any allocation.
-	if pattern == text {
+	if m.pattern == text {
 		return 1.0
 	}
 
 	// Byte length >= rune count, so this is a safe early exit before any allocation.
-	if len(pattern) > len(text) {
+	if m.patternLen > len(text) {
 		return 0.0
 	}
 
 	// For ASCII strings, use the string-native path that avoids []byte conversion.
 	// If pattern has non-ASCII runes but text is pure ASCII, no non-ASCII
 	// pattern rune can ever match, so the pattern cannot be a subsequence.
-	patternASCII, textASCII := isASCII(pattern), isASCII(text)
+	textASCII := isASCII(text)
 	switch {
-	case patternASCII && textASCII:
-		return matchSubsequenceString(pattern, text)
-	case !patternASCII && textASCII:
+	case m.patternASCII && textASCII:
+		return matchSubsequenceString(m.pattern, text)
+	case !m.patternASCII && textASCII:
 		return 0.0
 	}
-	return matchSubsequenceRunes([]rune(pattern), []rune(text))
+	if m.patternRunes == nil {
+		// pattern is ASCII but text is Unicode; convert and cache pattern runes.
+		m.patternRunes = []rune(m.pattern)
+	}
+	return matchSubsequenceRunes(m.patternRunes, []rune(text))
 }
 
 // isASCII reports whether s contains only ASCII characters.
@@ -74,10 +98,6 @@ func isASCII(s string) bool {
 	return true
 }
 
-// clamp returns v clamped to [0.0, 1.0].
-func clamp(v float64) float64 {
-	return min(max(v, 0.0), 1.0)
-}
 
 // matchSubsequenceString is the string-native implementation of the scoring
 // algorithm for ASCII inputs. It uses strings.IndexByte for character scanning,
@@ -165,7 +185,7 @@ func matchSubsequenceString(pattern, text string) float64 {
 	if bestScore < 0 {
 		return 0.0
 	}
-	return clamp(bestScore / float64(patternLen*patternLen))
+	return bestScore / float64(patternLen*patternLen)
 }
 
 // matchSubsequenceRunes implements the scoring algorithm over pre-converted
@@ -249,5 +269,5 @@ func matchSubsequenceRunes(patternSlice, textSlice []rune) float64 {
 	}
 
 	// Normalize by pattern_length² (the maximum possible raw score).
-	return clamp(bestScore / float64(patternLen*patternLen))
+	return bestScore / float64(patternLen*patternLen)
 }
