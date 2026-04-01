@@ -28,6 +28,8 @@ jobs:
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
       - run: make -C documentation/examples
+      - run: go test ./cmd/prometheus/ --count=1000 -race --timeout=300m
+      - run: go test ./cmd/prometheus/ --count=1000 -race --timeout=300m -run TestScrapeFailureLogFile
 
   test_go_more:
     name: More Go tests
