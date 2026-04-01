@@ -23,3 +23,17 @@ jobs:
       - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
       - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
       - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+  test_go_windows:
+    name: Go tests on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version: 1.26.x
+      - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+      - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+      - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+      - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
