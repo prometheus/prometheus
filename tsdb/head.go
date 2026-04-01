@@ -1948,15 +1948,29 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 func (h *Head) mmapHeadChunks() {
 	var count int
 	for i := 0; i < h.series.size; i++ {
-		h.series.locks[i].RLock()
-		for _, series := range h.series.series[i] {
-			series.Lock()
-			count += series.mmapChunks(h.chunkDiskMapper)
-			series.Unlock()
-		}
-		h.series.locks[i].RUnlock()
+		count += h.mmapHeadChunksShard(i)
 	}
 	h.metrics.mmapChunksTotal.Add(float64(count))
+}
+
+// mmapHeadChunksShard iterates all series in a single stripe and m-maps their
+// chunks. Locks are deferred so they are always released, even if mmapChunks panics.
+func (h *Head) mmapHeadChunksShard(i int) int {
+	h.series.locks[i].RLock()
+	defer h.series.locks[i].RUnlock()
+	var count int
+	for _, s := range h.series.series[i] {
+		count += h.mmapSeriesChunks(s)
+	}
+	return count
+}
+
+// mmapSeriesChunks m-maps all pending chunks for a single memSeries.
+// The series lock is deferred so it is always released, even if mmapChunks panics.
+func (h *Head) mmapSeriesChunks(s *memSeries) int {
+	s.Lock()
+	defer s.Unlock()
+	return s.mmapChunks(h.chunkDiskMapper)
 }
 
 // seriesHashmap lets TSDB find a memSeries by its label set, via a 64-bit hash.
