@@ -83,6 +83,13 @@ type RefreshMetricsInstantiator interface {
 type RefreshMetricsManager interface {
 	DiscovererMetrics
 	RefreshMetricsInstantiator
+	DeleteLabelValues(mech, config string)
+}
+
+// SDMetrics holds all metrics for service discovery mechanisms.
+type SDMetrics struct {
+	MechanismMetrics map[string]DiscovererMetrics
+	RefreshManager   RefreshMetricsManager
 }
 
 // A Config provides the configuration and constructor for a Discoverer.
