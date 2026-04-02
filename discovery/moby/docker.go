@@ -146,7 +146,6 @@ func NewDockerDiscovery(conf *DockerSDConfig, opts discovery.DiscovererOptions) 
 
 	clientOpts := []client.Opt{
 		client.WithHost(conf.Host),
-		client.WithAPIVersionNegotiation(),
 	}
 
 	d.filters = make(client.Filters)
@@ -176,7 +175,7 @@ func NewDockerDiscovery(conf *DockerSDConfig, opts discovery.DiscovererOptions) 
 		)
 	}
 
-	d.client, err = client.NewClientWithOpts(clientOpts...)
+	d.client, err = client.New(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up docker client: %w", err)
 	}

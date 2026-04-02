@@ -140,7 +140,6 @@ func NewDiscovery(conf *DockerSwarmSDConfig, opts discovery.DiscovererOptions) (
 
 	clientOpts := []client.Opt{
 		client.WithHost(conf.Host),
-		client.WithAPIVersionNegotiation(),
 	}
 
 	d.filters = make(client.Filters)
@@ -170,7 +169,7 @@ func NewDiscovery(conf *DockerSwarmSDConfig, opts discovery.DiscovererOptions) (
 		)
 	}
 
-	d.client, err = client.NewClientWithOpts(clientOpts...)
+	d.client, err = client.New(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up docker swarm client: %w", err)
 	}
