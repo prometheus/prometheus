@@ -818,7 +818,7 @@ func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
 				ctx := t.Context()
 
 				reg := prometheus.NewRegistry()
-				_, sdMetrics := NewTestMetrics(t, reg)
+				sdMetrics := NewTestMetrics(t, reg)
 
 				opts := make([]func(*Manager), 0)
 				discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics, opts...)
@@ -1732,7 +1732,7 @@ func TestGaugeLastUpdateTimestamp(t *testing.T) {
 	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
