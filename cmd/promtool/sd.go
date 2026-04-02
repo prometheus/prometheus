@@ -145,6 +145,7 @@ func getSDCheckResult(targetGroups []*targetgroup.Group, scrapeConfig *config.Sc
 			}
 
 			scrape.PopulateDiscoveredLabels(lb, scrapeConfig, target, targetGroup.Labels)
+			scrape.RedactLabels(lb)
 			orig := lb.Labels()
 			res, err := scrape.PopulateLabels(lb, scrapeConfig, target, targetGroup.Labels)
 			result := sdCheckResult{

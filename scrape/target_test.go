@@ -62,6 +62,69 @@ func TestTargetLabels(t *testing.T) {
 	require.Equal(t, 2, i)
 }
 
+func TestRedactLabels(t *testing.T) {
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
+	// Proxy URL with credentials should be redacted.
+	lb.Set(proxyURLLabel, "http://user:secret@proxy.example.com:8080")
+	RedactLabels(lb)
+	require.Equal(t, "http://proxy.example.com:8080", lb.Get(proxyURLLabel))
+
+	// Proxy URL without credentials should be unchanged.
+	lb.Reset(labels.EmptyLabels())
+	lb.Set(proxyURLLabel, "http://proxy.example.com:8080")
+	RedactLabels(lb)
+	require.Equal(t, "http://proxy.example.com:8080", lb.Get(proxyURLLabel))
+
+	// No proxy URL label should be a no-op.
+	lb.Reset(labels.EmptyLabels())
+	lb.Set("job", "test")
+	RedactLabels(lb)
+	require.Equal(t, "test", lb.Get("job"))
+	require.Empty(t, lb.Get(proxyURLLabel))
+}
+
+func TestDiscoveredLabelsRedactsProxyURL(t *testing.T) {
+	proxyURL := &url.URL{
+		Scheme: "http",
+		User:   url.UserPassword("user", "secret"),
+		Host:   "proxy.example.com:8080",
+	}
+	cfg := &config.ScrapeConfig{
+		Scheme:         "http",
+		MetricsPath:    "/metrics",
+		JobName:        "test",
+		ScrapeInterval: model.Duration(time.Second),
+		ScrapeTimeout:  model.Duration(time.Second),
+		HTTPClientConfig: config_util.HTTPClientConfig{
+			ProxyConfig: config_util.ProxyConfig{
+				ProxyURL: config_util.URL{URL: proxyURL},
+			},
+		},
+	}
+	tLabels := model.LabelSet{
+		model.AddressLabel: "1.2.3.4:1000",
+	}
+	target := NewTarget(
+		labels.FromStrings(
+			model.AddressLabel, "1.2.3.4:1000",
+			proxyURLLabel, proxyURL.String(),
+		),
+		cfg, tLabels, nil,
+	)
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
+	// DiscoveredLabels should have redacted proxy URL (no credentials).
+	discovered := target.DiscoveredLabels(lb)
+	require.Equal(t, "http://proxy.example.com:8080", discovered.Get(proxyURLLabel))
+
+	// ProxyURL() should still return the full URL with credentials for functional use.
+	got := target.ProxyURL()
+	require.NotNil(t, got)
+	require.Equal(t, "secret", func() string { p, _ := got.User.Password(); return p }())
+	require.Equal(t, "proxy.example.com:8080", got.Host)
+}
+
 func TestTargetOffset(t *testing.T) {
 	interval := 10 * time.Second
 	offsetSeed := uint64(0)
