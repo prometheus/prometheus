@@ -27,81 +27,80 @@ import (
 // similar to what is done in the OpenTelemetry Collector's `metricstarttimeprocessor`.
 // See https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/metricstarttimeprocessor.
 type stCache struct {
-	f *floatSynthesis
-	h *histogramSynthesis
+	f  *floatSynthesis
+	h  *histogramSynthesis
+	st int64
 }
 
 type floatSynthesis struct {
-	prevValue float64
-	refValue  float64
-	startTime int64
+	prev     float64
+	starting float64
 }
 
 // histogramSynthesis handles both Native integer Histograms and FloatHistograms.
 // It works by caching the incoming histogram perfectly as a FloatHistogram
 // to leverage native DetectReset and Sub methods.
 type histogramSynthesis struct {
-	prevFloat *histogram.FloatHistogram
-	refFloat  *histogram.FloatHistogram
-	startTime int64
+	prev     *histogram.FloatHistogram
+	starting *histogram.FloatHistogram
 }
 
 // synthesizeFloat updates the synthesis cache for a float and returns the adjusted value, synthesized start time, and whether to skip append (for first sample).
-func (st *stCache) synthesizeFloat(currentValue float64, currentTs int64) (float64, int64, bool) {
-	if st.f == nil {
-		st.f = &floatSynthesis{}
+func (c *stCache) synthesizeFloat(v float64, st int64) (float64, int64, bool) {
+	if c.f == nil {
+		c.f = &floatSynthesis{}
 	}
-	n := st.f
+	n := c.f
 
-	if n.startTime == 0 {
+	if c.st == 0 {
 		// First sample.
-		n.prevValue = currentValue
-		n.refValue = currentValue
-		n.startTime = currentTs
-		return currentValue, currentTs, true
+		n.prev = v
+		n.starting = v
+		c.st = st
+		return v, st, true
 	}
 
-	if currentValue < n.prevValue {
+	if v < n.prev {
 		// Reset detected.
-		n.refValue = 0
+		n.starting = 0
 		// ST is somewhere between prev timestamp and current timestamp.
 		// Pick the least risky guess: 1ms before the current timestamp.
-		n.startTime = currentTs - 1
+		c.st = st - 1
 	}
 
-	n.prevValue = currentValue
-	adjustedValue := currentValue - n.refValue
+	n.prev = v
+	adjustedValue := v - n.starting
 
-	return adjustedValue, n.startTime, false
+	return adjustedValue, c.st, false
 }
 
 // synthesizeHistogram updates the synthesis state for a classic/native Integer Histogram and returns the adjusted histogram, synthesized start time, and whether to skip append (for first sample).
-func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs int64) (*histogram.Histogram, int64, bool) {
-	if st.h == nil {
-		st.h = &histogramSynthesis{}
+func (c *stCache) synthesizeHistogram(h *histogram.Histogram, st int64) (*histogram.Histogram, int64, bool) {
+	if c.h == nil {
+		c.h = &histogramSynthesis{}
 	}
-	n := st.h
-	currFloat := current.ToFloat(nil)
+	n := c.h
+	currFloat := h.ToFloat(nil)
 
-	if n.startTime == 0 {
+	if c.st == 0 {
 		// First sample.
-		n.prevFloat = currFloat.Copy()
-		n.refFloat = n.prevFloat
-		n.startTime = currentTs
-		return current, currentTs, true
+		n.prev = currFloat.Copy()
+		n.starting = n.prev
+		c.st = st
+		return h, st, true
 	}
 
-	if currFloat.DetectReset(n.prevFloat) {
+	if currFloat.DetectReset(n.prev) {
 		// Reset detected.
-		n.prevFloat = currFloat.Copy()
-		n.refFloat = n.prevFloat
+		n.prev = currFloat.Copy()
+		n.starting = n.prev
 		// ST is somewhere between prev timestamp and current timestamp.
 		// Pick the least risky guess: 1ms before the current timestamp.
-		n.startTime = currentTs - 1
-		return current, n.startTime, false
+		c.st = st - 1
+		return h, c.st, false
 	}
 
-	n.prevFloat = currFloat.Copy()
+	n.prev = currFloat.Copy()
 
 	// TODO(ridwanmsharif): If we implement DetectResets and Sub for Histograms, we
 	// can do this in a cleaner way without losing precision when converting to
@@ -109,7 +108,7 @@ func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs i
 	// natively for histograms.
 
 	// Mathematically subtract the origin anchor.
-	subFloat, _, _, _ := currFloat.Sub(n.refFloat)
+	subFloat, _, _, _ := currFloat.Sub(n.starting)
 	subFloat = subFloat.Compact(0)
 
 	// Since we are synthesizing an integer histogram, we must cast the float subtraction back to ints.
@@ -117,7 +116,7 @@ func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs i
 	// We can lean on the fact that FloatHistograms retain absolute bucket structure.
 	// We will deeply construct a delta-encoded Histogram leveraging the subtracted absolute floats.
 	adjusted := &histogram.Histogram{
-		CounterResetHint: current.CounterResetHint,
+		CounterResetHint: h.CounterResetHint,
 		Schema:           subFloat.Schema,
 		ZeroThreshold:    subFloat.ZeroThreshold,
 		ZeroCount:        uint64(subFloat.ZeroCount),
@@ -153,39 +152,39 @@ func (st *stCache) synthesizeHistogram(current *histogram.Histogram, currentTs i
 		}
 	}
 
-	return adjusted, n.startTime, false
+	return adjusted, c.st, false
 }
 
 // synthesizeFloatHistogram updates the synthesis state for a FloatHistogram and returns the adjusted histogram, synthesized start time, and whether to skip append (for first sample).
-func (st *stCache) synthesizeFloatHistogram(current *histogram.FloatHistogram, currentTs int64) (*histogram.FloatHistogram, int64, bool) {
-	if st.h == nil {
-		st.h = &histogramSynthesis{}
+func (c *stCache) synthesizeFloatHistogram(fh *histogram.FloatHistogram, st int64) (*histogram.FloatHistogram, int64, bool) {
+	if c.h == nil {
+		c.h = &histogramSynthesis{}
 	}
-	n := st.h
+	n := c.h
 
-	if n.startTime == 0 {
+	if c.st == 0 {
 		// First sample.
-		n.prevFloat = current.Copy()
-		n.refFloat = n.prevFloat
-		n.startTime = currentTs
-		return current, currentTs, true
+		n.prev = fh.Copy()
+		n.starting = n.prev
+		c.st = st
+		return fh, st, true
 	}
 
-	if current.DetectReset(n.prevFloat) {
+	if fh.DetectReset(n.prev) {
 		// Reset detected.
-		n.prevFloat = current.Copy()
-		n.refFloat = n.prevFloat
+		n.prev = fh.Copy()
+		n.starting = n.prev
 		// ST is somewhere between prev timestamp and current timestamp.
 		// Pick the least risky guess: 1ms before the current timestamp.
-		n.startTime = currentTs - 1
-		return current, n.startTime, false
+		c.st = st - 1
+		return fh, c.st, false
 	}
 
-	n.prevFloat = current
+	n.prev = fh
 
 	// Mathematically subtract the origin anchor.
-	adjusted, _, _, _ := current.Copy().Sub(n.refFloat)
+	adjusted, _, _, _ := fh.Copy().Sub(n.starting)
 	adjusted = adjusted.Compact(0)
 
-	return adjusted, n.startTime, false
+	return adjusted, c.st, false
 }

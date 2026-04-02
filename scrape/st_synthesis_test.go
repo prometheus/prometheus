@@ -29,20 +29,20 @@ func TestSynthesizeNumber_ValidCounter(t *testing.T) {
 	require.Equal(t, 10.0, v)
 	require.Equal(t, int64(1000), ct)
 	require.True(t, skip)
-	require.Equal(t, 10.0, st.f.prevValue)
-	require.Equal(t, 10.0, st.f.refValue)
+	require.Equal(t, 10.0, st.f.prev)
+	require.Equal(t, 10.0, st.f.starting)
 
 	// Second scrape, no reset
 	v, ct, skip = st.synthesizeFloat(15.0, 2000)
 	require.Equal(t, 5.0, v)
-	require.Equal(t, 15.0, st.f.prevValue)
+	require.Equal(t, 15.0, st.f.prev)
 	require.Equal(t, int64(1000), ct)
 	require.False(t, skip)
 
 	// Third scrape, no reset
 	v, ct, skip = st.synthesizeFloat(20.0, 3000)
 	require.Equal(t, 10.0, v)
-	require.Equal(t, 20.0, st.f.prevValue)
+	require.Equal(t, 20.0, st.f.prev)
 	require.Equal(t, int64(1000), ct)
 	require.False(t, skip)
 }
@@ -55,16 +55,16 @@ func TestSynthesizeNumber_CounterReset(t *testing.T) {
 	require.Equal(t, 100.0, v)
 	require.Equal(t, int64(1000), ct)
 	require.True(t, skip)
-	require.Equal(t, 100.0, st.f.prevValue)
-	require.Equal(t, 100.0, st.f.refValue)
+	require.Equal(t, 100.0, st.f.prev)
+	require.Equal(t, 100.0, st.f.starting)
 
 	// First reset (value goes down)
 	v, ct, skip = st.synthesizeFloat(5.0, 2000)
 	require.Equal(t, 5.0, v)
 	require.Equal(t, int64(1999), ct)
 	require.False(t, skip)
-	require.Equal(t, 5.0, st.f.prevValue)
-	require.Equal(t, 0.0, st.f.refValue)
+	require.Equal(t, 5.0, st.f.prev)
+	require.Equal(t, 0.0, st.f.starting)
 
 	// Increment
 	v, ct, skip = st.synthesizeFloat(15.0, 3000)
@@ -88,8 +88,8 @@ func TestSynthesizeFloatHistogram_ValidAndReset(t *testing.T) {
 	require.Equal(t, int64(1000), ct)
 	require.True(t, skip)
 	require.NotNil(t, st.h)
-	require.NotNil(t, st.h.prevFloat)
-	require.NotNil(t, st.h.refFloat)
+	require.NotNil(t, st.h.prev)
+	require.NotNil(t, st.h.starting)
 
 	// Next scrape
 	fh2 := &histogram.FloatHistogram{
@@ -116,8 +116,8 @@ func TestSynthesizeFloatHistogram_ValidAndReset(t *testing.T) {
 	require.Equal(t, 1.0, v.ZeroCount)
 	require.Equal(t, int64(2999), ct)
 	require.False(t, skip)
-	require.Equal(t, 5.0, st.h.refFloat.Count)
-	require.Equal(t, 12.0, st.h.refFloat.Sum)
+	require.Equal(t, 5.0, st.h.starting.Count)
+	require.Equal(t, 12.0, st.h.starting.Sum)
 }
 
 func TestSynthesizeHistogram_ValidAndReset(t *testing.T) {
@@ -161,8 +161,8 @@ func TestSynthesizeHistogram_ValidAndReset(t *testing.T) {
 	require.Equal(t, uint64(1), v.ZeroCount)
 	require.Equal(t, int64(2999), ct)
 	require.False(t, skip)
-	require.Equal(t, 5.0, st.h.refFloat.Count)
-	require.Equal(t, 12.0, st.h.refFloat.Sum)
+	require.Equal(t, 5.0, st.h.starting.Count)
+	require.Equal(t, 12.0, st.h.starting.Sum)
 }
 
 func TestSynthesizeFloatHistogram_SubtractionMapping(t *testing.T) {
@@ -304,8 +304,8 @@ func TestSynthesizeFloatHistogram_BucketReset(t *testing.T) {
 	require.Equal(t, []float64{2.0, 8.0}, v.PositiveBuckets)
 
 	// Check if ref was updated
-	require.Equal(t, 12.0, st.h.refFloat.Count)
-	require.Equal(t, []float64{2.0, 8.0}, st.h.refFloat.PositiveBuckets)
+	require.Equal(t, 12.0, st.h.starting.Count)
+	require.Equal(t, []float64{2.0, 8.0}, st.h.starting.PositiveBuckets)
 }
 
 func TestSynthesizeHistogram_BucketReset(t *testing.T) {
@@ -343,5 +343,5 @@ func TestSynthesizeHistogram_BucketReset(t *testing.T) {
 	require.Equal(t, uint64(12), v.Count)
 	require.Equal(t, 60.0, v.Sum)
 	require.Equal(t, []int64{2, 6}, v.PositiveBuckets)
-	require.Equal(t, 12.0, st.h.refFloat.Count)
+	require.Equal(t, 12.0, st.h.starting.Count)
 }

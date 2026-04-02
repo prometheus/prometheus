@@ -348,7 +348,7 @@ loop:
 		}
 
 		if ce != nil && sl.synthesizeST {
-			ce.st = stCache
+			ce.st = stCache // Set it, even if it's nil (explicit reset).
 		}
 
 		// Track staleness uniformly, bypassing logic if there is an explicit timestamp.
