@@ -1633,8 +1633,10 @@ func TestManager_InitialScrapeOffset(t *testing.T) {
 		t.Run(tcase.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				opts := &Options{InitialScrapeOffset: tcase.initialScrapeOffset}
-				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts, interval, true)
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts)
 				defer cleanupConns()
+
+				applyDefaultSynctestConfig(t, scrapeManager, interval)
 
 				// Wait for the scrape manager to block on its timers.
 				synctest.Wait()
@@ -1699,8 +1701,10 @@ func TestManager_ScrapeOnShutdown(t *testing.T) {
 					ScrapeOnShutdown:    tcase.scrapeOnShutdown,
 					InitialScrapeOffset: tcase.initialScrapeOffset,
 				}
-				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts, interval, true)
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts)
 				defer cleanupConns()
+
+				applyDefaultSynctestConfig(t, scrapeManager, interval)
 
 				// Wait for the initial scrape to happen exactly at t=0.
 				synctest.Wait()
@@ -1806,7 +1810,7 @@ func TestManagerReloader(t *testing.T) {
 					ScrapeOnShutdown:         tcase.scrapeOnShutdown,
 					DiscoveryReloadInterval:  model.Duration(tcase.discoveryReloadInterval),
 				}
-				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts, 0, false)
+				scrapeManager, app, cleanupConns := setupSynctestManager(t, opts)
 				defer cleanupConns()
 
 				cfg := &config.Config{
