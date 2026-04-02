@@ -196,6 +196,7 @@ func (t *Target) DiscoveredLabels(lb *labels.Builder) labels.Labels {
 	cfg, tLabels, tgLabels := t.scrapeConfig, t.tLabels, t.tgLabels
 	t.mtx.RUnlock()
 	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
+	RedactLabels(lb)
 	return lb.Labels()
 }
 
@@ -604,6 +605,18 @@ func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLab
 	for k, v := range cfg.Params {
 		if name := model.ParamLabelPrefix + k; len(v) > 0 && lb.Get(name) == "" {
 			lb.Set(name, v[0])
+		}
+	}
+}
+
+// RedactLabels redacts sensitive label values to prevent credential exposure via the API.
+// Currently redacts __proxy_url__ which may contain embedded credentials.
+func RedactLabels(lb *labels.Builder) {
+	if v := lb.Get(proxyURLLabel); v != "" {
+		u, err := url.Parse(v)
+		if err == nil && u.User != nil {
+			u.User = nil
+			lb.Set(proxyURLLabel, u.String())
 		}
 	}
 }
