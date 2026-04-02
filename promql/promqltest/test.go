@@ -253,7 +253,15 @@ func newTest(t testing.TB, input string, testingMode bool, newStorage func(testi
 	return test, err
 }
 
-func newTestStorage(t testing.TB) storage.Storage { return teststorage.New(t) }
+// testStorageOptions holds additional tsdb.Options applied by newTestStorage.
+// It is populated via init() in test files so that options only take effect
+// when the promqltest package itself is under test, not when callers such as
+// promql_test.go invoke RunBuiltinTests.
+var testStorageOptions []teststorage.Option
+
+func newTestStorage(t testing.TB) storage.Storage {
+	return teststorage.New(t, testStorageOptions...)
+}
 
 //go:embed testdata
 var testsFs embed.FS
@@ -280,6 +288,11 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 	}
 	cmd := newLoadCmd(time.Duration(gap), withNHCB)
 	cmd.startTime = startTime
+	var (
+		pendingSTVals   []parser.SequenceValue
+		pendingSTMetric labels.Labels
+		pendingSTLine   int
+	)
 	for i+1 < len(lines) {
 		i++
 		defLine := lines[i]
@@ -287,13 +300,205 @@ func parseLoad(lines []string, i int, startTime time.Time) (int, *loadCmd, error
 			i--
 			break
 		}
+		if isSTLine(defLine) {
+			if pendingSTVals != nil {
+				return i, nil, raise(pendingSTLine, "@st line has no following sample line")
+			}
+			stMetric, stVals, err := parseSTLine(defLine, i)
+			if err != nil {
+				return i, nil, err
+			}
+			pendingSTVals = stVals
+			pendingSTMetric = stMetric
+			pendingSTLine = i
+			continue
+		}
 		metric, vals, err := parseSeries(defLine, i)
 		if err != nil {
 			return i, nil, err
 		}
-		cmd.set(metric, vals...)
+		if pendingSTVals != nil {
+			if !labels.Equal(metric, pendingSTMetric) {
+				return i, nil, raise(pendingSTLine, "@st metric does not match the following sample line metric")
+			}
+			if len(pendingSTVals) != len(vals) {
+				return i, nil, raise(pendingSTLine, "@st line has %d values but sample line has %d", len(pendingSTVals), len(vals))
+			}
+		}
+		cmd.set(metric, vals, pendingSTVals)
+		pendingSTVals = nil
+	}
+	if pendingSTVals != nil {
+		return i, nil, raise(pendingSTLine, "@st line has no following sample line")
 	}
 	return i, cmd, nil
+}
+
+// isSTLine returns true if defLine is a start-timestamp (ST) definition line.
+// An ST line has the metric name and optional labels immediately followed by
+// "@st" (no space), then a space and the ST offset sequence.
+func isSTLine(defLine string) bool {
+	defLine = strings.TrimSpace(defLine)
+	spaceIdx := strings.IndexAny(defLine, " \t")
+	if spaceIdx < 0 {
+		return false
+	}
+	return strings.HasSuffix(defLine[:spaceIdx], "@st")
+}
+
+// parseSTLine parses a start-timestamp line of the form:
+//
+//	metric{labels}@st <st_sequence>
+//
+// It returns the metric labels and a slice of SequenceValues where each
+// non-omitted SequenceValue.Value is the ST offset in milliseconds relative
+// to the corresponding sample's timestamp.
+func parseSTLine(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
+	defLine = strings.TrimSpace(defLine)
+	spaceIdx := strings.IndexAny(defLine, " \t")
+	if spaceIdx < 0 {
+		return labels.Labels{}, nil, raise(line, "invalid @st line: missing value sequence")
+	}
+	metricPart := strings.TrimSuffix(defLine[:spaceIdx], "@st")
+	valsPart := strings.TrimSpace(defLine[spaceIdx+1:])
+
+	// Parse metric labels by reusing the series description parser with a dummy value.
+	metric, _, err := parseSeries(metricPart+" _", line)
+	if err != nil {
+		return labels.Labels{}, nil, raise(line, "invalid @st line metric %q: %s", metricPart, err)
+	}
+	stVals, err := parseSTSequence(valsPart)
+	if err != nil {
+		return labels.Labels{}, nil, raise(line, "invalid @st sequence: %s", err)
+	}
+	return metric, stVals, nil
+}
+
+// parseSTSequence parses a space-separated sequence of start-timestamp offset
+// items. The grammar for each item is:
+//
+//	_            – one omitted position
+//	_xN          – N omitted positions
+//	<dur>        – one position with the given offset
+//	<dur>xN      – N+1 positions all with the same offset
+//	<dur>+<dur>xN – N+1 positions, offset increasing by delta each step
+//	<dur>-<dur>xN – N+1 positions, offset decreasing by delta each step
+//
+// Offsets are Prometheus durations (e.g. -1m, 30s, 0s) and stored as
+// milliseconds in SequenceValue.Value.
+func parseSTSequence(input string) ([]parser.SequenceValue, error) {
+	var result []parser.SequenceValue
+	for item := range strings.FieldsSeq(input) {
+		vals, err := parseSTItem(item)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ST item %q: %w", item, err)
+		}
+		result = append(result, vals...)
+	}
+	return result, nil
+}
+
+func parseSTItem(item string) ([]parser.SequenceValue, error) {
+	if item == "_" {
+		return []parser.SequenceValue{{Omitted: true}}, nil
+	}
+	if strings.HasPrefix(item, "_x") {
+		n, err := strconv.ParseUint(item[2:], 10, 64)
+		if err != nil || n == 0 {
+			return nil, errors.New("invalid repeat count")
+		}
+		vals := make([]parser.SequenceValue, n)
+		for i := range vals {
+			vals[i] = parser.SequenceValue{Omitted: true}
+		}
+		return vals, nil
+	}
+
+	base, rest, err := parseDurationPrefix(item)
+	if err != nil {
+		return nil, err
+	}
+	// No step: <dur> or <dur>xN.
+	if rest == "" {
+		return []parser.SequenceValue{{Value: float64(base)}}, nil
+	}
+	if rest[0] == 'x' {
+		n, err := strconv.ParseUint(rest[1:], 10, 64)
+		if err != nil {
+			return nil, errors.New("invalid repeat count")
+		}
+		vals := make([]parser.SequenceValue, n+1)
+		for i := range vals {
+			vals[i] = parser.SequenceValue{Value: float64(base)}
+		}
+		return vals, nil
+	}
+	// Step: <dur>+<dur>xN or <dur>-<dur>xN.
+	if rest[0] != '+' && rest[0] != '-' {
+		return nil, fmt.Errorf("unexpected character %q after duration", rest[0])
+	}
+	negative := rest[0] == '-'
+	delta, rest2, err := parseDurationPrefix(rest[1:])
+	if err != nil {
+		return nil, fmt.Errorf("invalid step duration: %w", err)
+	}
+	if negative {
+		delta = -delta
+	}
+	if rest2 == "" || rest2[0] != 'x' {
+		return nil, errors.New("expected 'x<count>' after step duration")
+	}
+	n, err := strconv.ParseUint(rest2[1:], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid repeat count: %w", err)
+	}
+	vals := make([]parser.SequenceValue, n+1)
+	offset := base
+	for i := range vals {
+		vals[i] = parser.SequenceValue{Value: float64(offset)}
+		offset += delta
+	}
+	return vals, nil
+}
+
+// parseDurationPrefix parses a Prometheus duration (with optional leading sign)
+// from the start of s. It returns the duration in milliseconds and the
+// remaining unparsed string.
+func parseDurationPrefix(s string) (int64, string, error) {
+	if s == "" {
+		return 0, "", errors.New("empty duration")
+	}
+	negative := false
+	i := 0
+	switch s[i] {
+	case '-':
+		negative = true
+		i++
+	case '+':
+		i++
+	}
+	// Scan digits.
+	start := i
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i == start {
+		return 0, "", fmt.Errorf("expected digits in duration %q", s)
+	}
+	// Scan unit (one or two alpha chars; handles "ms"). Stop at 'x' which is
+	// the repeat-count separator and never part of a valid duration unit.
+	for i < len(s) && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z')) && s[i] != 'x' {
+		i++
+	}
+	dur, err := model.ParseDuration(s[start:i])
+	if err != nil {
+		return 0, "", fmt.Errorf("invalid duration %q: %w", s[start:i], err)
+	}
+	ms := int64(time.Duration(dur) / time.Millisecond)
+	if negative {
+		ms = -ms
+	}
+	return ms, s[i:], nil
 }
 
 func parseSeries(defLine string, line int) (labels.Labels, []parser.SequenceValue, error) {
@@ -639,12 +844,19 @@ func (*clearCmd) testCmd() {}
 func (*loadCmd) testCmd()  {}
 func (*evalCmd) testCmd()  {}
 
+// sampleST extends promql.Sample with an optional start timestamp.
+// ST=0 means no start timestamp (unknown), matching the AppenderV2 convention.
+type sampleST struct {
+	promql.Sample
+	ST int64
+}
+
 // loadCmd is a command that loads sequences of sample values for specific
 // metrics into the storage.
 type loadCmd struct {
 	gap       time.Duration
 	metrics   map[uint64]labels.Labels
-	defs      map[uint64][]promql.Sample
+	defs      map[uint64][]sampleST
 	exemplars map[uint64][]exemplar.Exemplar
 	withNHCB  bool
 	startTime time.Time
@@ -654,7 +866,7 @@ func newLoadCmd(gap time.Duration, withNHCB bool) *loadCmd {
 	return &loadCmd{
 		gap:       gap,
 		metrics:   map[uint64]labels.Labels{},
-		defs:      map[uint64][]promql.Sample{},
+		defs:      map[uint64][]sampleST{},
 		exemplars: map[uint64][]exemplar.Exemplar{},
 		withNHCB:  withNHCB,
 		startTime: testStartTime,
@@ -665,19 +877,27 @@ func (loadCmd) String() string {
 	return "load"
 }
 
-// set a sequence of sample values for the given metric.
-func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
+// set stores a sequence of sample values for the given metric with optional start timestamps.
+// stVals must be nil (no ST for any sample) or have the same length as vals.
+func (cmd *loadCmd) set(m labels.Labels, vals, stVals []parser.SequenceValue) {
 	h := m.Hash()
 
-	samples := make([]promql.Sample, 0, len(vals))
+	samples := make([]sampleST, 0, len(vals))
 	ts := cmd.startTime
-	for _, v := range vals {
+	for i, v := range vals {
+		tsMs := ts.UnixNano() / int64(time.Millisecond/time.Nanosecond)
 		if !v.Omitted {
-			samples = append(samples, promql.Sample{
-				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
-				F: v.Value,
-				H: v.Histogram,
-			})
+			s := sampleST{
+				Sample: promql.Sample{
+					T: tsMs,
+					F: v.Value,
+					H: v.Histogram,
+				},
+			}
+			if len(stVals) > 0 && !stVals[i].Omitted {
+				s.ST = tsMs + int64(stVals[i].Value)
+			}
+			samples = append(samples, s)
 		}
 		ts = ts.Add(cmd.gap)
 	}
@@ -713,7 +933,7 @@ func newTempHistogramWrapper() tempHistogramWrapper {
 	}
 }
 
-func processClassicHistogramSeries(m labels.Labels, name string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogram func(*convertnhcb.TempHistogram, float64)) {
+func processClassicHistogramSeries(m labels.Labels, name string, histogramMap map[uint64]tempHistogramWrapper, smpls []sampleST, updateHistogram func(*convertnhcb.TempHistogram, float64)) {
 	m2 := convertnhcb.GetHistogramMetricBase(m, name)
 	m2hash := m2.Hash()
 	histogramWrapper, exists := histogramMap[m2hash]
@@ -792,7 +1012,7 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.AppenderV2) error {
 		}
 		sort.Slice(samples, func(i, j int) bool { return samples[i].T < samples[j].T })
 		for _, s := range samples {
-			if err := appendSample(a, s, histogramWrapper.metric); err != nil {
+			if err := appendSample(a, sampleST{Sample: s}, histogramWrapper.metric); err != nil {
 				return err
 			}
 		}
@@ -800,12 +1020,12 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.AppenderV2) error {
 	return nil
 }
 
-func appendSample(a storage.AppenderV2, s promql.Sample, m labels.Labels) error {
+func appendSample(a storage.AppenderV2, s sampleST, m labels.Labels) error {
 	if s.H != nil {
-		_, err := a.Append(0, m, 0, s.T, 0, nil, s.H, storage.AppendV2Options{})
+		_, err := a.Append(0, m, s.ST, s.T, 0, nil, s.H, storage.AppendV2Options{})
 		return err
 	}
-	_, err := a.Append(0, m, 0, s.T, s.F, nil, nil, storage.AppendV2Options{})
+	_, err := a.Append(0, m, s.ST, s.T, s.F, nil, nil, storage.AppendV2Options{})
 	return err
 }
 
