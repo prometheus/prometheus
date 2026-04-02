@@ -413,7 +413,7 @@ func (m *Manager) sender() {
 		close(m.syncCh)
 	}()
 	// Some discoverers send updates too often, so we throttle these with a backoff interval that
-	// increased the interval up to m.updatert delay.
+	// increases the interval up to m.updatert delay.
 	lastSent := time.Now().Add(-1 * m.updatert)
 	b := &backoff.ExponentialBackOff{
 		InitialInterval:     100 * time.Millisecond,
