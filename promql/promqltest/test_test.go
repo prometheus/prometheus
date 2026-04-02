@@ -1115,8 +1115,6 @@ eval instant at 0m http_requests
 }
 
 func TestParseSTSequence(t *testing.T) {
-	const msec = 1
-
 	cases := []struct {
 		input    string
 		expected []parser.SequenceValue
@@ -1138,7 +1136,7 @@ func TestParseSTSequence(t *testing.T) {
 		},
 		{
 			input:    "-1m",
-			expected: []parser.SequenceValue{{Value: float64(-60 * 1000 * msec)}},
+			expected: []parser.SequenceValue{{Value: float64(-60 * 1000)}},
 		},
 		{
 			input: "-1mx2",
@@ -1165,7 +1163,6 @@ func TestParseSTSequence(t *testing.T) {
 			},
 		},
 		{
-			// Mixed: blank then value.
 			input: "_ -1m",
 			expected: []parser.SequenceValue{
 				{Omitted: true},
@@ -1175,6 +1172,7 @@ func TestParseSTSequence(t *testing.T) {
 		{input: "", expected: nil},
 		{input: "badunit", wantErr: true},
 		{input: "_x0", wantErr: true},
+		{input: "_x-2", wantErr: true},
 		{input: "-1m+15s", wantErr: true}, // step without xN
 	}
 
