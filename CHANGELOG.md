@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.11.0-rc.0 / 2026-03-30
+## 3.11.0 / 2026-04-02
 
 - [CHANGE] Hetzner SD: The `__meta_hetzner_datacenter` label is deprecated for the role `robot` but kept for backward compatibility, use the `__meta_hetzner_robot_datacenter` label instead. For the role `hcloud`, the label is deprecated and will stop working after the 1 July 2026. #17850
 - [CHANGE] Hetzner SD: The `__meta_hetzner_hcloud_datacenter_location` and `__meta_hetzner_hcloud_datacenter_location_network_zone` labels are deprecated, use the `__meta_hetzner_hcloud_location` and `__meta_hetzner_hcloud_location_network_zone` labels instead. #17850
