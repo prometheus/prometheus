@@ -66,6 +66,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql"
@@ -1876,7 +1877,7 @@ func (notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
 
 type notReadyAppenderV2 struct{}
 
-func (notReadyAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, float64, *histogram.Histogram, *histogram.FloatHistogram, storage.AOptions) (storage.SeriesRef, error) {
+func (notReadyAppenderV2) Append(storage.SeriesRef, labels.Labels, int64, int64, sample.Value, storage.AOptions) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 func (notReadyAppenderV2) Commit() error { return tsdb.ErrNotReady }

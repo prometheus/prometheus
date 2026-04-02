@@ -46,6 +46,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
@@ -580,7 +581,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 							app := head.AppenderV2(ctx)
 							for i := range workerLabelSets {
 								// We also use the timestamp as the sample value.
-								if _, err := app.Append(0, workerLabelSets[i], 0, int64(ts), float64(ts), nil, nil, storage.AOptions{}); err != nil {
+								if _, err := app.Append(0, workerLabelSets[i], 0, int64(ts), samplemod.Float(float64(ts)), storage.AOptions{}); err != nil {
 									return false, fmt.Errorf("error when appending (V2) to head: %w", err)
 								}
 							}
@@ -7516,7 +7517,7 @@ func TestHeadAppender_WALEncoder_EnableSTStorage(t *testing.T) {
 			lbls := labels.FromStrings("foo", "bar")
 			app := h.AppenderV2(context.Background())
 			for ts := int64(100); ts < 110; ts++ {
-				_, err := app.Append(0, lbls, 0, ts, float64(ts), nil, nil, storage.AOptions{})
+				_, err := app.Append(0, lbls, 0, ts, samplemod.Float(float64(ts)), storage.AOptions{})
 				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
@@ -7577,14 +7578,14 @@ func TestHeadAppender_WBLEncoder_EnableSTStorage(t *testing.T) {
 
 			// Append an in-order sample to establish head maxt.
 			app := h.AppenderV2(context.Background())
-			_, err = app.Append(0, lbls, 0, 200, 200, nil, nil, storage.AOptions{})
+			_, err = app.Append(0, lbls, 0, 200, samplemod.Float(200), storage.AOptions{})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
 			// Append OOO samples; these are written to the WBL.
 			app = h.AppenderV2(context.Background())
 			for ts := int64(100); ts < 110; ts++ {
-				_, err = app.Append(0, lbls, 0, ts, float64(ts), nil, nil, storage.AOptions{})
+				_, err = app.Append(0, lbls, 0, ts, samplemod.Float(float64(ts)), storage.AOptions{})
 				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
@@ -7640,7 +7641,7 @@ func TestHeadAppender_STStorage_Disabled(t *testing.T) {
 
 	a := h.AppenderV2(context.Background())
 	for _, s := range samples {
-		_, err := a.Append(0, lbls, s.st, s.ts, s.fSample, nil, nil, storage.AOptions{})
+		_, err := a.Append(0, lbls, s.st, s.ts, samplemod.Float(s.fSample), storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, a.Commit())
@@ -7693,7 +7694,7 @@ func TestHeadAppender_STStorage_WALReplay(t *testing.T) {
 
 	a := h.AppenderV2(context.Background())
 	for ts := int64(100); ts < 200; ts++ {
-		_, err := a.Append(0, lbls, st, ts, float64(ts), nil, nil, storage.AOptions{})
+		_, err := a.Append(0, lbls, st, ts, samplemod.Float(float64(ts)), storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, a.Commit())
@@ -7748,7 +7749,7 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 
 	// Append an in-order sample to establish the head's maxt.
 	app := h.AppenderV2(context.Background())
-	_, err = app.Append(0, lbls, st, 200, 200, nil, nil, storage.AOptions{})
+	_, err = app.Append(0, lbls, st, 200, samplemod.Float(200), storage.AOptions{})
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -7757,7 +7758,7 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 	// OOO head chunk (not mmap'd) and are exclusively recovered via WBL replay.
 	app = h.AppenderV2(context.Background())
 	for ts := int64(100); ts < 120; ts++ {
-		_, err = app.Append(0, lbls, st, ts, float64(ts), nil, nil, storage.AOptions{})
+		_, err = app.Append(0, lbls, st, ts, samplemod.Float(float64(ts)), storage.AOptions{})
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())

@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -649,7 +650,7 @@ func TestBucketLimitAppender(t *testing.T) {
 					var err error
 					if floatHisto {
 						fh := c.h.Copy().ToFloat(nil)
-						_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, storage.AOptions{})
+						_, err = app.Append(0, lbls, 0, ts, samplemod.FloatHistogram(fh), storage.AOptions{})
 						if c.expectError {
 							require.Error(t, err)
 						} else {
@@ -659,7 +660,7 @@ func TestBucketLimitAppender(t *testing.T) {
 						}
 					} else {
 						h := c.h.Copy()
-						_, err = app.Append(0, lbls, 0, ts, 0, h, nil, storage.AOptions{})
+						_, err = app.Append(0, lbls, 0, ts, samplemod.Histogram(h), storage.AOptions{})
 						if c.expectError {
 							require.Error(t, err)
 						} else {
@@ -753,12 +754,12 @@ func TestMaxSchemaAppender(t *testing.T) {
 					var err error
 					if floatHisto {
 						fh := c.h.Copy().ToFloat(nil)
-						_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, storage.AOptions{})
+						_, err = app.Append(0, lbls, 0, ts, samplemod.FloatHistogram(fh), storage.AOptions{})
 						require.Equal(t, c.expectSchema, fh.Schema)
 						require.NoError(t, err)
 					} else {
 						h := c.h.Copy()
-						_, err = app.Append(0, lbls, 0, ts, 0, h, nil, storage.AOptions{})
+						_, err = app.Append(0, lbls, 0, ts, samplemod.Histogram(h), storage.AOptions{})
 						require.Equal(t, c.expectSchema, h.Schema)
 						require.NoError(t, err)
 					}
@@ -803,7 +804,7 @@ func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
 		app := appenderV2WithLimits(teststorage.NewAppendable().AppenderV2(t.Context()), 2, 0, histogram.ExponentialSchemaMax)
 
 		// sample_limit is set to 2, so first two scrapes should work
-		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), 0, timestamp.FromTime(now), 1, nil, nil, storage.AOptions{})
+		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), 0, timestamp.FromTime(now), samplemod.Float(1), storage.AOptions{})
 		require.NoError(t, err)
 
 		// Second sample, should be ok.
@@ -812,9 +813,7 @@ func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
 			labels.FromStrings(model.MetricNameLabel, "my_histogram1"),
 			0,
 			timestamp.FromTime(now),
-			0,
-			&histogram.Histogram{},
-			nil,
+			samplemod.Histogram(&histogram.Histogram{}),
 			storage.AOptions{},
 		)
 		require.NoError(t, err)
@@ -825,9 +824,7 @@ func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
 			labels.FromStrings(model.MetricNameLabel, "my_histogram2"),
 			0,
 			timestamp.FromTime(now),
-			0,
-			&histogram.Histogram{},
-			nil,
+			samplemod.Histogram(&histogram.Histogram{}),
 			storage.AOptions{},
 		)
 		require.ErrorIs(t, err, errSampleLimit)
