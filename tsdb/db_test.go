@@ -8361,6 +8361,10 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 	// (important for slow CI like i386 which can be 60x+ slower).
 	opts.SamplesPerChunk = 15
 	opts.OutOfOrderCapMax = 5
+	// Reduce the chunk segment size from the 512MB default: the test only writes
+	// ~80 samples so 1MB is sufficient and avoids large file pre-allocations
+	// during compaction on slow or constrained CI environments.
+	opts.MaxBlockChunkSegmentSize = 1024 * 1024
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions()
