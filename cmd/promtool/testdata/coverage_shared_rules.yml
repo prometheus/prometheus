@@ -1,0 +1,7 @@
+# Shared rule file referenced by two test files, to exercise coverage
+# de-duplication across a suite (see TestRuleCoverageDeduplicatesAcrossFiles).
+groups:
+  - name: shared
+    rules:
+      - record: only:metric
+        expr: up
