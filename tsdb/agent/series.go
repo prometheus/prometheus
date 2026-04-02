@@ -28,6 +28,11 @@ type ActiveSeries interface {
 	LastSampleTimestamp() int64
 }
 
+type DeletedSeries interface {
+	Ref() chunks.HeadSeriesRef
+	Labels() labels.Labels
+}
+
 // memSeries is a chunkless version of tsdb.memSeries.
 type memSeries struct {
 	sync.Mutex
@@ -179,14 +184,15 @@ func newStripeSeries(stripeSize int) *stripeSeries {
 
 // GC garbage collects old series that have not received a sample after mint
 // and will fully delete them.
-func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
+func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]labels.Labels {
 	// gcMut serializes GC calls. Within a single GC pass, the check function
 	// holds hashLock and then acquires refLock — callers must never hold both
 	// simultaneously, which SetUnlessAlreadySet satisfies.
 	s.gcMut.Lock()
 	defer s.gcMut.Unlock()
 
-	deleted := map[chunks.HeadSeriesRef]struct{}{}
+	// labels of deleted series are used by agent.Checkpoint
+	deleted := map[chunks.HeadSeriesRef]labels.Labels{}
 
 	// For one series, truncate old chunks and check if any chunks left. If not, mark as deleted and collect the ID.
 	check := func(hashLock int, hash uint64, series *memSeries) {
@@ -205,7 +211,7 @@ func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
 			s.locks[refLock].Lock()
 		}
 
-		deleted[series.ref] = struct{}{}
+		deleted[series.ref] = series.lset
 		delete(s.series[refLock], series.ref)
 		s.hashes[hashLock].Delete(hash, series.ref)
 
@@ -375,4 +381,28 @@ func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
 			}
 		}
 	}
+}
+
+// deletedSeriesIter returns an iterator over deleted series from the given map.
+func deletedSeriesIter(m map[chunks.HeadSeriesRef]deletedRefMeta) iter.Seq[DeletedSeries] {
+	return func(yield func(DeletedSeries) bool) {
+		for ref, meta := range m {
+			if !yield(deletedSeries{ref: ref, labels: meta.labels}) {
+				return
+			}
+		}
+	}
+}
+
+type deletedSeries struct {
+	ref    chunks.HeadSeriesRef
+	labels labels.Labels
+}
+
+func (series deletedSeries) Ref() chunks.HeadSeriesRef {
+	return series.ref
+}
+
+func (series deletedSeries) Labels() labels.Labels {
+	return series.labels
 }

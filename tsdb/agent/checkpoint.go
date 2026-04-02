@@ -20,7 +20,6 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -40,7 +39,7 @@ type CheckpointParams struct {
 	ActiveSeries iter.Seq[ActiveSeries]
 
 	// DeletedSeries is iterator over recently deleted series.
-	DeletedSeries iter.Seq[chunks.HeadSeriesRef]
+	DeletedSeries iter.Seq[DeletedSeries]
 }
 
 func (p CheckpointParams) withDefaults() CheckpointParams {
@@ -210,8 +209,8 @@ func (cf *checkpointFlusher) writeSeries(seriesIter iter.Seq[ActiveSeries]) erro
 	return nil
 }
 
-func (cf *checkpointFlusher) writeDeletedRecords(seriesRefIter iter.Seq[chunks.HeadSeriesRef]) error {
-	for ref := range seriesRefIter {
+func (cf *checkpointFlusher) writeDeletedRecords(seriesRefIter iter.Seq[DeletedSeries]) error {
+	for series := range seriesRefIter {
 		// If we filled the buffers, write them out and reset.
 		if len(cf.seriesRecords) == cf.batchSize {
 			if err := cf.flushRecords(); err != nil {
@@ -221,7 +220,8 @@ func (cf *checkpointFlusher) writeDeletedRecords(seriesRefIter iter.Seq[chunks.H
 
 		// We don't care about timestamps here, so no samples.
 		cf.seriesRecords = append(cf.seriesRecords, record.RefSeries{
-			Ref: ref,
+			Ref:    series.Ref(),
+			Labels: series.Labels(),
 		})
 	}
 
