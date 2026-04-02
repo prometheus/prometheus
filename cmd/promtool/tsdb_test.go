@@ -185,6 +185,17 @@ func TestTSDBDump(t *testing.T) {
 	}
 }
 
+func TestTSDBDumpNativeHistogram(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			native_hist{job="test"} {{sum:1 count:1}} {{sum:2 count:2}} {{sum:3 count:3}}
+	`)
+
+	dumpedMetrics := getDumpedSamples(t, storage.Dir(), "", math.MinInt64, math.MaxInt64, []string{"{__name__=~'(?s:.*)'}"}, formatSeriesSet)
+	lines := strings.Split(strings.TrimSpace(dumpedMetrics), "\n")
+	require.Len(t, lines, 3, "expected 3 samples for native histogram series, got %d", len(lines))
+}
+
 func sortLines(buf string) string {
 	lines := strings.Split(buf, "\n")
 	slices.Sort(lines)
