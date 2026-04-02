@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -58,7 +59,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
-	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 // newTestHeadDefaultOptions returns the HeadOptions that should be used by default in unit tests.
@@ -895,6 +895,74 @@ func TestHead_WALMultiRef(t *testing.T) {
 		sample{0, 1700, 3, nil, nil},
 		sample{0, 2000, 4, nil, nil},
 	}}, series)
+}
+
+// TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative is a regression test
+// for https://github.com/prometheus/prometheus/issues/10884.
+//
+// When a stale series is deleted via truncateStaleSeries (which writes a
+// [MinInt64, MaxInt64] tombstone to the WAL) and then re-created under the same
+// labels (producing a new WAL ref), the WAL replay processes for the shared
+// processor shard look like:
+//
+//	reset(mSeries, oldRef_chunks, oldRef)
+//	deleteSeriesByID(oldRef)           ← removes chunks from gauge
+//	reset(mSeries, newRef_chunks, newRef) ← was double-subtracting old chunks
+//
+// Without the fix, deleteSeriesByID removes M chunks from the gauge but leaves
+// series.mmappedChunks non-nil. The subsequent reset then subtracts those M
+// chunks a second time, driving prometheus_tsdb_head_chunks negative when M
+// exceeds the new series' chunk count.
+func TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative(t *testing.T) {
+	head, w := newTestHead(t, 1000, compression.None, false)
+	require.NoError(t, head.Init(0))
+
+	lset := labels.FromStrings("foo", "bar")
+	appendSample := func(ts int64, v float64) storage.SeriesRef {
+		app := head.Appender(context.Background())
+		ref, err := app.Append(0, lset, ts, v)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		return ref
+	}
+
+	// Append samples across chunk boundaries to give ref1 3 m-mapped chunks + 1 active head chunk.
+	ref1 := appendSample(100, 1) // nextAt=1000
+	appendSample(1200, 2)        // ≥1000 → chunk 2, nextAt=2000
+	appendSample(2300, 3)        // ≥2000 → chunk 3, nextAt=3000
+	appendSample(3400, 4)        // ≥3000 → chunk 4 (active head)
+
+	// Mark ref1 as stale.
+	appendSample(3500, math.Float64frombits(value.StaleNaN))
+
+	// Truncate stale series: removes ref1 from the head and writes a
+	// [MinInt64, MaxInt64] tombstone record to the WAL.
+	require.NoError(t, head.truncateStaleSeries([]storage.SeriesRef{ref1}, 3500))
+
+	// Append a single sample with the same labels to create ref2.
+	// Ref2 has 0 m-mapped chunks, fewer than ref1's 3.
+	ref2 := appendSample(5000, 5)
+	require.NotEqual(t, ref1, ref2, "refs must differ after stale truncation and recreation")
+
+	require.NoError(t, head.Close())
+
+	// Reopen the head to trigger WAL replay. The WAL contains (in order):
+	//   series(ref1) → tombstone(ref1, [MinInt64,MaxInt64]) → series(ref2) → sample(ref2)
+	// Without the fix, replay drives prometheus_tsdb_head_chunks negative.
+	w, err := wlog.New(nil, nil, w.Dir(), compression.None)
+	require.NoError(t, err)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = head.opts.ChunkDirRoot
+	head, err = NewHead(nil, nil, w, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	chunksGauge := prom_testutil.ToFloat64(head.metrics.chunks)
+	require.GreaterOrEqual(t, chunksGauge, 0.0, "prometheus_tsdb_head_chunks gauge must not be negative after WAL replay")
 }
 
 func TestHead_WALCheckpointMultiRef(t *testing.T) {
@@ -7914,4 +7982,87 @@ func TestHead_FastStartupStateFile(t *testing.T) {
 	require.True(t, state.CleanShutdown, "Close() should write CleanShutdown: true")
 	require.Equal(t, uint64(1), state.LastSeriesID, "LastSeriesID should remain 1")
 	require.Equal(t, 0, state.LastWALSegment, "LastWALSegment should remain 0")
+}
+
+func TestHead_ReadSeriesStateFile(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+
+	// Fresh boot case.
+	// Should return 0 valued state and os.ErrNotExist.
+	state, err := head.readSeriesStateFile()
+	require.Error(t, err, "reading non-existent state file should return an error")
+	require.True(t, os.IsNotExist(err), "error should be of type os.ErrNotExist")
+	require.Equal(t, SeriesLifecycleState{}, state, "state should be zero-valued when file does not exist")
+
+	// Valid file case.
+	expectedState := SeriesLifecycleState{
+		LastSeriesID:   42000,
+		LastWALSegment: 5,
+		CleanShutdown:  true,
+	}
+
+	b, err := json.Marshal(expectedState)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(w.Dir(), "series_state.json"), b, 0o666)
+	require.NoError(t, err)
+
+	state, err = head.readSeriesStateFile()
+	require.NoError(t, err, "reading valid state file should not error")
+	require.Equal(t, expectedState, state, "read state should match written state")
+}
+
+func TestHead_FindLastSeriesID(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+
+	// Write Series A to first segment.
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("metric", "A"), 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Force the WAL to cut a new segment file (second segment).
+	_, err = w.NextSegment()
+	require.NoError(t, err)
+
+	// Write new sample for series A to second segment.
+	app = head.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("metric", "A"), 200, 2.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Get the current max segment number.
+	first, last, err := wlog.Segments(w.Dir())
+	require.NoError(t, err)
+
+	mockState := SeriesLifecycleState{
+		LastSeriesID:   1,
+		LastWALSegment: first,
+		CleanShutdown:  false,
+	}
+
+	// Should return 1 as there is only 1 series created so far.
+	id, err := head.findLastSeriesID(mockState, last)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), id, "Should find ID 1 as no new series were created in segment 2")
+
+	// Write Series B to the second segment
+	app = head.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("metric", "B"), 300, 3.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Scanning both files should now return 2
+	id, err = head.findLastSeriesID(mockState, last)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), id, "Should find ID 2 after new series was created in segment 2")
+
+	// Simulate state file knowing about latest segment.
+	mockState.LastWALSegment = last
+
+	// Should return 2 as it should scan the last file and find series B.
+	id, err = head.findLastSeriesID(mockState, last)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), id, "Should find ID 2 even when state file's last segment is the newest segment")
 }

@@ -130,7 +130,7 @@ type Options struct {
 	// Maximum % of disk space to use for blocks to be retained.
 	// 0 or less means disabled.
 	// If both MaxBytes and MaxPercentage are set, percentage prevails.
-	MaxPercentage uint
+	MaxPercentage float64
 
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
@@ -1105,7 +1105,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	db.metrics = newDBMetrics(db, r)
 	maxBytes := max(opts.MaxBytes, 0)
 	db.metrics.maxBytes.Set(float64(maxBytes))
-	db.metrics.maxPercentage.Set(float64(max(opts.MaxPercentage, 0)))
+	db.metrics.maxPercentage.Set(max(opts.MaxPercentage, 0))
 	db.metrics.retentionDuration.Set((time.Duration(opts.RetentionDuration) * time.Millisecond).Seconds())
 
 	// Calling db.reload() calls db.reloadBlocks() which requires cmtx to be locked.
@@ -1295,7 +1295,7 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 			db.opts.MaxBytes = int64(conf.StorageConfig.TSDBConfig.Retention.Size)
 			db.metrics.maxBytes.Set(float64(db.opts.MaxBytes))
 			db.opts.MaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
-			db.metrics.maxPercentage.Set(float64(db.opts.MaxPercentage))
+			db.metrics.maxPercentage.Set(db.opts.MaxPercentage)
 			db.retentionMtx.Unlock()
 		}
 	} else {
@@ -1342,7 +1342,7 @@ func (db *DB) getRetentionDuration() int64 {
 }
 
 // getRetentionSettings returns max bytes and max percentage settings in a thread-safe manner.
-func (db *DB) getRetentionSettings() (int64, uint) {
+func (db *DB) getRetentionSettings() (int64, float64) {
 	db.retentionMtx.RLock()
 	defer db.retentionMtx.RUnlock()
 	return db.opts.MaxBytes, db.opts.MaxPercentage
@@ -2018,7 +2018,7 @@ func BeyondSizeRetention(db *DB, blocks []*Block) (deletable map[ulid.ULID]struc
 		if diskSize <= 0 {
 			db.logger.Warn("Unable to retrieve filesystem size of database directory, skip percentage limitation and default to fixed size limitation", "dir", db.dir)
 		} else {
-			maxBytes = int64(uint64(maxPercentage) * diskSize / 100)
+			maxBytes = int64(float64(diskSize) * maxPercentage / 100)
 		}
 	}
 

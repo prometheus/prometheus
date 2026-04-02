@@ -268,7 +268,7 @@ type Options struct {
 	TSDBRetentionDuration model.Duration
 	TSDBDir               string
 	TSDBMaxBytes          units.Base2Bytes
-	TSDBMaxPercentage     uint
+	TSDBMaxPercentage     float64
 	LocalStorage          LocalStorage
 	Storage               storage.Storage
 	ExemplarStorage       storage.ExemplarQueryable
@@ -889,7 +889,7 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 		if status.StorageRetention != "" {
 			status.StorageRetention += " or "
 		}
-		status.StorageRetention = status.StorageRetention + strconv.FormatUint(uint64(tsdbMaxPercentage), 10) + "%"
+		status.StorageRetention = status.StorageRetention + strconv.FormatFloat(tsdbMaxPercentage, 'g', -1, 64) + "%"
 	}
 
 	metrics, err := h.gatherer.Gather()
