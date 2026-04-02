@@ -19,7 +19,7 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/client"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -48,12 +48,12 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 		Source: "DockerSwarm",
 	}
 
-	nodes, err := d.client.NodeList(ctx, swarm.NodeListOptions{Filters: d.filters})
+	nodes, err := d.client.NodeList(ctx, client.NodeListOptions{Filters: d.filters})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing swarm nodes: %w", err)
 	}
 
-	for _, n := range nodes {
+	for _, n := range nodes.Items {
 		labels := model.LabelSet{
 			swarmLabelNodeID:                   model.LabelValue(n.ID),
 			swarmLabelNodeRole:                 model.LabelValue(n.Spec.Role),
@@ -85,12 +85,12 @@ func (d *Discovery) refreshNodes(ctx context.Context) ([]*targetgroup.Group, err
 }
 
 func (d *Discovery) getNodesLabels(ctx context.Context) (map[string]map[string]string, error) {
-	nodes, err := d.client.NodeList(ctx, swarm.NodeListOptions{})
+	nodes, err := d.client.NodeList(ctx, client.NodeListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing swarm nodes: %w", err)
 	}
-	labels := make(map[string]map[string]string, len(nodes))
-	for _, n := range nodes {
+	labels := make(map[string]map[string]string, len(nodes.Items))
+	for _, n := range nodes.Items {
 		labels[n.ID] = map[string]string{
 			swarmLabelNodeID:                   n.ID,
 			swarmLabelNodeRole:                 string(n.Spec.Role),
