@@ -968,6 +968,8 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		}
 	}
 
+	var wal, wbl *wlog.WL
+
 	db := &DB{
 		dir:            dir,
 		logger:         l,
@@ -984,6 +986,17 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		// Close files if startup fails somewhere.
 		if returnedErr == nil {
 			return
+		}
+
+		// If head was never initialized, WAL/WBL goroutines need explicit
+		// cleanup since db.Close() -> head.Close() won't reach them.
+		if db.head == nil {
+			if wal != nil {
+				returnedErr = errors.Join(returnedErr, wal.Close())
+			}
+			if wbl != nil {
+				returnedErr = errors.Join(returnedErr, wbl.Close())
+			}
 		}
 
 		close(db.donec) // DB is never run if it was an error, so close this channel here.
@@ -1043,7 +1056,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.fsSizeFunc = opts.FsSizeFunc
 	}
 
-	var wal, wbl *wlog.WL
 	segmentSize := wlog.DefaultSegmentSize
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
