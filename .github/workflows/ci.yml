@@ -19,10 +19,10 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
-      - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
-      - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
-      - run: go test -v -count=500 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+      - run: go test -v -count=500 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+      - run: go test -v -count=500 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+      - run: go test -v -count=500 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+      - run: go test -v -count=500 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
   test_go_windows:
     name: Go tests on Windows
     runs-on: windows-latest
