@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -43,7 +42,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
-	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -3883,81 +3881,6 @@ func TestHistogramRateWithFloatStaleness(t *testing.T) {
 	// The result should be zero as the histogram has not increased, so the rate is zero.
 	require.Equal(t, 0.0, vec[0].H.Count)
 	require.Equal(t, 0.0, vec[0].H.Sum)
-}
-
-// TODO: replace this test with usual `*.test` file evaluations when start timestamps support is
-// introduced in `promqltest`.
-func TestStartTimestampsUsageInIncreaseFunction(t *testing.T) {
-	var (
-		s = teststorage.New(t, func(o *tsdb.Options) {
-			o.EnableSTStorage = true
-			o.EnableXOR2Encoding = true
-		})
-
-		app = s.AppenderV2(t.Context())
-
-		metric = labels.FromStrings(model.MetricNameLabel, "some_metric")
-
-		err error
-	)
-
-	st := int64(1)
-	for ts := int64(1000); ts < 10000; ts += 1000 {
-		_, err = app.Append(0, metric, st, ts, 1, nil, nil, storage.AOptions{})
-		require.NoError(t, err)
-		st = ts
-	}
-	require.NoError(t, app.Commit())
-
-	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
-		Logger:                   nil,
-		Reg:                      nil,
-		MaxSamples:               100000,
-		Timeout:                  100 * time.Second,
-		NoStepSubqueryIntervalFn: func(int64) int64 { return time.Minute.Milliseconds() },
-		EnableAtModifier:         true,
-		EnableNegativeOffset:     true,
-		EnablePerStepStats:       false,
-		LookbackDelta:            5 * time.Minute,
-		EnableDelayedNameRemoval: true,
-		UseStartTimestamps:       true,
-		Parser:                   parser.NewParser(promqltest.TestParserOpts),
-	})
-
-	testCases := []struct {
-		query                   string
-		expectedDatapointValues float64
-	}{
-		{
-			query:                   `increase(some_metric[5s])`,
-			expectedDatapointValues: 5.0,
-		},
-		{
-			query:                   `rate(some_metric[5s])`,
-			expectedDatapointValues: 1.0,
-		},
-		{
-			query:                   `irate(some_metric[5s])`,
-			expectedDatapointValues: 1.0,
-		},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.query, func(t *testing.T) {
-			q, err := engine.NewRangeQuery(t.Context(), s, nil, testCase.query, time.Unix(5, 0), time.Unix(10, 0), time.Second)
-			require.NoError(t, err)
-
-			res := q.Exec(t.Context())
-			require.NoError(t, res.Err)
-			mat, ok := res.Value.(promql.Matrix)
-			require.True(t, ok)
-			require.Len(t, mat, 1)
-			require.Len(t, mat[0].Floats, 6)
-			for _, p := range mat[0].Floats {
-				require.InDelta(t, testCase.expectedDatapointValues, p.F, 1e-8)
-			}
-		})
-	}
 }
 
 type singleSeriesSet struct {
