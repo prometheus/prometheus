@@ -60,6 +60,14 @@ const (
 	CustomBucketsFloatHistogramSamples Type = 10
 	// SamplesV2 is an enhanced sample record with an encoding scheme that allows storing float samples with timestamp and an optional ST per sample.
 	SamplesV2 Type = 11
+	// HistogramSamplesV2 is an enhanced histogram record that supports start time per sample.
+	HistogramSamplesV2 Type = 12
+	// FloatHistogramSamplesV2 is an enhanced float histogram record that supports start time per sample.
+	FloatHistogramSamplesV2 Type = 13
+	// CustomBucketsHistogramSamplesV2 is an enhanced custom-buckets histogram record that supports start time per sample.
+	CustomBucketsHistogramSamplesV2 Type = 14
+	// CustomBucketsFloatHistogramSamplesV2 is an enhanced custom-buckets float histogram record that supports start time per sample.
+	CustomBucketsFloatHistogramSamplesV2 Type = 15
 )
 
 func (rt Type) String() string {
@@ -69,7 +77,7 @@ func (rt Type) String() string {
 	case Samples:
 		return "samples"
 	case SamplesV2:
-		return "samples-v2"
+		return "samples_v2"
 	case Tombstones:
 		return "tombstones"
 	case Exemplars:
@@ -82,6 +90,14 @@ func (rt Type) String() string {
 		return "custom_buckets_histogram_samples"
 	case CustomBucketsFloatHistogramSamples:
 		return "custom_buckets_float_histogram_samples"
+	case HistogramSamplesV2:
+		return "histogram_samples_v2"
+	case FloatHistogramSamplesV2:
+		return "float_histogram_samples_v2"
+	case CustomBucketsHistogramSamplesV2:
+		return "custom_buckets_histogram_samples_v2"
+	case CustomBucketsFloatHistogramSamplesV2:
+		return "custom_buckets_float_histogram_samples_v2"
 	case MmapMarkers:
 		return "mmapmarkers"
 	case Metadata:
@@ -186,19 +202,17 @@ type RefExemplar struct {
 }
 
 // RefHistogramSample is a histogram.
-// TODO(owilliams): Add support for ST.
 type RefHistogramSample struct {
-	Ref chunks.HeadSeriesRef
-	T   int64
-	H   *histogram.Histogram
+	Ref   chunks.HeadSeriesRef
+	ST, T int64
+	H     *histogram.Histogram
 }
 
 // RefFloatHistogramSample is a float histogram.
-// TODO(owilliams): Add support for ST.
 type RefFloatHistogramSample struct {
-	Ref chunks.HeadSeriesRef
-	T   int64
-	FH  *histogram.FloatHistogram
+	Ref   chunks.HeadSeriesRef
+	ST, T int64
+	FH    *histogram.FloatHistogram
 }
 
 // RefMmapMarker marks that the all the samples of the given series until now have been m-mapped to disk.
@@ -226,7 +240,9 @@ func (*Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples:
+	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata,
+		HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples,
+		HistogramSamplesV2, FloatHistogramSamplesV2, CustomBucketsHistogramSamplesV2, CustomBucketsFloatHistogramSamplesV2:
 		return t
 	}
 	return Unknown
@@ -512,10 +528,18 @@ func (*Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMarke
 
 func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
-	t := Type(dec.Byte())
-	if t != HistogramSamples && t != CustomBucketsHistogramSamples {
-		return nil, errors.New("invalid record type")
+	switch typ := Type(dec.Byte()); typ {
+	case HistogramSamples, CustomBucketsHistogramSamples:
+		return d.histogramSamplesV1(&dec, histograms)
+	case HistogramSamplesV2, CustomBucketsHistogramSamplesV2:
+		return d.histogramSamplesV2(&dec, histograms)
+	default:
+		return nil, fmt.Errorf("invalid record type %v", typ)
 	}
+}
+
+// histogramSamplesV1 decodes V1 int-histogram records (BE64 baseRef/baseTime, varint deltas).
+func (d *Decoder) histogramSamplesV1(dec *encoding.Decbuf, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
 	if dec.Len() == 0 {
 		return histograms, nil
 	}
@@ -533,7 +557,69 @@ func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) 
 			H:   &histogram.Histogram{},
 		}
 
-		DecodeHistogram(&dec, rh.H)
+		DecodeHistogram(dec, rh.H)
+
+		if !histogram.IsKnownSchema(rh.H.Schema) {
+			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.H.Schema, "timestamp", rh.T)
+			continue
+		}
+		if rh.H.Schema > histogram.ExponentialSchemaMax && rh.H.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// record is from a newer Prometheus version that supports higher
+			// resolution.
+			if err := rh.H.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
+			}
+		}
+
+		histograms = append(histograms, rh)
+	}
+
+	if dec.Err() != nil {
+		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms), dec.Err())
+	}
+	if len(dec.B) > 0 {
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return histograms, nil
+}
+
+// histogramSamplesV2 decodes V2 int-histogram records (all-varint, ST marker scheme).
+func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
+	if dec.Len() == 0 {
+		return histograms, nil
+	}
+	var firstT, firstST int64
+	for len(dec.B) > 0 && dec.Err() == nil {
+		var ref, t, ST int64
+
+		if len(histograms) == 0 {
+			ref = dec.Varint64()
+			firstT = dec.Varint64()
+			t = firstT
+			ST = dec.Varint64()
+			firstST = ST
+		} else {
+			prev := histograms[len(histograms)-1]
+			ref = int64(prev.Ref) + dec.Varint64()
+			t = firstT + dec.Varint64()
+			stMarker := dec.Byte()
+			switch stMarker {
+			case noST:
+			case sameST:
+				ST = prev.ST
+			default:
+				ST = firstST + dec.Varint64()
+			}
+		}
+
+		rh := RefHistogramSample{
+			Ref: chunks.HeadSeriesRef(ref),
+			ST:  ST,
+			T:   t,
+			H:   &histogram.Histogram{},
+		}
+		DecodeHistogram(dec, rh.H)
 
 		if !histogram.IsKnownSchema(rh.H.Schema) {
 			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.H.Schema, "timestamp", rh.T)
@@ -618,10 +704,18 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 
 func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
-	t := Type(dec.Byte())
-	if t != FloatHistogramSamples && t != CustomBucketsFloatHistogramSamples {
-		return nil, errors.New("invalid record type")
+	switch typ := Type(dec.Byte()); typ {
+	case FloatHistogramSamples, CustomBucketsFloatHistogramSamples:
+		return d.floatHistogramSamplesV1(&dec, histograms)
+	case FloatHistogramSamplesV2, CustomBucketsFloatHistogramSamplesV2:
+		return d.floatHistogramSamplesV2(&dec, histograms)
+	default:
+		return nil, fmt.Errorf("invalid record type %v", typ)
 	}
+}
+
+// floatHistogramSamplesV1 decodes V1 float-histogram records (BE64 baseRef/baseTime, varint deltas).
+func (d *Decoder) floatHistogramSamplesV1(dec *encoding.Decbuf, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
 	if dec.Len() == 0 {
 		return histograms, nil
 	}
@@ -639,7 +733,69 @@ func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogr
 			FH:  &histogram.FloatHistogram{},
 		}
 
-		DecodeFloatHistogram(&dec, rh.FH)
+		DecodeFloatHistogram(dec, rh.FH)
+
+		if !histogram.IsKnownSchema(rh.FH.Schema) {
+			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.FH.Schema, "timestamp", rh.T)
+			continue
+		}
+		if rh.FH.Schema > histogram.ExponentialSchemaMax && rh.FH.Schema <= histogram.ExponentialSchemaMaxReserved {
+			// This is a very slow path, but it should only happen if the
+			// record is from a newer Prometheus version that supports higher
+			// resolution.
+			if err := rh.FH.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
+			}
+		}
+
+		histograms = append(histograms, rh)
+	}
+
+	if dec.Err() != nil {
+		return nil, fmt.Errorf("decode error after %d histograms: %w", len(histograms), dec.Err())
+	}
+	if len(dec.B) > 0 {
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return histograms, nil
+}
+
+// floatHistogramSamplesV2 decodes V2 float-histogram records (all-varint, ST marker scheme).
+func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
+	if dec.Len() == 0 {
+		return histograms, nil
+	}
+	var firstT, firstST int64
+	for len(dec.B) > 0 && dec.Err() == nil {
+		var ref, t, ST int64
+
+		if len(histograms) == 0 {
+			ref = dec.Varint64()
+			firstT = dec.Varint64()
+			t = firstT
+			ST = dec.Varint64()
+			firstST = ST
+		} else {
+			prev := histograms[len(histograms)-1]
+			ref = int64(prev.Ref) + dec.Varint64()
+			t = firstT + dec.Varint64()
+			stMarker := dec.Byte()
+			switch stMarker {
+			case noST:
+			case sameST:
+				ST = prev.ST
+			default:
+				ST = firstST + dec.Varint64()
+			}
+		}
+
+		rh := RefFloatHistogramSample{
+			Ref: chunks.HeadSeriesRef(ref),
+			ST:  ST,
+			T:   t,
+			FH:  &histogram.FloatHistogram{},
+		}
+		DecodeFloatHistogram(dec, rh.FH)
 
 		if !histogram.IsKnownSchema(rh.FH.Schema) {
 			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.FH.Schema, "timestamp", rh.T)
@@ -914,7 +1070,14 @@ func (*Encoder) MmapMarkers(markers []RefMmapMarker, b []byte) []byte {
 
 // HistogramSamples encode exponential histograms while returning all the excluded custom bucket histograms.
 // Callers can encode the returned custom bucket histograms via CustomBucketsHistogramSamples.
-func (*Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
+func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
+	if e.EnableSTStorage {
+		return e.histogramSamplesV2(histograms, b)
+	}
+	return e.histogramSamplesV1(histograms, b)
+}
+
+func (*Encoder) histogramSamplesV1(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(HistogramSamples))
 
@@ -949,7 +1112,68 @@ func (*Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]b
 }
 
 // CustomBucketsHistogramSamples encodes given histograms as custom bucket histograms.
-func (*Encoder) CustomBucketsHistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
+func (*Encoder) histogramSamplesV2(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(HistogramSamplesV2))
+
+	if len(histograms) == 0 {
+		return buf.Get(), nil
+	}
+
+	var customBucketHistograms []RefHistogramSample
+
+	first := histograms[0]
+
+	// First sample: full varint values, no deltas, no ST marker.
+	if first.H.UsesCustomBuckets() {
+		customBucketHistograms = append(customBucketHistograms, first)
+	} else {
+		buf.PutVarint64(int64(first.Ref))
+		buf.PutVarint64(first.T)
+		buf.PutVarint64(first.ST)
+		EncodeHistogram(&buf, first.H)
+	}
+
+	// Subsequent samples: ref delta to prev, T delta to first, ST marker.
+	for i := 1; i < len(histograms); i++ {
+		h := histograms[i]
+		if h.H.UsesCustomBuckets() {
+			customBucketHistograms = append(customBucketHistograms, h)
+			continue
+		}
+		prev := histograms[i-1]
+
+		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		switch h.ST {
+		case 0:
+			buf.PutByte(noST)
+		case prev.ST:
+			buf.PutByte(sameST)
+		default:
+			buf.PutByte(explicitST)
+			buf.PutVarint64(h.ST - first.ST)
+		}
+		EncodeHistogram(&buf, h.H)
+	}
+
+	// Reset buffer if only custom bucket histograms existed in list of histogram samples.
+	if len(histograms) == len(customBucketHistograms) {
+		buf.Reset()
+	}
+
+	return buf.Get(), customBucketHistograms
+}
+
+func (e *Encoder) CustomBucketsHistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
+	if e.EnableSTStorage {
+		return e.customBucketsHistogramSamplesV2(histograms, b)
+	}
+	return e.customBucketsHistogramSamplesV1(histograms, b)
+}
+
+func (*Encoder) customBucketsHistogramSamplesV1(histograms []RefHistogramSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(CustomBucketsHistogramSamples))
 
@@ -967,6 +1191,44 @@ func (*Encoder) CustomBucketsHistogramSamples(histograms []RefHistogramSample, b
 		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
 		buf.PutVarint64(h.T - first.T)
 
+		EncodeHistogram(&buf, h.H)
+	}
+
+	return buf.Get()
+}
+
+func (*Encoder) customBucketsHistogramSamplesV2(histograms []RefHistogramSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(CustomBucketsHistogramSamplesV2))
+
+	if len(histograms) == 0 {
+		return buf.Get()
+	}
+
+	// First sample: full varint values, no deltas, no ST marker.
+	first := histograms[0]
+	buf.PutVarint64(int64(first.Ref))
+	buf.PutVarint64(first.T)
+	buf.PutVarint64(first.ST)
+	EncodeHistogram(&buf, first.H)
+
+	// Subsequent samples: ref delta to prev, T delta to first, ST marker.
+	for i := 1; i < len(histograms); i++ {
+		h := histograms[i]
+		prev := histograms[i-1]
+
+		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		switch h.ST {
+		case 0:
+			buf.PutByte(noST)
+		case prev.ST:
+			buf.PutByte(sameST)
+		default:
+			buf.PutByte(explicitST)
+			buf.PutVarint64(h.ST - first.ST)
+		}
 		EncodeHistogram(&buf, h.H)
 	}
 
@@ -1016,7 +1278,14 @@ func EncodeHistogram(buf *encoding.Encbuf, h *histogram.Histogram) {
 
 // FloatHistogramSamples encode exponential float histograms while returning all the excluded custom bucket float histograms.
 // Callers can encode the returned custom bucket float histograms via CustomBucketsFloatHistogramSamples.
-func (*Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
+func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
+	if e.EnableSTStorage {
+		return e.floatHistogramSamplesV2(histograms, b)
+	}
+	return e.floatHistogramSamplesV1(histograms, b)
+}
+
+func (*Encoder) floatHistogramSamplesV1(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(FloatHistogramSamples))
 
@@ -1052,7 +1321,66 @@ func (*Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []
 }
 
 // CustomBucketsFloatHistogramSamples encodes given float histograms as custom bucket float histograms.
-func (*Encoder) CustomBucketsFloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
+func (*Encoder) floatHistogramSamplesV2(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(FloatHistogramSamplesV2))
+
+	if len(histograms) == 0 {
+		return buf.Get(), nil
+	}
+
+	var customBucketsFloatHistograms []RefFloatHistogramSample
+
+	first := histograms[0]
+
+	if first.FH.UsesCustomBuckets() {
+		customBucketsFloatHistograms = append(customBucketsFloatHistograms, first)
+	} else {
+		buf.PutVarint64(int64(first.Ref))
+		buf.PutVarint64(first.T)
+		buf.PutVarint64(first.ST)
+		EncodeFloatHistogram(&buf, first.FH)
+	}
+
+	for i := 1; i < len(histograms); i++ {
+		h := histograms[i]
+		if h.FH.UsesCustomBuckets() {
+			customBucketsFloatHistograms = append(customBucketsFloatHistograms, h)
+			continue
+		}
+		prev := histograms[i-1]
+
+		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		switch h.ST {
+		case 0:
+			buf.PutByte(noST)
+		case prev.ST:
+			buf.PutByte(sameST)
+		default:
+			buf.PutByte(explicitST)
+			buf.PutVarint64(h.ST - first.ST)
+		}
+		EncodeFloatHistogram(&buf, h.FH)
+	}
+
+	// Reset buffer if only custom bucket histograms existed in list of histogram samples
+	if len(histograms) == len(customBucketsFloatHistograms) {
+		buf.Reset()
+	}
+
+	return buf.Get(), customBucketsFloatHistograms
+}
+
+func (e *Encoder) CustomBucketsFloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
+	if e.EnableSTStorage {
+		return e.customBucketsFloatHistogramSamplesV2(histograms, b)
+	}
+	return e.customBucketsFloatHistogramSamplesV1(histograms, b)
+}
+
+func (*Encoder) customBucketsFloatHistogramSamplesV1(histograms []RefFloatHistogramSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(CustomBucketsFloatHistogramSamples))
 
@@ -1070,6 +1398,42 @@ func (*Encoder) CustomBucketsFloatHistogramSamples(histograms []RefFloatHistogra
 		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
 		buf.PutVarint64(h.T - first.T)
 
+		EncodeFloatHistogram(&buf, h.FH)
+	}
+
+	return buf.Get()
+}
+
+func (*Encoder) customBucketsFloatHistogramSamplesV2(histograms []RefFloatHistogramSample, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(CustomBucketsFloatHistogramSamplesV2))
+
+	if len(histograms) == 0 {
+		return buf.Get()
+	}
+
+	first := histograms[0]
+	buf.PutVarint64(int64(first.Ref))
+	buf.PutVarint64(first.T)
+	buf.PutVarint64(first.ST)
+	EncodeFloatHistogram(&buf, first.FH)
+
+	for i := 1; i < len(histograms); i++ {
+		h := histograms[i]
+		prev := histograms[i-1]
+
+		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
+		buf.PutVarint64(h.T - first.T)
+
+		switch h.ST {
+		case 0:
+			buf.PutByte(noST)
+		case prev.ST:
+			buf.PutByte(sameST)
+		default:
+			buf.PutByte(explicitST)
+			buf.PutVarint64(h.ST - first.ST)
+		}
 		EncodeFloatHistogram(&buf, h.FH)
 	}
 
