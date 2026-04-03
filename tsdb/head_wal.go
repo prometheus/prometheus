@@ -1592,7 +1592,7 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 
 // loadChunkSnapshot replays the chunk snapshot and restores the Head state from it. If there was any error returned,
 // it is the responsibility of the caller to clear the contents of the Head.
-func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSeries, error) {
+func (h *Head) loadChunkSnapshot(multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, multiRefMtx *sync.Mutex) (int, int, map[chunks.HeadSeriesRef]*memSeries, error) {
 	dir, snapIdx, snapOffset, err := LastChunkSnapshot(h.opts.ChunkDirRoot)
 	if err != nil {
 		if errors.Is(err, record.ErrNotFound) {
@@ -1641,11 +1641,19 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 			localRefSeries := shardedRefSeries[idx]
 
 			for csr := range rc {
-				series, _, err := h.getOrCreateWithOptionalID(csr.ref, csr.lset.Hash(), csr.lset, false)
+				series, created, err := h.getOrCreateWithOptionalID(csr.ref, csr.lset.Hash(), csr.lset, false)
 				if err != nil {
 					errChan <- err
 					return
 				}
+
+				if h.opts.EnableFastStartup && !created {
+					// This is not a newly created series, update the multiRef.
+					multiRefMtx.Lock()
+					multiRef[csr.ref] = series.ref
+					multiRefMtx.Unlock()
+				}
+
 				localRefSeries[csr.ref] = series
 				for {
 					seriesID := uint64(series.ref)

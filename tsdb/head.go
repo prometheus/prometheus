@@ -698,6 +698,9 @@ func (h *Head) replayDiskChunksAndWAL() error {
 	h.logger.Info("Replaying on-disk memory mappable chunks if any")
 	start := time.Now()
 
+	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
+	var multiRefMtx sync.Mutex
+
 	snapIdx, snapOffset := -1, 0
 	refSeries := make(map[chunks.HeadSeriesRef]*memSeries)
 
@@ -730,7 +733,7 @@ func (h *Head) replayDiskChunksAndWAL() error {
 		}
 		if loadSnapshot {
 			var err error
-			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
+			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot(multiRef, &multiRefMtx)
 			if err == nil {
 				snapshotLoaded = true
 				chunkSnapshotLoadDuration = time.Since(start)
@@ -807,7 +810,6 @@ func (h *Head) replayDiskChunksAndWAL() error {
 	h.startWALReplayStatus(startFrom, endAt)
 
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
-	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
 		if err != nil {
