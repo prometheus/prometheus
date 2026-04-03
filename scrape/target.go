@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -592,7 +593,7 @@ func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLab
 	}
 	if cfg.HTTPClientConfig.ProxyURL.URL != nil {
 		scrapeLabels = append(scrapeLabels, labels.Label{
-			Name: proxyURLLabel, Value: cfg.HTTPClientConfig.ProxyURL.String(),
+			Name: proxyURLLabel, Value: cfg.HTTPClientConfig.ProxyURL.Redacted(),
 		})
 	}
 
@@ -614,9 +615,8 @@ func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLab
 func RedactLabels(lb *labels.Builder) {
 	if v := lb.Get(proxyURLLabel); v != "" {
 		u, err := url.Parse(v)
-		if err == nil && u.User != nil {
-			u.User = nil
-			lb.Set(proxyURLLabel, u.String())
+		if err == nil {
+			lb.Set(proxyURLLabel, config_util.URL{URL: u}.Redacted())
 		}
 	}
 }
