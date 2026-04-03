@@ -58,7 +58,7 @@ jobs:
           persist-credentials: false
       - uses: prometheus/promci@fc721ff8497a70a93a881cd552b71af7fb3a9d53 # v0.5.4
       - uses: ./.github/promci/actions/setup_environment
-      - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true -run TestVersionUpgrade
+      - run: go test -v --race -timeout 20m ./cmd/prometheus/ --test.version-upgrade=true -run TestVersionUpgrade
 
   test_go_oldest:
     name: Go tests with previous Go version
