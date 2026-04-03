@@ -2493,6 +2493,7 @@ Available meta labels:
 * `__meta_kubernetes_pod_controller_kind`: Object kind of the pod controller.
 * `__meta_kubernetes_pod_controller_name`: Name of the pod controller.
 * `__meta_kubernetes_pod_deployment_name`: Name of the deployment the pod belongs to. Requires `attach_metadata: {deployment: true}`.
+* `__meta_kubernetes_pod_daemonset_name`: Name of the daemonset the pod belongs to. Requires `attach_metadata: {daemonset: true}`.
 * `__meta_kubernetes_pod_cronjob_name`: Name of the cronjob the pod belongs to. Requires `attach_metadata: {cronjob: true}`.
 * `__meta_kubernetes_pod_job_name`: Name of the job the pod belongs to. Requires `attach_metadata: {job: true}`.
 
@@ -2635,6 +2636,9 @@ attach_metadata:
 # When set to true, Prometheus must have permissions to list/watch ReplicaSets.
 # Enables the __meta_kubernetes_pod_deployment_name label.
   [ deployment: <boolean> | default = false ]
+# Attaches daemonset metadata to discovered pod targets. Valid for role: pod.
+# Enables the __meta_kubernetes_pod_daemonset_name label.
+  [ daemonset: <boolean> | default = false ]
 # Attaches job metadata to discovered pod targets. Valid for role: pod.
 # When set to true, Prometheus must have permissions to list/watch Jobs.
 # Enables the __meta_kubernetes_pod_job_name label.
