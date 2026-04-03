@@ -141,6 +141,9 @@ type Head struct {
 	seriesStateQuit chan struct{}
 	seriesStateWg   sync.WaitGroup
 
+	// For running the background WAL replay.
+	walReplayWg sync.WaitGroup
+
 	stats *HeadStats
 	reg   prometheus.Registerer
 
@@ -678,11 +681,7 @@ func (s *WALReplayStatus) GetWALReplayStatus() WALReplayStatus {
 
 const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 
-// Init loads data from the write ahead log and prepares the head for writes.
-// It should be called before using an appender so that it
-// limits the ingested samples to the head min valid time.
-func (h *Head) Init(minValidTime int64) error {
-	h.minValidTime.Store(minValidTime)
+func (h *Head) replayDiskChunksAndWAL() error {
 	defer h.resetWLReplayResources()
 	defer func() {
 		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)
@@ -698,6 +697,9 @@ func (h *Head) Init(minValidTime int64) error {
 
 	h.logger.Info("Replaying on-disk memory mappable chunks if any")
 	start := time.Now()
+
+	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
+	var multiRefMtx sync.Mutex
 
 	snapIdx, snapOffset := -1, 0
 	refSeries := make(map[chunks.HeadSeriesRef]*memSeries)
@@ -731,7 +733,7 @@ func (h *Head) Init(minValidTime int64) error {
 		}
 		if loadSnapshot {
 			var err error
-			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
+			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot(multiRef, &multiRefMtx)
 			if err == nil {
 				snapshotLoaded = true
 				chunkSnapshotLoadDuration = time.Since(start)
@@ -775,7 +777,7 @@ func (h *Head) Init(minValidTime int64) error {
 			snapIdx, snapOffset = -1, 0
 
 			// If this fails, data will be recovered from WAL.
-			// Hence we won't lose any data (given WAL is not corrupt).
+			// Hence we wont lose any data (given WAL is not corrupt).
 			mmappedChunks, oooMmappedChunks, lastMmapRef, err = h.removeCorruptedMmappedChunks(err)
 			if err != nil {
 				return err
@@ -805,32 +807,9 @@ func (h *Head) Init(minValidTime int64) error {
 		return fmt.Errorf("finding WAL segments: %w", e)
 	}
 
-	if h.opts.EnableFastStartup {
-		state, err := h.readSeriesStateFile()
-		if err != nil && !os.IsNotExist(err) {
-			h.logger.Warn("Failed to read series state file, skipping the fast startup", "err", err)
-		}
-		if err == nil {
-			if state.CleanShutdown {
-				h.lastSeriesID.Store(state.LastSeriesID)
-				h.logger.Info("Fast startup: clean shutdown detected, restored last series ID", "last_series_id", state.LastSeriesID)
-			} else {
-				h.logger.Info("Fast startup: unclean shutdown detected, performing WAL scan", "from_segment", state.LastWALSegment, "to_segment", endAt)
-				id, scanErr := h.findLastSeriesID(state, endAt)
-				if scanErr != nil {
-					h.logger.Error("Fast startup: WAL scan failed, skipping fast startup", "err", scanErr)
-				} else {
-					h.lastSeriesID.Store(id)
-					h.logger.Info("Fast startup: WAL scan completed", "last_series_id", id)
-				}
-			}
-		}
-	}
-
 	h.startWALReplayStatus(startFrom, endAt)
 
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
-	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
 		if err != nil {
@@ -932,14 +911,60 @@ func (h *Head) Init(minValidTime int64) error {
 		"total_replay_duration", totalReplayDuration.String(),
 	)
 
+	return nil
+}
+
+// Init loads data from the write ahead log and prepares the head for writes.
+// It should be called before using an appender so that it
+// limits the ingested samples to the head min valid time.
+func (h *Head) Init(minValidTime int64) error {
+	h.minValidTime.Store(minValidTime)
+
+	// Find the last WAL segment.
+	_, endAt, e := wlog.Segments(h.wal.Dir())
+	if e != nil {
+		return fmt.Errorf("finding WAL segments: %w", e)
+	}
+
 	// TODO(RushabhMehta2005): Remove this 'if' block and always run the series state ticker when the feature is fully implemented.
 	if h.opts.EnableFastStartup {
+		state, err := h.readSeriesStateFile()
+		if err != nil && !os.IsNotExist(err) {
+			h.logger.Warn("Failed to read series state file, skipping the fast startup", "err", err)
+		}
+		if err == nil {
+			if state.CleanShutdown {
+				h.lastSeriesID.Store(state.LastSeriesID)
+				h.logger.Info("Fast startup: clean shutdown detected, restored last series ID", "last_series_id", state.LastSeriesID)
+			} else {
+				h.logger.Info("Fast startup: unclean shutdown detected, performing WAL scan", "from_segment", state.LastWALSegment, "to_segment", endAt)
+				id, scanErr := h.findLastSeriesID(state, endAt)
+				if scanErr != nil {
+					h.logger.Error("Fast startup: WAL scan failed, skipping fast startup", "err", scanErr)
+				} else {
+					h.lastSeriesID.Store(id)
+					h.logger.Info("Fast startup: WAL scan completed", "last_series_id", id)
+				}
+			}
+		}
+
 		// Start the background goroutine that writes to series_state.json.
 		h.seriesStateWg.Add(1)
 		go h.runSeriesStateTicker()
+
+		h.walReplayWg.Add(1)
+		go func() {
+			defer h.walReplayWg.Done()
+			if err := h.replayDiskChunksAndWAL(); err != nil {
+				h.logger.Error("Fast startup: Background WAL replay failed", "err", err)
+			}
+		}()
+
+		return nil
 	}
 
-	return nil
+	// When feature is not enabled, blocking call.
+	return h.replayDiskChunksAndWAL()
 }
 
 func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) (map[chunks.HeadSeriesRef][]*mmappedChunk, map[chunks.HeadSeriesRef][]*mmappedChunk, chunks.ChunkDiskMapperRef, error) {
@@ -1851,6 +1876,9 @@ func (h *Head) compactable() bool {
 // Close flushes the WAL and closes the head.
 // It also takes a snapshot of in-memory chunks if enabled.
 func (h *Head) Close() error {
+	// Wait for background WAL replay to finish before shutdown.
+	h.walReplayWg.Wait()
+
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
