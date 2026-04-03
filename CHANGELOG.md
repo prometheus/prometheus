@@ -40,6 +40,7 @@
 - [BUGFIX] Remote write: Fix `prometheus_remote_storage_sent_batch_duration_seconds` measuring before the request was sent. #18214
 - [BUGFIX] Rules: Fix alert state restoration when rule labels contain Go template expressions. #18375
 - [BUGFIX] Scrape: Fix panic when parsing bare label names without an equal sign in brace-only metric notation. #18229
+- [BUGFIX] Textparse: Canonicalize NaN in OpenMetrics metric sample values when parsing the value token. #18399
 - [BUGFIX] TSDB: Fail early when `use-uncached-io` feature flag is set on unsupported environments. #18219
 - [BUGFIX] TSDB: Fall back to CLI flag values when retention is removed from config file. #18200
 - [BUGFIX] TSDB: Fix memory leaks in buffer pools by clearing reference fields before returning buffers to pools. #17895
