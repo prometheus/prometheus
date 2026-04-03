@@ -3,6 +3,7 @@ dist/
 lib/
 src/parser.js
 src/parser.terms.js
+src/client/generated-term-ids.ts
 
 LICENSE
 CHANGELOG.md
