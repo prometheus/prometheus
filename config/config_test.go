@@ -2130,6 +2130,7 @@ func TestLoadConfig(t *testing.T) {
 		cmpopts.IgnoreUnexported(outscale.SDConfig{}),
 		cmpopts.IgnoreUnexported(stackit.SDConfig{}),
 		cmpopts.IgnoreUnexported(regexp.Regexp{}),
+		cmpopts.IgnoreUnexported(relabel.Regexp{}),
 		cmpopts.IgnoreUnexported(hetzner.SDConfig{}),
 		cmpopts.IgnoreUnexported(Config{}),
 	})
