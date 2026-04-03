@@ -236,7 +236,7 @@ func TestAzureAdConfig(t *testing.T) {
 		_, err := loadAzureAdConfig(c.filename)
 		if c.err != "" {
 			if err == nil {
-				t.Fatalf("Did not receive expected error unmarshaling bad azuread config")
+				t.Fatal("Did not receive expected error unmarshaling bad azuread config")
 			}
 			require.EqualError(t, err, c.err)
 		} else {

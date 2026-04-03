@@ -1083,7 +1083,7 @@ func CheckMetrics(extended bool, lint string) int {
 			return failureExitCode
 		}
 		w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
-		fmt.Fprintf(w, "Metric\tCardinality\tPercentage\t\n")
+		fmt.Fprint(w, "Metric\tCardinality\tPercentage\t\n")
 		for _, stat := range stats {
 			fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.name, stat.cardinality, stat.percentage*100)
 		}
