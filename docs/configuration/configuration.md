@@ -2472,7 +2472,7 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the pod object.
 * `__meta_kubernetes_pod_name`: The name of the pod object.
-* `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
+* `__meta_kubernetes_pod_ip`: The pod IP of the pod object, corresponds to `pod.Status.PodIP`.
 * `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_pod_labelpresent_<labelname>`: `true` for each label from the pod object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
@@ -2492,6 +2492,8 @@ Available meta labels:
 * `__meta_kubernetes_pod_uid`: The UID of the pod object.
 * `__meta_kubernetes_pod_controller_kind`: Object kind of the pod controller.
 * `__meta_kubernetes_pod_controller_name`: Name of the pod controller.
+* `__meta_kubernetes_pod_ipv4`: The pod IPv4 of the pod object, corresponds to `pod.Status.PodIPs`.
+* `__meta_kubernetes_pod_ipv6`: The pod IPv6 of the pod object, corresponds to `pod.Status.PodIPs`.
 * `__meta_kubernetes_pod_deployment_name`: Name of the deployment the pod belongs to. Requires `attach_metadata: {deployment: true}`.
 * `__meta_kubernetes_pod_cronjob_name`: Name of the cronjob the pod belongs to. Requires `attach_metadata: {cronjob: true}`.
 * `__meta_kubernetes_pod_job_name`: Name of the job the pod belongs to. Requires `attach_metadata: {job: true}`.
