@@ -40,3 +40,19 @@ jobs:
       - run: go test -v -count=50 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
       - run: go test -v -count=50 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
       - run: go test -v -count=50 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+  test_go_i386:
+    name: Go tests on i386 (${{ matrix.worker }})
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/prometheus/golang-builder:1.26-base
+    strategy:
+      matrix:
+        worker: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - run: GOARCH=386 go test -v -count=50 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+      - run: GOARCH=386 go test -v -count=50 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+      - run: GOARCH=386 go test -v -count=50 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
+      - run: GOARCH=386 go test -v -count=50 -parallel 1 -run TestDiskFillingUpAfterDisablingOOO ./tsdb/
