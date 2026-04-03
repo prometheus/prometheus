@@ -1,0 +1,22 @@
+groups:
+  - name: alerts
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: page
+      - alert: AlwaysFiring
+        expr: 1
+      - alert: NeverTested
+        expr: up == 0
+        for: 10m
+        labels:
+          severity: warning
+
+  - name: recording
+    rules:
+      - record: job:up:sum
+        expr: sum by (job)(up)
+      - record: job:up:avg
+        expr: avg by (job)(up)
