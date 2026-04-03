@@ -161,7 +161,7 @@ scrape_configs:
 			name: "enforces_body_limit",
 			handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-				for i := 0; i < 1024; i++ {
+				for range 1024 {
 					_, _ = w.Write([]byte("x"))
 				}
 			}),
