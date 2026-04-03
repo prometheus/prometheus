@@ -230,6 +230,7 @@ func main() {
 	pushMetricsTimeout := pushMetricsCmd.Flag("timeout", "The time to wait for pushing metrics.").Default("30s").Duration()
 	pushMetricsHeaders := pushMetricsCmd.Flag("header", "Prometheus remote write header.").StringMap()
 	pushMetricsProtoMsg := pushMetricsCmd.Flag("protobuf_message", "Protobuf message to use when writing (prometheus.WriteRequest or io.prometheus.write.v2.Request).").Default("prometheus.WriteRequest").String()
+	pushMetricsAPIPath := pushMetricsCmd.Flag("api-path", "Override the default remote write API path (/api/v1/write).").Default("").String()
 
 	testCmd := app.Command("test", "Unit testing.")
 	junitOutFile := testCmd.Flag("junit", "File path to store JUnit XML test results.").OpenFile(os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
@@ -390,7 +391,7 @@ func main() {
 		os.Exit(CheckMetrics(*checkMetricsExtended, *checkMetricsLint))
 
 	case pushMetricsCmd.FullCommand():
-		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsProtoMsg, *pushMetricsLabels, *metricFiles...))
+		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsProtoMsg, *pushMetricsLabels, *pushMetricsAPIPath, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))
