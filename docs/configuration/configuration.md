@@ -3801,6 +3801,18 @@ azuread:
       [ client_secret: <string> ]
       [ tenant_id: <string> ] ]
 
+  # Azure Certificate-based authentication.
+  [ certificate:
+      client_id: <string>
+      tenant_id: <string>
+      certificate_path: <file_name>
+      # Optional path to private key file if separate from certificate
+      [ certificate_key_path: <file_name> ]
+      # Optional password for password-protected certificate files (PFX/PKCS12)
+      [ certificate_password: <secret> ]
+      # Whether to send the certificate chain in the x5c header
+      [ send_certificate_chain: <boolean> | default = false ] ]
+
   # Azure SDK auth.
   # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
   [ sdk:
