@@ -52,6 +52,7 @@ S     [ ]
 <sComment>"EOF"\n?                    l.state = sInit; return tEOFWord
 <sMeta1>\"(\\.|[^\\"])*\"             l.state = sMeta2; return tMName
 <sMeta1>{M}({M}|{D})*                 l.state = sMeta2; return tMName
+<sMeta2>\n                              l.state = sInit; return tText
 <sMeta2>{S}{C}*\n                     l.state = sInit; return tText
 
 {M}({M}|{D})*                         l.state = sValue; return tMName
