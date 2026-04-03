@@ -1415,6 +1415,68 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+    /targets/scrape:
+        get:
+            tags:
+                - targets
+            summary: Proxy-scrape an active target
+            description: Scrape an active target through Prometheus. This endpoint is disabled by default and must be enabled explicitly.
+            operationId: targets-scrape
+            parameters:
+                - name: scrapePool
+                  in: query
+                  description: Name of the scrape pool.
+                  required: true
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: kubernetes-pods
+                - name: scrapeUrl
+                  in: query
+                  description: Exact scrape URL of an active target to proxy-scrape.
+                  required: true
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: http://10.0.0.42:8080/metrics
+                - name: timeout
+                  in: query
+                  description: Optional. Upper-bounded by 1 minute. Lower values apply stricter timeouts.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: 15s
+                - name: maxBytes
+                  in: query
+                  description: Optional. Upper-bounded by 10MB. Lower values apply stricter response size limits.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: "1048576"
+            responses:
+                "200":
+                    description: Scrape response retrieved successfully.
+                    content:
+                        text/plain:
+                            schema:
+                                type: string
+                                description: Raw metrics scrape response as plain text.
+                default:
+                    description: Error
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
     /targets/metadata:
         get:
             tags:
