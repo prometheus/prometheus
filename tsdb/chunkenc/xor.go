@@ -334,6 +334,27 @@ func (it *xorIterator) Next() ValueType {
 		return it.readValue()
 	}
 
+	// Fast path: for the most common case of regular scrape intervals,
+	// dod is 0 which is encoded as a single 0 bit.
+	// Check the bit directly from the buffer to avoid the loop and switch below.
+	if it.br.valid >= 1 {
+		if (it.br.buffer>>(it.br.valid-1))&1 == 0 {
+			// dod == 0: timestamp delta unchanged.
+			it.br.valid--
+			it.t += int64(it.tDelta)
+
+			// Super fast path: if the value is also unchanged (next bit is 0),
+			// we can skip the xorRead call entirely.
+			if it.br.valid >= 1 && (it.br.buffer>>(it.br.valid-1))&1 == 0 {
+				it.br.valid--
+				it.numRead++
+				return ValFloat
+			}
+			return it.readValue()
+		}
+		// dod != 0: fall through to the normal path below.
+	}
+
 	var d byte
 	// read delta-of-delta
 	for range 4 {
@@ -398,6 +419,39 @@ func (it *xorIterator) Next() ValueType {
 }
 
 func (it *xorIterator) readValue() ValueType {
+	// Fast path: read value encoding directly from the buffer when possible.
+	// The two most common cases are:
+	//   1. Value unchanged: single 0 bit.
+	//   2. Value changed, reuse leading/trailing zeros: 10-prefix + mbits significant bits.
+	if it.br.valid >= 1 {
+		if (it.br.buffer>>(it.br.valid-1))&1 == 0 {
+			// Value unchanged.
+			it.br.valid--
+			it.numRead++
+			return ValFloat
+		}
+		// Value changed. Try the reuse-leading/trailing fast path if the
+		// leading/trailing have been initialized and the buffer has enough bits.
+		if it.leading != 0xff {
+			mbits := 64 - it.leading - it.trailing
+			if it.br.valid >= 2+mbits {
+				if (it.br.buffer>>(it.br.valid-2))&1 == 0 {
+					// Reuse leading/trailing (control bits are 10).
+					it.br.valid -= 2 // Consume both control bits.
+					dataMask := (uint64(1) << mbits) - 1
+					bits := (it.br.buffer >> (it.br.valid - mbits)) & dataMask
+					it.br.valid -= mbits
+					vbits := math.Float64bits(it.val)
+					vbits ^= bits << it.trailing
+					it.val = math.Float64frombits(vbits)
+					it.numRead++
+					return ValFloat
+				}
+				// New leading/trailing (control bits are 11): fall through.
+			}
+		}
+	}
+
 	err := xorRead(&it.br, &it.val, &it.leading, &it.trailing)
 	if err != nil {
 		it.err = err
