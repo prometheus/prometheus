@@ -295,6 +295,7 @@ type Options struct {
 	UseOldUI                   bool
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
+	EnableTargetScrapeProxy    bool
 	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
@@ -437,6 +438,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		// Set dynamic API features (based on configuration).
 		r.Set(features.API, "lifecycle", o.EnableLifecycle)
 		r.Set(features.API, "admin", o.EnableAdminAPI)
+		r.Set(features.API, "target_scrape_proxy", o.EnableTargetScrapeProxy)
 		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
 		r.Set(features.OTLPReceiver, "delta_conversion", o.ConvertOTLPDelta)
@@ -515,6 +517,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("AGENT_MODE_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.IsAgent)))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("READY_PLACEHOLDER"), []byte(strconv.FormatBool(h.isReady())))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("LOOKBACKDELTA_PLACEHOLDER"), []byte(model.Duration(h.options.LookbackDelta).String()))
+		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TARGET_SCRAPE_PROXY_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.EnableTargetScrapeProxy)))
 		w.Write(replacedIdx)
 	}
 
