@@ -1,6 +1,7 @@
 import { FC, useMemo, useState } from "react";
-import { useSuspenseAPIQuery } from "../../../api/api";
+import { useSearchQuery, useSuspenseAPIQuery } from "../../../api/api";
 import { MetadataResult } from "../../../api/responseTypes/metadata";
+import { SearchMetricNameResult } from "../../../api/responseTypes/search";
 import {
   ActionIcon,
   CopyButton,
@@ -23,9 +24,12 @@ import { useDebouncedValue } from "@mantine/hooks";
 import classes from "./MetricsExplorer.module.css";
 import CustomInfiniteScroll from "../../../components/CustomInfiniteScroll";
 
+const fuzPre = '<b style="color: rgb(0, 102, 191)">';
+const fuzPost = "</b>";
+
 const fuz = new Fuzzy({
-  pre: '<b style="color: rgb(0, 102, 191)">',
-  post: "</b>",
+  pre: fuzPre,
+  post: fuzPost,
   shouldSort: true,
 });
 
@@ -33,6 +37,10 @@ const sanitizeOpts = {
   allowedTags: ["b"],
   allowedAttributes: { b: ["style"] },
 };
+
+// CLIENT_SIDE_LIMIT is the maximum number of metric names for which client-side
+// fuzzy filtering is used. Above this threshold the backend search API is used.
+const CLIENT_SIDE_LIMIT = 10000;
 
 type MetricsExplorerProps = {
   metricNames: string[];
@@ -42,8 +50,8 @@ type MetricsExplorerProps = {
 
 const getSearchMatches = (input: string, expressions: string[]) =>
   fuz.filter(input.replace(/ /g, ""), expressions, {
-    pre: '<b style="color: rgb(0, 102, 191)">',
-    post: "</b>",
+    pre: fuzPre,
+    post: fuzPost,
   });
 
 const MetricsExplorer: FC<MetricsExplorerProps> = ({
@@ -60,12 +68,53 @@ const MetricsExplorer: FC<MetricsExplorerProps> = ({
   const [filterText, setFilterText] = useState("");
   const [debouncedFilterText] = useDebouncedValue(filterText, 250);
 
+  // Probe the backend once to determine whether the full dataset fits within the
+  // client-side limit. When has_more is false the dataset is small enough to
+  // filter locally; otherwise the backend search API is used.
+  const { data: probeData } = useSearchQuery<SearchMetricNameResult>({
+    path: "/search/metric_names",
+    params: { limit: String(CLIENT_SIDE_LIMIT), case_sensitive: "false" },
+  });
+  const useClientSide = probeData === undefined || !probeData.hasMore;
+
+  // Backend search: only enabled when the dataset is too large for client-side
+  // and the user has actually typed something.
+  const searchQuery = debouncedFilterText.replace(/ /g, "");
+  const { data: backendData } = useSearchQuery<SearchMetricNameResult>({
+    path: "/search/metric_names",
+    params: {
+      search: searchQuery,
+      fuzz_alg: "subsequence",
+      fuzz_threshold: "0",
+      case_sensitive: "false",
+      limit: "100",
+    },
+    enabled: !useClientSide && searchQuery !== "",
+  });
+
   const searchMatches = useMemo(() => {
     if (debouncedFilterText === "") {
       return metricNames.map((m) => ({ original: m, rendered: m }));
     }
-    return getSearchMatches(debouncedFilterText, metricNames);
-  }, [debouncedFilterText, metricNames]);
+    if (useClientSide) {
+      return getSearchMatches(debouncedFilterText, metricNames);
+    }
+    // Backend mode: names are already filtered by the server; apply local fuzzy
+    // only for character-level highlighting.
+    const backendNames = (backendData?.results ?? []).map(
+      (r: SearchMetricNameResult) => r.name
+    );
+    return backendNames.map((name) => {
+      const m = fuz.match(searchQuery, name, { pre: fuzPre, post: fuzPost });
+      return m ?? { original: name, rendered: name };
+    });
+  }, [
+    debouncedFilterText,
+    metricNames,
+    useClientSide,
+    backendData,
+    searchQuery,
+  ]);
 
   const getMeta = (m: string) => {
     return (
