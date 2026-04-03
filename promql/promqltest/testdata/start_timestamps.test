@@ -1,0 +1,114 @@
+# Tests for rate(), irate() and increase() on cumulative.
+load 1m
+    cumulative@st  _ _ -30s-1mx2 -1m-1mx2 -59999ms-1mx2 -1s-1mx2 -1ms-1mx2
+    cumulative     _ _ 0+60x14
+
+eval range from 7m to 15m step 1m increase(cumulative[5m])
+    {}  420 780 675 675 1275 900 900 1725 1125
+
+eval range from 7m to 15m step 1m rate(cumulative[5m])
+    {}  1.4 2.6 2.25 2.25 4.25 3 3 5.75 3.75
+
+eval range from 7m to 15m step 1m irate(cumulative[5m])
+    {}  1 6 1 1 9 1 1 12 1
+
+# Subqueries cuts the propagation of start timestamps
+eval range from 7m to 15m step 1m increase(cumulative[5m:1m])
+    {}  300x8
+
+clear
+
+# Tests for rate(), irate() and increase() on deltas. Includes various approaches for start timestamps:
+# * ST_curr = T_prev (OTel)
+# * ST_curr = T_prev (GCP)
+# * ST = T - 1ms
+# * ST = T
+load 1m
+    delta{type="otel"}@st             _ _ -1mx15
+    delta{type="otel"}                _ _  60x15
+    delta{type="gcp"}@st              _ _ -59999msx15
+    delta{type="gcp"}                 _ _       60x15
+    delta{type="minimal_range"}@st    _ _ -1msx15
+    delta{type="minimal_range"}       _ _   60x15
+    delta{type="empty_range"}@st      _ _ -0msx15
+    delta{type="empty_range"}         _ _   60x15
+
+eval range from 10m to 15m step 1m increase(delta[5m])
+    {type="otel"}            300x5
+    {type="gcp"}             300x5
+    {type="minimal_range"}   300x5
+    {type="empty_range"}     300x5
+
+eval range from 10m to 15m step 1m rate(delta[5m])
+    {type="otel"}            1x5
+    {type="gcp"}             1x5
+    {type="minimal_range"}   1x5
+    {type="empty_range"}     1x5
+
+eval range from 10m to 15m step 1m irate(delta[5m])
+    {type="otel"}            1x5
+    {type="gcp"}             1x5
+    {type="minimal_range"}   1x5
+    {type="empty_range"}     1x5
+
+# Subqueries cuts the propagation of start timestamps
+eval range from 10m to 15m step 1m increase(delta[5m:1m])
+    {type="otel"}            0x5
+    {type="gcp"}             0x5
+    {type="minimal_range"}   0x5
+    {type="empty_range"}     0x5
+
+clear
+
+# Tests for rate(), irate() and increase() on cumulative histograms. Includes various approaches for start timestamps:
+# * ST_curr = T_prev (OTel)
+# * ST_curr = T_prev (GCP)
+# * ST = T - 1ms
+# * ST = T
+# TODO: start timestamps doesn't work for histograms yet, because the tsdb support is missing.
+load 1m
+    cumulative@st   _ _ -30s-1mx2 -1m-1mx2 -59999ms-1mx2 -1s-1mx2 -1ms-1mx2
+    cumulative      _ _ {{schema:0 sum:0 count:0}}+{{schema:0 sum:60 count:60}}x14
+
+eval range from 7m to 15m step 1m increase(cumulative[5m])
+    {} {{count:300 sum:300}}x8
+
+eval range from 7m to 15m step 1m rate(cumulative[5m])
+    {} {{count:1 sum:1}}x8
+
+eval range from 7m to 15m step 1m irate(cumulative[5m])
+    {} {{count:1 sum:1}}x8
+
+clear
+
+# Tests for rate(), irate() and increase() on delta histograms.
+# TODO: start timestamps doesn't work for histograms yet, because the tsdb support is missing.
+load 1m
+    delta{type="otel"}@st             _ _ -1mx15
+    delta{type="otel"}                _ _ {{schema:0 sum:60 count:60}}x15
+    delta{type="gcp"}@st              _ _ -59999msx15
+    delta{type="gcp"}                 _ _ {{schema:0 sum:60 count:60}}x15
+    delta{type="minimal_range"}@st    _ _ -1msx15
+    delta{type="minimal_range"}       _ _ {{schema:0 sum:60 count:60}}x15
+    delta{type="empty_range"}@st      _ _ -0msx15
+    delta{type="empty_range"}         _ _ {{schema:0 sum:60 count:60}}x15
+
+eval range from 10m to 15m step 1m increase(delta[5m])
+    {type="otel"}            {{sum:0 count:0}}x5
+    {type="gcp"}             {{sum:0 count:0}}x5
+    {type="minimal_range"}   {{sum:0 count:0}}x5
+    {type="empty_range"}     {{sum:0 count:0}}x5
+
+eval range from 10m to 15m step 1m rate(delta[5m])
+    {type="otel"}            {{schema:0 sum:0 count:0}}x5
+    {type="gcp"}             {{schema:0 sum:0 count:0}}x5
+    {type="minimal_range"}   {{schema:0 sum:0 count:0}}x5
+    {type="empty_range"}     {{schema:0 sum:0 count:0}}x5
+
+eval range from 10m to 15m step 1m irate(delta[5m])
+    {type="otel"}            {{schema:0 sum:0 count:0}}x5
+    {type="gcp"}             {{schema:0 sum:0 count:0}}x5
+    {type="minimal_range"}   {{schema:0 sum:0 count:0}}x5
+    {type="empty_range"}     {{schema:0 sum:0 count:0}}x5
+
+clear

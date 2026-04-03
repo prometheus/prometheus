@@ -214,6 +214,7 @@ type flagConfig struct {
 	// for ease of use.
 	enablePerStepStats       bool
 	enableConcurrentRuleEval bool
+	useStartTimestamps       bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -293,6 +294,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				logger.Info("Experimental start timestamp storage enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+			case "use-start-timestamps":
+				c.useStartTimestamps = true
+				logger.Info("Experimental usage of start timestamps in PromQL engine is enabled.")
 			case "delayed-compaction":
 				c.tsdb.EnableDelayedCompaction = true
 				logger.Info("Experimental delayed compaction is enabled.")
@@ -949,6 +953,7 @@ func main() {
 			EnablePerStepStats:       cfg.enablePerStepStats,
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
+			UseStartTimestamps:       cfg.useStartTimestamps,
 			FeatureRegistry:          features.DefaultRegistry,
 			Parser:                   promqlParser,
 		}

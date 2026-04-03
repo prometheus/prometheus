@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
@@ -107,6 +108,7 @@ func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Du
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 		EnableDelayedNameRemoval: true,
+		UseStartTimestamps:       true,
 		Parser:                   parser.NewParser(TestParserOpts),
 	})
 }
@@ -156,7 +158,12 @@ func GetBuiltInExprs() ([]string, error) {
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
 func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
-	RunBuiltinTestsWithStorage(t, engine, newTestStorage)
+	RunBuiltinTestsWithStorage(t, engine, func(t testing.TB) storage.Storage {
+		return teststorage.New(t, func(opt *tsdb.Options) {
+			opt.EnableSTStorage = true
+			opt.EnableXOR2Encoding = true
+		})
+	})
 }
 
 // RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
