@@ -62,20 +62,38 @@ paths:
                   required: false
                   explode: false
                   schema:
-                    type: string
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
                   examples:
-                    example:
-                        value: 30s
+                    duration:
+                        value: 1m30s
+                    number:
+                        value: "90"
                 - name: lookback_delta
                   in: query
                   description: Override the lookback period for this query. Optional.
                   required: false
                   explode: false
                   schema:
-                    type: string
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
                   examples:
-                    example:
+                    duration:
                         value: 5m
+                    number:
+                        value: "300"
                 - name: stats
                   in: query
                   description: When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.
@@ -248,10 +266,19 @@ paths:
                   required: true
                   explode: false
                   schema:
-                    type: string
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
                   examples:
-                    example:
+                    duration:
                         value: 15s
+                    number:
+                        value: "15"
                 - name: query
                   in: query
                   description: The query to execute.
@@ -268,20 +295,38 @@ paths:
                   required: false
                   explode: false
                   schema:
-                    type: string
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
                   examples:
-                    example:
-                        value: 30s
+                    duration:
+                        value: 1m30s
+                    number:
+                        value: "90"
                 - name: lookback_delta
                   in: query
                   description: Override the lookback period for this query. Optional.
                   required: false
                   explode: false
                   schema:
-                    type: string
+                    oneOf:
+                        - type: string
+                          format: duration
+                          description: Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).
+                        - type: number
+                          format: float
+                          description: Fractional number of seconds.
+                    description: Duration in human-readable or numeric format.
                   examples:
-                    example:
+                    duration:
                         value: 5m
+                    number:
+                        value: "300"
                 - name: stats
                   in: query
                   description: When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.

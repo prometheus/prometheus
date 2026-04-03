@@ -30,8 +30,8 @@ func (*OpenAPIBuilder) queryPath() *v3.PathItem {
 		queryParamWithExample("limit", "The maximum number of metrics to return.", false, integerSchema(), []example{{"example", 100}}),
 		queryParamWithExample("time", "The evaluation timestamp (optional, defaults to current time).", false, timestampSchema(), timestampExamples(exampleTime)),
 		queryParamWithExample("query", "The PromQL query to execute.", true, stringSchema(), []example{{"example", "up"}}),
-		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, stringSchema(), []example{{"example", "30s"}}),
-		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, stringSchema(), []example{{"example", "5m"}}),
+		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
+		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
 		queryParamWithExample("stats", "When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.", false, stringSchema(), []example{{"example", "all"}}),
 	}
 	return &v3.PathItem{
@@ -57,10 +57,10 @@ func (*OpenAPIBuilder) queryRangePath() *v3.PathItem {
 		queryParamWithExample("limit", "The maximum number of metrics to return.", false, integerSchema(), []example{{"example", 100}}),
 		queryParamWithExample("start", "The start time of the query.", true, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
 		queryParamWithExample("end", "The end time of the query.", true, timestampSchema(), timestampExamples(exampleTime)),
-		queryParamWithExample("step", "The step size of the query.", true, stringSchema(), []example{{"example", "15s"}}),
+		queryParamWithExample("step", "The step size of the query.", true, durationSchema(), []example{{"duration", "15s"}, {"number", "15"}}),
 		queryParamWithExample("query", "The query to execute.", true, stringSchema(), []example{{"example", "rate(prometheus_http_requests_total{handler=\"/api/v1/query\"}[5m])"}}),
-		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, stringSchema(), []example{{"example", "30s"}}),
-		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, stringSchema(), []example{{"example", "5m"}}),
+		queryParamWithExample("timeout", "Evaluation timeout. Optional. Defaults to and is capped by the value of the -query.timeout flag.", false, durationSchema(), []example{{"duration", "1m30s"}, {"number", "90"}}),
+		queryParamWithExample("lookback_delta", "Override the lookback period for this query. Optional.", false, durationSchema(), []example{{"duration", "5m"}, {"number", "300"}}),
 		queryParamWithExample("stats", "When provided, include query statistics in the response. The special value 'all' enables more comprehensive statistics.", false, stringSchema(), []example{{"example", "all"}}),
 	}
 	return &v3.PathItem{
