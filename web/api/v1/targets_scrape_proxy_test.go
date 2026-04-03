@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,11 +37,11 @@ import (
 )
 
 func TestTargetsScrapeProxyEndpoint(t *testing.T) {
-	var delay time.Duration
+	var handlerDelayNs atomic.Int64
 	metricsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if delay > 0 {
+		if d := handlerDelayNs.Load(); d > 0 {
 			select {
-			case <-time.After(delay):
+			case <-time.After(time.Duration(d)):
 			case <-r.Context().Done():
 				return
 			}
@@ -150,8 +151,8 @@ func TestTargetsScrapeProxyEndpoint(t *testing.T) {
 
 	t.Run("enabled_timeout_enforced", func(t *testing.T) {
 		api.featureRegistry.Set(features.API, "target_scrape_proxy", true)
-		delay = 100 * time.Millisecond
-		t.Cleanup(func() { delay = 0 })
+		handlerDelayNs.Store(int64(100 * time.Millisecond))
+		t.Cleanup(func() { handlerDelayNs.Store(0) })
 		w := makeReq(url.Values{
 			"scrapePool": {"test"},
 			"scrapeUrl":  {activeScrapeURL},
