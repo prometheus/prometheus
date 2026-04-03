@@ -96,7 +96,7 @@ type IndexReader interface {
 	// Series populates the given builder and chunk metas for the series identified
 	// by the reference.
 	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
-	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
+	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta, params ...index.SeriesParam) error
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
@@ -549,8 +549,8 @@ func (r blockIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	return r.ir.ShardedPostings(p, shardIndex, shardCount)
 }
 
-func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
-	if err := r.ir.Series(ref, builder, chks); err != nil {
+func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta, params ...index.SeriesParam) error {
+	if err := r.ir.Series(ref, builder, chks, params...); err != nil {
 		return fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 	return nil
