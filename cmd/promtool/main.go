@@ -180,6 +180,7 @@ func main() {
 	queryInstantCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
 	queryInstantExpr := queryInstantCmd.Arg("expr", "PromQL query expression.").Required().String()
 	queryInstantTime := queryInstantCmd.Flag("time", "Query evaluation time (RFC3339 or Unix timestamp).").String()
+	queryInstantHeaders := queryInstantCmd.Flag("header", "Extra headers to send to server.").StringMap()
 
 	queryRangeCmd := queryCmd.Command("range", "Run range query.")
 	queryRangeCmd.Arg("server", "Prometheus server to query.").Required().URLVar(&serverURL)
@@ -393,7 +394,7 @@ func main() {
 		os.Exit(PushMetrics(remoteWriteURL, httpRoundTripper, *pushMetricsHeaders, *pushMetricsTimeout, *pushMetricsProtoMsg, *pushMetricsLabels, *metricFiles...))
 
 	case queryInstantCmd.FullCommand():
-		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantExpr, *queryInstantTime, p))
+		os.Exit(QueryInstant(serverURL, httpRoundTripper, *queryInstantHeaders, *queryInstantExpr, *queryInstantTime, p))
 
 	case queryRangeCmd.FullCommand():
 		os.Exit(QueryRange(serverURL, httpRoundTripper, *queryRangeHeaders, *queryRangeExpr, *queryRangeBegin, *queryRangeEnd, *queryRangeStep, p))
