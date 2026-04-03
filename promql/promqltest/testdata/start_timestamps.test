@@ -12,6 +12,10 @@ eval range from 7m to 15m step 1m rate(cumulative[5m])
 eval range from 7m to 15m step 1m irate(cumulative[5m])
     {}  1 6 1 1 9 1 1 12 1
 
+# Subqueries cuts the propagation of start timestamps
+eval range from 7m to 15m step 1m increase(cumulative[5m:1m])
+    {}  300x8
+
 clear
 
 # Tests for rate(), irate() and increase() on deltas. Includes various approaches for start timestamps:
@@ -46,6 +50,13 @@ eval range from 10m to 15m step 1m irate(delta[5m])
     {type="gcp"}             1x5
     {type="minimal_range"}   1x5
     {type="empty_range"}     1x5
+
+# Subqueries cuts the propagation of start timestamps
+eval range from 10m to 15m step 1m increase(delta[5m:1m])
+    {type="otel"}            0x5
+    {type="gcp"}             0x5
+    {type="minimal_range"}   0x5
+    {type="empty_range"}     0x5
 
 clear
 
