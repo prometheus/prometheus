@@ -68,7 +68,7 @@ func TestRedactLabels(t *testing.T) {
 	// Proxy URL with credentials should be redacted.
 	lb.Set(proxyURLLabel, "http://user:secret@proxy.example.com:8080")
 	RedactLabels(lb)
-	require.Equal(t, "http://proxy.example.com:8080", lb.Get(proxyURLLabel))
+	require.Equal(t, "http://user:xxxxx@proxy.example.com:8080", lb.Get(proxyURLLabel))
 
 	// Proxy URL without credentials should be unchanged.
 	lb.Reset(labels.EmptyLabels())
@@ -114,9 +114,9 @@ func TestDiscoveredLabelsRedactsProxyURL(t *testing.T) {
 	)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
-	// DiscoveredLabels should have redacted proxy URL (no credentials).
+	// DiscoveredLabels should have redacted proxy URL (password masked).
 	discovered := target.DiscoveredLabels(lb)
-	require.Equal(t, "http://proxy.example.com:8080", discovered.Get(proxyURLLabel))
+	require.Equal(t, "http://user:xxxxx@proxy.example.com:8080", discovered.Get(proxyURLLabel))
 
 	// ProxyURL() should still return the full URL with credentials for functional use.
 	got := target.ProxyURL()
