@@ -57,6 +57,9 @@ const (
 	// DefaultCompactionDelayMaxPercent in percentage.
 	DefaultCompactionDelayMaxPercent = 10
 
+	// DefaultOutOfOrderCompactionInterval is the default interval duration for out-of-order head compaction.
+	DefaultOutOfOrderCompactionInterval = 2 * time.Hour
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -75,26 +78,27 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:              wlog.DefaultSegmentSize,
-		MaxBlockChunkSegmentSize:    chunks.DefaultChunkSegmentSize,
-		RetentionDuration:           int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:            DefaultBlockDuration,
-		MaxBlockDuration:            DefaultBlockDuration,
-		NoLockfile:                  false,
-		SamplesPerChunk:             DefaultSamplesPerChunk,
-		WALCompression:              compression.None,
-		StripeSize:                  DefaultStripeSize,
-		HeadChunksWriteBufferSize:   chunks.DefaultWriteBufferSize,
-		IsolationDisabled:           defaultIsolationDisabled,
-		HeadChunksWriteQueueSize:    chunks.DefaultWriteQueueSize,
-		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
-		EnableOverlappingCompaction: true,
-		EnableSharding:              false,
-		EnableDelayedCompaction:     false,
-		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
-		CompactionDelay:             time.Duration(0),
-		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
-		BlockReloadInterval:         1 * time.Minute,
+		WALSegmentSize:               wlog.DefaultSegmentSize,
+		MaxBlockChunkSegmentSize:     chunks.DefaultChunkSegmentSize,
+		RetentionDuration:            int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:             DefaultBlockDuration,
+		MaxBlockDuration:             DefaultBlockDuration,
+		NoLockfile:                   false,
+		SamplesPerChunk:              DefaultSamplesPerChunk,
+		WALCompression:               compression.None,
+		StripeSize:                   DefaultStripeSize,
+		HeadChunksWriteBufferSize:    chunks.DefaultWriteBufferSize,
+		IsolationDisabled:            defaultIsolationDisabled,
+		HeadChunksWriteQueueSize:     chunks.DefaultWriteQueueSize,
+		OutOfOrderCapMax:             DefaultOutOfOrderCapMax,
+		OutOfOrderCompactionInterval: DefaultOutOfOrderCompactionInterval,
+		EnableOverlappingCompaction:  true,
+		EnableSharding:               false,
+		EnableDelayedCompaction:      false,
+		CompactionDelayMaxPercent:    DefaultCompactionDelayMaxPercent,
+		CompactionDelay:              time.Duration(0),
+		PostingsDecoderFactory:       DefaultPostingsDecoderFactory,
+		BlockReloadInterval:          1 * time.Minute,
 	}
 }
 
@@ -195,6 +199,11 @@ type Options struct {
 	// OutOfOrderCapMax is maximum capacity for OOO chunks (in samples).
 	// If it is <=0, the default value is assumed.
 	OutOfOrderCapMax int64
+
+	// OutOfOrderCompactionInterval specifies the interval for automatic compaction of
+	// out-of-order head block.
+	// If it is <= 0, the default value is assumed.
+	OutOfOrderCompactionInterval time.Duration
 
 	// Compaction of overlapping blocks are allowed if EnableOverlappingCompaction is true.
 	// This is an optional flag for overlapping blocks.
@@ -356,9 +365,9 @@ type dbMetrics struct {
 	symbolTableSize                 prometheus.GaugeFunc
 	reloads                         prometheus.Counter
 	reloadsFailed                   prometheus.Counter
-	compactionsFailed               prometheus.Counter
-	compactionsTriggered            prometheus.Counter
-	compactionsSkipped              prometheus.Counter
+	compactionsFailed               prometheus.CounterVec
+	compactionsTriggered            prometheus.CounterVec
+	compactionsSkipped              prometheus.CounterVec
 	sizeRetentionCount              prometheus.Counter
 	timeRetentionCount              prometheus.Counter
 	startTime                       prometheus.GaugeFunc
@@ -404,22 +413,22 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_reloads_failures_total",
 		Help: "Number of times the database failed to reloadBlocks block data from disk.",
 	})
-	m.compactionsTriggered = prometheus.NewCounter(prometheus.CounterOpts{
+	m.compactionsTriggered = *prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_triggered_total",
 		Help: "Total number of triggered compactions for the partition.",
-	})
-	m.compactionsFailed = prometheus.NewCounter(prometheus.CounterOpts{
+	}, []string{"type"})
+	m.compactionsFailed = *prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_failed_total",
 		Help: "Total number of compactions that failed for the partition.",
-	})
+	}, []string{"type"})
 	m.timeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_time_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum time limit was exceeded.",
 	})
-	m.compactionsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
+	m.compactionsSkipped = *prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_skipped_total",
 		Help: "Total number of skipped compactions due to disabled auto compaction.",
-	})
+	}, []string{"type"})
 	m.startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_lowest_timestamp",
 		Help: "Lowest timestamp value stored in the database. The unit is decided by the library consumer.",
@@ -820,7 +829,6 @@ func (db *DBReadOnly) LastBlockID() (string, error) {
 	if lastBlockID == "" {
 		return "", errors.New("no blocks found")
 	}
-
 	return lastBlockID, nil
 }
 
@@ -913,6 +921,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	}
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
+	}
+	if opts.OutOfOrderCompactionInterval <= 0 {
+		opts.OutOfOrderCompactionInterval = DefaultOutOfOrderCompactionInterval
 	}
 	if opts.BlockReloadInterval < 1*time.Second {
 		opts.BlockReloadInterval = 1 * time.Second
@@ -1185,10 +1196,31 @@ func (db *DB) BlockMetas() []BlockMeta {
 	return metas
 }
 
+// calculateTimeUntilNextOOOCompaction calculates the time until the next out-of-order compaction.
+// We pass nowUnix as a parameter to make it easier to test.
+func calculateTimeUntilNextOOOCompaction(nowUnix int64, oooCompactionInterval time.Duration) time.Duration {
+	intvSec := int64(oooCompactionInterval / time.Second)
+	// For sub-second intervals, skip alignment.
+	if intvSec == 0 {
+		return oooCompactionInterval
+	}
+	// We align the out-of-order compactions to happen with in-order compaction, which happens midway
+	// between aligned intervals of time.
+	nextCompaction := (nowUnix / intvSec) * intvSec
+	nextCompaction += intvSec / 2
+	if nextCompaction < nowUnix {
+		nextCompaction += intvSec
+	}
+	return time.Duration(nextCompaction-nowUnix) * time.Second
+}
+
 func (db *DB) run(ctx context.Context) {
 	defer close(db.donec)
 
 	backoff := time.Duration(0)
+
+	nextOOOCompaction := calculateTimeUntilNextOOOCompaction(time.Now().Unix(), db.opts.OutOfOrderCompactionInterval)
+	oooScheduledCompact := time.NewTimer(nextOOOCompaction)
 
 	for {
 		select {
@@ -1234,8 +1266,24 @@ func (db *DB) run(ctx context.Context) {
 				}
 			}
 
+		case <-oooScheduledCompact.C:
+			db.metrics.compactionsTriggered.WithLabelValues("ooo").Inc()
+
+			db.autoCompactMtx.Lock()
+			if db.autoCompact {
+				if err := db.CompactOOOHead(ctx); err != nil {
+					db.logger.Error("ooo compaction failed", "err", err)
+				}
+			} else {
+				db.metrics.compactionsSkipped.WithLabelValues("ooo").Inc()
+			}
+			db.autoCompactMtx.Unlock()
+
+			// Reset the timer for the next OOO compaction.
+			oooScheduledCompact.Reset(db.opts.OutOfOrderCompactionInterval)
+
 		case <-db.compactc:
-			db.metrics.compactionsTriggered.Inc()
+			db.metrics.compactionsTriggered.WithLabelValues("head").Inc()
 
 			db.autoCompactMtx.Lock()
 			if db.autoCompact {
@@ -1246,7 +1294,7 @@ func (db *DB) run(ctx context.Context) {
 					backoff = 0
 				}
 			} else {
-				db.metrics.compactionsSkipped.Inc()
+				db.metrics.compactionsSkipped.WithLabelValues("head").Inc()
 			}
 			db.autoCompactMtx.Unlock()
 		case <-db.stopc:
@@ -1425,7 +1473,7 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 		if returnErr != nil && !errors.Is(returnErr, context.Canceled) {
 			// If we got an error because context was canceled then we're most likely
 			// shutting down TSDB and we don't need to report this on metrics
-			db.metrics.compactionsFailed.Inc()
+			db.metrics.compactionsFailed.WithLabelValues("head").Inc()
 		}
 	}()
 
@@ -1502,13 +1550,6 @@ func (db *DB) Compact(ctx context.Context) (returnErr error) {
 		)
 	}
 
-	if lastBlockMaxt != math.MinInt64 {
-		// The head was compacted, so we compact OOO head as well.
-		if err := db.compactOOOHead(ctx); err != nil {
-			return fmt.Errorf("compact ooo head: %w", err)
-		}
-	}
-
 	return db.compactBlocks()
 }
 
@@ -1532,7 +1573,11 @@ func (db *DB) CompactOOOHead(ctx context.Context) error {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
-	return db.compactOOOHead(ctx)
+	if err := db.compactOOOHead(ctx); err != nil {
+		db.metrics.compactionsFailed.WithLabelValues("ooo").Inc()
+		return err
+	}
+	return nil
 }
 
 // Callback for testing.

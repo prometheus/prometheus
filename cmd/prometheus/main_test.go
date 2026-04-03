@@ -684,6 +684,42 @@ func getMetricValue(t *testing.T, body io.Reader, metricType model.MetricType, m
 	return 0, errors.New("cannot get value")
 }
 
+// getMetricValueSum returns the sum of all metrics for a given metric name.
+// This is useful for CounterVec or GaugeVec metrics where we want the total across all label values.
+//
+// Key difference from getMetricValue: This function returns 0 (not an error) when the metric family
+// doesn't exist, which is appropriate for metrics that only appear after being incremented.
+func getMetricValueSum(t *testing.T, body io.Reader, metricType model.MetricType, metricName string) (float64, error) {
+	t.Helper()
+
+	p := expfmt.NewTextParser(model.UTF8Validation)
+	metricFamilies, err := p.TextToMetricFamilies(body)
+	if err != nil {
+		return 0, err
+	}
+	metricFamily, ok := metricFamilies[metricName]
+	if !ok {
+		return 0, nil
+	}
+	metrics := metricFamily.GetMetric()
+	if len(metrics) == 0 {
+		return 0, nil
+	}
+
+	var sum float64
+	for _, metric := range metrics {
+		switch metricType {
+		case model.MetricTypeGauge:
+			sum += metric.GetGauge().GetValue()
+		case model.MetricTypeCounter:
+			sum += metric.GetCounter().GetValue()
+		default:
+			t.Fatalf("metric type %s not supported", metricType)
+		}
+	}
+	return sum, nil
+}
+
 func TestRuntimeGOGCConfig(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
@@ -870,7 +906,7 @@ scrape_configs:
 				require.NotZero(t, series)
 
 				// No compaction must have failed
-				failures, err := getMetricValue(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_compactions_failed_total")
+				failures, err := getMetricValueSum(t, bytes.NewReader(metrics), model.MetricTypeCounter, "prometheus_tsdb_compactions_failed_total")
 				require.NoError(t, err)
 				require.Zero(t, failures)
 				return true
