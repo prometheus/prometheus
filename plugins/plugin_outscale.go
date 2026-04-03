@@ -11,24 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package timestamp
+//go:build !remove_all_sd || enable_outscale_sd
+
+package plugins
 
 import (
-	"math"
-	"time"
+	_ "github.com/prometheus/prometheus/discovery/outscale" // Register outscale plugin.
 )
-
-// FromTime returns a new millisecond timestamp from a time.
-func FromTime(t time.Time) int64 {
-	return t.UnixMilli()
-}
-
-// Time returns a new time.Time object from a millisecond timestamp, in UTC.
-func Time(ts int64) time.Time {
-	return time.UnixMilli(ts).UTC()
-}
-
-// FromFloatSeconds returns a millisecond timestamp from float seconds.
-func FromFloatSeconds(ts float64) int64 {
-	return int64(math.Round(ts * 1000))
-}

@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,7 +44,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 func alertsEqual(a, b []*Alert) error {
@@ -745,8 +745,13 @@ func TestHangingNotifier(t *testing.T) {
 		ctx, cancelSdManager := context.WithCancel(t.Context())
 		defer cancelSdManager()
 		reg := prometheus.NewRegistry()
-		sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
+		refreshMetrics := discovery.NewRefreshMetrics(reg)
+		mechanismMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
 		require.NoError(t, err)
+		sdMetrics := &discovery.SDMetrics{
+			MechanismMetrics: mechanismMetrics,
+			RefreshManager:   refreshMetrics,
+		}
 		sdManager := discovery.NewManager(
 			ctx,
 			promslog.NewNopLogger(),

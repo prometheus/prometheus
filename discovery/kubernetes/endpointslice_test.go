@@ -654,7 +654,7 @@ func TestEndpointsSlicesDiscoveryWithNodeMetadata(t *testing.T) {
 			},
 		},
 	}
-	objs := []runtime.Object{makeEndpointSliceV1("default"), makeNode("foobar", "", "", nodeLabels1, nil), makeNode("barbaz", "", "", nodeLabels2, nil), svc}
+	objs := []runtime.Object{makeEndpointSliceV1("default"), makeNode("foobar", "", "", nodeLabels1, nil, nil), makeNode("barbaz", "", "", nodeLabels2, nil, nil), svc}
 	n, _ := makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, metadataConfig, objs...)
 
 	k8sDiscoveryTest{
@@ -754,8 +754,8 @@ func TestEndpointsSlicesDiscoveryWithUpdatedNodeMetadata(t *testing.T) {
 			},
 		},
 	}
-	node1 := makeNode("foobar", "", "", nodeLabels1, nil)
-	node2 := makeNode("barbaz", "", "", nodeLabels2, nil)
+	node1 := makeNode("foobar", "", "", nodeLabels1, nil, nil)
+	node2 := makeNode("barbaz", "", "", nodeLabels2, nil, nil)
 	objs := []runtime.Object{makeEndpointSliceV1("default"), node1, node2, svc}
 	n, c := makeDiscoveryWithMetadata(RoleEndpointSlice, NamespaceDiscovery{}, metadataConfig, objs...)
 

@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -53,7 +54,6 @@ import (
 	"github.com/prometheus/prometheus/util/runutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
-	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -1173,8 +1173,13 @@ func runManagers(t *testing.T, ctx context.Context, opts *Options, app storage.A
 	opts.DiscoveryReloadInterval = model.Duration(100 * time.Millisecond)
 
 	reg := prometheus.NewRegistry()
-	sdMetrics, err := discovery.RegisterSDMetrics(reg, discovery.NewRefreshMetrics(reg))
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	mechanismMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
+	sdMetrics := &discovery.SDMetrics{
+		MechanismMetrics: mechanismMetrics,
+		RefreshManager:   refreshMetrics,
+	}
 	discoveryManager := discovery.NewManager(
 		ctx,
 		promslog.NewNopLogger(),

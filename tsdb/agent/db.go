@@ -555,12 +555,13 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 				}
 
 				series := &memSeries{ref: entry.Ref, lset: entry.Labels}
-				series, created := db.series.GetOrSet(series.lset.Hash(), series)
+				series, created := db.series.SetUnlessAlreadySet(series.lset.Hash(), series)
 
 				if !created {
-					// We don't need to check if entry.Ref exists / if the value is not series.ref because GetOrSet
-					// enforces that the same labels will always get the same Ref. If we did not create a new ref
-					// the only possible ref it should ever be in the WAL is series.ref.
+					// We don't need to check if entry.Ref exists / if the value is not series.ref because
+					// SetUnlessAlreadySet is "first insertion wins": during single-threaded WAL replay the
+					// first ref written for a given label set is the canonical one. Any later WAL record for
+					// the same labels must carry that same ref, so series.ref is the only valid ref here.
 					duplicateRefToValidRef[entry.Ref] = series.ref
 
 					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
@@ -880,16 +881,9 @@ func (a *appender) SetOptions(opts *storage.AppendOptions) {
 }
 
 func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	// series references and chunk references are identical for agent mode.
-	headRef := chunks.HeadSeriesRef(ref)
-
-	series := a.series.GetByID(headRef)
-	if series == nil {
-		var err error
-		series, err = a.getOrCreate(l)
-		if err != nil {
-			return 0, err
-		}
+	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	if err != nil {
+		return 0, err
 	}
 
 	series.Lock()
@@ -912,7 +906,14 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, err error) {
+func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (series *memSeries, err error) {
+	// Fastest path: caller already has a valid ref from a prior append.
+	if ref != 0 {
+		if series = a.series.GetByID(ref); series != nil {
+			return series, nil
+		}
+	}
+
 	// Ensure no empty or duplicate labels have gotten through. This mirrors the
 	// equivalent validation code in the TSDB's headAppender.
 	l = l.WithoutEmpty()
@@ -926,15 +927,27 @@ func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, err erro
 
 	hash := l.Hash()
 
-	series = a.series.GetByHash(hash, l)
-	if series != nil {
+	// Fast path: series already exists. This avoids burning a ref via
+	// nextRef.Inc() on every append for an already-known series.
+	if series = a.series.GetByHash(hash, l); series != nil {
 		return series, nil
 	}
 
-	ref := chunks.HeadSeriesRef(a.nextRef.Inc())
-	series = &memSeries{ref: ref, lset: l, lastTs: math.MinInt64}
-	a.series.Set(hash, series)
+	// Note this ref is wasted if a concurrent goroutine inserts the same series first.
+	newRef := chunks.HeadSeriesRef(a.nextRef.Inc())
+	var created bool
+	series, created = a.series.SetUnlessAlreadySet(hash, &memSeries{ref: newRef, lset: l, lastTs: math.MinInt64})
+	if !created {
+		// A concurrent goroutine inserted this series first; skip the WAL
+		// record and metric update.
+		return series, nil
+	}
 
+	// Known limitation: unlike the TSDB head, agent memSeries has no
+	// pendingCommit flag. Between this point and the first sample write that
+	// updates series.lastTs, GC may remove the series (lastTs == math.MinInt64
+	// satisfies mint > lastTs). The WAL record appended below would then
+	// reference a ref with no corresponding in-memory series.
 	a.pendingSeries = append(a.pendingSeries, record.RefSeries{
 		Ref:    series.ref,
 		Labels: l,
@@ -1015,16 +1028,9 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 		}
 	}
 
-	// series references and chunk references are identical for agent mode.
-	headRef := chunks.HeadSeriesRef(ref)
-
-	series := a.series.GetByID(headRef)
-	if series == nil {
-		var err error
-		series, err = a.getOrCreate(l)
-		if err != nil {
-			return 0, err
-		}
+	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	if err != nil {
+		return 0, err
 	}
 
 	series.Lock()
@@ -1078,13 +1084,9 @@ func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.L
 		return 0, storage.ErrSTNewerThanSample
 	}
 
-	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
-	if series == nil {
-		var err error
-		series, err = a.getOrCreate(l)
-		if err != nil {
-			return 0, err
-		}
+	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	if err != nil {
+		return 0, err
 	}
 
 	series.Lock()
@@ -1130,13 +1132,9 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 		return 0, storage.ErrSTNewerThanSample
 	}
 
-	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
-	if series == nil {
-		var err error
-		series, err = a.getOrCreate(l)
-		if err != nil {
-			return 0, err
-		}
+	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	if err != nil {
+		return 0, err
 	}
 
 	series.Lock()

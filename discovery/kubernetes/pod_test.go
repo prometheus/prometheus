@@ -483,7 +483,7 @@ func TestPodDiscoveryWithNodeMetadata(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			nodes := makeNode("testnode", "", "", nodeLbls, nil)
+			nodes := makeNode("testnode", "", "", nodeLbls, nil, nil)
 			c.CoreV1().Nodes().Create(context.Background(), nodes, metav1.CreateOptions{})
 
 			pods := makePods("default")
@@ -504,14 +504,14 @@ func TestPodDiscoveryWithNodeMetadataUpdateNode(t *testing.T) {
 		discovery: n,
 		beforeRun: func() {
 			oldNodeLbls := map[string]string{"l1": "v1"}
-			nodes := makeNode("testnode", "", "", oldNodeLbls, nil)
+			nodes := makeNode("testnode", "", "", oldNodeLbls, nil, nil)
 			c.CoreV1().Nodes().Create(context.Background(), nodes, metav1.CreateOptions{})
 		},
 		afterStart: func() {
 			pods := makePods("default")
 			c.CoreV1().Pods(pods.Namespace).Create(context.Background(), pods, metav1.CreateOptions{})
 
-			nodes := makeNode("testnode", "", "", nodeLbls, nil)
+			nodes := makeNode("testnode", "", "", nodeLbls, nil, nil)
 			c.CoreV1().Nodes().Update(context.Background(), nodes, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
@@ -633,8 +633,8 @@ func TestPodDiscoveryWithUpdatedNamespaceMetadata(t *testing.T) {
 func TestPodDiscoveryWithNodeSelector(t *testing.T) {
 	t.Parallel()
 
-	workerNode := makeNode("worker-node", "10.0.0.1", "", map[string]string{"node-type": "worker"}, nil)
-	filteredNode := makeNode("filtered-node", "10.0.0.2", "", map[string]string{"node-type": "master"}, nil)
+	workerNode := makeNode("worker-node", "10.0.0.1", "", map[string]string{"node-type": "worker"}, nil, nil)
+	filteredNode := makeNode("filtered-node", "10.0.0.2", "", map[string]string{"node-type": "master"}, nil, nil)
 
 	attachMetadata := AttachMetadataConfig{
 		Node: true, // necessary for node role selectos to work for pod role
