@@ -61,6 +61,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -9569,19 +9570,19 @@ func TestStaleSeriesCompaction(t *testing.T) {
 			}
 		}
 
-		querier, err := NewBlockQuerier(db.Blocks()[0], 0, 1000)
+		querier1, err := NewBlockQuerier(db.Blocks()[0], 0, 1000)
 		require.NoError(t, err)
 		t.Cleanup(func() {
-			querier.Close()
+			querier1.Close()
 		})
-		seriesSet := queryWithoutReplacingNaNs(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
+		seriesSet := queryWithoutReplacingNaNs(t, querier1, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
 
-		querier, err = NewBlockQuerier(db.Blocks()[1], 1000, 2000)
+		querier2, err := NewBlockQuerier(db.Blocks()[1], 1000, 2000)
 		require.NoError(t, err)
 		t.Cleanup(func() {
-			querier.Close()
+			querier2.Close()
 		})
-		seriesSet2 := queryWithoutReplacingNaNs(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
+		seriesSet2 := queryWithoutReplacingNaNs(t, querier2, labels.MustNewMatcher(labels.MatchRegexp, "name", "series.*"))
 		for k, v := range seriesSet2 {
 			seriesSet[k] = append(seriesSet[k], v...)
 		}
@@ -9687,4 +9688,42 @@ func TestBeyondSizeRetentionWithPercentage(t *testing.T) {
 	deletable = BeyondSizeRetention(db, blocks)
 	require.Len(t, deletable, 1)
 	require.Contains(t, deletable, ulid)
+}
+
+func TestBlockSizeIncludesSeriesMetadata(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a block with some series data and a metadata sidecar file.
+	blockDir := createBlock(t, dir, genSeries(1, 1, 0, 100))
+	mem := seriesmetadata.NewMemSeriesMetadata()
+	mem.SetVersionedResource(1, &seriesmetadata.VersionedResource{
+		Versions: []*seriesmetadata.ResourceVersion{
+			{
+				MinTime: 0, MaxTime: 100,
+				Identifying: map[string]string{"service.name": "api"},
+				Descriptive: map[string]string{"host.name": "host1"},
+			},
+		},
+	})
+	metaSize, err := seriesmetadata.WriteFile(promslog.NewNopLogger(), blockDir, mem)
+	require.NoError(t, err)
+	require.Positive(t, metaSize)
+
+	b, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
+	require.NoError(t, err)
+
+	// Size() includes metadata file size even before lazy load (stat at open time).
+	blockSize := b.Size()
+
+	// Close the block before removing the metadata file; on Windows,
+	// open file handles prevent deletion.
+	require.NoError(t, b.Close())
+	require.NoError(t, os.Remove(filepath.Join(blockDir, "series_metadata.parquet")))
+	bNoMeta, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
+	require.NoError(t, err)
+	defer bNoMeta.Close()
+
+	baseSizeNoMeta := bNoMeta.Size()
+	require.Greater(t, blockSize, baseSizeNoMeta)
+	require.Equal(t, metaSize, blockSize-baseSizeNoMeta)
 }

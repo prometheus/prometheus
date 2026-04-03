@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minimum Go version is met.
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
@@ -255,6 +256,27 @@ type Options struct {
 	// is implemented.
 	EnableMetadataWALRecords bool
 
+	// EnableNativeMetadata represents 'native-metadata' feature flag.
+	// When enabled, OTel resource/scope attributes are persisted per time series
+	// in Parquet-based metadata files alongside TSDB blocks.
+	EnableNativeMetadata bool
+
+	// EnableScopeMetadata controls whether scope metadata (name, version, schemaURL,
+	// custom attributes) is stored and replayed. When false, scope records are
+	// skipped during WAL replay and ingestion, saving significant memory.
+	// Requires EnableNativeMetadata to have any effect.
+	EnableScopeMetadata bool
+
+	// IndexedResourceAttrs specifies additional descriptive resource attribute
+	// names to include in the inverted index beyond identifying attributes
+	// (which are always indexed). nil means index only identifying attributes.
+	IndexedResourceAttrs map[string]struct{}
+
+	// EnableResourceAttrIndex enables the resource attribute inverted index
+	// for O(1) reverse lookup by attribute key:value. When disabled, the index
+	// is not built in memory or written to Parquet. Default: true.
+	EnableResourceAttrIndex bool
+
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
@@ -349,6 +371,20 @@ type DB struct {
 	blockChunkQuerierFunc BlockChunkQuerierFunc
 
 	fsSizeFunc FsSizeFunc
+
+	// Blocks-only metadata cache — avoids re-merging blocks on every request.
+	// metadataCache is read lock-free via atomic load; metadataBuildMtx prevents
+	// thundering herd on cache miss. Head data is layered on top at query time.
+	metadataCache    atomic.Value // stores *metadataCacheEntry
+	metadataBuildMtx sync.Mutex
+}
+
+// metadataCacheEntry holds the cached blocks-only merged metadata reader.
+// The cache is keyed solely by block ULIDs — it never expires for the same
+// block set. Head metadata is always served live via layered reader.
+type metadataCacheEntry struct {
+	reader    seriesmetadata.Reader
+	blocksKey string // sorted block ULIDs fingerprint
 }
 
 type dbMetrics struct {
@@ -370,6 +406,7 @@ type dbMetrics struct {
 	staleSeriesCompactionsTriggered prometheus.Counter
 	staleSeriesCompactionsFailed    prometheus.Counter
 	staleSeriesCompactionDuration   prometheus.Histogram
+	seriesMetadataBytes             prometheus.Gauge
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -474,6 +511,10 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
+	m.seriesMetadataBytes = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_tsdb_storage_series_metadata_bytes",
+		Help: "The number of bytes used by series metadata (Parquet) files across all blocks.",
+	})
 
 	if r != nil {
 		r.MustRegister(
@@ -495,6 +536,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.staleSeriesCompactionsTriggered,
 			m.staleSeriesCompactionsFailed,
 			m.staleSeriesCompactionDuration,
+			m.seriesMetadataBytes,
 		)
 	}
 	return m
@@ -1017,6 +1059,9 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			PD:                          opts.PostingsDecoderFactory,
 			UseUncachedIO:               opts.UseUncachedIO,
 			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
+			EnableNativeMetadata:        opts.EnableNativeMetadata,
+			IndexedResourceAttrs:        opts.IndexedResourceAttrs,
+			EnableResourceAttrIndex:     opts.EnableResourceAttrIndex,
 		})
 	}
 	if err != nil {
@@ -1088,6 +1133,10 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableXOR2Encoding.Store(opts.EnableXOR2Encoding)
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableFastStartup = opts.EnableFastStartup
+	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
+	headOpts.EnableScopeMetadata = opts.EnableScopeMetadata
+	headOpts.IndexedResourceAttrs = opts.IndexedResourceAttrs
+	headOpts.EnableResourceAttrIndex = opts.EnableResourceAttrIndex
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}
@@ -1183,6 +1232,124 @@ func (db *DB) BlockMetas() []BlockMeta {
 		metas = append(metas, b.Meta())
 	}
 	return metas
+}
+
+// cachedMetadataReader wraps a Reader and ignores Close() calls,
+// since the underlying reader is shared across callers via the cache.
+type cachedMetadataReader struct {
+	seriesmetadata.Reader
+}
+
+func (*cachedMetadataReader) Close() error { return nil }
+
+// SeriesMetadata returns a layered reader combining blocks (cached) and head (live).
+// Returns an empty reader when native metadata is not enabled.
+//
+// The blocks-only cache never expires for the same block set — it invalidates
+// only on compaction/block reload. Head metadata updates are immediately
+// visible without waiting for any TTL.
+//
+// NOTE: The returned reader's ref values are labels hashes, NOT series refs.
+// The merged result spans multiple indexes so no single series ref is valid.
+// Callers should use the resource/scope iteration methods.
+func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
+	if !db.opts.EnableNativeMetadata {
+		return seriesmetadata.NewMemSeriesMetadata(), nil
+	}
+
+	// Build fingerprint from current block set.
+	blocks := db.Blocks()
+	blocksKey := blocksFingerprint(blocks)
+
+	// Fast path: check blocks cache atomically (no lock, no TTL).
+	var blocksMerged seriesmetadata.Reader
+	if v := db.metadataCache.Load(); v != nil {
+		if entry := v.(*metadataCacheEntry); entry.blocksKey == blocksKey {
+			blocksMerged = entry.reader
+		}
+	}
+
+	if blocksMerged == nil {
+		// Cache miss — acquire build mutex to prevent thundering herd.
+		db.metadataBuildMtx.Lock()
+
+		// Re-check after acquiring lock.
+		if v := db.metadataCache.Load(); v != nil {
+			if entry := v.(*metadataCacheEntry); entry.blocksKey == blocksKey {
+				blocksMerged = entry.reader
+			}
+		}
+		if blocksMerged == nil {
+			merged, err := db.mergeBlockMetadata(blocks)
+			if err != nil {
+				db.metadataBuildMtx.Unlock()
+				return nil, err
+			}
+			db.metadataCache.Store(&metadataCacheEntry{
+				reader:    merged,
+				blocksKey: blocksKey,
+			})
+			blocksMerged = merged
+		}
+		db.metadataBuildMtx.Unlock()
+	}
+
+	headReader, err := db.head.SeriesMetadata()
+	if err != nil {
+		return nil, err
+	}
+
+	return seriesmetadata.NewLayeredReader(&cachedMetadataReader{blocksMerged}, headReader), nil
+}
+
+// blocksFingerprint builds a cache key from sorted block ULIDs.
+func blocksFingerprint(blocks []*Block) string {
+	if len(blocks) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, blk := range blocks {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(blk.Meta().ULID.String())
+	}
+	return b.String()
+}
+
+// mergeBlockMetadata merges metadata from all blocks into a single reader.
+// Head metadata is not included — it is layered on top at query time.
+//
+// Instead of deep-copying all block metadata into a single MemSeriesMetadata
+// (which doubled peak memory), this chains block readers using NewLayeredReader.
+// Each block's parquetReader already has data loaded + inverted index populated
+// from Parquet (in denormalizeRows Phase 4).
+func (*DB) mergeBlockMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
+	var readers []seriesmetadata.Reader
+	for _, b := range blocks {
+		mr, err := b.InternalSeriesMetadata()
+		if err != nil {
+			return nil, fmt.Errorf("get block series metadata: %w", err)
+		}
+		hasData := false
+		for _, kind := range seriesmetadata.AllKinds() {
+			if mr.KindLen(kind.ID()) > 0 {
+				hasData = true
+				break
+			}
+		}
+		if hasData {
+			readers = append(readers, &cachedMetadataReader{mr})
+		}
+	}
+	if len(readers) == 0 {
+		return seriesmetadata.NewMemSeriesMetadata(), nil
+	}
+	result := readers[0]
+	for _, r := range readers[1:] {
+		result = seriesmetadata.NewLayeredReader(result, r)
+	}
+	return result, nil
 }
 
 func (db *DB) run(ctx context.Context) {
@@ -1852,8 +2019,9 @@ func (db *DB) reloadBlocks() (err error) {
 	}
 
 	var (
-		toLoad     []*Block
-		blocksSize int64
+		toLoad             []*Block
+		blocksSize         int64
+		seriesMetadataSize int64
 	)
 	// All deletable blocks should be unloaded.
 	// NOTE: We need to loop through loadable one more time as there might be loadable ready to be removed (replaced by compacted block).
@@ -1865,8 +2033,10 @@ func (db *DB) reloadBlocks() (err error) {
 
 		toLoad = append(toLoad, block)
 		blocksSize += block.Size()
+		seriesMetadataSize += block.numBytesSeriesMetadata
 	}
 	db.metrics.blocksBytes.Set(float64(blocksSize))
+	db.metrics.seriesMetadataBytes.Set(float64(seriesMetadataSize))
 
 	slices.SortFunc(toLoad, func(a, b *Block) int {
 		switch {
@@ -2209,6 +2379,20 @@ func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
 // Head returns the databases's head.
 func (db *DB) Head() *Head {
 	return db.head
+}
+
+// ResourceHasContentHash reports whether the series at labelsHash has
+// a resource version with the given contentHash. Convenience pass-through
+// to Head.ResourceHasContentHash.
+func (db *DB) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
+	return db.head.ResourceHasContentHash(labelsHash, contentHash)
+}
+
+// ScopeHasContentHash reports whether the series at labelsHash has
+// a scope version with the given contentHash. Convenience pass-through
+// to Head.ScopeHasContentHash.
+func (db *DB) ScopeHasContentHash(labelsHash, contentHash uint64) bool {
+	return db.head.ScopeHasContentHash(labelsHash, contentHash)
 }
 
 // Close the partition.

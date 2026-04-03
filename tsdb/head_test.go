@@ -54,6 +54,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -134,6 +135,10 @@ func populateTestWL(t testing.TB, w *wlog.WL, recs []any, buf []byte, enableSTSt
 			buf = enc.MmapMarkers(v, buf)
 		case []record.RefMetadata:
 			buf = enc.Metadata(v, buf)
+		case []record.RefResource:
+			buf = enc.Resources(v, buf)
+		case []record.RefScope:
+			buf = enc.Scopes(v, buf)
 		default:
 			continue
 		}
@@ -184,6 +189,14 @@ func readTestWAL(t testing.TB, dir string) (recs []any) {
 			exemplars, err := dec.Exemplars(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, exemplars)
+		case record.ResourceUpdate:
+			resources, err := dec.Resources(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, resources)
+		case record.ScopeUpdate:
+			scopes, err := dec.Scopes(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, scopes)
 		default:
 			require.Fail(t, "unknown record type")
 		}
@@ -782,6 +795,10 @@ func TestHead_ReadWAL(t *testing.T) {
 				// Only the duplicate series record should have a WAL expiry set.
 				_, ok = head.getWALExpiry(50)
 				require.False(t, ok)
+
+				require.NotNil(t, s100.meta)
+				require.Equal(t, "foo", s100.meta.Unit)
+				require.Equal(t, "total foo", s100.meta.Help)
 
 				expandChunk := func(c chunkenc.Iterator) (x []sample) {
 					for c.Next() == chunkenc.ValFloat {
@@ -8065,4 +8082,307 @@ func TestHead_FindLastSeriesID(t *testing.T) {
 	id, err = head.findLastSeriesID(mockState, last)
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), id, "Should find ID 2 even when state file's last segment is the newest segment")
+}
+
+func TestResourceAndScopeWALReplay(t *testing.T) {
+	dir := t.TempDir()
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableNativeMetadata = true
+	opts.ChunkDirRoot = dir
+
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+
+	head, err := NewHead(nil, nil, wal, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	ctx := context.Background()
+	lset := labels.FromStrings("a", "b")
+
+	// Create a series and commit a sample so the series exists.
+	app := head.Appender(ctx)
+	ref, appErr := app.Append(0, lset, 100, 1.0)
+	require.NoError(t, appErr)
+	require.NoError(t, app.Commit())
+
+	// Add a resource update.
+	app = head.Appender(ctx)
+	_, appErr = app.Append(ref, lset, 200, 2.0)
+	require.NoError(t, appErr)
+	_, appErr = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "frontend"},
+		map[string]string{"host.name": "node-1"},
+		[]storage.EntityData{{Type: "resource", ID: map[string]string{"service.name": "frontend"}}},
+		200,
+	)
+	require.NoError(t, appErr)
+	require.NoError(t, app.Commit())
+
+	// Verify resource in shared MemStore.
+	hash := labels.StableHash(lset)
+	vr, vrOK := head.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vrOK)
+	require.Len(t, vr.Versions, 1)
+	require.Equal(t, "frontend", vr.Versions[0].Identifying["service.name"])
+
+	// Close the head and replay WAL into a new head using the same dir.
+	require.NoError(t, head.Close())
+
+	wal2, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+
+	head2, err := NewHead(nil, nil, wal2, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = head2.Close() })
+	require.NoError(t, head2.Init(0))
+
+	// The replayed head should have the resource in its shared store.
+	vr2, vr2OK := head2.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vr2OK, "resource should survive WAL replay")
+	require.Len(t, vr2.Versions, 1)
+	require.Equal(t, "frontend", vr2.Versions[0].Identifying["service.name"])
+	require.Equal(t, "node-1", vr2.Versions[0].Descriptive["host.name"])
+}
+
+func TestResourceAndScopeRollback(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableNativeMetadata = true
+	head, _ := newTestHeadWithOptions(t, compression.None, opts)
+	require.NoError(t, head.Init(0))
+
+	ctx := context.Background()
+	lset := labels.FromStrings("a", "b")
+
+	// Create a series.
+	app := head.Appender(ctx)
+	ref, err := app.Append(0, lset, 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Start a new appender with a resource update, then rollback.
+	app = head.Appender(ctx)
+	_, err = app.Append(ref, lset, 200, 2.0)
+	require.NoError(t, err)
+	_, err = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "frontend"},
+		map[string]string{"host.name": "node-1"},
+		nil,
+		200,
+	)
+	require.NoError(t, err)
+	require.NoError(t, app.Rollback())
+
+	// The shared store should NOT have a resource after rollback.
+	hash := labels.StableHash(lset)
+	_, resOK := head.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.False(t, resOK, "resource must not be set after rollback")
+}
+
+func TestResourceDedupInV1Appender(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableNativeMetadata = true
+	head, _ := newTestHeadWithOptions(t, compression.None, opts)
+	require.NoError(t, head.Init(0))
+
+	ctx := context.Background()
+	lset := labels.FromStrings("a", "b")
+
+	// Create a series.
+	app := head.Appender(ctx)
+	ref, err := app.Append(0, lset, 100, 1.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Call UpdateResource twice for the same series; second should be deduped.
+	app = head.Appender(ctx)
+	_, err = app.Append(ref, lset, 200, 2.0)
+	require.NoError(t, err)
+	_, err = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "v1"},
+		map[string]string{},
+		nil,
+		200,
+	)
+	require.NoError(t, err)
+	_, err = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "v2"},
+		map[string]string{},
+		nil,
+		200,
+	)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Only the first resource update should have been applied.
+	hash := labels.StableHash(lset)
+	vr, vrOK := head.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vrOK)
+	require.Len(t, vr.Versions, 1)
+	require.Equal(t, "v1", vr.Versions[0].Identifying["service.name"])
+}
+
+func TestResourceAndScopeWALReplayWithScope(t *testing.T) {
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableNativeMetadata = true
+	opts.EnableScopeMetadata = true
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+	// Manually populate the WAL with series + resource + scope records.
+	populateTestWL(t, w, []any{
+		[]record.RefSeries{
+			{Ref: 1, Labels: labels.FromStrings("a", "b")},
+		},
+		[]record.RefSample{
+			{Ref: 1, T: 100, V: 1.0},
+		},
+		[]record.RefResource{
+			{
+				Ref:         1,
+				MinTime:     100,
+				MaxTime:     100,
+				Identifying: map[string]string{"service.name": "frontend"},
+				Descriptive: map[string]string{"host.name": "node-1"},
+			},
+		},
+		[]record.RefScope{
+			{
+				Ref:       1,
+				MinTime:   100,
+				MaxTime:   100,
+				Name:      "go.opentelemetry.io/instrumentation",
+				Version:   "0.42.0",
+				SchemaURL: "https://opentelemetry.io/schemas/1.17.0",
+				Attrs:     map[string]string{"lib.custom": "val"},
+			},
+		},
+	}, nil, false)
+
+	require.NoError(t, head.Init(0))
+
+	// Compute the labels hash for series ref=1.
+	s := head.series.getByID(1)
+	require.NotNil(t, s)
+	s.Lock()
+	hash := labels.StableHash(s.lset)
+	s.Unlock()
+
+	// Resource should be replayed in shared store.
+	vr, vrOK := head.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vrOK)
+	require.Len(t, vr.Versions, 1)
+	require.Equal(t, "frontend", vr.Versions[0].Identifying["service.name"])
+
+	// Scope should be replayed in shared store.
+	vs, vsOK := head.seriesMeta.ScopeStore().GetVersioned(hash)
+	require.True(t, vsOK)
+	require.Len(t, vs.Versions, 1)
+	require.Equal(t, "go.opentelemetry.io/instrumentation", vs.Versions[0].Name)
+	require.Equal(t, "0.42.0", vs.Versions[0].Version)
+	require.Equal(t, "val", vs.Versions[0].Attrs["lib.custom"])
+
+	_ = w
+	_ = seriesmetadata.EntityTypeResource // Ensure import is used.
+}
+
+func TestResourceAndScopeWALFilterUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.EnableNativeMetadata = true
+	opts.ChunkDirRoot = dir
+
+	wal, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+
+	head, err := NewHead(nil, nil, wal, nil, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	ctx := context.Background()
+	lset := labels.FromStrings("a", "b")
+
+	// 1. Append sample + resource → Commit.
+	app := head.Appender(ctx)
+	ref, appErr := app.Append(0, lset, 100, 1.0)
+	require.NoError(t, appErr)
+	_, appErr = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "frontend"},
+		map[string]string{"host.name": "node-1"},
+		nil,
+		100,
+	)
+	require.NoError(t, appErr)
+	require.NoError(t, app.Commit())
+
+	// Verify resource exists in shared store.
+	hash := labels.StableHash(lset)
+	vr, vrOK := head.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vrOK)
+	require.Len(t, vr.Versions, 1)
+
+	// No WAL filtering yet on first commit (nothing stored before).
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.resourceUpdatesWALFiltered))
+
+	// 2. Append sample + SAME resource content → Commit.
+	app = head.Appender(ctx)
+	_, appErr = app.Append(ref, lset, 200, 2.0)
+	require.NoError(t, appErr)
+	_, appErr = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "frontend"},
+		map[string]string{"host.name": "node-1"},
+		nil,
+		200,
+	)
+	require.NoError(t, appErr)
+	require.NoError(t, app.Commit())
+
+	// The unchanged entry should have been WAL-filtered.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.resourceUpdatesWALFiltered))
+	// Committed metric counts all (changed + unchanged).
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(head.metrics.resourceUpdatesCommitted))
+
+	// Time range should have been extended in-place.
+	vr, _ = head.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.Len(t, vr.Versions, 1)
+	require.Equal(t, int64(100), vr.Versions[0].MinTime)
+	require.Equal(t, int64(200), vr.Versions[0].MaxTime)
+
+	// 3. Close head, replay WAL into new head. The filtered entry should
+	//    not be in the WAL, but the resource should still exist from the first record.
+	require.NoError(t, head.Close())
+
+	wal2, err := wlog.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compression.None)
+	require.NoError(t, err)
+
+	head2, err := NewHead(nil, nil, wal2, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = head2.Close() })
+	require.NoError(t, head2.Init(0))
+
+	vr2, vr2OK := head2.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.True(t, vr2OK)
+	require.Len(t, vr2.Versions, 1)
+	require.Equal(t, "frontend", vr2.Versions[0].Identifying["service.name"])
+	require.Equal(t, "node-1", vr2.Versions[0].Descriptive["host.name"])
+
+	// 4. Append sample + DIFFERENT resource → Commit.
+	app = head2.Appender(ctx)
+	_, appErr = app.Append(ref, lset, 300, 3.0)
+	require.NoError(t, appErr)
+	_, appErr = app.UpdateResource(ref, lset,
+		map[string]string{"service.name": "backend"},
+		map[string]string{"host.name": "node-2"},
+		nil,
+		300,
+	)
+	require.NoError(t, appErr)
+	require.NoError(t, app.Commit())
+
+	// Changed content should NOT be filtered.
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head2.metrics.resourceUpdatesWALFiltered))
+
+	// Two resource versions should exist in shared store.
+	vr2, _ = head2.seriesMeta.ResourceStore().GetVersioned(hash)
+	require.Len(t, vr2.Versions, 2)
+	require.Equal(t, "frontend", vr2.Versions[0].Identifying["service.name"])
+	require.Equal(t, "backend", vr2.Versions[1].Identifying["service.name"])
 }

@@ -127,6 +127,7 @@ func (rw *rwExporter) ConsumeMetrics(ctx context.Context, md pmetric.Metrics) er
 		EnableTypeAndUnitLabels:              rw.enableTypeAndUnitLabels,
 		LabelNameUnderscoreSanitization:      otlpCfg.LabelNameUnderscoreSanitization,
 		LabelNamePreserveMultipleUnderscores: otlpCfg.LabelNamePreserveMultipleUnderscores,
+		DisableTargetInfo:                    otlpCfg.DisableTargetInfo,
 	})
 
 	defer func() {
