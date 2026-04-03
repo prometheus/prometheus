@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/promslog"
@@ -101,7 +102,7 @@ func NewManager(ctx context.Context, logger *slog.Logger, registerer prometheus.
 		targets:     make(map[poolKey]map[string]*targetgroup.Group),
 		ctx:         ctx,
 		updatert:    5 * time.Second,
-		triggerSend: make(chan struct{}, 1),
+		triggerSend: make(chan struct{}, 1), // At least one element to ensure we can do a delayed read.
 		registerer:  registerer,
 		sdMetrics:   sdMetrics,
 	}
@@ -408,30 +409,43 @@ func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targ
 }
 
 func (m *Manager) sender() {
-	ticker := time.NewTicker(m.updatert)
 	defer func() {
-		ticker.Stop()
 		close(m.syncCh)
 	}()
+	// Some discoverers send updates too often, so we throttle these with a backoff interval that
+	// increases the interval up to m.updatert delay.
+	lastSent := time.Now().Add(-1 * m.updatert)
+	b := &backoff.ExponentialBackOff{
+		InitialInterval:     100 * time.Millisecond,
+		RandomizationFactor: backoff.DefaultRandomizationFactor,
+		Multiplier:          backoff.DefaultMultiplier,
+		MaxInterval:         m.updatert,
+	}
+
 	for {
 		select {
 		case <-m.ctx.Done():
 			return
-		case <-ticker.C: // Some discoverers send updates too often, so we throttle these with the ticker.
+		case <-time.After(b.NextBackOff()):
 			select {
 			case <-m.triggerSend:
 				m.metrics.SentUpdates.Inc()
 				select {
 				case m.syncCh <- m.allGroups():
+					lastSent = time.Now()
 				default:
 					m.metrics.DelayedUpdates.Inc()
 					m.logger.Debug("Discovery receiver's channel was full so will retry the next cycle")
+					// Ensure we don't miss this update.
 					select {
 					case m.triggerSend <- struct{}{}:
 					default:
 					}
 				}
 			default:
+			}
+			if time.Since(lastSent) > m.updatert {
+				b.Reset() // Nothing happened for a while, start again from low interval for prompt updates.
 			}
 		}
 	}
