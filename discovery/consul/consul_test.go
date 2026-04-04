@@ -49,6 +49,8 @@ func NewTestMetrics(t *testing.T, conf discovery.Config, reg prometheus.Register
 }
 
 func TestConfiguredService(t *testing.T) {
+	t.Parallel()
+
 	conf := &SDConfig{
 		Services: []string{"configuredServiceName"},
 	}
@@ -64,6 +66,8 @@ func TestConfiguredService(t *testing.T) {
 }
 
 func TestConfiguredServiceWithTag(t *testing.T) {
+	t.Parallel()
+
 	conf := &SDConfig{
 		Services:    []string{"configuredServiceName"},
 		ServiceTags: []string{"http"},
@@ -87,7 +91,10 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 }
 
 func TestConfiguredServiceWithTags(t *testing.T) {
+	t.Parallel()
+
 	type testcase struct {
+		name string
 		// What we've configured to watch.
 		conf *SDConfig
 		// The service we're checking if we should watch or not.
@@ -98,6 +105,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 
 	cases := []testcase{
 		{
+			name: "empty tags not watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -107,6 +115,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: false,
 		},
 		{
+			name: "exact match watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -116,6 +125,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: true,
 		},
 		{
+			name: "non-configured service not watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -125,6 +135,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: false,
 		},
 		{
+			name: "non-configured service with tags not watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -134,6 +145,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: false,
 		},
 		{
+			name: "superset of tags watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -143,6 +155,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: true,
 		},
 		{
+			name: "exact match with more tags watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1", "foo"},
@@ -152,6 +165,7 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 			shouldWatch: true,
 		},
 		{
+			name: "duplicate tags watched",
 			conf: &SDConfig{
 				Services:    []string{"configuredServiceName"},
 				ServiceTags: []string{"http", "v1"},
@@ -163,17 +177,24 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		metrics := NewTestMetrics(t, tc.conf, prometheus.NewRegistry())
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		consulDiscovery, err := NewDiscovery(tc.conf, nil, metrics)
-		require.NoError(t, err, "when initializing discovery")
-		ret := consulDiscovery.shouldWatch(tc.serviceName, tc.serviceTags)
-		require.Equal(t, tc.shouldWatch, ret, "Watched service and tags: %s %+v, input was %s %+v",
-			tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
+			metrics := NewTestMetrics(t, tc.conf, prometheus.NewRegistry())
+
+			consulDiscovery, err := NewDiscovery(tc.conf, nil, metrics)
+			require.NoError(t, err, "when initializing discovery")
+			ret := consulDiscovery.shouldWatch(tc.serviceName, tc.serviceTags)
+			require.Equal(t, tc.shouldWatch, ret, "Watched service and tags: %s %+v, input was %s %+v",
+				tc.conf.Services, tc.conf.ServiceTags, tc.serviceName, tc.serviceTags)
+		})
 	}
 }
 
 func TestNonConfiguredService(t *testing.T) {
+	t.Parallel()
+
 	conf := &SDConfig{}
 
 	metrics := NewTestMetrics(t, conf, prometheus.NewRegistry())
@@ -296,6 +317,8 @@ func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
 
 // Watch all the services in the catalog.
 func TestAllServices(t *testing.T) {
+	t.Parallel()
+
 	stub, config := newServer(t)
 	defer stub.Close()
 
@@ -315,6 +338,8 @@ func TestAllServices(t *testing.T) {
 
 // targetgroup with no targets is emitted if no services were discovered.
 func TestNoTargets(t *testing.T) {
+	t.Parallel()
+
 	stub, config := newServer(t)
 	defer stub.Close()
 	config.ServiceTags = []string{"missing"}
@@ -336,6 +361,8 @@ func TestNoTargets(t *testing.T) {
 
 // Watch only the test service.
 func TestOneService(t *testing.T) {
+	t.Parallel()
+
 	stub, config := newServer(t)
 	defer stub.Close()
 
@@ -351,6 +378,8 @@ func TestOneService(t *testing.T) {
 
 // Watch the test service with a specific tag and node-meta.
 func TestAllOptions(t *testing.T) {
+	t.Parallel()
+
 	stub, config := newServer(t)
 	defer stub.Close()
 
@@ -375,6 +404,8 @@ func TestAllOptions(t *testing.T) {
 
 // Watch the test service with a specific tag and node-meta via Filter parameter.
 func TestFilterOption(t *testing.T) {
+	t.Parallel()
+
 	stub, config := newServer(t)
 	defer stub.Close()
 
@@ -443,11 +474,15 @@ func TestFilterOnHealthEndpoint(t *testing.T) {
 }
 
 func TestGetDatacenterShouldReturnError(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
+		name       string
 		handler    func(http.ResponseWriter, *http.Request)
 		errMessage string
 	}{
 		{
+			name: "500 status code",
 			// Define a handler that will return status 500.
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -455,6 +490,7 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 			errMessage: "Unexpected response code: 500 ()",
 		},
 		{
+			name: "incorrect response format",
 			// Define a handler that will return incorrect response.
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.Write([]byte(`{"Config": {"Not-Datacenter": "test-dc"}}`))
@@ -462,31 +498,38 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 			errMessage: "invalid value '<nil>' for Config.Datacenter",
 		},
 	} {
-		stub := httptest.NewServer(http.HandlerFunc(tc.handler))
-		stuburl, err := url.Parse(stub.URL)
-		require.NoError(t, err)
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		config := &SDConfig{
-			Server:          stuburl.Host,
-			Token:           "fake-token",
-			RefreshInterval: model.Duration(1 * time.Second),
-		}
-		defer stub.Close()
-		d := newDiscovery(t, config)
+			stub := httptest.NewServer(http.HandlerFunc(tc.handler))
+			stuburl, err := url.Parse(stub.URL)
+			require.NoError(t, err)
 
-		// Should be empty if not initialized.
-		require.Empty(t, d.clientDatacenter)
+			config := &SDConfig{
+				Server:          stuburl.Host,
+				Token:           "fake-token",
+				RefreshInterval: model.Duration(1 * time.Second),
+			}
+			defer stub.Close()
+			d := newDiscovery(t, config)
 
-		err = d.getDatacenter()
+			// Should be empty if not initialized.
+			require.Empty(t, d.clientDatacenter)
 
-		// An error should be returned.
-		require.EqualError(t, err, tc.errMessage)
-		// Should still be empty.
-		require.Empty(t, d.clientDatacenter)
+			err = d.getDatacenter()
+
+			// An error should be returned.
+			require.EqualError(t, err, tc.errMessage)
+			// Should still be empty.
+			require.Empty(t, d.clientDatacenter)
+		})
 	}
 }
 
 func TestUnmarshalConfig(t *testing.T) {
+	t.Parallel()
+
 	unmarshal := func(d []byte) func(any) error {
 		return func(o any) error {
 			return yaml.Unmarshal(d, o)
@@ -558,6 +601,8 @@ oauth2:
 
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			var config SDConfig
 			err := config.UnmarshalYAML(unmarshal([]byte(test.config)))
 			if err != nil {
