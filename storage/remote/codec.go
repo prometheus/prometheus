@@ -414,6 +414,8 @@ func (c *concreteSeriesIterator) reset(series *concreteSeries) {
 }
 
 // Seek implements storage.SeriesIterator.
+//
+//nolint:stdmethods
 func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	if c.err != nil {
 		return chunkenc.ValNone
@@ -760,6 +762,9 @@ func (it *chunkedSeriesIterator) Next() chunkenc.ValueType {
 	return it.valType
 }
 
+// Seek implements chunkenc.Iterator.
+//
+//nolint:stdmethods
 func (it *chunkedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	if it.err != nil {
 		return chunkenc.ValNone
