@@ -1656,32 +1656,34 @@ func (m *mockECSEC2Client) DescribeInstances(_ context.Context, input *ec2.Descr
 	var reservations []ec2Types.Reservation
 
 	for _, instanceID := range input.InstanceIds {
-		if info, ok := m.ec2Instances[instanceID]; ok {
-			instance := ec2Types.Instance{
-				InstanceId:       &instanceID,
-				PrivateIpAddress: &info.privateIP,
-			}
-			if info.publicIP != "" {
-				instance.PublicIpAddress = &info.publicIP
-			}
-			if info.subnetID != "" {
-				instance.SubnetId = &info.subnetID
-			}
-			if info.instanceType != "" {
-				instance.InstanceType = ec2Types.InstanceType(info.instanceType)
-			}
-			// Add tags
-			for tagKey, tagValue := range info.tags {
-				instance.Tags = append(instance.Tags, ec2Types.Tag{
-					Key:   &tagKey,
-					Value: &tagValue,
-				})
-			}
-			reservation := ec2Types.Reservation{
-				Instances: []ec2Types.Instance{instance},
-			}
-			reservations = append(reservations, reservation)
+		info, ok := m.ec2Instances[instanceID]
+		if !ok {
+			continue
 		}
+		instance := ec2Types.Instance{
+			InstanceId:       &instanceID,
+			PrivateIpAddress: &info.privateIP,
+		}
+		if info.publicIP != "" {
+			instance.PublicIpAddress = &info.publicIP
+		}
+		if info.subnetID != "" {
+			instance.SubnetId = &info.subnetID
+		}
+		if info.instanceType != "" {
+			instance.InstanceType = ec2Types.InstanceType(info.instanceType)
+		}
+		// Add tags
+		for tagKey, tagValue := range info.tags {
+			instance.Tags = append(instance.Tags, ec2Types.Tag{
+				Key:   &tagKey,
+				Value: &tagValue,
+			})
+		}
+		reservation := ec2Types.Reservation{
+			Instances: []ec2Types.Instance{instance},
+		}
+		reservations = append(reservations, reservation)
 	}
 
 	return &ec2.DescribeInstancesOutput{
