@@ -5127,7 +5127,7 @@ func testHistogramStaleSampleHelper(t *testing.T, floatHistogram bool) {
 }
 
 func TestHistogramCounterResetHeader(t *testing.T) {
-	for _, floatHisto := range []bool{true} { // FIXME
+	for _, floatHisto := range []bool{true, false} {
 		t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
 			l := labels.FromStrings("a", "b")
 			head, _ := newTestHead(t, 1000, compression.None, false)
@@ -5175,34 +5175,65 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 				}
 			}
 
+			// appendUntilNMmappedChunks appends histograms until there are n additional mmapped chunks.
+			// This avoids magic numbers that differ between float and integer histograms (chunk capacity varies).
+			appendUntilNMmappedChunks := func(n int, hist *histogram.Histogram) {
+				if !floatHisto {
+					hist.SetCountFromBuckets()
+				}
+				ms, _, err := head.getOrCreate(l.Hash(), l, false)
+				require.NoError(t, err)
+				ms.mmapChunks(head.chunkDiskMapper)
+				targetCount := len(ms.mmappedChunks) + n
+				const maxIter = 100000
+				for range maxIter {
+					appendHistogram(hist)
+					ms, _, err = head.getOrCreate(l.Hash(), l, false)
+					require.NoError(t, err)
+					ms.mmapChunks(head.chunkDiskMapper)
+					if len(ms.mmappedChunks) >= targetCount {
+						return
+					}
+				}
+				t.Fatalf("failed to get %d additional mmapped chunks after %d appends (have %d, need %d)", n, maxIter, len(ms.mmappedChunks), targetCount)
+			}
+
 			h := tsdbutil.GenerateTestHistograms(1)[0]
 			h.PositiveBuckets = []int64{100, 1, 1, 1}
 			h.NegativeBuckets = []int64{100, 1, 1, 1}
-			h.Count = 1000
+			if floatHisto {
+				h.Count = 1000
+			} else {
+				h.SetCountFromBuckets()
+			}
 
 			// First histogram is UnknownCounterReset.
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
 
 			// Another normal histogram.
-			h.Count++
+			if floatHisto {
+				h.Count++
+			} else {
+				h.PositiveBuckets[len(h.PositiveBuckets)-1]++
+				h.Count++
+			}
 			appendHistogram(h)
 			checkExpCounterResetHeader()
 
 			// Counter reset via Count.
-			h.Count--
+			if floatHisto {
+				h.Count--
+			} else {
+				h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+				h.Count--
+				h.SetCountFromBuckets()
+			}
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
-			// Add 2 non-counter reset histogram chunks (each chunk targets 1024 bytes which contains ~500 int histogram
-			// samples or ~1000 float histogram samples).
-			numAppend := 2000
-			if floatHisto {
-				numAppend = 1000
-			}
-			for i := 0; i < numAppend; i++ {
-				appendHistogram(h)
-			}
+			// Add 2 non-counter reset histogram chunks.
+			appendUntilNMmappedChunks(2, h)
 
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
 
@@ -5219,28 +5250,38 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			// Counter reset by removing a positive bucket.
 			h.PositiveSpans[1].Length--
 			h.PositiveBuckets = h.PositiveBuckets[1:]
+			if !floatHisto {
+				h.SetCountFromBuckets()
+			}
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset by removing a negative bucket.
 			h.NegativeSpans[1].Length--
 			h.NegativeBuckets = h.NegativeBuckets[1:]
+			if !floatHisto {
+				h.SetCountFromBuckets()
+			}
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Add 2 non-counter reset histogram chunks. Just to have some non-counter reset chunks in between.
-			for range 2000 {
-				appendHistogram(h)
-			}
+			appendUntilNMmappedChunks(2, h)
 			checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
 
 			// Counter reset with counter reset in a positive bucket.
 			h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+			if !floatHisto {
+				h.SetCountFromBuckets()
+			}
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 
 			// Counter reset with counter reset in a negative bucket.
 			h.NegativeBuckets[len(h.NegativeBuckets)-1]--
+			if !floatHisto {
+				h.SetCountFromBuckets()
+			}
 			appendHistogram(h)
 			checkExpCounterResetHeader(chunkenc.CounterReset)
 		})
