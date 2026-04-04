@@ -6,6 +6,7 @@ See https://github.com/VictoriaMetrics/VictoriaMetrics/issues/3384 for more deta
 
 import moment from 'moment-timezone';
 import {formatValue} from "../../pages/graph/GraphHelpers";
+import {escapeHTML} from '../../utils';
 
 const TOOLTIP_ID = 'heatmap-tooltip';
 const GRADIENT_STEPS = 16;
@@ -82,7 +83,7 @@ const GRADIENT_STEPS = 16;
     tooltip.className = cssClass;
 
     const timeHtml = `<div class="date">${dateTime.join('<br>')}</div>`
-    const labelHtml = `<div>Bucket: ${label || 'value'}</div>`
+    const labelHtml = `<div>Bucket: ${label ? escapeHTML(label) : 'value'}</div>`
     const valueHtml = `<div>Value: <strong>${value}</strong></div>`
     tooltip.innerHTML = `<div>${timeHtml}<div>${labelHtml}${valueHtml}</div></div>`;
 
