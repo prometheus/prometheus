@@ -3,7 +3,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,36 +13,42 @@
 
 package gate
 
-import "context"
+import (
+	"context"
+	"time"
 
-// A Gate controls the maximum number of concurrently running and waiting queries.
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+// Gate controls the maximum number of concurrent requests.
 type Gate struct {
-	ch chan struct{}
+	ch      chan struct{}
+	waiting prometheus.Observer
 }
 
-// New returns a query gate that limits the number of queries
-// being concurrently executed.
-func New(length int) *Gate {
+// New returns a new Gate.
+func New(max int, waiting prometheus.Observer) *Gate {
 	return &Gate{
-		ch: make(chan struct{}, length),
+		ch:      make(chan struct{}, max),
+		waiting: waiting,
 	}
 }
 
-// Start blocks until the gate has a free spot or the context is done.
+// Start blocks until a slot is available or the context is canceled.
 func (g *Gate) Start(ctx context.Context) error {
+	start := time.Now()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case g.ch <- struct{}{}:
+		if g.waiting != nil {
+			g.waiting.Observe(time.Since(start).Seconds())
+		}
 		return nil
 	}
 }
 
-// Done releases a single spot in the gate.
+// Done releases a slot.
 func (g *Gate) Done() {
-	select {
-	case <-g.ch:
-	default:
-		panic("gate.Done: more operations done than started")
-	}
+	<-g.ch
 }
