@@ -1377,7 +1377,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_azure_machine_public_ip`: the machine's public IP if it exists
 * `__meta_azure_machine_resource_group`: the machine's resource group
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
-* `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
+* `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
 * `__meta_azure_machine_size`: the machine size
 * `__meta_azure_subscription_id`: the subscription ID
 * `__meta_azure_tenant_id`: the tenant ID
@@ -1390,7 +1390,7 @@ See below for the configuration options for Azure discovery:
 [ environment: <string> | default = AzurePublicCloud ]
 
 # The authentication method, either OAuth, ManagedIdentity or SDK.
-# See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
+# See https://learn.microsoft.com/en-us/entra/identity/managed-identities-azure-resources/overview
 # SDK authentication method uses environment variables by default.
 # See https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication
 [ authentication_method: <string> | default = OAuth]
@@ -1478,7 +1478,7 @@ tags:
 # The string by which Consul tags are joined into the tag label.
 [ tag_separator: <string> | default = , ]
 
-# Allow stale Consul results (see https://www.consul.io/api/features/consistency.html). Will reduce load on Consul.
+# Allow stale Consul results (see https://developer.hashicorp.com/consul/api-docs/features/consistency). Will reduce load on Consul.
 [ allow_stale: <boolean> | default = true ]
 
 # The time after which the provided names are refreshed.
