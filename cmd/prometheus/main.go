@@ -1966,6 +1966,21 @@ func (s *readyStorage) Stats(statsByLabelName string, limit int) (*tsdb.Stats, e
 	return nil, tsdb.ErrNotReady
 }
 
+// StatsForMatchers implements the api_v1.TSDBAdminStats interface.
+func (s *readyStorage) StatsForMatchers(ctx context.Context, statsByLabelName string, limit int, matchers []*labels.Matcher) (*tsdb.Stats, error) {
+	if x := s.get(); x != nil {
+		switch db := x.(type) {
+		case *tsdb.DB:
+			return db.Head().StatsForMatchers(ctx, statsByLabelName, limit, matchers)
+		case *agent.DB:
+			return nil, agent.ErrUnsupported
+		default:
+			panic(fmt.Sprintf("unknown storage type %T", db))
+		}
+	}
+	return nil, tsdb.ErrNotReady
+}
+
 // WALReplayStatus implements the api_v1.TSDBStats interface.
 func (s *readyStorage) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	if x := s.getStats(); x != nil {

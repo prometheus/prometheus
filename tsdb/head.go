@@ -1550,6 +1550,36 @@ func (h *Head) Stats(statsByLabelName string, limit int) *Stats {
 	}
 }
 
+// StatsForMatchers computes cardinality statistics for the series matching the given matchers.
+// Unlike Stats, results are not cached because they depend on the provided matchers.
+func (h *Head) StatsForMatchers(ctx context.Context, statsByLabelName string, limit int, matchers []*labels.Matcher) (*Stats, error) {
+	ir := h.indexRange(math.MinInt64, math.MaxInt64)
+
+	var matchedRefs map[storage.SeriesRef]struct{}
+	if len(matchers) > 0 {
+		p, err := PostingsForMatchers(ctx, ir, matchers...)
+		if err != nil {
+			return nil, fmt.Errorf("select series for matchers: %w", err)
+		}
+		refs, err := index.ExpandPostings(p)
+		if err != nil {
+			return nil, fmt.Errorf("expand postings: %w", err)
+		}
+		matchedRefs = make(map[storage.SeriesRef]struct{}, len(refs))
+		for _, ref := range refs {
+			matchedRefs[ref] = struct{}{}
+		}
+	}
+
+	postingsStats := h.postings.StatsForMatchedSeries(statsByLabelName, limit, labels.SizeOfLabels, matchedRefs)
+	return &Stats{
+		NumSeries:         uint64(len(matchedRefs)),
+		MaxTime:           h.MaxTime(),
+		MinTime:           h.MinTime(),
+		IndexPostingStats: postingsStats,
+	}, nil
+}
+
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
 // but only within a restricted range.  Used for queries and compactions.
 type RangeHead struct {

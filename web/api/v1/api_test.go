@@ -3942,6 +3942,23 @@ func (*fakeDB) Stats(statsByLabelName string, limit int) (_ *tsdb.Stats, retErr 
 	return h.Stats(statsByLabelName, limit), nil
 }
 
+func (*fakeDB) StatsForMatchers(ctx context.Context, statsByLabelName string, limit int, matchers []*labels.Matcher) (_ *tsdb.Stats, retErr error) {
+	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		err := os.RemoveAll(dbDir)
+		if retErr != nil {
+			retErr = err
+		}
+	}()
+	opts := tsdb.DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	h, _ := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+	return h.StatsForMatchers(ctx, statsByLabelName, limit, matchers)
+}
+
 func (*fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
@@ -4541,9 +4558,28 @@ func TestTSDBStatus(t *testing.T) {
 			values:   map[string][]string{"limit": {"10001"}},
 			errType:  errorBadData,
 		},
+		// Tests for match[] parameter.
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"match[]": {`{job="test"}`}},
+			errType:  errorNone,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"match[]": {`{job="test"}`, `{job="other"}`}},
+			errType:  errorNone,
+		},
+		{
+			db:       tsdb,
+			endpoint: tsdbStatusAPI,
+			values:   map[string][]string{"match[]": {`{bad matcher`}},
+			errType:  errorBadData,
+		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
+			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer, parser: testParser}
 			endpoint := tc.endpoint(api)
 			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), http.NoBody)
 			require.NoError(t, err, "Error when creating test request")
