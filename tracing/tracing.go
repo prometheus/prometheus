@@ -207,6 +207,14 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 		opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(tracingCfg.Endpoint)}
 		if tracingCfg.Insecure {
 			opts = append(opts, otlptracehttp.WithInsecure())
+		} else {
+			// Use of TLS Credentials forces the use of TLS. Therefore it can
+			// only be set when `insecure` is set to false.
+			tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConf))
 		}
 		// Currently, OTEL supports only gzip compression.
 		if tracingCfg.Compression == config.GzipCompression {
@@ -218,12 +226,6 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 		if tracingCfg.Timeout != 0 {
 			opts = append(opts, otlptracehttp.WithTimeout(time.Duration(tracingCfg.Timeout)))
 		}
-
-		tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConf))
 
 		client = otlptracehttp.NewClient(opts...)
 	}
