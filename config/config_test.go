@@ -2744,6 +2744,54 @@ func TestExpandExternalLabels(t *testing.T) {
 	testutil.RequireEqual(t, labels.FromStrings("bar", "foo", "baz", "fooTestValuebar", "foo", "TestValue", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)
 }
 
+func TestExpandRelabelConfigs(t *testing.T) {
+	// Cleanup any TEST env variables that could exist on the system.
+	os.Setenv("REPLACEMENT_VALUE", "")
+	os.Setenv("JOB_NAME", "")
+	os.Setenv("CUSTOM_LABEL_NAME", "")
+	os.Setenv("METRIC_PREFIX", "")
+	os.Setenv("ALERT_ENV", "")
+	os.Setenv("UNDEFINED_VAR", "")
+
+	c, err := LoadFile("testdata/relabel_expand_env.good.yml", false, promslog.NewNopLogger())
+	require.NoError(t, err)
+
+	// With empty env vars, should expand to empty strings
+	require.Len(t, c.ScrapeConfigs, 1)
+	scrapeConfig := c.ScrapeConfigs[0]
+	require.Len(t, scrapeConfig.RelabelConfigs, 5)
+	require.Empty(t, scrapeConfig.RelabelConfigs[1].Replacement)                   // $REPLACEMENT_VALUE -> ""
+	require.Equal(t, "prefix__suffix", scrapeConfig.RelabelConfigs[2].Replacement) // prefix_${JOB_NAME}_suffix -> prefix__suffix
+	require.Empty(t, scrapeConfig.RelabelConfigs[3].Replacement)                   // $UNDEFINED_VAR -> ""
+	require.Empty(t, scrapeConfig.RelabelConfigs[4].TargetLabel)                   // $CUSTOM_LABEL_NAME -> ""
+
+	require.Len(t, scrapeConfig.MetricRelabelConfigs, 2)
+	require.Empty(t, scrapeConfig.MetricRelabelConfigs[1].Replacement) // $METRIC_PREFIX -> ""
+
+	require.Len(t, c.AlertingConfig.AlertRelabelConfigs, 1)
+	require.Empty(t, c.AlertingConfig.AlertRelabelConfigs[0].Replacement) // $ALERT_ENV -> ""
+
+	// Now set env vars and reload
+	os.Setenv("REPLACEMENT_VALUE", "myvalue")
+	os.Setenv("JOB_NAME", "myjob")
+	os.Setenv("CUSTOM_LABEL_NAME", "custom_env")
+	os.Setenv("METRIC_PREFIX", "metric_")
+	os.Setenv("ALERT_ENV", "alert_val")
+	os.Setenv("UNDEFINED_VAR", "")
+
+	c, err = LoadFile("testdata/relabel_expand_env.good.yml", false, promslog.NewNopLogger())
+	require.NoError(t, err)
+
+	scrapeConfig = c.ScrapeConfigs[0]
+	require.Equal(t, "myvalue", scrapeConfig.RelabelConfigs[1].Replacement)
+	require.Equal(t, "prefix_myjob_suffix", scrapeConfig.RelabelConfigs[2].Replacement)
+	require.Empty(t, scrapeConfig.RelabelConfigs[3].Replacement)
+	require.Equal(t, "custom_env", scrapeConfig.RelabelConfigs[4].TargetLabel)
+
+	require.Equal(t, "metric_", scrapeConfig.MetricRelabelConfigs[1].Replacement)
+	require.Equal(t, "alert_val", c.AlertingConfig.AlertRelabelConfigs[0].Replacement)
+}
+
 func TestAgentMode(t *testing.T) {
 	_, err := LoadFile("testdata/agent_mode.with_alert_manager.yml", true, promslog.NewNopLogger())
 	require.ErrorContains(t, err, "field alerting is not allowed in agent mode")
