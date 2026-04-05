@@ -1,0 +1,31 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+    relabel_configs:
+      - source_labels: [__scheme__, __address__]
+        separator: "://"
+        target_label: __param_target
+      - replacement: $REPLACEMENT_VALUE
+        target_label: service_env
+      - replacement: prefix_${JOB_NAME}_suffix
+        target_label: expanded_label
+      - replacement: $UNDEFINED_VAR
+        target_label: undefined_env
+      - source_labels: [job]
+        target_label: $CUSTOM_LABEL_NAME
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'up|node_cpu_seconds_total'
+        action: keep
+      - replacement: $METRIC_PREFIX
+        target_label: metrics_env
+
+alerting:
+  alert_relabel_configs:
+    - replacement: $ALERT_ENV
+      target_label: alert_env_label
