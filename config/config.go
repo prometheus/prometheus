@@ -71,6 +71,97 @@ var (
 )
 
 // Load parses the YAML input s into a Config.
+// expandEnvVars expands environment variables in a string using os.Expand.
+// Variables are referenced as $VAR or ${VAR}. Escaping is done with $$.
+// Empty environment variables are logged as warnings and expanded to empty string.
+func expandEnvVars(s string, logger *slog.Logger) string {
+	return os.Expand(s, func(key string) string {
+		if key == "$" {
+			return "$"
+		}
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+		logger.Warn("Empty environment variable", "name", key)
+		return ""
+	})
+}
+
+// expandRelabelConfigs expands environment variables in replacement and target_label fields.
+// Note: $1, $2, etc. are regex capture group references and are not expanded.
+func expandRelabelConfigs(relabelConfigs []*relabel.Config, logger *slog.Logger) {
+	for _, relabelConfig := range relabelConfigs {
+		if relabelConfig == nil {
+			continue
+		}
+		if relabelConfig.Replacement != "" && containsEnvVar(relabelConfig.Replacement) {
+			newReplacement := expandEnvVars(relabelConfig.Replacement, logger)
+			if newReplacement != relabelConfig.Replacement {
+				logger.Debug("Relabel replacement expanded", "input", relabelConfig.Replacement, "output", newReplacement)
+				relabelConfig.Replacement = newReplacement
+			}
+		}
+		if relabelConfig.TargetLabel != "" && containsEnvVar(relabelConfig.TargetLabel) {
+			newTargetLabel := expandEnvVars(relabelConfig.TargetLabel, logger)
+			if newTargetLabel != relabelConfig.TargetLabel {
+				logger.Debug("Relabel target_label expanded", "input", relabelConfig.TargetLabel, "output", newTargetLabel)
+				relabelConfig.TargetLabel = newTargetLabel
+			}
+		}
+	}
+}
+
+// containsEnvVar checks if a string likely contains environment variables (not just regex references like $1).
+func containsEnvVar(s string) bool {
+	i := 0
+	for i < len(s) {
+		if s[i] == '$' {
+			if i+1 < len(s) {
+				next := s[i+1]
+				switch {
+				case next == '{':
+					// ${VAR} format - check what's inside braces
+					j := i + 2
+					for j < len(s) && s[j] != '}' {
+						j++
+					}
+					if j < len(s) && j > i+2 {
+						varName := s[i+2 : j]
+						// If not all digits, it's likely an env var
+						if !isAllDigits(varName) {
+							return true
+						}
+					}
+					i = j + 1
+				case next == '$':
+					// $$ escape
+					i += 2
+				case (next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || next == '_':
+					// $VAR_NAME format - likely an env var
+					return true
+				default:
+					i++
+				}
+			} else {
+				i++
+			}
+		} else {
+			i++
+		}
+	}
+	return false
+}
+
+// isAllDigits checks if a string contains only digits.
+func isAllDigits(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return s != ""
+}
+
 func Load(s string, logger *slog.Logger) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
@@ -92,16 +183,7 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 
 	b := labels.NewScratchBuilder(0)
 	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
-		newV := os.Expand(v.Value, func(s string) string {
-			if s == "$" {
-				return "$"
-			}
-			if v := os.Getenv(s); v != "" {
-				return v
-			}
-			logger.Warn("Empty environment variable", "name", s)
-			return ""
-		})
+		newV := expandEnvVars(v.Value, logger)
 		if newV != v.Value {
 			logger.Debug("External label replaced", "label", v.Name, "input", v.Value, "output", newV)
 		}
@@ -110,6 +192,24 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	})
 	if !b.Labels().IsEmpty() {
 		cfg.GlobalConfig.ExternalLabels = b.Labels()
+	}
+
+	// Expand environment variables in relabel_configs
+	for _, scrapeConfig := range cfg.ScrapeConfigs {
+		expandRelabelConfigs(scrapeConfig.RelabelConfigs, logger)
+		expandRelabelConfigs(scrapeConfig.MetricRelabelConfigs, logger)
+	}
+
+	// Expand environment variables in alerting relabel configs
+	expandRelabelConfigs(cfg.AlertingConfig.AlertRelabelConfigs, logger)
+	for _, amConfig := range cfg.AlertingConfig.AlertmanagerConfigs {
+		expandRelabelConfigs(amConfig.RelabelConfigs, logger)
+		expandRelabelConfigs(amConfig.AlertRelabelConfigs, logger)
+	}
+
+	// Expand environment variables in remote write relabel configs
+	for _, remoteWriteConfig := range cfg.RemoteWriteConfigs {
+		expandRelabelConfigs(remoteWriteConfig.WriteRelabelConfigs, logger)
 	}
 
 	switch cfg.OTLPConfig.TranslationStrategy {
