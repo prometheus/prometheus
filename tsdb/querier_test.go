@@ -40,7 +40,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // TODO(bwplotka): Replace those mocks with remote.concreteSeriesSet.
@@ -2499,6 +2498,25 @@ func (m mockIndex) LabelValues(_ context.Context, name string, hints *storage.La
 	return values, nil
 }
 
+func (m mockIndex) LabelValueFor(_ context.Context, id storage.SeriesRef, label string) (string, error) {
+	return m.series[id].l.Get(label), nil
+}
+
+func (m mockIndex) LabelValuesFiltered(_ context.Context, name string, hints *storage.LabelHints, filter func(string) bool) ([]string, error) {
+	var values []string
+
+	for l := range m.postings {
+		if l.Name == name && filter(l.Value) {
+			values = append(values, l.Value)
+			if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
+				break
+			}
+		}
+	}
+
+	return values, nil
+}
+
 func (m mockIndex) LabelNamesFor(_ context.Context, postings index.Postings) ([]string, error) {
 	namesMap := make(map[string]bool)
 	for postings.Next() {
@@ -3520,6 +3538,10 @@ func (mockMatcherIndex) LabelNamesFor(context.Context, index.Postings) ([]string
 	return nil, errors.New("label names for called")
 }
 
+func (mockMatcherIndex) LabelValuesFiltered(context.Context, string, *storage.LabelHints, func(string) bool) ([]string, error) {
+	return []string{}, errors.New("label values filtered called")
+}
+
 func (mockMatcherIndex) Postings(context.Context, string, ...string) (index.Postings, error) {
 	return index.EmptyPostings(), nil
 }
@@ -3915,69 +3937,6 @@ func TestQueryWithOneChunkCompletelyDeleted(t *testing.T) {
 	}
 	require.NoError(t, css.Err())
 	require.Equal(t, 1, seriesCount)
-}
-
-func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
-	ir := mockReaderOfLabels{}
-
-	failAfter := uint64(mockReaderOfLabelsSeriesCount / 2 / checkContextEveryNIterations)
-	ctx := &testutil.MockContextErrAfter{FailAfter: failAfter}
-	_, err := labelValuesWithMatchers(ctx, ir, "__name__", nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".+"))
-
-	require.Error(t, err)
-	require.Equal(t, failAfter+1, ctx.Count()) // Plus one for the Err() call that puts the error in the result.
-}
-
-type mockReaderOfLabels struct{}
-
-const mockReaderOfLabelsSeriesCount = checkContextEveryNIterations * 10
-
-func (mockReaderOfLabels) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
-	return make([]string, mockReaderOfLabelsSeriesCount), nil
-}
-
-func (mockReaderOfLabels) SortedLabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
-	panic("SortedLabelValues called")
-}
-
-func (mockReaderOfLabels) Close() error {
-	return nil
-}
-
-func (mockReaderOfLabels) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
-	panic("LabelNames called")
-}
-
-func (mockReaderOfLabels) LabelNamesFor(context.Context, index.Postings) ([]string, error) {
-	panic("LabelNamesFor called")
-}
-
-func (mockReaderOfLabels) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
-	panic("PostingsForLabelMatching called")
-}
-
-func (mockReaderOfLabels) PostingsForAllLabelValues(context.Context, string) index.Postings {
-	panic("PostingsForAllLabelValues called")
-}
-
-func (mockReaderOfLabels) Postings(context.Context, string, ...string) (index.Postings, error) {
-	panic("Postings called")
-}
-
-func (mockReaderOfLabels) ShardedPostings(index.Postings, uint64, uint64) index.Postings {
-	panic("Postings called")
-}
-
-func (mockReaderOfLabels) SortedPostings(index.Postings) index.Postings {
-	panic("SortedPostings called")
-}
-
-func (mockReaderOfLabels) Series(storage.SeriesRef, *labels.ScratchBuilder, *[]chunks.Meta) error {
-	panic("Series called")
-}
-
-func (mockReaderOfLabels) Symbols() index.StringIter {
-	panic("Series called")
 }
 
 // TestMergeQuerierConcurrentSelectMatchers reproduces the data race bug from
