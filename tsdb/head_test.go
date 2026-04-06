@@ -7735,67 +7735,117 @@ func TestHeadAppender_STStorage_WBLReplay(t *testing.T) {
 // TestHeadAppender_STStorage_ChunkEncoding verifies that the correct chunk encoding
 // is used based on EnableSTStorage setting.
 func TestHeadAppender_STStorage_ChunkEncoding(t *testing.T) {
-	samples := []struct {
+	testHistogram := tsdbutil.GenerateTestHistogram(1)
+	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
+
+	type appendableSample struct {
 		st      int64
 		ts      int64
 		fSample float64
-	}{
-		{st: 10, ts: 100, fSample: 1.0},
-		{st: 20, ts: 200, fSample: 2.0},
+		h       *histogram.Histogram
+		fh      *histogram.FloatHistogram
 	}
 
-	for _, enableST := range []bool{false, true} {
-		t.Run(fmt.Sprintf("EnableSTStorage=%t", enableST), func(t *testing.T) {
-			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
-			opts.EnableSTStorage.Store(enableST)
-			opts.EnableXOR2Encoding.Store(enableST) // ST storage implies XOR2 encoding.
-			h, _ := newTestHeadWithOptions(t, compression.None, opts)
+	for _, tc := range []struct {
+		name            string
+		samples         []appendableSample
+		stEncoding      chunkenc.Encoding
+		regularEncoding chunkenc.Encoding
+	}{
+		{
+			name: "float samples",
+			samples: []appendableSample{
+				{st: 10, ts: 100, fSample: 1.0},
+				{st: 20, ts: 200, fSample: 2.0},
+			},
+			stEncoding:      chunkenc.EncXOR2,
+			regularEncoding: chunkenc.EncXOR,
+		},
+		{
+			name: "histogram samples",
+			samples: []appendableSample{
+				{st: 10, ts: 100, h: testHistogram},
+				{st: 20, ts: 200, h: testHistogram},
+			},
+			stEncoding:      chunkenc.EncHistogramST,
+			regularEncoding: chunkenc.EncHistogram,
+		},
+		{
+			name: "float histogram samples",
+			samples: []appendableSample{
+				{st: 10, ts: 100, fh: testFloatHistogram},
+				{st: 20, ts: 200, fh: testFloatHistogram},
+			},
+			stEncoding:      chunkenc.EncFloatHistogramST,
+			regularEncoding: chunkenc.EncFloatHistogram,
+		},
+	} {
+		for _, enableST := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/EnableSTStorage=%t", tc.name, enableST), func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+				opts.EnableSTStorage.Store(enableST)
+				opts.EnableXOR2Encoding.Store(enableST) // ST storage implies XOR2 encoding.
+				h, _ := newTestHeadWithOptions(t, compression.None, opts)
 
-			lbls := labels.FromStrings("foo", "bar")
-			a := h.Appender(context.Background())
-			for _, s := range samples {
-				_, err := a.AppendSTZeroSample(0, lbls, s.ts, s.st)
-				require.NoError(t, err)
-				_, err = a.Append(0, lbls, s.ts, s.fSample)
-				require.NoError(t, err)
-			}
-			require.NoError(t, a.Commit())
-
-			ctx := context.Background()
-			idxReader, err := h.Index()
-			require.NoError(t, err)
-			defer idxReader.Close()
-
-			chkReader, err := h.Chunks()
-			require.NoError(t, err)
-			defer chkReader.Close()
-
-			p, err := idxReader.Postings(ctx, "foo", "bar")
-			require.NoError(t, err)
-
-			var lblBuilder labels.ScratchBuilder
-			require.True(t, p.Next())
-			sRef := p.At()
-
-			var chkMetas []chunks.Meta
-			require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
-			require.NotEmpty(t, chkMetas)
-
-			for _, meta := range chkMetas {
-				chk, iterable, err := chkReader.ChunkOrIterable(meta)
-				require.NoError(t, err)
-				require.Nil(t, iterable)
-
-				encoding := chk.Encoding()
-				if enableST {
-					require.Equal(t, chunkenc.EncXOR2, encoding,
-						"Expected ST-capable encoding when EnableSTStorage is true")
-				} else {
-					require.Equal(t, chunkenc.EncXOR, encoding,
-						"Expected regular XOR encoding when EnableSTStorage is false")
+				lbls := labels.FromStrings("foo", "bar")
+				a := h.Appender(context.Background())
+				for _, s := range tc.samples {
+					switch {
+					case s.h != nil:
+						_, err := a.AppendHistogramSTZeroSample(0, lbls, s.ts, s.st, s.h, nil)
+						require.NoError(t, err)
+						_, err = a.AppendHistogram(0, lbls, s.ts, s.h, nil)
+						require.NoError(t, err)
+					case s.fh != nil:
+						_, err := a.AppendHistogramSTZeroSample(0, lbls, s.ts, s.st, nil, s.fh)
+						require.NoError(t, err)
+						_, err = a.AppendHistogram(0, lbls, s.ts, nil, s.fh)
+						require.NoError(t, err)
+					default:
+						_, err := a.AppendSTZeroSample(0, lbls, s.ts, s.st)
+						require.NoError(t, err)
+						_, err = a.Append(0, lbls, s.ts, s.fSample)
+						require.NoError(t, err)
+					}
 				}
-			}
-		})
+				require.NoError(t, a.Commit())
+
+				ctx := context.Background()
+				idxReader, err := h.Index()
+				require.NoError(t, err)
+				defer idxReader.Close()
+
+				chkReader, err := h.Chunks()
+				require.NoError(t, err)
+				defer chkReader.Close()
+
+				p, err := idxReader.Postings(ctx, "foo", "bar")
+				require.NoError(t, err)
+
+				var lblBuilder labels.ScratchBuilder
+				require.True(t, p.Next())
+				sRef := p.At()
+
+				var chkMetas []chunks.Meta
+				require.NoError(t, idxReader.Series(sRef, &lblBuilder, &chkMetas))
+				require.NotEmpty(t, chkMetas)
+
+				for _, meta := range chkMetas {
+					chk, iterable, err := chkReader.ChunkOrIterable(meta)
+					require.NoError(t, err)
+					require.Nil(t, iterable)
+
+					encoding := chk.Encoding()
+					if enableST {
+						require.Equal(t, tc.stEncoding, encoding,
+							"Expected ST-capable encoding when EnableSTStorage is true")
+					} else {
+						require.Equal(t, tc.regularEncoding, encoding,
+							"Expected regular encoding when EnableSTStorage is false")
+					}
+				}
+			})
+		}
 	}
 }
 

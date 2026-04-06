@@ -31,6 +31,8 @@ const (
 	EncHistogram
 	EncFloatHistogram
 	EncXOR2
+	EncHistogramST
+	EncFloatHistogramST
 )
 
 func (e Encoding) String() string {
@@ -45,13 +47,17 @@ func (e Encoding) String() string {
 		return "floathistogram"
 	case EncXOR2:
 		return "XOR2"
+	case EncHistogramST:
+		return "histogramST"
+	case EncFloatHistogramST:
+		return "floathistogramST"
 	}
 	return "<unknown>"
 }
 
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
-	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOR2
+	return e == EncXOR || e == EncHistogram || e == EncFloatHistogram || e == EncXOR2 || e == EncHistogramST || e == EncFloatHistogramST
 }
 
 const (
@@ -199,8 +205,14 @@ func (v ValueType) ChunkEncoding(useXOR2 bool) Encoding {
 		}
 		return EncXOR
 	case ValHistogram:
+		if useXOR2 {
+			return EncHistogramST
+		}
 		return EncHistogram
 	case ValFloatHistogram:
+		if useXOR2 {
+			return EncFloatHistogramST
+		}
 		return EncFloatHistogram
 	default:
 		return EncNone
@@ -296,10 +308,12 @@ type Pool interface {
 
 // pool is a memory pool of chunk objects.
 type pool struct {
-	xor            sync.Pool
-	histogram      sync.Pool
-	floatHistogram sync.Pool
-	xo2            sync.Pool
+	xor              sync.Pool
+	histogram        sync.Pool
+	floatHistogram   sync.Pool
+	xo2              sync.Pool
+	histogramST      sync.Pool
+	floatHistogramST sync.Pool
 }
 
 // NewPool returns a new pool.
@@ -325,6 +339,16 @@ func NewPool() Pool {
 				return &XOR2Chunk{b: bstream{}}
 			},
 		},
+		histogramST: sync.Pool{
+			New: func() any {
+				return &HistogramSTChunk{b: bstream{}}
+			},
+		},
+		floatHistogramST: sync.Pool{
+			New: func() any {
+				return &FloatHistogramSTChunk{b: bstream{}}
+			},
+		},
 	}
 }
 
@@ -339,6 +363,10 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c = p.floatHistogram.Get().(*FloatHistogramChunk)
 	case EncXOR2:
 		c = p.xo2.Get().(*XOR2Chunk)
+	case EncHistogramST:
+		c = p.histogramST.Get().(*HistogramSTChunk)
+	case EncFloatHistogramST:
+		c = p.floatHistogramST.Get().(*FloatHistogramSTChunk)
 	default:
 		return nil, fmt.Errorf("invalid chunk encoding %q", e)
 	}
@@ -363,6 +391,12 @@ func (p *pool) Put(c Chunk) error {
 	case EncXOR2:
 		_, ok = c.(*XOR2Chunk)
 		sp = &p.xo2
+	case EncHistogramST:
+		_, ok = c.(*HistogramSTChunk)
+		sp = &p.histogramST
+	case EncFloatHistogramST:
+		_, ok = c.(*FloatHistogramSTChunk)
+		sp = &p.floatHistogramST
 	default:
 		return fmt.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
@@ -391,6 +425,10 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 		return &FloatHistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	case EncXOR2:
 		return &XOR2Chunk{b: bstream{count: 0, stream: d}}, nil
+	case EncHistogramST:
+		return &HistogramSTChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncFloatHistogramST:
+		return &FloatHistogramSTChunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
@@ -406,6 +444,10 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 		return NewFloatHistogramChunk(), nil
 	case EncXOR2:
 		return NewXOR2Chunk(), nil
+	case EncHistogramST:
+		return NewHistogramSTChunk(), nil
+	case EncFloatHistogramST:
+		return NewFloatHistogramSTChunk(), nil
 	}
 	return nil, fmt.Errorf("invalid chunk encoding %q", e)
 }
