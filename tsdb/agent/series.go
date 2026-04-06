@@ -161,10 +161,9 @@ func newStripeSeries(stripeSize int) *stripeSeries {
 // GC garbage collects old series that have not received a sample after mint
 // and will fully delete them.
 func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
-	// NOTE(rfratto): GC will grab two locks, one for the hash and the other for
-	// series. It's not valid for any other function to grab both locks,
-	// otherwise a deadlock might occur when running GC in parallel with
-	// appending.
+	// gcMut serializes GC calls. Within a single GC pass, the check function
+	// holds hashLock and then acquires refLock — callers must never hold both
+	// simultaneously, which SetUnlessAlreadySet satisfies.
 	s.gcMut.Lock()
 	defer s.gcMut.Unlock()
 
@@ -182,7 +181,7 @@ func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
 
 		// The series is stale. We need to obtain a second lock for the
 		// ref if it's different than the hash lock.
-		refLock := int(series.ref) & (s.size - 1)
+		refLock := int(s.refLock(series.ref))
 		if hashLock != refLock {
 			s.locks[refLock].Lock()
 		}
@@ -220,42 +219,66 @@ func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
 }
 
 func (s *stripeSeries) GetByID(id chunks.HeadSeriesRef) *memSeries {
-	refLock := uint64(id) & uint64(s.size-1)
+	refLock := s.refLock(id)
 	s.locks[refLock].RLock()
 	defer s.locks[refLock].RUnlock()
 	return s.series[refLock][id]
 }
 
 func (s *stripeSeries) GetByHash(hash uint64, lset labels.Labels) *memSeries {
-	hashLock := hash & uint64(s.size-1)
+	hashLock := s.hashLock(hash)
 
 	s.locks[hashLock].RLock()
 	defer s.locks[hashLock].RUnlock()
 	return s.hashes[hashLock].Get(hash, lset)
 }
 
-func (s *stripeSeries) Set(hash uint64, series *memSeries) {
-	var (
-		hashLock = hash & uint64(s.size-1)
-		refLock  = uint64(series.ref) & uint64(s.size-1)
-	)
+// SetUnlessAlreadySet inserts series for the given hash if no series with the
+// same label set already exists. It returns the canonical series and whether
+// it was newly inserted.
+//
+// Insertion order is refs-before-hashes. GC only discovers series via hashes,
+// so anything it finds is guaranteed to already be present in refs. We never
+// hold hashLock and refLock simultaneously, preserving the no-deadlock
+// invariant that GC relies on (it holds hashLock while acquiring refLock).
+func (s *stripeSeries) SetUnlessAlreadySet(hash uint64, series *memSeries) (*memSeries, bool) {
+	hashLock := s.hashLock(hash)
 
-	// We can't hold both locks at once otherwise we might deadlock with a
-	// simultaneous call to GC.
-	//
-	// We update s.series first because GC expects anything in s.hashes to
-	// already exist in s.series.
+	// Fast path: series already exists.
+	s.locks[hashLock].Lock()
+	if prev := s.hashes[hashLock].Get(hash, series.lset); prev != nil {
+		s.locks[hashLock].Unlock()
+		return prev, false
+	}
+	s.locks[hashLock].Unlock()
+
+	// Insert into refs first. GC discovers series through hashes, so a series
+	// that is only in refs is invisible to GC and will not be removed.
+	refLock := s.refLock(series.ref)
 	s.locks[refLock].Lock()
 	s.series[refLock][series.ref] = series
 	s.locks[refLock].Unlock()
 
+	// Re-acquire hashLock to insert into hashes. A concurrent goroutine may
+	// have inserted the same label set while we were inserting into refs, so
+	// check again before committing.
 	s.locks[hashLock].Lock()
+	if prev := s.hashes[hashLock].Get(hash, series.lset); prev != nil {
+		s.locks[hashLock].Unlock()
+		// We lost the race: clean up the ref we pre-inserted.
+		s.locks[refLock].Lock()
+		delete(s.series[refLock], series.ref)
+		s.locks[refLock].Unlock()
+		return prev, false
+	}
 	s.hashes[hashLock].Set(hash, series)
 	s.locks[hashLock].Unlock()
+
+	return series, true
 }
 
 func (s *stripeSeries) GetLatestExemplar(ref chunks.HeadSeriesRef) *exemplar.Exemplar {
-	i := uint64(ref) & uint64(s.size-1)
+	i := s.refLock(ref)
 
 	s.locks[i].RLock()
 	exemplar := s.exemplars[i][ref]
@@ -265,7 +288,7 @@ func (s *stripeSeries) GetLatestExemplar(ref chunks.HeadSeriesRef) *exemplar.Exe
 }
 
 func (s *stripeSeries) SetLatestExemplar(ref chunks.HeadSeriesRef, exemplar *exemplar.Exemplar) {
-	i := uint64(ref) & uint64(s.size-1)
+	i := s.refLock(ref)
 
 	// Make sure that's a valid series id and record its latest exemplar
 	s.locks[i].Lock()
@@ -273,4 +296,12 @@ func (s *stripeSeries) SetLatestExemplar(ref chunks.HeadSeriesRef, exemplar *exe
 		s.exemplars[i][ref] = exemplar
 	}
 	s.locks[i].Unlock()
+}
+
+func (s *stripeSeries) hashLock(hash uint64) uint64 {
+	return hash & uint64(s.size-1)
+}
+
+func (s *stripeSeries) refLock(ref chunks.HeadSeriesRef) uint64 {
+	return uint64(ref) & uint64(s.size-1)
 }

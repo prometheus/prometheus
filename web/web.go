@@ -253,6 +253,11 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 	defer h.mtx.Unlock()
 
 	h.config = conf
+	if conf.StorageConfig.TSDBConfig != nil && conf.StorageConfig.TSDBConfig.Retention != nil {
+		h.options.TSDBRetentionDuration = conf.StorageConfig.TSDBConfig.Retention.Time
+		h.options.TSDBMaxBytes = conf.StorageConfig.TSDBConfig.Retention.Size
+		h.options.TSDBMaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
+	}
 
 	return nil
 }
@@ -263,6 +268,7 @@ type Options struct {
 	TSDBRetentionDuration model.Duration
 	TSDBDir               string
 	TSDBMaxBytes          units.Base2Bytes
+	TSDBMaxPercentage     float64
 	LocalStorage          LocalStorage
 	Storage               storage.Storage
 	ExemplarStorage       storage.ExemplarQueryable
@@ -865,14 +871,25 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 	status.Hostname = hostname
 	status.ServerTime = time.Now().UTC()
 
-	if h.options.TSDBRetentionDuration != 0 {
-		status.StorageRetention = h.options.TSDBRetentionDuration.String()
+	h.mtx.RLock()
+	tsdbRetentionDuration := h.options.TSDBRetentionDuration
+	tsdbMaxBytes := h.options.TSDBMaxBytes
+	tsdbMaxPercentage := h.options.TSDBMaxPercentage
+	h.mtx.RUnlock()
+	if tsdbRetentionDuration != 0 {
+		status.StorageRetention = tsdbRetentionDuration.String()
 	}
-	if h.options.TSDBMaxBytes != 0 {
+	if tsdbMaxBytes != 0 {
 		if status.StorageRetention != "" {
 			status.StorageRetention += " or "
 		}
-		status.StorageRetention += h.options.TSDBMaxBytes.String()
+		status.StorageRetention += tsdbMaxBytes.String()
+	}
+	if tsdbMaxPercentage != 0 {
+		if status.StorageRetention != "" {
+			status.StorageRetention += " or "
+		}
+		status.StorageRetention = status.StorageRetention + strconv.FormatFloat(tsdbMaxPercentage, 'g', -1, 64) + "%"
 	}
 
 	metrics, err := h.gatherer.Gather()

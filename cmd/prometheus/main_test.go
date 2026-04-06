@@ -890,8 +890,10 @@ func TestRemoteWrite_PerQueueMetricsAfterRelabeling(t *testing.T) {
 	port := testutil.RandomUnprivilegedPort(t)
 	targetPort := testutil.RandomUnprivilegedPort(t)
 
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		panic("should never be reached")
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.Fail(t, "should never be reached because the remote write relabeling shouldn't yield anything", "header: %v, body: %s", r.Header, body)
 	}))
 	t.Cleanup(server.Close)
 
@@ -975,7 +977,6 @@ remote_write:
 // | dataPending         | 0             | 1228.8              |
 // | desiredShards       | 0.6           | 369.2               |.
 func TestRemoteWrite_ReshardingWithoutDeadlock(t *testing.T) {
-	t.Skip("flaky test, see https://github.com/prometheus/prometheus/issues/17489")
 	t.Parallel()
 
 	tmpDir := t.TempDir()

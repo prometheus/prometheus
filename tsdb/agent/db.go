@@ -95,7 +95,9 @@ type Options struct {
 
 	// EnableSTStorage determines whether agent DB should write a Start Timestamp (ST)
 	// per sample to WAL.
-	// TODO(bwplotka): Implement this option as per PROM-60, currently it's noop.
+	// Controlled by the `--enable-feature=st-storage` CLI flag; when enabled, ST is
+	// persisted to the WAL for samples that include a non-zero start timestamp in
+	// supported record types.
 	EnableSTStorage bool
 }
 
@@ -403,7 +405,7 @@ func (db *DB) replayWAL() error {
 		return fmt.Errorf("find last checkpoint: %w", err)
 	}
 
-	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
+	duplicateRefToValidRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 
 	if err == nil {
 		sr, err := wlog.NewSegmentsReader(dir)
@@ -418,7 +420,7 @@ func (db *DB) replayWAL() error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := db.loadWAL(wlog.NewReader(sr), multiRef); err != nil {
+		if err := db.loadWAL(wlog.NewReader(sr), duplicateRefToValidRef, startFrom); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		startFrom++
@@ -439,7 +441,7 @@ func (db *DB) replayWAL() error {
 		}
 
 		sr := wlog.NewSegmentBufReader(seg)
-		err = db.loadWAL(wlog.NewReader(sr), multiRef)
+		err = db.loadWAL(wlog.NewReader(sr), duplicateRefToValidRef, i)
 		if err := sr.Close(); err != nil {
 			db.logger.Warn("error while closing the wal segments reader", "err", err)
 		}
@@ -462,7 +464,7 @@ func (db *DB) resetWALReplayResources() {
 	db.walReplayFloatHistogramsPool = zeropool.Pool[[]record.RefFloatHistogramSample]{}
 }
 
-func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef) (err error) {
+func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, currentSegmentOrCheckpoint int) (err error) {
 	var (
 		syms    = labels.NewSymbolTable() // One table for the whole WAL.
 		dec     = record.NewDecoder(syms, db.logger)
@@ -490,7 +492,7 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- series
-			case record.Samples:
+			case record.Samples, record.SamplesV2:
 				samples := db.walReplaySamplesPool.Get()[:0]
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
@@ -547,29 +549,52 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, entry := range v {
-				// If this is a new series, create it in memory. If we never read in a
-				// sample for this series, its timestamp will remain at 0 and it will
-				// be deleted at the next GC.
-				if db.series.GetByID(entry.Ref) == nil {
-					series := &memSeries{ref: entry.Ref, lset: entry.Labels, lastTs: 0}
-					db.series.Set(entry.Labels.Hash(), series)
-					multiRef[entry.Ref] = series.ref
-					db.metrics.numActiveSeries.Inc()
-					if entry.Ref > lastRef {
-						lastRef = entry.Ref
+				// Make sure we don't try to reuse a Ref that already exists in the WAL.
+				if entry.Ref > lastRef {
+					lastRef = entry.Ref
+				}
+
+				series := &memSeries{ref: entry.Ref, lset: entry.Labels}
+				series, created := db.series.SetUnlessAlreadySet(series.lset.Hash(), series)
+
+				if !created {
+					// We don't need to check if entry.Ref exists / if the value is not series.ref because
+					// SetUnlessAlreadySet is "first insertion wins": during single-threaded WAL replay the
+					// first ref written for a given label set is the canonical one. Any later WAL record for
+					// the same labels must carry that same ref, so series.ref is the only valid ref here.
+					duplicateRefToValidRef[entry.Ref] = series.ref
+
+					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+					// it remains in the checkpoint until we get past that segment.
+					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
+						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
 					}
+				} else {
+					db.metrics.numActiveSeries.Inc()
 				}
 			}
-			db.walReplaySeriesPool.Put(v)
+			for i := range v { // Zero out to avoid retaining label data.
+				v[i].Labels = labels.EmptyLabels()
+			}
+			db.walReplaySeriesPool.Put(v[:0])
 		case []record.RefSample:
 			for _, entry := range v {
-				// Update the lastTs for the series based
-				ref, ok := multiRef[entry.Ref]
-				if !ok {
+				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
+					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+					// it remains in the checkpoint until we get past that segment.
+					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
+						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+					}
+					entry.Ref = ref
+				}
+
+				series := db.series.GetByID(entry.Ref)
+				if series == nil {
 					nonExistentSeriesRefs.Inc()
 					continue
 				}
-				series := db.series.GetByID(ref)
+
+				// Update the lastTs for the series if this sample is newer.
 				if entry.T > series.lastTs {
 					series.lastTs = entry.T
 				}
@@ -577,32 +602,50 @@ func (db *DB) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 			db.walReplaySamplesPool.Put(v)
 		case []record.RefHistogramSample:
 			for _, entry := range v {
-				// Update the lastTs for the series based
-				ref, ok := multiRef[entry.Ref]
-				if !ok {
+				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
+					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+					// it remains in the checkpoint until we get past that segment.
+					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
+						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+					}
+					entry.Ref = ref
+				}
+				series := db.series.GetByID(entry.Ref)
+				if series == nil {
 					nonExistentSeriesRefs.Inc()
 					continue
 				}
-				series := db.series.GetByID(ref)
+
+				// Update the lastTs for the series if this sample is newer.
 				if entry.T > series.lastTs {
 					series.lastTs = entry.T
 				}
 			}
-			db.walReplayHistogramsPool.Put(v)
+			clear(v) // Zero out to avoid retaining histogram data.
+			db.walReplayHistogramsPool.Put(v[:0])
 		case []record.RefFloatHistogramSample:
 			for _, entry := range v {
-				// Update the lastTs for the series based
-				ref, ok := multiRef[entry.Ref]
-				if !ok {
+				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
+					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
+					// it remains in the checkpoint until we get past that segment.
+					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
+						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+					}
+					entry.Ref = ref
+				}
+				series := db.series.GetByID(entry.Ref)
+				if series == nil {
 					nonExistentSeriesRefs.Inc()
 					continue
 				}
-				series := db.series.GetByID(ref)
+
+				// Update the lastTs for the series if this sample is newer.
 				if entry.T > series.lastTs {
 					series.lastTs = entry.T
 				}
 			}
-			db.walReplayFloatHistogramsPool.Put(v)
+			clear(v) // Zero out to avoid retaining histogram data.
+			db.walReplayFloatHistogramsPool.Put(v[:0])
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
@@ -710,7 +753,7 @@ func (db *DB) truncate(mint int64) error {
 
 	db.metrics.checkpointCreationTotal.Inc()
 
-	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint); err != nil {
+	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage); err != nil {
 		db.metrics.checkpointCreationFail.Inc()
 		var cerr *wlog.CorruptionErr
 		if errors.As(err, &cerr) {
@@ -838,16 +881,9 @@ func (a *appender) SetOptions(opts *storage.AppendOptions) {
 }
 
 func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	// series references and chunk references are identical for agent mode.
-	headRef := chunks.HeadSeriesRef(ref)
-
-	series := a.series.GetByID(headRef)
-	if series == nil {
-		var err error
-		series, err = a.getOrCreate(l)
-		if err != nil {
-			return 0, err
-		}
+	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	if err != nil {
+		return 0, err
 	}
 
 	series.Lock()
@@ -870,7 +906,14 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, err error) {
+func (a *appenderBase) getOrCreate(ref chunks.HeadSeriesRef, l labels.Labels) (series *memSeries, err error) {
+	// Fastest path: caller already has a valid ref from a prior append.
+	if ref != 0 {
+		if series = a.series.GetByID(ref); series != nil {
+			return series, nil
+		}
+	}
+
 	// Ensure no empty or duplicate labels have gotten through. This mirrors the
 	// equivalent validation code in the TSDB's headAppender.
 	l = l.WithoutEmpty()
@@ -884,15 +927,27 @@ func (a *appenderBase) getOrCreate(l labels.Labels) (series *memSeries, err erro
 
 	hash := l.Hash()
 
-	series = a.series.GetByHash(hash, l)
-	if series != nil {
+	// Fast path: series already exists. This avoids burning a ref via
+	// nextRef.Inc() on every append for an already-known series.
+	if series = a.series.GetByHash(hash, l); series != nil {
 		return series, nil
 	}
 
-	ref := chunks.HeadSeriesRef(a.nextRef.Inc())
-	series = &memSeries{ref: ref, lset: l, lastTs: math.MinInt64}
-	a.series.Set(hash, series)
+	// Note this ref is wasted if a concurrent goroutine inserts the same series first.
+	newRef := chunks.HeadSeriesRef(a.nextRef.Inc())
+	var created bool
+	series, created = a.series.SetUnlessAlreadySet(hash, &memSeries{ref: newRef, lset: l, lastTs: math.MinInt64})
+	if !created {
+		// A concurrent goroutine inserted this series first; skip the WAL
+		// record and metric update.
+		return series, nil
+	}
 
+	// Known limitation: unlike the TSDB head, agent memSeries has no
+	// pendingCommit flag. Between this point and the first sample write that
+	// updates series.lastTs, GC may remove the series (lastTs == math.MinInt64
+	// satisfies mint > lastTs). The WAL record appended below would then
+	// reference a ref with no corresponding in-memory series.
 	a.pendingSeries = append(a.pendingSeries, record.RefSeries{
 		Ref:    series.ref,
 		Labels: l,
@@ -973,16 +1028,9 @@ func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int
 		}
 	}
 
-	// series references and chunk references are identical for agent mode.
-	headRef := chunks.HeadSeriesRef(ref)
-
-	series := a.series.GetByID(headRef)
-	if series == nil {
-		var err error
-		series, err = a.getOrCreate(l)
-		if err != nil {
-			return 0, err
-		}
+	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	if err != nil {
+		return 0, err
 	}
 
 	series.Lock()
@@ -1036,13 +1084,9 @@ func (a *appender) AppendHistogramSTZeroSample(ref storage.SeriesRef, l labels.L
 		return 0, storage.ErrSTNewerThanSample
 	}
 
-	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
-	if series == nil {
-		var err error
-		series, err = a.getOrCreate(l)
-		if err != nil {
-			return 0, err
-		}
+	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	if err != nil {
+		return 0, err
 	}
 
 	series.Lock()
@@ -1088,13 +1132,9 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 		return 0, storage.ErrSTNewerThanSample
 	}
 
-	series := a.series.GetByID(chunks.HeadSeriesRef(ref))
-	if series == nil {
-		var err error
-		series, err = a.getOrCreate(l)
-		if err != nil {
-			return 0, err
-		}
+	series, err := a.getOrCreate(chunks.HeadSeriesRef(ref), l)
+	if err != nil {
+		return 0, err
 	}
 
 	series.Lock()
@@ -1156,7 +1196,7 @@ func (a *appenderBase) log() error {
 	a.mtx.RLock()
 	defer a.mtx.RUnlock()
 
-	var encoder record.Encoder
+	encoder := record.Encoder{EnableSTStorage: a.opts.EnableSTStorage}
 	buf := a.bufPool.Get().([]byte)
 	defer func() {
 		a.bufPool.Put(buf) //nolint:staticcheck
@@ -1280,7 +1320,7 @@ func (a *appenderBase) logSeries() error {
 			a.bufPool.Put(buf) //nolint:staticcheck
 		}()
 
-		var encoder record.Encoder
+		encoder := record.Encoder{EnableSTStorage: a.opts.EnableSTStorage}
 		buf = encoder.Series(a.pendingSeries, buf)
 		if err := a.wal.Log(buf); err != nil {
 			return err

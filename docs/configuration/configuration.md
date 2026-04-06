@@ -490,6 +490,10 @@ nomad_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of Outscale service discovery configurations.
+outscale_sd_configs:
+  [ - <outscale_sd_config> ... ]
+
 # List of OVHcloud service discovery configurations.
 ovhcloud_sd_configs:
   [ - <ovhcloud_sd_config> ... ]
@@ -1029,11 +1033,283 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_broker_node_exporter_enabled`: whether node exporter is enabled on brokers (broker nodes only)
 * `__meta_msk_controller_endpoint_index`: the index of the controller endpoint (controller nodes only)
 
+#### `elasticache`
+
+The `elasticache` role discovers targets from AWS ElastiCache for both serverless caches and cache clusters.
+
+**Important**: For cache clusters, one target is created per cache node. Each target includes the cluster-level labels (ARN, status, tags, etc.) and node-specific labels (node ID, endpoint, availability zone, etc.). The `__address__` label is set to the individual node's endpoint address and port.
+
+For serverless caches, one target is created per serverless cache, with the `__address__` label set to the serverless cache endpoint.
+
+The IAM credentials used must have the following permissions to discover scrape targets:
+
+- `elasticache:DescribeServerlessCaches`
+- `elasticache:DescribeCacheClusters`
+- `elasticache:ListTagsForResource`
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+**Common labels (available on all targets):**
+
+* `__meta_elasticache_deployment_option`: the deployment option - either `serverless` for serverless caches or `node` for cache cluster nodes
+
+**Serverless Cache labels:**
+
+* `__meta_elasticache_serverless_cache_arn`: the ARN of the serverless cache
+* `__meta_elasticache_serverless_cache_name`: the name of the serverless cache
+* `__meta_elasticache_serverless_cache_status`: the status of the serverless cache
+* `__meta_elasticache_serverless_cache_engine`: the cache engine (redis or valkey)
+* `__meta_elasticache_serverless_cache_full_engine_version`: the full engine version
+* `__meta_elasticache_serverless_cache_major_engine_version`: the major engine version
+* `__meta_elasticache_serverless_cache_description`: the description of the serverless cache
+* `__meta_elasticache_serverless_cache_create_time`: the creation time in RFC3339 format
+* `__meta_elasticache_serverless_cache_snapshot_retention_limit`: the snapshot retention limit in days
+* `__meta_elasticache_serverless_cache_daily_snapshot_time`: the daily snapshot time
+* `__meta_elasticache_serverless_cache_user_group_id`: the user group ID
+* `__meta_elasticache_serverless_cache_kms_key_id`: the KMS key ID for encryption at rest
+* `__meta_elasticache_serverless_cache_endpoint_address`: the endpoint address
+* `__meta_elasticache_serverless_cache_endpoint_port`: the endpoint port
+* `__meta_elasticache_serverless_cache_reader_endpoint_address`: the reader endpoint address
+* `__meta_elasticache_serverless_cache_reader_endpoint_port`: the reader endpoint port
+* `__meta_elasticache_serverless_cache_security_group_id_<index>`: security group IDs (indexed)
+* `__meta_elasticache_serverless_cache_subnet_id_<index>`: subnet IDs (indexed)
+* `__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_maximum`: maximum data storage in the specified unit
+* `__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_minimum`: minimum data storage in the specified unit
+* `__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_unit`: unit for data storage (e.g., GB)
+* `__meta_elasticache_serverless_cache_cache_usage_limit_ecpu_per_second_maximum`: maximum ECPU per second
+* `__meta_elasticache_serverless_cache_cache_usage_limit_ecpu_per_second_minimum`: minimum ECPU per second
+* `__meta_elasticache_serverless_cache_tag_<tagkey>`: each serverless cache tag value, keyed by tag name
+
+**Cache Cluster labels:**
+
+* `__meta_elasticache_cache_cluster_arn`: the ARN of the cache cluster
+* `__meta_elasticache_cache_cluster_cache_cluster_id`: the cache cluster ID
+* `__meta_elasticache_cache_cluster_cache_cluster_status`: the status of the cache cluster
+* `__meta_elasticache_cache_cluster_engine`: the cache engine (redis or memcached)
+* `__meta_elasticache_cache_cluster_engine_version`: the engine version
+* `__meta_elasticache_cache_cluster_cache_node_type`: the cache node type (e.g., cache.t3.micro)
+* `__meta_elasticache_cache_cluster_num_cache_nodes`: the number of cache nodes
+* `__meta_elasticache_cache_cluster_cache_cluster_create_time`: the creation time in RFC3339 format
+* `__meta_elasticache_cache_cluster_at_rest_encryption_enabled`: whether encryption at rest is enabled
+* `__meta_elasticache_cache_cluster_transit_encryption_enabled`: whether encryption in transit is enabled
+* `__meta_elasticache_cache_cluster_transit_encryption_mode`: the transit encryption mode
+* `__meta_elasticache_cache_cluster_auth_token_enabled`: whether auth token is enabled
+* `__meta_elasticache_cache_cluster_auth_token_last_modified`: the last modification time of auth token
+* `__meta_elasticache_cache_cluster_auto_minor_version_upgrade`: whether auto minor version upgrade is enabled
+* `__meta_elasticache_cache_cluster_cache_parameter_group`: the cache parameter group name
+* `__meta_elasticache_cache_cluster_cache_subnet_group_name`: the cache subnet group name
+* `__meta_elasticache_cache_cluster_client_download_landing_page`: the client download landing page URL
+* `__meta_elasticache_cache_cluster_ip_discovery`: the IP discovery mode (ipv4 or ipv6)
+* `__meta_elasticache_cache_cluster_network_type`: the network type (ipv4, ipv6, or dual_stack)
+* `__meta_elasticache_cache_cluster_preferred_availability_zone`: the preferred availability zone
+* `__meta_elasticache_cache_cluster_preferred_maintenance_window`: the preferred maintenance window
+* `__meta_elasticache_cache_cluster_preferred_outpost_arn`: the preferred outpost ARN
+* `__meta_elasticache_cache_cluster_replication_group_id`: the replication group ID (for Redis clusters that are part of a replication group)
+* `__meta_elasticache_cache_cluster_replication_group_log_delivery_enabled`: whether log delivery is enabled for the replication group
+* `__meta_elasticache_cache_cluster_snapshot_retention_limit`: the snapshot retention limit in days
+* `__meta_elasticache_cache_cluster_snapshot_window`: the daily snapshot window
+* `__meta_elasticache_cache_cluster_configuration_endpoint_address`: the configuration endpoint address (cluster mode enabled only)
+* `__meta_elasticache_cache_cluster_configuration_endpoint_port`: the configuration endpoint port (cluster mode enabled only)
+* `__meta_elasticache_cache_cluster_notification_topic_arn`: the SNS topic ARN for notifications
+* `__meta_elasticache_cache_cluster_notification_topic_status`: the SNS topic status
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_destination_type_<index>`: log delivery destination type (cloudwatch-logs or kinesis-firehose)
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_log_format_<index>`: log format (text or json)
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_log_type_<index>`: log type (slow-log or engine-log)
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_status_<index>`: log delivery status
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_message_<index>`: log delivery message
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_log_group_<index>`: CloudWatch log group name (cloudwatch-logs destination only)
+* `__meta_elasticache_cache_cluster_log_delivery_configuration_delivery_stream_<index>`: Kinesis Firehose delivery stream name (kinesis-firehose destination only)
+* `__meta_elasticache_cache_cluster_pending_modified_values_auth_token_status`: pending auth token status
+* `__meta_elasticache_cache_cluster_pending_modified_values_cache_node_type`: pending cache node type change
+* `__meta_elasticache_cache_cluster_pending_modified_values_engine_version`: pending engine version upgrade
+* `__meta_elasticache_cache_cluster_pending_modified_values_num_cache_nodes`: pending number of cache nodes
+* `__meta_elasticache_cache_cluster_pending_modified_values_transit_encryption_enabled`: pending transit encryption status
+* `__meta_elasticache_cache_cluster_pending_modified_values_transit_encryption_mode`: pending transit encryption mode
+* `__meta_elasticache_cache_cluster_pending_modified_values_cache_node_ids_to_remove`: comma-separated list of cache node IDs to be removed
+* `__meta_elasticache_cache_cluster_security_group_membership_id_<index>`: security group ID (indexed)
+* `__meta_elasticache_cache_cluster_security_group_membership_status_<index>`: security group status (indexed)
+* `__meta_elasticache_cache_cluster_node_id`: cache node ID
+* `__meta_elasticache_cache_cluster_node_status`: cache node status
+* `__meta_elasticache_cache_cluster_node_create_time`: cache node creation time in RFC3339 format
+* `__meta_elasticache_cache_cluster_node_availability_zone`: cache node availability zone
+* `__meta_elasticache_cache_cluster_node_customer_outpost_arn`: cache node outpost ARN
+* `__meta_elasticache_cache_cluster_node_source_cache_node_id`: source cache node ID for replication
+* `__meta_elasticache_cache_cluster_node_parameter_group_status`: parameter group status
+* `__meta_elasticache_cache_cluster_node_endpoint_address`: cache node endpoint address
+* `__meta_elasticache_cache_cluster_node_endpoint_port`: cache node endpoint port
+* `__meta_elasticache_cache_cluster_tag_<tagkey>`: each cache cluster tag value, keyed by tag name
+
+#### `rds`
+
+The `rds` role discovers targets from [AWS RDS](https://aws.amazon.com/rds/)
+database instances within clusters. One target is created for each DB instance
+within the specified clusters. The endpoint address and port of each instance is used by default.
+
+The IAM credentials used must have the `rds:DescribeDBClusters` and `rds:DescribeDBInstances`
+permissions to discover scrape targets.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+**Cluster labels:**
+
+* `__meta_rds_cluster_activity_stream_kinesis_stream_name`: the name of the Amazon Kinesis data stream used for database activity stream
+* `__meta_rds_cluster_activity_stream_kms_key_id`: the AWS KMS key identifier used for encrypting the database activity stream
+* `__meta_rds_cluster_activity_stream_mode`: the mode of the database activity stream (sync or async)
+* `__meta_rds_cluster_activity_stream_status`: the status of the database activity stream
+* `__meta_rds_cluster_allocated_storage`: the allocated storage size in gibibytes (GiB)
+* `__meta_rds_cluster_arn`: the Amazon Resource Name (ARN) of the DB cluster
+* `__meta_rds_cluster_auto_minor_version_upgrade`: whether automatic minor version upgrades are enabled
+* `__meta_rds_cluster_automatic_restart_time`: the time when a stopped cluster will be automatically restarted
+* `__meta_rds_cluster_aws_backup_recovery_point_arn`: the ARN of the recovery point in AWS Backup
+* `__meta_rds_cluster_backtrack_consumed_change_records`: the number of change records stored for backtrack
+* `__meta_rds_cluster_backtrack_window`: the target backtrack window in hours
+* `__meta_rds_cluster_backup_retention_period`: the number of days for which automated backups are retained
+* `__meta_rds_cluster_capacity`: the current capacity of an Aurora Serverless DB cluster
+* `__meta_rds_cluster_character_set_name`: the name of the character set
+* `__meta_rds_cluster_clone_group_id`: the ID of the clone group
+* `__meta_rds_cluster_cluster_create_time`: the time when the DB cluster was created
+* `__meta_rds_cluster_cluster_scalability_type`: the scalability type of the cluster
+* `__meta_rds_cluster_copy_tags_to_snapshot`: whether tags are copied from the cluster to snapshots
+* `__meta_rds_cluster_cross_account_clone`: whether the DB cluster is a cross-account clone
+* `__meta_rds_cluster_database_insights_mode`: the mode of Database Insights
+* `__meta_rds_cluster_database_name`: the database name
+* `__meta_rds_cluster_db_system_id`: the Oracle system ID (Oracle SID)
+* `__meta_rds_cluster_deletion_protection`: whether deletion protection is enabled
+* `__meta_rds_cluster_earliest_backtrack_time`: the earliest time to which a database can be restored with backtrack
+* `__meta_rds_cluster_earliest_restorable_time`: the earliest time to which a database can be restored
+* `__meta_rds_cluster_endpoint`: the endpoint of the DB cluster
+* `__meta_rds_cluster_engine_lifecycle_support`: the engine lifecycle support value
+* `__meta_rds_cluster_engine_mode`: the engine mode of the cluster (provisioned, serverless, etc.)
+* `__meta_rds_cluster_engine_version`: the version of the database engine
+* `__meta_rds_cluster_engine`: the database engine of the DB cluster
+* `__meta_rds_cluster_global_cluster_identifier`: the identifier of the global cluster
+* `__meta_rds_cluster_global_write_forwarding_requested`: whether global write forwarding is requested
+* `__meta_rds_cluster_global_write_forwarding_status`: the status of global write forwarding
+* `__meta_rds_cluster_hosted_zone_id`: the Route 53 hosted zone ID
+* `__meta_rds_cluster_http_endpoint_enabled`: whether the HTTP endpoint is enabled
+* `__meta_rds_cluster_iam_database_authentication_enabled`: whether the DB cluster has IAM database authentication enabled
+* `__meta_rds_cluster_identifier`: the identifier of the DB cluster
+* `__meta_rds_cluster_instance_class`: the compute and memory capacity class of the DB cluster
+* `__meta_rds_cluster_io_optimized_next_allowed_modification_time`: the time when the next IO optimization configuration change is allowed
+* `__meta_rds_cluster_iops`: the provisioned IOPS (I/O operations per second) value
+* `__meta_rds_cluster_kms_key_id`: the AWS KMS key identifier for the encrypted cluster
+* `__meta_rds_cluster_latest_restorable_time`: the latest time to which a database can be restored
+* `__meta_rds_cluster_local_write_forwarding_status`: the status of local write forwarding
+* `__meta_rds_cluster_master_username`: the master username
+* `__meta_rds_cluster_monitoring_interval`: the interval in seconds between enhanced monitoring metrics collection
+* `__meta_rds_cluster_monitoring_role_arn`: the ARN for the IAM role that permits RDS to send enhanced monitoring metrics to CloudWatch
+* `__meta_rds_cluster_multi_az`: whether the DB cluster is multi-AZ
+* `__meta_rds_cluster_network_type`: the network type (IPV4 or DUAL)
+* `__meta_rds_cluster_parameter_group`: the name of the DB cluster parameter group
+* `__meta_rds_cluster_percent_progress`: the progress percentage of the DB cluster operation
+* `__meta_rds_cluster_performance_insights_enabled`: whether Performance Insights is enabled
+* `__meta_rds_cluster_performance_insights_kms_key_id`: the AWS KMS key identifier for encrypting Performance Insights data
+* `__meta_rds_cluster_performance_insights_retention_period`: the retention period for Performance Insights data
+* `__meta_rds_cluster_port`: the port the DB cluster is listening on
+* `__meta_rds_cluster_preferred_backup_window`: the daily time range during which automated backups are created
+* `__meta_rds_cluster_preferred_maintenance_window`: the weekly time range during which system maintenance can occur
+* `__meta_rds_cluster_publicly_accessible`: whether the DB cluster is publicly accessible
+* `__meta_rds_cluster_reader_endpoint`: the reader endpoint of the DB cluster
+* `__meta_rds_cluster_replication_source_identifier`: the identifier of the source DB cluster if this is a read replica
+* `__meta_rds_cluster_resource_id`: the AWS Region-unique immutable identifier for the DB cluster
+* `__meta_rds_cluster_serverless_v2_platform_version`: the platform version of the Aurora Serverless v2 DB cluster
+* `__meta_rds_cluster_status`: the status of the DB cluster
+* `__meta_rds_cluster_storage_encrypted`: whether the DB cluster is storage encrypted
+* `__meta_rds_cluster_storage_encryption_type`: the storage encryption type
+* `__meta_rds_cluster_storage_throughput`: the storage throughput in MiBps
+* `__meta_rds_cluster_storage_type`: the storage type
+* `__meta_rds_cluster_subnet_group`: the name of the subnet group associated with the DB cluster
+* `__meta_rds_cluster_tag_<tagkey>`: each tag value of the DB cluster
+* `__meta_rds_cluster_upgrade_rollout_order`: the upgrade rollout order
+
+**Instance labels:**
+
+* `__meta_rds_instance_activity_stream_engine_native_audit_fields_included`: whether engine-native audit fields are included in the database activity stream
+* `__meta_rds_instance_activity_stream_kinesis_stream_name`: the name of the Amazon Kinesis data stream used for the database activity stream
+* `__meta_rds_instance_activity_stream_kms_key_id`: the AWS KMS key identifier used for encrypting the database activity stream
+* `__meta_rds_instance_activity_stream_mode`: the mode of the database activity stream (sync or async)
+* `__meta_rds_instance_activity_stream_policy_status`: the policy status of the database activity stream
+* `__meta_rds_instance_activity_stream_status`: the status of the database activity stream
+* `__meta_rds_instance_allocated_storage`: the allocated storage size in gibibytes (GiB)
+* `__meta_rds_instance_arn`: the Amazon Resource Name (ARN) of the DB instance
+* `__meta_rds_instance_auto_minor_version_upgrade`: whether automatic minor version upgrades are enabled
+* `__meta_rds_instance_automatic_restart_time`: the time when a stopped instance will be automatically restarted
+* `__meta_rds_instance_automation_mode`: the automation mode of the instance
+* `__meta_rds_instance_availability_zone`: the availability zone of the DB instance
+* `__meta_rds_instance_aws_backup_recovery_point_arn`: the ARN of the recovery point in AWS Backup
+* `__meta_rds_instance_backup_retention_period`: the number of days for which automated backups are retained
+* `__meta_rds_instance_backup_target`: the backup target (region or outposts)
+* `__meta_rds_instance_ca_certificate_identifier`: the identifier of the CA certificate for the DB instance
+* `__meta_rds_instance_character_set_name`: the name of the character set
+* `__meta_rds_instance_class`: the compute and memory capacity class of the DB instance
+* `__meta_rds_instance_copy_tags_to_snapshot`: whether tags are copied from the instance to snapshots
+* `__meta_rds_instance_custom_iam_instance_profile`: the instance profile associated with the underlying Amazon EC2 instance
+* `__meta_rds_instance_customer_owned_ip_enabled`: whether a customer-owned IP address (CoIP) is enabled
+* `__meta_rds_instance_database_insights_mode`: the mode of Database Insights
+* `__meta_rds_instance_db_cluster_identifier`: the identifier of the DB cluster this instance is a member of
+* `__meta_rds_instance_db_name`: the database name
+* `__meta_rds_instance_db_system_id`: the Oracle system ID (Oracle SID)
+* `__meta_rds_instance_dedicated_log_volume`: whether the DB instance has a dedicated log volume
+* `__meta_rds_instance_deletion_protection`: whether deletion protection is enabled
+* `__meta_rds_instance_endpoint_address`: the DNS address of the DB instance
+* `__meta_rds_instance_endpoint_hosted_zone_id`: the Route 53 hosted zone ID of the endpoint
+* `__meta_rds_instance_endpoint_port`: the port that the DB instance listens on
+* `__meta_rds_instance_engine_lifecycle_support`: the engine lifecycle support value
+* `__meta_rds_instance_engine_version`: the version of the database engine
+* `__meta_rds_instance_engine`: the database engine that the DB instance uses
+* `__meta_rds_instance_enhanced_monitoring_resource_arn`: the ARN of the Amazon CloudWatch Logs log stream for enhanced monitoring
+* `__meta_rds_instance_iam_database_authentication_enabled`: whether IAM database authentication is enabled
+* `__meta_rds_instance_identifier`: the identifier of the DB instance
+* `__meta_rds_instance_instance_create_time`: the time when the DB instance was created
+* `__meta_rds_instance_iops`: the provisioned IOPS (I/O operations per second) value
+* `__meta_rds_instance_is_cluster_writer`: whether the instance is the cluster writer (true/false)
+* `__meta_rds_instance_is_storage_config_upgrade_available`: whether a storage configuration upgrade is available
+* `__meta_rds_instance_kms_key_id`: the AWS KMS key identifier for the encrypted instance
+* `__meta_rds_instance_latest_restorable_time`: the latest time to which a database can be restored
+* `__meta_rds_instance_license_model`: the license model information
+* `__meta_rds_instance_listener_endpoint_address`: the DNS address of the listener endpoint
+* `__meta_rds_instance_listener_endpoint_hosted_zone_id`: the Route 53 hosted zone ID of the listener endpoint
+* `__meta_rds_instance_listener_endpoint_port`: the port that the listener endpoint listens on
+* `__meta_rds_instance_master_username`: the master username
+* `__meta_rds_instance_max_allocated_storage`: the upper limit in gibibytes to which storage can be scaled automatically
+* `__meta_rds_instance_monitoring_interval`: the interval in seconds between enhanced monitoring metrics collection
+* `__meta_rds_instance_monitoring_role_arn`: the ARN for the IAM role that permits RDS to send enhanced monitoring metrics to CloudWatch
+* `__meta_rds_instance_multi_az`: whether the DB instance is a Multi-AZ deployment
+* `__meta_rds_instance_multi_tenant`: whether the instance is in a multi-tenant configuration
+* `__meta_rds_instance_nchar_character_set_name`: the national character set name
+* `__meta_rds_instance_network_type`: the network type (IPV4 or DUAL)
+* `__meta_rds_instance_percent_progress`: the progress percentage of the DB instance operation
+* `__meta_rds_instance_performance_insights_enabled`: whether Performance Insights is enabled
+* `__meta_rds_instance_performance_insights_kms_key_id`: the AWS KMS key identifier for encrypting Performance Insights data
+* `__meta_rds_instance_performance_insights_retention_period`: the retention period for Performance Insights data
+* `__meta_rds_instance_port`: the port that the DB instance listens on
+* `__meta_rds_instance_preferred_backup_window`: the daily time range during which automated backups are created
+* `__meta_rds_instance_preferred_maintenance_window`: the weekly time range during which system maintenance can occur
+* `__meta_rds_instance_promotion_tier`: the order in which an Aurora replica is promoted to primary instance after a failure
+* `__meta_rds_instance_publicly_accessible`: whether the DB instance is publicly accessible
+* `__meta_rds_instance_read_replica_source_db_cluster_identifier`: the identifier of the source DB cluster if this instance is a read replica
+* `__meta_rds_instance_read_replica_source_db_instance_identifier`: the identifier of the source DB instance if this instance is a read replica
+* `__meta_rds_instance_replica_mode`: the replica mode (open-read-only or mounted)
+* `__meta_rds_instance_resource_id`: the AWS Region-unique immutable identifier for the DB instance
+* `__meta_rds_instance_resume_full_automation_mode_time`: the time when the DB instance will resume full automation
+* `__meta_rds_instance_secondary_availability_zone`: the secondary availability zone for Multi-AZ instances
+* `__meta_rds_instance_status`: the status of the DB instance
+* `__meta_rds_instance_storage_encrypted`: whether the DB instance is storage encrypted
+* `__meta_rds_instance_storage_encryption_type`: the storage encryption type
+* `__meta_rds_instance_storage_throughput`: the storage throughput in MiBps
+* `__meta_rds_instance_storage_type`: the storage type
+* `__meta_rds_instance_storage_volume_status`: the status of the storage volume
+* `__meta_rds_instance_subnet_group`: the name of the subnet group associated with the DB instance
+* `__meta_rds_instance_tag_<tagkey>`: each tag value of the DB instance
+* `__meta_rds_instance_tde_credential_arn`: the ARN for the TDE encryption key
+* `__meta_rds_instance_timezone`: the time zone of the DB instance
+* `__meta_rds_instance_upgrade_rollout_order`: the upgrade rollout order
+
 See below for the configuration options for AWS discovery:
 
 ```yaml
 # The AWS role to use for service discovery.
-# Must be one of: ec2, lightsail, ecs, or msk.
+# Must be one of: ec2, lightsail, ecs, msk, elasticache, or rds.
 role: <string>
 
 # The AWS region. If blank, the region from the instance metadata is used.
@@ -1069,8 +1345,9 @@ filters:
   [ - name: <string>
       values: <string>, [...] ]
 
-# List of ECS or MSK cluster ARNs (ecs and msk roles only) to discover. If empty, all clusters in the region are discovered.
-# This can significantly improve performance when you only need to monitor specific clusters.
+# List of ECS, ElastiCache, MSK, or RDS cluster identifiers (ecs, elasticache, msk, and rds roles only) to discover.
+# A List of ARNs of clusters to discover. If empty, all clusters in the region are discovered.
+# This can significantly improve performance when you only need to monitor specific clusters/caches.
 [ clusters: [<string>, ...] ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
@@ -1228,10 +1505,15 @@ metadata and a single tag).
 ### `<digitalocean_sd_config>`
 
 DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
-Droplets API.
-This service discovery uses the public IPv4 address by default, by that can be
-changed with relabeling, as demonstrated in [the Prometheus digitalocean-sd
-configuration file](/documentation/examples/prometheus-digitalocean.yml).
+API.
+This service discovery supports multiple roles through the `role` parameter.
+
+One of the following `role` types can be configured to discover targets:
+
+#### `droplets`
+
+The `droplets` role discovers targets from DigitalOcean Droplets. The public IPv4 address is used by default,
+but may be changed with relabeling.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -1249,11 +1531,33 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_digitalocean_tags`: the comma-separated list of tags of the droplet
 * `__meta_digitalocean_vpc`: the id of the droplet's VPC
 
+#### `databases`
+
+The `databases` role discovers targets from DigitalOcean Managed Databases.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_digitalocean_db_id`: the id of the database cluster
+* `__meta_digitalocean_db_name`: the name of the database cluster
+* `__meta_digitalocean_db_engine`: the engine of the database cluster (e.g., `pg`, `mysql`, `redis`, `mongodb`)
+* `__meta_digitalocean_db_version`: the version of the engine
+* `__meta_digitalocean_db_status`: the status of the database cluster
+* `__meta_digitalocean_db_region`: the region of the database cluster
+* `__meta_digitalocean_db_size`: the size of the database cluster
+* `__meta_digitalocean_db_num_nodes`: the number of nodes in the database cluster
+* `__meta_digitalocean_db_host`: the public host of the database cluster
+* `__meta_digitalocean_db_private_host`: the private host of the database cluster
+* `__meta_digitalocean_db_tag_<tagname>`: each tag of the database cluster, with its value set to `true`
+
 ```yaml
+# The DigitalOcean role to use for service discovery.
+# Must be one of: droplets or databases.
+[ role: <string> | default = droplets ]
+
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
 
-# The time after which the droplets are refreshed.
+# The time after which the targets are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
@@ -1965,7 +2269,10 @@ The following meta labels are available on all targets during [relabeling](#rela
 * `__meta_hetzner_server_status`: the status of the server
 * `__meta_hetzner_public_ipv4`: the public ipv4 address of the server
 * `__meta_hetzner_public_ipv6_network`: the public ipv6 network (/64) of the server
-* `__meta_hetzner_datacenter`: the datacenter of the server
+
+Note that the `__meta_hetzner_datacenter` label is deprecated for both roles `robot` and `hcloud`:
+- For the `robot` role, the replacement label is `__meta_hetzner_robot_datacenter`.
+- For the `hcloud` role, the label will be removed after 1 July 2026. For more details, see the [changelog](https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters).
 
 The labels below are only available for targets with `role` set to `hcloud`:
 
@@ -1973,8 +2280,10 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_image_os_flavor`: the OS flavor of the server image
 * `__meta_hetzner_hcloud_image_os_version`: the OS version of the server image
-* `__meta_hetzner_hcloud_datacenter_location`: the location of the server
-* `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server
+* `__meta_hetzner_hcloud_location`: the location of the server
+* `__meta_hetzner_hcloud_location_network_zone`: the network zone of the server
+* `__meta_hetzner_hcloud_datacenter_location`: the location of the server (deprecated in favor of `__meta_hetzner_hcloud_location`)
+* `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server (deprecated in favor of `__meta_hetzner_hcloud_location_network_zone`)
 * `__meta_hetzner_hcloud_server_type`: the type of the server
 * `__meta_hetzner_hcloud_cpu_cores`: the CPU cores count of the server
 * `__meta_hetzner_hcloud_cpu_type`: the CPU type of the server (shared or dedicated)
@@ -1986,6 +2295,7 @@ The labels below are only available for targets with `role` set to `hcloud`:
 
 The labels below are only available for targets with `role` set to `robot`:
 
+* `__meta_hetzner_robot_datacenter`: the datacenter of the server
 * `__meta_hetzner_robot_product`: the product of the server
 * `__meta_hetzner_robot_cancelled`: the server cancellation status
 
@@ -2040,6 +2350,10 @@ refresh failures.
 Each target has a meta label `__meta_url` during the
 [relabeling phase](#relabel_config). Its value is set to the
 URL from which the target was extracted.
+
+There is a list of
+[integrations](https://prometheus.io/docs/operating/integrations/#http-service-discovery) with this
+discovery mechanism.
 
 ```yaml
 # URL from which the targets are fetched.
@@ -2115,6 +2429,7 @@ Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
 * `__meta_kubernetes_node_provider_id`: The cloud provider's name for the node object.
+* `__meta_kubernetes_node_condition_<condition_type>`: For every entry in node.Status.Conditions, a label with the condition type in lowercase. Possible values are `true`, `false`, or `unknown`. Examples: `__meta_kubernetes_node_condition_ready`, `__meta_kubernetes_node_condition_memorypressure`, `__meta_kubernetes_node_condition_diskpressure`.
 * `__meta_kubernetes_node_label_<labelname>`: Each label from the node object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
@@ -2177,6 +2492,9 @@ Available meta labels:
 * `__meta_kubernetes_pod_uid`: The UID of the pod object.
 * `__meta_kubernetes_pod_controller_kind`: Object kind of the pod controller.
 * `__meta_kubernetes_pod_controller_name`: Name of the pod controller.
+* `__meta_kubernetes_pod_deployment_name`: Name of the deployment the pod belongs to. Requires `attach_metadata: {deployment: true}`.
+* `__meta_kubernetes_pod_cronjob_name`: Name of the cronjob the pod belongs to. Requires `attach_metadata: {cronjob: true}`.
+* `__meta_kubernetes_pod_job_name`: Name of the job the pod belongs to. Requires `attach_metadata: {job: true}`.
 
 #### `endpoints`
 
@@ -2313,6 +2631,18 @@ attach_metadata:
 # Attaches namespace metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice, service, ingress.
 # When set to true, Prometheus must have permissions to list/watch Namespaces.
   [ namespace: <boolean> | default = false ]
+# Attaches deployment metadata to discovered pod targets. Valid for role: pod.
+# When set to true, Prometheus must have permissions to list/watch ReplicaSets.
+# Enables the __meta_kubernetes_pod_deployment_name label.
+  [ deployment: <boolean> | default = false ]
+# Attaches job metadata to discovered pod targets. Valid for role: pod.
+# When set to true, Prometheus must have permissions to list/watch Jobs.
+# Enables the __meta_kubernetes_pod_job_name label.
+  [ job: <boolean> | default = false ]
+# Attaches cronjob metadata to discovered pod targets. Valid for role: pod.
+# When set to true, Prometheus must have permissions to list/watch Jobs.
+# Enables the __meta_kubernetes_pod_cronjob_name label.
+  [ cronjob: <boolean> | default = false ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
@@ -2999,6 +3329,49 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ <http_config> ]
 ```
 
+### `<outscale_sd_config>`
+
+Outscale SD configurations allow retrieving scrape targets from [Outscale Cloud](https://outscale.com/) VMs via the Outscale API (OAPI).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_outscale_vm_instance_id`: the ID of the VM
+* `__meta_outscale_vm_region`: the region of the VM
+* `__meta_outscale_vm_subregion`: the subregion of the VM
+* `__meta_outscale_vm_state`: the state of the VM
+* `__meta_outscale_vm_private_ip`: the private IP address of the VM
+* `__meta_outscale_vm_public_ip`: the public IP address of the VM
+* `__meta_outscale_vm_tag_<key>`: each tag value; the tag key is sanitized and appended (e.g. tag key `Name` → `__meta_outscale_vm_tag_Name`)
+
+Targets use the first address found: private IP, then public IP. This can be changed with relabeling, as demonstrated in [the Prometheus outscale-sd configuration file](/documentation/examples/prometheus-outscale.yml).
+
+See below for the configuration options for Outscale discovery:
+
+```yaml
+# Region to use.
+[ region: <string> | default = "eu-west-2" ]
+
+# Access key (20 alphanumeric characters). See https://docs.outscale.com/en/userguide/Creating-an-Access-Key.html
+access_key: <string>
+
+# Secret key (40 characters). Use one of `secret_key` or `secret_key_file`.
+[ secret_key: <secret> ]
+
+# Secret key file.
+[ secret_key_file: <filename> ]
+
+# API endpoint URL. Defaults to https://api.<region>.outscale.com/api/v1 if empty.
+[ endpoint: <string> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# Refresh interval to re-read the targets list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# HTTP client settings.
+[ <http_config> ]
+```
 
 ### `<static_config>`
 
@@ -3178,6 +3551,10 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+  # AWS External ID used when assuming a role.
+  # Can only be used with role_arn.
+  [ external_id: <string> ]
+
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
   # Note: FIPS STS selection should be configured via use_fips_sts_endpoint rather than environment variables. (The problem report that motivated this: AWS_USE_FIPS_ENDPOINT no longer works.)
@@ -3271,6 +3648,10 @@ nomad_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of Outscale service discovery configurations.
+outscale_sd_configs:
+  [ - <outscale_sd_config> ... ]
+
 # List of OVHcloud service discovery configurations.
 ovhcloud_sd_configs:
   [ - <ovhcloud_sd_config> ... ]
@@ -3334,7 +3715,7 @@ url: <string>
 # * The `prometheus.WriteRequest` represents the message introduced in Remote Write 1.0, which
 # will be deprecated eventually.
 # * The `io.prometheus.write.v2.Request` was introduced in Remote Write 2.0 and replaces the former,
-# by improving efficiency and sending metadata, created timestamp and native histograms by default.
+# by improving efficiency and sending metadata, start timestamp and native histograms by default.
 #
 # Before changing this value, consult with your remote storage provider (or test) what message it supports.
 # Read more on https://prometheus.io/docs/specs/remote_write_spec_2_0/#io-prometheus-write-v2-request
@@ -3388,6 +3769,10 @@ sigv4:
 
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
+
+  # AWS External ID used when assuming a role.
+  # Can only be used with role_arn.
+  [ external_id: <string> ]
 
   # Defines the FIPS mode for the AWS STS endpoint.
   # Requires Prometheus >= 2.54.0
@@ -3571,9 +3956,9 @@ with this feature.
 # or when a compaction completes, whichever comes first.
 [ retention: <retention> ] :
   # How long to retain samples in storage. If neither this option nor the size option
-  # is set, the retention time defaults to 15d. Units Supported: y, w, d, h, m, s, ms.
+  # is set, the retention time defaults to 15d. Setting this to 0 disables time-based retention.
   # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.time.
-  [ time: <duration> | default = 15d ]
+  [ time: <duration> ]
 
   # Maximum number of bytes that can be stored for blocks. A unit is required,
   # supported units: B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Based on powers-of-2, so 1KB is 1024B.
@@ -3581,6 +3966,14 @@ with this feature.
   # This option takes precedence over the deprecated command-line flag --storage.tsdb.retention.size.
   [ size: <size> | default = 0 ]
 
+  # Maximum percent of total disk space allowed for storage of blocks. Alternative to `size` and
+  # behaves the same as if size was calculated by hand as a percentage of the total storage capacity.
+  # Prometheus will fail to start if this config is enabled, but it fails to query the total storage capacity.
+  # The total disk space allowed will automatically adapt to volume resize.
+  # If set to 0 or not set, percentage-based retention is disabled.
+  #
+  # This is an experimental feature, this behaviour could change or be removed in the future.
+  [ percentage: <uint> | default = 0 ]
 ```
 
 ### `<exemplars>`
@@ -3623,3 +4016,6 @@ headers:
 tls_config:
   [ <tls_config> ]
 ```
+
+If query logging and tracing are both enabled, a traceID and spanID will be injected
+into the query log file for use in log/trace correlation.

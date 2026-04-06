@@ -1339,6 +1339,41 @@ func TestHistogramCompact(t *testing.T) {
 			},
 		},
 		{
+			"all zero-length spans with non-empty buckets",
+			&Histogram{
+				PositiveSpans:   []Span{{0, 0}, {2, 0}},
+				PositiveBuckets: []int64{1, 3},
+				NegativeSpans:   []Span{{1, 0}},
+				NegativeBuckets: []int64{2},
+			},
+			0,
+			&Histogram{
+				PositiveSpans:   []Span{},
+				PositiveBuckets: []int64{},
+				NegativeSpans:   []Span{},
+				NegativeBuckets: []int64{},
+			},
+		},
+		{
+			// The loop guard prevents a panic; extra buckets beyond span
+			// coverage are preserved in the output. Callers must validate
+			// span/bucket consistency before invoking Compact.
+			"more buckets than spans account for",
+			&Histogram{
+				PositiveSpans:   []Span{{0, 1}, {2, 1}},
+				PositiveBuckets: []int64{1, 2, 3, 4},
+				NegativeSpans:   []Span{{0, 1}},
+				NegativeBuckets: []int64{5, 6},
+			},
+			0,
+			&Histogram{
+				PositiveSpans:   []Span{{0, 1}, {2, 1}},
+				PositiveBuckets: []int64{1, 2, 3, 4},
+				NegativeSpans:   []Span{{0, 1}},
+				NegativeBuckets: []int64{5, 6},
+			},
+		},
+		{
 			"eliminate multiple zero length spans with custom buckets",
 			&Histogram{
 				Schema:          CustomBucketsSchema,

@@ -102,7 +102,7 @@ type OpenMetricsParser struct {
 	exemplarTs    int64
 	hasExemplarTs bool
 
-	// Created timestamp parsing state.
+	// Start timestamp parsing state.
 	st        int64
 	stHashSet uint64
 	// ignoreExemplar instructs the parser to not overwrite exemplars (to keep them while peeking ahead).
@@ -122,11 +122,11 @@ type openMetricsParserOptions struct {
 type OpenMetricsOption func(*openMetricsParserOptions)
 
 // WithOMParserSTSeriesSkipped turns off exposing _created lines
-// as series, which makes those only used for parsing created timestamp
+// as series, which makes those only used for parsing start timestamp
 // for `StartTimestamp` method purposes.
 //
 // It's recommended to use this option to avoid using _created lines for other
-// purposes than created timestamp, but leave false by default for the
+// purposes than start timestamp, but leave false by default for the
 // best-effort compatibility.
 func WithOMParserSTSeriesSkipped() OpenMetricsOption {
 	return func(o *openMetricsParserOptions) {
@@ -285,7 +285,7 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 	return true
 }
 
-// StartTimestamp returns the created timestamp for a current Metric if exists or nil.
+// StartTimestamp returns the start timestamp for a current Metric if exists or nil.
 // NOTE(Maniktherana): Might use additional CPU/mem resources due to deep copy of parser required for peeking given 1.0 OM specification on _created series.
 func (p *OpenMetricsParser) StartTimestamp() int64 {
 	if !typeRequiresST(p.mtype) {
@@ -521,7 +521,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		case tUnit:
 			p.unit = string(p.text)
 			m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
-			if len(p.unit) > 0 {
+			if p.unit != "" {
 				if !strings.HasSuffix(m, p.unit) || len(m) < len(p.unit)+1 || p.l.b[p.offsets[1]-len(p.unit)-1] != '_' {
 					return EntryInvalid, fmt.Errorf("unit %q not a suffix of metric %q", p.unit, m)
 				}
@@ -634,11 +634,13 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 	for {
 		curTStart := p.l.start
 		curTI := p.l.i
+		var isQString bool
 		switch t {
 		case tBraceClose:
 			return offsets, nil
 		case tLName:
 		case tQString:
+			isQString = true
 		default:
 			return nil, p.parseError("expected label name", t)
 		}
@@ -647,7 +649,7 @@ func (p *OpenMetricsParser) parseLVals(offsets []int, isExemplar bool) ([]int, e
 		// A quoted string followed by a comma or brace is a metric name. Set the
 		// offsets and continue processing. If this is an exemplar, this format
 		// is not allowed.
-		if t == tComma || t == tBraceClose {
+		if isQString && (t == tComma || t == tBraceClose) {
 			if isExemplar {
 				return nil, p.parseError("expected label name", t)
 			}

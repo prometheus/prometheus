@@ -126,6 +126,25 @@ samples. Operations involving histogram samples result in the removal of the
 corresponding vector elements from the output vector, flagged by an
 info-level annotation.
 
+### Histogram trim operators
+
+The following binary histogram trim operators exist in Prometheus:
+
+* `</` (trim upper): removes all observations above a threshold value
+* `>/` (trim lower): removes all observations below a threshold value
+
+Histogram trim operators are defined between vector/scalar and vector/vector value pairs,
+where the left hand side is a native histogram (either exponential or NHCB),
+and the right hand side is a float threshold value.
+
+In case the threshold value is not aligned to one of the bucket boundaries of the histogram,
+either linear (for NHCB and zero buckets of exponential histogram) or exponential (for non zero
+bucket of exponential histogram) interpolation is applied to compute the estimated count
+of observations that remain in the bucket containing the threshold.
+
+In case when some observations get trimmed, the new sum of observation values is recomputed
+(approximately) based on the remaining observations.
+
 ### Comparison binary operators
 
 The following binary comparison operators exist in Prometheus:
@@ -381,7 +400,7 @@ vector of fewer elements with aggregated values:
 * `count_values(l, v)` (count number of elements with the same value)
 
 * `stddev(v)` (calculate population standard deviation over dimensions)
-* `stdvar(v)` (calculate population standard variance over dimensions)
+* `stdvar(v)` (calculate population variance over dimensions)
 * `quantile(φ, v)` (calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions)
 
 These operators can either be used to aggregate over **all** label dimensions
@@ -544,7 +563,7 @@ an info-level annotation.
 
 #### `stdvar`
 
-`stdvar(v)` returns the standard deviation of `v`.
+`stdvar(v)` returns the variance of `v`.
 
 `stdvar` only works with float samples, following IEEE 754 floating
 point arithmetic. Histogram samples in the input vector are ignored, flagged by

@@ -44,6 +44,7 @@ import {
   HistogramCount,
   HistogramFraction,
   HistogramQuantile,
+  HistogramQuantiles,
   HistogramStdDev,
   HistogramStdVar,
   HistogramSum,
@@ -304,6 +305,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     name: 'histogram_quantile',
     argTypes: [ValueType.scalar, ValueType.vector],
     variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [HistogramQuantiles]: {
+    name: 'histogram_quantiles',
+    argTypes: [ValueType.vector, ValueType.string, ValueType.scalar, ValueType.scalar],
+    variadic: 10,
     returnType: ValueType.vector,
   },
   [HistogramStdDev]: {

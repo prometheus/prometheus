@@ -255,3 +255,56 @@ eval instant at 1111111s stdvar_over_time({__name__="up"}[1h:1m] @ 1111111)
 eval instant at 1111111s mad_over_time({__name__="up"}[1h:1m] @ 1111111)
 
 clear
+
+# Additional tests specific to timestamp() and @ modifier usage.
+load 10s
+  metric 0+1x10
+  metric_missing 0 _ 2 _ 4 _ 5 _ 6
+
+# Return a vector where each sample is set to the metric value at T=11.
+# Since T=11 falls within the [10s,20s) scrap window the sample value at T=10s is returned.
+eval range from 0 to 60s step 10s metric @ 11
+  {__name__="metric"} 1 1 1 1 1 1 1
+
+eval range from 0 to 60s step 10s abs(metric @ 11)
+ {} 1 1 1 1 1 1 1
+
+# Return a vector where each sample's value is set to the timestamp of each sample in the given metric series
+eval range from 0 to 60s step 10s timestamp(metric)
+ {} 0 10 20 30 40 50 60
+
+# Return a vector where each sample's value is set to the timestamp for the metric's sample used at T=11s.
+# The result is 10 since the metric at T=11s falls within the [10s,20s) scrape window.
+# The result is the timestamp of the sample at T=10s
+eval range from 0 to 60s step 10s timestamp(metric @ 11)
+ {} 10 10 10 10 10 10 10
+
+# As above - illustrating the sample used at the upper end of the [10s,20s) scrape window.
+eval range from 0 to 60s step 10s timestamp(metric @ 19)
+ {} 10 10 10 10 10 10 10
+
+# As above - illustrating the transition to the next scrap window.
+eval range from 0 to 60s step 10s timestamp(metric @ 20)
+ {} 20 20 20 20 20 20 20
+
+eval range from 0 to 60s step 10s timestamp(metric_missing @ 0)
+ {} 0 0 0 0 0 0 0
+
+# The timestamp of 0 is returned since the sample is missing from the [10s,20s) scrape window.
+# As such, the previous sample from T=0s is returned.
+eval range from 0 to 60s step 10s timestamp(metric_missing @ 10)
+ {} 0 0 0 0 0 0 0
+
+eval range from 0 to 60s step 10s timestamp(metric_missing @ 20)
+ {} 20 20 20 20 20 20 20
+
+# The timestamps for each step are returned since abs() returns a new vector with new [T,V] samples.
+# Each sample in this vector has its value set to the absolute value of the sample value at T=10s, and its timestamp aligned to the step interval.
+# This is unlike the above tests where timestamp() is operating on a vector with the original series samples.
+eval range from 0 to 60s step 10s timestamp(abs(metric @ 11))
+ {} 0 10 20 30 40 50 60
+
+eval range from 0 to 60s step 10s timestamp(abs(metric_missing @ 11))
+ {} 0 10 20 30 40 50 60
+
+clear

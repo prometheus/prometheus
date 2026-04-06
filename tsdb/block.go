@@ -291,7 +291,7 @@ func writeMetaFile(logger *slog.Logger, dir string, meta *BlockMeta) (int64, err
 
 	jsonMeta, err := json.MarshalIndent(meta, "", "\t")
 	if err != nil {
-		return 0, err
+		return 0, errors.Join(err, f.Close())
 	}
 
 	n, err := f.Write(jsonMeta)

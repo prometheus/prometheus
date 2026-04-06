@@ -716,3 +716,31 @@ rate(caddy_http_requests_total[5m] smoothed)
 
 ==>
 PromQL(FunctionCall(FunctionIdentifier(Rate),FunctionCallBody(SmoothedExpr(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext),Smoothed))))
+
+# TrimUpper binary operator
+
+metric1 </ metric2
+
+==>
+
+PromQL(
+  BinaryExpr(
+    VectorSelector(Identifier),
+    TrimUpper,
+    VectorSelector(Identifier)
+  )
+)
+
+# TrimLower binary operator
+
+metric1 >/ metric2
+
+==>
+
+PromQL(
+  BinaryExpr(
+    VectorSelector(Identifier),
+    TrimLower,
+    VectorSelector(Identifier)
+  )
+)

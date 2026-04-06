@@ -159,17 +159,14 @@ func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (u
 			batch := lbls[:l]
 			lbls = lbls[l:]
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
+			wg.Go(func() {
 				n, err := b.ingestScrapesShard(batch, 100, int64(timeDelta*i))
 				if err != nil {
 					// exitWithError(err)
 					fmt.Println(" err", err)
 				}
 				total.Add(n)
-			}()
+			})
 		}
 		wg.Wait()
 	}
@@ -413,7 +410,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		selectors []*labels.Matcher
 		err       error
 	)
-	if len(matchers) > 0 {
+	if matchers != "" {
 		selectors, err = p.ParseMetricSelector(matchers)
 		if err != nil {
 			return err
@@ -432,7 +429,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	// Presume 1ms resolution that Prometheus uses.
 	fmt.Printf("Duration: %s\n", (time.Duration(meta.MaxTime-meta.MinTime) * 1e6).String())
 	fmt.Printf("Total Series: %d\n", meta.Stats.NumSeries)
-	if len(matchers) > 0 {
+	if matchers != "" {
 		fmt.Printf("Matcher: %s\n", matchers)
 	}
 	ir, err := block.Index()
@@ -481,7 +478,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		postings index.Postings
 		refs     []storage.SeriesRef
 	)
-	if len(matchers) > 0 {
+	if matchers != "" {
 		postings, err = tsdb.PostingsForMatchers(ctx, ir, selectors...)
 		if err != nil {
 			return err
@@ -585,7 +582,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 			return err
 		}
 		// Only intersect postings if matchers are specified.
-		if len(matchers) > 0 {
+		if matchers != "" {
 			postings = index.Intersect(postings, index.NewListPostings(refs))
 		}
 		count := 0

@@ -26,6 +26,8 @@ export const binOpTerms = [
   { label: '>=' },
   { label: '>' },
   { label: '<' },
+  { label: '</' },
+  { label: '>/' },
   { label: '<=' },
   { label: '!=' },
   { label: 'atan2' },
@@ -244,6 +246,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'histogram_quantiles',
+    detail: 'function',
+    info: 'Calculate multiple quantiles from native histograms and from conventional histogram buckets',
+    type: 'function',
+  },
+  {
     label: 'histogram_sum',
     detail: 'function',
     info: 'Return the sum of observations from a native histogram',
@@ -310,9 +318,15 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'first_over_time',
+    detail: 'function',
+    info: 'Return the value of the oldest sample in the specified interval',
+    type: 'function',
+  },
+  {
     label: 'last_over_time',
     detail: 'function',
-    info: 'The most recent point value in specified interval.',
+    info: 'Return the value of the most recent sample in the specified interval',
     type: 'function',
   },
   {
@@ -361,6 +375,12 @@ export const functionIdentifierTerms = [
     label: 'ts_of_min_over_time',
     detail: 'function',
     info: 'Return the timestamp of the minimum value over time for input series',
+    type: 'function',
+  },
+  {
+    label: 'ts_of_first_over_time',
+    detail: 'function',
+    info: 'Return the timestamp of the first value over time for input series',
     type: 'function',
   },
   {

@@ -26,3 +26,7 @@ func NewDirectIOWriter(f *os.File, size int) (BufWriter, error) {
 func NewBufioWriterWithSize(f *os.File, size int) (BufWriter, error) {
 	return NewDirectIOWriter(f, size)
 }
+
+func UncachedIOSupported() bool {
+	return true
+}

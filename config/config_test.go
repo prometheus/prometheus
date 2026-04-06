@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/moby"
 	"github.com/prometheus/prometheus/discovery/nomad"
 	"github.com/prometheus/prometheus/discovery/openstack"
+	"github.com/prometheus/prometheus/discovery/outscale"
 	"github.com/prometheus/prometheus/discovery/ovhcloud"
 	"github.com/prometheus/prometheus/discovery/puppetdb"
 	"github.com/prometheus/prometheus/discovery/scaleway"
@@ -1151,6 +1152,7 @@ var expectedConf = &Config{
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
+					Role:            "droplets",
 				},
 			},
 		},
@@ -1708,6 +1710,44 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "outscale",
+
+			HonorTimestamps:                true,
+			ScrapeInterval:                 model.Duration(15 * time.Second),
+			ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
+			EnableCompression:              true,
+			BodySizeLimit:                  globBodySizeLimit,
+			SampleLimit:                    globSampleLimit,
+			TargetLimit:                    globTargetLimit,
+			LabelLimit:                     globLabelLimit,
+			LabelNameLengthLimit:           globLabelNameLengthLimit,
+			LabelValueLengthLimit:          globLabelValueLengthLimit,
+			ScrapeProtocols:                DefaultScrapeProtocols,
+			ScrapeFailureLogFile:           globScrapeFailureLogFile,
+			MetricNameValidationScheme:     DefaultGlobalConfig.MetricNameValidationScheme,
+			MetricNameEscapingScheme:       DefaultGlobalConfig.MetricNameEscapingScheme,
+			ScrapeNativeHistograms:         boolPtr(false),
+			AlwaysScrapeClassicHistograms:  boolPtr(false),
+			ConvertClassicHistogramsToNHCB: boolPtr(false),
+			ExtraScrapeMetrics:             boolPtr(false),
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&outscale.SDConfig{
+					Endpoint:         "https://api.eu-west-2.outscale.com/api/v1",
+					Region:           "eu-west-2",
+					AccessKey:        "A1B2C3D4E5F6G7H8I9J0",
+					SecretKey:        "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+					Port:             80,
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -1737,8 +1777,9 @@ var expectedConf = &Config{
 			OutOfOrderTimeWindowFlag:       model.Duration(30 * time.Minute),
 			StaleSeriesCompactionThreshold: 0.5,
 			Retention: &TSDBRetentionConfig{
-				Time: model.Duration(24 * time.Hour),
-				Size: 1 * units.GiB,
+				Time:       model.Duration(24 * time.Hour),
+				Size:       1 * units.GiB,
+				Percentage: 28,
 			},
 		},
 	},
@@ -2086,6 +2127,7 @@ func TestLoadConfig(t *testing.T) {
 	testutil.RequireEqualWithOptions(t, expectedConf, c, []cmp.Option{
 		cmpopts.IgnoreUnexported(config.ProxyConfig{}),
 		cmpopts.IgnoreUnexported(ionos.SDConfig{}),
+		cmpopts.IgnoreUnexported(outscale.SDConfig{}),
 		cmpopts.IgnoreUnexported(stackit.SDConfig{}),
 		cmpopts.IgnoreUnexported(regexp.Regexp{}),
 		cmpopts.IgnoreUnexported(hetzner.SDConfig{}),
@@ -2114,7 +2156,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Len(t, matches, 25, "wrong number of secret matches found")
+	require.Len(t, matches, 26, "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -2315,7 +2357,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "kubernetes_selectors_pod.bad.yml",
-		errMsg:   "pod role supports only pod selectors",
+		errMsg:   "pod role supports only pod, node selectors",
 	},
 	{
 		filename: "kubernetes_selectors_service.bad.yml",
@@ -2451,7 +2493,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "azure_authentication_method.bad.yml",
-		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\", \"ManagedIdentity\" or \"SDK\"",
+		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\", \"ManagedIdentity\", \"SDK\" or \"WorkloadIdentity\"",
 	},
 	{
 		filename: "azure_bearertoken_basicauth.bad.yml",
@@ -2535,6 +2577,18 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "scaleway_two_secrets.bad.yml",
+		errMsg:   "at most one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "outscale_no_region.bad.yml",
+		errMsg:   "outscale SD configuration requires a region",
+	},
+	{
+		filename: "outscale_no_secret.bad.yml",
+		errMsg:   "one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "outscale_two_secrets.bad.yml",
 		errMsg:   "at most one of secret_key & secret_key_file must be configured",
 	},
 	{
@@ -2625,6 +2679,22 @@ var expectedErrors = []struct {
 		filename: "stackit_endpoint.bad.yml",
 		errMsg:   "invalid endpoint",
 	},
+	{
+		filename: "tsdb_retention_time.bad.yml",
+		errMsg:   `not a valid duration string: "-1h"`,
+	},
+	{
+		filename: "tsdb_retention_size.bad.yml",
+		errMsg:   `'storage.tsdb.retention.size' must be greater than or equal to 0`,
+	},
+	{
+		filename: "tsdb_retention_percentage.bad.yml",
+		errMsg:   `'storage.tsdb.retention.percentage' must be in the range [0, 100]`,
+	},
+	{
+		filename: "tsdb_retention_percentage_negative.bad.yml",
+		errMsg:   "'storage.tsdb.retention.percentage' must be in the range [0, 100]",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -2633,6 +2703,12 @@ func TestBadConfigs(t *testing.T) {
 		require.ErrorContains(t, err, ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
 	}
+}
+
+func TestTSDBRetentionPercentageFloat(t *testing.T) {
+	c, err := LoadFile("testdata/tsdb_retention_percentage_float.good.yml", false, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, 0.5, c.StorageConfig.TSDBConfig.Retention.Percentage)
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
@@ -2648,6 +2724,8 @@ func TestEmptyConfig(t *testing.T) {
 	require.NoError(t, err)
 	exp := DefaultConfig
 	exp.loaded = true
+	retention := DefaultTSDBRetentionConfig
+	exp.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 	require.Equal(t, exp, *c)
 	require.Equal(t, 75, c.Runtime.GoGC)
 }
@@ -2699,6 +2777,10 @@ func TestGlobalConfig(t *testing.T) {
 		require.NoError(t, err)
 		exp := DefaultConfig
 		exp.loaded = true
+		// TSDBConfig is always injected by Config.UnmarshalYAML even when no
+		// storage.tsdb section is present, so the expected config must include it.
+		retention := DefaultTSDBRetentionConfig
+		exp.StorageConfig.TSDBConfig = &TSDBConfig{Retention: &retention}
 		require.Equal(t, exp, *c)
 	})
 
@@ -3083,7 +3165,7 @@ func TestGetScrapeConfigs(t *testing.T) {
 			require.NoError(t, err)
 
 			scfgs, err := c.GetScrapeConfigs()
-			if len(tc.expectedError) > 0 {
+			if tc.expectedError != "" {
 				require.ErrorContains(t, err, tc.expectedError)
 			}
 			require.Equal(t, tc.expectedResult, scfgs)

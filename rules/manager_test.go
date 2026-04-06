@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -49,7 +50,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 	prom_testutil "github.com/prometheus/prometheus/util/testutil"
-	"github.com/prometheus/prometheus/util/testutil/synctest"
 )
 
 func TestMain(m *testing.M) {
@@ -2473,11 +2473,9 @@ func TestBoundedRuleEvalConcurrency(t *testing.T) {
 	// Evaluate groups concurrently (like they normally do).
 	var wg sync.WaitGroup
 	for _, group := range groups {
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			group.Eval(ctx, time.Now())
-			wg.Done()
-		}()
+		})
 	}
 
 	wg.Wait()

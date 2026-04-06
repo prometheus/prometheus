@@ -21,6 +21,7 @@ import (
 	"math"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -92,6 +93,7 @@ func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *
 	t.Helper()
 
 	dbDir := t.TempDir()
+
 	rs := remote.NewStorage(promslog.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil, false)
 	t.Cleanup(func() {
 		require.NoError(t, rs.Close())
@@ -100,6 +102,61 @@ func createTestAgentDB(t testing.TB, reg prometheus.Registerer, opts *Options) *
 	db, err := Open(promslog.NewNopLogger(), reg, rs, dbDir, opts)
 	require.NoError(t, err)
 	return db
+}
+
+// TestConcurrentAppendSameLabels verifies that concurrent appends for the same
+// label set produce exactly one series in memory and one series record in the WAL.
+func TestConcurrentAppendSameLabels(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = math.MaxInt64
+	db := createTestAgentDB(t, nil, opts)
+	lset := labels.FromStrings("__name__", "test_metric")
+
+	const n = 100
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+
+	wg.Add(n)
+	for range n {
+		go func() {
+			defer wg.Done()
+			app := db.Appender(context.Background())
+			<-start
+			_, err := app.Append(0, lset, 1000, 1.0)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	var total int
+	for i := range db.series.size {
+		db.series.locks[i].RLock()
+		total += len(db.series.series[i])
+		db.series.locks[i].RUnlock()
+	}
+	require.Equal(t, 1, total)
+	require.NoError(t, db.Close())
+
+	sr, err := wlog.NewSegmentsReader(db.wal.Dir())
+	require.NoError(t, err)
+	defer func() { require.NoError(t, sr.Close()) }()
+
+	r := wlog.NewReader(sr)
+	dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+	var walSeries int
+	for r.Next() {
+		rec := r.Record()
+		if dec.Type(rec) == record.Series {
+			var s []record.RefSeries
+			s, err = dec.Series(rec, s)
+			require.NoError(t, err)
+			walSeries += len(s)
+		}
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, 1, walSeries)
 }
 
 func TestUnsupportedFunctions(t *testing.T) {
@@ -225,7 +282,7 @@ func TestCommit(t *testing.T) {
 			require.NoError(t, err)
 			walSeriesCount += len(series)
 
-		case record.Samples:
+		case record.Samples, record.SamplesV2:
 			var samples []record.RefSample
 			samples, err = dec.Samples(rec, samples)
 			require.NoError(t, err)
@@ -361,7 +418,7 @@ func TestRollback(t *testing.T) {
 			require.NoError(t, err)
 			walSeriesCount += len(series)
 
-		case record.Samples:
+		case record.Samples, record.SamplesV2:
 			var samples []record.RefSample
 			samples, err = dec.Samples(rec, samples)
 			require.NoError(t, err)
@@ -1317,6 +1374,86 @@ func TestDBStartTimestampSamplesIngestion(t *testing.T) {
 	}
 }
 
+func TestDuplicateSeriesRefsByHash(t *testing.T) {
+	dbDir := t.TempDir()
+	opts := DefaultOptions()
+	rs1 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+	db, err := Open(promslog.NewNopLogger(), nil, rs1, dbDir, opts)
+	require.NoError(t, err)
+
+	app := db.Appender(context.Background())
+
+	metricNames := []string{"foo", "bar", "baz", "blerg"}
+	originalSeriesRefs := make([]chunks.HeadSeriesRef, 0, len(metricNames))
+	for _, metricName := range metricNames {
+		lbls := labels.FromMap(map[string]string{"__name__": metricName})
+
+		ref, err := app.Append(storage.SeriesRef(0), lbls, int64(0), 10.0)
+		require.NoError(t, err)
+		originalSeriesRefs = append(originalSeriesRefs, chunks.HeadSeriesRef(ref))
+		ref2, err := app.Append(ref, lbls, int64(10), 100.0)
+		require.NoError(t, err)
+		require.Equal(t, ref, ref2)
+	}
+	require.NoError(t, app.Commit())
+
+	// Forcefully create a bunch of new segments to force a truncation.
+	for range 3 {
+		_, err := db.wal.NextSegmentSync()
+		require.NoError(t, err)
+	}
+	// No series should be deleted yet
+	require.Empty(t, db.deleted)
+
+	// Truncate at 1 ms higher than the highest timestamp.
+	err = db.truncate(11)
+	require.NoError(t, err)
+
+	// The original SeriesRefs should be considered deleted.
+	for _, ref := range originalSeriesRefs {
+		require.Nil(t, db.series.GetByID(ref))
+		require.Contains(t, db.deleted, ref)
+	}
+
+	duplicateSeriesRefs := make([]chunks.HeadSeriesRef, 0, len(metricNames))
+	for _, metricName := range metricNames {
+		lbls := labels.FromMap(map[string]string{"__name__": metricName})
+		ref, err := app.Append(storage.SeriesRef(0), lbls, int64(20), 10.0)
+		require.NoError(t, err)
+		duplicateSeriesRefs = append(duplicateSeriesRefs, chunks.HeadSeriesRef(ref))
+	}
+	require.NoError(t, app.Commit())
+
+	// The duplicate SeriesRefs should be in series.
+	for _, ref := range duplicateSeriesRefs {
+		require.NotNil(t, db.series.GetByID(ref))
+	}
+
+	// Close the WAL before we have a chance to remove the original RefIDs.
+	// Both db and rs1 must be closed to release all file handles before
+	// reopening the same directory — important on Windows.
+	require.NoError(t, db.Close())
+	require.NoError(t, rs1.Close())
+
+	rs2 := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+	t.Cleanup(func() { require.NoError(t, rs2.Close()) })
+	db, err = Open(promslog.NewNopLogger(), nil, rs2, dbDir, opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	// The original SeriesRefs should be in series.
+	for _, ref := range originalSeriesRefs {
+		require.NotNil(t, db.series.GetByID(ref))
+		require.NotContains(t, db.deleted, ref)
+	}
+
+	// The duplicated SeriesRefs should be considered deleted.
+	for _, ref := range duplicateSeriesRefs {
+		require.Nil(t, db.series.GetByID(ref))
+		require.Contains(t, db.deleted, ref)
+	}
+}
+
 func readWALSamples(t *testing.T, walDir string) []walSample {
 	t.Helper()
 	sr, err := wlog.NewSegmentsReader(walDir)
@@ -1344,7 +1481,7 @@ func readWALSamples(t *testing.T, walDir string) []walSample {
 			series, err := dec.Series(rec, nil)
 			require.NoError(t, err)
 			lastSeries = series[0]
-		case record.Samples:
+		case record.Samples, record.SamplesV2:
 			samples, err = dec.Samples(rec, samples[:0])
 			require.NoError(t, err)
 			for _, s := range samples {
@@ -1372,20 +1509,56 @@ func readWALSamples(t *testing.T, walDir string) []walSample {
 }
 
 func BenchmarkGetOrCreate(b *testing.B) {
-	s := createTestAgentDB(b, nil, DefaultOptions())
-	defer s.Close()
-
 	// NOTE: This benchmarks appenderBase, so it does not matter if it's V1 or V2.
-	app := s.Appender(context.Background()).(*appender)
-	lbls := make([]labels.Labels, b.N)
+	const n = 1_000
 
-	for i, l := range labelsForTest("benchmark", b.N) {
-		lbls[i] = labels.New(l...)
-	}
+	b.Run("new", func(b *testing.B) {
+		s := createTestAgentDB(b, nil, DefaultOptions())
+		defer s.Close()
+		app := s.Appender(context.Background()).(*appender)
 
-	b.ResetTimer()
+		// Fixed-size label set. Before each pass through the set we GC all series
+		// (they are created with lastTs==math.MinInt64, so mint=math.MaxInt64
+		// evicts everything) so every timed getOrCreate call takes the creation
+		// path. This keeps the stripe-series table at a stable size regardless of
+		// b.N, preventing per-op cost from growing with the benchmark iteration
+		// count.
+		lbls := make([]labels.Labels, n)
+		for i, l := range labelsForTest("benchmark_new", n) {
+			lbls[i] = labels.New(l...)
+		}
 
-	for _, l := range lbls {
-		app.getOrCreate(l)
-	}
+		b.ResetTimer()
+
+		for i := range b.N {
+			if i%n == 0 && i > 0 {
+				b.StopTimer()
+				_ = s.series.GC(math.MaxInt64)
+				b.StartTimer()
+			}
+			app.getOrCreate(0, lbls[i%n])
+		}
+	})
+
+	b.Run("existing", func(b *testing.B) {
+		s := createTestAgentDB(b, nil, DefaultOptions())
+		defer s.Close()
+		app := s.Appender(context.Background()).(*appender)
+
+		lbls := make([]labels.Labels, n)
+		for i, l := range labelsForTest("benchmark_existing", n) {
+			lbls[i] = labels.New(l...)
+		}
+
+		// Pre-populate all series so every timed call finds an existing series.
+		for _, l := range lbls {
+			app.getOrCreate(0, l)
+		}
+
+		b.ResetTimer()
+
+		for i := range b.N {
+			app.getOrCreate(0, lbls[i%n])
+		}
+	})
 }

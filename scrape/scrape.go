@@ -105,6 +105,7 @@ type scrapePool struct {
 	activeTargets       map[uint64]*Target
 	droppedTargets      []*Target // Subject to KeepDroppedTargets limit.
 	droppedTargetsCount int       // Count of all dropped targets.
+	scrapeFailureLogger FailureLogger
 
 	// newLoop injection for testing purposes.
 	injectTestNewLoop func(scrapeLoopOptions) loop
@@ -112,9 +113,6 @@ type scrapePool struct {
 	metrics    *scrapeMetrics
 	buffers    *pool.Pool
 	offsetSeed uint64
-
-	scrapeFailureLogger    FailureLogger
-	scrapeFailureLoggerMtx sync.RWMutex
 }
 
 type labelLimits struct {
@@ -224,31 +222,22 @@ func (sp *scrapePool) DroppedTargetsCount() int {
 }
 
 func (sp *scrapePool) SetScrapeFailureLogger(l FailureLogger) {
-	sp.scrapeFailureLoggerMtx.Lock()
-	defer sp.scrapeFailureLoggerMtx.Unlock()
+	sp.targetMtx.Lock()
+	defer sp.targetMtx.Unlock()
 	if l != nil {
 		l = slog.New(l).With("job_name", sp.config.JobName).Handler().(FailureLogger)
 	}
 	sp.scrapeFailureLogger = l
 
-	sp.targetMtx.Lock()
-	defer sp.targetMtx.Unlock()
 	for _, s := range sp.loops {
 		s.setScrapeFailureLogger(sp.scrapeFailureLogger)
 	}
-}
-
-func (sp *scrapePool) getScrapeFailureLogger() FailureLogger {
-	sp.scrapeFailureLoggerMtx.RLock()
-	defer sp.scrapeFailureLoggerMtx.RUnlock()
-	return sp.scrapeFailureLogger
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
 func (sp *scrapePool) stop() {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
-	sp.cancel()
 	var wg sync.WaitGroup
 
 	sp.targetMtx.Lock()
@@ -268,6 +257,10 @@ func (sp *scrapePool) stop() {
 	sp.targetMtx.Unlock()
 
 	wg.Wait()
+	// Cancel the context after all loops have stopped. This is required for
+	// scrapeOnShutdown to work properly, as the shutdown scrape uses this
+	// context (via sl.parentCtx) and would fail if the context was cancelled early.
+	sp.cancel()
 	sp.client.CloseIdleConnections()
 
 	if sp.config != nil {
@@ -323,6 +316,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 	sp.targetMtx.Lock()
 
 	forcedErr := sp.refreshTargetLimitErr()
+	scrapeFailureLogger := sp.scrapeFailureLogger
 	for fp, oldLoop := range sp.loops {
 		var cache *scrapeCache
 		if oc := oldLoop.getCache(); reuseCache && oc != nil {
@@ -364,7 +358,7 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 			wg.Done()
 
 			newLoop.setForcedError(forcedErr)
-			newLoop.setScrapeFailureLogger(sp.getScrapeFailureLogger())
+			newLoop.setScrapeFailureLogger(scrapeFailureLogger)
 			newLoop.run(nil)
 		}(oldLoop, newLoop)
 
@@ -743,7 +737,7 @@ var UserAgent = version.PrometheusUserAgent()
 
 func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
-		req, err := http.NewRequest(http.MethodGet, s.URL().String(), nil)
+		req, err := http.NewRequest(http.MethodGet, s.URL().String(), http.NoBody)
 		if err != nil {
 			return nil, err
 		}
@@ -829,11 +823,17 @@ type cacheEntry struct {
 }
 
 type scrapeLoop struct {
-	// Parameters.
-	ctx         context.Context
-	cancel      func()
-	stopped     chan struct{}
-	parentCtx   context.Context
+	// ctx represents a local context that is cancellable via s.cancel.
+	// It's meant to synchronize run() with stop().
+	// It inherits parentCtx.
+	ctx     context.Context
+	cancel  func()
+	stopped chan struct{}
+	// parentCtx represents manager-level context, typically connected
+	// to process shutdown.
+	parentCtx context.Context
+	// appenderCtx is a parentCtx with some extra context for appender
+	// implementations. Potentially remove-able with removal of AppenderV1.
 	appenderCtx context.Context
 	l           *slog.Logger
 	cache       *scrapeCache
@@ -870,12 +870,14 @@ type scrapeLoop struct {
 
 	// Options from scrape.Options.
 	enableSTZeroIngestion   bool
+	parseST                 bool // Used by AppenderV2 only.
 	enableTypeAndUnitLabels bool
 	reportExtraMetrics      bool
 	appendMetadataToWAL     bool
 	passMetadataInContext   bool
-	skipOffsetting          bool // For testability.
-
+	skipJitterOffsetting    bool // For testability.
+	scrapeOnShutdown        bool
+	initialScrapeOffset     time.Duration
 	// error injection through setForcedError.
 	forcedErr    error
 	forcedErrMtx sync.Mutex
@@ -1223,11 +1225,18 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		validationScheme:              opts.sp.config.MetricNameValidationScheme,
 
 		// scrape.Options.
-		enableSTZeroIngestion:   opts.sp.options.EnableStartTimestampZeroIngestion,
+		enableSTZeroIngestion: opts.sp.options.EnableStartTimestampZeroIngestion,
+		// parseST was added recently. Before EnableStartTimestampZeroIngestion
+		// was enabling parsing ST. For non-Prometheus users of the scrape
+		// manager, we ensure appenderV2 parseST is set on EnableStartTimestampZeroIngestion
+		// This will be removed when EnableStartTimestampZeroIngestion is removed.
+		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
-		skipOffsetting:          opts.sp.options.skipOffsetting,
+		skipJitterOffsetting:    opts.sp.options.skipJitterOffsetting,
+		scrapeOnShutdown:        opts.sp.options.ScrapeOnShutdown,
+		initialScrapeOffset:     opts.sp.options.InitialScrapeOffset,
 	}
 }
 
@@ -1240,31 +1249,52 @@ func (sl *scrapeLoop) setScrapeFailureLogger(l FailureLogger) {
 	sl.scrapeFailureLogger = l
 }
 
+func (sl *scrapeLoop) getScrapeOffset() time.Duration {
+	offset := sl.scraper.offset(sl.interval, sl.offsetSeed)
+	if sl.skipJitterOffsetting {
+		offset = time.Duration(0)
+	}
+	return sl.initialScrapeOffset + offset
+}
+
 func (sl *scrapeLoop) run(errc chan<- error) {
-	if !sl.skipOffsetting {
+	var (
+		last   time.Time
+		ticker = time.NewTicker(sl.interval)
+	)
+	defer func() {
+		if sl.scrapeOnShutdown {
+			last = sl.scrapeAndReport(last, time.Now().Round(0), errc)
+		}
+		// Let the stop() know it can continue.
+		close(sl.stopped)
+		if sl.parentCtx.Err() == nil {
+			if !sl.disabledEndOfRunStalenessMarkers.Load() {
+				sl.endOfRunStaleness(last, ticker, sl.interval)
+			}
+		}
+		ticker.Stop()
+	}()
+
+	// Initial offset and jitter offset, if any.
+	offset := sl.getScrapeOffset()
+	if offset > 0 {
 		select {
-		case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
+		case <-time.After(offset):
 			// Continue after a scraping offset.
 		case <-sl.ctx.Done():
-			close(sl.stopped)
 			return
 		}
 	}
 
-	var last time.Time
-
+	// Reset the ticker so target scrape times are aligned to the offset+intervals.
+	ticker.Reset(sl.interval)
 	alignedScrapeTime := time.Now().Round(0)
-	ticker := time.NewTicker(sl.interval)
-	defer ticker.Stop()
 
-mainLoop:
 	for {
 		select {
-		case <-sl.parentCtx.Done():
-			close(sl.stopped)
-			return
 		case <-sl.ctx.Done():
-			break mainLoop
+			return
 		default:
 		}
 
@@ -1291,19 +1321,10 @@ mainLoop:
 		last = sl.scrapeAndReport(last, scrapeTime, errc)
 
 		select {
-		case <-sl.parentCtx.Done():
-			close(sl.stopped)
-			return
 		case <-sl.ctx.Done():
-			break mainLoop
+			return
 		case <-ticker.C:
 		}
-	}
-
-	close(sl.stopped)
-
-	if !sl.disabledEndOfRunStalenessMarkers.Load() {
-		sl.endOfRunStaleness(last, ticker, sl.interval)
 	}
 }
 

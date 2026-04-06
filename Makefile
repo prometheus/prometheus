@@ -13,8 +13,11 @@
 
 # Needs to be defined before including Makefile.common to auto-generate targets
 DOCKER_ARCHS ?= amd64 armv7 arm64 ppc64le riscv64 s390x
+DOCKERFILE_ARCH_EXCLUSIONS ?= Dockerfile.distroless:riscv64
+DOCKER_REGISTRY_ARCH_EXCLUSIONS ?= quay.io:riscv64
 
 UI_PATH = web/ui
+BUILD_UI ?= all
 UI_NODE_MODULES_PATH = $(UI_PATH)/node_modules
 REACT_APP_NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
 
@@ -27,6 +30,15 @@ GOLANGCI_LINT_OPTS ?= --timeout 4m
 GOYACC_VERSION ?= v0.6.0
 
 include Makefile.common
+
+ifeq (arm, $(GOHOSTARCH))
+	PROTOC_ARCH ?= aarch_64
+else
+	PROTOC_ARCH ?= x86_64
+endif
+
+PROTOC_VERSION ?= 3.15.8
+PROTOC_URL     ?= https://github.com/protocolbuffers/protobuf/releases/download/v$(PROTOC_VERSION)/protoc-$(PROTOC_VERSION)-linux-$(PROTOC_ARCH).zip
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
@@ -61,7 +73,11 @@ ui-install:
 
 .PHONY: ui-build
 ui-build:
+ifeq ($(BUILD_UI),mantine)
+	cd $(UI_PATH) && CI="" npm run build:mantine-ui
+else
 	cd $(UI_PATH) && CI="" npm run build
+endif
 
 .PHONY: ui-build-module
 ui-build-module:
@@ -121,6 +137,15 @@ assets-compress: assets
 assets-tarball: assets
 	@echo '>> packaging assets'
 	scripts/package_assets.sh
+
+.PHONY: protoc
+protoc:
+	@echo ">> Installing protoc"
+	$(eval PROTOC_TMP := $(shell mktemp))
+	curl -s -o $(PROTOC_TMP) -L $(PROTOC_URL) 
+	unzip -u $(PROTOC_TMP) bin/protoc -d $(FIRST_GOPATH)
+	chmod +x $(FIRST_GOPATH)/bin/protoc
+	rm -v $(PROTOC_TMP)
 
 .PHONY: parser
 parser:
@@ -196,7 +221,7 @@ update-features-testdata:
 	@echo ">> updating features testdata"
 	@$(GO) test ./cmd/prometheus -run TestFeaturesAPI -update-features
 
-GO_SUBMODULE_DIRS := documentation/examples/remote_storage internal/tools web/ui/mantine-ui/src/promql/tools
+GO_SUBMODULE_DIRS := documentation/examples/remote_storage internal/tools web/ui/mantine-ui/src/promql/tools compliance
 
 .PHONY: update-all-go-deps
 update-all-go-deps: update-go-deps
