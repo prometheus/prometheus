@@ -5236,24 +5236,24 @@ func testOOOCompaction(t *testing.T, scenario sampleTypeScenario, addExtraSample
 	verifyDBSamples() // Final state. Blocks from normal and OOO head are merged.
 }
 
-// TestOOOCompactionWithNormalCompaction tests if OOO compaction is performed
-// when the normal head's compaction is done.
-func TestOOOCompactionWithNormalCompaction(t *testing.T) {
+// TestOOOScheduledCompaction verifies that OOO compaction is performed at the scheduled interval.
+func TestOOOScheduledCompaction(t *testing.T) {
 	t.Parallel()
 	for name, scenario := range sampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
-			testOOOCompactionWithNormalCompaction(t, scenario)
+			testOOOScheduledCompaction(t, scenario)
 		})
 	}
 }
 
-func testOOOCompactionWithNormalCompaction(t *testing.T, scenario sampleTypeScenario) {
+func testOOOScheduledCompaction(t *testing.T, scenario sampleTypeScenario) {
 	t.Parallel()
 	ctx := context.Background()
 
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+	opts.OutOfOrderCompactionInterval = 100 * time.Millisecond // Set a short interval for testing.
 
 	db := newTestDB(t, withOpts(opts))
 	db.DisableCompactions() // We want to manually call it.
@@ -5297,23 +5297,9 @@ func testOOOCompactionWithNormalCompaction(t *testing.T, scenario sampleTypeScen
 	// No blocks before compaction.
 	require.Empty(t, db.Blocks())
 
-	// Compacts normal and OOO head.
+	// Ensure OOO head is not compacted even when in-order head is.
 	require.NoError(t, db.Compact(ctx))
-
-	// 2 blocks exist now. [0, 120), [250, 360)
-	require.Len(t, db.Blocks(), 2)
-	require.Equal(t, int64(0), db.Blocks()[0].MinTime())
-	require.Equal(t, 120*time.Minute.Milliseconds(), db.Blocks()[0].MaxTime())
-	require.Equal(t, 250*time.Minute.Milliseconds(), db.Blocks()[1].MinTime())
-	require.Equal(t, 360*time.Minute.Milliseconds(), db.Blocks()[1].MaxTime())
-
-	// Checking that ooo chunk is empty.
-	for _, lbls := range []labels.Labels{series1, series2} {
-		ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls, false)
-		require.NoError(t, err)
-		require.False(t, created)
-		require.Nil(t, ms.ooo)
-	}
+	require.Len(t, db.Blocks(), 1)
 
 	verifySamples := func(block *Block, fromMins, toMins int64) {
 		series1Samples := make([]chunks.Sample, 0, toMins-fromMins+1)
@@ -5335,9 +5321,38 @@ func testOOOCompactionWithNormalCompaction(t *testing.T, scenario sampleTypeScen
 		requireEqualSeries(t, expRes, actRes, true)
 	}
 
-	// Checking for expected data in the blocks.
-	verifySamples(db.Blocks()[0], 90, 110)
-	verifySamples(db.Blocks()[1], 250, 350)
+	// Now enable auto compaction and expect the OOO head to be compacted at the scheduled interval.
+	db.EnableCompactions()
+	require.Eventually(t, func() bool {
+		if len(db.Blocks()) < 2 {
+			return false
+		}
+
+		// Stop running compactions while getting data for verification to prevent a race condition.
+		db.DisableCompactions()
+
+		// 2 blocks exist now. [0, 120), [250, 360	require.Len(t, db.Blocks(), 2)
+		require.Equal(t, int64(0), db.Blocks()[0].MinTime())
+		require.Equal(t, 120*time.Minute.Milliseconds(), db.Blocks()[0].MaxTime())
+		require.Equal(t, 250*time.Minute.Milliseconds(), db.Blocks()[1].MinTime())
+		require.Equal(t, 360*time.Minute.Milliseconds(), db.Blocks()[1].MaxTime())
+
+		// Checking that ooo chunk is empty.
+		for _, lbls := range []labels.Labels{series1, series2} {
+			ms, created, err := db.head.getOrCreate(lbls.Hash(), lbls, false)
+			require.NoError(t, err)
+			require.False(t, created)
+			require.Nil(t, ms.ooo)
+		}
+
+		// Checking for expected data in the blocks.
+		verifySamples(db.Blocks()[0], 90, 110)
+		verifySamples(db.Blocks()[1], 250, 350)
+
+		return true
+
+		// Sometimes the compaction can be slow; wait 3s to prevent test flakiness.
+	}, 3*time.Second, 100*time.Millisecond, "Expected blocks to be created from OOO compaction")
 }
 
 // TestOOOCompactionWithDisabledWriteLog tests the scenario where the TSDB is
@@ -5405,6 +5420,7 @@ func testOOOCompactionWithDisabledWriteLog(t *testing.T, scenario sampleTypeScen
 
 	// Compacts normal and OOO head.
 	require.NoError(t, db.Compact(ctx))
+	require.NoError(t, db.CompactOOOHead(ctx))
 
 	// 2 blocks exist now. [0, 120), [250, 360)
 	require.Len(t, db.Blocks(), 2)
@@ -7622,6 +7638,92 @@ func testOOOCompactionFailure(t *testing.T, scenario sampleTypeScenario) {
 	verifyMmapFiles("000001")
 }
 
+func TestCalculateTimeUntilNextOOOCompaction(t *testing.T) {
+	tests := []struct {
+		name     string
+		nowUnix  int64
+		interval time.Duration
+		expected time.Duration
+	}{
+		{
+			name:     "2h interval - exact beginning",
+			nowUnix:  1775030400, // Wed Apr 01 2026 08:00:00 UTC
+			interval: 2 * time.Hour,
+			expected: time.Hour, // Wait until midpoint (09:00:00)
+		},
+		{
+			name:     "2h interval - before midpoint",
+			nowUnix:  1775033400, // Wed Apr 01 2026 08:50:00 UTC
+			interval: 2 * time.Hour,
+			expected: 10 * time.Minute, // Wait until midpoint (09:00:00)
+		},
+		{
+			name:     "2h interval - exact midpoint",
+			nowUnix:  1775034000, // Wed Apr 01 2026 09:00:00 UTC
+			interval: 2 * time.Hour,
+			expected: 0, // At midpoint, compaction should trigger immediately
+		},
+		{
+			name:     "2h interval - after midpoint",
+			nowUnix:  1775034600, // Wed Apr 01 2026 09:10:00 UTC
+			interval: 2 * time.Hour,
+			expected: 110 * time.Minute, // Wait until next midpoint (11:00:00)
+		},
+		{
+			name:     "2h interval - exact end",
+			nowUnix:  1775037600, // Wed Apr 01 2026 10:00:00 UTC
+			interval: 2 * time.Hour,
+			expected: time.Hour, // Wait until next midpoint (11:00:00)
+		},
+		{
+			name:     "4h interval - before midpoint",
+			nowUnix:  1775034000, // Wed Apr 01 2026 09:00:00 UTC
+			interval: 4 * time.Hour,
+			expected: time.Hour, // Wait until midpoint (10:00:00)
+		},
+		{
+			name:     "4h interval - after midpoint",
+			nowUnix:  1775041200, // Wed Apr 01 2026 11:00:00 UTC
+			interval: 4 * time.Hour,
+			expected: 3 * time.Hour, // Wait until next midpoint (14:00:00)
+		},
+		{
+			name:     "1 second interval - always trigger immediately",
+			nowUnix:  1775001601, // Wed Apr 01 2026 00:00:01 UTC
+			interval: 1 * time.Second,
+			expected: 0, // At midpoint, compaction should trigger immediately
+		},
+		{
+			name:     "2 second interval - at start",
+			nowUnix:  1775001600, // Wed Apr 01 2026 00:00:00 UTC
+			interval: 2 * time.Second,
+			expected: 1 * time.Second, // Wait until midpoint (1 second)
+		},
+		{
+			name:     "2 second interval - at midpoint",
+			nowUnix:  1775001601, // Wed Apr 01 2026 00:00:01 UTC
+			interval: 2 * time.Second,
+			expected: 0, // At midpoint, compaction should trigger immediately
+		},
+		{
+			name:     "sub-second interval - skip alignment",
+			nowUnix:  1775001600, // Wed Apr 01 2026 00:00:00 UTC
+			interval: 100 * time.Millisecond,
+			expected: 100 * time.Millisecond,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calculateTimeUntilNextOOOCompaction(tt.nowUnix, tt.interval)
+			require.Equal(t, tt.expected, result,
+				"nowUnix=%d (%s), interval=%v, expected=%v, got=%v",
+				tt.nowUnix, time.Unix(tt.nowUnix, 0).UTC().Format(time.RFC3339),
+				tt.interval, tt.expected, result)
+		})
+	}
+}
+
 func TestWBLCorruption(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
@@ -8200,6 +8302,7 @@ func testNoGapAfterRestartWithOOO(t *testing.T, scenario sampleTypeScenario) {
 
 			// We get 2 blocks. 1 from OOO, 1 from in-order.
 			require.NoError(t, db.Compact(ctx))
+			require.NoError(t, db.CompactOOOHead(ctx))
 			verifyBlockRanges := func() {
 				blocks := db.Blocks()
 				require.Len(t, blocks, len(c.blockRanges))
@@ -8429,6 +8532,7 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
 	require.NotPanics(t, func() {
 		require.NoError(t, db.Compact(ctx))
+		require.NoError(t, db.CompactOOOHead(ctx))
 	})
 
 	checkMmapFileContents([]string{"000002"}, []string{"000001"})
@@ -8444,6 +8548,7 @@ func testDiskFillingUpAfterDisablingOOO(t *testing.T, scenario sampleTypeScenari
 	// See https://github.com/prometheus/prometheus/issues/17941#issuecomment-3846381263
 	require.NotPanics(t, func() {
 		require.NoError(t, db.Compact(ctx))
+		require.NoError(t, db.CompactOOOHead(ctx))
 	})
 	checkMmapFileContents(nil, []string{"000001", "000002", "000003"})
 
