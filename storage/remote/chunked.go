@@ -42,11 +42,20 @@ type ChunkedWriter struct {
 	flusher http.Flusher
 
 	crc32 hash.Hash32
+
+	flushImmediately bool
 }
 
 // NewChunkedWriter constructs a ChunkedWriter.
-func NewChunkedWriter(w io.Writer, f http.Flusher) *ChunkedWriter {
-	return &ChunkedWriter{writer: w, flusher: f, crc32: crc32.New(castagnoliTable)}
+func NewChunkedWriter(w io.Writer, f http.Flusher, flushImmediately bool) *ChunkedWriter {
+	return &ChunkedWriter{writer: w, flusher: f, crc32: crc32.New(castagnoliTable), flushImmediately: flushImmediately}
+}
+
+func (w *ChunkedWriter) Close() {
+	if w.flushImmediately {
+		return
+	}
+	w.flusher.Flush()
 }
 
 // Write writes given bytes to the stream and flushes it.
@@ -82,7 +91,10 @@ func (w *ChunkedWriter) Write(b []byte) (int, error) {
 		return n, err
 	}
 
-	w.flusher.Flush()
+	if w.flushImmediately {
+		w.flusher.Flush()
+	}
+
 	return n, nil
 }
 
