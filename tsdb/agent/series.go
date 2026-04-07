@@ -184,7 +184,7 @@ func newStripeSeries(stripeSize int) *stripeSeries {
 
 // GC garbage collects old series that have not received a sample after mint
 // and will fully delete them.
-func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]labels.Labels {
+func (s *stripeSeries) GC(mint int64, retainLabels bool) map[chunks.HeadSeriesRef]labels.Labels {
 	// gcMut serializes GC calls. Within a single GC pass, the check function
 	// holds hashLock and then acquires refLock — callers must never hold both
 	// simultaneously, which SetUnlessAlreadySet satisfies.
@@ -211,7 +211,12 @@ func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]labels.Labels {
 			s.locks[refLock].Lock()
 		}
 
-		deleted[series.ref] = series.lset
+		if retainLabels {
+			deleted[series.ref] = series.lset
+		} else {
+			deleted[series.ref] = labels.EmptyLabels()
+		}
+
 		delete(s.series[refLock], series.ref)
 		s.hashes[hashLock].Delete(hash, series.ref)
 

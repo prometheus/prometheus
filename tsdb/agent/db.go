@@ -825,7 +825,7 @@ func (db *DB) truncate(mint int64) error {
 // gc marks ref IDs that have not received a sample since mint as deleted in
 // s.deleted, along with the segment where they originally got deleted.
 func (db *DB) gc(mint int64) {
-	deleted := db.series.GC(mint)
+	deleted := db.series.GC(mint, db.opts.CheckpointFromInMemorySeries)
 	db.metrics.numActiveSeries.Sub(float64(len(deleted)))
 
 	_, last, _ := wlog.Segments(db.wal.Dir())
