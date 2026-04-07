@@ -117,6 +117,18 @@ func TestUninstallingTracerProvider(t *testing.T) {
 	require.Equal(t, noop.NewTracerProvider(), otel.GetTracerProvider())
 }
 
+func TestInstallingTracerProviderHTTPInsecure(t *testing.T) {
+	m := NewManager(promslog.NewNopLogger())
+	cfg := config.Config{
+		TracingConfig: config.TracingConfig{
+			Endpoint:   "localhost:4318",
+			ClientType: config.TracingClientHTTP,
+			Insecure:   true,
+		},
+	}
+	require.NoError(t, m.ApplyConfig(&cfg))
+}
+
 func TestTracerProviderShutdown(t *testing.T) {
 	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
