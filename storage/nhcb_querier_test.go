@@ -15,6 +15,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -347,6 +348,11 @@ type nhcbMockQuerier struct {
 	classicSeries     []Series
 	nhcbSeries        []Series
 	passthroughSeries []Series // For non-histogram queries
+
+	// For error/warning injection in tests.
+	classicErr   error
+	nhcbErr      error
+	nhcbWarnings annotations.Annotations
 }
 
 func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
@@ -356,6 +362,9 @@ func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matc
 			if strings.HasSuffix(matcher.Value, "_bucket") ||
 				strings.HasSuffix(matcher.Value, "_count") ||
 				strings.HasSuffix(matcher.Value, "_sum") {
+				if m.classicErr != nil {
+					return ErrSeriesSet(m.classicErr)
+				}
 				return NewMockSeriesSet(m.classicSeries...)
 			}
 			// If passthroughSeries is set, use it for non-histogram metric queries
@@ -363,7 +372,10 @@ func (m *nhcbMockQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matc
 				return NewMockSeriesSet(m.passthroughSeries...)
 			}
 			// Base metric name query - return NHCB series
-			return NewMockSeriesSet(m.nhcbSeries...)
+			if m.nhcbErr != nil {
+				return ErrSeriesSet(m.nhcbErr)
+			}
+			return &mockSeriesSet{idx: -1, series: m.nhcbSeries, warnings: m.nhcbWarnings}
 		}
 	}
 	return NewMockSeriesSet()
@@ -379,4 +391,171 @@ func (*nhcbMockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matc
 
 func (*nhcbMockQuerier) Close() error {
 	return nil
+}
+
+// deferredErrSeriesSet returns series normally but reports a non-nil error only
+// after Next() has been exhausted. This lets the pre-iteration Err() check pass
+// while still exercising error paths that are evaluated after draining the set.
+type deferredErrSeriesSet struct {
+	series    []Series
+	idx       int
+	err       error
+	exhausted bool
+}
+
+func newDeferredErrSeriesSet(err error, series ...Series) SeriesSet {
+	return &deferredErrSeriesSet{idx: -1, series: series, err: err}
+}
+
+func (s *deferredErrSeriesSet) Next() bool {
+	s.idx++
+	if s.idx >= len(s.series) {
+		s.exhausted = true
+		return false
+	}
+	return true
+}
+
+func (s *deferredErrSeriesSet) At() Series { return s.series[s.idx] }
+
+func (s *deferredErrSeriesSet) Err() error {
+	if s.exhausted {
+		return s.err
+	}
+	return nil
+}
+
+func (*deferredErrSeriesSet) Warnings() annotations.Annotations { return nil }
+
+// nhcbSetQuerier routes suffix queries (_bucket/_count/_sum) to classicSet and
+// all other queries to nhcbSet. This lets tests inject arbitrary SeriesSet
+// implementations for either path without duplicating routing logic.
+type nhcbSetQuerier struct {
+	classicSet SeriesSet
+	nhcbSet    SeriesSet
+}
+
+func (m *nhcbSetQuerier) Select(_ context.Context, _ bool, _ *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+	for _, matcher := range matchers {
+		if matcher.Name == model.MetricNameLabel {
+			if strings.HasSuffix(matcher.Value, "_bucket") ||
+				strings.HasSuffix(matcher.Value, "_count") ||
+				strings.HasSuffix(matcher.Value, "_sum") {
+				return m.classicSet
+			}
+			return m.nhcbSet
+		}
+	}
+	return NewMockSeriesSet()
+}
+
+func (*nhcbSetQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+
+func (*nhcbSetQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+
+func (*nhcbSetQuerier) Close() error { return nil }
+
+func TestNHCBAsClassicQuerier_ErrorPropagation(t *testing.T) {
+	nhcb := &histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           3,
+		Sum:             10.0,
+		CustomValues:    []float64{1.0},
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []int64{1, 1},
+	}
+	testError := errors.New("storage error")
+
+	tests := []struct {
+		name    string
+		querier Querier
+	}{
+		{
+			name: "classic set immediate error",
+			querier: &nhcbMockQuerier{
+				classicErr: testError,
+				nhcbSeries: []Series{
+					NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}}),
+				},
+			},
+		},
+		{
+			name: "nhcb set immediate error",
+			querier: &nhcbMockQuerier{
+				classicSeries: []Series{},
+				nhcbErr:       testError,
+			},
+		},
+		{
+			// The nhcb set's Err() is nil initially (passes the pre-check) but
+			// becomes non-nil once Next() is exhausted, exercising the error
+			// path inside nhcbToClassicSeriesSet.Next().
+			name: "nhcb set error during iteration inside nhcbToClassicSeriesSet",
+			querier: &nhcbSetQuerier{
+				classicSet: NewMockSeriesSet(),
+				nhcbSet:    newDeferredErrSeriesSet(testError),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q := NewNHCBAsClassicQuerier(tc.querier)
+			ss := q.Select(context.Background(), false, nil,
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+			for ss.Next() {
+			}
+			require.ErrorIs(t, ss.Err(), testError)
+		})
+	}
+}
+
+func TestNHCBAsClassicQuerier_WarningPropagation(t *testing.T) {
+	nhcb := &histogram.Histogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           3,
+		Sum:             10.0,
+		CustomValues:    []float64{1.0},
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []int64{1, 1},
+	}
+	nhcbSeries := NewListSeries(
+		labels.FromStrings("__name__", "http_requests"),
+		[]chunks.Sample{hSample{t: 1, h: nhcb}},
+	)
+
+	t.Run("nhcb set warnings propagate", func(t *testing.T) {
+		warn := annotations.New().Add(errors.New("nhcb warning"))
+		q := NewNHCBAsClassicQuerier(&nhcbMockQuerier{
+			classicSeries: []Series{},
+			nhcbSeries:    []Series{nhcbSeries},
+			nhcbWarnings:  warn,
+		})
+
+		ss := q.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"))
+		for ss.Next() {
+		}
+		require.NoError(t, ss.Err())
+		require.Equal(t, warn, ss.Warnings())
+	})
+
+	t.Run("non-histogram passthrough preserves warnings", func(t *testing.T) {
+		warn := annotations.New().Add(errors.New("passthrough warning"))
+		series := []Series{NewListSeries(labels.FromStrings("__name__", "my_gauge"), []chunks.Sample{fSample{t: 1, f: 1}})}
+		q := NewNHCBAsClassicQuerier(&nhcbSetQuerier{
+			nhcbSet: &mockSeriesSet{idx: -1, series: series, warnings: warn},
+		})
+
+		ss := q.Select(context.Background(), false, nil,
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "my_gauge"))
+		for ss.Next() {
+		}
+		require.NoError(t, ss.Err())
+		require.Equal(t, warn, ss.Warnings())
+	})
 }
