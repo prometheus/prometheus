@@ -384,11 +384,15 @@ func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
 }
 
 // deletedSeriesIter returns an iterator over deleted series from the given map.
-func deletedSeriesIter(m map[chunks.HeadSeriesRef]deletedRefMeta) iter.Seq[DeletedSeries] {
+// Only series whose lastSegment is greater than last are emitted, matching the
+// filtering behaviour of [wlog.Checkpoint] keep function.
+func deletedSeriesIter(m map[chunks.HeadSeriesRef]deletedRefMeta, last int) iter.Seq[DeletedSeries] {
 	return func(yield func(DeletedSeries) bool) {
 		for ref, meta := range m {
-			if !yield(deletedSeries{ref: ref, labels: meta.labels}) {
-				return
+			if meta.lastSegment > last {
+				if !yield(deletedSeries{ref: ref, labels: meta.labels}) {
+					return
+				}
 			}
 		}
 	}

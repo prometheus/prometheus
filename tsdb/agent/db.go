@@ -777,7 +777,7 @@ func (db *DB) truncate(mint int64) error {
 			AtIndex:       last,
 			BatchSize:     db.opts.CheckpointBatchSize,
 			ActiveSeries:  db.series.Iterate(),
-			DeletedSeries: deletedSeriesIter(db.deleted),
+			DeletedSeries: deletedSeriesIter(db.deleted, last),
 		})
 	} else {
 		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage)
