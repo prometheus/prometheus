@@ -95,10 +95,10 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 
 	success := false
 	defer func() {
-		os.RemoveAll(cpTmpDir)
 		if !success {
 			cp.Close()
 		}
+		os.RemoveAll(cpTmpDir)
 	}()
 
 	flusher := newCheckpointFlusher(cp, p.BatchSize)
