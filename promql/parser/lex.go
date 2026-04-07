@@ -218,6 +218,27 @@ func init() {
 	key["nan"] = NUMBER
 }
 
+// Keywords returns all keyword strings recognised by the PromQL lexer,
+// including aggregation operators, modifier keywords, histogram descriptor
+// keys, and counter-reset hint values.
+func Keywords() []string {
+	seen := make(map[string]struct{})
+	for s := range key {
+		seen[s] = struct{}{}
+	}
+	for s := range histogramDesc {
+		seen[s] = struct{}{}
+	}
+	for s := range counterResetHints {
+		seen[s] = struct{}{}
+	}
+	result := make([]string, 0, len(seen))
+	for s := range seen {
+		result = append(result, s)
+	}
+	return result
+}
+
 func (i ItemType) String() string {
 	if s, ok := ItemTypeStr[i]; ok {
 		return s
