@@ -4934,7 +4934,7 @@ func (q *fakeQuery) String() string {
 func TestDeleteSeriesEndpointRemoved(t *testing.T) {
 	api := newTestAPI(t, testhelpers.APIConfig{})
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/series", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/series", http.NoBody)
 	recorder := httptest.NewRecorder()
 	api.Handler.ServeHTTP(recorder, req)
 
