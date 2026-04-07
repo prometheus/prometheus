@@ -43,7 +43,7 @@ type CheckpointParams struct {
 }
 
 func (p CheckpointParams) withDefaults() CheckpointParams {
-	if p.BatchSize == 0 {
+	if p.BatchSize <= 0 {
 		p.BatchSize = defaultBatchSize
 	}
 
