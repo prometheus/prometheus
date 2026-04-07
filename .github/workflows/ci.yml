@@ -273,6 +273,12 @@ jobs:
         with:
           args: --verbose --build-tags=dedupelabels
           version: ${{ steps.golangci-lint-version.outputs.version }}
+      - name: Lint in compliance
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        with:
+          args: --verbose
+          working-directory: compliance
+          version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint in documentation/examples/remote_storage
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:

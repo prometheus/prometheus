@@ -57,7 +57,7 @@ type internalPrometheus struct {
 	agentMode bool
 }
 
-func (p internalPrometheus) Name() string { return "internal-prometheus" }
+func (internalPrometheus) Name() string { return "internal-prometheus" }
 
 // Run runs a <REPO>cmd/prometheus main package as a test sender target, until ctx is done.
 func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error {
