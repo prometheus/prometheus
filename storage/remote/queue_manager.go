@@ -57,6 +57,8 @@ const (
 	ewmaWeight          = 0.2
 	shardUpdateDuration = 10 * time.Second
 
+	savepointPersistDuration = 30 * time.Second
+
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
 
@@ -489,6 +491,7 @@ func NewQueueManager(
 	enableTypeAndUnitLabels bool,
 	protoMsg remoteapi.WriteMessageType,
 	recordBuf *record.BuffersPool,
+	startSegment int,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -539,6 +542,7 @@ func NewQueueManager(
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf)
+	t.watcher.SetStartSegment(startSegment)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
@@ -1004,6 +1008,11 @@ func (t *QueueManager) Stop() {
 		t.metadataWatcher.Stop()
 	}
 	t.metrics.unregister()
+}
+
+// CurrentSegment returns the WAL segment currently being processed by this queue's watcher.
+func (t *QueueManager) CurrentSegment() int {
+	return t.watcher.CurrentSegment()
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
