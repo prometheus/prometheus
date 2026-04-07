@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.11.1 / 2026-04-07
+
+- [BUGFIX] Tracing: Fix startup failure for OTLP HTTP tracing with `insecure: true`. #18469
+
 ## 3.11.0 / 2026-04-02
 
 - [CHANGE] Hetzner SD: The `__meta_hetzner_datacenter` label is deprecated for the role `robot` but kept for backward compatibility, use the `__meta_hetzner_robot_datacenter` label instead. For the role `hcloud`, the label is deprecated and will stop working after the 1 July 2026. #17850
