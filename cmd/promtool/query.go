@@ -61,8 +61,8 @@ func newAPI(url *url.URL, roundTripper http.RoundTripper, headers map[string]str
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query, evalTime string, p printer) int {
-	api, err := newAPI(url, roundTripper, nil)
+func QueryInstant(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, query, evalTime string, p printer) int {
+	api, err := newAPI(url, roundTripper, headers)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		return failureExitCode
