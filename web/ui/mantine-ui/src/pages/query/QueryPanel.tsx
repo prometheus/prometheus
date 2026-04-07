@@ -273,7 +273,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                   {
                     value: GraphDisplayMode.Lines,
                     label: (
-                      <Center>
+                      <Center fw={500}>
                         <IconChartLine style={iconStyle} />
                         <Box ml={10}>Unstacked</Box>
                       </Center>
@@ -282,7 +282,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                   {
                     value: GraphDisplayMode.Stacked,
                     label: (
-                      <Center>
+                      <Center fw={500}>
                         <IconChartAreaFilled style={iconStyle} />
                         <Box ml={10}>Stacked</Box>
                       </Center>

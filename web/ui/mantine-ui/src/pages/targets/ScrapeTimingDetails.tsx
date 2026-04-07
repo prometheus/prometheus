@@ -67,7 +67,7 @@ const ScrapeTimingDetails: FC<ScrapeTimingDetailsProps> = ({ target }) => {
         </ActionIcon>
       </Group>
 
-      <Collapse in={showDetails}>
+      <Collapse expanded={showDetails}>
         {/* Additionally remove DOM elements when not expanded (helps performance) */}
         {showDetails && (
           <Group gap="xs" wrap="wrap">
