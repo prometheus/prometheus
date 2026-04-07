@@ -668,7 +668,7 @@ func main() {
 		os.Exit(3)
 	}
 
-	if agentMode && cfg.agent.CheckpointBatchSize == 0 {
+	if agentMode && cfg.agent.CheckpointBatchSize <= 0 {
 		fmt.Fprintln(os.Stderr, "--storage.agent.checkpoint-batch-size must be greater than 0.")
 		os.Exit(1)
 	}

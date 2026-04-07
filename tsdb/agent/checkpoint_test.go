@@ -153,7 +153,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		require.NoError(t, db.Close())
 	})
 
-	assertCheckpointExists(t, wlogWalDir, 1)
+	assertCheckpointExists(t, agentWalDir, 1)
 	openDBAndDo(newParams, func(db *DB) {
 		defer db.Close()
 		agentAfterSeries = db.series
