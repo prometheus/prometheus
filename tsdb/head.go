@@ -777,7 +777,7 @@ func (h *Head) replayDiskChunksAndWAL() error {
 			snapIdx, snapOffset = -1, 0
 
 			// If this fails, data will be recovered from WAL.
-			// Hence we wont lose any data (given WAL is not corrupt).
+			// Hence we won't lose any data (given WAL is not corrupt).
 			mmappedChunks, oooMmappedChunks, lastMmapRef, err = h.removeCorruptedMmappedChunks(err)
 			if err != nil {
 				return err
@@ -952,13 +952,11 @@ func (h *Head) Init(minValidTime int64) error {
 		h.seriesStateWg.Add(1)
 		go h.runSeriesStateTicker()
 
-		h.walReplayWg.Add(1)
-		go func() {
-			defer h.walReplayWg.Done()
+		h.walReplayWg.Go(func() {
 			if err := h.replayDiskChunksAndWAL(); err != nil {
 				h.logger.Error("Fast startup: Background WAL replay failed", "err", err)
 			}
-		}()
+		})
 
 		return nil
 	}
