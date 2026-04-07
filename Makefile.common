@@ -55,7 +55,7 @@ ifneq ($(shell command -v gotestsum 2> /dev/null),)
 endif
 endif
 
-PROMU_VERSION ?= 0.18.0
+PROMU_VERSION ?= 0.18.1
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
 
 SKIP_GOLANGCI_LINT :=
@@ -91,7 +91,7 @@ $(error DOCKERFILE_PATH is deprecated. Use DOCKERFILE_VARIANTS ?= $(DOCKERFILE_P
 endif
 
 DOCKER_ARCHS            ?= amd64
-DOCKERFILE_VARIANTS     ?= Dockerfile $(wildcard Dockerfile.*)
+DOCKERFILE_VARIANTS     ?= $(wildcard Dockerfile Dockerfile.*)
 
 # Function to extract variant from Dockerfile label.
 # Returns the variant name from io.prometheus.image.variant label, or "default" if not found.
