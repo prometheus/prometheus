@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !slicelabels && !dedupelabels && !toplabels
+//go:build toplabels
 
 package labels
 
@@ -24,7 +24,7 @@ import (
 )
 
 // ImplementationName is the name of the labels implementation.
-const ImplementationName = "stringlabels"
+const ImplementationName = "toplabels"
 
 // Labels is implemented by a single flat string holding name/value pairs.
 // Each name and value is preceded by its length, encoded as a single byte
