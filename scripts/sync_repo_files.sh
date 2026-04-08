@@ -53,7 +53,7 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint scripts/golangci-lint.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .dockerignore .yamllint scripts/golangci-lint.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
@@ -144,9 +144,15 @@ process_repo() {
       repo_log "${org_repo} is not Go, skipping golangci-lint.yml."
       continue
     fi
-    if [[ "${source_file}" == '.github/workflows/container_description.yml' ]] && ! check_docker "${org_repo}" "${default_branch}" ; then
-      repo_log "${org_repo} has no Dockerfile, skipping container_description.yml."
-      continue
+    if ! check_docker "${org_repo}" "${default_branch}" ; then
+      if [[ "${source_file}" == '.dockerignore' ]] ; then
+        repo_log "${org_repo} has no Dockerfile, skipping .dockerignore."
+        continue
+      fi
+      if [[ "${source_file}" == '.github/workflows/container_description.yml' ]] ; then
+        repo_log "${org_repo} has no Dockerfile, skipping container_description.yml."
+        continue
+      fi
     fi
     if [[ "${source_file}" == 'LICENSE' ]] && ! check_license "${target_file}" ; then
       repo_log "LICENSE in ${org_repo} is not apache, skipping."
