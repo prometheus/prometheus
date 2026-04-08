@@ -489,6 +489,7 @@ func NewQueueManager(
 	enableTypeAndUnitLabels bool,
 	protoMsg remoteapi.WriteMessageType,
 	recordBuf *record.BuffersPool,
+	startSegment int,
 ) *QueueManager {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
@@ -539,6 +540,9 @@ func NewQueueManager(
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf)
+	if startSegment >= 0 {
+		t.watcher.SetStartSegment(startSegment)
+	}
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
@@ -1004,6 +1008,11 @@ func (t *QueueManager) Stop() {
 		t.metadataWatcher.Stop()
 	}
 	t.metrics.unregister()
+}
+
+// CurrentSegment returns the WAL segment currently being processed by this queue's watcher.
+func (t *QueueManager) CurrentSegment() int {
+	return t.watcher.CurrentSegment()
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.

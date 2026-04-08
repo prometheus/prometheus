@@ -220,6 +220,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.enableTypeAndUnitLabels,
 			rwConf.ProtobufMessage,
 			rws.recordBuf,
+			-1,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)

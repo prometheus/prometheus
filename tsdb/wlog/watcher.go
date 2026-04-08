@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -113,6 +114,14 @@ type Watcher struct {
 	readNotify chan struct{}
 	quit       chan struct{}
 	done       chan struct{}
+
+	// startSegment overrides the segment to start reading from.
+	// When >= 0, the watcher replays samples from this segment onwards
+	// instead of starting from time.Now(). Default: -1 (disabled).
+	startSegment int
+
+	// segment tracks the segment currently being processed.
+	segment atomic.Int64
 
 	// For testing, stop when we hit this segment.
 	MaxSegment int
@@ -209,7 +218,7 @@ func NewWatcher(
 	if recordBuf == nil {
 		recordBuf = record.NewBuffersPool()
 	}
-	return &Watcher{
+	w := &Watcher{
 		logger:         logger,
 		recordBuf:      recordBuf,
 		writer:         writer,
@@ -225,8 +234,11 @@ func NewWatcher(
 		quit:       make(chan struct{}),
 		done:       make(chan struct{}),
 
-		MaxSegment: -1,
+		startSegment: -1,
+		MaxSegment:   -1,
 	}
+	w.segment.Store(-1)
+	return w
 }
 
 func (w *Watcher) Notify() {
@@ -283,7 +295,9 @@ func (w *Watcher) loop() {
 
 	// We may encounter failures processing the WAL; we should wait and retry.
 	for !isClosed(w.quit) {
-		w.SetStartTime(time.Now())
+		if w.startSegment < 0 {
+			w.SetStartTime(time.Now())
+		}
 		if err := w.Run(); err != nil {
 			w.logger.Error("error tailing WAL", "err", err)
 		}
@@ -323,7 +337,16 @@ func (w *Watcher) Run() error {
 	}
 	w.lastCheckpoint = lastCheckpoint
 
-	currentSegment, err := w.findSegmentForIndex(checkpointIndex)
+	var currentSegment int
+	if w.startSegment < 0 {
+		currentSegment, err = w.findSegmentForIndex(checkpointIndex)
+	} else {
+		// Respect checkpoint if it's ahead of the savepoint
+		// (segments before the checkpoint have been compacted away).
+		startIdx := max(w.startSegment, checkpointIndex)
+		currentSegment, err = w.findSegmentForIndex(startIdx)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -331,6 +354,7 @@ func (w *Watcher) Run() error {
 	w.logger.Debug("Tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
 		w.currentSegmentMetric.Set(float64(currentSegment))
+		w.segment.Store(int64(currentSegment))
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
@@ -347,6 +371,8 @@ func (w *Watcher) Run() error {
 		currentSegment++
 	}
 
+	// Disable override for subsequent retries in loop().
+	w.startSegment = -1
 	return nil
 }
 
@@ -513,6 +539,7 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 // Also used with readCheckpoint - implements segmentReadFn.
 // TODO(bwplotka): Rename tail to !onlySeries; extremely confusing and easy to miss.
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
+	replay := w.startSegment >= 0
 	series := w.recordBuf.GetRefSeries(512)
 	samples := w.recordBuf.GetSamples(512)
 	exemplars := w.recordBuf.GetExemplars(512)
@@ -546,7 +573,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		case record.Samples, record.SamplesV2:
 			// If we're not tailing a segment we can ignore any samples records we see.
 			// This speeds up replay of the WAL by > 10x.
-			if !tail {
+			if !tail && !replay {
 				break
 			}
 			samples, err = dec.Samples(rec, samples[:0])
@@ -558,7 +585,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			samplesToSend := samples[:0]
 			for _, s := range samples {
-				if s.T > w.startTimestamp {
+				if replay || s.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
@@ -578,7 +605,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			// If we're not tailing a segment we can ignore any exemplars records we see.
 			// This speeds up replay of the WAL significantly.
-			if !tail {
+			if !tail && !replay {
 				break
 			}
 			exemplars, err = dec.Exemplars(rec, exemplars[:0])
@@ -593,7 +620,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			if !w.sendHistograms {
 				break
 			}
-			if !tail {
+			if !tail && !replay {
 				break
 			}
 			histograms, err = dec.HistogramSamples(rec, histograms[:0])
@@ -605,7 +632,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			histogramsToSend := histograms[:0]
 			for _, h := range histograms {
-				if h.T > w.startTimestamp {
+				if replay || h.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
@@ -623,7 +650,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			if !w.sendHistograms {
 				break
 			}
-			if !tail {
+			if !tail && !replay {
 				break
 			}
 			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms[:0])
@@ -635,7 +662,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			floatHistogramsToSend := floatHistograms[:0]
 			for _, fh := range floatHistograms {
-				if fh.T > w.startTimestamp {
+				if replay || fh.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
@@ -708,6 +735,21 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 func (w *Watcher) SetStartTime(t time.Time) {
 	w.startTime = t
 	w.startTimestamp = timestamp.FromTime(t)
+}
+
+// SetStartSegment configures the watcher to replay the WAL from the given
+// segment number on the next call to Run. Samples in replayed segments
+// are sent to the WriteTo consumer regardless of their timestamp.
+// A value of -1 (the default) disables the override.
+// Must be called before Start.
+func (w *Watcher) SetStartSegment(segment int) {
+	w.startSegment = segment
+}
+
+// CurrentSegment returns the WAL segment the watcher is currently processing.
+// Returns -1 if the watcher has not started processing yet.
+func (w *Watcher) CurrentSegment() int {
+	return int(w.segment.Load())
 }
 
 type segmentReadFn func(w *Watcher, r *LiveReader, segmentNum int, tail bool) error
