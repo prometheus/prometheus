@@ -26,6 +26,7 @@ import (
 // It maps closely to OpenTelemetry's cumulative-to-delta conversion patterns,
 // similar to what is done in the OpenTelemetry Collector's `metricstarttimeprocessor`.
 // See https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/metricstarttimeprocessor.
+// TODO(ridwanmsharif): Make this a struct usable by a go interface (see https://github.com/prometheus/prometheus/pull/18279#discussion_r3032221849).
 type stCache struct {
 	f  *floatSynthesis
 	h  *histogramSynthesis
