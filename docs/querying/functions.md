@@ -606,6 +606,12 @@ the name `target_info`. It also assumes that the identifying info series labels 
 `{__name__=~"(target|build)_info"}`. However, the identifying labels always
 have to be `instance` and `job`.
 
+When only negated `__name__` matchers are provided (e.g.
+`{__name__!="target_info"}`), `info` considers all metrics matching
+`.+_info` and then applies the negated matchers as filters. This is
+because negated matchers alone cannot positively identify which info
+metrics to consider.
+
 These limitations are partially defeating the purpose of the `info` function.
 At the current stage, this is an experiment to find out how useful the approach
 turns out to be in practice. A final version of the `info` function will indeed
