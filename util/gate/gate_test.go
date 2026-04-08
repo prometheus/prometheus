@@ -19,34 +19,39 @@ import (
 	"time"
 )
 
+func TestGate(t *testing.T) {
+	obs := &mockObserver{}
+	// Use NewWithObserver because we are passing an observer
+	g := NewWithObserver(1, obs)
+
+	ctx := context.Background()
+	// 1. Acquire the first slot (no waiting)
+	if err := g.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. This goroutine will release the slot after 10ms
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		g.Done()
+	}()
+
+	// 3. This will BLOCK for ~10ms until the goroutine calls Done()
+	if err := g.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. Verify that we recorded a wait duration
+	if obs.observed <= 0 {
+		t.Errorf("expected observed waiting time to be > 0, got %f", obs.observed)
+	}
+}
+
+// mockObserver is a simple implementation of the Observer interface for testing.
 type mockObserver struct {
 	observed float64
 }
 
 func (m *mockObserver) Observe(v float64) {
 	m.observed = v
-}
-
-func TestGate(t *testing.T) {
-	obs := &mockObserver{}
-	g := New(1, obs)
-
-	ctx := context.Background()
-	if err := g.Start(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	// This should block and record waiting time.
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		g.Done()
-	}()
-
-	if err := g.Start(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	if obs.observed <= 0 {
-		t.Errorf("expected observed waiting time to be > 0, got %f", obs.observed)
-	}
 }
