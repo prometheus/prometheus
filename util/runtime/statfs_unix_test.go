@@ -19,11 +19,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 )
-
-var regexpFsType = regexp.MustCompile("^[A-Z][A-Z0-9_]*_MAGIC$")
 
 func TestFsType(t *testing.T) {
 	var fsType string
@@ -32,7 +29,11 @@ func TestFsType(t *testing.T) {
 	require.NoError(t, err)
 
 	fsType = FsType(path)
-	require.Regexp(t, regexpFsType, fsType)
+	// FsType returns a named constant (e.g. "EXT4_SUPER_MAGIC") for known
+	// filesystem types or a hex string for unknown ones. Either way the
+	// result must be non-empty and differ from the error sentinel "0".
+	require.NotEmpty(t, fsType)
+	require.NotEqual(t, "0", fsType)
 
 	fsType = FsType("/no/where/to/be/found")
 	require.Equal(t, "0", fsType)

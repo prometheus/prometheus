@@ -63,6 +63,7 @@ func FsType(path string) string {
 		0x58465342: "XFS_SUPER_MAGIC",
 		0x012FD16D: "_XIAFS_SUPER_MAGIC",
 		0x794c7630: "OVERLAYFS_SUPER_MAGIC",
+		0x9123683e: "BTRFS_SUPER_MAGIC",
 	}
 
 	var fs syscall.Statfs_t
