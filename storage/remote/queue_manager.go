@@ -57,6 +57,8 @@ const (
 	ewmaWeight          = 0.2
 	shardUpdateDuration = 10 * time.Second
 
+	savepointPersistDuration = 30 * time.Second
+
 	// Allow 30% too many shards before scaling down.
 	shardToleranceFraction = 0.3
 
