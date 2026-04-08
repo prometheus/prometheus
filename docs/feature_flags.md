@@ -108,9 +108,9 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 Enables the synthesis of start timestamps (ST) for cumulative metrics (Counters, Classic Histograms, Native Histograms, and Summaries) when they are not provided by the source. Similar to [the official OpenTelemetry metricstarttimeprocessor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/metricstarttimeprocessor#strategy-subtract-initial-point), it tracks previous values to detect resets and subtracts the initial reference point to synthesize a zero-based timeline from the first sample.
 
 > NOTE:
-> * Synthesis is currently only implemented on scrape (not yet RW or Otel receive).
-> * This feature does not work with out-of-order samples.
-> * This leads to counter values being different than the source. The first point is dropped and its timestamp is used as the start timestamp for all subsequent points. All subsequent points are normalized against that dropped point (i.e. subtracted by it). Rates will still return accurate values but raw values of counters will not match the source.
+>  * Synthesis yields accurate Start Timestamp while maintaining accurate counter rates. However, the raw counter values will be different that what's scraped. This is because the first point is dropped and its timestamp is used as the start timestamp for all subsequent points. All subsequent points are normalized against that dropped point (i.e. subtracted by it). Effectively, synthesis create new counter streams with the known start timestamp from the original data.
+> * Synthesis works only with scraped data (RW and Otel receiver are not implemented).
+> * Synthesis requires ordered samples. As a result, cumulative samples without ST that are out of order will be rejected despite the `tsdb. out_of_order_time_window` setting.
 
 ## Concurrent evaluation of independent rules
 

@@ -319,6 +319,10 @@ loop:
 
 			if !skipAppend {
 				// Append sample to the storage.
+				if stCache != nil {
+					appOpts.RejectOutOfOrder = true
+					// TODO(ridwanmsharif): better handle OOO metrics when st-synthesis is on.
+				}
 				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
 				if err == nil && ce != nil && ref != 0 {
 					ce.ref = ref

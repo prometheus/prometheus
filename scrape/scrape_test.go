@@ -1916,6 +1916,63 @@ test_metric 32
 	requireSample(t, got[8], "test_metric", 7, timestamp.FromTime(tsF), timestamp.FromTime(tsE), false)
 }
 
+func TestScrapeLoopAppend_StartTimeSynthesis_OutOfOrder(t *testing.T) {
+	ts := time.Now()
+
+	s := teststorage.New(t)
+	// Simulate OOO error for "test_metric" on the second scrape.
+	var returnOOO bool
+	appTest := teststorage.NewAppendable().WithErrs(
+		func(ls labels.Labels) error {
+			if returnOOO && ls.Get(model.MetricNameLabel) == "test_metric" {
+				return storage.ErrOutOfOrderSample
+			}
+			return nil
+		}, nil, nil).Then(s)
+
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: anchor the start time, append is skipped.
+	scrapeA := []byte(`# TYPE test_metric counter
+test_metric 10
+# EOF
+`)
+
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Counter should be skipped (anchored).
+	got := appTest.ResultSamples()
+	require.Empty(t, got)
+
+	// Second Scrape: Counter should be rejected due to OOO.
+	// stCache is now non-nil for this series.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_metric counter
+test_metric 15
+# EOF
+`)
+
+	returnOOO = true // Now return OOO error
+	app = sl.appender()
+	total, added, seriesAdded, err := app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err) // Scrape should not fail
+	require.NoError(t, app.Commit())
+
+	// Counter should NOT be in the result samples because it was dropped.
+	got = appTest.ResultSamples()
+	require.Empty(t, got)
+
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, added)
+	require.Equal(t, 0, seriesAdded)
+}
+
 func requireSampleHist(t *testing.T, s teststorage.Sample, name, expectedHist string, ts, st int64, isNaN bool) {
 	t.Helper()
 	require.Equal(t, name, s.L.Get(model.MetricNameLabel))
