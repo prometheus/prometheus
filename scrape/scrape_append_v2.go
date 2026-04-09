@@ -318,6 +318,7 @@ loop:
 				}
 			}
 
+			// Note that even if append is skipped, we may still add to the cache to make sure we save stCache.
 			if !skipAppend {
 				// Append sample to the storage.
 				if stCache != nil {
@@ -342,8 +343,6 @@ loop:
 		// But we only do this for series that were appended to TSDB without errors.
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
-		// However, if we generated a start time synthesis anchor (stCache != nil),
-		// we DO need to cache it so next scrapes have the reference.
 		if !seriesCached && shouldCache {
 			ce = sl.cache.addRef(met, ref, lset, hash)
 
@@ -356,11 +355,13 @@ loop:
 			ce.st = stCache // Set it, even if it's nil (explicit reset).
 		}
 
-		// Track staleness uniformly, bypassing logic if there is an explicit timestamp.
-		// We avoid tracking staleness for newly synthesized anchors (ref == 0) to prevent
-		// emitting disconnected StaleNaNs if they disappear on the next scrape.
-		// We must track staleness if we are synthesizing a start time (stCache !=
-		// nil), otherwise the timeline could become disconnected if it disappears.
+		// We track staleness for a series to ensure that if it disappears in a future scrape,
+		// we can emit a StaleNaN marker to terminate the series (which also helps in eventually cleaning up stCache).
+		// We only track it if there are no errors and we have a valid storage reference (ce.ref != 0).
+		// We track it if:
+		// - There is no explicit timestamp in the scrape (parsedTimestamp == nil).
+		// - Or we explicitly track staleness for timestamps (sl.trackTimestampsStaleness).
+		// - Or we are synthesizing start times (stCache != nil), so we can clear stCache if it goes stale.
 		shouldTrackStaleness := parsedTimestamp == nil || sl.trackTimestampsStaleness || stCache != nil
 		if ce != nil && err == nil && ce.ref != 0 && shouldTrackStaleness {
 			sl.cache.trackStaleness(ce.ref, ce)

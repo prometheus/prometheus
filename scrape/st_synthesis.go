@@ -23,6 +23,10 @@ import (
 //
 // Only Counters and Histograms (Classic/Native/Float) are supported.
 //
+// Note: The first sample observed for a series is dropped to establish the
+// start timestamp reference point. All subsequent samples are adjusted relative
+// to this first sample.
+//
 // It maps closely to OpenTelemetry's cumulative-to-delta conversion patterns,
 // similar to what is done in the OpenTelemetry Collector's `metricstarttimeprocessor`.
 // See https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/metricstarttimeprocessor.
@@ -108,7 +112,7 @@ func (c *stCache) synthesizeHistogram(h *histogram.Histogram, st int64) (*histog
 	// floating histograms and back. Need to look into how reset detection works
 	// natively for histograms.
 
-	// Mathematically subtract the origin anchor.
+	// Subtract the origin anchor.
 	subFloat, _, _, _ := currFloat.Sub(n.starting)
 	subFloat = subFloat.Compact(0)
 
@@ -133,7 +137,7 @@ func (c *stCache) synthesizeHistogram(h *histogram.Histogram, st int64) (*histog
 		adjusted.PositiveBuckets = make([]int64, len(subFloat.PositiveBuckets))
 		var last uint64
 		for i, v := range subFloat.PositiveBuckets {
-			// Subtracted float buckets are absolute cumulative integers mathematically.
+			// Subtracted float buckets are absolute cumulative integers.
 			absolute := uint64(v)
 			adjusted.PositiveBuckets[i] = int64(absolute - last)
 			last = absolute
@@ -183,7 +187,7 @@ func (c *stCache) synthesizeFloatHistogram(fh *histogram.FloatHistogram, st int6
 
 	n.prev = fh
 
-	// Mathematically subtract the origin anchor.
+	// Subtract the origin anchor.
 	adjusted, _, _, _ := fh.Copy().Sub(n.starting)
 	adjusted = adjusted.Compact(0)
 
