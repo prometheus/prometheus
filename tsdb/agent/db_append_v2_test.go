@@ -729,7 +729,7 @@ func TestWALReplay_AppendV2(t *testing.T) {
 
 func Test_ExistingWAL_NextRef_AppendV2(t *testing.T) {
 	dbDir := t.TempDir()
-	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false)
+	rs := remote.NewStorage(promslog.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil, false, false)
 	defer func() {
 		require.NoError(t, rs.Close())
 	}()

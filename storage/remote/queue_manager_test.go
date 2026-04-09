@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -140,7 +141,8 @@ func TestBasicContentNegotiation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+			enableMetadataWALRecords := tc.senderProtoMsg == remoteapi.WriteV2MessageType
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, enableMetadataWALRecords)
 			defer s.Close()
 
 			recs := testwal.GenerateRecords(recCase{
@@ -225,7 +227,8 @@ func TestSampleDelivery(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("proto=%s/case=%s", protoMsg, rc.Name), func(t *testing.T) {
 				dir := t.TempDir()
-				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+				enableMetadataWALRecords := protoMsg == remoteapi.WriteV2MessageType
+				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, enableMetadataWALRecords)
 				defer s.Close()
 
 				rc.NoST = protoMsg == remoteapi.WriteV1MessageType // RW1 does not support ST.
@@ -300,13 +303,13 @@ func newTestClientAndQueueManager(t testing.TB, flushDeadline time.Duration, pro
 	c := NewTestWriteClient(protoMsg)
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
-	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+	return c, newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 }
 
-func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType) *QueueManager {
+func newTestQueueManager(t testing.TB, cfg config.QueueConfig, mcfg config.MetadataConfig, deadline time.Duration, c WriteClient, protoMsg remoteapi.WriteMessageType, enableMetadataWALRecords bool) *QueueManager {
 	dir := t.TempDir()
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, protoMsg, record.NewBuffersPool())
+	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, enableMetadataWALRecords, protoMsg, record.NewBuffersPool())
 
 	return m
 }
@@ -347,7 +350,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 func TestWALMetadataDelivery(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, true)
 	defer s.Close()
 
 	cfg := config.DefaultQueueConfig
@@ -379,8 +382,9 @@ func TestWALMetadataDelivery(t *testing.T) {
 	qm.StoreSeries(recs.Series, 0)
 	qm.StoreMetadata(recs.Metadata)
 
-	require.Len(t, qm.seriesLabels, n)
-	require.Len(t, qm.seriesMetadata, n)
+	qm.series.lock()
+	require.Equal(t, n, qm.series.activeLen())
+	qm.series.unlock()
 
 	c.expectSamples(recs.Samples, recs.Series)
 	c.expectMetadataForBatch(recs.Metadata, recs.Series, recs.Samples, nil, nil, nil)
@@ -401,7 +405,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 			cfg.MaxShards = 1
 
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			m.StoreSeries(recs.Series, 0)
 			m.Start()
 			defer m.Stop()
@@ -453,7 +457,7 @@ func TestShutdown(t *testing.T) {
 				cfg := config.DefaultQueueConfig
 				mcfg := config.DefaultMetadataConfig
 
-				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
+				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 				// Send 2x batch size, so we know it will need at least two sends.
 				n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
 				recs := testwal.GenerateRecords(recCase{
@@ -481,6 +485,160 @@ func TestShutdown(t *testing.T) {
 	}
 }
 
+func TestSeriesStorage(t *testing.T) {
+	ref1 := chunks.HeadSeriesRef(1)
+	ref2 := chunks.HeadSeriesRef(2)
+	ref3 := chunks.HeadSeriesRef(3)
+	lbls1 := labels.FromStrings("__name__", "metric_one")
+	lbls1Updated := labels.FromStrings("__name__", "metric_one_v2")
+
+	t.Run("withMeta=false", func(t *testing.T) {
+		s := &seriesStorage{
+			withMeta: false,
+			labels:   make(map[chunks.HeadSeriesRef]labels.Labels),
+			dropped:  make(map[chunks.HeadSeriesRef]struct{}),
+		}
+
+		// Never-seen ref: not active, not dropped.
+		lbls, meta, active, dropped := s.lookup(ref1)
+		require.Equal(t, labels.EmptyLabels(), lbls)
+		require.Nil(t, meta)
+		require.False(t, active)
+		require.False(t, dropped)
+
+		// Store and look up an active series.
+		s.lock()
+		s.storeLocked(ref1, lbls1)
+		require.Equal(t, 1, s.activeLen())
+		s.unlock()
+
+		lbls, meta, active, dropped = s.lookup(ref1)
+		require.Equal(t, lbls1, lbls)
+		require.Nil(t, meta) // metadata always nil when withMeta=false
+		require.True(t, active)
+		require.False(t, dropped)
+
+		// storeMetadataLocked is a no-op for withMeta=false.
+		s.lock()
+		s.storeMetadataLocked(ref1, record.RefMetadata{Ref: ref1, Type: 1, Unit: "bytes", Help: "help"})
+		s.unlock()
+		_, meta, _, _ = s.lookup(ref1)
+		require.Nil(t, meta)
+
+		// Drop the series: active=false, dropped=true.
+		s.lock()
+		s.dropLocked(ref1)
+		require.Equal(t, 0, s.activeLen())
+		s.unlock()
+
+		lbls, meta, active, dropped = s.lookup(ref1)
+		require.Equal(t, labels.EmptyLabels(), lbls)
+		require.Nil(t, meta)
+		require.False(t, active)
+		require.True(t, dropped)
+
+		// deleteLocked removes all traces: subsequent lookup is never-seen.
+		s.lock()
+		s.deleteLocked(ref1)
+		s.unlock()
+
+		_, _, active, dropped = s.lookup(ref1)
+		require.False(t, active)
+		require.False(t, dropped)
+	})
+
+	t.Run("withMeta=true", func(t *testing.T) {
+		s := &seriesStorage{
+			withMeta: true,
+			entries:  make(map[chunks.HeadSeriesRef]seriesEntry),
+			dropped:  make(map[chunks.HeadSeriesRef]struct{}),
+		}
+
+		// Never-seen ref: not active, not dropped.
+		lbls, meta, active, dropped := s.lookup(ref1)
+		require.Equal(t, labels.EmptyLabels(), lbls)
+		require.Nil(t, meta)
+		require.False(t, active)
+		require.False(t, dropped)
+
+		// Store series; metadata is nil until explicitly set.
+		s.lock()
+		s.storeLocked(ref1, lbls1)
+		require.Equal(t, 1, s.activeLen())
+		s.unlock()
+
+		lbls, meta, active, dropped = s.lookup(ref1)
+		require.Equal(t, lbls1, lbls)
+		require.Nil(t, meta)
+		require.True(t, active)
+		require.False(t, dropped)
+
+		// Store metadata; labels must be unchanged.
+		s.lock()
+		s.storeMetadataLocked(ref1, record.RefMetadata{Ref: ref1, Type: 1, Unit: "bytes", Help: "help"})
+		s.unlock()
+
+		lbls, meta, active, _ = s.lookup(ref1)
+		require.Equal(t, lbls1, lbls)
+		require.NotNil(t, meta)
+		require.Equal(t, "bytes", meta.Unit)
+		require.True(t, active)
+
+		// Update labels via storeLocked; existing metadata must be preserved.
+		s.lock()
+		s.storeLocked(ref1, lbls1Updated)
+		s.unlock()
+
+		lbls, meta, active, _ = s.lookup(ref1)
+		require.Equal(t, lbls1Updated, lbls)
+		require.NotNil(t, meta, "storeLocked must preserve existing metadata")
+		require.Equal(t, "bytes", meta.Unit)
+		require.True(t, active)
+
+		// storeMetadataLocked must not create an entry for a never-seen series.
+		s.lock()
+		s.storeMetadataLocked(ref3, record.RefMetadata{Ref: ref3, Type: 1, Unit: "u", Help: "h"})
+		require.Equal(t, 1, s.activeLen())
+		s.unlock()
+		_, _, active, _ = s.lookup(ref3)
+		require.False(t, active)
+
+		// Drop the series: labels and metadata no longer accessible.
+		s.lock()
+		s.dropLocked(ref1)
+		require.Equal(t, 0, s.activeLen())
+		s.unlock()
+
+		lbls, meta, active, dropped = s.lookup(ref1)
+		require.Equal(t, labels.EmptyLabels(), lbls)
+		require.Nil(t, meta)
+		require.False(t, active)
+		require.True(t, dropped)
+
+		// storeLocked on a previously-dropped ref restores it as active.
+		s.lock()
+		s.storeLocked(ref1, lbls1)
+		s.unlock()
+
+		_, _, active, dropped = s.lookup(ref1)
+		require.True(t, active)
+		require.False(t, dropped)
+
+		// deleteLocked removes both the active entry and the dropped flag.
+		s.lock()
+		s.storeLocked(ref2, labels.FromStrings("__name__", "metric_two"))
+		s.dropLocked(ref1) // move ref1 back to dropped before deleting
+		s.deleteLocked(ref1)
+		s.deleteLocked(ref2)
+		require.Equal(t, 0, s.activeLen())
+		s.unlock()
+
+		_, _, active, dropped = s.lookup(ref1)
+		require.False(t, active)
+		require.False(t, dropped)
+	})
+}
+
 func TestSeriesReset(t *testing.T) {
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
@@ -491,7 +649,7 @@ func TestSeriesReset(t *testing.T) {
 
 			cfg := config.DefaultQueueConfig
 			mcfg := config.DefaultMetadataConfig
-			m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			for i := range numSegments {
 				series := []record.RefSeries{}
 				metadata := []record.RefMetadata{}
@@ -503,19 +661,14 @@ func TestSeriesReset(t *testing.T) {
 				m.StoreSeries(series, i)
 				m.StoreMetadata(metadata)
 			}
-			require.Len(t, m.seriesLabels, numSegments*numSeries)
-			// V2 stores metadata in seriesMetadata map for inline sending.
-			// V1 sends metadata separately via MetadataWatcher, so seriesMetadata is not populated.
-			if protoMsg == remoteapi.WriteV2MessageType {
-				require.Len(t, m.seriesMetadata, numSegments*numSeries)
-			}
+			m.series.lock()
+			require.Equal(t, numSegments*numSeries, m.series.activeLen())
+			m.series.unlock()
 
 			m.SeriesReset(2)
-			require.Len(t, m.seriesLabels, numSegments*numSeries/2)
-			// Verify metadata is also reset for V2
-			if protoMsg == remoteapi.WriteV2MessageType {
-				require.Len(t, m.seriesMetadata, numSegments*numSeries/2)
-			}
+			m.series.lock()
+			require.Equal(t, numSegments*numSeries/2, m.series.activeLen())
+			m.series.unlock()
 		})
 	}
 }
@@ -538,7 +691,7 @@ func TestReshard(t *testing.T) {
 			cfg.MaxShards = 1
 
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			c.expectSamples(recs.Samples, recs.Series)
 			m.StoreSeries(recs.Series, 0)
 
@@ -578,7 +731,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 			exitCh := make(chan struct{})
 			go func() {
 				for {
-					m = newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+					m = newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 
 					m.Start()
 					h.Unlock()
@@ -621,7 +774,7 @@ func TestReshardPartialBatch(t *testing.T) {
 			flushDeadline := 10 * time.Millisecond
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
-			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			m.StoreSeries(recs.Series, 0)
 
 			m.Start()
@@ -671,7 +824,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 			batchSendDeadline := time.Millisecond
 			cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
-			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, flushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			m.StoreSeries(recs.Series, 0)
 			m.Start()
 			defer m.Stop()
@@ -792,7 +945,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 		}
 	)
 
-	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, nil)
+	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, client, 0, newPool(), newHighestTimestampMetric(), nil, false, false, false, false, remoteapi.WriteV1MessageType, nil)
 	m.StoreSeries(recs.Series, 0)
 
 	// Attempt to samples while the manager is running. We immediately stop the
@@ -1302,6 +1455,265 @@ var extraLabels []labels.Label = []labels.Label{
 	{Name: "pod_name", Value: "some-other-name-5j8s8"},
 }
 
+// BenchmarkSeriesLookup isolates the per-sample map lookup cost in the Append hot
+// path, measuring only the lock+lookup section without shard or network overhead.
+//
+// layout=old:    3-map layout from before this change (seriesLabels + seriesMetadata +
+//
+//	droppedSeries); always 2 lookups per non-dropped sample.
+//
+// layout=new-v1: labels-only map (withMeta=false, used for RWv1 or RWv2 without
+//
+//	metadata-wal-records); 1 lookup per non-dropped sample.
+//
+// layout=new-v2: entries map (withMeta=true, used for RWv2 with metadata-wal-records);
+//
+//	1 lookup per non-dropped sample, retrieving labels and metadata together.
+//
+// To run:
+//
+//	go test -bench=BenchmarkSeriesLookup -benchtime=5s -count=6 ./storage/remote/ | tee bench_lookup.txt
+//	benchstat -col /layout bench_lookup.txt
+func BenchmarkSeriesLookup(b *testing.B) {
+	const (
+		numRefsPerIter  = 10_000
+		sampleDropRate  = 0.10 // fraction of refs that hit dropped series
+		droppedFraction = 0.15
+	)
+
+	type sizeCase struct {
+		label   string
+		total   int
+		dropped int
+	}
+
+	sizes := []sizeCase{
+		{"n=1M/drop=0", 1_000_000, 0},
+		{"n=1M/drop=150k", 1_000_000, int(1_000_000 * droppedFraction)},
+		{"n=20M/drop=0", 20_000_000, 0},
+		{"n=20M/drop=3000k", 20_000_000, int(20_000_000 * droppedFraction)},
+	}
+
+	for _, sz := range sizes {
+		numKept := sz.total - sz.dropped
+
+		// Build ref batch: sampleDropRate fraction hit dropped series.
+		numDroppedRefs := 0
+		if sz.dropped > 0 {
+			numDroppedRefs = int(numRefsPerIter * sampleDropRate)
+		}
+		numKeptRefs := numRefsPerIter - numDroppedRefs
+		refs := make([]chunks.HeadSeriesRef, numRefsPerIter)
+		for i := range numKeptRefs {
+			refs[i] = chunks.HeadSeriesRef(i % numKept)
+		}
+		for i := range numDroppedRefs {
+			refs[numKeptRefs+i] = chunks.HeadSeriesRef(numKept + (i % sz.dropped))
+		}
+
+		b.Run(sz.label+"/layout=old", func(b *testing.B) {
+			if testing.Short() && sz.total >= 1_000_000 {
+				b.Skip("skipping large-scale benchmark in short mode")
+			}
+
+			// Old layout: three separate maps.
+			seriesLabels := make(map[chunks.HeadSeriesRef]labels.Labels, numKept)
+			seriesMetadata := make(map[chunks.HeadSeriesRef]*metadata.Metadata, numKept)
+			droppedSeries := make(map[chunks.HeadSeriesRef]struct{}, sz.dropped)
+			var mu sync.Mutex
+
+			for i := range numKept {
+				ref := chunks.HeadSeriesRef(i)
+				seriesLabels[ref] = labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i))
+				seriesMetadata[ref] = &metadata.Metadata{Type: "gauge", Unit: "bytes"}
+			}
+			for i := range sz.dropped {
+				droppedSeries[chunks.HeadSeriesRef(numKept+i)] = struct{}{}
+			}
+
+			b.ReportAllocs()
+			for b.Loop() {
+				for _, ref := range refs {
+					mu.Lock()
+					lbls, ok := seriesLabels[ref]
+					if !ok {
+						_ = droppedSeries[ref]
+						mu.Unlock()
+						continue
+					}
+					_ = seriesMetadata[ref]
+					mu.Unlock()
+					_ = lbls
+				}
+			}
+		})
+
+		b.Run(sz.label+"/layout=new-v1", func(b *testing.B) {
+			if testing.Short() && sz.total >= 1_000_000 {
+				b.Skip("skipping large-scale benchmark in short mode")
+			}
+
+			seriesLabels := make(map[chunks.HeadSeriesRef]labels.Labels, numKept)
+			droppedSeries := make(map[chunks.HeadSeriesRef]struct{}, sz.dropped)
+			var mu sync.Mutex
+
+			for i := range numKept {
+				ref := chunks.HeadSeriesRef(i)
+				seriesLabels[ref] = labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i))
+			}
+			for i := range sz.dropped {
+				droppedSeries[chunks.HeadSeriesRef(numKept+i)] = struct{}{}
+			}
+
+			b.ReportAllocs()
+			for b.Loop() {
+				for _, ref := range refs {
+					mu.Lock()
+					lbls, ok := seriesLabels[ref]
+					if !ok {
+						_ = droppedSeries[ref]
+						mu.Unlock()
+						continue
+					}
+					mu.Unlock()
+					_ = lbls
+				}
+			}
+		})
+
+		b.Run(sz.label+"/layout=new-v2", func(b *testing.B) {
+			if testing.Short() && sz.total >= 1_000_000 {
+				b.Skip("skipping large-scale benchmark in short mode")
+			}
+
+			series := make(map[chunks.HeadSeriesRef]seriesEntry, numKept)
+			droppedSeries := make(map[chunks.HeadSeriesRef]struct{}, sz.dropped)
+			var mu sync.Mutex
+
+			for i := range numKept {
+				ref := chunks.HeadSeriesRef(i)
+				series[ref] = seriesEntry{
+					labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+					meta:   &metadata.Metadata{Type: "gauge", Unit: "bytes"},
+				}
+			}
+			for i := range sz.dropped {
+				droppedSeries[chunks.HeadSeriesRef(numKept+i)] = struct{}{}
+			}
+
+			b.ReportAllocs()
+			for b.Loop() {
+				for _, ref := range refs {
+					mu.Lock()
+					entry, ok := series[ref]
+					if !ok {
+						_ = droppedSeries[ref]
+						mu.Unlock()
+						continue
+					}
+					mu.Unlock()
+					_ = entry
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkAppend measures full-pipeline Append throughput across a matrix of:
+//   - total series count (100k / 1M)
+//   - metadata presence (no meta / with meta, V2 only)
+//   - wire format (RW1 / RW2)
+//
+// Each iteration calls Append with 10 000 samples spread across all series.
+// For isolating the lookup cost see BenchmarkSeriesLookup.
+//
+// To run:
+//
+//	go test -bench=BenchmarkAppend -benchtime=5s -count=6 -benchmem ./storage/remote/ | tee bench_append.txt
+//	benchstat bench_append.txt
+func BenchmarkAppend(b *testing.B) {
+	const numSamplesPerIter = 10_000
+
+	type sizeCase struct {
+		label string
+		total int
+	}
+
+	sizes := []sizeCase{
+		{"n=100k", 100_000},
+		{"n=1M", 1_000_000},
+	}
+
+	type formatCase struct {
+		label    string
+		format   remoteapi.WriteMessageType
+		withMeta bool
+	}
+	formats := []formatCase{
+		{"proto=v1/meta=false", remoteapi.WriteV1MessageType, false},
+		{"proto=v2/meta=false", remoteapi.WriteV2MessageType, false},
+		{"proto=v2/meta=true", remoteapi.WriteV2MessageType, true},
+	}
+
+	for _, sz := range sizes {
+		for _, fc := range formats {
+			b.Run(fmt.Sprintf("%s/%s", sz.label, fc.label), func(b *testing.B) {
+				if testing.Short() && sz.total >= 1_000_000 {
+					b.Skip("skipping large-scale benchmark in short mode")
+				}
+
+				cfg := testDefaultQueueConfig()
+				mcfg := config.DefaultMetadataConfig
+				dir := b.TempDir()
+				metrics := newQueueManagerMetrics(nil, "", "")
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, NewNopWriteClient(), defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, fc.withMeta, fc.format, record.NewBuffersPool())
+
+				series := make([]record.RefSeries, sz.total)
+				for i := range sz.total {
+					series[i] = record.RefSeries{
+						Ref:    chunks.HeadSeriesRef(i),
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+					}
+				}
+				m.StoreSeries(series, 0)
+
+				if fc.withMeta {
+					meta := make([]record.RefMetadata, sz.total)
+					for i := range sz.total {
+						meta[i] = record.RefMetadata{
+							Ref:  chunks.HeadSeriesRef(i),
+							Type: 1,
+							Unit: "bytes",
+							Help: fmt.Sprintf("help text for metric_%d", i),
+						}
+					}
+					m.StoreMetadata(meta)
+				}
+
+				samples := make([]record.RefSample, numSamplesPerIter)
+				for i := range numSamplesPerIter {
+					samples[i] = record.RefSample{Ref: chunks.HeadSeriesRef(i % sz.total), T: 0, V: float64(i)}
+				}
+
+				m.Start()
+				defer m.Stop()
+
+				runtime.GC()
+				var mem runtime.MemStats
+				runtime.ReadMemStats(&mem)
+				heapMB := float64(mem.HeapInuse) / 1e6
+
+				b.ReportAllocs()
+				for b.Loop() {
+					m.Append(samples)
+				}
+				b.StopTimer()
+				b.ReportMetric(heapMB, "heapMB")
+			})
+		}
+	}
+}
+
 // Recommended CLI invocation(s):
 /*
 	export bench=sampleSend && go test ./storage/remote/... \
@@ -1327,7 +1739,7 @@ func BenchmarkSampleSend(b *testing.B) {
 	// todo: test with new proto type(s)
 	for _, format := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		b.Run(string(format), func(b *testing.B) {
-			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format)
+			m := newTestQueueManager(b, cfg, mcfg, defaultFlushDeadline, c, format, format != remoteapi.WriteV1MessageType)
 			m.StoreSeries(recs.Series, 0)
 
 			// These should be received by the client.
@@ -1390,7 +1802,7 @@ func BenchmarkStoreSeries(b *testing.B) {
 				mcfg := config.DefaultMetadataConfig
 				metrics := newQueueManagerMetrics(nil, "", "")
 
-				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, remoteapi.WriteV1MessageType, record.NewBuffersPool())
+				m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, labels.EmptyLabels(), nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false, false, false, false, remoteapi.WriteV1MessageType, record.NewBuffersPool())
 				m.externalLabels = tc.externalLabels
 				m.relabelConfigs = tc.relabelConfigs
 
@@ -1948,7 +2360,7 @@ func TestDropOldTimeSeries(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 			cfg.SampleAgeLimit = model.Duration(60 * time.Second)
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			m.StoreSeries(series, 0)
 
 			m.Start()
@@ -1992,7 +2404,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 			metadataCfg.SendInterval = model.Duration(time.Second * 60)
 			metadataCfg.MaxSamplesPerSend = maxSamplesPerSend
 			c := NewTestWriteClient(protoMsg)
-			m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, protoMsg)
+			m := newTestQueueManager(t, cfg, metadataCfg, time.Second, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 
 			m.Start()
 
@@ -2584,7 +2996,7 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 			mcfg := config.DefaultMetadataConfig
 			cfg.MaxShards = 1
 
-			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg)
+			m := newTestQueueManager(t, cfg, mcfg, defaultFlushDeadline, c, protoMsg, protoMsg != remoteapi.WriteV1MessageType)
 			m.sendNativeHistograms = true
 
 			// Create series for the histograms
