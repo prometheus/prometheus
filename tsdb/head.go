@@ -144,6 +144,9 @@ type Head struct {
 	// For running the background WAL replay.
 	walReplayWg sync.WaitGroup
 
+	// For signalling when the background WAL replay finishes.
+	walReplayDone chan struct{}
+
 	stats *HeadStats
 	reg   prometheus.Registerer
 
@@ -308,6 +311,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		stats:           stats,
 		reg:             r,
 		seriesStateQuit: make(chan struct{}),
+		walReplayDone: make(chan struct{}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -698,9 +702,6 @@ func (h *Head) replayDiskChunksAndWAL() error {
 	h.logger.Info("Replaying on-disk memory mappable chunks if any")
 	start := time.Now()
 
-	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
-	var multiRefMtx sync.Mutex
-
 	snapIdx, snapOffset := -1, 0
 	refSeries := make(map[chunks.HeadSeriesRef]*memSeries)
 
@@ -733,7 +734,7 @@ func (h *Head) replayDiskChunksAndWAL() error {
 		}
 		if loadSnapshot {
 			var err error
-			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot(multiRef, &multiRefMtx)
+			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
 			if err == nil {
 				snapshotLoaded = true
 				chunkSnapshotLoadDuration = time.Since(start)
@@ -810,6 +811,7 @@ func (h *Head) replayDiskChunksAndWAL() error {
 	h.startWALReplayStatus(startFrom, endAt)
 
 	syms := labels.NewSymbolTable() // One table for the whole WAL.
+	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wlog.NewSegmentsReader(dir)
 		if err != nil {
@@ -953,6 +955,7 @@ func (h *Head) Init(minValidTime int64) error {
 		go h.runSeriesStateTicker()
 
 		h.walReplayWg.Go(func() {
+			defer close(h.walReplayDone)
 			if err := h.replayDiskChunksAndWAL(); err != nil {
 				h.logger.Error("Fast startup: Background WAL replay failed", "err", err)
 			}
@@ -962,7 +965,14 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	// When feature is not enabled, blocking call.
-	return h.replayDiskChunksAndWAL()
+	err := h.replayDiskChunksAndWAL()
+	close(h.walReplayDone)
+	return err
+}
+
+// WaitForWALReplay returns a channel that is closed when the WAL replay has finished. 
+func (h *Head) WaitForWALReplay() <-chan struct{} {
+	return h.walReplayDone
 }
 
 func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) (map[chunks.HeadSeriesRef][]*mmappedChunk, map[chunks.HeadSeriesRef][]*mmappedChunk, chunks.ChunkDiskMapperRef, error) {
