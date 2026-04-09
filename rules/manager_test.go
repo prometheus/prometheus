@@ -809,7 +809,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	// Groups will be recreated if updated.
-	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml", false, model.UTF8Validation, testParser)
+	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml", false, model.UTF8Validation, testParser, promslog.NewNopLogger())
 	require.Empty(t, errs, "file parsing failures")
 
 	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
@@ -2594,11 +2594,11 @@ func TestLabels_FromMaps(t *testing.T) {
 
 func TestParseFiles(t *testing.T) {
 	t.Run("good files", func(t *testing.T) {
-		err := ParseFiles([]string{filepath.Join("fixtures", "rules.y*ml")}, model.UTF8Validation, testParser)
+		err := ParseFiles([]string{filepath.Join("fixtures", "rules.y*ml")}, model.UTF8Validation, testParser, promslog.NewNopLogger())
 		require.NoError(t, err)
 	})
 	t.Run("bad files", func(t *testing.T) {
-		err := ParseFiles([]string{filepath.Join("fixtures", "invalid_rules.y*ml")}, model.UTF8Validation, testParser)
+		err := ParseFiles([]string{filepath.Join("fixtures", "invalid_rules.y*ml")}, model.UTF8Validation, testParser, promslog.NewNopLogger())
 		require.ErrorContains(t, err, "field unexpected_field not found in type rulefmt.Rule")
 	})
 }
