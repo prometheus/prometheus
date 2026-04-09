@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"maps"
 	"math"
 	"sync"
 	"time"
@@ -145,35 +144,28 @@ func (rws *WriteStorage) run() {
 	}
 }
 
-func (rws *WriteStorage) persistSavepoint() {
-	rws.mtx.Lock()
-	sp := rws.collectSavepoint()
-	rws.mtx.Unlock()
-
-	if err := sp.Save(rws.dir); err != nil {
-		rws.logger.Error("Failed to persist remote write savepoint", "err", err)
-	}
-}
-
-// persistSavepointLocked persists the savepoint while the mutex is already held.
-func (rws *WriteStorage) persistSavepointLocked() {
-	sp := rws.collectSavepoint()
-	if err := sp.Save(rws.dir); err != nil {
-		rws.logger.Error("Failed to persist remote write savepoint", "err", err)
-	}
-}
-
-// collectSavepoint updates the savepoint from current queue positions and returns a copy.
+// snapshotSavepoint builds a Savepoint from current queue positions.
 // Must be called with rws.mtx held.
-func (rws *WriteStorage) collectSavepoint() Savepoint {
+func (rws *WriteStorage) snapshotSavepoint() Savepoint {
+	sp := make(Savepoint, len(rws.queues))
 	for hash, q := range rws.queues {
-		rws.savepoint[hash] = SavepointEntry{
+		sp[hash] = SavepointEntry{
 			Segment: q.CurrentSegment(),
 		}
 	}
-	sp := make(Savepoint, len(rws.savepoint))
-	maps.Copy(sp, rws.savepoint)
 	return sp
+}
+
+func (rws *WriteStorage) persistSavepoint() {
+	rws.mtx.Lock()
+	sp := rws.snapshotSavepoint()
+	rws.mtx.Unlock()
+
+	rws.savepoint = sp
+
+	if err := sp.Save(rws.dir); err != nil {
+		rws.logger.Error("Failed to persist remote write savepoint", "err", err)
+	}
 }
 
 func (rws *WriteStorage) Notify() {
@@ -346,7 +338,11 @@ func (rws *WriteStorage) Close() error {
 	defer rws.mtx.Unlock()
 
 	// Persist final savepoint before stopping queues.
-	rws.persistSavepointLocked()
+	if sp := rws.snapshotSavepoint(); len(sp) > 0 {
+		if err := sp.Save(rws.dir); err != nil {
+			rws.logger.Error("Failed to persist remote write savepoint", "err", err)
+		}
+	}
 
 	for _, q := range rws.queues {
 		q.Stop()
