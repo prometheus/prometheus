@@ -311,7 +311,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		stats:           stats,
 		reg:             r,
 		seriesStateQuit: make(chan struct{}),
-		walReplayDone: make(chan struct{}),
+		walReplayDone:   make(chan struct{}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -970,7 +970,7 @@ func (h *Head) Init(minValidTime int64) error {
 	return err
 }
 
-// WaitForWALReplay returns a channel that is closed when the WAL replay has finished. 
+// WaitForWALReplay returns a channel that is closed when the WAL replay has finished.
 func (h *Head) WaitForWALReplay() <-chan struct{} {
 	return h.walReplayDone
 }

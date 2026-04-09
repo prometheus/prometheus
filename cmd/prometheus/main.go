@@ -1752,7 +1752,7 @@ type readyStorage struct {
 	db              storage.Storage
 	startTimeMargin int64
 	stats           *tsdb.DBStats
-	queryReady atomic.Bool
+	queryReady      atomic.Bool
 }
 
 func (s *readyStorage) ApplyConfig(conf *config.Config) error {
@@ -1815,7 +1815,7 @@ func (s *readyStorage) StartTime() (int64, error) {
 
 // Querier implements the Storage interface.
 func (s *readyStorage) Querier(mint, maxt int64) (storage.Querier, error) {
-	if (!s.queryReady.Load()) {
+	if !s.queryReady.Load() {
 		return nil, tsdb.ErrNotReady
 	}
 	if x := s.get(); x != nil {
@@ -1826,7 +1826,7 @@ func (s *readyStorage) Querier(mint, maxt int64) (storage.Querier, error) {
 
 // ChunkQuerier implements the Storage interface.
 func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
-	if (!s.queryReady.Load()) {
+	if !s.queryReady.Load() {
 		return nil, tsdb.ErrNotReady
 	}
 	if x := s.get(); x != nil {
@@ -1836,7 +1836,7 @@ func (s *readyStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, err
 }
 
 func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
-	if (!s.queryReady.Load()) {
+	if !s.queryReady.Load() {
 		return nil, tsdb.ErrNotReady
 	}
 	if x := s.get(); x != nil {
