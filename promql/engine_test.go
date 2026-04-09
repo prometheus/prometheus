@@ -1181,9 +1181,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 36,
 			},
-			SamplesRead: 72,
+			SamplesRead: 36,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 72,
+				201000: 36,
 			},
 		},
 		{
@@ -1194,9 +1194,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 72,
 			},
-			SamplesRead: 144,
+			SamplesRead: 72,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 144,
+				201000: 72,
 			},
 		},
 		{
@@ -1424,12 +1424,12 @@ load 10s
 				211000: 36,
 				216000: 36,
 			},
-			SamplesRead: 93,
+			SamplesRead: 48,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 72,
-				206000: 6,
-				211000: 6,
-				216000: 9, // steps after last outer → last step
+				201000: 36,
+				206000: 3,
+				211000: 3,
+				216000: 6, // steps after last outer → last step
 			},
 		},
 		{
@@ -1445,12 +1445,12 @@ load 10s
 				211000: 12,
 				216000: 12,
 			},
-			SamplesRead: 31,
+			SamplesRead: 16,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 24,
-				206000: 2,
-				211000: 2,
-				216000: 3, // steps after last outer → last step
+				201000: 12,
+				206000: 1,
+				211000: 1,
+				216000: 2, // steps after last outer → last step
 			},
 		},
 		{
@@ -1466,12 +1466,12 @@ load 10s
 				211000: 12,
 				216000: 12,
 			},
-			SamplesRead: 31,
+			SamplesRead: 16,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 24,
-				206000: 2,
-				211000: 2,
-				216000: 3, // steps after last outer → last step
+				201000: 12,
+				206000: 1,
+				211000: 1,
+				216000: 2, // steps after last outer → last step
 			},
 		},
 		{
@@ -1487,12 +1487,12 @@ load 10s
 				211000: 72,
 				216000: 72,
 			},
-			SamplesRead: 186,
+			SamplesRead: 96,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 144,
-				206000: 12,
-				211000: 12,
-				216000: 18, // steps after last outer → last step
+				201000: 72,
+				206000: 6,
+				211000: 6,
+				216000: 12, // steps after last outer → last step
 			},
 		},
 		{
@@ -1508,12 +1508,12 @@ load 10s
 				211000: 48,
 				216000: 48,
 			},
-			SamplesRead: 124,
+			SamplesRead: 64,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 96,
-				206000: 8,
-				211000: 8,
-				216000: 12, // steps after last outer → last step
+				201000: 48,
+				206000: 4,
+				211000: 4,
+				216000: 8, // steps after last outer → last step
 			},
 		},
 
@@ -1530,24 +1530,24 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 2,
 			},
-			SamplesRead: 4,
+			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 4,
+				201000: 2,
 			},
 		},
 
-		// Single inner step (step = range) - corrected values
+		// Single inner step: step equals range so only one subquery evaluation
 		{
 			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[30s:30s])",
 			Start:        time.Unix(90, 0),
-			PeakSamples:  3, // 3 samples in 30s window
-			TotalSamples: 1, // Actual behavior: single step shows 1 effective sample
+			PeakSamples:  3,
+			TotalSamples: 1,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				90000: 1,
 			},
-			SamplesRead: 2, // subquery + outer
+			SamplesRead: 1,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				90000: 2,
+				90000: 1,
 			},
 		},
 
@@ -1560,9 +1560,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 6,
 			},
-			SamplesRead: 12,
+			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 12,
+				201000: 6,
 			},
 		},
 
@@ -1578,29 +1578,44 @@ load 10s
 				201000: 3,
 				231000: 3,
 			},
-			SamplesRead: 12,
+			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
-				231000: 6,
+				201000: 3,
+				231000: 3,
 			},
 		},
 
-		// Subquery with single inner step (step = range)
+		// Range query where subquery range (20s) > query step interval (10s):
+		// overlapping windows share inner subquery steps across parent steps.
 		{
-			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[30s:30s])",
-			Start:        time.Unix(90, 0),
-			PeakSamples:  3,
-			TotalSamples: 1, // 1 inner step
+			Query:        "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(261, 0),
+			Interval:     10 * time.Second,
+			PeakSamples:  17,
+			TotalSamples: 14,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				90000: 1,
+				201000: 2,
+				211000: 2,
+				221000: 2,
+				231000: 2,
+				241000: 2,
+				251000: 2,
+				261000: 2,
 			},
-			SamplesRead: 2,
+			SamplesRead: 8,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				90000: 2,
+				201000: 2,
+				211000: 1,
+				221000: 1,
+				231000: 1,
+				241000: 1,
+				251000: 1,
+				261000: 1,
 			},
 		},
 
-		// Subquery range query showing delta optimization
+		// Subquery range query showing per-step delta attribution
 		{
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",
 			Start:        time.Unix(201, 0),
@@ -1612,40 +1627,10 @@ load 10s
 				201000: 2,
 				231000: 2,
 			},
-			SamplesRead: 9,
+			SamplesRead: 5,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 4,
-				231000: 5,
-			},
-		},
-
-		// Multiple series subquery - 2 inner steps * 3 series
-		{
-			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[20s:10s]))",
-			Start:        time.Unix(201, 0),
-			PeakSamples:  11,
-			TotalSamples: 6,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
-			},
-			SamplesRead: 12,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 12,
-			},
-		},
-
-		// Steps equal to inner range duration - single inner step
-		{
-			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[30s:30s])",
-			Start:        time.Unix(90, 0),
-			PeakSamples:  3,
-			TotalSamples: 1,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				90000: 1,
-			},
-			SamplesRead: 2,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				90000: 2,
+				201000: 2,
+				231000: 3,
 			},
 		},
 
@@ -1658,9 +1643,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 1,
 			},
-			SamplesRead: 2,
+			SamplesRead: 1,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 2,
+				240000: 1,
 			},
 		},
 
@@ -1673,9 +1658,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				180000: 18,
 			},
-			SamplesRead: 45, // subquery SamplesRead merged into outer
+			SamplesRead: 27, // subquery SamplesRead merged into outer
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				180000: 45,
+				180000: 27,
 			},
 		},
 
@@ -1703,9 +1688,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				300000: 78,
 			},
-			SamplesRead: 102, // all subquery steps attributed (steps before first window → step 0)
+			SamplesRead: 54, // all subquery steps attributed (steps before first window → step 0)
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				300000: 102,
+				300000: 54,
 			},
 		},
 
@@ -1733,9 +1718,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 33,
 			},
-			SamplesRead: 42, // subquery SamplesRead merged into outer
+			SamplesRead: 21, // subquery SamplesRead merged into outer
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 42,
+				240000: 21,
 			},
 		},
 
@@ -1773,16 +1758,6 @@ load 10s
 			},
 		},
 
-		// ===================================================================================
-		// IMPLEMENTATION NOTES:
-		// - Added comprehensive test coverage for subquery sample counting
-		// - Tests verify both TotalSamples (full window semantics) and SamplesRead (delta semantics)
-		// - Some sample count calculations may need refinement based on actual query execution
-		// - Framework demonstrates key patterns: simple subqueries, range queries with delta optimization,
-		//   nested subqueries, histogram functions, aggregations, and @ modifiers
-		// - Test infrastructure supports easy addition of new subquery test patterns
-		// ===================================================================================
-
 		// Histogram subquery
 		{
 			Query:        "histogram_count(max_over_time(metricWith1HistogramEvery10Seconds[20s:10s]))",
@@ -1792,9 +1767,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 26,
 			},
-			SamplesRead: 52,
+			SamplesRead: 26,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 52,
+				201000: 26,
 			},
 		},
 
@@ -1807,9 +1782,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				250000: 6,
 			},
-			SamplesRead: 12,
+			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				250000: 12,
+				250000: 6,
 			},
 		},
 
@@ -1822,9 +1797,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				120000: 39,
 			},
-			SamplesRead: 78,
+			SamplesRead: 39,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 78,
+				120000: 39,
 			},
 		},
 
@@ -1837,9 +1812,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				300000: 9,
 			},
-			SamplesRead: 18,
+			SamplesRead: 9,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				300000: 18,
+				300000: 9,
 			},
 		},
 
@@ -1852,9 +1827,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				800000: 75,
 			},
-			SamplesRead: 33, // subquery SamplesRead merged into outer
+			SamplesRead: 18, // subquery SamplesRead merged into outer
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				800000: 33,
+				800000: 18,
 			},
 		},
 
@@ -1871,9 +1846,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 6,
 			},
-			SamplesRead: 12,
+			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 12,
+				201000: 6,
 			},
 		},
 
@@ -1890,11 +1865,11 @@ load 10s
 				231000: 6,
 				261000: 6,
 			},
-			SamplesRead: 42,
+			SamplesRead: 24,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 12,
-				231000: 15,
-				261000: 15,
+				201000: 6,
+				231000: 9,
+				261000: 9,
 			},
 		},
 
@@ -1907,9 +1882,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 26,
 			},
-			SamplesRead: 52,
+			SamplesRead: 26,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 52,
+				201000: 26,
 			},
 		},
 
@@ -1922,9 +1897,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				120000: 9,
 			},
-			SamplesRead: 18,
+			SamplesRead: 9,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 18,
+				120000: 9,
 			},
 		},
 
@@ -1937,9 +1912,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 52,
 			},
-			SamplesRead: 104,
+			SamplesRead: 52,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 104,
+				240000: 52,
 			},
 		},
 
@@ -1952,9 +1927,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				900000: 36,
 			},
-			SamplesRead: 108, // subquery SamplesRead merged into outer
+			SamplesRead: 72, // subquery SamplesRead merged into outer
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				900000: 108,
+				900000: 72,
 			},
 		},
 
@@ -1967,9 +1942,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				1800000: 130,
 			},
-			SamplesRead: 338, // subquery SamplesRead merged into outer
+			SamplesRead: 208, // subquery SamplesRead merged into outer
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				1800000: 338,
+				1800000: 208,
 			},
 		},
 
@@ -1986,9 +1961,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 2,
 			},
-			SamplesRead: 8,
+			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 8,
+				240000: 6,
 			},
 		},
 
@@ -2001,9 +1976,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 2,
 			},
-			SamplesRead: 4,
+			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 4,
+				240000: 2,
 			},
 		},
 
@@ -2020,11 +1995,11 @@ load 10s
 				216000: 2,
 				231000: 2,
 			},
-			SamplesRead: 8,
+			SamplesRead: 4,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 4,
-				216000: 2,
-				231000: 2,
+				201000: 2,
+				216000: 1,
+				231000: 1,
 			},
 		},
 
@@ -2037,9 +2012,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				1800000: 10,
 			},
-			SamplesRead: 26, // subquery SamplesRead merged into outer
+			SamplesRead: 16, // subquery SamplesRead merged into outer
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				1800000: 26,
+				1800000: 16,
 			},
 		},
 
@@ -2056,9 +2031,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				600000: 30,
 			},
-			SamplesRead: 60, // subquery SamplesRead merged into outer
+			SamplesRead: 30, // subquery SamplesRead merged into outer
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				600000: 60,
+				600000: 30,
 			},
 		},
 
@@ -2080,12 +2055,12 @@ load 10s
 				240000: 3,
 				300000: 3,
 			},
-			SamplesRead: 24,
+			SamplesRead: 12,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 6,
-				180000: 6,
-				240000: 6,
-				300000: 6,
+				120000: 3,
+				180000: 3,
+				240000: 3,
+				300000: 3,
 			},
 		},
 
@@ -2102,11 +2077,11 @@ load 10s
 				180000: 26,
 				240000: 26,
 			},
-			SamplesRead: 104,
+			SamplesRead: 52,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 52,
-				180000: 26,
-				240000: 26,
+				120000: 26,
+				180000: 13,
+				240000: 13,
 			},
 		},
 
@@ -2123,19 +2098,15 @@ load 10s
 				180000: 6,
 				240000: 6,
 			},
-			SamplesRead: 36,
+			SamplesRead: 18,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 12,
-				180000: 12,
-				240000: 12,
+				120000: 6,
+				180000: 6,
+				240000: 6,
 			},
 		},
 
-		// ===================================================================================
-		// PHASE 3: RANGE QUERY + SUBQUERY COMBINATIONS
-		// ===================================================================================
-
-		// Range queries with subqueries
+		// Range queries with subqueries (multiple series, higher cardinality)
 		{
 			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s:10s])",
 			Start:        time.Unix(200, 0),
@@ -2152,15 +2123,15 @@ load 10s
 				350000: 18,
 				380000: 18,
 			},
-			SamplesRead: 150,
+			SamplesRead: 78,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				200000: 36,
-				230000: 18,
-				260000: 18,
-				290000: 18,
-				320000: 18,
-				350000: 18,
-				380000: 24, // steps after last outer → last step
+				200000: 18,
+				230000: 9,
+				260000: 9,
+				290000: 9,
+				320000: 9,
+				350000: 9,
+				380000: 15, // steps after last outer → last step
 			},
 		},
 
@@ -2181,15 +2152,15 @@ load 10s
 				540000: 52,
 				600000: 52,
 			},
-			SamplesRead: 416,
+			SamplesRead: 208,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 104,
-				300000: 52,
-				360000: 52,
-				420000: 52,
-				480000: 52,
-				540000: 52,
-				600000: 52,
+				240000: 52,
+				300000: 26,
+				360000: 26,
+				420000: 26,
+				480000: 26,
+				540000: 26,
+				600000: 26,
 			},
 		},
 
@@ -2206,11 +2177,11 @@ load 10s
 				280000: 12,
 				400000: 12,
 			},
-			SamplesRead: 84,
+			SamplesRead: 48,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				160000: 24,
-				280000: 30,
-				400000: 30,
+				160000: 12,
+				280000: 18,
+				400000: 18,
 			},
 		},
 
@@ -2227,9 +2198,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				300000: 10,
 			},
-			SamplesRead: 20,
+			SamplesRead: 10,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				300000: 20,
+				300000: 10,
 			},
 		},
 
@@ -2242,9 +2213,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 6,
 			},
-			SamplesRead: 12,
+			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 12,
+				240000: 6,
 			},
 		},
 
@@ -2257,9 +2228,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				120000: 26,
 			},
-			SamplesRead: 52,
+			SamplesRead: 26,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 52,
+				120000: 26,
 			},
 		},
 
@@ -2272,9 +2243,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				600000: 30,
 			},
-			SamplesRead: 60,
+			SamplesRead: 30,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				600000: 60,
+				600000: 30,
 			},
 		},
 
@@ -2287,9 +2258,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 4,
 			},
-			SamplesRead: 56,
+			SamplesRead: 52,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 56,
+				240000: 52,
 			},
 		},
 
@@ -2302,9 +2273,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 12,
 			},
-			SamplesRead: 24,
+			SamplesRead: 12,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 24,
+				240000: 12,
 			},
 		},
 
@@ -2317,9 +2288,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 52,
 			},
-			SamplesRead: 104,
+			SamplesRead: 52,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 104,
+				240000: 52,
 			},
 		},
 
@@ -2336,9 +2307,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				120000: 1,
 			},
-			SamplesRead: 2,
+			SamplesRead: 1,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 2,
+				120000: 1,
 			},
 		},
 
@@ -2351,9 +2322,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 1,
 			},
-			SamplesRead: 2,
+			SamplesRead: 1,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 2,
+				240000: 1,
 			},
 		},
 
@@ -2366,9 +2337,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				300000: 6,
 			},
-			SamplesRead: 12,
+			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				300000: 12,
+				300000: 6,
 			},
 		},
 
@@ -2381,9 +2352,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				240000: 1,
 			},
-			SamplesRead: 2,
+			SamplesRead: 1,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 2,
+				240000: 1,
 			},
 		},
 
@@ -2396,9 +2367,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				300000: 18,
 			},
-			SamplesRead: 36,
+			SamplesRead: 18,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				300000: 36,
+				300000: 18,
 			},
 		},
 	}

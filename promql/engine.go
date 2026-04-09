@@ -2000,9 +2000,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		// Check if the function has a matrix argument.
 		var (
-			matrixArgIndex int
-			matrixArg      bool
-			warnings       annotations.Annotations
+			matrixArgIndex      int
+			matrixArg           bool
+			matrixFromSubquery  bool
+			warnings            annotations.Annotations
 		)
 		for i := range e.Args {
 			a := e.Args[i]
@@ -2015,6 +2016,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			if subq, ok := a.(*parser.SubqueryExpr); ok {
 				matrixArgIndex = i
 				matrixArg = true
+				matrixFromSubquery = true
 				// Replacing parser.SubqueryExpr with parser.MatrixSelector.
 				val, totalSamples, ws := ev.evalSubquery(ctx, subq)
 				e.Args[i] = val
@@ -2195,10 +2197,15 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 					}
 					floats, histograms, startTimestamps = ev.matrixIterSlice(it, mint, maxt, floats, histograms, startTimestamps)
 					fullWindowCount = int64(len(floats) + totalHPointSize(histograms))
-					if step == 0 {
-						samplesReadCount = fullWindowCount
-					} else {
-						samplesReadCount = countSamplesAfter(floats, histograms, maxt-ev.interval)
+					// For subquery-derived matrices, SamplesRead was already counted
+					// inside evalSubquery via MergeSamplesReadFromSubquery; skip here
+					// to avoid double-counting the storage I/O.
+					if !matrixFromSubquery {
+						if step == 0 {
+							samplesReadCount = fullWindowCount
+						} else {
+							samplesReadCount = countSamplesAfter(floats, histograms, maxt-ev.interval)
+						}
 					}
 				}
 				if len(floats)+len(histograms) == 0 {
@@ -2219,7 +2226,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				outVec, annos := call(vectorVals, inMatrix, e.Args, enh)
 				warnings.Merge(annos)
 				ev.samplesStats.IncrementSamplesAtStep(step, fullWindowCount)
-				ev.samplesStats.IncrementSamplesReadAtStep(step, samplesReadCount)
+				if !matrixFromSubquery {
+					ev.samplesStats.IncrementSamplesReadAtStep(step, samplesReadCount)
+				}
 
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
