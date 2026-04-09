@@ -542,9 +542,7 @@ func NewQueueManager(
 	walMetadata := t.protoMsg != remoteapi.WriteV1MessageType
 
 	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite, walMetadata, recordBuf)
-	if startSegment >= 0 {
-		t.watcher.SetStartSegment(startSegment)
-	}
+	t.watcher.SetStartSegment(startSegment)
 
 	// The current MetadataWatcher implementation is mutually exclusive
 	// with the new approach, which stores metadata as WAL records and
