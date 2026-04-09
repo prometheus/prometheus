@@ -240,8 +240,6 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 			response = ServiceTestAnswer
 		case "/v1/health/service/test?wait=120000ms":
 			response = ServiceTestAnswer
-		case "/v1/health/service/test?filter=NodeMeta.rack_name+%3D%3D+%222304%22&wait=120000ms":
-			response = ServiceTestAnswer
 		case "/v1/health/service/other?wait=120000ms":
 			response = `[]`
 		case "/v1/catalog/services?node-meta=rack_name%3A2304&stale=&wait=120000ms":
@@ -394,21 +392,28 @@ func TestFilterOption(t *testing.T) {
 	cancel()
 }
 
-// TestFilterOnHealthEndpoint verifies that filter is passed to health service endpoint.
-func TestFilterOnHealthEndpoint(t *testing.T) {
-	filterReceived := false
+// TestHealthFilterOption verifies that health_filter is passed to the health service endpoint
+// and not to the catalog endpoint.
+func TestHealthFilterOption(t *testing.T) {
+	catalogFilterReceived := false
+	healthFilterReceived := false
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := ""
 		switch r.URL.Path {
 		case "/v1/agent/self":
 			response = AgentAnswer
 		case "/v1/health/service/test":
-			// Verify filter parameter is present in the query
 			filter := r.URL.Query().Get("filter")
-			if filter == `Node.Meta.rack_name == "2304"` {
-				filterReceived = true
+			if filter == `Service.Tags contains "canary"` {
+				healthFilterReceived = true
 			}
 			response = ServiceTestAnswer
+		case "/v1/catalog/services":
+			filter := r.URL.Query().Get("filter")
+			if filter != "" {
+				catalogFilterReceived = true
+			}
+			response = ServicesTestAnswer
 		default:
 			t.Errorf("Unhandled consul call: %s", r.URL)
 		}
@@ -423,7 +428,7 @@ func TestFilterOnHealthEndpoint(t *testing.T) {
 	config := &SDConfig{
 		Server:          stuburl.Host,
 		Services:        []string{"test"},
-		Filter:          `Node.Meta.rack_name == "2304"`,
+		HealthFilter:    `Service.Tags contains "canary"`,
 		RefreshInterval: model.Duration(1 * time.Second),
 	}
 
@@ -438,8 +443,8 @@ func TestFilterOnHealthEndpoint(t *testing.T) {
 	checkOneTarget(t, <-ch)
 	cancel()
 
-	// Verify the filter was actually sent to the health endpoint
-	require.True(t, filterReceived, "Filter parameter should be sent to health service endpoint")
+	require.True(t, healthFilterReceived, "health_filter should be sent to the health service endpoint.")
+	require.False(t, catalogFilterReceived, "health_filter should not be sent to the catalog endpoint.")
 }
 
 func TestGetDatacenterShouldReturnError(t *testing.T) {
