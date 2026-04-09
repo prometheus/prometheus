@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unique"
 	"unsafe"
 
 	"github.com/klauspost/compress/gzip"
@@ -903,11 +904,11 @@ type scrapeCache struct {
 
 	// Parsed string to an entry with information about the actual label set
 	// and its storage reference.
-	series map[string]*cacheEntry
+	series map[unique.Handle[string]]*cacheEntry
 
 	// Cache of dropped metric strings and their iteration. The iteration must
 	// be a pointer so we can update it.
-	droppedSeries map[string]*uint64
+	droppedSeries map[unique.Handle[string]]*uint64
 
 	// Series that were seen in the current and previous scrape, for staleness detection.
 	seriesCur  map[storage.SeriesRef]*cacheEntry
@@ -915,8 +916,8 @@ type scrapeCache struct {
 
 	// TODO(bwplotka): Consider moving metadata caching to head. See
 	// https://github.com/prometheus/prometheus/issues/17619.
-	metaMtx  sync.Mutex            // Mutex is needed due to api touching it when metadata is queried.
-	metadata map[string]*metaEntry // metadata by metric family name.
+	metaMtx  sync.Mutex                           // Mutex is needed due to api touching it when metadata is queried.
+	metadata map[unique.Handle[string]]*metaEntry // metadata by metric family name.
 
 	metrics *scrapeMetrics
 }
@@ -924,6 +925,9 @@ type scrapeCache struct {
 // metaEntry holds meta information about a metric.
 type metaEntry struct {
 	metadata.Metadata
+
+	help unique.Handle[string]
+	unit unique.Handle[string]
 
 	lastIter       uint64 // Last scrape iteration the entry was observed at.
 	lastIterChange uint64 // Last scrape iteration the entry was changed at.
@@ -936,11 +940,11 @@ func (m *metaEntry) size() int {
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
-		series:        map[string]*cacheEntry{},
-		droppedSeries: map[string]*uint64{},
+		series:        map[unique.Handle[string]]*cacheEntry{},
+		droppedSeries: map[unique.Handle[string]]*uint64{},
 		seriesCur:     map[storage.SeriesRef]*cacheEntry{},
 		seriesPrev:    map[storage.SeriesRef]*cacheEntry{},
-		metadata:      map[string]*metaEntry{},
+		metadata:      map[unique.Handle[string]]*metaEntry{},
 		metrics:       metrics,
 	}
 }
@@ -995,7 +999,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 }
 
 func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
-	e, ok := c.series[string(met)]
+	e, ok := c.series[unique.Make(string(met))]
 	if !ok {
 		return nil, false, false
 	}
@@ -1009,17 +1013,17 @@ func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labe
 		return nil
 	}
 	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
-	c.series[string(met)] = ce
+	c.series[unique.Make(string(met))] = ce
 	return ce
 }
 
 func (c *scrapeCache) addDropped(met []byte) {
 	iter := c.iter
-	c.droppedSeries[string(met)] = &iter
+	c.droppedSeries[unique.Make(string(met))] = &iter
 }
 
 func (c *scrapeCache) getDropped(met []byte) bool {
-	iterp, ok := c.droppedSeries[string(met)]
+	iterp, ok := c.droppedSeries[unique.Make(string(met))]
 	if ok {
 		*iterp = c.iter
 	}
@@ -1045,13 +1049,15 @@ func yoloString(b []byte) string {
 }
 
 func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaEntry) {
+	key := unique.Make(string(mfName))
+
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(mfName)]
+	e, ok := c.metadata[key]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
+		c.metadata[key] = e
 	}
 	if e.Type != t {
 		e.Type = t
@@ -1062,16 +1068,19 @@ func (c *scrapeCache) setType(mfName []byte, t model.MetricType) ([]byte, *metaE
 }
 
 func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
+	key := unique.Make(string(mfName))
+
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(mfName)]
+	e, ok := c.metadata[key]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
+		c.metadata[key] = e
 	}
 	if e.Help != string(help) {
-		e.Help = string(help)
+		e.help = unique.Make(string(help))
+		e.Help = e.help.Value()
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
@@ -1079,16 +1088,19 @@ func (c *scrapeCache) setHelp(mfName, help []byte) ([]byte, *metaEntry) {
 }
 
 func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
+	key := unique.Make(string(mfName))
+
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	e, ok := c.metadata[string(mfName)]
+	e, ok := c.metadata[key]
 	if !ok {
 		e = &metaEntry{Metadata: metadata.Metadata{Type: model.MetricTypeUnknown}}
-		c.metadata[string(mfName)] = e
+		c.metadata[key] = e
 	}
 	if e.Unit != string(unit) {
-		e.Unit = string(unit)
+		e.unit = unique.Make(string(unit))
+		e.Unit = e.unit.Value()
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
@@ -1097,10 +1109,12 @@ func (c *scrapeCache) setUnit(mfName, unit []byte) ([]byte, *metaEntry) {
 
 // GetMetadata returns metadata given the metric family name.
 func (c *scrapeCache) GetMetadata(mfName string) (MetricMetadata, bool) {
+	key := unique.Make(mfName)
+
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
 
-	m, ok := c.metadata[mfName]
+	m, ok := c.metadata[key]
 	if !ok {
 		return MetricMetadata{}, false
 	}
@@ -1121,7 +1135,7 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 
 	for m, e := range c.metadata {
 		res = append(res, MetricMetadata{
-			MetricFamily: m,
+			MetricFamily: m.Value(),
 			Type:         e.Type,
 			Help:         e.Help,
 			Unit:         e.Unit,
