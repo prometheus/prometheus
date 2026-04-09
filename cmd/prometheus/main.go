@@ -1920,6 +1920,9 @@ func (s *readyStorage) Close() error {
 
 // CleanTombstones implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (s *readyStorage) CleanTombstones() error {
+	if !s.queryReady.Load() {
+		return tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
@@ -1935,6 +1938,9 @@ func (s *readyStorage) CleanTombstones() error {
 
 // BlockMetas implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
+	if !s.queryReady.Load() {
+		return nil, tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
@@ -1950,6 +1956,9 @@ func (s *readyStorage) BlockMetas() ([]tsdb.BlockMeta, error) {
 
 // Delete implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
+	if !s.queryReady.Load() {
+		return tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
@@ -1965,6 +1974,9 @@ func (s *readyStorage) Delete(ctx context.Context, mint, maxt int64, ms ...*labe
 
 // Snapshot implements the api_v1.TSDBAdminStats and api_v2.TSDBAdmin interfaces.
 func (s *readyStorage) Snapshot(dir string, withHead bool) error {
+	if !s.queryReady.Load() {
+		return tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
@@ -1980,6 +1992,9 @@ func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 
 // Stats implements the api_v1.TSDBAdminStats interface.
 func (s *readyStorage) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
+	if !s.queryReady.Load() {
+		return nil, tsdb.ErrNotReady
+	}
 	if x := s.get(); x != nil {
 		switch db := x.(type) {
 		case *tsdb.DB:
