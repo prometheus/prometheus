@@ -162,7 +162,7 @@ func isAllDigits(s string) bool {
 	return s != ""
 }
 
-func Load(s string, logger *slog.Logger) (*Config, error) {
+func Load(s string, logger *slog.Logger, expandRelabelEnv bool) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
 	// never called. We thus have to set the DefaultConfig at the entry
@@ -194,22 +194,25 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 		cfg.GlobalConfig.ExternalLabels = b.Labels()
 	}
 
-	// Expand environment variables in relabel_configs
-	for _, scrapeConfig := range cfg.ScrapeConfigs {
-		expandRelabelConfigs(scrapeConfig.RelabelConfigs, logger)
-		expandRelabelConfigs(scrapeConfig.MetricRelabelConfigs, logger)
-	}
+	if expandRelabelEnv {
+		// Expand environment variables in relabel_configs (opt-in via
+		// --enable-feature=expand-relabel-env-vars).
+		for _, scrapeConfig := range cfg.ScrapeConfigs {
+			expandRelabelConfigs(scrapeConfig.RelabelConfigs, logger)
+			expandRelabelConfigs(scrapeConfig.MetricRelabelConfigs, logger)
+		}
 
-	// Expand environment variables in alerting relabel configs
-	expandRelabelConfigs(cfg.AlertingConfig.AlertRelabelConfigs, logger)
-	for _, amConfig := range cfg.AlertingConfig.AlertmanagerConfigs {
-		expandRelabelConfigs(amConfig.RelabelConfigs, logger)
-		expandRelabelConfigs(amConfig.AlertRelabelConfigs, logger)
-	}
+		// Expand environment variables in alerting relabel configs.
+		expandRelabelConfigs(cfg.AlertingConfig.AlertRelabelConfigs, logger)
+		for _, amConfig := range cfg.AlertingConfig.AlertmanagerConfigs {
+			expandRelabelConfigs(amConfig.RelabelConfigs, logger)
+			expandRelabelConfigs(amConfig.AlertRelabelConfigs, logger)
+		}
 
-	// Expand environment variables in remote write relabel configs
-	for _, remoteWriteConfig := range cfg.RemoteWriteConfigs {
-		expandRelabelConfigs(remoteWriteConfig.WriteRelabelConfigs, logger)
+		// Expand environment variables in remote write relabel configs.
+		for _, remoteWriteConfig := range cfg.RemoteWriteConfigs {
+			expandRelabelConfigs(remoteWriteConfig.WriteRelabelConfigs, logger)
+		}
 	}
 
 	switch cfg.OTLPConfig.TranslationStrategy {
@@ -228,12 +231,12 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 
 // LoadFile parses and validates the given YAML file into a read-only Config.
 // Callers should never write to or shallow copy the returned Config.
-func LoadFile(filename string, agentMode bool, logger *slog.Logger) (*Config, error) {
+func LoadFile(filename string, agentMode bool, logger *slog.Logger, expandRelabelEnv bool) (*Config, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := Load(string(content), logger)
+	cfg, err := Load(string(content), logger, expandRelabelEnv)
 	if err != nil {
 		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
 	}
