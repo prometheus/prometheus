@@ -6029,7 +6029,7 @@ scrape_configs:
 	mng, err := NewManager(&Options{DiscoveryReloadInterval: model.Duration(10 * time.Millisecond)}, nil, nil, sa.V1(), sa.V2(), reg)
 	require.NoError(t, err)
 
-	cfg, err := config.Load(configStr, promslog.NewNopLogger())
+	cfg, err := config.Load(configStr, promslog.NewNopLogger(), false)
 	require.NoError(t, err)
 	require.NoError(t, mng.ApplyConfig(cfg))
 	tsets := make(chan map[string][]*targetgroup.Group)
