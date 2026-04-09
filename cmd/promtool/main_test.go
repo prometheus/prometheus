@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -204,7 +205,7 @@ func TestCheckDuplicates(t *testing.T) {
 		c := test
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			rgs, err := rulefmt.ParseFile(c.ruleFile, false, model.UTF8Validation, parser.NewParser(parser.Options{}))
+			rgs, err := rulefmt.ParseFile(c.ruleFile, false, model.UTF8Validation, parser.NewParser(parser.Options{}), promslog.NewNopLogger())
 			require.Empty(t, err)
 			dups := checkDuplicates(rgs.Groups)
 			require.Equal(t, c.expectedDups, dups)
@@ -213,7 +214,7 @@ func TestCheckDuplicates(t *testing.T) {
 }
 
 func BenchmarkCheckDuplicates(b *testing.B) {
-	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml", false, model.UTF8Validation, parser.NewParser(parser.Options{}))
+	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml", false, model.UTF8Validation, parser.NewParser(parser.Options{}), promslog.NewNopLogger())
 	require.Empty(b, err)
 
 	for b.Loop() {
