@@ -95,6 +95,9 @@ type AggregateExpr struct {
 	Grouping []string // The labels by which to group the Vector.
 	Without  bool     // Whether to drop the given labels rather than keep them.
 	PosRange posrange.PositionRange
+
+	// ResolvedParam is set by PreprocessExpr to Param with any enclosing ParenExpr removed.
+	ResolvedParam Expr
 }
 
 // BinaryExpr represents a binary expression between two child expressions.
@@ -126,6 +129,9 @@ type Call struct {
 	Args Expressions // Arguments used in the call.
 
 	PosRange posrange.PositionRange
+
+	// ResolvedArgs is set by PreprocessExpr to Args with any enclosing ParenExpr removed.
+	ResolvedArgs Expressions
 }
 
 // MatrixSelector represents a Matrix selection.
@@ -194,6 +200,9 @@ type UnaryExpr struct {
 // Currently this is only used for engine optimisations and the parser does not produce this.
 type StepInvariantExpr struct {
 	Expr Expr
+
+	// ResolvedExpr is set by PreprocessExpr to Expr with any enclosing ParenExpr removed.
+	ResolvedExpr Expr
 }
 
 func (e *StepInvariantExpr) String() string { return e.Expr.String() }
