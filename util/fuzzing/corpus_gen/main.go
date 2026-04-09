@@ -33,7 +33,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("Successfully generated all seed corpus ZIP files.")
+	fmt.Println("Successfully generated all seed corpus ZIP files and dictionary files.")
 }
 
 func run() error {
@@ -46,6 +46,13 @@ func run() error {
 		return fmt.Errorf("failed to generate FuzzParseExpr_seed_corpus.zip: %w", err)
 	}
 	fmt.Printf("Generated fuzzParseExpr_seed_corpus.zip with %d entries.\n", len(exprs))
+
+	// Generate FuzzParseExpr dictionary.
+	dict := fuzzing.GetDictForFuzzParseExpr()
+	if err := generateDictFile("fuzzParseExpr", dict); err != nil {
+		return fmt.Errorf("failed to generate fuzzParseExpr.dict: %w", err)
+	}
+	fmt.Printf("Generated fuzzParseExpr.dict with %d entries.\n", len(dict))
 
 	// Generate FuzzParseMetricSelector seed corpus.
 	selectors := fuzzing.GetCorpusForFuzzParseMetricSelector()
@@ -204,4 +211,27 @@ func generateZipFromProtobufSeeds(fuzzName string, seeds []fuzzing.ProtobufCorpu
 		))
 	}
 	return generateZipFromSeedEntries(fuzzName, entries)
+}
+
+// generateDictFile writes a libFuzzer dictionary file to the parent directory.
+// Each token is written as a quoted string on its own line, sorted
+// deterministically so the output is stable across runs.
+func generateDictFile(fuzzName string, tokens []string) error {
+	sorted := make([]string, len(tokens))
+	copy(sorted, tokens)
+	sort.Strings(sorted)
+
+	dictPath := filepath.Join("..", fuzzName+".dict")
+	f, err := os.Create(dictPath)
+	if err != nil {
+		return fmt.Errorf("failed to create dict file: %w", err)
+	}
+	defer f.Close()
+
+	for _, token := range sorted {
+		if _, err := fmt.Fprintf(f, "%q\n", token); err != nil {
+			return fmt.Errorf("failed to write dict entry %q: %w", token, err)
+		}
+	}
+	return nil
 }

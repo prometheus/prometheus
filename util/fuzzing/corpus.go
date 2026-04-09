@@ -14,6 +14,7 @@
 package fuzzing
 
 import (
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 )
 
@@ -150,6 +151,42 @@ func GetCorpusForFuzzXORChunk() []ChunkFuzzSeed {
 		// All StaleNaN.
 		{Seed: 7, N: 9, NaNMask: ^uint64(0)},
 	}
+}
+
+// GetDictForFuzzParseExpr returns the libFuzzer dictionary tokens for
+// FuzzParseExpr. Tokens are derived from the exported PromQL keyword list,
+// function names, and operator symbols so that the dictionary stays in sync
+// with the grammar automatically.
+func GetDictForFuzzParseExpr() []string {
+	seen := make(map[string]struct{})
+
+	// All PromQL keywords (aggregators, modifiers, histogram descriptors, etc.).
+	for _, kw := range parser.Keywords() {
+		seen[kw] = struct{}{}
+	}
+
+	// All built-in function names.
+	for name := range parser.Functions {
+		seen[name] = struct{}{}
+	}
+
+	// Operator and syntax tokens from ItemTypeStr. The SPACE entry is a
+	// display-only placeholder ("<space>"), not an actual token, so remove it.
+	for _, s := range parser.ItemTypeStr {
+		seen[s] = struct{}{}
+	}
+	delete(seen, parser.ItemTypeStr[parser.SPACE])
+
+	// Special numeric literals not covered by the keyword map.
+	for _, s := range []string{"+Inf", "-Inf", "NaN"} {
+		seen[s] = struct{}{}
+	}
+
+	result := make([]string, 0, len(seen))
+	for s := range seen {
+		result = append(result, s)
+	}
+	return result
 }
 
 // GetCorpusForFuzzXOR2Chunk returns the seed corpus for FuzzXOR2Chunk.
