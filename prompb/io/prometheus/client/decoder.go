@@ -114,7 +114,7 @@ func (m *MetricStreamingDecoder) resetMetric() {
 	// TODO(bwplotka): Autogenerate reset functions.
 	if m.Counter != nil {
 		m.Counter.Value = 0
-		m.Counter.CreatedTimestamp = nil
+		m.Counter.StartTimestamp = nil
 		m.Counter.Exemplar = nil
 	}
 	if m.Gauge != nil {
@@ -125,7 +125,7 @@ func (m *MetricStreamingDecoder) resetMetric() {
 		m.Histogram.SampleCountFloat = 0
 		m.Histogram.SampleSum = 0
 		m.Histogram.Bucket = m.Histogram.Bucket[:0]
-		m.Histogram.CreatedTimestamp = nil
+		m.Histogram.StartTimestamp = nil
 		m.Histogram.Schema = 0
 		m.Histogram.ZeroThreshold = 0
 		m.Histogram.ZeroCount = 0
@@ -142,7 +142,7 @@ func (m *MetricStreamingDecoder) resetMetric() {
 		m.Summary.SampleCount = 0
 		m.Summary.SampleSum = 0
 		m.Summary.Quantile = m.Summary.Quantile[:0]
-		m.Summary.CreatedTimestamp = nil
+		m.Summary.StartTimestamp = nil
 	}
 }
 

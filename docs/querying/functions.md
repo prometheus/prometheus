@@ -459,7 +459,7 @@ the zero bucket and for buckets with custom boundaries, the arithmetic mean is u
 For the usual exponential buckets, the geometric mean is used. Float samples are ignored
 and do not show up in the returned vector.
 
-Similarly, `histogram_stdvar(v instant-vector)` returns the estimated standard
+Similarly, `histogram_stdvar(v instant-vector)` returns the estimated
 variance of observations for each native histogram sample in `v`.
 
 ## `hour()`
@@ -525,6 +525,15 @@ It is not a real instant vector, but uses a subset of its syntax.
 It must start and end with curly braces (`{ ... }`) and may only contain label matchers.
 The label matchers are used to constrain which info series to consider
 and which data labels to add to `v`.
+
+If there is no matching info series for a given time series in `v` at a
+particular timestamp (e.g. because the info series has gone stale), the
+behavior depends on the data label matchers: If the `data-label-selector`
+contains any matcher that does not match the empty string (e.g.
+`{data=~".+"}`), then that time series is dropped from the result at that
+timestamp, because the required enrichment is unavailable. If all matchers
+match the empty string (e.g. `{data=~".*"}`), or if no `data-label-selector`
+is provided, the time series is returned without enrichment.
 
 Identifying labels of an info series are the subset of labels that uniquely
 identify the info series. The remaining labels are considered
@@ -596,6 +605,12 @@ the name `target_info`. It also assumes that the identifying info series labels 
 `target_info` and `build_info` as follows:
 `{__name__=~"(target|build)_info"}`. However, the identifying labels always
 have to be `instance` and `job`.
+
+When only negated `__name__` matchers are provided (e.g.
+`{__name__!="target_info"}`), `info` considers all metrics matching
+`.+_info` and then applies the negated matchers as filters. This is
+because negated matchers alone cannot positively identify which info
+metrics to consider.
 
 These limitations are partially defeating the purpose of the `info` function.
 At the current stage, this is an experiment to find out how useful the approach
@@ -866,7 +881,7 @@ over time and return an instant vector with per-series aggregation results:
 * `count_over_time(range-vector)`: the count of all samples in the specified interval.
 * `quantile_over_time(scalar, range-vector)`: the φ-quantile (0 ≤ φ ≤ 1) of all float samples in the specified interval.
 * `stddev_over_time(range-vector)`: the population standard deviation of all float samples in the specified interval.
-* `stdvar_over_time(range-vector)`: the population standard variance of all float samples in the specified interval.
+* `stdvar_over_time(range-vector)`: the population variance of all float samples in the specified interval.
 * `last_over_time(range-vector)`: the most recent sample in the specified interval.
 * `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
 

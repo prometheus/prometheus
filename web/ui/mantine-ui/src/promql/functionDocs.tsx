@@ -518,8 +518,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -838,8 +838,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -1153,8 +1153,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -1581,8 +1581,8 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        Similarly, <code>histogram_stdvar(v instant-vector)</code> returns the estimated standard variance of
-        observations for each native histogram sample in <code>v</code>.
+        Similarly, <code>histogram_stdvar(v instant-vector)</code> returns the estimated variance of observations for
+        each native histogram sample in <code>v</code>.
       </p>
     </>
   ),
@@ -1597,8 +1597,8 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
-        Similarly, <code>histogram_stdvar(v instant-vector)</code> returns the estimated standard variance of
-        observations for each native histogram sample in <code>v</code>.
+        Similarly, <code>histogram_stdvar(v instant-vector)</code> returns the estimated variance of observations for
+        each native histogram sample in <code>v</code>.
       </p>
     </>
   ),
@@ -1710,6 +1710,23 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
+        If there is no matching info series for a given time series in <code>v</code> at a particular timestamp (e.g.
+        because the info series has gone stale), the behavior depends on the data label matchers: If the{" "}
+        <code>data-label-selector</code>
+        contains any matcher that does not match the empty string (e.g.
+        <code>
+          {"{"}data=~&quot;.+&quot;{"}"}
+        </code>
+        ), then that time series is dropped from the result at that timestamp, because the required enrichment is
+        unavailable. If all matchers match the empty string (e.g.{" "}
+        <code>
+          {"{"}data=~&quot;.*&quot;{"}"}
+        </code>
+        ), or if no <code>data-label-selector</code>
+        is provided, the time series is returned without enrichment.
+      </p>
+
+      <p>
         Identifying labels of an info series are the subset of labels that uniquely identify the info series. The
         remaining labels are considered
         <em>data labels</em> (also called non-identifying). (Note that Prometheus&rsquo;s concept of time series
@@ -1802,6 +1819,16 @@ const funcDocs: Record<string, React.ReactNode> = {
           {"{"}__name__=~&quot;(target|build)_info&quot;{"}"}
         </code>
         . However, the identifying labels always have to be <code>instance</code> and <code>job</code>.
+      </p>
+
+      <p>
+        When only negated <code>__name__</code> matchers are provided (e.g.
+        <code>
+          {"{"}__name__!=&quot;target_info&quot;{"}"}
+        </code>
+        ), <code>info</code> considers all metrics matching
+        <code>.+_info</code> and then applies the negated matchers as filters. This is because negated matchers alone
+        cannot positively identify which info metrics to consider.
       </p>
 
       <p>
@@ -1958,8 +1985,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -2109,8 +2136,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -2219,8 +2246,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -2329,8 +2356,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -2545,8 +2572,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -2655,8 +2682,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -3137,8 +3164,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -3247,8 +3274,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -3357,8 +3384,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -3623,8 +3650,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -3733,8 +3760,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -3843,8 +3870,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
@@ -3953,8 +3980,8 @@ const funcDocs: Record<string, React.ReactNode> = {
           specified interval.
         </li>
         <li>
-          <code>stdvar_over_time(range-vector)</code>: the population standard variance of all float samples in the
-          specified interval.
+          <code>stdvar_over_time(range-vector)</code>: the population variance of all float samples in the specified
+          interval.
         </li>
         <li>
           <code>last_over_time(range-vector)</code>: the most recent sample in the specified interval.
