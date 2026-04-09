@@ -395,3 +395,25 @@ Example query:
 ```
 
 See [the fill modifiers documentation](querying/operators.md#filling-in-missing-matches) for more details and examples.
+
+## Environment Variable Expansion in Relabel Configs
+
+`--enable-feature=expand-relabel-env-vars`
+
+Enables environment variable expansion in `replacement` and `target_label` fields of
+`relabel_configs`, `metric_relabel_configs`, and `alert_relabel_configs`. Variables are
+expanded using the same `${VAR}` / `$VAR` syntax as `global.external_labels`.
+
+Regex capture group references (`$1`, `$2`, `${1}`, `${2}`) are not expanded.
+
+Example:
+
+```yaml
+relabel_configs:
+  - source_labels: [__address__]
+    target_label: $CUSTOM_LABEL_NAME
+    replacement: ${LABEL_PREFIX}_$1
+```
+
+> WARNING: This feature changes the interpretation of `$` in relabel config fields.
+> Enable only if you intentionally use environment variables in your relabel configurations.
