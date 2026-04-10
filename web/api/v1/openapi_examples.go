@@ -891,7 +891,7 @@ func statusSelfMetricsResponseExamples() *orderedmap.Map[string, *base.Example] 
 	examples := orderedmap.New[string, *base.Example]()
 
 	examples.Set("selfMetrics", &base.Example{
-		Summary: "Prometheus self-instrumentation metrics",
+		Summary: "Prometheus self-instrumentation metrics in ProtoJSON format",
 		Value: createYAMLNode(map[string]any{
 			"status": "success",
 			"data": []map[string]any{
@@ -899,18 +899,20 @@ func statusSelfMetricsResponseExamples() *orderedmap.Map[string, *base.Example] 
 					"name": "prometheus_build_info",
 					"help": "A metric with a constant '1' value labeled by version, revision, branch, goversion from which prometheus was built, and the goos and goarch for the build.",
 					"type": "GAUGE",
-					"metrics": []map[string]any{
+					"metric": []map[string]any{
 						{
-							"labels": map[string]string{
-								"branch":    "HEAD",
-								"goarch":    "amd64",
-								"goos":      "linux",
-								"goversion": "go1.23.0",
-								"revision":  "abc1234",
-								"tags":      "netgo,builtinassets,stringlabels",
-								"version":   "3.0.0",
+							"label": []map[string]string{
+								{"name": "branch", "value": "HEAD"},
+								{"name": "goarch", "value": "amd64"},
+								{"name": "goos", "value": "linux"},
+								{"name": "goversion", "value": "go1.23.0"},
+								{"name": "revision", "value": "abc1234"},
+								{"name": "tags", "value": "netgo,builtinassets,stringlabels"},
+								{"name": "version", "value": "3.0.0"},
 							},
-							"value": "1",
+							"gauge": map[string]any{
+								"value": 1,
+							},
 						},
 					},
 				},
@@ -918,9 +920,11 @@ func statusSelfMetricsResponseExamples() *orderedmap.Map[string, *base.Example] 
 					"name": "prometheus_tsdb_head_chunks",
 					"help": "Total number of chunks in the head block.",
 					"type": "GAUGE",
-					"metrics": []map[string]any{
+					"metric": []map[string]any{
 						{
-							"value": "1024",
+							"gauge": map[string]any{
+								"value": 1024,
+							},
 						},
 					},
 				},
