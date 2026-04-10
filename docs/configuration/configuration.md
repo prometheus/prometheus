@@ -1478,7 +1478,7 @@ services:
 tags:
   [ - <string> ]
 
-# Node metadata key/value pairs to filter nodes for a given service. As of Consul 1.14, consider `health_filter` instead.
+# Node metadata key/value pairs to filter nodes for a given service. As of Consul 1.14, consider `filter` or `health_filter` instead.
 [ node_meta:
   [ <string>: <string> ... ] ]
 
