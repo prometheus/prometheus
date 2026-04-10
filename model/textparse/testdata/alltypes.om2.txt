@@ -1,0 +1,31 @@
+# HELP http_requests_total Total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{method="get"} 1027.0 1395066363000 st@1395066363000
+http_requests_total{method="post"} 3.0
+# HELP rpc_duration_seconds RPC duration distribution.
+# TYPE rpc_duration_seconds summary
+rpc_duration_seconds{quantile="0.01"} 3102.0
+rpc_duration_seconds{quantile="0.05"} 3272.0
+rpc_duration_seconds{quantile="0.5"} 4773.0
+rpc_duration_seconds_count 2693.0
+rpc_duration_seconds_sum 1.7560473e+07
+# HELP go_gc_duration_seconds GC duration percentiles.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds {count:100,sum:1.5,quantile:[0.25:0.0001,0.5:0.0002,0.75:0.0003,1.0:0.0004]}
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 8.0
+# HELP up 1 if the target is up.
+# TYPE up gauge
+up 1.0
+# HELP request_duration_bucket Classic histogram.
+# TYPE request_duration_bucket histogram
+request_duration_bucket {count:144,sum:53423.0,bucket:[+Inf:144,0.1:24,0.2:33,0.4:100,1.0:144]}
+# HELP build_info Build information.
+# TYPE build_info info
+build_info{version="1.0.0"} 1.0
+# HELP subsystem_enabled Subsystem stateset.
+# TYPE subsystem_enabled stateset
+subsystem_enabled{subsystem_enabled="auth"} 0.0
+subsystem_enabled{subsystem_enabled="metrics"} 1.0
+# EOF
