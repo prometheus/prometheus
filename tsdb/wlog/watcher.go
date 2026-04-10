@@ -337,16 +337,7 @@ func (w *Watcher) Run() error {
 	}
 	w.lastCheckpoint = lastCheckpoint
 
-	var currentSegment int
-	if w.startSegment < 0 {
-		currentSegment, err = w.findSegmentForIndex(checkpointIndex)
-	} else {
-		// Respect checkpoint if it's ahead of the savepoint
-		// (segments before the checkpoint have been compacted away).
-		startIdx := max(w.startSegment, checkpointIndex)
-		currentSegment, err = w.findSegmentForIndex(startIdx)
-	}
-
+	currentSegment, err := w.findSegmentForIndex(checkpointIndex)
 	if err != nil {
 		return err
 	}
@@ -539,7 +530,10 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 // Also used with readCheckpoint - implements segmentReadFn.
 // TODO(bwplotka): Rename tail to !onlySeries; extremely confusing and easy to miss.
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
-	replay := w.startSegment >= 0
+	// When replaying from a savepoint, send samples from the savepoint segment
+	// onwards. Segments before the savepoint are read in "series only" mode to
+	// populate the QueueManager's series cache.
+	replay := w.startSegment >= 0 && segmentNum >= w.startSegment
 	series := w.recordBuf.GetRefSeries(512)
 	samples := w.recordBuf.GetSamples(512)
 	exemplars := w.recordBuf.GetExemplars(512)
