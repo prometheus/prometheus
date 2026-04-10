@@ -4273,6 +4273,35 @@ components:
                 - data
             additionalProperties: false
             description: Response body for status WAL replay endpoint.
+        StatusSelfMetricsOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    description: Response data (structure varies by endpoint).
+                    example:
+                        result: ok
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Generic response body.
         DeleteSeriesOutputBody:
             type: object
             properties:
