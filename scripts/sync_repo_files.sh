@@ -166,7 +166,7 @@ process_repo() {
     if [[ -z "${target_file}" ]]; then
       repo_log "${target_filename} doesn't exist in ${org_repo}"
       case "${source_file}" in
-        CODE_OF_CONDUCT.md | SECURITY.md | .github/workflows/container_description.yml)
+        CODE_OF_CONDUCT.md | SECURITY.md | .dockerignore | .github/workflows/container_description.yml)
           repo_log_yellow "${source_file} missing in ${org_repo}, force updating."
           needs_update+=("${source_file}")
           ;;
