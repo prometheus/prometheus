@@ -539,7 +539,7 @@ func TestEndpoints(t *testing.T) {
 
 		remote := remote.NewStorage(promslog.New(&promslogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
-		}, dbDir, 1*time.Second, nil, false)
+		}, dbDir, 1*time.Second, nil, false, false)
 		t.Cleanup(func() { _ = remote.Close() })
 
 		err = remote.ApplyConfig(&config.Config{

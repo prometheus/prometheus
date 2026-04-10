@@ -140,7 +140,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, false)
 			defer s.Close()
 
 			recs := testwal.GenerateRecords(recCase{
@@ -225,7 +225,7 @@ func TestSampleDelivery(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("proto=%s/case=%s", protoMsg, rc.Name), func(t *testing.T) {
 				dir := t.TempDir()
-				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+				s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, false)
 				defer s.Close()
 
 				rc.NoST = protoMsg == remoteapi.WriteV1MessageType // RW1 does not support ST.
@@ -347,7 +347,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 func TestWALMetadataDelivery(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false, false)
 	defer s.Close()
 
 	cfg := config.DefaultQueueConfig
