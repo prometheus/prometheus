@@ -108,6 +108,17 @@ func BenchmarkParseOMText(b *testing.B) {
 
 /*
 	export bench=v1 && go test ./model/textparse/... \
+		 -run '^$' -bench '^BenchmarkParseOM2Text' \
+		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
+	 | tee ${bench}.txt
+*/
+func BenchmarkParseOM2Text(b *testing.B) {
+	data := readTestdataFile(b, "alltypes.om2.txt")
+	benchParse(b, data, "om2text")
+}
+
+/*
+	export bench=v1 && go test ./model/textparse/... \
 		 -run '^$' -bench '^BenchmarkParsePromProto' \
 		 -benchtime 2s -count 6 -cpu 2 -benchmem -timeout 999m \
 	 | tee ${bench}.txt
@@ -160,6 +171,10 @@ func benchParse(b *testing.B, data []byte, parser string) {
 			p, err := New(buf, "application/openmetrics-text", st, ParserOptions{ConvertClassicHistogramsToNHCB: true})
 			require.NoError(b, err)
 			return p
+		}
+	case "om2text":
+		newParserFn = func(b []byte, st *labels.SymbolTable) Parser {
+			return NewOpenMetrics2Parser(b, st)
 		}
 	default:
 		b.Fatal("unknown parser", parser)
