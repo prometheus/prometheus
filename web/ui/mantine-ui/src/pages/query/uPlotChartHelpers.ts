@@ -76,7 +76,7 @@ const formatLabels = (labels: { [key: string]: string }): string => `
                 .filter((k) => k !== "__name__")
                 .map(
                   (k) =>
-                    `<div><strong>${escapeHTML(k)}</strong>: ${escapeHTML(labels[k])}</div>`
+                    `<div><strong>${escapeHTML(k)}</strong>: ${escapeHTML(labels[k])}</div>`,
                 )
                 .join("")}
             </div>`;
@@ -157,7 +157,7 @@ const tooltipPlugin = (useLocalTime: boolean, data: AlignedData) => {
             <div class="date">${formatTimestamp(ts, useLocalTime)}</div>
             <div class="series-value">
               <span class="detail-swatch" style="background-color: ${color}"></span>
-              <span>${labels.__name__ ? labels.__name__ + ": " : " "}<strong>${value}</strong></span>
+              <span>${labels.__name__ ? escapeHTML(labels.__name__) + ": " : " "}<strong>${value}</strong></span>
             </div>
             ${formatLabels(labels)}
           `.trimEnd();
@@ -197,7 +197,7 @@ const autoPadLeft = (
   u: uPlot,
   values: string[],
   axisIdx: number,
-  cycleNum: number
+  cycleNum: number,
 ) => {
   const axis = u.axes[axisIdx];
 
@@ -212,7 +212,7 @@ const autoPadLeft = (
   // Find longest tick text.
   const longestVal = (values ?? []).reduce(
     (acc, val) => (val.length > acc.length ? val : acc),
-    ""
+    "",
   );
 
   if (longestVal != "") {
@@ -232,7 +232,7 @@ const onlyDrawPointsForDisconnectedSamplesFilter = (
   u: uPlot,
   seriesIdx: number,
   show: boolean,
-  gaps?: null | number[][]
+  gaps?: null | number[][],
 ) => {
   const filtered = [];
 
@@ -290,7 +290,7 @@ export const getUPlotOptions = (
   result: RangeSamples[],
   useLocalTime: boolean,
   light: boolean,
-  onSelectRange: (_start: number, _end: number) => void
+  onSelectRange: (_start: number, _end: number) => void,
 ): uPlot.Options => ({
   width: width - 30,
   height: 550,
@@ -317,7 +317,7 @@ export const getUPlotOptions = (
     markers: {
       fill: (
         _u: uPlot,
-        seriesIdx: number
+        seriesIdx: number,
       ): CSSStyleDeclaration["borderColor"] =>
         // Because the index here is coming from uPlot, we need to subtract 1. Series 0
         // represents the X axis, so we need to skip it.
@@ -403,7 +403,7 @@ export const getUPlotOptions = (
         // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
         labels: r.metric,
         stroke: getSeriesColor(idx, light),
-      })
+      }),
     ),
   ],
   hooks: {
@@ -413,7 +413,7 @@ export const getUPlotOptions = (
         const leftVal = self.posToVal(self.select.left, "x");
         const rightVal = Math.max(
           self.posToVal(self.select.left + self.select.width, "x"),
-          leftVal + 1
+          leftVal + 1,
         );
 
         onSelectRange(leftVal, rightVal);
@@ -433,7 +433,7 @@ export const getUPlotData = (
   inputData: RangeSamples[],
   startTime: number,
   endTime: number,
-  resolution: number
+  resolution: number,
 ): uPlot.AlignedData => {
   const timeData: number[] = [];
   for (let t = startTime; t <= endTime; t += resolution) {
