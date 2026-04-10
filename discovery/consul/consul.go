@@ -335,7 +335,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 	d.initialize(ctx)
 
-	if len(d.watchedServices) == 0 || len(d.watchedTags) != 0 {
+	if len(d.watchedServices) == 0 || len(d.watchedTags) != 0 || d.watchedFilter != "" {
 		// We need to watch the catalog.
 		ticker := time.NewTicker(d.refreshInterval)
 
