@@ -1568,28 +1568,28 @@ NOTE: This endpoint is available before the server has been marked ready and is 
 
 The following endpoint returns Prometheus' own instrumentation metrics from its internal client registry as structured JSON. These are the same metrics that are exposed on the `/metrics` endpoint in Prometheus text exposition format, but returned as JSON for programmatic access by the web UI.
 
+The response uses the standard [ProtoJSON](https://protobuf.dev/programming-guides/json/) representation of the `io.prometheus.client.MetricFamily` protocol buffer message.
+
 ```
 GET /api/v1/status/self_metrics
 ```
 
 URL query parameters:
 
-- `metric_name=<string>`: Filter returned metric families by name prefix. For example, `metric_name=prometheus_tsdb` returns all metric families whose names start with `prometheus_tsdb`. Optional. When omitted, all metric families are returned.
+- `metric_name_pattern=<string>`: A regular expression filter for metric names (fully anchored, like PromQL label matchers). Only metric families whose names fully match the pattern are returned. For example, `metric_name_pattern=prometheus_tsdb_.*` returns all metric families whose names start with `prometheus_tsdb_`. Optional. When omitted, all metric families are returned.
 
-Each returned metric family contains:
+Each returned metric family is a ProtoJSON-encoded `MetricFamily` containing:
 
 - **name**: The metric name.
 - **help**: The metric help string.
 - **type**: The metric type (`COUNTER`, `GAUGE`, `SUMMARY`, `HISTOGRAM`, `UNTYPED`).
 - **unit**: The metric unit, if set (optional).
-- **metrics**: A list of individual metric samples, each containing:
-  - **labels**: A map of label name/value pairs (omitted when empty).
-  - **value**: The metric value as a string. For summaries and histograms, this contains the sum and count.
-  - **quantiles**: For summary metrics, a list of quantile/value pairs.
-  - **buckets**: For histogram metrics, a list of upper bound / cumulative count pairs.
+- **metric**: A list of individual metrics, each containing:
+  - **label**: A list of `{name, value}` label pairs.
+  - **gauge**, **counter**, **summary**, **histogram**, or **untyped**: The type-specific metric data.
 
 ```bash
-curl 'http://localhost:9090/api/v1/status/self_metrics?metric_name=prometheus_build'
+curl 'http://localhost:9090/api/v1/status/self_metrics?metric_name_pattern=prometheus_build_info'
 ```
 
 ```json
@@ -1600,18 +1600,20 @@ curl 'http://localhost:9090/api/v1/status/self_metrics?metric_name=prometheus_bu
       "name": "prometheus_build_info",
       "help": "A metric with a constant '1' value labeled by version, revision, branch, goversion from which prometheus was built, and the goos and goarch for the build.",
       "type": "GAUGE",
-      "metrics": [
+      "metric": [
         {
-          "labels": {
-            "branch": "main",
-            "goarch": "amd64",
-            "goos": "linux",
-            "goversion": "go1.26.1-X:nodwarf5",
-            "revision": "7b5a4090e38d9e1ad7697c7641234f4ed135a6c7",
-            "tags": "netgo,builtinassets",
-            "version": "3.11.0-rc.0"
-          },
-          "value": "1"
+          "label": [
+            { "name": "branch", "value": "main" },
+            { "name": "goarch", "value": "amd64" },
+            { "name": "goos", "value": "linux" },
+            { "name": "goversion", "value": "go1.26.1-X:nodwarf5" },
+            { "name": "revision", "value": "7b5a4090e38d9e1ad7697c7641234f4ed135a6c7" },
+            { "name": "tags", "value": "netgo,builtinassets" },
+            { "name": "version", "value": "3.11.0-rc.0" }
+          ],
+          "gauge": {
+            "value": 1
+          }
         }
       ]
     }

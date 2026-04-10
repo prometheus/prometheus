@@ -4558,48 +4558,62 @@ func TestSelfMetrics(t *testing.T) {
 		require.NoError(t, err)
 		res := api.selfMetrics(req)
 		assertAPIError(t, res.err, errorNone)
-		families, ok := res.data.([]SelfMetricFamily)
-		require.True(t, ok, "expected []SelfMetricFamily")
+		families, ok := res.data.([]json.RawMessage)
+		require.True(t, ok, "expected []json.RawMessage")
 		require.NotEmpty(t, families, "expected at least one metric family from default gatherer")
 	})
 
-	t.Run("filters metrics by prefix", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodGet, "?metric_name=go_", http.NoBody)
+	t.Run("filters metrics by regex", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "?metric_name_pattern=go_.*", http.NoBody)
 		require.NoError(t, err)
-		req.Form = url.Values{"metric_name": {"go_"}}
+		req.Form = url.Values{"metric_name_pattern": {"go_.*"}}
 		res := api.selfMetrics(req)
 		assertAPIError(t, res.err, errorNone)
-		families, ok := res.data.([]SelfMetricFamily)
-		require.True(t, ok, "expected []SelfMetricFamily")
-		for _, f := range families {
-			require.True(t, strings.HasPrefix(f.Name, "go_"), "expected metric name to start with 'go_', got %q", f.Name)
+		families, ok := res.data.([]json.RawMessage)
+		require.True(t, ok, "expected []json.RawMessage")
+		require.NotEmpty(t, families)
+		for _, raw := range families {
+			var f map[string]any
+			require.NoError(t, json.Unmarshal(raw, &f))
+			name, _ := f["name"].(string)
+			require.True(t, strings.HasPrefix(name, "go_"), "expected metric name to start with 'go_', got %q", name)
 		}
 	})
 
-	t.Run("non-matching prefix returns empty", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodGet, "?metric_name=nonexistent_prefix_xyz_", http.NoBody)
+	t.Run("non-matching pattern returns empty", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "?metric_name_pattern=nonexistent_prefix_xyz_", http.NoBody)
 		require.NoError(t, err)
-		req.Form = url.Values{"metric_name": {"nonexistent_prefix_xyz_"}}
+		req.Form = url.Values{"metric_name_pattern": {"nonexistent_prefix_xyz_"}}
 		res := api.selfMetrics(req)
 		assertAPIError(t, res.err, errorNone)
-		families, ok := res.data.([]SelfMetricFamily)
-		require.True(t, ok, "expected []SelfMetricFamily")
+		families, ok := res.data.([]json.RawMessage)
+		require.True(t, ok, "expected []json.RawMessage")
 		require.Empty(t, families)
 	})
 
-	t.Run("metric families have expected structure", func(t *testing.T) {
+	t.Run("invalid regex returns error", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "?metric_name_pattern=[invalid", http.NoBody)
+		require.NoError(t, err)
+		req.Form = url.Values{"metric_name_pattern": {"[invalid"}}
+		res := api.selfMetrics(req)
+		assertAPIError(t, res.err, errorBadData)
+	})
+
+	t.Run("metric families have expected ProtoJSON structure", func(t *testing.T) {
 		req, err := http.NewRequest(http.MethodGet, "", http.NoBody)
 		require.NoError(t, err)
 		res := api.selfMetrics(req)
 		assertAPIError(t, res.err, errorNone)
-		families := res.data.([]SelfMetricFamily)
-		for _, f := range families {
-			require.NotEmpty(t, f.Name, "metric family name should not be empty")
-			require.NotEmpty(t, f.Type, "metric family type should not be empty")
-			for _, m := range f.Metrics {
-				// Every metric should have a value set.
-				require.NotEmpty(t, m.Value, "metric value should not be empty for %s", f.Name)
-			}
+		families := res.data.([]json.RawMessage)
+		for _, raw := range families {
+			var f map[string]any
+			require.NoError(t, json.Unmarshal(raw, &f))
+			name, _ := f["name"].(string)
+			require.NotEmpty(t, name, "metric family name should not be empty")
+			typ, _ := f["type"].(string)
+			require.NotEmpty(t, typ, "metric family type should not be empty")
+			metrics, _ := f["metric"].([]any)
+			require.NotEmpty(t, metrics, "metric family %q should have at least one metric", name)
 		}
 	})
 }

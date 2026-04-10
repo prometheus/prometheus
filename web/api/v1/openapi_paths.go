@@ -443,13 +443,13 @@ func (*OpenAPIBuilder) statusWALReplayPath() *v3.PathItem {
 
 func (*OpenAPIBuilder) statusSelfMetricsPath() *v3.PathItem {
 	params := []*v3.Parameter{
-		queryParamWithExample("metric_name", "Filter metrics by name prefix.", false, stringSchema(), []example{{"example", "prometheus_tsdb"}}),
+		queryParamWithExample("metric_name_pattern", "Regular expression filter for metric names (fully anchored, like PromQL label matchers). Only metric families whose names fully match the pattern are returned.", false, stringSchema(), []example{{"example", "prometheus_tsdb_.*"}}),
 	}
 	return &v3.PathItem{
 		Get: &v3.Operation{
 			OperationId: "get-status-self-metrics",
 			Summary:     "Get Prometheus self-instrumentation metrics",
-			Description: "Returns Prometheus' own instrumentation metrics from its internal client registry, as structured JSON. Supports optional prefix filtering via the metric_name parameter.",
+			Description: "Returns Prometheus' own instrumentation metrics from its internal client registry, as structured JSON. Supports optional regex filtering via the metric_name_pattern parameter.",
 			Tags:        []string{"status"},
 			Parameters:  params,
 			Responses:   responsesWithErrorExamples("StatusSelfMetricsOutputBody", statusSelfMetricsResponseExamples(), errorResponseExamples(), "Self metrics retrieved successfully.", "Error retrieving self metrics."),
