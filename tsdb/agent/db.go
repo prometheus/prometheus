@@ -581,7 +581,11 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
 					// it remains in the checkpoint until we get past that segment.
 					if meta := db.deleted[entry.Ref]; meta.lastSegment <= currentSegmentOrCheckpoint {
-						db.deleted[entry.Ref] = deletedRefMeta{lastSegment: currentSegmentOrCheckpoint, labels: entry.Labels}
+						var lbls labels.Labels
+						if db.opts.CheckpointFromInMemorySeries {
+							lbls = entry.Labels
+						}
+						db.deleted[entry.Ref] = deletedRefMeta{lastSegment: currentSegmentOrCheckpoint, labels: lbls}
 					}
 				} else {
 					db.metrics.numActiveSeries.Inc()
