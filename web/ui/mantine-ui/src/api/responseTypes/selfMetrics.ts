@@ -31,15 +31,33 @@ export interface ProtoSummary {
 
 export interface ProtoBucket {
   cumulativeCount: string;
+  cumulativeCountFloat?: number;
   upperBound: number;
   exemplar?: ProtoExemplar;
 }
 
+export interface ProtoBucketSpan {
+  offset: number;
+  length: number;
+}
+
 export interface ProtoHistogram {
   sampleCount: string;
+  sampleCountFloat?: number;
   sampleSum: number;
   bucket?: ProtoBucket[];
   createdTimestamp?: string;
+  schema?: number;
+  zeroThreshold?: number;
+  zeroCount?: string;
+  zeroCountFloat?: number;
+  negativeSpan?: ProtoBucketSpan[];
+  negativeDelta?: string[];
+  negativeCount?: number[];
+  positiveSpan?: ProtoBucketSpan[];
+  positiveDelta?: string[];
+  positiveCount?: number[];
+  exemplars?: ProtoExemplar[];
 }
 
 export interface ProtoExemplar {
