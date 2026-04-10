@@ -2000,10 +2000,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		// Check if the function has a matrix argument.
 		var (
-			matrixArgIndex      int
-			matrixArg           bool
-			matrixFromSubquery  bool
-			warnings            annotations.Annotations
+			matrixArgIndex     int
+			matrixArg          bool
+			matrixFromSubquery bool
+			warnings           annotations.Annotations
 		)
 		for i := range e.Args {
 			a := e.Args[i]
