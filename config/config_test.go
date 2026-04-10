@@ -481,6 +481,7 @@ var expectedConf = &Config{
 					PathPrefix:      "/consul",
 					Token:           "mysecret",
 					Services:        []string{"nginx", "cache", "mysql"},
+					HealthFilter:    `Service.Tags contains "canary"`,
 					ServiceTags:     []string{"canary", "v1"},
 					NodeMeta:        map[string]string{"rack": "123"},
 					TagSeparator:    consul.DefaultSDConfig.TagSeparator,
