@@ -13,23 +13,53 @@
 
 package gate
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
 
 // A Gate controls the maximum number of concurrently running and waiting queries.
 type Gate struct {
-	ch chan struct{}
+	ch              chan struct{}
+	waitingDuration prometheus.Observer
 }
 
 // New returns a query gate that limits the number of queries
 // being concurrently executed.
 func New(length int) *Gate {
 	return &Gate{
-		ch: make(chan struct{}, length),
+		ch:              make(chan struct{}, length),
+		waitingDuration: nil,
 	}
+}
+
+// NewInstrumented returns a query gate that limits the number of queries
+// being concurrently executed and records the time spent waiting for the gate.
+func NewInstrumented(reg prometheus.Registerer, length int) *Gate {
+	g := New(length)
+	g.waitingDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		Name:                            "gate_waiting_seconds",
+		Help:                            "How many seconds it took for queries to wait at the gate.",
+		Buckets:                         prometheus.DefBuckets,
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	})
+	return g
 }
 
 // Start blocks until the gate has a free spot or the context is done.
 func (g *Gate) Start(ctx context.Context) error {
+	start := time.Now()
+	defer func() {
+		if g.waitingDuration != nil {
+			g.waitingDuration.Observe(time.Since(start).Seconds())
+		}
+	}()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

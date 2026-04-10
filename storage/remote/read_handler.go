@@ -51,7 +51,7 @@ func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable stor
 		queryable:                 queryable,
 		config:                    config,
 		remoteReadSampleLimit:     remoteReadSampleLimit,
-		remoteReadGate:            gate.New(remoteReadConcurrencyLimit),
+		remoteReadGate:            gate.NewInstrumented(r, remoteReadConcurrencyLimit),
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		marshalPool:               &sync.Pool{},
 
