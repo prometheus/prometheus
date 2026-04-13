@@ -1,6 +1,6 @@
 # tsdb/seriesmetadata
 
-This package persists OTel (OpenTelemetry) resource attributes, instrumentation scopes, and entities alongside Prometheus TSDB blocks. Data is stored in a Parquet sidecar file (`series_metadata.parquet`) within each block directory.
+This package persists OTel (OpenTelemetry) resource attributes alongside Prometheus TSDB blocks. Data is stored in a Parquet sidecar file (`series_metadata.parquet`) within each block directory.
 
 Enabled via `--enable-feature=native-metadata`.
 
@@ -9,8 +9,6 @@ Enabled via `--enable-feature=native-metadata`.
 Each time series in Prometheus can have associated OTel metadata:
 
 - **Resource attributes**: identifying (e.g. `service.name`) and descriptive (e.g. `host.name`) attributes from the OTel Resource
-- **Entities**: typed OTel entities (service, host, container, etc.) with their own ID and description attributes, embedded within resource versions
-- **Scopes**: OTel InstrumentationScope data (library name, version, schema URL, custom attributes)
 
 All metadata is **versioned over time** per series. When a descriptive attribute changes (e.g. a service migrates to a new host), a new version is created with its own time range. Identifying attributes remain constant across versions.
 
@@ -21,7 +19,7 @@ All metadata is **versioned over time** per series. When a descriptive attribute
                     │   OTLP Ingestion    │
                     │  (CombinedAppender) │
                     └─────────┬───────────┘
-                              │ UpdateResource() / UpdateScope()
+                              │ UpdateResource()
                               ▼
                     ┌─────────────────────┐
                     │   TSDB Head Block   │
@@ -40,9 +38,6 @@ All metadata is **versioned over time** per series. When a descriptive attribute
 │  │  content)    │  │  content_hash +  │                  │
 │  │              │  │  time range)     │                  │
 │  └──────────────┘  └──────────────────┘                  │
-│  ┌──────────────┐  ┌──────────────────┐                  │
-│  │ scope_table  │  │ scope_mapping    │                  │
-│  └──────────────┘  └──────────────────┘                  │
 │  ┌────────────────────────────────────┐                  │
 │  │ resource_attr_index (optional)     │                  │
 │  │ (inverted index: attr → series)   │                  │
@@ -57,11 +52,11 @@ All metadata is **versioned over time** per series. When a descriptive attribute
                     └──────────────────────────────┘
 ```
 
-The `/resources/series` reverse-lookup endpoint only supports filtering by resource attributes (`resource.attr=key:value`). Scope and entity filters are intentionally excluded as an architectural choice for simplicity — matched series include their scope versions in the response as supplementary data but scopes are not filterable.
+The `/resources/series` reverse-lookup endpoint only supports filtering by resource attributes (`resource.attr=key:value`).
 
 ## Kind Framework
 
-The metadata subsystem uses a **kind framework** to handle different metadata types (resources, scopes) generically. This avoids duplicating nearly identical code at every layer (WAL, Parquet, head commit/replay, compaction, DB merge).
+The metadata subsystem uses a **kind framework** to handle different metadata types generically. This avoids duplicating nearly identical code at every layer (WAL, Parquet, head commit/replay, compaction, DB merge).
 
 ### Architecture
 
@@ -73,7 +68,7 @@ Adding a new metadata kind requires: (1) define the version struct, (2) implemen
 
 ### Import Cycle Avoidance
 
-`seriesmetadata` cannot import `tsdb/record` (which would create a cycle). The registry defines `WALRecordType = uint8` and each kind descriptor uses pluggable function variables (`ResourceDecodeWAL`, `ScopeDecodeWAL`, etc.) that are set by the `tsdb` package during init.
+`seriesmetadata` cannot import `tsdb/record` (which would create a cycle). The registry defines `WALRecordType = uint8` and each kind descriptor uses pluggable function variables (`ResourceDecodeWAL`, etc.) that are set by the `tsdb` package during init.
 
 ## In-Memory Model
 
@@ -84,20 +79,17 @@ Data is stored per-series, keyed by `labels.StableHash` (a 64-bit hash of the se
 `Versioned[V]` is a generic container holding `[]V` ordered by MinTime ascending. Type aliases provide backward compatibility:
 
 - `VersionedResource = Versioned[*ResourceVersion]` → `[]*ResourceVersion`
-  - Each `ResourceVersion` has: `Identifying` attrs, `Descriptive` attrs, `[]*Entity`, `MinTime`, `MaxTime`
-- `VersionedScope = Versioned[*ScopeVersion]` → `[]*ScopeVersion`
-  - Each `ScopeVersion` has: `Name`, `Version`, `SchemaURL`, `Attrs`, `MinTime`, `MaxTime`
+  - Each `ResourceVersion` has: `Identifying` attrs, `Descriptive` attrs, `MinTime`, `MaxTime`
 
 ### Generic Stores
 
-`MemStore[V]` is a 256-way sharded generic in-memory store (matching the `stripeSeries` pattern in `tsdb/head.go`). Each shard has its own `sync.RWMutex` and map with 40-byte cache-line padding to prevent false sharing. Sharding is by `labelsHash & 0xFF`. When the `KindOps` also implements `ContentDedupOps[V]` (both `resourceOps` and `scopeOps` do), MemStore maintains a content-addressed dedup table so that versions with identical content share map/slice pointers from a single canonical entry (see Content-Addressed Dedup below). Type aliases provide backward compatibility:
+`MemStore[V]` is a 256-way sharded generic in-memory store (matching the `stripeSeries` pattern in `tsdb/head.go`). Each shard has its own `sync.RWMutex` and map with 40-byte cache-line padding to prevent false sharing. Sharding is by `labelsHash & 0xFF`. When the `KindOps` also implements `ContentDedupOps[V]` (`resourceOps` does), MemStore maintains a content-addressed dedup table so that versions with identical content share map/slice pointers from a single canonical entry (see Content-Addressed Dedup below). Type aliases provide backward compatibility:
 
 | Alias | Underlying Type | Key | Value |
 |-------|-----------------|-----|-------|
 | `MemResourceStore` | `MemStore[*ResourceVersion]` | labelsHash | `*Versioned[*ResourceVersion]` |
-| `MemScopeStore` | `MemStore[*ScopeVersion]` | labelsHash | `*Versioned[*ScopeVersion]` |
 
-`MemSeriesMetadata` wraps a `map[KindID]any` (each value is a `*MemStore[V]` for the appropriate V) and implements the `Reader` interface. It provides `StoreForKind(id)` for generic access and type-safe accessors `ResourceStore()` / `ScopeStore()`.
+`MemSeriesMetadata` wraps a `map[KindID]any` (each value is a `*MemStore[V]` for the appropriate V) and implements the `Reader` interface. It provides `StoreForKind(id)` for generic access and a type-safe accessor `ResourceStore()`.
 
 ### Resource Attribute Inverted Index
 
@@ -119,9 +111,9 @@ The index is **time-unaware** — it includes all labelsHashes that have *any* v
 
 ### Head Storage
 
-On `memSeries`, OTel metadata is stored behind a `*nativeMeta` pointer (nil when native metadata is not in use, saving 24 bytes per series vs inline fields). The `nativeMeta` struct holds `stableHash uint64` (cached `labels.StableHash`, computed lazily on first metadata commit) and `kindMeta []kindMetaEntry` where each entry is `{kind KindID, data any}`. Linear scan of 0-2 entries is faster than map lookup. The `kindMetaAccessor` interface (`GetKindMeta`/`SetKindMeta`) provides kind-generic access; `SetKindMeta` lazy-allocates `nativeMeta`.
+On `memSeries`, OTel metadata is stored behind a `*nativeMeta` pointer (nil when native metadata is not in use, saving 24 bytes per series vs inline fields). The `nativeMeta` struct holds `stableHash uint64` (cached `labels.StableHash`, computed lazily on first metadata commit) and `kindMeta []kindMetaEntry` where each entry is `{kind KindID, data any}`. Linear scan is faster than map lookup. The `kindMetaAccessor` interface (`GetKindMeta`/`SetKindMeta`) provides kind-generic access; `SetKindMeta` lazy-allocates `nativeMeta`.
 
-The `Head` also maintains a shared `*MemSeriesMetadata` (`seriesMeta`) that is incrementally updated during `commitResources()`/`commitScopes()` and WAL replay via `updateSharedMetadata()`. This avoids an O(ALL_SERIES) scan that would otherwise be required to collect metadata across all shards. `Head.SeriesMetadata()` returns an O(1) `headMetadataReader` wrapper around this live store instead of scanning.
+The `Head` also maintains a shared `*MemSeriesMetadata` (`seriesMeta`) that is incrementally updated during `commitResources()` and WAL replay via `updateSharedMetadata()`. This avoids an O(ALL_SERIES) scan that would otherwise be required to collect metadata across all shards. `Head.SeriesMetadata()` returns an O(1) `headMetadataReader` wrapper around this live store instead of scanning.
 
 The head does **not** populate `seriesMeta.labelsMap` — labels are resolved on-demand via `stripeSeries.getByID` in `headMetadataReader.LabelsForHash`. This saves ~3GB at 10M series by avoiding label set duplication.
 
@@ -135,9 +127,9 @@ Two sharded stripe arrays (`metaRefStripes` and `metaHashStripes`, 256-way) trac
 
 ### Content-Addressed Dedup
 
-When many series share the same OTel resource or scope (common at scale — e.g. 30M series sharing ~1K unique resources), the denormalized per-series storage wastes memory: each series holds a deep-copied version, and the shared `MemStore` holds another. Content-addressed dedup eliminates this by sharing map/slice pointers from a single canonical entry.
+When many series share the same OTel resource (common at scale — e.g. 30M series sharing ~1K unique resources), the denormalized per-series storage wastes memory: each series holds a deep-copied version, and the shared `MemStore` holds another. Content-addressed dedup eliminates this by sharing map/slice pointers from a single canonical entry.
 
-**Interface**: `ContentDedupOps[V]` is an optional extension of `KindOps[V]`, detected via type assertion. Both `resourceOps` and `scopeOps` implement it.
+**Interface**: `ContentDedupOps[V]` is an optional extension of `KindOps[V]`, detected via type assertion. `resourceOps` implements it.
 
 ```go
 type ContentDedupOps[V VersionConstraint] interface {
@@ -150,7 +142,7 @@ type ContentDedupOps[V VersionConstraint] interface {
 
 **Interning**: All `MemStore` methods that store deep copies call `internVersions` (or `internLastVersion`) after the copy/merge, replacing each version with a thin copy sharing the canonical's maps. The `SetVersionedWithDiff` fast path (time-range extension only) skips interning since no new version is created. `InternVersion(v)` is public for per-series interning from outside `MemStore`.
 
-**Per-series interning**: After `CommitResourceDirect`/`CommitScopeDirect` creates a deep-copied version on the series, `Head.internSeriesResource()`/`internSeriesScope()` replaces its maps with canonical pointers. Same in WAL replay after `CommitToSeries`.
+**Per-series interning**: After `CommitResourceDirect` creates a deep-copied version on the series, `Head.internSeriesResource()` replaces its maps with canonical pointers. Same in WAL replay after `CommitToSeries`.
 
 **Memory impact** (30M series, 1K unique resources): per-version drops from ~1500B (deep copy with maps) to ~72B (thin copy struct with shared pointers). Canonicals are never deleted — at 1K unique resources × 1500B = 1.5MB, negligible.
 
@@ -168,15 +160,13 @@ Each row has a `namespace` discriminator field:
 
 | Namespace | Purpose | Key Fields Used |
 |-----------|---------|-----------------|
-| `resource_table` | Unique resource content | `content_hash`, `identifying_attrs`, `descriptive_attrs`, `entities` |
+| `resource_table` | Unique resource content | `content_hash`, `identifying_attrs`, `descriptive_attrs` |
 | `resource_mapping` | Series → resource + time range | `series_ref`, `content_hash`, `mint`, `maxt` |
-| `scope_table` | Unique scope content | `content_hash`, `scope_name`, `scope_version_str`, `schema_url`, `scope_attrs` |
-| `scope_mapping` | Series → scope + time range | `series_ref`, `content_hash`, `mint`, `maxt` |
 | `resource_attr_index` | Inverted index: attr → series | `series_ref`, `content_hash`, `identifying_attrs[0]`, `attr_key`, `attr_value` |
 
 ### Parquet Schema
 
-A single `metadataRow` struct covers all four namespace types. Fields unused by a namespace are zero-valued.
+A single `metadataRow` struct covers all namespace types. Fields unused by a namespace are zero-valued.
 
 ```
 metadataRow
@@ -190,24 +180,6 @@ metadataRow
 │       ├── key        string
 │       └── value      string
 ├── descriptive_attrs  list?         (resource descriptive attributes)
-│   └── element
-│       ├── key        string
-│       └── value      string
-├── entities           list?         (typed OTel entities)
-│   └── element
-│       ├── type       string
-│       ├── id         list          (entity identifying attributes)
-│       │   └── element
-│       │       ├── key    string
-│       │       └── value  string
-│       └── description list         (entity descriptive attributes)
-│           └── element
-│               ├── key    string
-│               └── value  string
-├── scope_name         string?       (InstrumentationScope name)
-├── scope_version_str  string?       (InstrumentationScope version)
-├── schema_url         string?       (InstrumentationScope schema URL)
-├── scope_attrs        list?         (InstrumentationScope attributes)
 │   └── element
 │       ├── key        string
 │       └── value      string
@@ -226,7 +198,7 @@ Mapping rows store `series_ref` — the block-level series reference (a small in
 
 Each namespace is written as a separate row group (or multiple row groups if `MaxRowsPerRowGroup` is set). This enables selective reads — a reader can skip entire row groups based on namespace column statistics.
 
-Write order (alphabetical by namespace value): `resource_mapping`, `resource_table`, `scope_mapping`, `scope_table`, then `resource_attr_index` (when enabled).
+Write order (alphabetical by namespace value): `resource_mapping`, `resource_table`, then `resource_attr_index` (when enabled).
 
 Within each namespace, rows are sorted by `(series_ref, content_hash, mint)` for better zstd compression.
 
@@ -239,8 +211,6 @@ Parquet footer key-value pairs:
 | `schema_version` | Currently `"1"` |
 | `resource_table_count` | Number of unique resource content rows |
 | `resource_mapping_count` | Number of series→resource mapping rows |
-| `scope_table_count` | Number of unique scope content rows |
-| `scope_mapping_count` | Number of series→scope mapping rows |
 | `resource_attr_index_count` | Number of inverted index rows (when enabled) |
 | `row_group_layout` | `"namespace_partitioned"` |
 
@@ -321,22 +291,6 @@ for _, hash := range hashes {
 }
 ```
 
-## Entities
-
-Entities represent typed OTel resources within a `ResourceVersion`. Seven predefined types:
-
-| Entity Type | Example Identifying Attributes | Example Descriptive Attributes |
-|-------------|-------------------------------|-------------------------------|
-| `service` | `service.name`, `service.namespace`, `service.instance.id` | `deployment.environment` |
-| `host` | `host.name` | `cloud.region`, `cloud.provider` |
-| `container` | `container.id` | `container.image.name` |
-| `k8s.pod` | `k8s.pod.uid` | `k8s.pod.name` |
-| `k8s.node` | `k8s.node.uid` | `k8s.node.name` |
-| `process` | `process.pid` | `process.command` |
-| `resource` | (default type) | (all non-identifying attributes) |
-
-Entities are derived from OTel resource attributes using `entity.ResourceEntityRefs()` from the xpdata package during OTLP ingestion.
-
 ## Distributed-Scale Features
 
 Several features are designed for object-storage access patterns in clustered implementations (e.g. Grafana Mimir store-gateway and ingesters):
@@ -350,12 +304,12 @@ Several features are designed for object-storage access patterns in clustered im
 - **`BlockSeriesMetadata` in `meta.json`**: After compaction, `BlockMeta.SeriesMetadata` records namespace row counts and indexed resource attribute names, enabling Mimir store-gateway to pre-plan queries without opening the Parquet file
 - **`WriteStats`**: `WriterOptions.WriteStats` is populated after a successful write with per-namespace row counts, allowing the caller to capture stats (e.g. for `BlockMeta`) without parsing the Parquet footer
 - **Per-tenant `IndexedResourceAttrs`**: `Head.SetIndexedResourceAttrs()` allows runtime reconfiguration of which descriptive attributes are indexed, enabling Mimir ingesters to apply per-tenant overrides
-- **Direct commit functions**: `CommitResourceDirect()` and `CommitScopeDirect()` are called directly on the hot ingestion path with typed arguments (bypassing `interface{}` boxing). They use single-copy ownership: `maps.Clone` once from caller buffers, construct the version struct, and inline `AddOrExtend` logic — no redundant deep copies via `NewResourceVersion`/`copyResourceVersion`. `KindDescriptor.CommitToSeries()` (WAL replay) delegates to the same Direct functions after type-asserting `any` arguments. `CollectResourceDirect()` and `CollectScopeDirect()` provide the same boxing-avoidance for the collect path
+- **Direct commit functions**: `CommitResourceDirect()` is called directly on the hot ingestion path with typed arguments (bypassing `interface{}` boxing). It uses single-copy ownership: `maps.Clone` once from caller buffers, construct the version struct, and inline `AddOrExtend` logic — no redundant deep copies via `NewResourceVersion`/`copyResourceVersion`. `KindDescriptor.CommitToSeries()` (WAL replay) delegates to the same Direct function after type-asserting `any` arguments. `CollectResourceDirect()` provides the same boxing-avoidance for the collect path
 - **Unique attribute name cache**: `UniqueAttrNameReader` interface (via type assertion) provides O(1) access to the set of all resource attribute names, avoiding O(N_series) full scans for attribute name discovery
 - **`SetVersionedWithDiff` fast-path**: When the incoming `Versioned` has a single version that equals the existing current version (~90% of steady-state commits), `UpdateTimeRange` extends in-place with zero allocations, skipping `MergeVersioned` (~12 allocs)
 - **In-memory content-addressed dedup**: `MemStore[V]` uses `ContentDedupOps[V]` to share map/slice pointers across versions with identical content. Per-version memory drops from ~1500B to ~72B. `InternVersion()` is public for per-series interning from head commit and WAL replay paths
-- **WAL checkpoint content dedup**: Both resources and scopes use content-addressed dedup (`contentMapping` type) in WAL checkpoints, reducing memory from O(N_series × content_size) to O(N_unique_content + N_series × 24B)
-- **Chunked checkpoint flushing**: WAL checkpoint resource and scope records are flushed in 10K-record chunks instead of materializing all records into a single slice, bounding peak allocation to ~2 MB per chunk
+- **WAL checkpoint content dedup**: Resources use content-addressed dedup (`contentMapping` type) in WAL checkpoints, reducing memory from O(N_series × content_size) to O(N_unique_content + N_series × 24B)
+- **Chunked checkpoint flushing**: WAL checkpoint resource records are flushed in 10K-record chunks instead of materializing all records into a single slice, bounding peak allocation to ~2 MB per chunk
 
 ## File Organization
 
@@ -366,10 +320,8 @@ Several features are designed for object-storage access patterns in clustered im
 | `mem_store.go` | Generic `MemStore[V]` 256-way sharded in-memory store with content-addressed dedup |
 | `registry.go` | `KindDescriptor` interface, `KindID`, global kind registry, `kindMetaAccessor` |
 | `resource_kind.go` | `resourceKindDescriptor` (implements `KindDescriptor` for resources), `ResourceOps` (implements `KindOps` + `ContentDedupOps`), `ResourceCommitData`, `CommitResourceDirect()`, `CollectResourceDirect()`, content hashing |
-| `scope_kind.go` | `scopeKindDescriptor` (implements `KindDescriptor` for scopes), `ScopeOps` (implements `KindOps` + `ContentDedupOps`), `ScopeCommitData`, `CommitScopeDirect()`, `CollectScopeDirect()`, content hashing |
-| `parquet_schema.go` | Parquet schema (`metadataRow`, `EntityRow`, `EntityAttributeEntry`), namespace constants |
-| `entity.go` | `Entity`, `ResourceVersion`, type aliases (`VersionedResource`, `MemResourceStore`, `VersionedResourceReader`) |
-| `scope.go` | `ScopeVersion`, type aliases (`VersionedScope`, `MemScopeStore`, `VersionedScopeReader`) |
+| `parquet_schema.go` | Parquet schema (`metadataRow`), namespace constants |
+| `resource.go` | `ResourceVersion`, type aliases (`VersionedResource`, `MemResourceStore`, `VersionedResourceReader`) |
 | `content_hash.go` | Shared `hashAttrs()` utility for deterministic xxhash of attribute maps |
 | `resource_attributes.go` | `SplitAttributes()`, `IsIdentifyingAttribute()`, `AttributesEqual()` |
 | `writer_options.go` | `WriterOptions` (`BloomFilterFormat`, row group limits, `IndexedResourceAttrs`, `RefResolver`, `WriteStats`) |

@@ -257,15 +257,9 @@ type Options struct {
 	EnableMetadataWALRecords bool
 
 	// EnableNativeMetadata represents 'native-metadata' feature flag.
-	// When enabled, OTel resource/scope attributes are persisted per time series
+	// When enabled, OTel resource attributes are persisted per time series
 	// in Parquet-based metadata files alongside TSDB blocks.
 	EnableNativeMetadata bool
-
-	// EnableScopeMetadata controls whether scope metadata (name, version, schemaURL,
-	// custom attributes) is stored and replayed. When false, scope records are
-	// skipped during WAL replay and ingestion, saving significant memory.
-	// Requires EnableNativeMetadata to have any effect.
-	EnableScopeMetadata bool
 
 	// IndexedResourceAttrs specifies additional descriptive resource attribute
 	// names to include in the inverted index beyond identifying attributes
@@ -1134,7 +1128,6 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	headOpts.EnableMetadataWALRecords = opts.EnableMetadataWALRecords
 	headOpts.EnableFastStartup = opts.EnableFastStartup
 	headOpts.EnableNativeMetadata = opts.EnableNativeMetadata
-	headOpts.EnableScopeMetadata = opts.EnableScopeMetadata
 	headOpts.IndexedResourceAttrs = opts.IndexedResourceAttrs
 	headOpts.EnableResourceAttrIndex = opts.EnableResourceAttrIndex
 	if opts.WALReplayConcurrency > 0 {
@@ -1251,7 +1244,7 @@ func (*cachedMetadataReader) Close() error { return nil }
 //
 // NOTE: The returned reader's ref values are labels hashes, NOT series refs.
 // The merged result spans multiple indexes so no single series ref is valid.
-// Callers should use the resource/scope iteration methods.
+// Callers should use the resource iteration methods.
 func (db *DB) SeriesMetadata() (seriesmetadata.Reader, error) {
 	if !db.opts.EnableNativeMetadata {
 		return seriesmetadata.NewMemSeriesMetadata(), nil
@@ -2386,13 +2379,6 @@ func (db *DB) Head() *Head {
 // to Head.ResourceHasContentHash.
 func (db *DB) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
 	return db.head.ResourceHasContentHash(labelsHash, contentHash)
-}
-
-// ScopeHasContentHash reports whether the series at labelsHash has
-// a scope version with the given contentHash. Convenience pass-through
-// to Head.ScopeHasContentHash.
-func (db *DB) ScopeHasContentHash(labelsHash, contentHash uint64) bool {
-	return db.head.ScopeHasContentHash(labelsHash, contentHash)
 }
 
 // Close the partition.

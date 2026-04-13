@@ -135,65 +135,6 @@ func (r *layeredMetadataReader) TotalResourceVersions() uint64 {
 	return r.base.TotalResourceVersions() + r.top.TotalResourceVersions()
 }
 
-// --- VersionedScopeReader ---
-
-func (r *layeredMetadataReader) GetVersionedScope(labelsHash uint64) (*VersionedScope, bool) {
-	topVS, topOK := r.top.GetVersionedScope(labelsHash)
-	baseVS, baseOK := r.base.GetVersionedScope(labelsHash)
-	switch {
-	case topOK && baseOK:
-		return MergeVersionedScopes(baseVS, topVS), true
-	case topOK:
-		return topVS, true
-	case baseOK:
-		return baseVS, true
-	default:
-		return nil, false
-	}
-}
-
-func (r *layeredMetadataReader) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
-	topHashes := make(map[uint64]struct{})
-	if err := r.top.IterHashes(ctx, KindScope, func(labelsHash uint64) error {
-		topHashes[labelsHash] = struct{}{}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	if err := r.base.IterVersionedScopes(ctx, func(labelsHash uint64, baseVS *VersionedScope) error {
-		if _, shared := topHashes[labelsHash]; shared {
-			delete(topHashes, labelsHash)
-			topVS, _ := r.top.GetVersionedScope(labelsHash)
-			return f(labelsHash, MergeVersionedScopes(baseVS, topVS))
-		}
-		return f(labelsHash, baseVS)
-	}); err != nil {
-		return err
-	}
-
-	for labelsHash := range topHashes {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		topVS, _ := r.top.GetVersionedScope(labelsHash)
-		if topVS != nil {
-			if err := f(labelsHash, topVS); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (r *layeredMetadataReader) TotalScopes() uint64 {
-	return r.base.TotalScopes() + r.top.TotalScopes()
-}
-
-func (r *layeredMetadataReader) TotalScopeVersions() uint64 {
-	return r.base.TotalScopeVersions() + r.top.TotalScopeVersions()
-}
-
 // --- Generic Reader methods ---
 
 func (r *layeredMetadataReader) IterKind(ctx context.Context, id KindID, f func(labelsHash uint64, versioned any) error) error {

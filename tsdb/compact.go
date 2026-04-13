@@ -187,7 +187,7 @@ type LeveledCompactorOptions struct {
 	Metrics *CompactorMetrics
 	// UseUncachedIO allows bypassing the page cache when appropriate.
 	UseUncachedIO bool
-	// EnableNativeMetadata enables persistence of OTel resource/scope attributes during compaction.
+	// EnableNativeMetadata enables persistence of OTel resource attributes during compaction.
 	EnableNativeMetadata bool
 	// IndexedResourceAttrs specifies additional descriptive resource attribute
 	// names to include in the inverted index beyond identifying attributes.
@@ -756,7 +756,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 		return fmt.Errorf("write new tombstones file: %w", err)
 	}
 
-	// Merge and write series metadata (resources and scopes) from source blocks.
+	// Merge and write series metadata (resources) from source blocks.
 	if c.enableNativeMetadata {
 		if err := c.mergeAndWriteSeriesMetadata(tmp, blocks, meta); err != nil {
 			return fmt.Errorf("merge and write series metadata: %w", err)
@@ -797,7 +797,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blockPopulator Bl
 	return nil
 }
 
-// mergeAndWriteSeriesMetadata merges versioned resources and scopes from
+// mergeAndWriteSeriesMetadata merges versioned resources from
 // source blocks and writes them to the new compacted block. The merged data
 // is keyed by labelsHash in memory; on write, a RefResolver built from the
 // new block's index converts labelsHash → seriesRef for Parquet mapping rows.

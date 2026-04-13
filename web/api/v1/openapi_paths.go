@@ -289,7 +289,7 @@ func (*OpenAPIBuilder) resourcesSeriesPath() *v3.PathItem {
 		Get: &v3.Operation{
 			OperationId: "resources-series-lookup",
 			Summary:     "Find series by OTel metadata criteria",
-			Description: "Reverse lookup: given attribute filters (resource, scope, entity), find all series that have matching OTel metadata. At least one metadata filter is required.",
+			Description: "Reverse lookup: given resource attribute filters, find all series that have matching OTel metadata. At least one metadata filter is required.",
 			Tags:        []string{"resources"},
 			Parameters:  params,
 			Responses:   responsesWithErrorExamples("ResourcesSeriesOutputBody", nil, errorResponseExamples(), "Matching series with metadata retrieved successfully.", "Error performing reverse lookup."),

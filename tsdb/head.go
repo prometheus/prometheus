@@ -84,16 +84,6 @@ func init() {
 	seriesmetadata.ResourceEncodeWAL = func(records any, buf []byte) []byte {
 		return enc.Resources(records.([]record.RefResource), buf)
 	}
-	seriesmetadata.ScopeDecodeWAL = func(rec []byte, into any) (any, error) {
-		var buf []record.RefScope
-		if into != nil {
-			buf = into.([]record.RefScope)
-		}
-		return dec.Scopes(rec, buf)
-	}
-	seriesmetadata.ScopeEncodeWAL = func(records any, buf []byte) []byte {
-		return enc.Scopes(records.([]record.RefScope), buf)
-	}
 }
 
 // Head handles reads and writes of time series data within a time window.
@@ -125,7 +115,6 @@ type Head struct {
 	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 	metadataPool        zeropool.Pool[[]record.RefMetadata]
 	resourcesPool       zeropool.Pool[[]record.RefResource]
-	scopesPool          zeropool.Pool[[]record.RefScope]
 	seriesPool          zeropool.Pool[[]*memSeries]
 	typeMapPool         zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
 	bytesPool           zeropool.Pool[[]byte]
@@ -142,7 +131,6 @@ type Head struct {
 	wlReplayMetadataPool        zeropool.Pool[[]record.RefMetadata]
 	wlReplayMmapMarkersPool     zeropool.Pool[[]record.RefMmapMarker]
 	wlReplayResourcesPool       zeropool.Pool[[]record.RefResource]
-	wlReplayScopesPool          zeropool.Pool[[]record.RefScope]
 
 	// All series addressable by their ID or hash.
 	series *stripeSeries
@@ -261,12 +249,8 @@ type HeadOptions struct {
 	EnableFastStartup bool
 
 	// EnableNativeMetadata represents 'native-metadata' feature flag.
-	// When enabled, OTel resource/scope attributes are persisted per time series.
+	// When enabled, OTel resource attributes are persisted per time series.
 	EnableNativeMetadata bool
-
-	// EnableScopeMetadata controls whether scope metadata is stored and replayed.
-	// When false, scope records are skipped during WAL replay and ingestion.
-	EnableScopeMetadata bool
 
 	// IndexedResourceAttrs specifies additional descriptive resource attribute
 	// names to include in the inverted index beyond identifying attributes.
@@ -455,7 +439,6 @@ func (h *Head) resetWLReplayResources() {
 	h.wlReplayMetadataPool = zeropool.Pool[[]record.RefMetadata]{}
 	h.wlReplayMmapMarkersPool = zeropool.Pool[[]record.RefMmapMarker]{}
 	h.wlReplayResourcesPool = zeropool.Pool[[]record.RefResource]{}
-	h.wlReplayScopesPool = zeropool.Pool[[]record.RefScope]{}
 }
 
 type headMetrics struct {
@@ -488,9 +471,7 @@ type headMetrics struct {
 	oooHistogram               prometheus.Histogram
 	mmapChunksTotal            prometheus.Counter
 	resourceUpdatesCommitted   prometheus.Counter
-	scopeUpdatesCommitted      prometheus.Counter
 	resourceUpdatesWALFiltered prometheus.Counter
-	scopeUpdatesWALFiltered    prometheus.Counter
 	walReplayUnknownRefsTotal  *prometheus.CounterVec
 	wblReplayUnknownRefsTotal  *prometheus.CounterVec
 
@@ -638,17 +619,9 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_head_resource_updates_committed_total",
 			Help: "Total number of resource attribute updates committed to the head block.",
 		}),
-		scopeUpdatesCommitted: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_scope_updates_committed_total",
-			Help: "Total number of scope updates committed to the head block.",
-		}),
 		resourceUpdatesWALFiltered: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_resource_updates_wal_filtered_total",
 			Help: "Total number of resource attribute updates skipped from WAL write due to unchanged content.",
-		}),
-		scopeUpdatesWALFiltered: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_scope_updates_wal_filtered_total",
-			Help: "Total number of scope updates skipped from WAL write due to unchanged content.",
 		}),
 		walReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
@@ -668,7 +641,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		}, []string{"kind"}),
 		seriesmetadataWALReplayDuration: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_head_seriesmetadata_wal_replay_duration_seconds",
-			Help: "Time spent replaying series metadata (resources and scopes) from the WAL.",
+			Help: "Time spent replaying series metadata (resources) from the WAL.",
 		}),
 	}
 
@@ -701,9 +674,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.oooHistogram,
 			m.mmapChunksTotal,
 			m.resourceUpdatesCommitted,
-			m.scopeUpdatesCommitted,
 			m.resourceUpdatesWALFiltered,
-			m.scopeUpdatesWALFiltered,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
 			// Metrics bound to functions and not needed in tests
@@ -778,28 +749,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				}, func() float64 {
 					return float64(h.seriesMeta.AttrIndexKeyCount())
 				}),
-			}
-			if h.opts.EnableScopeMetadata {
-				metaGauges = append(metaGauges,
-					prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-						Name: "prometheus_tsdb_head_seriesmetadata_scope_entries",
-						Help: "Number of series with scope metadata in the head block.",
-					}, func() float64 {
-						return float64(h.seriesMeta.TotalScopes())
-					}),
-					prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-						Name: "prometheus_tsdb_head_seriesmetadata_scope_versions",
-						Help: "Total number of scope metadata versions across all series in the head block.",
-					}, func() float64 {
-						return float64(h.seriesMeta.TotalScopeVersions())
-					}),
-					prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-						Name: "prometheus_tsdb_head_seriesmetadata_scope_canonical",
-						Help: "Number of unique canonical scope metadata entries in the head block.",
-					}, func() float64 {
-						return float64(h.seriesMeta.ScopeStore().TotalCanonical())
-					}),
-				)
 			}
 			r.MustRegister(metaGauges...)
 		}
@@ -1984,9 +1933,6 @@ func (h *Head) cleanupSharedMetadata(deletedHashes map[uint64]struct{}) {
 		// If a live series shares the hash (extremely unlikely), its next
 		// commit will re-add it.
 		h.seriesMeta.DeleteResource(hash)
-		if h.opts.EnableScopeMetadata {
-			h.seriesMeta.ScopeStore().Delete(hash)
-		}
 	}
 }
 
@@ -2001,11 +1947,7 @@ type headMetadataReader struct {
 func (*headMetadataReader) Close() error { return nil }
 
 func (r *headMetadataReader) LabelsForHash(labelsHash uint64) (labels.Labels, bool) {
-	// Try resource store first (more common), then scope store.
 	ref, ok := r.head.seriesMeta.ResourceStore().GetSeriesRef(labelsHash)
-	if !ok && r.head.opts.EnableScopeMetadata {
-		ref, ok = r.head.seriesMeta.ScopeStore().GetSeriesRef(labelsHash)
-	}
 	if !ok {
 		return labels.EmptyLabels(), false
 	}
@@ -2064,30 +2006,6 @@ func (r *headMetadataReader) TotalResourceVersions() uint64 {
 	return r.head.seriesMeta.TotalResourceVersions()
 }
 
-func (r *headMetadataReader) GetVersionedScope(labelsHash uint64) (*seriesmetadata.VersionedScope, bool) {
-	return r.head.seriesMeta.GetVersionedScope(labelsHash)
-}
-
-func (r *headMetadataReader) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error) error {
-	return r.head.seriesMeta.IterVersionedScopes(ctx, f)
-}
-
-func (r *headMetadataReader) IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*seriesmetadata.ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
-	return r.head.seriesMeta.IterVersionedScopesFlatInline(ctx, f)
-}
-
-func (r *headMetadataReader) IterVersionedScopesFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []*seriesmetadata.ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error {
-	return r.head.seriesMeta.IterVersionedScopesFlatInlineWithContentHash(ctx, f)
-}
-
-func (r *headMetadataReader) TotalScopes() uint64 {
-	return r.head.seriesMeta.TotalScopes()
-}
-
-func (r *headMetadataReader) TotalScopeVersions() uint64 {
-	return r.head.seriesMeta.TotalScopeVersions()
-}
-
 func (r *headMetadataReader) LookupResourceAttr(key, value string) []uint64 {
 	return r.head.seriesMeta.LookupResourceAttr(key, value)
 }
@@ -2124,16 +2042,6 @@ func (h *Head) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
 		return false
 	}
 	return h.seriesMeta.ResourceHasContentHash(labelsHash, contentHash)
-}
-
-// ScopeHasContentHash reports whether the series at labelsHash has
-// a scope version with the given contentHash. Read-only, zero-allocation.
-// Returns false if native metadata is not enabled or the series is unknown.
-func (h *Head) ScopeHasContentHash(labelsHash, contentHash uint64) bool {
-	if h.seriesMeta == nil {
-		return false
-	}
-	return h.seriesMeta.ScopeHasContentHash(labelsHash, contentHash)
 }
 
 // GetIndexedResourceAttrs returns the current set of additional descriptive
@@ -2822,7 +2730,7 @@ type memSeries struct {
 	// been explicitly enabled in TSDB.
 	shardHash uint64
 
-	// stableHash is labels.StableHash(lset), set on first resource/scope commit.
+	// stableHash is labels.StableHash(lset), set on first resource commit.
 	// Zero when native metadata has not been committed for this series.
 	// Immutable after first write; safe to read without lock once non-zero.
 	stableHash uint64

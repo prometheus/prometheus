@@ -1888,7 +1888,7 @@ func (notReadyAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadat
 	return 0, tsdb.ErrNotReady
 }
 
-func (notReadyAppender) UpdateResource(storage.SeriesRef, labels.Labels, map[string]string, map[string]string, []storage.EntityData, int64) (storage.SeriesRef, error) {
+func (notReadyAppender) UpdateResource(storage.SeriesRef, labels.Labels, map[string]string, map[string]string, int64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 

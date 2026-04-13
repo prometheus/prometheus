@@ -11,17 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This demo showcases OTel resource and scope attributes persistence in Prometheus TSDB.
-// It demonstrates how resource attributes and instrumentation scope metadata from OTLP
-// metrics are persisted to disk and remain available for querying.
+// This demo showcases OTel resource attributes persistence in Prometheus TSDB.
+// It demonstrates how resource attributes from OTLP metrics are persisted to
+// disk and remain available for querying.
 //
 // The demo:
 // 1. Creates a TSDB with OTLP write handler
-// 2. Sends OTLP metrics with resource attributes (service.name, etc.) and scope metadata (library name, version)
-// 3. Queries resource and scope attributes from TSDB head (in-memory)
-// 4. Closes and reopens the TSDB to verify resource/scope records survive WAL replay
+// 2. Sends OTLP metrics with resource attributes (service.name, etc.)
+// 3. Queries resource attributes from TSDB head (in-memory)
+// 4. Closes and reopens the TSDB to verify resource records survive WAL replay
 // 5. Forces compaction to persist data to Parquet blocks
-// 6. Queries resource and scope attributes from compacted blocks
+// 6. Queries resource attributes from compacted blocks
 // 7. Demonstrates descriptive attributes changing over time (service migration)
 // 8. Uses info() PromQL function with time-varying resource attributes
 // 9. Demonstrates the API response format for /api/v1/resources
@@ -44,7 +44,6 @@ import (
 	"github.com/prometheus/common/promslog"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -73,7 +72,7 @@ const (
 )
 
 func main() {
-	fmt.Printf("%s%s=== Prometheus OTel Resource & Scope Attributes Persistence Demo ===%s\n\n", colorBold, colorCyan, colorReset)
+	fmt.Printf("%s%s=== Prometheus OTel Resource Attributes Persistence Demo ===%s\n\n", colorBold, colorCyan, colorReset)
 
 	if err := runDemo(); err != nil {
 		fmt.Fprintf(os.Stderr, "%sError: %v%s\n", colorRed, err, colorReset)
@@ -146,7 +145,6 @@ func runDemo() error {
 		return fmt.Errorf("get head metadata: %w", err)
 	}
 	printResourceAttributes("Resource attributes in head:", headMeta, db)
-	printScopeAttributes("Scope attributes in head:", headMeta, db)
 	headMeta.Close()
 
 	// === PHASE 3: WAL Replay ===
@@ -165,13 +163,12 @@ func runDemo() error {
 		return fmt.Errorf("reopen TSDB after WAL replay: %w", err)
 	}
 
-	// Verify resources and scopes survived WAL replay
+	// Verify resources survived WAL replay
 	replayMeta, err := db.Head().SeriesMetadata()
 	if err != nil {
 		return fmt.Errorf("get head metadata after replay: %w", err)
 	}
 	printResourceAttributes("Resource attributes after WAL replay:", replayMeta, db)
-	printScopeAttributes("Scope attributes after WAL replay:", replayMeta, db)
 	replayMeta.Close()
 
 	// Restart HTTP server with new DB (fresh registry to avoid duplicate metric registration)
@@ -214,7 +211,6 @@ func runDemo() error {
 		return fmt.Errorf("get DB metadata: %w", err)
 	}
 	printResourceAttributes("Resource attributes from blocks:", dbMeta, db)
-	printScopeAttributes("Scope attributes from blocks:", dbMeta, db)
 	dbMeta.Close()
 
 	// === PHASE 6: Demonstrate descriptive attributes changing over time ===
@@ -246,10 +242,6 @@ func runDemo() error {
 		return fmt.Errorf("get migrated metadata: %w", err)
 	}
 	printResourceAttributesFiltered("production/payment-service resource attributes:", migratedMeta, "payment-service", "production", db)
-
-	fmt.Printf("%sScope version history for production/payment-service:%s\n", colorBold, colorReset)
-	fmt.Printf("%s(Scope upgraded from v1.2.0 → v1.3.0 during migration)%s\n\n", colorGray, colorReset)
-	printScopeAttributesFiltered("production/payment-service scope attributes:", migratedMeta, "github.com/example/payment", db)
 	migratedMeta.Close()
 
 	// === PHASE 7: Demonstrate info() function with time-varying attributes ===
@@ -315,11 +307,11 @@ func runDemo() error {
 	fmt.Printf("%sAPI Response (/api/v1/resources):%s\n", colorBold, colorReset)
 	fmt.Printf("%s%s%s\n\n", colorGray, string(prettyJSON), colorReset)
 
-	// === PHASE 9: Reverse lookup — find series by metadata criteria ===
+	// === PHASE 9: Reverse lookup -- find series by metadata criteria ===
 	printPhase(9, "Reverse lookup: find series by metadata criteria")
 
 	fmt.Printf("The %s/api/v1/resources/series%s endpoint finds series that match OTel metadata filters.\n", colorBold, colorReset)
-	fmt.Printf("This is the reverse of %s/api/v1/resources%s (which takes series → returns attributes).\n\n", colorBold, colorReset)
+	fmt.Printf("This is the reverse of %s/api/v1/resources%s (which takes series -> returns attributes).\n\n", colorBold, colorReset)
 
 	reverseLookupResponse := buildReverseLookupAPIResponse(db)
 	reverseLookupJSON, _ := json.MarshalIndent(reverseLookupResponse, "", "  ")
@@ -328,22 +320,19 @@ func runDemo() error {
 
 	// === Summary ===
 	printPhase(10, "Summary")
-	fmt.Printf("%sThis demo showed how Prometheus persists OTel resource and scope attributes:%s\n", colorBold, colorReset)
+	fmt.Printf("%sThis demo showed how Prometheus persists OTel resource attributes:%s\n", colorBold, colorReset)
 	fmt.Printf("  %s1.%s Resource attributes arrive via OTLP metrics (service.name, etc.)\n", colorGreen, colorReset)
 	fmt.Printf("  %s2.%s Attributes are stored per-series in TSDB head (in-memory)\n", colorGreen, colorReset)
-	fmt.Printf("  %s3.%s Resource/scope records survive TSDB restart via %sWAL replay%s\n", colorGreen, colorReset, colorBold, colorReset)
+	fmt.Printf("  %s3.%s Resource records survive TSDB restart via %sWAL replay%s\n", colorGreen, colorReset, colorBold, colorReset)
 	fmt.Printf("  %s4.%s When blocks compact, attributes are persisted to Parquet files\n", colorGreen, colorReset)
 	fmt.Printf("  %s5.%s %sIdentifying%s attributes (service.name, etc.) remain constant for a series\n", colorGreen, colorReset, colorCyan, colorReset)
 	fmt.Printf("  %s6.%s %sDescriptive%s attributes (host.name, cloud.region) can change over time\n", colorGreen, colorReset, colorYellow, colorReset)
 	fmt.Printf("  %s7.%s %sVersioned storage%s preserves attribute history with time ranges\n", colorGreen, colorReset, colorMagenta, colorReset)
 	fmt.Printf("  %s8.%s Each version tracks when specific attributes were active (MinTime/MaxTime)\n", colorGreen, colorReset)
 	fmt.Printf("  %s9.%s The %sinfo()%s function enriches queries with time-appropriate attributes\n", colorGreen, colorReset, colorBold, colorReset)
-	fmt.Printf("  %s10.%s %sScope attributes%s (instrumentation library name, version, custom attrs) are persisted per-series\n", colorGreen, colorReset, colorCyan, colorReset)
 	fmt.Println()
 	fmt.Printf("%sThis enables correlation of Prometheus metrics with OTel traces/logs\n", colorCyan)
-	fmt.Printf("using the identifying resource attributes (service.name, etc.).\n")
-	fmt.Printf("Scope attributes track which instrumentation library produced the metrics,\n")
-	fmt.Printf("including version changes across deployments.%s\n", colorReset)
+	fmt.Printf("using the identifying resource attributes (service.name, etc.).%s\n", colorReset)
 
 	return nil
 }
@@ -353,7 +342,7 @@ func createOTLPMetrics() pmetric.Metrics {
 	md := pmetric.NewMetrics()
 	now := time.Now()
 
-	// Resource 1: payment-service in production (with entity_refs)
+	// Resource 1: payment-service in production
 	rm1 := md.ResourceMetrics().AppendEmpty()
 	res1 := rm1.Resource()
 	res1.Attributes().PutStr("service.name", "payment-service")
@@ -363,25 +352,7 @@ func createOTLPMetrics() pmetric.Metrics {
 	res1.Attributes().PutStr("cloud.region", "us-west-2")
 	res1.Attributes().PutStr("deployment.environment", "production")
 
-	// Add entity_refs: service entity + host entity
-	entityRefs1 := entity.ResourceEntityRefs(res1)
-	// Service entity
-	serviceRef := entityRefs1.AppendEmpty()
-	serviceRef.SetType("service")
-	serviceRef.IdKeys().Append("service.name")
-	serviceRef.IdKeys().Append("service.namespace")
-	serviceRef.IdKeys().Append("service.instance.id")
-	serviceRef.DescriptionKeys().Append("deployment.environment")
-	// Host entity
-	hostRef := entityRefs1.AppendEmpty()
-	hostRef.SetType("host")
-	hostRef.IdKeys().Append("host.name")
-	hostRef.DescriptionKeys().Append("cloud.region")
-
 	sm1 := rm1.ScopeMetrics().AppendEmpty()
-	sm1.Scope().SetName("github.com/example/payment")
-	sm1.Scope().SetVersion("1.2.0")
-	sm1.Scope().Attributes().PutStr("library.language", "go")
 	m1 := sm1.Metrics().AppendEmpty()
 	m1.SetName("http_requests_total")
 	m1.SetDescription("Total HTTP requests")
@@ -404,9 +375,6 @@ func createOTLPMetrics() pmetric.Metrics {
 	res2.Attributes().PutStr("cloud.region", "us-west-2")
 
 	sm2 := rm2.ScopeMetrics().AppendEmpty()
-	sm2.Scope().SetName("github.com/example/orders")
-	sm2.Scope().SetVersion("0.9.1")
-	sm2.Scope().Attributes().PutStr("library.language", "java")
 	m2 := sm2.Metrics().AppendEmpty()
 	m2.SetName("orders_processed_total")
 	m2.SetDescription("Total orders processed")
@@ -427,9 +395,6 @@ func createOTLPMetrics() pmetric.Metrics {
 	res3.Attributes().PutStr("cloud.region", "us-east-1")
 
 	sm3 := rm3.ScopeMetrics().AppendEmpty()
-	sm3.Scope().SetName("github.com/example/payment")
-	sm3.Scope().SetVersion("1.1.0")
-	sm3.Scope().Attributes().PutStr("library.language", "go")
 	m3 := sm3.Metrics().AppendEmpty()
 	m3.SetName("http_requests_total")
 	m3.SetDescription("Total HTTP requests")
@@ -470,26 +435,7 @@ func createMigratedServiceMetrics() pmetric.Metrics {
 	res.Attributes().PutStr("deployment.environment", "production")    // Same
 	res.Attributes().PutStr("k8s.pod.name", "payment-7d4f8b9c5-xk2pq") // NEW
 
-	// Add entity_refs: service entity + host entity (same structure, different descriptive values)
-	entityRefs := entity.ResourceEntityRefs(res)
-	// Service entity
-	serviceRef := entityRefs.AppendEmpty()
-	serviceRef.SetType("service")
-	serviceRef.IdKeys().Append("service.name")
-	serviceRef.IdKeys().Append("service.namespace")
-	serviceRef.IdKeys().Append("service.instance.id")
-	serviceRef.DescriptionKeys().Append("deployment.environment")
-	serviceRef.DescriptionKeys().Append("k8s.pod.name") // NEW descriptive attribute
-	// Host entity
-	hostRef := entityRefs.AppendEmpty()
-	hostRef.SetType("host")
-	hostRef.IdKeys().Append("host.name")
-	hostRef.DescriptionKeys().Append("cloud.region")
-
 	sm := rm.ScopeMetrics().AppendEmpty()
-	sm.Scope().SetName("github.com/example/payment")
-	sm.Scope().SetVersion("1.3.0") // Upgraded during migration (was 1.2.0)
-	sm.Scope().Attributes().PutStr("library.language", "go")
 	m := sm.Metrics().AppendEmpty()
 	m.SetName("http_requests_total")
 	m.SetDescription("Total HTTP requests")
@@ -564,29 +510,6 @@ func printSentResources(md pmetric.Metrics) {
 			fmt.Printf("      %s%s%s: %s\n", colorGray, k, colorReset, v.AsString())
 			return true
 		})
-
-		// Print scope info for each ScopeMetrics
-		for j := 0; j < rm.ScopeMetrics().Len(); j++ {
-			sm := rm.ScopeMetrics().At(j)
-			scope := sm.Scope()
-			if scope.Name() != "" || scope.Version() != "" {
-				fmt.Printf("      %sScope:%s %s @ %s", colorBold, colorReset, scope.Name(), scope.Version())
-				if scope.Attributes().Len() > 0 {
-					fmt.Printf(" {")
-					first := true
-					scope.Attributes().Range(func(k string, v pcommon.Value) bool {
-						if !first {
-							fmt.Printf(", ")
-						}
-						first = false
-						fmt.Printf("%s=%s", k, v.AsString())
-						return true
-					})
-					fmt.Printf("}")
-				}
-				fmt.Println()
-			}
-		}
 	}
 	fmt.Println()
 }
@@ -674,199 +597,6 @@ func printResourceAttributes(title string, reader seriesmetadata.Reader, db *tsd
 				fmt.Printf("       %s%s%s: %s\n", colorYellow, k, colorReset, ver.Descriptive[k])
 			}
 
-			// Print entities if present
-			if len(ver.Entities) > 0 {
-				fmt.Printf("     %sEntities:%s\n", colorBold, colorReset)
-				for _, ent := range ver.Entities {
-					fmt.Printf("       %s[%s]%s\n", colorMagenta, ent.Type, colorReset)
-					if len(ent.ID) > 0 {
-						fmt.Printf("         Identifying: ")
-						entIDKeys := make([]string, 0, len(ent.ID))
-						for k := range ent.ID {
-							entIDKeys = append(entIDKeys, k)
-						}
-						slices.Sort(entIDKeys)
-						for i, k := range entIDKeys {
-							if i > 0 {
-								fmt.Printf(", ")
-							}
-							fmt.Printf("%s%s%s=%s", colorCyan, k, colorReset, ent.ID[k])
-						}
-						fmt.Println()
-					}
-					if len(ent.Description) > 0 {
-						fmt.Printf("         Descriptive: ")
-						entDescKeys := make([]string, 0, len(ent.Description))
-						for k := range ent.Description {
-							entDescKeys = append(entDescKeys, k)
-						}
-						slices.Sort(entDescKeys)
-						for i, k := range entDescKeys {
-							if i > 0 {
-								fmt.Printf(", ")
-							}
-							fmt.Printf("%s%s%s=%s", colorYellow, k, colorReset, ent.Description[k])
-						}
-						fmt.Println()
-					}
-				}
-			}
-
-			if ver.MinTime > 0 {
-				fmt.Printf("     %sTime Range:%s %s - %s\n",
-					colorBold, colorReset,
-					time.UnixMilli(ver.MinTime).Format(time.RFC3339),
-					time.UnixMilli(ver.MaxTime).Format(time.RFC3339))
-			}
-		}
-	}
-	fmt.Println()
-}
-
-// printScopeAttributes prints scope attributes from a metadata reader.
-func printScopeAttributes(title string, reader seriesmetadata.Reader, db *tsdb.DB) {
-	fmt.Printf("%s%s%s\n", colorBold, title, colorReset)
-
-	labelsMap := buildHashToLabelsMap(db)
-
-	type entry struct {
-		hash   uint64
-		scopes *seriesmetadata.VersionedScope
-	}
-	var entries []entry
-
-	_ = reader.IterVersionedScopes(context.Background(), func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
-		entries = append(entries, entry{hash: labelsHash, scopes: scopes})
-		return nil
-	})
-
-	if len(entries) == 0 {
-		fmt.Printf("  %s(no scope attributes found)%s\n\n", colorGray, colorReset)
-		return
-	}
-
-	// Sort by labels string for consistent output
-	slices.SortFunc(entries, func(a, b entry) int {
-		aLabels := ""
-		bLabels := ""
-		if lbs, ok := labelsMap[a.hash]; ok {
-			aLabels = lbs.String()
-		}
-		if lbs, ok := labelsMap[b.hash]; ok {
-			bLabels = lbs.String()
-		}
-		if aLabels < bLabels {
-			return -1
-		}
-		if aLabels > bLabels {
-			return 1
-		}
-		return 0
-	})
-
-	for i, e := range entries {
-		if lbs, ok := labelsMap[e.hash]; ok {
-			fmt.Printf("  %s%d.%s Series: %s%s%s\n", colorGreen, i+1, colorReset, colorCyan, lbs.String(), colorReset)
-		} else {
-			fmt.Printf("  %s%d.%s Series (hash: %d)\n", colorGreen, i+1, colorReset, e.hash)
-		}
-
-		numVersions := len(e.scopes.Versions)
-		if numVersions > 1 {
-			fmt.Printf("     %s(%d scope versions)%s\n", colorMagenta, numVersions, colorReset)
-		}
-
-		for v, ver := range e.scopes.Versions {
-			if numVersions > 1 {
-				fmt.Printf("     %s--- Scope Version %d ---%s\n", colorGray, v+1, colorReset)
-			}
-
-			fmt.Printf("     %sName:%s    %s\n", colorBold, colorReset, ver.Name)
-			fmt.Printf("     %sVersion:%s %s\n", colorBold, colorReset, ver.Version)
-			if ver.SchemaURL != "" {
-				fmt.Printf("     %sSchema:%s  %s\n", colorBold, colorReset, ver.SchemaURL)
-			}
-
-			if len(ver.Attrs) > 0 {
-				fmt.Printf("     %sAttributes:%s\n", colorBold, colorReset)
-				attrKeys := make([]string, 0, len(ver.Attrs))
-				for k := range ver.Attrs {
-					attrKeys = append(attrKeys, k)
-				}
-				slices.Sort(attrKeys)
-				for _, k := range attrKeys {
-					fmt.Printf("       %s%s%s: %s\n", colorYellow, k, colorReset, ver.Attrs[k])
-				}
-			}
-
-			if ver.MinTime > 0 {
-				fmt.Printf("     %sTime Range:%s %s - %s\n",
-					colorBold, colorReset,
-					time.UnixMilli(ver.MinTime).Format(time.RFC3339),
-					time.UnixMilli(ver.MaxTime).Format(time.RFC3339))
-			}
-		}
-	}
-	fmt.Println()
-}
-
-// printScopeAttributesFiltered prints scope attributes filtered by scope name.
-// This highlights scope version history (e.g., library upgrades during migration).
-func printScopeAttributesFiltered(title string, reader seriesmetadata.Reader, scopeName string, db *tsdb.DB) {
-	fmt.Printf("%s%s%s\n", colorBold, title, colorReset)
-
-	labelsMap := buildHashToLabelsMap(db)
-
-	type entry struct {
-		hash   uint64
-		scopes *seriesmetadata.VersionedScope
-	}
-	var entries []entry
-
-	_ = reader.IterVersionedScopes(context.Background(), func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
-		current, ok := scopes.CurrentVersion()
-		if ok && current.Name == scopeName {
-			entries = append(entries, entry{hash: labelsHash, scopes: scopes})
-		}
-		return nil
-	})
-
-	if len(entries) == 0 {
-		fmt.Printf("  %s(no matching scope attributes found)%s\n\n", colorGray, colorReset)
-		return
-	}
-
-	for i, e := range entries {
-		if lbs, ok := labelsMap[e.hash]; ok {
-			fmt.Printf("  %s%d.%s Series: %s%s%s\n", colorGreen, i+1, colorReset, colorCyan, lbs.String(), colorReset)
-		} else {
-			fmt.Printf("  %s%d.%s Series (hash: %d)\n", colorGreen, i+1, colorReset, e.hash)
-		}
-
-		numVersions := len(e.scopes.Versions)
-		fmt.Printf("     %s%d version(s) of scope attributes%s\n", colorMagenta, numVersions, colorReset)
-
-		for v, ver := range e.scopes.Versions {
-			fmt.Printf("     %s--- Scope Version %d ---%s\n", colorGray, v+1, colorReset)
-
-			fmt.Printf("     %sName:%s    %s\n", colorBold, colorReset, ver.Name)
-			fmt.Printf("     %sVersion:%s %s\n", colorBold, colorReset, ver.Version)
-			if ver.SchemaURL != "" {
-				fmt.Printf("     %sSchema:%s  %s\n", colorBold, colorReset, ver.SchemaURL)
-			}
-
-			if len(ver.Attrs) > 0 {
-				fmt.Printf("     %sAttributes:%s\n", colorBold, colorReset)
-				attrKeys := make([]string, 0, len(ver.Attrs))
-				for k := range ver.Attrs {
-					attrKeys = append(attrKeys, k)
-				}
-				slices.Sort(attrKeys)
-				for _, k := range attrKeys {
-					fmt.Printf("       %s%s%s: %s\n", colorYellow, k, colorReset, ver.Attrs[k])
-				}
-			}
-
 			if ver.MinTime > 0 {
 				fmt.Printf("     %sTime Range:%s %s - %s\n",
 					colorBold, colorReset,
@@ -939,44 +669,6 @@ func printResourceAttributesFiltered(title string, reader seriesmetadata.Reader,
 			slices.Sort(descKeys)
 			for _, k := range descKeys {
 				fmt.Printf("       %s%s%s: %s\n", colorYellow, k, colorReset, ver.Descriptive[k])
-			}
-
-			// Print entities if present
-			if len(ver.Entities) > 0 {
-				fmt.Printf("     %sEntities:%s\n", colorBold, colorReset)
-				for _, ent := range ver.Entities {
-					fmt.Printf("       %s[%s]%s\n", colorMagenta, ent.Type, colorReset)
-					if len(ent.ID) > 0 {
-						fmt.Printf("         Identifying: ")
-						entIDKeys := make([]string, 0, len(ent.ID))
-						for k := range ent.ID {
-							entIDKeys = append(entIDKeys, k)
-						}
-						slices.Sort(entIDKeys)
-						for i, k := range entIDKeys {
-							if i > 0 {
-								fmt.Printf(", ")
-							}
-							fmt.Printf("%s%s%s=%s", colorCyan, k, colorReset, ent.ID[k])
-						}
-						fmt.Println()
-					}
-					if len(ent.Description) > 0 {
-						fmt.Printf("         Descriptive: ")
-						entDescKeys := make([]string, 0, len(ent.Description))
-						for k := range ent.Description {
-							entDescKeys = append(entDescKeys, k)
-						}
-						slices.Sort(entDescKeys)
-						for i, k := range entDescKeys {
-							if i > 0 {
-								fmt.Printf(", ")
-							}
-							fmt.Printf("%s%s%s=%s", colorYellow, k, colorReset, ent.Description[k])
-						}
-						fmt.Println()
-					}
-				}
 			}
 
 			if ver.MinTime > 0 {
@@ -1129,12 +821,6 @@ func buildResourceAttributesAPIResponse(db *tsdb.DB) map[string]any {
 
 	labelsMap := buildHashToLabelsMap(db)
 
-	type entityEntry struct {
-		Type        string            `json:"type"`
-		Identifying map[string]string `json:"identifying"`
-		Descriptive map[string]string `json:"descriptive"`
-	}
-
 	type resourceAttributeData struct {
 		Identifying map[string]string `json:"identifying"`
 		Descriptive map[string]string `json:"descriptive"`
@@ -1142,41 +828,14 @@ func buildResourceAttributesAPIResponse(db *tsdb.DB) map[string]any {
 
 	type versionEntry struct {
 		ResourceAttributes resourceAttributeData `json:"resource_attributes"`
-		Entities           []entityEntry         `json:"entities,omitempty"`
 		MinTimeMs          int64                 `json:"min_time_ms"`
 		MaxTimeMs          int64                 `json:"max_time_ms"`
 	}
 
-	type scopeVersionEntry struct {
-		Name      string            `json:"name"`
-		Version   string            `json:"version"`
-		SchemaURL string            `json:"schema_url,omitempty"`
-		Attrs     map[string]string `json:"attrs,omitempty"`
-		MinTimeMs int64             `json:"min_time_ms"`
-		MaxTimeMs int64             `json:"max_time_ms"`
-	}
-
 	type responseEntry struct {
-		Labels        map[string]string   `json:"labels"`
-		Versions      []versionEntry      `json:"versions"`
-		ScopeVersions []scopeVersionEntry `json:"scope_versions,omitempty"`
+		Labels   map[string]string `json:"labels"`
+		Versions []versionEntry    `json:"versions"`
 	}
-
-	// Build scope versions map keyed by labels hash
-	scopesByHash := make(map[uint64][]scopeVersionEntry)
-	_ = reader.IterVersionedScopes(context.Background(), func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
-		for _, sv := range scopes.Versions {
-			scopesByHash[labelsHash] = append(scopesByHash[labelsHash], scopeVersionEntry{
-				Name:      sv.Name,
-				Version:   sv.Version,
-				SchemaURL: sv.SchemaURL,
-				Attrs:     sv.Attrs,
-				MinTimeMs: sv.MinTime,
-				MaxTimeMs: sv.MaxTime,
-			})
-		}
-		return nil
-	})
 
 	var data []responseEntry
 	_ = reader.IterVersionedResources(context.Background(), func(labelsHash uint64, attrs *seriesmetadata.VersionedResource) error {
@@ -1189,7 +848,7 @@ func buildResourceAttributesAPIResponse(db *tsdb.DB) map[string]any {
 			lbls["__hash__"] = strconv.FormatUint(labelsHash, 10)
 		}
 
-		// Build versions with resource attributes and entities (if any)
+		// Build versions with resource attributes
 		var versions []versionEntry
 		for _, v := range attrs.Versions {
 			ve := versionEntry{
@@ -1201,24 +860,12 @@ func buildResourceAttributesAPIResponse(db *tsdb.DB) map[string]any {
 				MaxTimeMs: v.MaxTime,
 			}
 
-			// Include entities if present (only when entity_refs were in OTLP data)
-			for _, entity := range v.Entities {
-				ve.Entities = append(ve.Entities, entityEntry{
-					Type:        entity.Type,
-					Identifying: entity.ID,
-					Descriptive: entity.Description,
-				})
-			}
-
 			versions = append(versions, ve)
 		}
 
 		entry := responseEntry{
 			Labels:   lbls,
 			Versions: versions,
-		}
-		if sv, ok := scopesByHash[labelsHash]; ok {
-			entry.ScopeVersions = sv
 		}
 		data = append(data, entry)
 		return nil
@@ -1264,7 +911,6 @@ func buildReverseLookupAPIResponse(db *tsdb.DB) map[string]any {
 	type matchedEntry struct {
 		Labels       map[string]string `json:"labels"`
 		ServiceName  string            `json:"service_name,omitempty"`
-		ScopeName    string            `json:"scope_name,omitempty"`
 		VersionCount int               `json:"version_count"`
 	}
 
@@ -1275,7 +921,7 @@ func buildReverseLookupAPIResponse(db *tsdb.DB) map[string]any {
 
 	var results []result
 
-	// 1. Find series with service.name=payment-service
+	// Find series with service.name=payment-service
 	{
 		var matches []matchedEntry
 		_ = reader.IterVersionedResources(context.Background(), func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
@@ -1297,32 +943,6 @@ func buildReverseLookupAPIResponse(db *tsdb.DB) map[string]any {
 		})
 		results = append(results, result{
 			Query:   `resource.attr=service.name:payment-service`,
-			Matches: matches,
-		})
-	}
-
-	// 2. Find series with scope name "github.com/example/payment"
-	{
-		var matches []matchedEntry
-		_ = reader.IterVersionedScopes(context.Background(), func(labelsHash uint64, scopes *seriesmetadata.VersionedScope) error {
-			for _, sv := range scopes.Versions {
-				if sv.Name == "github.com/example/payment" {
-					lbls := make(map[string]string)
-					if lbs, ok := labelsMap[labelsHash]; ok {
-						lbs.Range(func(l labels.Label) { lbls[l.Name] = l.Value })
-					}
-					matches = append(matches, matchedEntry{
-						Labels:       lbls,
-						ScopeName:    sv.Name,
-						VersionCount: len(scopes.Versions),
-					})
-					break
-				}
-			}
-			return nil
-		})
-		results = append(results, result{
-			Query:   `scope.name=github.com/example/payment`,
 			Matches: matches,
 		})
 	}

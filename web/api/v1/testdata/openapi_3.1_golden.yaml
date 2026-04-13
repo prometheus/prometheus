@@ -1306,13 +1306,7 @@ paths:
                                                 instance: localhost:8080
                                                 job: myservice
                                               versions:
-                                                - entities:
-                                                    - descriptive:
-                                                        service.version: 1.0.0
-                                                      identifying:
-                                                        service.name: myservice
-                                                      type: service
-                                                  max_time_ms: 1767361020000
+                                                - max_time_ms: 1767361020000
                                                   min_time_ms: 1767357420000
                                                   resource_attributes:
                                                     descriptive:
@@ -1354,7 +1348,7 @@ paths:
             tags:
                 - resources
             summary: Find series by OTel metadata criteria
-            description: 'Reverse lookup: given attribute filters (resource, scope, entity), find all series that have matching OTel metadata. At least one metadata filter is required.'
+            description: 'Reverse lookup: given resource attribute filters, find all series that have matching OTel metadata. At least one metadata filter is required.'
             operationId: resources-series-lookup
             parameters:
                 - name: resource.attr
@@ -3599,8 +3593,8 @@ components:
                             type: array
                             items:
                                 type: object
-                                description: A series matching the metadata criteria with its resource and scope version history.
-                            description: Array of series matching the metadata criteria, with their resource and scope versions.
+                                description: A series matching the metadata criteria with its resource version history.
+                            description: Array of series matching the metadata criteria, with their resource versions.
                         nextToken:
                             type: string
                             description: Cursor token for fetching the next page. Empty when there are no more results.
@@ -3674,11 +3668,6 @@ components:
             properties:
                 resource_attributes:
                     $ref: '#/components/schemas/ResourceAttributeData'
-                entities:
-                    type: array
-                    items:
-                        $ref: '#/components/schemas/EntityData'
-                    description: Entities associated with this resource version.
                 min_time_ms:
                     type: integer
                     format: int64
@@ -3711,28 +3700,6 @@ components:
                 - descriptive
             additionalProperties: false
             description: Resource attribute data with identifying and descriptive attributes.
-        EntityData:
-            type: object
-            properties:
-                type:
-                    type: string
-                    description: Entity type (e.g., service, host).
-                identifying:
-                    type: object
-                    additionalProperties:
-                        type: string
-                    description: Identifying attributes for this entity.
-                descriptive:
-                    type: object
-                    additionalProperties:
-                        type: string
-                    description: Descriptive attributes for this entity.
-            required:
-                - type
-                - identifying
-                - descriptive
-            additionalProperties: false
-            description: Entity data with type and attributes.
         Metadata:
             type: object
             properties:

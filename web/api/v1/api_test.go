@@ -5047,7 +5047,7 @@ func TestResourceSeriesLookup(t *testing.T) {
 	orderHash := labels.StableHash(orderLbls)
 	stagingHash := labels.StableHash(stagingLbls)
 
-	// Build metadata store with resource and scope versions.
+	// Build metadata store with resource versions.
 	mem := seriesmetadata.NewMemSeriesMetadata()
 
 	// payment-service resource
@@ -5056,16 +5056,6 @@ func TestResourceSeriesLookup(t *testing.T) {
 			seriesmetadata.NewResourceVersion(
 				map[string]string{"service.name": "payment-service", "service.namespace": "production"},
 				map[string]string{"host.name": "host-1", "cloud.region": "us-west-2"},
-				[]*seriesmetadata.Entity{
-					seriesmetadata.NewEntity("service",
-						map[string]string{"service.name": "payment-service"},
-						map[string]string{"deployment.environment": "production"},
-					),
-					seriesmetadata.NewEntity("host",
-						map[string]string{"host.name": "host-1"},
-						map[string]string{"cloud.region": "us-west-2"},
-					),
-				},
 				nowMs-10000, nowMs,
 			),
 		},
@@ -5077,7 +5067,6 @@ func TestResourceSeriesLookup(t *testing.T) {
 			seriesmetadata.NewResourceVersion(
 				map[string]string{"service.name": "order-service", "service.namespace": "production"},
 				map[string]string{"host.name": "host-2", "cloud.region": "us-west-2"},
-				nil,
 				nowMs-10000, nowMs,
 			),
 		},
@@ -5089,21 +5078,8 @@ func TestResourceSeriesLookup(t *testing.T) {
 			seriesmetadata.NewResourceVersion(
 				map[string]string{"service.name": "payment-service", "service.namespace": "staging"},
 				map[string]string{"host.name": "staging-host-1", "cloud.region": "us-east-1"},
-				nil,
 				nowMs-10000, nowMs,
 			),
-		},
-	})
-
-	// Scope metadata
-	mem.ScopeStore().SetVersioned(paymentHash, &seriesmetadata.VersionedScope{
-		Versions: []*seriesmetadata.ScopeVersion{
-			seriesmetadata.NewScopeVersion("opentelemetry-go", "1.24.0", "", map[string]string{"library.language": "go"}, nowMs-10000, nowMs),
-		},
-	})
-	mem.ScopeStore().SetVersioned(orderHash, &seriesmetadata.VersionedScope{
-		Versions: []*seriesmetadata.ScopeVersion{
-			seriesmetadata.NewScopeVersion("opentelemetry-java", "1.30.0", "", map[string]string{"library.language": "java"}, nowMs-10000, nowMs),
 		},
 	})
 

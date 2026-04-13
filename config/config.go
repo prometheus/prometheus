@@ -1702,9 +1702,6 @@ type OTLPConfig struct {
 	TranslationStrategy               otlptranslator.TranslationStrategyOption `yaml:"translation_strategy,omitempty"`
 	KeepIdentifyingResourceAttributes bool                                     `yaml:"keep_identifying_resource_attributes,omitempty"`
 	ConvertHistogramsToNHCB           bool                                     `yaml:"convert_histograms_to_nhcb,omitempty"`
-	// PromoteScopeMetadata controls whether to promote OTel scope metadata (i.e. name, version, schema URL, and attributes) to metric labels.
-	// As per OTel spec, the aforementioned scope metadata should be identifying, i.e. made into metric labels.
-	PromoteScopeMetadata bool `yaml:"promote_scope_metadata,omitempty"`
 	// LabelNameUnderscoreSanitization controls whether to enable prepending of 'key_' to labels
 	// starting with '_'. Reserved labels starting with `__` are not modified.
 	// This is only relevant when AllowUTF8 is false (i.e., when using underscore escaping).

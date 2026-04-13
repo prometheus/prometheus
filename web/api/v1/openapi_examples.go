@@ -561,17 +561,6 @@ func resourcesResponseExamples() *orderedmap.Map[string, *base.Example] {
 									"host.name":       "server-01",
 								},
 							},
-							"entities": []map[string]any{
-								{
-									"type": "service",
-									"identifying": map[string]string{
-										"service.name": "myservice",
-									},
-									"descriptive": map[string]string{
-										"service.version": "1.0.0",
-									},
-								},
-							},
 							"min_time_ms": int64(1767357420000),
 							"max_time_ms": int64(1767361020000),
 						},

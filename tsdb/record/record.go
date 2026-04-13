@@ -64,8 +64,6 @@ const (
 	SamplesV2 Type = 11
 	// ResourceUpdate is used to match WAL records of type ResourceUpdate.
 	ResourceUpdate Type = 12
-	// ScopeUpdate is used to match WAL records of type ScopeUpdate.
-	ScopeUpdate Type = 13
 )
 
 func (rt Type) String() string {
@@ -94,8 +92,6 @@ func (rt Type) String() string {
 		return "metadata"
 	case ResourceUpdate:
 		return "resource_update"
-	case ScopeUpdate:
-		return "scope_update"
 	default:
 		return "unknown"
 	}
@@ -221,13 +217,6 @@ type RefMmapMarker struct {
 	MmapRef chunks.ChunkDiskMapperRef
 }
 
-// RefResourceEntity represents a single entity in a WAL resource record.
-type RefResourceEntity struct {
-	Type        string
-	ID          map[string]string
-	Description map[string]string
-}
-
 // RefResource is a resource update associated with a series ref.
 type RefResource struct {
 	Ref         chunks.HeadSeriesRef
@@ -235,18 +224,6 @@ type RefResource struct {
 	MaxTime     int64
 	Identifying map[string]string
 	Descriptive map[string]string
-	Entities    []RefResourceEntity
-}
-
-// RefScope is a scope update associated with a series ref.
-type RefScope struct {
-	Ref       chunks.HeadSeriesRef
-	MinTime   int64
-	MaxTime   int64
-	Name      string
-	Version   string
-	SchemaURL string
-	Attrs     map[string]string
 }
 
 // Decoder decodes series, sample, metadata and tombstone records.
@@ -268,7 +245,7 @@ func (*Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples, ResourceUpdate, ScopeUpdate:
+	case Series, Samples, SamplesV2, Tombstones, Exemplars, MmapMarkers, Metadata, HistogramSamples, FloatHistogramSamples, CustomBucketsHistogramSamples, CustomBucketsFloatHistogramSamples, ResourceUpdate:
 		return t
 	}
 	return Unknown
@@ -376,22 +353,12 @@ func (*Decoder) Resources(rec []byte, resources []RefResource) ([]RefResource, e
 		maxTime := dec.Varint64()
 		identifying := decodeMap(&dec)
 		descriptive := decodeMap(&dec)
-		numEntities := dec.Uvarint()
-		entities := make([]RefResourceEntity, numEntities)
-		for i := range numEntities {
-			entities[i] = RefResourceEntity{
-				Type:        dec.UvarintStr(),
-				ID:          decodeMap(&dec),
-				Description: decodeMap(&dec),
-			}
-		}
 		resources = append(resources, RefResource{
 			Ref:         chunks.HeadSeriesRef(ref),
 			MinTime:     minTime,
 			MaxTime:     maxTime,
 			Identifying: identifying,
 			Descriptive: descriptive,
-			Entities:    entities,
 		})
 	}
 	if dec.Err() != nil {
@@ -401,40 +368,6 @@ func (*Decoder) Resources(rec []byte, resources []RefResource) ([]RefResource, e
 		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return resources, nil
-}
-
-// Scopes decodes scope updates from the WAL record.
-func (*Decoder) Scopes(rec []byte, scopes []RefScope) ([]RefScope, error) {
-	dec := encoding.Decbuf{B: rec}
-
-	if Type(dec.Byte()) != ScopeUpdate {
-		return nil, errors.New("invalid record type")
-	}
-	for len(dec.B) > 0 && dec.Err() == nil {
-		ref := dec.Uvarint64()
-		minTime := dec.Varint64()
-		maxTime := dec.Varint64()
-		name := dec.UvarintStr()
-		version := dec.UvarintStr()
-		schemaURL := dec.UvarintStr()
-		attrs := decodeMap(&dec)
-		scopes = append(scopes, RefScope{
-			Ref:       chunks.HeadSeriesRef(ref),
-			MinTime:   minTime,
-			MaxTime:   maxTime,
-			Name:      name,
-			Version:   version,
-			SchemaURL: schemaURL,
-			Attrs:     attrs,
-		})
-	}
-	if dec.Err() != nil {
-		return nil, dec.Err()
-	}
-	if len(dec.B) > 0 {
-		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
-	}
-	return scopes, nil
 }
 
 func yoloString(b []byte) string {
@@ -932,31 +865,6 @@ func (*Encoder) Resources(resources []RefResource, b []byte) []byte {
 		buf.PutVarint64(r.MaxTime)
 		keysBuf = encodeMap(&buf, r.Identifying, keysBuf)
 		keysBuf = encodeMap(&buf, r.Descriptive, keysBuf)
-		buf.PutUvarint(len(r.Entities))
-		for _, e := range r.Entities {
-			buf.PutUvarintStr(e.Type)
-			keysBuf = encodeMap(&buf, e.ID, keysBuf)
-			keysBuf = encodeMap(&buf, e.Description, keysBuf)
-		}
-	}
-
-	return buf.Get()
-}
-
-// Scopes appends the encoded scope updates to b and returns the resulting slice.
-func (*Encoder) Scopes(scopes []RefScope, b []byte) []byte {
-	buf := encoding.Encbuf{B: b}
-	buf.PutByte(byte(ScopeUpdate))
-
-	var keysBuf []string
-	for _, s := range scopes {
-		buf.PutUvarint64(uint64(s.Ref))
-		buf.PutVarint64(s.MinTime)
-		buf.PutVarint64(s.MaxTime)
-		buf.PutUvarintStr(s.Name)
-		buf.PutUvarintStr(s.Version)
-		buf.PutUvarintStr(s.SchemaURL)
-		keysBuf = encodeMap(&buf, s.Attrs, keysBuf)
 	}
 
 	return buf.Get()

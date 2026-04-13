@@ -23,17 +23,15 @@ type KindID string
 
 const (
 	KindResource KindID = "resource"
-	KindScope    KindID = "scope"
 )
 
 // WALRecordType mirrors record.Type (uint8) to avoid an import cycle
 // between seriesmetadata and tsdb/record.
 type WALRecordType = uint8
 
-// WAL record type constants matching record.ResourceUpdate and record.ScopeUpdate.
+// WAL record type constants matching record.ResourceUpdate.
 const (
 	WALResourceUpdate WALRecordType = 11
-	WALScopeUpdate    WALRecordType = 12
 )
 
 // KindDescriptor provides runtime dispatch for a metadata kind at
