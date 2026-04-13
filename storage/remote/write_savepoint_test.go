@@ -17,12 +17,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
-	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -164,64 +166,6 @@ func TestWriteStorageSavepointMultipleDestinations(t *testing.T) {
 	require.Equal(t, 4, s.savepoint[hashB].Segment)
 }
 
-// E2E tests: verify which samples are delivered through the watcher pipeline
-// when replaying from a savepoint.
-
-var _ wlog.WriteTo = (*walWriteToMock)(nil)
-
-type walWriteToMock struct {
-	mu              sync.Mutex
-	seriesStored    []record.RefSeries
-	samplesAppended []record.RefSample
-}
-
-func (m *walWriteToMock) Append(s []record.RefSample) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.samplesAppended = append(m.samplesAppended, s...)
-	return true
-}
-
-func (m *walWriteToMock) AppendExemplars([]record.RefExemplar) bool {
-	return true
-}
-
-func (m *walWriteToMock) AppendHistograms([]record.RefHistogramSample) bool {
-	return true
-}
-
-func (m *walWriteToMock) AppendFloatHistograms([]record.RefFloatHistogramSample) bool {
-	return true
-}
-
-func (m *walWriteToMock) StoreSeries(series []record.RefSeries, _ int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.seriesStored = append(m.seriesStored, series...)
-}
-
-func (m *walWriteToMock) StoreMetadata([]record.RefMetadata) {}
-
-func (m *walWriteToMock) UpdateSeriesSegment([]record.RefSeries, int) {}
-
-func (m *walWriteToMock) SeriesReset(int) {}
-
-func (m *walWriteToMock) getSamples() []record.RefSample {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]record.RefSample, len(m.samplesAppended))
-	copy(out, m.samplesAppended)
-	return out
-}
-
-func (m *walWriteToMock) getSeries() []record.RefSeries {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]record.RefSeries, len(m.seriesStored))
-	copy(out, m.seriesStored)
-	return out
-}
-
 // walSegmentData describes the series and samples written to a single WAL segment.
 type walSegmentData struct {
 	series  []record.RefSeries
@@ -281,122 +225,188 @@ func makeSamples(refs []record.RefSeries, ts int64, value float64) []record.RefS
 	return samples
 }
 
-func TestSavepointE2E(t *testing.T) {
-	const seriesCount = 10
+func appendToWAL(t *testing.T, dir string, seg walSegmentData) {
+	t.Helper()
 
-	// Build 4 segments with distinct series, timestamps and values.
-	// Series are defined in segment 0, referenced in all segments.
-	// The last segment is reserved as the "tail" that the watcher would block on,
-	// so MaxSegment is set to the second-to-last to keep Run() finite.
-	series := makeSeries(seriesCount, 0)
-	seg0Samples := makeSamples(series, 1000, 0)
-	seg1Samples := makeSamples(series, 2000, 1)
-	seg2Samples := makeSamples(series, 3000, 2)
-	seg3Samples := makeSamples(series, 4000, 3)
+	w, err := wlog.NewSize(promslog.NewNopLogger(), nil, filepath.Join(dir, "wal"), 32*1024, compression.None)
+	require.NoError(t, err)
 
-	segments := []walSegmentData{
+	var enc record.Encoder
+	if len(seg.series) > 0 {
+		require.NoError(t, w.Log(enc.Series(seg.series, nil)))
+	}
+	if len(seg.samples) > 0 {
+		require.NoError(t, w.Log(enc.Samples(seg.samples, nil)))
+	}
+	require.NoError(t, w.Close())
+}
+
+func TestWriteStorageSavepointE2E(t *testing.T) {
+	const (
+		noStartupSamplesAssertDuration = 500 * time.Millisecond
+		noStartupSamplesAssertTick     = 50 * time.Millisecond
+	)
+
+	series := makeSeries(2, 0)
+	seg0Samples := makeSamples(series, 1_000, 0)
+	seg1Samples := makeSamples(series, 2_000, 1)
+	seg2Samples := makeSamples(series, 3_000, 2)
+	oldSegments := []walSegmentData{
 		{series: series, samples: seg0Samples},
 		{samples: seg1Samples},
 		{samples: seg2Samples},
-		{samples: seg3Samples}, // Tail segment — watcher would block here, so MaxSegment stops before it.
 	}
-	// Watcher stops after processing this segment index.
-	maxSegment := len(segments) - 2
-
-	wMetrics := wlog.NewWatcherMetrics(prometheus.NewRegistry())
 
 	tests := []struct {
-		name           string
-		startSegment   int
-		wantSampleVals []float64 // Expected sample V values in delivery order.
-		wantSeriesLen  int       // Expected number of series StoreSeries calls.
+		name               string
+		segments           []walSegmentData
+		savepointSegment   *int
+		wantStartupSamples []record.RefSample
+		appendAfterStart   bool
 	}{
 		{
-			name:         "no savepoint",
-			startSegment: -1,
-			// Without savepoint, all historical segments are series-only.
-			// No samples pass because onlySeries=true and fromSavepoint=false.
-			wantSampleVals: nil,
-			wantSeriesLen:  seriesCount,
+			name:               "empty wal without savepoint then notify sends new samples",
+			segments:           nil,
+			savepointSegment:   nil,
+			wantStartupSamples: nil,
+			appendAfterStart:   true,
 		},
 		{
-			name:         "savepoint at segment 1",
-			startSegment: 1,
-			// Segment 0: series loaded, samples skipped (before savepoint).
-			// Segment 1: samples delivered (fromSavepoint=true).
-			// Segment 2: samples delivered (fromSavepoint=true).
-			wantSampleVals: appendFloats(
-				valsFromSamples(seg1Samples),
-				valsFromSamples(seg2Samples),
-			),
-			wantSeriesLen: seriesCount,
+			name:               "historical wal without savepoint does not replay old samples",
+			segments:           oldSegments,
+			savepointSegment:   nil,
+			wantStartupSamples: nil,
 		},
 		{
-			name:         "savepoint at first segment replays everything",
-			startSegment: 0,
-			wantSampleVals: appendFloats(
-				valsFromSamples(seg0Samples),
-				valsFromSamples(seg1Samples),
-				valsFromSamples(seg2Samples),
-			),
-			wantSeriesLen: seriesCount,
+			name:               "savepoint lags behind and replays from lagging segment",
+			segments:           oldSegments,
+			savepointSegment:   ptrInt(1),
+			wantStartupSamples: slices.Concat(seg1Samples, seg2Samples),
 		},
 		{
-			name:         "savepoint at last historical segment",
-			startSegment: 2,
-			// Only segment 2 samples are delivered (the last one before tail).
-			wantSampleVals: valsFromSamples(seg2Samples),
-			wantSeriesLen:  seriesCount,
+			name:               "savepoint at latest segment replays only latest segment",
+			segments:           oldSegments,
+			savepointSegment:   ptrInt(2),
+			wantStartupSamples: slices.Clone(seg2Samples),
+		},
+		{
+			name:               "savepoint replay then notify sends new samples",
+			segments:           oldSegments,
+			savepointSegment:   ptrInt(1),
+			wantStartupSamples: slices.Concat(seg1Samples, seg2Samples),
+			appendAfterStart:   true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := createWALWithSegments(t, segments)
+			dir := createWALWithSegments(t, tc.segments)
+			client := NewTestWriteClient(remoteapi.WriteV1MessageType)
 
-			mock := &walWriteToMock{}
-			watcher := wlog.NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", mock, dir, false, false, false, nil)
-			watcher.SetStartSegment(tc.startSegment)
-			watcher.MaxSegment = maxSegment
-			watcher.SetMetrics()
+			cfg := testRemoteWriteConfigForHost("http://savepoint-e2e.local")
+			queueCfg := config.DefaultQueueConfig
+			queueCfg.MinShards = 1
+			queueCfg.MaxShards = 1
+			queueCfg.MaxSamplesPerSend = 1000
+			queueCfg.BatchSendDeadline = model.Duration(50 * time.Millisecond)
+			cfg.QueueConfig = queueCfg
 
-			require.NoError(t, watcher.Run())
-
-			gotSeries := mock.getSeries()
-			require.Len(t, gotSeries, tc.wantSeriesLen, "series count mismatch")
-
-			gotSamples := mock.getSamples()
-			gotVals := valsFromSamples2(gotSamples)
-
-			if tc.wantSampleVals == nil {
-				require.Empty(t, gotVals, "expected no samples delivered")
-			} else {
-				require.Equal(t, tc.wantSampleVals, gotVals, "delivered sample values mismatch")
+			hash, err := toHash(cfg)
+			require.NoError(t, err)
+			if tc.savepointSegment != nil {
+				require.NoError(t, Savepoint{
+					hash: {Segment: *tc.savepointSegment},
+				}.Save(dir))
 			}
+
+			s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false, true)
+			closed := false
+			t.Cleanup(func() {
+				if !closed {
+					require.NoError(t, s.Close())
+				}
+			})
+
+			startSegment := -1
+			if entry, ok := s.savepoint[hash]; ok {
+				startSegment = entry.Segment
+			}
+			if tc.savepointSegment != nil {
+				require.Contains(t, s.savepoint, hash)
+				require.Equal(t, *tc.savepointSegment, startSegment)
+			}
+
+			factory := WithWriteClientFactory(func(name string, clientCfg *ClientConfig) (WriteClient, error) {
+				require.Equal(t, hash[:6], name)
+				require.Equal(t, cfg.URL.String(), clientCfg.URL.String())
+				return client, nil
+			})
+			err = s.ApplyConfig(&config.Config{
+				GlobalConfig:       config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+			}, factory)
+			require.NoError(t, err)
+			require.Contains(t, s.queues, hash)
+
+			if len(tc.wantStartupSamples) == 0 {
+				require.Never(t, func() bool {
+					client.mtx.Lock()
+					defer client.mtx.Unlock()
+					return deepLen(client.receivedSamples) > 0
+				}, noStartupSamplesAssertDuration, noStartupSamplesAssertTick)
+			} else {
+				client.expectSamples(tc.wantStartupSamples, series)
+				waitForExpectedDataWithNotify(t, s, client, 10*time.Second)
+			}
+
+			if tc.appendAfterStart {
+				newSeries := makeSeries(2, 0)
+				newSamples := makeSamples(newSeries, time.Now().Add(time.Minute).UnixMilli(), 42)
+				client.expectSamples(newSamples, newSeries)
+
+				appendToWAL(t, dir, walSegmentData{
+					series:  newSeries,
+					samples: newSamples,
+				})
+				waitForExpectedDataWithNotify(t, s, client, 10*time.Second)
+			}
+
+			require.NoError(t, s.Close())
+			closed = true
+
+			saved, err := LoadSavepoint(dir)
+			require.NoError(t, err)
+			require.Contains(t, saved, hash)
+			require.GreaterOrEqual(t, saved[hash].Segment, 0)
 		})
 	}
 }
 
-func valsFromSamples(samples []record.RefSample) []float64 {
-	vals := make([]float64, len(samples))
-	for i, s := range samples {
-		vals[i] = s.V
-	}
-	return vals
+func ptrInt(v int) *int {
+	return &v
 }
 
-func valsFromSamples2(samples []record.RefSample) []float64 {
-	vals := make([]float64, len(samples))
-	for i, s := range samples {
-		vals[i] = s.V
-	}
-	return vals
-}
+func waitForExpectedDataWithNotify(t *testing.T, s *WriteStorage, client *TestWriteClient, timeout time.Duration) {
+	t.Helper()
 
-func appendFloats(slices ...[]float64) []float64 {
-	var out []float64
-	for _, s := range slices {
-		out = append(out, s...)
-	}
-	return out
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-t.Context().Done():
+				return
+			case <-stop:
+				return
+			case <-ticker.C:
+				s.Notify()
+			}
+		}
+	})
+
+	client.waitForExpectedData(t, timeout)
+	close(stop)
+	wg.Wait()
 }
