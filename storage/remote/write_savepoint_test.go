@@ -14,20 +14,22 @@
 package remote
 
 import (
-	"strconv"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
 )
@@ -41,6 +43,8 @@ func testRemoteWriteConfigForHost(host string) *config.RemoteWriteConfig {
 		ProtobufMessage: remoteapi.WriteV1MessageType,
 	}
 }
+
+// Unit tests for savepoint lifecycle mechanics (no WAL data flow).
 
 func TestWriteStorageSavepointDisabled(t *testing.T) {
 	dir := t.TempDir()
@@ -160,111 +164,239 @@ func TestWriteStorageSavepointMultipleDestinations(t *testing.T) {
 	require.Equal(t, 4, s.savepoint[hashB].Segment)
 }
 
-// Test helpers for WAL fixture generation.
+// E2E tests: verify which samples are delivered through the watcher pipeline
+// when replaying from a savepoint.
 
-type testSamplesParams struct {
-	labelPrefix   string
-	numDatapoints int
-	numHistograms int
-	numSeries     int
+var _ wlog.WriteTo = (*walWriteToMock)(nil)
+
+type walWriteToMock struct {
+	mu              sync.Mutex
+	seriesStored    []record.RefSeries
+	samplesAppended []record.RefSample
 }
 
-type testSamples struct {
-	datapointLabels  [][]labels.Label
-	histogramLabels  [][]labels.Label
-	datapointSamples [][]chunks.Sample
-	histogramSamples [][]*histogram.Histogram
+func (m *walWriteToMock) Append(s []record.RefSample) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.samplesAppended = append(m.samplesAppended, s...)
+	return true
 }
 
-// genTestSamples generates samples and labels to be written by appender.
-func genTestSamples(p testSamplesParams) testSamples {
-	out := testSamples{
-		datapointLabels:  labelsForTest(p.labelPrefix, p.numSeries),
-		histogramLabels:  labelsForTest(p.labelPrefix+"_histogram", p.numSeries),
-		datapointSamples: make([][]chunks.Sample, 0, p.numSeries),
-		histogramSamples: make([][]*histogram.Histogram, 0, p.numSeries),
-	}
+func (m *walWriteToMock) AppendExemplars([]record.RefExemplar) bool {
+	return true
+}
 
-	for range p.numDatapoints {
-		sample := chunks.GenerateSamples(0, 1)
-		out.datapointSamples = append(out.datapointSamples, sample)
-	}
+func (m *walWriteToMock) AppendHistograms([]record.RefHistogramSample) bool {
+	return true
+}
 
-	for range out.histogramLabels {
-		histograms := tsdbutil.GenerateTestHistograms(p.numHistograms)
-		out.histogramSamples = append(out.histogramSamples, histograms)
-	}
+func (m *walWriteToMock) AppendFloatHistograms([]record.RefFloatHistogramSample) bool {
+	return true
+}
 
+func (m *walWriteToMock) StoreSeries(series []record.RefSeries, _ int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.seriesStored = append(m.seriesStored, series...)
+}
+
+func (m *walWriteToMock) StoreMetadata([]record.RefMetadata) {}
+
+func (m *walWriteToMock) UpdateSeriesSegment([]record.RefSeries, int) {}
+
+func (m *walWriteToMock) SeriesReset(int) {}
+
+func (m *walWriteToMock) getSamples() []record.RefSample {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]record.RefSample, len(m.samplesAppended))
+	copy(out, m.samplesAppended)
 	return out
 }
 
-type walFixtureParams struct {
-	dir          string
-	numSegments  int
-	segmentSize  int
-	dtDelta      int64
-	seriesLabels [][]labels.Label
+func (m *walWriteToMock) getSeries() []record.RefSeries {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]record.RefSeries, len(m.seriesStored))
+	copy(out, m.seriesStored)
+	return out
 }
 
-// createWALFixtures initializes WAL directory and writes a number of given segments into it.
-//
-// Note: wlog.Open expects to store WAL data in a "wal" subdirectory.
-func createWALFixtures(t testing.TB, p walFixtureParams) {
-	// Make a segment to put initial data
+// walSegmentData describes the series and samples written to a single WAL segment.
+type walSegmentData struct {
+	series  []record.RefSeries
+	samples []record.RefSample
+}
+
+// createWALWithSegments creates a WAL directory with the given segments.
+// Each segment contains its own series and sample records.
+// Returns the base dir (parent of "wal/").
+func createWALWithSegments(t *testing.T, segments []walSegmentData) string {
+	t.Helper()
+	dir := t.TempDir()
+	walDir := filepath.Join(dir, "wal")
+	require.NoError(t, os.Mkdir(walDir, 0o777))
+
+	w, err := wlog.NewSize(promslog.NewNopLogger(), nil, walDir, 32*1024, compression.None)
+	require.NoError(t, err)
+
 	var enc record.Encoder
+	for i, seg := range segments {
+		if len(seg.series) > 0 {
+			require.NoError(t, w.Log(enc.Series(seg.series, nil)))
+		}
+		if len(seg.samples) > 0 {
+			require.NoError(t, w.Log(enc.Samples(seg.samples, nil)))
+		}
+		// Advance to the next segment for all but the last.
+		if i < len(segments)-1 {
+			_, err := w.NextSegment()
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, w.Close())
+	return dir
+}
 
-	// Create dummy segment to bump the start segment number.
-	// Dummy segment should be zero or agent.Open() will fail.
-	seg, err := wlog.CreateSegment(p.dir, 0)
-	require.NoError(t, err)
-	require.NoError(t, seg.Close())
+func makeSeries(n int, refOffset int) []record.RefSeries {
+	series := make([]record.RefSeries, n)
+	for i := range n {
+		series[i] = record.RefSeries{
+			Ref:    chunks.HeadSeriesRef(refOffset + i),
+			Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", refOffset+i), "job", "test"),
+		}
+	}
+	return series
+}
 
-	w, err := wlog.NewSize(promslog.NewNopLogger(), nil, p.dir, p.segmentSize, compression.None)
-	require.NoError(t, err)
+func makeSamples(refs []record.RefSeries, ts int64, value float64) []record.RefSample {
+	samples := make([]record.RefSample, len(refs))
+	for i, s := range refs {
+		samples[i] = record.RefSample{
+			Ref: s.Ref,
+			T:   ts,
+			V:   value,
+		}
+	}
+	return samples
+}
 
-	series := make([]record.RefSeries, 0, len(p.seriesLabels))
-	for i, lset := range p.seriesLabels {
-		// NOTE: don't append RefMetadata as agent.DB doesn't support it during WAL replay.
-		series = append(series, record.RefSeries{
-			Ref:    chunks.HeadSeriesRef(i),
-			Labels: labels.New(lset...),
+func TestSavepointE2E(t *testing.T) {
+	const seriesCount = 10
+
+	// Build 4 segments with distinct series, timestamps and values.
+	// Series are defined in segment 0, referenced in all segments.
+	// The last segment is reserved as the "tail" that the watcher would block on,
+	// so MaxSegment is set to the second-to-last to keep Run() finite.
+	series := makeSeries(seriesCount, 0)
+	seg0Samples := makeSamples(series, 1000, 0)
+	seg1Samples := makeSamples(series, 2000, 1)
+	seg2Samples := makeSamples(series, 3000, 2)
+	seg3Samples := makeSamples(series, 4000, 3)
+
+	segments := []walSegmentData{
+		{series: series, samples: seg0Samples},
+		{samples: seg1Samples},
+		{samples: seg2Samples},
+		{samples: seg3Samples}, // Tail segment — watcher would block here, so MaxSegment stops before it.
+	}
+	// Watcher stops after processing this segment index.
+	maxSegment := len(segments) - 2
+
+	wMetrics := wlog.NewWatcherMetrics(prometheus.NewRegistry())
+
+	tests := []struct {
+		name           string
+		startSegment   int
+		wantSampleVals []float64 // Expected sample V values in delivery order.
+		wantSeriesLen  int       // Expected number of series StoreSeries calls.
+	}{
+		{
+			name:         "no savepoint",
+			startSegment: -1,
+			// Without savepoint, all historical segments are series-only.
+			// No samples pass because onlySeries=true and fromSavepoint=false.
+			wantSampleVals: nil,
+			wantSeriesLen:  seriesCount,
+		},
+		{
+			name:         "savepoint at segment 1",
+			startSegment: 1,
+			// Segment 0: series loaded, samples skipped (before savepoint).
+			// Segment 1: samples delivered (fromSavepoint=true).
+			// Segment 2: samples delivered (fromSavepoint=true).
+			wantSampleVals: appendFloats(
+				valsFromSamples(seg1Samples),
+				valsFromSamples(seg2Samples),
+			),
+			wantSeriesLen: seriesCount,
+		},
+		{
+			name:         "savepoint at first segment replays everything",
+			startSegment: 0,
+			wantSampleVals: appendFloats(
+				valsFromSamples(seg0Samples),
+				valsFromSamples(seg1Samples),
+				valsFromSamples(seg2Samples),
+			),
+			wantSeriesLen: seriesCount,
+		},
+		{
+			name:         "savepoint at last historical segment",
+			startSegment: 2,
+			// Only segment 2 samples are delivered (the last one before tail).
+			wantSampleVals: valsFromSamples(seg2Samples),
+			wantSeriesLen:  seriesCount,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := createWALWithSegments(t, segments)
+
+			mock := &walWriteToMock{}
+			watcher := wlog.NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", mock, dir, false, false, false, nil)
+			watcher.SetStartSegment(tc.startSegment)
+			watcher.MaxSegment = maxSegment
+			watcher.SetMetrics()
+
+			require.NoError(t, watcher.Run())
+
+			gotSeries := mock.getSeries()
+			require.Len(t, gotSeries, tc.wantSeriesLen, "series count mismatch")
+
+			gotSamples := mock.getSamples()
+			gotVals := valsFromSamples2(gotSamples)
+
+			if tc.wantSampleVals == nil {
+				require.Empty(t, gotVals, "expected no samples delivered")
+			} else {
+				require.Equal(t, tc.wantSampleVals, gotVals, "delivered sample values mismatch")
+			}
 		})
 	}
-
-	var dt int64
-	samples := make([]record.RefSample, 0, len(series))
-	for i := range p.numSegments {
-		if i == 0 {
-			// Write series required for samples
-			b := enc.Series(series, nil)
-			require.NoError(t, w.Log(b))
-		}
-
-		samples = samples[:0]
-		for j := range len(series) {
-			samples = append(samples, record.RefSample{
-				Ref: chunks.HeadSeriesRef(j),
-				V:   float64(i),
-				T:   dt + int64(j+1),
-			})
-		}
-		require.NoError(t, w.Log(enc.Samples(samples, nil)))
-		dt += p.dtDelta
-	}
-	require.NoError(t, w.Close(), "WAL.Close")
 }
 
-func labelsForTest(lName string, seriesCount int) [][]labels.Label {
-	var series [][]labels.Label
-
-	for i := range seriesCount {
-		lset := []labels.Label{
-			{Name: "a", Value: lName},
-			{Name: "instance", Value: "localhost" + strconv.Itoa(i)},
-			{Name: "job", Value: "prometheus"},
-		}
-		series = append(series, lset)
+func valsFromSamples(samples []record.RefSample) []float64 {
+	vals := make([]float64, len(samples))
+	for i, s := range samples {
+		vals[i] = s.V
 	}
+	return vals
+}
 
-	return series
+func valsFromSamples2(samples []record.RefSample) []float64 {
+	vals := make([]float64, len(samples))
+	for i, s := range samples {
+		vals[i] = s.V
+	}
+	return vals
+}
+
+func appendFloats(slices ...[]float64) []float64 {
+	var out []float64
+	for _, s := range slices {
+		out = append(out, s...)
+	}
+	return out
 }
