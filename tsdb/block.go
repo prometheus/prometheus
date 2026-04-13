@@ -195,7 +195,7 @@ type BlockSeriesMetadata struct {
 	// Enabled indicates that the block contains series metadata.
 	Enabled bool `json:"enabled"`
 
-	// NamespaceRowCounts maps namespace names (e.g. "resource_table", "scope_mapping")
+	// NamespaceRowCounts maps namespace names (e.g. "resource_table", "resource_mapping")
 	// to the number of rows in that namespace.
 	NamespaceRowCounts map[string]uint64 `json:"namespaceRowCounts,omitempty"`
 

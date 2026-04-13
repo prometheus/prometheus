@@ -38,20 +38,10 @@ type AOptions = AppendV2Options
 
 // ResourceContext provides optional OTel resource attributes for a series.
 // When set, the storage layer persists resource identifying/descriptive attributes
-// and entity data alongside the series, enabling resource-level queries (e.g. info()).
+// alongside the series, enabling resource-level queries (e.g. info()).
 type ResourceContext struct {
 	Identifying map[string]string
 	Descriptive map[string]string
-	Entities    []EntityData
-}
-
-// ScopeContext provides optional OTel InstrumentationScope data for a series.
-// When set, the storage layer persists scope metadata alongside the series.
-type ScopeContext struct {
-	Name      string
-	Version   string
-	SchemaURL string
-	Attrs     map[string]string
 }
 
 // AppendV2Options provides optional, auxiliary data and configuration for AppenderV2.Append.
@@ -94,10 +84,6 @@ type AppendV2Options struct {
 	// When set, the storage layer persists resource attributes alongside the series.
 	// This enables resource-level queries such as the info() PromQL function.
 	Resource *ResourceContext
-
-	// Scope (optional) provides OTel InstrumentationScope data for the series.
-	// When set, the storage layer persists scope metadata alongside the series.
-	Scope *ScopeContext
 
 	// RejectOutOfOrder tells implementation that this append should not be out
 	// of order. An OOO append MUST be rejected with storage.ErrOutOfOrderSample

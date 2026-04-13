@@ -38,7 +38,6 @@ func (resourceOps) ThinCopy(canonical, v *ResourceVersion) *ResourceVersion {
 	return &ResourceVersion{
 		Identifying: canonical.Identifying,
 		Descriptive: canonical.Descriptive,
-		Entities:    canonical.Entities,
 		MinTime:     v.MinTime,
 		MaxTime:     v.MaxTime,
 	}
@@ -52,32 +51,19 @@ func (resourceOps) IsInterned(canonical, v *ResourceVersion) bool {
 var ResourceOps KindOps[*ResourceVersion] = resourceOps{}
 
 // hashResourceContent computes a deterministic xxhash for a ResourceVersion's content.
-// The hash covers identifying attrs, descriptive attrs, and all entities.
+// The hash covers identifying attrs and descriptive attrs.
 // It does NOT include MinTime/MaxTime since those are per-mapping, not per-content.
 func hashResourceContent(rv *ResourceVersion) uint64 {
 	hash, _ := hashResourceContentReusable(rv, nil)
 	return hash
 }
 
-// hashResourceContentReusable is like hashResourceContent but accepts and returns
-// a reusable keys buffer to avoid per-call []string allocations on the write path.
 func hashResourceContentReusable(rv *ResourceVersion, keysBuf []string) (uint64, []string) {
 	var h xxhash.Digest
 
 	keysBuf = hashAttrs(&h, rv.Identifying, keysBuf)
 	_, _ = h.Write([]byte{1}) // section separator
 	keysBuf = hashAttrs(&h, rv.Descriptive, keysBuf)
-	_, _ = h.Write([]byte{1})
-
-	// Entities must be sorted by Type (enforced by NewResourceVersion and parseResourceContent).
-	for _, e := range rv.Entities {
-		_, _ = h.WriteString(e.Type)
-		_, _ = h.Write([]byte{0})
-		keysBuf = hashAttrs(&h, e.ID, keysBuf)
-		_, _ = h.Write([]byte{1})
-		keysBuf = hashAttrs(&h, e.Description, keysBuf)
-		_, _ = h.Write([]byte{1})
-	}
 
 	return h.Sum64(), keysBuf
 }
@@ -90,9 +76,6 @@ func (*resourceKindDescriptor) WALRecordType() WALRecordType { return WALResourc
 func (*resourceKindDescriptor) TableNamespace() string       { return NamespaceResourceTable }
 func (*resourceKindDescriptor) MappingNamespace() string     { return NamespaceResourceMapping }
 
-// DecodeWAL and EncodeWAL are implemented in tsdb/head_wal_kind.go to avoid
-// importing tsdb/record from this package (which would create an import cycle).
-// The descriptor delegates to pluggable functions set during init.
 func (*resourceKindDescriptor) DecodeWAL(rec []byte, into any) (any, error) {
 	return ResourceDecodeWAL(rec, into)
 }
@@ -123,54 +106,20 @@ func (*resourceKindDescriptor) CommitToSeries(series, walRecord any) {
 	CommitResourceDirect(series.(kindMetaAccessor), walRecord.(ResourceCommitData))
 }
 
-// ResourceEntityData is a lightweight struct for passing entity data
-// from WAL records without importing tsdb/record.
-type ResourceEntityData struct {
-	Type        string
-	ID          map[string]string
-	Description map[string]string
-}
-
 // ResourceCommitData carries resource WAL record data without importing tsdb/record.
 type ResourceCommitData struct {
 	Identifying map[string]string
 	Descriptive map[string]string
-	Entities    []ResourceEntityData
 	MinTime     int64
 	MaxTime     int64
-	// Owned indicates the caller guarantees exclusive ownership of the maps.
-	// When true, buildResourceVersion takes the maps directly instead of cloning.
-	// Set by the ingester push path where maps are freshly allocated.
-	Owned bool
+	Owned       bool
 }
 
 // CommitResourceDirect is the hot-path commit for resources.
-// It constructs the ResourceVersion with exactly one deep copy of each map
-// (from the caller's buffers into stored metadata) and takes ownership of
-// the result — no further copies via AddOrExtend or copyResourceVersion.
-// Called directly from headAppenderBase.commitResources and from
-// CommitToSeries (cold path, WAL replay).
 func CommitResourceDirect(accessor kindMetaAccessor, rcd ResourceCommitData) {
-	entities := make([]*Entity, len(rcd.Entities))
-	for j, e := range rcd.Entities {
-		entityType := e.Type
-		if entityType == "" {
-			entityType = EntityTypeResource
-		}
-		entities[j] = &Entity{
-			Type:        entityType,
-			ID:          maps.Clone(e.ID),
-			Description: maps.Clone(e.Description),
-		}
-	}
-	slices.SortFunc(entities, func(a, b *Entity) int {
-		return cmp.Compare(a.Type, b.Type)
-	})
-
 	rv := &ResourceVersion{
 		Identifying: maps.Clone(rcd.Identifying),
 		Descriptive: maps.Clone(rcd.Descriptive),
-		Entities:    entities,
 		MinTime:     rcd.MinTime,
 		MaxTime:     rcd.MaxTime,
 	}
@@ -190,65 +139,24 @@ func CommitResourceDirect(accessor kindMetaAccessor, rcd ResourceCommitData) {
 	}
 }
 
-// hashResourceCommitData computes the content hash from raw ResourceCommitData
-// without cloning any maps. The hash is identical to hashResourceContent for
-// equivalent data, including the entity default-type normalization.
 func hashResourceCommitData(rcd ResourceCommitData) uint64 {
 	hash, _ := hashResourceCommitDataReusable(rcd, nil)
 	return hash
 }
 
-// hashResourceCommitDataReusable is like hashResourceCommitData but accepts and
-// returns a reusable keys buffer to avoid per-call []string allocations.
 func hashResourceCommitDataReusable(rcd ResourceCommitData, keysBuf []string) (uint64, []string) {
 	var h xxhash.Digest
 
 	keysBuf = hashAttrs(&h, rcd.Identifying, keysBuf)
 	_, _ = h.Write([]byte{1})
 	keysBuf = hashAttrs(&h, rcd.Descriptive, keysBuf)
-	_, _ = h.Write([]byte{1})
-
-	// Sort entities by type for deterministic hashing (matching hashResourceContent).
-	// Sort in-place since we'd sort anyway in the full-alloc path.
-	slices.SortFunc(rcd.Entities, func(a, b ResourceEntityData) int {
-		at, bt := a.Type, b.Type
-		if at == "" {
-			at = EntityTypeResource
-		}
-		if bt == "" {
-			bt = EntityTypeResource
-		}
-		return cmp.Compare(at, bt)
-	})
-	for _, e := range rcd.Entities {
-		entityType := e.Type
-		if entityType == "" {
-			entityType = EntityTypeResource
-		}
-		_, _ = h.WriteString(entityType)
-		_, _ = h.Write([]byte{0})
-		keysBuf = hashAttrs(&h, e.ID, keysBuf)
-		_, _ = h.Write([]byte{1})
-		keysBuf = hashAttrs(&h, e.Description, keysBuf)
-		_, _ = h.Write([]byte{1})
-	}
 
 	return h.Sum64(), keysBuf
 }
 
 // CommitResourceToStore builds a ResourceVersion from ResourceCommitData and
-// commits it directly to the MemStore, bypassing per-series storage entirely.
-// Returns contentChanged=false when only the time range was extended (no WAL
-// write or attr index update needed — the >99% hot path).
-// Returns contentChanged=true with old/cur materialized when content changed.
-//
-// Uses InsertVersion to avoid deep-copying maps when a canonical already exists
-// in the content dedup table (common during WAL replay where many series share
-// the same resource). The buildFull callback is only invoked when no canonical
-// exists yet.
+// commits it directly to the MemStore.
 func CommitResourceToStore(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData) (contentChanged bool, old, cur *VersionedResource) {
-	// Compute content hash from raw data (no allocations needed).
-	// hashResourceCommitData also sorts rcd.Entities in-place.
 	contentHash := hashResourceCommitData(rcd)
 
 	return store.InsertVersion(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, func() *ResourceVersion {
@@ -256,9 +164,6 @@ func CommitResourceToStore(store *MemStore[*ResourceVersion], labelsHash uint64,
 	}, false)
 }
 
-// CommitResourceToStoreReusable is like CommitResourceToStore but accepts and
-// returns a reusable keys buffer for hash computation, avoiding per-call
-// []string allocations on the ingestion hot path.
 func CommitResourceToStoreReusable(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData, keysBuf []string) (contentChanged bool, old, cur *VersionedResource, updatedKeysBuf []string) {
 	contentHash, keysBuf := hashResourceCommitDataReusable(rcd, keysBuf)
 	contentChanged, old, cur = store.InsertVersion(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, func() *ResourceVersion {
@@ -267,9 +172,6 @@ func CommitResourceToStoreReusable(store *MemStore[*ResourceVersion], labelsHash
 	return contentChanged, old, cur, keysBuf
 }
 
-// CommitResourceToStoreReusableWithRef is like CommitResourceToStoreReusable but
-// also sets the series ref on the MemStore entry in the same critical section,
-// avoiding a separate SetSeriesRef call (1 fewer lock + map lookup per series).
 func CommitResourceToStoreReusableWithRef(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData, seriesRef uint64, keysBuf []string) (contentChanged bool, old, cur *VersionedResource, updatedKeysBuf []string) {
 	contentHash, keysBuf := hashResourceCommitDataReusable(rcd, keysBuf)
 	contentChanged, old, cur = store.InsertVersionWithRef(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, seriesRef, func() *ResourceVersion {
@@ -278,39 +180,21 @@ func CommitResourceToStoreReusableWithRef(store *MemStore[*ResourceVersion], lab
 	return contentChanged, old, cur, keysBuf
 }
 
-// buildResourceVersion allocates a ResourceVersion from commit data.
-// When rcd.Owned is true, maps are taken directly (zero-copy).
-// Otherwise, all maps are deep-copied.
 func buildResourceVersion(rcd ResourceCommitData) *ResourceVersion {
 	cloneMap := maps.Clone[map[string]string]
 	if rcd.Owned {
 		cloneMap = func(m map[string]string) map[string]string { return m }
 	}
 
-	entities := make([]*Entity, len(rcd.Entities))
-	for j, e := range rcd.Entities {
-		entityType := e.Type
-		if entityType == "" {
-			entityType = EntityTypeResource
-		}
-		entities[j] = &Entity{
-			Type:        entityType,
-			ID:          cloneMap(e.ID),
-			Description: cloneMap(e.Description),
-		}
-	}
-	// Entities are already sorted by hashResourceCommitData.
 	return &ResourceVersion{
 		Identifying: cloneMap(rcd.Identifying),
 		Descriptive: cloneMap(rcd.Descriptive),
-		Entities:    entities,
 		MinTime:     rcd.MinTime,
 		MaxTime:     rcd.MaxTime,
 	}
 }
 
-// CollectResourceDirect is the hot-path equivalent of CollectFromSeries
-// for resources, avoiding interface{} boxing on the return path.
+// CollectResourceDirect is the hot-path equivalent of CollectFromSeries.
 func CollectResourceDirect(accessor kindMetaAccessor) (*VersionedResource, bool) {
 	v, ok := accessor.GetKindMeta(KindResource)
 	if !ok || v == nil {

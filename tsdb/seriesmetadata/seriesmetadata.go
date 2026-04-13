@@ -43,16 +43,13 @@ const SeriesMetadataFilename = "series_metadata.parquet"
 // schemaVersion is stored in the Parquet footer for future schema evolution.
 const schemaVersion = "1"
 
-// Reader provides read access to series metadata (OTel resources and scopes).
+// Reader provides read access to series metadata (OTel resources).
 type Reader interface {
 	// Close releases any resources associated with the reader.
 	Close() error
 
 	// VersionedResourceReader provides access to versioned OTel resources.
 	VersionedResourceReader
-
-	// VersionedScopeReader provides access to versioned OTel InstrumentationScope data.
-	VersionedScopeReader
 
 	// IterKind iterates all entries for a kind (type-erased).
 	IterKind(ctx context.Context, id KindID, f func(labelsHash uint64, versioned any) error) error
@@ -94,12 +91,6 @@ type InlineFlatResourceIterator interface {
 	IterVersionedResourcesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error
 }
 
-// InlineFlatScopeIterator is optionally implemented by Reader implementations
-// that can iterate scope versions without allocating ThinCopy for single-version entries.
-type InlineFlatScopeIterator interface {
-	IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error
-}
-
 // iterResourcesFlatInline uses InlineFlatResourceIterator if available, otherwise
 // falls back to IterVersionedResources with an adapter.
 func iterResourcesFlatInline(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
@@ -111,28 +102,12 @@ func iterResourcesFlatInline(ctx context.Context, mr Reader, f func(labelsHash u
 	})
 }
 
-// iterScopesFlatInline uses InlineFlatScopeIterator if available, otherwise
-// falls back to IterVersionedScopes with an adapter.
-func iterScopesFlatInline(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
-	if inline, ok := mr.(InlineFlatScopeIterator); ok {
-		return inline.IterVersionedScopesFlatInline(ctx, f)
-	}
-	return mr.IterVersionedScopes(ctx, func(labelsHash uint64, vs *VersionedScope) error {
-		return f(labelsHash, vs.Versions, 0, 0, false)
-	})
-}
-
 // InlineFlatResourceIteratorWithContentHash extends InlineFlatResourceIterator
 // with a cached contentHash parameter. For single-version inline entries, the
 // MemStore's cached contentHash is passed directly (non-zero), avoiding
 // recomputation during writes. Multi-version entries pass contentHash=0.
 type InlineFlatResourceIteratorWithContentHash interface {
 	IterVersionedResourcesFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error
-}
-
-// InlineFlatScopeIteratorWithContentHash is the scope equivalent.
-type InlineFlatScopeIteratorWithContentHash interface {
-	IterVersionedScopesFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error
 }
 
 // iterResourcesFlatInlineWithContentHash uses the WithContentHash variant if available,
@@ -142,17 +117,6 @@ func iterResourcesFlatInlineWithContentHash(ctx context.Context, mr Reader, f fu
 		return ch.IterVersionedResourcesFlatInlineWithContentHash(ctx, f)
 	}
 	return iterResourcesFlatInline(ctx, mr, func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
-		return f(labelsHash, versions, inlineMinTime, inlineMaxTime, isInline, 0)
-	})
-}
-
-// iterScopesFlatInlineWithContentHash uses the WithContentHash variant if available,
-// falls back to InlineFlatScopeIterator (contentHash=0), then IterVersionedScopes.
-func iterScopesFlatInlineWithContentHash(ctx context.Context, mr Reader, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error {
-	if ch, ok := mr.(InlineFlatScopeIteratorWithContentHash); ok {
-		return ch.IterVersionedScopesFlatInlineWithContentHash(ctx, f)
-	}
-	return iterScopesFlatInline(ctx, mr, func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
 		return f(labelsHash, versions, inlineMinTime, inlineMaxTime, isInline, 0)
 	})
 }
@@ -346,7 +310,7 @@ func (s *shardedAttrIndex) lookup(key string) []uint64 {
 
 // MemSeriesMetadata is an in-memory implementation of series metadata storage.
 // It wraps per-kind stores accessible both generically (via IterKind/KindLen)
-// and type-safely (via ResourceStore/ScopeStore).
+// and type-safely (via ResourceStore).
 type MemSeriesMetadata struct {
 	stores    map[KindID]any           // each value is *MemStore[V] for the appropriate V
 	labelsMap map[uint64]labels.Labels // labelsHash → labels.Labels
@@ -396,11 +360,6 @@ func (m *MemSeriesMetadata) ResourceStore() *MemStore[*ResourceVersion] {
 	return m.stores[KindResource].(*MemStore[*ResourceVersion])
 }
 
-// ScopeStore returns the typed scope store.
-func (m *MemSeriesMetadata) ScopeStore() *MemStore[*ScopeVersion] {
-	return m.stores[KindScope].(*MemStore[*ScopeVersion])
-}
-
 // StoreForKind returns the type-erased store for a kind.
 func (m *MemSeriesMetadata) StoreForKind(id KindID) any {
 	return m.stores[id]
@@ -410,12 +369,6 @@ func (m *MemSeriesMetadata) StoreForKind(id KindID) any {
 // resource version with the given contentHash. Read-only, zero-allocation.
 func (m *MemSeriesMetadata) ResourceHasContentHash(labelsHash, contentHash uint64) bool {
 	return m.ResourceStore().HasContentHash(labelsHash, contentHash)
-}
-
-// ScopeHasContentHash reports whether the series at labelsHash has a
-// scope version with the given contentHash. Read-only, zero-allocation.
-func (m *MemSeriesMetadata) ScopeHasContentHash(labelsHash, contentHash uint64) bool {
-	return m.ScopeStore().HasContentHash(labelsHash, contentHash)
 }
 
 // Close is a no-op for in-memory storage.
@@ -467,16 +420,12 @@ func (m *MemSeriesMetadata) LabelsForHash(labelsHash uint64) (labels.Labels, boo
 }
 
 // IterKind iterates all entries for a kind (type-erased).
-// Uses IterVersionedResources/IterVersionedScopes under the hood.
+// Uses IterVersionedResources under the hood.
 func (m *MemSeriesMetadata) IterKind(ctx context.Context, id KindID, f func(labelsHash uint64, versioned any) error) error {
 	switch id {
 	case KindResource:
 		return m.IterVersionedResources(ctx, func(labelsHash uint64, vr *VersionedResource) error {
 			return f(labelsHash, vr)
-		})
-	case KindScope:
-		return m.IterVersionedScopes(ctx, func(labelsHash uint64, vs *VersionedScope) error {
-			return f(labelsHash, vs)
 		})
 	default:
 		return nil
@@ -488,8 +437,6 @@ func (m *MemSeriesMetadata) IterHashes(ctx context.Context, id KindID, f func(la
 	switch id {
 	case KindResource:
 		return m.ResourceStore().IterHashes(ctx, f)
-	case KindScope:
-		return m.ScopeStore().IterHashes(ctx, f)
 	default:
 		return nil
 	}
@@ -569,44 +516,6 @@ func (m *MemSeriesMetadata) TotalResources() uint64 {
 
 func (m *MemSeriesMetadata) TotalResourceVersions() uint64 {
 	return m.ResourceStore().TotalVersions()
-}
-
-// --- Scope type-safe accessors (VersionedScopeReader) ---
-
-func (m *MemSeriesMetadata) GetVersionedScope(labelsHash uint64) (*VersionedScope, bool) {
-	return m.ScopeStore().GetVersioned(labelsHash)
-}
-
-func (m *MemSeriesMetadata) SetVersionedScope(labelsHash uint64, scopes *VersionedScope) {
-	m.ScopeStore().SetVersioned(labelsHash, scopes)
-}
-
-func (m *MemSeriesMetadata) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
-	return m.ScopeStore().IterVersionedFlatInline(ctx, func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
-		if isInline && len(versions) == 1 {
-			thin := scopeOps{}.ThinCopy(versions[0], versions[0])
-			thin.MinTime = inlineMinTime
-			thin.MaxTime = inlineMaxTime
-			return f(labelsHash, &Versioned[*ScopeVersion]{Versions: []*ScopeVersion{thin}})
-		}
-		return f(labelsHash, &Versioned[*ScopeVersion]{Versions: versions})
-	})
-}
-
-func (m *MemSeriesMetadata) IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
-	return m.ScopeStore().IterVersionedFlatInline(ctx, f)
-}
-
-func (m *MemSeriesMetadata) IterVersionedScopesFlatInlineWithContentHash(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool, contentHash uint64) error) error {
-	return m.ScopeStore().IterVersionedFlatInlineWithContentHash(ctx, f)
-}
-
-func (m *MemSeriesMetadata) TotalScopes() uint64 {
-	return m.ScopeStore().TotalEntries()
-}
-
-func (m *MemSeriesMetadata) TotalScopeVersions() uint64 {
-	return m.ScopeStore().TotalVersions()
 }
 
 // SetAttrIndexEnabled marks that the attr index should be built on first query.
@@ -1182,7 +1091,7 @@ func readRowGroup[T any](rg parquet.RowGroup) ([]T, error) {
 }
 
 // parseResourceContent converts a resource_table row into a ResourceVersion.
-func parseResourceContent(logger *slog.Logger, row *metadataRow) *ResourceVersion {
+func parseResourceContent(_ *slog.Logger, row *metadataRow) *ResourceVersion {
 	identifying := make(map[string]string, len(row.IdentifyingAttrs))
 	for _, attr := range row.IdentifyingAttrs {
 		identifying[attr.Key] = attr.Value
@@ -1192,53 +1101,9 @@ func parseResourceContent(logger *slog.Logger, row *metadataRow) *ResourceVersio
 		descriptive[attr.Key] = attr.Value
 	}
 
-	var entities []*Entity
-	for _, entityRow := range row.Entities {
-		entityID := make(map[string]string, len(entityRow.ID))
-		for _, attr := range entityRow.ID {
-			entityID[attr.Key] = attr.Value
-		}
-		entityDesc := make(map[string]string, len(entityRow.Description))
-		for _, attr := range entityRow.Description {
-			entityDesc[attr.Key] = attr.Value
-		}
-		entityType := entityRow.Type
-		if entityType == "" {
-			entityType = EntityTypeResource
-		}
-		e := &Entity{
-			Type:        entityType,
-			ID:          entityID,
-			Description: entityDesc,
-		}
-		if err := e.Validate(); err != nil {
-			logger.Warn("Skipping invalid entity during parquet read", "err", err, "type", entityRow.Type)
-			continue
-		}
-		entities = append(entities, e)
-	}
-	slices.SortFunc(entities, func(a, b *Entity) int {
-		return strings.Compare(a.Type, b.Type)
-	})
-
 	return &ResourceVersion{
 		Identifying: identifying,
 		Descriptive: descriptive,
-		Entities:    entities,
-	}
-}
-
-// parseScopeContent converts a scope_table row into a ScopeVersion.
-func parseScopeContent(row *metadataRow) *ScopeVersion {
-	attrs := make(map[string]string, len(row.ScopeAttrs))
-	for _, attr := range row.ScopeAttrs {
-		attrs[attr.Key] = attr.Value
-	}
-	return &ScopeVersion{
-		Name:      row.ScopeName,
-		Version:   row.ScopeVersionStr,
-		SchemaURL: row.SchemaURL,
-		Attrs:     attrs,
 	}
 }
 
@@ -1276,26 +1141,6 @@ func (r *parquetReader) TotalResourceVersions() uint64 {
 	return r.mem.TotalResourceVersions()
 }
 
-func (r *parquetReader) GetVersionedScope(labelsHash uint64) (*VersionedScope, bool) {
-	return r.mem.GetVersionedScope(labelsHash)
-}
-
-func (r *parquetReader) IterVersionedScopes(ctx context.Context, f func(labelsHash uint64, scopes *VersionedScope) error) error {
-	return r.mem.IterVersionedScopes(ctx, f)
-}
-
-func (r *parquetReader) IterVersionedScopesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
-	return r.mem.IterVersionedScopesFlatInline(ctx, f)
-}
-
-func (r *parquetReader) TotalScopes() uint64 {
-	return r.mem.TotalScopes()
-}
-
-func (r *parquetReader) TotalScopeVersions() uint64 {
-	return r.mem.TotalScopeVersions()
-}
-
 func (r *parquetReader) IterKind(ctx context.Context, id KindID, f func(labelsHash uint64, versioned any) error) error {
 	return r.mem.IterKind(ctx, id, f)
 }
@@ -1331,8 +1176,8 @@ func (r *parquetReader) Close() error {
 }
 
 // sortAttrEntries sorts attribute entries by key for deterministic Parquet output.
-func sortAttrEntries(entries []EntityAttributeEntry) {
-	slices.SortFunc(entries, func(a, b EntityAttributeEntry) int {
+func sortAttrEntries(entries []AttrEntry) {
+	slices.SortFunc(entries, func(a, b AttrEntry) int {
 		return cmp.Compare(a.Key, b.Key)
 	})
 }
@@ -1466,7 +1311,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 								ContentHash: ch,
 								AttrKey:     k,
 								AttrValue:   v,
-								IdentifyingAttrs: []EntityAttributeEntry{
+								IdentifyingAttrs: []AttrEntry{
 									{Key: k, Value: v},
 								},
 							})
@@ -1485,7 +1330,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 								ContentHash: ch,
 								AttrKey:     k,
 								AttrValue:   v,
-								IdentifyingAttrs: []EntityAttributeEntry{
+								IdentifyingAttrs: []AttrEntry{
 									{Key: k, Value: v},
 								},
 							})
@@ -1530,74 +1375,6 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 		}
 	}
 
-	// --- Scopes ---
-	{
-		contentTable := make(map[uint64]metadataRow)
-		var mappingRows []metadataRow
-		var keysBuf []string
-
-		err := iterScopesFlatInlineWithContentHash(context.Background(), mr, func(labelsHash uint64, versions []*ScopeVersion, inlineMinTime, inlineMaxTime int64, isInline bool, cachedContentHash uint64) error {
-			if opts.HashFilter != nil && !opts.HashFilter(labelsHash) {
-				return nil
-			}
-			seriesRef := labelsHash
-			if opts.RefResolver != nil {
-				ref, ok := opts.RefResolver(labelsHash)
-				if !ok {
-					return nil
-				}
-				seriesRef = ref
-			}
-			for i, sv := range versions {
-				var contentHash uint64
-				if isInline && cachedContentHash != 0 {
-					contentHash = cachedContentHash
-				} else {
-					contentHash, keysBuf = hashScopeContentReusable(sv, keysBuf)
-				}
-				_ = i // suppress unused warning
-				if _, exists := contentTable[contentHash]; !exists {
-					contentTable[contentHash] = buildScopeTableRow(contentHash, sv)
-				}
-				minTime, maxTime := sv.MinTime, sv.MaxTime
-				if isInline {
-					minTime, maxTime = inlineMinTime, inlineMaxTime
-				}
-				mappingRows = append(mappingRows, metadataRow{
-					Namespace:   NamespaceScopeMapping,
-					SeriesRef:   seriesRef,
-					ContentHash: contentHash,
-					MinTime:     minTime,
-					MaxTime:     maxTime,
-				})
-			}
-			return nil
-		})
-		if err != nil {
-			return 0, fmt.Errorf("iterate %s: %w", KindScope, err)
-		}
-
-		tableRows := make([]metadataRow, 0, len(contentTable))
-		for _, row := range contentTable {
-			tableRows = append(tableRows, row)
-		}
-		clear(contentTable)
-
-		sortMetadataRows(tableRows)
-		sortMetadataRows(mappingRows)
-
-		metadataCounts[string(KindScope)+"_table_count"] = len(tableRows)
-		metadataCounts[string(KindScope)+"_mapping_count"] = len(mappingRows)
-		totalRows += len(tableRows) + len(mappingRows)
-
-		if err := writeNamespaceRows(writer, tableRows, opts.MaxRowsPerRowGroup); err != nil {
-			return 0, fmt.Errorf("write %s table rows: %w", KindScope, err)
-		}
-		if err := writeNamespaceRows(writer, mappingRows, opts.MaxRowsPerRowGroup); err != nil {
-			return 0, fmt.Errorf("write %s mapping rows: %w", KindScope, err)
-		}
-	}
-
 	if totalRows == 0 {
 		// No rows written — remove the temp file and return.
 		if err := writer.Close(); err != nil {
@@ -1638,8 +1415,6 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 	logArgs := []any{
 		"resource_table", metadataCounts["resource_table_count"],
 		"resource_mappings", metadataCounts["resource_mapping_count"],
-		"scope_table", metadataCounts["scope_table_count"],
-		"scope_mappings", metadataCounts["scope_mapping_count"],
 		"size", size,
 	}
 	if cnt, ok := metadataCounts["resource_attr_index_count"]; ok {
@@ -1657,45 +1432,23 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 
 // buildResourceTableRow converts a ResourceVersion into a content-addressed table row.
 func buildResourceTableRow(contentHash uint64, rv *ResourceVersion) metadataRow {
-	idAttrs := make([]EntityAttributeEntry, 0, len(rv.Identifying))
+	idAttrs := make([]AttrEntry, 0, len(rv.Identifying))
 	for k, v := range rv.Identifying {
-		idAttrs = append(idAttrs, EntityAttributeEntry{Key: k, Value: v})
+		idAttrs = append(idAttrs, AttrEntry{Key: k, Value: v})
 	}
 	sortAttrEntries(idAttrs)
 
-	descAttrs := make([]EntityAttributeEntry, 0, len(rv.Descriptive))
+	descAttrs := make([]AttrEntry, 0, len(rv.Descriptive))
 	for k, v := range rv.Descriptive {
-		descAttrs = append(descAttrs, EntityAttributeEntry{Key: k, Value: v})
+		descAttrs = append(descAttrs, AttrEntry{Key: k, Value: v})
 	}
 	sortAttrEntries(descAttrs)
-
-	entityRows := make([]EntityRow, 0, len(rv.Entities))
-	for _, entity := range rv.Entities {
-		entityIDAttrs := make([]EntityAttributeEntry, 0, len(entity.ID))
-		for k, v := range entity.ID {
-			entityIDAttrs = append(entityIDAttrs, EntityAttributeEntry{Key: k, Value: v})
-		}
-		sortAttrEntries(entityIDAttrs)
-
-		entityDescAttrs := make([]EntityAttributeEntry, 0, len(entity.Description))
-		for k, v := range entity.Description {
-			entityDescAttrs = append(entityDescAttrs, EntityAttributeEntry{Key: k, Value: v})
-		}
-		sortAttrEntries(entityDescAttrs)
-
-		entityRows = append(entityRows, EntityRow{
-			Type:        entity.Type,
-			ID:          entityIDAttrs,
-			Description: entityDescAttrs,
-		})
-	}
 
 	return metadataRow{
 		Namespace:        NamespaceResourceTable,
 		ContentHash:      contentHash,
 		IdentifyingAttrs: idAttrs,
 		DescriptiveAttrs: descAttrs,
-		Entities:         entityRows,
 	}
 }
 
@@ -1741,7 +1494,7 @@ func buildResourceAttrIndexRows(mr Reader, refResolver func(labelsHash uint64) (
 				ContentHash: ch,
 				AttrKey:     k,
 				AttrValue:   v,
-				IdentifyingAttrs: []EntityAttributeEntry{
+				IdentifyingAttrs: []AttrEntry{
 					{Key: k, Value: v},
 				},
 			})

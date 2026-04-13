@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 )
 
 // initAppenderV2 is a helper to initialize the time bounds of the head
@@ -229,9 +228,6 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		if opts.Resource != nil {
 			a.updateResource(s, t, opts.Resource)
 		}
-		if opts.Scope != nil {
-			a.updateScope(s, t, opts.Scope)
-		}
 	}
 	return storage.SeriesRef(s.ref), partialErr
 }
@@ -408,27 +404,14 @@ func (a *headAppenderV2) updateResource(s *memSeries, t int64, rc *storage.Resou
 	}
 
 	// Cache the converted WAL record per ResourceContext pointer to avoid
-	// redundant entity conversion and allocations when the same resource is
-	// applied to many series (e.g. histogram sub-series share one ResourceContext).
+	// redundant allocations when the same resource is applied to many series
+	// (e.g. histogram sub-series share one ResourceContext).
 	if rc != a.cachedResourceCtx {
-		walEntities := make([]record.RefResourceEntity, len(rc.Entities))
-		for i, e := range rc.Entities {
-			entityType := e.Type
-			if entityType == "" {
-				entityType = seriesmetadata.EntityTypeResource
-			}
-			walEntities[i] = record.RefResourceEntity{
-				Type:        entityType,
-				ID:          e.ID,
-				Description: e.Description,
-			}
-		}
 		a.cachedWALResource = &record.RefResource{
 			MinTime:     t,
 			MaxTime:     t,
 			Identifying: rc.Identifying,
 			Descriptive: rc.Descriptive,
-			Entities:    walEntities,
 		}
 		a.cachedResourceCtx = rc
 	}
@@ -443,32 +426,6 @@ func (a *headAppenderV2) updateResource(s *memSeries, t int64, rc *storage.Resou
 	b.resourceSeries = append(b.resourceSeries, s)
 
 	a.resourceRefs[s.ref] = struct{}{}
-}
-
-// updateScope buffers a scope update for a series if not already done in this batch.
-// The actual mutation is deferred to Commit() time.
-func (a *headAppenderV2) updateScope(s *memSeries, t int64, sc *storage.ScopeContext) {
-	if a.scopeRefs == nil {
-		a.scopeRefs = make(map[chunks.HeadSeriesRef]struct{})
-	}
-	if _, ok := a.scopeRefs[s.ref]; ok {
-		return
-	}
-
-	// Buffer the scope update in the current batch.
-	b := a.getCurrentBatch(stNone, s.ref)
-	b.scopes = append(b.scopes, record.RefScope{
-		Ref:       s.ref,
-		MinTime:   t,
-		MaxTime:   t,
-		Name:      sc.Name,
-		Version:   sc.Version,
-		SchemaURL: sc.SchemaURL,
-		Attrs:     sc.Attrs,
-	})
-	b.scopeSeries = append(b.scopeSeries, s)
-
-	a.scopeRefs[s.ref] = struct{}{}
 }
 
 var _ storage.GetRef = &headAppenderV2{}
