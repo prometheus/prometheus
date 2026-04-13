@@ -49,6 +49,7 @@ import (
 	"math/bits"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 const (
@@ -231,6 +232,14 @@ func (*xorAppender) AppendHistogram(*HistogramAppender, int64, int64, *histogram
 
 func (*xorAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, *histogram.FloatHistogram, bool) (Chunk, bool, Appender, error) {
 	panic("appended a float histogram sample to a float chunk")
+}
+
+func (a *xorAppender) IsStaleLastValue() bool {
+	return value.IsStaleNaN(a.v)
+}
+
+func (a *xorAppender) IsEqual(v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
+	return h == nil && fh == nil && math.Float64bits(a.v) == math.Float64bits(v)
 }
 
 type xorIterator struct {

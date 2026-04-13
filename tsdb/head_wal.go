@@ -671,10 +671,11 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				continue
 			}
 
-			if !value.IsStaleNaN(ms.lastValue) && value.IsStaleNaN(s.V) {
+			isLastStale := ms.isStaleLastValue()
+			if !isLastStale && value.IsStaleNaN(s.V) {
 				h.numStaleSeries.Inc()
 			}
-			if value.IsStaleNaN(ms.lastValue) && !value.IsStaleNaN(s.V) {
+			if isLastStale && !value.IsStaleNaN(s.V) {
 				h.numStaleSeries.Dec()
 			}
 
@@ -711,19 +712,19 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			var chunkCreated, newlyStale, staleToNonStale bool
 			if s.h != nil {
 				newlyStale = value.IsStaleNaN(s.h.Sum)
-				if app, ok := ms.app.(*chunkenc.HistogramAppender); ok && app.LastHistogram() != nil {
-					prevSum := app.LastHistogram().Sum
-					newlyStale = newlyStale && !value.IsStaleNaN(prevSum)
-					staleToNonStale = value.IsStaleNaN(prevSum) && !value.IsStaleNaN(s.h.Sum)
+				if _, ok := ms.app.(*chunkenc.HistogramAppender); ok {
+					isLastStale := ms.app.IsStaleLastValue()
+					newlyStale = newlyStale && !isLastStale
+					staleToNonStale = isLastStale && !value.IsStaleNaN(s.h.Sum)
 				}
 				// TODO(krajorama,ywwg): Pass ST when available in WBL.
 				_, chunkCreated = ms.appendHistogram(0, s.t, s.h, 0, appendChunkOpts)
 			} else {
 				newlyStale = value.IsStaleNaN(s.fh.Sum)
-				if app, ok := ms.app.(*chunkenc.FloatHistogramAppender); ok && app.LastFloatHistogram() != nil {
-					prevSum := app.LastFloatHistogram().Sum
-					newlyStale = newlyStale && !value.IsStaleNaN(prevSum)
-					staleToNonStale = value.IsStaleNaN(prevSum) && !value.IsStaleNaN(s.fh.Sum)
+				if _, ok := ms.app.(*chunkenc.FloatHistogramAppender); ok {
+					isLastStale := ms.app.IsStaleLastValue()
+					newlyStale = newlyStale && !isLastStale
+					staleToNonStale = isLastStale && !value.IsStaleNaN(s.fh.Sum)
 				}
 				// TODO(krajorama,ywwg): Pass ST when available in WBL.
 				_, chunkCreated = ms.appendFloatHistogram(0, s.t, s.fh, 0, appendChunkOpts)
@@ -1691,7 +1692,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					}
 				}
 
-				if value.IsStaleNaN(series.lastValue) || series.isHistogramStale() {
+				if series.isStaleLastValue() {
 					h.numStaleSeries.Inc()
 				}
 

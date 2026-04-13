@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -2141,7 +2140,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			defer s.locks[refShard].Unlock()
 		}
 
-		if value.IsStaleNaN(series.lastValue) || series.isHistogramStale() {
+		if series.isStaleLastValue() {
 			staleSeriesDeleted++
 		}
 
@@ -2230,7 +2229,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		h.series.hashes[hashShard].del(hash, series.ref)
 		h.series.locks[hashShard].Unlock()
 
-		if value.IsStaleNaN(series.lastValue) || series.isHistogramStale() {
+		if series.isStaleLastValue() {
 			staleSeriesDeleted++
 		}
 
@@ -2288,7 +2287,7 @@ func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64)
 		}
 
 		// Check if the series is still stale.
-		isStale := value.IsStaleNaN(series.lastValue) || series.isHistogramStale()
+		isStale := series.isStaleLastValue()
 
 		if !isStale {
 			return
@@ -2487,16 +2486,10 @@ type memSeries struct {
 	txs *txRing
 }
 
-// isHistogramStale reports whether the most recently appended histogram or float
-// histogram sample is a stale marker. The series lock must be held.
-func (s *memSeries) isHistogramStale() bool {
-	if app, ok := s.app.(*chunkenc.HistogramAppender); ok && app.LastHistogram() != nil {
-		return value.IsStaleNaN(app.LastHistogram().Sum)
-	}
-	if app, ok := s.app.(*chunkenc.FloatHistogramAppender); ok && app.LastFloatHistogram() != nil {
-		return value.IsStaleNaN(app.LastFloatHistogram().Sum)
-	}
-	return false
+// isStaleLastValue reports whether the most recently appended sample (of any
+// type) is a stale marker. The series lock must be held.
+func (s *memSeries) isStaleLastValue() bool {
+	return s.app != nil && s.app.IsStaleLastValue()
 }
 
 // memSeriesOOOFields contains the fields required by memSeries

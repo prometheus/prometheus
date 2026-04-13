@@ -22,7 +22,6 @@ import (
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -270,7 +269,7 @@ func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) ([]storage.Ser
 			continue
 		}
 
-		if value.IsStaleNaN(s.lastValue) || s.isHistogramStale() {
+		if s.isStaleLastValue() {
 			series = append(series, s)
 		}
 		s.Unlock()
