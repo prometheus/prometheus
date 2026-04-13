@@ -1,20 +1,44 @@
 # Tests for rate(), irate() and increase() on cumulative.
+#                                         _ _ 0 60 120 180 240 300 360 420 480  540  600  660  720  780  840
+
 load 1m
-    cumulative@st  _ _ -30s-1mx2 -1m-1mx2 -59999ms-1mx2 -1s-1mx2 -1ms-1mx2
-    cumulative     _ _ 0+60x14
+    cumulative{type="no_st"}              _ _ 0+60x14
+    cumulative{type="st_resets"}@st       _ _ -30s-1mx2 -1m-1mx2 -59999ms-1mx2 -1s-1mx2 -1ms-1mx2
+    cumulative{type="st_resets"}          _ _ 0+60x14
+    cumulative{type="normalized_resets"}  _ _ 0 60 120 300 360 420 780 840 900 1440 1500 1560 2280 2340 2400
 
 eval range from 7m to 15m step 1m increase(cumulative[5m])
-    {}  420 780 675 675 1275 900 900 1725 1125
+    {type="no_st"}              300 300 300 300 300  300 300  300  300
+    {type="st_resets"}          420 780 675 675 1275 900 900 1725 1125
+    {type="normalized_resets"}  420 780 675 675 1275 900 900 1725 1125
 
 eval range from 7m to 15m step 1m rate(cumulative[5m])
-    {}  1.4 2.6 2.25 2.25 4.25 3 3 5.75 3.75
+    {type="no_st"}              1    1    1    1    1    1    1    1    1
+    {type="st_resets"}          1.40 2.60 2.25 2.25 4.25 3.00 3.00 5.75 3.75
+    {type="normalized_resets"}  1.40 2.60 2.25 2.25 4.25 3.00 3.00 5.75 3.75
 
 eval range from 7m to 15m step 1m irate(cumulative[5m])
-    {}  1 6 1 1 9 1 1 12 1
+    {type="no_st"}              1 1 1 1 1 1 1  1 1
+    {type="st_resets"}          1 6 1 1 9 1 1 12 1
+    {type="normalized_resets"}  1 6 1 1 9 1 1 12 1
 
-# Subqueries cuts the propagation of start timestamps
+# Simulate anchored vector selection for easier manual check.
+eval range from 7m to 15m step 1m round(increase(cumulative[5m1ms]))
+    {type="no_st"}              300 300 300 300  300  300 300  300  300
+    {type="st_resets"}          420 720 720 600 1080 1080 780 1440 1440
+    {type="normalized_resets"}  420 720 720 600 1080 1080 780 1440 1440
+
+# TODO actual anchored
+# eval range from 7m to 15m step 1m increase(cumulative[5m] anchored)
+#    {type="no_st"}              300 300 300 300  300  300 300  300  300
+#    {type="st_resets"}          420 720 720 600 1080 1080 780 1440 1440
+#    {type="normalized_resets"}  420 720 720 600 1080 1080 780 1440 1440
+
+# Subqueries cut the propagation of start timestamps.
 eval range from 7m to 15m step 1m increase(cumulative[5m:1m])
-    {}  300x8
+    {type="no_st"}              300x8
+    {type="st_resets"}          300x8
+    {type="normalized_resets"}  420 780 675 675 1275 900 900 1725 1125
 
 clear
 
