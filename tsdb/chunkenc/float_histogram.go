@@ -179,10 +179,26 @@ type FloatHistogramAppender struct {
 	t, tDelta          int64
 	sum, cnt, zCnt     xorValue
 	pBuckets, nBuckets []xorValue
+
+	// lastValue is the most recently appended float histogram, retained for
+	// duplicate detection and stale-marker tracking.
+	lastValue *histogram.FloatHistogram
 }
 
 func (a *FloatHistogramAppender) GetCounterResetHeader() CounterResetHeader {
 	return CounterResetHeader(a.b.bytes()[histogramFlagPos] & CounterResetHeaderMask)
+}
+
+// LastFloatHistogram returns the most recently appended float histogram, or nil
+// if none has been appended yet.
+func (a *FloatHistogramAppender) LastFloatHistogram() *histogram.FloatHistogram {
+	return a.lastValue
+}
+
+// SetLastFloatHistogram sets the last float histogram value. Used to restore
+// state after loading the appender from a snapshot.
+func (a *FloatHistogramAppender) SetLastFloatHistogram(fh *histogram.FloatHistogram) {
+	a.lastValue = fh
 }
 
 func (a *FloatHistogramAppender) setCounterResetHeader(cr CounterResetHeader) {
@@ -606,6 +622,7 @@ func (a *FloatHistogramAppender) appendFloatHistogram(t int64, h *histogram.Floa
 
 	a.t = t
 	a.tDelta = tDelta
+	a.lastValue = h
 }
 
 func (a *FloatHistogramAppender) writeXorValue(old *xorValue, v float64) {

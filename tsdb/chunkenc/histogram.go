@@ -203,10 +203,26 @@ type HistogramAppender struct {
 	sum      float64
 	leading  uint8
 	trailing uint8
+
+	// lastValue is the most recently appended histogram, retained for
+	// duplicate detection and stale-marker tracking.
+	lastValue *histogram.Histogram
 }
 
 func (a *HistogramAppender) GetCounterResetHeader() CounterResetHeader {
 	return CounterResetHeader(a.b.bytes()[histogramFlagPos] & CounterResetHeaderMask)
+}
+
+// LastHistogram returns the most recently appended histogram, or nil if none
+// has been appended yet.
+func (a *HistogramAppender) LastHistogram() *histogram.Histogram {
+	return a.lastValue
+}
+
+// SetLastHistogram sets the last histogram value. Used to restore state after
+// loading the appender from a snapshot.
+func (a *HistogramAppender) SetLastHistogram(h *histogram.Histogram) {
+	a.lastValue = h
 }
 
 func (a *HistogramAppender) setCounterResetHeader(cr CounterResetHeader) {
@@ -659,6 +675,7 @@ func (a *HistogramAppender) appendHistogram(t int64, h *histogram.Histogram) {
 	copy(a.nBuckets, h.NegativeBuckets)
 	// Note that the bucket deltas were already updated above.
 	a.sum = h.Sum
+	a.lastValue = h
 }
 
 // recode converts the current chunk to accommodate an expansion of the set of

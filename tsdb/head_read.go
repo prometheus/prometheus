@@ -270,9 +270,7 @@ func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) ([]storage.Ser
 			continue
 		}
 
-		if value.IsStaleNaN(s.lastValue) ||
-			(s.lastHistogramValue != nil && value.IsStaleNaN(s.lastHistogramValue.Sum)) ||
-			(s.lastFloatHistogramValue != nil && value.IsStaleNaN(s.lastFloatHistogramValue.Sum)) {
+		if value.IsStaleNaN(s.lastValue) || s.isHistogramStale() {
 			series = append(series, s)
 		}
 		s.Unlock()

@@ -660,7 +660,8 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
-			if s.lastHistogramValue != nil || s.lastFloatHistogramValue != nil {
+			switch s.app.(type) {
+			case *chunkenc.HistogramAppender, *chunkenc.FloatHistogramAppender:
 				return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
 			}
 			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
@@ -705,7 +706,8 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
-			if !h.Equals(s.lastHistogramValue) {
+			app, ok := s.app.(*chunkenc.HistogramAppender)
+			if !ok || !h.Equals(app.LastHistogram()) {
 				return false, 0, storage.ErrDuplicateSampleForTimestamp
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
@@ -747,7 +749,8 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
-			if !fh.Equals(s.lastFloatHistogramValue) {
+			app, ok := s.app.(*chunkenc.FloatHistogramAppender)
+			if !ok || !fh.Equals(app.LastFloatHistogram()) {
 				return false, 0, storage.ErrDuplicateSampleForTimestamp
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
@@ -1352,8 +1355,8 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			// sample for this same series in this same batch
 			// (because any such sample would have triggered a new
 			// batch).
-			switch {
-			case series.lastHistogramValue != nil:
+			switch series.app.(type) {
+			case *chunkenc.HistogramAppender:
 				b.histograms = append(b.histograms, record.RefHistogramSample{
 					Ref: series.ref,
 					T:   s.T,
@@ -1365,7 +1368,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				acc.histogramsAppended++
 				series.Unlock()
 				continue
-			case series.lastFloatHistogramValue != nil:
+			case *chunkenc.FloatHistogramAppender:
 				b.floatHistograms = append(b.floatHistograms, record.RefFloatHistogramSample{
 					Ref: series.ref,
 					T:   s.T,
@@ -1541,9 +1544,10 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		default:
 			newlyStale := value.IsStaleNaN(s.H.Sum)
 			staleToNonStale := false
-			if series.lastHistogramValue != nil {
-				newlyStale = newlyStale && !value.IsStaleNaN(series.lastHistogramValue.Sum)
-				staleToNonStale = value.IsStaleNaN(series.lastHistogramValue.Sum) && !value.IsStaleNaN(s.H.Sum)
+			if app, ok2 := series.app.(*chunkenc.HistogramAppender); ok2 && app.LastHistogram() != nil {
+				prevSum := app.LastHistogram().Sum
+				newlyStale = newlyStale && !value.IsStaleNaN(prevSum)
+				staleToNonStale = value.IsStaleNaN(prevSum) && !value.IsStaleNaN(s.H.Sum)
 			}
 			// TODO(krajorama,ywwg): pass ST when available in WAL.
 			ok, chunkCreated = series.appendHistogram(0, s.T, s.H, a.appendID, acc.appendChunkOpts)
@@ -1652,9 +1656,10 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		default:
 			newlyStale := value.IsStaleNaN(s.FH.Sum)
 			staleToNonStale := false
-			if series.lastFloatHistogramValue != nil {
-				newlyStale = newlyStale && !value.IsStaleNaN(series.lastFloatHistogramValue.Sum)
-				staleToNonStale = value.IsStaleNaN(series.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.FH.Sum)
+			if app, ok2 := series.app.(*chunkenc.FloatHistogramAppender); ok2 && app.LastFloatHistogram() != nil {
+				prevSum := app.LastFloatHistogram().Sum
+				newlyStale = newlyStale && !value.IsStaleNaN(prevSum)
+				staleToNonStale = value.IsStaleNaN(prevSum) && !value.IsStaleNaN(s.FH.Sum)
 			}
 			// TODO(krajorama,ywwg): pass ST when available in WAL.
 			ok, chunkCreated = series.appendFloatHistogram(0, s.T, s.FH, a.appendID, acc.appendChunkOpts)
@@ -1853,8 +1858,6 @@ func (s *memSeries) append(st, t int64, v float64, appendID uint64, o chunkOpts)
 	c.maxTime = t
 
 	s.lastValue = v
-	s.lastHistogramValue = nil
-	s.lastFloatHistogramValue = nil
 
 	if appendID > 0 {
 		s.txs.add(appendID)
@@ -1891,9 +1894,6 @@ func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendI
 	}
 
 	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, st, t, h, false) // false=request a new chunk if needed
-
-	s.lastHistogramValue = h
-	s.lastFloatHistogramValue = nil
 
 	if appendID > 0 {
 		s.txs.add(appendID)
@@ -1948,9 +1948,6 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 	}
 
 	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, st, t, fh, false) // False means request a new chunk if needed.
-
-	s.lastHistogramValue = nil
-	s.lastFloatHistogramValue = fh
 
 	if appendID > 0 {
 		s.txs.add(appendID)
