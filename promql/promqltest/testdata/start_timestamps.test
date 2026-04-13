@@ -92,6 +92,22 @@ eval range from 10m to 15m step 1m increase(delta[5m:1m])
 
 clear
 
+# Test for cumulative with unknow start timestamp, which is described in OTel spec. It is easy to incorrectly treat
+# second datapoint in such timeseries as delta, producing incorrect result. These can be distinguished by:
+#   * ST_curr == T_prev && ST_prev == 0 -> cumulative with unknown start, no reset
+#   * ST_curr == T_prev && ST_prev != 0 -> delta datapoint, treat as a reset
+load 1m
+    series{type="otel_cumulative_unknown_start"}@st  _ _   _ -1m
+    series{type="otel_cumulative_unknown_start"}     _ _   1   1
+    series{type="otel_delta"}@st                     _ _ -1m -1m
+    series{type="otel_delta"}                        _ _   1   1
+
+eval instant at 3m round(increase(series[1m1ms]))
+    {type="otel_cumulative_unknown_start"}  0
+    {type="otel_delta"}                     1
+
+clear
+
 # Tests for rate(), irate() and increase() on cumulative histograms. Includes various approaches for start timestamps:
 # * ST_curr = T_prev (OTel)
 # * ST_curr = T_prev (GCP)
