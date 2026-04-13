@@ -66,7 +66,6 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("ResourceAttributesResponse", b.resourceAttributesResponseSchema())
 	schemas.Set("ResourceAttributeVersion", b.resourceAttributeVersionSchema())
 	schemas.Set("ResourceAttributeData", b.resourceAttributeDataSchema())
-	schemas.Set("EntityData", b.entityDataSchema())
 
 	// Metadata schemas.
 	schemas.Set("Metadata", b.metadataSchema())
@@ -782,10 +781,10 @@ func (*OpenAPIBuilder) resourcesSeriesOutputBodySchema() *base.SchemaProxy {
 	dataProps := orderedmap.New[string, *base.SchemaProxy]()
 	dataProps.Set("results", base.CreateSchemaProxy(&base.Schema{
 		Type:        []string{"array"},
-		Description: "Array of series matching the metadata criteria, with their resource and scope versions.",
+		Description: "Array of series matching the metadata criteria, with their resource versions.",
 		Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: base.CreateSchemaProxy(&base.Schema{
 			Type:        []string{"object"},
-			Description: "A series matching the metadata criteria with its resource and scope version history.",
+			Description: "A series matching the metadata criteria with its resource version history.",
 		})},
 	}))
 	dataProps.Set("nextToken", base.CreateSchemaProxy(&base.Schema{
@@ -859,11 +858,6 @@ func (*OpenAPIBuilder) resourceAttributesResponseSchema() *base.SchemaProxy {
 func (*OpenAPIBuilder) resourceAttributeVersionSchema() *base.SchemaProxy {
 	props := orderedmap.New[string, *base.SchemaProxy]()
 	props.Set("resource_attributes", schemaRef("#/components/schemas/ResourceAttributeData"))
-	props.Set("entities", base.CreateSchemaProxy(&base.Schema{
-		Type:        []string{"array"},
-		Items:       &base.DynamicValue[*base.SchemaProxy, bool]{A: schemaRef("#/components/schemas/EntityData")},
-		Description: "Entities associated with this resource version.",
-	}))
 	props.Set("min_time_ms", integerSchemaWithDescription("Start timestamp of this version in milliseconds."))
 	props.Set("max_time_ms", integerSchemaWithDescription("End timestamp of this version in milliseconds."))
 
@@ -898,33 +892,6 @@ func (*OpenAPIBuilder) resourceAttributeDataSchema() *base.SchemaProxy {
 		Description:          "Resource attribute data with identifying and descriptive attributes.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"identifying", "descriptive"},
-		Properties:           props,
-	})
-}
-
-func (*OpenAPIBuilder) entityDataSchema() *base.SchemaProxy {
-	props := orderedmap.New[string, *base.SchemaProxy]()
-	props.Set("type", stringSchemaWithDescription("Entity type (e.g., service, host)."))
-	props.Set("identifying", base.CreateSchemaProxy(&base.Schema{
-		Type: []string{"object"},
-		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
-			A: stringSchema(),
-		},
-		Description: "Identifying attributes for this entity.",
-	}))
-	props.Set("descriptive", base.CreateSchemaProxy(&base.Schema{
-		Type: []string{"object"},
-		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{
-			A: stringSchema(),
-		},
-		Description: "Descriptive attributes for this entity.",
-	}))
-
-	return base.CreateSchemaProxy(&base.Schema{
-		Type:                 []string{"object"},
-		Description:          "Entity data with type and attributes.",
-		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
-		Required:             []string{"type", "identifying", "descriptive"},
 		Properties:           props,
 	})
 }

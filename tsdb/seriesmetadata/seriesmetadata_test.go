@@ -40,7 +40,6 @@ func TestReadNonexistentFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(0), size)
 	require.Equal(t, uint64(0), reader.TotalResources())
-	require.Equal(t, uint64(0), reader.TotalScopes())
 	require.NoError(t, reader.Close())
 }
 
@@ -60,7 +59,6 @@ func TestWriteEmptyMetadata(t *testing.T) {
 	defer reader.Close()
 
 	require.Equal(t, uint64(0), reader.TotalResources())
-	require.Equal(t, uint64(0), reader.TotalScopes())
 }
 
 // Tests for unified resource functionality
@@ -78,7 +76,7 @@ func TestResourceBasicOperations(t *testing.T) {
 		"host.name":      "host-1",
 	}
 
-	rv := NewResourceVersion(identifying, descriptive, nil, 1000, 2000)
+	rv := NewResourceVersion(identifying, descriptive, 1000, 2000)
 
 	// Verify version was created correctly
 	require.Equal(t, "my-service", rv.Identifying["service.name"])
@@ -115,7 +113,7 @@ func TestIsIdentifyingAttribute(t *testing.T) {
 
 func TestResourceVersionTimeRangeUpdate(t *testing.T) {
 	identifying := map[string]string{"service.name": "my-service"}
-	rv := NewResourceVersion(identifying, nil, nil, 1000, 2000)
+	rv := NewResourceVersion(identifying, nil, 1000, 2000)
 
 	// Update with wider range
 	rv.UpdateTimeRange(500, 3000)
@@ -134,13 +132,13 @@ func TestResourceVersioningOnSet(t *testing.T) {
 	// First set
 	identifying1 := map[string]string{"service.name": "my-service"}
 	descriptive1 := map[string]string{"deployment.env": "prod"}
-	rv1 := NewResourceVersion(identifying1, descriptive1, nil, 1000, 2000)
+	rv1 := NewResourceVersion(identifying1, descriptive1, 1000, 2000)
 	store.Set(123, rv1)
 
 	// Second set for same hash with different attributes - should create new version
 	identifying2 := map[string]string{"service.name": "my-service"}
 	descriptive2 := map[string]string{"host.name": "host-1"}
-	rv2 := NewResourceVersion(identifying2, descriptive2, nil, 3000, 4000)
+	rv2 := NewResourceVersion(identifying2, descriptive2, 3000, 4000)
 	store.Set(123, rv2)
 
 	// GetResource returns the current (latest) version
@@ -168,10 +166,10 @@ func TestResourceSameAttributesExtendTimeRange(t *testing.T) {
 	store := NewMemResourceStore()
 
 	identifying := map[string]string{"service.name": "my-service"}
-	rv1 := NewResourceVersion(identifying, nil, nil, 1000, 2000)
+	rv1 := NewResourceVersion(identifying, nil, 1000, 2000)
 	store.Set(123, rv1)
 
-	rv2 := NewResourceVersion(identifying, nil, nil, 3000, 4000)
+	rv2 := NewResourceVersion(identifying, nil, 3000, 4000)
 	store.Set(123, rv2)
 
 	vr, found := store.GetVersioned(123)
@@ -188,7 +186,7 @@ func TestResourceIter(t *testing.T) {
 		identifying := map[string]string{
 			"service.name": fmt.Sprintf("service-%d", i),
 		}
-		rv := NewResourceVersion(identifying, nil, nil, int64(i*1000), int64(i*2000))
+		rv := NewResourceVersion(identifying, nil, int64(i*1000), int64(i*2000))
 		store.Set(i, rv)
 	}
 
@@ -223,7 +221,7 @@ func TestWriteAndReadbackResources(t *testing.T) {
 	descriptive1 := map[string]string{
 		"deployment.env": "prod",
 	}
-	rv1 := NewResourceVersion(identifying1, descriptive1, nil, 1000, 2000)
+	rv1 := NewResourceVersion(identifying1, descriptive1, 1000, 2000)
 	mem.SetResource(100, rv1)
 
 	identifying2 := map[string]string{
@@ -234,7 +232,7 @@ func TestWriteAndReadbackResources(t *testing.T) {
 	descriptive2 := map[string]string{
 		"host.region": "us-west-2",
 	}
-	rv2 := NewResourceVersion(identifying2, descriptive2, nil, 1500, 2500)
+	rv2 := NewResourceVersion(identifying2, descriptive2, 1500, 2500)
 	mem.SetResource(200, rv2)
 
 	// Write to file
@@ -269,7 +267,7 @@ func TestWriteAndReadbackResources(t *testing.T) {
 	require.Equal(t, uint64(2), reader.TotalResources())
 }
 
-func TestMixedResourcesAndScopes(t *testing.T) {
+func TestMixedResources(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	mem := NewMemSeriesMetadata()
@@ -280,7 +278,7 @@ func TestMixedResourcesAndScopes(t *testing.T) {
 			"service.name":        "api-gateway",
 			"service.instance.id": "gw-1",
 		},
-		nil, nil, 1000, 5000)
+		nil, 1000, 5000)
 	mem.SetResource(100, rv1)
 
 	rv2 := NewResourceVersion(
@@ -288,8 +286,7 @@ func TestMixedResourcesAndScopes(t *testing.T) {
 			"service.name":        "database",
 			"service.instance.id": "db-1",
 		},
-		map[string]string{"db.system": "postgresql"},
-		nil, 2000, 6000)
+		map[string]string{"db.system": "postgresql"}, 2000, 6000)
 	mem.SetResource(200, rv2)
 
 	// Write and read back
@@ -312,169 +309,6 @@ func TestMixedResourcesAndScopes(t *testing.T) {
 	require.Equal(t, "postgresql", r.Descriptive["db.system"])
 }
 
-func TestWriteAndReadbackScopes(t *testing.T) {
-	tmpdir := t.TempDir()
-
-	mem := NewMemSeriesMetadata()
-
-	// Add scope data for two series
-	sv1 := NewScopeVersion("go.opentelemetry.io/contrib/instrumentation/net/http", "0.45.0", "https://opentelemetry.io/schemas/1.21.0",
-		map[string]string{"library.language": "go"}, 1000, 2000)
-	mem.SetVersionedScope(100, NewVersionedScope(sv1))
-
-	sv2 := NewScopeVersion("io.opentelemetry.contrib.javaagent", "1.30.0", "",
-		map[string]string{"library.language": "java", "library.framework": "spring"}, 1500, 2500)
-	mem.SetVersionedScope(200, NewVersionedScope(sv2))
-
-	// Write to file
-	size, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
-	require.NoError(t, err)
-	require.Positive(t, size)
-
-	// Read back
-	reader, readSize, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
-	require.NoError(t, err)
-	defer reader.Close()
-	require.Equal(t, size, readSize)
-
-	// Verify scope for series 100
-	vs1, found := reader.GetVersionedScope(100)
-	require.True(t, found)
-	require.Len(t, vs1.Versions, 1)
-	require.Equal(t, "go.opentelemetry.io/contrib/instrumentation/net/http", vs1.Versions[0].Name)
-	require.Equal(t, "0.45.0", vs1.Versions[0].Version)
-	require.Equal(t, "https://opentelemetry.io/schemas/1.21.0", vs1.Versions[0].SchemaURL)
-	require.Equal(t, "go", vs1.Versions[0].Attrs["library.language"])
-	require.Equal(t, int64(1000), vs1.Versions[0].MinTime)
-	require.Equal(t, int64(2000), vs1.Versions[0].MaxTime)
-
-	// Verify scope for series 200
-	vs2, found := reader.GetVersionedScope(200)
-	require.True(t, found)
-	require.Len(t, vs2.Versions, 1)
-	require.Equal(t, "io.opentelemetry.contrib.javaagent", vs2.Versions[0].Name)
-	require.Equal(t, "java", vs2.Versions[0].Attrs["library.language"])
-	require.Equal(t, "spring", vs2.Versions[0].Attrs["library.framework"])
-
-	// Verify totals
-	require.Equal(t, uint64(2), reader.TotalScopes())
-	require.Equal(t, uint64(2), reader.TotalScopeVersions())
-}
-
-func TestResourcesAndScopes(t *testing.T) {
-	tmpdir := t.TempDir()
-
-	mem := NewMemSeriesMetadata()
-
-	// Add resource
-	rv := NewResourceVersion(
-		map[string]string{"service.name": "my-service"},
-		map[string]string{"deployment.env": "prod"},
-		nil, 1000, 5000)
-	mem.SetResource(100, rv)
-
-	// Add scope
-	sv := NewScopeVersion("mylib", "1.0.0", "", map[string]string{"k": "v"}, 1000, 5000)
-	mem.SetVersionedScope(100, NewVersionedScope(sv))
-
-	// Write and read back
-	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
-	require.NoError(t, err)
-
-	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
-	require.NoError(t, err)
-	defer reader.Close()
-
-	require.Equal(t, uint64(1), reader.TotalResources())
-	require.Equal(t, uint64(1), reader.TotalScopes())
-
-	r, found := reader.GetResource(100)
-	require.True(t, found)
-	require.Equal(t, "my-service", r.Identifying["service.name"])
-
-	vs, found := reader.GetVersionedScope(100)
-	require.True(t, found)
-	require.Len(t, vs.Versions, 1)
-	require.Equal(t, "mylib", vs.Versions[0].Name)
-	require.Equal(t, "v", vs.Versions[0].Attrs["k"])
-}
-
-func TestScopeVersioningParquetRoundTrip(t *testing.T) {
-	tmpdir := t.TempDir()
-
-	mem := NewMemSeriesMetadata()
-
-	// Add two scope versions for the same series
-	vs := &VersionedScope{
-		Versions: []*ScopeVersion{
-			NewScopeVersion("lib", "1.0", "", nil, 1000, 2000),
-			NewScopeVersion("lib", "2.0", "", map[string]string{"new": "attr"}, 3000, 4000),
-		},
-	}
-	mem.SetVersionedScope(100, vs)
-
-	// Write and read back
-	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
-	require.NoError(t, err)
-
-	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
-	require.NoError(t, err)
-	defer reader.Close()
-
-	got, found := reader.GetVersionedScope(100)
-	require.True(t, found)
-	require.Len(t, got.Versions, 2)
-	require.Equal(t, "1.0", got.Versions[0].Version)
-	require.Equal(t, int64(1000), got.Versions[0].MinTime)
-	require.Equal(t, "2.0", got.Versions[1].Version)
-	require.Equal(t, "attr", got.Versions[1].Attrs["new"])
-	require.Equal(t, int64(3000), got.Versions[1].MinTime)
-
-	require.Equal(t, uint64(1), reader.TotalScopes())
-	require.Equal(t, uint64(2), reader.TotalScopeVersions())
-}
-
-// Tests for normalized Parquet storage.
-
-func TestContentHashDeterminism(t *testing.T) {
-	rv := NewResourceVersion(
-		map[string]string{"service.name": "foo", "service.namespace": "bar", "service.instance.id": "baz"},
-		map[string]string{"z": "1", "a": "2", "m": "3"},
-		[]*Entity{NewEntity("service", map[string]string{"b": "1", "a": "2"}, map[string]string{"y": "1", "x": "2"})},
-		1000, 2000,
-	)
-
-	hash1 := hashResourceContent(rv)
-	for range 100 {
-		require.Equal(t, hash1, hashResourceContent(rv))
-	}
-
-	rv2 := NewResourceVersion(
-		map[string]string{"service.instance.id": "baz", "service.name": "foo", "service.namespace": "bar"},
-		map[string]string{"m": "3", "z": "1", "a": "2"},
-		[]*Entity{NewEntity("service", map[string]string{"a": "2", "b": "1"}, map[string]string{"x": "2", "y": "1"})},
-		5000, 6000,
-	)
-	require.Equal(t, hash1, hashResourceContent(rv2))
-
-	rv3 := NewResourceVersion(
-		map[string]string{"service.name": "DIFFERENT"},
-		nil, nil, 1000, 2000,
-	)
-	require.NotEqual(t, hash1, hashResourceContent(rv3))
-}
-
-func TestScopeHashDeterminism(t *testing.T) {
-	sv := NewScopeVersion("lib", "1.0", "https://schema", map[string]string{"z": "1", "a": "2"}, 1000, 2000)
-	hash1 := hashScopeContent(sv)
-
-	sv2 := NewScopeVersion("lib", "1.0", "https://schema", map[string]string{"a": "2", "z": "1"}, 9000, 9999)
-	require.Equal(t, hash1, hashScopeContent(sv2))
-
-	sv3 := NewScopeVersion("lib", "2.0", "https://schema", map[string]string{"a": "2", "z": "1"}, 1000, 2000)
-	require.NotEqual(t, hash1, hashScopeContent(sv3))
-}
-
 func TestNormalizedResourceDeduplication(t *testing.T) {
 	tmpdir := t.TempDir()
 
@@ -490,7 +324,7 @@ func TestNormalizedResourceDeduplication(t *testing.T) {
 	}
 
 	for i := uint64(1); i <= 100; i++ {
-		rv := NewResourceVersion(sharedIdentifying, sharedDescriptive, nil, 1000, 5000)
+		rv := NewResourceVersion(sharedIdentifying, sharedDescriptive, 1000, 5000)
 		mem.SetResource(i, rv)
 	}
 
@@ -516,46 +350,6 @@ func TestNormalizedResourceDeduplication(t *testing.T) {
 	}
 }
 
-func TestNormalizedScopeDeduplication(t *testing.T) {
-	tmpdir := t.TempDir()
-
-	mem := NewMemSeriesMetadata()
-
-	for i := uint64(1); i <= 50; i++ {
-		sv := NewScopeVersion("otel-go", "1.0", "", map[string]string{"lang": "go"}, 1000, 5000)
-		mem.SetVersionedScope(i, NewVersionedScope(sv))
-	}
-	for i := uint64(51); i <= 100; i++ {
-		sv := NewScopeVersion("otel-java", "2.0", "", map[string]string{"lang": "java"}, 1000, 5000)
-		mem.SetVersionedScope(i, NewVersionedScope(sv))
-	}
-
-	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
-	require.NoError(t, err)
-
-	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
-	require.NoError(t, err)
-	defer reader.Close()
-
-	require.Equal(t, uint64(100), reader.TotalScopes())
-
-	for i := uint64(1); i <= 50; i++ {
-		vs, found := reader.GetVersionedScope(i)
-		require.True(t, found)
-		require.Len(t, vs.Versions, 1)
-		require.Equal(t, "otel-go", vs.Versions[0].Name)
-		require.Equal(t, "go", vs.Versions[0].Attrs["lang"])
-	}
-
-	for i := uint64(51); i <= 100; i++ {
-		vs, found := reader.GetVersionedScope(i)
-		require.True(t, found)
-		require.Len(t, vs.Versions, 1)
-		require.Equal(t, "otel-java", vs.Versions[0].Name)
-		require.Equal(t, "java", vs.Versions[0].Attrs["lang"])
-	}
-}
-
 func TestNormalizedMixedUniqueAndSharedResources(t *testing.T) {
 	tmpdir := t.TempDir()
 
@@ -563,15 +357,14 @@ func TestNormalizedMixedUniqueAndSharedResources(t *testing.T) {
 
 	for i := uint64(1); i <= 5; i++ {
 		rv := NewResourceVersion(
-			map[string]string{"service.name": fmt.Sprintf("unique-%d", i)},
-			nil, nil, 1000, 5000,
+			map[string]string{"service.name": fmt.Sprintf("unique-%d", i)}, nil, 1000, 5000,
 		)
 		mem.SetResource(i, rv)
 	}
 	for i := uint64(6); i <= 15; i++ {
 		rv := NewResourceVersion(
 			map[string]string{"service.name": "shared"},
-			nil, nil, 1000, 5000,
+			nil, 1000, 5000,
 		)
 		mem.SetResource(i, rv)
 	}
@@ -597,52 +390,6 @@ func TestNormalizedMixedUniqueAndSharedResources(t *testing.T) {
 	}
 }
 
-func TestNormalizedResourceWithEntities(t *testing.T) {
-	tmpdir := t.TempDir()
-
-	mem := NewMemSeriesMetadata()
-
-	entities := []*Entity{
-		NewEntity("service", map[string]string{"service.name": "my-svc"}, map[string]string{"version": "1.0"}),
-		NewEntity("host", map[string]string{"host.id": "h1"}, nil),
-	}
-	for i := uint64(1); i <= 2; i++ {
-		rv := NewResourceVersion(
-			map[string]string{"service.name": "my-svc"},
-			map[string]string{"cloud": "aws"},
-			entities,
-			1000, 5000,
-		)
-		mem.SetResource(i, rv)
-	}
-
-	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, mem)
-	require.NoError(t, err)
-
-	reader, _, err := ReadSeriesMetadata(promslog.NewNopLogger(), tmpdir)
-	require.NoError(t, err)
-	defer reader.Close()
-
-	require.Equal(t, uint64(2), reader.TotalResources())
-
-	for i := uint64(1); i <= 2; i++ {
-		r, found := reader.GetResource(i)
-		require.True(t, found)
-		require.Equal(t, "my-svc", r.Identifying["service.name"])
-		require.Equal(t, "aws", r.Descriptive["cloud"])
-		require.Len(t, r.Entities, 2)
-
-		svc := r.GetEntity("service")
-		require.NotNil(t, svc)
-		require.Equal(t, "my-svc", svc.ID["service.name"])
-		require.Equal(t, "1.0", svc.Description["version"])
-
-		host := r.GetEntity("host")
-		require.NotNil(t, host)
-		require.Equal(t, "h1", host.ID["host.id"])
-	}
-}
-
 func TestNormalizedVersionedResourceRoundTrip(t *testing.T) {
 	tmpdir := t.TempDir()
 
@@ -652,13 +399,11 @@ func TestNormalizedVersionedResourceRoundTrip(t *testing.T) {
 		Versions: []*ResourceVersion{
 			NewResourceVersion(
 				map[string]string{"service.name": "svc"},
-				map[string]string{"version": "1.0"},
-				nil, 1000, 2000,
+				map[string]string{"version": "1.0"}, 1000, 2000,
 			),
 			NewResourceVersion(
 				map[string]string{"service.name": "svc"},
-				map[string]string{"version": "2.0"},
-				nil, 3000, 4000,
+				map[string]string{"version": "2.0"}, 3000, 4000,
 			),
 		},
 	}
@@ -682,7 +427,7 @@ func TestNormalizedVersionedResourceRoundTrip(t *testing.T) {
 
 // Tests for distributed-scale Parquet features.
 
-// buildTestData creates a MemSeriesMetadata with resources and scopes for use in multiple tests.
+// buildTestData creates a MemSeriesMetadata with resources for use in multiple tests.
 func buildTestData(t *testing.T) *MemSeriesMetadata {
 	t.Helper()
 	mem := NewMemSeriesMetadata()
@@ -691,23 +436,16 @@ func buildTestData(t *testing.T) *MemSeriesMetadata {
 	for i := uint64(100); i <= 101; i++ {
 		rv := NewResourceVersion(
 			map[string]string{"service.name": fmt.Sprintf("svc-%d", i)},
-			map[string]string{"env": "prod"},
-			nil, 1000, 5000,
+			map[string]string{"env": "prod"}, 1000, 5000,
 		)
 		mem.SetResource(i, rv)
 	}
 	rv := NewResourceVersion(
 		map[string]string{"service.name": "shared-svc"},
-		map[string]string{"env": "staging"},
-		nil, 1000, 5000,
+		map[string]string{"env": "staging"}, 1000, 5000,
 	)
 	mem.SetResource(200, rv)
 	mem.SetResource(201, rv)
-
-	// Scopes.
-	sv := NewScopeVersion("otel-go", "1.0", "", map[string]string{"lang": "go"}, 1000, 5000)
-	mem.SetVersionedScope(100, NewVersionedScope(sv))
-	mem.SetVersionedScope(200, NewVersionedScope(sv))
 
 	return mem
 }
@@ -743,8 +481,6 @@ func TestWriteFileWithOptions_NamespaceRowGroups(t *testing.T) {
 
 	require.True(t, seenNamespaces[NamespaceResourceTable], "expected resource_table namespace")
 	require.True(t, seenNamespaces[NamespaceResourceMapping], "expected resource_mapping namespace")
-	require.True(t, seenNamespaces[NamespaceScopeTable], "expected scope_table namespace")
-	require.True(t, seenNamespaces[NamespaceScopeMapping], "expected scope_mapping namespace")
 }
 
 func TestWriteFileWithOptions_MaxRowsPerRowGroup(t *testing.T) {
@@ -754,7 +490,7 @@ func TestWriteFileWithOptions_MaxRowsPerRowGroup(t *testing.T) {
 	for i := uint64(1); i <= 200; i++ {
 		rv := NewResourceVersion(
 			map[string]string{"service.name": "shared"},
-			nil, nil, 1000, 5000,
+			nil, 1000, 5000,
 		)
 		mem.SetResource(i, rv)
 	}
@@ -856,11 +592,7 @@ func TestWriteFileWithOptions_RoundTrip(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, "shared-svc", r.Identifying["service.name"])
 
-	// Verify scopes.
-	require.Equal(t, uint64(2), reader.TotalScopes())
-	vs, found := reader.GetVersionedScope(100)
 	require.True(t, found)
-	require.Equal(t, "otel-go", vs.Versions[0].Name)
 }
 
 func TestReadSeriesMetadataFromReaderAt(t *testing.T) {
@@ -883,8 +615,6 @@ func TestReadSeriesMetadataFromReaderAt(t *testing.T) {
 	defer reader.Close()
 
 	require.Equal(t, uint64(4), reader.TotalResources())
-	require.Equal(t, uint64(2), reader.TotalScopes())
-
 	r, found := reader.GetResource(100)
 	require.True(t, found)
 	require.Equal(t, "svc-100", r.Identifying["service.name"])
@@ -938,37 +668,6 @@ func TestReadSeriesMetadataFromReaderAt_NamespaceFilter(t *testing.T) {
 	r, found := reader.GetResource(100)
 	require.True(t, found)
 	require.Equal(t, "svc-100", r.Identifying["service.name"])
-
-	// Scopes should be empty.
-	require.Equal(t, uint64(0), reader.TotalScopes())
-}
-
-func TestReadSeriesMetadataFromReaderAt_NamespaceFilter_EmptyResult(t *testing.T) {
-	tmpdir := t.TempDir()
-	mem := NewMemSeriesMetadata()
-	// Only add a scope, no resources.
-	sv := NewScopeVersion("lib", "1.0", "", nil, 1000, 5000)
-	mem.SetVersionedScope(1, NewVersionedScope(sv))
-
-	_, err := WriteFileWithOptions(promslog.NewNopLogger(), tmpdir, mem, WriterOptions{})
-	require.NoError(t, err)
-
-	path := filepath.Join(tmpdir, SeriesMetadataFilename)
-	f, err := os.Open(path)
-	require.NoError(t, err)
-	defer f.Close()
-
-	stat, err := f.Stat()
-	require.NoError(t, err)
-
-	// Filter for resource namespaces when there are no resources.
-	reader, err := ReadSeriesMetadataFromReaderAt(promslog.NewNopLogger(), f, stat.Size(),
-		WithNamespaceFilter(NamespaceResourceTable, NamespaceResourceMapping))
-	require.NoError(t, err)
-	defer reader.Close()
-
-	require.Equal(t, uint64(0), reader.TotalResources())
-	require.Equal(t, uint64(0), reader.TotalScopes())
 }
 
 func TestReadOldSingleRowGroupFile(t *testing.T) {
@@ -983,8 +682,6 @@ func TestReadOldSingleRowGroupFile(t *testing.T) {
 	defer reader1.Close()
 
 	require.Equal(t, uint64(4), reader1.TotalResources())
-	require.Equal(t, uint64(2), reader1.TotalScopes())
-
 	path := filepath.Join(tmpdir, SeriesMetadataFilename)
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -994,7 +691,6 @@ func TestReadOldSingleRowGroupFile(t *testing.T) {
 	defer reader2.Close()
 
 	require.Equal(t, uint64(4), reader2.TotalResources())
-	require.Equal(t, uint64(2), reader2.TotalScopes())
 }
 
 func TestRefResolverRoundTrip(t *testing.T) {
@@ -1012,22 +708,17 @@ func TestRefResolverRoundTrip(t *testing.T) {
 		20: 2000,
 	}
 
-	// Add resources and scopes keyed by labelsHash.
 	rv1 := NewResourceVersion(
 		map[string]string{"service.name": "frontend"},
-		map[string]string{"env": "prod"},
-		nil, 1000, 5000,
+		map[string]string{"env": "prod"}, 1000, 5000,
 	)
 	mem.SetResource(1000, rv1)
 
 	rv2 := NewResourceVersion(
 		map[string]string{"service.name": "backend"},
-		nil, nil, 2000, 6000,
+		nil, 2000, 6000,
 	)
 	mem.SetResource(2000, rv2)
-
-	sv := NewScopeVersion("otel-go", "1.0", "", map[string]string{"lang": "go"}, 1000, 5000)
-	mem.SetVersionedScope(1000, NewVersionedScope(sv))
 
 	// Write with RefResolver (labelsHash → seriesRef).
 	wopts := WriterOptions{
@@ -1051,8 +742,6 @@ func TestRefResolverRoundTrip(t *testing.T) {
 
 	// Verify data is accessible via the original labelsHash keys.
 	require.Equal(t, uint64(2), reader.TotalResources())
-	require.Equal(t, uint64(1), reader.TotalScopes())
-
 	r1, found := reader.GetResource(1000)
 	require.True(t, found)
 	require.Equal(t, "frontend", r1.Identifying["service.name"])
@@ -1062,10 +751,7 @@ func TestRefResolverRoundTrip(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, "backend", r2.Identifying["service.name"])
 
-	vs, found := reader.GetVersionedScope(1000)
 	require.True(t, found)
-	require.Len(t, vs.Versions, 1)
-	require.Equal(t, "otel-go", vs.Versions[0].Name)
 }
 
 func TestBuildResourceAttrIndex(t *testing.T) {
@@ -1074,24 +760,21 @@ func TestBuildResourceAttrIndex(t *testing.T) {
 	// Series 1: payment-service in production
 	rv1 := NewResourceVersion(
 		map[string]string{"service.name": "payment-service", "service.namespace": "production"},
-		map[string]string{"host.name": "host-1"},
-		nil, 1000, 2000,
+		map[string]string{"host.name": "host-1"}, 1000, 2000,
 	)
 	mem.SetVersionedResource(100, NewVersionedResource(rv1))
 
 	// Series 2: payment-service in staging (same service.name, different namespace)
 	rv2 := NewResourceVersion(
 		map[string]string{"service.name": "payment-service", "service.namespace": "staging"},
-		map[string]string{"host.name": "host-2"},
-		nil, 1000, 2000,
+		map[string]string{"host.name": "host-2"}, 1000, 2000,
 	)
 	mem.SetVersionedResource(200, NewVersionedResource(rv2))
 
 	// Series 3: frontend-service in production
 	rv3 := NewResourceVersion(
 		map[string]string{"service.name": "frontend-service", "service.namespace": "production"},
-		map[string]string{"host.name": "host-1"},
-		nil, 1000, 2000,
+		map[string]string{"host.name": "host-1"}, 1000, 2000,
 	)
 	mem.SetVersionedResource(300, NewVersionedResource(rv3))
 
@@ -1131,13 +814,11 @@ func TestBuildResourceAttrIndex_MultipleVersions(t *testing.T) {
 	// Series with two versions: different descriptive attrs across versions.
 	rv1 := NewResourceVersion(
 		map[string]string{"service.name": "my-service"},
-		map[string]string{"host.name": "host-old"},
-		nil, 1000, 2000,
+		map[string]string{"host.name": "host-old"}, 1000, 2000,
 	)
 	rv2 := NewResourceVersion(
 		map[string]string{"service.name": "my-service"},
-		map[string]string{"host.name": "host-new"},
-		nil, 2001, 3000,
+		map[string]string{"host.name": "host-new"}, 2001, 3000,
 	)
 	vr := NewVersionedResource(rv1)
 	vr.Versions = append(vr.Versions, rv2)
@@ -1177,7 +858,7 @@ func TestMemStoreContentDedup(t *testing.T) {
 	// Insert 1000 entries with identical resource content but different labelsHash.
 	const numEntries = 1000
 	for i := uint64(1); i <= numEntries; i++ {
-		rv := NewResourceVersion(sharedIdentifying, sharedDescriptive, nil, 1000, 5000)
+		rv := NewResourceVersion(sharedIdentifying, sharedDescriptive, 1000, 5000)
 		store.Set(i, rv)
 	}
 
@@ -1207,8 +888,7 @@ func TestMemStoreContentDedup(t *testing.T) {
 	for i := uint64(numEntries + 1); i <= numEntries+10; i++ {
 		rv := NewResourceVersion(
 			map[string]string{"service.name": "other-service"},
-			map[string]string{"deployment.env": "staging"},
-			nil, 2000, 6000,
+			map[string]string{"deployment.env": "staging"}, 2000, 6000,
 		)
 		store.Set(i, rv)
 	}
@@ -1222,34 +902,6 @@ func TestMemStoreContentDedup(t *testing.T) {
 	require.NotEqual(t, canonicalIdentifying, reflect.ValueOf(got1.Identifying).Pointer())
 }
 
-func TestMemStoreContentDedupScope(t *testing.T) {
-	store := NewMemScopeStore()
-
-	// Insert 100 entries with identical scope content.
-	const numEntries = 100
-	for i := uint64(1); i <= numEntries; i++ {
-		sv := NewScopeVersion("otel-go", "1.0", "https://schema", map[string]string{"lang": "go"}, 1000, 5000)
-		store.Set(i, sv)
-	}
-
-	require.Equal(t, 1, store.TotalCanonical())
-
-	// Verify shared pointers.
-	var canonicalAttrs uintptr
-	for i := uint64(1); i <= numEntries; i++ {
-		got, ok := store.Get(i)
-		require.True(t, ok)
-		attrsPtr := reflect.ValueOf(got.Attrs).Pointer()
-		if i == 1 {
-			canonicalAttrs = attrsPtr
-		} else {
-			require.Equal(t, canonicalAttrs, attrsPtr, "series %d should share Attrs map pointer", i)
-		}
-		require.Equal(t, "otel-go", got.Name)
-		require.Equal(t, "go", got.Attrs["lang"])
-	}
-}
-
 func TestMemStoreContentDedupSetVersioned(t *testing.T) {
 	store := NewMemResourceStore()
 
@@ -1257,8 +909,7 @@ func TestMemStoreContentDedupSetVersioned(t *testing.T) {
 	for i := uint64(1); i <= 50; i++ {
 		rv := NewResourceVersion(
 			map[string]string{"service.name": "svc"},
-			map[string]string{"env": "prod"},
-			nil, 1000, 5000,
+			map[string]string{"env": "prod"}, 1000, 5000,
 		)
 		store.SetVersioned(i, &VersionedResource{Versions: []*ResourceVersion{rv}})
 	}
@@ -1283,10 +934,10 @@ func TestMemStoreContentDedupTimeRangesIndependent(t *testing.T) {
 
 	// Two entries with same content but different time ranges should share maps
 	// but have independent time ranges.
-	rv1 := NewResourceVersion(map[string]string{"service.name": "svc"}, nil, nil, 1000, 2000)
+	rv1 := NewResourceVersion(map[string]string{"service.name": "svc"}, nil, 1000, 2000)
 	store.Set(1, rv1)
 
-	rv2 := NewResourceVersion(map[string]string{"service.name": "svc"}, nil, nil, 3000, 4000)
+	rv2 := NewResourceVersion(map[string]string{"service.name": "svc"}, nil, 3000, 4000)
 	store.Set(2, rv2)
 
 	got1, _ := store.Get(1)
@@ -1308,8 +959,7 @@ func TestInvertedIndexDisabled(t *testing.T) {
 
 	rv1 := NewResourceVersion(
 		map[string]string{"service.name": "payment-service", "service.namespace": "production"},
-		map[string]string{"host.name": "host-1"},
-		nil, 1000, 2000,
+		map[string]string{"host.name": "host-1"}, 1000, 2000,
 	)
 	vr := NewVersionedResource(rv1)
 	mem.SetVersionedResource(100, vr)
@@ -1366,8 +1016,7 @@ func TestWriteFileWithOptions_HashFilter(t *testing.T) {
 	for i := uint64(1); i <= 4; i++ {
 		rv := NewResourceVersion(
 			map[string]string{"service.name": fmt.Sprintf("svc-%d", i)},
-			map[string]string{"env": "prod"},
-			nil, 1000, 5000,
+			map[string]string{"env": "prod"}, 1000, 5000,
 		)
 		mem.SetResource(i, rv)
 	}
@@ -1407,8 +1056,7 @@ func TestWriteFileWithOptions_HashFilterWithInvertedIndex(t *testing.T) {
 	for i := uint64(1); i <= 4; i++ {
 		rv := NewResourceVersion(
 			map[string]string{"service.name": fmt.Sprintf("svc-%d", i)},
-			map[string]string{"env": "prod"},
-			nil, 1000, 5000,
+			map[string]string{"env": "prod"}, 1000, 5000,
 		)
 		mem.SetResource(i, rv)
 	}
@@ -1450,13 +1098,11 @@ func TestBuildResourceAttrIndexStreaming(t *testing.T) {
 	// descriptive attrs across versions.
 	rv1 := NewResourceVersion(
 		map[string]string{"service.name": "svc-a"},
-		map[string]string{"host.name": "host-old"},
-		nil, 1000, 2000,
+		map[string]string{"host.name": "host-old"}, 1000, 2000,
 	)
 	rv2 := NewResourceVersion(
 		map[string]string{"service.name": "svc-a"},
-		map[string]string{"host.name": "host-new"},
-		nil, 2001, 3000,
+		map[string]string{"host.name": "host-new"}, 2001, 3000,
 	)
 	vr := NewVersionedResource(rv1)
 	vr.Versions = append(vr.Versions, rv2)
@@ -1466,8 +1112,7 @@ func TestBuildResourceAttrIndexStreaming(t *testing.T) {
 	// attr value — must not be deduped across series).
 	rv3 := NewResourceVersion(
 		map[string]string{"service.name": "svc-a"},
-		map[string]string{"host.name": "host-new"},
-		nil, 1000, 5000,
+		map[string]string{"host.name": "host-new"}, 1000, 5000,
 	)
 	mem.SetVersionedResource(200, NewVersionedResource(rv3))
 

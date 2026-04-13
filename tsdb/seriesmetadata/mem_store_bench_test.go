@@ -123,7 +123,7 @@ func BenchmarkCommitResourceToStore(b *testing.B) {
 
 func BenchmarkIterVersionedFlatInline(b *testing.B) {
 	const numSeries = 100_000
-	m := populateBenchStore(numSeries, 1_000, 500)
+	m := populateBenchStore(numSeries, 1_000)
 	ctx := context.Background()
 
 	b.Run("IterVersionedFlatInline", func(b *testing.B) {
@@ -138,12 +138,11 @@ func BenchmarkIterVersionedFlatInline(b *testing.B) {
 	})
 }
 
-// populateBenchStore creates a MemSeriesMetadata with numSeries entries,
-// numResources unique resource contents, and numScopes unique scope contents.
-func populateBenchStore(numSeries, numResources, numScopes int) *MemSeriesMetadata {
+// populateBenchStore creates a MemSeriesMetadata with numSeries entries
+// and numResources unique resource contents.
+func populateBenchStore(numSeries, numResources int) *MemSeriesMetadata {
 	m := NewMemSeriesMetadata()
 	rs := m.ResourceStore()
-	ss := m.ScopeStore()
 
 	for i := range numSeries {
 		lh := uint64(i)
@@ -158,23 +157,13 @@ func populateBenchStore(numSeries, numResources, numScopes int) *MemSeriesMetada
 			MaxTime:     100,
 		}
 		rs.Set(lh, rv)
-
-		scopeIdx := i % numScopes
-		sv := &ScopeVersion{
-			Name:    fmt.Sprintf("scope-%d", scopeIdx),
-			Version: "1.0",
-			Attrs:   map[string]string{"lib": fmt.Sprintf("lib-%d", scopeIdx)},
-			MinTime: 0,
-			MaxTime: 100,
-		}
-		ss.Set(lh, sv)
 	}
 	return m
 }
 
 func BenchmarkWriteFileWithOptions(b *testing.B) {
 	const numSeries = 100_000
-	m := populateBenchStore(numSeries, 1_000, 500)
+	m := populateBenchStore(numSeries, 1_000)
 	dir := b.TempDir()
 	logger := slog.New(slog.DiscardHandler)
 
@@ -190,7 +179,7 @@ func BenchmarkWriteFileWithOptions(b *testing.B) {
 
 func BenchmarkMergeAndWriteSeriesMetadata(b *testing.B) {
 	const numSeries = 100_000
-	m := populateBenchStore(numSeries, 1_000, 500)
+	m := populateBenchStore(numSeries, 1_000)
 	dir := b.TempDir()
 	logger := slog.New(slog.DiscardHandler)
 

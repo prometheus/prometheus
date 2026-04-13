@@ -1539,17 +1539,9 @@ type ResourceAttributeData struct {
 	Descriptive map[string]string `json:"descriptive"`
 }
 
-// EntityData represents a single entity with type and attributes.
-type EntityData struct {
-	Type        string            `json:"type"`
-	Identifying map[string]string `json:"identifying"`
-	Descriptive map[string]string `json:"descriptive"`
-}
-
 // ResourceAttributeVersion is a single version of resource attributes with its time range.
 type ResourceAttributeVersion struct {
 	Attributes ResourceAttributeData `json:"resource_attributes"`
-	Entities   []EntityData          `json:"entities,omitempty"`
 	MinTimeMs  int64                 `json:"min_time_ms"`
 	MaxTimeMs  int64                 `json:"max_time_ms"`
 }
@@ -1572,21 +1564,10 @@ type PaginatedSeriesMetadata struct {
 	NextToken string                   `json:"nextToken,omitempty"`
 }
 
-// ScopeAttributeVersion is a single version of scope metadata with its time range.
-type ScopeAttributeVersion struct {
-	Name      string            `json:"name"`
-	Version   string            `json:"version,omitempty"`
-	SchemaURL string            `json:"schema_url,omitempty"`
-	Attrs     map[string]string `json:"attrs,omitempty"`
-	MinTimeMs int64             `json:"min_time_ms"`
-	MaxTimeMs int64             `json:"max_time_ms"`
-}
-
 // SeriesMetadataResponse is the response for the reverse lookup endpoint.
 type SeriesMetadataResponse struct {
-	Labels        labels.Labels              `json:"labels"`
-	Versions      []ResourceAttributeVersion `json:"versions,omitempty"`
-	ScopeVersions []ScopeAttributeVersion    `json:"scope_versions,omitempty"`
+	Labels   labels.Labels              `json:"labels"`
+	Versions []ResourceAttributeVersion `json:"versions,omitempty"`
 }
 
 func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
@@ -1734,7 +1715,6 @@ func (api *API) resourceAttributes(r *http.Request) (result apiFuncResult) {
 }
 
 // filterVersions returns versions that overlap with [startMs, endMs].
-// Uses the unified ResourceVersion that contains both attributes and entities.
 func filterVersions(versions []*seriesmetadata.ResourceVersion, startMs, endMs int64) []ResourceAttributeVersion {
 	result := make([]ResourceAttributeVersion, 0, len(versions))
 	for _, v := range versions {
@@ -1747,15 +1727,6 @@ func filterVersions(versions []*seriesmetadata.ResourceVersion, startMs, endMs i
 				},
 				MinTimeMs: v.MinTime,
 				MaxTimeMs: v.MaxTime,
-			}
-
-			// Extract entities from the unified ResourceVersion
-			for _, entity := range v.Entities {
-				rv.Entities = append(rv.Entities, EntityData{
-					Type:        entity.Type,
-					Identifying: entity.ID,
-					Descriptive: entity.Description,
-				})
 			}
 
 			result = append(result, rv)
@@ -2004,24 +1975,6 @@ func matchesResourceVersion(rv *seriesmetadata.ResourceVersion, resourceAttrFilt
 	return true
 }
 
-// filterScopeVersions returns scope versions that overlap with [startMs, endMs].
-func filterScopeVersions(versions []*seriesmetadata.ScopeVersion, startMs, endMs int64) []ScopeAttributeVersion {
-	result := make([]ScopeAttributeVersion, 0, len(versions))
-	for _, v := range versions {
-		if v.MinTime <= endMs && v.MaxTime >= startMs {
-			result = append(result, ScopeAttributeVersion{
-				Name:      v.Name,
-				Version:   v.Version,
-				SchemaURL: v.SchemaURL,
-				Attrs:     v.Attrs,
-				MinTimeMs: v.MinTime,
-				MaxTimeMs: v.MaxTime,
-			})
-		}
-	}
-	return result
-}
-
 func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 	if !api.enableNativeMetadata {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("native metadata is disabled; enable with --enable-feature=native-metadata")}, nil, nil}
@@ -2084,10 +2037,9 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 	}
 	defer mr.Close()
 
-	// Track matched series by labels hash. Each entry accumulates resource + scope versions.
+	// Track matched series by labels hash.
 	type matchedEntry struct {
 		resourceVersions []ResourceAttributeVersion
-		scopeVersions    []ScopeAttributeVersion
 	}
 	matched := make(map[uint64]*matchedEntry)
 
@@ -2166,13 +2118,6 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 		})
 		if err != nil && !errors.Is(err, errMaxResultsReached) {
 			return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("failed to iterate resources: %w", err)}, nil, nil}
-		}
-	}
-
-	// Populate scope versions for matched series (for complete response)
-	for hash, entry := range matched {
-		if scopes, ok := mr.GetVersionedScope(hash); ok {
-			entry.scopeVersions = filterScopeVersions(scopes.Versions, startMs, endMs)
 		}
 	}
 
@@ -2258,9 +2203,8 @@ func (api *API) resourceSeriesLookup(r *http.Request) (result apiFuncResult) {
 			continue
 		}
 		results = append(results, SeriesMetadataResponse{
-			Labels:        lset,
-			Versions:      entry.resourceVersions,
-			ScopeVersions: entry.scopeVersions,
+			Labels:   lset,
+			Versions: entry.resourceVersions,
 		})
 	}
 
