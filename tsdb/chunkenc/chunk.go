@@ -122,15 +122,12 @@ type Appender interface {
 	AppendHistogram(prev *HistogramAppender, st, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 	AppendFloatHistogram(prev *FloatHistogramAppender, st, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 
-	// IsStaleLastValue reports whether the most recently appended sample is a
-	// stale marker, regardless of sample type.
-	IsStaleLastValue() bool
-
-	// IsEqual reports whether the given sample would be an exact duplicate of
-	// the most recently appended sample. Pass only the field that matches the
-	// sample type being checked; the other fields should be zero (0 for float64,
-	// nil for pointers). Returns false whenever the types differ or the values differ.
-	IsEqual(v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool
+	// LastValue returns the most recently appended sample value.
+	// For float samples, v is set and h, fh are nil.
+	// For integer histogram samples, h is set and v, fh are zero/nil.
+	// For float histogram samples, fh is set and v, h are zero/nil.
+	// If no sample has been appended yet, all return values are zero/nil.
+	LastValue() (v float64, h *histogram.Histogram, fh *histogram.FloatHistogram)
 }
 
 // Iterator is a simple iterator that can only get the next value.

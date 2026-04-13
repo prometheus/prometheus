@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -2474,9 +2475,6 @@ type memSeries struct {
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
 
-	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
-	lastValue float64
-
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunks is nil. E.g. if there was an appender that created a new series, but rolled back the commit
 	// (the first sample would create a headChunk, hence appender, but rollback skipped it while the Append() call would create a series).
@@ -2489,7 +2487,11 @@ type memSeries struct {
 // isStaleLastValue reports whether the most recently appended sample (of any
 // type) is a stale marker. The series lock must be held.
 func (s *memSeries) isStaleLastValue() bool {
-	return s.app != nil && s.app.IsStaleLastValue()
+	if s.app == nil {
+		return false
+	}
+	v, h, fh := s.app.LastValue()
+	return value.IsStaleNaN(v) || (h != nil && value.IsStaleNaN(h.Sum)) || (fh != nil && value.IsStaleNaN(fh.Sum))
 }
 
 // memSeriesOOOFields contains the fields required by memSeries

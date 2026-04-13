@@ -508,12 +508,8 @@ func (*xor2Appender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64,
 	panic("appended a float histogram sample to a float chunk")
 }
 
-func (a *xor2Appender) IsStaleLastValue() bool {
-	return value.IsStaleNaN(a.v)
-}
-
-func (a *xor2Appender) IsEqual(v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
-	return h == nil && fh == nil && math.Float64bits(a.v) == math.Float64bits(v)
+func (a *xor2Appender) LastValue() (float64, *histogram.Histogram, *histogram.FloatHistogram) {
+	return a.v, nil, nil
 }
 
 // xor2Iterator decodes XOR2 chunks.

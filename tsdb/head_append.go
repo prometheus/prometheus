@@ -660,15 +660,15 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
-			if s.app.IsEqual(v, nil, nil) {
+			prevV, prevH, prevFH := s.app.LastValue()
+			if prevH == nil && prevFH == nil && math.Float64bits(prevV) == math.Float64bits(v) {
 				// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
 				return false, 0, nil
 			}
-			switch s.app.(type) {
-			case *chunkenc.HistogramAppender, *chunkenc.FloatHistogramAppender:
+			if prevH != nil || prevFH != nil {
 				return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
 			}
-			return false, 0, storage.NewDuplicateFloatErr(t, s.lastValue, v)
+			return false, 0, storage.NewDuplicateFloatErr(t, prevV, v)
 		}
 	}
 
@@ -706,7 +706,8 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
-			if !s.app.IsEqual(0, h, nil) {
+			_, prevH, _ := s.app.LastValue()
+			if !h.Equals(prevH) {
 				return false, 0, storage.ErrDuplicateSampleForTimestamp
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
@@ -748,7 +749,8 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
-			if !s.app.IsEqual(0, nil, fh) {
+			_, _, prevFH := s.app.LastValue()
+			if !fh.Equals(prevFH) {
 				return false, 0, storage.ErrDuplicateSampleForTimestamp
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
@@ -1543,10 +1545,12 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		default:
 			newlyStale := value.IsStaleNaN(s.H.Sum)
 			staleToNonStale := false
-			if _, ok2 := series.app.(*chunkenc.HistogramAppender); ok2 {
-				isLastStale := series.app.IsStaleLastValue()
-				newlyStale = newlyStale && !isLastStale
-				staleToNonStale = isLastStale && !value.IsStaleNaN(s.H.Sum)
+			if series.app != nil {
+				if _, prevH, _ := series.app.LastValue(); prevH != nil {
+					isLastStale := value.IsStaleNaN(prevH.Sum)
+					newlyStale = newlyStale && !isLastStale
+					staleToNonStale = isLastStale && !value.IsStaleNaN(s.H.Sum)
+				}
 			}
 			// TODO(krajorama,ywwg): pass ST when available in WAL.
 			ok, chunkCreated = series.appendHistogram(0, s.T, s.H, a.appendID, acc.appendChunkOpts)
@@ -1655,10 +1659,12 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		default:
 			newlyStale := value.IsStaleNaN(s.FH.Sum)
 			staleToNonStale := false
-			if _, ok2 := series.app.(*chunkenc.FloatHistogramAppender); ok2 {
-				isLastStale := series.app.IsStaleLastValue()
-				newlyStale = newlyStale && !isLastStale
-				staleToNonStale = isLastStale && !value.IsStaleNaN(s.FH.Sum)
+			if series.app != nil {
+				if _, _, prevFH := series.app.LastValue(); prevFH != nil {
+					isLastStale := value.IsStaleNaN(prevFH.Sum)
+					newlyStale = newlyStale && !isLastStale
+					staleToNonStale = isLastStale && !value.IsStaleNaN(s.FH.Sum)
+				}
 			}
 			// TODO(krajorama,ywwg): pass ST when available in WAL.
 			ok, chunkCreated = series.appendFloatHistogram(0, s.T, s.FH, a.appendID, acc.appendChunkOpts)
@@ -1855,8 +1861,6 @@ func (s *memSeries) append(st, t int64, v float64, appendID uint64, o chunkOpts)
 	s.app.Append(st, t, v)
 
 	c.maxTime = t
-
-	s.lastValue = v
 
 	if appendID > 0 {
 		s.txs.add(appendID)

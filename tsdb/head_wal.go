@@ -712,19 +712,23 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			var chunkCreated, newlyStale, staleToNonStale bool
 			if s.h != nil {
 				newlyStale = value.IsStaleNaN(s.h.Sum)
-				if _, ok := ms.app.(*chunkenc.HistogramAppender); ok {
-					isLastStale := ms.app.IsStaleLastValue()
-					newlyStale = newlyStale && !isLastStale
-					staleToNonStale = isLastStale && !value.IsStaleNaN(s.h.Sum)
+				if ms.app != nil {
+					if _, prevH, _ := ms.app.LastValue(); prevH != nil {
+						isLastStale := value.IsStaleNaN(prevH.Sum)
+						newlyStale = newlyStale && !isLastStale
+						staleToNonStale = isLastStale && !value.IsStaleNaN(s.h.Sum)
+					}
 				}
 				// TODO(krajorama,ywwg): Pass ST when available in WBL.
 				_, chunkCreated = ms.appendHistogram(0, s.t, s.h, 0, appendChunkOpts)
 			} else {
 				newlyStale = value.IsStaleNaN(s.fh.Sum)
-				if _, ok := ms.app.(*chunkenc.FloatHistogramAppender); ok {
-					isLastStale := ms.app.IsStaleLastValue()
-					newlyStale = newlyStale && !isLastStale
-					staleToNonStale = isLastStale && !value.IsStaleNaN(s.fh.Sum)
+				if ms.app != nil {
+					if _, _, prevFH := ms.app.LastValue(); prevFH != nil {
+						isLastStale := value.IsStaleNaN(prevFH.Sum)
+						newlyStale = newlyStale && !isLastStale
+						staleToNonStale = isLastStale && !value.IsStaleNaN(s.fh.Sum)
+					}
 				}
 				// TODO(krajorama,ywwg): Pass ST when available in WBL.
 				_, chunkCreated = ms.appendFloatHistogram(0, s.t, s.fh, 0, appendChunkOpts)
@@ -1222,18 +1226,13 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 				buf.PutBEFloat64(0)
 			}
 			buf.PutBE64int64(0)
-			buf.PutBEFloat64(s.lastValue)
+			lastV, _, _ := s.app.LastValue()
+			buf.PutBEFloat64(lastV)
 		case chunkenc.EncHistogram:
-			var lastH *histogram.Histogram
-			if app, ok := s.app.(*chunkenc.HistogramAppender); ok {
-				lastH = app.LastHistogram()
-			}
+			_, lastH, _ := s.app.LastValue()
 			record.EncodeHistogram(&buf, lastH)
 		default: // chunkenc.FloatHistogram.
-			var lastFH *histogram.FloatHistogram
-			if app, ok := s.app.(*chunkenc.FloatHistogramAppender); ok {
-				lastFH = app.LastFloatHistogram()
-			}
+			_, _, lastFH := s.app.LastValue()
 			record.EncodeFloatHistogram(&buf, lastFH)
 		}
 	}
@@ -1671,7 +1670,6 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
 				series.headChunks = csr.mc
-				series.lastValue = csr.lastValue
 
 				app, err := series.headChunks.chunk.Appender()
 				if err != nil {

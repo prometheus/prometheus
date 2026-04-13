@@ -201,12 +201,8 @@ func (a *FloatHistogramAppender) SetLastFloatHistogram(fh *histogram.FloatHistog
 	a.lastValue = fh
 }
 
-func (a *FloatHistogramAppender) IsStaleLastValue() bool {
-	return a.lastValue != nil && value.IsStaleNaN(a.lastValue.Sum)
-}
-
-func (a *FloatHistogramAppender) IsEqual(_ float64, _ *histogram.Histogram, fh *histogram.FloatHistogram) bool {
-	return fh != nil && fh.Equals(a.lastValue)
+func (a *FloatHistogramAppender) LastValue() (float64, *histogram.Histogram, *histogram.FloatHistogram) {
+	return 0, nil, a.lastValue
 }
 
 func (a *FloatHistogramAppender) setCounterResetHeader(cr CounterResetHeader) {
