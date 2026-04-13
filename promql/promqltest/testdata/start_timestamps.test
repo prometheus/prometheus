@@ -1,6 +1,4 @@
 # Tests for rate(), irate() and increase() on cumulative.
-#                                         _ _ 0 60 120 180 240 300 360 420 480  540  600  660  720  780  840
-
 load 1m
     cumulative{type="no_st"}              _ _ 0+60x14
     cumulative{type="st_resets"}@st       _ _ -30s-1mx2 -1m-1mx2 -59999ms-1mx2 -1s-1mx2 -1ms-1mx2
@@ -48,6 +46,7 @@ clear
 # * ST = T - 1ms
 # * ST = T
 load 1m
+    delta{type="no_st"}               _ _  60x15
     delta{type="otel"}@st             _ _ -1mx15
     delta{type="otel"}                _ _  60x15
     delta{type="gcp"}@st              _ _ -59999msx15
@@ -56,31 +55,40 @@ load 1m
     delta{type="minimal_range"}       _ _   60x15
     delta{type="empty_range"}@st      _ _ -0msx15
     delta{type="empty_range"}         _ _   60x15
+    delta{type="normalized_resets"}   _ _ 60+60x15
 
 eval range from 10m to 15m step 1m increase(delta[5m])
-    {type="otel"}            300x5
-    {type="gcp"}             300x5
-    {type="minimal_range"}   300x5
-    {type="empty_range"}     300x5
+    {type="no_st"}                0x5
+    {type="otel"}               300x5
+    {type="gcp"}                300x5
+    {type="minimal_range"}      300x5
+    {type="empty_range"}        300x5
+    {type="normalized_resets"}  300x5
 
 eval range from 10m to 15m step 1m rate(delta[5m])
-    {type="otel"}            1x5
-    {type="gcp"}             1x5
-    {type="minimal_range"}   1x5
-    {type="empty_range"}     1x5
+    {type="no_st"}              0x5
+    {type="otel"}               1x5
+    {type="gcp"}                1x5
+    {type="minimal_range"}      1x5
+    {type="empty_range"}        1x5
+    {type="normalized_resets"}  1x5
 
 eval range from 10m to 15m step 1m irate(delta[5m])
-    {type="otel"}            1x5
-    {type="gcp"}             1x5
-    {type="minimal_range"}   1x5
-    {type="empty_range"}     1x5
+    {type="no_st"}              0x5
+    {type="otel"}               1x5
+    {type="gcp"}                1x5
+    {type="minimal_range"}      1x5
+    {type="empty_range"}        1x5
+    {type="normalized_resets"}  1x5
 
 # Subqueries cuts the propagation of start timestamps
 eval range from 10m to 15m step 1m increase(delta[5m:1m])
-    {type="otel"}            0x5
-    {type="gcp"}             0x5
-    {type="minimal_range"}   0x5
-    {type="empty_range"}     0x5
+    {type="no_st"}                0x5
+    {type="otel"}                 0x5
+    {type="gcp"}                  0x5
+    {type="minimal_range"}        0x5
+    {type="empty_range"}          0x5
+    {type="normalized_resets"}  300x5
 
 clear
 
