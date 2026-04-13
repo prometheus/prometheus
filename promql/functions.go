@@ -230,20 +230,13 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		if enh.StartTimestamps != nil {
 			startTimestamps = enh.StartTimestamps.Floats
 		}
-		for i, currPoint := range samples.Floats {
-			if i == 0 {
-				continue
+		for i, currPoint := range samples.Floats[1:] {
+			prevPoint := samples.Floats[i]
+			isSTReset := false
+			if i+1 < len(startTimestamps) {
+				isSTReset = isStartTimestampReset(startTimestamps[i], prevPoint.T, startTimestamps[i+1], currPoint.T)
 			}
-
-			var (
-				prevPoint      = samples.Floats[i-1]
-				prevSt, currSt int64
-			)
-			if i < len(startTimestamps) {
-				prevSt = startTimestamps[i-1]
-				currSt = startTimestamps[i]
-			}
-			if currPoint.F < prevPoint.F || isStartTimestampReset(prevSt, prevPoint.T, currSt, currPoint.T) {
+			if currPoint.F < prevPoint.F || isSTReset {
 				resultFloat += prevPoint.F
 			}
 		}
@@ -400,23 +393,16 @@ func histogramRate(
 
 	if isCounter {
 		// Second iteration to deal with counter resets.
-		for i, currPoint := range points {
-			if i == 0 {
-				continue
-			}
+		for i, currPoint := range points[1:] {
 			var (
-				prevPoint = points[i-1]
 				curr      = currPoint.H
-
-				prevSt, currSt int64
+				isSTReset = false
 			)
-			if i < len(startTimestamps) {
-				prevSt = startTimestamps[i-1]
-				currSt = startTimestamps[i]
+			if i+1 < len(startTimestamps) {
+				isSTReset = isStartTimestampReset(startTimestamps[i], points[i].T, startTimestamps[i+1], currPoint.T)
 			}
-
 			// Check start timestamps first since it's potentially cheaper.
-			if isStartTimestampReset(prevSt, prevPoint.T, currSt, currPoint.T) || curr.DetectReset(prev) {
+			if isSTReset || curr.DetectReset(prev) {
 				// Counter reset conflict ignored here for the same reason as above.
 				_, _, nhcbBoundsReconciled, err := h.Add(prev)
 				if err != nil {
