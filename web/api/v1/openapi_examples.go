@@ -914,20 +914,6 @@ func cleanTombstonesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
-// seriesDeleteResponseExamples returns examples for DELETE /series response.
-func seriesDeleteResponseExamples() *orderedmap.Map[string, *base.Example] {
-	examples := orderedmap.New[string, *base.Example]()
-
-	examples.Set("seriesDeleted", &base.Example{
-		Summary: "Series marked for deletion",
-		Value: createYAMLNode(map[string]any{
-			"status": "success",
-		}),
-	})
-
-	return examples
-}
-
 // snapshotResponseExamples returns examples for /admin/tsdb/snapshot response.
 func snapshotResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()

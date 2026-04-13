@@ -2535,7 +2535,7 @@ The role requires the `discovery.k8s.io/v1` API version (available since Kuberne
 
 Available meta labels:
 
-* `__meta_kubernetes_namespace`: The namespace of the endpoints object.
+* `__meta_kubernetes_namespace`: The namespace of the endpointslice object.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object, with any unsupported characters converted to an underscore.

@@ -1822,6 +1822,16 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
 
       <p>
+        When only negated <code>__name__</code> matchers are provided (e.g.
+        <code>
+          {"{"}__name__!=&quot;target_info&quot;{"}"}
+        </code>
+        ), <code>info</code> considers all metrics matching
+        <code>.+_info</code> and then applies the negated matchers as filters. This is because negated matchers alone
+        cannot positively identify which info metrics to consider.
+      </p>
+
+      <p>
         These limitations are partially defeating the purpose of the <code>info</code> function. At the current stage,
         this is an experiment to find out how useful the approach turns out to be in practice. A final version of the{" "}
         <code>info</code> function will indeed consider all matching info series and with their appropriate identifying

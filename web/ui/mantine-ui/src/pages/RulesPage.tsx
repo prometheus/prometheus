@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Alert,
   Anchor,
   Badge,
@@ -45,7 +46,6 @@ import classes from "./RulesPage.module.css";
 import { useDebouncedValue, useLocalStorage } from "@mantine/hooks";
 import { KVSearch } from "@nexucis/kvsearch";
 import { StateMultiSelect } from "../components/StateMultiSelect";
-import { Accordion } from "../components/Accordion";
 
 const kvSearch = new KVSearch<Rule>({
   shouldSort: true,
@@ -231,7 +231,7 @@ export default function RulesPage() {
             <CustomInfiniteScroll
               allItems={g.rules}
               child={({ items }) => (
-                <Accordion multiple variant="separated" classNames={classes}>
+                <Accordion multiple variant="separated" keepMounted={false} classNames={classes}>
                   {items.map((r, j) => (
                     <Accordion.Item
                       mt={rem(5)}

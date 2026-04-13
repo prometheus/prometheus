@@ -34,7 +34,7 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels }) => {
         </ActionIcon>
       </Group>
 
-      <Collapse in={showDiscovered}>
+      <Collapse expanded={showDiscovered}>
         {/* Additionally remove DOM elements when not expanded (helps performance) */}
         {showDiscovered && (
           <>

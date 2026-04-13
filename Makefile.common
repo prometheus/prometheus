@@ -55,13 +55,13 @@ ifneq ($(shell command -v gotestsum 2> /dev/null),)
 endif
 endif
 
-PROMU_VERSION ?= 0.18.0
+PROMU_VERSION ?= 0.18.1
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
 
 SKIP_GOLANGCI_LINT :=
 GOLANGCI_LINT :=
 GOLANGCI_LINT_OPTS ?=
-GOLANGCI_LINT_VERSION ?= v2.10.1
+GOLANGCI_LINT_VERSION ?= v2.11.4
 GOLANGCI_FMT_OPTS ?=
 # golangci-lint only supports linux, darwin and windows platforms on i386/amd64/arm64.
 # windows isn't included here because of the path separator being different.
@@ -90,8 +90,10 @@ ifdef DOCKERFILE_PATH
 $(error DOCKERFILE_PATH is deprecated. Use DOCKERFILE_VARIANTS ?= $(DOCKERFILE_PATH) in the Makefile)
 endif
 
-DOCKER_ARCHS            ?= amd64
-DOCKERFILE_VARIANTS     ?= Dockerfile $(wildcard Dockerfile.*)
+DOCKER_ARCHS ?= amd64 arm64 armv7 ppc64le riscv64 s390x
+DOCKERFILE_ARCH_EXCLUSIONS ?=
+DOCKER_REGISTRY_ARCH_EXCLUSIONS ?= quay.io:riscv64
+DOCKERFILE_VARIANTS     ?= $(wildcard Dockerfile Dockerfile.*)
 
 # Function to extract variant from Dockerfile label.
 # Returns the variant name from io.prometheus.image.variant label, or "default" if not found.

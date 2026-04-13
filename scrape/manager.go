@@ -151,6 +151,13 @@ type Options struct {
 	// NOTE: This final scrape ignores the configured scrape interval.
 	ScrapeOnShutdown bool
 
+	// DiscoveryReloadOnStartup enables discovering targets immediately on start up as opposed
+	// to waiting for the interval defined in DiscoveryReloadInterval before
+	// initializing the scrape pools. Disabled by default. Useful for serverless
+	// flavors of OpenTelemetry contrib's prometheusreceiver where we're
+	// sensitive to start up delays.
+	DiscoveryReloadOnStartup bool
+
 	// InitialScrapeOffset applies an additional baseline delay before we begin
 	// scraping targets. By default, Prometheus calculates a specific offset for
 	// each target to spread the scraping load evenly across the server. Configuring
@@ -225,14 +232,23 @@ func (m *Manager) UnregisterMetrics() {
 }
 
 func (m *Manager) reloader() {
-	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
-	if reloadIntervalDuration == model.Duration(0) {
-		reloadIntervalDuration = model.Duration(5 * time.Second)
+	reloadIntervalDuration := time.Duration(m.opts.DiscoveryReloadInterval)
+	if reloadIntervalDuration == 0 {
+		reloadIntervalDuration = 5 * time.Second
 	}
 
-	ticker := time.NewTicker(time.Duration(reloadIntervalDuration))
-
+	ticker := time.NewTicker(reloadIntervalDuration)
 	defer ticker.Stop()
+
+	if m.opts.DiscoveryReloadOnStartup {
+		select {
+		case <-m.graceShut:
+			return
+		case <-m.triggerReload:
+			m.reload()
+		}
+		ticker.Reset(reloadIntervalDuration)
+	}
 
 	for {
 		select {
