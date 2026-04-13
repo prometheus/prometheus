@@ -23,7 +23,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var regexpFsType = regexp.MustCompile("^[A-Z][A-Z0-9_]*_MAGIC$")
+// regexpFsType matches either a known magic-number constant name (e.g.
+// EXT4_SUPER_MAGIC) or the lowercase-hex numeric fallback that FsType
+// returns for filesystems not present in its table. The numeric fallback
+// branch keeps the test green on machines that run on filesystems the
+// map hasn't been updated for yet (see prometheus/prometheus#18471).
+var regexpFsType = regexp.MustCompile("^([A-Z][A-Z0-9_]*_MAGIC|[0-9a-f]+)$")
 
 func TestFsType(t *testing.T) {
 	var fsType string
