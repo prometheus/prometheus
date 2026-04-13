@@ -186,11 +186,32 @@ func (rws *WriteStorage) Notify() {
 	}
 }
 
+type applyConfigOpts struct {
+	writeClientFactory func(name string, cfg *ClientConfig) (WriteClient, error)
+}
+
+// ApplyConfigOption modifies WriteStorage.ApplyConfig behavior.
+type ApplyConfigOption func(*applyConfigOpts)
+
+// WithWriteClientFactory sets a factory to provide a custom write client.
+func WithWriteClientFactory(factory func(name string, cfg *ClientConfig) (WriteClient, error)) ApplyConfigOption {
+	return func(opts *applyConfigOpts) {
+		opts.writeClientFactory = factory
+	}
+}
+
 // ApplyConfig updates the state as the new config requires.
 // Only stop & create queues which have changes.
-func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
+func (rws *WriteStorage) ApplyConfig(conf *config.Config, options ...ApplyConfigOption) error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
+
+	opts := applyConfigOpts{
+		writeClientFactory: NewWriteClient,
+	}
+	for _, option := range options {
+		option(&opts)
+	}
 
 	// Remote write queues only need to change if the remote write config or
 	// external labels change.
@@ -218,7 +239,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			name = rwConf.Name
 		}
 
-		c, err := NewWriteClient(name, &ClientConfig{
+		c, err := opts.writeClientFactory(name, &ClientConfig{
 			URL:              rwConf.URL,
 			WriteProtoMsg:    rwConf.ProtobufMessage,
 			Timeout:          rwConf.RemoteTimeout,
