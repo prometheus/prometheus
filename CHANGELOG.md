@@ -2,6 +2,13 @@
 
 ## main / unreleased
 
+## 3.5.2 / 2026-04-13
+
+This release has a fix for a Stored XSS vulnerability that can be triggered via crafted metric names and label values in Prometheus web UI tooltips and metrics explorer. Thanks to Duc Anh Nguyen from TinyxLab for reporting it.
+
+* [SECURITY] UI: Fix stored XSS via unescaped metric names and labels. CVE-2026-40179. #18507
+* [PERF] Regex: Stop calling Simplify. #17908
+
 ## 3.5.1 / 2026-01-07
 
 No code changes, just some dependency updates:
