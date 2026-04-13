@@ -106,12 +106,12 @@ func TestStreamVersionedResourcesFromFile_TimeRangeFilter(t *testing.T) {
 	// Series with two versions at different time ranges.
 	rv1 := NewResourceVersion(
 		map[string]string{"service.name": "svc"},
-		nil, nil, 1000, 2000,
+		nil, 1000, 2000,
 	)
 	rv2 := NewResourceVersion(
 		map[string]string{"service.name": "svc"},
 		map[string]string{"env": "v2"},
-		nil, 5000, 6000,
+		5000, 6000,
 	)
 	vr := NewVersionedResource(rv1)
 	vr.Versions = append(vr.Versions, rv2)
@@ -149,7 +149,7 @@ func TestStreamVersionedResourcesFromFile_TimeRangeAtZero(t *testing.T) {
 	// Version with MinTime=0 — must not be silently excluded by the filter.
 	rv := NewResourceVersion(
 		map[string]string{"service.name": "svc"},
-		nil, nil, 0, 1000,
+		nil, 0, 1000,
 	)
 	mem.SetVersionedResource(100, NewVersionedResource(rv))
 
@@ -180,8 +180,7 @@ func TestStreamVersionedResourcesFromFile_SeriesRefFilter(t *testing.T) {
 
 	for i := uint64(1); i <= 4; i++ {
 		rv := NewResourceVersion(
-			map[string]string{"service.name": fmt.Sprintf("svc-%d", i)},
-			nil, nil, 1000, 5000,
+			map[string]string{"service.name": fmt.Sprintf("svc-%d", i)}, nil, 1000, 5000,
 		)
 		mem.SetResource(i, rv)
 	}
@@ -219,14 +218,14 @@ func TestStreamResourceAttrIndexFromFile(t *testing.T) {
 	rv1 := NewResourceVersion(
 		map[string]string{"service.name": "svc-a"},
 		map[string]string{"host.name": "host-1"},
-		nil, 1000, 5000,
+		1000, 5000,
 	)
 	mem.SetVersionedResource(100, NewVersionedResource(rv1))
 
 	rv2 := NewResourceVersion(
 		map[string]string{"service.name": "svc-b"},
 		map[string]string{"host.name": "host-1"},
-		nil, 1000, 5000,
+		1000, 5000,
 	)
 	mem.SetVersionedResource(200, NewVersionedResource(rv2))
 
@@ -270,7 +269,7 @@ func TestOpenParquetFile_Reuse(t *testing.T) {
 	rv := NewResourceVersion(
 		map[string]string{"service.name": "svc"},
 		map[string]string{"env": "prod"},
-		nil, 1000, 5000,
+		1000, 5000,
 	)
 	mem.SetVersionedResource(100, NewVersionedResource(rv))
 
