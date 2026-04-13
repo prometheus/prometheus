@@ -539,12 +539,12 @@ func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m meta
 }
 
 // UpdateResource is a no-op for the test appender.
-func (a *appender) UpdateResource(ref storage.SeriesRef, l labels.Labels, _, _ map[string]string, _ []storage.EntityData, _ int64) (storage.SeriesRef, error) {
+func (a *appender) UpdateResource(ref storage.SeriesRef, l labels.Labels, _, _ map[string]string, _ int64) (storage.SeriesRef, error) {
 	if err := a.checkErr(); err != nil {
 		return 0, err
 	}
 	if a.next != nil {
-		return a.next.UpdateResource(ref, l, nil, nil, nil, 0)
+		return a.next.UpdateResource(ref, l, nil, nil, 0)
 	}
 	return computeOrCheckRef(ref, l)
 }
