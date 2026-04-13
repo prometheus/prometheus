@@ -75,7 +75,7 @@ func TestLayeredReader_ResourceMerge(t *testing.T) {
 			NewResourceVersion(
 				map[string]string{"service.name": "svc-a"},
 				map[string]string{"host.name": "host-1"},
-				nil, 1000, 2000,
+				1000, 2000,
 			),
 		},
 	})
@@ -86,7 +86,7 @@ func TestLayeredReader_ResourceMerge(t *testing.T) {
 			NewResourceVersion(
 				map[string]string{"service.name": "svc-a"},
 				map[string]string{"host.name": "host-2"},
-				nil, 3000, 4000,
+				3000, 4000,
 			),
 		},
 	})
@@ -113,26 +113,26 @@ func TestLayeredReader_IterDedup(t *testing.T) {
 	// hash1 in base only.
 	base.SetVersionedResource(hash1, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"service.name": "svc-1"}, nil, nil, 100, 200),
+			NewResourceVersion(map[string]string{"service.name": "svc-1"}, nil, 100, 200),
 		},
 	})
 
 	// hash2 in both — should appear once with merged versions.
 	base.SetVersionedResource(hash2, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"service.name": "svc-2"}, nil, nil, 100, 200),
+			NewResourceVersion(map[string]string{"service.name": "svc-2"}, nil, 100, 200),
 		},
 	})
 	top.SetVersionedResource(hash2, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"service.name": "svc-2"}, map[string]string{"k": "v"}, nil, 300, 400),
+			NewResourceVersion(map[string]string{"service.name": "svc-2"}, map[string]string{"k": "v"}, 300, 400),
 		},
 	})
 
 	// hash3 in top only.
 	top.SetVersionedResource(hash3, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"service.name": "svc-3"}, nil, nil, 500, 600),
+			NewResourceVersion(map[string]string{"service.name": "svc-3"}, nil, 500, 600),
 		},
 	})
 
@@ -166,12 +166,12 @@ func TestLayeredReader_LookupResourceAttrUnion(t *testing.T) {
 
 	base.SetVersionedResource(baseHash, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"region": "us-west"}, nil, nil, 100, 200),
+			NewResourceVersion(map[string]string{"region": "us-west"}, nil, 100, 200),
 		},
 	})
 	base.SetVersionedResource(sharedHash, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"region": "us-west"}, nil, nil, 100, 200),
+			NewResourceVersion(map[string]string{"region": "us-west"}, nil, 100, 200),
 		},
 	})
 	base.BuildResourceAttrIndex()
@@ -179,23 +179,23 @@ func TestLayeredReader_LookupResourceAttrUnion(t *testing.T) {
 	top.InitResourceAttrIndex()
 	top.SetVersionedResource(topHash, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"region": "us-west"}, nil, nil, 300, 400),
+			NewResourceVersion(map[string]string{"region": "us-west"}, nil, 300, 400),
 		},
 	})
 	top.SetVersionedResource(sharedHash, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"region": "us-west"}, nil, nil, 300, 400),
+			NewResourceVersion(map[string]string{"region": "us-west"}, nil, 300, 400),
 		},
 	})
 	// Simulate incremental index update.
 	top.UpdateResourceAttrIndex(topHash, nil, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"region": "us-west"}, nil, nil, 300, 400),
+			NewResourceVersion(map[string]string{"region": "us-west"}, nil, 300, 400),
 		},
 	})
 	top.UpdateResourceAttrIndex(sharedHash, nil, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"region": "us-west"}, nil, nil, 300, 400),
+			NewResourceVersion(map[string]string{"region": "us-west"}, nil, 300, 400),
 		},
 	})
 
@@ -224,7 +224,7 @@ func TestSelectiveResourceAttrIndexing(t *testing.T) {
 			NewResourceVersion(
 				map[string]string{"service.name": "frontend"},
 				map[string]string{"k8s.namespace.name": "prod", "host.name": "node-1"},
-				nil, 100, 200,
+				100, 200,
 			),
 		},
 	})
@@ -234,7 +234,7 @@ func TestSelectiveResourceAttrIndexing(t *testing.T) {
 			NewResourceVersion(
 				map[string]string{"service.name": "backend"},
 				map[string]string{"k8s.namespace.name": "staging", "cloud.region": "us-east-1"},
-				nil, 300, 400,
+				300, 400,
 			),
 		},
 	})
@@ -301,7 +301,7 @@ func TestSelectiveResourceAttrIndexing(t *testing.T) {
 				NewResourceVersion(
 					map[string]string{"service.name": "api"},
 					map[string]string{"k8s.namespace.name": "default", "host.name": "node-2"},
-					nil, 500, 600,
+					500, 600,
 				),
 			},
 		}
@@ -317,45 +317,18 @@ func TestSelectiveResourceAttrIndexing(t *testing.T) {
 	})
 }
 
-func TestLayeredReader_ScopeMerge(t *testing.T) {
-	base := NewMemSeriesMetadata()
-	top := NewMemSeriesMetadata()
-
-	hash := uint64(42)
-
-	base.SetVersionedScope(hash, &VersionedScope{
-		Versions: []*ScopeVersion{
-			NewScopeVersion("otel-go", "1.0", "", nil, 1000, 2000),
-		},
-	})
-	top.SetVersionedScope(hash, &VersionedScope{
-		Versions: []*ScopeVersion{
-			NewScopeVersion("otel-go", "2.0", "", nil, 3000, 4000),
-		},
-	})
-
-	lr := NewLayeredReader(base, top)
-	defer lr.Close()
-
-	vs, ok := lr.GetVersionedScope(hash)
-	require.True(t, ok)
-	require.Len(t, vs.Versions, 2)
-	require.Equal(t, "1.0", vs.Versions[0].Version)
-	require.Equal(t, "2.0", vs.Versions[1].Version)
-}
-
 func TestLayeredReader_KindLen(t *testing.T) {
 	base := NewMemSeriesMetadata()
 	top := NewMemSeriesMetadata()
 
 	base.SetVersionedResource(1, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"k": "v"}, nil, nil, 100, 200),
+			NewResourceVersion(map[string]string{"k": "v"}, nil, 100, 200),
 		},
 	})
 	top.SetVersionedResource(2, &VersionedResource{
 		Versions: []*ResourceVersion{
-			NewResourceVersion(map[string]string{"k": "v"}, nil, nil, 300, 400),
+			NewResourceVersion(map[string]string{"k": "v"}, nil, 300, 400),
 		},
 	})
 

@@ -152,16 +152,6 @@ func (c *PrometheusConverter) createAttributes(
 		}
 	}
 
-	if c.scopeLabels != nil {
-		// Merge cached scope labels if scope promotion is enabled.
-		c.scopeLabels.scopeAttrs.Range(func(l labels.Label) {
-			c.builder.Set(l.Name, l.Value)
-		})
-		c.builder.Set("otel_scope_name", c.scopeLabels.scopeName)
-		c.builder.Set("otel_scope_version", c.scopeLabels.scopeVersion)
-		c.builder.Set("otel_scope_schema_url", c.scopeLabels.scopeSchemaURL)
-	}
-
 	if settings.EnableTypeAndUnitLabels {
 		unitNamer := otlptranslator.UnitNamer{UTF8Allowed: settings.AllowUTF8}
 		if meta.Type != model.MetricTypeUnknown {
@@ -576,14 +566,9 @@ func (c *PrometheusConverter) addResourceTargetInfo(resource pcommon.Resource, s
 		MetricFamilyName: name,
 	}
 	// TODO: should target info have the __type__ metadata label?
-	// target_info is a resource-level metric and should not include scope labels.
-	// Temporarily clear scope labels for this call.
-	savedScopeLabels := c.scopeLabels
-	c.scopeLabels = nil
 	c.collisionSource = collisionFromResource
 	lbls, err := c.createAttributes(attributes, settings, identifyingAttrs, false, metadata.Metadata{}, model.MetricNameLabel, name)
 	c.collisionSource = collisionFromDataPoint
-	c.scopeLabels = savedScopeLabels
 	if err != nil {
 		return err
 	}
