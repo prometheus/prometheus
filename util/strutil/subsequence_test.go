@@ -96,7 +96,7 @@ func BenchmarkSubsequenceScoreRunes(b *testing.B) {
 		b.Run(fmt.Sprintf("names=%d", n), func(b *testing.B) {
 			b.ReportAllocs()
 			m := NewSubsequenceMatcher(query)
-			for range b.N {
+			for b.Loop() {
 				for _, name := range names {
 					m.Score(name)
 				}
