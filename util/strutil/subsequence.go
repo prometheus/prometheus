@@ -71,7 +71,7 @@ func (m *SubsequenceMatcher) Score(text string) float64 {
 		return 0.0
 	}
 
-	// For ASCII strings, use the string-native path that avoids []byte conversion.
+	// For ASCII strings, use the string-native path that avoids []rune conversion.
 	// If pattern has non-ASCII runes but text is pure ASCII, no non-ASCII
 	// pattern rune can ever match, so the pattern cannot be a subsequence.
 	textASCII := isASCII(text)
