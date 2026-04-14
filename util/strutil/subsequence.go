@@ -98,7 +98,6 @@ func isASCII(s string) bool {
 	return true
 }
 
-
 // matchSubsequenceString is the string-native implementation of the scoring
 // algorithm for ASCII inputs. It uses strings.IndexByte for character scanning,
 // with divisions by textLen replaced by a precomputed reciprocal multiply.
