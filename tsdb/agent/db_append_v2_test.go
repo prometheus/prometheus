@@ -399,7 +399,7 @@ func TestRollbackAppendV2(t *testing.T) {
 			case record.Exemplars:
 				t.Errorf("should not have found exemplars")
 
-			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+			case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.HistogramSamplesV2, record.CustomBucketsHistogramSamplesV2, record.FloatHistogramSamplesV2, record.CustomBucketsFloatHistogramSamplesV2:
 				t.Errorf("should not have found histograms")
 
 			default:
