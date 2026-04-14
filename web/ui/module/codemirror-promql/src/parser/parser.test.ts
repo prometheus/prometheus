@@ -106,6 +106,21 @@ describe('promql operations', () => {
       expectedDiag: [] as Diagnostic[],
     },
     {
+      expr: 'ts_of_max_over_time(rate(metric_name[5m])[1h:] offset 1m)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'ts_of_min_over_time(rate(metric_name[5m])[1h:] offset 1m)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'ts_of_last_over_time(rate(metric_name[5m])[1h:] offset 1m)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: 'foo * bar',
       expectedValueType: ValueType.vector,
       expectedDiag: [] as Diagnostic[],
@@ -528,7 +543,7 @@ describe('promql operations', () => {
         },
       ],
     },
-    // test aggregration
+    // test aggregation
     {
       expr: 'sum by (foo)(some_metric)',
       expectedValueType: ValueType.vector,
@@ -959,7 +974,7 @@ describe('promql operations', () => {
       ],
     },
     {
-      expr: `{'foo\`metric':'bar'}`, // eslint-disable-line
+      expr: `{'foo\`metric':'bar'}`,
       expectedValueType: ValueType.vector,
       expectedDiag: [],
     },
@@ -967,6 +982,23 @@ describe('promql operations', () => {
       expr: '{`foo\"metric`=`bar`}', // eslint-disable-line
       expectedValueType: ValueType.vector,
       expectedDiag: [],
+    },
+    {
+      expr: 'info(rate(http_request_counter_total{}[5m]))',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'info(rate(http_request_counter_total[5m]), target_info{service_version=~".+"})',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 78,
+          message: `expected label selectors as the second argument to "info" function, got [object Object]`,
+          severity: 'error',
+        },
+      ],
     },
   ];
   testCases.forEach((value) => {

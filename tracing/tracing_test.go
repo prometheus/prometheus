@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,8 +16,8 @@ package tracing
 import (
 	"testing"
 
-	"github.com/go-kit/log"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace/noop"
@@ -28,7 +28,7 @@ import (
 func TestInstallingNewTracerProvider(t *testing.T) {
 	tpBefore := otel.GetTracerProvider()
 
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -41,7 +41,7 @@ func TestInstallingNewTracerProvider(t *testing.T) {
 }
 
 func TestReinstallingTracerProvider(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -76,7 +76,7 @@ func TestReinstallingTracerProvider(t *testing.T) {
 }
 
 func TestReinstallingTracerProviderWithTLS(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -96,7 +96,7 @@ func TestReinstallingTracerProviderWithTLS(t *testing.T) {
 }
 
 func TestUninstallingTracerProvider(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
@@ -117,8 +117,20 @@ func TestUninstallingTracerProvider(t *testing.T) {
 	require.Equal(t, noop.NewTracerProvider(), otel.GetTracerProvider())
 }
 
+func TestInstallingTracerProviderHTTPInsecure(t *testing.T) {
+	m := NewManager(promslog.NewNopLogger())
+	cfg := config.Config{
+		TracingConfig: config.TracingConfig{
+			Endpoint:   "localhost:4318",
+			ClientType: config.TracingClientHTTP,
+			Insecure:   true,
+		},
+	}
+	require.NoError(t, m.ApplyConfig(&cfg))
+}
+
 func TestTracerProviderShutdown(t *testing.T) {
-	m := NewManager(log.NewNopLogger())
+	m := NewManager(promslog.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",

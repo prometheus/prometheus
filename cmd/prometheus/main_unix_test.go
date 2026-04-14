@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -34,6 +34,7 @@ func TestStartupInterrupt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
@@ -52,7 +53,7 @@ func TestStartupInterrupt(t *testing.T) {
 	url := "http://localhost" + port + "/graph"
 
 Loop:
-	for x := 0; x < 10; x++ {
+	for range 10 {
 		// error=nil means prometheus has started, so we can send the interrupt
 		// signal and wait for the graceful shutdown.
 		if _, err := http.Get(url); err == nil {

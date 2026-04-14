@@ -3,6 +3,7 @@
 name: golangci-lint
 on:
   push:
+    branches: [main, master, 'release-*']
     paths:
       - "go.sum"
       - "go.mod"
@@ -10,6 +11,7 @@ on:
       - "scripts/errcheck_excludes.txt"
       - ".github/workflows/golangci-lint.yml"
       - ".golangci.yml"
+    tags: ['v*']
   pull_request:
 
 permissions:  # added using https://github.com/step-security/secure-repo
@@ -24,16 +26,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - name: Install Go
-        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # v5.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          go-version: 1.23.x
+          persist-credentials: false
+      - name: Install Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: 1.26.x
       - name: Install snmp_exporter/generator dependencies
         run: sudo apt-get update && sudo apt-get -y install libsnmp-dev
         if: github.repository == 'prometheus/snmp_exporter'
+      - name: Get golangci-lint version
+        id: golangci-lint-version
+        run: echo "version=$(make print-golangci-lint-version)" >> $GITHUB_OUTPUT
       - name: Lint
-        uses: golangci/golangci-lint-action@aaa42aa0628b4ae2578232a66b541047968fac86 # v6.1.0
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           args: --verbose
-          version: v1.60.2
+          version: ${{ steps.golangci-lint-version.outputs.version }}

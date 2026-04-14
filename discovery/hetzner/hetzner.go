@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,9 +17,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -36,7 +36,7 @@ const (
 	hetznerLabelServerID          = hetznerLabelPrefix + "server_id"
 	hetznerLabelServerName        = hetznerLabelPrefix + "server_name"
 	hetznerLabelServerStatus      = hetznerLabelPrefix + "server_status"
-	hetznerLabelDatacenter        = hetznerLabelPrefix + "datacenter"
+	hetznerLabelDatacenter        = hetznerLabelPrefix + "datacenter" // Label name kept for backward compatibility
 	hetznerLabelPublicIPv4        = hetznerLabelPrefix + "public_ipv4"
 	hetznerLabelPublicIPv6Network = hetznerLabelPrefix + "public_ipv6_network"
 )
@@ -59,12 +59,15 @@ type SDConfig struct {
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
 	Role            Role           `yaml:"role"`
-	hcloudEndpoint  string         // For tests only.
-	robotEndpoint   string         // For tests only.
+
+	LabelSelector string `yaml:"label_selector,omitempty"`
+
+	hcloudEndpoint string // For tests only.
+	robotEndpoint  string // For tests only.
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &hetznerMetrics{
 		refreshMetrics: rmi,
 	}
@@ -75,7 +78,7 @@ func (*SDConfig) Name() string { return "hetzner" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts)
 }
 
 type refresher interface {
@@ -96,7 +99,7 @@ const (
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Role) UnmarshalYAML(unmarshal func(any) error) error {
 	if err := unmarshal((*string)(c)); err != nil {
 		return err
 	}
@@ -109,7 +112,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -135,21 +138,22 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
-	m, ok := metrics.(*hetznerMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*refresh.Discovery, error) {
+	m, ok := opts.Metrics.(*hetznerMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	r, err := newRefresher(conf, logger)
+	r, err := newRefresher(conf, opts.Logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "hetzner",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            r.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -157,7 +161,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 	), nil
 }
 
-func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {
+func newRefresher(conf *SDConfig, l *slog.Logger) (refresher, error) {
 	switch conf.Role {
 	case HetznerRoleHcloud:
 		if conf.hcloudEndpoint == "" {

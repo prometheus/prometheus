@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,11 +19,11 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
-
-	"github.com/stretchr/testify/require"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -46,8 +46,9 @@ func BenchmarkQuerier(b *testing.B) {
 		app.Append(0, l, 0, 0)
 	}
 
-	for n := 0; n < 10; n++ {
-		for i := 0; i < 100000; i++ {
+	for n := range 10 {
+		addSeries(labels.FromStrings("a", strconv.Itoa(n)+postingsBenchSuffix))
+		for i := range 100000 {
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
 			// Have some series that won't be matched, to properly test inverted matches.
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
@@ -55,6 +56,8 @@ func BenchmarkQuerier(b *testing.B) {
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "1_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "bar"))
 			addSeries(labels.FromStrings("i", strconv.Itoa(i)+postingsBenchSuffix, "n", "2_"+strconv.Itoa(n)+postingsBenchSuffix, "j", "foo"))
 		}
+		require.NoError(b, app.Commit())
+		app = h.Appender(context.Background())
 	}
 	require.NoError(b, app.Commit())
 
@@ -75,7 +78,7 @@ func BenchmarkQuerier(b *testing.B) {
 
 	b.Run("Block", func(b *testing.B) {
 		blockdir := createBlockFromHead(b, b.TempDir(), h)
-		block, err := OpenBlock(nil, blockdir, nil)
+		block, err := OpenBlock(nil, blockdir, nil, nil)
 		require.NoError(b, err)
 		defer func() {
 			require.NoError(b, block.Close())
@@ -99,23 +102,25 @@ func BenchmarkQuerier(b *testing.B) {
 func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	ctx := context.Background()
 
+	a1 := labels.MustNewMatcher(labels.MatchEqual, "a", "1"+postingsBenchSuffix)
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
+	n0_1 := labels.MustNewMatcher(labels.MatchEqual, "n", "0_1"+postingsBenchSuffix)
 	nX := labels.MustNewMatcher(labels.MatchEqual, "n", "X"+postingsBenchSuffix)
 
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
 
-	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")
-	i1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", "^1.*$")
-	iStar1 := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*1$")
-	iStar1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*1.*$")
-	iPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")
-	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^1.+$")
-	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")
+	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", ".*")
+	i1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", "1.*")
+	iStar1 := labels.MustNewMatcher(labels.MatchRegexp, "i", ".*1")
+	iStar1Star := labels.MustNewMatcher(labels.MatchRegexp, "i", ".*1.*")
+	iPlus := labels.MustNewMatcher(labels.MatchRegexp, "i", ".+")
+	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")
+	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "")
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "i", "2"+postingsBenchSuffix)
-	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
-	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^.*2.*$")
+	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "2.*")
+	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", ".*2.*")
 	jFooBar := labels.MustNewMatcher(labels.MatchRegexp, "j", "foo|bar")
 	jXXXYYY := labels.MustNewMatcher(labels.MatchRegexp, "j", "XXX|YYY")
 	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
@@ -135,6 +140,7 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`j="foo",n="1"`, []*labels.Matcher{jFoo, n1}},
 		{`n="1",j!="foo"`, []*labels.Matcher{n1, jNotFoo}},
 		{`n="1",i!="2"`, []*labels.Matcher{n1, iNot2}},
+		{`n="0_1",j="foo,a="1"`, []*labels.Matcher{n0_1, jFoo, a1}},
 		{`n="X",j!="foo"`, []*labels.Matcher{nX, jNotFoo}},
 		{`i=~"1[0-9]",j=~"foo|bar"`, []*labels.Matcher{iCharSet, jFooBar}},
 		{`j=~"foo|bar"`, []*labels.Matcher{jFooBar}},
@@ -173,9 +179,13 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				_, err := PostingsForMatchers(ctx, ir, c.matchers...)
+			for b.Loop() {
+				p, err := PostingsForMatchers(ctx, ir, c.matchers...)
 				require.NoError(b, err)
+				// Iterate over the postings
+				for p.Next() {
+					// Do nothing
+				}
 			}
 		})
 	}
@@ -186,13 +196,13 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")
 	i1PostingsBenchSuffix := labels.MustNewMatcher(labels.MatchEqual, "i", "1"+postingsBenchSuffix)
 	iSuffix := labels.MustNewMatcher(labels.MatchRegexp, "i", ".+ddd")
-	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", "^.*$")
+	iStar := labels.MustNewMatcher(labels.MatchRegexp, "i", ".*")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
 	jXXXYYY := labels.MustNewMatcher(labels.MatchRegexp, "j", "XXX|YYY")
 	jXplus := labels.MustNewMatcher(labels.MatchRegexp, "j", "X.+")
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+postingsBenchSuffix)
 	nX := labels.MustNewMatcher(labels.MatchNotEqual, "n", "X"+postingsBenchSuffix)
-	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "n", "^.+$")
+	nPlus := labels.MustNewMatcher(labels.MatchRegexp, "n", ".+")
 
 	ctx := context.Background()
 
@@ -205,12 +215,12 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 		{`i with i="1"`, "i", []*labels.Matcher{i1}},
 		// i has 100k values.
 		{`i with n="1"`, "i", []*labels.Matcher{n1}},
-		{`i with n="^.+$"`, "i", []*labels.Matcher{nPlus}},
+		{`i with n=".+"`, "i", []*labels.Matcher{nPlus}},
 		{`i with n="1",j!="foo"`, "i", []*labels.Matcher{n1, jNotFoo}},
 		{`i with n="1",j=~"X.+"`, "i", []*labels.Matcher{n1, jXplus}},
 		{`i with n="1",j=~"XXX|YYY"`, "i", []*labels.Matcher{n1, jXXXYYY}},
 		{`i with n="X",j!="foo"`, "i", []*labels.Matcher{nX, jNotFoo}},
-		{`i with n="1",i=~"^.*$",j!="foo"`, "i", []*labels.Matcher{n1, iStar, jNotFoo}},
+		{`i with n="1",i=~".*",j!="foo"`, "i", []*labels.Matcher{n1, iStar, jNotFoo}},
 		// matchers on i itself
 		{`i with i="1aaa...ddd"`, "i", []*labels.Matcher{i1PostingsBenchSuffix}},
 		{`i with i=~"1.+"`, "i", []*labels.Matcher{i1Plus}},
@@ -225,8 +235,8 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				_, err := labelValuesWithMatchers(ctx, ir, c.labelName, c.matchers...)
+			for b.Loop() {
+				_, err := labelValuesWithMatchers(ctx, ir, c.labelName, nil, c.matchers...)
 				require.NoError(b, err)
 			}
 		})
@@ -236,13 +246,13 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 func BenchmarkMergedStringIter(b *testing.B) {
 	numSymbols := 100000
 	s := make([]string, numSymbols)
-	for i := 0; i < numSymbols; i++ {
+	for i := range numSymbols {
 		s[i] = fmt.Sprintf("symbol%v", i)
 	}
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		it := NewMergedStringIter(index.NewStringListIter(s), index.NewStringListIter(s))
-		for j := 0; j < 100; j++ {
+		for range 100 {
 			it = NewMergedStringIter(it, index.NewStringListIter(s))
 		}
 
@@ -268,8 +278,12 @@ func createHeadForBenchmarkSelect(b *testing.B, numSeries int, addSeries func(ap
 	h := db.Head()
 
 	app := h.Appender(context.Background())
-	for i := 0; i < numSeries; i++ {
+	for i := range numSeries {
 		addSeries(app, i)
+		if i%1000 == 999 { // Commit every so often, so the appender doesn't get too big.
+			require.NoError(b, app.Commit())
+			app = h.Appender(context.Background())
+		}
 	}
 	require.NoError(b, app.Commit())
 	return h, db
@@ -284,7 +298,7 @@ func benchmarkSelect(b *testing.B, queryable storage.Queryable, numSeries int, s
 			require.NoError(b, err)
 
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				ss := q.Select(context.Background(), sorted, nil, matcher)
 				for ss.Next() {
 				}
@@ -315,7 +329,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 		tmpdir := b.TempDir()
 
 		blockdir := createBlockFromHead(b, tmpdir, h)
-		block, err := OpenBlock(nil, blockdir, nil)
+		block, err := OpenBlock(nil, blockdir, nil, nil)
 		require.NoError(b, err)
 		defer func() {
 			require.NoError(b, block.Close())

@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -26,11 +26,13 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+// TestNewDiscoveryError can fail if the DNS resolver mistakenly resolves the domain below.
+// See https://github.com/prometheus/prometheus/issues/16191 for a precedent.
 func TestNewDiscoveryError(t *testing.T) {
 	_, err := NewDiscovery(
-		[]string{"unreachable.test"},
+		[]string{"unreachable.invalid"},
 		time.Second, []string{"/"},
 		nil,
-		func(data []byte, path string) (model.LabelSet, error) { return nil, nil })
+		func([]byte, string) (model.LabelSet, error) { return nil, nil })
 	require.Error(t, err)
 }

@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,19 +16,19 @@ package graphite
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"math"
 	"net"
 	"sort"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 )
 
 // Client allows sending batches of Prometheus samples to Graphite.
 type Client struct {
-	logger log.Logger
+	logger *slog.Logger
 
 	address   string
 	transport string
@@ -37,9 +37,9 @@ type Client struct {
 }
 
 // NewClient creates a new Client.
-func NewClient(logger log.Logger, address, transport string, timeout time.Duration, prefix string) *Client {
+func NewClient(logger *slog.Logger, address, transport string, timeout time.Duration, prefix string) *Client {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 	return &Client{
 		logger:    logger,
@@ -73,8 +73,7 @@ func pathFromMetric(m model.Metric, prefix string) string {
 		// Since we use '.' instead of '=' to separate label and values
 		// it means that we can't have an '.' in the metric name. Fortunately
 		// this is prohibited in prometheus metrics.
-		buffer.WriteString(fmt.Sprintf(
-			".%s.%s", string(l), escape(v)))
+		fmt.Fprintf(&buffer, ".%s.%s", string(l), escape(v))
 	}
 	return buffer.String()
 }
@@ -93,7 +92,7 @@ func (c *Client) Write(samples model.Samples) error {
 		t := float64(s.Timestamp.UnixNano()) / 1e9
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			level.Debug(c.logger).Log("msg", "Cannot send value to Graphite, skipping sample", "value", v, "sample", s)
+			c.logger.Debug("Cannot send value to Graphite, skipping sample", "value", v, "sample", s)
 			continue
 		}
 		fmt.Fprintf(&buf, "%s %f %f\n", k, v, t)
@@ -104,6 +103,6 @@ func (c *Client) Write(samples model.Samples) error {
 }
 
 // Name identifies the client as a Graphite client.
-func (c Client) Name() string {
+func (Client) Name() string {
 	return "graphite"
 }

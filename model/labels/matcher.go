@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -101,7 +101,7 @@ func (m *Matcher) shouldQuoteName() bool {
 		}
 		return true
 	}
-	return len(m.Name) == 0
+	return m.Name == ""
 }
 
 // Matches returns whether the matcher matches the given string value.

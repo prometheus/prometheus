@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,7 +20,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"gopkg.in/yaml.v2"
+	promconfig "github.com/prometheus/common/config"
+	"go.yaml.in/yaml/v2"
 )
 
 type ExternalFilesConfig struct {
@@ -49,10 +50,10 @@ func GenerateChecksum(yamlFilePath string) (string, error) {
 	dir := filepath.Dir(yamlFilePath)
 
 	for i, file := range config.RuleFiles {
-		config.RuleFiles[i] = filepath.Join(dir, file)
+		config.RuleFiles[i] = promconfig.JoinDir(dir, file)
 	}
 	for i, file := range config.ScrapeConfigFiles {
-		config.ScrapeConfigFiles[i] = filepath.Join(dir, file)
+		config.ScrapeConfigFiles[i] = promconfig.JoinDir(dir, file)
 	}
 
 	files := map[string][]string{

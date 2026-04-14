@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { mount, shallow } from 'enzyme';
+import { shallow } from 'enzyme';
 import DataTable, { DataTableProps } from './DataTable';
 import { Alert, Table } from 'reactstrap';
 import SeriesName from './SeriesName';

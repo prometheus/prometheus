@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,13 +17,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -38,16 +39,16 @@ const (
 
 // Node discovers Kubernetes nodes.
 type Node struct {
-	logger   log.Logger
+	logger   *slog.Logger
 	informer cache.SharedInformer
 	store    cache.Store
-	queue    *workqueue.Type
+	queue    *workqueue.Typed[string]
 }
 
 // NewNode returns a new node discovery.
-func NewNode(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Node {
+func NewNode(l *slog.Logger, inf cache.SharedInformer, eventCount *prometheus.CounterVec) *Node {
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
 
 	nodeAddCount := eventCount.WithLabelValues(RoleNode.String(), MetricLabelRoleAdd)
@@ -58,31 +59,33 @@ func NewNode(l log.Logger, inf cache.SharedInformer, eventCount *prometheus.Coun
 		logger:   l,
 		informer: inf,
 		store:    inf.GetStore(),
-		queue:    workqueue.NewNamed(RoleNode.String()),
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RoleNode.String(),
+		}),
 	}
 
 	_, err := n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
+		AddFunc: func(o any) {
 			nodeAddCount.Inc()
 			n.enqueue(o)
 		},
-		DeleteFunc: func(o interface{}) {
+		DeleteFunc: func(o any) {
 			nodeDeleteCount.Inc()
 			n.enqueue(o)
 		},
-		UpdateFunc: func(_, o interface{}) {
+		UpdateFunc: func(_, o any) {
 			nodeUpdateCount.Inc()
 			n.enqueue(o)
 		},
 	})
 	if err != nil {
-		level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+		l.Error("Error adding nodes event handler.", "err", err)
 	}
 	return n
 }
 
-func (n *Node) enqueue(obj interface{}) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+func (n *Node) enqueue(obj any) {
+	key, err := nodeName(obj)
 	if err != nil {
 		return
 	}
@@ -96,7 +99,7 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	if !cache.WaitForCacheSync(ctx.Done(), n.informer.HasSynced) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
-			level.Error(n.logger).Log("msg", "node informer unable to sync cache")
+			n.logger.Error("node informer unable to sync cache")
 		}
 		return
 	}
@@ -111,12 +114,11 @@ func (n *Node) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 }
 
 func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := n.queue.Get()
+	key, quit := n.queue.Get()
 	if quit {
 		return false
 	}
-	defer n.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer n.queue.Done(key)
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -133,14 +135,14 @@ func (n *Node) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool
 	}
 	node, err := convertToNode(o)
 	if err != nil {
-		level.Error(n.logger).Log("msg", "converting to Node object failed", "err", err)
+		n.logger.Error("converting to Node object failed", "err", err)
 		return true
 	}
 	send(ctx, ch, n.buildNode(node))
 	return true
 }
 
-func convertToNode(o interface{}) (*apiv1.Node, error) {
+func convertToNode(o any) (*apiv1.Node, error) {
 	node, ok := o.(*apiv1.Node)
 	if ok {
 		return node, nil
@@ -159,6 +161,7 @@ func nodeSourceFromName(name string) string {
 
 const (
 	nodeProviderIDLabel = metaLabelPrefix + "node_provider_id"
+	nodeConditionPrefix = metaLabelPrefix + "node_condition_"
 	nodeAddressPrefix   = metaLabelPrefix + "node_address_"
 )
 
@@ -167,6 +170,13 @@ func nodeLabels(n *apiv1.Node) model.LabelSet {
 	ls := make(model.LabelSet)
 
 	ls[nodeProviderIDLabel] = lv(n.Spec.ProviderID)
+
+	// Export all node conditions as individual meta labels
+	for _, condition := range n.Status.Conditions {
+		conditionType := strings.ToLower(string(condition.Type))
+		labelName := nodeConditionPrefix + strutil.SanitizeLabelName(conditionType)
+		ls[model.LabelName(labelName)] = lv(strings.ToLower(string(condition.Status)))
+	}
 
 	addObjectMetaLabels(ls, n.ObjectMeta, RoleNode)
 
@@ -181,7 +191,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 
 	addr, addrMap, err := nodeAddress(node)
 	if err != nil {
-		level.Warn(n.logger).Log("msg", "No node address found", "err", err)
+		n.logger.Warn("No node address found", "err", err)
 		return nil
 	}
 	addr = net.JoinHostPort(addr, strconv.FormatInt(int64(node.Status.DaemonEndpoints.KubeletEndpoint.Port), 10))

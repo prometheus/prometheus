@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,12 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build openbsd || windows || netbsd || solaris
+//go:build openbsd || netbsd || solaris
 
 package runtime
 
-// Statfs returns the file system type (Unix only)
-// syscall.Statfs_t isn't available on openbsd
-func Statfs(path string) string {
+// FsType returns the file system type or "unknown" if unsupported.
+func FsType(path string) string {
 	return "unknown"
+}
+
+// FsSize returns the file system size or 0 if unsupported.
+func FsSize(path string) uint64 {
+	return 0
 }

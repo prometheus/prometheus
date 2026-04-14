@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -56,21 +56,34 @@ func (c *compressedResponseWriter) Close() {
 
 // Constructs a new compressedResponseWriter based on client request headers.
 func newCompressedResponseWriter(writer http.ResponseWriter, req *http.Request) *compressedResponseWriter {
-	encodings := strings.Split(req.Header.Get(acceptEncodingHeader), ",")
-	for _, encoding := range encodings {
+	writer.Header().Add("Vary", acceptEncodingHeader)
+	raw := req.Header.Get(acceptEncodingHeader)
+	var (
+		encoding   string
+		commaFound bool
+	)
+	for {
+		encoding, raw, commaFound = strings.Cut(raw, ",")
 		switch strings.TrimSpace(encoding) {
 		case gzipEncoding:
-			writer.Header().Set(contentEncodingHeader, gzipEncoding)
+			h := writer.Header()
+			h.Del("Content-Length") // avoid stale length after compression
+			h.Set(contentEncodingHeader, gzipEncoding)
 			return &compressedResponseWriter{
 				ResponseWriter: writer,
 				writer:         gzip.NewWriter(writer),
 			}
 		case deflateEncoding:
-			writer.Header().Set(contentEncodingHeader, deflateEncoding)
+			h := writer.Header()
+			h.Del("Content-Length")
+			h.Set(contentEncodingHeader, deflateEncoding)
 			return &compressedResponseWriter{
 				ResponseWriter: writer,
 				writer:         zlib.NewWriter(writer),
 			}
+		}
+		if !commaFound {
+			break
 		}
 	}
 	return &compressedResponseWriter{

@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,12 +17,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
@@ -31,7 +30,7 @@ import (
 
 // BlockWriter is a block writer that allows appending and flushing series to disk.
 type BlockWriter struct {
-	logger         log.Logger
+	logger         *slog.Logger
 	destinationDir string
 
 	head      *Head
@@ -50,7 +49,7 @@ var ErrNoSeriesAppended = errors.New("no series appended, aborting")
 // contains anything at all. It is the caller's responsibility to
 // ensure that the resulting blocks do not overlap etc.
 // Writer ensures the block flush is atomic (via rename).
-func NewBlockWriter(logger log.Logger, dir string, blockSize int64) (*BlockWriter, error) {
+func NewBlockWriter(logger *slog.Logger, dir string, blockSize int64) (*BlockWriter, error) {
 	w := &BlockWriter{
 		logger:         logger,
 		destinationDir: dir,
@@ -72,7 +71,6 @@ func (w *BlockWriter) initHead() error {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = w.blockSize
 	opts.ChunkDirRoot = w.chunkDir
-	opts.EnableNativeHistograms.Store(true)
 	h, err := NewHead(nil, w.logger, nil, nil, opts, NewHeadStats())
 	if err != nil {
 		return fmt.Errorf("tsdb.NewHead: %w", err)
@@ -88,6 +86,12 @@ func (w *BlockWriter) Appender(ctx context.Context) storage.Appender {
 	return w.head.Appender(ctx)
 }
 
+// AppenderV2 returns a new appender on the database.
+// AppenderV2 can't be called concurrently. However, the returned AppenderV2 can safely be used concurrently.
+func (w *BlockWriter) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return w.head.AppenderV2(ctx)
+}
+
 // Flush implements the Writer interface. This is where actual block writing
 // happens. After flush completes, no writes can be done.
 func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
@@ -95,7 +99,7 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
 	maxt := w.head.MaxTime() + 1
-	level.Info(w.logger).Log("msg", "flushing", "series_count", w.head.NumSeries(), "mint", timestamp.Time(mint), "maxt", timestamp.Time(maxt))
+	w.logger.Info("flushing", "series_count", w.head.NumSeries(), "mint", timestamp.Time(mint), "maxt", timestamp.Time(maxt))
 
 	compactor, err := NewLeveledCompactor(ctx,
 		nil,
@@ -121,7 +125,7 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 func (w *BlockWriter) Close() error {
 	defer func() {
 		if err := os.RemoveAll(w.chunkDir); err != nil {
-			level.Error(w.logger).Log("msg", "error in deleting BlockWriter files", "err", err)
+			w.logger.Error("error in deleting BlockWriter files", "err", err)
 		}
 	}()
 	return w.head.Close()

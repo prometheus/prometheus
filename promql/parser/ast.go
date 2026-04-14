@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,9 +19,8 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
-
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/storage"
 )
 
 // Node is a generic interface for all nodes in an AST.
@@ -111,6 +110,16 @@ type BinaryExpr struct {
 	ReturnBool bool
 }
 
+// DurationExpr represents a binary expression between two duration expressions.
+type DurationExpr struct {
+	Op       ItemType // The operation of the expression.
+	LHS, RHS Expr     // The operands on the respective sides of the operator.
+	Wrapped  bool     // Set when the duration is wrapped in parentheses.
+
+	StartPos posrange.Pos // For unary operations, step(), and range(), the start position of the operator.
+	EndPos   posrange.Pos // For step() and range(), the end position of the operator.
+}
+
 // Call represents a function call.
 type Call struct {
 	Func *Function   // The function that was called.
@@ -125,24 +134,27 @@ type MatrixSelector struct {
 	// if the parser hasn't returned an error.
 	VectorSelector Expr
 	Range          time.Duration
-
-	EndPos posrange.Pos
+	RangeExpr      *DurationExpr
+	EndPos         posrange.Pos
 }
 
 // SubqueryExpr represents a subquery.
 type SubqueryExpr struct {
-	Expr  Expr
-	Range time.Duration
+	Expr      Expr
+	Range     time.Duration
+	RangeExpr *DurationExpr
 	// OriginalOffset is the actual offset that was set in the query.
-	// This never changes.
 	OriginalOffset time.Duration
+	// OriginalOffsetExpr is the actual offset expression that was set in the query.
+	OriginalOffsetExpr *DurationExpr
 	// Offset is the offset used during the query execution
-	// which is calculated using the original offset, at modifier time,
+	// which is calculated using the original offset, offset expression, at modifier time,
 	// eval time, and subquery offsets in the AST tree.
 	Offset     time.Duration
 	Timestamp  *int64
 	StartOrEnd ItemType // Set when @ is used with start() or end()
 	Step       time.Duration
+	StepExpr   *DurationExpr
 
 	EndPos posrange.Pos
 }
@@ -151,6 +163,7 @@ type SubqueryExpr struct {
 type NumberLiteral struct {
 	Val float64
 
+	Duration bool // Used to format the number as a duration.
 	PosRange posrange.PositionRange
 }
 
@@ -192,9 +205,10 @@ func (e *StepInvariantExpr) PositionRange() posrange.PositionRange {
 // VectorSelector represents a Vector selection.
 type VectorSelector struct {
 	Name string
-	// OriginalOffset is the actual offset that was set in the query.
-	// This never changes.
+	// OriginalOffset is the actual offset calculated from OriginalOffsetExpr.
 	OriginalOffset time.Duration
+	// OriginalOffsetExpr is the actual offset that was set in the query.
+	OriginalOffsetExpr *DurationExpr
 	// Offset is the offset used during the query execution
 	// which is calculated using the original offset, at modifier time,
 	// eval time, and subquery offsets in the AST tree.
@@ -207,6 +221,15 @@ type VectorSelector struct {
 	// The unexpanded seriesSet populated at query preparation time.
 	UnexpandedSeriesSet storage.SeriesSet
 	Series              []storage.Series
+
+	// BypassEmptyMatcherCheck is true when the VectorSelector isn't required to have at least one matcher matching the empty string.
+	// This is the case when VectorSelector is used to represent the info function's second argument.
+	BypassEmptyMatcherCheck bool
+
+	// Anchored is true when the VectorSelector is anchored.
+	Anchored bool
+	// Smoothed is true when the VectorSelector is smoothed.
+	Smoothed bool
 
 	PosRange posrange.PositionRange
 }
@@ -225,15 +248,15 @@ func (TestStmt) PositionRange() posrange.PositionRange {
 		End:   -1,
 	}
 }
-func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
-func (e *Call) Type() ValueType           { return e.Func.ReturnType }
-func (e *MatrixSelector) Type() ValueType { return ValueTypeMatrix }
-func (e *SubqueryExpr) Type() ValueType   { return ValueTypeMatrix }
-func (e *NumberLiteral) Type() ValueType  { return ValueTypeScalar }
-func (e *ParenExpr) Type() ValueType      { return e.Expr.Type() }
-func (e *StringLiteral) Type() ValueType  { return ValueTypeString }
-func (e *UnaryExpr) Type() ValueType      { return e.Expr.Type() }
-func (e *VectorSelector) Type() ValueType { return ValueTypeVector }
+func (*AggregateExpr) Type() ValueType  { return ValueTypeVector }
+func (e *Call) Type() ValueType         { return e.Func.ReturnType }
+func (*MatrixSelector) Type() ValueType { return ValueTypeMatrix }
+func (*SubqueryExpr) Type() ValueType   { return ValueTypeMatrix }
+func (*NumberLiteral) Type() ValueType  { return ValueTypeScalar }
+func (e *ParenExpr) Type() ValueType    { return e.Expr.Type() }
+func (*StringLiteral) Type() ValueType  { return ValueTypeString }
+func (e *UnaryExpr) Type() ValueType    { return e.Expr.Type() }
+func (*VectorSelector) Type() ValueType { return ValueTypeVector }
 func (e *BinaryExpr) Type() ValueType {
 	if e.LHS.Type() == ValueTypeScalar && e.RHS.Type() == ValueTypeScalar {
 		return ValueTypeScalar
@@ -241,6 +264,7 @@ func (e *BinaryExpr) Type() ValueType {
 	return ValueTypeVector
 }
 func (e *StepInvariantExpr) Type() ValueType { return e.Expr.Type() }
+func (*DurationExpr) Type() ValueType        { return ValueTypeScalar }
 
 func (*AggregateExpr) PromQLExpr()     {}
 func (*BinaryExpr) PromQLExpr()        {}
@@ -253,6 +277,7 @@ func (*StringLiteral) PromQLExpr()     {}
 func (*UnaryExpr) PromQLExpr()         {}
 func (*VectorSelector) PromQLExpr()    {}
 func (*StepInvariantExpr) PromQLExpr() {}
+func (*DurationExpr) PromQLExpr()      {}
 
 // VectorMatchCardinality describes the cardinality relationship
 // of two Vectors in a binary operation.
@@ -293,6 +318,19 @@ type VectorMatching struct {
 	// Include contains additional labels that should be included in
 	// the result from the side with the lower cardinality.
 	Include []string
+	// Fill-in values to use when a series from one side does not find a match on the other side.
+	FillValues VectorMatchFillValues
+}
+
+// VectorMatchFillValues contains the fill values to use for Vector matching
+// when one side does not find a match on the other side.
+// When a fill value is nil, no fill is applied for that side, and there
+// is no output for the match group if there is no match.
+type VectorMatchFillValues struct {
+	// RHS is the fill value to use for the right-hand side.
+	RHS *float64
+	// LHS is the fill value to use for the left-hand side.
+	LHS *float64
 }
 
 // Visitor allows visiting a Node and its child nodes. The Visit method is
@@ -314,10 +352,13 @@ func Walk(v Visitor, node Node, path []Node) error {
 	if v, err = v.Visit(node, path); v == nil || err != nil {
 		return err
 	}
-	path = append(path, node)
+	var pathToHere []Node // Initialized only when needed.
 
-	for _, e := range Children(node) {
-		if err := Walk(v, e, path); err != nil {
+	for e := range ChildrenIter(node) {
+		if pathToHere == nil {
+			pathToHere = append(path, node)
+		}
+		if err := Walk(v, e, pathToHere); err != nil {
 			return err
 		}
 	}
@@ -351,61 +392,71 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
 // for all the non-nil children of node, recursively.
+// Note: path may be overwritten after f returns; copy path if you need to retain it.
 func Inspect(node Node, f inspector) {
-	Walk(f, node, nil) //nolint:errcheck
+	var pathBuf [4]Node        // To reduce allocations during recursion.
+	Walk(f, node, pathBuf[:0]) //nolint:errcheck
+}
+
+// ChildrenIter returns an iterator over all child nodes of a syntax tree node.
+func ChildrenIter(node Node) func(func(Node) bool) {
+	return func(yield func(Node) bool) {
+		// According to lore, these switches have significantly better performance than interfaces
+		switch n := node.(type) {
+		case *EvalStmt:
+			yield(n.Expr)
+		case Expressions:
+			for _, e := range n {
+				if !yield(e) {
+					return
+				}
+			}
+		case *AggregateExpr:
+			if n.Expr != nil {
+				if !yield(n.Expr) {
+					return
+				}
+			}
+			if n.Param != nil {
+				yield(n.Param)
+			}
+		case *BinaryExpr:
+			if !yield(n.LHS) {
+				return
+			}
+			yield(n.RHS)
+		case *Call:
+			for _, e := range n.Args {
+				if !yield(e) {
+					return
+				}
+			}
+		case *SubqueryExpr:
+			yield(n.Expr)
+		case *ParenExpr:
+			yield(n.Expr)
+		case *UnaryExpr:
+			yield(n.Expr)
+		case *MatrixSelector:
+			yield(n.VectorSelector)
+		case *StepInvariantExpr:
+			yield(n.Expr)
+		case *NumberLiteral, *StringLiteral, *VectorSelector:
+			// nothing to do
+		default:
+			panic(fmt.Errorf("promql.ChildrenIter: unhandled node type %T", node))
+		}
+	}
 }
 
 // Children returns a list of all child nodes of a syntax tree node.
+// Implemented for backwards-compatibility; prefer ChildrenIter().
 func Children(node Node) []Node {
-	// For some reasons these switches have significantly better performance than interfaces
-	switch n := node.(type) {
-	case *EvalStmt:
-		return []Node{n.Expr}
-	case Expressions:
-		// golang cannot convert slices of interfaces
-		ret := make([]Node, len(n))
-		for i, e := range n {
-			ret[i] = e
-		}
-		return ret
-	case *AggregateExpr:
-		// While this does not look nice, it should avoid unnecessary allocations
-		// caused by slice resizing
-		switch {
-		case n.Expr == nil && n.Param == nil:
-			return nil
-		case n.Expr == nil:
-			return []Node{n.Param}
-		case n.Param == nil:
-			return []Node{n.Expr}
-		default:
-			return []Node{n.Expr, n.Param}
-		}
-	case *BinaryExpr:
-		return []Node{n.LHS, n.RHS}
-	case *Call:
-		// golang cannot convert slices of interfaces
-		ret := make([]Node, len(n.Args))
-		for i, e := range n.Args {
-			ret[i] = e
-		}
-		return ret
-	case *SubqueryExpr:
-		return []Node{n.Expr}
-	case *ParenExpr:
-		return []Node{n.Expr}
-	case *UnaryExpr:
-		return []Node{n.Expr}
-	case *MatrixSelector:
-		return []Node{n.VectorSelector}
-	case *StepInvariantExpr:
-		return []Node{n.Expr}
-	case *NumberLiteral, *StringLiteral, *VectorSelector:
-		// nothing to do
-		return []Node{}
-	default:
-		panic(fmt.Errorf("promql.Children: unhandled node type %T", node))
+	ret := []Node{}
+	for e := range ChildrenIter(node) {
+		ret = append(ret, e)
 	}
+	return ret
 }
 
 // mergeRanges is a helper function to merge the PositionRanges of two Nodes.
@@ -432,6 +483,28 @@ func (e *AggregateExpr) PositionRange() posrange.PositionRange {
 }
 
 func (e *BinaryExpr) PositionRange() posrange.PositionRange {
+	return mergeRanges(e.LHS, e.RHS)
+}
+
+func (e *DurationExpr) PositionRange() posrange.PositionRange {
+	if e.Op == STEP || e.Op == RANGE {
+		return posrange.PositionRange{
+			Start: e.StartPos,
+			End:   e.EndPos,
+		}
+	}
+	if e.RHS == nil {
+		return posrange.PositionRange{
+			Start: e.StartPos,
+			End:   e.RHS.PositionRange().End,
+		}
+	}
+	if e.LHS == nil {
+		return posrange.PositionRange{
+			Start: e.StartPos,
+			End:   e.RHS.PositionRange().End,
+		}
+	}
 	return mergeRanges(e.LHS, e.RHS)
 }
 

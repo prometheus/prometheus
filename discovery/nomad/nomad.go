@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	nomad "github.com/hashicorp/nomad/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -84,7 +83,7 @@ func (*SDConfig) Name() string { return "nomad" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -93,7 +92,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -121,10 +120,10 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*nomadMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*nomadMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &Discovery{
@@ -157,8 +156,9 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "nomad",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

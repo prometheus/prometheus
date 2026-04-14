@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -24,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -71,7 +70,7 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &tritonMetrics{
 		refreshMetrics: rmi,
 	}
@@ -82,7 +81,7 @@ func (*SDConfig) Name() string { return "triton" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return New(opts.Logger, c, opts.Metrics)
+	return New(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -91,7 +90,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -146,10 +145,10 @@ type Discovery struct {
 }
 
 // New returns a new Discovery which periodically refreshes its targets.
-func New(logger log.Logger, conf *SDConfig, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*tritonMetrics)
+func New(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*tritonMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	tls, err := config.NewTLSConfig(&conf.TLSConfig)
@@ -173,8 +172,9 @@ func New(logger log.Logger, conf *SDConfig, metrics discovery.DiscovererMetrics)
 	}
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "triton",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -211,7 +211,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	req, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -25,10 +25,12 @@ type Samples interface {
 
 type Sample interface {
 	T() int64
+	ST() int64
 	F() float64
 	H() *histogram.Histogram
 	FH() *histogram.FloatHistogram
 	Type() chunkenc.ValueType
+	Copy() Sample // Returns a deep copy.
 }
 
 type SampleSlice []Sample
@@ -37,14 +39,18 @@ func (s SampleSlice) Get(i int) Sample { return s[i] }
 func (s SampleSlice) Len() int         { return len(s) }
 
 type sample struct {
-	t  int64
-	f  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
+	st, t int64
+	f     float64
+	h     *histogram.Histogram
+	fh    *histogram.FloatHistogram
 }
 
 func (s sample) T() int64 {
 	return s.t
+}
+
+func (s sample) ST() int64 {
+	return s.st
 }
 
 func (s sample) F() float64 {
@@ -68,6 +74,17 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func (s sample) Copy() Sample {
+	c := sample{t: s.t, f: s.f}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
 }
 
 // GenerateSamples starting at start and counting up numSamples.

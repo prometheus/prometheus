@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	stdlog "log"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
@@ -36,14 +36,15 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"github.com/felixge/fgprof"
 	"github.com/grafana/regexp"
 	"github.com/mwitkow/go-conntrack"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	io_prometheus_client "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/common/server"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
@@ -53,24 +54,36 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/netconnlimit"
+	"github.com/prometheus/prometheus/util/notifications"
 	api_v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/prometheus/prometheus/web/ui"
 )
 
-// Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
-var reactRouterPaths = []string{
+// Paths handled by the React router that should all serve the main React app's index.html,
+// no matter if agent mode is enabled or not.
+var oldUIReactRouterPaths = []string{
 	"/config",
 	"/flags",
 	"/service-discovery",
 	"/status",
 	"/targets",
-	"/starting",
+}
+
+var newUIReactRouterPaths = []string{
+	"/config",
+	"/flags",
+	"/service-discovery",
+	"/alertmanager-discovery",
+	"/status",
+	"/targets",
 }
 
 // Paths that are handled by the React router when the Agent mode is set.
@@ -79,25 +92,42 @@ var reactRouterAgentPaths = []string{
 }
 
 // Paths that are handled by the React router when the Agent mode is not set.
-var reactRouterServerPaths = []string{
+var oldUIReactRouterServerPaths = []string{
 	"/alerts",
 	"/graph",
 	"/rules",
 	"/tsdb-status",
 }
 
-// withStackTrace logs the stack trace in case the request panics. The function
+var newUIReactRouterServerPaths = []string{
+	"/alerts",
+	"/query", // The old /graph redirects to /query on the server side.
+	"/rules",
+	"/tsdb-status",
+}
+
+type ReadyStatus uint32
+
+const (
+	NotReady ReadyStatus = iota
+	Ready
+	Stopping
+)
+
+var fgprofHandler = fgprof.Handler()
+
+// withStackTracer logs the stack trace in case the request panics. The function
 // will re-raise the error which will then be handled by the net/http package.
 // It is needed because the go-kit log package doesn't manage properly the
 // panics from net/http (see https://github.com/go-kit/kit/issues/233).
-func withStackTracer(h http.Handler, l log.Logger) http.Handler {
+func withStackTracer(h http.Handler, l *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
 				const size = 64 << 10
 				buf := make([]byte, size)
 				buf = buf[:runtime.Stack(buf, false)]
-				level.Error(l).Log("msg", "panic while serving request", "client", r.RemoteAddr, "url", r.URL, "err", err, "stack", buf)
+				l.Error("panic while serving request", "client", r.RemoteAddr, "url", r.URL, "err", err, "stack", buf)
 				panic(err)
 			}
 		}()
@@ -183,7 +213,7 @@ type LocalStorage interface {
 
 // Handler serves various HTTP endpoints of the Prometheus server.
 type Handler struct {
-	logger log.Logger
+	logger *slog.Logger
 
 	gatherer prometheus.Gatherer
 	metrics  *metrics
@@ -223,6 +253,11 @@ func (h *Handler) ApplyConfig(conf *config.Config) error {
 	defer h.mtx.Unlock()
 
 	h.config = conf
+	if conf.StorageConfig.TSDBConfig != nil && conf.StorageConfig.TSDBConfig.Retention != nil {
+		h.options.TSDBRetentionDuration = conf.StorageConfig.TSDBConfig.Retention.Time
+		h.options.TSDBMaxBytes = conf.StorageConfig.TSDBConfig.Retention.Size
+		h.options.TSDBMaxPercentage = conf.StorageConfig.TSDBConfig.Retention.Percentage
+	}
 
 	return nil
 }
@@ -233,6 +268,7 @@ type Options struct {
 	TSDBRetentionDuration model.Duration
 	TSDBDir               string
 	TSDBMaxBytes          units.Base2Bytes
+	TSDBMaxPercentage     float64
 	LocalStorage          LocalStorage
 	Storage               storage.Storage
 	ExemplarStorage       storage.ExemplarQueryable
@@ -242,6 +278,8 @@ type Options struct {
 	RuleManager           *rules.Manager
 	Notifier              *notifier.Manager
 	Version               *PrometheusVersion
+	NotificationsGetter   func() []notifications.Notification
+	NotificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	Flags                 map[string]string
 
 	ListenAddresses            []string
@@ -254,6 +292,7 @@ type Options struct {
 	UserAssetsPath             string
 	ConsoleTemplatesPath       string
 	ConsoleLibrariesPath       string
+	UseOldUI                   bool
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
 	PageTitle                  string
@@ -262,19 +301,31 @@ type Options struct {
 	RemoteReadBytesInFrame     int
 	EnableRemoteWriteReceiver  bool
 	EnableOTLPWriteReceiver    bool
+	ConvertOTLPDelta           bool
+	NativeOTLPDeltaIngestion   bool
 	IsAgent                    bool
+	STZeroIngestionEnabled     bool
+	EnableTypeAndUnitLabels    bool
+	AppendMetadata             bool
 	AppName                    string
 
-	AcceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg
+	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
 
-	Gatherer   prometheus.Gatherer
-	Registerer prometheus.Registerer
+	Gatherer        prometheus.Gatherer
+	Registerer      prometheus.Registerer
+	FeatureRegistry features.Collector
+
+	// Parser is the PromQL parser used for parsing query expressions.
+	Parser parser.Parser
 }
 
 // New initializes a new web Handler.
-func New(logger log.Logger, o *Options) *Handler {
+func New(logger *slog.Logger, o *Options) *Handler {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
+	}
+	if o.Parser == nil {
+		o.Parser = parser.NewParser(parser.Options{})
 	}
 
 	m := newMetrics(o.Registerer)
@@ -314,19 +365,27 @@ func New(logger log.Logger, o *Options) *Handler {
 
 		now: model.Now,
 	}
-	h.SetReady(false)
+	h.SetReady(NotReady)
 
-	factorySPr := func(_ context.Context) api_v1.ScrapePoolsRetriever { return h.scrapeManager }
-	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
-	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
-	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
+	factorySPr := func(context.Context) api_v1.ScrapePoolsRetriever { return h.scrapeManager }
+	factoryTr := func(context.Context) api_v1.TargetRetriever { return h.scrapeManager }
+	factoryAr := func(context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
+	FactoryRr := func(context.Context) api_v1.RulesRetriever { return h.ruleManager }
 
-	var app storage.Appendable
+	var (
+		app   storage.Appendable
+		appV2 storage.AppendableV2
+	)
 	if o.EnableRemoteWriteReceiver || o.EnableOTLPWriteReceiver {
-		app = h.storage
+		app, appV2 = h.storage, h.storage
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
+	version := ""
+	if o.Version != nil {
+		version = o.Version.Version
+	}
+
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, appV2, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -351,13 +410,48 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.CORSOrigin,
 		h.runtimeInfo,
 		h.versionInfo,
+		h.options.NotificationsGetter,
+		h.options.NotificationsSub,
 		o.Gatherer,
 		o.Registerer,
 		nil,
 		o.EnableRemoteWriteReceiver,
 		o.AcceptRemoteWriteProtoMsgs,
 		o.EnableOTLPWriteReceiver,
+		o.ConvertOTLPDelta,
+		o.NativeOTLPDeltaIngestion,
+		o.STZeroIngestionEnabled,
+		o.LookbackDelta,
+		o.EnableTypeAndUnitLabels,
+		o.AppendMetadata,
+		nil,
+		o.FeatureRegistry,
+		api_v1.OpenAPIOptions{
+			ExternalURL: o.ExternalURL.String(),
+			Version:     version,
+		},
+		o.Parser,
 	)
+
+	if r := o.FeatureRegistry; r != nil {
+		// Set dynamic API features (based on configuration).
+		r.Set(features.API, "lifecycle", o.EnableLifecycle)
+		r.Set(features.API, "admin", o.EnableAdminAPI)
+		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
+		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
+		r.Set(features.OTLPReceiver, "delta_conversion", o.ConvertOTLPDelta)
+		r.Set(features.OTLPReceiver, "native_delta_ingestion", o.NativeOTLPDeltaIngestion)
+		r.Enable(features.API, "label_values_match") // match[] parameter for label values endpoint.
+		r.Enable(features.API, "query_warnings")     // warnings in query responses.
+		r.Enable(features.API, "query_stats")        // stats parameter for query endpoints.
+		r.Enable(features.API, "time_range_series")  // start/end parameters for /series endpoint.
+		r.Enable(features.API, "time_range_labels")  // start/end parameters for /labels endpoints.
+		r.Enable(features.API, "exclude_alerts")     // exclude_alerts parameter for /rules endpoint.
+		r.Enable(features.API, "openapi_3.1")        // OpenAPI 3.1 specification support.
+		r.Enable(features.API, "openapi_3.2")        // OpenAPI 3.2 specification support.
+		r.Set(features.UI, "ui_v3", !o.UseOldUI)
+		r.Set(features.UI, "ui_v2", o.UseOldUI)
+	}
 
 	if o.RoutePrefix != "/" {
 		// If the prefix is missing for the root path, prepend it.
@@ -367,7 +461,10 @@ func New(logger log.Logger, o *Options) *Handler {
 		router = router.WithPrefix(o.RoutePrefix)
 	}
 
-	homePage := "/graph"
+	homePage := "/query"
+	if o.UseOldUI {
+		homePage = "/graph"
+	}
 	if o.IsAgent {
 		homePage = "/agent"
 	}
@@ -378,12 +475,16 @@ func New(logger log.Logger, o *Options) *Handler {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
 
-	// The console library examples at 'console_libraries/prom.lib' still depend on old asset files being served under `classic`.
-	router.Get("/classic/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
-		fs := server.StaticFileServer(ui.Assets)
-		fs.ServeHTTP(w, r)
-	})
+	if !o.UseOldUI {
+		router.Get("/graph", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/query?"+r.URL.RawQuery), http.StatusFound)
+		})
+	}
+
+	reactAssetsRoot := "/static/mantine-ui"
+	if h.options.UseOldUI {
+		reactAssetsRoot = "/static/react-app"
+	}
 
 	router.Get("/version", h.version)
 	router.Get("/metrics", promhttp.Handler().ServeHTTP)
@@ -394,8 +495,9 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/consoles/*filepath", readyf(h.consoles))
 
-	serveReactApp := func(w http.ResponseWriter, r *http.Request) {
-		f, err := ui.Assets.Open("/static/react/index.html")
+	serveReactApp := func(w http.ResponseWriter, _ *http.Request) {
+		indexPath := reactAssetsRoot + "/index.html"
+		f, err := ui.Assets.Open(indexPath)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "Error opening React index.html: %v", err)
@@ -412,10 +514,18 @@ func New(logger log.Logger, o *Options) *Handler {
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("AGENT_MODE_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.IsAgent)))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("READY_PLACEHOLDER"), []byte(strconv.FormatBool(h.isReady())))
+		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("LOOKBACKDELTA_PLACEHOLDER"), []byte(model.Duration(h.options.LookbackDelta).String()))
 		w.Write(replacedIdx)
 	}
 
 	// Serve the React app.
+	reactRouterPaths := newUIReactRouterPaths
+	reactRouterServerPaths := newUIReactRouterServerPaths
+	if h.options.UseOldUI {
+		reactRouterPaths = oldUIReactRouterPaths
+		reactRouterServerPaths = oldUIReactRouterServerPaths
+	}
+
 	for _, p := range reactRouterPaths {
 		router.Get(p, serveReactApp)
 	}
@@ -432,8 +542,8 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	// The favicon and manifest are bundled as part of the React app, but we want to serve
 	// them on the root.
-	for _, p := range []string{"/favicon.ico", "/manifest.json"} {
-		assetPath := "/static/react" + p
+	for _, p := range []string{"/favicon.svg", "/favicon.ico", "/manifest.json"} {
+		assetPath := reactAssetsRoot + p
 		router.Get(p, func(w http.ResponseWriter, r *http.Request) {
 			r.URL.Path = assetPath
 			fs := server.StaticFileServer(ui.Assets)
@@ -441,9 +551,13 @@ func New(logger log.Logger, o *Options) *Handler {
 		})
 	}
 
+	reactStaticAssetsDir := "/assets"
+	if h.options.UseOldUI {
+		reactStaticAssetsDir = "/static"
+	}
 	// Static files required by the React app.
-	router.Get("/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
-		r.URL.Path = path.Join("/static/react/static", route.Param(r.Context(), "filepath"))
+	router.Get(reactStaticAssetsDir+"/*filepath", func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = path.Join(reactAssetsRoot+reactStaticAssetsDir, route.Param(r.Context(), "filepath"))
 		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})
@@ -479,18 +593,18 @@ func New(logger log.Logger, o *Options) *Handler {
 	router.Get("/debug/*subpath", serveDebug)
 	router.Post("/debug/*subpath", serveDebug)
 
-	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/-/healthy", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "%s is Healthy.\n", o.AppName)
 	})
 	router.Head("/-/healthy", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/-/ready", readyf(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "%s is Ready.\n", o.AppName)
 	}))
-	router.Head("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
+	router.Head("/-/ready", readyf(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -521,6 +635,8 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 		pprof.Symbol(w, req)
 	case "trace":
 		pprof.Trace(w, req)
+	case "fgprof":
+		fgprofHandler.ServeHTTP(w, req)
 	default:
 		req.URL.Path = "/debug/pprof/" + subpath
 		pprof.Index(w, req)
@@ -528,30 +644,39 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 }
 
 // SetReady sets the ready status of our web Handler.
-func (h *Handler) SetReady(v bool) {
-	if v {
-		h.ready.Store(1)
+func (h *Handler) SetReady(v ReadyStatus) {
+	if v == Ready {
+		h.ready.Store(uint32(Ready))
 		h.metrics.readyStatus.Set(1)
 		return
 	}
 
-	h.ready.Store(0)
+	h.ready.Store(uint32(v))
 	h.metrics.readyStatus.Set(0)
 }
 
 // Verifies whether the server is ready or not.
 func (h *Handler) isReady() bool {
-	return h.ready.Load() > 0
+	return ReadyStatus(h.ready.Load()) == Ready
 }
 
 // Checks if server is ready, calls f if it is, returns 503 if it is not.
 func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if h.isReady() {
+		switch ReadyStatus(h.ready.Load()) {
+		case Ready:
 			f(w, r)
-		} else {
+		case NotReady:
+			w.Header().Set("X-Prometheus-Stopping", "false")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			fmt.Fprintf(w, "Service Unavailable")
+		case Stopping:
+			w.Header().Set("X-Prometheus-Stopping", "true")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, "Service Unavailable")
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "Unknown state")
 		}
 	}
 }
@@ -582,7 +707,7 @@ func (h *Handler) Listeners() ([]net.Listener, error) {
 
 // Listener creates the TCP listener for web requests.
 func (h *Handler) Listener(address string, sem chan struct{}) (net.Listener, error) {
-	level.Info(h.logger).Log("msg", "Start listening for connections", "address", address)
+	h.logger.Info("Start listening for connections", "address", address)
 
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -614,7 +739,7 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 	apiPath := "/api"
 	if h.options.RoutePrefix != "/" {
 		apiPath = h.options.RoutePrefix + apiPath
-		level.Info(h.logger).Log("msg", "Router prefix", "prefix", h.options.RoutePrefix)
+		h.logger.Info("Router prefix", "prefix", h.options.RoutePrefix)
 	}
 	av1 := route.New().
 		WithInstrumentation(h.metrics.instrumentHandlerWithPrefix("/api/v1")).
@@ -623,7 +748,7 @@ func (h *Handler) Run(ctx context.Context, listeners []net.Listener, webConfig s
 
 	mux.Handle(apiPath+"/v1/", http.StripPrefix(apiPath+"/v1", av1))
 
-	errlog := stdlog.New(log.NewStdlibAdapter(level.Error(h.logger)), "", 0)
+	errlog := slog.NewLogLogger(h.logger.Handler(), slog.LevelError)
 
 	spanNameFormatter := otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 		return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
@@ -739,14 +864,32 @@ func (h *Handler) runtimeInfo() (api_v1.RuntimeInfo, error) {
 		GODEBUG:        os.Getenv("GODEBUG"),
 	}
 
-	if h.options.TSDBRetentionDuration != 0 {
-		status.StorageRetention = h.options.TSDBRetentionDuration.String()
+	hostname, err := os.Hostname()
+	if err != nil {
+		return status, fmt.Errorf("error getting hostname: %w", err)
 	}
-	if h.options.TSDBMaxBytes != 0 {
+	status.Hostname = hostname
+	status.ServerTime = time.Now().UTC()
+
+	h.mtx.RLock()
+	tsdbRetentionDuration := h.options.TSDBRetentionDuration
+	tsdbMaxBytes := h.options.TSDBMaxBytes
+	tsdbMaxPercentage := h.options.TSDBMaxPercentage
+	h.mtx.RUnlock()
+	if tsdbRetentionDuration != 0 {
+		status.StorageRetention = tsdbRetentionDuration.String()
+	}
+	if tsdbMaxBytes != 0 {
 		if status.StorageRetention != "" {
 			status.StorageRetention += " or "
 		}
-		status.StorageRetention += h.options.TSDBMaxBytes.String()
+		status.StorageRetention += tsdbMaxBytes.String()
+	}
+	if tsdbMaxPercentage != 0 {
+		if status.StorageRetention != "" {
+			status.StorageRetention += " or "
+		}
+		status.StorageRetention = status.StorageRetention + strconv.FormatFloat(tsdbMaxPercentage, 'g', -1, 64) + "%"
 	}
 
 	metrics, err := h.gatherer.Gather()
@@ -820,7 +963,7 @@ func (h *Handler) consolesPath() string {
 }
 
 func setPathWithPrefix(prefix string) func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
-	return func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(_ string, handler http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			handler(w, r.WithContext(httputil.ContextWithPath(r.Context(), prefix+r.URL.Path)))
 		}

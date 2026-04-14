@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -21,9 +21,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/go-kit/log/level"
-
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -51,7 +50,7 @@ type headIndexReader struct {
 	mint, maxt int64
 }
 
-func (h *headIndexReader) Close() error {
+func (*headIndexReader) Close() error {
 	return nil
 }
 
@@ -63,8 +62,8 @@ func (h *headIndexReader) Symbols() index.StringIter {
 // specific label name that are within the time range mint to maxt.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (h *headIndexReader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, err := h.LabelValues(ctx, name, matchers...)
+func (h *headIndexReader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := h.LabelValues(ctx, name, hints, matchers...)
 	if err == nil {
 		slices.Sort(values)
 	}
@@ -75,16 +74,16 @@ func (h *headIndexReader) SortedLabelValues(ctx context.Context, name string, ma
 // specific label name that are within the time range mint to maxt.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (h *headIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (h *headIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
 		return []string{}, nil
 	}
 
 	if len(matchers) == 0 {
-		return h.head.postings.LabelValues(ctx, name), nil
+		return h.head.postings.LabelValues(ctx, name, hints), nil
 	}
 
-	return labelValuesWithMatchers(ctx, h, name, matchers...)
+	return labelValuesWithMatchers(ctx, h, name, hints, matchers...)
 }
 
 // LabelNames returns all the unique label names present in the head
@@ -105,37 +104,32 @@ func (h *headIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Ma
 
 // Postings returns the postings list iterator for the label pairs.
 func (h *headIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
-	switch len(values) {
-	case 0:
-		return index.EmptyPostings(), nil
-	case 1:
-		return h.head.postings.Get(name, values[0]), nil
-	default:
-		res := make([]index.Postings, 0, len(values))
-		for _, value := range values {
-			if p := h.head.postings.Get(name, value); !index.IsEmptyPostingsType(p) {
-				res = append(res, p)
-			}
-		}
-		return index.Merge(ctx, res...), nil
-	}
+	return h.head.postings.Postings(ctx, name, values...), nil
 }
 
 func (h *headIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
 	return h.head.postings.PostingsForLabelMatching(ctx, name, match)
 }
 
+func (h *headIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	return h.head.postings.PostingsForAllLabelValues(ctx, name)
+}
+
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 
+	notFoundSeriesCount := 0
 	// Fetch all the series only once.
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
-			level.Debug(h.head.logger).Log("msg", "Looked up series not found")
+			notFoundSeriesCount++
 		} else {
 			series = append(series, s)
 		}
+	}
+	if notFoundSeriesCount > 0 {
+		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
 	}
 	if err := p.Err(); err != nil {
 		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
@@ -161,11 +155,12 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	}
 
 	out := make([]storage.SeriesRef, 0, 128)
+	notFoundSeriesCount := 0
 
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
-			level.Debug(h.head.logger).Log("msg", "Looked up series not found")
+			notFoundSeriesCount++
 			continue
 		}
 
@@ -175,6 +170,9 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 		}
 
 		out = append(out, storage.SeriesRef(s.ref))
+	}
+	if notFoundSeriesCount > 0 {
+		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
 	}
 
 	return index.NewListPostings(out)
@@ -202,6 +200,112 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 	*chks = appendSeriesChunks(s, h.mint, h.maxt, *chks)
 
 	return nil
+}
+
+func (h *Head) staleIndex(mint, maxt int64, staleSeriesRefs []storage.SeriesRef) (*headStaleIndexReader, error) {
+	return &headStaleIndexReader{
+		headIndexReader: h.indexRange(mint, maxt),
+		staleSeriesRefs: staleSeriesRefs,
+	}, nil
+}
+
+// headStaleIndexReader gives the stale series that have no out-of-order data.
+// This is only used for stale series compaction at the moment, that will only ask for all
+// the series during compaction. So to make that efficient, this index reader requires the
+// pre-calculated list of stale series refs that can be returned without re-reading the Head.
+type headStaleIndexReader struct {
+	*headIndexReader
+	staleSeriesRefs []storage.SeriesRef
+}
+
+func (h *headStaleIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	// If all postings are requested, return the precalculated list.
+	k, v := index.AllPostingsKey()
+	if len(h.staleSeriesRefs) > 0 && name == k && len(values) == 1 && values[0] == v {
+		return index.NewListPostings(h.staleSeriesRefs), nil
+	}
+	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.Postings(ctx, name, values...))
+	if err != nil {
+		return index.ErrPostings(err), err
+	}
+	return index.NewListPostings(seriesRefs), nil
+}
+
+func (h *headStaleIndexReader) PostingsForLabelMatching(ctx context.Context, name string, match func(string) bool) index.Postings {
+	// Unused for compaction, so we don't need to optimise.
+	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.PostingsForLabelMatching(ctx, name, match))
+	if err != nil {
+		return index.ErrPostings(err)
+	}
+	return index.NewListPostings(seriesRefs)
+}
+
+func (h *headStaleIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	// Unused for compaction, so we don't need to optimise.
+	seriesRefs, err := h.head.filterStaleSeriesAndSortPostings(h.head.postings.PostingsForAllLabelValues(ctx, name))
+	if err != nil {
+		return index.ErrPostings(err)
+	}
+	return index.NewListPostings(seriesRefs)
+}
+
+// filterStaleSeriesAndSortPostings returns the stale series references from the given postings
+// that also do not have any out-of-order data.
+func (h *Head) filterStaleSeriesAndSortPostings(p index.Postings) ([]storage.SeriesRef, error) {
+	series := make([]*memSeries, 0, 1024)
+
+	notFoundSeriesCount := 0
+	for p.Next() {
+		s := h.series.getByID(chunks.HeadSeriesRef(p.At()))
+		if s == nil {
+			notFoundSeriesCount++
+			continue
+		}
+
+		s.Lock()
+		if s.ooo != nil {
+			// Has out-of-order data; skip it because we cannot determine if a series
+			// is stale when it's getting out-of-order data.
+			s.Unlock()
+			continue
+		}
+
+		if value.IsStaleNaN(s.lastValue) ||
+			(s.lastHistogramValue != nil && value.IsStaleNaN(s.lastHistogramValue.Sum)) ||
+			(s.lastFloatHistogramValue != nil && value.IsStaleNaN(s.lastFloatHistogramValue.Sum)) {
+			series = append(series, s)
+		}
+		s.Unlock()
+	}
+	if notFoundSeriesCount > 0 {
+		h.logger.Debug("Looked up stale series not found", "count", notFoundSeriesCount)
+	}
+	if err := p.Err(); err != nil {
+		return nil, fmt.Errorf("expand postings: %w", err)
+	}
+
+	slices.SortFunc(series, func(a, b *memSeries) int {
+		return labels.Compare(a.labels(), b.labels())
+	})
+
+	refs := make([]storage.SeriesRef, 0, len(series))
+	for _, p := range series {
+		refs = append(refs, storage.SeriesRef(p.ref))
+	}
+	return refs, nil
+}
+
+// SortedPostings returns the postings as it is because we expect any postings obtained via
+// headStaleIndexReader to be already sorted.
+func (*headStaleIndexReader) SortedPostings(p index.Postings) index.Postings {
+	// All the postings function above already give the sorted list of postings.
+	return p
+}
+
+// SortedStaleSeriesRefsNoOOOData returns all the series refs of the stale series that do not have any out-of-order data.
+func (h *Head) SortedStaleSeriesRefsNoOOOData(ctx context.Context) ([]storage.SeriesRef, error) {
+	k, v := index.AllPostingsKey()
+	return h.filterStaleSeriesAndSortPostings(h.postings.Postings(ctx, k, v))
 }
 
 func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta) []chunks.Meta {
@@ -262,21 +366,6 @@ func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
 func unpackHeadChunkRef(ref chunks.ChunkRef) (seriesID chunks.HeadSeriesRef, chunkID chunks.HeadChunkID, isOOO bool) {
 	sid, cid := chunks.HeadChunkRef(ref).Unpack()
 	return sid, (cid & (oooChunkIDMask - 1)), (cid & oooChunkIDMask) != 0
-}
-
-// LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (h *headIndexReader) LabelValueFor(_ context.Context, id storage.SeriesRef, label string) (string, error) {
-	memSeries := h.head.series.getByID(chunks.HeadSeriesRef(id))
-	if memSeries == nil {
-		return "", storage.ErrNotFound
-	}
-
-	value := memSeries.labels().Get(label)
-	if value == "" {
-		return "", storage.ErrNotFound
-	}
-
-	return value, nil
 }
 
 // LabelNamesFor returns all the label names for the series referred to by the postings.
@@ -492,7 +581,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 
 // oooChunk returns the chunk for the HeadChunkID by m-mapping it from the disk.
 // It never returns the head OOO chunk.
-func (s *memSeries) oooChunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool) (chunk chunkenc.Chunk, maxTime int64, err error) {
+func (s *memSeries) oooChunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, _ *sync.Pool) (chunk chunkenc.Chunk, maxTime int64, err error) {
 	// ix represents the index of chunk in the s.ooo.oooMmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstOOOChunkID) gives the slice index.
 	ix := int(id) - int(s.ooo.firstOOOChunkID)
@@ -563,7 +652,7 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 		// Iterate over the appendIDs, find the first one that the isolation state says not
 		// to return.
 		it := s.txs.iterator()
-		for index := 0; index < appendIDsToConsider; index++ {
+		for index := range appendIDsToConsider {
 			appendID := it.At()
 			if appendID <= isoState.maxAppendID { // Easy check first.
 				if _, ok := isoState.incompleteAppends[appendID]; !ok {
@@ -571,10 +660,8 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 					continue
 				}
 			}
-			stopAfter = numSamples - (appendIDsToConsider - index)
-			if stopAfter < 0 {
-				stopAfter = 0 // Stopped in a previous chunk.
-			}
+			// Stopped in a previous chunk.
+			stopAfter = max(numSamples-(appendIDsToConsider-index), 0)
 			break
 		}
 	}

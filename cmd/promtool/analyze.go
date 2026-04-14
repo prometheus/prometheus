@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -34,8 +34,8 @@ import (
 )
 
 var (
-	errNotNativeHistogram = fmt.Errorf("not a native histogram")
-	errNotEnoughData      = fmt.Errorf("not enough data")
+	errNotNativeHistogram = errors.New("not a native histogram")
+	errNotEnoughData      = errors.New("not enough data")
 
 	outputHeader = `Bucket stats for each histogram series over time
 ------------------------------------------------
@@ -169,7 +169,7 @@ func querySamples(ctx context.Context, api v1.API, query string, end time.Time) 
 
 	matrix, ok := values.(model.Matrix)
 	if !ok {
-		return nil, fmt.Errorf("query of buckets resulted in non-Matrix")
+		return nil, errors.New("query of buckets resulted in non-Matrix")
 	}
 
 	return matrix, nil
@@ -207,7 +207,7 @@ func calcClassicBucketStatistics(matrix model.Matrix) (*statistics, error) {
 	sortMatrix(matrix)
 
 	totalPop := 0
-	for timeIdx := 0; timeIdx < numSamples; timeIdx++ {
+	for timeIdx := range numSamples {
 		curr, err := getBucketCountsAtTime(matrix, numBuckets, timeIdx)
 		if err != nil {
 			return stats, err
@@ -259,7 +259,7 @@ func getBucketCountsAtTime(matrix model.Matrix, numBuckets, timeIdx int) ([]int,
 		prev := matrix[i].Values[timeIdx]
 		// Assume the results are nicely aligned.
 		if curr.Timestamp != prev.Timestamp {
-			return counts, fmt.Errorf("matrix result is not time aligned")
+			return counts, errors.New("matrix result is not time aligned")
 		}
 		counts[i+1] = int(curr.Value - prev.Value)
 	}

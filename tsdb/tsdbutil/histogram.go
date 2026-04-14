@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,8 +20,8 @@ import (
 )
 
 func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
-	for i := 0; i < n; i++ {
-		h := GenerateTestHistogram(i)
+	for i := range n {
+		h := GenerateTestHistogram(int64(i))
 		if i > 0 {
 			h.CounterResetHint = histogram.NotCounterReset
 		}
@@ -31,13 +31,13 @@ func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
 }
 
 func GenerateTestHistogramWithHint(n int, hint histogram.CounterResetHint) *histogram.Histogram {
-	h := GenerateTestHistogram(n)
+	h := GenerateTestHistogram(int64(n))
 	h.CounterResetHint = hint
 	return h
 }
 
 // GenerateTestHistogram but it is up to the user to set any known counter reset hint.
-func GenerateTestHistogram(i int) *histogram.Histogram {
+func GenerateTestHistogram(i int64) *histogram.Histogram {
 	return &histogram.Histogram{
 		Count:         12 + uint64(i*9),
 		ZeroCount:     2 + uint64(i),
@@ -48,16 +48,27 @@ func GenerateTestHistogram(i int) *histogram.Histogram {
 			{Offset: 0, Length: 2},
 			{Offset: 1, Length: 2},
 		},
-		PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
+		PositiveBuckets: []int64{i + 1, 1, -1, 0},
 		NegativeSpans: []histogram.Span{
 			{Offset: 0, Length: 2},
 			{Offset: 1, Length: 2},
 		},
-		NegativeBuckets: []int64{int64(i + 1), 1, -1, 0},
+		NegativeBuckets: []int64{i + 1, 1, -1, 0},
 	}
 }
 
-func GenerateTestCustomBucketsHistogram(i int) *histogram.Histogram {
+func GenerateTestCustomBucketsHistograms(n int) (r []*histogram.Histogram) {
+	for i := range n {
+		h := GenerateTestCustomBucketsHistogram(int64(i))
+		if i > 0 {
+			h.CounterResetHint = histogram.NotCounterReset
+		}
+		r = append(r, h)
+	}
+	return r
+}
+
+func GenerateTestCustomBucketsHistogram(i int64) *histogram.Histogram {
 	return &histogram.Histogram{
 		Count:  5 + uint64(i*4),
 		Sum:    18.4 * float64(i+1),
@@ -66,28 +77,28 @@ func GenerateTestCustomBucketsHistogram(i int) *histogram.Histogram {
 			{Offset: 0, Length: 2},
 			{Offset: 1, Length: 2},
 		},
-		PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
+		PositiveBuckets: []int64{i + 1, 1, -1, 0},
 		CustomValues:    []float64{0, 1, 2, 3, 4},
 	}
 }
 
 func GenerateTestGaugeHistograms(n int) (r []*histogram.Histogram) {
-	for x := 0; x < n; x++ {
-		i := int(math.Sin(float64(x))*100) + 100
+	for x := range n {
+		i := int64(math.Sin(float64(x))*100) + 100
 		r = append(r, GenerateTestGaugeHistogram(i))
 	}
 	return r
 }
 
-func GenerateTestGaugeHistogram(i int) *histogram.Histogram {
+func GenerateTestGaugeHistogram(i int64) *histogram.Histogram {
 	h := GenerateTestHistogram(i)
 	h.CounterResetHint = histogram.GaugeType
 	return h
 }
 
 func GenerateTestFloatHistograms(n int) (r []*histogram.FloatHistogram) {
-	for i := 0; i < n; i++ {
-		h := GenerateTestFloatHistogram(i)
+	for i := range n {
+		h := GenerateTestFloatHistogram(int64(i))
 		if i > 0 {
 			h.CounterResetHint = histogram.NotCounterReset
 		}
@@ -97,7 +108,7 @@ func GenerateTestFloatHistograms(n int) (r []*histogram.FloatHistogram) {
 }
 
 // GenerateTestFloatHistogram but it is up to the user to set any known counter reset hint.
-func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
+func GenerateTestFloatHistogram(i int64) *histogram.FloatHistogram {
 	return &histogram.FloatHistogram{
 		Count:         12 + float64(i*9),
 		ZeroCount:     2 + float64(i),
@@ -117,7 +128,18 @@ func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
 	}
 }
 
-func GenerateTestCustomBucketsFloatHistogram(i int) *histogram.FloatHistogram {
+func GenerateTestCustomBucketsFloatHistograms(n int) (r []*histogram.FloatHistogram) {
+	for i := range n {
+		h := GenerateTestCustomBucketsFloatHistogram(int64(i))
+		if i > 0 {
+			h.CounterResetHint = histogram.NotCounterReset
+		}
+		r = append(r, h)
+	}
+	return r
+}
+
+func GenerateTestCustomBucketsFloatHistogram(i int64) *histogram.FloatHistogram {
 	return &histogram.FloatHistogram{
 		Count:  5 + float64(i*4),
 		Sum:    18.4 * float64(i+1),
@@ -132,14 +154,14 @@ func GenerateTestCustomBucketsFloatHistogram(i int) *histogram.FloatHistogram {
 }
 
 func GenerateTestGaugeFloatHistograms(n int) (r []*histogram.FloatHistogram) {
-	for x := 0; x < n; x++ {
-		i := int(math.Sin(float64(x))*100) + 100
+	for x := range n {
+		i := int64(math.Sin(float64(x))*100) + 100
 		r = append(r, GenerateTestGaugeFloatHistogram(i))
 	}
 	return r
 }
 
-func GenerateTestGaugeFloatHistogram(i int) *histogram.FloatHistogram {
+func GenerateTestGaugeFloatHistogram(i int64) *histogram.FloatHistogram {
 	h := GenerateTestFloatHistogram(i)
 	h.CounterResetHint = histogram.GaugeType
 	return h

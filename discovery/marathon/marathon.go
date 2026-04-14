@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -27,7 +27,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -80,7 +79,7 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &marathonMetrics{
 		refreshMetrics: rmi,
 	}
@@ -91,7 +90,7 @@ func (*SDConfig) Name() string { return "marathon" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(*c, opts.Logger, opts.Metrics)
+	return NewDiscovery(*c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -101,7 +100,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -111,15 +110,15 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if len(c.Servers) == 0 {
 		return errors.New("marathon_sd: must contain at least one Marathon server")
 	}
-	if len(c.AuthToken) > 0 && len(c.AuthTokenFile) > 0 {
+	if len(c.AuthToken) > 0 && c.AuthTokenFile != "" {
 		return errors.New("marathon_sd: at most one of auth_token & auth_token_file must be configured")
 	}
 
-	if len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0 {
+	if len(c.AuthToken) > 0 || c.AuthTokenFile != "" {
 		switch {
 		case c.HTTPClientConfig.BasicAuth != nil:
 			return errors.New("marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured")
-		case len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0:
+		case len(c.HTTPClientConfig.BearerToken) > 0 || c.HTTPClientConfig.BearerTokenFile != "":
 			return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
 		case c.HTTPClientConfig.Authorization != nil:
 			return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
@@ -140,10 +139,10 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Marathon Discovery.
-func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*marathonMetrics)
+func NewDiscovery(conf SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*marathonMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd")
@@ -154,7 +153,7 @@ func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.Discoverer
 	switch {
 	case len(conf.AuthToken) > 0:
 		rt, err = newAuthTokenRoundTripper(conf.AuthToken, rt)
-	case len(conf.AuthTokenFile) > 0:
+	case conf.AuthTokenFile != "":
 		rt, err = newAuthTokenFileRoundTripper(conf.AuthTokenFile, rt)
 	}
 	if err != nil {
@@ -168,8 +167,9 @@ func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.Discoverer
 	}
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "marathon",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -339,7 +339,7 @@ type appListClient func(ctx context.Context, client *http.Client, url string) (*
 
 // fetchApps requests a list of applications from a marathon server.
 func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, error) {
-	request, err := http.NewRequest(http.MethodGet, url, nil)
+	request, err := http.NewRequest(http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -513,7 +513,7 @@ func extractPortMapping(portMappings []portMapping, containerNet bool) ([]uint32
 	ports := make([]uint32, len(portMappings))
 	labels := make([]map[string]string, len(portMappings))
 
-	for i := 0; i < len(portMappings); i++ {
+	for i := range portMappings {
 		labels[i] = portMappings[i].Labels
 
 		if containerNet {

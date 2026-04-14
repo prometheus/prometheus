@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -49,15 +49,15 @@ func SanitizeLabelName(name string) string {
 // SanitizeFullLabelName replaces any invalid character with an underscore, and
 // if given an empty string, returns a string containing a single underscore.
 func SanitizeFullLabelName(name string) string {
-	if len(name) == 0 {
+	if name == "" {
 		return "_"
 	}
 	var validSb strings.Builder
 	for i, b := range name {
-		if !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0)) {
-			validSb.WriteRune('_')
-		} else {
+		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0) {
 			validSb.WriteRune(b)
+		} else {
+			validSb.WriteRune('_')
 		}
 	}
 	return validSb.String()

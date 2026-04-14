@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -57,11 +56,11 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), metrics)
+	d, err := newRefresher(&cfg)
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
 	require.NoError(t, err)
-	d.client.BaseURL = endpoint
+	d.(*dropletsDiscovery).client.BaseURL = endpoint
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)

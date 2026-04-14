@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -68,16 +68,16 @@ func (p *queryLogTest) skip(t *testing.T) {
 }
 
 // waitForPrometheus waits for Prometheus to be ready.
-func (p *queryLogTest) waitForPrometheus() error {
-	var err error
-	for x := 0; x < 20; x++ {
-		var r *http.Response
-		if r, err = http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix)); err == nil && r.StatusCode == http.StatusOK {
-			break
+func (p *queryLogTest) waitForPrometheus(t *testing.T) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		r, err := http.Get(fmt.Sprintf("http://%s:%d%s/-/ready", p.host, p.port, p.prefix))
+		if err != nil {
+			return false
 		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return err
+		r.Body.Close()
+		return r.StatusCode == http.StatusOK
+	}, 20*time.Second, 500*time.Millisecond, "prometheus at %s:%d did not become ready in time", p.host, p.port)
 }
 
 // setQueryLog alters the configuration file to enable or disable the query log,
@@ -88,18 +88,11 @@ func (p *queryLogTest) setQueryLog(t *testing.T, queryLogFile string) {
 	_, err = p.configFile.Seek(0, 0)
 	require.NoError(t, err)
 	if queryLogFile != "" {
-		_, err = p.configFile.Write([]byte(fmt.Sprintf("global:\n  query_log_file: %s\n", queryLogFile)))
+		_, err = fmt.Fprintf(p.configFile, "global:\n  query_log_file: %s\n", queryLogFile)
 		require.NoError(t, err)
 	}
 	_, err = p.configFile.Write([]byte(p.configuration()))
 	require.NoError(t, err)
-}
-
-// reloadConfig reloads the configuration using POST.
-func (p *queryLogTest) reloadConfig(t *testing.T) {
-	r, err := http.Post(fmt.Sprintf("http://%s:%d%s/-/reload", p.host, p.port, p.prefix), "text/plain", nil)
-	require.NoError(t, err)
-	require.Equal(t, 200, r.StatusCode)
 }
 
 // query runs a query according to the test origin.
@@ -125,10 +118,59 @@ func (p *queryLogTest) query(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 200, r.StatusCode)
 	case ruleOrigin:
-		time.Sleep(2 * time.Second)
+		// Poll the /api/v1/rules endpoint until a new rule evaluation is detected.
+		var lastEvalTime time.Time
+		for {
+			r, err := http.Get(fmt.Sprintf("http://%s:%d/api/v1/rules", p.host, p.port))
+			require.NoError(t, err)
+
+			rulesBody, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			defer r.Body.Close()
+
+			// Parse the rules response to find the last evaluation time.
+			newEvalTime := parseLastEvaluation(rulesBody)
+			if newEvalTime.After(lastEvalTime) {
+				if !lastEvalTime.IsZero() {
+					break
+				}
+				lastEvalTime = newEvalTime
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
 	default:
 		panic("can't query this origin")
 	}
+}
+
+// parseLastEvaluation extracts the last evaluation timestamp from the /api/v1/rules response.
+func parseLastEvaluation(rulesBody []byte) time.Time {
+	var ruleResponse struct {
+		Status string `json:"status"`
+		Data   struct {
+			Groups []struct {
+				Rules []struct {
+					LastEvaluation string `json:"lastEvaluation"`
+				} `json:"rules"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+
+	err := json.Unmarshal(rulesBody, &ruleResponse)
+	if err != nil {
+		return time.Time{}
+	}
+
+	for _, group := range ruleResponse.Data.Groups {
+		for _, rule := range group.Rules {
+			if evalTime, err := time.Parse(time.RFC3339Nano, rule.LastEvaluation); err == nil {
+				return evalTime
+			}
+		}
+	}
+
+	return time.Time{}
 }
 
 // queryString returns the expected queryString of a this test.
@@ -208,7 +250,7 @@ func (p *queryLogTest) params() []string {
 		s = append(s, "--web.route-prefix="+p.prefix)
 	}
 	if p.origin == consoleOrigin {
-		s = append(s, "--web.console.templates="+filepath.Join("testdata", "consoles"))
+		s = append(s, "--web.console.templates="+filepath.Join(p.cwd, "testdata", "consoles"))
 	}
 	return s
 }
@@ -259,6 +301,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	}, p.params()...)
 
 	prom := exec.Command(promPath, params...)
+	reloadURL := fmt.Sprintf("http://%s:%d%s/-/reload", p.host, p.port, p.prefix)
 
 	// Log stderr in case of failure.
 	stderr, err := prom.StderrPipe()
@@ -280,18 +323,19 @@ func (p *queryLogTest) run(t *testing.T) {
 		prom.Process.Kill()
 		prom.Wait()
 	}()
-	require.NoError(t, p.waitForPrometheus())
+	p.waitForPrometheus(t)
 
 	if !p.enabledAtStart {
 		p.query(t)
 		require.Empty(t, readQueryLog(t, queryLogFile.Name()))
 		p.setQueryLog(t, queryLogFile.Name())
-		p.reloadConfig(t)
+		reloadPrometheusConfig(t, reloadURL)
 	}
 
 	p.query(t)
 
-	ql := readQueryLog(t, queryLogFile.Name())
+	// Wait for query log entry to be written (avoid race with file I/O).
+	ql := waitForQueryLog(t, queryLogFile.Name(), 1)
 	qc := len(ql)
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
@@ -301,7 +345,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.validateLastQuery(t, ql)
 
 	p.setQueryLog(t, "")
-	p.reloadConfig(t)
+	reloadPrometheusConfig(t, reloadURL)
 	if !p.exactQueryCount() {
 		qc = len(readQueryLog(t, queryLogFile.Name()))
 	}
@@ -313,16 +357,17 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	qc = len(ql)
 	p.setQueryLog(t, queryLogFile.Name())
-	p.reloadConfig(t)
+	reloadPrometheusConfig(t, reloadURL)
 
 	p.query(t)
 	qc++
 
-	ql = readQueryLog(t, queryLogFile.Name())
+	// Wait for query log entry to be written (avoid race with file I/O).
+	ql = waitForQueryLog(t, queryLogFile.Name(), qc)
 	if p.exactQueryCount() {
 		require.Len(t, ql, qc)
 	} else {
-		require.Greater(t, len(ql), qc, "no queries logged")
+		require.GreaterOrEqual(t, len(ql), qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 	qc = len(ql)
@@ -349,19 +394,21 @@ func (p *queryLogTest) run(t *testing.T) {
 
 	qc++
 
-	ql = readQueryLog(t, newFile.Name())
+	// Wait for query log entry to be written (avoid race with file I/O).
+	ql = waitForQueryLog(t, newFile.Name(), qc)
 	if p.exactQueryCount() {
 		require.Len(t, ql, qc)
 	} else {
-		require.Greater(t, len(ql), qc, "no queries logged")
+		require.GreaterOrEqual(t, len(ql), qc, "no queries logged")
 	}
 	p.validateLastQuery(t, ql)
 
-	p.reloadConfig(t)
+	reloadPrometheusConfig(t, reloadURL)
 
 	p.query(t)
 
-	ql = readQueryLog(t, queryLogFile.Name())
+	// Wait for query log entry to be written (avoid race with file I/O).
+	ql = waitForQueryLog(t, queryLogFile.Name(), 1)
 	qc = len(ql)
 	if p.exactQueryCount() {
 		require.Equal(t, 1, qc)
@@ -393,6 +440,7 @@ func readQueryLog(t *testing.T, path string) []queryLogLine {
 	file, err := os.Open(path)
 	require.NoError(t, err)
 	defer file.Close()
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var q queryLogLine
@@ -402,10 +450,23 @@ func readQueryLog(t *testing.T, path string) []queryLogLine {
 	return ql
 }
 
+// waitForQueryLog waits for the query log to contain at least minEntries entries,
+// polling at regular intervals until the timeout is reached.
+func waitForQueryLog(t *testing.T, path string, minEntries int) []queryLogLine {
+	t.Helper()
+	var ql []queryLogLine
+	require.Eventually(t, func() bool {
+		ql = readQueryLog(t, path)
+		return len(ql) >= minEntries
+	}, 5*time.Second, 100*time.Millisecond, "timed out waiting for query log to have at least %d entries, got %d", minEntries, len(ql))
+	return ql
+}
+
 func TestQueryLog(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+	t.Parallel()
 
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
@@ -424,6 +485,7 @@ func TestQueryLog(t *testing.T) {
 					}
 
 					t.Run(p.String(), func(t *testing.T) {
+						t.Parallel()
 						p.run(t)
 					})
 				}

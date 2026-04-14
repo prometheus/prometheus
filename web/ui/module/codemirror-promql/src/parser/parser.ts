@@ -15,11 +15,14 @@ import { Diagnostic } from '@codemirror/lint';
 import { SyntaxNode, Tree } from '@lezer/common';
 import {
   AggregateExpr,
+  AnchoredExpr,
   And,
   BinaryExpr,
   BoolModifier,
   Bottomk,
+  Changes,
   CountValues,
+  Delta,
   Eql,
   EqlSingle,
   FunctionCall,
@@ -27,6 +30,7 @@ import {
   Gte,
   Gtr,
   Identifier,
+  Increase,
   LabelMatchers,
   LimitK,
   LimitRatio,
@@ -39,20 +43,25 @@ import {
   Quantile,
   QuotedLabelMatcher,
   QuotedLabelName,
+  Rate,
+  Resets,
+  SmoothedExpr,
   StepInvariantExpr,
   SubqueryExpr,
   Topk,
+  TrimLower,
+  TrimUpper,
   UnaryExpr,
   Unless,
   UnquotedLabelMatcher,
   VectorSelector,
 } from '@prometheus-io/lezer-promql';
-import { containsAtLeastOneChild } from './path-finder';
+import { containsAtLeastOneChild, containsChild } from './path-finder';
 import { getType } from './type';
 import { buildLabelMatchers } from './matcher';
 import { EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
-import { getFunction, Matcher, VectorMatchCardinality, ValueType } from '../types';
+import { getFunction, Matcher, ValueType, VectorMatchCardinality } from '../types';
 import { buildVectorMatching } from './vector';
 
 export class Parser {
@@ -116,25 +125,35 @@ export class Parser {
       case ParenExpr:
         this.checkAST(node.getChild('Expr'));
         break;
-      case UnaryExpr:
+      case UnaryExpr: {
         const unaryExprType = this.checkAST(node.getChild('Expr'));
         if (unaryExprType !== ValueType.scalar && unaryExprType !== ValueType.vector) {
           this.addDiagnostic(node, `unary expression only allowed on expressions of type scalar or instant vector, got ${unaryExprType}`);
         }
         break;
-      case SubqueryExpr:
+      }
+      case SmoothedExpr: {
+        this.checkAnchoredSmoothedExpr(node, [Rate, Increase, Delta]);
+        break;
+      }
+      case AnchoredExpr: {
+        this.checkAnchoredSmoothedExpr(node, [Resets, Changes, Rate, Increase, Delta]);
+        break;
+      }
+      case SubqueryExpr: {
         const subQueryExprType = this.checkAST(node.getChild('Expr'));
         if (subQueryExprType !== ValueType.vector) {
           this.addDiagnostic(node, `subquery is only allowed on instant vector, got ${subQueryExprType} in ${node.name} instead`);
         }
         break;
+      }
       case MatrixSelector:
         this.checkAST(node.getChild('Expr'));
         break;
       case VectorSelector:
         this.checkVectorSelector(node);
         break;
-      case StepInvariantExpr:
+      case StepInvariantExpr: {
         const exprValue = this.checkAST(node.getChild('Expr'));
         if (exprValue !== ValueType.vector && exprValue !== ValueType.matrix) {
           this.addDiagnostic(node, `@ modifier must be preceded by an instant selector vector or range vector selector or a subquery`);
@@ -148,6 +167,7 @@ export class Parser {
         //     So far I didn't find the way to fix it. I think it's likely due to the fact we are building an ESM package which is now something stable in nodeJS/javascript but still experimental in typescript.
         // For the above reason, we decided to drop these checks.
         break;
+      }
     }
 
     return getType(node);
@@ -197,6 +217,8 @@ export class Parser {
     const rt = this.checkAST(rExpr);
     const boolModifierUsed = node.getChild(BoolModifier);
     const isComparisonOperator = containsAtLeastOneChild(node, Eql, Neq, Lte, Lss, Gte, Gtr);
+    const isTrimLowerOperator = containsChild(node, TrimLower);
+    const isTrimUpperOperator = containsChild(node, TrimUpper);
     const isSetOperator = containsAtLeastOneChild(node, And, Or, Unless);
 
     // BOOL modifier check
@@ -205,8 +227,14 @@ export class Parser {
         this.addDiagnostic(node, 'bool modifier can only be used on comparison operators');
       }
     } else {
-      if (isComparisonOperator && lt === ValueType.scalar && rt === ValueType.scalar) {
-        this.addDiagnostic(node, 'comparisons between scalars must use BOOL modifier');
+      if (lt === ValueType.scalar && rt === ValueType.scalar) {
+        if (isComparisonOperator) {
+          this.addDiagnostic(node, 'comparisons between scalars must use BOOL modifier');
+        } else if (isTrimLowerOperator) {
+          this.addDiagnostic(node, 'operator ">/" not allowed for Scalar operations');
+        } else if (isTrimUpperOperator) {
+          this.addDiagnostic(node, 'operator "</" not allowed for Scalar operations');
+        }
       }
     }
 
@@ -275,6 +303,13 @@ export class Parser {
       }
     }
 
+    if (funcSignature.name === 'info') {
+      // Verify that the data label selector expression is not prefixed with metric name.
+      if (args.length > 1 && args[1].getChild(Identifier)) {
+        this.addDiagnostic(node, `expected label selectors as the second argument to "info" function, got ${args[1].type}`);
+      }
+    }
+
     let j = 0;
     for (let i = 0; i < args.length; i++) {
       j = i;
@@ -287,6 +322,31 @@ export class Parser {
         j = funcSignature.argTypes.length - 1;
       }
       this.expectType(args[i], funcSignature.argTypes[j], `call to function "${funcSignature.name}"`);
+    }
+  }
+
+  private checkAnchoredSmoothedExpr(node: SyntaxNode, allowedFunctions: number[]): void {
+    // A smoothed/anchored expression is supposed to work with range vectors or instant vectors.
+    // So first thing to do is to check the type of the child.
+    // Then, if this is used inside a function call, we need to check that the function is one of the given allowedFunctions.
+    const nodeType = getType(node);
+    if (nodeType !== ValueType.vector && nodeType !== ValueType.matrix) {
+      this.addDiagnostic(node, `smoothed/anchored expression only allowed on instant vector or range vector selector, got ${nodeType} instead`);
+      return;
+    }
+    const parent = node.parent?.parent;
+    if (!parent || parent.type.id !== FunctionCall) {
+      // Since the anchored/smoothed expression is not inside a function call, we cannot check the function name.
+      // This is an acceptable case as the anchored/smoothed expression can be used on any vector expression.
+      return;
+    }
+    const funcID = parent.firstChild?.firstChild;
+    if (!funcID) {
+      this.addDiagnostic(node, 'function not defined');
+      return;
+    }
+    if (!allowedFunctions.includes(funcID.type.id)) {
+      this.addDiagnostic(node, 'smoothed/anchored expression can only be used in specific functions');
     }
   }
 

@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,11 +16,12 @@ package rules
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -85,6 +86,8 @@ func TestAlertingRuleState(t *testing.T) {
 	for i, test := range tests {
 		rule := NewAlertingRule(test.name, nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 		rule.active = test.active
+		// Set evaluation timestamp to simulate that the rule has been evaluated
+		rule.SetEvaluationTimestamp(time.Now())
 		got := rule.State()
 		require.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
 	}
@@ -109,11 +112,11 @@ func TestAlertingRuleTemplateWithHistogram(t *testing.T) {
 		NegativeBuckets: []float64{-2, 2, 2, 7, 5, 5, 2},
 	}
 
-	q := func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+	q := func(context.Context, string, time.Time) (promql.Vector, error) {
 		return []promql.Sample{{H: &h}}, nil
 	}
 
-	expr, err := parser.ParseExpr("foo")
+	expr, err := testParser.ParseExpr("foo")
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -156,9 +159,8 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 stale
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests < 100`)
+	expr, err := testParser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -262,9 +264,8 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests < 100`)
+	expr, err := testParser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
 
 	ruleWithoutExternalLabels := NewAlertingRule(
@@ -276,7 +277,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	ruleWithExternalLabels := NewAlertingRule(
 		"ExternalLabelExists",
@@ -287,7 +288,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.FromStrings("foo", "bar", "dings", "bums"),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -357,9 +358,8 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests < 100`)
+	expr, err := testParser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
 
 	ruleWithoutExternalURL := NewAlertingRule(
@@ -371,7 +371,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	ruleWithExternalURL := NewAlertingRule(
 		"ExternalURLExists",
@@ -382,7 +382,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"http://localhost:1234",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -452,9 +452,8 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests < 100`)
+	expr, err := testParser.ParseExpr(`http_requests < 100`)
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -466,7 +465,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -508,9 +507,8 @@ func TestAlertingRuleQueryInTemplate(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	70 85 70 70
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`sum(http_requests) < 100`)
+	expr, err := testParser.ParseExpr(`sum(http_requests) < 100`)
 	require.NoError(t, err)
 
 	ruleWithQueryInTemplate := NewAlertingRule(
@@ -527,7 +525,7 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 `),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	evalTime := time.Unix(0, 0)
 
@@ -541,8 +539,11 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 			close(startQueryCh)
 			select {
 			case <-getDoneCh:
-			case <-time.After(time.Millisecond * 10):
+			case <-time.After(20 * time.Millisecond):
 				// Assert no blocking when template expanding.
+				buf := make([]byte, 1<<20)
+				n := runtime.Stack(buf, true)
+				t.Logf("goroutine dump:\n%s", buf[:n])
 				require.Fail(t, "unexpected blocking when template expanding.")
 			}
 		}
@@ -567,7 +568,7 @@ func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 	rule := NewAlertingRule("bench", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			rule.GetEvaluationTimestamp()
 		}
 		close(done)
@@ -582,7 +583,6 @@ func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 
 func TestAlertingRuleDuplicate(t *testing.T) {
 	storage := teststorage.New(t)
-	defer storage.Close()
 
 	opts := promql.EngineOpts{
 		Logger:     nil,
@@ -592,12 +592,11 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 	}
 
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	ctx := t.Context()
 
 	now := time.Now()
 
-	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
+	expr, _ := testParser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewAlertingRule(
 		"foo",
 		expr,
@@ -607,11 +606,11 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
-	require.EqualError(t, err, "vector contains metrics with the same labelset after applying alert labels")
+	require.ErrorIs(t, err, ErrDuplicateAlertLabelSet)
 }
 
 func TestAlertingRuleLimit(t *testing.T) {
@@ -620,7 +619,6 @@ func TestAlertingRuleLimit(t *testing.T) {
 			metric{label="1"} 1
 			metric{label="2"} 1
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	tests := []struct {
 		limit int
@@ -641,7 +639,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 		},
 	}
 
-	expr, _ := parser.ParseExpr(`metric > 0`)
+	expr, _ := testParser.ParseExpr(`metric > 0`)
 	rule := NewAlertingRule(
 		"foo",
 		expr,
@@ -651,7 +649,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 
 	evalTime := time.Unix(0, 0)
@@ -678,7 +676,7 @@ func TestQueryForStateSeries(t *testing.T) {
 	tests := []testInput{
 		// Test for empty series.
 		{
-			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 				return storage.EmptySeriesSet()
 			},
 			expectedSeries: nil,
@@ -686,7 +684,7 @@ func TestQueryForStateSeries(t *testing.T) {
 		},
 		// Test for error series.
 		{
-			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 				return storage.ErrSeriesSet(testError)
 			},
 			expectedSeries: nil,
@@ -694,14 +692,16 @@ func TestQueryForStateSeries(t *testing.T) {
 		},
 		// Test for mock series.
 		{
-			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			selectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 				return storage.TestSeriesSet(storage.MockSeries(
+					nil,
 					[]int64{1, 2, 3},
 					[]float64{1, 2, 3},
 					[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
 				))
 			},
 			expectedSeries: storage.MockSeries(
+				nil,
 				[]int64{1, 2, 3},
 				[]float64{1, 2, 3},
 				[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
@@ -745,6 +745,45 @@ func TestQueryForStateSeries(t *testing.T) {
 	}
 }
 
+// TestQueryForStateSeriesTemplateLabels verifies that labels containing Go
+// template syntax are excluded from the matchers used to query ALERTS_FOR_STATE,
+// so that per-instance expanded values stored in the series can still be found.
+func TestQueryForStateSeriesTemplateLabels(t *testing.T) {
+	var gotMatchers []*labels.Matcher
+	querier := &storage.MockQuerier{
+		SelectMockFunction: func(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			gotMatchers = matchers
+			return storage.EmptySeriesSet()
+		},
+	}
+
+	rule := NewAlertingRule(
+		"TestRule",
+		nil,
+		time.Minute,
+		0,
+		labels.FromStrings("severity", "critical", "instance_ext", "instance_{{ $labels.instance }}"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	_, err := rule.QueryForStateSeries(context.Background(), querier)
+	require.NoError(t, err)
+
+	for _, m := range gotMatchers {
+		require.NotContains(t, m.Value, "{{", "template label %q must not appear in Select matchers", m.Name)
+	}
+
+	// The static label must still be present.
+	found := false
+	for _, m := range gotMatchers {
+		if m.Name == "severity" && m.Value == "critical" {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "static label severity=critical must be present in Select matchers")
+}
+
 // TestSendAlertsDontAffectActiveAlerts tests a fix for https://github.com/prometheus/prometheus/issues/11424.
 func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 	rule := NewAlertingRule(
@@ -762,7 +801,7 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 	al := &Alert{State: StateFiring, Labels: lbls, ActiveAt: time.Now()}
 	rule.active[h] = al
 
-	expr, err := parser.ParseExpr("foo")
+	expr, err := testParser.ParseExpr("foo")
 	require.NoError(t, err)
 	rule.vector = expr
 
@@ -771,15 +810,16 @@ func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
 		QueueCapacity: 1,
 		RelabelConfigs: []*relabel.Config{
 			{
-				SourceLabels: model.LabelNames{"a1"},
-				Regex:        relabel.MustNewRegexp("(.+)"),
-				TargetLabel:  "a1",
-				Replacement:  "bug",
-				Action:       "replace",
+				SourceLabels:         model.LabelNames{"a1"},
+				Regex:                relabel.MustNewRegexp("(.+)"),
+				TargetLabel:          "a1",
+				Replacement:          "bug",
+				Action:               "replace",
+				NameValidationScheme: model.UTF8Validation,
 			},
 		},
 	}
-	nm := notifier.NewManager(&opts, log.NewNopLogger())
+	nm := notifier.NewManager(&opts, model.UTF8Validation, promslog.NewNopLogger())
 
 	f := SendAlerts(nm, "")
 	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
@@ -801,9 +841,8 @@ func TestKeepFiringFor(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70 10x5
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests > 50`)
+	expr, err := testParser.ParseExpr(`http_requests > 50`)
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -912,9 +951,8 @@ func TestPendingAndKeepFiringFor(t *testing.T) {
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 10x10
 	`)
-	t.Cleanup(func() { storage.Close() })
 
-	expr, err := parser.ParseExpr(`http_requests > 50`)
+	expr, err := testParser.ParseExpr(`http_requests > 50`)
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -974,7 +1012,7 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		lbs    = labels.FromStrings("test", "test")
 	)
 
-	expr, err := parser.ParseExpr(query)
+	expr, err := testParser.ParseExpr(query)
 	require.NoError(t, err)
 
 	rule := NewAlertingRule(
@@ -986,10 +1024,10 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 
-	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, qs string, _ time.Time) (promql.Vector, error) {
+	_, err = rule.Eval(ctx, 0, now, func(ctx context.Context, _ string, _ time.Time) (promql.Vector, error) {
 		detail = FromOriginContext(ctx)
 		return nil, nil
 	}, nil, 0)
@@ -998,7 +1036,9 @@ func TestAlertingEvalWithOrigin(t *testing.T) {
 	require.Equal(t, detail, NewRuleDetail(rule))
 }
 
-func TestAlertingRule_SetNoDependentRules(t *testing.T) {
+func TestAlertingRule_SetDependentRules(t *testing.T) {
+	dependentRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+
 	rule := NewAlertingRule(
 		"test",
 		&parser.NumberLiteral{Val: 1},
@@ -1008,18 +1048,22 @@ func TestAlertingRule_SetNoDependentRules(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	require.False(t, rule.NoDependentRules())
 
-	rule.SetNoDependentRules(false)
+	rule.SetDependentRules([]Rule{dependentRule})
 	require.False(t, rule.NoDependentRules())
+	require.Equal(t, []Rule{dependentRule}, rule.DependentRules())
 
-	rule.SetNoDependentRules(true)
+	rule.SetDependentRules([]Rule{})
 	require.True(t, rule.NoDependentRules())
+	require.Empty(t, rule.DependentRules())
 }
 
-func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
+func TestAlertingRule_SetDependencyRules(t *testing.T) {
+	dependencyRule := NewRecordingRule("test1", nil, labels.EmptyLabels())
+
 	rule := NewAlertingRule(
 		"test",
 		&parser.NumberLiteral{Val: 1},
@@ -1029,15 +1073,17 @@ func TestAlertingRule_SetNoDependencyRules(t *testing.T) {
 		labels.EmptyLabels(),
 		labels.EmptyLabels(),
 		"",
-		true, log.NewNopLogger(),
+		true, promslog.NewNopLogger(),
 	)
 	require.False(t, rule.NoDependencyRules())
 
-	rule.SetNoDependencyRules(false)
+	rule.SetDependencyRules([]Rule{dependencyRule})
 	require.False(t, rule.NoDependencyRules())
+	require.Equal(t, []Rule{dependencyRule}, rule.DependencyRules())
 
-	rule.SetNoDependencyRules(true)
+	rule.SetDependencyRules([]Rule{})
 	require.True(t, rule.NoDependencyRules())
+	require.Empty(t, rule.DependencyRules())
 }
 
 func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
@@ -1059,4 +1105,86 @@ func TestAlertingRule_ActiveAlertsCount(t *testing.T) {
 	rule.active[h] = al
 
 	require.Equal(t, 1, rule.ActiveAlertsCount())
+}
+
+// TestFiringAlertResetToPendingOnHoldDurationIncrease verifies that when the
+// holdDuration ("for" duration) is increased on a rule that already has a
+// firing alert, the alert is demoted back to StatePending because the elapsed
+// time since ActiveAt no longer meets the new, larger holdDuration.
+func TestFiringAlertResetToPendingOnHoldDurationIncrease(t *testing.T) {
+	shortHold := 15 * time.Second
+	longHold := 1 * time.Hour
+
+	expr, err := testParser.ParseExpr("foo")
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		"TestResetToPending",
+		expr,
+		shortHold,
+		0,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	baseTime := time.Unix(0, 0)
+	q := func(_ context.Context, _ string, ts time.Time) (promql.Vector, error) {
+		return promql.Vector{
+			promql.Sample{
+				Metric: labels.EmptyLabels(),
+				T:      timestamp.FromTime(ts),
+				F:      1,
+			},
+		}, nil
+	}
+
+	// Eval at t=0: creates the alert in StatePending with ActiveAt = baseTime.
+	_, err = rule.Eval(context.TODO(), 0, baseTime, q, nil, 0)
+	require.NoError(t, err)
+
+	require.Len(t, rule.active, 1)
+	var alert *Alert
+	for _, a := range rule.active {
+		alert = a
+	}
+	require.Equal(t, StatePending, alert.State)
+
+	// Eval at t=15s: the short holdDuration is met, alert transitions to firing.
+	evalTime := baseTime.Add(shortHold)
+	_, err = rule.Eval(context.TODO(), 0, evalTime, q, nil, 0)
+	require.NoError(t, err)
+	require.Equal(t, StateFiring, alert.State)
+	require.False(t, alert.FiredAt.IsZero(), "FiredAt should be set after firing")
+
+	// Now increase the holdDuration to 1 hour (simulating a rule config reload).
+	rule.holdDuration = longHold
+
+	// Eval at t=30s: only 30s have elapsed since ActiveAt, which is far less
+	// than the new 1h holdDuration, so the alert must go back to pending.
+	evalTime = baseTime.Add(30 * time.Second)
+	res, err := rule.Eval(context.TODO(), 0, evalTime, q, nil, 0)
+	require.NoError(t, err)
+
+	require.Equal(t, StatePending, alert.State)
+	require.True(t, alert.FiredAt.IsZero(), "FiredAt should be reset")
+	require.True(t, alert.LastSentAt.IsZero(), "LastSentAt should be reset")
+	require.True(t, alert.KeepFiringSince.IsZero(), "KeepFiringSince should be reset")
+
+	for _, smpl := range res {
+		if smpl.Metric.Get("__name__") == "ALERTS" {
+			require.Equal(t, "pending", smpl.Metric.Get("alertstate"))
+		}
+	}
+
+	// Eval at t=1h: now the new holdDuration is met, alert fires again.
+	evalTime = baseTime.Add(longHold)
+	res, err = rule.Eval(context.TODO(), 0, evalTime, q, nil, 0)
+	require.NoError(t, err)
+	require.Equal(t, StateFiring, alert.State)
+
+	for _, smpl := range res {
+		if smpl.Metric.Get("__name__") == "ALERTS" {
+			require.Equal(t, "firing", smpl.Metric.Get("alertstate"))
+		}
+	}
 }

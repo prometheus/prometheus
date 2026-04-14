@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,13 +28,12 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v2"
+	"github.com/prometheus/common/promslog"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -78,7 +79,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -120,9 +121,7 @@ func (t *TimestampCollector) Collect(ch chan<- prometheus.Metric) {
 	t.lock.RLock()
 	for fileSD := range t.discoverers {
 		fileSD.lock.RLock()
-		for filename, timestamp := range fileSD.timestamps {
-			uniqueFiles[filename] = timestamp
-		}
+		maps.Copy(uniqueFiles, fileSD.timestamps)
 		fileSD.lock.RUnlock()
 	}
 	t.lock.RUnlock()
@@ -175,20 +174,20 @@ type Discovery struct {
 	// and how many target groups they contained.
 	// This is used to detect deleted target groups.
 	lastRefresh map[string]int
-	logger      log.Logger
+	logger      *slog.Logger
 
 	metrics *fileMetrics
 }
 
 // NewDiscovery returns a new file discovery for the given paths.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
 	fm, ok := metrics.(*fileMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	disc := &Discovery{
@@ -210,7 +209,7 @@ func (d *Discovery) listFiles() []string {
 	for _, p := range d.paths {
 		files, err := filepath.Glob(p)
 		if err != nil {
-			level.Error(d.logger).Log("msg", "Error expanding glob", "glob", p, "err", err)
+			d.logger.Error("Error expanding glob", "glob", p, "err", err)
 			continue
 		}
 		paths = append(paths, files...)
@@ -231,7 +230,7 @@ func (d *Discovery) watchFiles() {
 			p = "./"
 		}
 		if err := d.watcher.Add(p); err != nil {
-			level.Error(d.logger).Log("msg", "Error adding file watch", "path", p, "err", err)
+			d.logger.Error("Error adding file watch", "path", p, "err", err)
 		}
 	}
 }
@@ -240,7 +239,7 @@ func (d *Discovery) watchFiles() {
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		level.Error(d.logger).Log("msg", "Error adding file watcher", "err", err)
+		d.logger.Error("Error adding file watcher", "err", err)
 		d.metrics.fileWatcherErrorsCount.Inc()
 		return
 	}
@@ -260,7 +259,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		case event := <-d.watcher.Events:
 			// fsnotify sometimes sends a bunch of events without name or operation.
 			// It's unclear what they are and why they are sent - filter them out.
-			if len(event.Name) == 0 {
+			if event.Name == "" {
 				break
 			}
 			// Everything but a chmod requires rereading.
@@ -280,7 +279,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 		case err := <-d.watcher.Errors:
 			if err != nil {
-				level.Error(d.logger).Log("msg", "Error watching file", "err", err)
+				d.logger.Error("Error watching file", "err", err)
 			}
 		}
 	}
@@ -300,7 +299,7 @@ func (d *Discovery) deleteTimestamp(filename string) {
 
 // stop shuts down the file watcher.
 func (d *Discovery) stop() {
-	level.Debug(d.logger).Log("msg", "Stopping file discovery...", "paths", fmt.Sprintf("%v", d.paths))
+	d.logger.Debug("Stopping file discovery...", "paths", fmt.Sprintf("%v", d.paths))
 
 	done := make(chan struct{})
 	defer close(done)
@@ -320,10 +319,10 @@ func (d *Discovery) stop() {
 		}
 	}()
 	if err := d.watcher.Close(); err != nil {
-		level.Error(d.logger).Log("msg", "Error closing file watcher", "paths", fmt.Sprintf("%v", d.paths), "err", err)
+		d.logger.Error("Error closing file watcher", "paths", fmt.Sprintf("%v", d.paths), "err", err)
 	}
 
-	level.Debug(d.logger).Log("msg", "File discovery stopped")
+	d.logger.Debug("File discovery stopped")
 }
 
 // refresh reads all files matching the discovery's patterns and sends the respective
@@ -339,7 +338,7 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 		if err != nil {
 			d.metrics.fileSDReadErrorsCount.Inc()
 
-			level.Error(d.logger).Log("msg", "Error reading file", "path", p, "err", err)
+			d.logger.Error("Error reading file", "path", p, "err", err)
 			// Prevent deletion down below.
 			ref[p] = d.lastRefresh[p]
 			continue
@@ -356,7 +355,7 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 	for f, n := range d.lastRefresh {
 		m, ok := ref[f]
 		if !ok || n > m {
-			level.Debug(d.logger).Log("msg", "file_sd refresh found file that should be removed", "file", f)
+			d.logger.Debug("file_sd refresh found file that should be removed", "file", f)
 			d.deleteTimestamp(f)
 			for i := m; i < n; i++ {
 				select {

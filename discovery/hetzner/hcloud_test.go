@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,7 +43,7 @@ func TestHCloudSDRefresh(t *testing.T) {
 	cfg.HTTPClientConfig.BearerToken = hcloudTestToken
 	cfg.hcloudEndpoint = suite.Mock.Endpoint()
 
-	d, err := newHcloudDiscovery(&cfg, log.NewNopLogger())
+	d, err := newHcloudDiscovery(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 
 	targetGroups, err := d.refresh(context.Background())
@@ -69,6 +69,8 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_hcloud_image_description":                model.LabelValue("Ubuntu 20.04 Standard 64 bit"),
 			"__meta_hetzner_hcloud_image_os_flavor":                  model.LabelValue("ubuntu"),
 			"__meta_hetzner_hcloud_image_os_version":                 model.LabelValue("20.04"),
+			"__meta_hetzner_hcloud_location":                         model.LabelValue("fsn1"),
+			"__meta_hetzner_hcloud_location_network_zone":            model.LabelValue("eu-central"),
 			"__meta_hetzner_hcloud_datacenter_location":              model.LabelValue("fsn1"),
 			"__meta_hetzner_hcloud_datacenter_location_network_zone": model.LabelValue("eu-central"),
 			"__meta_hetzner_hcloud_cpu_cores":                        model.LabelValue("1"),
@@ -93,6 +95,8 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_hcloud_image_description":                model.LabelValue("Ubuntu 20.04 Standard 64 bit"),
 			"__meta_hetzner_hcloud_image_os_flavor":                  model.LabelValue("ubuntu"),
 			"__meta_hetzner_hcloud_image_os_version":                 model.LabelValue("20.04"),
+			"__meta_hetzner_hcloud_location":                         model.LabelValue("fsn1"),
+			"__meta_hetzner_hcloud_location_network_zone":            model.LabelValue("eu-central"),
 			"__meta_hetzner_hcloud_datacenter_location":              model.LabelValue("fsn1"),
 			"__meta_hetzner_hcloud_datacenter_location_network_zone": model.LabelValue("eu-central"),
 			"__meta_hetzner_hcloud_cpu_cores":                        model.LabelValue("2"),
@@ -114,6 +118,8 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_datacenter":                              model.LabelValue("fsn1-dc14"),
 			"__meta_hetzner_public_ipv4":                             model.LabelValue("1.2.3.6"),
 			"__meta_hetzner_public_ipv6_network":                     model.LabelValue("2001:db7::/64"),
+			"__meta_hetzner_hcloud_location":                         model.LabelValue("fsn1"),
+			"__meta_hetzner_hcloud_location_network_zone":            model.LabelValue("eu-central"),
 			"__meta_hetzner_hcloud_datacenter_location":              model.LabelValue("fsn1"),
 			"__meta_hetzner_hcloud_datacenter_location_network_zone": model.LabelValue("eu-central"),
 			"__meta_hetzner_hcloud_cpu_cores":                        model.LabelValue("2"),

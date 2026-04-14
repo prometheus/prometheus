@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -223,6 +223,13 @@ func BenchmarkNewMatcher(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i <= b.N; i++ {
 			NewMatcher(MatchRegexp, "foo", "bar")
+		}
+	})
+	b.Run("complex regex", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i <= b.N; i++ {
+			NewMatcher(MatchRegexp, "foo", "((.*)(bar|b|buzz)(.+)|foo){10}")
 		}
 	})
 }

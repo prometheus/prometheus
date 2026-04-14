@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,6 +15,7 @@ package vultr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -22,12 +23,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
-	"github.com/vultr/govultr/v2"
+	"github.com/vultr/govultr/v3"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -75,7 +75,7 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &vultrMetrics{
 		refreshMetrics: rmi,
 	}
@@ -86,7 +86,7 @@ func (*SDConfig) Name() string { return "vultr" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -95,7 +95,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	if err := unmarshal((*plain)(c)); err != nil {
@@ -114,10 +114,10 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*vultrMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*vultrMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &Discovery{
@@ -134,16 +134,13 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 		Timeout:   time.Duration(conf.RefreshInterval),
 	})
 
-	d.client.SetUserAgent(fmt.Sprintf("Prometheus/%s", version.Version))
-
-	if err != nil {
-		return nil, fmt.Errorf("error setting up vultr agent: %w", err)
-	}
+	d.client.SetUserAgent(version.PrometheusUserAgent())
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "vultr",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -210,9 +207,12 @@ func (d *Discovery) listInstances(ctx context.Context) ([]govultr.Instance, erro
 	}
 
 	for {
-		pagedInstances, meta, err := d.client.Instance.List(ctx, listOptions)
+		pagedInstances, meta, resp, err := d.client.Instance.List(ctx, listOptions)
 		if err != nil {
 			return nil, err
+		}
+		if resp != nil && resp.StatusCode/100 != 2 {
+			return nil, fmt.Errorf("vultr API returned unexpected status %d", resp.StatusCode)
 		}
 		instances = append(instances, pagedInstances...)
 

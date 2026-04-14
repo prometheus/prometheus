@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,206 +18,151 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"math"
-	"math/rand"
-	"strings"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v2"
 
-	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/pool"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
-type nopAppendable struct{}
+// For readability.
+type sample = teststorage.Sample
 
-func (a nopAppendable) Appender(_ context.Context) storage.Appender {
-	return nopAppender{}
+type compatAppendable interface {
+	storage.Appendable
+	storage.AppendableV2
 }
 
-type nopAppender struct{}
-
-func (a nopAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
-	return 0, nil
-}
-
-func (a nopAppender) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, nil
-}
-
-func (a nopAppender) AppendHistogram(storage.SeriesRef, labels.Labels, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, nil
-}
-
-func (a nopAppender) UpdateMetadata(storage.SeriesRef, labels.Labels, metadata.Metadata) (storage.SeriesRef, error) {
-	return 0, nil
-}
-
-func (a nopAppender) AppendCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64) (storage.SeriesRef, error) {
-	return 0, nil
-}
-
-func (a nopAppender) Commit() error   { return nil }
-func (a nopAppender) Rollback() error { return nil }
-
-type floatSample struct {
-	metric labels.Labels
-	t      int64
-	f      float64
-}
-
-func equalFloatSamples(a, b floatSample) bool {
-	// Compare Float64bits so NaN values which are exactly the same will compare equal.
-	return labels.Equal(a.metric, b.metric) && a.t == b.t && math.Float64bits(a.f) == math.Float64bits(b.f)
-}
-
-type histogramSample struct {
-	t  int64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-}
-
-type collectResultAppendable struct {
-	*collectResultAppender
-}
-
-func (a *collectResultAppendable) Appender(_ context.Context) storage.Appender {
-	return a
-}
-
-// collectResultAppender records all samples that were added through the appender.
-// It can be used as its zero value or be backed by another appender it writes samples through.
-type collectResultAppender struct {
-	mtx sync.Mutex
-
-	next                 storage.Appender
-	resultFloats         []floatSample
-	pendingFloats        []floatSample
-	rolledbackFloats     []floatSample
-	resultHistograms     []histogramSample
-	pendingHistograms    []histogramSample
-	rolledbackHistograms []histogramSample
-	resultExemplars      []exemplar.Exemplar
-	pendingExemplars     []exemplar.Exemplar
-	resultMetadata       []metadata.Metadata
-	pendingMetadata      []metadata.Metadata
-}
-
-func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-	a.pendingFloats = append(a.pendingFloats, floatSample{
-		metric: lset,
-		t:      t,
-		f:      v,
-	})
-
-	if ref == 0 {
-		ref = storage.SeriesRef(rand.Uint64())
+func withCtx(ctx context.Context) func(sl *scrapeLoop) {
+	return func(sl *scrapeLoop) {
+		sl.ctx = ctx
 	}
-	if a.next == nil {
-		return ref, nil
+}
+
+func withAppendable(app compatAppendable, appV2 bool) func(sl *scrapeLoop) {
+	return func(sl *scrapeLoop) {
+		sa := selectAppendable(app, appV2)
+		sl.appendable = sa.V1()
+		sl.appendableV2 = sa.V2()
+	}
+}
+
+// newTestScrapeLoop is the initial scrape loop for all tests.
+// It returns scrapeLoop and mock scraper you can customize.
+//
+// It's recommended to use withXYZ functions for simple option customizations, e.g:
+//
+//	sl, _ := newTestScrapeLoop(t, withCtx(customCtx))
+//
+// However, when changing more than one scrapeLoop options it's more readable to have one explicit opt function:
+//
+//	ctx, cancel := context.WithCancel(t.Context())
+//	appTest := teststorage.NewAppendable()
+//	sl, scraper := newTestScrapeLoop(t, func(sl *scrapeLoop) {
+//		sl.ctx = ctx
+//		sl.appendableV2 = appTest
+//		// Since we're writing samples directly below we need to provide a protocol fallback.
+//		sl.fallbackScrapeProtocol = "text/plain"
+//	})
+//
+// NOTE: Try to NOT add more parameter to this function. Try to NOT add more
+// newTestScrapeLoop-like constructors. It should be flexible enough with scrapeLoop
+// used for initial options.
+func newTestScrapeLoop(t testing.TB, opts ...func(sl *scrapeLoop)) (_ *scrapeLoop, scraper *testScraper) {
+	metrics := newTestScrapeMetrics(t)
+	sl := &scrapeLoop{
+		stopped: make(chan struct{}),
+
+		l:     promslog.NewNopLogger(),
+		cache: newScrapeCache(metrics),
+
+		interval:            10 * time.Millisecond,
+		timeout:             1 * time.Hour,
+		sampleMutator:       nopMutator,
+		reportSampleMutator: nopMutator,
+		buffers:             pool.New(1e3, 1e6, 3, func(sz int) any { return make([]byte, 0, sz) }),
+		metrics:             metrics,
+		maxSchema:           histogram.ExponentialSchemaMax,
+		honorTimestamps:     true,
+		enableCompression:   true,
+		validationScheme:    model.UTF8Validation,
+		symbolTable:         labels.NewSymbolTable(),
+		// Tests assume those features are enabled, unless explicitly turned off.
+		appendMetadataToWAL: true,
+		parseST:             true,
+	}
+	for _, o := range opts {
+		o(sl)
 	}
 
-	ref, err := a.next.Append(ref, lset, t, v)
-	if err != nil {
-		return 0, err
+	if sl.appendable != nil && sl.appendableV2 != nil {
+		t.Fatal("select the appendable to use, both were passed, likely a bug")
 	}
-	return ref, err
+
+	// Validate user opts for convenience.
+	require.Nil(t, sl.parentCtx, "newTestScrapeLoop does not support injecting non-nil parent context")
+	require.Nil(t, sl.appenderCtx, "newTestScrapeLoop does not support injecting non-nil appender context")
+	require.Nil(t, sl.cancel, "newTestScrapeLoop does not support injecting custom cancel function")
+	require.Nil(t, sl.scraper, "newTestScrapeLoop does not support injecting scraper, it's mocked, use the returned scraper")
+
+	rootCtx := t.Context()
+	// Use sl.ctx for context injection.
+	// True contexts (sl.appenderCtx, sl.parentCtx, sl.ctx) are populated from it
+	if sl.ctx != nil {
+		rootCtx = sl.ctx
+	}
+	ctx, cancel := context.WithCancel(rootCtx)
+	sl.ctx = ctx
+	sl.cancel = cancel
+	sl.appenderCtx = rootCtx
+	sl.parentCtx = rootCtx
+
+	scraper = &testScraper{}
+	sl.scraper = scraper
+	return sl, scraper
 }
 
-func (a *collectResultAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-	a.pendingExemplars = append(a.pendingExemplars, e)
-	if a.next == nil {
-		return 0, nil
-	}
+func newTestScrapePool(t *testing.T, app compatAppendable, appV2 bool, injectNewLoop func(options scrapeLoopOptions) loop) *scrapePool {
+	sa := selectAppendable(app, appV2)
+	return &scrapePool{
+		ctx:     t.Context(),
+		cancel:  func() {},
+		logger:  promslog.NewNopLogger(),
+		config:  &config.ScrapeConfig{},
+		options: &Options{},
+		client:  http.DefaultClient,
 
-	return a.next.AppendExemplar(ref, l, e)
-}
+		activeTargets:     map[uint64]*Target{},
+		loops:             map[uint64]loop{},
+		injectTestNewLoop: injectNewLoop,
 
-func (a *collectResultAppender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-	a.pendingHistograms = append(a.pendingHistograms, histogramSample{h: h, fh: fh, t: t})
-	if a.next == nil {
-		return 0, nil
-	}
+		appendable: sa.V1(), appendableV2: sa.V2(),
 
-	return a.next.AppendHistogram(ref, l, t, h, fh)
-}
-
-func (a *collectResultAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-	a.pendingMetadata = append(a.pendingMetadata, m)
-	if ref == 0 {
-		ref = storage.SeriesRef(rand.Uint64())
+		symbolTable: labels.NewSymbolTable(),
+		metrics:     newTestScrapeMetrics(t),
 	}
-	if a.next == nil {
-		return ref, nil
-	}
-
-	return a.next.UpdateMetadata(ref, l, m)
-}
-
-func (a *collectResultAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
-	return a.Append(ref, l, ct, 0.0)
-}
-
-func (a *collectResultAppender) Commit() error {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-	a.resultFloats = append(a.resultFloats, a.pendingFloats...)
-	a.resultExemplars = append(a.resultExemplars, a.pendingExemplars...)
-	a.resultHistograms = append(a.resultHistograms, a.pendingHistograms...)
-	a.resultMetadata = append(a.resultMetadata, a.pendingMetadata...)
-	a.pendingFloats = nil
-	a.pendingExemplars = nil
-	a.pendingHistograms = nil
-	a.pendingMetadata = nil
-	if a.next == nil {
-		return nil
-	}
-	return a.next.Commit()
-}
-
-func (a *collectResultAppender) Rollback() error {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-	a.rolledbackFloats = a.pendingFloats
-	a.rolledbackHistograms = a.pendingHistograms
-	a.pendingFloats = nil
-	a.pendingHistograms = nil
-	if a.next == nil {
-		return nil
-	}
-	return a.next.Rollback()
-}
-
-func (a *collectResultAppender) String() string {
-	var sb strings.Builder
-	for _, s := range a.resultFloats {
-		sb.WriteString(fmt.Sprintf("committed: %s %f %d\n", s.metric, s.f, s.t))
-	}
-	for _, s := range a.pendingFloats {
-		sb.WriteString(fmt.Sprintf("pending: %s %f %d\n", s.metric, s.f, s.t))
-	}
-	for _, s := range a.rolledbackFloats {
-		sb.WriteString(fmt.Sprintf("rolledback: %s %f %d\n", s.metric, s.f, s.t))
-	}
-	return sb.String()
 }
 
 // protoMarshalDelimited marshals a MetricFamily into a delimited
-// Prometheus proto exposition format bytes (known as 'encoding=delimited`)
+// Prometheus proto exposition format bytes (known as `encoding=delimited`)
 //
 // See also https://eli.thegreenplace.net/2011/08/02/length-prefix-framing-for-protocol-buffers
 func protoMarshalDelimited(t *testing.T, mf *dto.MetricFamily) []byte {
@@ -233,4 +178,200 @@ func protoMarshalDelimited(t *testing.T, mf *dto.MetricFamily) []byte {
 	buf.Write(varintBuf[:varintLength])
 	buf.Write(protoBuf)
 	return buf.Bytes()
+}
+
+type selectedAppendable struct {
+	useV2 bool
+	app   compatAppendable
+}
+
+// V1 returns Appendable if V1 is selected, otherwise nil.
+func (s selectedAppendable) V1() storage.Appendable {
+	if s.useV2 {
+		return nil
+	}
+	return s.app
+}
+
+// V2 returns AppendableV2 if V2 is selected, otherwise nil.
+func (s selectedAppendable) V2() storage.AppendableV2 {
+	if !s.useV2 {
+		return nil
+	}
+	return s.app
+}
+
+// selectAppendable allows to specify which appendable callers should use when the struct
+// implements both. This is how all callers are making the decision - if one appendable is nil, they
+// take another. selectAppendable allows to inject nil to e.g. storage.AppendableV2 when appV2 is false.
+func selectAppendable(app compatAppendable, appV2 bool) selectedAppendable {
+	s := selectedAppendable{
+		app:   app,
+		useV2: appV2,
+	}
+	return s
+}
+
+func foreachAppendable(t *testing.T, f func(t *testing.T, appV2 bool)) {
+	for _, appV2 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appV2=%v", appV2), func(t *testing.T) {
+			f(t, appV2)
+		})
+	}
+}
+
+func TestSelectAppendable(t *testing.T) {
+	var i int
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		defer func() { i++ }()
+		switch i {
+		case 0:
+			require.False(t, appV2)
+
+			s := selectAppendable(teststorage.NewAppendable(), appV2)
+			require.NotNil(t, s.V1())
+			require.Nil(t, s.V2())
+		case 1:
+			require.True(t, appV2)
+
+			s := selectAppendable(teststorage.NewAppendable(), appV2)
+			require.Nil(t, s.V1())
+			require.NotNil(t, s.V2())
+		default:
+			t.Fatal("too many iterations")
+		}
+	})
+}
+
+// pipeListener is an in-memory net.Listener that connects a custom DialContext
+// directly to the httptest Server without opening real OS ports.
+type pipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newPipeListener() *pipeListener {
+	return &pipeListener{
+		conns:  make(chan net.Conn),
+		closed: make(chan struct{}),
+	}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+
+// Dummy Addr implementation to satisfy the net.Listener interface.
+type pipeAddr struct{}
+
+func (pipeAddr) Network() string     { return "pipe" }
+func (pipeAddr) String() string      { return "pipe" }
+func (*pipeListener) Addr() net.Addr { return pipeAddr{} }
+
+// startFakeHTTPServer spins up a httptest.Server bound to an in-memory
+// pipeListener. It returns the listener (to be wired to a custom dialer) and a
+// cleanup function to shut down the server.
+func startFakeHTTPServer(t *testing.T) (*pipeListener, func()) {
+	t.Helper()
+
+	listener := newPipeListener()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Abort if the request context is canceled (e.g., due to a scrape timeout).
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+			fmt.Fprintln(w, "expected_metric 1")
+		}
+	})
+
+	srv := httptest.NewUnstartedServer(handler)
+	srv.Listener = listener
+
+	// Background goroutines inherit the synctest bubble safely.
+	srv.Start()
+
+	return listener, srv.Close
+}
+
+// setupSynctestManager abstracts the boilerplate of creating a mock network,
+// starting the fake HTTP server, and configuring the scrape manager for synctest.
+func setupSynctestManager(t *testing.T, opts *Options) (*Manager, *teststorage.Appendable, func()) {
+	t.Helper()
+	app := teststorage.NewAppendable()
+
+	listener, cleanup := startFakeHTTPServer(t)
+
+	if opts == nil {
+		opts = &Options{}
+	}
+	opts.skipJitterOffsetting = true
+
+	// Ensure the scraper creates a new net.Pipe on every dial attempt
+	// and hands the server-side connection to the mock server's listener.
+	opts.HTTPClientOptions = []config_util.HTTPClientOption{
+		config_util.WithDialContextFunc(func(ctx context.Context, _, _ string) (net.Conn, error) {
+			srvConn, cliConn := net.Pipe()
+
+			select {
+			case listener.conns <- srvConn:
+				// Give the client side to the scraper.
+				return cliConn, nil
+			case <-listener.closed:
+				return nil, net.ErrClosed
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}),
+	}
+
+	scrapeManager, err := NewManager(
+		opts,
+		promslog.New(&promslog.Config{}),
+		nil, nil, app, prometheus.NewRegistry(),
+	)
+	require.NoError(t, err)
+
+	return scrapeManager, app, cleanup
+}
+
+func applyDefaultSynctestConfig(t *testing.T, scrapeManager *Manager, interval time.Duration) {
+	t.Helper()
+
+	cfg := &config.Config{
+		GlobalConfig: config.GlobalConfig{
+			ScrapeInterval:  model.Duration(interval),
+			ScrapeTimeout:   model.Duration(interval),
+			ScrapeProtocols: []config.ScrapeProtocol{config.PrometheusProto, config.OpenMetricsText1_0_0},
+		},
+		ScrapeConfigs: []*config.ScrapeConfig{{JobName: "test"}},
+	}
+	cfgText, err := yaml.Marshal(*cfg)
+	require.NoError(t, err)
+	cfg = loadConfiguration(t, string(cfgText))
+	require.NoError(t, scrapeManager.ApplyConfig(cfg))
+
+	scrapeManager.updateTsets(map[string][]*targetgroup.Group{
+		"test": {{
+			Targets: []model.LabelSet{{
+				model.SchemeLabel:  "http",
+				model.AddressLabel: "test.local",
+			}},
+		}},
+	})
+
+	scrapeManager.reload()
 }

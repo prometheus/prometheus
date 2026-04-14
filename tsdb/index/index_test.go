@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -90,7 +90,7 @@ func (m mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...c
 	return nil
 }
 
-func (m mockIndex) Close() error {
+func (mockIndex) Close() error {
 	return nil
 }
 
@@ -146,7 +146,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, DecodePostingsRaw)
 	require.NoError(t, err)
 	require.NoError(t, ir.Close())
 
@@ -157,7 +157,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	f.Close()
 
-	_, err = NewFileReader(dir)
+	_, err = NewFileReader(dir, DecodePostingsRaw)
 	require.Error(t, err)
 }
 
@@ -186,39 +186,8 @@ func TestIndexRW_Postings(t *testing.T) {
 	}
 	require.NoError(t, p.Err())
 
-	// The label indices are no longer used, so test them by hand here.
-	labelValuesOffsets := map[string]uint64{}
-	d := encoding.NewDecbufAt(ir.b, int(ir.toc.LabelIndicesTable), castagnoliTable)
-	cnt := d.Be32()
-
-	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
-		require.Equal(t, 1, d.Uvarint(), "Unexpected number of keys for label indices table")
-		lbl := d.UvarintStr()
-		off := d.Uvarint64()
-		labelValuesOffsets[lbl] = off
-		cnt--
-	}
-	require.NoError(t, d.Err())
-
-	labelIndices := map[string][]string{}
-	for lbl, off := range labelValuesOffsets {
-		d := encoding.NewDecbufAt(ir.b, int(off), castagnoliTable)
-		require.Equal(t, 1, d.Be32int(), "Unexpected number of label indices table names")
-		for i := d.Be32(); i > 0 && d.Err() == nil; i-- {
-			v, err := ir.lookupSymbol(ctx, d.Be32())
-			require.NoError(t, err)
-			labelIndices[lbl] = append(labelIndices[lbl], v)
-		}
-		require.NoError(t, d.Err())
-	}
-
-	require.Equal(t, map[string][]string{
-		"a": {"1"},
-		"b": {"1", "2", "3", "4"},
-	}, labelIndices)
-
 	t.Run("ShardedPostings()", func(t *testing.T) {
-		ir, err := NewFileReader(fn)
+		ir, err := NewFileReader(fn, DecodePostingsRaw)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, ir.Close())
@@ -241,7 +210,7 @@ func TestIndexRW_Postings(t *testing.T) {
 		actualShards := make(map[uint64][]storage.SeriesRef)
 		actualPostings := make([]storage.SeriesRef, 0, len(expected))
 
-		for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
+		for shardIndex := range shardCount {
 			p, err = ir.Postings(ctx, "a", "1")
 			require.NoError(t, err)
 
@@ -331,7 +300,7 @@ func TestPostingsMany(t *testing.T) {
 				exp = append(exp, e)
 			}
 		}
-		require.Equal(t, exp, got, fmt.Sprintf("input: %v", c.in))
+		require.Equalf(t, exp, got, "input: %v", c.in)
 	}
 }
 
@@ -421,11 +390,11 @@ func TestPersistence_index_e2e(t *testing.T) {
 	for k, v := range labelPairs {
 		sort.Strings(v)
 
-		res, err := ir.SortedLabelValues(ctx, k)
+		res, err := ir.SortedLabelValues(ctx, k, nil)
 		require.NoError(t, err)
 
-		require.Equal(t, len(v), len(res))
-		for i := 0; i < len(v); i++ {
+		require.Len(t, res, len(v))
+		for i := range v {
 			require.Equal(t, v[i], res[i])
 		}
 	}
@@ -469,7 +438,7 @@ func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 func TestReaderWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
-	_, err := NewReader(b)
+	_, err := NewReader(b, DecodePostingsRaw)
 	require.Error(t, err)
 }
 
@@ -481,7 +450,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	err := os.WriteFile(idxName, []byte("corrupted contents"), 0o666)
 	require.NoError(t, err)
 
-	_, err = NewFileReader(idxName)
+	_, err = NewFileReader(idxName, DecodePostingsRaw)
 	require.Error(t, err)
 
 	// dir.Close will fail on Win if idxName fd is not closed on error path.
@@ -497,7 +466,7 @@ func TestSymbols(t *testing.T) {
 	symbolsStart := buf.Len()
 	buf.PutBE32int(204) // Length of symbols table.
 	buf.PutBE32int(100) // Number of symbols.
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// i represents index in unicode characters table.
 		buf.PutUvarintStr(string(rune(i))) // Symbol.
 	}
@@ -549,9 +518,8 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 		})
 	}
 	ir, _, _ := createFileReader(ctx, b, input)
-	b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
+	for n := 0; b.Loop(); n++ {
 		allPostings, err := ir.Postings(ctx, "const", fmt.Sprintf("%10d", 1))
 		require.NoError(b, err)
 
@@ -560,7 +528,8 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 }
 
 func TestDecoder_Postings_WrongInput(t *testing.T) {
-	_, _, err := (&Decoder{}).Postings([]byte("the cake is a lie"))
+	d := encoding.Decbuf{B: []byte("the cake is a lie")}
+	_, _, err := (&Decoder{DecodePostings: DecodePostingsRaw}).DecodePostings(d)
 	require.Error(t, err)
 }
 
@@ -610,6 +579,52 @@ func TestChunksTimeOrdering(t *testing.T) {
 	), "chunk maxT 30 is less than minT 100")
 
 	require.NoError(t, idx.Close())
+}
+
+func TestReader_PostingsForLabelMatching(t *testing.T) {
+	const seriesCount = 9
+	var input indexWriterSeriesSlice
+	for i := 1; i <= seriesCount; i++ {
+		input = append(input, &indexWriterSeries{
+			labels: labels.FromStrings("__name__", strconv.Itoa(i)),
+			chunks: []chunks.Meta{
+				{Ref: 1, MinTime: 0, MaxTime: 10},
+			},
+		})
+	}
+	ir, _, _ := createFileReader(context.Background(), t, input)
+
+	p := ir.PostingsForLabelMatching(context.Background(), "__name__", func(v string) bool {
+		iv, err := strconv.Atoi(v)
+		if err != nil {
+			panic(err)
+		}
+		return iv%2 == 0
+	})
+	require.NoError(t, p.Err())
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{4, 6, 8, 10}, refs)
+}
+
+func TestReader_PostingsForAllLabelValues(t *testing.T) {
+	const seriesCount = 9
+	var input indexWriterSeriesSlice
+	for i := 1; i <= seriesCount; i++ {
+		input = append(input, &indexWriterSeries{
+			labels: labels.FromStrings("__name__", strconv.Itoa(i)),
+			chunks: []chunks.Meta{
+				{Ref: 1, MinTime: 0, MaxTime: 10},
+			},
+		})
+	}
+	ir, _, _ := createFileReader(context.Background(), t, input)
+
+	p := ir.PostingsForAllLabelValues(context.Background(), "__name__")
+	require.NoError(t, p.Err())
+	refs, err := ExpandPostings(p)
+	require.NoError(t, err)
+	require.Equal(t, []storage.SeriesRef{3, 4, 5, 6, 7, 8, 9, 10, 11}, refs)
 }
 
 func TestReader_PostingsForLabelMatchingHonorsContextCancel(t *testing.T) {
@@ -690,7 +705,7 @@ func createFileReader(ctx context.Context, tb testing.TB, input indexWriterSerie
 	}
 	require.NoError(tb, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, DecodePostingsRaw)
 	require.NoError(tb, err)
 	tb.Cleanup(func() {
 		require.NoError(tb, ir.Close())

@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -34,6 +34,9 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 const (
@@ -43,8 +46,8 @@ const (
 func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
-	b := labels.NewScratchBuilder(0)
-	got := target.Labels(&b)
+	b := labels.NewBuilder(labels.EmptyLabels())
+	got := target.Labels(b)
 	require.Equal(t, want, got)
 	i := 0
 	target.LabelsRange(func(l labels.Label) {
@@ -103,9 +106,11 @@ func TestTargetOffset(t *testing.T) {
 }
 
 func TestTargetURL(t *testing.T) {
-	params := url.Values{
-		"abc": []string{"foo", "bar", "baz"},
-		"xyz": []string{"hoo"},
+	scrapeConfig := &config.ScrapeConfig{
+		Params: url.Values{
+			"abc": []string{"foo", "bar", "baz"},
+			"xyz": []string{"hoo"},
+		},
 	}
 	labels := labels.FromMap(map[string]string{
 		model.AddressLabel:     "example.com:1234",
@@ -114,7 +119,7 @@ func TestTargetURL(t *testing.T) {
 		"__param_abc":          "overwrite",
 		"__param_cde":          "huu",
 	})
-	target := NewTarget(labels, labels, params)
+	target := NewTarget(labels, scrapeConfig, nil, nil)
 
 	// The reserved labels are concatenated into a full URL. The first value for each
 	// URL query parameter can be set/modified via labels as well.
@@ -139,13 +144,13 @@ func newTestTarget(targetURL string, _ time.Duration, lbls labels.Labels) *Targe
 	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
-	return &Target{labels: lb.Labels()}
+	return &Target{labels: lb.Labels(), scrapeConfig: &config.ScrapeConfig{}}
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(_ http.ResponseWriter, r *http.Request) {
 				expected := "Bearer 1234"
 				received := r.Header.Get("Authorization")
 				require.Equal(t, expected, received, "Authorization header was not set correctly.")
@@ -166,7 +171,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 func TestNewHTTPBearerTokenFile(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(_ http.ResponseWriter, r *http.Request) {
 				expected := "Bearer 12345"
 				received := r.Header.Get("Authorization")
 				require.Equal(t, expected, received, "Authorization header was not set correctly.")
@@ -187,7 +192,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 func TestNewHTTPBasicAuth(t *testing.T) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(_ http.ResponseWriter, r *http.Request) {
 				username, password, ok := r.BasicAuth()
 				require.True(t, ok, "Basic authorization header was not set correctly.")
 				require.Equal(t, "user", username)
@@ -212,7 +217,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 func TestNewHTTPCACert(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -236,7 +241,7 @@ func TestNewHTTPCACert(t *testing.T) {
 func TestNewHTTPClientCert(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -265,7 +270,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 func TestNewHTTPWithServerName(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -290,7 +295,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 func TestNewHTTPWithBadServerName(t *testing.T) {
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
+			func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
 				w.Write([]byte{})
 			},
@@ -348,10 +353,84 @@ func TestTargetsFromGroup(t *testing.T) {
 		ScrapeInterval: model.Duration(1 * time.Minute),
 	}
 	lb := labels.NewBuilder(labels.EmptyLabels())
-	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, false, nil, lb)
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, nil, lb)
 	require.Len(t, targets, 1)
 	require.Len(t, failures, 1)
 	require.EqualError(t, failures[0], expectedError)
+}
+
+// TestTargetsFromGroupWithLabelKeepDrop aims to demonstrate and reinforce the current behavior: relabeling's "labelkeep" and "labeldrop"
+// are applied to all labels of a target, including internal ones (labels starting with "__" such as "__address__").
+// This will be helpful for cases like https://github.com/prometheus/prometheus/issues/12355.
+func TestTargetsFromGroupWithLabelKeepDrop(t *testing.T) {
+	tests := []struct {
+		name             string
+		cfgText          string
+		targets          []model.LabelSet
+		shouldDropTarget bool
+	}{
+		{
+			name: "no relabeling",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+`,
+			targets: []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+		},
+		{
+			name: "labelkeep",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+    relabel_configs:
+      - regex: 'foo'
+        action: labelkeep
+`,
+			targets:          []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+			shouldDropTarget: true,
+		},
+		{
+			name: "labeldrop",
+			cfgText: `
+global:
+  metric_name_validation_scheme: legacy
+scrape_configs:
+  - job_name: job1
+    static_configs:
+      - targets: ["localhost:9090"]
+    relabel_configs:
+      - regex: '__address__'
+        action: labeldrop
+`,
+			targets:          []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+			shouldDropTarget: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := loadConfiguration(t, tt.cfgText)
+			lb := labels.NewBuilder(labels.EmptyLabels())
+			targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: tt.targets}, config.ScrapeConfigs[0], nil, lb)
+
+			if tt.shouldDropTarget {
+				require.Len(t, failures, 1)
+				require.EqualError(t, failures[0], "instance 0 in group : no address")
+				require.Empty(t, targets)
+			} else {
+				require.Empty(t, failures)
+				require.Len(t, targets, 1)
+			}
+		})
+	}
 }
 
 func BenchmarkTargetsFromGroup(b *testing.B) {
@@ -413,7 +492,7 @@ scrape_configs:
 	for _, nTargets := range []int{1, 10, 100} {
 		b.Run(fmt.Sprintf("%d_targets", nTargets), func(b *testing.B) {
 			targets := []model.LabelSet{}
-			for i := 0; i < nTargets; i++ {
+			for i := range nTargets {
 				labels := model.LabelSet{
 					model.AddressLabel:                            model.LabelValue(fmt.Sprintf("localhost:%d", i)),
 					"__meta_kubernetes_namespace":                 "some_namespace",
@@ -425,7 +504,7 @@ scrape_configs:
 					"__meta_kubernetes_pod_phase":                 "Running",
 				}
 				// Add some more labels, because Kubernetes SD generates a lot
-				for i := 0; i < 10; i++ {
+				for i := range 10 {
 					labels[model.LabelName(fmt.Sprintf("__meta_kubernetes_pod_label_extra%d", i))] = "a_label_abcdefgh"
 					labels[model.LabelName(fmt.Sprintf("__meta_kubernetes_pod_labelpresent_extra%d", i))] = "true"
 				}
@@ -434,8 +513,8 @@ scrape_configs:
 			var tgets []*Target
 			lb := labels.NewBuilder(labels.EmptyLabels())
 			group := &targetgroup.Group{Targets: targets}
-			for i := 0; i < b.N; i++ {
-				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], false, tgets, lb)
+			for b.Loop() {
+				tgets, _ = TargetsFromGroup(group, config.ScrapeConfigs[0], tgets, lb)
 				if len(targets) != nTargets {
 					b.Fatalf("Expected %d targets, got %d", nTargets, len(targets))
 				}
@@ -532,37 +611,65 @@ func TestBucketLimitAppender(t *testing.T) {
 		},
 	}
 
-	resApp := &collectResultAppender{}
-
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
-				app := &bucketLimitAppender{Appender: resApp, limit: c.limit}
-				ts := int64(10 * time.Minute / time.Millisecond)
-				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
-				var err error
-				if floatHisto {
-					fh := c.h.Copy().ToFloat(nil)
-					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
-					if c.expectError {
-						require.Error(t, err)
+				t.Run("appV2=false", func(t *testing.T) {
+					app := &bucketLimitAppender{Appender: teststorage.NewAppendable().Appender(t.Context()), limit: c.limit}
+					ts := int64(10 * time.Minute / time.Millisecond)
+					lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+					var err error
+					if floatHisto {
+						fh := c.h.Copy().ToFloat(nil)
+						_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+						if c.expectError {
+							require.Error(t, err)
+						} else {
+							require.Equal(t, c.expectSchema, fh.Schema)
+							require.Equal(t, c.expectBucketCount, len(fh.NegativeBuckets)+len(fh.PositiveBuckets))
+							require.NoError(t, err)
+						}
 					} else {
-						require.Equal(t, c.expectSchema, fh.Schema)
-						require.Equal(t, c.expectBucketCount, len(fh.NegativeBuckets)+len(fh.PositiveBuckets))
-						require.NoError(t, err)
+						h := c.h.Copy()
+						_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+						if c.expectError {
+							require.Error(t, err)
+						} else {
+							require.Equal(t, c.expectSchema, h.Schema)
+							require.Equal(t, c.expectBucketCount, len(h.NegativeBuckets)+len(h.PositiveBuckets))
+							require.NoError(t, err)
+						}
 					}
-				} else {
-					h := c.h.Copy()
-					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
-					if c.expectError {
-						require.Error(t, err)
+					require.NoError(t, app.Commit())
+				})
+				t.Run("appV2=true", func(t *testing.T) {
+					app := &bucketLimitAppenderV2{AppenderV2: teststorage.NewAppendable().AppenderV2(t.Context()), limit: c.limit}
+					ts := int64(10 * time.Minute / time.Millisecond)
+					lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+					var err error
+					if floatHisto {
+						fh := c.h.Copy().ToFloat(nil)
+						_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, storage.AOptions{})
+						if c.expectError {
+							require.Error(t, err)
+						} else {
+							require.Equal(t, c.expectSchema, fh.Schema)
+							require.Equal(t, c.expectBucketCount, len(fh.NegativeBuckets)+len(fh.PositiveBuckets))
+							require.NoError(t, err)
+						}
 					} else {
-						require.Equal(t, c.expectSchema, h.Schema)
-						require.Equal(t, c.expectBucketCount, len(h.NegativeBuckets)+len(h.PositiveBuckets))
-						require.NoError(t, err)
+						h := c.h.Copy()
+						_, err = app.Append(0, lbls, 0, ts, 0, h, nil, storage.AOptions{})
+						if c.expectError {
+							require.Error(t, err)
+						} else {
+							require.Equal(t, c.expectSchema, h.Schema)
+							require.Equal(t, c.expectBucketCount, len(h.NegativeBuckets)+len(h.PositiveBuckets))
+							require.NoError(t, err)
+						}
 					}
-				}
-				require.NoError(t, app.Commit())
+					require.NoError(t, app.Commit())
+				})
 			})
 		}
 	}
@@ -618,28 +725,111 @@ func TestMaxSchemaAppender(t *testing.T) {
 		},
 	}
 
-	resApp := &collectResultAppender{}
-
 	for _, c := range cases {
 		for _, floatHisto := range []bool{true, false} {
 			t.Run(fmt.Sprintf("floatHistogram=%t", floatHisto), func(t *testing.T) {
-				app := &maxSchemaAppender{Appender: resApp, maxSchema: c.maxSchema}
-				ts := int64(10 * time.Minute / time.Millisecond)
-				lbls := labels.FromStrings("__name__", "sparse_histogram_series")
-				var err error
-				if floatHisto {
-					fh := c.h.Copy().ToFloat(nil)
-					_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
-					require.Equal(t, c.expectSchema, fh.Schema)
-					require.NoError(t, err)
-				} else {
-					h := c.h.Copy()
-					_, err = app.AppendHistogram(0, lbls, ts, h, nil)
-					require.Equal(t, c.expectSchema, h.Schema)
-					require.NoError(t, err)
-				}
-				require.NoError(t, app.Commit())
+				t.Run("appV2=false", func(t *testing.T) {
+					app := &maxSchemaAppender{Appender: teststorage.NewAppendable().Appender(t.Context()), maxSchema: c.maxSchema}
+					ts := int64(10 * time.Minute / time.Millisecond)
+					lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+					var err error
+					if floatHisto {
+						fh := c.h.Copy().ToFloat(nil)
+						_, err = app.AppendHistogram(0, lbls, ts, nil, fh)
+						require.Equal(t, c.expectSchema, fh.Schema)
+						require.NoError(t, err)
+					} else {
+						h := c.h.Copy()
+						_, err = app.AppendHistogram(0, lbls, ts, h, nil)
+						require.Equal(t, c.expectSchema, h.Schema)
+						require.NoError(t, err)
+					}
+					require.NoError(t, app.Commit())
+				})
+				t.Run("appV2=true", func(t *testing.T) {
+					app := &maxSchemaAppenderV2{AppenderV2: teststorage.NewAppendable().AppenderV2(t.Context()), maxSchema: c.maxSchema}
+					ts := int64(10 * time.Minute / time.Millisecond)
+					lbls := labels.FromStrings("__name__", "sparse_histogram_series")
+					var err error
+					if floatHisto {
+						fh := c.h.Copy().ToFloat(nil)
+						_, err = app.Append(0, lbls, 0, ts, 0, nil, fh, storage.AOptions{})
+						require.Equal(t, c.expectSchema, fh.Schema)
+						require.NoError(t, err)
+					} else {
+						h := c.h.Copy()
+						_, err = app.Append(0, lbls, 0, ts, 0, h, nil, storage.AOptions{})
+						require.Equal(t, c.expectSchema, h.Schema)
+						require.NoError(t, err)
+					}
+					require.NoError(t, app.Commit())
+				})
 			})
 		}
 	}
+}
+
+// Test sample_limit when a scrape contains Native Histograms.
+func TestAppendWithSampleLimitAndNativeHistogram(t *testing.T) {
+	now := time.Now()
+	t.Run("appV2=false", func(t *testing.T) {
+		app := appenderWithLimits(teststorage.NewAppendable().Appender(t.Context()), 2, 0, histogram.ExponentialSchemaMax)
+
+		// sample_limit is set to 2, so first two scrapes should work
+		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), timestamp.FromTime(now), 1)
+		require.NoError(t, err)
+
+		// Second sample, should be ok.
+		_, err = app.AppendHistogram(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "my_histogram1"),
+			timestamp.FromTime(now),
+			&histogram.Histogram{},
+			nil,
+		)
+		require.NoError(t, err)
+
+		// This is third sample with sample_limit=2, it should trigger errSampleLimit.
+		_, err = app.AppendHistogram(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "my_histogram2"),
+			timestamp.FromTime(now),
+			&histogram.Histogram{},
+			nil,
+		)
+		require.ErrorIs(t, err, errSampleLimit)
+	})
+	t.Run("appV2=true", func(t *testing.T) {
+		app := appenderV2WithLimits(teststorage.NewAppendable().AppenderV2(t.Context()), 2, 0, histogram.ExponentialSchemaMax)
+
+		// sample_limit is set to 2, so first two scrapes should work
+		_, err := app.Append(0, labels.FromStrings(model.MetricNameLabel, "foo"), 0, timestamp.FromTime(now), 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+
+		// Second sample, should be ok.
+		_, err = app.Append(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "my_histogram1"),
+			0,
+			timestamp.FromTime(now),
+			0,
+			&histogram.Histogram{},
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+
+		// This is third sample with sample_limit=2, it should trigger errSampleLimit.
+		_, err = app.Append(
+			0,
+			labels.FromStrings(model.MetricNameLabel, "my_histogram2"),
+			0,
+			timestamp.FromTime(now),
+			0,
+			&histogram.Histogram{},
+			nil,
+			storage.AOptions{},
+		)
+		require.ErrorIs(t, err, errSampleLimit)
+	})
 }

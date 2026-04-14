@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/common/version"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var userAgent = version.PrometheusUserAgent()
 
 type Applications struct {
 	VersionsDelta int           `xml:"versions__delta"`
@@ -81,7 +81,7 @@ const appListPath string = "/apps"
 func fetchApps(ctx context.Context, server string, client *http.Client) (*Applications, error) {
 	url := fmt.Sprintf("%s%s", server, appListPath)
 
-	request, err := http.NewRequest(http.MethodGet, url, nil)
+	request, err := http.NewRequest(http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

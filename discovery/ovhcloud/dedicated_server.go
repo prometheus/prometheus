@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,13 +16,12 @@ package ovhcloud
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"net/url"
 	"path"
 	"strconv"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/ovh/go-ovh/ovh"
 	"github.com/prometheus/common/model"
 
@@ -55,10 +54,10 @@ type dedicatedServer struct {
 type dedicatedServerDiscovery struct {
 	*refresh.Discovery
 	config *SDConfig
-	logger log.Logger
+	logger *slog.Logger
 }
 
-func newDedicatedServerDiscovery(conf *SDConfig, logger log.Logger) *dedicatedServerDiscovery {
+func newDedicatedServerDiscovery(conf *SDConfig, logger *slog.Logger) *dedicatedServerDiscovery {
 	return &dedicatedServerDiscovery{config: conf, logger: logger}
 }
 
@@ -94,7 +93,7 @@ func getDedicatedServerDetails(client *ovh.Client, serverName string) (*dedicate
 	return &dedicatedServerDetails, nil
 }
 
-func (d *dedicatedServerDiscovery) getService() string {
+func (*dedicatedServerDiscovery) getService() string {
 	return "dedicated_server"
 }
 
@@ -115,10 +114,7 @@ func (d *dedicatedServerDiscovery) refresh(context.Context) ([]*targetgroup.Grou
 	for _, dedicatedServerName := range dedicatedServerList {
 		dedicatedServer, err := getDedicatedServerDetails(client, dedicatedServerName)
 		if err != nil {
-			err := level.Warn(d.logger).Log("msg", fmt.Sprintf("%s: Could not get details of %s", d.getSource(), dedicatedServerName), "err", err.Error())
-			if err != nil {
-				return nil, err
-			}
+			d.logger.Warn(fmt.Sprintf("%s: Could not get details of %s", d.getSource(), dedicatedServerName), "err", err.Error())
 			continue
 		}
 		dedicatedServerDetailedList = append(dedicatedServerDetailedList, *dedicatedServer)

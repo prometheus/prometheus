@@ -25,19 +25,20 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 └──────────────────────────────┘
 ```
 
-
 # Chunk
 
 ```
-┌───────────────┬───────────────────┬──────────────┬────────────────┐
-│ len <uvarint> │ encoding <1 byte> │ data <bytes> │ CRC32 <4 byte> │
-└───────────────┴───────────────────┴──────────────┴────────────────┘
+┌───────────────┬───────────────────┬─────────────┬───────────────────┐
+│ len <uvarint> │ encoding <1 byte> │ data <data> │ checksum <4 byte> │
+└───────────────┴───────────────────┴─────────────┴───────────────────┘
 ```
 
 Notes:
-* `<uvarint>` has 1 to 10 bytes.
-* `encoding`: Currently either `XOR` or `histogram`.
+
+* `len`: Chunk size in bytes. 1 to 5 bytes long using the [`<uvarint>` encoding](https://go.dev/src/encoding/binary/varint.go).
+* `encoding`: Currently either `XOR`, `histogram`, or `floathistogram`, see [code for numerical values](https://github.com/prometheus/prometheus/blob/02d0de9987ad99dee5de21853715954fadb3239f/tsdb/chunkenc/chunk.go#L28-L47).
 * `data`: See below for each encoding.
+* `checksum`: Checksum of `encoding` and `data`. It's a [cyclic redundancy check](https://en.wikipedia.org/wiki/Cyclic_redundancy_check) with the Castagnoli polynomial, serialised as an unsigned 32 bits big endian number. Can be referred as a `CRC-32C`.
 
 ## XOR chunk data
 
@@ -64,12 +65,102 @@ Notes:
 * `padding` of 0 to 7 bits so that the whole chunk data is byte-aligned.
 * The chunk can have as few as one sample, i.e. `ts_1`, `v_1`, etc. are optional.
 
+## XOR2 chunk data
+
+XOR2 uses the same structure as XOR for samples 0 and 1. Starting from sample 2,
+a joint control prefix encodes both the timestamp delta-of-delta (dod) and whether
+the value changed, with common dod cases byte-aligned for efficient writing.
+
+XOR2 can encode start timestamp (ST) as well optionally, see details further
+down.
+
+
+```
+┌──────────────────────┬───────────────────┬───────────────┬───────────────┬────────────────┬─-
+│ num_samples <uint16> │ st_header <uint8> | ts_0 <varint> │ v_0 <float64> │ ?st_0 <varint> |
+└──────────────────────┴───────────────────┴───────────────┴───────────────┴────────────────┴─-
+
+-─────────────────────┬───────────────────────┬─────────────────────────┬─-
+ ts_1_delta <uvarint> │ v_1_xor <varbit_xor2> │ ?st_1_delta <varbit_ts> |
+-─────────────────────┴───────────────────────┴─────────────────────────┴─-
+
+-─────────────────────────┬───────────────────────┬─────┬─-
+ sample_2 <joint_sample2> │ ?st_2_dod <varbit_ts> | ... │
+-─────────────────────────┴───────────────────────┴─────┴─-
+
+-─────────────────────────┬───────────────────────┬──────────────────┐
+ sample_n <joint_sample2> │ ?st_n_dod <varbit_ts> | padding <x bits> │
+-─────────────────────────┴───────────────────────┴──────────────────┘
+
+```
+
+### Joint sample encoding for n >= 2 (`<joint_sample2>`):
+
+Each sample starts with a variable-length control prefix that jointly encodes the
+dod and value change status:
+
+| Control prefix | dod | Value encoding that follows |
+|---|---|---|
+| `0` | 0 | (none, value unchanged) |
+| `10` | 0 | `<varbit_xor2_nn>` (value known non-zero and non-stale) |
+| `110DDDDD` `DDDDDDDD` | 13-bit signed [-4096, 4095] | `<varbit_xor2>` |
+| `1110DDDD` `DDDDDDDD` `DDDDDDDD` | 20-bit signed [-524288, 524287] | `<varbit_xor2>` |
+| `11110` + 64-bit dod | exact | `<varbit_xor2>` |
+| `11111` | 0 | (none, stale NaN — no value field) |
+
+The `110` and `1110` cases pack the prefix and the most-significant dod bits into
+the first byte, making the full dod field byte-aligned.
+
+### Value delta encoding (`<varbit_xor2>`):
+
+Used after the dod≠0 control prefixes. The XOR of the current and previous value is encoded as:
+
+| Prefix | Meaning |
+|---|---|
+| `0` | XOR = 0 (value unchanged) |
+| `10` | Reuse previous leading/trailing window; `sigbits` value bits follow |
+| `110` + leading(5) + sigbits(6) + value(sigbits) | New leading/trailing window |
+| `111` | Stale NaN marker (3 bits) |
+
+### Value delta encoding, known non-zero (`<varbit_xor2_nn>`):
+
+Used after the `10` control prefix (dod=0, value known to have changed and be non-stale).
+The delta=0 check is skipped, saving one bit on the reuse path:
+
+| Prefix | Meaning |
+|---|---|
+| `0` | Reuse previous leading/trailing window; `sigbits` value bits follow |
+| `1` + leading(5) + sigbits(6) + value(sigbits) | New leading/trailing window |
+
+### Start timestamp encoding
+
+* We use `st_i_dod` and `st_i` interchangeably when `i>1` in these notes.
+* `st_header` is one byte:
+   ```
+   ┌───────────────────────┬───────────────────────┐
+   │ first_st_known<1 bit> | st_changed_on<7 bits> │
+   └───────────────────────┴───────────────────────┘
+   ```
+   where the highest bit `first_st_known` indicates if `st_0` is present or not.
+   If the lower 7bits `st_changed_on` is 0, no `st_i (i>0)` is present.
+   Otherwise `st_i (i>=st_changed_on>)` is present, while
+   `st_i (0<i<st_changed_on)` is not present.
+
+   Due to the 7 bit limitation, once a chunk has at least 127 samples,
+   `st_changed_on` is set to 127 (0xEF) and the 127th and further samples will
+   have `st_i` present.
+* `st_0` is encoded as a `varint` if present.
+* `st_1` is encoded as a `varbit_ts` delta from `st_0` (or from 0 if `st_0` is
+   not present).
+* `st_i_dod` aka `st_i (i>1)` is encoded as a `varbit_ts` "delta of delta" from
+  `st_i-1` (or from 0 if `st_i-1` is not present).
+
 ## Histogram chunk data
 
 ```
-┌──────────────────────┬──────────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬────────────────┬──────────────────┐
-│ num_samples <uint16> │ histogram_flags <1 byte> │ zero_threshold <1 or 9 bytes> │ schema <varbit_int> │ pos_spans <data> │ neg_spans <data> │ samples <data> │ padding <x bits> │
-└──────────────────────┴──────────────────────────┴───────────────────────────────┴─────────────────────┴──────────────────┴──────────────────┴────────────────┴──────────────────┘
+┌──────────────────────┬──────────────────────────┬───────────────────────────────┬─────────────────────┬──────────────────┬──────────────────┬──────────────────────┬────────────────┬──────────────────┐
+│ num_samples <uint16> │ histogram_flags <1 byte> │ zero_threshold <1 or 9 bytes> │ schema <varbit_int> │ pos_spans <data> │ neg_spans <data> │ custom_values <data> │ samples <data> │ padding <x bits> │
+└──────────────────────┴──────────────────────────┴───────────────────────────────┴─────────────────────┴──────────────────┴──────────────────┴──────────────────────┴────────────────┴──────────────────┘
 ```
 
 ### Positive and negative spans data:
@@ -78,6 +169,16 @@ Notes:
 ┌─────────────────────────┬────────────────────────┬───────────────────────┬────────────────────────┬───────────────────────┬─────┬────────────────────────┬───────────────────────┐
 │ num_spans <varbit_uint> │ length_0 <varbit_uint> │ offset_0 <varbit_int> │ length_1 <varbit_uint> │ offset_1 <varbit_int> │ ... │ length_n <varbit_uint> │ offset_n <varbit_int> │
 └─────────────────────────┴────────────────────────┴───────────────────────┴────────────────────────┴───────────────────────┴─────┴────────────────────────┴───────────────────────┘
+```
+
+### Custom values data:
+
+The `custom_values` data is currently only used for schema -53 (custom bucket boundaries). For other schemas, it is empty (length of zero).
+
+```
+┌──────────────────────────┬──────────────────┬──────────────────┬─────┬──────────────────┐
+│ num_values <varbit_uint> │ value_0 <custom> │ value_1 <custom> │ ... │ value_n <custom> │
+└──────────────────────────┴─────────────────────────────────────┴─────┴──────────────────┘
 ```
 
 ### Samples data:
@@ -92,7 +193,7 @@ Notes:
 ├──────────────────────────┤
 │          ...             │
 ├──────────────────────────┤
-│    Sample_n <data>       │
+│    sample_n <data>       │
 └──────────────────────────┘
 ```
 
@@ -107,9 +208,9 @@ Notes:
 #### Sample 1 data:
 
 ```
-┌────────────────────────┬───────────────────────────┬────────────────────────────────┬──────────────────────┬─────────────────────────────────┬─────┬─────────────────────────────────┬─────────────────────────────────┬─────┬─────────────────────────────────┐
-│ ts_delta <varbit_uint> │ count_delta <varbit_uint> │ zero_count_delta <varbit_uint> │ sum_xor <varbit_xor> │ pos_bucket_0_delta <varbit_int> │ ... │ pos_bucket_n_delta <varbit_int> │ neg_bucket_0_delta <varbit_int> │ ... │ neg_bucket_n_delta <varbit_int> │
-└────────────────────────┴───────────────────────────┴────────────────────────────────┴──────────────────────┴─────────────────────────────────┴─────┴─────────────────────────────────┴─────────────────────────────────┴─────┴─────────────────────────────────┘
+┌───────────────────────┬──────────────────────────┬───────────────────────────────┬──────────────────────┬─────────────────────────────────┬─────┬─────────────────────────────────┬─────────────────────────────────┬─────┬─────────────────────────────────┐
+│ ts_delta <varbit_int> │ count_delta <varbit_int> │ zero_count_delta <varbit_int> │ sum_xor <varbit_xor> │ pos_bucket_0_delta <varbit_int> │ ... │ pos_bucket_n_delta <varbit_int> │ neg_bucket_0_delta <varbit_int> │ ... │ neg_bucket_n_delta <varbit_int> │
+└───────────────────────┴──────────────────────────┴───────────────────────────────┴──────────────────────┴─────────────────────────────────┴─────┴─────────────────────────────────┴─────────────────────────────────┴─────┴─────────────────────────────────┘
 ```
 
 #### Sample 2 data and following:
@@ -131,7 +232,9 @@ Notes:
   * If 0, it is a single zero byte.
   * If a power of two between 2^-243 and 2^10, it is a single byte between 1 and 254.
   * Otherwise, it is a byte with all bits set (255), followed by a float64, resulting in 9 bytes length.
-* `schema` is a specific value defined by the exposition format. Currently valid values are -4 <= n <= 8.
+* `schema` is a specific value defined by the exposition format. Currently
+  valid values are either -4 <= n <= 8 (standard exponential schemas) or -53
+  (custom bucket boundaries).
 * `<varbit_int>` is a variable bitwidth encoding for signed integers, optimized for “delta of deltas” of bucket deltas. It has between 1 bit and 9 bytes.
   See [code for details](https://github.com/prometheus/prometheus/blob/8c1507ebaa4ca552958ffb60c2d1b21afb7150e4/tsdb/chunkenc/varbit.go#L31-L60).
 * `<varbit_uint>` is a variable bitwidth encoding for unsigned integers with the same bit-bucketing as `<varbit_int>`.
@@ -142,3 +245,68 @@ Notes:
 * Note that buckets are inherently deltas between the current bucket and the previous bucket. Only `bucket_0` is an absolute count.
 * The chunk can have as few as one sample, i.e. sample 1 and following are optional.
 * Similarly, there could be down to zero spans and down to zero buckets.
+
+The `<custom>` encoding within the custom values data depends on the schema.
+For schema -53 (custom bucket boundaries, currently the only use case for
+custom values), the values to encode are bucket boundaries in the form of
+floats. The encoding of a given float value _x_ works as follows:
+
+1. Create an intermediate value _y_ = _x_ * 1000.
+2. If 0 ≤ _y_ ≤ 33554430 _and_ if the decimal value of _y_ is integer, store
+   _y_ + 1 as `<varbit_uint>`.
+3. Otherwise, store a 0 bit, followed by the 64 bit of the original _x_
+   encoded as plain `<float64>`.
+
+Note that values stored as per (2) will always start with a 1 bit, which allow
+decoders to recognize this case in contrast to values stores as per (3), which
+always start with a 0 bit.
+
+The rational behind this encoding is that most custom bucket boundaries are set
+by humans as decimal numbers with not very many decimal places. In most cases,
+the encoding will therefore result in a short varbit representation. The upper
+bound of 33554430 is picked so that the varbit encoded value will take at most
+4 bytes.
+
+## Float histogram chunk data
+
+Float histograms have the same layout as histograms apart from the encoding of samples.
+
+### Samples data:
+
+```
+┌──────────────────────────┐
+│    sample_0 <data>       │
+├──────────────────────────┤
+│    sample_1 <data>       │
+├──────────────────────────┤
+│    sample_2 <data>       │
+├──────────────────────────┤
+│          ...             │
+├──────────────────────────┤
+│    sample_n <data>       │
+└──────────────────────────┘
+```
+
+#### Sample 0 data:
+
+```
+┌─────────────────┬─────────────────┬──────────────────────┬───────────────┬────────────────────────┬─────┬────────────────────────┬────────────────────────┬─────┬────────────────────────┐
+│ ts <varbit_int> │ count <float64> │ zero_count <float64> │ sum <float64> │ pos_bucket_0 <float64> │ ... │ pos_bucket_n <float64> │ neg_bucket_0 <float64> │ ... │ neg_bucket_n <float64> │
+└─────────────────┴─────────────────┴──────────────────────┴───────────────┴────────────────────────┴─────┴────────────────────────┴────────────────────────┴─────┴────────────────────────┘
+```
+
+#### Sample 1 data:
+
+```
+┌───────────────────────┬────────────────────────┬─────────────────────────────┬──────────────────────┬───────────────────────────────┬─────┬───────────────────────────────┬───────────────────────────────┬─────┬───────────────────────────────┐
+│ ts_delta <varbit_int> │ count_xor <varbit_xor> │ zero_count_xor <varbit_xor> │ sum_xor <varbit_xor> │ pos_bucket_0_xor <varbit_xor> │ ... │ pos_bucket_n_xor <varbit_xor> │ neg_bucket_0_xor <varbit_xor> │ ... │ neg_bucket_n_xor <varbit_xor> │
+└───────────────────────┴────────────────────────┴─────────────────────────────┴──────────────────────┴───────────────────────────────┴─────┴───────────────────────────────┴───────────────────────────────┴─────┴───────────────────────────────┘
+```
+
+#### Sample 2 data and following:
+
+```
+┌─────────────────────┬────────────────────────┬─────────────────────────────┬──────────────────────┬───────────────────────────────┬─────┬───────────────────────────────┬───────────────────────────────┬─────┬───────────────────────────────┐
+│ ts_dod <varbit_int> │ count_xor <varbit_xor> │ zero_count_xor <varbit_xor> │ sum_xor <varbit_xor> │ pos_bucket_0_xor <varbit_xor> │ ... │ pos_bucket_n_xor <varbit_xor> │ neg_bucket_0_xor <varbit_xor> │ ... │ neg_bucket_n_xor <varbit_xor> │
+└─────────────────────┴────────────────────────┴─────────────────────────────┴──────────────────────┴───────────────────────────────┴─────┴───────────────────────────────┴───────────────────────────────┴─────┴───────────────────────────────┘
+```

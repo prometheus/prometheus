@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -39,15 +39,17 @@ func TestEvaluations(t *testing.T) {
 // Run a lot of queries at the same time, to check for race conditions.
 func TestConcurrentRangeQueries(t *testing.T) {
 	stor := teststorage.New(t)
-	defer stor.Close()
+
 	opts := promql.EngineOpts{
 		Logger:     nil,
 		Reg:        nil,
 		MaxSamples: 50000000,
 		Timeout:    100 * time.Second,
+		Parser: parser.NewParser(parser.Options{
+			EnableExperimentalFunctions:  true,
+			EnableExtendedRangeSelectors: true,
+		}),
 	}
-	// Enable experimental functions testing
-	parser.EnableExperimentalFunctions = true
 	engine := promqltest.NewTestEngineWithOpts(t, opts)
 
 	const interval = 10000 // 10s interval.
@@ -61,12 +63,11 @@ func TestConcurrentRangeQueries(t *testing.T) {
 	// Limit the number of queries running at the same time.
 	const numConcurrent = 4
 	sem := make(chan struct{}, numConcurrent)
-	for i := 0; i < numConcurrent; i++ {
+	for range numConcurrent {
 		sem <- struct{}{}
 	}
 	var g errgroup.Group
 	for _, c := range cases {
-		c := c
 		if strings.Contains(c.expr, "count_values") && c.steps > 10 {
 			continue // This test is too big to run with -race.
 		}

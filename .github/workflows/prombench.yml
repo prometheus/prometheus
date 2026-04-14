@@ -2,6 +2,8 @@ on:
   repository_dispatch:
     types: [prombench_start, prombench_restart, prombench_stop]
 name: Prombench Workflow
+permissions:
+  contents: read
 env:
   AUTH_FILE: ${{ secrets.TEST_INFRA_PROVIDER_AUTH }}
   CLUSTER_NAME: test-infra
@@ -15,11 +17,15 @@ env:
   PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
   PROVIDER: gke
   RELEASE: ${{ github.event.client_payload.RELEASE }}
+  BENCHMARK_VERSION: ${{ github.event.client_payload.BENCHMARK_VERSION }}
+  BENCHMARK_DIRECTORY: ${{ github.event.client_payload.BENCHMARK_DIRECTORY }}
   ZONE: europe-west3-a
 jobs:
   benchmark_start:
     name: Benchmark Start
     if: github.event.action == 'prombench_start'
+    permissions:
+      statuses: write
     runs-on: ubuntu-latest
     steps:
       - name: Update status to pending
@@ -34,8 +40,8 @@ jobs:
         uses: docker://prominfra/prombench:master
         with:
           args: >-
-            until make all_nodes_deleted; do echo "waiting for nodepools to be deleted"; sleep 10; done;
             make deploy;
+            until make all_nodes_running; do echo "waiting for nodepools to be created"; sleep 10; done;
       - name: Update status to failure
         if: failure()
         run: >-
@@ -55,6 +61,8 @@ jobs:
   benchmark_cancel:
     name: Benchmark Cancel
     if: github.event.action == 'prombench_stop'
+    permissions:
+      statuses: write
     runs-on: ubuntu-latest
     steps:
       - name: Update status to pending
@@ -69,8 +77,8 @@ jobs:
         uses: docker://prominfra/prombench:master
         with:
           args: >-
-            until make all_nodes_running; do echo "waiting for nodepools to be created"; sleep 10; done;
             make clean;
+            until make all_nodes_deleted; do echo "waiting for nodepools to be deleted"; sleep 10; done;
       - name: Update status to failure
         if: failure()
         run: >-
@@ -90,6 +98,8 @@ jobs:
   benchmark_restart:
     name: Benchmark Restart
     if: github.event.action == 'prombench_restart'
+    permissions:
+      statuses: write
     runs-on: ubuntu-latest
     steps:
       - name: Update status to pending
@@ -104,10 +114,10 @@ jobs:
         uses: docker://prominfra/prombench:master
         with:
           args: >-
-            until make all_nodes_running; do echo "waiting for nodepools to be created"; sleep 10; done;
             make clean;
             until make all_nodes_deleted; do echo "waiting for nodepools to be deleted"; sleep 10; done;
             make deploy;
+            until make all_nodes_running; do echo "waiting for nodepools to be created"; sleep 10; done;
       - name: Update status to failure
         if: failure()
         run: >-

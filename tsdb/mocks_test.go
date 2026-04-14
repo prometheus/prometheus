@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -63,8 +63,8 @@ type mockBReader struct {
 
 func (r *mockBReader) Index() (IndexReader, error)  { return r.ir, nil }
 func (r *mockBReader) Chunks() (ChunkReader, error) { return r.cr, nil }
-func (r *mockBReader) Tombstones() (tombstones.Reader, error) {
+func (*mockBReader) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 func (r *mockBReader) Meta() BlockMeta { return BlockMeta{MinTime: r.mint, MaxTime: r.maxt} }
-func (r *mockBReader) Size() int64     { return 0 }
+func (*mockBReader) Size() int64       { return 0 }

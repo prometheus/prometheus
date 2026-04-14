@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/gzip"
@@ -39,7 +40,7 @@ func setup() func() {
 }
 
 func getCompressionHandlerFunc() CompressionHandler {
-	hf := func(w http.ResponseWriter, r *http.Request) {
+	hf := func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Hello World!"))
 	}
@@ -72,6 +73,17 @@ func TestCompressionHandler_PlainText(t *testing.T) {
 	require.Equal(t, expected, actual, "expected response with content")
 }
 
+func BenchmarkNewCompressionHandler_MaliciousAcceptEncoding(b *testing.B) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/whatever", http.NoBody)
+	req.Header.Set("Accept-Encoding", strings.Repeat(",", http.DefaultMaxHeaderBytes))
+	b.ReportAllocs()
+
+	for b.Loop() {
+		newCompressedResponseWriter(rec, req)
+	}
+}
+
 func TestCompressionHandler_Gzip(t *testing.T) {
 	tearDown := setup()
 	defer tearDown()
@@ -85,7 +97,7 @@ func TestCompressionHandler_Gzip(t *testing.T) {
 		},
 	}
 
-	req, _ := http.NewRequest(http.MethodGet, server.URL+"/foo_endpoint", nil)
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/foo_endpoint", http.NoBody)
 	req.Header.Set(acceptEncodingHeader, gzipEncoding)
 
 	resp, err := client.Do(req)
@@ -120,7 +132,7 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 		},
 	}
 
-	req, _ := http.NewRequest(http.MethodGet, server.URL+"/foo_endpoint", nil)
+	req, _ := http.NewRequest(http.MethodGet, server.URL+"/foo_endpoint", http.NoBody)
 	req.Header.Set(acceptEncodingHeader, deflateEncoding)
 
 	resp, err := client.Do(req)

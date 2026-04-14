@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"math"
 	"sort"
 	"time"
 
@@ -46,7 +48,10 @@ var MetricMetadataTypeValue = map[string]int32{
 
 // MetricTextToWriteRequest consumes an io.Reader and return the data in write request format.
 func MetricTextToWriteRequest(input io.Reader, labels map[string]string) (*prompb.WriteRequest, error) {
-	var parser expfmt.TextParser
+	// Lacking information about what the intended validation scheme is, use the
+	// deprecated library bool.
+	//nolint:staticcheck
+	parser := expfmt.NewTextParser(model.NameValidationScheme)
 	mf, err := parser.TextToMetricFamilies(input)
 	if err != nil {
 		return nil, err
@@ -113,43 +118,51 @@ func makeTimeseries(wr *prompb.WriteRequest, labels map[string]string, m *dto.Me
 		toTimeseries(wr, labels, timestamp, m.GetCounter().GetValue())
 	case m.Summary != nil:
 		metricName := labels[model.MetricNameLabel]
-		// Preserve metric name order with first quantile labels timeseries then sum suffix timeserie and finally count suffix timeserie
+		// Preserve metric name order with first quantile labels timeseries then sum suffix timeseries and finally count suffix timeseries
 		// Add Summary quantile timeseries
 		quantileLabels := make(map[string]string, len(labels)+1)
-		for key, value := range labels {
-			quantileLabels[key] = value
-		}
+		maps.Copy(quantileLabels, labels)
 
 		for _, q := range m.GetSummary().Quantile {
 			quantileLabels[model.QuantileLabel] = fmt.Sprint(q.GetQuantile())
 			toTimeseries(wr, quantileLabels, timestamp, q.GetValue())
 		}
 		// Overwrite label model.MetricNameLabel for count and sum metrics
-		// Add Summary sum timeserie
+		// Add Summary sum timeseries
 		labels[model.MetricNameLabel] = metricName + sumStr
 		toTimeseries(wr, labels, timestamp, m.GetSummary().GetSampleSum())
-		// Add Summary count timeserie
+		// Add Summary count timeseries
 		labels[model.MetricNameLabel] = metricName + countStr
 		toTimeseries(wr, labels, timestamp, float64(m.GetSummary().GetSampleCount()))
 
 	case m.Histogram != nil:
 		metricName := labels[model.MetricNameLabel]
-		// Preserve metric name order with first bucket suffix timeseries then sum suffix timeserie and finally count suffix timeserie
+		// Preserve metric name order with first bucket suffix timeseries then sum suffix timeseries and finally count suffix timeseries
 		// Add Histogram bucket timeseries
 		bucketLabels := make(map[string]string, len(labels)+1)
-		for key, value := range labels {
-			bucketLabels[key] = value
-		}
+		maps.Copy(bucketLabels, labels)
+		var hasInf bool
 		for _, b := range m.GetHistogram().Bucket {
+			if b.GetUpperBound() == math.Inf(1) {
+				hasInf = true
+			}
 			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
 			bucketLabels[model.BucketLabel] = fmt.Sprint(b.GetUpperBound())
 			toTimeseries(wr, bucketLabels, timestamp, float64(b.GetCumulativeCount()))
 		}
+
+		// Add +Inf bucket if not present
+		if !hasInf {
+			bucketLabels[model.MetricNameLabel] = metricName + bucketStr
+			bucketLabels[model.BucketLabel] = "+Inf"
+			toTimeseries(wr, bucketLabels, timestamp, float64(m.GetHistogram().GetSampleCount()))
+		}
+
 		// Overwrite label model.MetricNameLabel for count and sum metrics
-		// Add Histogram sum timeserie
+		// Add Histogram sum timeseries
 		labels[model.MetricNameLabel] = metricName + sumStr
 		toTimeseries(wr, labels, timestamp, m.GetHistogram().GetSampleSum())
-		// Add Histogram count timeserie
+		// Add Histogram count timeseries
 		labels[model.MetricNameLabel] = metricName + countStr
 		toTimeseries(wr, labels, timestamp, float64(m.GetHistogram().GetSampleCount()))
 
@@ -186,9 +199,7 @@ func makeLabelsMap(m *dto.Metric, metricName string, extraLabels map[string]stri
 	labels[model.MetricNameLabel] = metricName
 
 	// add extra labels
-	for key, value := range extraLabels {
-		labels[key] = value
-	}
+	maps.Copy(labels, extraLabels)
 
 	// add metric labels
 	for _, label := range m.Label {

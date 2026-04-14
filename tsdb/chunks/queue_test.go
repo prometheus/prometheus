@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -62,6 +62,7 @@ func (q *writeJobQueue) assertInvariants(t *testing.T) {
 }
 
 func TestQueuePushPopSingleGoroutine(t *testing.T) {
+	t.Parallel()
 	seed := time.Now().UnixNano()
 	t.Log("seed:", seed)
 	r := rand.New(rand.NewSource(seed))
@@ -76,7 +77,7 @@ func TestQueuePushPopSingleGoroutine(t *testing.T) {
 		lastWriteID := 0
 		lastReadID := 0
 
-		for iter := 0; iter < maxIters; iter++ {
+		for range maxIters {
 			if elements < maxCount {
 				toWrite := r.Int() % (maxCount - elements)
 				if toWrite == 0 {
@@ -115,6 +116,7 @@ func TestQueuePushPopSingleGoroutine(t *testing.T) {
 }
 
 func TestQueuePushBlocksOnFullQueue(t *testing.T) {
+	t.Parallel()
 	queue := newWriteJobQueue(5, 5)
 
 	pushTime := make(chan time.Time)
@@ -152,6 +154,7 @@ func TestQueuePushBlocksOnFullQueue(t *testing.T) {
 }
 
 func TestQueuePopBlocksOnEmptyQueue(t *testing.T) {
+	t.Parallel()
 	queue := newWriteJobQueue(5, 5)
 
 	popTime := make(chan time.Time)
@@ -192,6 +195,7 @@ func TestQueuePopBlocksOnEmptyQueue(t *testing.T) {
 }
 
 func TestQueuePopUnblocksOnClose(t *testing.T) {
+	t.Parallel()
 	queue := newWriteJobQueue(5, 5)
 
 	popTime := make(chan time.Time)
@@ -231,11 +235,12 @@ func TestQueuePopUnblocksOnClose(t *testing.T) {
 }
 
 func TestQueuePopAfterCloseReturnsAllElements(t *testing.T) {
+	t.Parallel()
 	const count = 10
 
 	queue := newWriteJobQueue(count, count)
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		require.True(t, queue.push(chunkWriteJob{seriesRef: HeadSeriesRef(i)}))
 	}
 
@@ -246,7 +251,7 @@ func TestQueuePopAfterCloseReturnsAllElements(t *testing.T) {
 	require.False(t, queue.push(chunkWriteJob{seriesRef: HeadSeriesRef(11111)}))
 
 	// Verify that we can still read all pushed elements.
-	for i := 0; i < count; i++ {
+	for i := range count {
 		j, b := queue.pop()
 		require.True(t, b)
 		require.Equal(t, HeadSeriesRef(i), j.seriesRef)
@@ -257,6 +262,7 @@ func TestQueuePopAfterCloseReturnsAllElements(t *testing.T) {
 }
 
 func TestQueuePushPopManyGoroutines(t *testing.T) {
+	t.Parallel()
 	const readGoroutines = 5
 	const writeGoroutines = 10
 	const writes = 500
@@ -268,35 +274,27 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 	refs := map[HeadSeriesRef]bool{}
 
 	readersWG := sync.WaitGroup{}
-	for i := 0; i < readGoroutines; i++ {
-		readersWG.Add(1)
-
-		go func() {
-			defer readersWG.Done()
-
+	for range readGoroutines {
+		readersWG.Go(func() {
 			for j, ok := queue.pop(); ok; j, ok = queue.pop() {
 				refsMx.Lock()
 				refs[j.seriesRef] = true
 				refsMx.Unlock()
 			}
-		}()
+		})
 	}
 
 	id := atomic.Uint64{}
 
 	writersWG := sync.WaitGroup{}
-	for i := 0; i < writeGoroutines; i++ {
-		writersWG.Add(1)
-
-		go func() {
-			defer writersWG.Done()
-
-			for i := 0; i < writes; i++ {
+	for range writeGoroutines {
+		writersWG.Go(func() {
+			for range writes {
 				ref := id.Inc()
 
 				require.True(t, queue.push(chunkWriteJob{seriesRef: HeadSeriesRef(ref)}))
 			}
-		}()
+		})
 	}
 
 	// Wait until all writes are done.
@@ -311,6 +309,7 @@ func TestQueuePushPopManyGoroutines(t *testing.T) {
 }
 
 func TestQueueSegmentIsKeptEvenIfEmpty(t *testing.T) {
+	t.Parallel()
 	queue := newWriteJobQueue(1024, 64)
 
 	require.True(t, queue.push(chunkWriteJob{seriesRef: 1}))

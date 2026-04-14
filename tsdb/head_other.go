@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,7 +16,7 @@
 package tsdb
 
 import (
-	"github.com/go-kit/log"
+	"log/slog"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -27,6 +27,6 @@ func (s *memSeries) labels() labels.Labels {
 }
 
 // RebuildSymbolTable is a no-op when not using dedupelabels.
-func (h *Head) RebuildSymbolTable(logger log.Logger) *labels.SymbolTable {
+func (*Head) RebuildSymbolTable(*slog.Logger) *labels.SymbolTable {
 	return nil
 }

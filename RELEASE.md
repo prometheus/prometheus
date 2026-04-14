@@ -5,60 +5,23 @@ This page describes the release process and the currently planned schedule for u
 ## Release schedule
 
 Release cadence of first pre-releases being cut is 6 weeks.
+Please see [the v2.55 RELEASE.md](https://github.com/prometheus/prometheus/blob/release-2.55/RELEASE.md) for the v2 release series schedule.
 
-| release series | date of first pre-release (year-month-day) | release shepherd                            |
-|----------------|--------------------------------------------|---------------------------------------------|
-| v2.4           | 2018-09-06                                 | Goutham Veeramachaneni (GitHub: @gouthamve) |
-| v2.5           | 2018-10-24                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.6           | 2018-12-05                                 | Simon Pasquier (GitHub: @simonpasquier)     |
-| v2.7           | 2019-01-16                                 | Goutham Veeramachaneni (GitHub: @gouthamve) |
-| v2.8           | 2019-02-27                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.9           | 2019-04-10                                 | Brian Brazil (GitHub: @brian-brazil)        |
-| v2.10          | 2019-05-22                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.11          | 2019-07-03                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.12          | 2019-08-14                                 | Julius Volz (GitHub: @juliusv)              |
-| v2.13          | 2019-09-25                                 | Krasi Georgiev (GitHub: @krasi-georgiev)    |
-| v2.14          | 2019-11-06                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
-| v2.15          | 2019-12-18                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.16          | 2020-01-29                                 | Callum Styan (GitHub: @cstyan)              |
-| v2.17          | 2020-03-11                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.18          | 2020-04-22                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.19          | 2020-06-03                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.20          | 2020-07-15                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.21          | 2020-08-26                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.22          | 2020-10-07                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.23          | 2020-11-18                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.24          | 2020-12-30                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.25          | 2021-02-10                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.26          | 2021-03-24                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.27          | 2021-05-05                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
-| v2.28          | 2021-06-16                                 | Julius Volz (GitHub: @juliusv)              |
-| v2.29          | 2021-07-28                                 | Frederic Branczyk (GitHub: @brancz)         |
-| v2.30          | 2021-09-08                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.31          | 2021-10-20                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.32          | 2021-12-01                                 | Julius Volz (GitHub: @juliusv)              |
-| v2.33          | 2022-01-12                                 | Björn Rabenstein (GitHub: @beorn7)          |
-| v2.34          | 2022-02-23                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
-| v2.35          | 2022-04-06                                 | Augustin Husson (GitHub: @nexucis)          |
-| v2.36          | 2022-05-18                                 | Matthias Loibl (GitHub: @metalmatze)        |
-| v2.37 LTS      | 2022-06-29                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.38          | 2022-08-10                                 | Julius Volz (GitHub: @juliusv)              |
-| v2.39          | 2022-09-21                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.40          | 2022-11-02                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.41          | 2022-12-14                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.42          | 2023-01-25                                 | Kemal Akkoyun (GitHub: @kakkoyun)           |
-| v2.43          | 2023-03-08                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.44          | 2023-04-19                                 | Bryan Boreham (GitHub: @bboreham)           |
-| v2.45 LTS      | 2023-05-31                                 | Jesus Vazquez (Github: @jesusvazquez)       |
-| v2.46          | 2023-07-12                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.47          | 2023-08-23                                 | Bryan Boreham (GitHub: @bboreham)           |
-| v2.48          | 2023-10-04                                 | Levi Harrison (GitHub: @LeviHarrison)       |
-| v2.49          | 2023-12-05                                 | Bartek Plotka (GitHub: @bwplotka)           |
-| v2.50          | 2024-01-16                                 | Augustin Husson (GitHub: @nexucis)          |
-| v2.51          | 2024-03-07                                 | Bryan Boreham (GitHub: @bboreham)           |
-| v2.52          | 2024-04-22                                 | Arthur Silva Sens (GitHub: @ArthurSens)     |
-| v2.53 LTS      | 2024-06-03                                 | George Krajcsovits (GitHub: @krajorama)     |
-| v2.54          | 2024-07-17                                 | Bryan Boreham (GitHub: @bboreham)           |
+| release series | date of first pre-release (year-month-day) | release shepherd                                                        |
+|----------------|--------------------------------------------|-------------------------------------------------------------------------|
+| v3.0           | 2024-11-14                                 | Jan Fajerski (GitHub: @jan--f)                                          |
+| v3.1           | 2024-12-17                                 | Bryan Boreham (GitHub: @bboreham)                                       |
+| v3.2           | 2025-01-28                                 | Jan Fajerski (GitHub: @jan--f)                                          |
+| v3.3           | 2025-03-11                                 | Ayoub Mrini (Github: @machine424)                                       |
+| v3.4           | 2025-04-29                                 | Jan-Otto Kröpke (Github: @jkroepke)                                     |
+| v3.5 LTS       | 2025-06-03                                 | Bryan Boreham (GitHub: @bboreham)                                       |
+| v3.6           | 2025-08-01                                 | Ayoub Mrini (Github: @machine424)                                       |
+| v3.7           | 2025-09-25                                 | Arthur Sens and George Krajcsovits (Github: @ArthurSens and @krajorama) |
+| v3.8           | 2025-11-06                                 | Jan Fajerski (GitHub: @jan--f)                                          |
+| v3.9           | 2025-12-18                                 | Bryan Boreham (GitHub: @bboreham)                                       |
+| v3.10          | 2026-02-05                                 | Ganesh Vernekar (Github: @codesome)                                     |
+| v3.11          | 2026-03-25                                 | Julien Pivotto (GitHub: @roidelapluie)                                  |
+| v3.12          | 2026-05-06                                 | **volunteer welcome**                                                   |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -81,7 +44,7 @@ These instructions are currently valid for the Prometheus server, i.e. the [prom
 
 We use [Semantic Versioning](https://semver.org/).
 
-We maintain a separate branch for each minor release, named `release-<major>.<minor>`, e.g. `release-1.1`, `release-2.0`.
+We maintain a separate branch for each minor release, named `release-<major>.<minor>`, e.g. `release-2.1`, `release-3.0`.
 
 Note that branch protection kicks in automatically for any branches whose name starts with `release-`. Never use names starting with `release-` for branches that are not release branches.
 
@@ -144,31 +107,33 @@ though this may be done at convenient times (e.g. by the UI maintainers) that ar
 
 ### 1. Prepare your release
 
-At the start of a new major or minor release cycle create the corresponding release branch based on the main branch. For example if we're releasing `2.17.0` and the previous stable release is `2.16.0` we need to create a `release-2.17` branch. Note that all releases are handled in protected release branches, see the above `Branch management and versioning` section. Release candidates and patch releases for any given major or minor release happen in the same `release-<major>.<minor>` branch. Do not create `release-<version>` for patch or release candidate releases.
+At the start of a new major or minor release cycle create the corresponding release branch based on the main branch. For example if we're releasing `3.7.0` and the previous stable release is `3.6.0` we need to create a `release-3.7` branch. Note that all releases are handled in protected release branches, see the [Branch management and versioning strategy](#branch-management-and-versioning-strategy) section. Release candidates and patch releases for any given major or minor release happen in the same `release-<major>.<minor>` branch. Do not create `release-<version>` for patch or release candidate releases.
 
 Changes for a patch release or release candidate should be merged into the previously mentioned release branch via pull request.
 
-Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to the changelog in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
+Bump the version in the `VERSION` file and update `CHANGELOG.md`. Do this in a proper PR pointing to the release branch as this gives others the opportunity to chime in on the release in general and on the addition to `CHANGELOG.md` in particular. For a release candidate, append something like `-rc.0` to the version (with the corresponding changes to the tag name, the release name etc.).
 
-When updating the `CHANGELOG.md` look at all PRs included in the release since the last release and verify if they need a changelog entry.
+Use [`scripts/generate_release_notes.sh`](scripts/generate_release_notes.sh) to produce a starting point for the `CHANGELOG.md` entries. It requires the [`release-notes`](https://github.com/kubernetes/release/tree/master/cmd/release-notes) tool and a `GITHUB_TOKEN` with read access to the repository:
 
-Note that `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
+Run it for the target release version (RC, final, or patch; for example `v3.11.0-rc.0`, `v3.11.0`, or `v3.11.1`):
 
-For release candidates still update `CHANGELOG.md`, but when you cut the final release later, merge all the changes from the pre-releases into the one final update.
+```bash
+GITHUB_TOKEN=<token> scripts/generate_release_notes.sh 3.Y_SET_ME.Z_SET_ME
+```
 
-Entries in the `CHANGELOG.md` are meant to be in this order:
+Review the output carefully before adding it to `CHANGELOG.md`:
 
-* `[SECURITY]` - A bugfix that specifically fixes a security issue.
-* `[CHANGE]`
-* `[FEATURE]`
-* `[ENHANCEMENT]`
-* `[BUGFIX]`
+- Remove entries already present in a previous release's Changelog. Duplicates can appear for fixes merged to the previous release branch.
+- `CHANGELOG.md` should only document changes relevant to users of Prometheus, including external API changes, performance improvements, and new features. Do not document changes of internal interfaces, code refactorings and clean-ups, changes to the build process, etc. People interested in these are asked to refer to the git history.
 
 Then bump the UI module version:
 
 ```bash
 make ui-bump-version
 ```
+
+All of the above goes to make a PR, which you should create targeting the `release-x.y` branch, then wait for CI to complete and get an approval.
+Once the PR is ready, merge it into the release branch and pull it down to your work area. Then you are ready for the next step:
 
 ### 2. Draft the new release
 
@@ -180,19 +145,7 @@ git tag -s "${tag}" -m "${tag}"
 git push origin "${tag}"
 ```
 
-Go modules versioning requires strict use of semver. Because we do not commit to
-avoid code-level breaking changes for the libraries between minor releases of
-the Prometheus server, we use major version zero releases for the libraries.
-
-Tag the new library release via the following commands:
-
-```bash
-tag="v$(sed s/2/0/ < VERSION)"
-git tag -s "${tag}" -m "${tag}"
-git push origin "${tag}"
-```
-
-Optionally, you can use this handy `.gitconfig` alias.
+Alternatively, you can use this handy `.gitconfig` alias.
 
 ```ini
 [alias]
@@ -203,14 +156,29 @@ Then release with `git tag-release`.
 
 Signing a tag with a GPG key is appreciated, but in case you can't add a GPG key to your Github account using the following [procedure](https://help.github.com/articles/generating-a-gpg-key/), you can replace the `-s` flag by `-a` flag of the `git tag` command to only annotate the tag without signing.
 
-Once a tag is created, the release process through CircleCI will be triggered for this tag and Circle CI will draft the GitHub release using the `prombot` account.
+Once a tag is created, the release process through Github Actions will be triggered for this tag and Github Actions will draft the GitHub release using the `prombot` account.
 
 Finally, wait for the build step for the tag to finish. The point here is to wait for tarballs to be uploaded to the Github release and the container images to be pushed to the Docker Hub and Quay.io. Once that has happened, click _Publish release_, which will make the release publicly visible and create a GitHub notification.
 **Note:** for a release candidate version ensure the _This is a pre-release_ box is checked when drafting the release in the Github UI. The CI job should take care of this but it's a good idea to double check before clicking _Publish release_.`
 
-### 3. Wrapping up
+### 3. Tag the library release
 
-For release candidate versions (`v2.16.0-rc.0`), run the benchmark for 3 days using the `/prombench vX.Y.Z` command, `vX.Y.Z` being the latest stable patch release's tag of the previous minor release series, such as `v2.15.2`.
+Go modules versioning requires strict use of semver. Because we do not commit to
+avoid code-level breaking changes for the libraries between minor releases of
+the Prometheus server, we use major version zero releases for the libraries.
+
+Tagging the new library release works similar to the normal release tagging,
+but without the subsequent build and publish steps. Use the following commands:
+
+```bash
+tag="v$(./scripts/get_module_version.sh)"
+git tag -s "${tag}" -m "${tag}"
+git push origin "${tag}"
+```
+
+### 4. Wrapping up
+
+For release candidate versions (`v3.6.0-rc.0`), run the benchmark for 3 days using the `/prombench vX.Y.Z` command, `vX.Y.Z` being the latest stable patch release's tag of the previous minor release series, such as `v3.5.2`.
 
 If the release has happened in the latest release branch, merge the changes into main.
 

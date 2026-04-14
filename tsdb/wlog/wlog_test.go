@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,14 +23,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 func TestMain(m *testing.M) {
@@ -126,7 +126,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			// then corrupt a given record in a given segment.
 			// As a result we want a repaired WAL with given intact records.
 			segSize := 3 * pageSize
-			w, err := NewSize(nil, nil, dir, segSize, CompressionNone)
+			w, err := NewSize(nil, nil, dir, segSize, compression.None)
 			require.NoError(t, err)
 
 			var records [][]byte
@@ -151,7 +151,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 
 			require.NoError(t, f.Close())
 
-			w, err = NewSize(nil, nil, dir, segSize, CompressionNone)
+			w, err = NewSize(nil, nil, dir, segSize, compression.None)
 			require.NoError(t, err)
 			defer w.Close()
 
@@ -215,7 +215,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 	dir := t.TempDir()
 
 	var (
-		logger      = testutil.NewLogger(t)
+		logger      = promslog.NewNopLogger()
 		segmentSize = pageSize * 3
 		recordSize  = (pageSize / 3) - recordHeaderSize
 	)
@@ -223,10 +223,10 @@ func TestCorruptAndCarryOn(t *testing.T) {
 	// Produce a WAL with a two segments of 3 pages with 3 records each,
 	// so when we truncate the file we're guaranteed to split a record.
 	{
-		w, err := NewSize(logger, nil, dir, segmentSize, CompressionNone)
+		w, err := NewSize(logger, nil, dir, segmentSize, compression.None)
 		require.NoError(t, err)
 
-		for i := 0; i < 18; i++ {
+		for range 18 {
 			buf := make([]byte, recordSize)
 			_, err := rand.Read(buf)
 			require.NoError(t, err)
@@ -294,7 +294,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		err = sr.Close()
 		require.NoError(t, err)
 
-		w, err := NewSize(logger, nil, dir, segmentSize, CompressionNone)
+		w, err := NewSize(logger, nil, dir, segmentSize, compression.None)
 		require.NoError(t, err)
 
 		err = w.Repair(corruptionErr)
@@ -304,7 +304,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		require.Equal(t, 1, w.segment.Index()) // We corrupted segment 0.
 		require.Equal(t, 0, w.donePages)
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			buf := make([]byte, recordSize)
 			_, err := rand.Read(buf)
 			require.NoError(t, err)
@@ -337,7 +337,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 // TestClose ensures that calling Close more than once doesn't panic and doesn't block.
 func TestClose(t *testing.T) {
 	dir := t.TempDir()
-	w, err := NewSize(nil, nil, dir, pageSize, CompressionNone)
+	w, err := NewSize(nil, nil, dir, pageSize, compression.None)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 	require.Error(t, w.Close())
@@ -350,13 +350,13 @@ func TestSegmentMetric(t *testing.T) {
 	)
 
 	dir := t.TempDir()
-	w, err := NewSize(nil, nil, dir, segmentSize, CompressionNone)
+	w, err := NewSize(nil, nil, dir, segmentSize, compression.None)
 	require.NoError(t, err)
 
 	initialSegment := client_testutil.ToFloat64(w.metrics.currentSegment)
 
 	// Write 3 records, each of which is half the segment size, meaning we should rotate to the next segment.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		buf := make([]byte, recordSize)
 		_, err := rand.Read(buf)
 		require.NoError(t, err)
@@ -369,7 +369,8 @@ func TestSegmentMetric(t *testing.T) {
 }
 
 func TestCompression(t *testing.T) {
-	bootstrap := func(compressed CompressionType) string {
+	t.Parallel()
+	bootstrap := func(compressed compression.Type) string {
 		const (
 			segmentSize = pageSize
 			recordSize  = (pageSize / 2) - recordHeaderSize
@@ -382,7 +383,7 @@ func TestCompression(t *testing.T) {
 		require.NoError(t, err)
 
 		buf := make([]byte, recordSize)
-		for i := 0; i < records; i++ {
+		for range records {
 			require.NoError(t, w.Log(buf))
 		}
 		require.NoError(t, w.Close())
@@ -397,10 +398,10 @@ func TestCompression(t *testing.T) {
 		}
 	}()
 
-	dirUnCompressed := bootstrap(CompressionNone)
+	dirUnCompressed := bootstrap(compression.None)
 	tmpDirs = append(tmpDirs, dirUnCompressed)
 
-	for _, compressionType := range []CompressionType{CompressionSnappy, CompressionZstd} {
+	for _, compressionType := range []compression.Type{compression.Snappy, compression.Zstd} {
 		dirCompressed := bootstrap(compressionType)
 		tmpDirs = append(tmpDirs, dirCompressed)
 
@@ -444,7 +445,7 @@ func TestLogPartialWrite(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			dirPath := t.TempDir()
 
-			w, err := NewSize(nil, nil, dirPath, segmentSize, CompressionNone)
+			w, err := NewSize(nil, nil, dirPath, segmentSize, compression.None)
 			require.NoError(t, err)
 
 			// Replace the underlying segment file with a mocked one that injects a failure.
@@ -511,7 +512,7 @@ func (f *faultySegmentFile) Write(p []byte) (int, error) {
 }
 
 func BenchmarkWAL_LogBatched(b *testing.B) {
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range compression.Types() {
 		b.Run(fmt.Sprintf("compress=%s", compress), func(b *testing.B) {
 			dir := b.TempDir()
 
@@ -523,7 +524,7 @@ func BenchmarkWAL_LogBatched(b *testing.B) {
 			var recs [][]byte
 			b.SetBytes(2048)
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				recs = append(recs, buf[:])
 				if len(recs) < 1000 {
 					continue
@@ -541,7 +542,7 @@ func BenchmarkWAL_LogBatched(b *testing.B) {
 }
 
 func BenchmarkWAL_Log(b *testing.B) {
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	for _, compress := range compression.Types() {
 		b.Run(fmt.Sprintf("compress=%s", compress), func(b *testing.B) {
 			dir := b.TempDir()
 
@@ -552,7 +553,7 @@ func BenchmarkWAL_Log(b *testing.B) {
 			var buf [2048]byte
 			b.SetBytes(2048)
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				err := w.Log(buf[:])
 				require.NoError(b, err)
 			}
@@ -567,8 +568,8 @@ func BenchmarkWAL_Log(b *testing.B) {
 func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
-	for i := 0; i < 2; i++ {
-		wl, err := New(log.NewNopLogger(), reg, t.TempDir(), CompressionNone)
+	for range 2 {
+		wl, err := New(promslog.NewNopLogger(), reg, t.TempDir(), compression.None)
 		require.NoError(t, err)
 		require.NoError(t, wl.Close())
 	}

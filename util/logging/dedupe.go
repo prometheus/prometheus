@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,12 +14,13 @@
 package logging
 
 import (
-	"bytes"
+	"context"
+	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-logfmt/logfmt"
+	"github.com/grafana/regexp"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -28,38 +29,87 @@ const (
 	maxEntries          = 1024
 )
 
-type logfmtEncoder struct {
-	*logfmt.Encoder
-	buf bytes.Buffer
-}
+var _ slog.Handler = (*Deduper)(nil)
 
-var logfmtEncoderPool = sync.Pool{
-	New: func() interface{} {
-		var enc logfmtEncoder
-		enc.Encoder = logfmt.NewEncoder(&enc.buf)
-		return &enc
-	},
-}
-
-// Deduper implement log.Logger, dedupes log lines.
+// Deduper implements *slog.Handler, dedupes log lines based on a time duration.
 type Deduper struct {
-	next   log.Logger
+	next   *slog.Logger
 	repeat time.Duration
 	quit   chan struct{}
-	mtx    sync.RWMutex
+	mtx    *sync.RWMutex
 	seen   map[string]time.Time
 }
 
 // Dedupe log lines to next, only repeating every repeat duration.
-func Dedupe(next log.Logger, repeat time.Duration) *Deduper {
+func Dedupe(next *slog.Logger, repeat time.Duration) *Deduper {
 	d := &Deduper{
 		next:   next,
 		repeat: repeat,
 		quit:   make(chan struct{}),
+		mtx:    new(sync.RWMutex),
 		seen:   map[string]time.Time{},
 	}
 	go d.run()
 	return d
+}
+
+// Enabled returns true if the Deduper's internal slog.Logger is enabled at the
+// provided context and log level, and returns false otherwise. It implements
+// slog.Handler.
+func (d *Deduper) Enabled(ctx context.Context, level slog.Level) bool {
+	return d.next.Enabled(ctx, level)
+}
+
+// Handle uses the provided context and slog.Record to deduplicate messages
+// every 1m. Log records received within the interval are not acted on, and
+// thus dropped. Log records that pass deduplication and need action invoke the
+// Handle() method on the Deduper's internal slog.Logger's handler, effectively
+// chaining log calls to the internal slog.Logger.
+func (d *Deduper) Handle(ctx context.Context, r slog.Record) error {
+	line := r.Message
+	d.mtx.RLock()
+	last, ok := d.seen[line]
+	d.mtx.RUnlock()
+
+	if ok && time.Since(last) < d.repeat {
+		return nil
+	}
+
+	d.mtx.Lock()
+	if len(d.seen) < maxEntries {
+		d.seen[line] = time.Now()
+	}
+	d.mtx.Unlock()
+
+	return d.next.Handler().Handle(ctx, r.Clone())
+}
+
+// WithAttrs adds the provided attributes to the Deduper's internal
+// slog.Logger. It implements slog.Handler.
+func (d *Deduper) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &Deduper{
+		next:   slog.New(d.next.Handler().WithAttrs(attrs)),
+		repeat: d.repeat,
+		quit:   d.quit,
+		seen:   d.seen,
+		mtx:    d.mtx,
+	}
+}
+
+// WithGroup adds the provided group name to the Deduper's internal
+// slog.Logger. It implements slog.Handler.
+func (d *Deduper) WithGroup(name string) slog.Handler {
+	if name == "" {
+		return d
+	}
+
+	return &Deduper{
+		next:   slog.New(d.next.Handler().WithGroup(name)),
+		repeat: d.repeat,
+		quit:   d.quit,
+		seen:   d.seen,
+		mtx:    d.mtx,
+	}
 }
 
 // Stop the Deduper.
@@ -88,43 +138,43 @@ func (d *Deduper) run() {
 	}
 }
 
-// Log implements log.Logger.
-func (d *Deduper) Log(keyvals ...interface{}) error {
-	line, err := encode(keyvals...)
-	if err != nil {
-		return err
-	}
+// deprecationRegex matches the format of Kubernetes API deprecation warnings:
+// See https://github.com/kubernetes/kubernetes/blob/da663405beb487d66c27a0220ea4073305ae9077/staging/src/k8s.io/apiserver/pkg/endpoints/deprecation/deprecation.go#L117.
+var deprecationRegex = regexp.MustCompile(`\S+ \S+ is deprecated in v\d+\.\d+\+`)
 
-	d.mtx.RLock()
-	last, ok := d.seen[line]
-	d.mtx.RUnlock()
+// Even though deprecation warnings should be bounded in number, this safeguard should help prevent leaks.
+const maxDeprecationWarnings = 32
 
-	if ok && time.Since(last) < d.repeat {
-		return nil
-	}
-
-	d.mtx.Lock()
-	if len(d.seen) < maxEntries {
-		d.seen[line] = time.Now()
-	}
-	d.mtx.Unlock()
-
-	return d.next.Log(keyvals...)
+// DedupDeprecationWarningLogger deduplicates Kube API deprecation warnings by message before logging them.
+// Inspired by https://github.com/kubernetes/kubernetes/blob/3edae6c1c49958fd10a708d9cc8c4c9e7f5fb6e8/staging/src/k8s.io/client-go/rest/warnings.go#L113
+type DedupDeprecationWarningLogger struct {
+	logger rest.WarningHandlerWithContext
+	lock   sync.Mutex
+	logged map[string]struct{}
 }
 
-func encode(keyvals ...interface{}) (string, error) {
-	enc := logfmtEncoderPool.Get().(*logfmtEncoder)
-	enc.buf.Reset()
-	defer logfmtEncoderPool.Put(enc)
+func NewDedupDeprecationWarningLogger() *DedupDeprecationWarningLogger {
+	return &DedupDeprecationWarningLogger{
+		logger: rest.WarningLogger{},
+		logged: make(map[string]struct{}),
+	}
+}
 
-	if err := enc.EncodeKeyvals(keyvals...); err != nil {
-		return "", err
+func (w *DedupDeprecationWarningLogger) HandleWarningHeaderWithContext(ctx context.Context, code int, agent, message string) {
+	if code != 299 || message == "" {
+		return
 	}
 
-	// Add newline to the end of the buffer
-	if err := enc.EndRecord(); err != nil {
-		return "", err
+	w.lock.Lock()
+	defer w.lock.Unlock()
+
+	if _, seen := w.logged[message]; seen {
+		return
 	}
 
-	return enc.buf.String(), nil
+	if deprecationRegex.MatchString(message) && len(w.logged) < maxDeprecationWarnings {
+		w.logged[message] = struct{}{}
+	}
+
+	w.logger.HandleWarningHeaderWithContext(ctx, code, agent, message)
 }

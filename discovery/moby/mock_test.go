@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -24,7 +24,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -98,7 +98,7 @@ func (m *SDMock) SetupHandlers() {
 				if len(query) == 2 {
 					h := sha1.New()
 					h.Write([]byte(query[1]))
-					// Avoing long filenames for Windows.
+					// Avoiding long filenames for Windows.
 					f += "__" + base64.URLEncoding.EncodeToString(h.Sum(nil))[:10]
 				}
 			}

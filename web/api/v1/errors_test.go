@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,18 +20,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
+	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -41,9 +44,10 @@ import (
 
 func TestApiStatusCodes(t *testing.T) {
 	for name, tc := range map[string]struct {
-		err            error
-		expectedString string
-		expectedCode   int
+		err               error
+		expectedString    string
+		expectedCode      int
+		overrideErrorCode OverrideErrorCode
 	}{
 		"random error": {
 			err:            errors.New("some random error"),
@@ -55,6 +59,22 @@ func TestApiStatusCodes(t *testing.T) {
 			err:            promql.ErrTooManySamples("some error"),
 			expectedString: "too many samples",
 			expectedCode:   http.StatusUnprocessableEntity,
+		},
+
+		"overridden error code for engine error": {
+			err:            promql.ErrTooManySamples("some error"),
+			expectedString: "too many samples",
+			overrideErrorCode: func(errNum errorNum, err error) (code int, override bool) {
+				if errNum == ErrorExec {
+					if strings.Contains(err.Error(), "some error") {
+						return 999, true
+					}
+					return 998, true
+				}
+
+				return 0, false
+			},
+			expectedCode: 999,
 		},
 
 		"promql.ErrQueryCanceled": {
@@ -87,10 +107,10 @@ func TestApiStatusCodes(t *testing.T) {
 			"error from seriesset": errorTestQueryable{q: errorTestQuerier{s: errorTestSeriesSet{err: tc.err}}},
 		} {
 			t.Run(fmt.Sprintf("%s/%s", name, k), func(t *testing.T) {
-				r := createPrometheusAPI(t, q)
+				r := createPrometheusAPI(t, q, tc.overrideErrorCode)
 				rec := httptest.NewRecorder()
 
-				req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", http.NoBody)
 
 				r.ServeHTTP(rec, req)
 
@@ -101,11 +121,11 @@ func TestApiStatusCodes(t *testing.T) {
 	}
 }
 
-func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route.Router {
+func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overrideErrorCode OverrideErrorCode) *route.Router {
 	t.Helper()
 
 	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
-		Logger:             log.NewNopLogger(),
+		Logger:             promslog.NewNopLogger(),
 		Reg:                nil,
 		ActiveQueryTracker: nil,
 		MaxSamples:         100,
@@ -115,7 +135,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route
 	api := NewAPI(
 		engine,
 		q,
-		nil,
+		nil, nil,
 		nil,
 		func(context.Context) ScrapePoolsRetriever { return &DummyScrapePoolsRetriever{} },
 		func(context.Context) TargetRetriever { return &DummyTargetRetriever{} },
@@ -127,19 +147,31 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable) *route
 		nil,   // Only needed for admin APIs.
 		"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
 		false, // Disable admin APIs.
-		log.NewNopLogger(),
+		promslog.NewNopLogger(),
 		func(context.Context) RulesRetriever { return &DummyRulesRetriever{} },
 		0, 0, 0, // Remote read samples and concurrency limit.
 		false, // Not an agent.
 		regexp.MustCompile(".*"),
 		func() (RuntimeInfo, error) { return RuntimeInfo{}, errors.New("not implemented") },
 		&PrometheusVersion{},
+		nil,
+		nil,
 		prometheus.DefaultGatherer,
 		nil,
 		nil,
 		false,
-		config.RemoteWriteProtoMsgs{config.RemoteWriteProtoMsgV1, config.RemoteWriteProtoMsgV2},
+		remoteapi.MessageTypes{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType},
 		false,
+		false,
+		false,
+		false,
+		5*time.Minute,
+		false,
+		false,
+		overrideErrorCode,
+		nil,
+		OpenAPIOptions{},
+		parser.NewParser(parser.Options{}),
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")
@@ -154,15 +186,15 @@ type errorTestQueryable struct {
 	err error
 }
 
-func (t errorTestQueryable) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+func (t errorTestQueryable) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
 	return nil, t.err
 }
 
-func (t errorTestQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+func (t errorTestQueryable) ChunkQuerier(_, _ int64) (storage.ChunkQuerier, error) {
 	return nil, t.err
 }
 
-func (t errorTestQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+func (t errorTestQueryable) Querier(_, _ int64) (storage.Querier, error) {
 	if t.q != nil {
 		return t.q, nil
 	}
@@ -182,11 +214,11 @@ func (t errorTestQuerier) LabelNames(context.Context, *storage.LabelHints, ...*l
 	return nil, nil, t.err
 }
 
-func (t errorTestQuerier) Close() error {
+func (errorTestQuerier) Close() error {
 	return nil
 }
 
-func (t errorTestQuerier) Select(_ context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (t errorTestQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	if t.s != nil {
 		return t.s
 	}
@@ -197,11 +229,11 @@ type errorTestSeriesSet struct {
 	err error
 }
 
-func (t errorTestSeriesSet) Next() bool {
+func (errorTestSeriesSet) Next() bool {
 	return false
 }
 
-func (t errorTestSeriesSet) At() storage.Series {
+func (errorTestSeriesSet) At() storage.Series {
 	return nil
 }
 
@@ -209,11 +241,11 @@ func (t errorTestSeriesSet) Err() error {
 	return t.err
 }
 
-func (t errorTestSeriesSet) Warnings() annotations.Annotations {
+func (errorTestSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
-// DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.ScrapePoolsRetriever.
+// DummyScrapePoolsRetriever implements github.com/prometheus/prometheus/web/api/v1.ScrapePoolsRetriever.
 type DummyScrapePoolsRetriever struct{}
 
 func (DummyScrapePoolsRetriever) ScrapePools() []string {
@@ -236,6 +268,10 @@ func (DummyTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 // TargetsDroppedCounts implements targetRetriever.
 func (DummyTargetRetriever) TargetsDroppedCounts() map[string]int {
 	return nil
+}
+
+func (DummyTargetRetriever) ScrapePoolConfig(_ string) (*config.ScrapeConfig, error) {
+	return nil, errors.New("not implemented")
 }
 
 // DummyAlertmanagerRetriever implements AlertmanagerRetriever.

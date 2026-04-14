@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -119,13 +119,16 @@ func (b *BufferedSeriesIterator) Next() chunkenc.ValueType {
 		return chunkenc.ValNone
 	case chunkenc.ValFloat:
 		t, f := b.it.At()
-		b.buf.addF(fSample{t: t, f: f})
+		st := b.it.AtST()
+		b.buf.addF(fSample{st: st, t: t, f: f})
 	case chunkenc.ValHistogram:
 		t, h := b.it.AtHistogram(&b.hReader)
-		b.buf.addH(hSample{t: t, h: h})
+		st := b.it.AtST()
+		b.buf.addH(hSample{st: st, t: t, h: h})
 	case chunkenc.ValFloatHistogram:
 		t, fh := b.it.AtFloatHistogram(&b.fhReader)
-		b.buf.addFH(fhSample{t: t, fh: fh})
+		st := b.it.AtST()
+		b.buf.addFH(fhSample{st: st, t: t, fh: fh})
 	default:
 		panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
 	}
@@ -157,46 +160,63 @@ func (b *BufferedSeriesIterator) AtT() int64 {
 	return b.it.AtT()
 }
 
+// AtST returns the current sample's start timestamp of the iterator.
+func (b *BufferedSeriesIterator) AtST() int64 {
+	return b.it.AtST()
+}
+
 // Err returns the last encountered error.
 func (b *BufferedSeriesIterator) Err() error {
 	return b.it.Err()
 }
 
 type fSample struct {
-	t int64
-	f float64
+	st, t int64
+	f     float64
 }
 
 func (s fSample) T() int64 {
 	return s.t
 }
 
+func (s fSample) ST() int64 {
+	return s.st
+}
+
 func (s fSample) F() float64 {
 	return s.f
 }
 
-func (s fSample) H() *histogram.Histogram {
+func (fSample) H() *histogram.Histogram {
 	panic("H() called for fSample")
 }
 
-func (s fSample) FH() *histogram.FloatHistogram {
+func (fSample) FH() *histogram.FloatHistogram {
 	panic("FH() called for fSample")
 }
 
-func (s fSample) Type() chunkenc.ValueType {
+func (fSample) Type() chunkenc.ValueType {
 	return chunkenc.ValFloat
 }
 
+func (s fSample) Copy() chunks.Sample {
+	return s
+}
+
 type hSample struct {
-	t int64
-	h *histogram.Histogram
+	st, t int64
+	h     *histogram.Histogram
 }
 
 func (s hSample) T() int64 {
 	return s.t
 }
 
-func (s hSample) F() float64 {
+func (s hSample) ST() int64 {
+	return s.st
+}
+
+func (hSample) F() float64 {
 	panic("F() called for hSample")
 }
 
@@ -208,24 +228,32 @@ func (s hSample) FH() *histogram.FloatHistogram {
 	return s.h.ToFloat(nil)
 }
 
-func (s hSample) Type() chunkenc.ValueType {
+func (hSample) Type() chunkenc.ValueType {
 	return chunkenc.ValHistogram
 }
 
+func (s hSample) Copy() chunks.Sample {
+	return hSample{st: s.st, t: s.t, h: s.h.Copy()}
+}
+
 type fhSample struct {
-	t  int64
-	fh *histogram.FloatHistogram
+	st, t int64
+	fh    *histogram.FloatHistogram
 }
 
 func (s fhSample) T() int64 {
 	return s.t
 }
 
-func (s fhSample) F() float64 {
+func (s fhSample) ST() int64 {
+	return s.st
+}
+
+func (fhSample) F() float64 {
 	panic("F() called for fhSample")
 }
 
-func (s fhSample) H() *histogram.Histogram {
+func (fhSample) H() *histogram.Histogram {
 	panic("H() called for fhSample")
 }
 
@@ -233,17 +261,21 @@ func (s fhSample) FH() *histogram.FloatHistogram {
 	return s.fh
 }
 
-func (s fhSample) Type() chunkenc.ValueType {
+func (fhSample) Type() chunkenc.ValueType {
 	return chunkenc.ValFloatHistogram
+}
+
+func (s fhSample) Copy() chunks.Sample {
+	return fhSample{st: s.st, t: s.t, fh: s.fh.Copy()}
 }
 
 type sampleRing struct {
 	delta int64
 
 	// Lookback buffers. We use iBuf for mixed samples, but one of the three
-	// concrete ones for homogenous samples. (Only one of the four bufs is
+	// concrete ones for homogeneous samples. (Only one of the four bufs is
 	// allowed to be populated!) This avoids the overhead of the interface
-	// wrapper for the happy (and by far most common) case of homogenous
+	// wrapper for the happy (and by far most common) case of homogeneous
 	// samples.
 	iBuf     []chunks.Sample
 	fBuf     []fSample
@@ -268,7 +300,7 @@ const (
 	fhBuf
 )
 
-// newSampleRing creates a new sampleRing. If you do not know the prefereed
+// newSampleRing creates a new sampleRing. If you do not know the preferred
 // value type yet, use a size of 0 (in which case the provided typ doesn't
 // matter). On the first add, a buffer of size 16 will be allocated with the
 // preferred type being the type of the first added sample.
@@ -317,6 +349,7 @@ func (r *sampleRing) iterator() *SampleRingIterator {
 type SampleRingIterator struct {
 	r  *sampleRing
 	i  int
+	st int64
 	t  int64
 	f  float64
 	h  *histogram.Histogram
@@ -338,21 +371,25 @@ func (it *SampleRingIterator) Next() chunkenc.ValueType {
 	switch it.r.bufInUse {
 	case fBuf:
 		s := it.r.atF(it.i)
+		it.st = s.st
 		it.t = s.t
 		it.f = s.f
 		return chunkenc.ValFloat
 	case hBuf:
 		s := it.r.atH(it.i)
+		it.st = s.st
 		it.t = s.t
 		it.h = s.h
 		return chunkenc.ValHistogram
 	case fhBuf:
 		s := it.r.atFH(it.i)
+		it.st = s.st
 		it.t = s.t
 		it.fh = s.fh
 		return chunkenc.ValFloatHistogram
 	}
 	s := it.r.at(it.i)
+	it.st = s.ST()
 	it.t = s.T()
 	switch s.Type() {
 	case chunkenc.ValHistogram:
@@ -396,6 +433,10 @@ func (it *SampleRingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (in
 
 func (it *SampleRingIterator) AtT() int64 {
 	return it.t
+}
+
+func (it *SampleRingIterator) AtST() int64 {
+	return it.st
 }
 
 func (r *sampleRing) at(i int) chunks.Sample {
@@ -535,55 +576,8 @@ func (r *sampleRing) addFH(s fhSample) {
 	}
 }
 
-// genericAdd is a generic implementation of adding a chunks.Sample
-// implementation to a buffer of a sample ring. However, the Go compiler
-// currently (go1.20) decides to not expand the code during compile time, but
-// creates dynamic code to handle the different types. That has a significant
-// overhead during runtime, noticeable in PromQL benchmarks. For example, the
-// "RangeQuery/expr=rate(a_hundred[1d]),steps=.*" benchmarks show about 7%
-// longer runtime, 9% higher allocation size, and 10% more allocations.
-// Therefore, genericAdd has been manually implemented for all the types
-// (addSample, addF, addH, addFH) below.
-//
-// func genericAdd[T chunks.Sample](s T, buf []T, r *sampleRing) []T {
-// 	l := len(buf)
-// 	// Grow the ring buffer if it fits no more elements.
-// 	if l == 0 {
-// 		buf = make([]T, 16)
-// 		l = 16
-// 	}
-// 	if l == r.l {
-// 		newBuf := make([]T, 2*l)
-// 		copy(newBuf[l+r.f:], buf[r.f:])
-// 		copy(newBuf, buf[:r.f])
-//
-// 		buf = newBuf
-// 		r.i = r.f
-// 		r.f += l
-// 		l = 2 * l
-// 	} else {
-// 		r.i++
-// 		if r.i >= l {
-// 			r.i -= l
-// 		}
-// 	}
-//
-// 	buf[r.i] = s
-// 	r.l++
-//
-// 	// Free head of the buffer of samples that just fell out of the range.
-// 	tmin := s.T() - r.delta
-// 	for buf[r.f].T() < tmin {
-// 		r.f++
-// 		if r.f >= l {
-// 			r.f -= l
-// 		}
-// 		r.l--
-// 	}
-// 	return buf
-// }
-
-// addSample is a handcoded specialization of genericAdd (see above).
+// addSample adds a sample to a buffer of chunks.Sample, i.e. the general case
+// using an interface as the type.
 func addSample(s chunks.Sample, buf []chunks.Sample, r *sampleRing) []chunks.Sample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.
@@ -607,7 +601,7 @@ func addSample(s chunks.Sample, buf []chunks.Sample, r *sampleRing) []chunks.Sam
 		}
 	}
 
-	buf[r.i] = s
+	buf[r.i] = s.Copy()
 	r.l++
 
 	// Free head of the buffer of samples that just fell out of the range.
@@ -622,7 +616,7 @@ func addSample(s chunks.Sample, buf []chunks.Sample, r *sampleRing) []chunks.Sam
 	return buf
 }
 
-// addF is a handcoded specialization of genericAdd (see above).
+// addF adds an fSample to a (specialized) fSample buffer.
 func addF(s fSample, buf []fSample, r *sampleRing) []fSample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.
@@ -661,7 +655,7 @@ func addF(s fSample, buf []fSample, r *sampleRing) []fSample {
 	return buf
 }
 
-// addH is a handcoded specialization of genericAdd (see above).
+// addH adds an hSample to a (specialized) hSample buffer.
 func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.
@@ -686,6 +680,7 @@ func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
 	}
 
 	buf[r.i].t = s.t
+	buf[r.i].st = s.st
 	if buf[r.i].h == nil {
 		buf[r.i].h = s.h.Copy()
 	} else {
@@ -705,7 +700,7 @@ func addH(s hSample, buf []hSample, r *sampleRing) []hSample {
 	return buf
 }
 
-// addFH is a handcoded specialization of genericAdd (see above).
+// addFH adds an fhSample to a (specialized) fhSample buffer.
 func addFH(s fhSample, buf []fhSample, r *sampleRing) []fhSample {
 	l := len(buf)
 	// Grow the ring buffer if it fits no more elements.
@@ -730,6 +725,7 @@ func addFH(s fhSample, buf []fhSample, r *sampleRing) []fhSample {
 	}
 
 	buf[r.i].t = s.t
+	buf[r.i].st = s.st
 	if buf[r.i].fh == nil {
 		buf[r.i].fh = s.fh.Copy()
 	} else {

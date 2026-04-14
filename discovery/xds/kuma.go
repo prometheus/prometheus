@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,15 +14,16 @@
 package xds
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -64,7 +65,7 @@ func (*KumaSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discove
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultKumaSDConfig
 	type plainKumaConf KumaSDConfig
 	err := unmarshal((*plainKumaConf)(c))
@@ -72,7 +73,7 @@ func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if len(c.Server) == 0 {
+	if c.Server == "" {
 		return fmt.Errorf("kuma SD server must not be empty: %s", c.Server)
 	}
 	parsedURL, err := url.Parse(c.Server)
@@ -80,14 +81,14 @@ func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if len(parsedURL.Scheme) == 0 || len(parsedURL.Host) == 0 {
+	if parsedURL.Scheme == "" || parsedURL.Host == "" {
 		return fmt.Errorf("kuma SD server must not be empty and have a scheme: %s", c.Server)
 	}
 
 	return c.HTTPClientConfig.Validate()
 }
 
-func (c *KumaSDConfig) Name() string {
+func (*KumaSDConfig) Name() string {
 	return "kuma"
 }
 
@@ -99,7 +100,7 @@ func (c *KumaSDConfig) SetDirectory(dir string) {
 func (c *KumaSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	logger := opts.Logger
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	return NewKumaHTTPDiscovery(c, logger, opts.Metrics)
@@ -158,10 +159,10 @@ func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]model.L
 	return targets, nil
 }
 
-func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (discovery.Discoverer, error) {
+func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (discovery.Discoverer, error) {
 	m, ok := metrics.(*xdsMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	// Default to "prometheus" if hostname is unavailable.
@@ -170,7 +171,7 @@ func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger, metrics discove
 		var err error
 		clientID, err = osutil.GetFQDN()
 		if err != nil {
-			level.Debug(logger).Log("msg", "error getting FQDN", "err", err)
+			logger.Debug("error getting FQDN", "err", err)
 			clientID = "prometheus"
 		}
 	}

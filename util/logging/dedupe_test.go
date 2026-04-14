@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,34 +14,101 @@
 package logging
 
 import (
+	"bytes"
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 )
 
-type counter int
-
-func (c *counter) Log(...interface{}) error {
-	(*c)++
-	return nil
-}
-
 func TestDedupe(t *testing.T) {
-	var c counter
-	d := Dedupe(&c, 100*time.Millisecond)
+	var buf bytes.Buffer
+	d := Dedupe(promslog.New(&promslog.Config{Writer: &buf}), 100*time.Millisecond)
+	dlog := slog.New(d)
 	defer d.Stop()
 
 	// Log 10 times quickly, ensure they are deduped.
-	for i := 0; i < 10; i++ {
-		err := d.Log("msg", "hello")
-		require.NoError(t, err)
+	for range 10 {
+		dlog.Info("test", "hello", "world")
 	}
-	require.Equal(t, 1, int(c))
+
+	// Trim empty lines
+	lines := []string{}
+	for line := range strings.SplitSeq(buf.String(), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	require.Len(t, lines, 1)
 
 	// Wait, then log again, make sure it is logged.
 	time.Sleep(200 * time.Millisecond)
-	err := d.Log("msg", "hello")
-	require.NoError(t, err)
-	require.Equal(t, 2, int(c))
+	dlog.Info("test", "hello", "world")
+	// Trim empty lines
+	lines = []string{}
+	for line := range strings.SplitSeq(buf.String(), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	require.Len(t, lines, 2)
+}
+
+func TestDedupeConcurrent(t *testing.T) {
+	d := Dedupe(promslog.New(&promslog.Config{}), 250*time.Millisecond)
+	dlog := slog.New(d)
+	defer d.Stop()
+
+	concurrentWriteFunc := func() {
+		go func() {
+			dlog1 := dlog.With("writer", 1)
+			for range 10 {
+				dlog1.With("foo", "bar").Info("test", "hello", "world")
+			}
+		}()
+
+		go func() {
+			dlog2 := dlog.With("writer", 2)
+			for range 10 {
+				dlog2.With("foo", "bar").Info("test", "hello", "world")
+			}
+		}()
+	}
+
+	require.NotPanics(t, func() { concurrentWriteFunc() })
+}
+
+type fakeWarningLogger struct {
+	logs []string
+}
+
+func (fl *fakeWarningLogger) HandleWarningHeaderWithContext(_ context.Context, _ int, _, message string) {
+	fl.logs = append(fl.logs, message)
+}
+
+func TestDedupeDeprecationWarningLogger(t *testing.T) {
+	wl := DedupDeprecationWarningLogger{
+		logger: &fakeWarningLogger{},
+		logged: make(map[string]struct{}),
+	}
+
+	deprecationMessage := "v1 Endpoints is deprecated in v1.33+; use [discovery.k8s.io/v1](http://discovery.k8s.io/v1) EndpointSlice"
+	for range 10 {
+		wl.HandleWarningHeaderWithContext(context.Background(), 299, "", deprecationMessage)
+	}
+	require.Len(t, wl.logger.(*fakeWarningLogger).logs, 1)
+	require.Len(t, wl.logged, 1)
+	require.Equal(t, wl.logger.(*fakeWarningLogger).logs[0], deprecationMessage)
+
+	for i := range 10 {
+		wl.HandleWarningHeaderWithContext(context.Background(), 299, "", fmt.Sprintf("some other warning %d", i+1))
+	}
+	require.Len(t, wl.logger.(*fakeWarningLogger).logs, 11)
+	require.Len(t, wl.logged, 1)
+	require.Equal(t, "some other warning 10", wl.logger.(*fakeWarningLogger).logs[10])
 }

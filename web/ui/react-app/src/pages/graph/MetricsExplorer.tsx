@@ -2,7 +2,7 @@ import React, { Component, ChangeEvent } from 'react';
 import { Modal, ModalBody, ModalHeader, Input } from 'reactstrap';
 import { Fuzzy, FuzzyResult } from '@nexucis/fuzzy';
 
-const fuz = new Fuzzy({ pre: '<strong>', post: '</strong>', shouldSort: true });
+const fuz = new Fuzzy({ pre: '<strong>', post: '</strong>', shouldSort: true, escapeHTML: true });
 
 interface MetricsExplorerProps {
   show: boolean;

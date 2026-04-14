@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -34,7 +34,7 @@ type Resource struct {
 	Parameters  Parameters `json:"parameters"`
 }
 
-type Parameters map[string]interface{}
+type Parameters map[string]any
 
 func (p *Parameters) toLabels() model.LabelSet {
 	labels := model.LabelSet{}
@@ -52,7 +52,7 @@ func (p *Parameters) toLabels() model.LabelSet {
 			labelValue = strconv.FormatFloat(value, 'g', -1, 64)
 		case []string:
 			labelValue = separator + strings.Join(value, separator) + separator
-		case []interface{}:
+		case []any:
 			if len(value) == 0 {
 				continue
 			}
@@ -72,7 +72,7 @@ func (p *Parameters) toLabels() model.LabelSet {
 				}
 			}
 			labelValue = strings.Join(values, separator)
-		case map[string]interface{}:
+		case map[string]any:
 			subParameter := Parameters(value)
 			prefix := strutil.SanitizeLabelName(k + "_")
 			for subk, subv := range subParameter.toLabels() {

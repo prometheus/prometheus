@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -47,7 +47,11 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 	defer metrics.Unregister()
 	defer refreshMetrics.Unregister()
 
-	md, err := NewDiscovery(&conf, nil, metrics)
+	md, err := NewDiscovery(&conf, discovery.DiscovererOptions{
+		Logger:  nil,
+		Metrics: metrics,
+		SetName: "eureka",
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +62,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 func TestEurekaSDHandleError(t *testing.T) {
 	var (
 		errTesting  = "non 2xx status '500' response during eureka service discovery"
-		respHandler = func(w http.ResponseWriter, r *http.Request) {
+		respHandler = func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/xml")
 			io.WriteString(w, ``)
@@ -76,7 +80,7 @@ func TestEurekaSDEmptyList(t *testing.T) {
 <versions__delta>1</versions__delta>
 <apps__hashcode/>
 </applications>`
-		respHandler = func(w http.ResponseWriter, r *http.Request) {
+		respHandler = func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "application/xml")
 			io.WriteString(w, appsXML)
@@ -235,7 +239,7 @@ func TestEurekaSDSendGroup(t *testing.T) {
     </instance>
   </application>
 </applications>`
-		respHandler = func(w http.ResponseWriter, r *http.Request) {
+		respHandler = func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "application/xml")
 			io.WriteString(w, appsXML)

@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -41,7 +41,7 @@ func NewRoundTripper(cfg *Config, next http.RoundTripper) (http.RoundTripper, er
 		option.WithScopes(scopes),
 	}
 	if cfg.CredentialsFile != "" {
-		opts = append(opts, option.WithCredentialsFile(cfg.CredentialsFile))
+		opts = append(opts, option.WithAuthCredentialsFile(option.ServiceAccount, cfg.CredentialsFile))
 	} else {
 		creds, err := google.FindDefaultCredentials(ctx, scopes)
 		if err != nil {

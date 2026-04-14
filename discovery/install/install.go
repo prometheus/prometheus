@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -33,9 +33,11 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/moby"         // register moby
 	_ "github.com/prometheus/prometheus/discovery/nomad"        // register nomad
 	_ "github.com/prometheus/prometheus/discovery/openstack"    // register openstack
+	_ "github.com/prometheus/prometheus/discovery/outscale"     // register outscale
 	_ "github.com/prometheus/prometheus/discovery/ovhcloud"     // register ovhcloud
 	_ "github.com/prometheus/prometheus/discovery/puppetdb"     // register puppetdb
 	_ "github.com/prometheus/prometheus/discovery/scaleway"     // register scaleway
+	_ "github.com/prometheus/prometheus/discovery/stackit"      // register stackit
 	_ "github.com/prometheus/prometheus/discovery/triton"       // register triton
 	_ "github.com/prometheus/prometheus/discovery/uyuni"        // register uyuni
 	_ "github.com/prometheus/prometheus/discovery/vultr"        // register vultr

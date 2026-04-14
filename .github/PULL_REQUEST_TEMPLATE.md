@@ -1,9 +1,5 @@
 <!--
-    Please give your PR a title in the form "area: short description".  For example "tsdb: reduce disk usage by 95%"
-
-    If your PR is to fix an issue, put "Fixes #issue-number" in the description.
-
-    Don't forget!
+    - Please give your PR a title in the form "area: short description".  For example "tsdb: reduce disk usage by 95%"
 
     - Please sign CNCF's Developer Certificate of Origin and sign-off your commits by adding the -s / --signoff flag to `git commit`. See https://github.com/apps/dco for more information.
 
@@ -17,3 +13,29 @@
 
     - All comments should start with a capital letter and end with a full stop.
  -->
+
+#### Which issue(s) does the PR fix:
+<!--
+If it applies.
+Automatically closes linked issue when PR is merged.
+Usage: `Fixes #<issue number>`, or `Fixes (paste link of issue)`.
+More at https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword
+-->
+
+#### Release notes for end users (**ALL** commits must be considered).
+*Reviewers should verify clarity and quality.*
+
+<!--
+Write NONE only if there is no user-facing change.
+
+Otherwise use one of: [FEATURE] [ENHANCEMENT] [PERF] [BUGFIX] [SECURITY] [CHANGE]
+Following the pattern `[TYPE] Component: description.`
+
+Example: [FEATURE] API: Add `/api/v1/features` endpoint.
+
+Refer to the existing CHANGELOG for inspiration:  https://github.com/prometheus/
+prometheus/blob/main/CHANGELOG.md
+-->
+```release-notes
+
+```

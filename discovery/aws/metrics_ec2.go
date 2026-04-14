@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -24,9 +24,9 @@ type ec2Metrics struct {
 var _ discovery.DiscovererMetrics = (*ec2Metrics)(nil)
 
 // Register implements discovery.DiscovererMetrics.
-func (m *ec2Metrics) Register() error {
+func (*ec2Metrics) Register() error {
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-func (m *ec2Metrics) Unregister() {}
+func (*ec2Metrics) Unregister() {}

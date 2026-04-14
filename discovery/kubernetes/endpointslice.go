@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,17 +16,15 @@ package kubernetes
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/discovery/v1"
-	"k8s.io/api/discovery/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
@@ -34,27 +32,36 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
+const serviceIndex = "service"
+
 // EndpointSlice discovers new endpoint targets.
 type EndpointSlice struct {
-	logger log.Logger
+	logger *slog.Logger
 
-	endpointSliceInf cache.SharedIndexInformer
-	serviceInf       cache.SharedInformer
-	podInf           cache.SharedInformer
-	nodeInf          cache.SharedInformer
-	withNodeMetadata bool
+	endpointSliceInf       cache.SharedIndexInformer
+	serviceInf             cache.SharedInformer
+	podInf                 cache.SharedInformer
+	nodeInf                cache.SharedInformer
+	withNodeMetadata       bool
+	namespaceInf           cache.SharedInformer
+	withNamespaceMetadata  bool
+	replicaSetInf          cache.SharedInformer
+	withDeploymentMetadata bool
+	jobInf                 cache.SharedInformer
+	withJobMetadata        bool
+	withCronJobMetadata    bool
 
 	podStore           cache.Store
 	endpointSliceStore cache.Store
 	serviceStore       cache.Store
 
-	queue *workqueue.Type
+	queue *workqueue.Typed[string]
 }
 
 // NewEndpointSlice returns a new endpointslice discovery.
-func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer, eventCount *prometheus.CounterVec) *EndpointSlice {
+func NewEndpointSlice(l *slog.Logger, eps cache.SharedIndexInformer, svc, pod, node, namespace, rs, job cache.SharedInformer, withDeploymentMetadata, withJobMetadata, withCronJobMetadata bool, eventCount *prometheus.CounterVec) *EndpointSlice {
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
 
 	epslAddCount := eventCount.WithLabelValues(RoleEndpointSlice.String(), MetricLabelRoleAdd)
@@ -66,92 +73,114 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 	svcDeleteCount := eventCount.WithLabelValues(RoleService.String(), MetricLabelRoleDelete)
 
 	e := &EndpointSlice{
-		logger:             l,
-		endpointSliceInf:   eps,
-		endpointSliceStore: eps.GetStore(),
-		serviceInf:         svc,
-		serviceStore:       svc.GetStore(),
-		podInf:             pod,
-		podStore:           pod.GetStore(),
-		nodeInf:            node,
-		withNodeMetadata:   node != nil,
-		queue:              workqueue.NewNamed(RoleEndpointSlice.String()),
+		logger:                 l,
+		endpointSliceInf:       eps,
+		endpointSliceStore:     eps.GetStore(),
+		serviceInf:             svc,
+		serviceStore:           svc.GetStore(),
+		podInf:                 pod,
+		podStore:               pod.GetStore(),
+		nodeInf:                node,
+		withNodeMetadata:       node != nil,
+		namespaceInf:           namespace,
+		withNamespaceMetadata:  namespace != nil,
+		replicaSetInf:          rs,
+		withDeploymentMetadata: withDeploymentMetadata,
+		jobInf:                 job,
+		withJobMetadata:        withJobMetadata,
+		withCronJobMetadata:    withCronJobMetadata,
+		queue: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{
+			Name: RoleEndpointSlice.String(),
+		}),
 	}
 
 	_, err := e.endpointSliceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
+		AddFunc: func(o any) {
 			epslAddCount.Inc()
 			e.enqueue(o)
 		},
-		UpdateFunc: func(_, o interface{}) {
+		UpdateFunc: func(_, o any) {
 			epslUpdateCount.Inc()
 			e.enqueue(o)
 		},
-		DeleteFunc: func(o interface{}) {
+		DeleteFunc: func(o any) {
 			epslDeleteCount.Inc()
 			e.enqueue(o)
 		},
 	})
 	if err != nil {
-		level.Error(l).Log("msg", "Error adding endpoint slices event handler.", "err", err)
+		l.Error("Error adding endpoint slices event handler.", "err", err)
 	}
 
-	serviceUpdate := func(o interface{}) {
+	serviceUpdate := func(o any) {
 		svc, err := convertToService(o)
 		if err != nil {
-			level.Error(e.logger).Log("msg", "converting to Service object failed", "err", err)
+			e.logger.Error("converting to Service object failed", "err", err)
 			return
 		}
 
-		// TODO(brancz): use cache.Indexer to index endpoints by
-		// disv1beta1.LabelServiceName so this operation doesn't have to
-		// iterate over all endpoint objects.
-		for _, obj := range e.endpointSliceStore.List() {
-			esa, err := e.getEndpointSliceAdaptor(obj)
-			if err != nil {
-				level.Error(e.logger).Log("msg", "converting to EndpointSlice object failed", "err", err)
-				continue
-			}
-			if lv, exists := esa.labels()[esa.labelServiceName()]; exists && lv == svc.Name {
-				e.enqueue(esa.get())
-			}
+		endpointSlices, err := e.endpointSliceInf.GetIndexer().ByIndex(serviceIndex, namespacedName(svc.Namespace, svc.Name))
+		if err != nil {
+			e.logger.Error("getting endpoint slices by service name failed", "err", err)
+			return
+		}
+
+		for _, endpointSlice := range endpointSlices {
+			e.enqueue(endpointSlice)
 		}
 	}
 	_, err = e.serviceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(o interface{}) {
+		AddFunc: func(o any) {
 			svcAddCount.Inc()
 			serviceUpdate(o)
 		},
-		UpdateFunc: func(_, o interface{}) {
+		UpdateFunc: func(_, o any) {
 			svcUpdateCount.Inc()
 			serviceUpdate(o)
 		},
-		DeleteFunc: func(o interface{}) {
+		DeleteFunc: func(o any) {
 			svcDeleteCount.Inc()
 			serviceUpdate(o)
 		},
 	})
 	if err != nil {
-		level.Error(l).Log("msg", "Error adding services event handler.", "err", err)
+		l.Error("Error adding services event handler.", "err", err)
 	}
 
 	if e.withNodeMetadata {
 		_, err = e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(o interface{}) {
+			AddFunc: func(o any) {
 				node := o.(*apiv1.Node)
 				e.enqueueNode(node.Name)
 			},
-			UpdateFunc: func(_, o interface{}) {
+			UpdateFunc: func(_, o any) {
 				node := o.(*apiv1.Node)
 				e.enqueueNode(node.Name)
 			},
-			DeleteFunc: func(o interface{}) {
-				node := o.(*apiv1.Node)
-				e.enqueueNode(node.Name)
+			DeleteFunc: func(o any) {
+				nodeName, err := nodeName(o)
+				if err != nil {
+					l.Error("Error getting Node name", "err", err)
+				}
+				e.enqueueNode(nodeName)
 			},
 		})
 		if err != nil {
-			level.Error(l).Log("msg", "Error adding nodes event handler.", "err", err)
+			l.Error("Error adding nodes event handler.", "err", err)
+		}
+	}
+
+	if e.withNamespaceMetadata {
+		_, err = e.namespaceInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(_, o any) {
+				namespace := o.(*apiv1.Namespace)
+				e.enqueueNamespace(namespace.Name)
+			},
+			// Creation and deletion will trigger events for the change handlers of the resources within the namespace.
+			// No need to have additional handlers for them here.
+		})
+		if err != nil {
+			l.Error("Error adding namespaces event handler.", "err", err)
 		}
 	}
 
@@ -161,7 +190,7 @@ func NewEndpointSlice(l log.Logger, eps cache.SharedIndexInformer, svc, pod, nod
 func (e *EndpointSlice) enqueueNode(nodeName string) {
 	endpoints, err := e.endpointSliceInf.GetIndexer().ByIndex(nodeIndex, nodeName)
 	if err != nil {
-		level.Error(e.logger).Log("msg", "Error getting endpoints for node", "node", nodeName, "err", err)
+		e.logger.Error("Error getting endpoints for node", "node", nodeName, "err", err)
 		return
 	}
 
@@ -170,7 +199,19 @@ func (e *EndpointSlice) enqueueNode(nodeName string) {
 	}
 }
 
-func (e *EndpointSlice) enqueue(obj interface{}) {
+func (e *EndpointSlice) enqueueNamespace(namespace string) {
+	endpoints, err := e.endpointSliceInf.GetIndexer().ByIndex(cache.NamespaceIndex, namespace)
+	if err != nil {
+		e.logger.Error("Error getting endpoints in namespace", "namespace", namespace, "err", err)
+		return
+	}
+
+	for _, endpoint := range endpoints {
+		e.enqueue(endpoint)
+	}
+}
+
+func (e *EndpointSlice) enqueue(obj any) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		return
@@ -187,9 +228,12 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 	if e.withNodeMetadata {
 		cacheSyncs = append(cacheSyncs, e.nodeInf.HasSynced)
 	}
+	if e.withNamespaceMetadata {
+		cacheSyncs = append(cacheSyncs, e.namespaceInf.HasSynced)
+	}
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
-			level.Error(e.logger).Log("msg", "endpointslice informer unable to sync cache")
+			e.logger.Error("endpointslice informer unable to sync cache")
 		}
 		return
 	}
@@ -204,22 +248,21 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 }
 
 func (e *EndpointSlice) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
-	keyObj, quit := e.queue.Get()
+	key, quit := e.queue.Get()
 	if quit {
 		return false
 	}
-	defer e.queue.Done(keyObj)
-	key := keyObj.(string)
+	defer e.queue.Done(key)
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		level.Error(e.logger).Log("msg", "splitting key failed", "key", key)
+		e.logger.Error("splitting key failed", "key", key)
 		return true
 	}
 
 	o, exists, err := e.endpointSliceStore.GetByKey(key)
 	if err != nil {
-		level.Error(e.logger).Log("msg", "getting object from store failed", "key", key)
+		e.logger.Error("getting object from store failed", "key", key)
 		return true
 	}
 	if !exists {
@@ -227,29 +270,17 @@ func (e *EndpointSlice) process(ctx context.Context, ch chan<- []*targetgroup.Gr
 		return true
 	}
 
-	esa, err := e.getEndpointSliceAdaptor(o)
-	if err != nil {
-		level.Error(e.logger).Log("msg", "converting to EndpointSlice object failed", "err", err)
-		return true
+	if es, ok := o.(*v1.EndpointSlice); ok {
+		send(ctx, ch, e.buildEndpointSlice(*es))
+	} else {
+		e.logger.Error("received unexpected object", "object", o)
+		return false
 	}
-
-	send(ctx, ch, e.buildEndpointSlice(esa))
 	return true
 }
 
-func (e *EndpointSlice) getEndpointSliceAdaptor(o interface{}) (endpointSliceAdaptor, error) {
-	switch endpointSlice := o.(type) {
-	case *v1.EndpointSlice:
-		return newEndpointSliceAdaptorFromV1(endpointSlice), nil
-	case *v1beta1.EndpointSlice:
-		return newEndpointSliceAdaptorFromV1beta1(endpointSlice), nil
-	default:
-		return nil, fmt.Errorf("received unexpected object: %v", o)
-	}
-}
-
-func endpointSliceSource(ep endpointSliceAdaptor) string {
-	return endpointSliceSourceFromNamespaceAndName(ep.namespace(), ep.name())
+func endpointSliceSource(ep v1.EndpointSlice) string {
+	return endpointSliceSourceFromNamespaceAndName(ep.Namespace, ep.Name)
 }
 
 func endpointSliceSourceFromNamespaceAndName(namespace, name string) string {
@@ -274,95 +305,103 @@ const (
 	endpointSliceEndpointTopologyLabelPresentPrefix = metaLabelPrefix + "endpointslice_endpoint_topology_present_"
 )
 
-func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgroup.Group {
+func (e *EndpointSlice) buildEndpointSlice(eps v1.EndpointSlice) *targetgroup.Group {
 	tg := &targetgroup.Group{
 		Source: endpointSliceSource(eps),
 	}
 	tg.Labels = model.LabelSet{
-		namespaceLabel:                lv(eps.namespace()),
-		endpointSliceAddressTypeLabel: lv(eps.addressType()),
+		namespaceLabel:                lv(eps.Namespace),
+		endpointSliceAddressTypeLabel: lv(string(eps.AddressType)),
 	}
 
-	addObjectMetaLabels(tg.Labels, eps.getObjectMeta(), RoleEndpointSlice)
+	addObjectMetaLabels(tg.Labels, eps.ObjectMeta, RoleEndpointSlice)
 
-	e.addServiceLabels(eps, tg)
+	svc := e.addServiceLabels(eps, tg)
+
+	if e.withNamespaceMetadata {
+		tg.Labels = addNamespaceLabels(tg.Labels, e.namespaceInf, e.logger, eps.Namespace)
+	}
+
+	if nonPrimaryIPFamilySlice(svc, eps) {
+		return tg
+	}
 
 	type podEntry struct {
 		pod          *apiv1.Pod
-		servicePorts []endpointSlicePortAdaptor
+		servicePorts []v1.EndpointPort
 	}
 	seenPods := map[string]*podEntry{}
 
-	add := func(addr string, ep endpointSliceEndpointAdaptor, port endpointSlicePortAdaptor) {
+	add := func(addr string, ep v1.Endpoint, port v1.EndpointPort) {
 		a := addr
-		if port.port() != nil {
-			a = net.JoinHostPort(addr, strconv.FormatUint(uint64(*port.port()), 10))
+		if port.Port != nil {
+			a = net.JoinHostPort(addr, strconv.FormatUint(uint64(*port.Port), 10))
 		}
 
 		target := model.LabelSet{
 			model.AddressLabel: lv(a),
 		}
 
-		if port.name() != nil {
-			target[endpointSlicePortNameLabel] = lv(*port.name())
+		if port.Name != nil {
+			target[endpointSlicePortNameLabel] = lv(*port.Name)
 		}
 
-		if port.protocol() != nil {
-			target[endpointSlicePortProtocolLabel] = lv(*port.protocol())
+		if port.Protocol != nil {
+			target[endpointSlicePortProtocolLabel] = lv(string(*port.Protocol))
 		}
 
-		if port.port() != nil {
-			target[endpointSlicePortLabel] = lv(strconv.FormatUint(uint64(*port.port()), 10))
+		if port.Port != nil {
+			target[endpointSlicePortLabel] = lv(strconv.FormatUint(uint64(*port.Port), 10))
 		}
 
-		if port.appProtocol() != nil {
-			target[endpointSlicePortAppProtocol] = lv(*port.appProtocol())
+		if port.AppProtocol != nil {
+			target[endpointSlicePortAppProtocol] = lv(*port.AppProtocol)
 		}
 
-		if ep.conditions().ready() != nil {
-			target[endpointSliceEndpointConditionsReadyLabel] = lv(strconv.FormatBool(*ep.conditions().ready()))
+		if ep.Conditions.Ready != nil {
+			target[endpointSliceEndpointConditionsReadyLabel] = lv(strconv.FormatBool(*ep.Conditions.Ready))
 		}
 
-		if ep.conditions().serving() != nil {
-			target[endpointSliceEndpointConditionsServingLabel] = lv(strconv.FormatBool(*ep.conditions().serving()))
+		if ep.Conditions.Serving != nil {
+			target[endpointSliceEndpointConditionsServingLabel] = lv(strconv.FormatBool(*ep.Conditions.Serving))
 		}
 
-		if ep.conditions().terminating() != nil {
-			target[endpointSliceEndpointConditionsTerminatingLabel] = lv(strconv.FormatBool(*ep.conditions().terminating()))
+		if ep.Conditions.Terminating != nil {
+			target[endpointSliceEndpointConditionsTerminatingLabel] = lv(strconv.FormatBool(*ep.Conditions.Terminating))
 		}
 
-		if ep.hostname() != nil {
-			target[endpointSliceEndpointHostnameLabel] = lv(*ep.hostname())
+		if ep.Hostname != nil {
+			target[endpointSliceEndpointHostnameLabel] = lv(*ep.Hostname)
 		}
 
-		if ep.targetRef() != nil {
-			target[model.LabelName(endpointSliceAddressTargetKindLabel)] = lv(ep.targetRef().Kind)
-			target[model.LabelName(endpointSliceAddressTargetNameLabel)] = lv(ep.targetRef().Name)
+		if ep.TargetRef != nil {
+			target[model.LabelName(endpointSliceAddressTargetKindLabel)] = lv(ep.TargetRef.Kind)
+			target[model.LabelName(endpointSliceAddressTargetNameLabel)] = lv(ep.TargetRef.Name)
 		}
 
-		if ep.nodename() != nil {
-			target[endpointSliceEndpointNodenameLabel] = lv(*ep.nodename())
+		if ep.NodeName != nil {
+			target[endpointSliceEndpointNodenameLabel] = lv(*ep.NodeName)
 		}
 
-		if ep.zone() != nil {
-			target[model.LabelName(endpointSliceEndpointZoneLabel)] = lv(*ep.zone())
+		if ep.Zone != nil {
+			target[model.LabelName(endpointSliceEndpointZoneLabel)] = lv(*ep.Zone)
 		}
 
-		for k, v := range ep.topology() {
+		for k, v := range ep.DeprecatedTopology {
 			ln := strutil.SanitizeLabelName(k)
 			target[model.LabelName(endpointSliceEndpointTopologyLabelPrefix+ln)] = lv(v)
 			target[model.LabelName(endpointSliceEndpointTopologyLabelPresentPrefix+ln)] = presentValue
 		}
 
 		if e.withNodeMetadata {
-			if ep.targetRef() != nil && ep.targetRef().Kind == "Node" {
-				target = addNodeLabels(target, e.nodeInf, e.logger, &ep.targetRef().Name)
+			if ep.TargetRef != nil && ep.TargetRef.Kind == "Node" {
+				target = addNodeLabels(target, e.nodeInf, e.logger, &ep.TargetRef.Name)
 			} else {
-				target = addNodeLabels(target, e.nodeInf, e.logger, ep.nodename())
+				target = addNodeLabels(target, e.nodeInf, e.logger, ep.NodeName)
 			}
 		}
 
-		pod := e.resolvePodRef(ep.targetRef())
+		pod := e.resolvePodRef(ep.TargetRef)
 		if pod == nil {
 			// This target is not a Pod, so don't continue with Pod specific logic.
 			tg.Targets = append(tg.Targets, target)
@@ -377,22 +416,26 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		}
 
 		// Attach standard pod labels.
-		target = target.Merge(podLabels(pod))
+		target = target.Merge(podLabels(pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withJobMetadata, e.withCronJobMetadata))
 
 		// Attach potential container port labels matching the endpoint port.
-		for _, c := range pod.Spec.Containers {
+		containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
+		for i, c := range containers {
 			for _, cport := range c.Ports {
-				if port.port() == nil {
+				if port.Port == nil {
 					continue
 				}
-				if *port.port() == cport.ContainerPort {
-					ports := strconv.FormatUint(uint64(*port.port()), 10)
+
+				if *port.Port == cport.ContainerPort {
+					ports := strconv.FormatUint(uint64(*port.Port), 10)
+					isInit := i >= len(pod.Spec.Containers)
 
 					target[podContainerNameLabel] = lv(c.Name)
 					target[podContainerImageLabel] = lv(c.Image)
 					target[podContainerPortNameLabel] = lv(cport.Name)
 					target[podContainerPortNumberLabel] = lv(ports)
 					target[podContainerPortProtocolLabel] = lv(string(cport.Protocol))
+					target[podContainerIsInit] = lv(strconv.FormatBool(isInit))
 					break
 				}
 			}
@@ -404,9 +447,9 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 		tg.Targets = append(tg.Targets, target)
 	}
 
-	for _, ep := range eps.endpoints() {
-		for _, port := range eps.ports() {
-			for _, addr := range ep.addresses() {
+	for _, ep := range eps.Endpoints {
+		for _, port := range eps.Ports {
+			for _, addr := range ep.Addresses {
 				add(addr, ep, port)
 			}
 		}
@@ -416,18 +459,19 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 	// by one of the service endpoints, generate targets for them.
 	for _, pe := range seenPods {
 		// PodIP can be empty when a pod is starting or has been evicted.
-		if len(pe.pod.Status.PodIP) == 0 {
+		if pe.pod.Status.PodIP == "" {
 			continue
 		}
 
-		for _, c := range pe.pod.Spec.Containers {
+		containers := append(pe.pod.Spec.Containers, pe.pod.Spec.InitContainers...)
+		for i, c := range containers {
 			for _, cport := range c.Ports {
 				hasSeenPort := func() bool {
 					for _, eport := range pe.servicePorts {
-						if eport.port() == nil {
+						if eport.Port == nil {
 							continue
 						}
-						if cport.ContainerPort == *eport.port() {
+						if cport.ContainerPort == *eport.Port {
 							return true
 						}
 					}
@@ -440,6 +484,7 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 				a := net.JoinHostPort(pe.pod.Status.PodIP, strconv.FormatUint(uint64(cport.ContainerPort), 10))
 				ports := strconv.FormatUint(uint64(cport.ContainerPort), 10)
 
+				isInit := i >= len(pe.pod.Spec.Containers)
 				target := model.LabelSet{
 					model.AddressLabel:            lv(a),
 					podContainerNameLabel:         lv(c.Name),
@@ -447,8 +492,9 @@ func (e *EndpointSlice) buildEndpointSlice(eps endpointSliceAdaptor) *targetgrou
 					podContainerPortNameLabel:     lv(cport.Name),
 					podContainerPortNumberLabel:   lv(ports),
 					podContainerPortProtocolLabel: lv(string(cport.Protocol)),
+					podContainerIsInit:            lv(strconv.FormatBool(isInit)),
 				}
-				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod)))
+				tg.Targets = append(tg.Targets, target.Merge(podLabels(pe.pod, e.replicaSetInf, e.jobInf, e.withDeploymentMetadata, e.withJobMetadata, e.withCronJobMetadata)))
 			}
 		}
 	}
@@ -460,13 +506,10 @@ func (e *EndpointSlice) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	if ref == nil || ref.Kind != "Pod" {
 		return nil
 	}
-	p := &apiv1.Pod{}
-	p.Namespace = ref.Namespace
-	p.Name = ref.Name
 
-	obj, exists, err := e.podStore.Get(p)
+	obj, exists, err := e.podStore.GetByKey(namespacedName(ref.Namespace, ref.Name))
 	if err != nil {
-		level.Error(e.logger).Log("msg", "resolving pod ref failed", "err", err)
+		e.logger.Error("resolving pod ref failed", "err", err)
 		return nil
 	}
 	if !exists {
@@ -475,29 +518,57 @@ func (e *EndpointSlice) resolvePodRef(ref *apiv1.ObjectReference) *apiv1.Pod {
 	return obj.(*apiv1.Pod)
 }
 
-func (e *EndpointSlice) addServiceLabels(esa endpointSliceAdaptor, tg *targetgroup.Group) {
+// nonPrimaryIPFamilySlice reports whether eps is the secondary slice of a
+// dual-stack service, i.e. its address type does not match the service's
+// primary IP family. Targets from such slices would duplicate those of the
+// primary slice.
+func nonPrimaryIPFamilySlice(svc *apiv1.Service, eps v1.EndpointSlice) bool {
+	if svc == nil {
+		return false
+	}
+	policy := svc.Spec.IPFamilyPolicy
+	if policy == nil {
+		return false
+	}
+	if *policy != apiv1.IPFamilyPolicyPreferDualStack && *policy != apiv1.IPFamilyPolicyRequireDualStack {
+		return false
+	}
+	if len(svc.Spec.IPFamilies) == 0 {
+		return false
+	}
+
+	// NOTE: For ServiceSpec.IPFamilies:
+	// * A maximum of two values (dual-stack IPFamilies) are allowed.
+	// * The field is conditionally mutable: it allows for adding or
+	// removing a secondary IPFamily, but it does not allow changing the primary
+	// IPFamily of the service.
+	return string(eps.AddressType) != string(svc.Spec.IPFamilies[0])
+}
+
+func (e *EndpointSlice) addServiceLabels(esa v1.EndpointSlice, tg *targetgroup.Group) *apiv1.Service {
 	var (
-		svc   = &apiv1.Service{}
 		found bool
+		name  string
 	)
-	svc.Namespace = esa.namespace()
+	ns := esa.Namespace
 
 	// Every EndpointSlice object has the Service they belong to in the
 	// kubernetes.io/service-name label.
-	svc.Name, found = esa.labels()[esa.labelServiceName()]
+	name, found = esa.Labels[v1.LabelServiceName]
 	if !found {
-		return
+		return nil
 	}
 
-	obj, exists, err := e.serviceStore.Get(svc)
+	obj, exists, err := e.serviceStore.GetByKey(namespacedName(ns, name))
 	if err != nil {
-		level.Error(e.logger).Log("msg", "retrieving service failed", "err", err)
-		return
+		e.logger.Error("retrieving service failed", "err", err)
+		return nil
 	}
 	if !exists {
-		return
+		return nil
 	}
-	svc = obj.(*apiv1.Service)
+	svc := obj.(*apiv1.Service)
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
+	return svc
 }

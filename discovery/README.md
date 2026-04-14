@@ -50,7 +50,7 @@ file for use with `file_sd`.
 The general principle with SD is to extract all the potentially useful
 information we can out of the SD, and let the user choose what they need of it
 using
-[relabelling](https://prometheus.io/docs/operating/configuration/#<relabel_config>).
+[relabelling](https://prometheus.io/docs/operating/configuration/#relabel_config).
 This information is generally termed metadata.
 
 Metadata is exposed as a set of key/value pairs (labels) per target. The keys
@@ -233,7 +233,7 @@ type Config interface {
 }
 
 type DiscovererOptions struct {
-	Logger log.Logger
+	Logger *slog.Logger
 
 	// A registerer for the Discoverer's metrics.
 	Registerer prometheus.Registerer

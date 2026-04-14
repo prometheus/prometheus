@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -21,10 +21,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 func TestOvhcloudDedicatedServerRefresh(t *testing.T) {
@@ -41,7 +41,7 @@ application_secret: %s
 consumer_key: %s`, mock.URL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecretTest, ovhcloudConsumerKeyTest)
 
 	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
-	d, err := newRefresher(&cfg, log.NewNopLogger())
+	d, err := newRefresher(&cfg, promslog.NewNopLogger())
 	require.NoError(t, err)
 	ctx := context.Background()
 	targetGroups, err := d.refresh(ctx)

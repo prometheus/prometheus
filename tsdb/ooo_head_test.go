@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,26 +17,25 @@ import (
 	"math"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-
-	"github.com/stretchr/testify/require"
 )
 
 const testMaxSize int = 32
 
 // Formulas chosen to make testing easy.
-func valEven(pos int) int { return pos*2 + 2 } // s[0]=2, s[1]=4, s[2]=6, ..., s[31]=64 - Predictable pre-existing values
-func valOdd(pos int) int  { return pos*2 + 1 } // s[0]=1, s[1]=3, s[2]=5, ..., s[31]=63 - New values will interject at chosen position because they sort before the pre-existing vals.
+func valEven(pos int) int64 { return int64(pos*2 + 2) } // s[0]=2, s[1]=4, s[2]=6, ..., s[31]=64 - Predictable pre-existing values
+func valOdd(pos int) int64  { return int64(pos*2 + 1) } // s[0]=1, s[1]=3, s[2]=5, ..., s[31]=63 - New values will interject at chosen position because they sort before the pre-existing vals.
 
-func samplify(v int) sample { return sample{int64(v), float64(v), nil, nil} }
-
-func makeEvenSampleSlice(n int) []sample {
+func makeEvenSampleSlice(n int, sampleFunc func(st, ts int64) sample) []sample {
 	s := make([]sample, n)
-	for i := 0; i < n; i++ {
-		s[i] = samplify(valEven(i))
+	for i := range n {
+		ts := valEven(i)
+		s[i] = sampleFunc(ts, ts) // Use ts as st for consistency
 	}
 	return s
 }
@@ -45,8 +44,63 @@ func makeEvenSampleSlice(n int) []sample {
 // - Number of pre-existing samples anywhere from 0 to testMaxSize-1.
 // - Insert new sample before first pre-existing samples, after the last, and anywhere in between.
 // - With a chunk initial capacity of testMaxSize/8 and testMaxSize, which lets us test non-full and full chunks, and chunks that need to expand themselves.
-// Note: In all samples used, t always equals v in numeric value. when we talk about 'value' we just refer to a value that will be used for both sample.t and sample.v.
+// - With st=0 and st!=0 to verify ordering is based on sample.t, not sample.st.
 func TestOOOInsert(t *testing.T) {
+	scenarios := map[string]struct {
+		sampleFunc func(st, ts int64) sample
+	}{
+		"float st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, f: float64(ts)}
+			},
+		},
+		"float st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, f: float64(ts)}
+			},
+		},
+		"float st=ts-100": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts - 100, t: ts, f: float64(ts)}
+			},
+		},
+		"float st descending while t ascending": {
+			// st values go in opposite direction of t to ensure ordering is by t.
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 1000 - ts, t: ts, f: float64(ts)}
+			},
+		},
+		"integer histogram st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
+			},
+		},
+		"integer histogram st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
+			},
+		},
+		"float histogram st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
+			},
+		},
+		"float histogram st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
+			},
+		},
+	}
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOInsert(t, scenario.sampleFunc)
+		})
+	}
+}
+
+func testOOOInsert(t *testing.T,
+	sampleFunc func(st, ts int64) sample,
+) {
 	for numPreExisting := 0; numPreExisting <= testMaxSize; numPreExisting++ {
 		// For example, if we have numPreExisting 2, then:
 		// chunk.samples indexes filled        0   1
@@ -56,20 +110,24 @@ func TestOOOInsert(t *testing.T) {
 
 		for insertPos := 0; insertPos <= numPreExisting; insertPos++ {
 			chunk := NewOOOChunk()
-			chunk.samples = makeEvenSampleSlice(numPreExisting)
-			newSample := samplify(valOdd(insertPos))
-			chunk.Insert(newSample.t, newSample.f, nil, nil)
+			chunk.samples = make([]sample, numPreExisting)
+			chunk.samples = makeEvenSampleSlice(numPreExisting, sampleFunc)
+			ts := valOdd(insertPos)
+			newSample := sampleFunc(ts, ts) // Use ts as st for consistency
+			chunk.Insert(newSample.st, newSample.t, newSample.f, newSample.h, newSample.fh)
 
 			var expSamples []sample
 			// Our expected new samples slice, will be first the original samples.
 			for i := 0; i < insertPos; i++ {
-				expSamples = append(expSamples, samplify(valEven(i)))
+				ts := valEven(i)
+				expSamples = append(expSamples, sampleFunc(ts, ts))
 			}
 			// Then the new sample.
 			expSamples = append(expSamples, newSample)
 			// Followed by any original samples that were pushed back by the new one.
 			for i := insertPos; i < numPreExisting; i++ {
-				expSamples = append(expSamples, samplify(valEven(i)))
+				ts := valEven(i)
+				expSamples = append(expSamples, sampleFunc(ts, ts))
 			}
 
 			require.Equal(t, expSamples, chunk.samples, "numPreExisting %d, insertPos %d", numPreExisting, insertPos)
@@ -80,18 +138,74 @@ func TestOOOInsert(t *testing.T) {
 // TestOOOInsertDuplicate tests the correct behavior when inserting a sample that is a duplicate of any
 // pre-existing samples, with between 1 and testMaxSize pre-existing samples and
 // with a chunk initial capacity of testMaxSize/8 and testMaxSize, which lets us test non-full and full chunks, and chunks that need to expand themselves.
+// With st=0 and st!=0 to verify duplicate detection is based on sample.t, not sample.st.
 func TestOOOInsertDuplicate(t *testing.T) {
+	scenarios := map[string]struct {
+		sampleFunc func(st, ts int64) sample
+	}{
+		"float st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, f: float64(ts)}
+			},
+		},
+		"float st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, f: float64(ts)}
+			},
+		},
+		"float st=ts-100": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts - 100, t: ts, f: float64(ts)}
+			},
+		},
+		"float st descending while t ascending": {
+			// st values go in opposite direction of t to ensure duplicate detection is by t.
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 1000 - ts, t: ts, f: float64(ts)}
+			},
+		},
+		"integer histogram st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
+			},
+		},
+		"integer histogram st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, h: tsdbutil.GenerateTestHistogram(ts)}
+			},
+		},
+		"float histogram st=0": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: 0, t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
+			},
+		},
+		"float histogram st=ts": {
+			sampleFunc: func(st, ts int64) sample {
+				return sample{st: ts, t: ts, fh: tsdbutil.GenerateTestFloatHistogram(ts)}
+			},
+		},
+	}
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			testOOOInsertDuplicate(t, scenario.sampleFunc)
+		})
+	}
+}
+
+func testOOOInsertDuplicate(t *testing.T,
+	sampleFunc func(st, ts int64) sample,
+) {
 	for num := 1; num <= testMaxSize; num++ {
 		for dupPos := 0; dupPos < num; dupPos++ {
 			chunk := NewOOOChunk()
-			chunk.samples = makeEvenSampleSlice(num)
+			chunk.samples = makeEvenSampleSlice(num, sampleFunc)
 
 			dupSample := chunk.samples[dupPos]
 			dupSample.f = 0.123
 
-			ok := chunk.Insert(dupSample.t, dupSample.f, nil, nil)
+			ok := chunk.Insert(dupSample.st, dupSample.t, dupSample.f, dupSample.h, dupSample.fh)
 
-			expSamples := makeEvenSampleSlice(num) // We expect no change.
+			expSamples := makeEvenSampleSlice(num, sampleFunc) // We expect no change.
 			require.False(t, ok)
 			require.Equal(t, expSamples, chunk.samples, "num %d, dupPos %d", num, dupPos)
 		}
@@ -110,6 +224,8 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 	h2 := h1.Copy()
 	h2.PositiveSpans = append(h2.PositiveSpans, histogram.Span{Offset: 1, Length: 1})
 	h2.PositiveBuckets = append(h2.PositiveBuckets, 12)
+	h2explicit := h2.Copy()
+	h2explicit.CounterResetHint = histogram.CounterReset
 
 	testCases := map[string]struct {
 		samples               []sample
@@ -142,12 +258,32 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 				{encoding: chunkenc.EncXOR, minTime: 1200, maxTime: 1200},
 			},
 		},
-		"has a counter reset": {
+		"has an implicit counter reset": {
 			samples: []sample{
 				{t: 1000, h: h2},
 				{t: 1100, h: h1},
 			},
-			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.CounterReset},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncHistogram, minTime: 1000, maxTime: 1000},
+				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},
+			},
+		},
+		"has an explicit counter reset": {
+			samples: []sample{
+				{t: 1100, h: h2explicit},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset},
+			expectedChunks: []chunkVerify{
+				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},
+			},
+		},
+		"has an explicit counter reset inside": {
+			samples: []sample{
+				{t: 1000, h: h1},
+				{t: 1100, h: h2explicit},
+			},
+			expectedCounterResets: []histogram.CounterResetHint{histogram.UnknownCounterReset, histogram.UnknownCounterReset},
 			expectedChunks: []chunkVerify{
 				{encoding: chunkenc.EncHistogram, minTime: 1000, maxTime: 1000},
 				{encoding: chunkenc.EncHistogram, minTime: 1100, maxTime: 1100},
@@ -168,25 +304,25 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			// Sanity check.
-			require.Equal(t, len(tc.samples), len(tc.expectedCounterResets), "number of samples and counter resets")
+			require.Len(t, tc.expectedCounterResets, len(tc.samples), "number of samples and counter resets")
 
 			oooChunk := OOOChunk{}
 			for _, s := range tc.samples {
 				switch s.Type() {
 				case chunkenc.ValFloat:
-					oooChunk.Insert(s.t, s.f, nil, nil)
+					oooChunk.Insert(s.st, s.t, s.f, nil, nil)
 				case chunkenc.ValHistogram:
-					oooChunk.Insert(s.t, 0, s.h.Copy(), nil)
+					oooChunk.Insert(s.st, s.t, 0, s.h.Copy(), nil)
 				case chunkenc.ValFloatHistogram:
-					oooChunk.Insert(s.t, 0, nil, s.fh.Copy())
+					oooChunk.Insert(s.st, s.t, 0, nil, s.fh.Copy())
 				default:
 					t.Fatalf("unexpected sample type %d", s.Type())
 				}
 			}
 
-			chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64)
+			chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, false)
 			require.NoError(t, err)
-			require.Equal(t, len(tc.expectedChunks), len(chunks), "number of chunks")
+			require.Len(t, chunks, len(tc.expectedChunks), "number of chunks")
 			sampleIndex := 0
 			for i, c := range chunks {
 				require.Equal(t, tc.expectedChunks[i].encoding, c.chunk.Encoding(), "chunk %d encoding", i)
@@ -228,5 +364,89 @@ func TestOOOChunks_ToEncodedChunks(t *testing.T) {
 			}
 			require.Equal(t, len(tc.samples), sampleIndex, "number of samples")
 		})
+	}
+}
+
+// TestOOOChunks_ToEncodedChunks_WithST tests ToEncodedChunks with useXOR2=true and useXOR2=false for float samples.
+// When useXOR2=true, st values are preserved; when useXOR2=false, AtST() returns 0.
+// TODO(@krajorama): Add histogram test cases once ST storage is implemented for histograms.
+func TestOOOChunks_ToEncodedChunks_WithST(t *testing.T) {
+	testCases := map[string]struct {
+		samples []sample
+	}{
+		"floats with st=0": {
+			samples: []sample{
+				{st: 0, t: 1000, f: 43.0},
+				{st: 0, t: 1100, f: 42.0},
+			},
+		},
+		"floats with st=t": {
+			samples: []sample{
+				{st: 1000, t: 1000, f: 43.0},
+				{st: 1100, t: 1100, f: 42.0},
+			},
+		},
+		"floats with st=t-100": {
+			samples: []sample{
+				{st: 900, t: 1000, f: 43.0},
+				{st: 1000, t: 1100, f: 42.0},
+			},
+		},
+		"floats with varying st": {
+			samples: []sample{
+				{st: 500, t: 1000, f: 43.0},
+				{st: 1100, t: 1100, f: 42.0}, // st == t
+				{st: 0, t: 1200, f: 41.0},    // st == 0
+			},
+		},
+	}
+
+	storageScenarios := []struct {
+		name             string
+		useXOR2          bool
+		expectedEncoding chunkenc.Encoding
+	}{
+		{"useXOR2=true", true, chunkenc.EncXOR2},
+		{"useXOR2=false", false, chunkenc.EncXOR},
+	}
+
+	for name, tc := range testCases {
+		for _, ss := range storageScenarios {
+			t.Run(name+"/"+ss.name, func(t *testing.T) {
+				oooChunk := OOOChunk{}
+				for _, s := range tc.samples {
+					oooChunk.Insert(s.st, s.t, s.f, nil, nil)
+				}
+
+				chunks, err := oooChunk.ToEncodedChunks(math.MinInt64, math.MaxInt64, ss.useXOR2)
+				require.NoError(t, err)
+				require.Len(t, chunks, 1, "number of chunks")
+
+				c := chunks[0]
+				require.Equal(t, ss.expectedEncoding, c.chunk.Encoding(), "chunk encoding")
+				require.Equal(t, tc.samples[0].t, c.minTime, "chunk minTime")
+				require.Equal(t, tc.samples[len(tc.samples)-1].t, c.maxTime, "chunk maxTime")
+
+				// Verify samples can be read back with correct st and t values.
+				it := c.chunk.Iterator(nil)
+				sampleIndex := 0
+				for it.Next() == chunkenc.ValFloat {
+					gotT, gotF := it.At()
+					gotST := it.AtST()
+
+					if ss.useXOR2 {
+						// When useXOR2=true, st values should be preserved.
+						require.Equal(t, tc.samples[sampleIndex].st, gotST, "sample %d st", sampleIndex)
+					} else {
+						// When useXOR2=false, AtST() should return 0.
+						require.Equal(t, int64(0), gotST, "sample %d st should be 0 when useXOR2=false", sampleIndex)
+					}
+					require.Equal(t, tc.samples[sampleIndex].t, gotT, "sample %d t", sampleIndex)
+					require.Equal(t, tc.samples[sampleIndex].f, gotF, "sample %d f", sampleIndex)
+					sampleIndex++
+				}
+				require.Equal(t, len(tc.samples), sampleIndex, "number of samples")
+			})
+		}
 	}
 }

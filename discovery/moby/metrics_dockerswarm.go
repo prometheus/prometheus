@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -24,9 +24,9 @@ type dockerswarmMetrics struct {
 }
 
 // Register implements discovery.DiscovererMetrics.
-func (m *dockerswarmMetrics) Register() error {
+func (*dockerswarmMetrics) Register() error {
 	return nil
 }
 
 // Unregister implements discovery.DiscovererMetrics.
-func (m *dockerswarmMetrics) Unregister() {}
+func (*dockerswarmMetrics) Unregister() {}

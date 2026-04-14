@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,9 +17,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -32,7 +34,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/log"
+	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -41,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
@@ -60,7 +61,7 @@ type writeBenchmark struct {
 	memprof   *os.File
 	blockprof *os.File
 	mtxprof   *os.File
-	logger    log.Logger
+	logger    *slog.Logger
 }
 
 func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) error {
@@ -68,7 +69,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 		outPath:     outPath,
 		samplesFile: samplesFile,
 		numMetrics:  numMetrics,
-		logger:      log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)),
+		logger:      promslog.New(&promslog.Config{}),
 	}
 	if b.outPath == "" {
 		dir, err := os.MkdirTemp("", "tsdb_bench")
@@ -87,9 +88,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 
 	dir := filepath.Join(b.outPath, "storage")
 
-	l := log.With(b.logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
-
-	st, err := tsdb.Open(dir, l, nil, &tsdb.Options{
+	st, err := tsdb.Open(dir, b.logger, nil, &tsdb.Options{
 		RetentionDuration: int64(15 * 24 * time.Hour / time.Millisecond),
 		MinBlockDuration:  int64(2 * time.Hour / time.Millisecond),
 	}, tsdb.NewDBStats())
@@ -156,24 +155,18 @@ func (b *writeBenchmark) ingestScrapes(lbls []labels.Labels, scrapeCount int) (u
 		var wg sync.WaitGroup
 		lbls := lbls
 		for len(lbls) > 0 {
-			l := 1000
-			if len(lbls) < 1000 {
-				l = len(lbls)
-			}
+			l := min(len(lbls), 1000)
 			batch := lbls[:l]
 			lbls = lbls[l:]
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
+			wg.Go(func() {
 				n, err := b.ingestScrapesShard(batch, 100, int64(timeDelta*i))
 				if err != nil {
 					// exitWithError(err)
 					fmt.Println(" err", err)
 				}
 				total.Add(n)
-			}()
+			})
 		}
 		wg.Wait()
 	}
@@ -201,7 +194,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 	}
 	total := uint64(0)
 
-	for i := 0; i < scrapeCount; i++ {
+	for range scrapeCount {
 		app := b.storage.Appender(context.TODO())
 		ts += timeDelta
 
@@ -315,12 +308,11 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 	i := 0
 
 	for scanner.Scan() && i < n {
-		m := make([]labels.Label, 0, 10)
-
 		r := strings.NewReplacer("\"", "", "{", "", "}", "")
 		s := r.Replace(scanner.Text())
 
 		labelChunks := strings.Split(s, ",")
+		m := make([]labels.Label, 0, len(labelChunks))
 		for _, labelChunk := range labelChunks {
 			split := strings.Split(labelChunk, ":")
 			m = append(m, labels.Label{Name: split[0], Value: split[1]})
@@ -343,7 +335,7 @@ func listBlocks(path string, humanReadable bool) error {
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+		err = errors.Join(err, db.Close())
 	}()
 	blocks, err := db.Blocks()
 	if err != nil {
@@ -367,25 +359,25 @@ func printBlocks(blocks []tsdb.BlockReader, writeHeader, humanReadable bool) {
 		fmt.Fprintf(tw,
 			"%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\n",
 			meta.ULID,
-			getFormatedTime(meta.MinTime, humanReadable),
-			getFormatedTime(meta.MaxTime, humanReadable),
+			getFormattedTime(meta.MinTime, humanReadable),
+			getFormattedTime(meta.MaxTime, humanReadable),
 			time.Duration(meta.MaxTime-meta.MinTime)*time.Millisecond,
 			meta.Stats.NumSamples,
 			meta.Stats.NumChunks,
 			meta.Stats.NumSeries,
-			getFormatedBytes(b.Size(), humanReadable),
+			getFormattedBytes(b.Size(), humanReadable),
 		)
 	}
 }
 
-func getFormatedTime(timestamp int64, humanReadable bool) string {
+func getFormattedTime(timestamp int64, humanReadable bool) string {
 	if humanReadable {
 		return time.Unix(timestamp/1000, 0).UTC().String()
 	}
 	return strconv.FormatInt(timestamp, 10)
 }
 
-func getFormatedBytes(bytes int64, humanReadable bool) string {
+func getFormattedBytes(bytes int64, humanReadable bool) string {
 	if humanReadable {
 		return units.Base2Bytes(bytes).String()
 	}
@@ -405,7 +397,7 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 		}
 	}
 
-	b, err := db.Block(blockID)
+	b, err := db.Block(blockID, tsdb.DefaultPostingsDecoderFactory)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -413,13 +405,13 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, b, nil
 }
 
-func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExtended bool, matchers string) error {
+func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExtended bool, matchers string, p parser.Parser) error {
 	var (
 		selectors []*labels.Matcher
 		err       error
 	)
-	if len(matchers) > 0 {
-		selectors, err = parser.ParseMetricSelector(matchers)
+	if matchers != "" {
+		selectors, err = p.ParseMetricSelector(matchers)
 		if err != nil {
 			return err
 		}
@@ -429,7 +421,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+		err = errors.Join(err, db.Close())
 	}()
 
 	meta := block.Meta()
@@ -437,7 +429,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	// Presume 1ms resolution that Prometheus uses.
 	fmt.Printf("Duration: %s\n", (time.Duration(meta.MaxTime-meta.MinTime) * 1e6).String())
 	fmt.Printf("Total Series: %d\n", meta.Stats.NumSeries)
-	if len(matchers) > 0 {
+	if matchers != "" {
 		fmt.Printf("Matcher: %s\n", matchers)
 	}
 	ir, err := block.Index()
@@ -483,24 +475,24 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	labelpairsCount := map[string]uint64{}
 	entries := 0
 	var (
-		p    index.Postings
-		refs []storage.SeriesRef
+		postings index.Postings
+		refs     []storage.SeriesRef
 	)
-	if len(matchers) > 0 {
-		p, err = tsdb.PostingsForMatchers(ctx, ir, selectors...)
+	if matchers != "" {
+		postings, err = tsdb.PostingsForMatchers(ctx, ir, selectors...)
 		if err != nil {
 			return err
 		}
 		// Expand refs first and cache in memory.
 		// So later we don't have to expand again.
-		refs, err = index.ExpandPostings(p)
+		refs, err = index.ExpandPostings(postings)
 		if err != nil {
 			return err
 		}
 		fmt.Printf("Matched series: %d\n", len(refs))
-		p = index.NewListPostings(refs)
+		postings = index.NewListPostings(refs)
 	} else {
-		p, err = ir.Postings(ctx, "", "") // The special all key.
+		postings, err = ir.Postings(ctx, "", "") // The special all key.
 		if err != nil {
 			return err
 		}
@@ -508,8 +500,8 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	chks := []chunks.Meta{}
 	builder := labels.ScratchBuilder{}
-	for p.Next() {
-		if err = ir.Series(p.At(), &builder, &chks); err != nil {
+	for postings.Next() {
+		if err = ir.Series(postings.At(), &builder, &chks); err != nil {
 			return err
 		}
 		// Amount of the block time range not covered by this series.
@@ -522,8 +514,8 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 			entries++
 		})
 	}
-	if p.Err() != nil {
-		return p.Err()
+	if postings.Err() != nil {
+		return postings.Err()
 	}
 	fmt.Printf("Postings (unique label pairs): %d\n", len(labelpairsUncovered))
 	fmt.Printf("Postings entries (total label pairs): %d\n", entries)
@@ -554,7 +546,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		values, err := ir.SortedLabelValues(ctx, n, selectors...)
+		values, err := ir.SortedLabelValues(ctx, n, nil, selectors...)
 		if err != nil {
 			return err
 		}
@@ -570,7 +562,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 
 	postingInfos = postingInfos[:0]
 	for _, n := range allLabelNames {
-		lv, err := ir.SortedLabelValues(ctx, n, selectors...)
+		lv, err := ir.SortedLabelValues(ctx, n, nil, selectors...)
 		if err != nil {
 			return err
 		}
@@ -580,7 +572,7 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 	printInfo(postingInfos)
 
 	postingInfos = postingInfos[:0]
-	lv, err := ir.SortedLabelValues(ctx, "__name__", selectors...)
+	lv, err := ir.SortedLabelValues(ctx, "__name__", nil, selectors...)
 	if err != nil {
 		return err
 	}
@@ -589,7 +581,10 @@ func analyzeBlock(ctx context.Context, path, blockID string, limit int, runExten
 		if err != nil {
 			return err
 		}
-		postings = index.Intersect(postings, index.NewListPostings(refs))
+		// Only intersect postings if matchers are specified.
+		if matchers != "" {
+			postings = index.Intersect(postings, index.NewListPostings(refs))
+		}
 		count := 0
 		for postings.Next() {
 			count++
@@ -626,7 +621,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, chunkr.Close()).Err()
+		err = errors.Join(err, chunkr.Close())
 	}()
 
 	totalChunks := 0
@@ -662,7 +657,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
 				fhchk, ok := chk.(*chunkenc.FloatHistogramChunk)
 				if !ok {
-					return fmt.Errorf("chunk is not FloatHistogramChunk")
+					return errors.New("chunk is not FloatHistogramChunk")
 				}
 				it := fhchk.Iterator(nil)
 				bucketCount := 0
@@ -677,7 +672,7 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 				histogramChunkSize = append(histogramChunkSize, len(chk.Bytes()))
 				hchk, ok := chk.(*chunkenc.HistogramChunk)
 				if !ok {
-					return fmt.Errorf("chunk is not HistogramChunk")
+					return errors.New("chunk is not HistogramChunk")
 				}
 				it := hchk.Iterator(nil)
 				bucketCount := 0
@@ -708,13 +703,13 @@ func analyzeCompaction(ctx context.Context, block tsdb.BlockReader, indexr tsdb.
 
 type SeriesSetFormatter func(series storage.SeriesSet) error
 
-func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) (err error) {
+func dumpTSDBData(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter, p parser.Parser) (err error) {
 	db, err := tsdb.OpenDBReadOnly(dbDir, sandboxDirRoot, nil)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+		err = errors.Join(err, db.Close())
 	}()
 	q, err := db.Querier(mint, maxt)
 	if err != nil {
@@ -722,7 +717,7 @@ func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt i
 	}
 	defer q.Close()
 
-	matcherSets, err := parser.ParseMetricSelectors(match)
+	matcherSets, err := p.ParseMetricSelectors(match)
 	if err != nil {
 		return err
 	}
@@ -733,7 +728,7 @@ func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt i
 		for _, mset := range matcherSets {
 			sets = append(sets, q.Select(ctx, true, nil, mset...))
 		}
-		ss = storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+		ss = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 	} else {
 		ss = q.Select(ctx, false, nil, matcherSets[0]...)
 	}
@@ -744,7 +739,7 @@ func dumpSamples(ctx context.Context, dbDir, sandboxDirRoot string, mint, maxt i
 	}
 
 	if ws := ss.Warnings(); len(ws) > 0 {
-		return tsdb_errors.NewMulti(ws.AsErrors()...).Err()
+		return errors.Join(ws.AsErrors()...)
 	}
 
 	if ss.Err() != nil {
@@ -796,12 +791,36 @@ func CondensedString(ls labels.Labels) string {
 	return b.String()
 }
 
+func formatSeriesSetLabelsToJSON(ss storage.SeriesSet) error {
+	seriesCache := make(map[string]struct{})
+	for ss.Next() {
+		series := ss.At()
+		lbs := series.Labels()
+
+		b, err := json.Marshal(lbs)
+		if err != nil {
+			return err
+		}
+
+		if len(b) == 0 {
+			continue
+		}
+
+		s := string(b)
+		if _, ok := seriesCache[s]; !ok {
+			fmt.Println(s)
+			seriesCache[s] = struct{}{}
+		}
+	}
+	return nil
+}
+
 func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
 	for ss.Next() {
 		series := ss.At()
 		lbs := series.Labels()
 		metricName := lbs.Get(labels.MetricName)
-		lbs = lbs.DropMetricName()
+		lbs = lbs.DropReserved(func(n string) bool { return n == labels.MetricName })
 		it := series.Iterator(nil)
 		for it.Next() == chunkenc.ValFloat {
 			ts, val := it.At()
@@ -824,17 +843,31 @@ func checkErr(err error) int {
 }
 
 func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration, customLabels map[string]string) int {
-	inputFile, err := fileutil.OpenMmapFile(path)
+	var buf []byte
+	info, err := os.Stat(path)
 	if err != nil {
 		return checkErr(err)
 	}
-	defer inputFile.Close()
+	if info.Mode()&(os.ModeNamedPipe|os.ModeCharDevice) != 0 {
+		// Read the pipe chunks by chunks as it cannot be mmap-ed
+		buf, err = os.ReadFile(path)
+		if err != nil {
+			return checkErr(err)
+		}
+	} else {
+		inputFile, err := fileutil.OpenMmapFile(path)
+		if err != nil {
+			return checkErr(err)
+		}
+		defer inputFile.Close()
+		buf = inputFile.Bytes()
+	}
 
 	if err := os.MkdirAll(outputDir, 0o777); err != nil {
 		return checkErr(fmt.Errorf("create output dir: %w", err))
 	}
 
-	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet, maxBlockDuration, customLabels))
+	return checkErr(backfill(5000, buf, outputDir, humanReadable, quiet, maxBlockDuration, customLabels))
 }
 
 func displayHistogram(dataType string, datas []int, total int) {
@@ -877,5 +910,5 @@ func generateBucket(minVal, maxVal int) (start, end, step int) {
 	start = minVal - minVal%step
 	end = maxVal - maxVal%step + step
 
-	return
+	return start, end, step
 }

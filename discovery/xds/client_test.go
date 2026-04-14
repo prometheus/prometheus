@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -49,22 +49,26 @@ func urlMustParse(str string) *url.URL {
 }
 
 func TestMakeXDSResourceHttpEndpointEmptyServerURLScheme(t *testing.T) {
+	t.Parallel()
+
 	endpointURL, err := makeXDSResourceHTTPEndpointURL(ProtocolV3, urlMustParse("127.0.0.1"), "monitoring")
 
 	require.Empty(t, endpointURL)
-	require.Error(t, err)
-	require.Equal(t, "invalid xDS server URL", err.Error())
+	require.EqualError(t, err, "invalid xDS server URL")
 }
 
 func TestMakeXDSResourceHttpEndpointEmptyServerURLHost(t *testing.T) {
+	t.Parallel()
+
 	endpointURL, err := makeXDSResourceHTTPEndpointURL(ProtocolV3, urlMustParse("grpc://127.0.0.1"), "monitoring")
 
 	require.Empty(t, endpointURL)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "must be either 'http' or 'https'")
+	require.ErrorContains(t, err, "must be either 'http' or 'https'")
 }
 
 func TestMakeXDSResourceHttpEndpoint(t *testing.T) {
+	t.Parallel()
+
 	endpointURL, err := makeXDSResourceHTTPEndpointURL(ProtocolV3, urlMustParse("http://127.0.0.1:5000"), "monitoring")
 
 	require.NoError(t, err)
@@ -72,6 +76,8 @@ func TestMakeXDSResourceHttpEndpoint(t *testing.T) {
 }
 
 func TestCreateNewHTTPResourceClient(t *testing.T) {
+	t.Parallel()
+
 	c := &HTTPResourceClientConfig{
 		HTTPClientConfig: sdConf.HTTPClientConfig,
 		Name:             "test",
@@ -108,7 +114,9 @@ func createTestHTTPResourceClient(t *testing.T, conf *HTTPResourceClientConfig, 
 }
 
 func TestHTTPResourceClientFetchEmptyResponse(t *testing.T) {
-	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
+	t.Parallel()
+
+	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(*v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
 		return nil, nil
 	})
 	defer cleanup()
@@ -119,6 +127,8 @@ func TestHTTPResourceClientFetchEmptyResponse(t *testing.T) {
 }
 
 func TestHTTPResourceClientFetchFullResponse(t *testing.T) {
+	t.Parallel()
+
 	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
 		if request.VersionInfo == "1" {
 			return nil, nil
@@ -148,7 +158,9 @@ func TestHTTPResourceClientFetchFullResponse(t *testing.T) {
 }
 
 func TestHTTPResourceClientServerError(t *testing.T) {
-	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
+	t.Parallel()
+
+	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(*v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
 		return nil, errors.New("server error")
 	})
 	defer cleanup()

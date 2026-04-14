@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,11 +23,11 @@ var corsHeaders = map[string]string{
 	"Access-Control-Allow-Headers":  "Accept, Authorization, Content-Type, Origin",
 	"Access-Control-Allow-Methods":  "GET, POST, OPTIONS",
 	"Access-Control-Expose-Headers": "Date",
-	"Vary":                          "Origin",
 }
 
-// SetCORS enables cross-site script calls.
+// SetCORS enables cross-origin script calls.
 func SetCORS(w http.ResponseWriter, o *regexp.Regexp, r *http.Request) {
+	w.Header().Add("Vary", "Origin")
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return

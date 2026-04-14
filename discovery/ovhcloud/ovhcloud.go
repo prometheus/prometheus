@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,10 +17,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/ovh/go-ovh/ovh"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -54,19 +54,19 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &ovhcloudMetrics{
 		refreshMetrics: rmi,
 	}
 }
 
 // Name implements the Discoverer interface.
-func (c SDConfig) Name() string {
+func (SDConfig) Name() string {
 	return "ovhcloud"
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -100,8 +100,8 @@ func createClient(config *SDConfig) (*ovh.Client, error) {
 }
 
 // NewDiscoverer returns a Discoverer for the Config.
-func (c *SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, options.Logger, options.Metrics)
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(c, opts)
 }
 
 func init() {
@@ -137,7 +137,7 @@ func parseIPList(ipList []string) ([]netip.Addr, error) {
 	return ipAddresses, nil
 }
 
-func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
+func newRefresher(conf *SDConfig, logger *slog.Logger) (refresher, error) {
 	switch conf.Service {
 	case "vps":
 		return newVpsDiscovery(conf, logger), nil
@@ -148,21 +148,22 @@ func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
 }
 
 // NewDiscovery returns a new OVHcloud Discoverer which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
-	m, ok := metrics.(*ovhcloudMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*refresh.Discovery, error) {
+	m, ok := opts.Metrics.(*ovhcloudMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	r, err := newRefresher(conf, logger)
+	r, err := newRefresher(conf, opts.Logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "ovhcloud",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            r.refresh,
 			MetricsInstantiator: m.refreshMetrics,

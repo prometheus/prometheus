@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,13 +18,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -34,12 +34,13 @@ import (
 )
 
 const (
-	hetznerRobotLabelPrefix    = hetznerLabelPrefix + "robot_"
-	hetznerLabelRobotProduct   = hetznerRobotLabelPrefix + "product"
-	hetznerLabelRobotCancelled = hetznerRobotLabelPrefix + "cancelled"
+	hetznerRobotLabelPrefix     = hetznerLabelPrefix + "robot_"
+	hetznerLabelRobotDatacenter = hetznerRobotLabelPrefix + "datacenter"
+	hetznerLabelRobotProduct    = hetznerRobotLabelPrefix + "product"
+	hetznerLabelRobotCancelled  = hetznerRobotLabelPrefix + "cancelled"
 )
 
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+var userAgent = version.PrometheusUserAgent()
 
 // Discovery periodically performs Hetzner Robot requests. It implements
 // the Discoverer interface.
@@ -51,7 +52,7 @@ type robotDiscovery struct {
 }
 
 // newRobotDiscovery returns a new robotDiscovery which periodically refreshes its targets.
-func newRobotDiscovery(conf *SDConfig, _ log.Logger) (*robotDiscovery, error) {
+func newRobotDiscovery(conf *SDConfig, _ *slog.Logger) (*robotDiscovery, error) {
 	d := &robotDiscovery{
 		port:     conf.Port,
 		endpoint: conf.robotEndpoint,
@@ -70,7 +71,7 @@ func newRobotDiscovery(conf *SDConfig, _ log.Logger) (*robotDiscovery, error) {
 }
 
 func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) {
-	req, err := http.NewRequest(http.MethodGet, d.endpoint+"/server", nil)
+	req, err := http.NewRequest(http.MethodGet, d.endpoint+"/server", http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -105,14 +106,15 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 	targets := make([]model.LabelSet, len(servers))
 	for i, server := range servers {
 		labels := model.LabelSet{
-			hetznerLabelRole:           model.LabelValue(HetznerRoleRobot),
-			hetznerLabelServerID:       model.LabelValue(strconv.Itoa(server.Server.ServerNumber)),
-			hetznerLabelServerName:     model.LabelValue(server.Server.ServerName),
-			hetznerLabelDatacenter:     model.LabelValue(strings.ToLower(server.Server.Dc)),
-			hetznerLabelPublicIPv4:     model.LabelValue(server.Server.ServerIP),
-			hetznerLabelServerStatus:   model.LabelValue(server.Server.Status),
-			hetznerLabelRobotProduct:   model.LabelValue(server.Server.Product),
-			hetznerLabelRobotCancelled: model.LabelValue(strconv.FormatBool(server.Server.Canceled)),
+			hetznerLabelRole:            model.LabelValue(HetznerRoleRobot),
+			hetznerLabelServerID:        model.LabelValue(strconv.Itoa(server.Server.ServerNumber)),
+			hetznerLabelServerName:      model.LabelValue(server.Server.ServerName),
+			hetznerLabelDatacenter:      model.LabelValue(strings.ToLower(server.Server.Dc)), // Label name kept for backward compatibility
+			hetznerLabelPublicIPv4:      model.LabelValue(server.Server.ServerIP),
+			hetznerLabelServerStatus:    model.LabelValue(server.Server.Status),
+			hetznerLabelRobotDatacenter: model.LabelValue(strings.ToLower(server.Server.Dc)),
+			hetznerLabelRobotProduct:    model.LabelValue(server.Server.Product),
+			hetznerLabelRobotCancelled:  model.LabelValue(strconv.FormatBool(server.Server.Canceled)),
 
 			model.AddressLabel: model.LabelValue(net.JoinHostPort(server.Server.ServerIP, strconv.FormatUint(uint64(d.port), 10))),
 		}

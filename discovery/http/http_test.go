@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -21,11 +21,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -49,7 +49,12 @@ func TestHTTPValidRefresh(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:            promslog.NewNopLogger(),
+		HTTPClientOptions: nil,
+		Metrics:           metrics,
+		SetName:           "http",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -75,7 +80,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 }
 
 func TestHTTPInvalidCode(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
 
@@ -94,7 +99,12 @@ func TestHTTPInvalidCode(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:            promslog.NewNopLogger(),
+		HTTPClientOptions: nil,
+		Metrics:           metrics,
+		SetName:           "http",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -104,7 +114,7 @@ func TestHTTPInvalidCode(t *testing.T) {
 }
 
 func TestHTTPInvalidFormat(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "{}")
 	}))
 
@@ -123,7 +133,12 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:            promslog.NewNopLogger(),
+		HTTPClientOptions: nil,
+		Metrics:           metrics,
+		SetName:           "http",
+	})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -212,7 +227,7 @@ func TestContentTypeRegex(t *testing.T) {
 
 func TestSourceDisappeared(t *testing.T) {
 	var stubResponse string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintln(w, stubResponse)
 	}))
@@ -442,7 +457,12 @@ func TestSourceDisappeared(t *testing.T) {
 	require.NoError(t, metrics.Register())
 	defer metrics.Unregister()
 
-	d, err := NewDiscovery(&cfg, log.NewNopLogger(), nil, metrics)
+	d, err := NewDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:            promslog.NewNopLogger(),
+		HTTPClientOptions: nil,
+		Metrics:           metrics,
+		SetName:           "http",
+	})
 	require.NoError(t, err)
 	for _, test := range cases {
 		ctx := context.Background()

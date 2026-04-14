@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,17 +18,17 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestSDCheckResult(t *testing.T) {
+	t.Parallel()
 	targetGroups := []*targetgroup.Group{{
 		Targets: []model.LabelSet{
 			map[model.LabelName]model.LabelValue{"__address__": "localhost:8080", "foo": "bar"},
@@ -42,11 +42,12 @@ func TestSDCheckResult(t *testing.T) {
 		ScrapeInterval: model.Duration(1 * time.Minute),
 		ScrapeTimeout:  model.Duration(10 * time.Second),
 		RelabelConfigs: []*relabel.Config{{
-			SourceLabels: model.LabelNames{"foo"},
-			Action:       relabel.Replace,
-			TargetLabel:  "newfoo",
-			Regex:        reg,
-			Replacement:  "$1",
+			SourceLabels:         model.LabelNames{"foo"},
+			Action:               relabel.Replace,
+			TargetLabel:          "newfoo",
+			Regex:                reg,
+			Replacement:          "$1",
+			NameValidationScheme: model.UTF8Validation,
 		}},
 	}
 
@@ -70,5 +71,5 @@ func TestSDCheckResult(t *testing.T) {
 		},
 	}
 
-	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig, true))
+	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig))
 }

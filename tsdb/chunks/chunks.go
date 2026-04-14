@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,8 +14,8 @@
 package chunks
 
 import (
-	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -25,7 +25,6 @@ import (
 	"strconv"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -136,6 +135,9 @@ type Meta struct {
 }
 
 // ChunkFromSamples requires all samples to have the same type.
+// It is not efficient and meant for testing purposes only.
+// It scans the samples to determine whether any sample has ST set and
+// creates a chunk accordingly.
 func ChunkFromSamples(s []Sample) (Meta, error) {
 	return ChunkFromSamplesGeneric(SampleSlice(s))
 }
@@ -154,7 +156,17 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	}
 
 	sampleType := s.Get(0).Type()
-	c, err := chunkenc.NewEmptyChunk(sampleType.ChunkEncoding())
+
+	hasST := false
+	for i := range s.Len() {
+		if s.Get(i).ST() != 0 {
+			hasST = true
+			break
+		}
+	}
+
+	// Request storing ST in the chunk if available.
+	c, err := sampleType.NewChunk(hasST)
 	if err != nil {
 		return Meta{}, err
 	}
@@ -165,22 +177,22 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 	for i := 0; i < s.Len(); i++ {
 		switch sampleType {
 		case chunkenc.ValFloat:
-			ca.Append(s.Get(i).T(), s.Get(i).F())
+			ca.Append(s.Get(i).ST(), s.Get(i).T(), s.Get(i).F())
 		case chunkenc.ValHistogram:
-			newChunk, _, ca, err = ca.AppendHistogram(nil, s.Get(i).T(), s.Get(i).H(), false)
+			newChunk, _, ca, err = ca.AppendHistogram(nil, s.Get(i).ST(), s.Get(i).T(), s.Get(i).H(), false)
 			if err != nil {
 				return emptyChunk, err
 			}
 			if newChunk != nil {
-				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
+				return emptyChunk, errors.New("did not expect to start a second chunk")
 			}
 		case chunkenc.ValFloatHistogram:
-			newChunk, _, ca, err = ca.AppendFloatHistogram(nil, s.Get(i).T(), s.Get(i).FH(), false)
+			newChunk, _, ca, err = ca.AppendFloatHistogram(nil, s.Get(i).ST(), s.Get(i).T(), s.Get(i).FH(), false)
 			if err != nil {
 				return emptyChunk, err
 			}
 			if newChunk != nil {
-				return emptyChunk, fmt.Errorf("did not expect to start a second chunk")
+				return emptyChunk, errors.New("did not expect to start a second chunk")
 			}
 		default:
 			panic(fmt.Sprintf("unknown sample type %s", sampleType.String()))
@@ -197,7 +209,7 @@ func ChunkFromSamplesGeneric(s Samples) (Meta, error) {
 // Used in tests to compare the content of chunks.
 func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
 	if len(chunks) == 0 {
-		return
+		return result
 	}
 
 	for _, chunk := range chunks {
@@ -218,7 +230,7 @@ func ChunkMetasToSamples(chunks []Meta) (result []Sample) {
 			}
 		}
 	}
-	return
+	return result
 }
 
 // Iterator iterates over the chunks of a single time series.
@@ -250,7 +262,7 @@ func (cm *Meta) OverlapsClosedInterval(mint, maxt int64) bool {
 	return cm.MinTime <= maxt && mint <= cm.MaxTime
 }
 
-var errInvalidSize = fmt.Errorf("invalid size")
+var errInvalidSize = errors.New("invalid size")
 
 var castagnoliTable *crc32.Table
 
@@ -280,12 +292,13 @@ func checkCRC32(data, sum []byte) error {
 type Writer struct {
 	dirFile *os.File
 	files   []*os.File
-	wbuf    *bufio.Writer
+	wbuf    fileutil.BufWriter
 	n       int64
 	crc32   hash.Hash
 	buf     [binary.MaxVarintLen32]byte
 
-	segmentSize int64
+	segmentSize   int64
+	useUncachedIO bool
 }
 
 const (
@@ -293,21 +306,40 @@ const (
 	DefaultChunkSegmentSize = 512 * 1024 * 1024
 )
 
-// NewWriterWithSegSize returns a new writer against the given directory
-// and allows setting a custom size for the segments.
-func NewWriterWithSegSize(dir string, segmentSize int64) (*Writer, error) {
-	return newWriter(dir, segmentSize)
+type writerOptions struct {
+	segmentSize   int64
+	useUncachedIO bool
 }
 
-// NewWriter returns a new writer against the given directory
-// using the default segment size.
-func NewWriter(dir string) (*Writer, error) {
-	return newWriter(dir, DefaultChunkSegmentSize)
+type WriterOption func(*writerOptions)
+
+func WithUncachedIO(enabled bool) WriterOption {
+	return func(o *writerOptions) {
+		o.useUncachedIO = enabled
+	}
 }
 
-func newWriter(dir string, segmentSize int64) (*Writer, error) {
-	if segmentSize <= 0 {
-		segmentSize = DefaultChunkSegmentSize
+// WithSegmentSize sets the chunk segment size for the writer.
+// Passing a value less than or equal to 0 causes the default segment size (DefaultChunkSegmentSize) to be used.
+func WithSegmentSize(segmentSize int64) WriterOption {
+	return func(o *writerOptions) {
+		if segmentSize <= 0 {
+			segmentSize = DefaultChunkSegmentSize
+		}
+
+		o.segmentSize = segmentSize
+	}
+}
+
+// NewWriter returns a new writer against the given directory.
+// It uses DefaultChunkSegmentSize as the default segment size.
+func NewWriter(dir string, opts ...WriterOption) (*Writer, error) {
+	options := &writerOptions{
+		segmentSize: DefaultChunkSegmentSize,
+	}
+
+	for _, opt := range opts {
+		opt(options)
 	}
 
 	if err := os.MkdirAll(dir, 0o777); err != nil {
@@ -318,10 +350,11 @@ func newWriter(dir string, segmentSize int64) (*Writer, error) {
 		return nil, err
 	}
 	return &Writer{
-		dirFile:     dirFile,
-		n:           0,
-		crc32:       newCRC32(),
-		segmentSize: segmentSize,
+		dirFile:       dirFile,
+		n:             0,
+		crc32:         newCRC32(),
+		segmentSize:   options.segmentSize,
+		useUncachedIO: options.useUncachedIO,
 	}, nil
 }
 
@@ -332,7 +365,7 @@ func (w *Writer) tail() *os.File {
 	return w.files[len(w.files)-1]
 }
 
-// finalizeTail writes all pending data to the current tail file,
+// finalizeTail writes all pending data to the current tail file if any,
 // truncates its size, and closes it.
 func (w *Writer) finalizeTail() error {
 	tf := w.tail()
@@ -340,8 +373,10 @@ func (w *Writer) finalizeTail() error {
 		return nil
 	}
 
-	if err := w.wbuf.Flush(); err != nil {
-		return err
+	if w.wbuf != nil {
+		if err := w.wbuf.Flush(); err != nil {
+			return err
+		}
 	}
 	if err := tf.Sync(); err != nil {
 		return err
@@ -372,9 +407,25 @@ func (w *Writer) cut() error {
 
 	w.files = append(w.files, f)
 	if w.wbuf != nil {
-		w.wbuf.Reset(f)
+		if err := w.wbuf.Reset(f); err != nil {
+			return err
+		}
 	} else {
-		w.wbuf = bufio.NewWriterSize(f, 8*1024*1024)
+		var (
+			wbuf fileutil.BufWriter
+			err  error
+		)
+		size := 8 * 1024 * 1024
+		if w.useUncachedIO {
+			// Uncached IO is implemented using direct I/O for now.
+			wbuf, err = fileutil.NewDirectIOWriter(f, size)
+		} else {
+			wbuf, err = fileutil.NewBufioWriterWithSize(f, size)
+		}
+		if err != nil {
+			return err
+		}
+		w.wbuf = wbuf
 	}
 
 	return nil
@@ -392,13 +443,15 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 	}
 	defer func() {
 		if returnErr != nil {
-			errs := tsdb_errors.NewMulti(returnErr)
+			errs := []error{
+				returnErr,
+			}
 			if f != nil {
-				errs.Add(f.Close())
+				errs = append(errs, f.Close())
 			}
 			// Calling RemoveAll on a non-existent file does not return error.
-			errs.Add(os.RemoveAll(ptmp))
-			returnErr = errs.Err()
+			errs = append(errs, os.RemoveAll(ptmp))
+			returnErr = errors.Join(errs...)
 		}
 	}()
 	if allocSize > 0 {
@@ -433,8 +486,9 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 		return 0, nil, 0, fmt.Errorf("open final file: %w", err)
 	}
 	// Skip header for further writes.
-	if _, err := f.Seek(int64(n), 0); err != nil {
-		return 0, nil, 0, fmt.Errorf("seek in final file: %w", err)
+	offset := int64(n)
+	if _, err := f.Seek(offset, 0); err != nil {
+		return 0, nil, 0, fmt.Errorf("seek to %d in final file: %w", offset, err)
 	}
 	return n, f, seq, nil
 }
@@ -625,10 +679,10 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 	for _, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
-			return nil, tsdb_errors.NewMulti(
+			return nil, errors.Join(
 				fmt.Errorf("mmap files: %w", err),
-				tsdb_errors.CloseAll(cs),
-			).Err()
+				closeAll(cs),
+			)
 		}
 		cs = append(cs, f)
 		bs = append(bs, realByteSlice(f.Bytes()))
@@ -636,16 +690,16 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 
 	reader, err := newReader(bs, cs, pool)
 	if err != nil {
-		return nil, tsdb_errors.NewMulti(
+		return nil, errors.Join(
 			err,
-			tsdb_errors.CloseAll(cs),
-		).Err()
+			closeAll(cs),
+		)
 	}
 	return reader, nil
 }
 
 func (s *Reader) Close() error {
-	return tsdb_errors.CloseAll(s.cs)
+	return closeAll(s.cs)
 }
 
 // Size returns the size of the chunks.
@@ -733,4 +787,13 @@ func sequenceFiles(dir string) ([]string, error) {
 		res = append(res, filepath.Join(dir, fi.Name()))
 	}
 	return res, nil
+}
+
+// closeAll closes all given closers while recording all errors.
+func closeAll(cs []io.Closer) error {
+	var errs []error
+	for _, c := range cs {
+		errs = append(errs, c.Close())
+	}
+	return errors.Join(errs...)
 }

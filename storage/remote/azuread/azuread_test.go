@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 const (
@@ -68,7 +68,7 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 	cases := []struct {
 		cfg *AzureADConfig
 	}{
-		// AzureAd roundtripper with Managedidentity.
+		// AzureAd roundtripper with ManagedIdentity.
 		{
 			cfg: &AzureADConfig{
 				Cloud: "AzurePublic",
@@ -85,6 +85,17 @@ func (ad *AzureAdTestSuite) TestAzureAdRoundTripper() {
 					ClientID:     dummyClientID,
 					ClientSecret: dummyClientSecret,
 					TenantID:     dummyTenantID,
+				},
+			},
+		},
+		// AzureAd roundtripper with Workload Identity.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: DefaultWorkloadIdentityTokenPath,
 				},
 			},
 		},
@@ -142,10 +153,10 @@ func TestAzureAdConfig(t *testing.T) {
 		filename string
 		err      string
 	}{
-		// Missing managedidentiy or oauth field.
+		// Missing managedidentity or oauth field.
 		{
 			filename: "testdata/azuread_bad_configmissing.yaml",
-			err:      "must provide an Azure Managed Identity, Azure OAuth or Azure SDK in the Azure AD config",
+			err:      "must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth or Azure SDK in the Azure AD config",
 		},
 		// Invalid managedidentity client id.
 		{
@@ -160,20 +171,49 @@ func TestAzureAdConfig(t *testing.T) {
 		// Invalid config when both managedidentity and oauth is provided.
 		{
 			filename: "testdata/azuread_bad_twoconfig.yaml",
-			err:      "cannot provide both Azure Managed Identity and Azure OAuth in the Azure AD config",
+			err:      "cannot provide multiple authentication methods in the Azure AD config",
 		},
 		// Invalid config when both sdk and oauth is provided.
 		{
 			filename: "testdata/azuread_bad_oauthsdkconfig.yaml",
-			err:      "cannot provide both Azure OAuth and Azure SDK in the Azure AD config",
+			err:      "cannot provide multiple authentication methods in the Azure AD config",
+		},
+		// Invalid workload identity client id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_invalidclientid.yaml",
+			err:      "the provided Azure Workload Identity client_id is invalid",
+		},
+		// Invalid workload identity tenant id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_invalidtenantid.yaml",
+			err:      "the provided Azure Workload Identity tenant_id is invalid",
+		},
+		// Missing workload identity client id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_missingclientid.yaml",
+			err:      "must provide an Azure Workload Identity client_id in the Azure AD config",
+		},
+		// Missing workload identity tenant id.
+		{
+			filename: "testdata/azuread_bad_workloadidentity_missingtenantid.yaml",
+			err:      "must provide an Azure Workload Identity tenant_id in the Azure AD config",
+		},
+		// Invalid scope validation.
+		{
+			filename: "testdata/azuread_bad_scope_invalid.yaml",
+			err:      "the provided scope contains invalid characters",
 		},
 		// Valid config with missing  optionally cloud field.
 		{
 			filename: "testdata/azuread_good_cloudmissing.yaml",
 		},
-		// Valid managed identity config.
+		// Valid specific managed identity config.
 		{
-			filename: "testdata/azuread_good_managedidentity.yaml",
+			filename: "testdata/azuread_good_specificmanagedidentity.yaml",
+		},
+		// Valid default managed identity config.
+		{
+			filename: "testdata/azuread_good_defaultmanagedidentity.yaml",
 		},
 		// Valid Oauth config.
 		{
@@ -182,6 +222,14 @@ func TestAzureAdConfig(t *testing.T) {
 		// Valid SDK config.
 		{
 			filename: "testdata/azuread_good_sdk.yaml",
+		},
+		// Valid workload identity config.
+		{
+			filename: "testdata/azuread_good_workloadidentity.yaml",
+		},
+		// Valid OAuth config with custom scope.
+		{
+			filename: "testdata/azuread_good_oauth_customscope.yaml",
 		},
 	}
 	for _, c := range cases {
@@ -251,6 +299,18 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 			},
 			err: "Cloud is not specified or is incorrect: ",
 		},
+		// Invalid tokenProvider for workload identity.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "PublicAzure",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: DefaultWorkloadIdentityTokenPath,
+				},
+			},
+			err: "Cloud is not specified or is incorrect: ",
+		},
 		// Valid tokenProvider for managedidentity.
 		{
 			cfg: &AzureADConfig{
@@ -277,6 +337,17 @@ func (s *TokenProviderTestSuite) TestNewTokenProvider() {
 				Cloud: "AzurePublic",
 				SDK: &SDKConfig{
 					TenantID: dummyTenantID,
+				},
+			},
+		},
+		// Valid tokenProvider for workload identity.
+		{
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				WorkloadIdentity: &WorkloadIdentityConfig{
+					ClientID:      dummyClientID,
+					TenantID:      dummyTenantID,
+					TokenFilePath: DefaultWorkloadIdentityTokenPath,
 				},
 			},
 		},
@@ -323,5 +394,89 @@ func getToken() azcore.AccessToken {
 	return azcore.AccessToken{
 		Token:     uuid.New().String(),
 		ExpiresOn: time.Now().Add(10 * time.Second),
+	}
+}
+
+func TestCustomScopeSupport(t *testing.T) {
+	mockCredential := new(mockCredential)
+	testToken := &azcore.AccessToken{
+		Token:     testTokenString,
+		ExpiresOn: testTokenExpiry(),
+	}
+
+	cases := []struct {
+		name          string
+		cfg           *AzureADConfig
+		expectedScope string
+	}{
+		{
+			name: "Custom scope with OAuth",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+				Scope: "https://custom-app.com/.default",
+			},
+			expectedScope: "https://custom-app.com/.default",
+		},
+		{
+			name: "Custom scope with Managed Identity",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				ManagedIdentity: &ManagedIdentityConfig{
+					ClientID: dummyClientID,
+				},
+				Scope: "https://monitor.azure.com//.default",
+			},
+			expectedScope: "https://monitor.azure.com//.default",
+		},
+		{
+			name: "Default scope fallback with OAuth",
+			cfg: &AzureADConfig{
+				Cloud: "AzurePublic",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+			},
+			expectedScope: IngestionPublicAudience,
+		},
+		{
+			name: "Default scope fallback with China cloud",
+			cfg: &AzureADConfig{
+				Cloud: "AzureChina",
+				OAuth: &OAuthConfig{
+					ClientID:     dummyClientID,
+					ClientSecret: dummyClientSecret,
+					TenantID:     dummyTenantID,
+				},
+			},
+			expectedScope: IngestionChinaAudience,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Set up mock to capture the actual scopes used
+			mockCredential.On("GetToken", mock.Anything, mock.MatchedBy(func(options policy.TokenRequestOptions) bool {
+				return len(options.Scopes) == 1 && options.Scopes[0] == c.expectedScope
+			})).Return(*testToken, nil).Once()
+
+			tokenProvider, err := newTokenProvider(c.cfg, mockCredential)
+			require.NoError(t, err)
+			require.NotNil(t, tokenProvider)
+
+			// Verify that the token provider uses the expected scope
+			token, err := tokenProvider.getAccessToken(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, testTokenString, token)
+
+			// Reset mock for next test
+			mockCredential.ExpectedCalls = nil
+		})
 	}
 }

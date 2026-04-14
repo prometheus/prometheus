@@ -1,7 +1,8 @@
 ---
 extends: default
 ignore: |
-  ui/react-app/node_modules
+  **/node_modules
+  web/api/v1/testdata/openapi_*_golden.yaml
 
 rules:
   braces:

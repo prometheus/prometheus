@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -41,19 +41,21 @@ func TestCORSHandler(t *testing.T) {
 	dummyOrigin := "https://foo.com"
 
 	// OPTIONS with legit origin
-	req, err := http.NewRequest(http.MethodOptions, server.URL+"/any_path", nil)
+	req, err := http.NewRequest(http.MethodOptions, server.URL+"/any_path", http.NoBody)
 	require.NoError(t, err, "could not create request")
 
 	req.Header.Set("Origin", dummyOrigin)
 	resp, err := client.Do(req)
 	require.NoError(t, err, "client get failed with unexpected error")
 
-	AccessControlAllowOrigin := resp.Header.Get("Access-Control-Allow-Origin")
+	Vary := resp.Header.Get("Vary")
+	require.Equal(t, "Origin", Vary)
 
+	AccessControlAllowOrigin := resp.Header.Get("Access-Control-Allow-Origin")
 	require.Equal(t, dummyOrigin, AccessControlAllowOrigin, "expected Access-Control-Allow-Origin header")
 
 	// OPTIONS with bad origin
-	req, err = http.NewRequest(http.MethodOptions, server.URL+"/any_path", nil)
+	req, err = http.NewRequest(http.MethodOptions, server.URL+"/any_path", http.NoBody)
 	require.NoError(t, err, "could not create request")
 
 	req.Header.Set("Origin", "https://not-foo.com")
@@ -62,4 +64,20 @@ func TestCORSHandler(t *testing.T) {
 
 	AccessControlAllowOrigin = resp.Header.Get("Access-Control-Allow-Origin")
 	require.Empty(t, AccessControlAllowOrigin, "Access-Control-Allow-Origin header should not exist but it was set")
+
+	Vary = resp.Header.Get("Vary")
+	require.Equal(t, "Origin", Vary)
+
+	// OPTIONS with no origin
+	req, err = http.NewRequest(http.MethodOptions, server.URL+"/any_path", http.NoBody)
+	require.NoError(t, err)
+
+	resp, err = client.Do(req)
+	require.NoError(t, err)
+
+	Vary = resp.Header.Get("Vary")
+	require.Equal(t, "Origin", Vary)
+
+	AccessControlAllowOrigin = resp.Header.Get("Access-Control-Allow-Origin")
+	require.Empty(t, AccessControlAllowOrigin)
 }

@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,9 +19,7 @@
 package remote
 
 import (
-	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +31,7 @@ func TestIntern(t *testing.T) {
 	interned, ok := interner.pool[testString]
 
 	require.True(t, ok)
-	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
+	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
 }
 
 func TestIntern_MultiRef(t *testing.T) {
@@ -44,13 +42,13 @@ func TestIntern_MultiRef(t *testing.T) {
 	interned, ok := interner.pool[testString]
 
 	require.True(t, ok)
-	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
+	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
 
 	interner.intern(testString)
 	interned, ok = interner.pool[testString]
 
 	require.True(t, ok)
-	require.Equal(t, int64(2), interned.refs.Load(), fmt.Sprintf("expected refs to be 2 but it was %d", interned.refs.Load()))
+	require.Equalf(t, int64(2), interned.refs.Load(), "expected refs to be 2 but it was %d", interned.refs.Load())
 }
 
 func TestIntern_DeleteRef(t *testing.T) {
@@ -61,7 +59,7 @@ func TestIntern_DeleteRef(t *testing.T) {
 	interned, ok := interner.pool[testString]
 
 	require.True(t, ok)
-	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
+	require.Equalf(t, int64(1), interned.refs.Load(), "expected refs to be 1 but it was %d", interned.refs.Load())
 
 	interner.release(testString)
 	_, ok = interner.pool[testString]
@@ -75,17 +73,21 @@ func TestIntern_MultiRef_Concurrent(t *testing.T) {
 	interner.intern(testString)
 	interned, ok := interner.pool[testString]
 	require.True(t, ok)
-	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
+	require.Equal(t, int64(1), interned.refs.Load(), "wrong interned refs count")
 
-	go interner.release(testString)
-
-	interner.intern(testString)
-
-	time.Sleep(time.Millisecond)
+	for range 1000 {
+		released := make(chan struct{})
+		go func() {
+			interner.release(testString)
+			close(released)
+		}()
+		interner.intern(testString)
+		<-released
+	}
 
 	interner.mtx.RLock()
 	interned, ok = interner.pool[testString]
 	interner.mtx.RUnlock()
 	require.True(t, ok)
-	require.Equal(t, int64(1), interned.refs.Load(), fmt.Sprintf("expected refs to be 1 but it was %d", interned.refs.Load()))
+	require.Equal(t, int64(1), interned.refs.Load(), "wrong interned refs count")
 }

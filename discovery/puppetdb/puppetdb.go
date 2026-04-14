@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -27,11 +28,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -62,7 +63,7 @@ var (
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
-	userAgent        = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent        = version.PrometheusUserAgent()
 )
 
 func init() {
@@ -80,7 +81,7 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &puppetdbMetrics{
 		refreshMetrics: rmi,
 	}
@@ -91,7 +92,7 @@ func (*SDConfig) Name() string { return "puppetdb" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -100,7 +101,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -108,20 +109,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.URL == "" {
-		return fmt.Errorf("URL is missing")
+		return errors.New("URL is missing")
 	}
 	parsedURL, err := url.Parse(c.URL)
 	if err != nil {
 		return err
 	}
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("URL scheme must be 'http' or 'https'")
+		return errors.New("URL scheme must be 'http' or 'https'")
 	}
 	if parsedURL.Host == "" {
-		return fmt.Errorf("host is missing in URL")
+		return errors.New("host is missing in URL")
 	}
 	if c.Query == "" {
-		return fmt.Errorf("query missing")
+		return errors.New("query missing")
 	}
 	return c.HTTPClientConfig.Validate()
 }
@@ -138,14 +139,14 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new PuppetDB discovery for the given config.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*puppetdbMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*puppetdbMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	if logger == nil {
-		logger = log.NewNopLogger()
+	if opts.Logger == nil {
+		opts.Logger = promslog.NewNopLogger()
 	}
 
 	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "http")
@@ -170,8 +171,9 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "puppetdb",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

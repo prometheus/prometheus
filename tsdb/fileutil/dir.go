@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,8 +20,12 @@ import (
 
 func DirSize(dir string) (int64, error) {
 	var size int64
-	err := filepath.Walk(dir, func(filePath string, info os.FileInfo, err error) error {
+	err := filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
+			// Ignore missing files that may have been deleted during the walk.
+			if os.IsNotExist(err) {
+				return nil
+			}
 			return err
 		}
 		if !info.IsDir() {

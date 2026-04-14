@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -232,8 +232,12 @@ func TestWriteOutput(t *testing.T) {
 
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	sdMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
+	mechanismMetrics, err := discovery.RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
+	sdMetrics := &discovery.SDMetrics{
+		MechanismMetrics: mechanismMetrics,
+		RefreshManager:   refreshMetrics,
+	}
 
 	adapter := NewAdapter(ctx, tmpfile.Name(), "test_sd", nil, nil, sdMetrics, reg)
 	require.NoError(t, adapter.writeOutput())

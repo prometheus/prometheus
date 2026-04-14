@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,11 +13,33 @@
 
 package metadata
 
-import "github.com/prometheus/common/model"
+import (
+	"strings"
+
+	"github.com/prometheus/common/model"
+)
 
 // Metadata stores a series' metadata information.
 type Metadata struct {
 	Type model.MetricType `json:"type"`
 	Unit string           `json:"unit"`
 	Help string           `json:"help"`
+}
+
+// IsEmpty returns true if metadata structure is empty, including unknown type case.
+func (m Metadata) IsEmpty() bool {
+	return (m.Type == "" || m.Type == model.MetricTypeUnknown) && m.Unit == "" && m.Help == ""
+}
+
+// Equals returns true if m is semantically the same as other metadata.
+func (m Metadata) Equals(other Metadata) bool {
+	if strings.Compare(m.Unit, other.Unit) != 0 || strings.Compare(m.Help, other.Help) != 0 {
+		return false
+	}
+
+	// Unknown means the same as empty string.
+	if m.Type == "" || m.Type == model.MetricTypeUnknown {
+		return other.Type == "" || other.Type == model.MetricTypeUnknown
+	}
+	return m.Type == other.Type
 }

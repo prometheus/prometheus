@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,10 +15,8 @@ package ionos
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -43,25 +41,26 @@ func init() {
 type Discovery struct{}
 
 // NewDiscovery returns a new refresh.Discovery for IONOS Cloud.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*refresh.Discovery, error) {
-	m, ok := metrics.(*ionosMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*refresh.Discovery, error) {
+	m, ok := opts.Metrics.(*ionosMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	if conf.ionosEndpoint == "" {
 		conf.ionosEndpoint = "https://api.ionos.com"
 	}
 
-	d, err := newServerDiscovery(conf, logger)
+	d, err := newServerDiscovery(conf, opts.Logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "ionos",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -90,24 +89,24 @@ type SDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &ionosMetrics{
 		refreshMetrics: rmi,
 	}
 }
 
 // Name returns the name of the IONOS Cloud service discovery.
-func (c SDConfig) Name() string {
+func (SDConfig) Name() string {
 	return "ionos"
 }
 
 // NewDiscoverer returns a new discovery.Discoverer for IONOS Cloud.
-func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(&c, options.Logger, options.Metrics)
+func (c SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(&c, opts)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))

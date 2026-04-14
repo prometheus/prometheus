@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -25,11 +25,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -40,10 +40,10 @@ import (
 var (
 	// DefaultSDConfig is the default HTTP SD configuration.
 	DefaultSDConfig = SDConfig{
-		RefreshInterval:  model.Duration(60 * time.Second),
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		RefreshInterval:  model.Duration(60 * time.Second),
 	}
-	userAgent        = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent        = version.PrometheusUserAgent()
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
 )
 
@@ -68,7 +68,7 @@ func (*SDConfig) Name() string { return "http" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.HTTPClientOptions, opts.Metrics)
+	return NewDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -77,7 +77,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -85,17 +85,17 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.URL == "" {
-		return fmt.Errorf("URL is missing")
+		return errors.New("URL is missing")
 	}
 	parsedURL, err := url.Parse(c.URL)
 	if err != nil {
 		return err
 	}
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("URL scheme must be 'http' or 'https'")
+		return errors.New("URL scheme must be 'http' or 'https'")
 	}
 	if parsedURL.Host == "" {
-		return fmt.Errorf("host is missing in URL")
+		return errors.New("host is missing in URL")
 	}
 	return c.HTTPClientConfig.Validate()
 }
@@ -114,17 +114,17 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new HTTP discovery for the given config.
-func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPClientOption, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*httpMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*httpMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	if logger == nil {
-		logger = log.NewNopLogger()
+	if opts.Logger == nil {
+		opts.Logger = promslog.NewNopLogger()
 	}
 
-	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "http", clientOpts...)
+	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "http", opts.HTTPClientOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -139,8 +139,9 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPCli
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "http",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.Refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -150,7 +151,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPCli
 }
 
 func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	req, err := http.NewRequest(http.MethodGet, d.url, nil)
+	req, err := http.NewRequest(http.MethodGet, d.url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}

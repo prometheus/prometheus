@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -61,8 +61,8 @@ func newAPI(url *url.URL, roundTripper http.RoundTripper, headers map[string]str
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
-func QueryInstant(url *url.URL, roundTripper http.RoundTripper, query, evalTime string, p printer) int {
-	api, err := newAPI(url, roundTripper, nil)
+func QueryInstant(url *url.URL, roundTripper http.RoundTripper, headers map[string]string, query, evalTime string, p printer) int {
+	api, err := newAPI(url, roundTripper, headers)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
 		return failureExitCode

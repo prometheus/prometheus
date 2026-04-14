@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,19 +16,17 @@ package azuread
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/grafana/regexp"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/google/uuid"
+	"github.com/grafana/regexp"
 )
 
 // Clouds.
@@ -45,10 +43,30 @@ const (
 	IngestionPublicAudience     = "https://monitor.azure.com//.default"
 )
 
+const (
+	// DefaultWorkloadIdentityTokenPath is the default path where the Azure Workload Identity
+	// webhook puts the service account token on Azure environments. See <azure docs link>.
+	DefaultWorkloadIdentityTokenPath = "/var/run/secrets/azure/tokens/azure-identity-token"
+)
+
 // ManagedIdentityConfig is used to store managed identity config values.
 type ManagedIdentityConfig struct {
 	// ClientID is the clientId of the managed identity that is being used to authenticate.
 	ClientID string `yaml:"client_id,omitempty"`
+}
+
+// WorkloadIdentityConfig is used to store workload identity config values.
+type WorkloadIdentityConfig struct {
+	// ClientID is the clientId of the Microsoft Entra application or user-assigned managed identity.
+	ClientID string `yaml:"client_id,omitempty"`
+
+	// TenantID is the tenantId of the Microsoft Entra application or user-assigned managed identity.
+	// This should match the tenant ID where your application or managed identity is registered.
+	TenantID string `yaml:"tenant_id,omitempty"`
+
+	// TokenFilePath is the path to the token file provided by the Kubernetes service account projected volume.
+	// If not specified, it defaults to DefaultWorkloadIdentityTokenPath.
+	TokenFilePath string `yaml:"token_file_path,omitempty"`
 }
 
 // OAuthConfig is used to store azure oauth config values.
@@ -74,6 +92,9 @@ type AzureADConfig struct { //nolint:revive // exported.
 	// ManagedIdentity is the managed identity that is being used to authenticate.
 	ManagedIdentity *ManagedIdentityConfig `yaml:"managed_identity,omitempty"`
 
+	// WorkloadIdentity is the workload identity that is being used to authenticate.
+	WorkloadIdentity *WorkloadIdentityConfig `yaml:"workload_identity,omitempty"`
+
 	// OAuth is the oauth config that is being used to authenticate.
 	OAuth *OAuthConfig `yaml:"oauth,omitempty"`
 
@@ -82,6 +103,9 @@ type AzureADConfig struct { //nolint:revive // exported.
 
 	// Cloud is the Azure cloud in which the service is running. Example: AzurePublic/AzureGovernment/AzureChina.
 	Cloud string `yaml:"cloud,omitempty"`
+
+	// Scope is the custom OAuth 2.0 scope to request when acquiring tokens.
+	Scope string `yaml:"scope,omitempty"`
 }
 
 // azureADRoundTripper is used to store the roundtripper and the tokenprovider.
@@ -110,66 +134,89 @@ func (c *AzureADConfig) Validate() error {
 	}
 
 	if c.Cloud != AzureChina && c.Cloud != AzureGovernment && c.Cloud != AzurePublic {
-		return fmt.Errorf("must provide a cloud in the Azure AD config")
+		return errors.New("must provide a cloud in the Azure AD config")
 	}
 
-	if c.ManagedIdentity == nil && c.OAuth == nil && c.SDK == nil {
-		return fmt.Errorf("must provide an Azure Managed Identity, Azure OAuth or Azure SDK in the Azure AD config")
+	authenticators := 0
+	if c.ManagedIdentity != nil {
+		authenticators++
+	}
+	if c.WorkloadIdentity != nil {
+		authenticators++
+	}
+	if c.OAuth != nil {
+		authenticators++
+	}
+	if c.SDK != nil {
+		authenticators++
 	}
 
-	if c.ManagedIdentity != nil && c.OAuth != nil {
-		return fmt.Errorf("cannot provide both Azure Managed Identity and Azure OAuth in the Azure AD config")
+	if authenticators == 0 {
+		return errors.New("must provide an Azure Managed Identity, Azure Workload Identity, Azure OAuth or Azure SDK in the Azure AD config")
 	}
-
-	if c.ManagedIdentity != nil && c.SDK != nil {
-		return fmt.Errorf("cannot provide both Azure Managed Identity and Azure SDK in the Azure AD config")
-	}
-
-	if c.OAuth != nil && c.SDK != nil {
-		return fmt.Errorf("cannot provide both Azure OAuth and Azure SDK in the Azure AD config")
+	if authenticators > 1 {
+		return errors.New("cannot provide multiple authentication methods in the Azure AD config")
 	}
 
 	if c.ManagedIdentity != nil {
-		if c.ManagedIdentity.ClientID == "" {
-			return fmt.Errorf("must provide an Azure Managed Identity client_id in the Azure AD config")
+		if c.ManagedIdentity.ClientID != "" {
+			_, err := uuid.Parse(c.ManagedIdentity.ClientID)
+			if err != nil {
+				return errors.New("the provided Azure Managed Identity client_id is invalid")
+			}
+		}
+	}
+
+	if c.WorkloadIdentity != nil {
+		if c.WorkloadIdentity.ClientID == "" {
+			return errors.New("must provide an Azure Workload Identity client_id in the Azure AD config")
+		}
+		if c.WorkloadIdentity.TenantID == "" {
+			return errors.New("must provide an Azure Workload Identity tenant_id in the Azure AD config")
 		}
 
-		_, err := uuid.Parse(c.ManagedIdentity.ClientID)
-		if err != nil {
-			return fmt.Errorf("the provided Azure Managed Identity client_id is invalid")
+		if _, err := uuid.Parse(c.WorkloadIdentity.ClientID); err != nil {
+			return errors.New("the provided Azure Workload Identity client_id is invalid")
+		}
+		if _, err := uuid.Parse(c.WorkloadIdentity.TenantID); err != nil {
+			return errors.New("the provided Azure Workload Identity tenant_id is invalid")
+		}
+
+		if c.WorkloadIdentity.TokenFilePath == "" {
+			c.WorkloadIdentity.TokenFilePath = DefaultWorkloadIdentityTokenPath
 		}
 	}
 
 	if c.OAuth != nil {
 		if c.OAuth.ClientID == "" {
-			return fmt.Errorf("must provide an Azure OAuth client_id in the Azure AD config")
+			return errors.New("must provide an Azure OAuth client_id in the Azure AD config")
 		}
 		if c.OAuth.ClientSecret == "" {
-			return fmt.Errorf("must provide an Azure OAuth client_secret in the Azure AD config")
+			return errors.New("must provide an Azure OAuth client_secret in the Azure AD config")
 		}
 		if c.OAuth.TenantID == "" {
-			return fmt.Errorf("must provide an Azure OAuth tenant_id in the Azure AD config")
+			return errors.New("must provide an Azure OAuth tenant_id in the Azure AD config")
 		}
 
-		var err error
-		_, err = uuid.Parse(c.OAuth.ClientID)
-		if err != nil {
-			return fmt.Errorf("the provided Azure OAuth client_id is invalid")
+		if _, err := uuid.Parse(c.OAuth.ClientID); err != nil {
+			return errors.New("the provided Azure OAuth client_id is invalid")
 		}
-		_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.OAuth.TenantID)
-		if err != nil {
-			return fmt.Errorf("the provided Azure OAuth tenant_id is invalid")
+		if _, err := regexp.MatchString("^[0-9a-zA-Z-.]+$", c.OAuth.TenantID); err != nil {
+			return errors.New("the provided Azure OAuth tenant_id is invalid")
 		}
 	}
 
 	if c.SDK != nil {
-		var err error
-
 		if c.SDK.TenantID != "" {
-			_, err = regexp.MatchString("^[0-9a-zA-Z-.]+$", c.SDK.TenantID)
-			if err != nil {
-				return fmt.Errorf("the provided Azure OAuth tenant_id is invalid")
+			if _, err := regexp.MatchString("^[0-9a-zA-Z-.]+$", c.SDK.TenantID); err != nil {
+				return errors.New("the provided Azure SDK tenant_id is invalid")
 			}
+		}
+	}
+
+	if c.Scope != "" {
+		if matched, err := regexp.MatchString("^[\\w\\s:/.\\-]+$", c.Scope); err != nil || !matched {
+			return errors.New("the provided scope contains invalid characters")
 		}
 	}
 
@@ -177,7 +224,7 @@ func (c *AzureADConfig) Validate() error {
 }
 
 // UnmarshalYAML unmarshal the Azure AD config yaml.
-func (c *AzureADConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *AzureADConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	type plain AzureADConfig
 	*c = AzureADConfig{}
 	if err := unmarshal((*plain)(c)); err != nil {
@@ -221,7 +268,7 @@ func (rt *azureADRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	return rt.next.RoundTrip(req)
 }
 
-// newTokenCredential returns a TokenCredential of different kinds like Azure Managed Identity and Azure AD application.
+// newTokenCredential returns a TokenCredential of different kinds like Azure Managed Identity, Workload Identity and Azure AD application.
 func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 	var cred azcore.TokenCredential
 	var err error
@@ -238,6 +285,18 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 			ClientID: cfg.ManagedIdentity.ClientID,
 		}
 		cred, err = newManagedIdentityTokenCredential(clientOpts, managedIdentityConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if cfg.WorkloadIdentity != nil {
+		workloadIdentityConfig := &WorkloadIdentityConfig{
+			ClientID:      cfg.WorkloadIdentity.ClientID,
+			TenantID:      cfg.WorkloadIdentity.TenantID,
+			TokenFilePath: cfg.WorkloadIdentity.TokenFilePath,
+		}
+		cred, err = newWorkloadIdentityTokenCredential(clientOpts, workloadIdentityConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -270,9 +329,29 @@ func newTokenCredential(cfg *AzureADConfig) (azcore.TokenCredential, error) {
 
 // newManagedIdentityTokenCredential returns new Managed Identity token credential.
 func newManagedIdentityTokenCredential(clientOpts *azcore.ClientOptions, managedIdentityConfig *ManagedIdentityConfig) (azcore.TokenCredential, error) {
-	clientID := azidentity.ClientID(managedIdentityConfig.ClientID)
-	opts := &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts, ID: clientID}
+	var opts *azidentity.ManagedIdentityCredentialOptions
+	if managedIdentityConfig.ClientID != "" {
+		clientID := azidentity.ClientID(managedIdentityConfig.ClientID)
+		opts = &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts, ID: clientID}
+	} else {
+		opts = &azidentity.ManagedIdentityCredentialOptions{ClientOptions: *clientOpts}
+	}
 	return azidentity.NewManagedIdentityCredential(opts)
+}
+
+// newWorkloadIdentityTokenCredential returns new Microsoft Entra Workload Identity token credential.
+//
+// For detailed setup instructions, see:
+// https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/prometheus-metrics-enable-workload-identity
+func newWorkloadIdentityTokenCredential(clientOpts *azcore.ClientOptions, workloadIdentityConfig *WorkloadIdentityConfig) (azcore.TokenCredential, error) {
+	opts := &azidentity.WorkloadIdentityCredentialOptions{
+		ClientOptions: *clientOpts,
+		ClientID:      workloadIdentityConfig.ClientID,
+		TenantID:      workloadIdentityConfig.TenantID,
+		TokenFilePath: workloadIdentityConfig.TokenFilePath,
+	}
+
+	return azidentity.NewWorkloadIdentityCredential(opts)
 }
 
 // newOAuthTokenCredential returns new OAuth token credential.
@@ -290,14 +369,22 @@ func newSDKTokenCredential(clientOpts *azcore.ClientOptions, sdkConfig *SDKConfi
 // newTokenProvider helps to fetch accessToken for different types of credential. This also takes care of
 // refreshing the accessToken before expiry. This accessToken is attached to the Authorization header while making requests.
 func newTokenProvider(cfg *AzureADConfig, cred azcore.TokenCredential) (*tokenProvider, error) {
-	audience, err := getAudience(cfg.Cloud)
-	if err != nil {
-		return nil, err
+	var scopes []string
+
+	// Use custom scope if provided, otherwise fallback to cloud-specific audience
+	if cfg.Scope != "" {
+		scopes = []string{cfg.Scope}
+	} else {
+		audience, err := getAudience(cfg.Cloud)
+		if err != nil {
+			return nil, err
+		}
+		scopes = []string{audience}
 	}
 
 	tokenProvider := &tokenProvider{
 		credentialClient: cred,
-		options:          &policy.TokenRequestOptions{Scopes: []string{audience}},
+		options:          &policy.TokenRequestOptions{Scopes: scopes},
 	}
 
 	return tokenProvider, nil
@@ -319,7 +406,7 @@ func (tokenProvider *tokenProvider) getAccessToken(ctx context.Context) (string,
 
 // valid checks if the token in the token provider is valid and not expired.
 func (tokenProvider *tokenProvider) valid() bool {
-	if len(tokenProvider.token) == 0 {
+	if tokenProvider.token == "" {
 		return false
 	}
 	if tokenProvider.refreshTime.After(time.Now().UTC()) {
@@ -334,7 +421,7 @@ func (tokenProvider *tokenProvider) getToken(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if len(accessToken.Token) == 0 {
+	if accessToken.Token == "" {
 		return errors.New("access token is empty")
 	}
 
@@ -350,11 +437,10 @@ func (tokenProvider *tokenProvider) getToken(ctx context.Context) error {
 func (tokenProvider *tokenProvider) updateRefreshTime(accessToken azcore.AccessToken) error {
 	tokenExpiryTimestamp := accessToken.ExpiresOn.UTC()
 	deltaExpirytime := time.Now().Add(time.Until(tokenExpiryTimestamp) / 2)
-	if deltaExpirytime.After(time.Now().UTC()) {
-		tokenProvider.refreshTime = deltaExpirytime
-	} else {
+	if !deltaExpirytime.After(time.Now().UTC()) {
 		return errors.New("access token expiry is less than the current time")
 	}
+	tokenProvider.refreshTime = deltaExpirytime
 	return nil
 }
 

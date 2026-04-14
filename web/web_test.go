@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -52,11 +52,15 @@ type dbAdapter struct {
 	*tsdb.DB
 }
 
+func (a *dbAdapter) BlockMetas() ([]tsdb.BlockMeta, error) {
+	return a.DB.BlockMetas(), nil
+}
+
 func (a *dbAdapter) Stats(statsByLabelName string, limit int) (*tsdb.Stats, error) {
 	return a.Head().Stats(statsByLabelName, limit), nil
 }
 
-func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+func (*dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
 
@@ -106,8 +110,7 @@ func TestReadyAndHealthy(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -115,11 +118,9 @@ func TestReadyAndHealthy(t *testing.T) {
 		}
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
-
 	baseURL := "http://localhost" + port
+
+	waitForServerReady(t, baseURL, 5*time.Second)
 
 	resp, err := http.Get(baseURL + "/-/healthy")
 	require.NoError(t, err)
@@ -137,11 +138,32 @@ func TestReadyAndHealthy(t *testing.T) {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "false", resp.Header.Get("X-Prometheus-Stopping"))
 		cleanupTestResponse(t, resp)
 
 		resp, err = http.Head(u)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "false", resp.Header.Get("X-Prometheus-Stopping"))
+		cleanupTestResponse(t, resp)
+	}
+
+	// Set to stopping
+	webHandler.SetReady(Stopping)
+
+	for _, u := range []string{
+		baseURL + "/-/ready",
+	} {
+		resp, err = http.Get(u)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "true", resp.Header.Get("X-Prometheus-Stopping"))
+		cleanupTestResponse(t, resp)
+
+		resp, err = http.Head(u)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, "true", resp.Header.Get("X-Prometheus-Stopping"))
 		cleanupTestResponse(t, resp)
 	}
 
@@ -156,7 +178,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	cleanupTestResponse(t, resp)
 
 	// Set to ready.
-	webHandler.SetReady(true)
+	webHandler.SetReady(Ready)
 
 	for _, u := range []string{
 		baseURL + "/-/healthy",
@@ -224,8 +246,7 @@ func TestRoutePrefix(t *testing.T) {
 	if err != nil {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -233,11 +254,9 @@ func TestRoutePrefix(t *testing.T) {
 		}
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
-
 	baseURL := "http://localhost" + port
+
+	waitForServerReady(t, baseURL+opts.RoutePrefix, 5*time.Second)
 
 	resp, err := http.Get(baseURL + opts.RoutePrefix + "/-/healthy")
 	require.NoError(t, err)
@@ -260,7 +279,7 @@ func TestRoutePrefix(t *testing.T) {
 	cleanupTestResponse(t, resp)
 
 	// Set to ready.
-	webHandler.SetReady(true)
+	webHandler.SetReady(Ready)
 
 	resp, err = http.Get(baseURL + opts.RoutePrefix + "/-/healthy")
 	require.NoError(t, err)
@@ -305,13 +324,14 @@ func TestDebugHandler(t *testing.T) {
 				Host:   "localhost.localdomain:9090",
 				Scheme: "http",
 			},
+			Version: &PrometheusVersion{},
 		}
 		handler := New(nil, opts)
-		handler.SetReady(true)
+		handler.SetReady(Ready)
 
 		w := httptest.NewRecorder()
 
-		req, err := http.NewRequest(http.MethodGet, tc.url, nil)
+		req, err := http.NewRequest(http.MethodGet, tc.url, http.NoBody)
 
 		require.NoError(t, err)
 
@@ -330,12 +350,13 @@ func TestHTTPMetrics(t *testing.T) {
 			Host:   "localhost.localdomain:9090",
 			Scheme: "http",
 		},
+		Version: &PrometheusVersion{},
 	})
 	getReady := func() int {
 		t.Helper()
 		w := httptest.NewRecorder()
 
-		req, err := http.NewRequest(http.MethodGet, "/-/ready", nil)
+		req, err := http.NewRequest(http.MethodGet, "/-/ready", http.NoBody)
 		require.NoError(t, err)
 
 		handler.router.ServeHTTP(w, req)
@@ -349,7 +370,7 @@ func TestHTTPMetrics(t *testing.T) {
 	counter := handler.metrics.requestCounter
 	require.Equal(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 
-	handler.SetReady(true)
+	handler.SetReady(Ready)
 	for range [2]int{} {
 		code = getReady()
 		require.Equal(t, http.StatusOK, code)
@@ -358,7 +379,7 @@ func TestHTTPMetrics(t *testing.T) {
 	require.Equal(t, 2, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
 	require.Equal(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 
-	handler.SetReady(false)
+	handler.SetReady(NotReady)
 	for range [2]int{} {
 		code = getReady()
 		require.Equal(t, http.StatusServiceUnavailable, code)
@@ -424,9 +445,9 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 		close(closed)
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
+	baseURL := "http://localhost" + port
+
+	waitForServerReady(t, baseURL, 5*time.Second)
 
 	// Open a socket, and don't use it. This connection should then be closed
 	// after the ReadTimeout.
@@ -475,23 +496,19 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 		close(closed)
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
-
 	baseURL := opts.ExternalURL.Scheme + "://" + opts.ExternalURL.Host
+
+	waitForServerReady(t, baseURL, 5*time.Second)
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 3 {
+		wg.Go(func() {
 			<-start
 			resp, err := http.Post(baseURL+"/-/quit", "", strings.NewReader(""))
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()
@@ -537,7 +554,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 	opts.Flags = map[string]string{}
 
 	webHandler := New(nil, opts)
-	webHandler.SetReady(true)
+	webHandler.SetReady(Ready)
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
 	l, err := webHandler.Listeners()
@@ -545,8 +562,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listeners: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -554,21 +570,21 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		}
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
 	baseURL := "http://localhost" + port + "/api/v1"
+
+	waitForServerReady(t, "http://localhost"+port, 5*time.Second)
 
 	// Test for non-available endpoints in the Agent mode.
 	for path, methods := range map[string][]string{
 		"/labels":                      {http.MethodGet, http.MethodPost},
 		"/label/:name/values":          {http.MethodGet},
-		"/series":                      {http.MethodGet, http.MethodPost, http.MethodDelete},
+		"/series":                      {http.MethodGet, http.MethodPost},
 		"/alertmanagers":               {http.MethodGet},
 		"/query":                       {http.MethodGet, http.MethodPost},
 		"/query_range":                 {http.MethodGet, http.MethodPost},
 		"/query_exemplars":             {http.MethodGet, http.MethodPost},
 		"/status/tsdb":                 {http.MethodGet},
+		"/status/tsdb/blocks":          {http.MethodGet},
 		"/alerts":                      {http.MethodGet},
 		"/rules":                       {http.MethodGet},
 		"/admin/tsdb/delete_series":    {http.MethodPost, http.MethodPut},
@@ -576,7 +592,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		"/admin/tsdb/snapshot":         {http.MethodPost, http.MethodPut},
 	} {
 		for _, m := range methods {
-			req, err := http.NewRequest(m, baseURL+path, nil)
+			req, err := http.NewRequest(m, baseURL+path, http.NoBody)
 			require.NoError(t, err)
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
@@ -597,7 +613,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		"/status/flags":       {http.MethodGet},
 	} {
 		for _, m := range methods {
-			req, err := http.NewRequest(m, baseURL+path, nil)
+			req, err := http.NewRequest(m, baseURL+path, http.NoBody)
 			require.NoError(t, err)
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
@@ -624,7 +640,7 @@ func cleanupSnapshot(t *testing.T, dbDir string, resp *http.Response) {
 	b, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(b, snapshot))
-	require.NotZero(t, snapshot.Data.Name, "snapshot directory not returned")
+	require.NotEmpty(t, snapshot.Data.Name, "snapshot directory not returned")
 	require.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots", snapshot.Data.Name)))
 	require.NoError(t, os.Remove(filepath.Join(dbDir, "snapshots")))
 }
@@ -678,8 +694,7 @@ func TestMultipleListenAddresses(t *testing.T) {
 		panic(fmt.Sprintf("Unable to start web listener: %s", err))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() {
 		err := webHandler.Run(ctx, l, "")
 		if err != nil {
@@ -687,12 +702,10 @@ func TestMultipleListenAddresses(t *testing.T) {
 		}
 	}()
 
-	// Give some time for the web goroutine to run since we need the server
-	// to be up before starting tests.
-	time.Sleep(5 * time.Second)
+	waitForServerReady(t, "http://localhost"+port1, 5*time.Second)
 
 	// Set to ready.
-	webHandler.SetReady(true)
+	webHandler.SetReady(Ready)
 
 	for _, port := range []string{port1, port2} {
 		baseURL := "http://localhost" + port
@@ -707,4 +720,25 @@ func TestMultipleListenAddresses(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		cleanupTestResponse(t, resp)
 	}
+}
+
+// Give some time for the web goroutine to run since we need the server
+// to be up before starting tests.
+func waitForServerReady(t *testing.T, baseURL string, timeout time.Duration) {
+	t.Helper()
+
+	interval := 100 * time.Millisecond
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(baseURL + "/-/healthy")
+		if resp != nil {
+			cleanupTestResponse(t, resp)
+		}
+		if err == nil && resp.StatusCode == http.StatusOK {
+			return
+		}
+		time.Sleep(interval)
+	}
+	t.Fatalf("Server did not become ready within %v", timeout)
 }

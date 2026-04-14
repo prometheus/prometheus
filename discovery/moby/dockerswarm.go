@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,14 +15,13 @@ package moby
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/client"
-	"github.com/go-kit/log"
+	"github.com/moby/moby/client"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -36,8 +35,6 @@ import (
 const (
 	swarmLabel = model.MetaLabelPrefix + "dockerswarm_"
 )
-
-var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // DefaultDockerSwarmSDConfig is the default Docker Swarm SD configuration.
 var DefaultDockerSwarmSDConfig = DockerSwarmSDConfig{
@@ -71,7 +68,7 @@ type Filter struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*DockerSwarmSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*DockerSwarmSDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &dockerswarmMetrics{
 		refreshMetrics: rmi,
 	}
@@ -82,7 +79,7 @@ func (*DockerSwarmSDConfig) Name() string { return "dockerswarm" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *DockerSwarmSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -91,7 +88,7 @@ func (c *DockerSwarmSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *DockerSwarmSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *DockerSwarmSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultDockerSwarmSDConfig
 	type plain DockerSwarmSDConfig
 	err := unmarshal((*plain)(c))
@@ -99,7 +96,7 @@ func (c *DockerSwarmSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) e
 		return err
 	}
 	if c.Host == "" {
-		return fmt.Errorf("host missing")
+		return errors.New("host missing")
 	}
 	if _, err = url.Parse(c.Host); err != nil {
 		return err
@@ -107,7 +104,7 @@ func (c *DockerSwarmSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) e
 	switch c.Role {
 	case "services", "nodes", "tasks":
 	case "":
-		return fmt.Errorf("role missing (one of: tasks, services, nodes)")
+		return errors.New("role missing (one of: tasks, services, nodes)")
 	default:
 		return fmt.Errorf("invalid role %s, expected tasks, services, or nodes", c.Role)
 	}
@@ -121,14 +118,14 @@ type Discovery struct {
 	client  *client.Client
 	role    string
 	port    int
-	filters filters.Args
+	filters client.Filters
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *DockerSwarmSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*dockerswarmMetrics)
+func NewDiscovery(conf *DockerSwarmSDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*dockerswarmMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &Discovery{
@@ -141,12 +138,11 @@ func NewDiscovery(conf *DockerSwarmSDConfig, logger log.Logger, metrics discover
 		return nil, err
 	}
 
-	opts := []client.Opt{
+	clientOpts := []client.Opt{
 		client.WithHost(conf.Host),
-		client.WithAPIVersionNegotiation(),
 	}
 
-	d.filters = filters.NewArgs()
+	d.filters = make(client.Filters)
 	for _, f := range conf.Filters {
 		for _, v := range f.Values {
 			d.filters.Add(f.Name, v)
@@ -161,27 +157,28 @@ func NewDiscovery(conf *DockerSwarmSDConfig, logger log.Logger, metrics discover
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts,
+		clientOpts = append(clientOpts,
 			client.WithHTTPClient(&http.Client{
 				Transport: rt,
 				Timeout:   time.Duration(conf.RefreshInterval),
 			}),
 			client.WithScheme(hostURL.Scheme),
 			client.WithHTTPHeaders(map[string]string{
-				"User-Agent": userAgent,
+				"User-Agent": version.PrometheusUserAgent(),
 			}),
 		)
 	}
 
-	d.client, err = client.NewClientWithOpts(opts...)
+	d.client, err = client.New(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up docker swarm client: %w", err)
 	}
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "dockerswarm",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,

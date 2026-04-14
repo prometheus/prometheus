@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,13 +18,14 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v2"
+	"github.com/prometheus/common/promslog"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -51,8 +52,9 @@ type startTimeCallback func() (int64, error)
 // Storage represents all the remote read and write endpoints.  It implements
 // storage.Storage.
 type Storage struct {
-	logger *logging.Deduper
-	mtx    sync.Mutex
+	deduper *logging.Deduper
+	logger  *slog.Logger
+	mtx     sync.Mutex
 
 	rws *WriteStorage
 
@@ -61,18 +63,22 @@ type Storage struct {
 	localStartTimeCallback startTimeCallback
 }
 
+var _ storage.Storage = &Storage{}
+
 // NewStorage returns a remote.Storage.
-func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, metadataInWAL bool) *Storage {
+func NewStorage(l *slog.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager, enableTypeAndUnitLabels bool) *Storage {
 	if l == nil {
-		l = log.NewNopLogger()
+		l = promslog.NewNopLogger()
 	}
-	logger := logging.Dedupe(l, 1*time.Minute)
+	deduper := logging.Dedupe(l, 1*time.Minute)
+	logger := slog.New(deduper)
 
 	s := &Storage{
 		logger:                 logger,
+		deduper:                deduper,
 		localStartTimeCallback: stCallback,
 	}
-	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, metadataInWAL)
+	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm, enableTypeAndUnitLabels)
 	return s
 }
 
@@ -141,7 +147,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 }
 
 // StartTime implements the Storage interface.
-func (s *Storage) StartTime() (int64, error) {
+func (*Storage) StartTime() (int64, error) {
 	return int64(model.Latest), nil
 }
 
@@ -189,6 +195,11 @@ func (s *Storage) Appender(ctx context.Context) storage.Appender {
 	return s.rws.Appender(ctx)
 }
 
+// AppenderV2 implements storage.Storage.
+func (s *Storage) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return s.rws.AppenderV2(ctx)
+}
+
 // LowestSentTimestamp returns the lowest sent timestamp across all queues.
 func (s *Storage) LowestSentTimestamp() int64 {
 	return s.rws.LowestSentTimestamp()
@@ -196,7 +207,7 @@ func (s *Storage) LowestSentTimestamp() int64 {
 
 // Close the background processing of the storage queues.
 func (s *Storage) Close() error {
-	s.logger.Stop()
+	s.deduper.Stop()
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	return s.rws.Close()
@@ -215,7 +226,7 @@ func labelsToEqualityMatchers(ls model.LabelSet) []*labels.Matcher {
 }
 
 // Used for hashing configs and diff'ing hashes in ApplyConfig.
-func toHash(data interface{}) (string, error) {
+func toHash(data any) (string, error) {
 	bytes, err := yaml.Marshal(data)
 	if err != nil {
 		return "", err

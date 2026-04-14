@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,14 +16,12 @@ package tsdbutil
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -34,7 +32,7 @@ const (
 )
 
 type DirLocker struct {
-	logger log.Logger
+	logger *slog.Logger
 
 	createdCleanly prometheus.Gauge
 
@@ -43,7 +41,7 @@ type DirLocker struct {
 }
 
 // NewDirLocker creates a DirLocker that can obtain an exclusive lock on dir.
-func NewDirLocker(dir, subsystem string, l log.Logger, r prometheus.Registerer) (*DirLocker, error) {
+func NewDirLocker(dir, subsystem string, l *slog.Logger, r prometheus.Registerer) (*DirLocker, error) {
 	lock := &DirLocker{
 		logger: l,
 		createdCleanly: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -74,7 +72,7 @@ func (l *DirLocker) Lock() error {
 	}
 
 	if _, err := os.Stat(l.path); err == nil {
-		level.Warn(l.logger).Log("msg", "A lockfile from a previous execution already existed. It was replaced", "file", l.path)
+		l.logger.Warn("A lockfile from a previous execution already existed. It was replaced", "file", l.path)
 
 		l.createdCleanly.Set(lockfileReplaced)
 	} else {
@@ -95,10 +93,9 @@ func (l *DirLocker) Release() error {
 		return nil
 	}
 
-	errs := tsdb_errors.NewMulti()
-	errs.Add(l.releaser.Release())
-	errs.Add(os.Remove(l.path))
+	releaserErr := l.releaser.Release()
+	removeErr := os.Remove(l.path)
 
 	l.releaser = nil
-	return errs.Err()
+	return errors.Join(releaserErr, removeErr)
 }

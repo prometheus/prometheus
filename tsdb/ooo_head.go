@@ -1,4 +1,4 @@
-// Copyright 2022 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -34,13 +34,13 @@ func NewOOOChunk() *OOOChunk {
 
 // Insert inserts the sample such that order is maintained.
 // Returns false if insert was not possible due to the same timestamp already existing.
-func (o *OOOChunk) Insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
+func (o *OOOChunk) Insert(st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
 	// Although out-of-order samples can be out-of-order amongst themselves, we
 	// are opinionated and expect them to be usually in-order meaning we could
 	// try to append at the end first if the new timestamp is higher than the
 	// last known timestamp.
 	if len(o.samples) == 0 || t > o.samples[len(o.samples)-1].t {
-		o.samples = append(o.samples, sample{t, v, h, fh})
+		o.samples = append(o.samples, sample{st, t, v, h, fh})
 		return true
 	}
 
@@ -49,7 +49,7 @@ func (o *OOOChunk) Insert(t int64, v float64, h *histogram.Histogram, fh *histog
 
 	if i >= len(o.samples) {
 		// none found. append it at the end
-		o.samples = append(o.samples, sample{t, v, h, fh})
+		o.samples = append(o.samples, sample{st, t, v, h, fh})
 		return true
 	}
 
@@ -61,7 +61,7 @@ func (o *OOOChunk) Insert(t int64, v float64, h *histogram.Histogram, fh *histog
 	// Expand length by 1 to make room. use a zero sample, we will overwrite it anyway.
 	o.samples = append(o.samples, sample{})
 	copy(o.samples[i+1:], o.samples[i:])
-	o.samples[i] = sample{t, v, h, fh}
+	o.samples[i] = sample{st, t, v, h, fh}
 
 	return true
 }
@@ -72,8 +72,8 @@ func (o *OOOChunk) NumSamples() int {
 
 // ToEncodedChunks returns chunks with the samples in the OOOChunk.
 //
-//nolint:revive // unexported-return.
-func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error) {
+//nolint:revive
+func (o *OOOChunk) ToEncodedChunks(mint, maxt int64, useXOR2 bool) (chks []memChunk, err error) {
 	if len(o.samples) == 0 {
 		return nil, nil
 	}
@@ -93,10 +93,13 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 		if s.t > maxt {
 			break
 		}
-		encoding := chunkenc.EncXOR
-		if s.h != nil {
+		encoding := chunkenc.ValFloat.ChunkEncoding(useXOR2)
+		switch {
+		case s.h != nil:
+			// TODO(krajorama): use ST capable histogram chunk.
 			encoding = chunkenc.EncHistogram
-		} else if s.fh != nil {
+		case s.fh != nil:
+			// TODO(krajorama): use ST capable float histogram chunk.
 			encoding = chunkenc.EncFloatHistogram
 		}
 
@@ -108,32 +111,29 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 				chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
 			}
 			cmint = s.t
-			switch encoding {
-			case chunkenc.EncXOR:
-				chunk = chunkenc.NewXORChunk()
-			case chunkenc.EncHistogram:
-				chunk = chunkenc.NewHistogramChunk()
-			case chunkenc.EncFloatHistogram:
-				chunk = chunkenc.NewFloatHistogramChunk()
-			default:
-				chunk = chunkenc.NewXORChunk()
+			chunk, err = chunkenc.NewEmptyChunk(encoding)
+			if err != nil {
+				// This should never happen. No point using a default type as
+				// calling the wrong append function would panic.
+				return chks, err
 			}
 			app, err = chunk.Appender()
 			if err != nil {
-				return
+				return chks, err
 			}
 		}
 		switch encoding {
-		case chunkenc.EncXOR:
-			app.Append(s.t, s.f)
+		case chunkenc.EncXOR, chunkenc.EncXOR2:
+			app.Append(s.st, s.t, s.f)
 		case chunkenc.EncHistogram:
+			// TODO(krajorama): handle ST capable histogram chunk.
 			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 			prevHApp, _ := prevApp.(*chunkenc.HistogramAppender)
 			var (
 				newChunk chunkenc.Chunk
 				recoded  bool
 			)
-			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, s.t, s.h, false)
+			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, s.st, s.t, s.h, false)
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
@@ -142,13 +142,14 @@ func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error
 				chunk = newChunk
 			}
 		case chunkenc.EncFloatHistogram:
+			// TODO(krajorama): handle ST capable float histogram chunk.
 			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
 			prevHApp, _ := prevApp.(*chunkenc.FloatHistogramAppender)
 			var (
 				newChunk chunkenc.Chunk
 				recoded  bool
 			)
-			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, s.t, s.fh, false)
+			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, s.st, s.t, s.fh, false)
 			if newChunk != nil { // A new chunk was allocated.
 				if !recoded {
 					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})

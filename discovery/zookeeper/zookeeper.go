@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,15 +18,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/go-zookeeper/zk"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -58,7 +59,7 @@ type ServersetSDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*ServersetSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*ServersetSDConfig) NewDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &discovery.NoopDiscovererMetrics{}
 }
 
@@ -71,7 +72,7 @@ func (c *ServersetSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (dis
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultServersetSDConfig
 	type plain ServersetSDConfig
 	err := unmarshal((*plain)(c))
@@ -100,7 +101,7 @@ type NerveSDConfig struct {
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*NerveSDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*NerveSDConfig) NewDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &discovery.NoopDiscovererMetrics{}
 }
 
@@ -113,7 +114,7 @@ func (c *NerveSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discove
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultNerveSDConfig
 	type plain NerveSDConfig
 	err := unmarshal((*plain)(c))
@@ -146,16 +147,16 @@ type Discovery struct {
 	treeCaches  []*treecache.ZookeeperTreeCache
 
 	parse  func(data []byte, path string) (model.LabelSet, error)
-	logger log.Logger
+	logger *slog.Logger
 }
 
 // NewNerveDiscovery returns a new Discovery for the given Nerve config.
-func NewNerveDiscovery(conf *NerveSDConfig, logger log.Logger) (*Discovery, error) {
+func NewNerveDiscovery(conf *NerveSDConfig, logger *slog.Logger) (*Discovery, error) {
 	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseNerveMember)
 }
 
 // NewServersetDiscovery returns a new Discovery for the given serverset config.
-func NewServersetDiscovery(conf *ServersetSDConfig, logger log.Logger) (*Discovery, error) {
+func NewServersetDiscovery(conf *ServersetSDConfig, logger *slog.Logger) (*Discovery, error) {
 	return NewDiscovery(conf.Servers, time.Duration(conf.Timeout), conf.Paths, logger, parseServersetMember)
 }
 
@@ -165,11 +166,11 @@ func NewDiscovery(
 	srvs []string,
 	timeout time.Duration,
 	paths []string,
-	logger log.Logger,
+	logger *slog.Logger,
 	pf func(data []byte, path string) (model.LabelSet, error),
 ) (*Discovery, error) {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 
 	conn, _, err := zk.Connect(

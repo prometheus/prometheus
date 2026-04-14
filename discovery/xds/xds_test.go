@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -22,9 +22,9 @@ import (
 	"time"
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -85,12 +85,12 @@ func createTestHTTPServer(t *testing.T, responder discoveryResponder) *httptest.
 }
 
 func constantResourceParser(targets []model.LabelSet, err error) resourceParser {
-	return func(resources []*anypb.Any, typeUrl string) ([]model.LabelSet, error) {
+	return func([]*anypb.Any, string) ([]model.LabelSet, error) {
 		return targets, err
 	}
 }
 
-var nopLogger = log.NewNopLogger()
+var nopLogger = promslog.NewNopLogger()
 
 type testResourceClient struct {
 	resourceTypeURL string
@@ -111,16 +111,18 @@ func (rc testResourceClient) Fetch(ctx context.Context) (*v3.DiscoveryResponse, 
 	return rc.fetch(ctx)
 }
 
-func (rc testResourceClient) ID() string {
+func (testResourceClient) ID() string {
 	return "test-client"
 }
 
-func (rc testResourceClient) Close() {
+func (testResourceClient) Close() {
 }
 
 func TestPollingRefreshSkipUpdate(t *testing.T) {
+	t.Parallel()
+
 	rc := &testResourceClient{
-		fetch: func(ctx context.Context) (*v3.DiscoveryResponse, error) {
+		fetch: func(context.Context) (*v3.DiscoveryResponse, error) {
 			return nil, nil
 		},
 	}
@@ -162,12 +164,14 @@ func TestPollingRefreshSkipUpdate(t *testing.T) {
 }
 
 func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
+	t.Parallel()
+
 	server := "http://198.161.2.0"
 	source := "test"
 	rc := &testResourceClient{
 		server:          server,
 		protocolVersion: ProtocolV3,
-		fetch: func(ctx context.Context) (*v3.DiscoveryResponse, error) {
+		fetch: func(context.Context) (*v3.DiscoveryResponse, error) {
 			return &v3.DiscoveryResponse{}, nil
 		},
 	}
@@ -218,19 +222,21 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 }
 
 func TestPollingDisappearingTargets(t *testing.T) {
+	t.Parallel()
+
 	server := "http://198.161.2.0"
 	source := "test"
 	rc := &testResourceClient{
 		server:          server,
 		protocolVersion: ProtocolV3,
-		fetch: func(ctx context.Context) (*v3.DiscoveryResponse, error) {
+		fetch: func(context.Context) (*v3.DiscoveryResponse, error) {
 			return &v3.DiscoveryResponse{}, nil
 		},
 	}
 
 	// On the first poll, send back two targets. On the next, send just one.
 	counter := 0
-	parser := func(resources []*anypb.Any, typeUrl string) ([]model.LabelSet, error) {
+	parser := func([]*anypb.Any, string) ([]model.LabelSet, error) {
 		counter++
 		if counter == 1 {
 			return []model.LabelSet{

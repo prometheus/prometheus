@@ -1,9 +1,7 @@
 ---
-title: Unit Testing for Rules
+title: Unit testing for rules
 sort_rank: 6
 ---
-
-# Unit Testing for Rules
 
 You can use `promtool` to test your rules.
 
@@ -11,7 +9,7 @@ You can use `promtool` to test your rules.
 # For a single test file.
 ./promtool test rules test.yml
 
-# If you have multiple test files, say test1.yml,test2.yml,test2.yml
+# If you have multiple test files, say test1.yml,test2.yml,test3.yml
 ./promtool test rules test1.yml test2.yml test3.yml
 ```
 
@@ -23,6 +21,10 @@ rule_files:
   [ - <file_name> ]
 
 [ evaluation_interval: <duration> | default = 1m ]
+
+# Setting fuzzy_compare true will very slightly weaken floating point comparisons.
+# This will (effectively) ignore differences in the last bit of the mantissa.
+[ fuzzy_compare: <boolean> | default = false ]
 
 # The order in which group names are listed below will be the order of evaluation of
 # rule groups (at a given evaluation time). The order is guaranteed only for the groups mentioned below.
@@ -45,6 +47,18 @@ input_series:
 
 # Name of the test group
 [ name: <string> ]
+
+# Start timestamp for the test group. This sets the base time for all samples
+# and evaluations in this test group.
+# Accepts either a Unix timestamp (e.g., 1609459200) or an RFC3339 formatted
+# timestamp (e.g., "2021-01-01T00:00:00Z").
+# Default: 0 (Unix epoch: 1970-01-01 00:00:00 UTC)
+#
+# When set:
+# - All input_series samples are timestamped starting from start_timestamp
+# - The eval_time in test cases is relative to start_timestamp
+# - The time() function returns start_timestamp + eval_time
+[ start_timestamp: <int> | <rfc3339_string> | default = 0 ]
 
 # Unit tests for the above data.
 
@@ -95,20 +109,22 @@ series: <string>
 #     {{schema:1 sum:-0.3 count:3.1 z_bucket:7.1 z_bucket_w:0.05 buckets:[5.1 10 7] offset:-3 n_buckets:[4.1 5] n_offset:-5 counter_reset_hint:gauge}}
 #     Native histograms support the same expanding notation as floating point numbers, i.e. 'axn', 'a+bxn' and 'a-bxn'.
 #     All properties are optional and default to 0. The order is not important. The following properties are supported:
-#     - schema (int): 
-#         Currently valid schema numbers are -4 <= n <= 8. They are all for
-#         base-2 bucket schemas, where 1 is a bucket boundary in each case, and
+#     - schema (int):
+#         Currently valid schema numbers are -53 and -4 <= n <= 8.
+#         Schema -53 is the custom buckets schema, upper bucket boundaries are defined in custom_values
+#         like for classic histograms, and you shouldn't use z_bucket, z_bucket_w, n_buckets, n_offset.
+#         The rest are base-2 standard schemas, where 1.0 is a bucket boundary in each case, and
 #         then each power of two is divided into 2^n logarithmic buckets.  Or
 #         in other words, each bucket boundary is the previous boundary times
 #         2^(2^-n).
-#     - sum (float): 
+#     - sum (float):
 #         The sum of all observations, including the zero bucket.
-#     - count (non-negative float): 
+#     - count (non-negative float):
 #         The number of observations, including those that are NaN and including the zero bucket.
-#     - z_bucket (non-negative float): 
+#     - z_bucket (non-negative float):
 #         The sum of all observations in the zero bucket.
-#     - z_bucket_w (non-negative float): 
-#         The width of the zero bucket. 
+#     - z_bucket_w (non-negative float):
+#         The width of the zero bucket.
 #         If z_bucket_w > 0, the zero bucket contains all observations -z_bucket_w <= x <= z_bucket_w.
 #         Otherwise, the zero bucket only contains observations that are exactly 0.
 #     - buckets (list of non-negative floats):
@@ -121,6 +137,10 @@ series: <string>
 #         The starting index of the first entry in the negative buckets.
 #     - counter_reset_hint (one of 'unknown', 'reset', 'not_reset' or 'gauge')
 #         The counter reset hint associated with this histogram. Defaults to 'unknown' if not set.
+#     - custom_values (list of floats in ascending order):
+#         The upper limits for custom buckets when schema is -53. 
+#         These have the same role as the 'le' numbers in classic histograms.
+#         Do not append '+Inf' at the end, it is implicit.
 values: <string>
 ```
 
@@ -129,7 +149,8 @@ values: <string>
 Prometheus allows you to have same alertname for different alerting rules. Hence in this unit testing, you have to list the union of all the firing alerts for the alertname under a single `<alert_test_case>`.
 
 ``` yaml
-# The time elapsed from time=0s when the alerts have to be checked.
+# The time elapsed from start_timestamp when the alerts have to be checked.
+# This is a duration relative to start_timestamp (which defaults to 0).
 eval_time: <duration>
 
 # Name of the alert to be tested.
@@ -160,7 +181,8 @@ exp_annotations:
 # Expression to evaluate
 expr: <string>
 
-# The time elapsed from time=0s when the expression has to be evaluated.
+# The time elapsed from start_timestamp when the expression has to be evaluated.
+# This is a duration relative to start_timestamp (which defaults to 0).
 eval_time: <duration>
 
 # Expected samples at the given evaluation time.
@@ -267,3 +289,24 @@ groups:
         summary: "Instance {{ $labels.instance }} down"
         description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 5 minutes."
 ```
+
+### Time within tests
+
+It should be noted that in all tests, either in `alert_test_case` or
+`promql_test_case`, the output from all functions related to the current time,
+for example the `time()` and `day_of_*()` functions, will output a consistent value
+for tests.
+
+By default, at the start of the test evaluation, `time()` returns 0 (Unix epoch:
+January 1, 1970 00:00:00 UTC). The `eval_time` field specifies a duration relative
+to `start_timestamp`, so by default `time()` will return a value of `0 + eval_time`.
+
+You can configure a custom start timestamp for your tests by setting the `start_timestamp`
+field in your test group. This field accepts either:
+- A Unix timestamp (e.g., `1609459200` for January 1, 2021 00:00:00 UTC)
+- An RFC3339 formatted timestamp (e.g., `"2021-01-01T00:00:00Z"`)
+
+When you set `start_timestamp`:
+- All `input_series` samples will be timestamped starting from `start_timestamp`
+- The `eval_time` field in test cases is interpreted as a duration relative to `start_timestamp`
+- The `time()` function will return `start_timestamp + eval_time`

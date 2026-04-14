@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -126,14 +126,21 @@ func TestIgnoreExternalLabels(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// mustURLParse parses a URL and panics on error.
+func mustURLParse(rawURL string) *url.URL {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse URL %q: %v", rawURL, err))
+	}
+	return u
+}
+
 // baseRemoteWriteConfig copy values from global Default Write config
 // to avoid change global state and cross impact test execution.
 func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 	cfg := config.DefaultRemoteWriteConfig
 	cfg.URL = &common_config.URL{
-		URL: &url.URL{
-			Host: host,
-		},
+		URL: mustURLParse(host),
 	}
 	return &cfg
 }
@@ -143,9 +150,7 @@ func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
 func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
 	cfg := config.DefaultRemoteReadConfig
 	cfg.URL = &common_config.URL{
-		URL: &url.URL{
-			Host: host,
-		},
+		URL: mustURLParse(host),
 	}
 	return &cfg
 }
@@ -160,7 +165,7 @@ func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
 	wg.Add(2000)
 
 	start := make(chan struct{})
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		go func(i int) {
 			<-start
 			conf := &config.Config{
@@ -174,7 +179,7 @@ func TestWriteStorageApplyConfigsDuringCommit(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		go func() {
 			<-start
 			s.Notify()

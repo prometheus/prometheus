@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,17 +15,19 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -36,11 +38,14 @@ func TestMain(m *testing.M) {
 	testutil.TolerantVerifyLeak(m)
 }
 
-func NewTestMetrics(t *testing.T, reg prometheus.Registerer) (RefreshMetricsManager, map[string]DiscovererMetrics) {
+func NewTestMetrics(t *testing.T, reg prometheus.Registerer) *SDMetrics {
 	refreshMetrics := NewRefreshMetrics(reg)
-	sdMetrics, err := RegisterSDMetrics(reg, refreshMetrics)
+	mechanismMetrics, err := RegisterSDMetrics(reg, refreshMetrics)
 	require.NoError(t, err)
-	return refreshMetrics, sdMetrics
+	return &SDMetrics{
+		MechanismMetrics: mechanismMetrics,
+		RefreshManager:   refreshMetrics,
+	}
 }
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
@@ -667,15 +672,14 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
 			reg := prometheus.NewRegistry()
-			_, sdMetrics := NewTestMetrics(t, reg)
+			sdMetrics := NewTestMetrics(t, reg)
 
-			discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+			discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 			require.NotNil(t, discoveryManager)
 			discoveryManager.updatert = 100 * time.Millisecond
 
@@ -694,7 +698,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			for x := 0; x < totalUpdatesCount; x++ {
 				select {
 				case <-ctx.Done():
-					require.FailNow(t, "%d: no update arrived within the timeout limit", x)
+					t.Fatalf("%d: no update arrived within the timeout limit", x)
 				case tgs := <-provUpdates:
 					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
 					for _, got := range discoveryManager.allGroups() {
@@ -768,12 +772,10 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 			}
 		}
 	}
-	if match != present {
-		msg := ""
-		if !present {
-			msg = "not"
-		}
-		require.FailNow(t, "%q should %s be present in Targets labels: %q", label, msg, mergedTargets)
+	if present {
+		require.Truef(t, match, "%q must be present in Targets labels: %q", label, mergedTargets)
+	} else {
+		require.Falsef(t, match, "%q must be absent in Targets labels: %q", label, mergedTargets)
 	}
 }
 
@@ -784,14 +786,91 @@ func pk(provider, setName string, n int) poolKey {
 	}
 }
 
+func TestTargetSetTargetGroupsPresentOnStartup(t *testing.T) {
+	testCases := []struct {
+		name            string
+		updatert        time.Duration
+		readTimeout     time.Duration
+		expectedTargets int
+	}{
+		{
+			name:        "startup wait with long interval times out",
+			updatert:    100 * time.Hour,
+			readTimeout: 10 * time.Millisecond,
+		},
+		{
+			name:            "startup wait with short interval succeeds",
+			updatert:        10 * time.Millisecond,
+			readTimeout:     300 * time.Millisecond,
+			expectedTargets: 1,
+		},
+		{
+			name:            "skip startup wait",
+			updatert:        100 * time.Hour,
+			readTimeout:     300 * time.Millisecond,
+			expectedTargets: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx := t.Context()
+
+				reg := prometheus.NewRegistry()
+				sdMetrics := NewTestMetrics(t, reg)
+
+				opts := make([]func(*Manager), 0)
+				discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics, opts...)
+				require.NotNil(t, discoveryManager)
+
+				discoveryManager.updatert = tc.updatert
+				go discoveryManager.Run()
+
+				c := map[string]Configs{
+					"prometheus": {
+						staticConfig("foo:9090"),
+					},
+				}
+				discoveryManager.ApplyConfig(c)
+
+				synctest.Wait()
+
+				timeout := time.After(tc.readTimeout)
+				var lastSyncedTargets map[string][]*targetgroup.Group
+			testFor:
+				for {
+					select {
+					case <-timeout:
+						break testFor
+					case lastSyncedTargets = <-discoveryManager.SyncCh():
+					}
+				}
+
+				if tc.expectedTargets == 0 {
+					require.Nil(t, lastSyncedTargets)
+					return
+				}
+
+				require.Len(t, lastSyncedTargets, 1)
+				require.Len(t, lastSyncedTargets["prometheus"], tc.expectedTargets)
+				verifySyncedPresence(t, lastSyncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+
+				p := pk("static", "prometheus", 0)
+				verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+				require.Len(t, discoveryManager.targets, 1)
+			})
+		})
+	}
+}
+
 func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -822,13 +901,12 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -862,13 +940,12 @@ func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -905,13 +982,12 @@ func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testi
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -973,13 +1049,12 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 }
 
 func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1017,13 +1092,12 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 }
 
 func TestDiscovererConfigs(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1054,13 +1128,12 @@ func TestDiscovererConfigs(t *testing.T) {
 // removing all targets from the static_configs cleans the corresponding targetGroups entries to avoid leaks and sends an empty update.
 // The update is required to signal the consumers that the previous targets should be dropped.
 func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1090,17 +1163,16 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	targetGroups, ok := discoveryManager.targets[p]
 	require.True(t, ok, "'%v' should be present in targets", p)
 	// Otherwise the targetGroups will leak, see https://github.com/prometheus/prometheus/issues/12436.
-	require.Empty(t, targetGroups, 0, "'%v' should no longer have any associated target groups", p)
+	require.Empty(t, targetGroups, "'%v' should no longer have any associated target groups", p)
 	require.Len(t, syncedTargets, 1, "an update with no targetGroups should still be sent.")
-	require.Empty(t, syncedTargets["prometheus"], 0)
+	require.Empty(t, syncedTargets["prometheus"])
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
 	discoveryManager := NewManager(ctx, nil, reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
@@ -1135,13 +1207,12 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 	processedConfig := Configs{
 		staticConfig("foo:9090", "bar:9090", "baz:9090"),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1159,7 +1230,7 @@ func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
 
 type errorConfig struct{ err error }
 
-func (e errorConfig) Name() string                                        { return "error" }
+func (errorConfig) Name() string                                          { return "error" }
 func (e errorConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) { return nil, e.err }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -1177,7 +1248,7 @@ func (lockStaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetri
 	return &NoopDiscovererMetrics{}
 }
 
-func (s lockStaticConfig) Name() string { return "lockstatic" }
+func (lockStaticConfig) Name() string { return "lockstatic" }
 func (s lockStaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
 	return (lockStaticDiscoverer)(s), nil
 }
@@ -1196,22 +1267,21 @@ func (s lockStaticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.
 }
 
 func TestGaugeFailedConfigs(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
 		"prometheus": {
-			errorConfig{fmt.Errorf("tests error 0")},
-			errorConfig{fmt.Errorf("tests error 1")},
-			errorConfig{fmt.Errorf("tests error 2")},
+			errorConfig{errors.New("tests error 0")},
+			errorConfig{errors.New("tests error 1")},
+			errorConfig{errors.New("tests error 2")},
 		},
 	}
 	discoveryManager.ApplyConfig(c)
@@ -1351,13 +1421,12 @@ func TestCoordinationWithReceiver(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
 			reg := prometheus.NewRegistry()
-			_, sdMetrics := NewTestMetrics(t, reg)
+			sdMetrics := NewTestMetrics(t, reg)
 
 			mgr := NewManager(ctx, nil, reg, sdMetrics)
 			require.NotNil(t, mgr)
@@ -1372,10 +1441,10 @@ func TestCoordinationWithReceiver(t *testing.T) {
 				time.Sleep(expected.delay)
 				select {
 				case <-ctx.Done():
-					require.FailNow(t, "step %d: no update received in the expected timeframe", i)
+					t.Fatalf("step %d: no update received in the expected timeframe", i)
 				case tgs, ok := <-mgr.SyncCh():
 					require.True(t, ok, "step %d: discovery manager channel is closed", i)
-					require.Equal(t, len(expected.tgs), len(tgs), "step %d: targets mismatch", i)
+					require.Len(t, tgs, len(expected.tgs), "step %d: targets mismatch", i)
 
 					for k := range expected.tgs {
 						_, ok := tgs[k]
@@ -1448,13 +1517,12 @@ func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
 // TestTargetSetTargetGroupsUpdateDuringApplyConfig is used to detect races when
 // ApplyConfig happens at the same time as targets update.
 func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	reg := prometheus.NewRegistry()
-	_, sdMetrics := NewTestMetrics(t, reg)
+	sdMetrics := NewTestMetrics(t, reg)
 
-	discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 	require.NotNil(t, discoveryManager)
 	discoveryManager.updatert = 100 * time.Millisecond
 	go discoveryManager.Run()
@@ -1472,7 +1540,7 @@ func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 	wg.Add(2000)
 
 	start := make(chan struct{})
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		go func() {
 			<-start
 			td.update([]*targetgroup.Group{
@@ -1486,7 +1554,7 @@ func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		go func(i int) {
 			<-start
 			c := map[string]Configs{
@@ -1522,7 +1590,7 @@ func (*testDiscoverer) NewDiscovererMetrics(prometheus.Registerer, RefreshMetric
 }
 
 // Name implements Config.
-func (t *testDiscoverer) Name() string {
+func (*testDiscoverer) Name() string {
 	return "test"
 }
 
@@ -1546,20 +1614,143 @@ func (t *testDiscoverer) update(tgs []*targetgroup.Group) {
 func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	// Check that all metrics can be unregistered, allowing a second manager to be created.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		ctx, cancel := context.WithCancel(context.Background())
 
-		refreshMetrics, sdMetrics := NewTestMetrics(t, reg)
+		sdMetrics := NewTestMetrics(t, reg)
 
-		discoveryManager := NewManager(ctx, log.NewNopLogger(), reg, sdMetrics)
+		discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
 		// discoveryManager will be nil if there was an error configuring metrics.
 		require.NotNil(t, discoveryManager)
 		// Unregister all metrics.
 		discoveryManager.UnregisterMetrics()
-		for _, sdMetric := range sdMetrics {
+		for _, sdMetric := range sdMetrics.MechanismMetrics {
 			sdMetric.Unregister()
 		}
-		refreshMetrics.Unregister()
+		sdMetrics.RefreshManager.Unregister()
 		cancel()
 	}
+}
+
+// Refresh and discovery metrics should be deleted for providers that are removed.
+func TestMetricsCleanupAfterConfigReload(t *testing.T) {
+	ctx := t.Context()
+
+	reg := prometheus.NewRegistry()
+	sdMetrics := NewTestMetrics(t, reg)
+
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, discoveryManager)
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090", "bar:9090"),
+		},
+		"other": {
+			staticConfig("baz:9090"),
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+	<-discoveryManager.SyncCh()
+
+	// Manually instantiate refresh metrics to make them visible
+	sdMetrics.RefreshManager.Instantiate("static", "prometheus").Failures.Add(0)
+	sdMetrics.RefreshManager.Instantiate("static", "other").Failures.Add(0)
+
+	count, err := client_testutil.GatherAndCount(reg, "prometheus_sd_discovered_targets")
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
+
+	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_refresh_failures_total")
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
+
+	// Simulate a config refresh.
+	delete(c, "prometheus")
+	discoveryManager.ApplyConfig(c)
+	<-discoveryManager.SyncCh()
+
+	// Ensure we still have metrics for the remaining provider.
+	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_discovered_targets")
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+
+	count, err = client_testutil.GatherAndCount(reg, "prometheus_sd_refresh_failures_total")
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+}
+
+// Calling ApplyConfig() that removes providers at the same time as shutting down
+// the manager should not hang.
+func TestConfigReloadAndShutdownRace(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	sdMetrics := NewTestMetrics(t, reg)
+
+	mgrCtx, mgrCancel := context.WithCancel(context.Background())
+	discoveryManager := NewManager(mgrCtx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, discoveryManager)
+	discoveryManager.updatert = 100 * time.Millisecond
+
+	var wgDiscovery sync.WaitGroup
+	wgDiscovery.Go(func() {
+		discoveryManager.Run()
+	})
+	time.Sleep(time.Millisecond * 200)
+
+	var wgBg sync.WaitGroup
+	updateChan := discoveryManager.SyncCh()
+	wgBg.Add(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		defer wgBg.Done()
+		select {
+		case <-ctx.Done():
+			return
+		case <-updateChan:
+		}
+	}()
+
+	c := map[string]Configs{
+		"prometheus": {staticConfig("bar:9090")},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	delete(c, "prometheus")
+	wgBg.Go(func() {
+		discoveryManager.ApplyConfig(c)
+	})
+	mgrCancel()
+	wgDiscovery.Wait()
+
+	cancel()
+	wgBg.Wait()
+}
+
+func TestGaugeLastUpdateTimestamp(t *testing.T) {
+	ctx := t.Context()
+
+	reg := prometheus.NewRegistry()
+	sdMetrics := NewTestMetrics(t, reg)
+
+	discoveryManager := NewManager(ctx, promslog.NewNopLogger(), reg, sdMetrics)
+	require.NotNil(t, discoveryManager)
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	before := time.Now()
+	<-discoveryManager.SyncCh()
+	after := time.Now()
+
+	ts := client_testutil.ToFloat64(discoveryManager.metrics.LastUpdated.WithLabelValues("prometheus"))
+	require.GreaterOrEqual(t, ts, float64(before.UnixNano())/1e9, "last update timestamp should be >= time before sync")
+	require.LessOrEqual(t, ts, float64(after.UnixNano())/1e9, "last update timestamp should be <= time after sync")
 }

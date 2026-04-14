@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,11 +16,12 @@ package moby
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"strconv"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/swarm"
+	mobynetwork "github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -43,7 +44,7 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 		Source: "DockerSwarm",
 	}
 
-	tasks, err := d.client.TaskList(ctx, types.TaskListOptions{Filters: d.filters})
+	tasks, err := d.client.TaskList(ctx, client.TaskListOptions{Filters: d.filters})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing swarm services: %w", err)
 	}
@@ -63,7 +64,7 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 		return nil, fmt.Errorf("error while computing swarm network labels: %w", err)
 	}
 
-	for _, s := range tasks {
+	for _, s := range tasks.Items {
 		commonLabels := map[string]string{
 			swarmLabelTaskID:           s.ID,
 			swarmLabelTaskDesiredState: string(s.DesiredState),
@@ -82,16 +83,12 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 			}
 		}
 
-		for k, v := range serviceLabels[s.ServiceID] {
-			commonLabels[k] = v
-		}
+		maps.Copy(commonLabels, serviceLabels[s.ServiceID])
 
-		for k, v := range nodeLabels[s.NodeID] {
-			commonLabels[k] = v
-		}
+		maps.Copy(commonLabels, nodeLabels[s.NodeID])
 
 		for _, p := range s.Status.PortStatus.Ports {
-			if p.Protocol != swarm.PortConfigProtocolTCP {
+			if p.Protocol != mobynetwork.TCP {
 				continue
 			}
 
@@ -112,13 +109,13 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 			for _, address := range network.Addresses {
 				var added bool
 
-				ip, _, err := net.ParseCIDR(address)
+				ip, _, err := net.ParseCIDR(address.String())
 				if err != nil {
 					return nil, fmt.Errorf("error while parsing address %s: %w", address, err)
 				}
 
 				for _, p := range servicePorts[s.ServiceID] {
-					if p.Protocol != swarm.PortConfigProtocolTCP {
+					if p.Protocol != mobynetwork.TCP {
 						continue
 					}
 					labels := model.LabelSet{

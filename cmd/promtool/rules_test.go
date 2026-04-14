@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -35,7 +35,7 @@ type mockQueryRangeAPI struct {
 	samples model.Matrix
 }
 
-func (mockAPI mockQueryRangeAPI) QueryRange(_ context.Context, query string, r v1.Range, opts ...v1.Option) (model.Value, v1.Warnings, error) {
+func (mockAPI mockQueryRangeAPI) QueryRange(context.Context, string, v1.Range, ...v1.Option) (model.Value, v1.Warnings, error) {
 	return mockAPI.samples, v1.Warnings{}, nil
 }
 
@@ -43,6 +43,7 @@ const defaultBlockDuration = time.Duration(tsdb.DefaultBlockDuration) * time.Mil
 
 // TestBackfillRuleIntegration is an integration test that runs all the rule importer code to confirm the parts work together.
 func TestBackfillRuleIntegration(t *testing.T) {
+	t.Parallel()
 	const (
 		testMaxSampleCount = 50
 		testValue          = 123
@@ -72,6 +73,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	}
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			tmpDir := t.TempDir()
 			ctx := context.Background()
 
@@ -161,13 +163,14 @@ func TestBackfillRuleIntegration(t *testing.T) {
 }
 
 func newTestRuleImporter(_ context.Context, start time.Time, tmpDir string, testSamples model.Matrix, maxBlockDuration time.Duration) (*ruleImporter, error) {
-	logger := log.NewNopLogger()
+	logger := promslog.NewNopLogger()
 	cfg := ruleImporterConfig{
-		outputDir:        tmpDir,
-		start:            start.Add(-10 * time.Hour),
-		end:              start.Add(-7 * time.Hour),
-		evalInterval:     60 * time.Second,
-		maxBlockDuration: maxBlockDuration,
+		outputDir:            tmpDir,
+		start:                start.Add(-10 * time.Hour),
+		end:                  start.Add(-7 * time.Hour),
+		evalInterval:         60 * time.Second,
+		maxBlockDuration:     maxBlockDuration,
+		nameValidationScheme: model.UTF8Validation,
 	}
 
 	return newRuleImporter(logger, cfg, mockQueryRangeAPI{
@@ -210,6 +213,7 @@ func createMultiRuleTestFiles(path string) error {
 // TestBackfillLabels confirms that the labels in the rule file override the labels from the metrics
 // received from Prometheus Query API, including the __name__ label.
 func TestBackfillLabels(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	ctx := context.Background()
 
@@ -251,6 +255,7 @@ func TestBackfillLabels(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("correct-labels", func(t *testing.T) {
+		t.Parallel()
 		selectedSeries := q.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 		for selectedSeries.Next() {
 			series := selectedSeries.At()

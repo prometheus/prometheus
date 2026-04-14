@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,18 +19,15 @@ import (
 	"fmt"
 	"hash"
 	"hash/crc32"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
@@ -76,7 +73,7 @@ type Reader interface {
 	Close() error
 }
 
-func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
+func WriteFile(logger *slog.Logger, dir string, tr Reader) (int64, error) {
 	path := filepath.Join(dir, TombstonesFilename)
 	tmp := path + ".tmp"
 	hash := newCRC32()
@@ -89,11 +86,11 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 	defer func() {
 		if f != nil {
 			if err := f.Close(); err != nil {
-				level.Error(logger).Log("msg", "close tmp file", "err", err.Error())
+				logger.Error("close tmp file", "err", err.Error())
 			}
 		}
 		if err := os.RemoveAll(tmp); err != nil {
-			level.Error(logger).Log("msg", "remove tmp file", "err", err.Error())
+			logger.Error("remove tmp file", "err", err.Error())
 		}
 	}()
 
@@ -130,7 +127,7 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 	size += n
 
 	if err := f.Sync(); err != nil {
-		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
+		return 0, errors.Join(err, f.Close())
 	}
 
 	if err = f.Close(); err != nil {
@@ -355,7 +352,7 @@ func (in Intervals) Add(n Interval) Intervals {
 		return append(in, n)
 	}
 	// Find min and max indexes of intervals that overlap with the new interval.
-	// Intervals are closed [t1, t2] and t is discreet, so if neighbour intervals are 1 step difference
+	// Intervals are closed [t1, t2] and t is discrete, so if neighbour intervals are 1 step difference
 	// to the new one, we can merge those together.
 	mini := 0
 	if n.Mint != math.MinInt64 { // Avoid overflow.
@@ -379,9 +376,6 @@ func (in Intervals) Add(n Interval) Intervals {
 	if n.Mint < in[mini].Mint {
 		in[mini].Mint = n.Mint
 	}
-	in[mini].Maxt = in[maxi+mini-1].Maxt
-	if n.Maxt > in[mini].Maxt {
-		in[mini].Maxt = n.Maxt
-	}
+	in[mini].Maxt = max(n.Maxt, in[maxi+mini-1].Maxt)
 	return append(in[:mini+1], in[maxi+mini:]...)
 }

@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,24 +14,70 @@
 package rulefmt
 
 import (
+	"bytes"
 	"errors"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"testing"
 
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
+
+	"github.com/prometheus/prometheus/promql/parser"
+)
+
+var (
+	testParser = parser.NewParser(parser.Options{})
+	testLogger = promslog.NewNopLogger()
 )
 
 func TestParseFileSuccess(t *testing.T) {
-	_, errs := ParseFile("testdata/test.yaml")
+	_, errs := ParseFile("testdata/test.yaml", false, model.UTF8Validation, testParser, testLogger)
+	require.Empty(t, errs, "unexpected errors parsing file")
+
+	_, errs = ParseFile("testdata/utf-8_lname.good.yaml", false, model.UTF8Validation, testParser, testLogger)
+	require.Empty(t, errs, "unexpected errors parsing file")
+	_, errs = ParseFile("testdata/utf-8_annotation.good.yaml", false, model.UTF8Validation, testParser, testLogger)
+	require.Empty(t, errs, "unexpected errors parsing file")
+	_, errs = ParseFile("testdata/legacy_validation_annotation.good.yaml", false, model.LegacyValidation, testParser, testLogger)
 	require.Empty(t, errs, "unexpected errors parsing file")
 }
 
+func TestParseFileSuccessWithAliases(t *testing.T) {
+	exprString := `sum without(instance) (rate(errors_total[5m]))
+/
+sum without(instance) (rate(requests_total[5m]))
+`
+	rgs, errs := ParseFile("testdata/test_aliases.yaml", false, model.UTF8Validation, testParser, testLogger)
+	require.Empty(t, errs, "unexpected errors parsing file")
+	for _, rg := range rgs.Groups {
+		require.Equal(t, "HighAlert", rg.Rules[0].Alert)
+		require.Equal(t, "critical", rg.Rules[0].Labels["severity"])
+		require.Equal(t, "stuff's happening with {{ $.labels.service }}", rg.Rules[0].Annotations["description"])
+
+		require.Equal(t, "new_metric", rg.Rules[1].Record)
+
+		require.Equal(t, "HighAlert", rg.Rules[2].Alert)
+		require.Equal(t, "critical", rg.Rules[2].Labels["severity"])
+		require.Equal(t, "stuff's happening with {{ $.labels.service }}", rg.Rules[2].Annotations["description"])
+
+		require.Equal(t, "HighAlert2", rg.Rules[3].Alert)
+		require.Equal(t, "critical", rg.Rules[3].Labels["severity"])
+
+		for _, rule := range rg.Rules {
+			require.Equal(t, exprString, rule.Expr)
+		}
+	}
+}
+
 func TestParseFileFailure(t *testing.T) {
-	table := []struct {
-		filename string
-		errMsg   string
+	for _, c := range []struct {
+		filename             string
+		errMsg               string
+		nameValidationScheme model.ValidationScheme
 	}{
 		{
 			filename: "duplicate_grp.bad.yaml",
@@ -54,16 +100,8 @@ func TestParseFileFailure(t *testing.T) {
 			errMsg:   "field 'expr' must be set in rule",
 		},
 		{
-			filename: "bad_lname.bad.yaml",
-			errMsg:   "invalid label name",
-		},
-		{
-			filename: "bad_annotation.bad.yaml",
-			errMsg:   "invalid annotation name",
-		},
-		{
 			filename: "invalid_record_name.bad.yaml",
-			errMsg:   "invalid recording rule name",
+			errMsg:   "braces present in the recording rule name; should it be in expr?: strawberry{flavor=\"sweet\"}",
 		},
 		{
 			filename: "bad_field.bad.yaml",
@@ -81,13 +119,20 @@ func TestParseFileFailure(t *testing.T) {
 			filename: "record_and_keep_firing_for.bad.yaml",
 			errMsg:   "invalid field 'keep_firing_for' in recording rule",
 		},
-	}
-
-	for _, c := range table {
-		_, errs := ParseFile(filepath.Join("testdata", c.filename))
-		require.NotNil(t, errs, "Expected error parsing %s but got none", c.filename)
-		require.Error(t, errs[0])
-		require.Containsf(t, errs[0].Error(), c.errMsg, "Expected error for %s.", c.filename)
+		{
+			filename:             "legacy_validation_annotation.bad.yaml",
+			nameValidationScheme: model.LegacyValidation,
+			errMsg:               "invalid annotation name: ins-tance",
+		},
+	} {
+		t.Run(c.filename, func(t *testing.T) {
+			if c.nameValidationScheme == model.UnsetValidation {
+				c.nameValidationScheme = model.UTF8Validation
+			}
+			_, errs := ParseFile(filepath.Join("testdata", c.filename), false, c.nameValidationScheme, testParser, testLogger)
+			require.NotEmpty(t, errs, "Expected error parsing %s but got none", c.filename)
+			require.ErrorContainsf(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
+		})
 	}
 }
 
@@ -100,6 +145,23 @@ func TestTemplateParsing(t *testing.T) {
 			ruleString: `
 groups:
 - name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+`,
+			shouldPass: true,
+		},
+		{
+			ruleString: `
+groups:
+- name: example
+  labels:
+    team: myteam
   rules:
   - alert: InstanceDown
     expr: up == 0
@@ -163,7 +225,7 @@ groups:
 	}
 
 	for _, tst := range tests {
-		rgs, errs := Parse([]byte(tst.ruleString))
+		rgs, errs := Parse([]byte(tst.ruleString), false, model.UTF8Validation, testParser, testLogger)
 		require.NotNil(t, rgs, "Rule parsing, rule=\n"+tst.ruleString)
 		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
 		require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
@@ -190,7 +252,7 @@ groups:
     annotations:
       summary: "Instance {{ $labels.instance }} up"
 `
-	_, errs := Parse([]byte(group))
+	_, errs := Parse([]byte(group), false, model.UTF8Validation, testParser, testLogger)
 	require.Len(t, errs, 2, "Expected two errors")
 	var err00 *Error
 	require.ErrorAs(t, errs[0], &err00)
@@ -259,8 +321,7 @@ func TestError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.error.Error()
-			require.Equal(t, tt.want, got)
+			require.EqualError(t, tt.error, tt.want)
 		})
 	}
 }
@@ -308,8 +369,7 @@ func TestWrappedError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.wrappedError.Error()
-			require.Equal(t, tt.want, got)
+			require.EqualError(t, tt.wrappedError, tt.want)
 		})
 	}
 }
@@ -336,4 +396,60 @@ func TestErrorUnwrap(t *testing.T) {
 			require.ErrorIs(t, tt.wrappedError, tt.unwrappedError)
 		})
 	}
+}
+
+func TestMultiDocParse(t *testing.T) {
+	const (
+		valid = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+`
+		multi = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+---
+groups:
+- name: example2
+  rules:
+  - alert: InstanceDown2
+    expr: up == 0
+`
+		multiEmpty = `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+---
+`
+	)
+
+	var buf bytes.Buffer
+	bufLogger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	rgs, errs := Parse([]byte(valid), false, model.UTF8Validation, testParser, bufLogger)
+	require.Empty(t, errs)
+	require.NotNil(t, rgs)
+	require.Len(t, rgs.Groups, 1)
+	require.NotContains(t, buf.String(), "Multiple document yaml rules files are not supported")
+	buf.Reset()
+
+	rgs, errs = Parse([]byte(multi), false, model.UTF8Validation, testParser, bufLogger)
+	require.Empty(t, errs)
+	require.NotNil(t, rgs)
+	require.Len(t, rgs.Groups, 1)
+	require.Contains(t, buf.String(), "Multiple document yaml rules files are not supported")
+	buf.Reset()
+
+	rgs, errs = Parse([]byte(multiEmpty), false, model.UTF8Validation, testParser, bufLogger)
+	require.Empty(t, errs)
+	require.NotNil(t, rgs)
+	require.Len(t, rgs.Groups, 1)
+	require.Contains(t, buf.String(), "Multiple document yaml rules files are not supported")
 }

@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright The Prometheus Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -29,11 +30,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 type reader interface {
@@ -53,7 +53,7 @@ var readerConstructors = map[string]func(io.Reader) reader{
 		return NewReader(r)
 	},
 	"LiveReader": func(r io.Reader) reader {
-		lr := NewLiveReader(log.NewNopLogger(), NewLiveReaderMetrics(nil), r)
+		lr := NewLiveReader(promslog.NewNopLogger(), NewLiveReaderMetrics(nil), r)
 		lr.eofNonErr = true
 		return lr
 	},
@@ -196,7 +196,7 @@ func TestReader(t *testing.T) {
 }
 
 func TestReader_Live(t *testing.T) {
-	logger := testutil.NewLogger(t)
+	logger := promslog.NewNopLogger()
 
 	for i := range testReaderCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -240,7 +240,7 @@ const fuzzLen = 500
 
 func generateRandomEntries(w *WL, records chan []byte) error {
 	var recs [][]byte
-	for i := 0; i < fuzzLen; i++ {
+	for i := range fuzzLen {
 		var sz int64
 		switch i % 5 {
 		case 0, 1:
@@ -287,7 +287,7 @@ func (m *multiReadCloser) Read(p []byte) (n int, err error) {
 }
 
 func (m *multiReadCloser) Close() error {
-	return tsdb_errors.NewMulti(tsdb_errors.CloseAll(m.closers)).Err()
+	return errors.Join(closeAll(m.closers))
 }
 
 func allSegments(dir string) (io.ReadCloser, error) {
@@ -314,8 +314,9 @@ func allSegments(dir string) (io.ReadCloser, error) {
 }
 
 func TestReaderFuzz(t *testing.T) {
+	t.Parallel()
 	for name, fn := range readerConstructors {
-		for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+		for _, compress := range compression.Types() {
 			t.Run(fmt.Sprintf("%s,compress=%s", name, compress), func(t *testing.T) {
 				dir := t.TempDir()
 
@@ -353,8 +354,9 @@ func TestReaderFuzz(t *testing.T) {
 }
 
 func TestReaderFuzz_Live(t *testing.T) {
-	logger := testutil.NewLogger(t)
-	for _, compress := range []CompressionType{CompressionNone, CompressionSnappy, CompressionZstd} {
+	t.Parallel()
+	logger := promslog.NewNopLogger()
+	for _, compress := range compression.Types() {
 		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
 			dir := t.TempDir()
 
@@ -441,10 +443,10 @@ func TestReaderFuzz_Live(t *testing.T) {
 func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	// Write a corrupt WAL segment, there is one record of pageSize in length,
 	// but the segment is only half written.
-	logger := testutil.NewLogger(t)
+	logger := promslog.NewNopLogger()
 	dir := t.TempDir()
 
-	w, err := NewSize(nil, nil, dir, pageSize, CompressionNone)
+	w, err := NewSize(nil, nil, dir, pageSize, compression.None)
 	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -481,10 +483,10 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 
 func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	// Write a corrupt WAL segment, when record len > page size.
-	logger := testutil.NewLogger(t)
+	logger := promslog.NewNopLogger()
 	dir := t.TempDir()
 
-	w, err := NewSize(nil, nil, dir, pageSize*2, CompressionNone)
+	w, err := NewSize(nil, nil, dir, pageSize*2, compression.None)
 	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
@@ -531,7 +533,7 @@ func TestReaderData(t *testing.T) {
 
 	for name, fn := range readerConstructors {
 		t.Run(name, func(t *testing.T) {
-			w, err := New(nil, nil, dir, CompressionSnappy)
+			w, err := New(nil, nil, dir, compression.Snappy)
 			require.NoError(t, err)
 
 			sr, err := allSegments(dir)
@@ -546,4 +548,13 @@ func TestReaderData(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// closeAll closes all given closers while recording all errors.
+func closeAll(cs []io.Closer) error {
+	var errs []error
+	for _, c := range cs {
+		errs = append(errs, c.Close())
+	}
+	return errors.Join(errs...)
 }

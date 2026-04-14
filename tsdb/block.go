@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,20 +20,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"sync"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -66,10 +65,10 @@ type IndexReader interface {
 	Symbols() index.StringIter
 
 	// SortedLabelValues returns sorted possible label values.
-	SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -80,6 +79,10 @@ type IndexReader interface {
 	// PostingsForLabelMatching returns a sorted iterator over postings having a label with the given name and a value for which match returns true.
 	// If no postings are found having at least one matching label, an empty iterator is returned.
 	PostingsForLabelMatching(ctx context.Context, name string, match func(value string) bool) index.Postings
+
+	// PostingsForAllLabelValues returns a sorted iterator over all postings having a label with the given name.
+	// If no postings are found with the label in question, an empty iterator is returned.
+	PostingsForAllLabelValues(ctx context.Context, name string) index.Postings
 
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
@@ -97,11 +100,6 @@ type IndexReader interface {
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
-
-	// LabelValueFor returns label value for the given label name in the series referred to by ID.
-	// If the series couldn't be found or the series doesn't have the requested label a
-	// storage.ErrNotFound is returned as error.
-	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
 
 	// LabelNamesFor returns all the label names for the series referred to by the postings.
 	// The names returned are sorted.
@@ -184,10 +182,12 @@ type BlockMeta struct {
 
 // BlockStats contains stats about contents of a block.
 type BlockStats struct {
-	NumSamples    uint64 `json:"numSamples,omitempty"`
-	NumSeries     uint64 `json:"numSeries,omitempty"`
-	NumChunks     uint64 `json:"numChunks,omitempty"`
-	NumTombstones uint64 `json:"numTombstones,omitempty"`
+	NumSamples          uint64 `json:"numSamples,omitempty"`
+	NumFloatSamples     uint64 `json:"numFloatSamples,omitempty"`
+	NumHistogramSamples uint64 `json:"numHistogramSamples,omitempty"`
+	NumSeries           uint64 `json:"numSeries,omitempty"`
+	NumChunks           uint64 `json:"numChunks,omitempty"`
+	NumTombstones       uint64 `json:"numTombstones,omitempty"`
 }
 
 // BlockDesc describes a block by ULID and time range.
@@ -216,7 +216,7 @@ type BlockMetaCompaction struct {
 }
 
 func (bm *BlockMetaCompaction) SetOutOfOrder() {
-	if bm.containsHint(CompactionHintFromOutOfOrder) {
+	if bm.FromOutOfOrder() {
 		return
 	}
 	bm.Hints = append(bm.Hints, CompactionHintFromOutOfOrder)
@@ -224,16 +224,19 @@ func (bm *BlockMetaCompaction) SetOutOfOrder() {
 }
 
 func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
-	return bm.containsHint(CompactionHintFromOutOfOrder)
+	return slices.Contains(bm.Hints, CompactionHintFromOutOfOrder)
 }
 
-func (bm *BlockMetaCompaction) containsHint(hint string) bool {
-	for _, h := range bm.Hints {
-		if h == hint {
-			return true
-		}
+func (bm *BlockMetaCompaction) SetStaleSeries() {
+	if bm.FromStaleSeries() {
+		return
 	}
-	return false
+	bm.Hints = append(bm.Hints, CompactionHintFromStaleSeries)
+	slices.Sort(bm.Hints)
+}
+
+func (bm *BlockMetaCompaction) FromStaleSeries() bool {
+	return slices.Contains(bm.Hints, CompactionHintFromStaleSeries)
 }
 
 const (
@@ -244,6 +247,10 @@ const (
 	// CompactionHintFromOutOfOrder is a hint noting that the block
 	// was created from out-of-order chunks.
 	CompactionHintFromOutOfOrder = "from-out-of-order"
+
+	// CompactionHintFromStaleSeries is a hint noting that the block
+	// was created from stale series.
+	CompactionHintFromStaleSeries = "from-stale-series"
 )
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
@@ -265,7 +272,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 	return &m, int64(len(b)), nil
 }
 
-func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error) {
+func writeMetaFile(logger *slog.Logger, dir string, meta *BlockMeta) (int64, error) {
 	meta.Version = metaVersion1
 
 	// Make any changes to the file appear atomic.
@@ -273,7 +280,7 @@ func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error
 	tmp := path + ".tmp"
 	defer func() {
 		if err := os.RemoveAll(tmp); err != nil {
-			level.Error(logger).Log("msg", "remove tmp file", "err", err.Error())
+			logger.Error("remove tmp file", "err", err.Error())
 		}
 	}()
 
@@ -284,17 +291,17 @@ func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error
 
 	jsonMeta, err := json.MarshalIndent(meta, "", "\t")
 	if err != nil {
-		return 0, err
+		return 0, errors.Join(err, f.Close())
 	}
 
 	n, err := f.Write(jsonMeta)
 	if err != nil {
-		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
+		return 0, errors.Join(err, f.Close())
 	}
 
 	// Force the kernel to persist the file on disk to avoid data loss if the host crashes.
 	if err := f.Sync(); err != nil {
-		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
+		return 0, errors.Join(err, f.Close())
 	}
 	if err := f.Close(); err != nil {
 		return 0, err
@@ -319,7 +326,7 @@ type Block struct {
 	indexr     IndexReader
 	tombstones tombstones.Reader
 
-	logger log.Logger
+	logger *slog.Logger
 
 	numBytesChunks    int64
 	numBytesIndex     int64
@@ -329,14 +336,14 @@ type Block struct {
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
-func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
+func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory) (pb *Block, err error) {
 	if logger == nil {
-		logger = log.NewNopLogger()
+		logger = promslog.NewNopLogger()
 	}
 	var closers []io.Closer
 	defer func() {
 		if err != nil {
-			err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
+			err = errors.Join(err, closeAll(closers))
 		}
 	}()
 	meta, sizeMeta, err := readMetaFile(dir)
@@ -350,7 +357,11 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	}
 	closers = append(closers, cr)
 
-	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename))
+	decoder := index.DecodePostingsRaw
+	if postingsDecoderFactory != nil {
+		decoder = postingsDecoderFactory(meta)
+	}
+	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename), decoder)
 	if err != nil {
 		return nil, err
 	}
@@ -386,11 +397,11 @@ func (pb *Block) Close() error {
 
 	pb.pendingReaders.Wait()
 
-	return tsdb_errors.NewMulti(
+	return errors.Join(
 		pb.chunkr.Close(),
 		pb.indexr.Close(),
 		pb.tombstones.Close(),
-	).Err()
+	)
 }
 
 func (pb *Block) String() string {
@@ -476,14 +487,14 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	var st []string
 	var err error
 
 	if len(matchers) == 0 {
-		st, err = r.ir.SortedLabelValues(ctx, name)
+		st, err = r.ir.SortedLabelValues(ctx, name, hints)
 	} else {
-		st, err = r.LabelValues(ctx, name, matchers...)
+		st, err = r.LabelValues(ctx, name, hints, matchers...)
 		if err == nil {
 			slices.Sort(st)
 		}
@@ -494,16 +505,16 @@ func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, ma
 	return st, nil
 }
 
-func (r blockIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
-		st, err := r.ir.LabelValues(ctx, name)
+		st, err := r.ir.LabelValues(ctx, name, hints)
 		if err != nil {
 			return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 		}
 		return st, nil
 	}
 
-	return labelValuesWithMatchers(ctx, r.ir, name, matchers...)
+	return labelValuesWithMatchers(ctx, r.ir, name, hints, matchers...)
 }
 
 func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
@@ -526,6 +537,10 @@ func (r blockIndexReader) PostingsForLabelMatching(ctx context.Context, name str
 	return r.ir.PostingsForLabelMatching(ctx, name, match)
 }
 
+func (r blockIndexReader) PostingsForAllLabelValues(ctx context.Context, name string) index.Postings {
+	return r.ir.PostingsForAllLabelValues(ctx, name)
+}
+
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return r.ir.SortedPostings(p)
 }
@@ -544,11 +559,6 @@ func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 func (r blockIndexReader) Close() error {
 	r.b.pendingReaders.Done()
 	return nil
-}
-
-// LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
-	return r.ir.LabelValueFor(ctx, id, label)
 }
 
 // LabelNamesFor returns all the label names for the series referred to by the postings.
@@ -652,7 +662,7 @@ Outer:
 func (pb *Block) CleanTombstones(dest string, c Compactor) ([]ulid.ULID, bool, error) {
 	numStones := 0
 
-	if err := pb.tombstones.Iter(func(id storage.SeriesRef, ivs tombstones.Intervals) error {
+	if err := pb.tombstones.Iter(func(_ storage.SeriesRef, ivs tombstones.Intervals) error {
 		numStones += len(ivs)
 		return nil
 	}); err != nil {

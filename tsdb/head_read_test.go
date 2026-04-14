@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -33,7 +33,7 @@ func TestMemSeries_chunk(t *testing.T) {
 
 	appendSamples := func(t *testing.T, s *memSeries, start, end int64, cdm *chunks.ChunkDiskMapper) {
 		for i := start; i < end; i += chunkStep {
-			ok, _ := s.append(i, float64(i), 0, chunkOpts{
+			ok, _ := s.append(0, i, float64(i), 0, chunkOpts{
 				chunkDiskMapper: cdm,
 				chunkRange:      chunkRange,
 				samplesPerChunk: DefaultSamplesPerChunk,
@@ -368,7 +368,7 @@ func TestMemSeries_chunk(t *testing.T) {
 	}
 
 	memChunkPool := &sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &memChunk{}
 		},
 	}
@@ -382,7 +382,7 @@ func TestMemSeries_chunk(t *testing.T) {
 				require.NoError(t, chunkDiskMapper.Close())
 			}()
 
-			series := newMemSeries(labels.EmptyLabels(), 1, 0, true)
+			series := newMemSeries(labels.EmptyLabels(), 1, 0, true, false)
 
 			if tc.setup != nil {
 				tc.setup(t, series, chunkDiskMapper)

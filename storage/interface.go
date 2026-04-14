@@ -1,4 +1,4 @@
-// Copyright 2014 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -41,15 +41,17 @@ var (
 	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
 	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
-	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
-	ErrNativeHistogramsDisabled    = fmt.Errorf("native histograms are disabled")
+	ErrExemplarsDisabled           = errors.New("exemplar storage is disabled or max exemplars is less than or equal to 0")
+	ErrNativeHistogramsDisabled    = errors.New("native histograms are disabled")
 
-	// ErrOutOfOrderCT indicates failed append of CT to the storage
-	// due to CT being older the then newer sample.
+	// ErrOutOfOrderST indicates failed append of ST to the storage
+	// due to ST being older the then newer sample.
 	// NOTE(bwplotka): This can be both an instrumentation failure or commonly expected
 	// behaviour, and we currently don't have a way to determine this. As a result
 	// it's recommended to ignore this error for now.
-	ErrOutOfOrderCT = fmt.Errorf("created timestamp out of order, ignoring")
+	// TODO(bwplotka): Remove with appender v1 flow; not used in v2.
+	ErrOutOfOrderST      = errors.New("start timestamp out of order, ignoring")
+	ErrSTNewerThanSample = errors.New("ST is newer or the same as sample's timestamp, ignoring")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a
@@ -57,11 +59,15 @@ var (
 // their own reference types.
 type SeriesRef uint64
 
-// Appendable allows creating appenders.
+// Appendable allows creating Appender.
+//
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// Appendable will be removed soon (ETA: Q2 2026).
 type Appendable interface {
-	// Appender returns a new appender for the storage. The implementation
-	// can choose whether or not to use the context, for deadlines or to check
-	// for errors.
+	// Appender returns a new appender for the storage.
+	//
+	// Implementations CAN choose whether to use the context e.g. for deadlines,
+	// but it's not mandatory.
 	Appender(ctx context.Context) Appender
 }
 
@@ -72,10 +78,16 @@ type SampleAndChunkQueryable interface {
 }
 
 // Storage ingests and manages samples, along with various indexes. All methods
-// are goroutine-safe. Storage implements storage.Appender.
+// are goroutine-safe.
 type Storage interface {
 	SampleAndChunkQueryable
+
+	// Appendable allows appending to storage.
+	// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+	// Appendable will be removed soon (ETA: Q2 2026).
 	Appendable
+	// AppendableV2 allows appending to storage.
+	AppendableV2
 
 	// StartTime returns the oldest timestamp stored in the storage.
 	StartTime() (int64, error)
@@ -112,6 +124,8 @@ type Querier interface {
 	LabelQuerier
 
 	// Select returns a set of series that matches the given label matchers.
+	// Results are not checked whether they match. Results that do not match
+	// may cause undefined behavior.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
 	Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
@@ -122,15 +136,15 @@ type MockQuerier struct {
 	SelectMockFunction func(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
-func (q *MockQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*MockQuerier) LabelValues(context.Context, string, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (q *MockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*MockQuerier) LabelNames(context.Context, *LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (q *MockQuerier) Close() error {
+func (*MockQuerier) Close() error {
 	return nil
 }
 
@@ -150,6 +164,8 @@ type ChunkQuerier interface {
 	LabelQuerier
 
 	// Select returns a set of series that matches the given label matchers.
+	// Results are not checked whether they match. Results that do not match
+	// may cause undefined behavior.
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
 	Select(ctx context.Context, sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) ChunkSeriesSet
@@ -157,7 +173,7 @@ type ChunkQuerier interface {
 
 // LabelQuerier provides querying access over labels.
 type LabelQuerier interface {
-	// LabelValues returns all potential values for a label name.
+	// LabelValues returns all potential values for a label name in sorted order.
 	// It is not safe to use the strings beyond the lifetime of the querier.
 	// If matchers are specified the returned result set is reduced
 	// to label values of metrics matching the matchers.
@@ -218,6 +234,19 @@ type SelectHints struct {
 	// When disabled, the result may contain samples outside the queried time range but Select() performances
 	// may be improved.
 	DisableTrimming bool
+
+	// Projection hints. They are currently unused in the Prometheus promql engine but can be used by different
+	// implementations of the Queryable interface and engines.
+	// These hints are useful for queries like `sum by (label) (rate(metric[5m]))` - we can safely evaluate it
+	// even if we only fetch the `label` label. For some storage implementations this is beneficial.
+
+	// ProjectionLabels are the minimum amount of labels required to be fetched for this Select call
+	// When honored it is required to add an __series_hash__ label containing the hash of all labels
+	// of a particular series so that the engine can still perform horizontal joins.
+	ProjectionLabels []string
+
+	// ProjectionInclude defines if we have to include or exclude the labels from the ProjectLabels field.
+	ProjectionInclude bool
 }
 
 // LabelHints specifies hints passed for label reads.
@@ -237,14 +266,31 @@ func (f QueryableFunc) Querier(mint, maxt int64) (Querier, error) {
 	return f(mint, maxt)
 }
 
+// AppendOptions provides options for implementations of the Appender interface.
+//
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// AppendOptions will be removed soon (ETA: Q2 2026).
+type AppendOptions struct {
+	// DiscardOutOfOrder tells implementation that this append should not be out
+	// of order. An OOO append MUST be rejected with storage.ErrOutOfOrderSample
+	// error.
+	DiscardOutOfOrder bool
+}
+
 // Appender provides batched appends against a storage.
 // It must be completed with a call to Commit or Rollback and must not be reused afterwards.
 //
 // Operations on the Appender interface are not goroutine-safe.
 //
-// The type of samples (float64, histogram, etc) appended for a given series must remain same within an Appender.
-// The behaviour is undefined if samples of different types are appended to the same series in a single Commit().
+// The order of samples appended via the Appender is preserved within each series.
+// I.e. timestamp order within batch is not validated, samples are not reordered per timestamp or by float/histogram
+// type.
+//
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// Appender will be removed soon (ETA: Q2 2026).
 type Appender interface {
+	AppenderTransaction
+
 	// Append adds a sample pair for the given series.
 	// An optional series reference can be provided to accelerate calls.
 	// A series reference number is returned which can be used to add further
@@ -255,27 +301,21 @@ type Appender interface {
 	// If the reference is 0 it must not be used for caching.
 	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
 
-	// Commit submits the collected samples and purges the batch. If Commit
-	// returns a non-nil error, it also rolls back all modifications made in
-	// the appender so far, as Rollback would do. In any case, an Appender
-	// must not be used anymore after Commit has been called.
-	Commit() error
-
-	// Rollback rolls back all modifications made in the appender so far.
-	// Appender has to be discarded after rollback.
-	Rollback() error
+	// SetOptions configures the appender with specific append options such as
+	// discarding out-of-order samples even if out-of-order is enabled in the TSDB.
+	SetOptions(opts *AppendOptions)
 
 	ExemplarAppender
 	HistogramAppender
 	MetadataUpdater
-	CreatedTimestampAppender
+	StartTimestampAppender
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
 // (e.g. Cortex) to avoid maintaining a parallel set of references.
 type GetRef interface {
-	// Returns reference number that can be used to pass to Appender.Append(),
-	// and a set of labels that will not cause another copy when passed to Appender.Append().
+	// GetRef returns a reference number that can be used to pass to AppenderV2.Append(),
+	// and a set of labels that will not cause another copy when passed to AppenderV2.Append().
 	// 0 means the appender does not have a reference to this series.
 	// hash should be a hash of lset.
 	GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels)
@@ -283,6 +323,9 @@ type GetRef interface {
 
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which
 // within Prometheus is in-memory only.
+//
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// ExemplarAppender will be removed soon (ETA: Q2 2026).
 type ExemplarAppender interface {
 	// AppendExemplar adds an exemplar for the given series labels.
 	// An optional reference number can be provided to accelerate calls.
@@ -299,6 +342,9 @@ type ExemplarAppender interface {
 }
 
 // HistogramAppender provides an interface for appending histograms to the storage.
+//
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// HistogramAppender will be removed soon (ETA: Q2 2026).
 type HistogramAppender interface {
 	// AppendHistogram adds a histogram for the given series labels. An
 	// optional reference number can be provided to accelerate calls. A
@@ -312,9 +358,26 @@ type HistogramAppender interface {
 	// pointer. AppendHistogram won't mutate the histogram, but in turn
 	// depends on the caller to not mutate it either.
 	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
+	// AppendHistogramSTZeroSample adds synthetic zero sample for the given st timestamp,
+	// which will be associated with given series, labels and the incoming
+	// sample's t (timestamp). AppendHistogramSTZeroSample returns error if zero sample can't be
+	// appended, for example when st is too old, or when it would collide with
+	// incoming sample (sample has priority).
+	//
+	// AppendHistogramSTZeroSample has to be called before the corresponding histogram AppendHistogram.
+	// A series reference number is returned which can be used to modify the
+	// ST for the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to AppendHistogramSTZeroSample() at any point.
+	//
+	// If the reference is 0 it must not be used for caching.
+	AppendHistogramSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error)
 }
 
 // MetadataUpdater provides an interface for associating metadata to stored series.
+//
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// MetadataUpdater will be removed soon (ETA: Q2 2026).
 type MetadataUpdater interface {
 	// UpdateMetadata updates a metadata entry for the given series and labels.
 	// A series reference number is returned which can be used to modify the
@@ -326,22 +389,25 @@ type MetadataUpdater interface {
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
 
-// CreatedTimestampAppender provides an interface for appending CT to storage.
-type CreatedTimestampAppender interface {
-	// AppendCTZeroSample adds synthetic zero sample for the given ct timestamp,
+// StartTimestampAppender provides an interface for appending ST to storage.
+//
+// WARNING(bwplotka): Switch to AppendableV2 is in progress (https://github.com/prometheus/prometheus/issues/17632).
+// StartTimestampAppender will be removed soon (ETA: Q2 2026).
+type StartTimestampAppender interface {
+	// AppendSTZeroSample adds synthetic zero sample for the given st timestamp,
 	// which will be associated with given series, labels and the incoming
-	// sample's t (timestamp). AppendCTZeroSample returns error if zero sample can't be
-	// appended, for example when ct is too old, or when it would collide with
+	// sample's t (timestamp). AppendSTZeroSample returns error if zero sample can't be
+	// appended, for example when st is too old, or when it would collide with
 	// incoming sample (sample has priority).
 	//
-	// AppendCTZeroSample has to be called before the corresponding sample Append.
+	// AppendSTZeroSample has to be called before the corresponding sample Append.
 	// A series reference number is returned which can be used to modify the
-	// CT for the given series in the same or later transactions.
+	// ST for the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to AppendCTZeroSample() at any point.
+	// to AppendSTZeroSample() at any point.
 	//
 	// If the reference is 0 it must not be used for caching.
-	AppendCTZeroSample(ref SeriesRef, l labels.Labels, t, ct int64) (SeriesRef, error)
+	AppendSTZeroSample(ref SeriesRef, l labels.Labels, t, st int64) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.
@@ -349,10 +415,10 @@ type SeriesSet interface {
 	Next() bool
 	// At returns full series. Returned series should be iterable even after Next is called.
 	At() Series
-	// The error that iteration as failed with.
+	// Err returns the error that iteration has failed with.
 	// When an error occurs, set cannot continue to iterate.
 	Err() error
-	// A collection of warnings for the whole set.
+	// Warnings returns a collection of warnings for the whole set.
 	// Warnings could be return even iteration has not failed with error.
 	Warnings() annotations.Annotations
 }
@@ -368,10 +434,10 @@ type testSeriesSet struct {
 	series Series
 }
 
-func (s testSeriesSet) Next() bool                        { return true }
-func (s testSeriesSet) At() Series                        { return s.series }
-func (s testSeriesSet) Err() error                        { return nil }
-func (s testSeriesSet) Warnings() annotations.Annotations { return nil }
+func (testSeriesSet) Next() bool                        { return true }
+func (s testSeriesSet) At() Series                      { return s.series }
+func (testSeriesSet) Err() error                        { return nil }
+func (testSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // TestSeriesSet returns a mock series set.
 func TestSeriesSet(series Series) SeriesSet {
@@ -382,10 +448,10 @@ type errSeriesSet struct {
 	err error
 }
 
-func (s errSeriesSet) Next() bool                        { return false }
-func (s errSeriesSet) At() Series                        { return nil }
-func (s errSeriesSet) Err() error                        { return s.err }
-func (s errSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errSeriesSet) Next() bool                        { return false }
+func (errSeriesSet) At() Series                        { return nil }
+func (s errSeriesSet) Err() error                      { return s.err }
+func (errSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // ErrSeriesSet returns a series set that wraps an error.
 func ErrSeriesSet(err error) SeriesSet {
@@ -403,10 +469,10 @@ type errChunkSeriesSet struct {
 	err error
 }
 
-func (s errChunkSeriesSet) Next() bool                        { return false }
-func (s errChunkSeriesSet) At() ChunkSeries                   { return nil }
-func (s errChunkSeriesSet) Err() error                        { return s.err }
-func (s errChunkSeriesSet) Warnings() annotations.Annotations { return nil }
+func (errChunkSeriesSet) Next() bool                        { return false }
+func (errChunkSeriesSet) At() ChunkSeries                   { return nil }
+func (s errChunkSeriesSet) Err() error                      { return s.err }
+func (errChunkSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // ErrChunkSeriesSet returns a chunk series set that wraps an error.
 func ErrChunkSeriesSet(err error) ChunkSeriesSet {
@@ -420,9 +486,10 @@ type Series interface {
 }
 
 type mockSeries struct {
-	timestamps []int64
-	values     []float64
-	labelSet   []string
+	startTimestamps []int64
+	timestamps      []int64
+	values          []float64
+	labelSet        []string
 }
 
 func (s mockSeries) Labels() labels.Labels {
@@ -430,15 +497,19 @@ func (s mockSeries) Labels() labels.Labels {
 }
 
 func (s mockSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
-	return chunkenc.MockSeriesIterator(s.timestamps, s.values)
+	return chunkenc.MockSeriesIterator(s.startTimestamps, s.timestamps, s.values)
 }
 
-// MockSeries returns a series with custom timestamps, values and labelSet.
-func MockSeries(timestamps []int64, values []float64, labelSet []string) Series {
+// MockSeries returns a series with custom start timestamp, timestamps, values,
+// and labelSet.
+// Start timestamps is optional, pass nil or empty slice to indicate no start
+// timestamps.
+func MockSeries(startTimestamps, timestamps []int64, values []float64, labelSet []string) Series {
 	return mockSeries{
-		timestamps: timestamps,
-		values:     values,
-		labelSet:   labelSet,
+		startTimestamps: startTimestamps,
+		timestamps:      timestamps,
+		values:          values,
+		labelSet:        labelSet,
 	}
 }
 

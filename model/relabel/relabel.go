@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,6 +16,8 @@ package relabel
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -27,7 +29,8 @@ import (
 )
 
 var (
-	relabelTarget = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
+	// relabelTargetLegacy allows targeting labels with legacy Prometheus character set, plus ${<var>} variables for dynamic characters from source the metrics.
+	relabelTargetLegacy = regexp.MustCompile(`^(?:(?:[a-zA-Z_]|\$(?:\{\w+\}|\w+))+\w*)+$`)
 
 	DefaultRelabelConfig = Config{
 		Action:      Replace,
@@ -66,7 +69,7 @@ const (
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (a *Action) UnmarshalYAML(unmarshal func(any) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
 		return err
@@ -83,24 +86,26 @@ func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type Config struct {
 	// A list of labels from which values are taken and concatenated
 	// with the configured separator in order.
-	SourceLabels model.LabelNames `yaml:"source_labels,flow,omitempty"`
+	SourceLabels model.LabelNames `yaml:"source_labels,flow,omitempty" json:"source_labels,omitempty"`
 	// Separator is the string between concatenated values from the source labels.
-	Separator string `yaml:"separator,omitempty"`
+	Separator string `yaml:"separator,omitempty" json:"separator,omitempty"`
 	// Regex against which the concatenation is matched.
-	Regex Regexp `yaml:"regex,omitempty"`
+	Regex Regexp `yaml:"regex,omitempty" json:"regex,omitempty"`
 	// Modulus to take of the hash of concatenated values from the source labels.
-	Modulus uint64 `yaml:"modulus,omitempty"`
+	Modulus uint64 `yaml:"modulus,omitempty" json:"modulus,omitempty"`
 	// TargetLabel is the label to which the resulting string is written in a replacement.
 	// Regexp interpolation is allowed for the replace action.
-	TargetLabel string `yaml:"target_label,omitempty"`
+	TargetLabel string `yaml:"target_label,omitempty" json:"target_label,omitempty"`
 	// Replacement is the regex replacement pattern to be used.
-	Replacement string `yaml:"replacement,omitempty"`
+	Replacement string `yaml:"replacement,omitempty" json:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
-	Action Action `yaml:"action,omitempty"`
+	Action Action `yaml:"action,omitempty" json:"action,omitempty"`
+	// NameValidationScheme to use when validating labels.
+	NameValidationScheme model.ValidationScheme `yaml:"-" json:"-"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultRelabelConfig
 	type plain Config
 	if err := unmarshal((*plain)(c)); err != nil {
@@ -109,35 +114,58 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Regex.Regexp == nil {
 		c.Regex = MustNewRegexp("")
 	}
-	return c.Validate()
+	return nil
 }
 
-func (c *Config) Validate() error {
+func (c *Config) Validate(nameValidationScheme model.ValidationScheme) error {
 	if c.Action == "" {
-		return fmt.Errorf("relabel action cannot be empty")
+		return errors.New("relabel action cannot be empty")
 	}
 	if c.Modulus == 0 && c.Action == HashMod {
-		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
+		return errors.New("relabel configuration for hashmod requires non-zero modulus")
 	}
 	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if c.Action == Replace && !strings.Contains(c.TargetLabel, "$") && !model.LabelName(c.TargetLabel).IsValid() {
+
+	// Relabel config validation scheme matches global if left blank.
+	switch c.NameValidationScheme {
+	case model.LegacyValidation, model.UTF8Validation:
+	case model.UnsetValidation:
+		c.NameValidationScheme = nameValidationScheme
+	default:
+		return fmt.Errorf("unknown relabel config name validation method specified, must be either '', 'legacy' or 'utf8', got %s", c.NameValidationScheme)
+	}
+
+	if c.Action == Replace && !varInRegexTemplate(c.TargetLabel) && !c.NameValidationScheme.IsValidLabelName(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if c.Action == Replace && strings.Contains(c.TargetLabel, "$") && !relabelTarget.MatchString(c.TargetLabel) {
+
+	isValidLabelNameWithRegexVarFn := func(value string) bool {
+		// UTF-8 allows ${} characters, so standard validation allow $variables by default.
+		// TODO(bwplotka): Relabelling users cannot put $ and ${<...>} characters in metric names or values.
+		// Design escaping mechanism to allow that, once valid use case appears.
+		switch c.NameValidationScheme {
+		case model.UTF8Validation:
+			return c.NameValidationScheme.IsValidLabelName(value)
+		default:
+			// For legacy validation, use the legacy regex that allows $variables.
+			return relabelTargetLegacy.MatchString(value)
+		}
+	}
+	if c.Action == Replace && varInRegexTemplate(c.TargetLabel) && !isValidLabelNameWithRegexVarFn(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !model.LabelName(c.TargetLabel).IsValid() {
+	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !c.NameValidationScheme.IsValidLabelName(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
 		return fmt.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
-	if c.Action == LabelMap && !relabelTarget.MatchString(c.Replacement) {
+	if c.Action == LabelMap && !isValidLabelNameWithRegexVarFn(c.Replacement) {
 		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
 	}
-	if c.Action == HashMod && !model.LabelName(c.TargetLabel).IsValid() {
+	if c.Action == HashMod && !c.NameValidationScheme.IsValidLabelName(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 
@@ -171,7 +199,7 @@ type Regexp struct {
 // NewRegexp creates a new anchored Regexp and returns an error if the
 // passed-in regular expression does not compile.
 func NewRegexp(s string) (Regexp, error) {
-	regex, err := regexp.Compile("^(?:" + s + ")$")
+	regex, err := regexp.Compile("^(?s:" + s + ")$")
 	return Regexp{Regexp: regex}, err
 }
 
@@ -185,7 +213,7 @@ func MustNewRegexp(s string) Regexp {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (re *Regexp) UnmarshalYAML(unmarshal func(any) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
 		return err
@@ -199,11 +227,30 @@ func (re *Regexp) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
-func (re Regexp) MarshalYAML() (interface{}, error) {
+func (re Regexp) MarshalYAML() (any, error) {
 	if re.String() != "" {
 		return re.String(), nil
 	}
 	return nil, nil
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (re *Regexp) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	r, err := NewRegexp(s)
+	if err != nil {
+		return err
+	}
+	*re = r
+	return nil
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (re Regexp) MarshalJSON() ([]byte, error) {
+	return json.Marshal(re.String())
 }
 
 // IsZero implements the yaml.IsZeroer interface.
@@ -218,26 +265,12 @@ func (re Regexp) String() string {
 	}
 
 	str := re.Regexp.String()
-	// Trim the anchor `^(?:` prefix and `)$` suffix.
-	return str[4 : len(str)-2]
+	// Trim the anchor `^(?s:` prefix and `)$` suffix.
+	return str[5 : len(str)-2]
 }
 
-// Process returns a relabeled version of the given label set. The relabel configurations
-// are applied in order of input.
-// There are circumstances where Process will modify the input label.
-// If you want to avoid issues with the input label set being modified, at the cost of
-// higher memory usage, you can use lbls.Copy().
-// If a label set is dropped, EmptyLabels and false is returned.
-func Process(lbls labels.Labels, cfgs ...*Config) (ret labels.Labels, keep bool) {
-	lb := labels.NewBuilder(lbls)
-	if !ProcessBuilder(lb, cfgs...) {
-		return labels.EmptyLabels(), false
-	}
-	return lb.Labels(), true
-}
-
-// ProcessBuilder is like Process, but the caller passes a labels.Builder
-// containing the initial set of labels, which is mutated by the rules.
+// ProcessBuilder applies relabeling configurations (rules) to the labels in lb.
+// The rules are applied in order of input. Returns false if the rule says to drop.
 func ProcessBuilder(lb *labels.Builder, cfgs ...*Config) (keep bool) {
 	for _, cfg := range cfgs {
 		keep = relabel(cfg, lb)
@@ -277,21 +310,28 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 			return false
 		}
 	case Replace:
+		// Fast path to add or delete label pair.
+		if val == "" && cfg.Regex == DefaultRelabelConfig.Regex &&
+			!varInRegexTemplate(cfg.TargetLabel) && !varInRegexTemplate(cfg.Replacement) {
+			lb.Set(cfg.TargetLabel, cfg.Replacement)
+			break
+		}
+
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
 		// If there is no match no replacement must take place.
 		if indexes == nil {
 			break
 		}
-		target := model.LabelName(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
-		if !target.IsValid() {
+		target := string(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
+		if !cfg.NameValidationScheme.IsValidLabelName(target) {
 			break
 		}
 		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
 		if len(res) == 0 {
-			lb.Del(string(target))
+			lb.Del(target)
 			break
 		}
-		lb.Set(string(target), string(res))
+		lb.Set(target, string(res))
 	case Lowercase:
 		lb.Set(cfg.TargetLabel, strings.ToLower(val))
 	case Uppercase:
@@ -325,4 +365,8 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 	}
 
 	return true
+}
+
+func varInRegexTemplate(template string) bool {
+	return strings.Contains(template, "$")
 }

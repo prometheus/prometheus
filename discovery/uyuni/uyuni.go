@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
@@ -24,7 +25,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/kolo/xmlrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -41,10 +41,10 @@ const (
 	uyuniMetaLabelPrefix     = model.MetaLabelPrefix + "uyuni_"
 	uyuniLabelMinionHostname = uyuniMetaLabelPrefix + "minion_hostname"
 	uyuniLabelPrimaryFQDN    = uyuniMetaLabelPrefix + "primary_fqdn"
-	uyuniLablelSystemID      = uyuniMetaLabelPrefix + "system_id"
-	uyuniLablelGroups        = uyuniMetaLabelPrefix + "groups"
-	uyuniLablelEndpointName  = uyuniMetaLabelPrefix + "endpoint_name"
-	uyuniLablelExporter      = uyuniMetaLabelPrefix + "exporter"
+	uyuniLabelSystemID       = uyuniMetaLabelPrefix + "system_id"
+	uyuniLabelGroups         = uyuniMetaLabelPrefix + "groups"
+	uyuniLabelEndpointName   = uyuniMetaLabelPrefix + "endpoint_name"
+	uyuniLabelExporter       = uyuniMetaLabelPrefix + "exporter"
 	uyuniLabelProxyModule    = uyuniMetaLabelPrefix + "proxy_module"
 	uyuniLabelMetricsPath    = uyuniMetaLabelPrefix + "metrics_path"
 	uyuniLabelScheme         = uyuniMetaLabelPrefix + "scheme"
@@ -109,11 +109,11 @@ type Discovery struct {
 	entitlement     string
 	separator       string
 	interval        time.Duration
-	logger          log.Logger
+	logger          *slog.Logger
 }
 
 // NewDiscovererMetrics implements discovery.Config.
-func (*SDConfig) NewDiscovererMetrics(reg prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+func (*SDConfig) NewDiscovererMetrics(_ prometheus.Registerer, rmi discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
 	return &uyuniMetrics{
 		refreshMetrics: rmi,
 	}
@@ -124,7 +124,7 @@ func (*SDConfig) Name() string { return "uyuni" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -133,7 +133,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -141,18 +141,22 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Server == "" {
+		//nolint:staticcheck // Capitalized first word.
 		return errors.New("Uyuni SD configuration requires server host")
 	}
 
 	_, err = url.Parse(c.Server)
 	if err != nil {
+		//nolint:staticcheck // Capitalized first word.
 		return fmt.Errorf("Uyuni Server URL is not valid: %w", err)
 	}
 
 	if c.Username == "" {
+		//nolint:staticcheck // Capitalized first word.
 		return errors.New("Uyuni SD configuration requires a username")
 	}
 	if c.Password == "" {
+		//nolint:staticcheck // Capitalized first word.
 		return errors.New("Uyuni SD configuration requires a password")
 	}
 	return c.HTTPClientConfig.Validate()
@@ -160,7 +164,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 func login(rpcclient *xmlrpc.Client, user, pass string, duration int) (string, error) {
 	var result string
-	err := rpcclient.Call("auth.login", []interface{}{user, pass, duration}, &result)
+	err := rpcclient.Call("auth.login", []any{user, pass, duration}, &result)
 	return result, err
 }
 
@@ -170,7 +174,7 @@ func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token, enti
 		SystemGroups []systemGroupID `xmlrpc:"system_groups"`
 	}
 
-	err := rpcclient.Call("system.listSystemGroupsForSystemsWithEntitlement", []interface{}{token, entitlement}, &systemGroupsInfos)
+	err := rpcclient.Call("system.listSystemGroupsForSystemsWithEntitlement", []any{token, entitlement}, &systemGroupsInfos)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +188,7 @@ func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token, enti
 
 func getNetworkInformationForSystems(rpcclient *xmlrpc.Client, token string, systemIDs []int) (map[int]networkInfo, error) {
 	var networkInfos []networkInfo
-	err := rpcclient.Call("system.getNetworkForSystems", []interface{}{token, systemIDs}, &networkInfos)
+	err := rpcclient.Call("system.getNetworkForSystems", []any{token, systemIDs}, &networkInfos)
 	if err != nil {
 		return nil, err
 	}
@@ -204,18 +208,15 @@ func getEndpointInfoForSystems(
 	var endpointInfos []endpointInfo
 	err := rpcclient.Call(
 		"system.monitoring.listEndpoints",
-		[]interface{}{token, systemIDs}, &endpointInfos)
-	if err != nil {
-		return nil, err
-	}
+		[]any{token, systemIDs}, &endpointInfos)
 	return endpointInfos, err
 }
 
 // NewDiscovery returns a uyuni discovery for the given configuration.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*uyuniMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*uyuniMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	apiURL, err := url.Parse(conf.Server)
@@ -237,13 +238,14 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 		entitlement:  conf.Entitlement,
 		separator:    conf.Separator,
 		interval:     time.Duration(conf.RefreshInterval),
-		logger:       logger,
+		logger:       opts.Logger,
 	}
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "uyuni",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -270,10 +272,10 @@ func (d *Discovery) getEndpointLabels(
 		model.AddressLabel:       model.LabelValue(addr),
 		uyuniLabelMinionHostname: model.LabelValue(networkInfo.Hostname),
 		uyuniLabelPrimaryFQDN:    model.LabelValue(networkInfo.PrimaryFQDN),
-		uyuniLablelSystemID:      model.LabelValue(strconv.Itoa(endpoint.SystemID)),
-		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.separator)),
-		uyuniLablelEndpointName:  model.LabelValue(endpoint.EndpointName),
-		uyuniLablelExporter:      model.LabelValue(endpoint.ExporterName),
+		uyuniLabelSystemID:       model.LabelValue(strconv.Itoa(endpoint.SystemID)),
+		uyuniLabelGroups:         model.LabelValue(strings.Join(managedGroupNames, d.separator)),
+		uyuniLabelEndpointName:   model.LabelValue(endpoint.EndpointName),
+		uyuniLabelExporter:       model.LabelValue(endpoint.ExporterName),
 		uyuniLabelProxyModule:    model.LabelValue(endpoint.Module),
 		uyuniLabelMetricsPath:    model.LabelValue(endpoint.Path),
 		uyuniLabelScheme:         model.LabelValue(scheme),
@@ -329,7 +331,7 @@ func (d *Discovery) getTargetsForSystems(
 	return result, nil
 }
 
-func (d *Discovery) refresh(_ context.Context) ([]*targetgroup.Group, error) {
+func (d *Discovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 	rpcClient, err := xmlrpc.NewClient(d.apiURL.String(), d.roundTripper)
 	if err != nil {
 		return nil, err

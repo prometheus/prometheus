@@ -1,4 +1,4 @@
-// Copyright 2024 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,8 +16,7 @@
 package tsdb
 
 import (
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"log/slog"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -31,8 +30,8 @@ func (s *memSeries) labels() labels.Labels {
 
 // RebuildSymbolTable goes through all the series in h, build a SymbolTable with all names and values,
 // replace each series' Labels with one using that SymbolTable.
-func (h *Head) RebuildSymbolTable(logger log.Logger) *labels.SymbolTable {
-	level.Info(logger).Log("msg", "RebuildSymbolTable starting")
+func (h *Head) RebuildSymbolTable(logger *slog.Logger) *labels.SymbolTable {
+	logger.Info("RebuildSymbolTable starting")
 	st := labels.NewSymbolTable()
 	builder := labels.NewScratchBuilderWithSymbolTable(st, 0)
 	rebuildLabels := func(lbls labels.Labels) labels.Labels {
@@ -66,7 +65,7 @@ func (h *Head) RebuildSymbolTable(logger log.Logger) *labels.SymbolTable {
 	if e, ok := h.exemplars.(withReset); ok {
 		e.ResetSymbolTable(st)
 	}
-	level.Info(logger).Log("msg", "RebuildSymbolTable finished", "size", st.Len())
+	logger.Info("RebuildSymbolTable finished", "size", st.Len())
 	return st
 }
 

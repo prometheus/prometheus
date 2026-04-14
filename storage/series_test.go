@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -14,7 +14,6 @@
 package storage
 
 import (
-	"fmt"
 	"math"
 	"testing"
 
@@ -29,11 +28,11 @@ import (
 
 func TestListSeriesIterator(t *testing.T) {
 	it := NewListSeriesIterator(samples{
-		fSample{0, 0},
-		fSample{1, 1},
-		fSample{1, 1.5},
-		fSample{2, 2},
-		fSample{3, 3},
+		fSample{-10, 0, 0},
+		fSample{-9, 1, 1},
+		fSample{-8, 1, 1.5},
+		fSample{-7, 2, 2},
+		fSample{-6, 3, 3},
 	})
 
 	// Seek to the first sample with ts=1.
@@ -41,30 +40,35 @@ func TestListSeriesIterator(t *testing.T) {
 	ts, v := it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, 1., v)
+	require.Equal(t, int64(-9), it.AtST())
 
 	// Seek one further, next sample still has ts=1.
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, v = it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, 1.5, v)
+	require.Equal(t, int64(-8), it.AtST())
 
 	// Seek again to 1 and make sure we stay where we are.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
 	ts, v = it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, 1.5, v)
+	require.Equal(t, int64(-8), it.AtST())
 
 	// Another seek.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 	ts, v = it.At()
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, 3., v)
+	require.Equal(t, int64(-6), it.AtST())
 
 	// And we don't go back.
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
 	ts, v = it.At()
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, 3., v)
+	require.Equal(t, int64(-6), it.AtST())
 
 	// Seek beyond the end.
 	require.Equal(t, chunkenc.ValNone, it.Seek(5))
@@ -113,7 +117,7 @@ func TestChunkSeriesSetToSeriesSet(t *testing.T) {
 	require.Len(t, ssSlice, 2)
 	var iter chunkenc.Iterator
 	for i, s := range ssSlice {
-		require.EqualValues(t, series[i].lbs, s.Labels())
+		require.Equal(t, series[i].lbs, s.Labels())
 		iter = s.Iterator(iter)
 		j := 0
 		for iter.Next() == chunkenc.ValFloat {
@@ -598,50 +602,50 @@ func testHistogramsSeriesToChunks(t *testing.T, test histogramTest) {
 	}
 	series := NewListSeries(lbs, copiedSamples)
 	encoder := NewSeriesToChunkEncoder(series)
-	require.EqualValues(t, lbs, encoder.Labels())
+	require.Equal(t, lbs, encoder.Labels())
 
 	chks, err := ExpandChunks(encoder.Iterator(nil))
 	require.NoError(t, err)
-	require.Equal(t, len(test.expectedCounterResetHeaders), len(chks))
+	require.Len(t, chks, len(test.expectedCounterResetHeaders))
 
 	// Decode all encoded samples and assert they are equal to the original ones.
 	encodedSamples := chunks.ChunkMetasToSamples(chks)
-	require.Equal(t, len(test.expectedSamples), len(encodedSamples))
+	require.Len(t, encodedSamples, len(test.expectedSamples))
 
 	for i, s := range test.expectedSamples {
 		encodedSample := encodedSamples[i]
 		switch expectedSample := s.(type) {
 		case hSample:
-			require.Equal(t, chunkenc.ValHistogram, encodedSample.Type(), "expect histogram", fmt.Sprintf("at idx %d", i))
+			require.Equalf(t, chunkenc.ValHistogram, encodedSample.Type(), "expect histogram at idx %d", i)
 			h := encodedSample.H()
 			// Ignore counter reset if not gauge here, will check on chunk level.
 			if expectedSample.h.CounterResetHint != histogram.GaugeType {
 				h.CounterResetHint = histogram.UnknownCounterReset
 			}
 			if value.IsStaleNaN(expectedSample.h.Sum) {
-				require.True(t, value.IsStaleNaN(h.Sum), fmt.Sprintf("at idx %d", i))
+				require.Truef(t, value.IsStaleNaN(h.Sum), "at idx %d", i)
 				continue
 			}
-			require.Equal(t, *expectedSample.h, *h, fmt.Sprintf("at idx %d", i))
+			require.Equalf(t, *expectedSample.h, *h, "at idx %d", i)
 		case fhSample:
-			require.Equal(t, chunkenc.ValFloatHistogram, encodedSample.Type(), "expect float histogram", fmt.Sprintf("at idx %d", i))
+			require.Equalf(t, chunkenc.ValFloatHistogram, encodedSample.Type(), "expect float histogram at idx %d", i)
 			fh := encodedSample.FH()
 			// Ignore counter reset if not gauge here, will check on chunk level.
 			if expectedSample.fh.CounterResetHint != histogram.GaugeType {
 				fh.CounterResetHint = histogram.UnknownCounterReset
 			}
 			if value.IsStaleNaN(expectedSample.fh.Sum) {
-				require.True(t, value.IsStaleNaN(fh.Sum), fmt.Sprintf("at idx %d", i))
+				require.Truef(t, value.IsStaleNaN(fh.Sum), "at idx %d", i)
 				continue
 			}
-			require.Equal(t, *expectedSample.fh, *fh, fmt.Sprintf("at idx %d", i))
+			require.Equalf(t, *expectedSample.fh, *fh, "at idx %d", i)
 		default:
 			t.Error("internal error, unexpected type")
 		}
 	}
 
 	for i, expectedCounterResetHint := range test.expectedCounterResetHeaders {
-		require.Equal(t, expectedCounterResetHint, getCounterResetHint(chks[i]), fmt.Sprintf("chunk at index %d", i))
+		require.Equalf(t, expectedCounterResetHint, getCounterResetHint(chks[i]), "chunk at index %d", i)
 	}
 }
 

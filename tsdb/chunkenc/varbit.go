@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -30,6 +30,8 @@ import (
 // the size by around 1%. A more detailed study would be needed for precise
 // values, but it's appears quite certain that we would end up far below 10%,
 // which would maybe convince us to invest the increased coding/decoding cost.
+//
+// TODO(XOR2): Once XOR2 is stable, merge putVarbitInt and putVarbitIntFast.
 func putVarbitInt(b *bstream, val int64) {
 	switch {
 	case val == 0: // Precisely 0, needs 1 bit.
@@ -61,10 +63,40 @@ func putVarbitInt(b *bstream, val int64) {
 	}
 }
 
+// putVarbitIntFast is like putVarbitInt but combines the prefix and value into
+// a single writeBitsFast call per bucket, reducing bstream overhead on the hot
+// path. It is used by XOR2 encoding.
+//
+// TODO(XOR2): Once XOR2 is stable, merge putVarbitInt and putVarbitIntFast.
+func putVarbitIntFast(b *bstream, val int64) {
+	uval := uint64(val)
+	switch {
+	case val == 0: // Precisely 0, needs 1 bit.
+		b.writeBit(zero)
+	case bitRange(val, 3): // -3 <= val <= 4, needs 5 bits.
+		b.writeBitsFast((0b10<<3)|(uval&0x7), 5)
+	case bitRange(val, 6): // -31 <= val <= 32, 9 bits.
+		b.writeBitsFast((0b110<<6)|(uval&0x3F), 9)
+	case bitRange(val, 9): // -255 <= val <= 256, 13 bits.
+		b.writeBitsFast((0b1110<<9)|(uval&0x1FF), 13)
+	case bitRange(val, 12): // -2047 <= val <= 2048, 17 bits.
+		b.writeBitsFast((0b11110<<12)|(uval&0xFFF), 17)
+	case bitRange(val, 18): // -131071 <= val <= 131072, 3 bytes.
+		b.writeBitsFast((0b111110<<18)|(uval&0x3FFFF), 24)
+	case bitRange(val, 25): // -16777215 <= val <= 16777216, 4 bytes.
+		b.writeBitsFast((0b1111110<<25)|(uval&0x1FFFFFF), 32)
+	case bitRange(val, 56): // -36028797018963967 <= val <= 36028797018963968, 8 bytes.
+		b.writeBitsFast((0b11111110<<56)|(uval&0xFFFFFFFFFFFFFF), 64)
+	default:
+		b.writeBitsFast(0b11111111, 8) // Worst case, needs 9 bytes.
+		b.writeBitsFast(uval, 64)
+	}
+}
+
 // readVarbitInt reads an int64 encoded with putVarbitInt.
 func readVarbitInt(b *bstreamReader) (int64, error) {
 	var d byte
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		d <<= 1
 		bit, err := b.readBitFast()
 		if err != nil {
@@ -169,7 +201,7 @@ func putVarbitUint(b *bstream, val uint64) {
 // readVarbitUint reads a uint64 encoded with putVarbitUint.
 func readVarbitUint(b *bstreamReader) (uint64, error) {
 	var d byte
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		d <<= 1
 		bit, err := b.readBitFast()
 		if err != nil {

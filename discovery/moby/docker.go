@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,6 +15,7 @@ package moby
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -23,15 +24,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/go-kit/log"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -93,7 +92,7 @@ func (*DockerSDConfig) Name() string { return "docker" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *DockerSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDockerDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDockerDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -102,7 +101,7 @@ func (c *DockerSDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultDockerSDConfig
 	type plain DockerSDConfig
 	err := unmarshal((*plain)(c))
@@ -110,7 +109,7 @@ func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 	if c.Host == "" {
-		return fmt.Errorf("host missing")
+		return errors.New("host missing")
 	}
 	if _, err = url.Parse(c.Host); err != nil {
 		return err
@@ -123,15 +122,15 @@ type DockerDiscovery struct {
 	client             *client.Client
 	port               int
 	hostNetworkingHost string
-	filters            filters.Args
+	filters            client.Filters
 	matchFirstNetwork  bool
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
-func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*DockerDiscovery, error) {
-	m, ok := metrics.(*dockerMetrics)
+func NewDockerDiscovery(conf *DockerSDConfig, opts discovery.DiscovererOptions) (*DockerDiscovery, error) {
+	m, ok := opts.Metrics.(*dockerMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &DockerDiscovery{
@@ -145,12 +144,11 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, metrics discove
 		return nil, err
 	}
 
-	opts := []client.Opt{
+	clientOpts := []client.Opt{
 		client.WithHost(conf.Host),
-		client.WithAPIVersionNegotiation(),
 	}
 
-	d.filters = filters.NewArgs()
+	d.filters = make(client.Filters)
 	for _, f := range conf.Filters {
 		for _, v := range f.Values {
 			d.filters.Add(f.Name, v)
@@ -165,27 +163,28 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger, metrics discove
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts,
+		clientOpts = append(clientOpts,
 			client.WithHTTPClient(&http.Client{
 				Transport: rt,
 				Timeout:   time.Duration(conf.RefreshInterval),
 			}),
 			client.WithScheme(hostURL.Scheme),
 			client.WithHTTPHeaders(map[string]string{
-				"User-Agent": userAgent,
+				"User-Agent": version.PrometheusUserAgent(),
 			}),
 		)
 	}
 
-	d.client, err = client.NewClientWithOpts(opts...)
+	d.client, err = client.New(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up docker client: %w", err)
 	}
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "docker",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -199,7 +198,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		Source: "Docker",
 	}
 
-	containers, err := d.client.ContainerList(ctx, container.ListOptions{Filters: d.filters})
+	containers, err := d.client.ContainerList(ctx, client.ContainerListOptions{Filters: d.filters})
 	if err != nil {
 		return nil, fmt.Errorf("error while listing containers: %w", err)
 	}
@@ -209,12 +208,12 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		return nil, fmt.Errorf("error while computing network labels: %w", err)
 	}
 
-	allContainers := make(map[string]types.Container)
-	for _, c := range containers {
+	allContainers := make(map[string]container.Summary)
+	for _, c := range containers.Items {
 		allContainers[c.ID] = c
 	}
 
-	for _, c := range containers {
+	for _, c := range containers.Items {
 		if len(c.Names) == 0 {
 			continue
 		}
@@ -234,18 +233,14 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		containerNetworkMode := container.NetworkMode(c.HostConfig.NetworkMode)
 		if len(networks) == 0 {
 			// Try to lookup shared networks
-			for {
-				if containerNetworkMode.IsContainer() {
-					tmpContainer, exists := allContainers[containerNetworkMode.ConnectedContainer()]
-					if !exists {
-						break
-					}
-					networks = tmpContainer.NetworkSettings.Networks
-					containerNetworkMode = container.NetworkMode(tmpContainer.HostConfig.NetworkMode)
-					if len(networks) > 0 {
-						break
-					}
-				} else {
+			for containerNetworkMode.IsContainer() {
+				tmpContainer, exists := allContainers[containerNetworkMode.ConnectedContainer()]
+				if !exists {
+					break
+				}
+				networks = tmpContainer.NetworkSettings.Networks
+				containerNetworkMode = container.NetworkMode(tmpContainer.HostConfig.NetworkMode)
+				if len(networks) > 0 {
 					break
 				}
 			}
@@ -279,14 +274,23 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 					continue
 				}
 
+				ipAddr := ""
+				if n.IPAddress.IsValid() {
+					ipAddr = n.IPAddress.String()
+				}
+
 				labels := model.LabelSet{
-					dockerLabelNetworkIP:   model.LabelValue(n.IPAddress),
+					dockerLabelNetworkIP:   model.LabelValue(ipAddr),
 					dockerLabelPortPrivate: model.LabelValue(strconv.FormatUint(uint64(p.PrivatePort), 10)),
 				}
 
 				if p.PublicPort > 0 {
 					labels[dockerLabelPortPublic] = model.LabelValue(strconv.FormatUint(uint64(p.PublicPort), 10))
-					labels[dockerLabelPortPublicIP] = model.LabelValue(p.IP)
+					publicIP := ""
+					if p.IP.IsValid() {
+						publicIP = p.IP.String()
+					}
+					labels[dockerLabelPortPublicIP] = model.LabelValue(publicIP)
 				}
 
 				for k, v := range commonLabels {
@@ -297,7 +301,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 					labels[model.LabelName(k)] = model.LabelValue(v)
 				}
 
-				addr := net.JoinHostPort(n.IPAddress, strconv.FormatUint(uint64(p.PrivatePort), 10))
+				addr := net.JoinHostPort(ipAddr, strconv.FormatUint(uint64(p.PrivatePort), 10))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 				tg.Targets = append(tg.Targets, labels)
 				added = true
@@ -305,8 +309,13 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 
 			if !added {
 				// Use fallback port when no exposed ports are available or if all are non-TCP
+				ipAddr := ""
+				if n.IPAddress.IsValid() {
+					ipAddr = n.IPAddress.String()
+				}
+
 				labels := model.LabelSet{
-					dockerLabelNetworkIP: model.LabelValue(n.IPAddress),
+					dockerLabelNetworkIP: model.LabelValue(ipAddr),
 				}
 
 				for k, v := range commonLabels {
@@ -321,7 +330,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				// so they only end up here, not in the previous loop.
 				var addr string
 				if c.HostConfig.NetworkMode != "host" {
-					addr = net.JoinHostPort(n.IPAddress, strconv.FormatUint(uint64(d.port), 10))
+					addr = net.JoinHostPort(ipAddr, strconv.FormatUint(uint64(d.port), 10))
 				} else {
 					addr = d.hostNetworkingHost
 				}

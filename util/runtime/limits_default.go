@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,7 +23,7 @@ import (
 
 // syscall.RLIM_INFINITY is a constant.
 // Its type is int on most architectures but there are exceptions such as loong64.
-// Uniform it to uint accorind to the standard.
+// Uniform it to uint according to the standard.
 // https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_resource.h.html
 var unlimited uint64 = syscall.RLIM_INFINITY & math.MaxUint64
 

@@ -1,4 +1,4 @@
-// Copyright 2023 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -29,25 +29,27 @@ import (
 
 type unknownRule struct{}
 
-func (u unknownRule) Name() string          { return "" }
-func (u unknownRule) Labels() labels.Labels { return labels.EmptyLabels() }
-func (u unknownRule) Eval(context.Context, time.Duration, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error) {
+func (unknownRule) Name() string          { return "" }
+func (unknownRule) Labels() labels.Labels { return labels.EmptyLabels() }
+func (unknownRule) Eval(context.Context, time.Duration, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error) {
 	return nil, nil
 }
-func (u unknownRule) String() string                       { return "" }
-func (u unknownRule) Query() parser.Expr                   { return nil }
-func (u unknownRule) SetLastError(error)                   {}
-func (u unknownRule) LastError() error                     { return nil }
-func (u unknownRule) SetHealth(RuleHealth)                 {}
-func (u unknownRule) Health() RuleHealth                   { return "" }
-func (u unknownRule) SetEvaluationDuration(time.Duration)  {}
-func (u unknownRule) GetEvaluationDuration() time.Duration { return 0 }
-func (u unknownRule) SetEvaluationTimestamp(time.Time)     {}
-func (u unknownRule) GetEvaluationTimestamp() time.Time    { return time.Time{} }
-func (u unknownRule) SetNoDependentRules(bool)             {}
-func (u unknownRule) NoDependentRules() bool               { return false }
-func (u unknownRule) SetNoDependencyRules(bool)            {}
-func (u unknownRule) NoDependencyRules() bool              { return false }
+func (unknownRule) String() string                       { return "" }
+func (unknownRule) Query() parser.Expr                   { return nil }
+func (unknownRule) SetLastError(error)                   {}
+func (unknownRule) LastError() error                     { return nil }
+func (unknownRule) SetHealth(RuleHealth)                 {}
+func (unknownRule) Health() RuleHealth                   { return "" }
+func (unknownRule) SetEvaluationDuration(time.Duration)  {}
+func (unknownRule) GetEvaluationDuration() time.Duration { return 0 }
+func (unknownRule) SetEvaluationTimestamp(time.Time)     {}
+func (unknownRule) GetEvaluationTimestamp() time.Time    { return time.Time{} }
+func (unknownRule) SetDependentRules([]Rule)             {}
+func (unknownRule) NoDependentRules() bool               { return false }
+func (unknownRule) DependentRules() []Rule               { return nil }
+func (unknownRule) SetDependencyRules([]Rule)            {}
+func (unknownRule) NoDependencyRules() bool              { return false }
+func (unknownRule) DependencyRules() []Rule              { return nil }
 
 func TestNewRuleDetailPanics(t *testing.T) {
 	require.PanicsWithValue(t, `unknown rule type "rules.unknownRule"`, func() {
@@ -75,12 +77,12 @@ func TestNewRuleDetail(t *testing.T) {
 		require.False(t, detail.NoDependentRules)
 		require.False(t, detail.NoDependencyRules)
 
-		rule.SetNoDependentRules(true)
+		rule.SetDependentRules([]Rule{})
 		detail = NewRuleDetail(rule)
 		require.True(t, detail.NoDependentRules)
 		require.False(t, detail.NoDependencyRules)
 
-		rule.SetNoDependencyRules(true)
+		rule.SetDependencyRules([]Rule{})
 		detail = NewRuleDetail(rule)
 		require.True(t, detail.NoDependentRules)
 		require.True(t, detail.NoDependencyRules)
@@ -96,19 +98,19 @@ func TestNewRuleDetail(t *testing.T) {
 			labels.EmptyLabels(),
 			labels.EmptyLabels(),
 			"",
-			true, log.NewNopLogger(),
+			true, promslog.NewNopLogger(),
 		)
 
 		detail := NewRuleDetail(rule)
 		require.False(t, detail.NoDependentRules)
 		require.False(t, detail.NoDependencyRules)
 
-		rule.SetNoDependentRules(true)
+		rule.SetDependentRules([]Rule{})
 		detail = NewRuleDetail(rule)
 		require.True(t, detail.NoDependentRules)
 		require.False(t, detail.NoDependencyRules)
 
-		rule.SetNoDependencyRules(true)
+		rule.SetDependencyRules([]Rule{})
 		detail = NewRuleDetail(rule)
 		require.True(t, detail.NoDependentRules)
 		require.True(t, detail.NoDependencyRules)

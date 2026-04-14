@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -35,12 +35,15 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+var testParser = parser.NewParser(parser.Options{})
 
 var scenarios = map[string]struct {
 	params         string
@@ -212,7 +215,6 @@ func TestFederation(t *testing.T) {
 			test_metric_stale                       1+10x99 stale
 			test_metric_old                         1+10x98
 	`)
-	t.Cleanup(func() { storage.Close() })
 
 	h := &Handler{
 		localStorage:  &dbAdapter{storage.DB},
@@ -221,12 +223,13 @@ func TestFederation(t *testing.T) {
 		config: &config.Config{
 			GlobalConfig: config.GlobalConfig{},
 		},
+		options: &Options{Parser: testParser},
 	}
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
 			h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
-			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, nil)
+			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, http.NoBody)
 			res := httptest.NewRecorder()
 
 			h.federation(res, req)
@@ -265,9 +268,10 @@ func TestFederation_NotReady(t *testing.T) {
 						ExternalLabels: scenario.externalLabels,
 					},
 				},
+				options: &Options{Parser: testParser},
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, nil)
+			req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?"+scenario.params, http.NoBody)
 			res := httptest.NewRecorder()
 
 			h.federation(res, req)
@@ -303,7 +307,6 @@ func normalizeBody(body *bytes.Buffer) string {
 
 func TestFederationWithNativeHistograms(t *testing.T) {
 	storage := teststorage.New(t)
-	t.Cleanup(func() { storage.Close() })
 
 	var expVec promql.Vector
 
@@ -340,8 +343,19 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		},
 		NegativeBuckets: []int64{2, 2, -2, 0},
 	}
+	nhcb := &histogram.Histogram{
+		Count:  6,
+		Sum:    1.234,
+		Schema: -53,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 1},
+		},
+		PositiveBuckets: []int64{3, -1, -1},
+		CustomValues:    []float64{0.1, 0.2, 0.5, 1, 2},
+	}
 	app := db.Appender(context.Background())
-	for i := 0; i < 6; i++ {
+	for i := range 7 {
 		l := labels.FromStrings("__name__", "test_metric", "foo", strconv.Itoa(i))
 		expL := labels.FromStrings("__name__", "test_metric", "instance", "", "foo", strconv.Itoa(i))
 		var err error
@@ -358,6 +372,56 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 			expVec = append(expVec, promql.Sample{
 				T:      100 * 60 * 1000,
 				H:      histWithoutZeroBucket.ToFloat(nil),
+				Metric: expL,
+			})
+		case 6:
+			_, err = app.AppendHistogram(0, l, 100*60*1000, nhcb.Copy(), nil)
+			expL = labels.FromStrings("__name__", "test_metric_count", "instance", "", "foo", strconv.Itoa(i))
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      6,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_sum", "instance", "", "foo", strconv.Itoa(i))
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      1.234,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "0.1")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      3,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "0.2")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      5,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "0.5")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      5,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "1.0")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      5,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "2.0")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      6,
+				Metric: expL,
+			})
+			expL = labels.FromStrings("__name__", "test_metric_bucket", "instance", "", "foo", strconv.Itoa(i), "le", "+Inf")
+			expVec = append(expVec, promql.Sample{
+				T:      100 * 60 * 1000,
+				F:      6,
 				Metric: expL,
 			})
 		default:
@@ -381,9 +445,10 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		config: &config.Config{
 			GlobalConfig: config.GlobalConfig{},
 		},
+		options: &Options{Parser: testParser},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?match[]=test_metric", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://example.org/federate?match[]=test_metric", http.NoBody)
 	req.Header.Add("Accept", `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.8,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`)
 	res := httptest.NewRecorder()
 
@@ -392,7 +457,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 	require.Equal(t, http.StatusOK, res.Code)
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
-	p := textparse.NewProtobufParser(body, false, labels.NewSymbolTable())
+	p := textparse.NewProtobufParser(body, false, false, false, false, labels.NewSymbolTable())
 	var actVec promql.Vector
 	metricFamilies := 0
 	l := labels.Labels{}
@@ -403,7 +468,7 @@ func TestFederationWithNativeHistograms(t *testing.T) {
 		}
 		require.NoError(t, err)
 		if et == textparse.EntryHistogram || et == textparse.EntrySeries {
-			p.Metric(&l)
+			p.Labels(&l)
 		}
 		switch et {
 		case textparse.EntryHelp:

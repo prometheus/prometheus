@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -72,7 +72,7 @@ func TestIsolation(t *testing.T) {
 
 func countOpenReads(iso *isolation) int {
 	count := 0
-	iso.TraverseOpenReads(func(s *isolationState) bool {
+	iso.TraverseOpenReads(func(*isolationState) bool {
 		count++
 		return true
 	})
@@ -87,19 +87,16 @@ func BenchmarkIsolation(b *testing.B) {
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
 
-			for g := 0; g < goroutines; g++ {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
+			for range goroutines {
+				wg.Go(func() {
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
 					}
-				}()
+				})
 			}
 
 			b.ResetTimer()
@@ -117,19 +114,16 @@ func BenchmarkIsolationWithState(b *testing.B) {
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
 
-			for g := 0; g < goroutines; g++ {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
+			for range goroutines {
+				wg.Go(func() {
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						appendID, _ := iso.newAppendID(0)
 
 						iso.closeAppend(appendID)
 					}
-				}()
+				})
 			}
 
 			readers := goroutines / 100
@@ -138,17 +132,14 @@ func BenchmarkIsolationWithState(b *testing.B) {
 			}
 
 			for g := 0; g < readers; g++ {
-				wg.Add(1)
-
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					<-start
 
-					for i := 0; i < b.N; i++ {
+					for b.Loop() {
 						s := iso.State(math.MinInt64, math.MaxInt64)
 						s.Close()
 					}
-				}()
+				})
 			}
 
 			b.ResetTimer()

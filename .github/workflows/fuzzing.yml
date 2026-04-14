@@ -1,28 +1,47 @@
-name: CIFuzz
+name: fuzzing
 on:
   workflow_call:
 permissions:
   contents: read
 
 jobs:
-  Fuzzing:
+  fuzzing:
+    name: Run Go Fuzz Tests
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        fuzz_test: [FuzzParseMetricText, FuzzParseOpenMetric, FuzzParseMetricSelector, FuzzParseExpr, FuzzXORChunk, FuzzXOR2Chunk, FuzzParseProtobuf]
     steps:
-      - name: Build Fuzzers
-        id: build
-        uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          oss-fuzz-project-name: "prometheus"
-          dry-run: false
-      - name: Run Fuzzers
-        uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master
+          persist-credentials: false
+      - name: Install Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          oss-fuzz-project-name: "prometheus"
-          fuzz-seconds: 600
-          dry-run: false
-      - name: Upload Crash
-        uses: actions/upload-artifact@0b2256b8c012f0828dc542b3febcab082c67f72b # v4.3.4
-        if: failure() && steps.build.outcome == 'success'
+          go-version: 1.26.x
+      - name: Run Fuzzing
+        run: go test -fuzz=${{ matrix.fuzz_test }}$ -fuzztime=4m ./util/fuzzing
+        continue-on-error: true
+        id: fuzz
+      - name: Upload Crash Artifacts
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: failure()
         with:
-          name: artifacts
-          path: ./out/artifacts
+          name: fuzz-artifacts-${{ matrix.fuzz_test }}
+          path: util/fuzzing/testdata/fuzz/${{ matrix.fuzz_test }}
+  fuzzing_status:
+    # This status check aggregates the individual matrix jobs of the fuzzing
+    # step into a final status. Fails if a single matrix job fails, succeeds if
+    # all matrix jobs succeed.
+    name: Fuzzing
+    runs-on: ubuntu-latest
+    needs: [fuzzing]
+    if: always()
+    steps:
+      - name: Successful fuzzing
+        if: ${{ !(contains(needs.*.result, 'failure')) && !(contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Failing or cancelled fuzzing
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

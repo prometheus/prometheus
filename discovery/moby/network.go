@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,8 +17,7 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -33,13 +32,13 @@ const (
 	labelNetworkLabelPrefix = labelNetworkPrefix + "label_"
 )
 
-func getNetworksLabels(ctx context.Context, client *client.Client, labelPrefix string) (map[string]map[string]string, error) {
-	networks, err := client.NetworkList(ctx, network.ListOptions{})
+func getNetworksLabels(ctx context.Context, c *client.Client, labelPrefix string) (map[string]map[string]string, error) {
+	networks, err := c.NetworkList(ctx, client.NetworkListOptions{})
 	if err != nil {
 		return nil, err
 	}
-	labels := make(map[string]map[string]string, len(networks))
-	for _, network := range networks {
+	labels := make(map[string]map[string]string, len(networks.Items))
+	for _, network := range networks.Items {
 		labels[network.ID] = map[string]string{
 			labelPrefix + labelNetworkID:       network.ID,
 			labelPrefix + labelNetworkName:     network.Name,

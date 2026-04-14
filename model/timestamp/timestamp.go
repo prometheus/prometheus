@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,12 +20,12 @@ import (
 
 // FromTime returns a new millisecond timestamp from a time.
 func FromTime(t time.Time) int64 {
-	return t.Unix()*1000 + int64(t.Nanosecond())/int64(time.Millisecond)
+	return t.UnixMilli()
 }
 
-// Time returns a new time.Time object from a millisecond timestamp.
+// Time returns a new time.Time object from a millisecond timestamp, in UTC.
 func Time(ts int64) time.Time {
-	return time.Unix(ts/1000, (ts%1000)*int64(time.Millisecond)).UTC()
+	return time.UnixMilli(ts).UTC()
 }
 
 // FromFloatSeconds returns a millisecond timestamp from float seconds.

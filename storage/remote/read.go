@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -93,7 +93,7 @@ func (c *sampleAndChunkQueryableClient) ChunkQuerier(mint, maxt int64) (storage.
 		noop bool
 		err  error
 	)
-	cq.querier.maxt, noop, err = c.preferLocalStorage(mint, maxt)
+	cq.maxt, noop, err = c.preferLocalStorage(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
@@ -210,19 +210,19 @@ func (q querier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, []s
 }
 
 // LabelValues implements storage.Querier and is a noop.
-func (q *querier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*querier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	// TODO: Implement: https://github.com/prometheus/prometheus/issues/3351
 	return nil, nil, errors.New("not implemented")
 }
 
 // LabelNames implements storage.Querier and is a noop.
-func (q *querier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (*querier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	// TODO: Implement: https://github.com/prometheus/prometheus/issues/3351
 	return nil, nil, errors.New("not implemented")
 }
 
 // Close implements storage.Querier and is a noop.
-func (q *querier) Close() error {
+func (*querier) Close() error {
 	return nil
 }
 

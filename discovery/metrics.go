@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -26,6 +26,7 @@ type Metrics struct {
 	ReceivedUpdates   prometheus.Counter
 	DelayedUpdates    prometheus.Counter
 	SentUpdates       prometheus.Counter
+	LastUpdated       *prometheus.GaugeVec
 }
 
 func NewManagerMetrics(registerer prometheus.Registerer, sdManagerName string) (*Metrics, error) {
@@ -72,12 +73,22 @@ func NewManagerMetrics(registerer prometheus.Registerer, sdManagerName string) (
 		},
 	)
 
+	m.LastUpdated = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:        "prometheus_sd_last_update_timestamp_seconds",
+			Help:        "Timestamp of the last update sent to the SD consumers.",
+			ConstLabels: prometheus.Labels{"name": sdManagerName},
+		},
+		[]string{"config"},
+	)
+
 	metrics := []prometheus.Collector{
 		m.FailedConfigs,
 		m.DiscoveredTargets,
 		m.ReceivedUpdates,
 		m.DelayedUpdates,
 		m.SentUpdates,
+		m.LastUpdated,
 	}
 
 	for _, collector := range metrics {
@@ -97,4 +108,5 @@ func (m *Metrics) Unregister(registerer prometheus.Registerer) {
 	registerer.Unregister(m.ReceivedUpdates)
 	registerer.Unregister(m.DelayedUpdates)
 	registerer.Unregister(m.SentUpdates)
+	registerer.Unregister(m.LastUpdated)
 }

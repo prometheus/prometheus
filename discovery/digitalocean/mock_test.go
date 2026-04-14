@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -643,5 +643,70 @@ func (m *SDMock) HandleDropletsList() {
 `,
 		}[page-1],
 		)
+	})
+}
+
+// HandleDatabasesList mocks database clusters list.
+func (m *SDMock) HandleDatabasesList() {
+	m.Mux.HandleFunc("/v2/databases", func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		switch page {
+		case "1", "":
+			fmt.Fprint(w, `
+{
+  "databases": [
+    {
+      "id": "9cc10173-e9ea-4176-9dbc-a4cee4c4ff30",
+      "name": "do-fra1-pg-trading-001",
+      "engine": "pg",
+      "version": "16",
+      "status": "online",
+      "region": "fra1",
+      "size": "db-s-1vcpu-2gb",
+      "num_nodes": 1,
+      "connection": {
+        "host": "do-fra1-pg-trading-001-do-user-XXXXX-0.f.db.ondigitalocean.com",
+        "port": 25060,
+        "user": "doadmin",
+        "password": "XXX",
+        "database": "defaultdb",
+        "ssl": true
+      },
+      "tags": ["prod", "market"]
+    }
+  ],
+  "links": {
+    "pages": {
+      "next": "http://example.com/v2/databases?page=2"
+    }
+  }
+}
+`)
+		case "2":
+			fmt.Fprint(w, `
+{
+  "databases": [
+    {
+      "id": "a0b1c2d3-e4f5-4677-8899-001122334455",
+      "name": "private-db",
+      "engine": "mysql",
+      "version": "8",
+      "status": "online",
+      "region": "nyc1",
+      "size": "db-s-2vcpu-4gb",
+      "num_nodes": 2,
+      "connection": {
+        "host": "public-db-host"
+      },
+      "private_connection": {
+        "host": "private-db-host"
+      }
+    }
+  ]
+}
+`)
+		default:
+			fmt.Fprint(w, `{"databases": []}`)
+		}
 	})
 }

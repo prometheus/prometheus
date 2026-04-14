@@ -1,4 +1,4 @@
-// Copyright 2024 Prometheus Team
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -25,7 +25,7 @@ import (
 // NOTE(bwplotka): This file's code is tested in /prompb/rwcommon.
 
 // ToLabels return model labels.Labels from timeseries' remote labels.
-func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) labels.Labels {
+func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) (labels.Labels, error) {
 	return desymbolizeLabels(b, m.GetLabelsRefs(), symbols)
 }
 
@@ -142,7 +142,7 @@ func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 
 func spansProtoToSpans(s []BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
-	for i := 0; i < len(s); i++ {
+	for i := range s {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
 	}
 
@@ -196,21 +196,29 @@ func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) Histogram
 }
 
 func spansToSpansProto(s []histogram.Span) []BucketSpan {
+	if len(s) == 0 {
+		return nil
+	}
 	spans := make([]BucketSpan, len(s))
-	for i := 0; i < len(s); i++ {
+	for i := range s {
 		spans[i] = BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
 	}
 
 	return spans
 }
 
-func (m Exemplar) ToExemplar(b *labels.ScratchBuilder, symbols []string) exemplar.Exemplar {
+func (m Exemplar) ToExemplar(b *labels.ScratchBuilder, symbols []string) (exemplar.Exemplar, error) {
 	timestamp := m.Timestamp
 
+	lbls, err := desymbolizeLabels(b, m.LabelsRefs, symbols)
+	if err != nil {
+		return exemplar.Exemplar{}, err
+	}
+
 	return exemplar.Exemplar{
-		Labels: desymbolizeLabels(b, m.LabelsRefs, symbols),
+		Labels: lbls,
 		Value:  m.Value,
 		Ts:     timestamp,
 		HasTs:  timestamp != 0,
-	}
+	}, nil
 }

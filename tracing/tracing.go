@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,11 +16,10 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/version"
 	"go.opentelemetry.io/otel"
@@ -30,7 +29,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc/credentials"
@@ -43,14 +42,14 @@ const serviceName = "prometheus"
 // Manager is capable of building, (re)installing and shutting down
 // the tracer provider.
 type Manager struct {
-	logger       log.Logger
+	logger       *slog.Logger
 	done         chan struct{}
 	config       config.TracingConfig
 	shutdownFunc func() error
 }
 
 // NewManager creates a new tracing manager.
-func NewManager(logger log.Logger) *Manager {
+func NewManager(logger *slog.Logger) *Manager {
 	return &Manager{
 		logger: logger,
 		done:   make(chan struct{}),
@@ -62,7 +61,7 @@ func NewManager(logger log.Logger) *Manager {
 func (m *Manager) Run() {
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	otel.SetErrorHandler(otelErrHandler(func(err error) {
-		level.Error(m.logger).Log("msg", "OpenTelemetry handler returned an error", "err", err)
+		m.logger.Error("OpenTelemetry handler returned an error", "err", err.Error())
 	}))
 	<-m.done
 }
@@ -89,7 +88,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 		m.config = cfg.TracingConfig
 		m.shutdownFunc = nil
 		otel.SetTracerProvider(noop.NewTracerProvider())
-		level.Info(m.logger).Log("msg", "Tracing provider uninstalled.")
+		m.logger.Info("Tracing provider uninstalled.")
 		return nil
 	}
 
@@ -102,7 +101,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	m.config = cfg.TracingConfig
 	otel.SetTracerProvider(tp)
 
-	level.Info(m.logger).Log("msg", "Successfully installed a new tracer provider.")
+	m.logger.Info("Successfully installed a new tracer provider.")
 	return nil
 }
 
@@ -115,10 +114,10 @@ func (m *Manager) Stop() {
 	}
 
 	if err := m.shutdownFunc(); err != nil {
-		level.Error(m.logger).Log("msg", "failed to shut down the tracer provider", "err", err)
+		m.logger.Error("failed to shut down the tracer provider", "err", err)
 	}
 
-	level.Info(m.logger).Log("msg", "Tracing manager stopped")
+	m.logger.Info("Tracing manager stopped")
 }
 
 type otelErrHandler func(err error)
@@ -208,6 +207,14 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 		opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(tracingCfg.Endpoint)}
 		if tracingCfg.Insecure {
 			opts = append(opts, otlptracehttp.WithInsecure())
+		} else {
+			// Use of TLS Credentials forces the use of TLS. Therefore it can
+			// only be set when `insecure` is set to false.
+			tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConf))
 		}
 		// Currently, OTEL supports only gzip compression.
 		if tracingCfg.Compression == config.GzipCompression {
@@ -219,12 +226,6 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 		if tracingCfg.Timeout != 0 {
 			opts = append(opts, otlptracehttp.WithTimeout(time.Duration(tracingCfg.Timeout)))
 		}
-
-		tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConf))
 
 		client = otlptracehttp.NewClient(opts...)
 	}

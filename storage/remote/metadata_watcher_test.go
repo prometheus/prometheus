@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -40,9 +40,9 @@ func (s *TestMetaStore) ListMetadata() []scrape.MetricMetadata {
 	return s.Metadata
 }
 
-func (s *TestMetaStore) GetMetadata(metric string) (scrape.MetricMetadata, bool) {
+func (s *TestMetaStore) GetMetadata(mfName string) (scrape.MetricMetadata, bool) {
 	for _, m := range s.Metadata {
-		if metric == m.Metric {
+		if mfName == m.MetricFamily {
 			return m, true
 		}
 	}
@@ -50,8 +50,8 @@ func (s *TestMetaStore) GetMetadata(metric string) (scrape.MetricMetadata, bool)
 	return scrape.MetricMetadata{}, false
 }
 
-func (s *TestMetaStore) SizeMetadata() int   { return 0 }
-func (s *TestMetaStore) LengthMetadata() int { return 0 }
+func (*TestMetaStore) SizeMetadata() int   { return 0 }
+func (*TestMetaStore) LengthMetadata() int { return 0 }
 
 type writeMetadataToMock struct {
 	metadataAppended int
@@ -106,26 +106,26 @@ func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
 	metadata := &TestMetaStore{
 		Metadata: []scrape.MetricMetadata{
 			{
-				Metric: "prometheus_tsdb_head_chunks_created_total",
-				Type:   model.MetricTypeCounter,
-				Help:   "Total number",
-				Unit:   "",
+				MetricFamily: "prometheus_tsdb_head_chunks_created",
+				Type:         model.MetricTypeCounter,
+				Help:         "Total number",
+				Unit:         "",
 			},
 			{
-				Metric: "prometheus_remote_storage_retried_samples_total",
-				Type:   model.MetricTypeCounter,
-				Help:   "Total number",
-				Unit:   "",
+				MetricFamily: "prometheus_remote_storage_retried_samples",
+				Type:         model.MetricTypeCounter,
+				Help:         "Total number",
+				Unit:         "",
 			},
 		},
 	}
 	metadataDup := &TestMetaStore{
 		Metadata: []scrape.MetricMetadata{
 			{
-				Metric: "prometheus_tsdb_head_chunks_created_total",
-				Type:   model.MetricTypeCounter,
-				Help:   "Total number",
-				Unit:   "",
+				MetricFamily: "prometheus_tsdb_head_chunks_created",
+				Type:         model.MetricTypeCounter,
+				Help:         "Total number",
+				Unit:         "",
 			},
 		},
 	}

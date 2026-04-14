@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -38,19 +38,19 @@ func TestWriteAndReadbackTombstones(t *testing.T) {
 
 	stones := NewMemTombstones()
 	// Generate the tombstones.
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		ref += uint64(rand.Int31n(10)) + 1
 		numRanges := rand.Intn(5) + 1
 		dranges := make(Intervals, 0, numRanges)
 		mint := rand.Int63n(time.Now().UnixNano())
-		for j := 0; j < numRanges; j++ {
+		for range numRanges {
 			dranges = dranges.Add(Interval{mint, mint + rand.Int63n(1000)})
 			mint += rand.Int63n(1000) + 1
 		}
 		stones.AddInterval(storage.SeriesRef(ref), dranges...)
 	}
 
-	_, err := WriteFile(log.NewNopLogger(), tmpdir, stones)
+	_, err := WriteFile(promslog.NewNopLogger(), tmpdir, stones)
 	require.NoError(t, err)
 
 	restr, _, err := ReadTombstones(tmpdir)
@@ -263,13 +263,13 @@ func TestMemTombstonesConcurrency(t *testing.T) {
 	wg.Add(2)
 
 	go func() {
-		for x := 0; x < totalRuns; x++ {
+		for x := range totalRuns {
 			tomb.AddInterval(storage.SeriesRef(x), Interval{int64(x), int64(x)})
 		}
 		wg.Done()
 	}()
 	go func() {
-		for x := 0; x < totalRuns; x++ {
+		for x := range totalRuns {
 			_, err := tomb.Get(storage.SeriesRef(x))
 			require.NoError(t, err)
 		}

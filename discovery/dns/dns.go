@@ -1,4 +1,4 @@
-// Copyright 2016 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,17 +17,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -78,11 +78,11 @@ func (*SDConfig) Name() string { return "dns" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(*c, opts.Logger, opts.Metrics)
+	return NewDiscovery(*c, opts)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -111,21 +111,21 @@ type Discovery struct {
 	names   []string
 	port    int
 	qtype   uint16
-	logger  log.Logger
+	logger  *slog.Logger
 	metrics *dnsMetrics
 
-	lookupFn func(name string, qtype uint16, logger log.Logger) (*dns.Msg, error)
+	lookupFn func(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error)
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*dnsMetrics)
+func NewDiscovery(conf SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*dnsMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
-	if logger == nil {
-		logger = log.NewNopLogger()
+	if opts.Logger == nil {
+		opts.Logger = promslog.NewNopLogger()
 	}
 
 	qtype := dns.TypeSRV
@@ -145,15 +145,16 @@ func NewDiscovery(conf SDConfig, logger log.Logger, metrics discovery.Discoverer
 		names:    conf.Names,
 		qtype:    qtype,
 		port:     conf.Port,
-		logger:   logger,
+		logger:   opts.Logger,
 		lookupFn: lookupWithSearchPath,
 		metrics:  m,
 	}
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "dns",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -174,7 +175,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	for _, name := range d.names {
 		go func(n string) {
 			if err := d.refreshOne(ctx, n, ch); err != nil && !errors.Is(err, context.Canceled) {
-				level.Error(d.logger).Log("msg", "Error refreshing DNS targets", "err", err)
+				d.logger.Error("Error refreshing DNS targets", "err", err)
 			}
 			wg.Done()
 		}(name)
@@ -238,7 +239,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 			// CNAME responses can occur with "Type: A" dns_sd_config requests.
 			continue
 		default:
-			level.Warn(d.logger).Log("msg", "Invalid record", "record", record)
+			d.logger.Warn("Invalid record", "record", record)
 			continue
 		}
 		tg.Targets = append(tg.Targets, model.LabelSet{
@@ -288,7 +289,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 // error will be generic-looking, because trying to return all the errors
 // returned by the combination of all name permutations and servers is a
 // nightmare.
-func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
+func lookupWithSearchPath(name string, qtype uint16, logger *slog.Logger) (*dns.Msg, error) {
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
 		return nil, fmt.Errorf("could not load resolv.conf: %w", err)
@@ -337,14 +338,14 @@ func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Ms
 // A non-viable answer is "anything else", which encompasses both various
 // system-level problems (like network timeouts) and also
 // valid-but-unexpected DNS responses (SERVFAIL, REFUSED, etc).
-func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logger log.Logger) (*dns.Msg, error) {
+func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logger *slog.Logger) (*dns.Msg, error) {
 	client := &dns.Client{}
 
 	for _, server := range conf.Servers {
 		servAddr := net.JoinHostPort(server, conf.Port)
 		msg, err := askServerForName(name, qtype, client, servAddr, true)
 		if err != nil {
-			level.Warn(logger).Log("msg", "DNS resolution failed", "server", server, "name", name, "err", err)
+			logger.Warn("DNS resolution failed", "server", server, "name", name, "err", err)
 			continue
 		}
 

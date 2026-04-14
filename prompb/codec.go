@@ -1,4 +1,4 @@
-// Copyright 2024 Prometheus Team
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -90,6 +90,7 @@ func (h Histogram) ToIntHistogram() *histogram.Histogram {
 		PositiveBuckets:  h.GetPositiveDeltas(),
 		NegativeSpans:    spansProtoToSpans(h.GetNegativeSpans()),
 		NegativeBuckets:  h.GetNegativeDeltas(),
+		CustomValues:     h.CustomValues,
 	}
 }
 
@@ -109,6 +110,7 @@ func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 			PositiveBuckets:  h.GetPositiveCounts(),
 			NegativeSpans:    spansProtoToSpans(h.GetNegativeSpans()),
 			NegativeBuckets:  h.GetNegativeCounts(),
+			CustomValues:     h.CustomValues, // CustomValues are immutable.
 		}
 	}
 	// Conversion from integer histogram.
@@ -123,12 +125,13 @@ func (h Histogram) ToFloatHistogram() *histogram.FloatHistogram {
 		PositiveBuckets:  deltasToCounts(h.GetPositiveDeltas()),
 		NegativeSpans:    spansProtoToSpans(h.GetNegativeSpans()),
 		NegativeBuckets:  deltasToCounts(h.GetNegativeDeltas()),
+		CustomValues:     h.CustomValues, // CustomValues are immutable.
 	}
 }
 
 func spansProtoToSpans(s []BucketSpan) []histogram.Span {
 	spans := make([]histogram.Span, len(s))
-	for i := 0; i < len(s); i++ {
+	for i := range s {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
 	}
 
@@ -159,6 +162,7 @@ func FromIntHistogram(timestamp int64, h *histogram.Histogram) Histogram {
 		PositiveDeltas: h.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(h.CounterResetHint),
 		Timestamp:      timestamp,
+		CustomValues:   h.CustomValues, // CustomValues are immutable.
 	}
 }
 
@@ -176,12 +180,13 @@ func FromFloatHistogram(timestamp int64, fh *histogram.FloatHistogram) Histogram
 		PositiveCounts: fh.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
 		Timestamp:      timestamp,
+		CustomValues:   fh.CustomValues, // CustomValues are immutable.
 	}
 }
 
 func spansToSpansProto(s []histogram.Span) []BucketSpan {
 	spans := make([]BucketSpan, len(s))
-	for i := 0; i < len(s); i++ {
+	for i := range s {
 		spans[i] = BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
 	}
 

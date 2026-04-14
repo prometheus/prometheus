@@ -14,7 +14,6 @@ examples and guides.</p>
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/486/badge)](https://bestpractices.coreinfrastructure.org/projects/486)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/prometheus/prometheus/badge)](https://securityscorecards.dev/viewer/?uri=github.com/prometheus/prometheus)
 [![CLOMonitor](https://img.shields.io/endpoint?url=https://clomonitor.io/api/projects/cncf/prometheus/badge)](https://clomonitor.io/projects/cncf/prometheus)
-[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/prometheus/prometheus)
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/prometheus.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:prometheus)
 
 </div>
@@ -40,14 +39,14 @@ The features that distinguish Prometheus from other metrics and monitoring syste
 
 ## Install
 
-There are various ways of installing Prometheus.
+There are various ways to install Prometheus.
 
 ### Precompiled binaries
 
 Precompiled binaries for released versions are available in the
 [*download* section](https://prometheus.io/download/)
 on [prometheus.io](https://prometheus.io). Using the latest production release binary
-is the recommended way of installing Prometheus.
+is the recommended way to install Prometheus.
 See the [Installing](https://prometheus.io/docs/introduction/install/)
 chapter in the documentation for all the details.
 
@@ -65,11 +64,11 @@ Prometheus will now be reachable at <http://localhost:9090/>.
 
 ### Building from source
 
-To build Prometheus from source code, You need:
+To build Prometheus from source code, you need:
 
-* Go [version 1.17 or greater](https://golang.org/doc/install).
-* NodeJS [version 16 or greater](https://nodejs.org/).
-* npm [version 7 or greater](https://www.npmjs.com/).
+* Go: Version specified in [go.mod](./go.mod) or greater.
+* NodeJS: Version specified in [.nvmrc](./web/ui/.nvmrc) or greater.
+* npm: Version 10 or greater (check with `npm --version` and [here](https://www.npmjs.com/)).
 
 Start by cloning the repository:
 
@@ -82,15 +81,15 @@ You can use the `go` tool to build and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:
 
 ```bash
-GO111MODULE=on go install github.com/prometheus/prometheus/cmd/...
+go install github.com/prometheus/prometheus/cmd/...
 prometheus --config.file=your_config.yml
 ```
 
 *However*, when using `go install` to build Prometheus, Prometheus will expect to be able to
-read its web assets from local filesystem directories under `web/ui/static` and
-`web/ui/templates`. In order for these assets to be found, you will have to run Prometheus
-from the root of the cloned repository. Note also that these directories do not include the
-React UI unless it has been built explicitly using `make assets` or `make build`.
+read its web assets from local filesystem directories under `web/ui/static`. In order for
+these assets to be found, you will have to run Prometheus from the root of the cloned
+repository. Note also that this directory does not include the React UI unless it has been
+built explicitly using `make assets` or `make build`.
 
 An example of the above configuration file can be found [here.](https://github.com/prometheus/prometheus/blob/main/documentation/examples/prometheus.yml)
 
@@ -113,16 +112,31 @@ The Makefile provides several targets:
 
 ### Service discovery plugins
 
-Prometheus is bundled with many service discovery plugins.
-When building Prometheus from source, you can edit the [plugins.yml](./plugins.yml)
-file to disable some service discoveries. The file is a yaml-formated list of go
-import path that will be built into the Prometheus binary.
+Prometheus is bundled with many service discovery plugins. You can customize
+which service discoveries are included in your build using Go build tags.
 
-After you have changed the file, you
-need to run `make build` again.
+To exclude service discoveries when building with `make build`, add the desired
+tags to the `.promu.yml` file under `build.tags.all`:
 
-If you are using another method to compile Prometheus, `make plugins` will
-generate the plugins file accordingly.
+```yaml
+build:
+    tags:
+        all:
+            - netgo
+            - builtinassets
+            - remove_all_sd           # Exclude all optional SDs
+            - enable_kubernetes_sd    # Re-enable only kubernetes
+```
+
+Then run `make build` as usual. Alternatively, when using `go build` directly:
+
+```bash
+go build -tags "remove_all_sd,enable_kubernetes_sd" ./cmd/prometheus
+```
+
+Available build tags:
+* `remove_all_sd` - Exclude all optional service discoveries (keeps file_sd, static_sd, and http_sd)
+* `enable_<name>_sd` - Re-enable a specific SD when using `remove_all_sd`
 
 If you add out-of-tree plugins, which we do not endorse at the moment,
 additional steps might be needed to adjust the `go.mod` and `go.sum` files. As
@@ -130,7 +144,6 @@ always, be extra careful when loading third party code.
 
 ### Building the Docker image
 
-The `make docker` target is designed for use in our CI system.
 You can build a docker image locally with the following commands:
 
 ```bash
@@ -140,7 +153,19 @@ make npm_licenses
 make common-docker-amd64
 ```
 
+The `make docker` target is intended only for use in our CI system and will not
+produce a fully working image when run locally.
+
 ## Using Prometheus as a Go Library
+
+Within the Prometheus project, repositories such as [prometheus/common](https://github.com/prometheus/common) and
+[prometheus/client-golang](https://github.com/prometheus/client-golang) are designed as re-usable libraries.
+
+The [prometheus/prometheus](https://github.com/prometheus/prometheus) repository builds a stand-alone program and is not
+designed for use as a library. We are aware that people do use parts as such,
+and we do not put any deliberate inconvenience in the way, but we want you to be
+aware that no care has been taken to make it work well as a library. For instance,
+you may encounter errors that only surface when used as a library.
 
 ### Remote Write
 
@@ -158,8 +183,19 @@ This is experimental.
 ### Prometheus code base
 
 In order to comply with [go mod](https://go.dev/ref/mod#versions) rules,
-Prometheus release number do not exactly match Go module releases. For the
-Prometheus v2.y.z releases, we are publishing equivalent v0.y.z tags.
+Prometheus release number do not exactly match Go module releases.
+
+For the
+Prometheus v3.y.z releases, we are publishing equivalent v0.3y.z tags. The y in v0.3y.z is always padded to two digits, with a leading zero if needed.
+
+Therefore, a user that would want to use Prometheus v3.0.0 as a library could do:
+
+```shell
+go get github.com/prometheus/prometheus@v0.300.0
+```
+
+For the
+Prometheus v2.y.z releases, we published the equivalent v0.y.z tags.
 
 Therefore, a user that would want to use Prometheus v2.35.0 as a library could do:
 
@@ -177,7 +213,7 @@ For more information on building, running, and developing on the React-based UI,
 
 ## More information
 
-* Godoc documentation is available via [pkg.go.dev](https://pkg.go.dev/github.com/prometheus/prometheus). Due to peculiarities of Go Modules, v2.x.y will be displayed as v0.x.y.
+* Godoc documentation is available via [pkg.go.dev](https://pkg.go.dev/github.com/prometheus/prometheus). Due to peculiarities of Go Modules, v3.y.z will be displayed as v0.3y.z (the y in v0.3y.z is always padded to two digits, with a leading zero if needed), while v2.y.z will be displayed as v0.y.z.
 * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
 ## Contributing

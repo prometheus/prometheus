@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -22,15 +22,15 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -42,7 +42,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 func TestSplitByRange(t *testing.T) {
@@ -173,214 +173,274 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 	c.plan(metas)
 }
 
-func TestLeveledCompactor_plan(t *testing.T) {
-	// This mimics our default ExponentialBlockRanges with min block size equals to 20.
-	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
-		20,
-		60,
-		180,
-		540,
-		1620,
-	}, nil, nil)
-	require.NoError(t, err)
+func TestLeveledCompactor(t *testing.T) {
+	// Tests for the private plan() method.
+	t.Run("plan", func(t *testing.T) {
+		// This mimics our default ExponentialBlockRanges with min block size equals to 20.
+		compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
+			20,
+			60,
+			180,
+			540,
+			1620,
+		}, nil, nil)
+		require.NoError(t, err)
 
-	cases := map[string]struct {
-		metas    []dirMeta
-		expected []string
-	}{
-		"Outside Range": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
+		cases := map[string]struct {
+			metas    []dirMeta
+			expected []string
+		}{
+			"Outside Range": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		"We should wait for four blocks of size 20 to appear before compacting.": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
+			"We should wait for four blocks of size 20 to appear before compacting.": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		`We should wait for a next block of size 20 to appear before compacting
-		the existing ones. We have three, but we ignore the fresh one from WAl`: {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 40, 60, nil),
+			`We should wait for a next block of size 20 to appear before compacting
+			the existing ones. We have three, but we ignore the fresh one from WAl`: {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 40, 60, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		"Block to fill the entire parent range appeared – should be compacted": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 40, 60, nil),
-				metaRange("4", 60, 80, nil),
+			"Block to fill the entire parent range appeared – should be compacted": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 40, 60, nil),
+					metaRange("4", 60, 80, nil),
+				},
+				expected: []string{"1", "2", "3"},
 			},
-			expected: []string{"1", "2", "3"},
-		},
-		`Block for the next parent range appeared with gap with size 20. Nothing will happen in the first one
-		anymore but we ignore fresh one still, so no compaction`: {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 60, 80, nil),
+			`Block for the next parent range appeared with gap with size 20. Nothing will happen in the first one
+			anymore but we ignore fresh one still, so no compaction`: {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 60, 80, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		`Block for the next parent range appeared, and we have a gap with size 20 between second and third block.
-		We will not get this missed gap anymore and we should compact just these two.`: {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 60, 80, nil),
-				metaRange("4", 80, 100, nil),
+			`Block for the next parent range appeared, and we have a gap with size 20 between second and third block.
+			We will not get this missed gap anymore and we should compact just these two.`: {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 60, 80, nil),
+					metaRange("4", 80, 100, nil),
+				},
+				expected: []string{"1", "2"},
 			},
-			expected: []string{"1", "2"},
-		},
-		"We have 20, 20, 20, 60, 60 range blocks. '5' is marked as fresh one": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 40, 60, nil),
-				metaRange("4", 60, 120, nil),
-				metaRange("5", 120, 180, nil),
+			"We have 20, 20, 20, 60, 60 range blocks. '5' is marked as fresh one": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 40, 60, nil),
+					metaRange("4", 60, 120, nil),
+					metaRange("5", 120, 180, nil),
+				},
+				expected: []string{"1", "2", "3"},
 			},
-			expected: []string{"1", "2", "3"},
-		},
-		"We have 20, 60, 20, 60, 240 range blocks. We can compact 20 + 60 + 60": {
-			metas: []dirMeta{
-				metaRange("2", 20, 40, nil),
-				metaRange("4", 60, 120, nil),
-				metaRange("5", 960, 980, nil), // Fresh one.
-				metaRange("6", 120, 180, nil),
-				metaRange("7", 720, 960, nil),
+			"We have 20, 60, 20, 60, 240 range blocks. We can compact 20 + 60 + 60": {
+				metas: []dirMeta{
+					metaRange("2", 20, 40, nil),
+					metaRange("4", 60, 120, nil),
+					metaRange("5", 960, 980, nil), // Fresh one.
+					metaRange("6", 120, 180, nil),
+					metaRange("7", 720, 960, nil),
+				},
+				expected: []string{"2", "4", "6"},
 			},
-			expected: []string{"2", "4", "6"},
-		},
-		"Do not select large blocks that have many tombstones when there is no fresh block": {
-			metas: []dirMeta{
-				metaRange("1", 0, 540, &BlockStats{
-					NumSeries:     10,
-					NumTombstones: 3,
-				}),
+			"Do not select large blocks that have many tombstones when there is no fresh block": {
+				metas: []dirMeta{
+					metaRange("1", 0, 540, &BlockStats{
+						NumSeries:     10,
+						NumTombstones: 3,
+					}),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		"Select large blocks that have many tombstones when fresh appears": {
-			metas: []dirMeta{
-				metaRange("1", 0, 540, &BlockStats{
-					NumSeries:     10,
-					NumTombstones: 3,
-				}),
-				metaRange("2", 540, 560, nil),
+			"Select large blocks that have many tombstones when fresh appears": {
+				metas: []dirMeta{
+					metaRange("1", 0, 540, &BlockStats{
+						NumSeries:     10,
+						NumTombstones: 3,
+					}),
+					metaRange("2", 540, 560, nil),
+				},
+				expected: []string{"1"},
 			},
-			expected: []string{"1"},
-		},
-		"For small blocks, do not compact tombstones, even when fresh appears.": {
-			metas: []dirMeta{
-				metaRange("1", 0, 60, &BlockStats{
-					NumSeries:     10,
-					NumTombstones: 3,
-				}),
-				metaRange("2", 60, 80, nil),
+			"For small blocks, do not compact tombstones, even when fresh appears.": {
+				metas: []dirMeta{
+					metaRange("1", 0, 60, &BlockStats{
+						NumSeries:     10,
+						NumTombstones: 3,
+					}),
+					metaRange("2", 60, 80, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		`Regression test: we were stuck in a compact loop where we always recompacted
-		the same block when tombstones and series counts were zero`: {
-			metas: []dirMeta{
-				metaRange("1", 0, 540, &BlockStats{
-					NumSeries:     0,
-					NumTombstones: 0,
-				}),
-				metaRange("2", 540, 560, nil),
+			`Regression test: we were stuck in a compact loop where we always recompacted
+			the same block when tombstones and series counts were zero`: {
+				metas: []dirMeta{
+					metaRange("1", 0, 540, &BlockStats{
+						NumSeries:     0,
+						NumTombstones: 0,
+					}),
+					metaRange("2", 540, 560, nil),
+				},
+				expected: nil,
 			},
-			expected: nil,
-		},
-		`Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
-		We need to actually look on max time instead.
+			`Regression test: we were wrongly assuming that new block is fresh from WAL when its ULID is newest.
+			We need to actually look on max time instead.
 
-		With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
-		block overlaps`: {
-			metas: []dirMeta{
-				metaRange("5", 0, 360, nil),
-				metaRange("6", 540, 560, nil), // Fresh one.
-				metaRange("7", 360, 420, nil),
-				metaRange("8", 420, 540, nil),
+			With previous, wrong approach "8" block was ignored, so we were wrongly compacting 5 and 7 and introducing
+			block overlaps`: {
+				metas: []dirMeta{
+					metaRange("5", 0, 360, nil),
+					metaRange("6", 540, 560, nil), // Fresh one.
+					metaRange("7", 360, 420, nil),
+					metaRange("8", 420, 540, nil),
+				},
+				expected: []string{"7", "8"},
 			},
-			expected: []string{"7", "8"},
-		},
-		// |--------------|
-		//               |----------------|
-		//                                |--------------|
-		"Overlapping blocks 1": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 19, 40, nil),
-				metaRange("3", 40, 60, nil),
+			// |--------------|
+			//               |----------------|
+			//                                |--------------|
+			"Overlapping blocks 1": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 19, 40, nil),
+					metaRange("3", 40, 60, nil),
+				},
+				expected: []string{"1", "2"},
 			},
-			expected: []string{"1", "2"},
-		},
-		// |--------------|
-		//                |--------------|
-		//                        |--------------|
-		"Overlapping blocks 2": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 20, 40, nil),
-				metaRange("3", 30, 50, nil),
+			// |--------------|
+			//                |--------------|
+			//                        |--------------|
+			"Overlapping blocks 2": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 20, 40, nil),
+					metaRange("3", 30, 50, nil),
+				},
+				expected: []string{"2", "3"},
 			},
-			expected: []string{"2", "3"},
-		},
-		// |--------------|
-		//         |---------------------|
-		//                       |--------------|
-		"Overlapping blocks 3": {
-			metas: []dirMeta{
-				metaRange("1", 0, 20, nil),
-				metaRange("2", 10, 40, nil),
-				metaRange("3", 30, 50, nil),
+			// |--------------|
+			//         |---------------------|
+			//                       |--------------|
+			"Overlapping blocks 3": {
+				metas: []dirMeta{
+					metaRange("1", 0, 20, nil),
+					metaRange("2", 10, 40, nil),
+					metaRange("3", 30, 50, nil),
+				},
+				expected: []string{"1", "2", "3"},
 			},
-			expected: []string{"1", "2", "3"},
-		},
-		// |--------------|
-		//               |--------------------------------|
-		//                |--------------|
-		//                               |--------------|
-		"Overlapping blocks 4": {
-			metas: []dirMeta{
-				metaRange("5", 0, 360, nil),
-				metaRange("6", 340, 560, nil),
-				metaRange("7", 360, 420, nil),
-				metaRange("8", 420, 540, nil),
+			// |--------------|
+			//               |--------------------------------|
+			//                |--------------|
+			//                               |--------------|
+			"Overlapping blocks 4": {
+				metas: []dirMeta{
+					metaRange("5", 0, 360, nil),
+					metaRange("6", 340, 560, nil),
+					metaRange("7", 360, 420, nil),
+					metaRange("8", 420, 540, nil),
+				},
+				expected: []string{"5", "6", "7", "8"},
 			},
-			expected: []string{"5", "6", "7", "8"},
-		},
-		// |--------------|
-		//               |--------------|
-		//                                            |--------------|
-		//                                                          |--------------|
-		"Overlapping blocks 5": {
-			metas: []dirMeta{
-				metaRange("1", 0, 10, nil),
-				metaRange("2", 9, 20, nil),
-				metaRange("3", 30, 40, nil),
-				metaRange("4", 39, 50, nil),
+			// |--------------|
+			//               |--------------|
+			//                                            |--------------|
+			//                                                          |--------------|
+			"Overlapping blocks 5": {
+				metas: []dirMeta{
+					metaRange("1", 0, 10, nil),
+					metaRange("2", 9, 20, nil),
+					metaRange("3", 30, 40, nil),
+					metaRange("4", 39, 50, nil),
+				},
+				expected: []string{"1", "2"},
 			},
-			expected: []string{"1", "2"},
-		},
-	}
-
-	for title, c := range cases {
-		if !t.Run(title, func(t *testing.T) {
-			res, err := compactor.plan(c.metas)
-			require.NoError(t, err)
-			require.Equal(t, c.expected, res)
-		}) {
-			return
 		}
-	}
+
+		for title, c := range cases {
+			if !t.Run(title, func(t *testing.T) {
+				res, err := compactor.plan(c.metas)
+				require.NoError(t, err)
+				require.Equal(t, c.expected, res)
+			}) {
+				return
+			}
+		}
+	})
+
+	// Tests for the public Plan() method.
+	t.Run("Plan", func(t *testing.T) {
+		// Verify that when a BlockExcludeFilter excludes a block in the middle of
+		// the list, subsequent blocks are not processed.
+		t.Run("BlockExcludeFilter stops iteration", func(t *testing.T) {
+			dir := t.TempDir()
+
+			// Create 4 blocks with sequential ULIDs.
+			block1ULID := ulid.MustNew(1, nil)
+			block2ULID := ulid.MustNew(2, nil)
+			block3ULID := ulid.MustNew(3, nil)
+			block4ULID := ulid.MustNew(4, nil)
+
+			for i, uid := range []ulid.ULID{block1ULID, block2ULID, block3ULID, block4ULID} {
+				blockDir := filepath.Join(dir, uid.String())
+				require.NoError(t, os.MkdirAll(blockDir, 0o777))
+
+				meta := &BlockMeta{
+					ULID:    uid,
+					MinTime: int64(i * 10),
+					MaxTime: int64((i + 1) * 10),
+				}
+				meta.Compaction.Level = 1
+				_, err := writeMetaFile(promslog.NewNopLogger(), blockDir, meta)
+				require.NoError(t, err)
+			}
+
+			// Track which blocks were evaluated by the exclude function.
+			var evaluatedBlocks []ulid.ULID
+			excludeFunc := func(meta *BlockMeta) bool {
+				evaluatedBlocks = append(evaluatedBlocks, meta.ULID)
+				return meta.ULID == block2ULID
+			}
+
+			c, err := NewLeveledCompactorWithOptions(
+				context.Background(),
+				nil,
+				promslog.NewNopLogger(),
+				[]int64{20},
+				chunkenc.NewPool(),
+				LeveledCompactorOptions{
+					BlockExcludeFilter:          excludeFunc,
+					EnableOverlappingCompaction: true,
+				},
+			)
+			require.NoError(t, err)
+
+			// Plan should evaluate all blocks.
+			_, err = c.Plan(dir)
+			require.NoError(t, err)
+
+			require.Len(t, evaluatedBlocks, 2, "Expected only 2 blocks to be evaluated")
+			require.Contains(t, evaluatedBlocks, block1ULID)
+			require.Contains(t, evaluatedBlocks, block2ULID)
+		})
+	})
 }
 
 func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
@@ -434,7 +494,7 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 }
 
 func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
-	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{
+	compactor, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{
 		20,
 		60,
 		240,
@@ -1045,8 +1105,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 			}
 			err = blockPopulator.PopulateBlock(c.ctx, c.metrics, c.logger, c.chunkPool, c.mergeFunc, blocks, meta, iw, nopChunkWriter{}, irPostingsFunc)
 			if tc.expErr != nil {
-				require.Error(t, err)
-				require.Equal(t, tc.expErr.Error(), err.Error())
+				require.EqualError(t, err, tc.expErr.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -1099,6 +1158,13 @@ func TestCompaction_populateBlock(t *testing.T) {
 				s.NumChunks += uint64(len(series.chunks))
 				for _, chk := range series.chunks {
 					s.NumSamples += uint64(len(chk))
+					for _, smpl := range chk {
+						if smpl.h != nil || smpl.fh != nil {
+							s.NumHistogramSamples++
+						} else {
+							s.NumFloatSamples++
+						}
+					}
 				}
 			}
 			require.Equal(t, s, meta.Stats)
@@ -1154,7 +1220,7 @@ func BenchmarkCompaction(b *testing.B) {
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
-				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil)
+				block, err := OpenBlock(nil, createBlock(b, dir, genSeries(nSeries, 10, r[0], r[1])), nil, nil)
 				require.NoError(b, err)
 				blocks = append(blocks, block)
 				defer func() {
@@ -1163,12 +1229,12 @@ func BenchmarkCompaction(b *testing.B) {
 				blockDirs = append(blockDirs, block.Dir())
 			}
 
-			c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil)
+			c, err := NewLeveledCompactor(context.Background(), nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
 			require.NoError(b, err)
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_, err = c.Compact(dir, blockDirs, blocks)
 				require.NoError(b, err)
 			}
@@ -1190,7 +1256,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
-				for lv := 0; lv < labelValues; lv++ {
+				for lv := range labelValues {
 					app.Append(0, labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln)), 0, 0)
 				}
 				require.NoError(b, app.Commit())
@@ -1198,7 +1264,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				createBlockFromHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), h)
 			}
 			h.Close()
@@ -1222,11 +1288,11 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
-				for lv := 0; lv < labelValues; lv++ {
+				for lv := range labelValues {
 					lbls := labels.FromStrings(strconv.Itoa(ln), fmt.Sprintf("%d%s%d", lv, postingsBenchSuffix, ln))
 					_, err = app.Append(0, lbls, int64(totalSamples), 0)
 					require.NoError(b, err)
-					for ts := 0; ts < totalSamples; ts++ {
+					for ts := range totalSamples {
 						_, err = app.Append(0, lbls, int64(ts), float64(ts))
 						require.NoError(b, err)
 					}
@@ -1236,7 +1302,7 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				oooHead, err := NewOOOCompactionHead(context.TODO(), h)
 				require.NoError(b, err)
 				createBlockFromOOOHead(b, filepath.Join(dir, fmt.Sprintf("%d-%d", i, labelNames)), oooHead)
@@ -1251,10 +1317,7 @@ func BenchmarkCompactionFromOOOHead(b *testing.B) {
 // This is needed for unit tests that rely on
 // checking state before and after a compaction.
 func TestDisableAutoCompactions(t *testing.T) {
-	db := openTestDB(t, nil, nil)
-	defer func() {
-		require.NoError(t, db.Close())
-	}()
+	db := newTestDB(t)
 
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
 	label := labels.FromStrings("foo", "bar")
@@ -1263,7 +1326,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	// no new blocks were created when compaction is disabled.
 	db.DisableCompactions()
 	app := db.Appender(context.Background())
-	for i := int64(0); i < 3; i++ {
+	for i := range int64(3) {
 		_, err := app.Append(0, label, i*blockRange, 0)
 		require.NoError(t, err)
 		_, err = app.Append(0, label, i*blockRange+1000, 0)
@@ -1276,7 +1339,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	default:
 	}
 
-	for x := 0; x < 10; x++ {
+	for range 10 {
 		if prom_testutil.ToFloat64(db.metrics.compactionsSkipped) > 0.0 {
 			break
 		}
@@ -1292,7 +1355,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 	case db.compactc <- struct{}{}:
 	default:
 	}
-	for x := 0; x < 100; x++ {
+	for range 100 {
 		if len(db.Blocks()) > 0 {
 			break
 		}
@@ -1304,6 +1367,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
+	t.Parallel()
 	tmpdir := t.TempDir()
 
 	// Create some blocks to fall within the compaction range.
@@ -1319,7 +1383,7 @@ func TestCancelCompactions(t *testing.T) {
 	// Measure the compaction time without interrupting it.
 	var timeCompactionUninterrupted time.Duration
 	{
-		db, err := open(tmpdir, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
+		db, err := open(tmpdir, promslog.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
@@ -1338,7 +1402,7 @@ func TestCancelCompactions(t *testing.T) {
 	}
 	// Measure the compaction time when closing the db in the middle of compaction.
 	{
-		db, err := open(tmpdirCopy, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
+		db, err := open(tmpdirCopy, promslog.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
@@ -1357,9 +1421,8 @@ func TestCancelCompactions(t *testing.T) {
 
 		// Make sure that no blocks were marked as compaction failed.
 		// This checks that the `context.Canceled` error is properly checked at all levels:
-		// - tsdb_errors.NewMulti() should have the Is() method implemented for correct checks.
 		// - callers should check with errors.Is() instead of ==.
-		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, "", log.NewNopLogger())
+		readOnlyDB, err := OpenDBReadOnly(tmpdirCopy, "", promslog.NewNopLogger())
 		require.NoError(t, err)
 		blocks, err := readOnlyDB.Blocks()
 		require.NoError(t, err)
@@ -1371,8 +1434,9 @@ func TestCancelCompactions(t *testing.T) {
 }
 
 // TestDeleteCompactionBlockAfterFailedReload ensures that a failed reloadBlocks immediately after a compaction
-// deletes the resulting block to avoid creatings blocks with the same time range.
+// deletes the resulting block to avoid creating blocks with the same time range.
 func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
+	t.Parallel()
 	tests := map[string]func(*DB) int{
 		"Test Head Compaction": func(db *DB) int {
 			rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 - 1
@@ -1400,7 +1464,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 				createBlock(t, db.Dir(), genSeries(1, 1, m.MinTime, m.MaxTime))
 			}
 			require.NoError(t, db.reload())
-			require.Equal(t, len(blocks), len(db.Blocks()), "unexpected block count after a reloadBlocks")
+			require.Len(t, db.Blocks(), len(blocks), "unexpected block count after a reloadBlocks")
 
 			return len(blocks)
 		},
@@ -1410,10 +1474,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 		t.Run(title, func(t *testing.T) {
 			ctx := context.Background()
 
-			db := openTestDB(t, nil, []int64{1, 100})
-			defer func() {
-				require.NoError(t, db.Close())
-			}()
+			db := newTestDB(t, withRngs(1, 100))
 			db.DisableCompactions()
 
 			expBlocks := bootStrap(db)
@@ -1448,11 +1509,8 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 func TestHeadCompactionWithHistograms(t *testing.T) {
 	for _, floatTest := range []bool{true, false} {
 		t.Run(fmt.Sprintf("float=%t", floatTest), func(t *testing.T) {
-			head, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
+			head, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 			require.NoError(t, head.Init(0))
-			t.Cleanup(func() {
-				require.NoError(t, head.Close())
-			})
 
 			minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 			ctx := context.Background()
@@ -1550,7 +1608,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 			require.Len(t, ids, 1)
 
 			// Open the block and query it and check the histograms.
-			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, ids[0].String()), nil)
+			block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, ids[0].String()), nil, nil)
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				require.NoError(t, block.Close())
@@ -1576,12 +1634,13 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 func TestSparseHistogramSpaceSavings(t *testing.T) {
 	t.Skip()
 
-	cases := []struct {
+	type testcase struct {
 		numSeriesPerSchema int
 		numBuckets         int
 		numSpans           int
 		gapBetweenSpans    int
-	}{
+	}
+	cases := []testcase{
 		{1, 15, 1, 0},
 		{1, 50, 1, 0},
 		{1, 100, 1, 0},
@@ -1627,14 +1686,8 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 				c.numBuckets,
 			),
 			func(t *testing.T) {
-				oldHead, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
-				t.Cleanup(func() {
-					require.NoError(t, oldHead.Close())
-				})
-				sparseHead, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
-				t.Cleanup(func() {
-					require.NoError(t, sparseHead.Close())
-				})
+				oldHead, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
+				sparseHead, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
 
 				var allSparseSeries []struct {
 					baseLabels labels.Labels
@@ -1664,17 +1717,14 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 
 				var wg sync.WaitGroup
 
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-
+				wg.Go(func() {
 					// Ingest sparse histograms.
 					for _, ah := range allSparseSeries {
 						var (
 							ref storage.SeriesRef
 							err error
 						)
-						for i := 0; i < numHistograms; i++ {
+						for i := range numHistograms {
 							ts := int64(i) * timeStep
 							ref, err = sparseApp.AppendHistogram(ref, ah.baseLabels, ts, ah.hists[i], nil)
 							require.NoError(t, err)
@@ -1690,16 +1740,16 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					sparseULIDs, err = compactor.Write(sparseHead.opts.ChunkDirRoot, sparseHead, mint, maxt, nil)
 					require.NoError(t, err)
 					require.Len(t, sparseULIDs, 1)
-				}()
+				})
 
 				wg.Add(1)
-				go func() {
+				go func(c testcase) {
 					defer wg.Done()
 
 					// Ingest histograms the old way.
 					for _, ah := range allSparseSeries {
 						refs := make([]storage.SeriesRef, c.numBuckets+((c.numSpans-1)*c.gapBetweenSpans))
-						for i := 0; i < numHistograms; i++ {
+						for i := range numHistograms {
 							ts := int64(i) * timeStep
 
 							h := ah.hists[i]
@@ -1741,7 +1791,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					oldULIDs, err = compactor.Write(oldHead.opts.ChunkDirRoot, oldHead, mint, maxt, nil)
 					require.NoError(t, err)
 					require.Len(t, oldULIDs, 1)
-				}()
+				}(c)
 
 				wg.Wait()
 
@@ -1912,13 +1962,13 @@ func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
 	ctx := context.Background()
 	tmpdir := t.TempDir()
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 10))
-	block, err := OpenBlock(nil, blockDir, nil)
+	block, err := OpenBlock(nil, blockDir, nil, nil)
 	require.NoError(t, err)
 	// Write tombstone covering the whole block.
 	err = block.Delete(ctx, 0, 10, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "0"))
 	require.NoError(t, err)
 
-	c, err := NewLeveledCompactor(ctx, nil, log.NewNopLogger(), []int64{0}, nil, nil)
+	c, err := NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{0}, nil, nil)
 	require.NoError(t, err)
 
 	ulids, err := c.Compact(tmpdir, []string{blockDir}, []*Block{block})
@@ -1928,172 +1978,133 @@ func TestCompactEmptyResultBlockWithTombstone(t *testing.T) {
 }
 
 func TestDelayedCompaction(t *testing.T) {
-	// The delay is chosen in such a way as to not slow down the tests, but also to make
-	// the effective compaction duration negligible compared to it, so that the duration comparisons make sense.
-	delay := 1000 * time.Millisecond
+	delay := 5 * time.Second
+	label := labels.FromStrings("foo", "bar")
 
-	waitUntilCompactedAndCheck := func(db *DB) {
-		t.Helper()
-		start := time.Now()
-		for db.head.compactable() {
-			// This simulates what happens at the end of commits, for less busy DB, a compaction
-			// is triggered every minute. This is to speed up the test.
-			select {
-			case db.compactc <- struct{}{}:
-			default:
-			}
-			time.Sleep(time.Millisecond)
+	appendSamples := func(t *testing.T, db *DB, timestamps ...int64) {
+		app := db.Appender(context.Background())
+		for _, ts := range timestamps {
+			_, err := app.Append(0, label, ts, 0)
+			require.NoError(t, err)
 		}
-		duration := time.Since(start)
-		// Only waited for one offset: offset<=delay<<<2*offset
-		require.Greater(t, duration, db.opts.CompactionDelay)
-		require.Less(t, duration, 2*db.opts.CompactionDelay)
+		require.NoError(t, app.Commit())
 	}
 
-	compactAndCheck := func(db *DB) {
-		t.Helper()
-		start := time.Now()
-		db.Compact(context.Background())
-		for db.head.compactable() {
-			time.Sleep(time.Millisecond)
-		}
-		if runtime.GOOS == "windows" {
-			// TODO: enable on windows once ms resolution timers are better supported.
-			return
-		}
-		duration := time.Since(start)
-		require.Less(t, duration, delay)
+	compactorRanCount := func(db *DB) float64 {
+		return prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran)
 	}
 
-	cases := []struct {
-		name string
-		// The delays are chosen in such a way as to not slow down the tests, but also in a way to make the
-		// effective compaction duration negligible compared to them, so that the duration comparisons make sense.
-		compactionDelay time.Duration
-	}{
-		{
-			"delayed compaction not enabled",
-			0,
-		},
-		{
-			"delayed compaction enabled",
-			delay,
-		},
-	}
+	t.Run("delay not enabled", func(t *testing.T) {
+		t.Parallel()
+		db := newTestDB(t, withRngs(10))
 
-	for _, c := range cases {
-		c := c
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
+		compactAndCheck := func() {
+			start := time.Now()
+			db.Compact(context.Background())
+			require.False(t, db.head.compactable())
+			require.Less(t, time.Since(start), delay)
+		}
 
-			var options *Options
-			if c.compactionDelay > 0 {
-				options = &Options{CompactionDelay: c.compactionDelay}
-			}
-			db := openTestDB(t, options, []int64{10})
-			defer func() {
-				require.NoError(t, db.Close())
-			}()
+		db.DisableCompactions()
+		appendSamples(t, db, 0, 11, 21)
+		compactAndCheck()
+		require.Equal(t, 1.0, compactorRanCount(db))
 
-			label := labels.FromStrings("foo", "bar")
+		db.DisableCompactions()
+		appendSamples(t, db, 31, 41)
+		compactAndCheck()
+		require.Equal(t, 3.0, compactorRanCount(db))
+	})
 
-			// The first compaction is expected to result in 1 block.
-			db.DisableCompactions()
-			app := db.Appender(context.Background())
-			_, err := app.Append(0, label, 0, 0)
-			require.NoError(t, err)
-			_, err = app.Append(0, label, 11, 0)
-			require.NoError(t, err)
-			_, err = app.Append(0, label, 21, 0)
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
+	t.Run("delay enabled", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			db := newTestDB(t, withOpts(&Options{CompactionDelay: delay}), withRngs(10))
 
-			if c.compactionDelay == 0 {
-				// When delay is not enabled, compaction should run on the first trigger.
-				compactAndCheck(db)
-			} else {
-				db.EnableCompactions()
-				waitUntilCompactedAndCheck(db)
-				// The db.compactc signals have been processed multiple times since a compaction is triggered every 1ms by waitUntilCompacted.
-				// This implies that the compaction delay doesn't block or wait on the initial trigger.
-				// 3 is an arbitrary value because it's difficult to determine the precise value.
-				require.GreaterOrEqual(t, prom_testutil.ToFloat64(db.metrics.compactionsTriggered)-prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 3.0)
-				// The delay doesn't change the head blocks alignment.
-				require.Eventually(t, func() bool {
-					return db.head.MinTime() == db.compactor.(*LeveledCompactor).ranges[0]+1
-				}, 500*time.Millisecond, 10*time.Millisecond)
-				// One compaction was run and one block was produced.
-				require.Equal(t, 1.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran))
-			}
-
-			// The second compaction is expected to result in 2 blocks.
-			// This ensures that the logic for compaction delay doesn't only work for the first compaction, but also takes into account the future compactions.
-			// This also ensures that no delay happens between consecutive compactions.
-			db.DisableCompactions()
-			app = db.Appender(context.Background())
-			_, err = app.Append(0, label, 31, 0)
-			require.NoError(t, err)
-			_, err = app.Append(0, label, 41, 0)
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
-
-			if c.compactionDelay == 0 {
-				// Compaction should still run on the first trigger.
-				compactAndCheck(db)
-			} else {
-				db.EnableCompactions()
-				waitUntilCompactedAndCheck(db)
-			}
-
-			// Two other compactions were run.
-			require.Eventually(t, func() bool {
-				return prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran) == 3.0
-			}, 500*time.Millisecond, 10*time.Millisecond)
-
-			if c.compactionDelay == 0 {
-				return
-			}
-
-			// This test covers a special case. If auto compaction is in a delay period and a manual compaction is triggered,
-			// auto compaction should stop waiting for the delay if the head is no longer compactable.
-			// Of course, if the head is still compactable after the manual compaction, auto compaction will continue waiting for the same delay.
-			getTimeWhenCompactionDelayStarted := func() time.Time {
-				t.Helper()
+			getDelayStart := func() time.Time {
 				db.cmtx.Lock()
 				defer db.cmtx.Unlock()
 				return db.timeWhenCompactionDelayStarted
 			}
 
-			db.DisableCompactions()
-			app = db.Appender(context.Background())
-			_, err = app.Append(0, label, 51, 0)
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
+			// triggerAutoCompaction sends a compaction trigger and waits for it to be processed.
+			triggerAutoCompaction := func() {
+				db.compactc <- struct{}{}
+				synctest.Wait()
+			}
 
+			// First compaction: expect 1 block.
+			db.DisableCompactions()
+			appendSamples(t, db, 0, 11, 21)
+			db.EnableCompactions()
+
+			// First trigger starts the delay period; no compaction yet.
+			triggerAutoCompaction()
+			require.NotZero(t, getDelayStart())
+			require.Equal(t, 0.0, compactorRanCount(db))
+
+			// Compaction doesn't run before the delay expires.
+			time.Sleep(delay / 2)
+			triggerAutoCompaction()
+			require.Equal(t, 0.0, compactorRanCount(db))
+
+			// Compaction runs once the delay expires.
+			time.Sleep(delay / 2)
+			triggerAutoCompaction()
+			// One compaction was run and one block was produced.
+			require.Equal(t, 1.0, compactorRanCount(db))
+			// The compaction delay doesn't block or wait on the trigger;
+			// 3 triggers were processed above without blocking.
+			require.GreaterOrEqual(t, prom_testutil.ToFloat64(db.metrics.compactionsTriggered)-prom_testutil.ToFloat64(db.metrics.compactionsSkipped), 3.0)
+			// The delay doesn't change the head blocks alignment.
+			require.Equal(t, db.compactor.(*LeveledCompactor).ranges[0]+1, db.head.MinTime())
+
+			// Second compaction: expect 2 more blocks.
+			// This ensures that the logic for compaction delay doesn't only work for the first compaction, but also takes into account the future compactions.
+			// This also ensures that no delay happens between consecutive compactions.
+			db.DisableCompactions()
+			appendSamples(t, db, 31, 41)
+			db.EnableCompactions()
+
+			triggerAutoCompaction()
+			require.Equal(t, 1.0, compactorRanCount(db))
+
+			time.Sleep(delay / 2)
+			triggerAutoCompaction()
+			require.Equal(t, 1.0, compactorRanCount(db))
+
+			time.Sleep(delay / 2)
+			triggerAutoCompaction()
+			require.Equal(t, 3.0, compactorRanCount(db))
+
+			// This test covers a special case. If auto compaction is in a delay period and a manual compaction is triggered,
+			// auto compaction should stop waiting for the delay if the head is no longer compactable.
+			// Of course, if the head is still compactable after the manual compaction, auto compaction will continue waiting for the same delay.
+			db.DisableCompactions()
+			appendSamples(t, db, 51)
 			require.True(t, db.head.compactable())
+
 			db.EnableCompactions()
 			// Trigger an auto compaction.
-			db.compactc <- struct{}{}
+			triggerAutoCompaction()
 			// That made auto compaction start waiting for the delay.
-			require.Eventually(t, func() bool {
-				return !getTimeWhenCompactionDelayStarted().IsZero()
-			}, 100*time.Millisecond, 10*time.Millisecond)
+			require.NotZero(t, getDelayStart())
+
 			// Trigger a manual compaction.
 			require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, 50.0)))
-			require.Equal(t, 4.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran))
+			require.Equal(t, 4.0, compactorRanCount(db))
+
 			// Re-trigger an auto compaction.
-			db.compactc <- struct{}{}
+			triggerAutoCompaction()
 			// That made auto compaction stop waiting for the delay.
-			require.Eventually(t, func() bool {
-				return getTimeWhenCompactionDelayStarted().IsZero()
-			}, 100*time.Millisecond, 10*time.Millisecond)
+			require.Zero(t, getDelayStart())
 		})
-	}
+	})
 }
 
 // TestDelayedCompactionDoesNotBlockUnrelatedOps makes sure that when delayed compaction is enabled,
 // operations that don't directly derive from the Head compaction are not delayed, here we consider disk blocks compaction.
 func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name            string
 		whenCompactable bool
@@ -2109,12 +2120,11 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 
 			tmpdir := t.TempDir()
-			// Some blocks that need compation are present.
+			// Some blocks that need compaction are present.
 			createBlock(t, tmpdir, genSeries(1, 1, 0, 100))
 			createBlock(t, tmpdir, genSeries(1, 1, 100, 200))
 			createBlock(t, tmpdir, genSeries(1, 1, 200, 300))
@@ -2122,7 +2132,7 @@ func TestDelayedCompactionDoesNotBlockUnrelatedOps(t *testing.T) {
 			options := DefaultOptions()
 			// This will make the test timeout if compaction really waits for it.
 			options.CompactionDelay = time.Hour
-			db, err := open(tmpdir, log.NewNopLogger(), nil, options, []int64{10, 200}, nil)
+			db, err := open(tmpdir, promslog.NewNopLogger(), nil, options, []int64{10, 200}, nil)
 			require.NoError(t, err)
 			defer func() {
 				require.NoError(t, db.Close())

@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -194,9 +194,10 @@ func TestSeriesSetFilter(t *testing.T) {
 }
 
 type mockedRemoteClient struct {
-	got   *prompb.Query
-	store []*prompb.TimeSeries
-	b     labels.ScratchBuilder
+	got         *prompb.Query
+	gotMultiple []*prompb.Query
+	store       []*prompb.TimeSeries
+	b           labels.ScratchBuilder
 }
 
 func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
@@ -224,15 +225,69 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query, sortSe
 			}
 		}
 
-		if !notMatch {
-			q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels})
+		if notMatch {
+			continue
 		}
+		// Filter samples by query time range
+		var filteredSamples []prompb.Sample
+		for _, sample := range s.Samples {
+			if sample.Timestamp >= query.StartTimestampMs && sample.Timestamp <= query.EndTimestampMs {
+				filteredSamples = append(filteredSamples, sample)
+			}
+		}
+		q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels, Samples: filteredSamples})
 	}
 	return FromQueryResult(sortSeries, q), nil
 }
 
+func (c *mockedRemoteClient) ReadMultiple(_ context.Context, queries []*prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
+	// Store the queries for verification
+	c.gotMultiple = make([]*prompb.Query, len(queries))
+	copy(c.gotMultiple, queries)
+
+	// Simulate the same behavior as the real client
+	var results []*prompb.QueryResult
+	for _, query := range queries {
+		matchers, err := FromLabelMatchers(query.Matchers)
+		if err != nil {
+			return nil, err
+		}
+
+		q := &prompb.QueryResult{}
+		for _, s := range c.store {
+			l := s.ToLabels(&c.b, nil)
+			var notMatch bool
+
+			for _, m := range matchers {
+				v := l.Get(m.Name)
+				if !m.Matches(v) {
+					notMatch = true
+					break
+				}
+			}
+
+			if notMatch {
+				continue
+			}
+			// Filter samples by query time range
+			var filteredSamples []prompb.Sample
+			for _, sample := range s.Samples {
+				if sample.Timestamp >= query.StartTimestampMs && sample.Timestamp <= query.EndTimestampMs {
+					filteredSamples = append(filteredSamples, sample)
+				}
+			}
+			q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels, Samples: filteredSamples})
+		}
+		results = append(results, q)
+	}
+
+	// Use the same logic as the real client
+	return combineQueryResults(results, sortSeries)
+}
+
 func (c *mockedRemoteClient) reset() {
 	c.got = nil
+	c.gotMultiple = nil
 }
 
 // NOTE: We don't need to test ChunkQuerier as it's uses querier for all operations anyway.
@@ -475,7 +530,9 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			)
 			q, err := c.Querier(tc.mint, tc.maxt)
 			require.NoError(t, err)
-			defer require.NoError(t, q.Close())
+			defer func() {
+				require.NoError(t, q.Close())
+			}()
 
 			ss := q.Select(context.Background(), true, nil, tc.matchers...)
 			require.NoError(t, err)

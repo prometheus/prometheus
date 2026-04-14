@@ -1,4 +1,4 @@
-// Copyright 2013 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -46,12 +45,12 @@ const (
 
 // Target refers to a singular HTTP or HTTPS endpoint.
 type Target struct {
-	// Labels before any processing.
-	discoveredLabels labels.Labels
 	// Any labels that are added to this target and its metrics.
 	labels labels.Labels
-	// Additional URL parameters that are part of the target URL.
-	params url.Values
+	// ScrapeConfig used to create this target.
+	scrapeConfig *config.ScrapeConfig
+	// Target and TargetGroup labels used to create this target.
+	tLabels, tgLabels model.LabelSet
 
 	mtx                sync.RWMutex
 	lastError          error
@@ -62,12 +61,13 @@ type Target struct {
 }
 
 // NewTarget creates a reasonably configured target for querying.
-func NewTarget(labels, discoveredLabels labels.Labels, params url.Values) *Target {
+func NewTarget(labels labels.Labels, scrapeConfig *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) *Target {
 	return &Target{
-		labels:           labels,
-		discoveredLabels: discoveredLabels,
-		params:           params,
-		health:           HealthUnknown,
+		labels:       labels,
+		tLabels:      tLabels,
+		tgLabels:     tgLabels,
+		scrapeConfig: scrapeConfig,
+		health:       HealthUnknown,
 	}
 }
 
@@ -78,17 +78,17 @@ func (t *Target) String() string {
 // MetricMetadataStore represents a storage for metadata.
 type MetricMetadataStore interface {
 	ListMetadata() []MetricMetadata
-	GetMetadata(metric string) (MetricMetadata, bool)
+	GetMetadata(mfName string) (MetricMetadata, bool)
 	SizeMetadata() int
 	LengthMetadata() int
 }
 
-// MetricMetadata is a piece of metadata for a metric.
+// MetricMetadata is a piece of metadata for a metric family.
 type MetricMetadata struct {
-	Metric string
-	Type   model.MetricType
-	Help   string
-	Unit   string
+	MetricFamily string
+	Type         model.MetricType
+	Help         string
+	Unit         string
 }
 
 func (t *Target) ListMetadata() []MetricMetadata {
@@ -124,14 +124,14 @@ func (t *Target) LengthMetadata() int {
 }
 
 // GetMetadata returns type and help metadata for the given metric.
-func (t *Target) GetMetadata(metric string) (MetricMetadata, bool) {
+func (t *Target) GetMetadata(mfName string) (MetricMetadata, bool) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
 	if t.metadata == nil {
 		return MetricMetadata{}, false
 	}
-	return t.metadata.GetMetadata(metric)
+	return t.metadata.GetMetadata(mfName)
 }
 
 func (t *Target) SetMetadataStore(s MetricMetadataStore) {
@@ -144,7 +144,7 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
 
-	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
+	fmt.Fprintf(h, "%016d", t.labels.Hash())
 	h.Write([]byte(t.URL().String()))
 
 	return h.Sum64()
@@ -169,11 +169,11 @@ func (t *Target) offset(interval time.Duration, offsetSeed uint64) time.Duration
 }
 
 // Labels returns a copy of the set of all public labels of the target.
-func (t *Target) Labels(b *labels.ScratchBuilder) labels.Labels {
-	b.Reset()
+func (t *Target) Labels(b *labels.Builder) labels.Labels {
+	b.Reset(labels.EmptyLabels())
 	t.labels.Range(func(l labels.Label) {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
-			b.Add(l.Name, l.Value)
+			b.Set(l.Name, l.Value)
 		}
 	})
 	return b.Labels()
@@ -189,24 +189,31 @@ func (t *Target) LabelsRange(f func(l labels.Label)) {
 }
 
 // DiscoveredLabels returns a copy of the target's labels before any processing.
-func (t *Target) DiscoveredLabels() labels.Labels {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
-	return t.discoveredLabels.Copy()
+func (t *Target) DiscoveredLabels(lb *labels.Builder) labels.Labels {
+	t.mtx.RLock()
+	cfg, tLabels, tgLabels := t.scrapeConfig, t.tLabels, t.tgLabels
+	t.mtx.RUnlock()
+	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
+	return lb.Labels()
 }
 
-// SetDiscoveredLabels sets new DiscoveredLabels.
-func (t *Target) SetDiscoveredLabels(l labels.Labels) {
+// SetScrapeConfig sets new ScrapeConfig.
+func (t *Target) SetScrapeConfig(scrapeConfig *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
-	t.discoveredLabels = l
+	t.scrapeConfig = scrapeConfig
+	t.tLabels = tLabels
+	t.tgLabels = tgLabels
 }
 
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
+	t.mtx.RLock()
+	configParams := t.scrapeConfig.Params
+	t.mtx.RUnlock()
 	params := url.Values{}
 
-	for k, v := range t.params {
+	for k, v := range configParams {
 		params[k] = make([]string, len(v))
 		copy(params[k], v)
 	}
@@ -288,12 +295,12 @@ func (t *Target) intervalAndTimeout(defaultInterval, defaultDuration time.Durati
 	intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
 	interval, err := model.ParseDuration(intervalLabel)
 	if err != nil {
-		return defaultInterval, defaultDuration, fmt.Errorf("Error parsing interval label %q: %w", intervalLabel, err)
+		return defaultInterval, defaultDuration, fmt.Errorf("error parsing interval label %q: %w", intervalLabel, err)
 	}
 	timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
 	timeout, err := model.ParseDuration(timeoutLabel)
 	if err != nil {
-		return defaultInterval, defaultDuration, fmt.Errorf("Error parsing timeout label %q: %w", timeoutLabel, err)
+		return defaultInterval, defaultDuration, fmt.Errorf("error parsing timeout label %q: %w", timeoutLabel, err)
 	}
 
 	return time.Duration(interval), time.Duration(timeout), nil
@@ -325,13 +332,31 @@ type limitAppender struct {
 }
 
 func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	if !value.IsStaleNaN(v) {
+	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
+	// This ensures that if a series is already in TSDB then we always write the marker.
+	if ref == 0 || !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return 0, errSampleLimit
 		}
 	}
 	ref, err := app.Appender.Append(ref, lset, t, v)
+	if err != nil {
+		return 0, err
+	}
+	return ref, nil
+}
+
+func (app *limitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
+	// This ensures that if a series is already in TSDB then we always write the marker.
+	if ref == 0 || (h != nil && !value.IsStaleNaN(h.Sum)) || (fh != nil && !value.IsStaleNaN(fh.Sum)) {
+		app.i++
+		if app.i > app.limit {
+			return 0, errSampleLimit
+		}
+	}
+	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
 	if err != nil {
 		return 0, err
 	}
@@ -364,6 +389,7 @@ type bucketLimitAppender struct {
 }
 
 func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	var err error
 	if h != nil {
 		// Return with an early error if the histogram has too many buckets and the
 		// schema is not exponential, in which case we can't reduce the resolution.
@@ -374,7 +400,9 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 			if h.Schema <= histogram.ExponentialSchemaMin {
 				return 0, errBucketLimit
 			}
-			h = h.ReduceResolution(h.Schema - 1)
+			if err = h.ReduceResolution(h.Schema - 1); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if fh != nil {
@@ -387,11 +415,12 @@ func (app *bucketLimitAppender) AppendHistogram(ref storage.SeriesRef, lset labe
 			if fh.Schema <= histogram.ExponentialSchemaMin {
 				return 0, errBucketLimit
 			}
-			fh = fh.ReduceResolution(fh.Schema - 1)
+			if err = fh.ReduceResolution(fh.Schema - 1); err != nil {
+				return 0, err
+			}
 		}
 	}
-	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
-	if err != nil {
+	if ref, err = app.Appender.AppendHistogram(ref, lset, t, h, fh); err != nil {
 		return 0, err
 	}
 	return ref, nil
@@ -404,27 +433,139 @@ type maxSchemaAppender struct {
 }
 
 func (app *maxSchemaAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	var err error
 	if h != nil {
-		if histogram.IsExponentialSchema(h.Schema) && h.Schema > app.maxSchema {
-			h = h.ReduceResolution(app.maxSchema)
+		if histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > app.maxSchema {
+			if err = h.ReduceResolution(app.maxSchema); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if fh != nil {
-		if histogram.IsExponentialSchema(fh.Schema) && fh.Schema > app.maxSchema {
-			fh = fh.ReduceResolution(app.maxSchema)
+		if histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > app.maxSchema {
+			if err = fh.ReduceResolution(app.maxSchema); err != nil {
+				return 0, err
+			}
 		}
 	}
-	ref, err := app.Appender.AppendHistogram(ref, lset, t, h, fh)
-	if err != nil {
+	if ref, err = app.Appender.AppendHistogram(ref, lset, t, h, fh); err != nil {
 		return 0, err
 	}
 	return ref, nil
 }
 
-// PopulateLabels builds a label set from the given label set and scrape configuration.
-// It returns a label set before relabeling was applied as the second return value.
-// Returns the original discovered label set found before relabelling was applied if the target is dropped during relabeling.
-func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort bool) (res, orig labels.Labels, err error) {
+// limitAppender limits the number of total appended samples in a batch.
+type limitAppenderV2 struct {
+	storage.AppenderV2
+
+	limit int
+	i     int
+}
+
+func (app *limitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	// Bypass sample_limit checks only if we have a staleness marker for a known series (ref value is non-zero).
+	// This ensures that if a series is already in TSDB then we always write the marker.
+	if ref == 0 || !value.IsStaleNaN(v) {
+		app.i++
+		if app.i > app.limit {
+			return 0, errSampleLimit
+		}
+	}
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+}
+
+type timeLimitAppenderV2 struct {
+	storage.AppenderV2
+
+	maxTime int64
+}
+
+func (app *timeLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	if t > app.maxTime {
+		return 0, storage.ErrOutOfBounds
+	}
+
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+}
+
+// bucketLimitAppender limits the number of total appended samples in a batch.
+type bucketLimitAppenderV2 struct {
+	storage.AppenderV2
+
+	limit int
+}
+
+func (app *bucketLimitAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
+	if h != nil {
+		// Return with an early error if the histogram has too many buckets and the
+		// schema is not exponential, in which case we can't reduce the resolution.
+		if len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(h.Schema) {
+			return 0, errBucketLimit
+		}
+		for len(h.PositiveBuckets)+len(h.NegativeBuckets) > app.limit {
+			if h.Schema <= histogram.ExponentialSchemaMin {
+				return 0, errBucketLimit
+			}
+			if err = h.ReduceResolution(h.Schema - 1); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if fh != nil {
+		// Return with an early error if the histogram has too many buckets and the
+		// schema is not exponential, in which case we can't reduce the resolution.
+		if len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit && !histogram.IsExponentialSchema(fh.Schema) {
+			return 0, errBucketLimit
+		}
+		for len(fh.PositiveBuckets)+len(fh.NegativeBuckets) > app.limit {
+			if fh.Schema <= histogram.ExponentialSchemaMin {
+				return 0, errBucketLimit
+			}
+			if err = fh.ReduceResolution(fh.Schema - 1); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+}
+
+type maxSchemaAppenderV2 struct {
+	storage.AppenderV2
+
+	maxSchema int32
+}
+
+func (app *maxSchemaAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (_ storage.SeriesRef, err error) {
+	if h != nil {
+		if histogram.IsExponentialSchemaReserved(h.Schema) && h.Schema > app.maxSchema {
+			if err = h.ReduceResolution(app.maxSchema); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if fh != nil {
+		if histogram.IsExponentialSchemaReserved(fh.Schema) && fh.Schema > app.maxSchema {
+			if err = fh.ReduceResolution(app.maxSchema); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return app.AppenderV2.Append(ref, ls, st, t, v, h, fh, opts)
+}
+
+// PopulateDiscoveredLabels sets base labels on lb from target and group labels and scrape configuration, before relabeling.
+func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) {
+	lb.Reset(labels.EmptyLabels())
+
+	for ln, lv := range tLabels {
+		lb.Set(string(ln), string(lv))
+	}
+	for ln, lv := range tgLabels {
+		if _, ok := tLabels[ln]; !ok {
+			lb.Set(string(ln), string(lv))
+		}
+	}
+
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
@@ -441,92 +582,53 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 	}
 	// Encode scrape query parameters as labels.
 	for k, v := range cfg.Params {
-		if len(v) > 0 {
-			lb.Set(model.ParamLabelPrefix+k, v[0])
+		if name := model.ParamLabelPrefix + k; len(v) > 0 && lb.Get(name) == "" {
+			lb.Set(name, v[0])
 		}
 	}
+}
 
-	preRelabelLabels := lb.Labels()
+// PopulateLabels builds labels from target and group labels and scrape configuration,
+// performs defined relabeling, checks validity, and adds Prometheus standard labels such as 'instance'.
+// A return of empty labels and nil error means the target was dropped by relabeling.
+func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLabels, tgLabels model.LabelSet) (res labels.Labels, err error) {
+	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
 	keep := relabel.ProcessBuilder(lb, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
 	if !keep {
-		return labels.EmptyLabels(), preRelabelLabels, nil
+		return labels.EmptyLabels(), nil
 	}
 	if v := lb.Get(model.AddressLabel); v == "" {
-		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("no address")
-	}
-
-	// addPort checks whether we should add a default port to the address.
-	// If the address is not valid, we don't append a port either.
-	addPort := func(s string) (string, string, bool) {
-		// If we can split, a port exists and we don't have to add one.
-		if host, port, err := net.SplitHostPort(s); err == nil {
-			return host, port, false
-		}
-		// If adding a port makes it valid, the previous error
-		// was not due to an invalid address and we can append a port.
-		_, _, err := net.SplitHostPort(s + ":1234")
-		return "", "", err == nil
+		return labels.EmptyLabels(), errors.New("no address")
 	}
 
 	addr := lb.Get(model.AddressLabel)
-	scheme := lb.Get(model.SchemeLabel)
-	host, port, add := addPort(addr)
-	// If it's an address with no trailing port, infer it based on the used scheme
-	// unless the no-default-scrape-port feature flag is present.
-	if !noDefaultPort && add {
-		// Addresses reaching this point are already wrapped in [] if necessary.
-		switch scheme {
-		case "http", "":
-			addr += ":80"
-		case "https":
-			addr += ":443"
-		default:
-			return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("invalid scheme: %q", cfg.Scheme)
-		}
-		lb.Set(model.AddressLabel, addr)
-	}
-
-	if noDefaultPort {
-		// If it's an address with a trailing default port and the
-		// no-default-scrape-port flag is present, remove the port.
-		switch port {
-		case "80":
-			if scheme == "http" {
-				lb.Set(model.AddressLabel, host)
-			}
-		case "443":
-			if scheme == "https" {
-				lb.Set(model.AddressLabel, host)
-			}
-		}
-	}
 
 	if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
-		return labels.EmptyLabels(), labels.EmptyLabels(), err
+		return labels.EmptyLabels(), err
 	}
 
 	interval := lb.Get(model.ScrapeIntervalLabel)
 	intervalDuration, err := model.ParseDuration(interval)
 	if err != nil {
-		return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("error parsing scrape interval: %w", err)
+		return labels.EmptyLabels(), fmt.Errorf("error parsing scrape interval: %w", err)
 	}
 	if time.Duration(intervalDuration) == 0 {
-		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("scrape interval cannot be 0")
+		return labels.EmptyLabels(), errors.New("scrape interval cannot be 0")
 	}
 
 	timeout := lb.Get(model.ScrapeTimeoutLabel)
 	timeoutDuration, err := model.ParseDuration(timeout)
 	if err != nil {
-		return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("error parsing scrape timeout: %w", err)
+		return labels.EmptyLabels(), fmt.Errorf("error parsing scrape timeout: %w", err)
 	}
 	if time.Duration(timeoutDuration) == 0 {
-		return labels.EmptyLabels(), labels.EmptyLabels(), errors.New("scrape timeout cannot be 0")
+		return labels.EmptyLabels(), errors.New("scrape timeout cannot be 0")
 	}
 
 	if timeoutDuration > intervalDuration {
-		return labels.EmptyLabels(), labels.EmptyLabels(), fmt.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
+		return labels.EmptyLabels(), fmt.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
@@ -551,34 +653,22 @@ func PopulateLabels(lb *labels.Builder, cfg *config.ScrapeConfig, noDefaultPort 
 		return nil
 	})
 	if err != nil {
-		return labels.EmptyLabels(), labels.EmptyLabels(), err
+		return labels.EmptyLabels(), err
 	}
-	return res, preRelabelLabels, nil
+	return res, nil
 }
 
 // TargetsFromGroup builds targets based on the given TargetGroup and config.
-func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefaultPort bool, targets []*Target, lb *labels.Builder) ([]*Target, []error) {
+func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, targets []*Target, lb *labels.Builder) ([]*Target, []error) {
 	targets = targets[:0]
 	failures := []error{}
 
-	for i, tlset := range tg.Targets {
-		lb.Reset(labels.EmptyLabels())
-
-		for ln, lv := range tlset {
-			lb.Set(string(ln), string(lv))
-		}
-		for ln, lv := range tg.Labels {
-			if _, ok := tlset[ln]; !ok {
-				lb.Set(string(ln), string(lv))
-			}
-		}
-
-		lset, origLabels, err := PopulateLabels(lb, cfg, noDefaultPort)
+	for i, tLabels := range tg.Targets {
+		lset, err := PopulateLabels(lb, cfg, tLabels, tg.Labels)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("instance %d in group %s: %w", i, tg, err))
-		}
-		if !lset.IsEmpty() || !origLabels.IsEmpty() {
-			targets = append(targets, NewTarget(lset, origLabels, cfg.Params))
+		} else {
+			targets = append(targets, NewTarget(lset, cfg, tLabels, tg.Labels))
 		}
 	}
 	return targets, failures

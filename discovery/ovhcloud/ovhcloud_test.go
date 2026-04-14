@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,11 +20,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
@@ -121,7 +121,7 @@ func TestParseIPs(t *testing.T) {
 
 func TestDiscoverer(t *testing.T) {
 	conf, _ := getMockConf("vps")
-	logger := testutil.NewLogger(t)
+	logger := promslog.NewNopLogger()
 
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)

@@ -1,0 +1,7 @@
+global:
+  always_scrape_classic_histograms: false
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:8080']
+    always_scrape_classic_histograms: true

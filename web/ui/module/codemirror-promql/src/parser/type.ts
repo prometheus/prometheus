@@ -14,12 +14,14 @@
 import { SyntaxNode } from '@lezer/common';
 import {
   AggregateExpr,
+  AnchoredExpr,
   BinaryExpr,
   FunctionCall,
   MatrixSelector,
   NumberDurationLiteral,
   OffsetExpr,
   ParenExpr,
+  SmoothedExpr,
   StepInvariantExpr,
   StringLiteral,
   SubqueryExpr,
@@ -48,23 +50,29 @@ export function getType(node: SyntaxNode | null): ValueType {
       return ValueType.matrix;
     case SubqueryExpr:
       return ValueType.matrix;
+    case SmoothedExpr:
+      return getType(node.firstChild);
+    case AnchoredExpr:
+      return getType(node.firstChild);
     case ParenExpr:
       return getType(node.getChild('Expr'));
     case UnaryExpr:
       return getType(node.getChild('Expr'));
-    case BinaryExpr:
+    case BinaryExpr: {
       const lt = getType(node.firstChild);
       const rt = getType(node.lastChild);
       if (lt === ValueType.scalar && rt === ValueType.scalar) {
         return ValueType.scalar;
       }
       return ValueType.vector;
-    case FunctionCall:
+    }
+    case FunctionCall: {
       const funcNode = node.firstChild?.firstChild;
       if (!funcNode) {
         return ValueType.none;
       }
       return getFunction(funcNode.type.id).returnType;
+    }
     case StepInvariantExpr:
       return getType(node.getChild('Expr'));
     default:

@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -23,7 +23,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/linode/linodego"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -103,7 +102,7 @@ func (*SDConfig) Name() string { return "linode" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger, opts.Metrics)
+	return NewDiscovery(c, opts)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -112,7 +111,7 @@ func (c *SDConfig) SetDirectory(dir string) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
@@ -138,10 +137,10 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
-	m, ok := metrics.(*linodeMetrics)
+func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery, error) {
+	m, ok := opts.Metrics.(*linodeMetrics)
 	if !ok {
-		return nil, fmt.Errorf("invalid discovery metrics type")
+		return nil, errors.New("invalid discovery metrics type")
 	}
 
 	d := &Discovery{
@@ -165,13 +164,14 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, metrics discovery.Discovere
 			Timeout:   time.Duration(conf.RefreshInterval),
 		},
 	)
-	client.SetUserAgent(fmt.Sprintf("Prometheus/%s", version.Version))
+	client.SetUserAgent(version.PrometheusUserAgent())
 	d.client = &client
 
 	d.Discovery = refresh.NewDiscovery(
 		refresh.Options{
-			Logger:              logger,
+			Logger:              opts.Logger,
 			Mech:                "linode",
+			SetName:             opts.SetName,
 			Interval:            time.Duration(conf.RefreshInterval),
 			RefreshF:            d.refresh,
 			MetricsInstantiator: m.refreshMetrics,
@@ -194,13 +194,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		events, err := d.client.ListEvents(ctx, &eventsOpts)
 		if err != nil {
 			var e *linodego.Error
-			if errors.As(err, &e) && e.Code == http.StatusUnauthorized {
-				// If we get a 401, the token doesn't have `events:read_only` scope.
-				// Disable event polling and fallback to doing a full refresh every interval.
-				d.eventPollingEnabled = false
-			} else {
+			if !errors.As(err, &e) || e.Code != http.StatusUnauthorized {
 				return nil, err
 			}
+			// If we get a 401, the token doesn't have `events:read_only` scope.
+			// Disable event polling and fallback to doing a full refresh every interval.
+			d.eventPollingEnabled = false
 		} else {
 			// Event polling tells us changes the Linode API is aware of. Actions issued outside of the Linode API,
 			// such as issuing a `shutdown` at the VM's console instead of using the API to power off an instance,
