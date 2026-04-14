@@ -1951,17 +1951,12 @@ func (h *Head) mmapHeadChunks() {
 	for i := range h.series.size {
 		h.series.locks[i].RLock()
 		for _, series := range h.series.series[i] {
-			if series.headChunkCount.Load() < 2 {
+			if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
 				continue
 			}
 
 			series.Lock()
 			count += series.mmapChunks(h.chunkDiskMapper)
-			if series.headChunks != nil {
-				series.headChunkCount.Store(1)
-			} else {
-				series.headChunkCount.Store(0)
-			}
 			series.Unlock()
 		}
 		h.series.locks[i].RUnlock()
@@ -2480,7 +2475,7 @@ type memSeries struct {
 	// Most recent chunks in memory that are still being built or waiting to be mmapped.
 	// This is a linked list, headChunks points to the most recent chunk, headChunks.prev points
 	// to older chunk and so on.
-	// Please note that the headChunkCount field is updated via observeChunkCreated when committing a sample that creates a new head chunk.
+	// Please note the headChunkCount field tracking the number of headChunks.
 	headChunks   *memChunk
 	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
@@ -2491,11 +2486,9 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
-	// headChunkCount tracks the number of head chunks when a new head chunk is cut.
-	// A value >= 2 signals that the series has chunks ready for mmapping.
-	// The count may undercount by 1 in the rare case where a histogram append
-	// creates two chunks (counter reset + chunk cut) in a single sample, since
-	// observeChunkCreated is called once per append.
+	// headChunkCount tracks the number of head chunks.
+	// It is incremented in cutNewHeadChunk and the histogram counter-reset paths,
+	// and reset by mmapChunks and truncateChunksBefore.
 	// Explicitly uses sync/atomic.Uint32 (4 bytes) to fit in the existing padding
 	// between two bools and a float64.
 	headChunkCount stdatomic.Uint32

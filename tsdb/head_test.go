@@ -8103,14 +8103,14 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 	ts := int64(0)
 
-	// First chunk creation should leave headChunkCount at 0.
+	// First chunk creation should set headChunkCount to 1.
 	app := h.Appender(t.Context())
 	_, err := app.Append(0, lblsA, ts, 1.0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	ts += interval
 
-	require.Equal(t, uint32(0), getCount(lblsA), "first chunk should leave headChunkCount at 0")
+	require.Equal(t, uint32(1), getCount(lblsA), "first chunk should set headChunkCount to 1")
 	require.Equal(t, 0, countReady(), "series with only a first chunk should not be ready")
 
 	const chunkCutIterations = 2*DefaultSamplesPerChunk + 10
@@ -8188,4 +8188,40 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 
 	h.mmapHeadChunks()
 	require.Equal(t, uint32(0), getCount(lblsB), "headChunkCount should be 0 when headChunks is nil")
+}
+
+func TestHead_mmapHeadChunks_oooDoesNotInflateCount(t *testing.T) {
+	h, _ := newTestHead(t, DefaultBlockDuration, compression.None, true /* oooEnabled */)
+	require.NoError(t, h.Init(0))
+
+	interval := DefaultBlockDuration / (4 * 120)
+	lbls := labels.FromStrings("__name__", "test")
+	ts := int64(0)
+
+	// Create enough in-order samples to get headChunkCount >= 2.
+	const chunkCutIterations = 2*DefaultSamplesPerChunk + 10
+	var ref storage.SeriesRef
+	app := h.Appender(t.Context())
+	for range chunkCutIterations {
+		var err error
+		ref, err = app.Append(ref, lbls, ts, float64(ts))
+		require.NoError(t, err)
+		ts += interval
+	}
+	require.NoError(t, app.Commit())
+
+	s := h.series.getByHash(lbls.Hash(), lbls)
+	require.NotNil(t, s)
+	countBefore := s.headChunkCount.Load()
+	require.GreaterOrEqual(t, countBefore, uint32(2), "need multiple head chunks for this test")
+
+	// Append an OOO sample that creates an OOO chunk.
+	oooTs := ts - 5*time.Minute.Milliseconds() // Within the 10m OOO window.
+	app = h.Appender(t.Context())
+	_, err := app.Append(0, lbls, oooTs, 999.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// headChunkCount must not change from an OOO insert.
+	require.Equal(t, countBefore, s.headChunkCount.Load(), "OOO insert should not inflate headChunkCount")
 }
