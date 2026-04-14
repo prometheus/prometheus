@@ -63,7 +63,7 @@ func isASCII(s string) bool {
 }
 
 // jaroWinklerString implements the Jaro-Winkler algorithm directly on ASCII
-// strings, avoiding any []byte conversion.
+// strings, avoiding any []rune conversion.
 func jaroWinklerString(s1, s2 string) float64 {
 	l1, l2 := len(s1), len(s2)
 
@@ -73,6 +73,7 @@ func jaroWinklerString(s1, s2 string) float64 {
 		l1, l2 = l2, l1
 	}
 
+	// Jaro match distance: characters must be within this many positions to match.
 	matchDistance := max(l2/2-1, 0)
 
 	s1Matches := make([]bool, l1)
@@ -121,11 +122,7 @@ func jaroWinklerString(s1, s2 string) float64 {
 
 	// Winkler modification: boost for common prefix up to 4 characters.
 	prefixLen := 0
-	maxPrefix := min(4, l1, l2)
-	for i := range maxPrefix {
-		if s1[i] != s2[i] {
-			break
-		}
+	for prefixLen < min(4, l1, l2) && s1[prefixLen] == s2[prefixLen] {
 		prefixLen++
 	}
 
@@ -144,10 +141,11 @@ func jaroWinklerRunes(r1, r2 []rune) float64 {
 		l1, l2 = l2, l1
 	}
 
+	// Jaro match distance: characters must be within this many positions to match.
 	matchDistance := max(l2/2-1, 0)
 
-	s1Matches := make([]bool, l1)
-	s2Matches := make([]bool, l2)
+	r1Matches := make([]bool, l1)
+	r2Matches := make([]bool, l2)
 
 	var matches float64
 	var transpositions float64
@@ -157,11 +155,11 @@ func jaroWinklerRunes(r1, r2 []rune) float64 {
 		end := min(i+matchDistance+1, l2)
 
 		for j := start; j < end; j++ {
-			if s2Matches[j] || r1[i] != r2[j] {
+			if r2Matches[j] || r1[i] != r2[j] {
 				continue
 			}
-			s1Matches[i] = true
-			s2Matches[j] = true
+			r1Matches[i] = true
+			r2Matches[j] = true
 			matches++
 			break
 		}
@@ -173,10 +171,10 @@ func jaroWinklerRunes(r1, r2 []rune) float64 {
 
 	k := 0
 	for i := range l1 {
-		if !s1Matches[i] {
+		if !r1Matches[i] {
 			continue
 		}
-		for !s2Matches[k] {
+		for !r2Matches[k] {
 			k++
 		}
 		if r1[i] != r2[k] {
@@ -192,11 +190,7 @@ func jaroWinklerRunes(r1, r2 []rune) float64 {
 
 	// Winkler modification: boost for common prefix up to 4 characters.
 	prefixLen := 0
-	maxPrefix := min(4, l1, l2)
-	for i := range maxPrefix {
-		if r1[i] != r2[i] {
-			break
-		}
+	for prefixLen < min(4, l1, l2) && r1[prefixLen] == r2[prefixLen] {
 		prefixLen++
 	}
 

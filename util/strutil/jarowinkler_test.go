@@ -61,6 +61,12 @@ func TestJaroWinklerMatcher(t *testing.T) {
 		{"café", "cafè", 0.88, 0.89},
 		// Common Unicode prefix (exercises Winkler boost on runes).
 		{"préfixe_abc", "préfixe_xyz", 0.80, 0.90},
+		// Unicode strings with unequal rune lengths (exercises swap in rune path).
+		{"naïve_long", "naïve", 0.89, 0.91},
+		// Completely different Unicode strings (exercises zero-matches in rune path).
+		{"äöü", "éèê", 0.0, 0.01},
+		// Unicode transpositions (mirrors martha/marhta in rune path).
+		{"màrthà", "màrhtà", 0.96, 0.97},
 	}
 
 	for _, tt := range tests {
