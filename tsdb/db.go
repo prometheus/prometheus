@@ -1324,14 +1324,7 @@ func (*DB) mergeBlockMetadata(blocks []*Block) (seriesmetadata.Reader, error) {
 		if err != nil {
 			return nil, fmt.Errorf("get block series metadata: %w", err)
 		}
-		hasData := false
-		for _, kind := range seriesmetadata.AllKinds() {
-			if mr.KindLen(kind.ID()) > 0 {
-				hasData = true
-				break
-			}
-		}
-		if hasData {
+		if mr.TotalResources() > 0 {
 			readers = append(readers, &cachedMetadataReader{mr})
 		}
 	}
