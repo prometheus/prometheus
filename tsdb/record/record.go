@@ -457,6 +457,7 @@ func (*Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombstones
 	return tstones, nil
 }
 
+// Exemplars appends exemplars in rec to the given slice.
 func (d *Decoder) Exemplars(rec []byte, exemplars []RefExemplar) ([]RefExemplar, error) {
 	dec := encoding.Decbuf{B: rec}
 	t := Type(dec.Byte())
@@ -467,6 +468,7 @@ func (d *Decoder) Exemplars(rec []byte, exemplars []RefExemplar) ([]RefExemplar,
 	return d.ExemplarsFromBuffer(&dec, exemplars)
 }
 
+// ExemplarsFromBuffer appends exemplars in dec to the given slice.
 func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemplar) ([]RefExemplar, error) {
 	if dec.Len() == 0 {
 		return exemplars, nil
@@ -498,6 +500,7 @@ func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemp
 	return exemplars, nil
 }
 
+// MmapMarkers appends mmap markers in rec to the given slice.
 func (*Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMarker, error) {
 	dec := encoding.Decbuf{B: rec}
 	t := Type(dec.Byte())
@@ -526,6 +529,7 @@ func (*Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMarke
 	return markers, nil
 }
 
+// HistogramSamples appends histogram samples in rec to the given slice.
 func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
 	switch typ := Type(dec.Byte()); typ {
@@ -584,7 +588,7 @@ func (d *Decoder) histogramSamplesV1(dec *encoding.Decbuf, histograms []RefHisto
 	return histograms, nil
 }
 
-// histogramSamplesV2 decodes V2 int-histogram records (all-varint, ST marker scheme).
+// histogramSamplesV2 decodes V2 int-histogram records.
 func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
 	if dec.Len() == 0 {
 		return histograms, nil
@@ -647,7 +651,7 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 	return histograms, nil
 }
 
-// DecodeHistogram decodes a Histogram from a byte slice.
+// DecodeHistogram decodes a Histogram from buf.
 func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	h.CounterResetHint = histogram.CounterResetHint(buf.Byte())
 
@@ -703,6 +707,8 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	}
 }
 
+// FloatHistogramSamples appends float histogram samples in rec to the given
+// slice.
 func (d *Decoder) FloatHistogramSamples(rec []byte, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
 	switch typ := Type(dec.Byte()); typ {
@@ -761,7 +767,7 @@ func (d *Decoder) floatHistogramSamplesV1(dec *encoding.Decbuf, histograms []Ref
 	return histograms, nil
 }
 
-// floatHistogramSamplesV2 decodes V2 float-histogram records (all-varint, ST marker scheme).
+// floatHistogramSamplesV2 decodes V2 float-histogram records.
 func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []RefFloatHistogramSample) ([]RefFloatHistogramSample, error) {
 	if dec.Len() == 0 {
 		return histograms, nil
@@ -825,7 +831,7 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 	return histograms, nil
 }
 
-// DecodeFloatHistogram decodes a Histogram from a byte slice.
+// DecodeFloatHistogram decodes a FloatHistogram from buf.
 func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	fh.CounterResetHint = histogram.CounterResetHint(buf.Byte())
 
@@ -933,7 +939,8 @@ func EncodeLabels(buf *encoding.Encbuf, lbls labels.Labels) {
 }
 
 // Samples appends the encoded samples to b and returns the resulting slice.
-// Depending on the ST existence it either writes Samples or SamplesWithST record.
+// Depending on EnableSTStorage, it writes either a Samples or SamplesV2
+// record.
 func (e *Encoder) Samples(samples []RefSample, b []byte) []byte {
 	if e.EnableSTStorage {
 		return e.samplesV2(samples, b)
@@ -941,7 +948,7 @@ func (e *Encoder) Samples(samples []RefSample, b []byte) []byte {
 	return e.samplesV1(samples, b)
 }
 
-// Samples appends the encoded samples to b and returns the resulting slice.
+// samplesV1 appends the encoded samples to b and returns the resulting slice.
 func (*Encoder) samplesV1(samples []RefSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(Samples))
@@ -1030,6 +1037,8 @@ func (*Encoder) Tombstones(tstones []tombstones.Stone, b []byte) []byte {
 	return buf.Get()
 }
 
+// Exemplars appends the encoded exemplars to b and returns the resulting
+// slice.
 func (e *Encoder) Exemplars(exemplars []RefExemplar, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(Exemplars))
@@ -1043,6 +1052,7 @@ func (e *Encoder) Exemplars(exemplars []RefExemplar, b []byte) []byte {
 	return buf.Get()
 }
 
+// EncodeExemplarsIntoBuffer appends the encoded exemplars to buf.
 func (*Encoder) EncodeExemplarsIntoBuffer(exemplars []RefExemplar, buf *encoding.Encbuf) {
 	// Store base timestamp and base reference number of first sample.
 	// All samples encode their timestamp and ref as delta to those.
@@ -1059,6 +1069,8 @@ func (*Encoder) EncodeExemplarsIntoBuffer(exemplars []RefExemplar, buf *encoding
 	}
 }
 
+// MmapMarkers appends the encoded mmap markers to b and returns the resulting
+// slice.
 func (*Encoder) MmapMarkers(markers []RefMmapMarker, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(MmapMarkers))
@@ -1071,8 +1083,9 @@ func (*Encoder) MmapMarkers(markers []RefMmapMarker, b []byte) []byte {
 	return buf.Get()
 }
 
-// HistogramSamples encode exponential histograms while returning all the excluded custom bucket histograms.
-// Callers can encode the returned custom bucket histograms via CustomBucketsHistogramSamples.
+// HistogramSamples encodes exponential histogram samples and returns the custom
+// bucket histogram samples that must be encoded separately via
+// CustomBucketsHistogramSamples.
 func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) ([]byte, []RefHistogramSample) {
 	if e.EnableSTStorage {
 		return e.histogramSamplesV2(histograms, b)
@@ -1165,6 +1178,8 @@ func (*Encoder) histogramSamplesV2(histograms []RefHistogramSample, b []byte) ([
 	return buf.Get(), customBucketHistograms
 }
 
+// CustomBucketsHistogramSamples appends the encoded custom-bucket histogram
+// samples to b and returns the resulting slice.
 func (e *Encoder) CustomBucketsHistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
 	if e.EnableSTStorage {
 		return e.customBucketsHistogramSamplesV2(histograms, b)
@@ -1196,7 +1211,8 @@ func (*Encoder) customBucketsHistogramSamplesV1(histograms []RefHistogramSample,
 	return buf.Get()
 }
 
-// customBucketsHistogramSamplesV2 encodes the givem custom bucket histograms.
+// customBucketsHistogramSamplesV2 encodes the given custom-bucket histogram
+// samples.
 func (*Encoder) customBucketsHistogramSamplesV2(histograms []RefHistogramSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(CustomBucketsHistogramSamplesV2))
@@ -1278,8 +1294,9 @@ func EncodeHistogram(buf *encoding.Encbuf, h *histogram.Histogram) {
 	}
 }
 
-// FloatHistogramSamples encode exponential float histograms while returning all the excluded custom bucket float histograms.
-// Callers can encode the returned custom bucket float histograms via CustomBucketsFloatHistogramSamples.
+// FloatHistogramSamples encodes exponential float histogram samples and
+// returns the custom-bucket float histogram samples that must be encoded
+// separately via CustomBucketsFloatHistogramSamples.
 func (e *Encoder) FloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
 	if e.EnableSTStorage {
 		return e.floatHistogramSamplesV2(histograms, b)
@@ -1322,7 +1339,8 @@ func (*Encoder) floatHistogramSamplesV1(histograms []RefFloatHistogramSample, b 
 	return buf.Get(), customBucketsFloatHistograms
 }
 
-// CustomBucketsFloatHistogramSamples encodes given float histograms as custom bucket float histograms.
+// floatHistogramSamplesV2 encodes exponential float histogram samples and
+// splits off custom-bucket float histogram samples to be encoded later.
 func (*Encoder) floatHistogramSamplesV2(histograms []RefFloatHistogramSample, b []byte) ([]byte, []RefFloatHistogramSample) {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(FloatHistogramSamplesV2))
@@ -1371,6 +1389,8 @@ func (*Encoder) floatHistogramSamplesV2(histograms []RefFloatHistogramSample, b 
 	return buf.Get(), customBucketsFloatHistograms
 }
 
+// CustomBucketsFloatHistogramSamples appends the encoded custom-bucket float
+// histogram samples to b and returns the resulting slice.
 func (e *Encoder) CustomBucketsFloatHistogramSamples(histograms []RefFloatHistogramSample, b []byte) []byte {
 	if e.EnableSTStorage {
 		return e.customBucketsFloatHistogramSamplesV2(histograms, b)
