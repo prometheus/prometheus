@@ -29,7 +29,7 @@ func BenchmarkInsertVersion_SameContent(b *testing.B) {
 		MinTime:     0,
 		MaxTime:     0,
 	}
-	contentHash := hashResourceCommitData(rcd)
+	contentHash, _ := hashResourceCommitDataReusable(rcd, nil)
 	buildFull := func() *ResourceVersion { return buildResourceVersion(rcd) }
 	// Seed first insert.
 	store.InsertVersion(1, contentHash, 0, 0, buildFull, false)
@@ -49,7 +49,7 @@ func BenchmarkInsertVersion_ManySeriesSameContent(b *testing.B) {
 		MinTime:     0,
 		MaxTime:     100,
 	}
-	contentHash := hashResourceCommitData(rcd)
+	contentHash, _ := hashResourceCommitDataReusable(rcd, nil)
 	buildFull := func() *ResourceVersion { return buildResourceVersion(rcd) }
 	// Seed canonical with first series.
 	store.InsertVersion(0, contentHash, 0, 100, buildFull, false)
@@ -70,7 +70,7 @@ func BenchmarkMemStore_MemoryPerSeries(b *testing.B) {
 		MinTime:     0,
 		MaxTime:     100,
 	}
-	contentHash := hashResourceCommitData(rcd)
+	contentHash, _ := hashResourceCommitDataReusable(rcd, nil)
 	buildFull := func() *ResourceVersion { return buildResourceVersion(rcd) }
 
 	runtime.GC()
@@ -101,24 +101,14 @@ func BenchmarkCommitResourceToStore(b *testing.B) {
 		MaxTime:     0,
 	}
 	// Seed first insert.
-	CommitResourceToStore(store, 1, rcd)
+	CommitResourceToStoreReusableWithRef(store, 1, rcd, 1, nil)
 
-	b.Run("without_reuse", func(b *testing.B) {
-		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
-			rcd.MaxTime = int64(i)
-			CommitResourceToStore(store, 1, rcd)
-		}
-	})
-
-	b.Run("with_reuse", func(b *testing.B) {
-		b.ReportAllocs()
-		var keysBuf []string
-		for i := 0; i < b.N; i++ {
-			rcd.MaxTime = int64(i)
-			_, _, _, keysBuf = CommitResourceToStoreReusable(store, 1, rcd, keysBuf)
-		}
-	})
+	b.ReportAllocs()
+	var keysBuf []string
+	for i := 0; i < b.N; i++ {
+		rcd.MaxTime = int64(i)
+		_, _, _, keysBuf = CommitResourceToStoreReusableWithRef(store, 1, rcd, 1, keysBuf)
+	}
 }
 
 func BenchmarkIterVersionedFlatInline(b *testing.B) {
@@ -188,12 +178,10 @@ func BenchmarkMergeAndWriteSeriesMetadata(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Build needsResolve hashes via IterHashes.
 		needsResolve := make(map[uint64]struct{}, numSeries)
-		for _, kind := range AllKinds() {
-			_ = m.IterHashes(context.Background(), kind.ID(), func(labelsHash uint64) error {
-				needsResolve[labelsHash] = struct{}{}
-				return nil
-			})
-		}
+		_ = m.IterHashes(context.Background(), KindResource, func(labelsHash uint64) error {
+			needsResolve[labelsHash] = struct{}{}
+			return nil
+		})
 
 		// Build a simple identity ref resolver from needsResolve.
 		labelsHashToRef := make(map[uint64]uint64, len(needsResolve))
