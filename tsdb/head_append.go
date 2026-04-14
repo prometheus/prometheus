@@ -1916,6 +1916,7 @@ func (s *memSeries) appendHistogram(st, t int64, h *histogram.Histogram, appendI
 		maxTime: t,
 		prev:    s.headChunks,
 	}
+	s.headChunkCount.Add(1)
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
 }
@@ -1973,6 +1974,7 @@ func (s *memSeries) appendFloatHistogram(st, t int64, fh *histogram.FloatHistogr
 		maxTime: t,
 		prev:    s.headChunks,
 	}
+	s.headChunkCount.Add(1)
 	s.nextAt = rangeForTimestamp(t, o.chunkRange)
 	return true, true
 }
@@ -2146,6 +2148,7 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkRange 
 		maxTime: math.MinInt64,
 		prev:    s.headChunks,
 	}
+	s.headChunkCount.Add(1)
 
 	if chunkenc.IsValidEncoding(e) {
 		var err error
@@ -2213,7 +2216,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(o chunkOpts, logger *slog.Logger) []
 	return chunkRefs
 }
 
-// mmapChunks will m-map all but first chunk on s.headChunks list.
+// mmapChunks will m-map all but first chunk on s.headChunks list and update headChunkCount.
 func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count int) {
 	if s.headChunks == nil || s.headChunks.prev == nil {
 		// There is none or only one head chunk, so nothing to m-map here.
@@ -2235,8 +2238,9 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		count++
 	}
 
-	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunk.
+	// Remove the tail of the list, leaving only the most recent head chunk.
 	s.headChunks.prev = nil
+	s.headChunkCount.Store(1)
 
 	return count
 }
