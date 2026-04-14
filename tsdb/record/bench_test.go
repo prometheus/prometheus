@@ -129,6 +129,7 @@ var (
 	}
 )
 
+//nolint:godot
 /*
 	go test ./tsdb/record/... \
 		-run '^$' -bench '^BenchmarkEncode_Samples' \
@@ -172,6 +173,7 @@ func BenchmarkEncode_Samples(b *testing.B) {
 	}
 }
 
+//nolint:godot
 /*
 	go test ./tsdb/record/... \
 		-run '^$' -bench '^BenchmarkDecode_Samples' \
@@ -225,6 +227,7 @@ var (
 	histCounts    = testrecord.HistCounts
 )
 
+//nolint:godot
 /*
 	go test ./tsdb/record/... \
 		-run '^$' -bench '^BenchmarkEncode_Histograms' \
@@ -280,6 +283,7 @@ func BenchmarkEncode_Histograms(b *testing.B) {
 	}
 }
 
+//nolint:godot
 /*
 	go test ./tsdb/record/... \
 		-run '^$' -bench '^BenchmarkDecode_Histograms' \
@@ -336,6 +340,7 @@ func BenchmarkDecode_Histograms(b *testing.B) {
 	}
 }
 
+//nolint:godot
 /*
 	go test ./tsdb/record/... \
 		-run '^$' -bench '^BenchmarkEncode_FloatHistograms' \
@@ -391,6 +396,7 @@ func BenchmarkEncode_FloatHistograms(b *testing.B) {
 	}
 }
 
+//nolint:godot
 /*
 	go test ./tsdb/record/... \
 		-run '^$' -bench '^BenchmarkDecode_FloatHistograms' \
