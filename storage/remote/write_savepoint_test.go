@@ -202,7 +202,7 @@ func createWALWithSegments(t *testing.T, segments []walSegmentData) string {
 	return dir
 }
 
-func makeSeries(n int, refOffset int) []record.RefSeries {
+func makeSeries(n, refOffset int) []record.RefSeries {
 	series := make([]record.RefSeries, n)
 	for i := range n {
 		series[i] = record.RefSeries{
