@@ -2141,9 +2141,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 			defer s.locks[refShard].Unlock()
 		}
 
-		if value.IsStaleNaN(series.lastValue) ||
-			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+		if series.isStaleLastValue() {
 			staleSeriesDeleted++
 		}
 
@@ -2232,9 +2230,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		h.series.hashes[hashShard].del(hash, series.ref)
 		h.series.locks[hashShard].Unlock()
 
-		if value.IsStaleNaN(series.lastValue) ||
-			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
+		if series.isStaleLastValue() {
 			staleSeriesDeleted++
 		}
 
@@ -2292,9 +2288,7 @@ func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64)
 		}
 
 		// Check if the series is still stale.
-		isStale := value.IsStaleNaN(series.lastValue) ||
-			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-			(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum))
+		isStale := series.isStaleLastValue()
 
 		if !isStale {
 			return
@@ -2481,13 +2475,6 @@ type memSeries struct {
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
 
-	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
-	lastValue float64
-
-	// We keep the last histogram value here (in addition to appending it to the chunk) so we can check for duplicates.
-	lastHistogramValue      *histogram.Histogram
-	lastFloatHistogramValue *histogram.FloatHistogram
-
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunks is nil. E.g. if there was an appender that created a new series, but rolled back the commit
 	// (the first sample would create a headChunk, hence appender, but rollback skipped it while the Append() call would create a series).
@@ -2495,6 +2482,16 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
+}
+
+// isStaleLastValue reports whether the most recently appended sample (of any
+// type) is a stale marker. The series lock must be held.
+func (s *memSeries) isStaleLastValue() bool {
+	if s.app == nil {
+		return false
+	}
+	v, h, fh := s.app.LastValue()
+	return value.IsStaleNaN(v) || (h != nil && value.IsStaleNaN(h.Sum)) || (fh != nil && value.IsStaleNaN(fh.Sum))
 }
 
 // memSeriesOOOFields contains the fields required by memSeries

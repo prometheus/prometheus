@@ -508,6 +508,10 @@ func (*xor2Appender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64,
 	panic("appended a float histogram sample to a float chunk")
 }
 
+func (a *xor2Appender) LastValue() (float64, *histogram.Histogram, *histogram.FloatHistogram) {
+	return a.v, nil, nil
+}
+
 // xor2Iterator decodes XOR2 chunks.
 type xor2Iterator struct {
 	br       bstreamReader

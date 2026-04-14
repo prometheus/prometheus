@@ -671,10 +671,11 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 				continue
 			}
 
-			if !value.IsStaleNaN(ms.lastValue) && value.IsStaleNaN(s.V) {
+			isLastStale := ms.isStaleLastValue()
+			if !isLastStale && value.IsStaleNaN(s.V) {
 				h.numStaleSeries.Inc()
 			}
-			if value.IsStaleNaN(ms.lastValue) && !value.IsStaleNaN(s.V) {
+			if isLastStale && !value.IsStaleNaN(s.V) {
 				h.numStaleSeries.Dec()
 			}
 
@@ -711,17 +712,23 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			var chunkCreated, newlyStale, staleToNonStale bool
 			if s.h != nil {
 				newlyStale = value.IsStaleNaN(s.h.Sum)
-				if ms.lastHistogramValue != nil {
-					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastHistogramValue.Sum)
-					staleToNonStale = value.IsStaleNaN(ms.lastHistogramValue.Sum) && !value.IsStaleNaN(s.h.Sum)
+				if ms.app != nil {
+					if _, prevH, _ := ms.app.LastValue(); prevH != nil {
+						isLastStale := value.IsStaleNaN(prevH.Sum)
+						newlyStale = newlyStale && !isLastStale
+						staleToNonStale = isLastStale && !value.IsStaleNaN(s.h.Sum)
+					}
 				}
 				// TODO(krajorama,ywwg): Pass ST when available in WBL.
 				_, chunkCreated = ms.appendHistogram(0, s.t, s.h, 0, appendChunkOpts)
 			} else {
 				newlyStale = value.IsStaleNaN(s.fh.Sum)
-				if ms.lastFloatHistogramValue != nil {
-					newlyStale = newlyStale && !value.IsStaleNaN(ms.lastFloatHistogramValue.Sum)
-					staleToNonStale = value.IsStaleNaN(ms.lastFloatHistogramValue.Sum) && !value.IsStaleNaN(s.fh.Sum)
+				if ms.app != nil {
+					if _, _, prevFH := ms.app.LastValue(); prevFH != nil {
+						isLastStale := value.IsStaleNaN(prevFH.Sum)
+						newlyStale = newlyStale && !isLastStale
+						staleToNonStale = isLastStale && !value.IsStaleNaN(s.fh.Sum)
+					}
 				}
 				// TODO(krajorama,ywwg): Pass ST when available in WBL.
 				_, chunkCreated = ms.appendFloatHistogram(0, s.t, s.fh, 0, appendChunkOpts)
@@ -1219,11 +1226,14 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 				buf.PutBEFloat64(0)
 			}
 			buf.PutBE64int64(0)
-			buf.PutBEFloat64(s.lastValue)
+			lastV, _, _ := s.app.LastValue()
+			buf.PutBEFloat64(lastV)
 		case chunkenc.EncHistogram:
-			record.EncodeHistogram(&buf, s.lastHistogramValue)
+			_, lastH, _ := s.app.LastValue()
+			record.EncodeHistogram(&buf, lastH)
 		default: // chunkenc.FloatHistogram.
-			record.EncodeFloatHistogram(&buf, s.lastFloatHistogramValue)
+			_, _, lastFH := s.app.LastValue()
+			record.EncodeFloatHistogram(&buf, lastFH)
 		}
 	}
 	s.Unlock()
@@ -1660,15 +1670,6 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
 				series.headChunks = csr.mc
-				series.lastValue = csr.lastValue
-				series.lastHistogramValue = csr.lastHistogramValue
-				series.lastFloatHistogramValue = csr.lastFloatHistogramValue
-
-				if value.IsStaleNaN(series.lastValue) ||
-					(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
-					(series.lastFloatHistogramValue != nil && value.IsStaleNaN(series.lastFloatHistogramValue.Sum)) {
-					h.numStaleSeries.Inc()
-				}
 
 				app, err := series.headChunks.chunk.Appender()
 				if err != nil {
@@ -1676,6 +1677,22 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					return
 				}
 				series.app = app
+
+				// Restore the last histogram pointer so that duplicate detection
+				// and stale-marker tracking work after snapshot load.
+				if csr.lastHistogramValue != nil {
+					if histApp, ok := app.(*chunkenc.HistogramAppender); ok {
+						histApp.SetLastHistogram(csr.lastHistogramValue)
+					}
+				} else if csr.lastFloatHistogramValue != nil {
+					if fhApp, ok := app.(*chunkenc.FloatHistogramAppender); ok {
+						fhApp.SetLastFloatHistogram(csr.lastFloatHistogramValue)
+					}
+				}
+
+				if series.isStaleLastValue() {
+					h.numStaleSeries.Inc()
+				}
 
 				h.updateMinMaxTime(csr.mc.minTime, csr.mc.maxTime)
 			}

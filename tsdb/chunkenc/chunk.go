@@ -121,6 +121,13 @@ type Appender interface {
 	// The Appender app that can be used for the next append is always returned.
 	AppendHistogram(prev *HistogramAppender, st, t int64, h *histogram.Histogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
 	AppendFloatHistogram(prev *FloatHistogramAppender, st, t int64, h *histogram.FloatHistogram, appendOnly bool) (c Chunk, isRecoded bool, app Appender, err error)
+
+	// LastValue returns the most recently appended sample value.
+	// For float samples, v is set and h, fh are nil.
+	// For integer histogram samples, h is set and v, fh are zero/nil.
+	// For float histogram samples, fh is set and v, h are zero/nil.
+	// If no sample has been appended yet, all return values are zero/nil.
+	LastValue() (v float64, h *histogram.Histogram, fh *histogram.FloatHistogram)
 }
 
 // Iterator is a simple iterator that can only get the next value.

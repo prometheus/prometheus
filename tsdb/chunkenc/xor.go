@@ -233,6 +233,10 @@ func (*xorAppender) AppendFloatHistogram(*FloatHistogramAppender, int64, int64, 
 	panic("appended a float histogram sample to a float chunk")
 }
 
+func (a *xorAppender) LastValue() (float64, *histogram.Histogram, *histogram.FloatHistogram) {
+	return a.v, nil, nil
+}
+
 type xorIterator struct {
 	br       bstreamReader
 	numTotal uint16
