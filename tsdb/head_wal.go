@@ -579,6 +579,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
 	mSeries.nextAt = 0
 	mSeries.headChunks = nil
+	mSeries.headChunkCount.Store(0)
 	mSeries.app = nil
 	return overlapped
 }

@@ -1028,6 +1028,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			// Hence remove this chunk.
 			ms.nextAt = 0
 			ms.headChunks = nil
+			ms.headChunkCount.Store(0)
 			ms.app = nil
 		}
 		return nil
@@ -1951,13 +1952,17 @@ func (h *Head) mmapHeadChunks() {
 	for i := range h.series.size {
 		h.series.locks[i].RLock()
 		for _, series := range h.series.series[i] {
-			if !series.readyForMmap.Load() {
+			if series.headChunkCount.Load() < 2 {
 				continue
 			}
 
 			series.Lock()
-			series.readyForMmap.Store(false)
 			count += series.mmapChunks(h.chunkDiskMapper)
+			if series.headChunks != nil {
+				series.headChunkCount.Store(1)
+			} else {
+				series.headChunkCount.Store(0)
+			}
 			series.Unlock()
 		}
 		h.series.locks[i].RUnlock()
@@ -2476,7 +2481,7 @@ type memSeries struct {
 	// Most recent chunks in memory that are still being built or waiting to be mmapped.
 	// This is a linked list, headChunks points to the most recent chunk, headChunks.next points
 	// to older chunk and so on.
-	// Please note that the readyForMmap field needs to be set to true when cutting a new head chunk.
+	// Please note that the headChunkCount field needs to be updated with the head chunk count when cutting a new head chunk.
 	headChunks   *memChunk
 	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
@@ -2487,10 +2492,14 @@ type memSeries struct {
 	nextAt                           int64 // Timestamp at which to cut the next chunk.
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
-	// readyForMmap is set when a new head chunk is cut to signal that the series is ready for mmapping.
-	// Explicitly uses sync/atomic.Bool (4 bytes) rather than go.uber.org/atomic (8 bytes), to fit in the existing padding
+	// headChunkCount tracks the number of head chunks when a new head chunk is cut.
+	// A value >= 2 signals that the series has chunks ready for mmapping.
+	// The count may undercount by 1 in the rare case where a histogram append
+	// creates two chunks (counter reset + chunk cut) in a single sample, since
+	// observeChunkCreated is called once per append.
+	// Explicitly uses sync/atomic.Uint32 (4 bytes) to fit in the existing padding
 	// between two bools and a float64.
-	readyForMmap stdatomic.Bool
+	headChunkCount stdatomic.Uint32
 
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
@@ -2568,9 +2577,11 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
 					s.headChunks = nil
+					s.headChunkCount.Store(0)
 				} else {
 					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
+					s.headChunkCount.Store(uint32(i))
 				}
 				s.mmappedChunks = nil
 				break

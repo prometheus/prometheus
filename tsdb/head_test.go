@@ -1734,8 +1734,12 @@ func TestMemSeries_truncateChunks_scenarios(t *testing.T) {
 			}
 			require.Len(t, series.mmappedChunks, tc.mmappedChunks, "wrong number of mmapped chunks")
 
+			// Set headChunkCount before truncation (series.append bypasses observeChunkCreated).
+			series.headChunkCount.Store(uint32(tc.headChunks))
+
 			truncated := series.truncateChunksBefore(tc.truncateBefore, 0)
 			require.Equal(t, tc.expectedTruncated, truncated, "wrong number of truncated chunks returned")
+			require.Equal(t, uint32(tc.expectedHead), series.headChunkCount.Load(), "wrong headChunkCount after truncation")
 
 			require.Len(t, series.mmappedChunks, tc.expectedMmap, "wrong number of mmappedChunks after truncation")
 
@@ -8078,7 +8082,7 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		for i := range h.series.size {
 			h.series.locks[i].RLock()
 			for _, s := range h.series.series[i] {
-				if s.readyForMmap.Load() {
+				if s.headChunkCount.Load() >= 2 {
 					n++
 				}
 			}
@@ -8087,24 +8091,31 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		return n
 	}
 
+	getCount := func(lbls labels.Labels) uint32 {
+		s := h.series.getByHash(lbls.Hash(), lbls)
+		require.NotNil(t, s, "series %s not found", lbls)
+		return s.headChunkCount.Load()
+	}
+
 	lblsA := labels.FromStrings("__name__", "seriesA")
 	lblsB := labels.FromStrings("__name__", "seriesB")
 	lblsC := labels.FromStrings("__name__", "seriesC")
 
 	ts := int64(0)
 
-	// First chunk creation should not mark series as ready.
+	// First chunk creation should leave headChunkCount at 0.
 	app := h.Appender(t.Context())
 	_, err := app.Append(0, lblsA, ts, 1.0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 	ts += interval
 
+	require.Equal(t, uint32(0), getCount(lblsA), "first chunk should leave headChunkCount at 0")
 	require.Equal(t, 0, countReady(), "series with only a first chunk should not be ready")
 
 	const chunkCutIterations = 2*DefaultSamplesPerChunk + 10
 
-	// Appending enough samples to trigger chunk cuts should mark series ready.
+	// Appending enough samples to trigger chunk cuts should update headChunkCount.
 	var refB, refC storage.SeriesRef
 	app = h.Appender(t.Context())
 	for range chunkCutIterations {
@@ -8118,8 +8129,11 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	require.Equal(t, 2, countReady(), "expected both series to be marked ready")
+	// With ~2*DefaultSamplesPerChunk samples, we expect 3 head chunks (the count tracks total head chunks).
+	require.Equal(t, uint32(3), getCount(lblsB), "series B headChunkCount should reflect actual head chunk count")
+	require.Equal(t, uint32(3), getCount(lblsC), "series C headChunkCount should reflect actual head chunk count")
 
-	// mmapHeadChunks should drain the ready set and mmap chunks.
+	// mmapHeadChunks should reset headChunkCount to 1 (one head chunk remains).
 	h.mmapHeadChunks()
 
 	for _, lbls := range []labels.Labels{lblsB, lblsC} {
@@ -8132,6 +8146,8 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 		s.Unlock()
 	}
 
+	require.Equal(t, uint32(1), getCount(lblsB), "headChunkCount should be 1 after mmap")
+	require.Equal(t, uint32(1), getCount(lblsC), "headChunkCount should be 1 after mmap")
 	require.Equal(t, 0, countReady(), "ready set should be empty after mmapHeadChunks")
 
 	// A second call should be a no-op.
@@ -8151,9 +8167,25 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	require.Equal(t, 1, countReady(), "only series B should be ready")
+	require.Equal(t, uint32(3), getCount(lblsB), "series B headChunkCount should reflect new chunks")
+	require.Equal(t, uint32(1), getCount(lblsC), "series C headChunkCount should be unchanged")
 
 	beforeMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
 	h.mmapHeadChunks()
 	afterMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
 	require.Greater(t, afterMetric, beforeMetric, "third call should mmap chunks from series B")
+	require.Equal(t, uint32(1), getCount(lblsB), "series B headChunkCount should be 1 after mmap")
+
+	// Simulate the race where truncation clears headChunks between the lock-free
+	// fast-path check and acquiring the series lock. Set headChunkCount >= 2 but
+	// headChunks to nil, then verify mmapHeadChunks resets count to 0.
+	sB := h.series.getByHash(lblsB.Hash(), lblsB)
+	require.NotNil(t, sB)
+	sB.Lock()
+	sB.headChunks = nil
+	sB.headChunkCount.Store(3)
+	sB.Unlock()
+
+	h.mmapHeadChunks()
+	require.Equal(t, uint32(0), getCount(lblsB), "headChunkCount should be 0 when headChunks is nil")
 }

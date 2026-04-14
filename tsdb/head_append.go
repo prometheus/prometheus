@@ -1688,14 +1688,18 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 // observeChunkCreated observes that chunk is created for a series, by incrementing
 // a.head.metrics.chunks and a.head.metrics.chunksCreated.
 //
-// If the series has more than one head chunk, it's marked as ready for mmapping.
+// If the series has more than one head chunk, headChunkCount is updated with the head chunk count.
 // Callers must ensure this cannot be called concurrently on the same series.
 func (a *headAppenderBase) observeChunkCreated(series *memSeries) {
 	a.head.metrics.chunks.Inc()
 	a.head.metrics.chunksCreated.Inc()
 
 	if series.headChunks != nil && series.headChunks.prev != nil {
-		series.readyForMmap.Store(true)
+		if n := series.headChunkCount.Load(); n < 2 {
+			series.headChunkCount.Store(2)
+		} else {
+			series.headChunkCount.Store(n + 1)
+		}
 	}
 }
 
