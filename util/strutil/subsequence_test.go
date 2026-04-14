@@ -171,6 +171,12 @@ func TestSubsequenceScore(t *testing.T) {
 			wantZero: true,
 		},
 		{
+			name:     "non-ASCII pattern with ASCII text",
+			pattern:  "é",
+			text:     "ab",
+			wantZero: true,
+		},
+		{
 			name:     "no subsequence match",
 			pattern:  "xyz",
 			text:     "abc",
