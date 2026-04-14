@@ -600,8 +600,6 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 				Ref: firstRef,
 				ST: firstST,
 			}
-		} else {
-			prev = &histograms[len(histograms)-1]
 		}
 
 		ref := int64(prev.Ref) + dec.Varint64()
@@ -636,7 +634,7 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
 			}
 		}
-
+		prev = &rh
 		histograms = append(histograms, rh)
 	}
 
@@ -779,8 +777,6 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 				Ref: firstRef,
 				ST: firstST,
 			}
-		} else {
-			prev = &histograms[len(histograms)-1]
 		}
 
 		ref := int64(prev.Ref) + dec.Varint64()
@@ -816,6 +812,7 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 			}
 		}
 
+		prev = &rfh
 		histograms = append(histograms, rfh)
 	}
 
