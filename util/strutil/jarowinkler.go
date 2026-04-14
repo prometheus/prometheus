@@ -52,16 +52,6 @@ func (m *JaroWinklerMatcher) Score(s string) float64 {
 	return jaroWinklerRunes(m.termRunes, []rune(s))
 }
 
-// isASCII reports whether s contains only ASCII characters.
-func isASCII(s string) bool {
-	for i := range len(s) {
-		if s[i] >= 0x80 {
-			return false
-		}
-	}
-	return true
-}
-
 // jaroWinklerString implements the Jaro-Winkler algorithm directly on ASCII
 // strings, avoiding any []rune conversion.
 func jaroWinklerString(s1, s2 string) float64 {
