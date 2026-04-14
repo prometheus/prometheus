@@ -1933,15 +1933,14 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 }
 
 // mmapHeadChunks iterates all memSeries stored on Head ready for m-mapping and calls
-// mmapHeadChunks() on each of them.
+// mmapChunks() on each of them.
 //
 // There are two types of chunks that store samples for each memSeries:
 // A) Head chunk - stored on Go heap, when new samples are appended they go there.
 // B) M-mapped chunks - memory mapped chunks, kernel manages the memory for us on-demand, these chunks
 // are read-only.
 //
-// Calling mmapHeadChunks() will iterate all memSeries and m-mmap all chunks that should be m-mapped.
-// The m-mapping operation is needs to be serialised and so it goes via central lock.
+// The m-mapping operation needs to be serialised and so it goes via central lock.
 // If there are multiple concurrent memSeries that need to m-map some chunk then they can block each-other.
 //
 // To minimise the effect of locking on TSDB operations m-mapping is serialised and done away from
@@ -2479,9 +2478,9 @@ type memSeries struct {
 	// pN is the pointer to the mmappedChunk referred to by HeadChunkID=N
 	mmappedChunks []*mmappedChunk
 	// Most recent chunks in memory that are still being built or waiting to be mmapped.
-	// This is a linked list, headChunks points to the most recent chunk, headChunks.next points
+	// This is a linked list, headChunks points to the most recent chunk, headChunks.prev points
 	// to older chunk and so on.
-	// Please note that the headChunkCount field needs to be updated with the head chunk count when cutting a new head chunk.
+	// Please note that the headChunkCount field is updated via observeChunkCreated when committing a sample that creates a new head chunk.
 	headChunks   *memChunk
 	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 

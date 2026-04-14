@@ -1688,7 +1688,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 // observeChunkCreated observes that chunk is created for a series, by incrementing
 // a.head.metrics.chunks and a.head.metrics.chunksCreated.
 //
-// If the series has more than one head chunk, headChunkCount is updated with the head chunk count.
+// If the series has more than one head chunk, headChunkCount is incremented.
 // Callers must ensure this cannot be called concurrently on the same series.
 func (a *headAppenderBase) observeChunkCreated(series *memSeries) {
 	a.head.metrics.chunks.Inc()
@@ -2250,7 +2250,7 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		count++
 	}
 
-	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunk.
+	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunks.
 	s.headChunks.prev = nil
 
 	return count
