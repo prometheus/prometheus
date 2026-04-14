@@ -1685,8 +1685,8 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 	}
 }
 
-// observeChunkCreated observes that a chunk is created for a series, by incrementing
-// a.head.metrics.chunks and a.head.metrics.chunksCreated.
+// observeChunkCreated observes that a chunk is created for a series,
+// updating all counters related to head chunks.
 func (a *headAppenderBase) observeChunkCreated() {
 	a.head.metrics.chunks.Inc()
 	a.head.metrics.chunksCreated.Inc()
