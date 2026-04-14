@@ -8175,19 +8175,6 @@ func TestHead_mmapHeadChunks(t *testing.T) {
 	afterMetric = prom_testutil.ToFloat64(h.metrics.mmapChunksTotal)
 	require.Greater(t, afterMetric, beforeMetric, "third call should mmap chunks from series B")
 	require.Equal(t, uint32(1), getCount(lblsB), "series B headChunkCount should be 1 after mmap")
-
-	// Simulate the race where truncation clears headChunks between the lock-free
-	// fast-path check and acquiring the series lock. Set headChunkCount >= 2 but
-	// headChunks to nil, then verify mmapHeadChunks resets count to 0.
-	sB := h.series.getByHash(lblsB.Hash(), lblsB)
-	require.NotNil(t, sB)
-	sB.Lock()
-	sB.headChunks = nil
-	sB.headChunkCount.Store(3)
-	sB.Unlock()
-
-	h.mmapHeadChunks()
-	require.Equal(t, uint32(0), getCount(lblsB), "headChunkCount should be 0 when headChunks is nil")
 }
 
 func TestHead_mmapHeadChunks_oooDoesNotInflateCount(t *testing.T) {

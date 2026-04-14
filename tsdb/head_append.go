@@ -1456,7 +1456,8 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 		}
 
 		if chunkCreated {
-			a.observeChunkCreated()
+			a.head.metrics.chunks.Inc()
+			a.head.metrics.chunksCreated.Inc()
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1566,7 +1567,8 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		}
 
 		if chunkCreated {
-			a.observeChunkCreated()
+			a.head.metrics.chunks.Inc()
+			a.head.metrics.chunksCreated.Inc()
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
@@ -1676,20 +1678,14 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		}
 
 		if chunkCreated {
-			a.observeChunkCreated()
+			a.head.metrics.chunks.Inc()
+			a.head.metrics.chunksCreated.Inc()
 		}
 
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
 		series.Unlock()
 	}
-}
-
-// observeChunkCreated observes that a chunk is created for a series,
-// updating all counters related to head chunks.
-func (a *headAppenderBase) observeChunkCreated() {
-	a.head.metrics.chunks.Inc()
-	a.head.metrics.chunksCreated.Inc()
 }
 
 // commitMetadata commits the metadata for each series in the provided batch.
@@ -2222,13 +2218,8 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(o chunkOpts, logger *slog.Logger) []
 
 // mmapChunks will m-map all but first chunk on s.headChunks list and update headChunkCount.
 func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count int) {
-	if s.headChunks == nil {
-		s.headChunkCount.Store(0)
-		return count
-	}
-	if s.headChunks.prev == nil {
-		// Only one head chunk, nothing to m-map.
-		s.headChunkCount.Store(1)
+	if s.headChunks == nil || s.headChunks.prev == nil {
+		// There is none or only one head chunk, so nothing to m-map here.
 		return count
 	}
 
@@ -2247,7 +2238,7 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		count++
 	}
 
-	// Once we've written out all chunks except s.headChunks we need to unlink these from s.headChunks.
+	// Remove the tail of the list, leaving only the most recent head chunk.
 	s.headChunks.prev = nil
 	s.headChunkCount.Store(1)
 

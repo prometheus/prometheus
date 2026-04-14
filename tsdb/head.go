@@ -1940,12 +1940,8 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 // B) M-mapped chunks - memory mapped chunks, kernel manages the memory for us on-demand, these chunks
 // are read-only.
 //
-// The m-mapping operation needs to be serialised and so it goes via central lock.
-// If there are multiple concurrent memSeries that need to m-map some chunk then they can block each-other.
-//
-// To minimise the effect of locking on TSDB operations m-mapping is serialised and done away from
-// sample append path, since waiting on a lock inside an append would lock the entire memSeries for
-// (potentially) a long time, since that could eventually delay next scrape and/or cause query timeouts.
+// M-mapping is serialised via the per-series lock and done away from the sample append path,
+// since holding the lock during an append could delay the next scrape or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
 	for i := range h.series.size {
@@ -2487,8 +2483,9 @@ type memSeries struct {
 	histogramChunkHasComputedEndTime bool  // True if nextAt has been predicted for the current histograms chunk; false otherwise.
 	pendingCommit                    bool  // Whether there are samples waiting to be committed to this series.
 	// headChunkCount tracks the number of head chunks.
-	// It is incremented in cutNewHeadChunk and the histogram counter-reset paths,
+	// It is incremented in cutNewHeadChunk and the histogram new-chunk paths,
 	// and reset by mmapChunks and truncateChunksBefore.
+	// Chunk counts are bounded by the 3-byte field in HeadChunkRef, so cannot overflow uint32.
 	// Explicitly uses sync/atomic.Uint32 (4 bytes) to fit in the existing padding
 	// between two bools and a float64.
 	headChunkCount stdatomic.Uint32
