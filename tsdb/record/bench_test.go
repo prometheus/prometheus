@@ -121,8 +121,8 @@ var (
 		testrecord.WorstCase1000WithSTSamples,
 	}
 	versions = []struct {
-		name      string
-		enableST  bool
+		name     string
+		enableST bool
 	}{
 		{"V1", false},
 		{"V2", true},
@@ -134,7 +134,8 @@ var (
 		-run '^$' -bench '^BenchmarkEncode_Samples' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee encode.txt
-	benchstat -col /version encode.txt
+
+benchstat -col /version encode.txt
 */
 func BenchmarkEncode_Samples(b *testing.B) {
 	for _, ver := range versions {
@@ -176,7 +177,8 @@ func BenchmarkEncode_Samples(b *testing.B) {
 		-run '^$' -bench '^BenchmarkDecode_Samples' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee decode.txt
-	benchstat -col /version decode.txt
+
+benchstat -col /version decode.txt
 */
 func BenchmarkDecode_Samples(b *testing.B) {
 	for _, ver := range versions {
@@ -228,7 +230,8 @@ var (
 		-run '^$' -bench '^BenchmarkEncode_Histograms' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee encode-hist.txt
-	benchstat -col /version encode-hist.txt
+
+benchstat -col /version encode-hist.txt
 */
 func BenchmarkEncode_Histograms(b *testing.B) {
 	for _, ver := range versions {
@@ -282,7 +285,8 @@ func BenchmarkEncode_Histograms(b *testing.B) {
 		-run '^$' -bench '^BenchmarkDecode_Histograms' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee decode-hist.txt
-	benchstat -col /version decode-hist.txt
+
+benchstat -col /version decode-hist.txt
 */
 func BenchmarkDecode_Histograms(b *testing.B) {
 	for _, ver := range versions {
@@ -337,7 +341,8 @@ func BenchmarkDecode_Histograms(b *testing.B) {
 		-run '^$' -bench '^BenchmarkEncode_FloatHistograms' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee encode-fhist.txt
-	benchstat -col /version encode-fhist.txt
+
+benchstat -col /version encode-fhist.txt
 */
 func BenchmarkEncode_FloatHistograms(b *testing.B) {
 	for _, ver := range versions {
@@ -391,7 +396,8 @@ func BenchmarkEncode_FloatHistograms(b *testing.B) {
 		-run '^$' -bench '^BenchmarkDecode_FloatHistograms' \
 		-benchtime 5s -count 6 -cpu 2 -timeout 999m \
 		| tee decode-fhist.txt
-	benchstat -col /version decode-fhist.txt
+
+benchstat -col /version decode-fhist.txt
 */
 func BenchmarkDecode_FloatHistograms(b *testing.B) {
 	for _, ver := range versions {

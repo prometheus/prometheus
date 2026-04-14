@@ -602,7 +602,7 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 		if prev == nil || len(histograms) == 0 {
 			prev = &RefHistogramSample{
 				Ref: firstRef,
-				ST: firstST,
+				ST:  firstST,
 			}
 		}
 
@@ -781,7 +781,7 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 		if prev == nil || len(histograms) == 0 {
 			prev = &RefFloatHistogramSample{
 				Ref: firstRef,
-				ST: firstST,
+				ST:  firstST,
 			}
 		}
 

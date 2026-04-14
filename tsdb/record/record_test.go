@@ -488,7 +488,6 @@ func TestRecord_MixedRegularAndCustomBucketHistogramPermutations(t *testing.T) {
 	type tc struct {
 		name    string
 		kinds   []string
-		stModes []stMode
 	}
 
 	testCases := []tc{

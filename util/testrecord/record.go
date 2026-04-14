@@ -159,9 +159,9 @@ func GenCustomBucketHistograms(n int, stCase HistSTCase) []record.RefHistogramSa
 			Ref: chunks.HeadSeriesRef(i),
 			T:   1709000000 + int64(i)*15,
 			H: &histogram.Histogram{
-				Count:         uint64(10 + i%100),
-				Sum:           float64(100+i) * 1.5,
-				Schema:        histogram.CustomBucketsSchema,
+				Count:  uint64(10 + i%100),
+				Sum:    float64(100+i) * 1.5,
+				Schema: histogram.CustomBucketsSchema,
 				PositiveSpans: []histogram.Span{
 					{Offset: 0, Length: 8},
 				},
