@@ -312,8 +312,8 @@ func (s *shardedAttrIndex) lookup(key string) []uint64 {
 // It wraps per-kind stores accessible both generically (via IterKind/KindLen)
 // and type-safely (via ResourceStore).
 type MemSeriesMetadata struct {
-	stores    map[KindID]any           // each value is *MemStore[V] for the appropriate V
-	labelsMap map[uint64]labels.Labels // labelsHash → labels.Labels
+	resourceStore *MemStore[*ResourceVersion]
+	labelsMap     map[uint64]labels.Labels // labelsHash → labels.Labels
 
 	// resourceAttrIndex is a 256-way sharded inverted index mapping
 	// "key\x00value" → sorted []uint64 of labelsHashes.
@@ -345,24 +345,15 @@ type MemSeriesMetadata struct {
 
 // NewMemSeriesMetadata creates a new in-memory series metadata store.
 func NewMemSeriesMetadata() *MemSeriesMetadata {
-	m := &MemSeriesMetadata{
-		stores:    make(map[KindID]any, len(allKindsRegistered)),
-		labelsMap: make(map[uint64]labels.Labels),
+	return &MemSeriesMetadata{
+		resourceStore: NewMemStore[*ResourceVersion](ResourceOps),
+		labelsMap:     make(map[uint64]labels.Labels),
 	}
-	for _, kind := range allKindsRegistered {
-		m.stores[kind.ID()] = kind.NewStore()
-	}
-	return m
 }
 
 // ResourceStore returns the typed resource store.
 func (m *MemSeriesMetadata) ResourceStore() *MemStore[*ResourceVersion] {
-	return m.stores[KindResource].(*MemStore[*ResourceVersion])
-}
-
-// StoreForKind returns the type-erased store for a kind.
-func (m *MemSeriesMetadata) StoreForKind(id KindID) any {
-	return m.stores[id]
+	return m.resourceStore
 }
 
 // ResourceHasContentHash reports whether the series at labelsHash has a
@@ -444,15 +435,12 @@ func (m *MemSeriesMetadata) IterHashes(ctx context.Context, id KindID, f func(la
 
 // KindLen returns the number of entries for a kind.
 func (m *MemSeriesMetadata) KindLen(id KindID) int {
-	kind, ok := KindByID(id)
-	if !ok {
+	switch id {
+	case KindResource:
+		return m.resourceStore.Len()
+	default:
 		return 0
 	}
-	store, ok := m.stores[id]
-	if !ok {
-		return 0
-	}
-	return kind.StoreLen(store)
 }
 
 // --- Resource type-safe accessors (VersionedResourceReader) ---
@@ -648,20 +636,17 @@ func collectAttrNames(names map[string]struct{}, rv *ResourceVersion) {
 	}
 }
 
-// addToAttrIndex adds attribute entries for a resource version to the sharded index.
-// Identifying attributes are always indexed. Descriptive attributes are only
-// indexed if their key is in extraIndexed.
-// Uses in-place sorted insert through *[]uint64 pointers (copy-on-read for readers).
-// Each key routes to a single stripe — no two stripe locks are held simultaneously.
-// The buf is used to build index keys without allocating; string(buf.Bytes()) in
-// map index expressions triggers Go's compiler optimization for zero-alloc lookups.
-func addToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}, buf *bytes.Buffer) {
+// forEachAttrKey iterates all indexable "key\x00value" entries for a resource version.
+// Identifying attributes are always included. Descriptive attributes are only
+// included if their key is in extraIndexed.
+// The buf is reused to build index keys without allocating.
+func forEachAttrKey(rv *ResourceVersion, extraIndexed map[string]struct{}, buf *bytes.Buffer, fn func(key []byte)) {
 	for k, v := range rv.Identifying {
 		buf.Reset()
 		buf.WriteString(k)
 		buf.WriteByte('\x00')
 		buf.WriteString(v)
-		addToAttrIndexEntry(idx, buf.Bytes(), labelsHash)
+		fn(buf.Bytes())
 	}
 	for k, v := range rv.Descriptive {
 		if _, ok := extraIndexed[k]; !ok {
@@ -671,8 +656,19 @@ func addToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersio
 		buf.WriteString(k)
 		buf.WriteByte('\x00')
 		buf.WriteString(v)
-		addToAttrIndexEntry(idx, buf.Bytes(), labelsHash)
+		fn(buf.Bytes())
 	}
+}
+
+// addToAttrIndex adds attribute entries for a resource version to the sharded index.
+// Uses in-place sorted insert through *[]uint64 pointers (copy-on-read for readers).
+// Each key routes to a single stripe — no two stripe locks are held simultaneously.
+// string(buf.Bytes()) in map index expressions triggers Go's compiler optimization
+// for zero-alloc lookups.
+func addToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}, buf *bytes.Buffer) {
+	forEachAttrKey(rv, extraIndexed, buf, func(key []byte) {
+		addToAttrIndexEntry(idx, key, labelsHash)
+	})
 }
 
 // addToAttrIndexEntry adds a labelsHash to the posting list for the given key.
@@ -699,28 +695,10 @@ func addToAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint64) {
 }
 
 // removeFromAttrIndex removes attribute entries for a resource version from the sharded index.
-// Identifying attributes are always removed. Descriptive attributes are only
-// removed if their key is in extraIndexed.
-// Uses in-place sorted remove through *[]uint64 pointers (copy-on-read for readers).
-// Each key routes to a single stripe — no two stripe locks are held simultaneously.
 func removeFromAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}, buf *bytes.Buffer) {
-	for k, v := range rv.Identifying {
-		buf.Reset()
-		buf.WriteString(k)
-		buf.WriteByte('\x00')
-		buf.WriteString(v)
-		removeFromAttrIndexEntry(idx, buf.Bytes(), labelsHash)
-	}
-	for k, v := range rv.Descriptive {
-		if _, ok := extraIndexed[k]; !ok {
-			continue
-		}
-		buf.Reset()
-		buf.WriteString(k)
-		buf.WriteByte('\x00')
-		buf.WriteString(v)
-		removeFromAttrIndexEntry(idx, buf.Bytes(), labelsHash)
-	}
+	forEachAttrKey(rv, extraIndexed, buf, func(key []byte) {
+		removeFromAttrIndexEntry(idx, key, labelsHash)
+	})
 }
 
 // removeFromAttrIndexEntry removes a labelsHash from the posting list for the given key.
@@ -754,23 +732,9 @@ func removeFromAttrIndexEntry(idx *shardedAttrIndex, key []byte, labelsHash uint
 // bulkAddToAttrIndex appends labelsHash to posting lists without maintaining sort order.
 // Used during BuildResourceAttrIndex for O(n) build; finalizeBulkAttrIndex sorts afterward.
 func bulkAddToAttrIndex(idx *shardedAttrIndex, labelsHash uint64, rv *ResourceVersion, extraIndexed map[string]struct{}, buf *bytes.Buffer) {
-	for k, v := range rv.Identifying {
-		buf.Reset()
-		buf.WriteString(k)
-		buf.WriteByte('\x00')
-		buf.WriteString(v)
-		bulkAddToAttrIndexEntry(idx, buf.Bytes(), labelsHash)
-	}
-	for k, v := range rv.Descriptive {
-		if _, ok := extraIndexed[k]; !ok {
-			continue
-		}
-		buf.Reset()
-		buf.WriteString(k)
-		buf.WriteByte('\x00')
-		buf.WriteString(v)
-		bulkAddToAttrIndexEntry(idx, buf.Bytes(), labelsHash)
-	}
+	forEachAttrKey(rv, extraIndexed, buf, func(key []byte) {
+		bulkAddToAttrIndexEntry(idx, key, labelsHash)
+	})
 }
 
 // bulkAddToAttrIndexEntry adds to a posting list (no lock, single-threaded bulk phase).
@@ -834,8 +798,8 @@ func (m *MemSeriesMetadata) LookupResourceAttr(key, value string) []uint64 {
 
 // parquetReader implements Reader by reading from a Parquet file.
 type parquetReader struct {
+	*MemSeriesMetadata
 	closer io.Closer // nil for ReaderAt-based readers (caller manages lifecycle)
-	mem    *MemSeriesMetadata
 
 	closeOnce sync.Once
 	closeErr  error
@@ -849,41 +813,24 @@ type contentMapping struct {
 	maxTime     int64
 }
 
-// kindDenormState holds per-kind state during row denormalization.
-type kindDenormState struct {
-	kind           KindDescriptor
-	contentTable   map[uint64]any               // contentHash → version value (type-erased)
-	mappings       []contentMapping             // series → content hash + time range
-	versionsByHash map[uint64][]VersionWithTime // labelsHash → versions with time ranges
-}
-
 // denormalizeRows processes raw Parquet rows into in-memory lookup structures.
-// It uses the kind registry to dispatch table/mapping rows generically.
 func denormalizeRows(
 	logger *slog.Logger,
 	rows []metadataRow,
 	mem *MemSeriesMetadata,
 	refResolver func(seriesRef uint64) (labelsHash uint64, ok bool),
 ) {
-	// Phase 1: Build content-addressed tables and collect mappings per kind.
-	states := make(map[KindID]*kindDenormState)
-	for _, kind := range AllKinds() {
-		states[kind.ID()] = &kindDenormState{
-			kind:           kind,
-			contentTable:   make(map[uint64]any),
-			versionsByHash: make(map[uint64][]VersionWithTime),
-		}
-	}
+	// Phase 1: Build content-addressed table and collect mappings for resources.
+	contentTable := make(map[uint64]*ResourceVersion)
+	var mappings []contentMapping
 
 	for i := range rows {
 		row := &rows[i]
-
-		if kind, ok := KindByTableNS(row.Namespace); ok {
-			state := states[kind.ID()]
-			state.contentTable[row.ContentHash] = kind.ParseTableRow(logger, row)
-		} else if kind, ok := KindByMappingNS(row.Namespace); ok {
-			state := states[kind.ID()]
-			state.mappings = append(state.mappings, contentMapping{
+		switch row.Namespace {
+		case NamespaceResourceTable:
+			contentTable[row.ContentHash] = parseResourceContent(logger, row)
+		case NamespaceResourceMapping:
+			mappings = append(mappings, contentMapping{
 				seriesRef:   row.SeriesRef,
 				contentHash: row.ContentHash,
 				minTime:     row.MinTime,
@@ -892,46 +839,53 @@ func denormalizeRows(
 		}
 	}
 
-	// Phase 2: Resolve mappings by looking up content from tables.
-	for _, state := range states {
-		for _, m := range state.mappings {
-			template, ok := state.contentTable[m.contentHash]
+	// Phase 2: Resolve mappings by looking up content from the table.
+	type versionWithTime struct {
+		version *ResourceVersion
+		minTime int64
+		maxTime int64
+	}
+	versionsByHash := make(map[uint64][]versionWithTime)
+	for _, m := range mappings {
+		template, ok := contentTable[m.contentHash]
+		if !ok {
+			logger.Warn("Mapping references missing content hash",
+				"kind", "resource",
+				"series_ref", m.seriesRef, "content_hash", m.contentHash)
+			continue
+		}
+		labelsHash := m.seriesRef
+		if refResolver != nil {
+			lh, ok := refResolver(m.seriesRef)
 			if !ok {
-				logger.Warn("Mapping references missing content hash",
-					"kind", string(state.kind.ID()),
+				logger.Warn("Mapping references unresolvable series ref",
+					"kind", "resource",
 					"series_ref", m.seriesRef, "content_hash", m.contentHash)
 				continue
 			}
-			labelsHash := m.seriesRef
-			if refResolver != nil {
-				lh, ok := refResolver(m.seriesRef)
-				if !ok {
-					logger.Warn("Mapping references unresolvable series ref",
-						"kind", string(state.kind.ID()),
-						"series_ref", m.seriesRef, "content_hash", m.contentHash)
-					continue
-				}
-				labelsHash = lh
-			}
-			// Copy the template and set time range.
-			// The kind descriptor's CopyVersioned works on *Versioned[V], but here
-			// we have a single version. We'll wrap and use kind.SetVersioned.
-			// For now, accumulate raw versions and build Versioned in phase 3.
-			state.versionsByHash[labelsHash] = append(state.versionsByHash[labelsHash], VersionWithTime{
-				Version: template,
-				MinTime: m.minTime,
-				MaxTime: m.maxTime,
-			})
+			labelsHash = lh
 		}
+		versionsByHash[labelsHash] = append(versionsByHash[labelsHash], versionWithTime{
+			version: template,
+			minTime: m.minTime,
+			maxTime: m.maxTime,
+		})
 	}
 
-	// Phase 3: Sort versions by MinTime and populate stores (kind-generic).
-	for _, kind := range AllKinds() {
-		state := states[kind.ID()]
-		store := mem.StoreForKind(kind.ID())
-		for labelsHash, rawVersions := range state.versionsByHash {
-			kind.DenormalizeIntoStore(store, labelsHash, rawVersions)
+	// Phase 3: Sort versions by MinTime and populate the resource store.
+	store := mem.ResourceStore()
+	for labelsHash, rawVersions := range versionsByHash {
+		typed := make([]*ResourceVersion, len(rawVersions))
+		for i, vt := range rawVersions {
+			cp := copyResourceVersion(vt.version)
+			cp.MinTime = vt.minTime
+			cp.MaxTime = vt.maxTime
+			typed[i] = cp
 		}
+		slices.SortFunc(typed, func(a, b *ResourceVersion) int {
+			return cmp.Compare(a.MinTime, b.MinTime)
+		})
+		store.SetVersioned(labelsHash, &Versioned[*ResourceVersion]{Versions: typed})
 	}
 
 	// Phase 4: Process resource attribute inverted index rows.
@@ -989,13 +943,6 @@ func denormalizeRows(
 	}
 }
 
-// VersionWithTime wraps a version value with its time range from a mapping row.
-type VersionWithTime struct {
-	Version any
-	MinTime int64
-	MaxTime int64
-}
-
 // newParquetReaderFromReaderAt creates a parquetReader from an io.ReaderAt.
 func newParquetReaderFromReaderAt(logger *slog.Logger, r io.ReaderAt, size int64, opts ...ReaderOption) (*parquetReader, error) {
 	var ropts readerOptions
@@ -1045,7 +992,7 @@ func newParquetReaderFromReaderAt(logger *slog.Logger, r io.ReaderAt, size int64
 		denormalizeRows(logger, rows, mem, ropts.refResolver)
 	}
 
-	return &parquetReader{mem: mem}, nil
+	return &parquetReader{MemSeriesMetadata: mem}, nil
 }
 
 // lookupColumnIndex returns the index of the named column in the schema, or -1.
@@ -1105,64 +1052,6 @@ func parseResourceContent(_ *slog.Logger, row *metadataRow) *ResourceVersion {
 		Identifying: identifying,
 		Descriptive: descriptive,
 	}
-}
-
-// --- parquetReader type-safe accessors ---
-
-func (r *parquetReader) GetResource(labelsHash uint64) (*ResourceVersion, bool) {
-	return r.mem.GetResource(labelsHash)
-}
-
-func (r *parquetReader) GetVersionedResource(labelsHash uint64) (*VersionedResource, bool) {
-	return r.mem.GetVersionedResource(labelsHash)
-}
-
-func (r *parquetReader) GetResourceAt(labelsHash uint64, timestamp int64) (*ResourceVersion, bool) {
-	return r.mem.GetResourceAt(labelsHash, timestamp)
-}
-
-func (r *parquetReader) IterResources(ctx context.Context, f func(labelsHash uint64, resource *ResourceVersion) error) error {
-	return r.mem.IterResources(ctx, f)
-}
-
-func (r *parquetReader) IterVersionedResources(ctx context.Context, f func(labelsHash uint64, resources *VersionedResource) error) error {
-	return r.mem.IterVersionedResources(ctx, f)
-}
-
-func (r *parquetReader) IterVersionedResourcesFlatInline(ctx context.Context, f func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error) error {
-	return r.mem.IterVersionedResourcesFlatInline(ctx, f)
-}
-
-func (r *parquetReader) TotalResources() uint64 {
-	return r.mem.TotalResources()
-}
-
-func (r *parquetReader) TotalResourceVersions() uint64 {
-	return r.mem.TotalResourceVersions()
-}
-
-func (r *parquetReader) IterKind(ctx context.Context, id KindID, f func(labelsHash uint64, versioned any) error) error {
-	return r.mem.IterKind(ctx, id, f)
-}
-
-func (r *parquetReader) IterHashes(ctx context.Context, id KindID, f func(labelsHash uint64) error) error {
-	return r.mem.IterHashes(ctx, id, f)
-}
-
-func (r *parquetReader) LabelsForHash(labelsHash uint64) (labels.Labels, bool) {
-	return r.mem.LabelsForHash(labelsHash)
-}
-
-func (r *parquetReader) SetLabels(labelsHash uint64, lset labels.Labels) {
-	r.mem.SetLabels(labelsHash, lset)
-}
-
-func (r *parquetReader) KindLen(id KindID) int {
-	return r.mem.KindLen(id)
-}
-
-func (r *parquetReader) LookupResourceAttr(key, value string) []uint64 {
-	return r.mem.LookupResourceAttr(key, value)
 }
 
 // Close releases resources associated with the reader.
@@ -1277,7 +1166,7 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 			if seen != nil {
 				clear(seen)
 			}
-			for i, rv := range versions {
+			for _, rv := range versions {
 				var contentHash uint64
 				if isInline && cachedContentHash != 0 {
 					contentHash = cachedContentHash
@@ -1298,9 +1187,8 @@ func WriteFileWithOptions(logger *slog.Logger, dir string, mr Reader, opts Write
 					MinTime:     minTime,
 					MaxTime:     maxTime,
 				})
-				// Build inverted index rows inline (Fix 1: avoids second iteration).
+				// Build inverted index rows inline (avoids second iteration).
 				if seen != nil {
-					_ = i // suppress unused warning
 					for k, v := range rv.Identifying {
 						ch := attrKeyValueHash(k, v)
 						if _, exists := seen[ch]; !exists {
