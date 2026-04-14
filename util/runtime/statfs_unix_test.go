@@ -17,7 +17,6 @@ package runtime
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -29,15 +28,11 @@ func TestFsType(t *testing.T) {
 	path, err := os.Getwd()
 	require.NoError(t, err)
 
+	// FsType returns a named constant (e.g. EXT4_SUPER_MAGIC) for known
+	// filesystems, or a lowercase-hex fallback for unknown ones. Either way
+	// the result must be non-zero for a real path. See #18471.
 	fsType = FsType(path)
-	// If FsType returns a hex string the filesystem is not in the known map.
-	// Skip rather than fail so that CI on unusual filesystems does not
-	// spuriously break. The test is still exercised on known filesystems.
-	// See prometheus/prometheus#18471.
-	if !strings.Contains(fsType, "_MAGIC") {
-		t.Skipf("filesystem type %q not in known map, skipping strict format check", fsType)
-	}
-	require.Contains(t, fsType, "_MAGIC")
+	require.NotEqual(t, "0", fsType)
 
 	fsType = FsType("/no/where/to/be/found")
 	require.Equal(t, "0", fsType)
