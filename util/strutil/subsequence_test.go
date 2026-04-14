@@ -196,6 +196,20 @@ func TestSubsequenceScore(t *testing.T) {
 			wantZero: true,
 		},
 		{
+			name:     "unicode first char matches but pattern cannot complete",
+			pattern:  "éàx",
+			text:     "éàü",
+			wantZero: true,
+		},
+		{
+			name:    "unicode fuzzy match with gap between intervals",
+			pattern: "éü",
+			text:    "éàü",
+			// intervals [0,0] and [2,2], leading=0, inner gap=1, trailing=0.
+			// raw = 1 + 1 - 1/3, normalized by 4.
+			wantScore: 5.0 / 12.0,
+		},
+		{
 			name:    "mixed ascii and unicode",
 			pattern: "aé",
 			text:    "aéb",
