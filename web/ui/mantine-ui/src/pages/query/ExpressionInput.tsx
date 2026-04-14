@@ -68,6 +68,7 @@ import ErrorBoundary from "../../components/ErrorBoundary";
 import { useAppSelector } from "../../state/hooks";
 import { inputIconStyle, menuIconStyle } from "../../styles";
 import { HistoryCompleteStrategy } from "./HistoryCompleteStrategy";
+import { SearchPrometheusClient } from "./SearchPrometheusClient";
 
 const promqlExtension = new PromQLExtension();
 
@@ -150,10 +151,7 @@ const ExpressionInput: FC<ExpressionInputProps> = ({
       .setComplete({
         completeStrategy: new HistoryCompleteStrategy(
           newCompleteStrategy({
-            remote: {
-              url: pathPrefix,
-              cache: { initialMetricList: metricNames },
-            },
+            remote: new SearchPrometheusClient(pathPrefix),
           }),
           enableQueryHistory ? queryHistory : []
         ),

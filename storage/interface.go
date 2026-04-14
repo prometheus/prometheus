@@ -249,11 +249,106 @@ type SelectHints struct {
 	ProjectionInclude bool
 }
 
+// Filter determines whether a value should be included in results.
+// Returns (accepted, score) where score is used for relevance ranking.
+// Score should be in range [0.0, 1.0] where 1.0 is perfect match.
+type Filter interface {
+	Accept(value string) (accepted bool, score float64)
+}
+
+// Comparator defines ordering for search results.
+// This allows sorting by value, score, or any combination.
+type Comparator interface {
+	Compare(a, b SearchResult) int
+}
+
+// SearchResultSet is an iterator over search results.
+// Callers must call Close when done, regardless of whether all results were consumed.
+type SearchResultSet interface {
+	// Next advances the iterator. Returns false when exhausted or on error.
+	Next() bool
+	// At returns the current search result. Must only be called after a successful Next.
+	At() SearchResult
+	// Warnings returns any warnings accumulated during iteration.
+	Warnings() annotations.Annotations
+	// Err returns any error that caused iteration to stop.
+	Err() error
+	// Close releases resources associated with this result set.
+	Close() error
+}
+
+type emptySearchResultSet struct{}
+
+func (emptySearchResultSet) Next() bool                        { return false }
+func (emptySearchResultSet) At() SearchResult                  { return SearchResult{} }
+func (emptySearchResultSet) Warnings() annotations.Annotations { return nil }
+func (emptySearchResultSet) Err() error                        { return nil }
+func (emptySearchResultSet) Close() error                      { return nil }
+
+// EmptySearchResultSet returns a SearchResultSet that contains no results.
+func EmptySearchResultSet() SearchResultSet { return emptySearchResultSet{} }
+
+type errSearchResultSet struct{ err error }
+
+func (errSearchResultSet) Next() bool                        { return false }
+func (errSearchResultSet) At() SearchResult                  { return SearchResult{} }
+func (errSearchResultSet) Warnings() annotations.Annotations { return nil }
+func (s errSearchResultSet) Err() error                      { return s.err }
+func (s errSearchResultSet) Close() error                    { return nil }
+
+// ErrSearchResultSet returns a SearchResultSet that immediately returns the given error.
+func ErrSearchResultSet(err error) SearchResultSet { return errSearchResultSet{err: err} }
+
 // LabelHints specifies hints passed for label reads.
 // This is used only as an option for implementation to use.
+// Results are returned in natural (alphabetical) order.
 type LabelHints struct {
 	// Maximum number of results returned. Use a value of 0 to disable.
 	Limit int
+}
+
+// SearchHints configures search operations with filtering and scoring.
+// Unlike LabelHints, SearchHints is specifically designed for search APIs
+// that need relevance scoring and ranking.
+type SearchHints struct {
+	// Filter determines which values to include and their relevance scores.
+	// A nil Filter accepts all values with score 1.0.
+	Filter Filter
+
+	// Limit is the maximum number of results to return.
+	// Use 0 to disable limiting.
+	Limit int
+
+	// CompareFunc is used for ordering results.
+	// It receives full SearchResult values, allowing comparison by value,
+	// score, or any combination.
+	// A nil value means no sorting is applied; results are returned in natural order.
+	CompareFunc Comparator
+}
+
+// SearchResult represents a single search result with its relevance score.
+type SearchResult struct {
+	// Value is the label name or label value.
+	Value string
+
+	// Score represents relevance, with 1.0 being a perfect match.
+	// Score range is [0.0, 1.0].
+	Score float64
+}
+
+// Searcher provides search capabilities with relevance scoring.
+// This interface is designed for autocomplete and search UIs that need
+// to rank results by relevance rather than just filter them.
+type Searcher interface {
+	// SearchLabelNames returns an iterator over label names matching the search criteria.
+	// Results include relevance scores based on the Filter.
+	// The caller must call Close on the returned SearchResultSet when done.
+	SearchLabelNames(ctx context.Context, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet
+
+	// SearchLabelValues returns an iterator over label values for the given label name.
+	// Results include relevance scores based on the Filter.
+	// The caller must call Close on the returned SearchResultSet when done.
+	SearchLabelValues(ctx context.Context, name string, hints *SearchHints, matchers ...*labels.Matcher) SearchResultSet
 }
 
 // QueryableFunc is an adapter to allow the use of ordinary functions as

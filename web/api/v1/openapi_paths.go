@@ -199,6 +199,117 @@ func (*OpenAPIBuilder) labelValuesPath() *v3.PathItem {
 	}
 }
 
+func (*OpenAPIBuilder) searchMetricNamesPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("match[]", "Series selector argument used to scope metric discovery.", false, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", []string{"{job=\"prometheus\"}"}}}),
+		queryParamWithExample("search", "Search string matched against metric names.", false, stringSchema(), []example{{"example", "http_req"}}),
+		queryParamWithExample("fuzz_threshold", "Fuzzy threshold in the range 0-100.", false, integerSchema(), []example{{"example", 80}}),
+		queryParamWithExample("fuzz_alg", "Fuzzy algorithm. Supported values are subsequence and jarowinkler.", false, stringSchema(), []example{{"example", "subsequence"}}),
+		queryParamWithExample("case_sensitive", "Whether matching is case-sensitive.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("sort_by", "Sort mode. Supported values are alpha, cardinality, and score.", false, stringSchema(), []example{{"example", "score"}}),
+		queryParamWithExample("sort_dir", "Sort direction. Supported values are asc and dsc.", false, stringSchema(), []example{{"example", "asc"}}),
+		queryParamWithExample("include_cardinality", "Include metric cardinality in each result.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("include_metadata", "Include metric metadata in each result.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("start", "Start timestamp for metric name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp for metric name search.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("limit", "Maximum number of metric names to return.", false, integerSchema(), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchema(), []example{{"example", 20}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "search-metric-names",
+			Summary:     "Search metric names",
+			Tags:        []string{"metadata"},
+			Parameters:  params,
+			Responses:   ndjsonResponsesWithErrorExamples(searchMetricNamesResponseExamples(), errorResponseExamples(), "Metric names streamed successfully.", "Error searching metric names."),
+		},
+		Post: &v3.Operation{
+			OperationId: "search-metric-names-post",
+			Summary:     "Search metric names",
+			Tags:        []string{"metadata"},
+			RequestBody: formRequestBodyWithExamples("SearchMetricNamesPostInputBody", searchMetricNamesPostExamples(), "Submit a metric name search. This endpoint accepts the same parameters as the GET version."),
+			Responses:   ndjsonResponsesWithErrorExamples(searchMetricNamesResponseExamples(), errorResponseExamples(), "Metric names streamed successfully via POST.", "Error searching metric names via POST."),
+		},
+	}
+}
+
+func (*OpenAPIBuilder) searchLabelNamesPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("match[]", "Series selector argument used to scope label discovery.", false, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", []string{"{__name__=\"up\"}"}}}),
+		queryParamWithExample("search", "Search string matched against label names.", false, stringSchema(), []example{{"example", "inst"}}),
+		queryParamWithExample("fuzz_threshold", "Fuzzy threshold in the range 0-100.", false, integerSchema(), []example{{"example", 80}}),
+		queryParamWithExample("fuzz_alg", "Fuzzy algorithm. Supported values are subsequence and jarowinkler.", false, stringSchema(), []example{{"example", "subsequence"}}),
+		queryParamWithExample("case_sensitive", "Whether matching is case-sensitive.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("sort_by", "Sort mode. Supported values are alpha, cardinality, frequency, and score.", false, stringSchema(), []example{{"example", "score"}}),
+		queryParamWithExample("sort_dir", "Sort direction. Supported values are asc and dsc.", false, stringSchema(), []example{{"example", "asc"}}),
+		queryParamWithExample("include_frequency", "Include label frequency in each result.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("include_cardinality", "Include label cardinality in each result.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("start", "Start timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("limit", "Maximum number of label names to return.", false, integerSchema(), []example{{"example", 20}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchema(), []example{{"example", 20}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "search-label-names",
+			Summary:     "Search label names",
+			Tags:        []string{"labels"},
+			Parameters:  params,
+			Responses:   ndjsonResponsesWithErrorExamples(searchLabelNamesResponseExamples(), errorResponseExamples(), "Label names streamed successfully.", "Error searching label names."),
+		},
+		Post: &v3.Operation{
+			OperationId: "search-label-names-post",
+			Summary:     "Search label names",
+			Tags:        []string{"labels"},
+			RequestBody: formRequestBodyWithExamples("SearchLabelNamesPostInputBody", searchLabelNamesPostExamples(), "Submit a label name search. This endpoint accepts the same parameters as the GET version."),
+			Responses:   ndjsonResponsesWithErrorExamples(searchLabelNamesResponseExamples(), errorResponseExamples(), "Label names streamed successfully via POST.", "Error searching label names via POST."),
+		},
+	}
+}
+
+func (*OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("label", "Label name whose values should be searched.", true, stringSchema(), []example{{"example", "instance"}}),
+		queryParamWithExample("match[]", "Series selector argument used to scope label value discovery.", false, base.CreateSchemaProxy(&base.Schema{
+			Type:  []string{"array"},
+			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
+		}), []example{{"example", []string{"up"}}}),
+		queryParamWithExample("search", "Search string matched against label values.", false, stringSchema(), []example{{"example", "909"}}),
+		queryParamWithExample("fuzz_threshold", "Fuzzy threshold in the range 0-100.", false, integerSchema(), []example{{"example", 80}}),
+		queryParamWithExample("fuzz_alg", "Fuzzy algorithm. Supported values are subsequence and jarowinkler.", false, stringSchema(), []example{{"example", "subsequence"}}),
+		queryParamWithExample("case_sensitive", "Whether matching is case-sensitive.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("sort_by", "Sort mode. Supported values are alpha, frequency, and score.", false, stringSchema(), []example{{"example", "frequency"}}),
+		queryParamWithExample("sort_dir", "Sort direction. Supported values are asc and dsc.", false, stringSchema(), []example{{"example", "dsc"}}),
+		queryParamWithExample("include_frequency", "Include label value frequency in each result.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("start", "Start timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
+		queryParamWithExample("end", "End timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime)),
+		queryParamWithExample("limit", "Maximum number of label values to return.", false, integerSchema(), []example{{"example", 10}}),
+		queryParamWithExample("batch_size", "Preferred number of results per NDJSON batch.", false, integerSchema(), []example{{"example", 10}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "search-label-values",
+			Summary:     "Search label values",
+			Tags:        []string{"labels"},
+			Parameters:  params,
+			Responses:   ndjsonResponsesWithErrorExamples(searchLabelValuesResponseExamples(), errorResponseExamples(), "Label values streamed successfully.", "Error searching label values."),
+		},
+		Post: &v3.Operation{
+			OperationId: "search-label-values-post",
+			Summary:     "Search label values",
+			Tags:        []string{"labels"},
+			RequestBody: formRequestBodyWithExamples("SearchLabelValuesPostInputBody", searchLabelValuesPostExamples(), "Submit a label value search. This endpoint accepts the same parameters as the GET version."),
+			Responses:   ndjsonResponsesWithErrorExamples(searchLabelValuesResponseExamples(), errorResponseExamples(), "Label values streamed successfully via POST.", "Error searching label values via POST."),
+		},
+	}
+}
+
 func (*OpenAPIBuilder) seriesPath() *v3.PathItem {
 	params := []*v3.Parameter{
 		queryParamWithExample("start", "Start timestamp for series query.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),

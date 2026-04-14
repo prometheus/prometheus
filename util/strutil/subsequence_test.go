@@ -1,0 +1,153 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package strutil
+
+import (
+	"math"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestSubsequenceScore(t *testing.T) {
+	tests := []struct {
+		name      string
+		pattern   string
+		text      string
+		wantScore float64 // -1 means "any positive value".
+		wantZero  bool
+	}{
+		{
+			name:      "empty pattern",
+			pattern:   "",
+			text:      "anything",
+			wantScore: 1.0,
+		},
+		{
+			name:     "empty text",
+			pattern:  "abc",
+			text:     "",
+			wantZero: true,
+		},
+		{
+			name:      "exact match",
+			pattern:   "my awesome text",
+			text:      "my awesome text",
+			wantScore: 1.0,
+		},
+		{
+			name:    "prefix match",
+			pattern: "my",
+			text:    "my awesome text",
+			// intervals [0,1], leading=0, trailing=13. raw = 4 - 13/30, normalized by 4.
+			wantScore: 107.0 / 120.0,
+		},
+		{
+			name:    "substring match",
+			pattern: "tex",
+			text:    "my awesome text",
+			// intervals [11,13], leading=11, trailing=1. raw = 9 - 11/15 - 1/30, normalized by 9.
+			wantScore: 247.0 / 270.0,
+		},
+		{
+			name:    "fuzzy match picks best starting position",
+			pattern: "met",
+			text:    "my awesome text",
+			// intervals [8,9] and [11,11], leading=8, inner gap=1, trailing=3. raw = 5 - 9/15 - 3/30, normalized by 9.
+			wantScore: 43.0 / 90.0,
+		},
+		{
+			name:      "prefers later position with better consecutive run",
+			pattern:   "bac",
+			text:      "babac",
+			wantScore: 43.0 / 45.0, // match at [2,4], leading gap=2, trailing=0. raw = 9 - 2/5, normalized by 9.
+		},
+		{
+			name:     "pattern longer than text",
+			pattern:  "abcd",
+			text:     "abc",
+			wantZero: true,
+		},
+		{
+			name:     "no subsequence match",
+			pattern:  "xyz",
+			text:     "abc",
+			wantZero: true,
+		},
+		{
+			name:      "single char prefix match scores 1.0",
+			pattern:   "a",
+			text:      "a",
+			wantScore: 1.0,
+		},
+		{
+			name:      "pattern equals text single char",
+			pattern:   "a",
+			text:      "a",
+			wantScore: 1.0,
+		},
+		{
+			name:    "consecutive match with leading gap",
+			pattern: "oa",
+			text:    "goat",
+			// 'o'(1),'a'(2) form one interval [1,2], leading gap=1, trailing=1.
+			// raw = 2² - 1/4 - 1/8 = 29/8, normalized by 2² = 4.
+			wantScore: 29.0 / 32.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SubsequenceScore(tt.pattern, tt.text)
+			if tt.wantZero {
+				require.Equal(t, 0.0, got)
+				return
+			}
+			require.InDelta(t, tt.wantScore, got, 1e-9)
+		})
+	}
+}
+
+func TestSubsequenceScoreProperties(t *testing.T) {
+	// Prefix match scores below 1.0; only exact match scores 1.0.
+	// "pro" in "prometheus": intervals [0,2], trailing=7. raw = 9 - 7/20, normalized by 9.
+	require.InDelta(t, 173.0/180.0, SubsequenceScore("pro", "prometheus"), 1e-9)
+
+	// Exact match always scores 1.0.
+	require.Equal(t, 1.0, SubsequenceScore("prometheus", "prometheus"))
+
+	// Score is always in [0, 1].
+	cases := [][2]string{
+		{"abc", "xaxbxcx"},
+		{"z", "aaaaaz"},
+		{"ab", "ba"},
+		{"met", "my awesome text"},
+	}
+	for _, c := range cases {
+		score := SubsequenceScore(c[0], c[1])
+		require.True(t, score >= 0.0 && score <= 1.0,
+			"score %v out of range for pattern=%q text=%q", score, c[0], c[1])
+		require.False(t, math.IsNaN(score))
+	}
+
+	// Prefix scores higher than non-prefix substring.
+	prefixScore := SubsequenceScore("abc", "abcdef")
+	suffixScore := SubsequenceScore("abc", "defabc")
+	require.Greater(t, prefixScore, suffixScore)
+
+	// Consecutive chars score higher than scattered.
+	consecutiveScore := SubsequenceScore("abc", "xabcx")
+	scatteredScore := SubsequenceScore("abc", "xaxbxcx")
+	require.Greater(t, consecutiveScore, scatteredScore)
+}

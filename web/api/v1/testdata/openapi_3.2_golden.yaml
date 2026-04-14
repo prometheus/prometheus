@@ -999,6 +999,717 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+    /search/metric_names:
+        get:
+            tags:
+                - metadata
+            summary: Search metric names
+            operationId: search-metric-names
+            parameters:
+                - name: match[]
+                  in: query
+                  description: Series selector argument used to scope metric discovery.
+                  required: false
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value:
+                            - '{job="prometheus"}'
+                - name: search
+                  in: query
+                  description: Search string matched against metric names.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: http_req
+                - name: fuzz_threshold
+                  in: query
+                  description: Fuzzy threshold in the range 0-100.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 80
+                - name: fuzz_alg
+                  in: query
+                  description: Fuzzy algorithm. Supported values are subsequence and jarowinkler.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: subsequence
+                - name: case_sensitive
+                  in: query
+                  description: Whether matching is case-sensitive.
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: sort_by
+                  in: query
+                  description: Sort mode. Supported values are alpha, cardinality, and score.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: score
+                - name: sort_dir
+                  in: query
+                  description: Sort direction. Supported values are asc and dsc.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: asc
+                - name: include_cardinality
+                  in: query
+                  description: Include metric cardinality in each result.
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: include_metadata
+                  in: query
+                  description: Include metric metadata in each result.
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: start
+                  in: query
+                  description: Start timestamp for metric name search.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: End timestamp for metric name search.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+                - name: limit
+                  in: query
+                  description: Maximum number of metric names to return.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 20
+                - name: batch_size
+                  in: query
+                  description: Preferred number of results per NDJSON batch.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 20
+            responses:
+                "200":
+                    description: Metric names streamed successfully.
+                    content:
+                        application/x-ndjson:
+                            schema:
+                                type: string
+                                description: NDJSON response stream.
+                            examples:
+                                metricNamesStream:
+                                    summary: NDJSON stream of metric names
+                                    value: |
+                                        {"results":[{"name":"http_requests_total","cardinality":42,"type":"counter","help":"Total HTTP requests."}]}
+                                        {"status":"success","has_more":false}
+                default:
+                    description: Error searching metric names.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+        post:
+            tags:
+                - metadata
+            summary: Search metric names
+            operationId: search-metric-names-post
+            requestBody:
+                description: Submit a metric name search. This endpoint accepts the same parameters as the GET version.
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/SearchMetricNamesPostInputBody'
+                        examples:
+                            metricAutocomplete:
+                                summary: Search metric names for autocomplete
+                                value:
+                                    include_metadata: true
+                                    limit: 20
+                                    search: http_req
+                                    sort_by: score
+                required: true
+            responses:
+                "200":
+                    description: Metric names streamed successfully via POST.
+                    content:
+                        application/x-ndjson:
+                            schema:
+                                type: string
+                                description: NDJSON response stream.
+                            examples:
+                                metricNamesStream:
+                                    summary: NDJSON stream of metric names
+                                    value: |
+                                        {"results":[{"name":"http_requests_total","cardinality":42,"type":"counter","help":"Total HTTP requests."}]}
+                                        {"status":"success","has_more":false}
+                default:
+                    description: Error searching metric names via POST.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+    /search/label_names:
+        get:
+            tags:
+                - labels
+            summary: Search label names
+            operationId: search-label-names
+            parameters:
+                - name: match[]
+                  in: query
+                  description: Series selector argument used to scope label discovery.
+                  required: false
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value:
+                            - '{__name__="up"}'
+                - name: search
+                  in: query
+                  description: Search string matched against label names.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: inst
+                - name: fuzz_threshold
+                  in: query
+                  description: Fuzzy threshold in the range 0-100.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 80
+                - name: fuzz_alg
+                  in: query
+                  description: Fuzzy algorithm. Supported values are subsequence and jarowinkler.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: subsequence
+                - name: case_sensitive
+                  in: query
+                  description: Whether matching is case-sensitive.
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: sort_by
+                  in: query
+                  description: Sort mode. Supported values are alpha, cardinality, frequency, and score.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: score
+                - name: sort_dir
+                  in: query
+                  description: Sort direction. Supported values are asc and dsc.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: asc
+                - name: include_frequency
+                  in: query
+                  description: Include label frequency in each result.
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: include_cardinality
+                  in: query
+                  description: Include label cardinality in each result.
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: start
+                  in: query
+                  description: Start timestamp for label name search.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: End timestamp for label name search.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+                - name: limit
+                  in: query
+                  description: Maximum number of label names to return.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 20
+                - name: batch_size
+                  in: query
+                  description: Preferred number of results per NDJSON batch.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 20
+            responses:
+                "200":
+                    description: Label names streamed successfully.
+                    content:
+                        application/x-ndjson:
+                            schema:
+                                type: string
+                                description: NDJSON response stream.
+                            examples:
+                                labelNamesStream:
+                                    summary: NDJSON stream of label names
+                                    value: |
+                                        {"results":[{"name":"instance","frequency":120,"cardinality":8},{"name":"job","frequency":120,"cardinality":3}]}
+                                        {"status":"success","has_more":false}
+                default:
+                    description: Error searching label names.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+        post:
+            tags:
+                - labels
+            summary: Search label names
+            operationId: search-label-names-post
+            requestBody:
+                description: Submit a label name search. This endpoint accepts the same parameters as the GET version.
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/SearchLabelNamesPostInputBody'
+                        examples:
+                            labelsForMetric:
+                                summary: Search label names for a metric
+                                value:
+                                    include_cardinality: true
+                                    limit: 20
+                                    match[]:
+                                        - '{__name__="http_requests_total"}'
+                                    search: sta
+                                    sort_by: score
+                required: true
+            responses:
+                "200":
+                    description: Label names streamed successfully via POST.
+                    content:
+                        application/x-ndjson:
+                            schema:
+                                type: string
+                                description: NDJSON response stream.
+                            examples:
+                                labelNamesStream:
+                                    summary: NDJSON stream of label names
+                                    value: |
+                                        {"results":[{"name":"instance","frequency":120,"cardinality":8},{"name":"job","frequency":120,"cardinality":3}]}
+                                        {"status":"success","has_more":false}
+                default:
+                    description: Error searching label names via POST.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+    /search/label_values:
+        get:
+            tags:
+                - labels
+            summary: Search label values
+            operationId: search-label-values
+            parameters:
+                - name: label
+                  in: query
+                  description: Label name whose values should be searched.
+                  required: true
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: instance
+                - name: match[]
+                  in: query
+                  description: Series selector argument used to scope label value discovery.
+                  required: false
+                  explode: false
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                  examples:
+                    example:
+                        value:
+                            - up
+                - name: search
+                  in: query
+                  description: Search string matched against label values.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: "909"
+                - name: fuzz_threshold
+                  in: query
+                  description: Fuzzy threshold in the range 0-100.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 80
+                - name: fuzz_alg
+                  in: query
+                  description: Fuzzy algorithm. Supported values are subsequence and jarowinkler.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: subsequence
+                - name: case_sensitive
+                  in: query
+                  description: Whether matching is case-sensitive.
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: sort_by
+                  in: query
+                  description: Sort mode. Supported values are alpha, frequency, and score.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: frequency
+                - name: sort_dir
+                  in: query
+                  description: Sort direction. Supported values are asc and dsc.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: dsc
+                - name: include_frequency
+                  in: query
+                  description: Include label value frequency in each result.
+                  required: false
+                  explode: false
+                  schema:
+                    type: boolean
+                  examples:
+                    example:
+                        value: true
+                - name: start
+                  in: query
+                  description: Start timestamp for label value search.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T12:37:00Z"
+                    epoch:
+                        value: 1767357420
+                - name: end
+                  in: query
+                  description: End timestamp for label value search.
+                  required: false
+                  explode: false
+                  schema:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                          description: RFC3339 timestamp.
+                        - type: number
+                          format: unixtime
+                          description: Unix timestamp in seconds.
+                    description: Timestamp in RFC3339 format or Unix timestamp in seconds.
+                  examples:
+                    RFC3339:
+                        value: "2026-01-02T13:37:00Z"
+                    epoch:
+                        value: 1767361020
+                - name: limit
+                  in: query
+                  description: Maximum number of label values to return.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 10
+                - name: batch_size
+                  in: query
+                  description: Preferred number of results per NDJSON batch.
+                  required: false
+                  explode: false
+                  schema:
+                    type: integer
+                    format: int64
+                  examples:
+                    example:
+                        value: 10
+            responses:
+                "200":
+                    description: Label values streamed successfully.
+                    content:
+                        application/x-ndjson:
+                            schema:
+                                type: string
+                                description: NDJSON response stream.
+                            examples:
+                                labelValuesStream:
+                                    summary: NDJSON stream of label values
+                                    value: |
+                                        {"results":[{"name":"localhost:9090","frequency":80},{"name":"localhost:9091","frequency":40}]}
+                                        {"status":"success","has_more":true}
+                default:
+                    description: Error searching label values.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
+        post:
+            tags:
+                - labels
+            summary: Search label values
+            operationId: search-label-values-post
+            requestBody:
+                description: Submit a label value search. This endpoint accepts the same parameters as the GET version.
+                content:
+                    application/x-www-form-urlencoded:
+                        schema:
+                            $ref: '#/components/schemas/SearchLabelValuesPostInputBody'
+                        examples:
+                            valuesForLabel:
+                                summary: Search values for a label
+                                value:
+                                    include_frequency: true
+                                    label: instance
+                                    limit: 10
+                                    match[]:
+                                        - up
+                                    search: "909"
+                                    sort_by: frequency
+                                    sort_dir: dsc
+                required: true
+            responses:
+                "200":
+                    description: Label values streamed successfully via POST.
+                    content:
+                        application/x-ndjson:
+                            schema:
+                                type: string
+                                description: NDJSON response stream.
+                            examples:
+                                labelValuesStream:
+                                    summary: NDJSON stream of label values
+                                    value: |
+                                        {"results":[{"name":"localhost:9090","frequency":80},{"name":"localhost:9091","frequency":40}]}
+                                        {"status":"success","has_more":true}
+                default:
+                    description: Error searching label values via POST.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
     /series:
         get:
             tags:
@@ -3171,6 +3882,195 @@ components:
                 - data
             additionalProperties: false
             description: Response body with an array of strings.
+        SearchMetricNamesPostInputBody:
+            type: object
+            properties:
+                match[]:
+                    type: array
+                    items:
+                        type: string
+                    description: 'Form field: Series selector argument used to scope metric discovery.'
+                    example:
+                        - '{job="prometheus"}'
+                search[]:
+                    type: array
+                    items:
+                        type: string
+                    description: 'Form field: One or more search terms matched against metric names (OR logic).'
+                    example:
+                        - http_req
+                fuzz_threshold:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Fuzzy threshold in the range 0-100. Default is 0 (no fuzz matching).'
+                    example: 80
+                fuzz_alg:
+                    type: string
+                    description: 'Form field: Fuzzy algorithm. Supported values are jarowinkler (default) and subsequence.'
+                    example: jarowinkler
+                case_sensitive:
+                    type: boolean
+                    description: 'Form field: Whether matching is case-sensitive.'
+                sort_by:
+                    type: string
+                    description: 'Form field: Sort mode. Supported values are alpha and score. If unset, results are returned in natural order.'
+                    example: score
+                sort_dir:
+                    type: string
+                    description: 'Form field: Sort direction. Supported values are asc and dsc.'
+                    example: asc
+                include_score:
+                    type: boolean
+                    description: 'Form field: Include the relevance score in each result record.'
+                include_metadata:
+                    type: boolean
+                    description: 'Form field: Include metric metadata in each result.'
+                start:
+                    type: string
+                    description: 'Form field: The start time of the query.'
+                    example: "2026-01-02T12:37:00.000Z"
+                end:
+                    type: string
+                    description: 'Form field: The end time of the query.'
+                    example: "2026-01-02T13:37:00.000Z"
+                limit:
+                    type: integer
+                    format: int64
+                    description: 'Form field: The maximum number of results to return.'
+                    example: 20
+                batch_size:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Preferred number of results per NDJSON batch.'
+                    example: 20
+            additionalProperties: false
+            description: POST request body for metric name search.
+        SearchLabelNamesPostInputBody:
+            type: object
+            properties:
+                match[]:
+                    type: array
+                    items:
+                        type: string
+                    description: 'Form field: Series selector argument used to scope label discovery.'
+                    example:
+                        - '{__name__="up"}'
+                search[]:
+                    type: array
+                    items:
+                        type: string
+                    description: 'Form field: One or more search terms matched against label names (OR logic).'
+                    example:
+                        - inst
+                fuzz_threshold:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Fuzzy threshold in the range 0-100. Default is 0 (no fuzz matching).'
+                    example: 80
+                fuzz_alg:
+                    type: string
+                    description: 'Form field: Fuzzy algorithm. Supported values are jarowinkler (default) and subsequence.'
+                    example: jarowinkler
+                case_sensitive:
+                    type: boolean
+                    description: 'Form field: Whether matching is case-sensitive.'
+                sort_by:
+                    type: string
+                    description: 'Form field: Sort mode. Supported values are alpha and score. If unset, results are returned in natural order.'
+                    example: score
+                sort_dir:
+                    type: string
+                    description: 'Form field: Sort direction. Supported values are asc and dsc.'
+                    example: asc
+                include_score:
+                    type: boolean
+                    description: 'Form field: Include the relevance score in each result record.'
+                start:
+                    type: string
+                    description: 'Form field: The start time of the query.'
+                    example: "2026-01-02T12:37:00.000Z"
+                end:
+                    type: string
+                    description: 'Form field: The end time of the query.'
+                    example: "2026-01-02T13:37:00.000Z"
+                limit:
+                    type: integer
+                    format: int64
+                    description: 'Form field: The maximum number of results to return.'
+                    example: 20
+                batch_size:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Preferred number of results per NDJSON batch.'
+                    example: 20
+            additionalProperties: false
+            description: POST request body for label name search.
+        SearchLabelValuesPostInputBody:
+            type: object
+            properties:
+                label:
+                    type: string
+                    description: 'Form field: Label name whose values should be searched.'
+                    example: instance
+                match[]:
+                    type: array
+                    items:
+                        type: string
+                    description: 'Form field: Series selector argument used to scope label value discovery.'
+                    example:
+                        - up
+                search[]:
+                    type: array
+                    items:
+                        type: string
+                    description: 'Form field: One or more search terms matched against label values (OR logic).'
+                    example:
+                        - "909"
+                fuzz_threshold:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Fuzzy threshold in the range 0-100. Default is 0 (no fuzz matching).'
+                    example: 80
+                fuzz_alg:
+                    type: string
+                    description: 'Form field: Fuzzy algorithm. Supported values are jarowinkler (default) and subsequence.'
+                    example: jarowinkler
+                case_sensitive:
+                    type: boolean
+                    description: 'Form field: Whether matching is case-sensitive.'
+                sort_by:
+                    type: string
+                    description: 'Form field: Sort mode. Supported values are alpha and score. If unset, results are returned in natural order.'
+                    example: score
+                sort_dir:
+                    type: string
+                    description: 'Form field: Sort direction. Supported values are asc and dsc.'
+                    example: asc
+                include_score:
+                    type: boolean
+                    description: 'Form field: Include the relevance score in each result record.'
+                start:
+                    type: string
+                    description: 'Form field: The start time of the query.'
+                    example: "2026-01-02T12:37:00.000Z"
+                end:
+                    type: string
+                    description: 'Form field: The end time of the query.'
+                    example: "2026-01-02T13:37:00.000Z"
+                limit:
+                    type: integer
+                    format: int64
+                    description: 'Form field: The maximum number of results to return.'
+                    example: 20
+                batch_size:
+                    type: integer
+                    format: int64
+                    description: 'Form field: Preferred number of results per NDJSON batch.'
+                    example: 20
+            required:
+                - label
+            additionalProperties: false
+            description: POST request body for label value search.
         SeriesOutputBody:
             type: object
             properties:
