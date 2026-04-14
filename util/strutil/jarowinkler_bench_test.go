@@ -25,11 +25,12 @@ var benchCases = []struct {
 	{"unicode", "naïve", "naive"},
 }
 
-func BenchmarkJaroWinkler(b *testing.B) {
+func BenchmarkJaroWinklerMatcher(b *testing.B) {
 	for _, bc := range benchCases {
 		b.Run(bc.name, func(b *testing.B) {
+			m := NewJaroWinklerMatcher(bc.s1)
 			for range b.N {
-				JaroWinkler(bc.s1, bc.s2)
+				m.Score(bc.s2)
 			}
 		})
 	}

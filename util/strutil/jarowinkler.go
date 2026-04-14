@@ -13,21 +13,43 @@
 
 package strutil
 
-// JaroWinkler computes the Jaro-Winkler similarity between two strings,
-// returning a score in [0.0, 1.0] where 1.0 means identical strings.
-func JaroWinkler(s1, s2 string) float64 {
-	if s1 == s2 {
+// JaroWinklerMatcher pre-computes the encoding of a fixed search term so that
+// it can be scored against many candidate strings without repeating the ASCII
+// check or rune conversion on the term for every call. The first Score call
+// with a Unicode candidate lazily caches the term's rune slice. It is not
+// safe for concurrent use.
+type JaroWinklerMatcher struct {
+	term      string // original term; used directly on the ASCII path
+	termASCII bool   // whether term is pure ASCII
+	termRunes []rune // pre-converted runes; set when !termASCII or on first Unicode candidate
+}
+
+// NewJaroWinklerMatcher returns a matcher for the given term.
+func NewJaroWinklerMatcher(term string) *JaroWinklerMatcher {
+	if isASCII(term) {
+		return &JaroWinklerMatcher{term: term, termASCII: true}
+	}
+	return &JaroWinklerMatcher{term: term, termRunes: []rune(term)}
+}
+
+// Score returns the Jaro-Winkler similarity between the matcher's term and s,
+// in [0.0, 1.0] where 1.0 means identical strings.
+func (m *JaroWinklerMatcher) Score(s string) float64 {
+	if m.term == s {
 		return 1.0
 	}
-	if s1 == "" || s2 == "" {
+	if m.term == "" || s == "" {
 		return 0.0
 	}
-
-	// For ASCII strings, use the string-native path that avoids slice conversion.
-	if isASCII(s1) && isASCII(s2) {
-		return jaroWinklerString(s1, s2)
+	if m.termASCII && isASCII(s) {
+		return jaroWinklerString(m.term, s)
 	}
-	return jaroWinklerRunes([]rune(s1), []rune(s2))
+	// Either the term or s is Unicode; use the rune path.
+	if m.termRunes == nil {
+		// term is ASCII but s is Unicode; convert and cache term runes.
+		m.termRunes = []rune(m.term)
+	}
+	return jaroWinklerRunes(m.termRunes, []rune(s))
 }
 
 // isASCII reports whether s contains only ASCII characters.

@@ -18,7 +18,7 @@ import (
 	"testing"
 )
 
-func TestJaroWinkler(t *testing.T) {
+func TestJaroWinklerMatcher(t *testing.T) {
 	tests := []struct {
 		s1, s2 string
 		min    float64
@@ -65,14 +65,14 @@ func TestJaroWinkler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.s1+"_"+tt.s2, func(t *testing.T) {
-			score := JaroWinkler(tt.s1, tt.s2)
+			score := NewJaroWinklerMatcher(tt.s1).Score(tt.s2)
 			if score < tt.min || score > tt.max {
-				t.Errorf("JaroWinkler(%q, %q) = %f, want in [%f, %f]", tt.s1, tt.s2, score, tt.min, tt.max)
+				t.Errorf("NewJaroWinklerMatcher(%q).Score(%q) = %f, want in [%f, %f]", tt.s1, tt.s2, score, tt.min, tt.max)
 			}
 			// Verify symmetry.
-			reverse := JaroWinkler(tt.s2, tt.s1)
+			reverse := NewJaroWinklerMatcher(tt.s2).Score(tt.s1)
 			if math.Abs(score-reverse) > 1e-10 {
-				t.Errorf("JaroWinkler(%q, %q) = %f, but JaroWinkler(%q, %q) = %f (not symmetric)", tt.s1, tt.s2, score, tt.s2, tt.s1, reverse)
+				t.Errorf("NewJaroWinklerMatcher(%q).Score(%q) = %f, but NewJaroWinklerMatcher(%q).Score(%q) = %f (not symmetric)", tt.s1, tt.s2, score, tt.s2, tt.s1, reverse)
 			}
 		})
 	}
