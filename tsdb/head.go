@@ -2558,7 +2558,7 @@ func (s *memSeries) maxTime() int64 {
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
 	if s.headChunks != nil {
-		var i int
+		var i uint32
 		var nextChk *memChunk
 		chk := s.headChunks
 		for chk != nil {
@@ -2573,7 +2573,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 				} else {
 					// This is NOT the first chunk, unlink it from parent.
 					nextChk.prev = nil
-					s.headChunkCount.Store(uint32(i))
+					s.headChunkCount.Store(i)
 				}
 				s.mmappedChunks = nil
 				break
