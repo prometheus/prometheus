@@ -14,17 +14,33 @@
 package seriesmetadata
 
 import (
-	"cmp"
-	"context"
-	"log/slog"
 	"maps"
-	"slices"
 
 	"github.com/cespare/xxhash/v2"
 )
 
-func init() {
-	RegisterKind(&resourceKindDescriptor{})
+// KindID uniquely identifies a metadata kind.
+type KindID string
+
+const (
+	KindResource KindID = "resource"
+)
+
+// WALRecordType mirrors record.Type (uint8) to avoid an import cycle
+// between seriesmetadata and tsdb/record.
+type WALRecordType = uint8
+
+// WAL record type constants matching record.ResourceUpdate.
+const (
+	WALResourceUpdate WALRecordType = 11
+)
+
+// kindMetaAccessor is implemented by memSeries to provide kind-generic access
+// to per-series metadata. Defined here (in seriesmetadata) so that commit
+// implementations can use it without importing tsdb.
+type kindMetaAccessor interface {
+	GetKindMeta(id KindID) (any, bool)
+	SetKindMeta(id KindID, v any)
 }
 
 // resourceOps implements KindOps for *ResourceVersion.
@@ -68,43 +84,11 @@ func hashResourceContentReusable(rv *ResourceVersion, keysBuf []string) (uint64,
 	return h.Sum64(), keysBuf
 }
 
-// resourceKindDescriptor implements KindDescriptor for OTel resources.
-type resourceKindDescriptor struct{}
-
-func (*resourceKindDescriptor) ID() KindID                   { return KindResource }
-func (*resourceKindDescriptor) WALRecordType() WALRecordType { return WALResourceUpdate }
-func (*resourceKindDescriptor) TableNamespace() string       { return NamespaceResourceTable }
-func (*resourceKindDescriptor) MappingNamespace() string     { return NamespaceResourceMapping }
-
-func (*resourceKindDescriptor) DecodeWAL(rec []byte, into any) (any, error) {
-	return ResourceDecodeWAL(rec, into)
-}
-
-func (*resourceKindDescriptor) EncodeWAL(records any, buf []byte) []byte {
-	return ResourceEncodeWAL(records, buf)
-}
-
 // ResourceDecodeWAL is set by the tsdb package to break the import cycle.
 var ResourceDecodeWAL func(rec []byte, into any) (any, error)
 
 // ResourceEncodeWAL is set by the tsdb package to break the import cycle.
 var ResourceEncodeWAL func(records any, buf []byte) []byte
-
-func (*resourceKindDescriptor) ParseTableRow(logger *slog.Logger, row *metadataRow) any {
-	return parseResourceContent(logger, row)
-}
-
-func (*resourceKindDescriptor) BuildTableRow(contentHash uint64, version any) metadataRow {
-	return buildResourceTableRow(contentHash, version.(*ResourceVersion))
-}
-
-func (*resourceKindDescriptor) ContentHash(version any) uint64 {
-	return hashResourceContent(version.(*ResourceVersion))
-}
-
-func (*resourceKindDescriptor) CommitToSeries(series, walRecord any) {
-	CommitResourceDirect(series.(kindMetaAccessor), walRecord.(ResourceCommitData))
-}
 
 // ResourceCommitData carries resource WAL record data without importing tsdb/record.
 type ResourceCommitData struct {
@@ -139,11 +123,6 @@ func CommitResourceDirect(accessor kindMetaAccessor, rcd ResourceCommitData) {
 	}
 }
 
-func hashResourceCommitData(rcd ResourceCommitData) uint64 {
-	hash, _ := hashResourceCommitDataReusable(rcd, nil)
-	return hash
-}
-
 func hashResourceCommitDataReusable(rcd ResourceCommitData, keysBuf []string) (uint64, []string) {
 	var h xxhash.Digest
 
@@ -154,24 +133,8 @@ func hashResourceCommitDataReusable(rcd ResourceCommitData, keysBuf []string) (u
 	return h.Sum64(), keysBuf
 }
 
-// CommitResourceToStore builds a ResourceVersion from ResourceCommitData and
-// commits it directly to the MemStore.
-func CommitResourceToStore(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData) (contentChanged bool, old, cur *VersionedResource) {
-	contentHash := hashResourceCommitData(rcd)
-
-	return store.InsertVersion(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, func() *ResourceVersion {
-		return buildResourceVersion(rcd)
-	}, false)
-}
-
-func CommitResourceToStoreReusable(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData, keysBuf []string) (contentChanged bool, old, cur *VersionedResource, updatedKeysBuf []string) {
-	contentHash, keysBuf := hashResourceCommitDataReusable(rcd, keysBuf)
-	contentChanged, old, cur = store.InsertVersion(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, func() *ResourceVersion {
-		return buildResourceVersion(rcd)
-	}, false)
-	return contentChanged, old, cur, keysBuf
-}
-
+// CommitResourceToStoreReusableWithRef builds a ResourceVersion from ResourceCommitData and
+// commits it directly to the MemStore, reusing a key buffer and tracking the series ref.
 func CommitResourceToStoreReusableWithRef(store *MemStore[*ResourceVersion], labelsHash uint64, rcd ResourceCommitData, seriesRef uint64, keysBuf []string) (contentChanged bool, old, cur *VersionedResource, updatedKeysBuf []string) {
 	contentHash, keysBuf := hashResourceCommitDataReusable(rcd, keysBuf)
 	contentChanged, old, cur = store.InsertVersionWithRef(labelsHash, contentHash, rcd.MinTime, rcd.MaxTime, seriesRef, func() *ResourceVersion {
@@ -201,67 +164,4 @@ func CollectResourceDirect(accessor kindMetaAccessor) (*VersionedResource, bool)
 		return nil, false
 	}
 	return v.(*Versioned[*ResourceVersion]), true
-}
-
-func (*resourceKindDescriptor) CollectFromSeries(series any) (any, bool) {
-	accessor := series.(kindMetaAccessor)
-	return accessor.GetKindMeta(KindResource)
-}
-
-func (*resourceKindDescriptor) CopyVersioned(v any) any {
-	return v.(*Versioned[*ResourceVersion]).Copy(ResourceOps)
-}
-
-func (*resourceKindDescriptor) SetOnSeries(series, versioned any) {
-	accessor := series.(kindMetaAccessor)
-	accessor.SetKindMeta(KindResource, versioned)
-}
-
-func (*resourceKindDescriptor) NewStore() any {
-	return NewMemStore[*ResourceVersion](ResourceOps)
-}
-
-func (*resourceKindDescriptor) SetVersioned(store any, labelsHash uint64, versioned any) {
-	store.(*MemStore[*ResourceVersion]).SetVersioned(labelsHash, versioned.(*Versioned[*ResourceVersion]))
-}
-
-func (*resourceKindDescriptor) IterVersioned(ctx context.Context, store any, f func(labelsHash uint64, versioned any) error) error {
-	return store.(*MemStore[*ResourceVersion]).IterVersionedFlatInline(ctx, func(labelsHash uint64, versions []*ResourceVersion, inlineMinTime, inlineMaxTime int64, isInline bool) error {
-		if isInline && len(versions) == 1 {
-			thin := resourceOps{}.ThinCopy(versions[0], versions[0])
-			thin.MinTime = inlineMinTime
-			thin.MaxTime = inlineMaxTime
-			return f(labelsHash, &Versioned[*ResourceVersion]{Versions: []*ResourceVersion{thin}})
-		}
-		return f(labelsHash, &Versioned[*ResourceVersion]{Versions: versions})
-	})
-}
-
-func (*resourceKindDescriptor) StoreLen(store any) int {
-	return store.(*MemStore[*ResourceVersion]).Len()
-}
-
-func (*resourceKindDescriptor) DenormalizeIntoStore(store any, labelsHash uint64, versions []VersionWithTime) {
-	typed := make([]*ResourceVersion, len(versions))
-	for i, vt := range versions {
-		cp := copyResourceVersion(vt.Version.(*ResourceVersion))
-		cp.MinTime = vt.MinTime
-		cp.MaxTime = vt.MaxTime
-		typed[i] = cp
-	}
-	slices.SortFunc(typed, func(a, b *ResourceVersion) int {
-		return cmp.Compare(a.MinTime, b.MinTime)
-	})
-	store.(*MemStore[*ResourceVersion]).SetVersioned(labelsHash, &Versioned[*ResourceVersion]{Versions: typed})
-}
-
-func (*resourceKindDescriptor) IterateVersions(versioned any, f func(version any, minTime, maxTime int64)) {
-	vr := versioned.(*Versioned[*ResourceVersion])
-	for _, rv := range vr.Versions {
-		f(rv, rv.MinTime, rv.MaxTime)
-	}
-}
-
-func (*resourceKindDescriptor) VersionsEqual(a, b any) bool {
-	return ResourceVersionsEqual(a.(*ResourceVersion), b.(*ResourceVersion))
 }

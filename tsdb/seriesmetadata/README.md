@@ -54,21 +54,20 @@ All metadata is **versioned over time** per series. When a descriptive attribute
 
 The `/resources/series` reverse-lookup endpoint only supports filtering by resource attributes (`resource.attr=key:value`).
 
-## Kind Framework
+## Type System
 
-The metadata subsystem uses a **kind framework** to handle different metadata types generically. This avoids duplicating nearly identical code at every layer (WAL, Parquet, head commit/replay, compaction, DB merge).
+The metadata subsystem uses Go generics for type-safe operations:
 
-### Architecture
+- **`Versioned[V]`**: Generic versioned container holding `[]V` ordered by MinTime
+- **`MemStore[V]`**: 256-way sharded generic in-memory store with optional content-addressed dedup
+- **`KindOps[V]`**: Interface for equality/copy operations (`Equal`, `Copy`)
+- **`ContentDedupOps[V]`**: Optional extension for content-addressed dedup (`ContentHash`, `ThinCopy`)
 
-- **Go generics** for type-safe hot paths: `Versioned[V]` (versioned container), `MemStore[V]` (in-memory store), `KindOps[V]` (equality/copy operations)
-- **`KindDescriptor` interface** for runtime dispatch at serialization boundaries: WAL encode/decode, Parquet conversion, head commit, store operations. Methods use `any` for type erasure since the registry is not generic.
-- **Kind registry** with lookup by `KindID`, WAL record type, table namespace, and mapping namespace. Each kind registers itself in an `init()` function.
-
-Adding a new metadata kind requires: (1) define the version struct, (2) implement `KindOps` and `KindDescriptor`, (3) register in `init()`. The framework layers (stores, Parquet normalization, WAL dispatch, head commit/replay, compaction merge, DB merge) all work automatically via the registry.
+Resources are the only metadata kind. `resourceOps` implements both `KindOps` and `ContentDedupOps` for `*ResourceVersion`. Standalone functions (`CommitResourceDirect`, `CollectResourceDirect`, `CommitResourceToStoreReusableWithRef`) handle the hot-path commit and collection logic directly.
 
 ### Import Cycle Avoidance
 
-`seriesmetadata` cannot import `tsdb/record` (which would create a cycle). The registry defines `WALRecordType = uint8` and each kind descriptor uses pluggable function variables (`ResourceDecodeWAL`, etc.) that are set by the `tsdb` package during init.
+`seriesmetadata` cannot import `tsdb/record` (which would create a cycle). `WALRecordType = uint8` is defined locally, and pluggable function variables (`ResourceDecodeWAL`, `ResourceEncodeWAL`) are set by the `tsdb` package during init.
 
 ## In-Memory Model
 
@@ -89,7 +88,7 @@ Data is stored per-series, keyed by `labels.StableHash` (a 64-bit hash of the se
 |-------|-----------------|-----|-------|
 | `MemResourceStore` | `MemStore[*ResourceVersion]` | labelsHash | `*Versioned[*ResourceVersion]` |
 
-`MemSeriesMetadata` wraps a `map[KindID]any` (each value is a `*MemStore[V]` for the appropriate V) and implements the `Reader` interface. It provides `StoreForKind(id)` for generic access and a type-safe accessor `ResourceStore()`.
+`MemSeriesMetadata` holds a typed `*MemStore[*ResourceVersion]` field and implements the `Reader` interface. `ResourceStore()` provides direct access to the store.
 
 ### Resource Attribute Inverted Index
 
@@ -304,7 +303,7 @@ Several features are designed for object-storage access patterns in clustered im
 - **`BlockSeriesMetadata` in `meta.json`**: After compaction, `BlockMeta.SeriesMetadata` records namespace row counts and indexed resource attribute names, enabling Mimir store-gateway to pre-plan queries without opening the Parquet file
 - **`WriteStats`**: `WriterOptions.WriteStats` is populated after a successful write with per-namespace row counts, allowing the caller to capture stats (e.g. for `BlockMeta`) without parsing the Parquet footer
 - **Per-tenant `IndexedResourceAttrs`**: `Head.SetIndexedResourceAttrs()` allows runtime reconfiguration of which descriptive attributes are indexed, enabling Mimir ingesters to apply per-tenant overrides
-- **Direct commit functions**: `CommitResourceDirect()` is called directly on the hot ingestion path with typed arguments (bypassing `interface{}` boxing). It uses single-copy ownership: `maps.Clone` once from caller buffers, construct the version struct, and inline `AddOrExtend` logic — no redundant deep copies via `NewResourceVersion`/`copyResourceVersion`. `KindDescriptor.CommitToSeries()` (WAL replay) delegates to the same Direct function after type-asserting `any` arguments. `CollectResourceDirect()` provides the same boxing-avoidance for the collect path
+- **Direct commit functions**: `CommitResourceDirect()` is called directly on the hot ingestion path and WAL replay with typed arguments (bypassing `interface{}` boxing). It uses single-copy ownership: `maps.Clone` once from caller buffers, construct the version struct, and inline `AddOrExtend` logic — no redundant deep copies via `NewResourceVersion`/`copyResourceVersion`. `CollectResourceDirect()` provides the same boxing-avoidance for the collect path
 - **Unique attribute name cache**: `UniqueAttrNameReader` interface (via type assertion) provides O(1) access to the set of all resource attribute names, avoiding O(N_series) full scans for attribute name discovery
 - **`SetVersionedWithDiff` fast-path**: When the incoming `Versioned` has a single version that equals the existing current version (~90% of steady-state commits), `UpdateTimeRange` extends in-place with zero allocations, skipping `MergeVersioned` (~12 allocs)
 - **In-memory content-addressed dedup**: `MemStore[V]` uses `ContentDedupOps[V]` to share map/slice pointers across versions with identical content. Per-version memory drops from ~1500B to ~72B. `InternVersion()` is public for per-series interning from head commit and WAL replay paths
@@ -318,8 +317,7 @@ Several features are designed for object-storage access patterns in clustered im
 | `seriesmetadata.go` | Core types (`Reader`, `MemSeriesMetadata`, `parquetReader`), write/read paths, denormalization, resource attribute inverted index |
 | `versioned.go` | Generic `Versioned[V]` container, `VersionConstraint` interface, `KindOps[V]`, `ContentDedupOps[V]`, `MergeVersioned()` |
 | `mem_store.go` | Generic `MemStore[V]` 256-way sharded in-memory store with content-addressed dedup |
-| `registry.go` | `KindDescriptor` interface, `KindID`, global kind registry, `kindMetaAccessor` |
-| `resource_kind.go` | `resourceKindDescriptor` (implements `KindDescriptor` for resources), `ResourceOps` (implements `KindOps` + `ContentDedupOps`), `ResourceCommitData`, `CommitResourceDirect()`, `CollectResourceDirect()`, content hashing |
+| `resource_kind.go` | `KindID`, `ResourceOps` (implements `KindOps` + `ContentDedupOps`), `ResourceCommitData`, `CommitResourceDirect()`, `CollectResourceDirect()`, `kindMetaAccessor`, content hashing, WAL type constants |
 | `parquet_schema.go` | Parquet schema (`metadataRow`), namespace constants |
 | `resource.go` | `ResourceVersion`, type aliases (`VersionedResource`, `MemResourceStore`, `VersionedResourceReader`) |
 | `content_hash.go` | Shared `hashAttrs()` utility for deterministic xxhash of attribute maps |
