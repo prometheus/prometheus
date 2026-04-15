@@ -338,7 +338,7 @@ func histogramRate(
 	// bucket layout of the 1st sample because we do not need to look at it.
 	if isCounter && len(points) > 1 {
 		second := points[1].H
-		if second != nil && second.DetectReset(prev) {
+		if second != nil && (len(startTimestamps) > 1 && isStartTimestampReset(startTimestamps[0], points[0].T, startTimestamps[1], points[1].T) || second.DetectReset(prev)) {
 			prev = &histogram.FloatHistogram{}
 			prev.Schema = second.Schema
 			prev.CustomValues = second.CustomValues
