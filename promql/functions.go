@@ -142,6 +142,9 @@ func extendedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper, isC
 	if f[lastSampleIndex].T <= rangeStart {
 		return enh.Out, annos
 	}
+	if smoothed && f[firstSampleIndex].T > rangeEnd {
+		return enh.Out, annos
+	}
 
 	left := pickOrInterpolateLeft(f, firstSampleIndex, rangeStart, smoothed, isCounter)
 	right := pickOrInterpolateRight(f, lastSampleIndex, rangeEnd, smoothed, isCounter)
