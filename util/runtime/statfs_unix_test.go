@@ -28,9 +28,7 @@ func TestFsType(t *testing.T) {
 	path, err := os.Getwd()
 	require.NoError(t, err)
 
-	// FsType returns a named constant (e.g. EXT4_SUPER_MAGIC) for known
-	// filesystems, or a lowercase-hex fallback for unknown ones. Either way
-	// the result must be non-zero for a real path. See #18471.
+	// A real path must yield a non-zero filesystem type.
 	fsType = FsType(path)
 	require.NotEqual(t, "0", fsType)
 
