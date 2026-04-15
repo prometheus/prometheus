@@ -2074,6 +2074,77 @@ paths:
                                         error: TSDB not ready
                                         errorType: internal
                                         status: error
+    /status/self_metrics:
+        get:
+            tags:
+                - status
+            summary: Get Prometheus self-instrumentation metrics
+            description: Returns Prometheus' own instrumentation metrics from its internal client registry, as structured JSON. Supports optional regex filtering via the metric_name_pattern parameter.
+            operationId: get-status-self-metrics
+            parameters:
+                - name: metric_name_pattern
+                  in: query
+                  description: Regular expression filter for metric names (fully anchored, like PromQL label matchers). Only metric families whose names fully match the pattern are returned.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: prometheus_tsdb_.*
+            responses:
+                "200":
+                    description: Self metrics retrieved successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/StatusSelfMetricsOutputBody'
+                            examples:
+                                selfMetrics:
+                                    summary: Prometheus self-instrumentation metrics in ProtoJSON format
+                                    value:
+                                        data:
+                                            - help: A metric with a constant '1' value labeled by version, revision, branch, goversion from which prometheus was built, and the goos and goarch for the build.
+                                              metric:
+                                                - gauge:
+                                                    value: 1
+                                                  label:
+                                                    - name: branch
+                                                      value: HEAD
+                                                    - name: goarch
+                                                      value: amd64
+                                                    - name: goos
+                                                      value: linux
+                                                    - name: goversion
+                                                      value: go1.23.0
+                                                    - name: revision
+                                                      value: abc1234
+                                                    - name: tags
+                                                      value: netgo,builtinassets,stringlabels
+                                                    - name: version
+                                                      value: 3.0.0
+                                              name: prometheus_build_info
+                                              type: GAUGE
+                                            - help: Total number of chunks in the head block.
+                                              metric:
+                                                - gauge:
+                                                    value: 1024
+                                              name: prometheus_tsdb_head_chunks
+                                              type: GAUGE
+                                        status: success
+                default:
+                    description: Error retrieving self metrics.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                tsdbNotReady:
+                                    summary: TSDB not ready
+                                    value:
+                                        error: TSDB not ready
+                                        errorType: internal
+                                        status: error
     /admin/tsdb/delete_series:
         put:
             tags:
@@ -4202,6 +4273,35 @@ components:
                 - data
             additionalProperties: false
             description: Response body for status WAL replay endpoint.
+        StatusSelfMetricsOutputBody:
+            type: object
+            properties:
+                status:
+                    type: string
+                    enum:
+                        - success
+                        - error
+                    description: Response status.
+                    example: success
+                data:
+                    description: Response data (structure varies by endpoint).
+                    example:
+                        result: ok
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were warnings while executing the request. There will still be data in the data field.
+                infos:
+                    type: array
+                    items:
+                        type: string
+                    description: Only set if there were info-level annotations while executing the request.
+            required:
+                - status
+                - data
+            additionalProperties: false
+            description: Generic response body.
         DeleteSeriesOutputBody:
             type: object
             properties:

@@ -886,6 +886,55 @@ func statusWALReplayResponseExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// statusSelfMetricsResponseExamples returns examples for /status/self_metrics response.
+func statusSelfMetricsResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("selfMetrics", &base.Example{
+		Summary: "Prometheus self-instrumentation metrics in ProtoJSON format",
+		Value: createYAMLNode(map[string]any{
+			"status": "success",
+			"data": []map[string]any{
+				{
+					"name": "prometheus_build_info",
+					"help": "A metric with a constant '1' value labeled by version, revision, branch, goversion from which prometheus was built, and the goos and goarch for the build.",
+					"type": "GAUGE",
+					"metric": []map[string]any{
+						{
+							"label": []map[string]string{
+								{"name": "branch", "value": "HEAD"},
+								{"name": "goarch", "value": "amd64"},
+								{"name": "goos", "value": "linux"},
+								{"name": "goversion", "value": "go1.23.0"},
+								{"name": "revision", "value": "abc1234"},
+								{"name": "tags", "value": "netgo,builtinassets,stringlabels"},
+								{"name": "version", "value": "3.0.0"},
+							},
+							"gauge": map[string]any{
+								"value": 1,
+							},
+						},
+					},
+				},
+				{
+					"name": "prometheus_tsdb_head_chunks",
+					"help": "Total number of chunks in the head block.",
+					"type": "GAUGE",
+					"metric": []map[string]any{
+						{
+							"gauge": map[string]any{
+								"value": 1024,
+							},
+						},
+					},
+				},
+			},
+		}),
+	})
+
+	return examples
+}
+
 // deleteSeriesResponseExamples returns examples for /admin/tsdb/delete_series response.
 func deleteSeriesResponseExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
