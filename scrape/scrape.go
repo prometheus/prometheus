@@ -1779,7 +1779,7 @@ loop:
 		}
 
 		if err == nil {
-			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
+			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
 				sl.cache.trackStaleness(ce.ref, ce)
 			}
 		}
@@ -1798,7 +1798,7 @@ loop:
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
 			ce = sl.cache.addRef(met, ref, lset, hash)
-			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
+			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
 				sl.cache.trackStaleness(ref, ce)

@@ -1971,6 +1971,23 @@ test_metric 15
 	require.Equal(t, 1, total)
 	require.Equal(t, 1, added)
 	require.Equal(t, 0, seriesAdded)
+
+	// Third Scrape: Counter is missing.
+	// Since it was never successfully appended (anchored on first scrape, failed with OOO on second),
+	// it should NOT have been tracked for staleness. Thus, no StaleNaN should be appended.
+	ts3 := ts2.Add(time.Second)
+	scrapeC := []byte(`# TYPE test_metric counter
+# EOF
+`)
+
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeC, "application/openmetrics-text", ts3)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Verify that still no samples are appended (specifically no stale marker).
+	got = appTest.ResultSamples()
+	require.Empty(t, got, "Expected no samples (specifically no stale markers) because the series was never tracked for staleness")
 }
 
 func requireSampleHist(t *testing.T, s teststorage.Sample, name, expectedHist string, ts, st int64, isNaN bool) {
