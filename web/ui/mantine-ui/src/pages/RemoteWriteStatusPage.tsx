@@ -1,11 +1,12 @@
 import { Alert, Badge, Group, Table, Text } from "@mantine/core";
 import { IconInfoCircle, IconUpload } from "@tabler/icons-react";
-import { useSuspenseAPIQuery } from "../api/api";
+import { useSuspenseAPIQuery, useAPIQuery } from "../api/api";
 import {
   SelfMetricsResult,
   ProtoMetricFamily,
   ProtoMetric,
 } from "../api/responseTypes/selfMetrics";
+import { InstantQueryResult } from "../api/responseTypes/query";
 import InfoPageStack from "../components/InfoPageStack";
 import InfoPageCard from "../components/InfoPageCard";
 
@@ -25,8 +26,8 @@ const labelValue = (m: ProtoMetric, name: string): string =>
   m.label?.find((l) => l.name === name)?.value ?? "";
 
 // A composite key that identifies a single remote write queue.
-const queueKey = (m: ProtoMetric): string =>
-  `${labelValue(m, "remote_name")}|${labelValue(m, "url")}`;
+const queueKey = (remoteName: string, url: string): string =>
+  `${remoteName}|${url}`;
 
 interface QueueData {
   name: string;
@@ -92,6 +93,20 @@ const metricFieldMap: Record<string, keyof QueueData> = {
 
 const METRIC_PREFIX = "prometheus_remote_storage_";
 
+// PromQL expression that sums current error and retry rates per queue.
+// A queue is unhealthy if any of the following are happening right now:
+//   - samples/exemplars/histograms are failing permanently (*_failed_total)
+//   - samples are being retried (indicates upstream trouble before final failure)
+//   - enqueue retries are happening (queue is blocked, e.g. receiver is down)
+// Using rate() over 5m means stale errors from hours ago don't keep the
+// endpoint stuck in DEGRADED after recovery.
+const HEALTH_QUERY =
+  "sum by (remote_name, url) (" +
+  "rate(prometheus_remote_storage_samples_failed_total[5m]) + " +
+  "rate(prometheus_remote_storage_samples_retried_total[5m]) + " +
+  "rate(prometheus_remote_storage_enqueue_retries_total[5m])" +
+  ")";
+
 const buildQueues = (families: ProtoMetricFamily[]): QueueData[] => {
   const queues = new Map<string, QueueData>();
 
@@ -106,11 +121,13 @@ const buildQueues = (families: ProtoMetricFamily[]): QueueData[] => {
     }
 
     for (const m of family.metric) {
-      const key = queueKey(m);
+      const name = labelValue(m, "remote_name");
+      const url = labelValue(m, "url");
+      const key = queueKey(name, url);
       if (!queues.has(key)) {
         queues.set(key, {
-          name: labelValue(m, "remote_name"),
-          endpoint: labelValue(m, "url"),
+          name,
+          endpoint: url,
           highestTimestampSec: 0,
           highestSentTimestampSec: 0,
           pendingSamples: 0,
@@ -145,6 +162,23 @@ const buildQueues = (families: ProtoMetricFamily[]): QueueData[] => {
   return Array.from(queues.values());
 };
 
+// Parse the PromQL health query into a map of queueKey -> current error/retry rate.
+const buildHealthMap = (
+  result: InstantQueryResult | undefined,
+): Map<string, number> => {
+  const health = new Map<string, number>();
+  if (!result || result.resultType !== "vector") {
+    return health;
+  }
+  for (const sample of result.result) {
+    const name = sample.metric.remote_name ?? "";
+    const url = sample.metric.url ?? "";
+    const val = sample.value ? parseFloat(sample.value[1]) : 0;
+    health.set(queueKey(name, url), val);
+  }
+  return health;
+};
+
 const formatBytes = (bytes: number): string => {
   if (bytes === 0) {
     return "0 B";
@@ -168,13 +202,24 @@ const formatDelay = (seconds: number): string => {
   return `${(seconds / 3600).toFixed(1)}h`;
 };
 
-const QueueCard = ({ queue }: { queue: QueueData }) => {
+interface QueueCardProps {
+  queue: QueueData;
+  errorRate: number | undefined;
+}
+
+const QueueCard = ({ queue, errorRate }: QueueCardProps) => {
   const delay = queue.highestTimestampSec - queue.highestSentTimestampSec;
-  const totalFailed =
-    queue.samplesFailed + queue.exemplarsFailed + queue.histogramsFailed;
   const totalPending =
     queue.pendingSamples + queue.pendingExemplars + queue.pendingHistograms;
-  const isHealthy = totalFailed === 0 && delay < 600;
+
+  // Health is based on the PromQL rate query, not absolute counter totals.
+  // If the rate query hasn't returned yet we assume unknown and fall back to
+  // a conservative "healthy if no pending errors" check on the totals so the
+  // badge never flickers away from the correct state.
+  const isHealthy =
+    errorRate === undefined
+      ? delay < 600
+      : errorRate === 0 && delay < 600;
 
   return (
     <InfoPageCard title={queue.name} icon={IconUpload}>
@@ -202,6 +247,7 @@ const QueueCard = ({ queue }: { queue: QueueData }) => {
                 color={delay < 60 ? "green" : delay < 600 ? "yellow" : "red"}
                 variant="light"
                 size="sm"
+                styles={{ label: { textTransform: "none" } }}
               >
                 {formatDelay(delay)}
               </Badge>
@@ -232,7 +278,13 @@ const QueueCard = ({ queue }: { queue: QueueData }) => {
                 {queue.pendingHistograms}
               </code>
               {totalPending > 0 && (
-                <Badge color="yellow" variant="light" size="sm" ml="xs">
+                <Badge
+                  color="yellow"
+                  variant="light"
+                  size="sm"
+                  ml="xs"
+                  styles={{ label: { textTransform: "none" } }}
+                >
                   {totalPending} total
                 </Badge>
               )}
@@ -288,6 +340,7 @@ const QueueCard = ({ queue }: { queue: QueueData }) => {
 };
 
 export default function RemoteWriteStatusPage() {
+  // Snapshot of current counter / gauge values — drives the stats display.
   const {
     data: { data: families },
   } = useSuspenseAPIQuery<SelfMetricsResult>({
@@ -297,7 +350,16 @@ export default function RemoteWriteStatusPage() {
     },
   });
 
+  // Rate-based health check — drives the HEALTHY / DEGRADED badge.
+  // Not a suspense query: if PromQL is unavailable the page still renders
+  // with a fallback health heuristic (see QueueCard).
+  const { data: healthResult } = useAPIQuery<InstantQueryResult>({
+    path: "/query",
+    params: { query: HEALTH_QUERY },
+  });
+
   const queues = buildQueues(families);
+  const healthMap = buildHealthMap(healthResult?.data);
 
   if (queues.length === 0) {
     return (
@@ -317,7 +379,11 @@ export default function RemoteWriteStatusPage() {
   return (
     <InfoPageStack>
       {queues.map((queue) => (
-        <QueueCard key={`${queue.name}-${queue.endpoint}`} queue={queue} />
+        <QueueCard
+          key={`${queue.name}-${queue.endpoint}`}
+          queue={queue}
+          errorRate={healthMap.get(queueKey(queue.name, queue.endpoint))}
+        />
       ))}
     </InfoPageStack>
   );

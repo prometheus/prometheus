@@ -90,7 +90,6 @@ var newUIReactRouterPaths = []string{
 // Paths that are handled by the React router when the Agent mode is set.
 var reactRouterAgentPaths = []string{
 	"/agent",
-	"/remote-write",
 }
 
 // Paths that are handled by the React router when the Agent mode is not set.
