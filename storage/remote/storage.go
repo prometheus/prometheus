@@ -205,11 +205,6 @@ func (s *Storage) LowestSentTimestamp() int64 {
 	return s.rws.LowestSentTimestamp()
 }
 
-// RemoteWriteStatus returns status information for all remote write queues.
-func (s *Storage) RemoteWriteStatus() RemoteWriteStatus {
-	return s.rws.RemoteWriteStatus()
-}
-
 // Close the background processing of the storage queues.
 func (s *Storage) Close() error {
 	s.deduper.Stop()

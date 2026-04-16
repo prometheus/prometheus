@@ -84,11 +84,13 @@ var newUIReactRouterPaths = []string{
 	"/alertmanager-discovery",
 	"/status",
 	"/targets",
+	"/remote-write",
 }
 
 // Paths that are handled by the React router when the Agent mode is set.
 var reactRouterAgentPaths = []string{
 	"/agent",
+	"/remote-write",
 }
 
 // Paths that are handled by the React router when the Agent mode is not set.
@@ -311,10 +313,9 @@ type Options struct {
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
 
-	Gatherer             prometheus.Gatherer
-	Registerer           prometheus.Registerer
-	FeatureRegistry      features.Collector
-	RemoteWriteStatuser  api_v1.RemoteWriteStatuser
+	Gatherer        prometheus.Gatherer
+	Registerer      prometheus.Registerer
+	FeatureRegistry features.Collector
 
 	// Parser is the PromQL parser used for parsing query expressions.
 	Parser parser.Parser
@@ -432,7 +433,6 @@ func New(logger *slog.Logger, o *Options) *Handler {
 			Version:     version,
 		},
 		o.Parser,
-		o.RemoteWriteStatuser,
 	)
 
 	if r := o.FeatureRegistry; r != nil {

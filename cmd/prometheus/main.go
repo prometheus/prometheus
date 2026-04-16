@@ -996,7 +996,6 @@ func main() {
 	cfg.web.IsAgent = agentMode
 	cfg.web.AppName = modeAppName
 	cfg.web.Parser = promqlParser
-	cfg.web.RemoteWriteStatuser = remoteStorage
 
 	cfg.web.Version = &web.PrometheusVersion{
 		Version:   version.Version,
