@@ -352,7 +352,11 @@ loop:
 		}
 
 		if ce != nil && sl.synthesizeST {
-			ce.st = stCache // Set it, even if it's nil (explicit reset).
+			if shouldCache {
+				ce.st = stCache // Set it, even if it's nil (explicit reset).
+			} else if seriesCached {
+				ce.st = nil // Clear state on failure for existing series.
+			}
 		}
 
 		// We track staleness for a series to ensure that if it disappears in a future scrape,

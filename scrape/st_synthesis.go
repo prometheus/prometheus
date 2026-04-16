@@ -185,10 +185,10 @@ func (c *stCache) synthesizeFloatHistogram(fh *histogram.FloatHistogram, st int6
 		return fh, c.st, false
 	}
 
-	n.prev = fh
+	n.prev = fh.Copy()
 
 	// Subtract the origin anchor.
-	adjusted, _, _, _ := fh.Copy().Sub(n.starting)
+	adjusted, _, _, _ := fh.Sub(n.starting)
 	adjusted = adjusted.Compact(0)
 
 	return adjusted, c.st, false

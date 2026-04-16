@@ -112,6 +112,7 @@ Enables the synthesis of start timestamps (ST) for cumulative metrics (Counters,
 > * Synthesis yields accurate Start Timestamp while maintaining accurate counter rates. However, the raw counter values will be different that what's scraped. This is because the first point is dropped and its timestamp is used as the start timestamp for all subsequent points. All subsequent points are normalized against that dropped point (i.e. subtracted by it). Effectively, synthesis create new counter streams with the known start timestamp from the original data.
 > * Synthesis works only with scraped data (RW and Otel receiver are not implemented).
 > * Synthesis requires ordered samples. As a result, cumulative samples without ST that are out of order will be rejected despite the `tsdb. out_of_order_time_window` setting.
+> * If an append fails for a series (e.g., due to out-of-order samples being rejected), the synthesis state for that series is cleared. As a result, the next sample received after the failure will be treated as the first sample again and will be dropped to establish a new reference point.
 
 ## Concurrent evaluation of independent rules
 

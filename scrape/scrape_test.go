@@ -1990,6 +1990,72 @@ test_metric 15
 	require.Empty(t, got, "Expected no samples (specifically no stale markers) because the series was never tracked for staleness")
 }
 
+func TestScrapeLoopAppend_StartTimeSynthesis_OOO_StateMutation(t *testing.T) {
+	ts := time.Now()
+
+	s := teststorage.New(t)
+	var returnOOO bool
+	appTest := teststorage.NewAppendable().WithErrs(
+		func(ls labels.Labels) error {
+			if returnOOO && ls.Get(model.MetricNameLabel) == "test_metric" {
+				return storage.ErrOutOfOrderSample
+			}
+			return nil
+		}, nil, nil).Then(s)
+
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+		sl.synthesizeST = true
+		sl.parseST = true
+	})
+
+	// First Scrape: anchor the start time, append is skipped.
+	scrapeA := []byte(`# TYPE test_metric counter
+test_metric 10
+# EOF
+`)
+
+	app := sl.appender()
+	_, _, _, err := app.append(scrapeA, "application/openmetrics-text", ts)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Second Scrape: Counter should be rejected due to OOO.
+	// We pass a large value to trigger false reset on next scrape if state leaks.
+	ts2 := ts.Add(time.Second)
+	scrapeB := []byte(`# TYPE test_metric counter
+test_metric 100
+# EOF
+`)
+
+	returnOOO = true // Now return OOO error
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeB, "application/openmetrics-text", ts2)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Third Scrape: Counter is valid again.
+	// Since the previous scrape failed with OOO, we cleared the state (ce.st = nil).
+	// This makes this scrape act like a first sample again, so it will be dropped to establish a new reference point.
+	ts3 := ts2.Add(time.Second)
+	scrapeC := []byte(`# TYPE test_metric counter
+test_metric 25
+# EOF
+`)
+
+	returnOOO = false // No error now
+	app = sl.appender()
+	_, _, _, err = app.append(scrapeC, "application/openmetrics-text", ts3)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	got := appTest.ResultSamples()
+	// We expect 0 samples because:
+	// - 1st scrape: anchored (dropped)
+	// - 2nd scrape: OOO (dropped)
+	// - 3rd scrape: fresh start after cleared state (dropped)
+	require.Empty(t, got, "Expected no samples because the state was cleared and the sample was used to re-anchor")
+}
+
 func requireSampleHist(t *testing.T, s teststorage.Sample, name, expectedHist string, ts, st int64, isNaN bool) {
 	t.Helper()
 	require.Equal(t, name, s.L.Get(model.MetricNameLabel))
