@@ -92,7 +92,7 @@ endif
 
 DOCKER_ARCHS ?= amd64 arm64 armv7 ppc64le riscv64 s390x
 DOCKERFILE_ARCH_EXCLUSIONS ?=
-DOCKER_REGISTRY_ARCH_EXCLUSIONS ?= quay.io:riscv64
+DOCKER_REGISTRY_ARCH_EXCLUSIONS ?=
 DOCKERFILE_VARIANTS     ?= $(wildcard Dockerfile Dockerfile.*)
 
 # Function to extract variant from Dockerfile label.
