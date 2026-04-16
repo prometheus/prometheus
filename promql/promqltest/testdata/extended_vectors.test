@@ -434,3 +434,11 @@ eval instant at 15s increase(metric[10s] smoothed)
 eval instant at 60s rate(metric[5s] smoothed)
 
 eval instant at 60s increase(metric[5s] smoothed)
+
+# Smoothed vector selector with @ modifier with binary op.
+clear
+load 10s
+    metric 0+1x20
+
+eval range from 0s to 60s step 15s metric @ 100 smoothed + 0
+    {} 10 10 10 10 10
