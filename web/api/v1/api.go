@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -458,6 +459,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
 	r.Get("/status/tsdb/blocks", wrapAgent(api.serveTSDBBlocks))
+	r.Get("/status/self_metrics", wrap(api.selfMetrics))
 	r.Get("/features", wrap(api.features))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Get("/notifications", api.notifications)
@@ -1863,6 +1865,38 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 		result = append(result, item)
 	}
 	return result
+}
+
+func (api *API) selfMetrics(r *http.Request) apiFuncResult {
+	var nameFilter *regexp.Regexp
+	if pattern := r.FormValue("metric_name_pattern"); pattern != "" {
+		var err error
+		nameFilter, err = regexp.Compile("^(?:" + pattern + ")$")
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid metric_name_pattern: %w", err)}, nil, nil}
+		}
+	}
+
+	mfs, err := api.gatherer.Gather()
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error gathering self metrics: %w", err)}, nil, nil}
+	}
+
+	marshaler := protojson.MarshalOptions{}
+	result := make([]json.RawMessage, 0, len(mfs))
+	for _, mf := range mfs {
+		if nameFilter != nil && !nameFilter.MatchString(mf.GetName()) {
+			continue
+		}
+
+		b, err := marshaler.Marshal(mf)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("error marshaling metric family %q: %w", mf.GetName(), err)}, nil, nil}
+		}
+		result = append(result, json.RawMessage(b))
+	}
+
+	return apiFuncResult{result, nil, nil, nil}
 }
 
 func (api *API) serveTSDBBlocks(*http.Request) apiFuncResult {

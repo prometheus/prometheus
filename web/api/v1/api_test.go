@@ -4550,6 +4550,74 @@ func TestTSDBStatus(t *testing.T) {
 	}
 }
 
+func TestSelfMetrics(t *testing.T) {
+	api := &API{gatherer: prometheus.DefaultGatherer}
+
+	t.Run("returns all metrics without filter", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "", http.NoBody)
+		require.NoError(t, err)
+		res := api.selfMetrics(req)
+		assertAPIError(t, res.err, errorNone)
+		families, ok := res.data.([]json.RawMessage)
+		require.True(t, ok, "expected []json.RawMessage")
+		require.NotEmpty(t, families, "expected at least one metric family from default gatherer")
+	})
+
+	t.Run("filters metrics by regex", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "?metric_name_pattern=go_.*", http.NoBody)
+		require.NoError(t, err)
+		req.Form = url.Values{"metric_name_pattern": {"go_.*"}}
+		res := api.selfMetrics(req)
+		assertAPIError(t, res.err, errorNone)
+		families, ok := res.data.([]json.RawMessage)
+		require.True(t, ok, "expected []json.RawMessage")
+		require.NotEmpty(t, families)
+		for _, raw := range families {
+			var f map[string]any
+			require.NoError(t, json.Unmarshal(raw, &f))
+			name, _ := f["name"].(string)
+			require.True(t, strings.HasPrefix(name, "go_"), "expected metric name to start with 'go_', got %q", name)
+		}
+	})
+
+	t.Run("non-matching pattern returns empty", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "?metric_name_pattern=nonexistent_prefix_xyz_", http.NoBody)
+		require.NoError(t, err)
+		req.Form = url.Values{"metric_name_pattern": {"nonexistent_prefix_xyz_"}}
+		res := api.selfMetrics(req)
+		assertAPIError(t, res.err, errorNone)
+		families, ok := res.data.([]json.RawMessage)
+		require.True(t, ok, "expected []json.RawMessage")
+		require.Empty(t, families)
+	})
+
+	t.Run("invalid regex returns error", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "?metric_name_pattern=[invalid", http.NoBody)
+		require.NoError(t, err)
+		req.Form = url.Values{"metric_name_pattern": {"[invalid"}}
+		res := api.selfMetrics(req)
+		assertAPIError(t, res.err, errorBadData)
+	})
+
+	t.Run("metric families have expected ProtoJSON structure", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "", http.NoBody)
+		require.NoError(t, err)
+		res := api.selfMetrics(req)
+		assertAPIError(t, res.err, errorNone)
+		families := res.data.([]json.RawMessage)
+		for _, raw := range families {
+			var f map[string]any
+			require.NoError(t, json.Unmarshal(raw, &f))
+			name, _ := f["name"].(string)
+			require.NotEmpty(t, name, "metric family name should not be empty")
+			typ, _ := f["type"].(string)
+			require.NotEmpty(t, typ, "metric family type should not be empty")
+			metrics, _ := f["metric"].([]any)
+			require.NotEmpty(t, metrics, "metric family %q should have at least one metric", name)
+		}
+	})
+}
+
 func TestReturnAPIError(t *testing.T) {
 	cases := []struct {
 		err      error
