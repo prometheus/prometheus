@@ -36,7 +36,7 @@ import {
   IconSearch,
   IconServer,
   IconServerCog,
-  IconUpload,
+  IconCloudUpload,
 } from "@tabler/icons-react";
 import {
   BrowserRouter,
@@ -122,7 +122,7 @@ const monitoringStatusPages = [
   {
     title: "Remote write",
     path: "/remote-write",
-    icon: <IconUpload style={navIconStyle} />,
+    icon: <IconCloudUpload style={navIconStyle} />,
     element: <RemoteWriteStatusPage />,
     inAgentMode: true,
   },
