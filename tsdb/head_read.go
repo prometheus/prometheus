@@ -474,8 +474,8 @@ func (h *headChunkReader) Close() error {
 }
 
 func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
-	// Skip if the cache is disabled (instant queries) or there are no head chunks.
-	if !h.enableCache || s.headChunks == nil {
+	// Skip if the cache is disabled (instant queries) or there are no head chunks or there's only one.
+	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
 		return nil
 	}
 	ref := storage.SeriesRef(s.ref)
