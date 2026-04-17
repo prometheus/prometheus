@@ -609,16 +609,88 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, chk2)
 
-		// After mmap, only 1 head chunk remains. The cache is skipped for
-		// single-chunk series (fast path), so it should still hold the stale
-		// slice from before — but it was NOT consulted for the lookup above.
-		require.Len(t, cr.cachedHeadChunks, headChunksLenBefore, "stale cache not cleared, but also not used")
+		// After mmap, the cache was invalidated (mmapLen changed) and
+		// re-collected with only the remaining head chunk.
+		require.Len(t, cr.cachedHeadChunks, 1, "cache should be re-collected with 1 head chunk after mmap")
 
 		// Verify the returned chunk is actually the newest head chunk, not a stale cached entry.
 		it := chk2.Iterator(nil)
 		require.Equal(t, chunkenc.ValFloat, it.Next())
 		ts, _ := it.At()
 		require.Equal(t, newestChunkMinTime, ts, "returned chunk should be the newest head chunk, not a stale cached entry")
+	})
+
+	t.Run("buffer_cap_release", func(t *testing.T) {
+		// Test that headChunksBuf is released when its capacity exceeds
+		// headChunksBufMaxCap, preventing unbounded memory retention.
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1
+		opts.ChunkDirRoot = t.TempDir()
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+		// Append enough samples to create >headChunksBufMaxCap head chunks.
+		// With ChunkRange=1, each sample goes to a new chunk.
+		app := h.Appender(t.Context())
+		lbls := labels.FromStrings("__name__", "cap_test")
+		for i := range int64(headChunksBufMaxCap) + 10 {
+			_, err := app.Append(0, lbls, i, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		s := h.series.getByID(1)
+		require.NotNil(t, s)
+		s.Lock()
+		require.Greater(t, s.headChunks.len(), headChunksBufMaxCap, "need >%d head chunks", headChunksBufMaxCap)
+		s.Unlock()
+
+		// Call Series() via headIndexReader — this populates headChunksBuf.
+		ir := h.indexRange(0, int64(headChunksBufMaxCap)+10)
+		var builder labels.ScratchBuilder
+		var chks []chunks.Meta
+		require.NoError(t, ir.Series(1, &builder, &chks))
+		require.Greater(t, len(chks), headChunksBufMaxCap)
+
+		// Buffer should have been released because cap exceeded threshold.
+		require.Nil(t, ir.headChunksBuf, "headChunksBuf should be released when cap > headChunksBufMaxCap")
+	})
+
+	t.Run("buffer_cap_release_ooo_index_reader", func(t *testing.T) {
+		// Same as buffer_cap_release but exercises HeadAndOOOIndexReader.Series,
+		// which has its own headChunksBufMaxCap check.
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = 1
+		opts.ChunkDirRoot = t.TempDir()
+		h, err := NewHead(nil, nil, nil, nil, opts, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+		app := h.Appender(t.Context())
+		lbls := labels.FromStrings("__name__", "cap_test_ooo")
+		for i := range int64(headChunksBufMaxCap) + 10 {
+			_, err := app.Append(0, lbls, i, float64(i))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+
+		s := h.series.getByID(1)
+		require.NotNil(t, s)
+		s.Lock()
+		require.Greater(t, s.headChunks.len(), headChunksBufMaxCap, "need >%d head chunks", headChunksBufMaxCap)
+		s.Unlock()
+
+		// Call Series() via HeadAndOOOIndexReader (non-OOO series, so the else branch is taken).
+		maxt := int64(headChunksBufMaxCap) + 10
+		ir := NewHeadAndOOOIndexReader(h, 0, 0, maxt, 0)
+		var builder labels.ScratchBuilder
+		var chks []chunks.Meta
+		require.NoError(t, ir.Series(1, &builder, &chks))
+		require.Greater(t, len(chks), headChunksBufMaxCap)
+
+		// Buffer should have been released because cap exceeded threshold.
+		require.Nil(t, ir.headChunksBuf, "headChunksBuf should be released when cap > headChunksBufMaxCap")
 	})
 }
 

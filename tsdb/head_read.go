@@ -50,6 +50,8 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 	return &headIndexReader{head: h, mint: mint, maxt: maxt}
 }
 
+// headIndexReader provides index reading for the head block.
+// Not safe for concurrent use from multiple goroutines.
 type headIndexReader struct {
 	head       *Head
 	mint, maxt int64
@@ -446,6 +448,8 @@ func (h *Head) chunksRange(mint, maxt int64, is *isolationState) (*headChunkRead
 	}, nil
 }
 
+// headChunkReader provides chunk reading for the head block.
+// Not safe for concurrent use from multiple goroutines.
 type headChunkReader struct {
 	head       *Head
 	mint, maxt int64
@@ -470,16 +474,8 @@ func (h *headChunkReader) Close() error {
 }
 
 func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
-	// Single head chunk (or none): the linked-list walk is O(1), so skip the
-	// cache to avoid per-series overhead that dominates for typical workloads.
-	// Also skip if the cache is disabled (instant queries).
-	//
-	// The prev==nil guard also provides implicit cache invalidation after
-	// mmapChunks(): once all but the latest head chunk have been mmapped,
-	// the linked list collapses to a single element (prev==nil), so we
-	// bypass the stale cache and fall through to the non-cached path.
-	// Do not remove this guard without adding explicit cache invalidation.
-	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
+	// Skip if the cache is disabled (instant queries) or there are no head chunks.
+	if !h.enableCache || s.headChunks == nil {
 		return nil
 	}
 	ref := storage.SeriesRef(s.ref)
