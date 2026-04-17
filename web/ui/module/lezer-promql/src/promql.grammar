@@ -211,6 +211,10 @@ FunctionIdentifier {
   SortDesc |
   SortByLabel |
   SortByLabelDesc |
+  StartFn |
+  EndFn |
+  Range |
+  Step |
   Sqrt |
   StddevOverTime |
   StdvarOverTime |
@@ -287,7 +291,7 @@ StepInvariantExpr {
 }
 
 AtModifierPreprocessors {
-  Start | End
+  AtStart | AtEnd
 }
 
 NumberDurationLiteral  {
@@ -387,8 +391,10 @@ NumberDurationLiteralInDurationContext {
   And,
   Or,
   Unless,
-  Start,
-  End,
+  StartFn,
+  EndFn,
+  AtStart,
+  AtEnd,
   Smoothed,
   Anchored,
   Fill,
@@ -473,6 +479,8 @@ NumberDurationLiteralInDurationContext {
   SortDesc { condFn<"sort_desc"> }
   SortByLabel { condFn<"sort_by_label"> }
   SortByLabelDesc { condFn<"sort_by_label_desc"> }
+  Range { condFn<"range"> }
+  Step { condFn<"step"> }
   Sqrt { condFn<"sqrt"> }
   StddevOverTime { condFn<"stddev_over_time"> }
   StdvarOverTime { condFn<"stdvar_over_time"> }
