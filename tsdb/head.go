@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	stdatomic "sync/atomic" //nolint:depguard
@@ -2636,6 +2637,22 @@ func (mc *memChunk) len() (count int) {
 		elem = elem.prev
 	}
 	return count
+}
+
+func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
+	if head == nil {
+		return buf
+	}
+	// Single walk: append newest-to-oldest (following prev pointers), then
+	// reverse to oldest-to-newest. Pointer-chasing the linked list is the
+	// expensive part; slices.Reverse on a contiguous array is essentially
+	// free by comparison.
+	hc := buf
+	for elem := head; elem != nil; elem = elem.prev {
+		hc = append(hc, elem)
+	}
+	slices.Reverse(hc)
+	return hc
 }
 
 // oldest returns the oldest element on the list.
