@@ -356,16 +356,16 @@ func appendSeriesChunks(s *memSeries, mint, maxt int64, chks []chunks.Meta, head
 	// Multiple head chunks: collect once O(N), iterate O(N).
 	headChunksBuf = collectHeadChunks(s.headChunks, headChunksBuf[:0])
 	clear(headChunksBuf[len(headChunksBuf):cap(headChunksBuf)])
-	for j, chk := range headChunksBuf {
+	for i, chk := range headChunksBuf {
 		maxTime := chk.maxTime
-		if j == len(headChunksBuf)-1 {
+		if i == len(headChunksBuf)-1 {
 			maxTime = math.MaxInt64 // Open (newest) chunk.
 		}
 		if chk.OverlapsClosedInterval(mint, maxt) {
 			chks = append(chks, chunks.Meta{
 				MinTime: chk.minTime,
 				MaxTime: maxTime,
-				Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)+j))),
+				Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)+i))),
 			})
 		}
 	}
