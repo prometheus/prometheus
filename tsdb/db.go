@@ -989,6 +989,12 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			}
 		}
 
+		// db.Close() short-circuits once db.donec is closed below, so release
+		// the lockfile here to ensure it is always released on error.
+		if db.locker != nil {
+			returnedErr = errors.Join(returnedErr, db.locker.Release())
+		}
+
 		close(db.donec) // DB is never run if it was an error, so close this channel here.
 		if err := db.Close(); err != nil {
 			returnedErr = errors.Join(returnedErr, fmt.Errorf("close DB after failed startup: %w", err))
