@@ -278,6 +278,7 @@ func NewChunkDiskMapper(reg prometheus.Registerer, dir string, pool chunkenc.Poo
 		if m.writeQueue != nil {
 			m.writeQueue.stop()
 		}
+		err = errors.Join(err, m.dir.Close())
 		return nil, err
 	}
 	return m, nil
