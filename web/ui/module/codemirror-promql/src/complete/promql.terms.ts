@@ -276,6 +276,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'end',
+    detail: 'function',
+    info: 'Return the query end timestamp in seconds',
+    type: 'function',
+  },
+  {
     label: 'hour',
     detail: 'function',
     info: 'Return the hour of the day for provided timestamps',
@@ -434,6 +440,12 @@ export const functionIdentifierTerms = [
     boost: -1,
   },
   {
+    label: 'range',
+    detail: 'function',
+    info: 'Return the query range in seconds',
+    type: 'function',
+  },
+  {
     label: 'rate',
     detail: 'function',
     info: 'Calculate per-second increase over a range vector (for counters)',
@@ -503,6 +515,18 @@ export const functionIdentifierTerms = [
     label: 'sqrt',
     detail: 'function',
     info: 'Return the square root for input series',
+    type: 'function',
+  },
+  {
+    label: 'start',
+    detail: 'function',
+    info: 'Return the query start timestamp in seconds',
+    type: 'function',
+  },
+  {
+    label: 'step',
+    detail: 'function',
+    info: 'Return the query step in seconds',
     type: 'function',
   },
   {
