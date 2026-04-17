@@ -609,9 +609,9 @@ func TestHeadChunkReaderCache(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, chk2)
 
-		// After mmap, the cache was invalidated (mmapLen changed) and
-		// re-collected with only the remaining head chunk.
-		require.Len(t, cr.cachedHeadChunks, 1, "cache should be re-collected with 1 head chunk after mmap")
+		// After mmap, only 1 head chunk remains. The prev==nil guard skips
+		// the cache entirely, so the stale slice is preserved but not consulted.
+		require.Len(t, cr.cachedHeadChunks, headChunksLenBefore, "stale cache not cleared, but also not used")
 
 		// Verify the returned chunk is actually the newest head chunk, not a stale cached entry.
 		it := chk2.Iterator(nil)
