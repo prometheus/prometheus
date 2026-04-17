@@ -46,6 +46,9 @@ type FastRegexMatcher struct {
 	suffix        string
 	contains      []string
 
+	// caseInsensitivePrefix is true if prefix exists and should be matched case-insensitively
+	caseInsensitivePrefix bool
+
 	// matchString is the "compiled" function to run by MatchString().
 	matchString func(string) bool
 }
@@ -79,7 +82,7 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		clearCapture(parsed)
 
 		if parsed.Op == syntax.OpConcat {
-			m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
+			m.caseInsensitivePrefix, m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
 		}
 		if matches, caseSensitive := findSetMatches(parsed); caseSensitive {
 			m.setMatches = matches
@@ -107,6 +110,15 @@ func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 	// If the only optimization available is the string matcher, then we can just run it.
 	if len(m.setMatches) == 0 && m.prefix == "" && m.suffix == "" && len(m.contains) == 0 && m.stringMatcher != nil {
 		return m.stringMatcher.Matches
+	}
+
+	if m.caseInsensitivePrefix && m.prefix != "" {
+		return func(s string) bool {
+			if !hasPrefixCaseInsensitive(s, m.prefix) {
+				return false
+			}
+			return m.re.MatchString(s)
+		}
 	}
 
 	return func(s string) bool {
@@ -411,7 +423,7 @@ func optimizeAlternatingSimpleContains(r *syntax.Regexp) *syntax.Regexp {
 
 // optimizeConcatRegex returns literal prefix/suffix text that can be safely
 // checked against the label value before running the regexp matcher.
-func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []string) {
+func optimizeConcatRegex(r *syntax.Regexp) (caseInsensitivePrefix bool, prefix, suffix string, contains []string) {
 	sub := r.Sub
 	clearCapture(sub...)
 
@@ -425,14 +437,15 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []st
 	}
 
 	if len(sub) == 0 {
-		return prefix, suffix, contains
+		return caseInsensitivePrefix, prefix, suffix, contains
 	}
 
 	// Given Prometheus regex matchers are always anchored to the begin/end
 	// of the text, if the first/last operations are literals, we can safely
 	// treat them as prefix/suffix.
-	if sub[0].Op == syntax.OpLiteral && (sub[0].Flags&syntax.FoldCase) == 0 {
+	if sub[0].Op == syntax.OpLiteral {
 		prefix = string(sub[0].Rune)
+		caseInsensitivePrefix = (sub[0].Flags & syntax.FoldCase) != 0
 	}
 	if last := len(sub) - 1; sub[last].Op == syntax.OpLiteral && (sub[last].Flags&syntax.FoldCase) == 0 {
 		suffix = string(sub[last].Rune)
@@ -446,7 +459,7 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []st
 		}
 	}
 
-	return prefix, suffix, contains
+	return caseInsensitivePrefix, prefix, suffix, contains
 }
 
 // StringMatcher is a matcher that matches a string in place of a regular expression.
