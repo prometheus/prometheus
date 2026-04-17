@@ -1712,8 +1712,6 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 	it := storage.NewBuffer(dur + 2*durationMilliseconds(ev.lookbackDelta))
 
 	offMS := offset.Milliseconds()
-	start := ev.startTimestamp - offMS
-	end := ev.endTimestamp - offMS
 	step := ev.interval
 	lb := durationMilliseconds(ev.lookbackDelta)
 
@@ -1729,9 +1727,11 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 		var floats []FPoint
 		var hists []HPoint
 
-		for ts := start; ts <= end; ts += step {
-			matrixStart := ts - lb
-			matrixEnd := ts + lb
+		for evalTS := ev.startTimestamp; evalTS <= ev.endTimestamp; evalTS += step {
+			// Apply offset to get the data timestamp.
+			dataTS := evalTS - offMS
+			matrixStart := dataTS - lb
+			matrixEnd := dataTS + lb
 
 			floats, hists = ev.matrixIterSlice(it, matrixStart, matrixEnd, floats, hists)
 			if len(floats) == 0 && len(hists) == 0 {
@@ -1743,28 +1743,28 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 				ev.errorf("smoothed and anchored modifiers do not work with native histograms")
 			}
 
-			// Binary search for the first index with T >= ts.
-			i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= ts })
+			// Binary search for the first index with T >= dataTS.
+			i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= dataTS })
 
 			switch {
-			case i < len(floats) && floats[i].T == ts:
+			case i < len(floats) && floats[i].T == dataTS:
 				// Exact match.
-				ss.Floats = append(ss.Floats, floats[i])
+				ss.Floats = append(ss.Floats, FPoint{F: floats[i].F, T: evalTS})
 
 			case i > 0 && i < len(floats):
 				// Interpolate between prev and next.
 				// TODO: detect if the sample is a counter, based on __type__ or metadata.
 				prev, next := floats[i-1], floats[i]
-				val := interpolate(prev, next, ts, false)
-				ss.Floats = append(ss.Floats, FPoint{F: val, T: ts})
+				val := interpolate(prev, next, dataTS, false)
+				ss.Floats = append(ss.Floats, FPoint{F: val, T: evalTS})
 
 			case i > 0:
 				// No next point yet; carry forward previous value.
 				prev := floats[i-1]
-				ss.Floats = append(ss.Floats, FPoint{F: prev.F, T: ts})
+				ss.Floats = append(ss.Floats, FPoint{F: prev.F, T: evalTS})
 
 			default:
-				// i == 0 and floats[0].T > ts: there is no previous data yet; skip.
+				// i == 0 and floats[0].T > dataTS: there is no previous data yet; skip.
 			}
 		}
 
