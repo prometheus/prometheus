@@ -47,6 +47,7 @@ var (
 		".*foo.*",
 		".+foo.+",
 		".*foo.*|",
+		"(?i).*foo.*",
 		".*foo.*|bar.*",
 		"foo.*|.*bar.*",
 		".*foo.*|.*bar.*",
@@ -67,6 +68,8 @@ var (
 		"10\\.0\\.(1|2)\\.+",
 		"10\\.0\\.(1|2).+",
 		"((fo(bar))|.+foo)",
+		"(?i)report.scheduled.job_runscheduledreports",
+		"report.scheduled.job_runscheduledreports",
 		// A long case sensitive alternation.
 		"zQPbMkNO|NNSPdvMi|iWuuSoAl|qbvKMimS|IecrXtPa|seTckYqt|NxnyHkgB|fIDlOgKb|UhlWIygH|OtNoJxHG|cUTkFVIV|mTgFIHjr|jQkoIDtE|PPMKxRXl|AwMfwVkQ|CQyMrTQJ|BzrqxVSi|nTpcWuhF|PertdywG|ZZDgCtXN|WWdDPyyE|uVtNQsKk|BdeCHvPZ|wshRnFlH|aOUIitIp|RxZeCdXT|CFZMslCj|AVBZRDxl|IzIGCnhw|ythYuWiz|oztXVXhl|VbLkwqQx|qvaUgyVC|VawUjPWC|ecloYJuj|boCLTdSU|uPrKeAZx|hrMWLWBq|JOnUNHRM|rYnujkPq|dDEdZhIj|DRrfvugG|yEGfDxVV|YMYdJWuP|PHUQZNWM|AmKNrLis|zTxndVfn|FPsHoJnc|EIulZTua|KlAPhdzg|ScHJJCLt|NtTfMzME|eMCwuFdo|SEpJVJbR|cdhXZeCx|sAVtBwRh|kVFEVcMI|jzJrxraA|tGLHTell|NNWoeSaw|DcOKSetX|UXZAJyka|THpMphDP|rizheevl|kDCBRidd|pCZZRqyu|pSygkitl|SwZGkAaW|wILOrfNX|QkwVOerj|kHOMxPDr|EwOVycJv|AJvtzQFS|yEOjKYYB|LizIINLL|JBRSsfcG|YPiUqqNl|IsdEbvee|MjEpGcBm|OxXZVgEQ|xClXGuxa|UzRCGFEb|buJbvfvA|IPZQxRet|oFYShsMc|oBHffuHO|bzzKrcBR|KAjzrGCl|IPUsAVls|OGMUMbIU|gyDccHuR|bjlalnDd|ZLWjeMna|fdsuIlxQ|dVXtiomV|XxedTjNg|XWMHlNoA|nnyqArQX|opfkWGhb|wYtnhdYb",
 		// An extremely long case sensitive alternation. This is a special
@@ -108,6 +111,7 @@ var (
 		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
 		"FOO", "Foo", "fOo", "foO", "OO", "Oo", "\nfoo\n", strings.Repeat("f", 20), "prometheus", "prometheus_api_v1", "prometheus_api_v1_foo",
 		"10.0.1.20", "10.0.2.10", "10.0.3.30", "10.0.4.40",
+		"report.scheduled.job_runscheduledreports", "Report.Scheduled.JobRunScheduledReports", "Report.Scheduled.Job_RunScheduledReports",
 		"foofoo0", "foofoo", "😀foo0", "ſſs", "ſſS", "AAAAAAAAAAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBBBBBBBBBB", "cccccccccccccccccccccccC", "ſſſſſſſſſſſſſſſſſſſſſſſſS", "SSSSSSSSSSSSSSSSSSSSSSSSſ",
 		"a-b-c-d-e",
 		"aaaaaa-bbbbbb-cccccc-dddddd-eeeeee",
@@ -154,10 +158,11 @@ func readable(s string) string {
 
 func TestOptimizeConcatRegex(t *testing.T) {
 	cases := []struct {
-		regex    string
-		prefix   string
-		suffix   string
-		contains []string
+		regex                   string
+		prefix                  string
+		isCaseInsensitivePrefix bool
+		suffix                  string
+		contains                []string
 	}{
 		{regex: "foo(hello|bar)", prefix: "foo", suffix: "", contains: nil},
 		{regex: "foo(hello|bar)world", prefix: "foo", suffix: "world", contains: nil},
@@ -171,12 +176,12 @@ func TestOptimizeConcatRegex(t *testing.T) {
 		{regex: ".*[abc].*", prefix: "", suffix: "", contains: nil},
 		{regex: ".*((?i)abc).*", prefix: "", suffix: "", contains: nil},
 		{regex: ".*(?i:abc).*", prefix: "", suffix: "", contains: nil},
-		{regex: "(?i:abc).*", prefix: "", suffix: "", contains: nil},
+		{regex: "(?i:abc).*", prefix: "ABC", isCaseInsensitivePrefix: true, suffix: "", contains: nil},
 		{regex: ".*(?i:abc)", prefix: "", suffix: "", contains: nil},
 		{regex: ".*(?i:abc)def.*", prefix: "", suffix: "", contains: []string{"def"}},
 		{regex: "(?i).*(?-i:abc)def", prefix: "", suffix: "", contains: []string{"abc"}},
 		{regex: ".*(?msU:abc).*", prefix: "", suffix: "", contains: []string{"abc"}},
-		{regex: "[aA]bc.*", prefix: "", suffix: "", contains: []string{"bc"}},
+		{regex: "[aA]bc.*", prefix: "A", isCaseInsensitivePrefix: true, suffix: "", contains: []string{"bc"}},
 		{regex: "^5..$", prefix: "5", suffix: "", contains: nil},
 		{regex: "^release.*", prefix: "release", suffix: "", contains: nil},
 		{regex: "^env-[0-9]+laio[1]?[^0-9].*", prefix: "env-", suffix: "", contains: []string{"laio"}},
@@ -184,13 +189,16 @@ func TestOptimizeConcatRegex(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		parsed, err := syntax.Parse(c.regex, syntax.Perl|syntax.DotNL)
-		require.NoError(t, err)
+		t.Run(c.regex, func(t *testing.T) {
+			parsed, err := syntax.Parse(c.regex, syntax.Perl|syntax.DotNL)
+			require.NoError(t, err)
 
-		prefix, suffix, contains := optimizeConcatRegex(parsed)
-		require.Equal(t, c.prefix, prefix)
-		require.Equal(t, c.suffix, suffix)
-		require.Equal(t, c.contains, contains)
+			caseInsensitivePrefix, prefix, suffix, contains := optimizeConcatRegex(parsed)
+			require.Equal(t, c.prefix, prefix)
+			require.Equal(t, c.isCaseInsensitivePrefix, caseInsensitivePrefix)
+			require.Equal(t, c.suffix, suffix)
+			require.Equal(t, c.contains, contains)
+		})
 	}
 }
 
@@ -432,6 +440,8 @@ func TestNewFastRegexMatcher(t *testing.T) {
 		{"foo.?", &literalPrefixSensitiveStringMatcher{prefix: "foo", right: &zeroOrOneCharacterStringMatcher{matchNL: true}}},
 		{"f.?o", nil},
 		{".*foo.*|.*bar.*|.*baz.*", &containsStringMatcher{left: trueMatcher{}, substrings: []string{"foo", "bar", "baz"}, right: trueMatcher{}}},
+		{"(?i)report.scheduled.job_runscheduledreports", nil},
+		{"report.scheduled.job_runscheduledreports", nil},
 	} {
 		t.Run(c.pattern, func(t *testing.T) {
 			t.Parallel()

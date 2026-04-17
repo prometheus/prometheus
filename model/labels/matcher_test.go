@@ -137,8 +137,9 @@ func TestInverse(t *testing.T) {
 
 func TestPrefix(t *testing.T) {
 	for i, tc := range []struct {
-		matcher *Matcher
-		prefix  string
+		matcher               *Matcher
+		prefix                string
+		caseInsensitivePrefix bool
 	}{
 		{
 			matcher: mustNewMatcher(t, MatchEqual, "abc"),
@@ -180,9 +181,15 @@ func TestPrefix(t *testing.T) {
 			matcher: mustNewMatcher(t, MatchRegexp, ".+def"),
 			prefix:  "",
 		},
+		{
+			matcher:               mustNewMatcher(t, MatchNotRegexp, "(?i)abc.+"),
+			prefix:                "ABC",
+			caseInsensitivePrefix: true,
+		},
 	} {
 		t.Run(fmt.Sprintf("%d: %s", i, tc.matcher), func(t *testing.T) {
 			require.Equal(t, tc.prefix, tc.matcher.Prefix())
+			require.Equal(t, tc.caseInsensitivePrefix, tc.matcher.HasCaseInsensitivePrefix())
 		})
 	}
 }
