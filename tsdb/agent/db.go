@@ -1167,6 +1167,11 @@ func (a *appender) AppendSTZeroSample(ref storage.SeriesRef, l labels.Labels, t,
 	return storage.SeriesRef(series.ref), nil
 }
 
+func (*appender) UpdateResource(_ storage.SeriesRef, _ labels.Labels, _, _ map[string]string, _ int64) (storage.SeriesRef, error) {
+	// Agent mode doesn't store resource metadata locally.
+	return 0, nil
+}
+
 // Commit submits the collected samples and purges the batch.
 func (a *appender) Commit() error {
 	defer a.appenderPool.Put(a)

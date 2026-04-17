@@ -103,6 +103,12 @@ func (h *Head) appenderV2() *headAppenderV2 {
 
 type headAppenderV2 struct {
 	headAppenderBase
+
+	// Cached resource conversion to avoid redundant work when the same
+	// ResourceContext pointer is used for many series in a batch (e.g.
+	// histogram buckets and summary quantiles from the same OTLP resource).
+	cachedResourceCtx *storage.ResourceContext
+	cachedWALResource *record.RefResource
 }
 
 func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
@@ -208,12 +214,19 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 		if metaChanged {
 			b := a.getCurrentBatch(stNone, s.ref)
 			b.metadata = append(b.metadata, record.RefMetadata{
-				Ref:  s.ref,
-				Type: record.GetMetricType(opts.Metadata.Type),
-				Unit: opts.Metadata.Unit,
-				Help: opts.Metadata.Help,
+				Ref:     s.ref,
+				Type:    record.GetMetricType(opts.Metadata.Type),
+				Unit:    opts.Metadata.Unit,
+				Help:    opts.Metadata.Help,
+				MinTime: t,
+				MaxTime: t,
 			})
 			b.metadataSeries = append(b.metadataSeries, s)
+		}
+	}
+	if a.head.opts.EnableNativeMetadata {
+		if opts.Resource != nil {
+			a.updateResource(s, t, opts.Resource)
 		}
 	}
 	return storage.SeriesRef(s.ref), partialErr
@@ -378,6 +391,41 @@ func (a *headAppenderV2) bestEffortAppendSTZeroSample(s *memSeries, ls labels.La
 		a.head.logger.Debug("Error when appending ST", "series", s.lset.String(), "st", st, "t", t, "err", err)
 		return
 	}
+}
+
+// updateResource buffers a resource update for a series if not already done in this batch.
+// The actual mutation is deferred to Commit() time.
+func (a *headAppenderV2) updateResource(s *memSeries, t int64, rc *storage.ResourceContext) {
+	if a.resourceRefs == nil {
+		a.resourceRefs = make(map[chunks.HeadSeriesRef]struct{})
+	}
+	if _, ok := a.resourceRefs[s.ref]; ok {
+		return
+	}
+
+	// Cache the converted WAL record per ResourceContext pointer to avoid
+	// redundant allocations when the same resource is applied to many series
+	// (e.g. histogram sub-series share one ResourceContext).
+	if rc != a.cachedResourceCtx {
+		a.cachedWALResource = &record.RefResource{
+			MinTime:     t,
+			MaxTime:     t,
+			Identifying: rc.Identifying,
+			Descriptive: rc.Descriptive,
+		}
+		a.cachedResourceCtx = rc
+	}
+
+	// Buffer the resource update in the current batch.
+	b := a.getCurrentBatch(stNone, s.ref)
+	rr := *a.cachedWALResource
+	rr.Ref = s.ref
+	rr.MinTime = t
+	rr.MaxTime = t
+	b.resources = append(b.resources, rr)
+	b.resourceSeries = append(b.resourceSeries, s)
+
+	a.resourceRefs[s.ref] = struct{}{}
 }
 
 var _ storage.GetRef = &headAppenderV2{}

@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 )
@@ -86,6 +87,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	var unknownHistogramRefs atomic.Uint64
 	var unknownMetadataRefs atomic.Uint64
 	var unknownTombstoneRefs atomic.Uint64
+	var unknownResourceRefs atomic.Uint64
 	// Track number of series records that had overlapping m-map chunks.
 	var mmapOverlappingChunks atomic.Uint64
 
@@ -242,6 +244,18 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					return
 				}
 				decoded <- meta
+			case record.ResourceUpdate:
+				resources := h.wlReplayResourcesPool.Get()[:0]
+				resources, err = dec.Resources(r.Record(), resources)
+				if err != nil {
+					decodeErr = &wlog.CorruptionErr{
+						Err:     fmt.Errorf("decode resources: %w", err),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- resources
 			default:
 				// Noop.
 			}
@@ -250,6 +264,8 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 	// The records are always replayed from the oldest to the newest.
 	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+	var keysBuf []string                 // reusable keys buffer for resource hash computation
+	var metaReplayDuration time.Duration // accumulated time spent on resource metadata replay
 Outer:
 	for d := range decoded {
 		switch v := d.(type) {
@@ -452,19 +468,62 @@ Outer:
 					missingSeries[m.Ref] = struct{}{}
 					continue
 				}
+				s.Lock()
 				s.meta = &metadata.Metadata{
 					Type: record.ToMetricType(m.Type),
 					Unit: m.Unit,
 					Help: m.Help,
 				}
+				s.Unlock()
 			}
 			clear(v) // Zero out to avoid retaining metadata strings.
 			h.wlReplayMetadataPool.Put(v[:0])
+		case []record.RefResource:
+			metaReplayStart := time.Now()
+			if h.seriesMeta != nil {
+				store := h.seriesMeta.ResourceStore()
+				for _, r := range v {
+					if ref, ok := multiRef[r.Ref]; ok {
+						r.Ref = ref
+					}
+					s := h.series.getByID(r.Ref)
+					if s == nil {
+						unknownResourceRefs.Inc()
+						missingSeries[r.Ref] = struct{}{}
+						continue
+					}
+					s.Lock()
+					hash := labels.StableHash(s.lset)
+					ref := s.ref
+					s.stableHash = hash
+					s.Unlock()
+
+					var contentChanged bool
+					var oldVR, newVR *seriesmetadata.VersionedResource
+					contentChanged, oldVR, newVR, keysBuf = seriesmetadata.CommitResourceToStoreReusableWithRef(store, hash, seriesmetadata.ResourceCommitData{
+						Identifying: r.Identifying,
+						Descriptive: r.Descriptive,
+						MinTime:     r.MinTime,
+						MaxTime:     r.MaxTime,
+						Owned:       true,
+					}, uint64(ref), keysBuf)
+					if contentChanged {
+						if oldVR == nil {
+							h.metrics.seriesmetadataInserts.WithLabelValues("resource").Inc()
+						}
+						h.metrics.seriesmetadataContentChanges.WithLabelValues("resource").Inc()
+						h.seriesMeta.UpdateResourceAttrIndex(hash, oldVR, newVR)
+					}
+				}
+			}
+			metaReplayDuration += time.Since(metaReplayStart)
+			h.wlReplayResourcesPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
 	}
 	unknownSeriesRefs.merge(missingSeries)
+	h.metrics.seriesmetadataWALReplayDuration.Add(metaReplayDuration.Seconds())
 
 	if decodeErr != nil {
 		return decodeErr
@@ -487,7 +546,7 @@ Outer:
 		return fmt.Errorf("read records: %w", err)
 	}
 
-	if unknownSampleRefs.Load()+unknownExemplarRefs.Load()+unknownHistogramRefs.Load()+unknownMetadataRefs.Load()+unknownTombstoneRefs.Load() > 0 {
+	if unknownSampleRefs.Load()+unknownExemplarRefs.Load()+unknownHistogramRefs.Load()+unknownMetadataRefs.Load()+unknownTombstoneRefs.Load()+unknownResourceRefs.Load() > 0 {
 		h.logger.Warn(
 			"Unknown series references",
 			"series", unknownSeriesRefs.count(),
@@ -496,6 +555,7 @@ Outer:
 			"histograms", unknownHistogramRefs.Load(),
 			"metadata", unknownMetadataRefs.Load(),
 			"tombstones", unknownTombstoneRefs.Load(),
+			"resources", unknownResourceRefs.Load(),
 		)
 
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
@@ -504,6 +564,7 @@ Outer:
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownHistogramRefs.Load()), "histograms")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownMetadataRefs.Load()), "metadata")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownTombstoneRefs.Load()), "tombstones")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownResourceRefs.Load()), "resources")
 	}
 	if count := mmapOverlappingChunks.Load(); count > 0 {
 		h.logger.Info("Overlapping m-map chunks on duplicate series records", "count", count)
