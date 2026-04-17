@@ -17,6 +17,7 @@
 /storage/remote                 @prometheus/default-maintainers @cstyan @bwplotka @tomwilkie @alexgreenbank
 /storage/remote/otlptranslator  @prometheus/default-maintainers @aknuds1 @jesusvazquez @ArthurSens
 /tsdb                           @prometheus/default-maintainers @jesusvazquez @codesome @bwplotka @krajorama
+/tsdb/agent                     @prometheus/default-maintainers @jesusvazquez @codesome @bwplotka @krajorama @kgeckhart
 
 # Service discovery.
 /discovery/kubernetes           @prometheus/default-maintainers @brancz @rexagod

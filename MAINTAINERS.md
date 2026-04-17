@@ -25,6 +25,7 @@ Maintainers for specific parts of the codebase:
   * `remote`: Callum Styan (<callumstyan@gmail.com> / @cstyan), Tom Wilkie (tom.wilkie@gmail.com / @tomwilkie), Alex Greenbank (<alexgreenbank@yahoo.com> / @alexgreenbank)
     * `otlptranslator`: Arthur Silva Sens (<arthursens2005@gmail.com> / @ArthurSens, Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Jesús Vázquez (<jesus.vazquez@grafana.com> / @jesusvazquez)
+    * `agent`: Kyle Eckhart (<kyle.eckhart@grafana.com> / @kgeckhart)
 * `web`
   * `ui`: Julius Volz (<julius.volz@gmail.com> / @juliusv)
     * `module`: Augustin Husson (<husson.augustin@gmail.com> / @nexucis)
