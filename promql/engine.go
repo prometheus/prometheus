@@ -2010,6 +2010,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			return ev.evalInfo(ctx, e.Args)
 		}
 
+		// Emit a warning when sort is used for range queries.
+		if (e.Func.Name == "sort" || e.Func.Name == "sort_desc" || e.Func.Name == "sort_by_label" || e.Func.Name == "sort_by_label_desc") && ev.startTimestamp != ev.endTimestamp {
+			warnings.Add(annotations.NewSortInRangeQueryWarning(e.PositionRange()))
+		}
+
 		if !matrixArg {
 			// Does not have a matrix argument.
 			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
@@ -4229,11 +4234,60 @@ func unwrapParenExpr(e *parser.Expr) {
 	}
 }
 
+// foldQueryContextFunctions rewrites calls to start(), end(), range(), and step() into
+// NumberLiteral nodes, since their values are constant for a given query execution.
+// This allows parent expressions to be correctly recognized as step-invariant by preprocessExprHelper.
+func foldQueryContextFunctions(expr parser.Expr, start, end time.Time, step time.Duration) parser.Expr {
+	if call, ok := expr.(*parser.Call); ok {
+		switch call.Func.Name {
+		case "start":
+			return &parser.NumberLiteral{Val: float64(timestamp.FromTime(start)) / 1000, PosRange: call.PosRange}
+		case "end":
+			return &parser.NumberLiteral{Val: float64(timestamp.FromTime(end)) / 1000, PosRange: call.PosRange}
+		case "range":
+			return &parser.NumberLiteral{Val: end.Sub(start).Seconds(), PosRange: call.PosRange}
+		case "step":
+			var val float64
+			if !start.Equal(end) {
+				val = step.Seconds()
+			}
+			return &parser.NumberLiteral{Val: val, PosRange: call.PosRange}
+		}
+	}
+	switch n := expr.(type) {
+	case *parser.BinaryExpr:
+		n.LHS = foldQueryContextFunctions(n.LHS, start, end, step)
+		n.RHS = foldQueryContextFunctions(n.RHS, start, end, step)
+	case *parser.Call:
+		for i := range n.Args {
+			n.Args[i] = foldQueryContextFunctions(n.Args[i], start, end, step)
+		}
+	case *parser.AggregateExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+		if n.Param != nil {
+			n.Param = foldQueryContextFunctions(n.Param, start, end, step)
+		}
+	case *parser.UnaryExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+	case *parser.ParenExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+	case *parser.SubqueryExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+	case *parser.MatrixSelector, *parser.VectorSelector, *parser.NumberLiteral, *parser.StringLiteral:
+		// Leaf nodes or nodes without foldable sub-expressions.
+	default:
+		panic(fmt.Sprintf("foldQueryContextFunctions: unhandled node type %T", expr))
+	}
+	return expr
+}
+
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors, evaluates duration expressions
 // into their numeric values and removes superfluous parenthesis on parameters to functions and aggregations.
 func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
+
+	expr = foldQueryContextFunctions(expr, start, end, step)
 
 	if err := parser.Walk(&durationVisitor{step: step, queryRange: end.Sub(start)}, expr, nil); err != nil {
 		return nil, err

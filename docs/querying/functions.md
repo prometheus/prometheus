@@ -173,6 +173,16 @@ entirely. For elements that contain a mix of float and histogram samples, only
 the float samples are used as input, which is flagged by an info-level
 annotation.
 
+## `end()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`end()` returns the end timestamp of the current query range evaluation as the
+number of seconds since January 1, 1970 UTC. For instant queries, this is equal
+to the evaluation timestamp.
+
 ## `double_exponential_smoothing()`
 
 **This function has to be enabled via the [feature
@@ -606,6 +616,12 @@ the name `target_info`. It also assumes that the identifying info series labels 
 `{__name__=~"(target|build)_info"}`. However, the identifying labels always
 have to be `instance` and `job`.
 
+When only negated `__name__` matchers are provided (e.g.
+`{__name__!="target_info"}`), `info` considers all metrics matching
+`.+_info` and then applies the negated matchers as filters. This is
+because negated matchers alone cannot positively identify which info
+metrics to consider.
+
 These limitations are partially defeating the purpose of the `info` function.
 At the current stage, this is an experiment to find out how useful the approach
 turns out to be in practice. A final version of the `info` function will indeed
@@ -729,6 +745,15 @@ ignored entirely. For elements that contain a mix of float and histogram
 samples, only the float samples are used as input, which is flagged by an
 info-level annotation.
 
+## `range()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`range()` returns the range duration of the current query range evaluation in
+seconds and is equivalent to `end() - start()`. For instant queries, this returns `0`.
+
 ## `rate()`
 
 `rate(v range-vector)` calculates the per-second average rate of increase of the
@@ -840,6 +865,25 @@ Same as `sort_by_label`, but sorts in descending order.
 
 `sqrt(v instant-vector)` calculates the square root of all float samples in
 `v`. Histogram samples in the input vector are ignored silently.
+
+## `start()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`start()` returns the start timestamp of the current query range evaluation as the
+number of seconds since January 1, 1970 UTC. For instant queries, this is equal
+to the evaluation timestamp.
+
+## `step()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`step()` returns the query resolution step as the number of seconds. For instant
+queries, this returns `0`.
 
 ## `time()`
 

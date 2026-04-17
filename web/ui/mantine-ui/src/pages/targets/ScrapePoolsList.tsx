@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Alert,
   Anchor,
   Badge,
@@ -323,6 +324,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
         <Accordion
           multiple
           variant="separated"
+          keepMounted={false}
           value={allPoolNames.filter((p) => !collapsedPools.includes(p))}
           onChange={(value) =>
             dispatch(

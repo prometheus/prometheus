@@ -167,6 +167,8 @@ const serverStatusPages = [
 const allStatusPages = [...monitoringStatusPages, ...serverStatusPages];
 
 const theme = createTheme({
+  // Preserve v8 default border-radius for now (was 'sm' in v8, changed to 'md' in v9).
+  defaultRadius: "sm",
   colors: {
     "codebox-bg": [
       "#f5f5f5",
