@@ -17,12 +17,9 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/scaleway/scaleway-sdk-go/api/instance/v1"
@@ -84,16 +81,9 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 		tagsFilter: conf.TagsFilter,
 	}
 
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd")
+	client, err := newScalewayHTTPClient(conf)
 	if err != nil {
 		return nil, err
-	}
-
-	if conf.SecretKeyFile != "" {
-		rt, err = newAuthTokenFileRoundTripper(conf.SecretKeyFile, rt)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	profile, err := loadProfile(conf)
@@ -102,10 +92,7 @@ func newInstanceDiscovery(conf *SDConfig) (*instanceDiscovery, error) {
 	}
 
 	d.client, err = scw.NewClient(
-		scw.WithHTTPClient(&http.Client{
-			Transport: rt,
-			Timeout:   time.Duration(conf.RefreshInterval),
-		}),
+		scw.WithHTTPClient(client),
 		scw.WithUserAgent(version.PrometheusUserAgent()),
 		scw.WithProfile(profile),
 	)
