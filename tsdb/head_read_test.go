@@ -443,14 +443,15 @@ func TestMemSeries_chunk_FastPath(t *testing.T) {
 	series.mmapChunks(chunkDiskMapper)
 	require.Len(t, series.mmappedChunks, 3)
 	require.Equal(t, 1, series.headChunks.len())
-
 	appendSamples(t, series, chunkRange*4, chunkRange*6, chunkDiskMapper)
 	require.Equal(t, 3, series.headChunks.len())
 	require.Len(t, series.mmappedChunks, 3)
 
 	hc := collectHeadChunks(series.headChunks, nil)
 
-	totalChunks := len(series.mmappedChunks) + series.headChunks.len()
+	headChunkCount := int(series.headChunkCount.Load())
+	require.Equal(t, 3, headChunkCount, "expected 3 head chunks")
+	totalChunks := len(series.mmappedChunks) + headChunkCount
 	for ix := range totalChunks {
 		id := chunks.HeadChunkID(ix)
 

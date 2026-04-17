@@ -299,6 +299,7 @@ func (cr *HeadAndOOOChunkReader) collectOrGetHeadChunks(s *memSeries) []*memChun
 	if cr.cr != nil {
 		return cr.cr.getOrCollectHeadChunks(s)
 	}
+
 	// Defensive: in current callers, cr.cr is nil only for OOO compaction
 	// (OOOCompactionHead.Chunks), which only requests OOO chunks, so this
 	// branch is not reached. It is kept for correctness if callers change.

@@ -478,10 +478,12 @@ func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
 		return nil
 	}
+
 	ref := storage.SeriesRef(s.ref)
 	if ref == h.cachedSeriesRef && s.headChunks == h.cachedHeadChunksHead && h.cachedMmapLen == len(s.mmappedChunks) {
 		return h.cachedHeadChunks
 	}
+
 	var buf []*memChunk
 	if h.cachedHeadChunks != nil {
 		buf = h.cachedHeadChunks[:0]
