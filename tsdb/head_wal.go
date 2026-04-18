@@ -76,7 +76,7 @@ func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
 	}
 }
 
-func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, targetStripeMap *stripeSeries) (err error) {
 	// Track number of missing series records that were referenced by other records.
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	// Track number of different records that referenced a series we don't know about
@@ -136,7 +136,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		var err error
 		defer wg.Done()
 		for e := range input {
-			ms := h.series.getByID(e.Ref)
+			ms := targetStripeMap.getByID(e.Ref)
 			if ms == nil {
 				unknownExemplarRefs.Inc()
 				missingSeries[e.Ref] = struct{}{}
@@ -255,7 +255,7 @@ Outer:
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
-				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
+				mSeries, created, err := h.getOrCreateInStripe(targetStripeMap, walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
 				if err != nil {
 					seriesCreationErr = err
 					break Outer
@@ -335,7 +335,7 @@ Outer:
 						h.updateWALExpiry(chunks.HeadSeriesRef(s.Ref), itv.Maxt)
 						s.Ref = storage.SeriesRef(r)
 					}
-					if m := h.series.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
+					if m := targetStripeMap.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
 						unknownTombstoneRefs.Inc()
 						missingSeries[chunks.HeadSeriesRef(s.Ref)] = struct{}{}
 						continue
@@ -446,7 +446,7 @@ Outer:
 				if r, ok := multiRef[m.Ref]; ok {
 					m.Ref = r
 				}
-				s := h.series.getByID(m.Ref)
+				s := targetStripeMap.getByID(m.Ref)
 				if s == nil {
 					unknownMetadataRefs.Inc()
 					missingSeries[m.Ref] = struct{}{}

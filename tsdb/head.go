@@ -112,6 +112,10 @@ type Head struct {
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
+	// A temporary map used exclusively during WAL replay.
+	// It is merged into 'series' at the end of the replay.
+	walSeries *stripeSeries
+
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
 
@@ -368,6 +372,11 @@ func (h *Head) resetInMemoryState() error {
 	}
 
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
+
+	if h.opts.EnableFastStartup {
+		h.walSeries = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
+	}
+
 	h.iso = newIsolation(h.opts.IsolationDisabled)
 	h.oooIso = newOOOIsolation()
 	h.numSeries.Store(0)
@@ -702,6 +711,11 @@ func (h *Head) replayDiskChunksAndWAL() error {
 	h.logger.Info("Replaying on-disk memory mappable chunks if any")
 	start := time.Now()
 
+	targetStripeMap := h.series
+	if h.opts.EnableFastStartup {
+		targetStripeMap = h.walSeries
+	}
+
 	snapIdx, snapOffset := -1, 0
 	refSeries := make(map[chunks.HeadSeriesRef]*memSeries)
 
@@ -825,7 +839,7 @@ func (h *Head) replayDiskChunksAndWAL() error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, targetStripeMap); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -859,7 +873,7 @@ func (h *Head) replayDiskChunksAndWAL() error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
+		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, targetStripeMap)
 		if err := sr.Close(); err != nil {
 			h.logger.Warn("Error while closing the wal segments reader", "err", err)
 		}
@@ -1936,8 +1950,14 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) 
 }
 
 // If id is zero, one will be allocated.
+// It always writes to the live h.series map.
 func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
-	if preCreationErr := h.series.seriesLifecycleCallback.PreCreation(lset); preCreationErr != nil {
+	return h.getOrCreateInStripe(h.series, id, hash, lset, pendingCommit)
+}
+
+// getOrCreateInStripe allows injecting a specific stripe map like walSeries for background replay.
+func (h *Head) getOrCreateInStripe(stripeMap *stripeSeries, id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
+	if preCreationErr := stripeMap.seriesLifecycleCallback.PreCreation(lset); preCreationErr != nil {
 		return nil, false, preCreationErr
 	}
 	if id == 0 {
@@ -1951,7 +1971,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 	}
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
 
-	s, created := h.series.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
+	s, created := stripeMap.setUnlessAlreadySet(hash, lset, optimisticallyCreatedSeries)
 	if !created {
 		return s, false, nil
 	}
@@ -1963,7 +1983,7 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 
 	// Adding the series in the postings marks the creation of series
 	// as any further calls to this and the read methods would return that series.
-	h.series.postCreation(lset)
+	stripeMap.postCreation(lset)
 
 	return s, true, nil
 }
