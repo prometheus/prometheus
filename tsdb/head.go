@@ -2385,9 +2385,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		}
 
 		chunksRemoved += len(series.mmappedChunks)
-		if series.headChunks != nil {
-			chunksRemoved += series.headChunks.len()
-		}
+		chunksRemoved += int(series.headChunkCount.Load())
 		if series.headChunkCount.Load() >= 2 {
 			h.series.decMmapReady(series.ref)
 		}
@@ -2452,9 +2450,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 			return
 		}
 
-		if series.headChunks != nil {
-			rmChunks += series.headChunks.len()
-		}
+		rmChunks += int(series.headChunkCount.Load())
 		rmChunks += len(series.mmappedChunks)
 
 		// The series is gone entirely. We need to keep the series lock
@@ -2756,13 +2752,12 @@ func (s *memSeries) setHeadChunks(head *memChunk, count uint32) {
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
 	if s.headChunks != nil {
-		var i uint32
+		var i int
 		var nextChk *memChunk
 		chk := s.headChunks
 		for chk != nil {
 			if chk.maxTime < mint {
-				// If any head chunk is truncated, we can truncate all mmapped chunks.
-				removedInOrder = chk.len() + len(s.mmappedChunks)
+				removedInOrder = int(s.headChunkCount.Load()) - i + len(s.mmappedChunks)
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
 				if i == 0 {
 					// This is the first chunk on the list so we need to remove the entire list.
@@ -2840,9 +2835,7 @@ func (mc *memChunk) len() (count int) {
 
 // collectHeadChunks walks the headChunks linked list once and returns a slice
 // in oldest-first order (matching mmappedChunks ordering).
-// buf must have length 0 but may have non-zero capacity for reuse; the
-// returned slice's tail beyond its length is zeroed, so a reused, shrinking
-// buffer does not pin chunks from a previous, longer collection.
+// buf must have length 0 but may have non-zero capacity for reuse.
 func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
 	// Single walk: append newest-to-oldest (following prev pointers), then
 	// reverse to oldest-to-newest. Pointer-chasing the linked list is the
@@ -2866,30 +2859,6 @@ func (mc *memChunk) oldest() (elem *memChunk) {
 	elem = mc
 	for elem.prev != nil {
 		elem = elem.prev
-	}
-	return elem
-}
-
-// atOffset returns a memChunk that's Nth element on the linked list.
-func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
-	if offset == 0 {
-		return mc
-	}
-	if offset == 1 {
-		return mc.prev
-	}
-	if offset < 0 {
-		return nil
-	}
-
-	var i int
-	elem = mc
-	for i < offset {
-		i++
-		elem = elem.prev
-		if elem == nil {
-			break
-		}
 	}
 	return elem
 }
