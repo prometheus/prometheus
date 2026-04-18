@@ -311,8 +311,10 @@ func (cr *HeadAndOOOChunkReader) collectOrGetHeadChunks(s *memSeries) []*memChun
 	return hc
 }
 
-// EnableChunkCache enables the head-chunk cache on the underlying
-// headChunkReader; see its documentation for the caching semantics.
+// EnableChunkCache enables the head-chunk cache on the underlying headChunkReader.
+// This should be called for sequential chunk access patterns (range queries,
+// compaction) where the cache provides O(1) lookups across multiple chunk
+// accesses for the same series.
 func (cr *HeadAndOOOChunkReader) EnableChunkCache() {
 	if cr.cr != nil {
 		cr.cr.EnableChunkCache()

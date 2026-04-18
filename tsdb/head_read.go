@@ -525,18 +525,11 @@ func (h *headChunkReader) Close() error {
 	return nil
 }
 
-// EnableChunkCache enables the head-chunk cache for sequential chunk access
-// patterns (range queries), which look up every chunk of a series. The cache
-// is invalidated whenever the series' chunk layout changes (a parallel append,
-// mmapping, or truncation), falling back to O(n) for that lookup.
+// EnableChunkCache enables the head-chunk cache for sequential chunk access patterns.
 func (h *headChunkReader) EnableChunkCache() {
 	h.enableCache = true
 }
 
-// getOrCollectHeadChunks returns the cached head-chunk slice for s, collecting
-// it first if the cache does not match the series' current chunk layout.
-// The series lock must be held; the fingerprint comparison is only consistent
-// against concurrent appends, mmapping, and truncation under that lock.
 func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	// Skip if the cache is disabled (instant queries) or there are no head chunks or there's only one.
 	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {

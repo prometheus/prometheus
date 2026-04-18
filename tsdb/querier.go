@@ -171,8 +171,8 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 }
 
 // chunkCacheToggler is an optional interface implemented by chunk readers that
-// support an in-memory head-chunk cache. The cache is only beneficial for range
-// queries (Step > 0) where every chunk of a series is accessed.
+// support an in-memory head-chunk cache. The cache is beneficial when every
+// chunk of a series is accessed sequentially, such as range queries and compaction.
 type chunkCacheToggler interface {
 	EnableChunkCache()
 }
