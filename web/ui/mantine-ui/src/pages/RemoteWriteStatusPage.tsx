@@ -1,12 +1,12 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Badge, Group, Table, Text } from "@mantine/core";
 import { IconInfoCircle, IconUpload } from "@tabler/icons-react";
-import { useSuspenseAPIQuery, useAPIQuery } from "../api/api";
+import { useAPIQuery } from "../api/api";
 import {
   SelfMetricsResult,
   ProtoMetricFamily,
   ProtoMetric,
 } from "../api/responseTypes/selfMetrics";
-import { InstantQueryResult } from "../api/responseTypes/query";
 import InfoPageStack from "../components/InfoPageStack";
 import InfoPageCard from "../components/InfoPageCard";
 
@@ -93,19 +93,26 @@ const metricFieldMap: Record<string, keyof QueueData> = {
 
 const METRIC_PREFIX = "prometheus_remote_storage_";
 
-// PromQL expression that sums current error and retry rates per queue.
-// A queue is unhealthy if any of the following are happening right now:
-//   - samples/exemplars/histograms are failing permanently (*_failed_total)
-//   - samples are being retried (indicates upstream trouble before final failure)
-//   - enqueue retries are happening (queue is blocked, e.g. receiver is down)
-// Using rate() over 5m means stale errors from hours ago don't keep the
-// endpoint stuck in DEGRADED after recovery.
-const HEALTH_QUERY =
-  "sum by (remote_name, url) (" +
-  "rate(prometheus_remote_storage_samples_failed_total[5m]) + " +
-  "rate(prometheus_remote_storage_samples_retried_total[5m]) + " +
-  "rate(prometheus_remote_storage_enqueue_retries_total[5m])" +
-  ")";
+// Counter fields used for health checks: if any of these have a nonzero
+// rate, the queue is considered degraded.
+const HEALTH_COUNTER_FIELDS: (keyof QueueData)[] = [
+  "samplesFailed",
+  "exemplarsFailed",
+  "histogramsFailed",
+  "samplesRetried",
+  "exemplarsRetried",
+  "histogramsRetried",
+];
+
+// Snapshot of counter values and the time they were observed, used for
+// computing rates between two polls.
+interface CounterSnapshot {
+  ts: number; // Date.now() when observed
+  counters: Map<string, QueueData>; // keyed by queueKey
+}
+
+// Computed error/retry rate per queue, derived from two successive snapshots.
+type HealthRates = Map<string, number | "calculating">;
 
 const buildQueues = (families: ProtoMetricFamily[]): QueueData[] => {
   const queues = new Map<string, QueueData>();
@@ -162,23 +169,6 @@ const buildQueues = (families: ProtoMetricFamily[]): QueueData[] => {
   return Array.from(queues.values());
 };
 
-// Parse the PromQL health query into a map of queueKey -> current error/retry rate.
-const buildHealthMap = (
-  result: InstantQueryResult | undefined,
-): Map<string, number> => {
-  const health = new Map<string, number>();
-  if (!result || result.resultType !== "vector") {
-    return health;
-  }
-  for (const sample of result.result) {
-    const name = sample.metric.remote_name ?? "";
-    const url = sample.metric.url ?? "";
-    const val = sample.value ? parseFloat(sample.value[1]) : 0;
-    health.set(queueKey(name, url), val);
-  }
-  return health;
-};
-
 const formatBytes = (bytes: number): string => {
   if (bytes === 0) {
     return "0 B";
@@ -202,31 +192,93 @@ const formatDelay = (seconds: number): string => {
   return `${(seconds / 3600).toFixed(1)}h`;
 };
 
+// Compute per-queue error/retry rates from two successive counter snapshots.
+// Returns "calculating" for queues that only appear in the current snapshot
+// (i.e. we don't have a baseline yet).
+const computeHealthRates = (
+  baseline: CounterSnapshot,
+  current: CounterSnapshot,
+): HealthRates => {
+  const rates: HealthRates = new Map();
+  const dt = (current.ts - baseline.ts) / 1000; // seconds
+  if (dt <= 0) {
+    for (const key of current.counters.keys()) {
+      rates.set(key, "calculating");
+    }
+    return rates;
+  }
+
+  for (const [key, cur] of current.counters) {
+    const base = baseline.counters.get(key);
+    if (!base) {
+      rates.set(key, "calculating");
+      continue;
+    }
+
+    let totalRate = 0;
+    for (const field of HEALTH_COUNTER_FIELDS) {
+      const curVal = cur[field] as number;
+      const baseVal = base[field] as number;
+      // Counter going backwards means a restart — treat delta as zero
+      // (the baseline will be reset by the caller).
+      const delta = curVal >= baseVal ? curVal - baseVal : 0;
+      totalRate += delta / dt;
+    }
+    rates.set(key, totalRate);
+  }
+
+  return rates;
+};
+
+// Detect whether any counter went backwards (Prometheus restart).
+const detectCounterReset = (
+  baseline: CounterSnapshot,
+  current: CounterSnapshot,
+): boolean => {
+  for (const [key, cur] of current.counters) {
+    const base = baseline.counters.get(key);
+    if (!base) {
+      continue;
+    }
+    for (const field of HEALTH_COUNTER_FIELDS) {
+      if ((cur[field] as number) < (base[field] as number)) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
 interface QueueCardProps {
   queue: QueueData;
-  errorRate: number | undefined;
+  healthRate: number | "calculating" | undefined;
 }
 
-const QueueCard = ({ queue, errorRate }: QueueCardProps) => {
+const QueueCard = ({ queue, healthRate }: QueueCardProps) => {
   const delay = queue.highestTimestampSec - queue.highestSentTimestampSec;
   const totalPending =
     queue.pendingSamples + queue.pendingExemplars + queue.pendingHistograms;
 
-  // Health is based on the PromQL rate query, not absolute counter totals.
-  // If the rate query hasn't returned yet we assume unknown and fall back to
-  // a conservative "healthy if no pending errors" check on the totals so the
-  // badge never flickers away from the correct state.
-  const isHealthy =
-    errorRate === undefined
-      ? delay < 600
-      : errorRate === 0 && delay < 600;
+  const isCalculating =
+    healthRate === undefined || healthRate === "calculating";
+  const isHealthy = isCalculating ? undefined : healthRate === 0 && delay < 600;
 
   return (
     <InfoPageCard title={queue.name} icon={IconUpload}>
       <Group mb="sm" ml="xs" gap="xs">
-        <Badge color={isHealthy ? "green" : "red"} variant="filled" size="sm">
-          {isHealthy ? "Healthy" : "Degraded"}
-        </Badge>
+        {isCalculating ? (
+          <Badge color="gray" variant="filled" size="sm">
+            Calculating...
+          </Badge>
+        ) : (
+          <Badge
+            color={isHealthy ? "green" : "red"}
+            variant="filled"
+            size="sm"
+          >
+            {isHealthy ? "Healthy" : "Degraded"}
+          </Badge>
+        )}
         <Text size="sm" c="dimmed">
           {queue.endpoint}
         </Text>
@@ -339,27 +391,88 @@ const QueueCard = ({ queue, errorRate }: QueueCardProps) => {
   );
 };
 
+const POLL_INTERVAL = 10_000; // 10 seconds
+
 export default function RemoteWriteStatusPage() {
-  // Snapshot of current counter / gauge values — drives the stats display.
-  const {
-    data: { data: families },
-  } = useSuspenseAPIQuery<SelfMetricsResult>({
+  const baselineRef = useRef<CounterSnapshot | null>(null);
+  const [healthRates, setHealthRates] = useState<HealthRates>(new Map());
+  const [tabVisible, setTabVisible] = useState(!document.hidden);
+
+  // Pause polling when the tab is hidden.
+  useEffect(() => {
+    const handler = () => setTabVisible(!document.hidden);
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, []);
+
+  // Poll self_metrics for remote_storage counters + gauges.
+  const { data } = useAPIQuery<SelfMetricsResult>({
     path: `/status/self_metrics`,
     params: {
       metric_name_pattern: "prometheus_remote_storage_.*",
     },
+    refetchInterval: tabVisible ? POLL_INTERVAL : false,
   });
 
-  // Rate-based health check — drives the HEALTHY / DEGRADED badge.
-  // Not a suspense query: if PromQL is unavailable the page still renders
-  // with a fallback health heuristic (see QueueCard).
-  const { data: healthResult } = useAPIQuery<InstantQueryResult>({
-    path: "/query",
-    params: { query: HEALTH_QUERY },
-  });
+  const families = data?.data;
+  const queues = families ? buildQueues(families) : [];
 
-  const queues = buildQueues(families);
-  const healthMap = buildHealthMap(healthResult?.data);
+  // Build a snapshot map from the current poll result.
+  const snapshotFromQueues = useCallback(
+    (qs: QueueData[]): CounterSnapshot => {
+      const counters = new Map<string, QueueData>();
+      for (const q of qs) {
+        counters.set(queueKey(q.name, q.endpoint), q);
+      }
+      return { ts: Date.now(), counters };
+    },
+    [],
+  );
+
+  // Update baseline and health rates whenever new data arrives.
+  useEffect(() => {
+    if (queues.length === 0) {
+      return;
+    }
+
+    const current = snapshotFromQueues(queues);
+
+    if (!baselineRef.current) {
+      // First sample: set baseline, mark all queues as "calculating".
+      baselineRef.current = current;
+      const rates: HealthRates = new Map();
+      for (const key of current.counters.keys()) {
+        rates.set(key, "calculating");
+      }
+      setHealthRates(rates);
+      return;
+    }
+
+    // Counter reset detection: if any counter went backwards, reset baseline.
+    if (detectCounterReset(baselineRef.current, current)) {
+      baselineRef.current = current;
+      const rates: HealthRates = new Map();
+      for (const key of current.counters.keys()) {
+        rates.set(key, "calculating");
+      }
+      setHealthRates(rates);
+      return;
+    }
+
+    // Compute rates from baseline to current.
+    setHealthRates(computeHealthRates(baselineRef.current, current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  if (!families) {
+    return (
+      <InfoPageStack>
+        <Alert icon={<IconInfoCircle />} title="Loading..." color="gray">
+          Fetching remote write metrics...
+        </Alert>
+      </InfoPageStack>
+    );
+  }
 
   if (queues.length === 0) {
     return (
@@ -382,7 +495,7 @@ export default function RemoteWriteStatusPage() {
         <QueueCard
           key={`${queue.name}-${queue.endpoint}`}
           queue={queue}
-          errorRate={healthMap.get(queueKey(queue.name, queue.endpoint))}
+          healthRate={healthRates.get(queueKey(queue.name, queue.endpoint))}
         />
       ))}
     </InfoPageStack>
