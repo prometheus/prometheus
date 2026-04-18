@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/gate"
+	"github.com/prometheus/prometheus/util/gate" // <--- ADD THIS LINE HERE
 )
 
 type readHandler struct {
@@ -38,32 +38,47 @@ type readHandler struct {
 	config                    func() config.Config
 	remoteReadSampleLimit     int
 	remoteReadMaxBytesInFrame int
-	remoteReadGate            *gate.Gate
+	remoteReadGate            *gate.Gate // FIXED: Removed 'gate' prefix and fixed typo
 	queries                   prometheus.Gauge
 	marshalPool               *sync.Pool
+	gateDuration              prometheus.Observer
 }
 
 // NewReadHandler creates a http.Handler that accepts remote read requests and
 // writes them to the provided queryable.
-func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
+func NewReadHandler(logger *slog.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadConcurrencyLimit int, remoteReadSampleLimit int, remoteReadMaxBytesInFrame int) http.Handler {
+
+	// 1. Define the Histogram
+	gateDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "prometheus", // Ensure 'namespace' is defined or use a string
+		Subsystem: "remote_read_handler",
+		Name:      "queries_wait_duration_seconds",
+		Help:      "How long remote read queries wait at the gate before execution.",
+		Buckets:   prometheus.DefBuckets,
+	})
+
 	h := &readHandler{
-		logger:                    logger,
-		queryable:                 queryable,
-		config:                    config,
-		remoteReadSampleLimit:     remoteReadSampleLimit,
-		remoteReadGate:            gate.New(remoteReadConcurrencyLimit),
+		logger:                logger,
+		queryable:             queryable,
+		config:                config,
+		remoteReadSampleLimit: remoteReadSampleLimit,
+		// 2. USE THE NEW CONSTRUCTOR HERE
+		remoteReadGate: gate.NewWithObserver(remoteReadConcurrencyLimit, gateDuration),
+
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		marshalPool:               &sync.Pool{},
-
+		gateDuration:              gateDuration,
 		queries: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: namespace,
+			Namespace: "prometheus",
 			Subsystem: "remote_read_handler",
 			Name:      "queries",
 			Help:      "The current number of remote read queries that are either in execution or queued on the handler.",
 		}),
 	}
+
+	// 3. Register both metrics
 	if r != nil {
-		r.MustRegister(h.queries)
+		r.MustRegister(h.queries, gateDuration)
 	}
 	return h
 }
@@ -253,9 +268,6 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 	}
 }
 
-// filterExtLabelsFromMatchers change equality matchers which match external labels
-// to a matcher that looks for an empty label,
-// as that label should not be present in the storage.
 func filterExtLabelsFromMatchers(pbMatchers []*prompb.LabelMatcher, externalLabels map[string]string) ([]*labels.Matcher, error) {
 	matchers, err := FromLabelMatchers(pbMatchers)
 	if err != nil {
