@@ -473,6 +473,11 @@ func (h *headChunkReader) Close() error {
 	return nil
 }
 
+// EnableChunkCache enables the head-chunk cache for sequential chunk access patterns.
+func (h *headChunkReader) EnableChunkCache() {
+	h.enableCache = true
+}
+
 func (h *headChunkReader) getOrCollectHeadChunks(s *memSeries) []*memChunk {
 	// Skip if the cache is disabled (instant queries) or there are no head chunks or there's only one.
 	if !h.enableCache || s.headChunks == nil || s.headChunks.prev == nil {
