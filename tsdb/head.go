@@ -748,7 +748,7 @@ func (h *Head) replayDiskChunksAndWAL() error {
 		}
 		if loadSnapshot {
 			var err error
-			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
+			snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot(targetStripeMap)
 			if err == nil {
 				snapshotLoaded = true
 				chunkSnapshotLoadDuration = time.Since(start)

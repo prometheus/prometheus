@@ -120,7 +120,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
-			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
+			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks, targetStripeMap)
 			unknownSeriesRefs.merge(missingSeries)
 			unknownSampleRefs.Add(unknownSamples)
 			mmapOverlappingChunks.Add(overlapping)
@@ -634,7 +634,7 @@ func (wp *walSubsetProcessor) reuseHistogramBuf() []histogramRecord {
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (map[chunks.HeadSeriesRef]struct{}, uint64, uint64, uint64) {
+func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, targetStripeMap *stripeSeries) (map[chunks.HeadSeriesRef]struct{}, uint64, uint64, uint64) {
 	defer close(wp.output)
 	defer close(wp.histogramsOutput)
 
@@ -661,7 +661,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		}
 
 		for _, s := range in.samples {
-			ms := h.series.getByID(s.Ref)
+			ms := targetStripeMap.getByID(s.Ref)
 			if ms == nil {
 				unknownSampleRefs++
 				missingSeries[s.Ref] = struct{}{}
@@ -699,7 +699,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.t < minValidTime {
 				continue
 			}
-			ms := h.series.getByID(s.ref)
+			ms := targetStripeMap.getByID(s.ref)
 			if ms == nil {
 				unknownHistogramRefs++
 				missingSeries[s.ref] = struct{}{}
@@ -1592,7 +1592,7 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 
 // loadChunkSnapshot replays the chunk snapshot and restores the Head state from it. If there was any error returned,
 // it is the responsibility of the caller to clear the contents of the Head.
-func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSeries, error) {
+func (h *Head) loadChunkSnapshot(targetStripeMap *stripeSeries) (int, int, map[chunks.HeadSeriesRef]*memSeries, error) {
 	dir, snapIdx, snapOffset, err := LastChunkSnapshot(h.opts.ChunkDirRoot)
 	if err != nil {
 		if errors.Is(err, record.ErrNotFound) {
@@ -1641,7 +1641,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 			localRefSeries := shardedRefSeries[idx]
 
 			for csr := range rc {
-				series, _, err := h.getOrCreateWithOptionalID(csr.ref, csr.lset.Hash(), csr.lset, false)
+				series, _, err := h.getOrCreateInStripe(targetStripeMap, csr.ref, csr.lset.Hash(), csr.lset, false)
 				if err != nil {
 					errChan <- err
 					return
