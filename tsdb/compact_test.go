@@ -1270,6 +1270,109 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			h.Close()
 		})
 	}
+
+	// Sub-benchmark with multiple head chunks per series, as can happen with
+	// native histograms that trigger a counter reset on every sample. This
+	// stresses the linked-list traversal in s.chunk() and exercises the
+	// head-chunk cache.
+	for _, tc := range []struct{ series, chunks int }{
+		{100000, 1},  // Baseline: cache skipped (prev==nil).
+		{100000, 10}, // Realistic: cache active, but improvement negligible vs total compaction cost.
+		{10, 100},    // Moderate pathological case.
+		{10, 1000},   // Heavy pathological case.
+	} {
+		nSeries, nChunks := tc.series, tc.chunks
+		b.Run(fmt.Sprintf("many head chunks/series=%d,chunks=%d", nSeries, nChunks), func(b *testing.B) {
+			dir := b.TempDir()
+			chunkDir := b.TempDir()
+			opts := DefaultHeadOptions()
+			opts.ChunkRange = int64(nChunks+1) * 1000 // Wide enough so nothing gets mmapped.
+			opts.ChunkDirRoot = chunkDir
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
+			require.NoError(b, err)
+
+			app := h.Appender(b.Context())
+			for i := range nSeries {
+				lbls := labels.FromStrings("__name__", "bench", "series", strconv.Itoa(i))
+				for j := range nChunks {
+					// Counter reset on every histogram forces a new head chunk per sample.
+					hist := tsdbutil.GenerateTestHistogram(int64(j))
+					hist.CounterResetHint = histogram.CounterReset
+					_, err := app.AppendHistogram(0, lbls, int64(j)*1000, hist, nil)
+					require.NoError(b, err)
+				}
+			}
+			require.NoError(b, app.Commit())
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; b.Loop(); i++ {
+				createBlockFromHead(b, filepath.Join(dir, strconv.Itoa(i)), h)
+			}
+			h.Close()
+		})
+	}
+}
+
+// TestCompactionFromHeadWithMultipleHeadChunks verifies that compaction from
+// a Head with multiple head chunks per series produces correct blocks. This
+// exercises the chunkCacheToggler path in PopulateBlock, which enables the
+// head-chunk cache during compaction for O(1) chunk lookups.
+func TestCompactionFromHeadWithMultipleHeadChunks(t *testing.T) {
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 100
+	opts.ChunkDirRoot = t.TempDir()
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, h.Close()) })
+
+	// Append enough samples to create multiple head chunks.
+	// With ChunkRange=100 and DefaultSamplesPerChunk=120, each chunk holds
+	// ~20 samples (range/step = 100/5). 200 samples → ~10 head chunks.
+	lbls := labels.FromStrings("__name__", "test")
+	var expSamples []sample
+	app := h.Appender(t.Context())
+	for i := int64(0); i < 1000; i += 5 {
+		_, err := app.Append(0, lbls, i, float64(i))
+		require.NoError(t, err)
+		expSamples = append(expSamples, sample{t: i, f: float64(i)})
+	}
+	require.NoError(t, app.Commit())
+
+	// Verify we have multiple head chunks.
+	s := h.series.getByID(1)
+	require.NotNil(t, s)
+	s.Lock()
+	headChunks := int(s.headChunkCount.Load())
+	s.Unlock()
+	require.Greater(t, headChunks, 1, "need multiple head chunks for this test")
+
+	// Compact from head.
+	blockDir := createBlockFromHead(t, t.TempDir(), h)
+
+	// Re-read the block and verify all samples survived.
+	block, err := OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+
+	q, err := NewBlockQuerier(block, math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	defer q.Close()
+
+	ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "__name__", "test"))
+	require.True(t, ss.Next(), "expected a series")
+
+	var actSamples []sample
+	it := ss.At().Iterator(nil)
+	for it.Next() == chunkenc.ValFloat {
+		ts, v := it.At()
+		actSamples = append(actSamples, sample{t: ts, f: v})
+	}
+	require.NoError(t, it.Err())
+	require.False(t, ss.Next(), "expected only one series")
+	require.NoError(t, ss.Err())
+
+	require.Equal(t, expSamples, actSamples, "compacted block should contain all samples")
 }
 
 func BenchmarkCompactionFromOOOHead(b *testing.B) {
