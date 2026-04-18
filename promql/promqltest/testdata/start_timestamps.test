@@ -164,3 +164,50 @@ eval range from 10m to 15m step 1m irate(delta[5m])
     {type="empty_range"}     {{schema:0 sum:0 count:0}}x5
 
 clear
+
+# Tests for start timestamp overlap warnings.
+# Overlaps occur when: currST != 0 && currST < prevT && currST != prevST
+load 1m
+    valid_delta@st          _ _ -1mx5
+    valid_delta             _ _  60x5
+    valid_cumulative@st     _ _ -5m-5mx5
+    valid_cumulative        _ _  60+60x5
+    invalid_overlap@st      _ _ -2m-1mx5
+    invalid_overlap         _ _  60x5
+
+# Valid delta: currST = prevT, no warning expected.
+eval instant at 5m rate(valid_delta[5m])
+    {} 1
+
+# Valid cumulative: currST = prevST, no warning expected.
+eval instant at 5m rate(valid_cumulative[5m])
+    {} 1
+
+# Invalid overlap: currST < prevT && currST != prevST, should warn.
+eval instant at 5m rate(invalid_overlap[5m])
+    {} 1
+    expect warn msg: sample has start time that overlaps with previous sample timestamp
+
+clear
+
+# Test overlap warning for histogram samples.
+load 1m
+    histogram_overlap@st    _ _ -2m-1mx5
+    histogram_overlap       _ _ {{schema:0 sum:60 count:60}}x5
+
+eval instant at 5m rate(histogram_overlap[5m])
+    {} {{schema:0 sum:1 count:1}}
+    expect warn msg: sample has start time that overlaps with previous sample timestamp
+
+clear
+
+# Test that increase() also produces overlap warnings.
+load 1m
+    counter_overlap@st      _ _ -2m-1mx5
+    counter_overlap         _ _ 60x5
+
+eval instant at 5m increase(counter_overlap[5m])
+    {} 300
+    expect warn msg: sample has start time that overlaps with previous sample timestamp
+
+clear
