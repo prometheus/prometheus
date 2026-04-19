@@ -2137,7 +2137,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		// series alike.
 		// If we don't hold them all, there's a very small chance that a series receives
 		// samples again while we are half-way into deleting it.
-		refShard := int(series.ref) & (s.size - 1)
+		refShard := s.refStripe(series.ref)
 		if hashShard != refShard {
 			s.locks[refShard].Lock()
 			defer s.locks[refShard].Unlock()
@@ -2217,7 +2217,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	for _, ref := range refs {
 		// Delete the reference from the series map.
 		// Copying getByID here to avoid locking and unlocking twice.
-		refShard := int(ref) & (h.series.size - 1)
+		refShard := h.series.refStripe(ref)
 		h.series.locks[refShard].Lock()
 		series := h.series.series[refShard][ref]
 		if series == nil {
@@ -2312,7 +2312,7 @@ func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64)
 		// series alike.
 		// If we don't hold them all, there's a very small chance that a series receives
 		// samples again while we are half-way into deleting it.
-		refShard := int(series.ref) & (s.size - 1)
+		refShard := s.refStripe(series.ref)
 		if hashShard != refShard {
 			s.locks[refShard].Lock()
 			defer s.locks[refShard].Unlock()
@@ -2359,8 +2359,13 @@ func (s *stripeSeries) iterForDeletion(checkDeletedFunc func(int, uint64, *memSe
 	return totalDeletedSeries
 }
 
+// refStripe returns the stripe index for the given series ref.
+func (s *stripeSeries) refStripe(ref chunks.HeadSeriesRef) int {
+	return int(uint64(ref) & uint64(s.size-1))
+}
+
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
-	i := uint64(id) & uint64(s.size-1)
+	i := s.refStripe(id)
 
 	s.locks[i].RLock()
 	series := s.series[i][id]
@@ -2389,11 +2394,11 @@ func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, seri
 	s.hashes[i].set(hash, series)
 	s.locks[i].Unlock()
 
-	i = uint64(series.ref) & uint64(s.size-1)
+	refShard := s.refStripe(series.ref)
 
-	s.locks[i].Lock()
-	s.series[i][series.ref] = series
-	s.locks[i].Unlock()
+	s.locks[refShard].Lock()
+	s.series[refShard][series.ref] = series
+	s.locks[refShard].Unlock()
 
 	return series, true
 }
