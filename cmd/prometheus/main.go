@@ -613,6 +613,9 @@ func main() {
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
 
+	serverOnlyFlag(a, "debug.pprof-collector.path", "Base path to write periodic heap pprof snapshots to during startup. Disabled when empty.").
+		Default("").Hidden().StringVar(&cfg.tsdb.HeapPprofPath)
+
 	promslogflag.AddFlags(a, &cfg.promslogConfig)
 
 	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(*kingpin.ParseContext) error {
@@ -659,6 +662,13 @@ func main() {
 	if cfg.memlimitRatio <= 0.0 || cfg.memlimitRatio > 1.0 {
 		fmt.Fprintf(os.Stderr, "--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1.")
 		os.Exit(1)
+	}
+
+	if cfg.tsdb.HeapPprofPath != "" {
+		if _, err := os.Stat(cfg.tsdb.HeapPprofPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid --debug.pprof-collector.path: %s\n", err)
+			os.Exit(1)
+		}
 	}
 
 	localStoragePath := cfg.serverStoragePath
@@ -2033,6 +2043,7 @@ type tsdbOptions struct {
 	EnableXOR2Encoding             bool
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
+	HeapPprofPath                  string
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2065,6 +2076,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
+		HeapPprofPath:                  opts.HeapPprofPath,
 	}
 }
 

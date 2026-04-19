@@ -55,6 +55,18 @@ func init() {
 
 const startupTime = 10 * time.Second
 
+func ensurePrometheusIsReady(t *testing.T, baseURL string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		resp, err := http.Get(baseURL + "/-/ready")
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, startupTime, 100*time.Millisecond, "Prometheus didn't become ready in time")
+}
+
 var (
 	promPath    = os.Args[0]
 	promConfig  = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
@@ -1061,4 +1073,32 @@ remote_write:
 		return true
 		// 3*shardUpdateDuration to allow for the resharding logic to run.
 	}, 30*time.Second, time.Second)
+}
+
+func TestHeadInitHeapPprofCollector(t *testing.T) {
+	t.Parallel()
+	t.Run("happy path", func(t *testing.T) {
+		pprofDir := t.TempDir()
+		port := testutil.RandomUnprivilegedPort(t)
+		prom := prometheusCommandWithLogging(t, promConfig, port,
+			"--storage.tsdb.path="+t.TempDir(),
+			"--debug.pprof-collector.path="+pprofDir,
+		)
+		require.NoError(t, prom.Start())
+
+		baseURL := fmt.Sprintf("http://localhost:%d", port)
+		ensurePrometheusIsReady(t, baseURL)
+
+		matches, _ := filepath.Glob(filepath.Join(pprofDir, "*head_init*", "*heap.pprof*"))
+		require.Len(t, matches, 1, "expected exactly one head_init*/heap.pprof under %s", pprofDir)
+	})
+
+	t.Run("bad path", func(t *testing.T) {
+		prom := prometheusCommandWithLogging(t, promConfig, testutil.RandomUnprivilegedPort(t),
+			"--debug.pprof-collector.path=/no/such/dir",
+		)
+		err := prom.Run()
+		require.Error(t, err)
+		require.Equal(t, 1, prom.ProcessState.ExitCode())
+	})
 }

@@ -123,14 +123,7 @@ func runTestSteps(t *testing.T, steps []struct {
 	require.NoError(t, prom.Start())
 
 	baseURL := "http://localhost:" + strconv.Itoa(port)
-	require.Eventually(t, func() bool {
-		resp, err := http.Get(baseURL + "/-/ready")
-		if err != nil {
-			return false
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
-	}, 5*time.Second, 100*time.Millisecond, "Prometheus didn't become ready in time")
+	ensurePrometheusIsReady(t, baseURL)
 
 	for i, step := range steps {
 		t.Logf("Step %d", i)
