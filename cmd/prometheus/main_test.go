@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +35,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/grafana/regexp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
@@ -1061,4 +1063,31 @@ remote_write:
 		return true
 		// 3*shardUpdateDuration to allow for the resharding logic to run.
 	}, 30*time.Second, time.Second)
+}
+
+// TestFeatureFlagsDocumented ensures the --enable-feature help text in main.go
+// and the documented flags in docs/feature_flags.md list the same set of flags.
+func TestFeatureFlagsDocumented(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.SkipNow()
+	}
+	h, err := os.ReadFile(filepath.Join("..", "..", "cmd", "prometheus", "main.go"))
+	require.NoError(t, err)
+	m := regexp.MustCompile(`a\.Flag\("enable-feature", "Comma separated feature names to enable. Valid options: (.+?)\.`).FindSubmatch(h)
+	require.NotNil(t, m)
+	var helpFlags []string
+	for f := range strings.SplitSeq(string(m[1]), ",") {
+		helpFlags = append(helpFlags, strings.TrimSpace(f))
+	}
+	require.NotEmpty(t, helpFlags)
+
+	d, err := os.ReadFile(filepath.Join("..", "..", "docs", "feature_flags.md"))
+	require.NoError(t, err)
+	var docFlags []string
+	for _, dm := range regexp.MustCompile("(?m)^`--enable-feature=(.+)`$").FindAllSubmatch(d, -1) {
+		docFlags = append(docFlags, string(dm[1]))
+	}
+	require.NotEmpty(t, docFlags)
+	require.True(t, slices.IsSorted(helpFlags))
+	require.ElementsMatch(t, helpFlags, docFlags)
 }
