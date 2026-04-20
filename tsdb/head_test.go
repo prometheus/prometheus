@@ -914,7 +914,7 @@ func TestHead_WALMultiRef(t *testing.T) {
 //     known side-effect when WAL corruption causes ref aliasing; the labels
 //     returned are still correct for series_a).
 func TestHead_WALDuplicateRefDifferentLabels(t *testing.T) {
-	const sharedRef = chunks.HeadSeriesRef(800000)
+	const conflictingRef = chunks.HeadSeriesRef(800000)
 
 	lblsA := labels.FromStrings("__name__", "series_a")
 	lblsB := labels.FromStrings("__name__", "series_b")
@@ -928,16 +928,16 @@ func TestHead_WALDuplicateRefDifferentLabels(t *testing.T) {
 	//   4. sample    → ref 800000, t=200, v=2    (intended for series_b)
 	populateTestWL(t, w, []any{
 		[]record.RefSeries{
-			{Ref: sharedRef, Labels: lblsA},
+			{Ref: conflictingRef, Labels: lblsA},
 		},
 		[]record.RefSample{
-			{Ref: sharedRef, T: 100, V: 1},
+			{Ref: conflictingRef, T: 100, V: 1},
 		},
 		[]record.RefSeries{
-			{Ref: sharedRef, Labels: lblsB},
+			{Ref: conflictingRef, Labels: lblsB},
 		},
 		[]record.RefSample{
-			{Ref: sharedRef, T: 200, V: 2},
+			{Ref: conflictingRef, T: 200, V: 2},
 		},
 	}, nil, false)
 
@@ -948,7 +948,7 @@ func TestHead_WALDuplicateRefDifferentLabels(t *testing.T) {
 
 	// After replay, the ref-keyed map must only contain series_a (the first
 	// record for ref 800000).  series_b must have been skipped.
-	byID := head.series.getByID(sharedRef)
+	byID := head.series.getByID(conflictingRef)
 	require.NotNil(t, byID, "series for ref 800000 should exist")
 	testutil.RequireEqual(t, lblsA, byID.labels(), "ref 800000 must still map to series_a")
 
