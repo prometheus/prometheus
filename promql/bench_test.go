@@ -719,6 +719,117 @@ func generateInfoFunctionTestSeries(tb testing.TB, stor *teststorage.TestStorage
 	stor.Compact(ctx)
 }
 
+func BenchmarkAlignedSubqueries(b *testing.B) {
+	ctx := context.Background()
+
+	generateSeries := func(tb testing.TB, stor *teststorage.TestStorage, series, sampleStepSec int, start time.Time, end time.Time) { //nolint:gofumpt
+		tb.Helper()
+		stepMillis := int64(sampleStepSec) * int64(time.Second/time.Millisecond)
+		startMillis := start.UnixNano() / int64(time.Millisecond)
+		endMillis := end.UnixNano() / int64(time.Millisecond)
+
+		lbls := make([]labels.Labels, series)
+		for i := range lbls {
+			lbls[i] = labels.FromStrings("__name__", "bench_m", "l", strconv.Itoa(i))
+		}
+		refs := make([]storage.SeriesRef, len(lbls))
+		for ts := startMillis; ts <= endMillis; ts += stepMillis {
+			a := stor.Appender(ctx)
+			for i, lset := range lbls {
+				v := float64(i) + float64((ts%600000))/600000.0
+				ref, _ := a.Append(refs[i], lset, ts, v)
+				refs[i] = ref
+			}
+			require.NoError(tb, a.Commit())
+		}
+		stor.ForceHeadMMap()
+		stor.Compact(ctx)
+	}
+
+	opts := promql.EngineOpts{
+		MaxSamples:                  50000000,
+		Timeout:                     60 * time.Second,
+		EnableAtModifier:            true,
+		EnableNegativeOffset:        true,
+		EnableEvalAlignedSubqueries: true,
+	}
+
+	makeCases := func(innerRange, innerStep time.Duration) []struct{ name, query string } {
+		var sb strings.Builder
+		sb.WriteString("bench_m")
+		for off := time.Duration(0) + innerStep; off < innerRange; off += innerStep {
+			sb.WriteString(" + bench_m offset ")
+			sb.WriteString(off.String())
+		}
+
+		return []struct{ name, query string }{
+			{": regular subquery", fmt.Sprintf("sum by (l) (sum_over_time(bench_m[%ds:%ds]))", int(innerRange/time.Second), int(innerStep/time.Second))},
+			{":: aligned subquery", fmt.Sprintf("sum by (l) (sum_over_time(bench_m[%ds::%ds]))", int(innerRange/time.Second), int(innerStep/time.Second))},
+			{":: equivalent (offset)", fmt.Sprintf("sum by (l) (%s)", sb.String())},
+		}
+	}
+
+	b.Run("Compatible steps - low overhead", func(b *testing.B) {
+		storage := teststorage.New(b)
+		defer storage.Close()
+
+		start := time.Unix(0, 0)
+		end := start.Add(2 * time.Hour)
+		outerStep := 30 * time.Second
+		innerRange := 60 * time.Second
+		innerStep := 15 * time.Second
+
+		generateSeries(b, storage, 500, int(innerStep/time.Second), start, end)
+
+		engine := promqltest.NewTestEngineWithOpts(b, opts)
+		cases := makeCases(innerRange, innerStep)
+		b.ReportAllocs()
+		for _, tc := range cases {
+			b.Run(tc.name, func(b *testing.B) {
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					b.StopTimer()
+					qry, err := engine.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, outerStep)
+					require.NoError(b, err)
+					b.StartTimer()
+					res := qry.Exec(context.Background())
+					require.NoError(b, res.Err)
+				}
+			})
+		}
+	})
+
+	b.Run("Incompatible steps - high overhead", func(b *testing.B) {
+		storage := teststorage.New(b)
+		defer storage.Close()
+
+		start := time.Unix(0, 0)
+		end := start.Add(10 * time.Minute)
+		outerStep := 17 * time.Second
+		innerRange := 65 * time.Second
+		innerStep := 13 * time.Second
+
+		generateSeries(b, storage, 100, 1, start, end)
+
+		engine := promqltest.NewTestEngineWithOpts(b, opts)
+		cases := makeCases(innerRange, innerStep)
+		b.ReportAllocs()
+		for _, tc := range cases {
+			b.Run(tc.name, func(b *testing.B) {
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					b.StopTimer()
+					qry, err := engine.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, outerStep)
+					require.NoError(b, err)
+					b.StartTimer()
+					res := qry.Exec(context.Background())
+					require.NoError(b, res.Err)
+				}
+			})
+		}
+	})
+}
+
 func generateNativeHistogramSeries(app storage.Appender, numSeries int) error {
 	commonLabels := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
 	series := make([][]*histogram.Histogram, numSeries)
