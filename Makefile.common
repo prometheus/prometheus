@@ -91,7 +91,6 @@ $(error DOCKERFILE_PATH is deprecated. Use DOCKERFILE_VARIANTS ?= $(DOCKERFILE_P
 endif
 
 DOCKER_ARCHS ?= amd64 arm64 armv7 ppc64le riscv64 s390x
-DOCKERFILE_ARCH_EXCLUSIONS ?=
 DOCKERFILE_VARIANTS     ?= $(wildcard Dockerfile Dockerfile.*)
 
 # Function to extract variant from Dockerfile label.
@@ -109,14 +108,6 @@ endif
 
 # Build variant:dockerfile pairs for shell iteration.
 DOCKERFILE_VARIANTS_WITH_NAMES := $(foreach df,$(DOCKERFILE_VARIANTS),$(call dockerfile_variant,$(df)):$(df))
-
-# Shell helper to check whether a dockerfile/arch pair is excluded.
-define dockerfile_arch_is_excluded
-case " $(DOCKERFILE_ARCH_EXCLUSIONS) " in \
-	*" $$dockerfile:$(1) "*) true ;; \
-	*) false ;; \
-esac
-endef
 
 BUILD_DOCKER_ARCHS = $(addprefix common-docker-,$(DOCKER_ARCHS))
 PUBLISH_DOCKER_ARCHS = $(addprefix common-docker-publish-,$(DOCKER_ARCHS))
@@ -259,10 +250,6 @@ $(BUILD_DOCKER_ARCHS): common-docker-%:
 	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
-		if $(call dockerfile_arch_is_excluded,$*); then \
-			echo "Skipping $$variant_name variant for linux-$* (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
-			continue; \
-		fi; \
 		distroless_arch="$*"; \
 		if [ "$*" = "armv7" ]; then \
 			distroless_arch="arm"; \
@@ -297,10 +284,6 @@ $(PUBLISH_DOCKER_ARCHS): common-docker-publish-%:
 	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
-		if $(call dockerfile_arch_is_excluded,$*); then \
-			echo "Skipping push for $$variant_name variant on linux-$* (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
-			continue; \
-		fi; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 			echo "Pushing $$variant_name variant for linux-$*"; \
 			docker push "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name"; \
@@ -328,10 +311,6 @@ $(TAG_DOCKER_ARCHS): common-docker-tag-latest-%:
 	@for variant in $(DOCKERFILE_VARIANTS_WITH_NAMES); do \
 		dockerfile=$${variant#*:}; \
 		variant_name=$${variant%%:*}; \
-		if $(call dockerfile_arch_is_excluded,$*); then \
-			echo "Skipping tag for $$variant_name variant on linux-$* (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
-			continue; \
-		fi; \
 		if [ "$$dockerfile" != "Dockerfile" ] || [ "$$variant_name" != "default" ]; then \
 			echo "Tagging $$variant_name variant for linux-$* as latest"; \
 			docker tag "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name" "$(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$*:latest-$$variant_name"; \
@@ -353,10 +332,6 @@ common-docker-manifest:
 			echo "Creating manifest for $$variant_name variant"; \
 			refs=""; \
 			for arch in $(DOCKER_ARCHS); do \
-				if $(call dockerfile_arch_is_excluded,$$arch); then \
-					echo "  Skipping $$arch for $$variant_name (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
-					continue; \
-				fi; \
 				refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:$(SANITIZED_DOCKER_IMAGE_TAG)-$$variant_name"; \
 			done; \
 			if [ -z "$$refs" ]; then \
@@ -370,10 +345,6 @@ common-docker-manifest:
 			echo "Creating default variant ($$variant_name) manifest"; \
 			refs=""; \
 			for arch in $(DOCKER_ARCHS); do \
-				if $(call dockerfile_arch_is_excluded,$$arch); then \
-					echo "  Skipping $$arch for default variant (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
-					continue; \
-				fi; \
 				refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:$(SANITIZED_DOCKER_IMAGE_TAG)"; \
 			done; \
 			if [ -z "$$refs" ]; then \
@@ -388,10 +359,6 @@ common-docker-manifest:
 				echo "Creating manifest for $$variant_name variant version tag"; \
 				refs=""; \
 				for arch in $(DOCKER_ARCHS); do \
-					if $(call dockerfile_arch_is_excluded,$$arch); then \
-						echo "  Skipping $$arch for $$variant_name version tag (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
-						continue; \
-					fi; \
 					refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:v$(DOCKER_MAJOR_VERSION_TAG)-$$variant_name"; \
 				done; \
 				if [ -z "$$refs" ]; then \
@@ -405,10 +372,6 @@ common-docker-manifest:
 				echo "Creating default variant version tag manifest"; \
 				refs=""; \
 				for arch in $(DOCKER_ARCHS); do \
-					if $(call dockerfile_arch_is_excluded,$$arch); then \
-						echo "  Skipping $$arch for default variant version tag (excluded by DOCKERFILE_ARCH_EXCLUSIONS)"; \
-						continue; \
-					fi; \
 					refs="$$refs $(DOCKER_REPO)/$(DOCKER_IMAGE_NAME)-linux-$$arch:v$(DOCKER_MAJOR_VERSION_TAG)"; \
 				done; \
 				if [ -z "$$refs" ]; then \
