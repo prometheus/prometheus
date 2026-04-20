@@ -820,6 +820,9 @@ type cacheEntry struct {
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
+
+	// st is an optional state for ST synthesis.
+	st *stCache
 }
 
 type scrapeLoop struct {
@@ -848,6 +851,8 @@ type scrapeLoop struct {
 	appendable   storage.Appendable
 	appendableV2 storage.AppendableV2
 	buffers      *pool.Pool
+
+	synthesizeST bool
 	offsetSeed   uint64
 	symbolTable  *labels.SymbolTable
 	metrics      *scrapeMetrics
@@ -1005,9 +1010,6 @@ func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
 }
 
 func (c *scrapeCache) addRef(met []byte, ref storage.SeriesRef, lset labels.Labels, hash uint64) (ce *cacheEntry) {
-	if ref == 0 {
-		return nil
-	}
 	ce = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
 	c.series[string(met)] = ce
 	return ce
@@ -1231,6 +1233,7 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		// manager, we ensure appenderV2 parseST is set on EnableStartTimestampZeroIngestion
 		// This will be removed when EnableStartTimestampZeroIngestion is removed.
 		parseST:                 opts.sp.options.ParseST || opts.sp.options.EnableStartTimestampZeroIngestion,
+		synthesizeST:            opts.sp.options.SynthesizeST,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
@@ -1776,7 +1779,7 @@ loop:
 		}
 
 		if err == nil {
-			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
+			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil && ce.ref != 0 {
 				sl.cache.trackStaleness(ce.ref, ce)
 			}
 		}
@@ -1795,7 +1798,7 @@ loop:
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
 			ce = sl.cache.addRef(met, ref, lset, hash)
-			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
+			if ce != nil && ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
 				// But make sure we only do this if we have a cache entry (ce) for our series.
 				sl.cache.trackStaleness(ref, ce)

@@ -149,12 +149,15 @@ loop:
 	for {
 		var (
 			et                       textparse.Entry
-			sampleAdded, isHistogram bool
+			shouldCache, isHistogram bool
+			st                       int64
 			met                      []byte
 			parsedTimestamp          *int64
 			val                      float64
 			h                        *histogram.Histogram
 			fh                       *histogram.FloatHistogram
+			skipAppend               bool
+			stCache                  *stCache
 		)
 		if et, err = p.Next(); err != nil {
 			if errors.Is(err, io.EOF) {
@@ -253,10 +256,14 @@ loop:
 				break loop
 			}
 
-			st := int64(0)
 			if sl.parseST {
 				// p.StartTimestamp() tend to be expensive (e.g. OM1). Do it only if we care.
 				st = p.StartTimestamp()
+			}
+
+			// TODO(ridwanmsharif): Consider injecting a 0 value with the st == t here, instead of skipping an append.
+			if sl.synthesizeST && st == 0 {
+				st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce, lastMFName, val, h, fh, t)
 			}
 
 			for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
@@ -311,34 +318,57 @@ loop:
 				}
 			}
 
-			// Append sample to the storage.
-			ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
+			// Note that even if append is skipped, we may still add to the cache to make sure we save stCache.
+			if !skipAppend {
+				// Append sample to the storage.
+				if stCache != nil {
+					appOpts.RejectOutOfOrder = true
+					// TODO(ridwanmsharif): better handle OOO metrics when st-synthesis is on.
+				}
+				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
+				if err == nil && ce != nil && ref != 0 {
+					ce.ref = ref
+				}
+			}
 		}
-		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
+		shouldCache, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
 				sl.l.Debug("Unexpected error", "series", string(met), "err", err)
 			}
 			break loop
 		}
-		if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
-			sl.cache.trackStaleness(ce.ref, ce)
-		}
 
 		// If series wasn't cached (is new, not seen on previous scrape) we need to add it to the scrape cache.
 		// But we only do this for series that were appended to TSDB without errors.
 		// If a series was new, but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
-		if !seriesCached && sampleAdded {
+		if !seriesCached && shouldCache {
 			ce = sl.cache.addRef(met, ref, lset, hash)
-			if ce != nil && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
-				// Bypass staleness logic if there is an explicit timestamp.
-				// But make sure we only do this if we have a cache entry (ce) for our series.
-				sl.cache.trackStaleness(ref, ce)
-			}
+
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
 			}
+		}
+
+		if ce != nil && sl.synthesizeST {
+			if shouldCache {
+				ce.st = stCache // Set it, even if it's nil (explicit reset).
+			} else if seriesCached {
+				ce.st = nil // Clear state on failure for existing series.
+			}
+		}
+
+		// We track staleness for a series to ensure that if it disappears in a future scrape,
+		// we can emit a StaleNaN marker to terminate the series (which also helps in eventually cleaning up stCache).
+		// We only track it if there are no errors and we have a valid storage reference (ce.ref != 0).
+		// We track it if:
+		// - There is no explicit timestamp in the scrape (parsedTimestamp == nil).
+		// - Or we explicitly track staleness for timestamps (sl.trackTimestampsStaleness).
+		// - Or we are synthesizing start times (stCache != nil), so we can clear stCache if it goes stale.
+		shouldTrackStaleness := parsedTimestamp == nil || sl.trackTimestampsStaleness || stCache != nil
+		if ce != nil && err == nil && ce.ref != 0 && shouldTrackStaleness {
+			sl.cache.trackStaleness(ce.ref, ce)
 		}
 
 		// Increment added even if there's an error so we correctly report the
@@ -413,4 +443,47 @@ func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float
 	default:
 		return err
 	}
+}
+
+func (sl *scrapeLoop) checkAndSynthesizeStartTime(
+	st int64,
+	lset labels.Labels,
+	ce *cacheEntry,
+	lastMFName []byte,
+	val float64,
+	h *histogram.Histogram,
+	fh *histogram.FloatHistogram,
+	t int64,
+) (int64, float64, *histogram.Histogram, *histogram.FloatHistogram, bool, *stCache) {
+	var skipAppend bool
+	var c *stCache
+
+	// TODO(https://github.com/prometheus/prometheus/issues/1790): Move isSeriesPartOfFamily inside parsers.
+	if ce == nil || ce.st == nil {
+		metadata, ok := sl.cache.GetMetadata(string(lastMFName))
+		if !ok || !isSeriesPartOfFamily(lset.Get(model.MetricNameLabel), lastMFName, metadata.Type) {
+			return st, val, h, fh, skipAppend, c
+		}
+
+		switch metadata.Type {
+		case model.MetricTypeCounter, model.MetricTypeHistogram, model.MetricTypeSummary:
+			// Proceed to synthesis.
+		default:
+			return st, val, h, fh, skipAppend, c
+		}
+		c = &stCache{}
+	} else {
+		c = ce.st
+	}
+
+	switch {
+	case fh != nil:
+		fh, st, skipAppend = c.synthesizeFloatHistogram(fh, t)
+	case h != nil:
+		h, st, skipAppend = c.synthesizeHistogram(h, t)
+	default:
+		val, st, skipAppend = c.synthesizeFloat(val, t)
+	}
+
+	return st, val, h, fh, skipAppend, c
 }
