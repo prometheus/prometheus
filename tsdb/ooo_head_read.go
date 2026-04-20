@@ -77,18 +77,23 @@ func (oh *HeadAndOOOIndexReader) Series(ref storage.SeriesRef, builder *labels.S
 	*chks = (*chks)[:0]
 
 	if s.ooo != nil {
-		return getOOOSeriesChunks(s, oh.head.opts.EnableXOR2Encoding.Load(), oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, oh.inoMint, chks)
+		oh.headChunksBuf = getOOOSeriesChunks(s, oh.head.opts.EnableXOR2Encoding.Load(), oh.mint, oh.maxt, oh.lastGarbageCollectedMmapRef, 0, true, oh.inoMint, chks, oh.headChunksBuf)
+	} else {
+		*chks, oh.headChunksBuf = appendSeriesChunks(s, oh.inoMint, oh.maxt, *chks, oh.headChunksBuf)
 	}
-	*chks = appendSeriesChunks(s, oh.inoMint, oh.maxt, *chks)
+	if cap(oh.headChunksBuf) > headChunksBufMaxCap {
+		oh.headChunksBuf = nil
+	}
 	return nil
 }
 
+// getOOOSeriesChunks collects chunk metadata for OOO (and optionally in-order) data.
 // lastGarbageCollectedMmapRef gives the last mmap chunk that may be being garbage collected and so
 // any chunk at or before this ref will not be considered. 0 disables this check.
-//
-// maxMmapRef tells upto what max m-map chunk that we can consider. If it is non-0, then
+// maxMmapRef tells up to what max m-map chunk that we can consider. If it is non-0, then
 // the oooHeadChunk will not be considered.
-func getOOOSeriesChunks(s *memSeries, useXOR2 bool, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, includeInOrder bool, inoMint int64, chks *[]chunks.Meta) error {
+// headChunksBuf is a reusable buffer for collectHeadChunks; the (possibly grown) buffer is returned.
+func getOOOSeriesChunks(s *memSeries, useXOR2 bool, mint, maxt int64, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef, includeInOrder bool, inoMint int64, chks *[]chunks.Meta, headChunksBuf []*memChunk) []*memChunk {
 	tmpChks := make([]chunks.Meta, 0, len(s.ooo.oooMmappedChunks))
 
 	addChunk := func(minT, maxT int64, ref chunks.ChunkRef, chunk chunkenc.Chunk) {
@@ -109,7 +114,7 @@ func getOOOSeriesChunks(s *memSeries, useXOR2 bool, mint, maxt int64, lastGarbag
 				chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(c.minTime, c.maxTime, useXOR2)
 				if err != nil {
 					handleChunkWriteError(err)
-					return nil
+					return headChunksBuf
 				}
 				for _, chk := range chks {
 					addChunk(chk.minTime, chk.maxTime, ref, chk.chunk)
@@ -129,12 +134,12 @@ func getOOOSeriesChunks(s *memSeries, useXOR2 bool, mint, maxt int64, lastGarbag
 	}
 
 	if includeInOrder {
-		tmpChks = appendSeriesChunks(s, inoMint, maxt, tmpChks)
+		tmpChks, headChunksBuf = appendSeriesChunks(s, inoMint, maxt, tmpChks, headChunksBuf)
 	}
 
 	// There is nothing to do if we did not collect any chunk.
 	if len(tmpChks) == 0 {
-		return nil
+		return headChunksBuf
 	}
 
 	// Next we want to sort all the collected chunks by min time so we can find
@@ -165,7 +170,7 @@ func getOOOSeriesChunks(s *memSeries, useXOR2 bool, mint, maxt int64, lastGarbag
 	}
 	*chks = append(*chks, toBeMerged)
 
-	return nil
+	return headChunksBuf
 }
 
 // Fake Chunk object to pass a set of Metas inside Meta.Chunk.
@@ -207,11 +212,12 @@ func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
 }
 
 type HeadAndOOOChunkReader struct {
-	head        *Head
-	mint, maxt  int64
-	cr          *headChunkReader // If nil, only read OOO chunks.
-	maxMmapRef  chunks.ChunkDiskMapperRef
-	oooIsoState *oooIsolationState
+	head          *Head
+	mint, maxt    int64
+	cr            *headChunkReader // If nil, only read OOO chunks.
+	maxMmapRef    chunks.ChunkDiskMapperRef
+	oooIsoState   *oooIsolationState
+	headChunksBuf []*memChunk // Reusable buffer for collectHeadChunks when cr is nil.
 }
 
 func NewHeadAndOOOChunkReader(head *Head, mint, maxt int64, cr *headChunkReader, oooIsoState *oooIsolationState, maxMmapRef chunks.ChunkDiskMapperRef) *HeadAndOOOChunkReader {
@@ -252,7 +258,11 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 	defer s.Unlock()
 
 	if meta.Chunk == nil {
-		c, maxt, err := cr.head.chunkFromSeries(s, cid, isOOO, meta.MinTime, meta.MaxTime, isoState, copyLastChunk)
+		var headChunks []*memChunk
+		if !isOOO {
+			headChunks = cr.collectOrGetHeadChunks(s)
+		}
+		c, maxt, err := cr.head.chunkFromSeries(s, cid, isOOO, meta.MinTime, meta.MaxTime, isoState, copyLastChunk, headChunks)
 		return c, nil, maxt, err
 	}
 	mm, ok := meta.Chunk.(*multiMeta)
@@ -261,13 +271,17 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 	}
 	// We have a composite meta: construct a composite iterable.
 	mc := &mergedOOOChunks{}
+	var headChunks []*memChunk
 	for _, m := range mm.metas {
 		switch {
 		case m.Chunk != nil:
 			mc.chunkIterables = append(mc.chunkIterables, m.Chunk)
 		default:
 			_, cid, isOOO := unpackHeadChunkRef(m.Ref)
-			iterable, _, err := cr.head.chunkFromSeries(s, cid, isOOO, m.MinTime, m.MaxTime, isoState, copyLastChunk)
+			if !isOOO && headChunks == nil {
+				headChunks = cr.collectOrGetHeadChunks(s)
+			}
+			iterable, _, err := cr.head.chunkFromSeries(s, cid, isOOO, m.MinTime, m.MaxTime, isoState, copyLastChunk, headChunks)
 			if err != nil {
 				return nil, nil, 0, fmt.Errorf("invalid head chunk: %w", err)
 			}
@@ -275,6 +289,36 @@ func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk
 		}
 	}
 	return nil, mc, meta.MaxTime, nil
+}
+
+// collectOrGetHeadChunks returns the pre-collected head chunks for s. When the
+// underlying headChunkReader exists, it delegates to the per-series cache there.
+// Otherwise it collects directly into cr.headChunksBuf — this does not cache
+// across series, it only reuses the backing array to avoid per-call allocations.
+func (cr *HeadAndOOOChunkReader) collectOrGetHeadChunks(s *memSeries) []*memChunk {
+	if cr.cr != nil {
+		return cr.cr.getOrCollectHeadChunks(s)
+	}
+
+	// Defensive: in current callers, cr.cr is nil only for OOO compaction
+	// (OOOCompactionHead.Chunks), which only requests OOO chunks, so this
+	// branch is not reached. It is kept for correctness if callers change.
+	cr.headChunksBuf = collectHeadChunks(s.headChunks, cr.headChunksBuf[:0])
+	clear(cr.headChunksBuf[len(cr.headChunksBuf):cap(cr.headChunksBuf)])
+	hc := cr.headChunksBuf
+	if cap(cr.headChunksBuf) > headChunksBufMaxCap {
+		cr.headChunksBuf = nil
+	}
+	return hc
+}
+
+// EnableChunkCache enables the head-chunk cache on the underlying headChunkReader.
+// This should only be called for range queries where the cache provides O(1) lookups
+// across multiple chunk accesses for the same series.
+func (cr *HeadAndOOOChunkReader) EnableChunkCache() {
+	if cr.cr != nil {
+		cr.cr.enableCache = true
+	}
 }
 
 func (cr *HeadAndOOOChunkReader) Close() error {
@@ -481,7 +525,8 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 		return nil
 	}
 
-	return getOOOSeriesChunks(s, ir.ch.head.opts.EnableXOR2Encoding.Load(), ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks)
+	getOOOSeriesChunks(s, ir.ch.head.opts.EnableXOR2Encoding.Load(), ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks, nil)
+	return nil
 }
 
 func (*OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, error) {

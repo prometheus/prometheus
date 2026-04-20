@@ -1723,8 +1723,6 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 	it := storage.NewBuffer(dur + 2*durationMilliseconds(ev.lookbackDelta))
 
 	offMS := offset.Milliseconds()
-	start := ev.startTimestamp - offMS
-	end := ev.endTimestamp - offMS
 	step := ev.interval
 	lb := durationMilliseconds(ev.lookbackDelta)
 
@@ -1740,9 +1738,11 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 		var floats []FPoint
 		var hists []HPoint
 
-		for ts := start; ts <= end; ts += step {
-			matrixStart := ts - lb
-			matrixEnd := ts + lb
+		for evalTS := ev.startTimestamp; evalTS <= ev.endTimestamp; evalTS += step {
+			// Apply offset to get the data timestamp.
+			dataTS := evalTS - offMS
+			matrixStart := dataTS - lb
+			matrixEnd := dataTS + lb
 
 			floats, hists, _ = ev.matrixIterSlice(it, matrixStart, matrixEnd, floats, hists, nil)
 			if len(floats) == 0 && len(hists) == 0 {
@@ -1754,28 +1754,28 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 				ev.errorf("smoothed and anchored modifiers do not work with native histograms")
 			}
 
-			// Binary search for the first index with T >= ts.
-			i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= ts })
+			// Binary search for the first index with T >= dataTS.
+			i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= dataTS })
 
 			switch {
-			case i < len(floats) && floats[i].T == ts:
+			case i < len(floats) && floats[i].T == dataTS:
 				// Exact match.
-				ss.Floats = append(ss.Floats, floats[i])
+				ss.Floats = append(ss.Floats, FPoint{F: floats[i].F, T: evalTS})
 
 			case i > 0 && i < len(floats):
 				// Interpolate between prev and next.
 				// TODO: detect if the sample is a counter, based on __type__ or metadata.
 				prev, next := floats[i-1], floats[i]
-				val := interpolate(prev, next, ts, false)
-				ss.Floats = append(ss.Floats, FPoint{F: val, T: ts})
+				val := interpolate(prev, next, dataTS, false)
+				ss.Floats = append(ss.Floats, FPoint{F: val, T: evalTS})
 
 			case i > 0:
 				// No next point yet; carry forward previous value.
 				prev := floats[i-1]
-				ss.Floats = append(ss.Floats, FPoint{F: prev.F, T: ts})
+				ss.Floats = append(ss.Floats, FPoint{F: prev.F, T: evalTS})
 
 			default:
-				// i == 0 and floats[0].T > ts: there is no previous data yet; skip.
+				// i == 0 and floats[0].T > dataTS: there is no previous data yet; skip.
 			}
 		}
 
@@ -4301,11 +4301,60 @@ func unwrapParenExpr(e *parser.Expr) {
 	}
 }
 
+// foldQueryContextFunctions rewrites calls to start(), end(), range(), and step() into
+// NumberLiteral nodes, since their values are constant for a given query execution.
+// This allows parent expressions to be correctly recognized as step-invariant by preprocessExprHelper.
+func foldQueryContextFunctions(expr parser.Expr, start, end time.Time, step time.Duration) parser.Expr {
+	if call, ok := expr.(*parser.Call); ok {
+		switch call.Func.Name {
+		case "start":
+			return &parser.NumberLiteral{Val: float64(timestamp.FromTime(start)) / 1000, PosRange: call.PosRange}
+		case "end":
+			return &parser.NumberLiteral{Val: float64(timestamp.FromTime(end)) / 1000, PosRange: call.PosRange}
+		case "range":
+			return &parser.NumberLiteral{Val: end.Sub(start).Seconds(), PosRange: call.PosRange}
+		case "step":
+			var val float64
+			if !start.Equal(end) {
+				val = step.Seconds()
+			}
+			return &parser.NumberLiteral{Val: val, PosRange: call.PosRange}
+		}
+	}
+	switch n := expr.(type) {
+	case *parser.BinaryExpr:
+		n.LHS = foldQueryContextFunctions(n.LHS, start, end, step)
+		n.RHS = foldQueryContextFunctions(n.RHS, start, end, step)
+	case *parser.Call:
+		for i := range n.Args {
+			n.Args[i] = foldQueryContextFunctions(n.Args[i], start, end, step)
+		}
+	case *parser.AggregateExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+		if n.Param != nil {
+			n.Param = foldQueryContextFunctions(n.Param, start, end, step)
+		}
+	case *parser.UnaryExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+	case *parser.ParenExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+	case *parser.SubqueryExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+	case *parser.MatrixSelector, *parser.VectorSelector, *parser.NumberLiteral, *parser.StringLiteral:
+		// Leaf nodes or nodes without foldable sub-expressions.
+	default:
+		panic(fmt.Sprintf("foldQueryContextFunctions: unhandled node type %T", expr))
+	}
+	return expr
+}
+
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors, evaluates duration expressions
 // into their numeric values and removes superfluous parenthesis on parameters to functions and aggregations.
 func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
+
+	expr = foldQueryContextFunctions(expr, start, end, step)
 
 	if err := parser.Walk(&durationVisitor{step: step, queryRange: end.Sub(start)}, expr, nil); err != nil {
 		return nil, err
