@@ -3488,13 +3488,7 @@ func TestNoGoroutineLeakOnTSDBOpenError(t *testing.T) {
 	// Verify that no goroutines were leaked. Without proper cleanup,
 	// wlog.(*WL).run and chunks.(*chunkWriteQueue).start.func1 goroutines
 	// would remain running after the failed Open().
-	goleak.VerifyNone(t,
-		goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func1"),
-		goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func2"),
-		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
-		goleak.IgnoreTopFunction("testing.(*T).Run"),
-		goleak.IgnoreTopFunction("testing.tRunner"),
-	)
+	goleak.VerifyNone(t)
 }
 
 func TestLockfile(t *testing.T) {
