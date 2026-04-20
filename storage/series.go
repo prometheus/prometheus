@@ -40,7 +40,7 @@ type ChunkSeriesEntry struct {
 func (s *ChunkSeriesEntry) Labels() labels.Labels                       { return s.Lset }
 func (s *ChunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator { return s.ChunkIteratorFn(it) }
 
-// NewListSeries returns series entry with iterator that allows to iterate over provided samples.
+// NewListSeries returns series entry with iterator that allows iterating over provided samples.
 func NewListSeries(lset labels.Labels, s []chunks.Sample) *SeriesEntry {
 	samplesS := Samples(samples(s))
 	return &SeriesEntry{
@@ -55,7 +55,7 @@ func NewListSeries(lset labels.Labels, s []chunks.Sample) *SeriesEntry {
 	}
 }
 
-// NewListChunkSeriesFromSamples returns a chunk series entry that allows to iterate over provided samples.
+// NewListChunkSeriesFromSamples returns a chunk series entry that allows iterating over provided samples.
 // NOTE: It uses an inefficient chunks encoding implementation, not caring about chunk size.
 // Use only for testing.
 func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]chunks.Sample) *ChunkSeriesEntry {
@@ -102,13 +102,13 @@ type samples []chunks.Sample
 func (s samples) Get(i int) chunks.Sample { return s[i] }
 func (s samples) Len() int                { return len(s) }
 
-// Samples interface allows to work on arrays of types that are compatible with chunks.Sample.
+// Samples interface allows working on arrays of types that are compatible with chunks.Sample.
 type Samples interface {
 	Get(i int) chunks.Sample
 	Len() int
 }
 
-// NewListSeriesIterator returns listSeriesIterator that allows to iterate over provided samples.
+// NewListSeriesIterator returns listSeriesIterator that allows iterating over provided samples.
 func NewListSeriesIterator(samples Samples) chunkenc.Iterator {
 	return &listSeriesIterator{samples: samples, idx: -1}
 }
@@ -209,7 +209,7 @@ type listChunkSeriesIterator struct {
 	idx  int
 }
 
-// NewListChunkSeriesIterator returns listChunkSeriesIterator that allows to iterate over provided chunks.
+// NewListChunkSeriesIterator returns listChunkSeriesIterator that allows iterating over provided chunks.
 func NewListChunkSeriesIterator(chks ...chunks.Meta) chunks.Iterator {
 	return &listChunkSeriesIterator{chks: chks, idx: -1}
 }
