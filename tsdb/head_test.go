@@ -897,6 +897,85 @@ func TestHead_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
+// TestHead_WALDuplicateRefDifferentLabels is a regression test for
+// https://github.com/prometheus/prometheus/issues/18547.
+//
+// When the WAL contains two series records with the same ref but different label
+// sets, the second record must be silently ignored rather than overwriting the
+// first series in the ref-keyed stripeSeries map.  Without the fix both series
+// end up in the postings index, but the map only retains the second one, so
+// queries for the first series resolve to the wrong memSeries and return
+// unexpected data.
+//
+// With the fix:
+//   - The ref-keyed map retains the first series (series_a).
+//   - series_b is never inserted into the map or postings, so it is not queryable.
+//   - Samples that reference the shared ref are all attributed to series_a (a
+//     known side-effect when WAL corruption causes ref aliasing; the labels
+//     returned are still correct for series_a).
+func TestHead_WALDuplicateRefDifferentLabels(t *testing.T) {
+	const sharedRef = chunks.HeadSeriesRef(800000)
+
+	lblsA := labels.FromStrings("__name__", "series_a")
+	lblsB := labels.FromStrings("__name__", "series_b")
+
+	head, w := newTestHead(t, 1000, compression.None, false)
+
+	// Craft a WAL that contains:
+	//   1. series_a  → ref 800000
+	//   2. sample    → ref 800000, t=100, v=1    (belongs to series_a)
+	//   3. series_b  → ref 800000  (duplicate ref, different labels – corrupt WAL)
+	//   4. sample    → ref 800000, t=200, v=2    (intended for series_b)
+	populateTestWL(t, w, []any{
+		[]record.RefSeries{
+			{Ref: sharedRef, Labels: lblsA},
+		},
+		[]record.RefSample{
+			{Ref: sharedRef, T: 100, V: 1},
+		},
+		[]record.RefSeries{
+			{Ref: sharedRef, Labels: lblsB},
+		},
+		[]record.RefSample{
+			{Ref: sharedRef, T: 200, V: 2},
+		},
+	}, nil, false)
+
+	require.NoError(t, head.Init(0))
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	// After replay, the ref-keyed map must only contain series_a (the first
+	// record for ref 800000).  series_b must have been skipped.
+	byID := head.series.getByID(sharedRef)
+	require.NotNil(t, byID, "series for ref 800000 should exist")
+	testutil.RequireEqual(t, lblsA, byID.labels(), "ref 800000 must still map to series_a")
+
+	// series_b must not be reachable by its labels because its record was
+	// skipped during replay.
+	byHash := head.series.getByHash(lblsB.Hash(), lblsB)
+	require.Nil(t, byHash, "series_b should not exist in the head after replay")
+
+	// series_b must not appear in query results at all.
+	q, err := NewBlockQuerier(head, 0, 300)
+	require.NoError(t, err)
+	seriesBResult := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "series_b"))
+	require.Empty(t, seriesBResult, "series_b should not be queryable after being skipped during replay")
+
+	// Querying series_a must return series_a's own labels (not series_b's).
+	// Both the t=100 sample (from series_a's own record) and the t=200 sample
+	// (from series_b's sample record, which still references ref 800000) are
+	// attributed to series_a because they share the same WAL ref.  The key
+	// invariant is that the series identity is correct; mixing samples is an
+	// unavoidable consequence of the ref aliasing in the corrupted WAL.
+	q, err = NewBlockQuerier(head, 0, 300)
+	require.NoError(t, err)
+	seriesAResult := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "series_a"))
+	require.Contains(t, seriesAResult, `{__name__="series_a"}`,
+		"querying series_a must return a result with series_a's labels, not series_b's")
+}
+
 // TestHead_WALMultiRef_StaleDeletion_ChunkGaugeNotNegative is a regression test
 // for https://github.com/prometheus/prometheus/issues/10884.
 //

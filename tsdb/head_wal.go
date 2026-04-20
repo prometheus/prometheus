@@ -255,6 +255,28 @@ Outer:
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
+				// Guard against a WAL that contains two series records with the same
+				// ref but different label sets. This should not happen under normal
+				// operation (lastSeriesID is a monotonically-increasing counter), but
+				// can result from WAL corruption or operational scenarios such as WAL
+				// segment transfers between instances with overlapping ref spaces.
+				//
+				// Without this check, getOrCreateWithOptionalID would return
+				// created=true for both series (they have distinct hashes), add both
+				// to the postings index, and then silently overwrite the first
+				// series in the ref-keyed map with the second one.  Queries for the
+				// first series would then resolve its posting ref to the wrong
+				// memSeries and return incorrect data.
+				if existing := h.series.getByID(walSeries.Ref); existing != nil && !labels.Equal(existing.labels(), walSeries.Labels) {
+					h.logger.Warn(
+						"Duplicate series ref in WAL with different labels; skipping record to protect series map integrity",
+						"ref", walSeries.Ref,
+						"existing_labels", existing.labels().String(),
+						"new_labels", walSeries.Labels.String(),
+					)
+					continue
+				}
+
 				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
 				if err != nil {
 					seriesCreationErr = err
