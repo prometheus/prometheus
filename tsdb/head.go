@@ -861,34 +861,57 @@ func (h *Head) Init(minValidTime int64) error {
 		startFrom = snapIdx
 	}
 	// Backfill segments from the most recent checkpoint onwards.
-	for i := startFrom; i <= endAt; i++ {
-		walSegmentStart := time.Now()
-		s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wal.Dir(), i))
-		if err != nil {
-			return fmt.Errorf("open WAL segment: %d: %w", i, err)
+	// Use a single continuous reader across all segments so that the reader
+	// preserves state (partial-record tracking) across segment boundaries.
+	// This ensures cross-segment torn records are detected, matching the
+	// behavior of wlog.Checkpoint. See https://github.com/prometheus/prometheus/issues/18552.
+	if startFrom <= endAt {
+		walReplaySegStart := time.Now()
+
+		// if a snapshot was loaded , replay the first segment from snapOffset, then use
+		//continuous reader for remaining segment to preserve cross segment continuity
+		continuousStart := startFrom
+		if snapOffset > 0 && startFrom == snapIdx {
+			s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wal.Dir(), startFrom))
+			if err != nil {
+				return fmt.Errorf("open WAL segment: %d: %w", startFrom, err)
+			}
+			sr, err := wlog.NewSegmentBufReaderWithOffset(snapOffset, s)
+			if err != nil && !errors.Is(err, io.EOF) {
+				return fmt.Errorf("segment reader (offset=%d): %w", snapOffset, err)
+			}
+			if err == nil {
+				err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
+				if cerr := sr.Close(); cerr != nil {
+					h.logger.Warn("Error while closing the wal segment reader", "err", cerr)
+				}
+				if err != nil {
+					return err
+				}
+			}
+			continuousStart = startFrom + 1
 		}
 
-		offset := 0
-		if i == snapIdx {
-			offset = snapOffset
+		if continuousStart <= endAt {
+			sr, err := wlog.NewSegmentsRangeReader(wlog.SegmentRange{
+				Dir:   h.wal.Dir(),
+				First: continuousStart,
+				Last:  endAt,
+			})
+			if err != nil {
+				return fmt.Errorf("open WAL segments [%d, %d]: %w", continuousStart, endAt, err)
+			}
+			err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
+			if cerr := sr.Close(); cerr != nil {
+				h.logger.Warn("Error while closing the wal segments reader", "err", cerr)
+			}
+			if err != nil {
+				return err
+			}
 		}
-		sr, err := wlog.NewSegmentBufReaderWithOffset(offset, s)
-		if errors.Is(err, io.EOF) {
-			// File does not exist.
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
-		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
-		if err := sr.Close(); err != nil {
-			h.logger.Warn("Error while closing the wal segments reader", "err", err)
-		}
-		if err != nil {
-			return err
-		}
-		h.logger.Info("WAL segment loaded", "segment", i, "maxSegment", endAt, "duration", time.Since(walSegmentStart))
-		h.updateWALReplayStatusRead(i)
+
+		h.logger.Info("WAL segments loaded", "first", startFrom, "last", endAt, "duration", time.Since(walReplaySegStart))
+		h.updateWALReplayStatusRead(endAt)
 	}
 	walReplayDuration := time.Since(walReplayStart)
 

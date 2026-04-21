@@ -2094,34 +2094,28 @@ func TestHead_CrossSegmentWALCorruption_Replay_vs_Checkpoint(t *testing.T) {
 	require.NoError(t, segFile.Close())
 
 	// ---------------------------------------------------------------
-	// Assertion 1 (currently buggy): per-segment WAL replay misses the
-	// cross-segment torn record. This mirrors the loop in Head.Init
-	// (tsdb/head.go, the "Backfill segments from the most recent
-	// checkpoint onwards" block), where a fresh wlog.Reader is created
-	// for every segment and therefore the partial-record counter is
-	// reset at each boundary.
+	// Assertion 1 (fixed): WAL replay now uses a single continuous reader
+	// (wlog.NewSegmentsRangeReader, matching the fix in Head.Init), which
+	// preserves the partial-record counter across segment boundaries and
+	// correctly surfaces the cross-segment torn record.
+	// See https://github.com/prometheus/prometheus/issues/18552.
 	// ---------------------------------------------------------------
-	for i := first; i <= last; i++ {
-		s, err := wlog.OpenReadSegment(wlog.SegmentName(walDir, i))
+	{
+		replaySr, err := wlog.NewSegmentsRangeReader(wlog.SegmentRange{Dir: walDir, First: first, Last: last})
 		require.NoError(t, err)
 
-		sr, err := wlog.NewSegmentBufReaderWithOffset(0, s)
-		require.NoError(t, err)
-
-		r := wlog.NewReader(sr)
-		for r.Next() { //nolint:revive // Drain the reader.
+		r := wlog.NewReader(replaySr)
+		for r.Next() { //nolint:revive // Drain until corruption is hit.
 		}
-		// Today this assertion holds: per-segment replay silently accepts
-		// the corruption. See https://github.com/prometheus/prometheus/issues/18552.
-		// Once the fix lands, segment tornSeg should report a CorruptionErr
-		// and this assertion will need to be inverted.
-		require.NoErrorf(t, r.Err(),
-			"bug #18552: per-segment WAL replay unexpectedly detected the "+
-				"cross-segment torn record in segment %d; if this assertion "+
-				"starts failing after a fix, invert it to assert the "+
-				"CorruptionErr is returned for segment %d", i, tornSeg)
+		replayErr := r.Err()
+		require.NoError(t, replaySr.Close())
 
-		require.NoError(t, sr.Close())
+		// The fix makes replay detect the same corruption as checkpointing.
+		require.Error(t, replayErr, "replay must now detect the cross-segment torn record")
+		var cerr *wlog.CorruptionErr
+		require.ErrorAs(t, replayErr, &cerr,
+			"replay must return a CorruptionErr for the torn segment")
+		require.GreaterOrEqual(t, cerr.Segment, tornSeg)
 	}
 
 	// ---------------------------------------------------------------
