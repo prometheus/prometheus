@@ -101,6 +101,12 @@ Besides enabling this feature in Prometheus, start timestamps need to be exposed
 > * ST for native histograms and NHCBs are not yet implemented (see [#18315](https://github.com/prometheus/prometheus/issues/18315)).
 > * PromQL use of ST is out of scope of this feature.
 
+## Start timestamp (ST) usage in PromQL functions
+
+`--enable-feature=use-start-timestamps`
+
+Enables the use of start timestamps (ST) in PromQL functions such as `rate()`, `irate()`, and `increase()`. This feature doesn't currently work with extended range selectors (`promql-extended-range-selectors`). 
+
 ## Concurrent evaluation of independent rules
 
 `--enable-feature=concurrent-rule-eval`
