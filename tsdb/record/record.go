@@ -795,7 +795,6 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 			}
 		}
 
-
 		rfh := RefFloatHistogramSample{
 			Ref: chunks.HeadSeriesRef(ref),
 			ST:  ST,
