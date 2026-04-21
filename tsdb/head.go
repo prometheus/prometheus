@@ -869,7 +869,7 @@ func (h *Head) Init(minValidTime int64) error {
 		walReplaySegStart := time.Now()
 
 		// if a snapshot was loaded , replay the first segment from snapOffset, then use
-		//continuous reader for remaining segment to preserve cross segment continuity
+		// continuous reader for remaining segment to preserve cross segment continuity
 		continuousStart := startFrom
 		if snapOffset > 0 && startFrom == snapIdx {
 			s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wal.Dir(), startFrom))
