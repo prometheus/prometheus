@@ -33,10 +33,10 @@ func TestHistogramRateCounterResetHint(t *testing.T) {
 		{T: 1, H: &histogram.FloatHistogram{CounterResetHint: histogram.UnknownCounterReset, Count: 10, Sum: 10}},
 	}
 	labels := labels.FromMap(map[string]string{model.MetricNameLabel: "foo"})
-	fh, _ := histogramRate(points, false, labels, posrange.PositionRange{})
+	fh, _ := histogramRate(points, nil, false, labels, posrange.PositionRange{})
 	require.Equal(t, histogram.GaugeType, fh.CounterResetHint)
 
-	fh, _ = histogramRate(points, true, labels, posrange.PositionRange{})
+	fh, _ = histogramRate(points, nil, true, labels, posrange.PositionRange{})
 	require.Equal(t, histogram.GaugeType, fh.CounterResetHint)
 }
 
