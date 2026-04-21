@@ -287,6 +287,12 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		return nil, fmt.Errorf("OOOCapMax of %d is invalid. must be > 0 and <= 255", capMax)
 	}
 
+	if opts.EnableFastStartup {
+		if opts.OutOfOrderTimeWindow.Load() > 0 {
+			return nil, fmt.Errorf("Fast startup is disabled because Out-Of-Order time window is enabled.")
+		}
+	}
+
 	if opts.ChunkRange < 1 {
 		return nil, fmt.Errorf("invalid chunk range %d", opts.ChunkRange)
 	}
@@ -935,6 +941,13 @@ func (h *Head) replayDiskChunksAndWAL() error {
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
+	err := h.replayDiskChunksAndWAL()
+	close(h.walReplayDone)
+	return err
+}
+
+func (h *Head) InitFastStartup(minValidTime int64) error {
+	h.minValidTime.Store(minValidTime)
 
 	// TODO(RushabhMehta2005): Remove this 'if' block and always run the series state ticker when the feature is fully implemented.
 	if h.opts.EnableFastStartup {
@@ -980,10 +993,7 @@ func (h *Head) Init(minValidTime int64) error {
 		return nil
 	}
 
-	// When feature is not enabled, blocking call.
-	err := h.replayDiskChunksAndWAL()
-	close(h.walReplayDone)
-	return err
+	return nil
 }
 
 // WaitForWALReplay returns a channel that is closed when the WAL replay has finished.
