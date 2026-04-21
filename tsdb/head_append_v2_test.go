@@ -4515,6 +4515,56 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 	}
 }
 
+func TestHeadAppenderV2_BestEffortSTZeroSample_OOO(t *testing.T) {
+	testHistogram := tsdbutil.GenerateTestHistogram(1)
+	testHistogram.CounterResetHint = histogram.NotCounterReset
+	testFloatHistogram := tsdbutil.GenerateTestFloatHistogram(1)
+	testFloatHistogram.CounterResetHint = histogram.NotCounterReset
+
+	for _, tc := range []struct {
+		name string
+		v    float64
+		h    *histogram.Histogram
+		fh   *histogram.FloatHistogram
+	}{
+		{name: "float", v: 10},
+		{name: "histogram", h: testHistogram},
+		{name: "floathistogram", fh: testFloatHistogram},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
+			opts.EnableSTAsZeroSample = true
+			head, _ := newTestHeadWithOptions(t, compression.None, opts)
+
+			lbls := labels.FromStrings("foo", "bar")
+
+			// First appender: commit a sample at ts=200 to establish headMaxt and
+			// populate headChunks on the series.
+			app := head.AppenderV2(context.Background())
+			_, err := app.Append(0, lbls, 0, 200, tc.v, tc.h, tc.fh, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			// Second appender: st=100 is OOO (headMaxt=200, OOO disabled). Because the
+			// series now has committed data, bestEffortAppendSTZeroSample calls
+			// appendFloat/appendHistogram/appendFloatHistogram with fastRejectOOO=true,
+			// gets ErrOutOfOrderSample, and silently ignores it. The main sample must
+			// still be appended successfully.
+			app = head.AppenderV2(context.Background())
+			_, err = app.Append(0, lbls, 100, 300, tc.v, tc.h, tc.fh, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			result := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+			// Only the two main samples should be present; the OOO zero sample at ts=100
+			// must have been dropped.
+			require.Len(t, result[`{foo="bar"}`], 2)
+		})
+	}
+}
+
 // Regression test for data race https://github.com/prometheus/prometheus/issues/15139.
 func TestHeadAppenderV2_Append_HistogramAndCommitConcurrency(t *testing.T) {
 	h := tsdbutil.GenerateTestHistogram(1)
