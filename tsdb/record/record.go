@@ -591,23 +591,26 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 	var prev *RefHistogramSample
 
 	for len(dec.B) > 0 && dec.Err() == nil {
+		var ref, t, ST int64
 		if prev == nil || len(histograms) == 0 {
 			prev = &RefHistogramSample{
 				Ref: firstRef,
 				ST:  firstST,
 			}
-		}
-
-		ref := int64(prev.Ref) + dec.Varint64()
-		t := firstT + dec.Varint64()
-		stMarker := dec.Byte()
-		var ST int64
-		switch stMarker {
-		case noST:
-		case sameST:
-			ST = prev.ST
-		default:
-			ST = firstST + dec.Varint64()
+			ref = int64(firstRef)
+			t = firstT
+			ST = firstST
+		} else {
+			ref = int64(prev.Ref) + dec.Varint64()
+			t = firstT + dec.Varint64()
+			stMarker := dec.Byte()
+			switch stMarker {
+			case noST:
+			case sameST:
+				ST = prev.ST
+			default:
+				ST = firstST + dec.Varint64()
+			}
 		}
 
 		rh := RefHistogramSample{
@@ -616,6 +619,7 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 			T:   t,
 			H:   &histogram.Histogram{},
 		}
+		prev = &rh
 		DecodeHistogram(dec, rh.H)
 
 		if !histogram.IsKnownSchema(rh.H.Schema) {
@@ -630,7 +634,6 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 				return nil, fmt.Errorf("error reducing resolution of histogram #%d: %w", len(histograms)+1, err)
 			}
 		}
-		prev = &rh
 		histograms = append(histograms, rh)
 	}
 
@@ -770,24 +773,28 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 	var prev *RefFloatHistogramSample
 
 	for len(dec.B) > 0 && dec.Err() == nil {
+		var ref, t, ST int64
 		if prev == nil || len(histograms) == 0 {
 			prev = &RefFloatHistogramSample{
 				Ref: firstRef,
 				ST:  firstST,
 			}
+			ref = int64(firstRef)
+			t = firstT
+			ST = firstST
+		} else {
+			ref = int64(prev.Ref) + dec.Varint64()
+			t = firstT + dec.Varint64()
+			stMarker := dec.Byte()
+			switch stMarker {
+			case noST:
+			case sameST:
+				ST = prev.ST
+			default:
+				ST = firstST + dec.Varint64()
+			}
 		}
 
-		ref := int64(prev.Ref) + dec.Varint64()
-		t := firstT + dec.Varint64()
-		stMarker := dec.Byte()
-		var ST int64
-		switch stMarker {
-		case noST:
-		case sameST:
-			ST = prev.ST
-		default:
-			ST = firstST + dec.Varint64()
-		}
 
 		rfh := RefFloatHistogramSample{
 			Ref: chunks.HeadSeriesRef(ref),
@@ -795,6 +802,7 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 			T:   t,
 			FH:  &histogram.FloatHistogram{},
 		}
+		prev = &rfh
 		DecodeFloatHistogram(dec, rfh.FH)
 
 		if !histogram.IsKnownSchema(rfh.FH.Schema) {
@@ -810,7 +818,6 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 			}
 		}
 
-		prev = &rfh
 		histograms = append(histograms, rfh)
 	}
 
@@ -1014,6 +1021,19 @@ func (*Encoder) samplesV2(samples []RefSample, b []byte) []byte {
 	return buf.Get()
 }
 
+// func writeSTMarker(buf encoding.Encbuf, ST, prevST, firstST int64, V float64) {
+// 	switch ST {
+// 		case 0:
+// 			buf.PutByte(noST)
+// 		case prevST:
+// 			buf.PutByte(sameST)
+// 		default:
+// 			buf.PutByte(explicitST)
+// 			buf.PutVarint64(ST - firstST)
+// 		}
+// 		buf.PutBE64(math.Float64bits(V))
+// }
+
 // Tombstones appends the encoded tombstones to b and returns the resulting slice.
 func (*Encoder) Tombstones(tstones []tombstones.Stone, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
@@ -1138,6 +1158,8 @@ func (*Encoder) histogramSamplesV2(histograms []RefHistogramSample, b []byte) []
 			buf.PutVarint64(first.T)
 			buf.PutVarint64(first.ST)
 			prev = first
+			EncodeHistogram(&buf, h.H)
+			continue
 		}
 
 		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
@@ -1298,6 +1320,8 @@ func (*Encoder) floatHistogramSamplesV2(histograms []RefFloatHistogramSample, b 
 			buf.PutVarint64(first.T)
 			buf.PutVarint64(first.ST)
 			prev = first
+			EncodeFloatHistogram(&buf, fh.FH)
+			continue
 		}
 
 		buf.PutVarint64(int64(fh.Ref) - int64(prev.Ref))
