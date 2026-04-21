@@ -4436,6 +4436,59 @@ func TestHeadAppenderV2_Append_EnableSTAsZeroSample(t *testing.T) {
 				}
 			}(),
 		},
+		{
+			name: "ST is out of order/float",
+			appendableSamples: []appendableSamples{
+				{ts: 200, fSample: 10},
+				{ts: 300, fSample: 10, st: 100},
+			},
+			// ST results ErrOutOfOrderSample, but ST append is best effort, so
+			// ST should be ignored, but sample appended.
+			expectedSamples: func() []chunks.Sample {
+				return []chunks.Sample{
+					sample{t: 200, f: 10},
+					sample{t: 300, f: 10},
+				}
+			}(),
+		},
+		{
+			name: "ST is out of order/histogram",
+			appendableSamples: []appendableSamples{
+				{ts: 200, h: testHistogram},
+				{ts: 300, h: testHistogram, st: 100},
+			},
+			// ST results ErrOutOfOrderSample, but ST append is best effort, so
+			// ST should be ignored, but sample appended.
+			expectedSamples: func() []chunks.Sample {
+				// NOTE: Without ST, on query, first histogram sample will get
+				// CounterReset adjusted to UnknownCounterReset.
+				firstSample := testHistogram.Copy()
+				firstSample.CounterResetHint = histogram.UnknownCounterReset
+				return []chunks.Sample{
+					sample{t: 200, h: firstSample},
+					sample{t: 300, h: testHistogram},
+				}
+			}(),
+		},
+		{
+			name: "ST is out of order/floathistogram",
+			appendableSamples: []appendableSamples{
+				{ts: 200, fh: testFloatHistogram},
+				{ts: 300, fh: testFloatHistogram, st: 100},
+			},
+			// ST results ErrOutOfOrderSample, but ST append is best effort, so
+			// ST should be ignored, but sample appended.
+			expectedSamples: func() []chunks.Sample {
+				// NOTE: Without ST, on query, first histogram sample will get
+				// CounterReset adjusted to UnknownCounterReset.
+				firstSample := testFloatHistogram.Copy()
+				firstSample.CounterResetHint = histogram.UnknownCounterReset
+				return []chunks.Sample{
+					sample{t: 200, fh: firstSample},
+					sample{t: 300, fh: testFloatHistogram},
+				}
+			}(),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := newTestHeadDefaultOptions(DefaultBlockDuration, false)
