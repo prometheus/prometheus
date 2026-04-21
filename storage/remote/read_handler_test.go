@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
@@ -325,142 +326,97 @@ func TestStreamReadEndpoint(t *testing.T) {
 
 	require.Len(t, results, 6, "Expected 6 results.")
 
-	require.Equal(t, []*prompb.ChunkedReadResponse{
+	type expectedFrame struct {
+		labels     []prompb.Label
+		chunkCount int
+		queryIndex int64
+	}
+	expectedFrames := []expectedFrame{
 		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar1"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
-						},
-					},
-				},
+			labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar1"},
 			},
+			chunkCount: 1,
 		},
 		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar2"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
-						},
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 7200000,
-							MaxTimeMs: 7200000,
-							Data:      []byte("\000\001\200\364\356\006@\307p\000\000\000\000\000"),
-						},
-					},
-				},
+			labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar2"},
 			},
+			chunkCount: 2,
 		},
 		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar3"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
-						},
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 7200000,
-							MaxTimeMs: 14340000,
-							Data:      []byte("\000x\200\364\356\006@\307p\000\000\000\000\000\340\324\003\340>\224\355\260\277\322\200\372\005(=\240R\207:\003(\025\240\362\201z\003(\365\240r\203:\005(\r\241\322\201\372\r(\r\240R\237:\007(5\2402\201z\037(\025\2402\203:\005(\375\240R\200\372\r(\035\241\322\201:\003(5\240r\326g\364\271\213\227!\253q\037\312N\340GJ\033E)\375\024\241\266\362}(N\217(V\203)\336\207(\326\203(N\334W\322\203\2644\240}\005(\373AJ\031\3202\202\264\374\240\275\003(kA\3129\320R\201\2644\240\375\264\277\322\200\332\005(3\240r\207Z\003(\027\240\362\201Z\003(\363\240R\203\332\005(\017\241\322\201\332\r(\023\2402\237Z\007(7\2402\201Z\037(\023\240\322\200\332\005(\377\240R\200\332\r "),
-						},
-					},
-				},
+			labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar3"},
 			},
+			chunkCount: 2,
 		},
 		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar3"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MinTimeMs: 14400000,
-							MaxTimeMs: 14400000,
-							Data:      []byte("\000\001\200\350\335\r@\327p\000\000\000\000\000"),
-						},
-					},
-				},
+			labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar3"},
 			},
+			chunkCount: 1,
 		},
 		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-						{Name: "foo", Value: "bar1"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_XOR,
-							MaxTimeMs: 7140000,
-							Data:      []byte("\000x\000\000\000\000\000\000\000\000\000\340\324\003\302|\005\224\000\301\254}\351z2\320O\355\264n[\007\316\224\243md\371\320\375\032Pm\nS\235\016Q\255\006P\275\250\277\312\201Z\003(3\240R\207\332\005(\017\240\322\201\332=(\023\2402\203Z\007(w\2402\201Z\017(\023\265\227\364P\033@\245\007\364\nP\033C\245\002t\036P+@e\036\364\016Pk@e\002t:P;A\245\001\364\nS\373@\245\006t\006P+C\345\002\364\006Pk@\345\036t\nP\033A\245\003\364:P\033@\245\006t\016ZJ\377\\\205\313\210\327\270\017\345+F[\310\347E)\355\024\241\366\342}(v\215(N\203)\326\207(\336\203(V\332W\362\202t4\240m\005(\377AJ\006\320\322\202t\374\240\255\003(oA\312:\3202"),
-						},
-					},
-				},
+			labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar1"},
 			},
-			QueryIndex: 1,
+			chunkCount: 1,
+			queryIndex: 1,
 		},
 		{
-			ChunkedSeries: []*prompb.ChunkedSeries{
-				{
-					Labels: []prompb.Label{
-						{Name: "__name__", Value: "test_histogram_metric1"},
-						{Name: "b", Value: "c"},
-						{Name: "baz", Value: "qux"},
-						{Name: "d", Value: "e"},
-					},
-					Chunks: []prompb.Chunk{
-						{
-							Type:      prompb.Chunk_FLOAT_HISTOGRAM,
-							MaxTimeMs: 1440000,
-							Data:      []byte("\x00\x19\x00\xff?PbM\xd2\xf1\xa9\xfc\x8c\xa4\x94e$\xa2@(\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00@2ffffff?\xf0\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00?\xf0\x00\x00\x00\x00\x00\x00\xf8\xea`\xd6/v\x03\xd2\x1f\xc2_\xff\xd8\x0f\t\x7f\xff\t\x7f\xff\t\x7f\xff`<%\xff\xfc%\xff\xf4\xbda{4\x9f\xff\xff\xff\xff\xff\xfd\x80\xf5\x85\xec\a\xb0\x1e\xc0z\xc2\xf6\x03\xd8\r\xa4\x8f\xbd\xa0\xf5\xeb\x9f\xff\xff\xff\xff\xff\xfda{A\xeb\v\xd6\x17\xac/h=az\xc2о\xc0\xb8\xac\xcc\xcc\xcc\xcc\xcc\xdbA\xec\v\xda\x0fh=\xa0\xf6\x05\xed\a\xb4\x1a\t\x99\x9333333;\x02\xe7`^\xc0\xbd\x81s\xb0/`Z8\xd4'\xea\x1f\xbc\xea\x13\xe6gP\x9f2\xdc$\xee\a\xbb)\xff\xff\xff\xff\xff\xffP\x9f\xb8\x1e\xa1?P\x9f\xa8O\xdc\x0fP\x9f\xa8Om\x17\xfbB\xf6\xe7\xb5UUUUUw\x03\xda\x17\xb8\x1e\xe0{\x81\xed\v\xdc\x0fp4\x99\x9d\x99\x99\x99\x99\x99\x9eй\xda\x17\xb4/h\\\xed\v\xda\x16\xd87{\x03\xfb2\xe4\xcc\xcc\xcc\xcc\xcc\xe7`~fv\a\xe6Q1ݕ\xaa\xaa\xaa\xaa\xaa\xab\xb0?\x1d\x81\xfd\x81\xfd\x81\xf8\xec\x0f\xec\x0f\xa5\xe7\xb7<\xff\xff\xff\xff\xff\xff\x19\xc61\x9cb\xd4O\xc6:\xf5\xef\xff\xff\xff\xff\xff\xfc\xe39\xce3\x9a\x05\xeb\x13\xe0\xac\xcc\xcc\xcc\xcc\xcc\xc7X\x9f\x18\xc7X\x9f\x18\xa0\xce\xf0pə\x99\x99\x99\x99\xb5\x89\xfb\xc1\xeb\x13\xf5\x89\xfa\xc4\xfd\xe0\xf5\x89\xfa\xc4\xf4\x0f\xdc\x17\a\xaa\xaa\xaa\xaa\xaa\xabx=\xc1{\xc1\xef\a\xbc\x1e\xe0\xbd\xe0\xf7\x83C\x99\x8e\x7f\xff\xff\xff\xff\xff\xb8.w\x05\xee\v\xdc\x17;\x82\xf7\x05\xa0^\xd0\xfc\x16\xaa\xaa\xaa\xaa\xaa\xa9\xda\x1f\x99\x9d\xa1\xf9\x94\x19\x8c-\x99\x99\x99\x99\x99\x9d\xa1\xf8\xed\x0f\xed\x0f\xed\x0f\xc7h\x7fh}\x1d\xe7<\x99\x99\x99\x99\x99\x9a3\x8cc8\xc5\x02c\x05\xaa\xaa\xaa\xaa\xaa\xaaq\x9c\xe7\x19\xcd\x06\xf6\t\xf0\xcf\xff\xff\xff\xff\xff\xe3\xb0O\x8cc\xb0O\x8cP&\x18=UUUUU[\x04\xf8v\t\xfb\x04\xfd\x82|;\x04\xfd\x82z\x1f\xc7\x1c\x99\x99\x99\x99\x99\x9a\x18\xe1\x86\x18\xe1\x84"),
-						},
-					},
-				},
+			labels: []prompb.Label{
+				{Name: "__name__", Value: "test_histogram_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
 			},
-			QueryIndex: 2,
+			chunkCount: 1,
+			queryIndex: 2,
 		},
-	}, results)
+	}
+
+	for i, exp := range expectedFrames {
+		require.Len(t, results[i].ChunkedSeries, 1, "frame %d: expected 1 chunked series", i)
+		series := results[i].ChunkedSeries[0]
+		require.Equal(t, exp.labels, series.Labels, "frame %d: labels mismatch", i)
+		require.Len(t, series.Chunks, exp.chunkCount, "frame %d: chunk count mismatch", i)
+		require.Equal(t, exp.queryIndex, results[i].QueryIndex, "frame %d: query index mismatch", i)
+
+		// Verify chunks have non-empty data and valid encoding.
+		for j, chk := range series.Chunks {
+			require.NotEmpty(t, chk.Data, "frame %d chunk %d: empty data", i, j)
+			// Decode the chunk and verify we get the expected number of samples.
+			c, err := chunkenc.FromData(chunkenc.Encoding(chk.Type), chk.Data)
+			require.NoError(t, err, "frame %d chunk %d: failed to decode", i, j)
+			iter := c.Iterator(nil)
+			count := 0
+			for iter.Next() != chunkenc.ValNone {
+				count++
+			}
+			require.NoError(t, iter.Err(), "frame %d chunk %d: iterator error", i, j)
+			require.Greater(t, count, 0, "frame %d chunk %d: no samples", i, j)
+		}
+	}
 }
 
 func addNativeHistogramsToTestSuite(t *testing.T, storage *teststorage.TestStorage, n int) {

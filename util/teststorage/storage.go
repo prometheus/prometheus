@@ -57,6 +57,11 @@ func NewWithError(o ...Option) (*TestStorage, error) {
 	opts.EnableExemplarStorage = true
 	opts.MaxExemplars = 1e5
 
+	// Enable XOR2 encoding and ST storage by default so all tests exercise
+	// the ST-aware code path.
+	opts.EnableXOR2Encoding = true
+	opts.EnableSTStorage = true
+
 	for _, opt := range o {
 		opt(opts)
 	}
