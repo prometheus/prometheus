@@ -235,7 +235,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			stats.TotalSamples += len(histogramSamples)
 			stats.DroppedSamples += len(histogramSamples) - len(repl)
-		case record.CustomBucketsHistogramSamples, record.CustomBucketsHistogramSamplesV2:
+		case record.CustomBucketsHistogramSamples:
 			histogramSamples, err = dec.HistogramSamples(rec, histogramSamples)
 			if err != nil {
 				return nil, fmt.Errorf("decode histogram samples: %w", err)
@@ -269,7 +269,7 @@ func Checkpoint(logger *slog.Logger, w *WL, from, to int, keep func(id chunks.He
 			}
 			stats.TotalSamples += len(floatHistogramSamples)
 			stats.DroppedSamples += len(floatHistogramSamples) - len(repl)
-		case record.CustomBucketsFloatHistogramSamples, record.CustomBucketsFloatHistogramSamplesV2:
+		case record.CustomBucketsFloatHistogramSamples:
 			floatHistogramSamples, err = dec.FloatHistogramSamples(rec, floatHistogramSamples)
 			if err != nil {
 				return nil, fmt.Errorf("decode float histogram samples: %w", err)
