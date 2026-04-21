@@ -289,7 +289,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 
 	if opts.EnableFastStartup {
 		if opts.OutOfOrderTimeWindow.Load() > 0 {
-			return nil, fmt.Errorf("Fast startup is disabled because Out-Of-Order time window is enabled.")
+			return nil, errors.New("fast startup is disabled because OOO time window is enabled")
 		}
 	}
 
