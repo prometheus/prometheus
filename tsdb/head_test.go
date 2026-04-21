@@ -7247,7 +7247,7 @@ func TestHeadAppender_AppendSTZeroSample(t *testing.T) {
 			expectedError: storage.ErrOutOfOrderSample,
 		},
 		{
-			name: "ST is out of order when OOO is enabled",
+			name:       "ST is out of order when OOO is enabled",
 			oooEnabled: true,
 			appendableSamples: []appendableSample{
 				{ts: 200, fSample: 2.0},
