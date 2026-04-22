@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -172,7 +173,40 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		agentAfterSeries = db.series
 	})
 
-	require.Equal(t, wlogAfterSeries, agentAfterSeries, "agent.Checkpoint vs wlog.Checkpoint post-replay state doesn't match")
+	requireStripeSeriesEqual(t, wlogAfterSeries, agentAfterSeries)
+}
+
+// requireStripeSeriesEqual asserts that two stripeSeries are semantically
+// equivalent: same set of refs, each memSeries has matching labels (by
+// content) and lastTs. It avoids reflect.DeepEqual on labels.Labels because
+// under -tags=dedupelabels the struct carries a per-instance nameTable
+// pointer and symbol-table IDs whose layout depends on the order in which
+// records were interned during replay — an implementation detail, not a
+// behavioural property.
+func requireStripeSeriesEqual(t *testing.T, want, got *stripeSeries) {
+	t.Helper()
+
+	require.Equal(t, want.size, got.size, "stripeSeries size mismatch")
+
+	collect := func(s *stripeSeries) map[chunks.HeadSeriesRef]*memSeries {
+		out := map[chunks.HeadSeriesRef]*memSeries{}
+		for _, m := range s.series {
+			maps.Copy(out, m)
+		}
+		return out
+	}
+	wantByRef := collect(want)
+	gotByRef := collect(got)
+
+	require.Len(t, gotByRef, len(wantByRef), "series count mismatch")
+
+	for ref, w := range wantByRef {
+		g, ok := gotByRef[ref]
+		require.Truef(t, ok, "ref %d present in wlog path, missing in agent path", ref)
+		require.Truef(t, labels.Equal(w.lset, g.lset),
+			"ref %d labels mismatch: wlog=%s agent=%s", ref, w.lset.String(), g.lset.String())
+		require.Equalf(t, w.lastTs, g.lastTs, "ref %d lastTs mismatch", ref)
+	}
 }
 
 func assertCheckpointExists(t *testing.T, walDir string, checkpointID int) {
