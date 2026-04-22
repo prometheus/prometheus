@@ -1882,7 +1882,7 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 	val, ws := ev.eval(ctx, subq)
 	// Update the parent samples stats with the subquery samples stats.
 	parentSamplesStats.UpdatePeakFromSubquery(ev.samplesStats)
-	parentSamplesStats.MergeSamplesReadFromSubquery(ev.samplesStats)
+	parentSamplesStats.MergeSamplesReadFromSubquery(ev.samplesStats, 0)
 	// Restore the parent samples stats.
 	ev.samplesStats = parentSamplesStats
 	mat := val.(Matrix)
@@ -2441,7 +2441,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			subqStart += subqInterval
 		}
 
-		subqSamplesStats := stats.NewChildWithStepTracking(ev.samplesStats.StepTrackingEnabled(), subqStart, subqEnd, subqInterval)
+		// Always enable per-step tracking on the subquery child so that
+		// MergeSamplesReadFromSubquery can apply range-windowed attribution
+		// regardless of whether the parent tracks per-step stats.
+		subqSamplesStats := stats.NewChildWithStepTracking(true, subqStart, subqEnd, subqInterval)
 
 		newEv := &evaluator{
 			startTimestamp:           subqStart,
@@ -2470,12 +2473,18 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		ev.currentSamples = newEv.currentSamples
 		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, newEv.samplesStats.TotalSamples)
-		// Merge SamplesRead with incremental attribution; subquery steps before/after outer window → step 0 / last step.
-		if ev.samplesStats.SamplesReadPerStep != nil && newEv.samplesStats.SamplesReadPerStep != nil {
-			ev.samplesStats.MergeSamplesReadFromSubquery(newEv.samplesStats)
-		} else {
-			ev.samplesStats.IncrementSamplesReadAtTimestamp(ev.endTimestamp, newEv.samplesStats.SamplesRead)
+		// Merge SamplesRead from the subquery into the parent. When neither
+		// offset nor @ modifier is used, apply range-windowed attribution so
+		// that only subquery steps inside each parent step's
+		// [parentTs-range, parentTs] window are counted, consistent with
+		// range vector selectors. With offset or @ modifier the subquery's
+		// time frame is shifted relative to the parent, so we attribute all
+		// steps without windowing.
+		effectiveRange := rangeMillis
+		if offsetMillis != 0 || e.Timestamp != nil {
+			effectiveRange = 0
 		}
+		ev.samplesStats.MergeSamplesReadFromSubquery(newEv.samplesStats, effectiveRange)
 		return res, ws
 	case *parser.StepInvariantExpr:
 		newEv := &evaluator{

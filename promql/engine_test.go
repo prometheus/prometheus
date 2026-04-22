@@ -1424,12 +1424,12 @@ load 10s
 				211000: 36,
 				216000: 36,
 			},
-			SamplesRead: 48,
+			SamplesRead: 45,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 36,
 				206000: 3,
 				211000: 3,
-				216000: 6, // steps after last outer → last step
+				216000: 3,
 			},
 		},
 		{
@@ -1445,12 +1445,12 @@ load 10s
 				211000: 12,
 				216000: 12,
 			},
-			SamplesRead: 16,
+			SamplesRead: 15,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 12,
 				206000: 1,
 				211000: 1,
-				216000: 2, // steps after last outer → last step
+				216000: 1,
 			},
 		},
 		{
@@ -1466,12 +1466,12 @@ load 10s
 				211000: 12,
 				216000: 12,
 			},
-			SamplesRead: 16,
+			SamplesRead: 15,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 12,
 				206000: 1,
 				211000: 1,
-				216000: 2, // steps after last outer → last step
+				216000: 1,
 			},
 		},
 		{
@@ -1487,12 +1487,12 @@ load 10s
 				211000: 72,
 				216000: 72,
 			},
-			SamplesRead: 96,
+			SamplesRead: 90,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 72,
 				206000: 6,
 				211000: 6,
-				216000: 12, // steps after last outer → last step
+				216000: 6,
 			},
 		},
 		{
@@ -1508,12 +1508,12 @@ load 10s
 				211000: 48,
 				216000: 48,
 			},
-			SamplesRead: 64,
+			SamplesRead: 60,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 48,
 				206000: 4,
 				211000: 4,
-				216000: 8, // steps after last outer → last step
+				216000: 4,
 			},
 		},
 
@@ -1627,10 +1627,10 @@ load 10s
 				201000: 2,
 				231000: 2,
 			},
-			SamplesRead: 5,
+			SamplesRead: 4,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 2,
-				231000: 3,
+				231000: 2,
 			},
 		},
 
@@ -1658,9 +1658,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				180000: 18,
 			},
-			SamplesRead: 27, // subquery SamplesRead merged into outer
+			SamplesRead: 18,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				180000: 27,
+				180000: 18,
 			},
 		},
 
@@ -1688,9 +1688,9 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				300000: 78,
 			},
-			SamplesRead: 54, // all subquery steps attributed (steps before first window → step 0)
+			SamplesRead: 48, // all subquery steps attributed (steps before first window → step 0)
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				300000: 54,
+				300000: 48,
 			},
 		},
 
@@ -1865,11 +1865,11 @@ load 10s
 				231000: 6,
 				261000: 6,
 			},
-			SamplesRead: 24,
+			SamplesRead: 18,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 6,
-				231000: 9,
-				261000: 9,
+				231000: 6,
+				261000: 6,
 			},
 		},
 
@@ -1922,14 +1922,14 @@ load 10s
 		{
 			Query:        "sum by (a) (rate(metricWith3SampleEvery10Seconds[2m:30s]))[15m:5m]",
 			Start:        time.Unix(900, 0),
-			PeakSamples:  85,
+			PeakSamples:  49,
 			TotalSamples: 36,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				900000: 36,
 			},
-			SamplesRead: 72, // subquery SamplesRead merged into outer
+			SamplesRead: 36, // subquery SamplesRead merged into outer
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				900000: 72,
+				900000: 36,
 			},
 		},
 
@@ -1937,14 +1937,14 @@ load 10s
 		{
 			Query:        "histogram_sum(rate(metricWith1HistogramEvery10Seconds[5m:1m]))[30m:10m]",
 			Start:        time.Unix(1800, 0),
-			PeakSamples:  273,
+			PeakSamples:  195,
 			TotalSamples: 130,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				1800000: 130,
 			},
-			SamplesRead: 208, // subquery SamplesRead merged into outer
+			SamplesRead: 130, // subquery SamplesRead merged into outer
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				1800000: 208,
+				1800000: 130,
 			},
 		},
 
@@ -2007,14 +2007,14 @@ load 10s
 		{
 			Query:        "increase(metricWith1SampleEvery10Seconds[5m:1m])[30m:10m]",
 			Start:        time.Unix(1800, 0),
-			PeakSamples:  21,
+			PeakSamples:  15,
 			TotalSamples: 10,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				1800000: 10,
 			},
-			SamplesRead: 16, // subquery SamplesRead merged into outer
+			SamplesRead: 10, // subquery SamplesRead merged into outer
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				1800000: 16,
+				1800000: 10,
 			},
 		},
 
@@ -2123,7 +2123,7 @@ load 10s
 				350000: 18,
 				380000: 18,
 			},
-			SamplesRead: 78,
+			SamplesRead: 72,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				200000: 18,
 				230000: 9,
@@ -2131,7 +2131,7 @@ load 10s
 				290000: 9,
 				320000: 9,
 				350000: 9,
-				380000: 15, // steps after last outer → last step
+				380000: 9,
 			},
 		},
 
@@ -2177,11 +2177,11 @@ load 10s
 				280000: 12,
 				400000: 12,
 			},
-			SamplesRead: 48,
+			SamplesRead: 36,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				160000: 12,
-				280000: 18,
-				400000: 18,
+				280000: 12,
+				400000: 12,
 			},
 		},
 

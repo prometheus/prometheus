@@ -288,6 +288,10 @@ type QuerySamples struct {
 	EnablePerStepStats bool
 	StartTimestamp     int64
 	Interval           int64
+	// numSteps is the number of evaluation steps. Always set by
+	// NewChildWithStepTracking so that MergeSamplesReadFromSubquery
+	// can compute parent windows even when per-step arrays are nil.
+	numSteps int
 }
 
 type Stats struct {
@@ -403,13 +407,18 @@ func (*QuerySamples) NewChild() *QuerySamples {
 	return NewQuerySamples(false)
 }
 
-// NewChildWithStepTracking creates a child QuerySamples that shares the parent's
-// per-step setting and, when enablePerStepStats is true, initializes step tracking
-// with the given outer query step layout (start, end, interval). Used when
-// evaluating a subquery so the child can record SamplesReadPerStep for incremental
-// attribution to outer steps.
+// NewChildWithStepTracking creates a child QuerySamples and, when
+// enablePerStepStats is true, initializes per-step arrays. The step layout
+// (start, interval, numSteps) is always stored so that
+// MergeSamplesReadFromSubquery can compute parent windows for windowed
+// attribution even when the parent does not track per-step arrays.
 func NewChildWithStepTracking(enablePerStepStats bool, start, end, interval int64) *QuerySamples {
 	qs := NewQuerySamples(enablePerStepStats)
+	qs.StartTimestamp = start
+	qs.Interval = interval
+	if interval > 0 {
+		qs.numSteps = int((end-start)/interval) + 1
+	}
 	if enablePerStepStats {
 		qs.InitStepTracking(start, end, interval)
 	}
@@ -419,23 +428,42 @@ func NewChildWithStepTracking(enablePerStepStats bool, start, end, interval int6
 // MergeSamplesReadFromSubquery merges only SamplesRead and SamplesReadPerStep from
 // the child (subquery) into the parent. TotalSamples and TotalSamplesPerStep are
 // not merged, because the outer range-eval loop already counts those when it
-// iterates over the pre-computed matrix. This function ensures the outer query's
-// samples-read stats reflect the subquery's actual storage I/O.
-func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples) {
+// iterates over the pre-computed matrix.
+//
+// When subqRange > 0, range-windowed attribution is used: only child steps whose
+// timestamp falls within a parent step's [parentTs-subqRange, parentTs] window are
+// counted. Child steps in gaps between parent windows (when the parent interval
+// exceeds subqRange) are not attributed, consistent with range vector selectors
+// where only samples inside the selected range are counted.
+//
+// When subqRange is 0, all child steps are attributed to the nearest parent step.
+//
+// The parent must have StartTimestamp and Interval set (via NewChildWithStepTracking)
+// for windowing to work. Per-step arrays on the parent are optional; when present
+// they receive per-step attribution, otherwise only SamplesRead is updated.
+func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples, subqRange int64) {
 	if qs == nil || child == nil {
 		return
 	}
-	qs.SamplesRead += child.SamplesRead
-	if qs.SamplesReadPerStep == nil || child.SamplesReadPerStep == nil {
+	if child.SamplesReadPerStep == nil {
+		qs.SamplesRead += child.SamplesRead
 		return
 	}
-	if len(qs.SamplesReadPerStep) == 0 || qs.Interval == 0 {
+	if qs.Interval == 0 {
+		qs.SamplesRead += child.SamplesRead
 		return
 	}
 
-	numParent := len(qs.SamplesReadPerStep)
 	parentStart := qs.StartTimestamp
 	parentInterval := qs.Interval
+	numParent := 0
+	if qs.SamplesReadPerStep != nil {
+		numParent = len(qs.SamplesReadPerStep)
+	}
+	numParentForWindow := qs.numSteps
+	if numParent > numParentForWindow {
+		numParentForWindow = numParent
+	}
 
 	for k := range child.SamplesReadPerStep {
 		n := child.SamplesReadPerStep[k]
@@ -443,14 +471,30 @@ func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples) {
 			continue
 		}
 		tk := child.StartTimestamp + int64(k)*child.Interval
+
 		outerStep := 0
 		if tk > parentStart {
 			outerStep = int((tk - parentStart + parentInterval - 1) / parentInterval)
 		}
-		if outerStep >= numParent {
-			outerStep = numParent - 1
+
+		if subqRange > 0 {
+			if outerStep >= numParentForWindow {
+				continue
+			}
+			parentTs := parentStart + int64(outerStep)*parentInterval
+			if tk <= parentTs-subqRange {
+				continue
+			}
+		} else {
+			if numParent > 0 && outerStep >= numParent {
+				outerStep = numParent - 1
+			}
 		}
-		qs.SamplesReadPerStep[outerStep] += n
+
+		qs.SamplesRead += n
+		if numParent > 0 && outerStep < numParent {
+			qs.SamplesReadPerStep[outerStep] += n
+		}
 	}
 }
 
