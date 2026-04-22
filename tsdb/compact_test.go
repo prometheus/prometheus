@@ -1304,6 +1304,14 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			}
 			require.NoError(b, app.Commit())
 
+			// Verify we actually have the expected number of head chunks.
+			for i := range nSeries {
+				lbls := labels.FromStrings("__name__", "bench", "series", strconv.Itoa(i))
+				s := h.series.getByHash(lbls.Hash(), lbls)
+				require.NotNil(b, s, "series %d not found", i)
+				require.Equal(b, uint32(nChunks), s.headChunkCount.Load(), "series %d: unexpected head chunk count", i)
+			}
+
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; b.Loop(); i++ {

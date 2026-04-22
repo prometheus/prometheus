@@ -2557,6 +2557,7 @@ func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkD
 		chk := s.headChunks
 		for chk != nil {
 			if chk.maxTime < mint {
+				// If any head chunk is truncated, we can truncate all mmapped chunks.
 				removedInOrder = int(s.headChunkCount.Load()) - i + len(s.mmappedChunks)
 				s.firstChunkID += chunks.HeadChunkID(removedInOrder)
 				if i == 0 {
@@ -2633,6 +2634,11 @@ func (mc *memChunk) len() (count int) {
 	}
 	return count
 }
+
+// collectHeadChunksBufSize is the stack-allocated buffer size for collectHeadChunks.
+// Most series have ≤16 head chunks between mmap cycles, so this avoids heap allocation
+// in the common case.
+const collectHeadChunksBufSize = 16
 
 // collectHeadChunks walks the headChunks linked list once and returns a slice
 // in oldest-first order (matching mmappedChunks ordering).
