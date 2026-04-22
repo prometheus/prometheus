@@ -167,9 +167,8 @@ func (rws *WriteStorage) snapshotSavepoint() Savepoint {
 func (rws *WriteStorage) persistSavepoint() {
 	rws.mtx.Lock()
 	sp := rws.snapshotSavepoint()
-	rws.mtx.Unlock()
-
 	rws.savepoint = sp
+	rws.mtx.Unlock()
 
 	if err := sp.Save(rws.dir); err != nil {
 		rws.logger.Error("Failed to persist remote write savepoint", "err", err)

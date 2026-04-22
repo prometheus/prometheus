@@ -295,9 +295,7 @@ func (w *Watcher) loop() {
 
 	// We may encounter failures processing the WAL; we should wait and retry.
 	for !isClosed(w.quit) {
-		if w.startSegment < 0 {
-			w.SetStartTime(time.Now())
-		}
+		w.SetStartTime(time.Now())
 		if err := w.Run(); err != nil {
 			w.logger.Error("error tailing WAL", "err", err)
 		}
