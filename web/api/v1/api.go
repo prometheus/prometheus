@@ -1968,6 +1968,7 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 	status, err := api.db.WALReplayStatus()
 	if err != nil {
 		api.respondError(w, &apiError{errorInternal, err}, nil)
+		return
 	}
 	api.respond(w, r, walReplayStatus{
 		Min:     status.Min,
