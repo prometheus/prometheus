@@ -73,7 +73,7 @@ PromQL(
                             VectorSelector(
                                 Identifier
                             ),
-                          NumberDurationLiteralInDurationContext
+                          DurationExpr(NumberDurationLiteralInDurationContext)
                         )
                   )
                 )
@@ -103,7 +103,7 @@ PromQL(
                             VectorSelector(
                                 Identifier
                             ),
-                          NumberDurationLiteralInDurationContext
+                          DurationExpr(NumberDurationLiteralInDurationContext)
                       )
                   )
               )
@@ -246,7 +246,71 @@ foo[1y2w3d4h5m6s7ms]
 
 ==>
 
-PromQL(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext))
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)))
+
+# Duration expression step()
+
+foo[step()]
+
+==>
+
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(DurationStep)))
+
+# Duration expression with min(...) and range()
+
+rate(foo[min(5m, range())])
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(Rate),FunctionCallBody(MatrixSelector(VectorSelector(Identifier),DurationExpr(Min,DurationExpr(NumberDurationLiteralInDurationContext),DurationExpr(DurationRange))))))
+
+# Duration expression with max(...) and step()
+
+avg_over_time(foo[max(step(), 1m)])
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(AvgOverTime),FunctionCallBody(MatrixSelector(VectorSelector(Identifier),DurationExpr(Max,DurationExpr(DurationStep),DurationExpr(NumberDurationLiteralInDurationContext))))))
+
+# Duration expression in subquery step
+
+foo[1h:step()]
+
+==>
+
+PromQL(SubqueryExpr(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext),DurationExpr(DurationStep)))
+
+# Range as a label name should not be treated as duration pseudo-function
+
+foo{range="5m"}
+
+==>
+
+PromQL(VectorSelector(Identifier,LabelMatchers(UnquotedLabelMatcher(LabelName,MatchOp(EqlSingle),StringLiteral))))
+
+# Range in metric identifiers should parse as regular identifier content
+
+some_range_metric[5m]
+
+==>
+
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)))
+
+# step() is invalid for offset durations
+
+foo offset step()
+
+==>
+
+PromQL(OffsetExpr(VectorSelector(Identifier),Offset,⚠(Identifier)))
+
+# range() is invalid for offset durations
+
+foo offset range()
+
+==>
+
+PromQL(OffsetExpr(VectorSelector(Identifier),Offset,⚠(Identifier)))
 
 # Incorrectly ordered NumberDurationLiteralInDurationContext units
 
@@ -254,7 +318,7 @@ foo[1m2h]
 
 ==>
 
-PromQL(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext,⚠))
+PromQL(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext),⚠))
 
 # Using a function name as a metric name
 
@@ -357,7 +421,7 @@ PromQL(
                 VectorSelector(
                     Identifier
                 ),
-              NumberDurationLiteralInDurationContext
+              DurationExpr(NumberDurationLiteralInDurationContext)
             )
       )
     )
@@ -376,7 +440,7 @@ PromQL(
                 VectorSelector(
                     Identifier
                 ),
-              NumberDurationLiteralInDurationContext
+              DurationExpr(NumberDurationLiteralInDurationContext)
             )
       )
     )
@@ -502,7 +566,7 @@ PromQL(
           FunctionCallBody(
                 MatrixSelector(
                   VectorSelector(Identifier),
-                  NumberDurationLiteralInDurationContext
+                  DurationExpr(NumberDurationLiteralInDurationContext)
                 )
           )
         ),
@@ -515,7 +579,7 @@ PromQL(
               FunctionIdentifier(Rate),
               FunctionCallBody(
                 StepInvariantExpr(
-                  MatrixSelector(VectorSelector(Identifier), NumberDurationLiteralInDurationContext),
+                  MatrixSelector(VectorSelector(Identifier), DurationExpr(NumberDurationLiteralInDurationContext)),
                   At,
                   NumberDurationLiteral
                 )
@@ -708,14 +772,14 @@ PromQL(VectorSelector(LabelMatchers(QuotedLabelName(StringLiteral), QuotedLabelM
 increase(caddy_http_requests_total[5m] anchored)
 
 ==>
-PromQL(FunctionCall(FunctionIdentifier(Increase),FunctionCallBody(AnchoredExpr(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext),Anchored))))
+PromQL(FunctionCall(FunctionIdentifier(Increase),FunctionCallBody(AnchoredExpr(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)),Anchored))))
 
 # Testing smoothed keyword
 
 rate(caddy_http_requests_total[5m] smoothed)
 
 ==>
-PromQL(FunctionCall(FunctionIdentifier(Rate),FunctionCallBody(SmoothedExpr(MatrixSelector(VectorSelector(Identifier),NumberDurationLiteralInDurationContext),Smoothed))))
+PromQL(FunctionCall(FunctionIdentifier(Rate),FunctionCallBody(SmoothedExpr(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)),Smoothed))))
 
 # TrimUpper binary operator
 
