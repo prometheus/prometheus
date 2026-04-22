@@ -27,49 +27,28 @@ import (
 
 const defaultBatchSize = 1000
 
-type CheckpointParams struct {
-	// AtIndex is the WAL segment index to name this checkpoint after.
-	// If a checkpoint at given index or higher already exists, creation is skipped.
-	AtIndex int
-
-	// BatchSize is size of a single WAL log entry chunk to be flushed.
-	BatchSize int
-
-	// ActiveSeries is an iterator over active series.
-	ActiveSeries iter.Seq[ActiveSeries]
-
-	// DeletedSeries is iterator over recently deleted series.
-	DeletedSeries iter.Seq[DeletedSeries]
-}
-
-func (p CheckpointParams) withDefaults() CheckpointParams {
-	if p.BatchSize <= 0 {
-		p.BatchSize = defaultBatchSize
-	}
-
-	return p
-}
-
 // Checkpoint creates an unindexed checkpoint containing record.RefSeries and
 // last timestamp for ActiveSeries and a record.RefSeries for the recentlyDeleted series.
 //
 // The difference between this implementation and [wlog.Checkpoint] is that it skips re-read current checkpoint + segments
 // and relies on data in memory.
-func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
-	p = p.withDefaults()
-	logger.Info("Creating checkpoint", "atIndex", p.AtIndex)
+func Checkpoint(logger *slog.Logger, w *wlog.WL, atIndex, batchSize int, activeSeries iter.Seq[ActiveSeries], deletedSeries iter.Seq[DeletedSeries]) error {
+	if batchSize <= 0 {
+		batchSize = defaultBatchSize
+	}
+	logger.Info("Creating checkpoint", "atIndex", atIndex)
 
 	dir, idx, err := wlog.LastCheckpoint(w.Dir())
 	if err != nil && !errors.Is(err, record.ErrNotFound) {
 		return fmt.Errorf("can't find last checkpoint: %w", err)
 	}
 
-	if idx >= p.AtIndex {
+	if idx >= atIndex {
 		logger.Info(
 			"checkpoint already exists",
 			"dir", dir,
 			"index", idx,
-			"requested_index", p.AtIndex,
+			"requested_index", atIndex,
 		)
 		return nil
 	}
@@ -78,7 +57,7 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 		return fmt.Errorf("failed to cleanup temporary checkpoints: %w", err)
 	}
 
-	cpDir := wlog.CheckpointDir(w.Dir(), p.AtIndex)
+	cpDir := wlog.CheckpointDir(w.Dir(), atIndex)
 	cpTmpDir := cpDir + wlog.CheckpointTempFileSuffix
 	if err := os.RemoveAll(cpTmpDir); err != nil {
 		return fmt.Errorf("remove previous temporary checkpoint dir: %w", err)
@@ -101,12 +80,12 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 		os.RemoveAll(cpTmpDir)
 	}()
 
-	flusher := newCheckpointFlusher(cp, p.BatchSize)
-	if err := flusher.writeSeries(p.ActiveSeries); err != nil {
+	flusher := newCheckpointFlusher(cp, batchSize)
+	if err := flusher.writeSeries(activeSeries); err != nil {
 		return err
 	}
 
-	if err := flusher.writeDeletedRecords(p.DeletedSeries); err != nil {
+	if err := flusher.writeDeletedRecords(deletedSeries); err != nil {
 		return err
 	}
 
@@ -136,7 +115,7 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, p CheckpointParams) error {
 	return nil
 }
 
-type checkpointFlusher struct {
+type checkpointWriter struct {
 	enc         record.Encoder
 	checkpoint  *wlog.WL
 	seriesBuff  []byte
@@ -147,8 +126,8 @@ type checkpointFlusher struct {
 	batchSize     int
 }
 
-func newCheckpointFlusher(checkpoint *wlog.WL, batchSize int) *checkpointFlusher {
-	return &checkpointFlusher{
+func newCheckpointFlusher(checkpoint *wlog.WL, batchSize int) *checkpointWriter {
+	return &checkpointWriter{
 		batchSize:     batchSize,
 		checkpoint:    checkpoint,
 		seriesRecords: make([]record.RefSeries, 0, batchSize),
@@ -156,7 +135,7 @@ func newCheckpointFlusher(checkpoint *wlog.WL, batchSize int) *checkpointFlusher
 	}
 }
 
-func (cf *checkpointFlusher) flushRecords() error {
+func (cf *checkpointWriter) flushRecords() error {
 	withSamples := len(cf.sampleRecords) > 0
 	cf.seriesBuff = cf.enc.Series(cf.seriesRecords, cf.seriesBuff)
 
@@ -179,7 +158,7 @@ func (cf *checkpointFlusher) flushRecords() error {
 	return nil
 }
 
-func (cf *checkpointFlusher) writeSeries(seriesIter iter.Seq[ActiveSeries]) error {
+func (cf *checkpointWriter) writeSeries(seriesIter iter.Seq[ActiveSeries]) error {
 	for series := range seriesIter {
 		// If we filled the buffers, write them out and reset.
 		if len(cf.seriesRecords) == cf.batchSize {
@@ -209,7 +188,7 @@ func (cf *checkpointFlusher) writeSeries(seriesIter iter.Seq[ActiveSeries]) erro
 	return nil
 }
 
-func (cf *checkpointFlusher) writeDeletedRecords(seriesRefIter iter.Seq[DeletedSeries]) error {
+func (cf *checkpointWriter) writeDeletedRecords(seriesRefIter iter.Seq[DeletedSeries]) error {
 	for series := range seriesRefIter {
 		// If we filled the buffers, write them out and reset.
 		if len(cf.seriesRecords) == cf.batchSize {
