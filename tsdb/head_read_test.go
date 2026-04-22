@@ -926,7 +926,7 @@ func BenchmarkCollectHeadChunks(b *testing.B) {
 
 			b.ReportAllocs()
 			for b.Loop() {
-				var buf [16]*memChunk
+				var buf [collectHeadChunksBufSize]*memChunk
 				benchSink = collectHeadChunks(head, buf[:0])
 			}
 		})
@@ -989,6 +989,7 @@ func BenchmarkTruncateChunksBefore(b *testing.B) {
 
 			b.ReportAllocs()
 			for b.Loop() {
+				b.StopTimer()
 				// Rebuild each iteration since truncate is destructive.
 				// Use lightweight chunks (nil chunk field) since truncation
 				// only reads maxTime and follows prev pointers.
@@ -997,6 +998,7 @@ func BenchmarkTruncateChunksBefore(b *testing.B) {
 					headChunks:   buildHeadChunksLight(n),
 				}
 				s.headChunkCount.Store(uint32(n))
+				b.StartTimer()
 				s.truncateChunksBefore(mint, 0)
 			}
 		})
