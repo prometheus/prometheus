@@ -775,7 +775,7 @@ func (db *DB) truncate(mint int64) error {
 	db.metrics.checkpointCreationTotal.Inc()
 
 	if db.opts.CheckpointFromInMemorySeries {
-		err = Checkpoint(db.logger, db.wal, last, db.opts.CheckpointBatchSize, db.series.Iterate(), deletedSeriesIter(db.deleted, last))
+		err = Checkpoint(db.logger, db.wal, last, db.opts.CheckpointBatchSize, db.series.allSeries(), deletedSeriesIter(db.deleted, last))
 	} else {
 		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage)
 	}

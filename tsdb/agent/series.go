@@ -356,7 +356,7 @@ func (s *seriesSnapshot) LastSampleTimestamp() int64 {
 	return s.lastTs
 }
 
-func (s *stripeSeries) Iterate() iter.Seq[ActiveSeries] {
+func (s *stripeSeries) allSeries() iter.Seq[ActiveSeries] {
 	return func(yield func(ActiveSeries) bool) {
 		var buf []*memSeries
 		for i := 0; i < s.size; i++ {
