@@ -6,6 +6,7 @@ import ASTNode, {
   nodeType,
   StartOrEnd,
   MatrixSelector,
+  DurationNode,
 } from "./ast";
 import {
   aggregatorsWithParam,
@@ -14,6 +15,28 @@ import {
   metricContainsExtendedCharset,
   maybeQuoteLabelName,
 } from "./utils";
+
+const serializeDurationNode = (node: DurationNode): string => {
+  if (node.type === "numberLiteral") {
+    if (node.duration) {
+      return formatPrometheusDuration(parseFloat(node.val) * 1000);
+    }
+    return node.val;
+  }
+  const { op, lhs, rhs, wrapped } = node;
+  let inner: string;
+  if (op === "step" || op === "range") {
+    inner = `${op}()`;
+  } else if (op === "min_of" || op === "max_of") {
+    inner = `${op}(${lhs ? serializeDurationNode(lhs) : ""},${rhs ? serializeDurationNode(rhs) : ""})`;
+  } else if (lhs !== null && rhs !== null) {
+    inner = `${serializeDurationNode(lhs)} ${op} ${serializeDurationNode(rhs)}`;
+  } else {
+    // Unary.
+    inner = `${op}${rhs ? serializeDurationNode(rhs) : ""}`;
+  }
+  return wrapped ? `(${inner})` : inner;
+};
 
 const labelNameList = (labels: string[]): string => {
   return labels.map((ln) => maybeQuoteLabelName(ln)).join(", ");
@@ -52,10 +75,14 @@ const serializeSelector = (node: VectorSelector | MatrixSelector): string => {
     matchers.unshift(`"${escapeString(metricName)}"`);
   }
 
-  const range =
-    node.type === nodeType.matrixSelector
-      ? `[${formatPrometheusDuration(node.range)}]`
-      : "";
+  let range = "";
+  if (node.type === nodeType.matrixSelector) {
+    if (node.rangeExpr && node.range === 0) {
+      range = `[max_of(${serializeDurationNode(node.rangeExpr)},1s)]`;
+    } else {
+      range = `[${formatPrometheusDuration(node.range)}]`;
+    }
+  }
   const extendedAttribute = node.anchored
     ? " anchored"
     : node.smoothed
