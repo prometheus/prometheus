@@ -2223,7 +2223,7 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		return count
 	}
 
-	// Collect head chunks in oldest-first order (O(n) instead of O(n²)).
+	// Collect head chunks in oldest-first order.
 	// If we have this chain: s.headChunks{t4} -> t3 -> t2 -> t1 -> t0
 	// then hc = [t0, t1, t2, t3, t4] and we write all except the newest (t4).
 	var buf [16]*memChunk
