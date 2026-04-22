@@ -56,8 +56,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - uses: prometheus/promci@fc721ff8497a70a93a881cd552b71af7fb3a9d53 # v0.5.4
-      - uses: ./.github/promci/actions/setup_environment
+      - uses: prometheus/promci-setup@5af30ba8c199a91d6c04ebdc3c48e630e355f62d # v0.1.0
       - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true -run TestVersionUpgrade
 
   test_go_oldest:
@@ -107,7 +106,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: 1.26.x
       - run: |
@@ -249,7 +248,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: 1.26.x
       - name: Install snmp_exporter/generator dependencies
@@ -272,6 +271,12 @@ jobs:
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
           args: --verbose --build-tags=dedupelabels
+          version: ${{ steps.golangci-lint-version.outputs.version }}
+      - name: Lint in compliance
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        with:
+          args: --verbose
+          working-directory: compliance
           version: ${{ steps.golangci-lint-version.outputs.version }}
       - name: Lint in documentation/examples/remote_storage
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0

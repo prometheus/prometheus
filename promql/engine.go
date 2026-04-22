@@ -333,6 +333,9 @@ type EngineOpts struct {
 	// EnableTypeAndUnitLabels will allow PromQL Engine to make decisions based on the type and unit labels.
 	EnableTypeAndUnitLabels bool
 
+	// UseStartTimestamps enables start timestamp usage in functions such as rate().
+	UseStartTimestamps bool
+
 	// FeatureRegistry is the registry for tracking enabled/disabled features.
 	FeatureRegistry features.Collector
 
@@ -357,6 +360,7 @@ type Engine struct {
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
+	useStartTimestamps       bool
 	parser                   parser.Parser
 }
 
@@ -486,6 +490,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
+		useStartTimestamps:       opts.UseStartTimestamps,
 		parser:                   opts.Parser,
 	}
 }
@@ -801,6 +806,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
+			useStartTimestamps:       ng.useStartTimestamps,
 			querier:                  querier,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
@@ -861,6 +867,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
+		useStartTimestamps:       ng.useStartTimestamps,
 		querier:                  querier,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
@@ -1148,6 +1155,7 @@ type evaluator struct {
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
+	useStartTimestamps       bool
 	querier                  storage.Querier
 }
 
@@ -1239,6 +1247,9 @@ type EvalNodeHelper struct {
 
 	// Additional options for the evaluation.
 	enableDelayedNameRemoval bool
+
+	// StartTimestamps optionally provides sample start timestamps aligned with matrix samples.
+	StartTimestamps *StartTimestamps
 }
 
 func (enh *EvalNodeHelper) resetSigsPresent() []bool {
@@ -1712,8 +1723,6 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 	it := storage.NewBuffer(dur + 2*durationMilliseconds(ev.lookbackDelta))
 
 	offMS := offset.Milliseconds()
-	start := ev.startTimestamp - offMS
-	end := ev.endTimestamp - offMS
 	step := ev.interval
 	lb := durationMilliseconds(ev.lookbackDelta)
 
@@ -1729,11 +1738,13 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 		var floats []FPoint
 		var hists []HPoint
 
-		for ts := start; ts <= end; ts += step {
-			matrixStart := ts - lb
-			matrixEnd := ts + lb
+		for evalTS := ev.startTimestamp; evalTS <= ev.endTimestamp; evalTS += step {
+			// Apply offset to get the data timestamp.
+			dataTS := evalTS - offMS
+			matrixStart := dataTS - lb
+			matrixEnd := dataTS + lb
 
-			floats, hists = ev.matrixIterSlice(it, matrixStart, matrixEnd, floats, hists)
+			floats, hists, _ = ev.matrixIterSlice(it, matrixStart, matrixEnd, floats, hists, nil)
 			if len(floats) == 0 && len(hists) == 0 {
 				continue
 			}
@@ -1743,28 +1754,28 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 				ev.errorf("smoothed and anchored modifiers do not work with native histograms")
 			}
 
-			// Binary search for the first index with T >= ts.
-			i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= ts })
+			// Binary search for the first index with T >= dataTS.
+			i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= dataTS })
 
 			switch {
-			case i < len(floats) && floats[i].T == ts:
+			case i < len(floats) && floats[i].T == dataTS:
 				// Exact match.
-				ss.Floats = append(ss.Floats, floats[i])
+				ss.Floats = append(ss.Floats, FPoint{F: floats[i].F, T: evalTS})
 
 			case i > 0 && i < len(floats):
 				// Interpolate between prev and next.
 				// TODO: detect if the sample is a counter, based on __type__ or metadata.
 				prev, next := floats[i-1], floats[i]
-				val := interpolate(prev, next, ts, false)
-				ss.Floats = append(ss.Floats, FPoint{F: val, T: ts})
+				val := interpolate(prev, next, dataTS, false)
+				ss.Floats = append(ss.Floats, FPoint{F: val, T: evalTS})
 
 			case i > 0:
 				// No next point yet; carry forward previous value.
 				prev := floats[i-1]
-				ss.Floats = append(ss.Floats, FPoint{F: prev.F, T: ts})
+				ss.Floats = append(ss.Floats, FPoint{F: prev.F, T: evalTS})
 
 			default:
-				// i == 0 and floats[0].T > ts: there is no previous data yet; skip.
+				// i == 0 and floats[0].T > dataTS: there is no previous data yet; skip.
 			}
 		}
 
@@ -2010,6 +2021,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			return ev.evalInfo(ctx, e.Args)
 		}
 
+		// Emit a warning when sort is used for range queries.
+		if (e.Func.Name == "sort" || e.Func.Name == "sort_desc" || e.Func.Name == "sort_by_label" || e.Func.Name == "sort_by_label_desc") && ev.startTimestamp != ev.endTimestamp {
+			warnings.Add(annotations.NewSortInRangeQueryWarning(e.PositionRange()))
+		}
+
 		if !matrixArg {
 			// Does not have a matrix argument.
 			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
@@ -2083,6 +2099,12 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		it := storage.NewBuffer(bufferRange)
 		var chkIter chunkenc.Iterator
 
+		var startTimestamps *StartTimestamps
+		if ev.useStartTimestamps && (e.Func.Name == "rate" || e.Func.Name == "irate" || e.Func.Name == "increase") {
+			// TODO: consider pooling this.
+			startTimestamps = &StartTimestamps{}
+		}
+
 		// The last_over_time and first_over_time functions act like
 		// offset; thus, they should keep the metric name.  For all the
 		// other range vector functions, the only change needed is to
@@ -2101,6 +2123,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}
 			if histograms != nil {
 				histograms = histograms[:0]
+			}
+			if startTimestamps != nil {
+				startTimestamps.Reset()
 			}
 			chkIter = s.Iterator(chkIter)
 			it.Reset(chkIter)
@@ -2148,7 +2173,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 						mint -= durationMilliseconds(ev.lookbackDelta)
 						maxt += durationMilliseconds(ev.lookbackDelta)
 					}
-					floats, histograms = ev.matrixIterSlice(it, mint, maxt, floats, histograms)
+					floats, histograms, startTimestamps = ev.matrixIterSlice(it, mint, maxt, floats, histograms, startTimestamps)
 				}
 				if len(floats)+len(histograms) == 0 {
 					continue
@@ -2162,6 +2187,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				inMatrix[0].Floats = floats
 				inMatrix[0].Histograms = histograms
 				enh.Ts = ts
+				enh.StartTimestamps = startTimestamps
 
 				// Make the function call.
 				outVec, annos := call(vectorVals, inMatrix, e.Args, enh)
@@ -2377,6 +2403,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
+			useStartTimestamps:       ev.useStartTimestamps,
 			querier:                  ev.querier,
 		}
 
@@ -2418,6 +2445,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
+			useStartTimestamps:       ev.useStartTimestamps,
 			querier:                  ev.querier,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
@@ -2685,7 +2713,7 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 			Metric: series[i].Labels(),
 		}
 
-		ss.Floats, ss.Histograms = ev.matrixIterSlice(it, mint, maxt, nil, nil)
+		ss.Floats, ss.Histograms, _ = ev.matrixIterSlice(it, mint, maxt, nil, nil, nil)
 		switch {
 		case vs.Anchored:
 			if ss.Histograms != nil {
@@ -2719,10 +2747,17 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 // values). Any such points falling before mint are discarded; points that fall
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
+//
+// This function will also optionally track corresponding StartTimestamps for
+// each float/histogram datapoint if the passed-in startTimestamps is non-nil.
+// In this case, the caller must always pass in startTimestamps with fields
+// whose lengths exactly match those of the "floats" and "histograms" slices.
+// Typically this is accomplished by passing in either all empty slices or the
+// values returned by a previous call.
 func (ev *evaluator) matrixIterSlice(
 	it *storage.BufferedSeriesIterator, mint, maxt int64,
-	floats []FPoint, histograms []HPoint,
-) ([]FPoint, []HPoint) {
+	floats []FPoint, histograms []HPoint, startTimestamps *StartTimestamps,
+) ([]FPoint, []HPoint, *StartTimestamps) {
 	mintFloats, mintHistograms := mint, mint
 
 	// First floats...
@@ -2740,10 +2775,21 @@ func (ev *evaluator) matrixIterSlice(
 		floats = floats[:len(floats)-drop]
 		// Only append points with timestamps after the last timestamp we have.
 		mintFloats = floats[len(floats)-1].T
+
+		if startTimestamps != nil {
+			// Truncate startTimestamps at the same drop point.
+			copy(startTimestamps.Floats, startTimestamps.Floats[drop:])
+			startTimestamps.Floats = startTimestamps.Floats[:len(startTimestamps.Floats)-drop]
+		}
 	} else {
 		ev.currentSamples -= len(floats)
 		if floats != nil {
 			floats = floats[:0]
+		}
+
+		if startTimestamps != nil {
+			// Clear the startTimestamps since we are clearing floats now.
+			startTimestamps.Floats = startTimestamps.Floats[:0]
 		}
 	}
 
@@ -2767,16 +2813,27 @@ func (ev *evaluator) matrixIterSlice(
 		ev.currentSamples -= totalHPointSize(histograms)
 		// Only append points with timestamps after the last timestamp we have.
 		mintHistograms = histograms[len(histograms)-1].T
+
+		if startTimestamps != nil {
+			// Truncate startTimestamps at the same drop point.
+			copy(startTimestamps.Histograms, startTimestamps.Histograms[drop:])
+			startTimestamps.Histograms = startTimestamps.Histograms[:len(startTimestamps.Histograms)-drop]
+		}
 	} else {
 		ev.currentSamples -= totalHPointSize(histograms)
 		if histograms != nil {
 			histograms = histograms[:0]
 		}
+
+		if startTimestamps != nil {
+			// Clear the startTimestamps since we are clearing histograms now.
+			startTimestamps.Histograms = startTimestamps.Histograms[:0]
+		}
 	}
 
 	if mint == maxt {
 		// Empty range: return the empty slices.
-		return floats, histograms
+		return floats, histograms, startTimestamps
 	}
 
 	soughtValueType := it.Seek(maxt)
@@ -2814,6 +2871,10 @@ loop:
 				if ev.currentSamples > ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
+
+				if startTimestamps != nil {
+					startTimestamps.Histograms = append(startTimestamps.Histograms, buf.AtST())
+				}
 			}
 		case chunkenc.ValFloat:
 			t, f := buf.At()
@@ -2830,6 +2891,10 @@ loop:
 					floats = getFPointSlice(16)
 				}
 				floats = append(floats, FPoint{T: t, F: f})
+
+				if startTimestamps != nil {
+					startTimestamps.Floats = append(startTimestamps.Floats, buf.AtST())
+				}
 			}
 		}
 	}
@@ -2863,6 +2928,9 @@ loop:
 			ev.error(ErrTooManySamples(env))
 		}
 
+		if startTimestamps != nil {
+			startTimestamps.Histograms = append(startTimestamps.Histograms, it.AtST())
+		}
 	case chunkenc.ValFloat:
 		t, f := it.At()
 		if t == maxt && !value.IsStaleNaN(f) {
@@ -2874,10 +2942,14 @@ loop:
 				floats = getFPointSlice(16)
 			}
 			floats = append(floats, FPoint{T: t, F: f})
+
+			if startTimestamps != nil {
+				startTimestamps.Floats = append(startTimestamps.Floats, it.AtST())
+			}
 		}
 	}
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
-	return floats, histograms
+	return floats, histograms, startTimestamps
 }
 
 func (*evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
@@ -4229,11 +4301,60 @@ func unwrapParenExpr(e *parser.Expr) {
 	}
 }
 
+// foldQueryContextFunctions rewrites calls to start(), end(), range(), and step() into
+// NumberLiteral nodes, since their values are constant for a given query execution.
+// This allows parent expressions to be correctly recognized as step-invariant by preprocessExprHelper.
+func foldQueryContextFunctions(expr parser.Expr, start, end time.Time, step time.Duration) parser.Expr {
+	if call, ok := expr.(*parser.Call); ok {
+		switch call.Func.Name {
+		case "start":
+			return &parser.NumberLiteral{Val: float64(timestamp.FromTime(start)) / 1000, PosRange: call.PosRange}
+		case "end":
+			return &parser.NumberLiteral{Val: float64(timestamp.FromTime(end)) / 1000, PosRange: call.PosRange}
+		case "range":
+			return &parser.NumberLiteral{Val: end.Sub(start).Seconds(), PosRange: call.PosRange}
+		case "step":
+			var val float64
+			if !start.Equal(end) {
+				val = step.Seconds()
+			}
+			return &parser.NumberLiteral{Val: val, PosRange: call.PosRange}
+		}
+	}
+	switch n := expr.(type) {
+	case *parser.BinaryExpr:
+		n.LHS = foldQueryContextFunctions(n.LHS, start, end, step)
+		n.RHS = foldQueryContextFunctions(n.RHS, start, end, step)
+	case *parser.Call:
+		for i := range n.Args {
+			n.Args[i] = foldQueryContextFunctions(n.Args[i], start, end, step)
+		}
+	case *parser.AggregateExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+		if n.Param != nil {
+			n.Param = foldQueryContextFunctions(n.Param, start, end, step)
+		}
+	case *parser.UnaryExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+	case *parser.ParenExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+	case *parser.SubqueryExpr:
+		n.Expr = foldQueryContextFunctions(n.Expr, start, end, step)
+	case *parser.MatrixSelector, *parser.VectorSelector, *parser.NumberLiteral, *parser.StringLiteral:
+		// Leaf nodes or nodes without foldable sub-expressions.
+	default:
+		panic(fmt.Sprintf("foldQueryContextFunctions: unhandled node type %T", expr))
+	}
+	return expr
+}
+
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors, evaluates duration expressions
 // into their numeric values and removes superfluous parenthesis on parameters to functions and aggregations.
 func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
+
+	expr = foldQueryContextFunctions(expr, start, end, step)
 
 	if err := parser.Walk(&durationVisitor{step: step, queryRange: end.Sub(start)}, expr, nil); err != nil {
 		return nil, err

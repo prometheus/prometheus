@@ -492,6 +492,54 @@ end
 ==>
 PromQL(VectorSelector(Identifier))
 
+# Lowercase start function.
+
+start()
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(StartFn),
+      FunctionCallBody
+    )
+)
+
+# Lowercase end function.
+
+end()
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(EndFn),
+      FunctionCallBody
+    )
+)
+
+# Lowercase range function.
+
+range()
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(Range),
+      FunctionCallBody
+    )
+)
+
+# Lowercase step function.
+
+step()
+
+==>
+PromQL(
+    FunctionCall(
+      FunctionIdentifier(Step),
+      FunctionCallBody
+    )
+)
+
 # Simple At start
 
 foo @ start()
@@ -503,7 +551,7 @@ PromQL(
             Identifier
         ),
       At,
-      AtModifierPreprocessors(Start),
+      AtModifierPreprocessors(AtStart),
     )
 )
 
@@ -518,7 +566,7 @@ PromQL(
             Identifier
         ),
       At,
-      AtModifierPreprocessors(End),
+      AtModifierPreprocessors(AtEnd),
     )
 )
 
@@ -548,7 +596,7 @@ PromQL(
             Identifier
         ),
       At,
-      AtModifierPreprocessors(Start),
+      AtModifierPreprocessors(AtStart),
     )
 )
 

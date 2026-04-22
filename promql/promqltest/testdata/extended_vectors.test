@@ -418,3 +418,42 @@ eval instant at 45s withreset smoothed
 
 eval instant at 30s notregular smoothed
     notregular 2
+
+# Smoothed rate returns empty when data is only before or only after the range.
+clear
+load 10s
+    metric _ 5+1x4
+
+eval instant at 5s rate(metric[5s] smoothed)
+
+eval instant at 5s increase(metric[5s] smoothed)
+
+eval instant at 15s increase(metric[10s] smoothed)
+    {} 0.5
+
+eval instant at 60s rate(metric[5s] smoothed)
+
+eval instant at 60s increase(metric[5s] smoothed)
+
+# Smoothed vector selector with @ and offset modifier and binop
+clear
+load 10s
+    metric 0+1x20
+
+eval range from 0s to 60s step 15s metric @ 100
+    metric 10 10 10 10 10
+
+eval range from 0s to 60s step 15s metric @ 100 smoothed
+    metric 10 10 10 10 10
+
+eval range from 0s to 60s step 15s metric @ 100 smoothed + 0
+    {} 10 10 10 10 10
+
+eval range from 0s to 60s step 15s metric offset -100
+    metric 10 11 13 14 16
+
+eval range from 0s to 60s step 15s metric offset -100 smoothed
+    metric 10 11.5 13 14.5 16
+
+eval range from 0s to 60s step 15s metric offset -100 smoothed + 0
+    {} 10 11.5 13 14.5 16

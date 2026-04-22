@@ -224,13 +224,6 @@ func (*OpenAPIBuilder) seriesPath() *v3.PathItem {
 			RequestBody: formRequestBodyWithExamples("SeriesPostInputBody", seriesPostExamples(), "Submit a series query. This endpoint accepts the same parameters as the GET version."),
 			Responses:   responsesWithErrorExamples("SeriesOutputBody", seriesResponseExamples(), errorResponseExamples(), "Series returned matching the provided label matchers via POST.", "Error retrieving series via POST."),
 		},
-		Delete: &v3.Operation{
-			OperationId: "delete-series",
-			Summary:     "Delete series",
-			Description: "Delete series matching selectors. Note: This is deprecated, use POST /admin/tsdb/delete_series instead.",
-			Tags:        []string{"series"},
-			Responses:   responsesWithErrorExamples("SeriesDeleteOutputBody", seriesDeleteResponseExamples(), errorResponseExamples(), "Series marked for deletion.", "Error deleting series."),
-		},
 	}
 }
 
@@ -444,6 +437,22 @@ func (*OpenAPIBuilder) statusWALReplayPath() *v3.PathItem {
 			Summary:     "Get status walreplay",
 			Tags:        []string{"status"},
 			Responses:   responsesWithErrorExamples("StatusWALReplayOutputBody", statusWALReplayResponseExamples(), errorResponseExamples(), "WAL replay status retrieved successfully.", "Error retrieving WAL replay status."),
+		},
+	}
+}
+
+func (*OpenAPIBuilder) statusSelfMetricsPath() *v3.PathItem {
+	params := []*v3.Parameter{
+		queryParamWithExample("metric_name_pattern", "Regular expression filter for metric names (fully anchored, like PromQL label matchers). Only metric families whose names fully match the pattern are returned.", false, stringSchema(), []example{{"example", "prometheus_tsdb_.*"}}),
+	}
+	return &v3.PathItem{
+		Get: &v3.Operation{
+			OperationId: "get-status-self-metrics",
+			Summary:     "Get Prometheus self-instrumentation metrics",
+			Description: "Returns Prometheus' own instrumentation metrics from its internal client registry, as structured JSON. Supports optional regex filtering via the metric_name_pattern parameter.",
+			Tags:        []string{"status"},
+			Parameters:  params,
+			Responses:   responsesWithErrorExamples("StatusSelfMetricsOutputBody", statusSelfMetricsResponseExamples(), errorResponseExamples(), "Self metrics retrieved successfully.", "Error retrieving self metrics."),
 		},
 	}
 }

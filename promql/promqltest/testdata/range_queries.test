@@ -105,3 +105,18 @@ eval instant at 1m some_nonexistent_metric[1m]
 
 eval instant at 10m some_metric[1m]
     expect range vector from 9m10s to 10m step 1m
+
+eval range from 1m to 2m step 1m sort(series)
+  expect warn msg: PromQL warning: sort is ineffective for range queries since results are always ordered by labels
+
+eval range from 1m to 2m step 1m sort_desc(series)
+  expect warn msg: PromQL warning: sort is ineffective for range queries since results are always ordered by labels
+
+eval range from 1m to 2m step 1m sort_by_label(series)
+  expect warn msg: PromQL warning: sort is ineffective for range queries since results are always ordered by labels
+
+eval range from 1m to 2m step 1m sort_by_label_desc(series)
+  expect warn msg: PromQL warning: sort is ineffective for range queries since results are always ordered by labels
+
+eval range from 1m to 2m step 1m sum(sort(series))
+  expect warn msg: PromQL warning: sort is ineffective for range queries since results are always ordered by labels

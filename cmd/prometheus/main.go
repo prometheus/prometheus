@@ -214,6 +214,7 @@ type flagConfig struct {
 	// for ease of use.
 	enablePerStepStats       bool
 	enableConcurrentRuleEval bool
+	useStartTimestamps       bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -293,6 +294,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				config.DefaultConfig.GlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				config.DefaultGlobalConfig.ScrapeProtocols = config.DefaultProtoFirstScrapeProtocols
 				logger.Info("Experimental start timestamp storage enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
+			case "use-start-timestamps":
+				c.useStartTimestamps = true
+				logger.Info("Experimental usage of start timestamps in PromQL engine is enabled.")
 			case "delayed-compaction":
 				c.tsdb.EnableDelayedCompaction = true
 				logger.Info("Experimental delayed compaction is enabled.")
@@ -305,8 +309,6 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "promql-binop-fill-modifiers":
 				c.parserOpts.EnableBinopFillModifiers = true
 				logger.Info("Experimental PromQL binary operator fill modifiers enabled.")
-			case "":
-				continue
 			case "old-ui":
 				c.web.UseOldUI = true
 				logger.Info("Serving previous version of the Prometheus web UI.")
@@ -543,13 +545,17 @@ func main() {
 		"The frequency at which to truncate the WAL and remove old data.").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.agent.TruncateFrequency)
 
+	// Dynamically calculate the format strings from the tsdb/agent constants
+	agentDefaultMinWALTime := model.Duration(agent.DefaultMinWALTime * int64(time.Millisecond)).String()
+	agentDefaultMaxWALTime := model.Duration(agent.DefaultMaxWALTime * int64(time.Millisecond)).String()
+
 	agentOnlyFlag(a, "storage.agent.retention.min-time",
 		"Minimum age samples may be before being considered for deletion when the WAL is truncated").
-		SetValue(&cfg.agent.MinWALTime)
+		Default(agentDefaultMinWALTime).SetValue(&cfg.agent.MinWALTime)
 
 	agentOnlyFlag(a, "storage.agent.retention.max-time",
 		"Maximum age samples may be before being forcibly deleted when the WAL is truncated").
-		SetValue(&cfg.agent.MaxWALTime)
+		Default(agentDefaultMaxWALTime).SetValue(&cfg.agent.MaxWALTime)
 
 	agentOnlyFlag(a, "storage.agent.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.agent.NoLockfile)
@@ -608,8 +614,8 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-per-step-stats, promql-experimental-functions, extra-scrape-metrics, auto-gomaxprocs, created-timestamp-zero-ingestion, st-storage, concurrent-rule-eval, delayed-compaction, old-ui, otlp-deltatocumulative, promql-duration-expr, use-uncached-io, promql-extended-range-selectors, promql-binop-fill-modifiers, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
-		Default("").StringsVar(&cfg.featureList)
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-reload-config, concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, memory-snapshot-on-shutdown, metadata-wal-records, old-ui, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-duration-expr, promql-experimental-functions, promql-extended-range-selectors, promql-per-step-stats, st-storage, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
 
@@ -712,7 +718,7 @@ func main() {
 	}
 
 	// Parse rule files to verify they exist and contain valid rules.
-	if err := rules.ParseFiles(cfgFile.RuleFiles, cfgFile.GlobalConfig.MetricNameValidationScheme, promqlParser); err != nil {
+	if err := rules.ParseFiles(cfgFile.RuleFiles, cfgFile.GlobalConfig.MetricNameValidationScheme, promqlParser, logger); err != nil {
 		absPath, pathErr := filepath.Abs(cfg.configFile)
 		if pathErr != nil {
 			absPath = cfg.configFile
@@ -949,6 +955,7 @@ func main() {
 			EnablePerStepStats:       cfg.enablePerStepStats,
 			EnableDelayedNameRemoval: cfg.promqlEnableDelayedNameRemoval,
 			EnableTypeAndUnitLabels:  cfg.scrape.EnableTypeAndUnitLabels,
+			UseStartTimestamps:       cfg.useStartTimestamps,
 			FeatureRegistry:          features.DefaultRegistry,
 			Parser:                   promqlParser,
 		}

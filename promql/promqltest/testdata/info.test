@@ -17,18 +17,24 @@ eval range from 0m to 10m step 5m info(metric)
 eval range from 0m to 10m step 5m info(metric_not_matching_target_info)
     metric_not_matching_target_info{instance="a", job="2", label="value"} 0 1 2
 
+# Non-matching identifying labels with a data label matcher that matches empty string.
+# The series should still be returned unchanged.
+eval range from 0m to 10m step 5m info(metric_not_matching_target_info, {data=~".*"})
+    metric_not_matching_target_info{instance="a", job="2", label="value"} 0 1 2
+
+# Non-matching identifying labels with a data label matcher that doesn't match empty string.
+# The series should be dropped since no info series matches and the matcher requires a non-empty value.
+eval range from 0m to 10m step 5m info(metric_not_matching_target_info, {data=~".+"})
+
 # Try including a certain info metric data label with a non-matching matcher not accepting empty labels.
 # Metric is ignored, due there being a data label matcher not matching empty labels,
 # and there being no info series matches.
 eval range from 0m to 10m step 5m info(metric, {non_existent=~".+"})
 
-# Include a certain info metric data label together with a non-matching matcher accepting empty labels.
-# Since the non_existent matcher matches empty labels, it's simply ignored when there's no match.
-# XXX: This case has to include a matcher not matching empty labels, due the PromQL limitation
-# that vector selectors have to contain at least one matcher not accepting empty labels.
-# We might need another construct than vector selector to get around this limitation.
-eval range from 0m to 10m step 5m info(metric, {data=~".+", non_existent=~".*"})
-    metric{data="info", instance="a", job="1", label="value"} 0 1 2
+# A data matcher accepting empty labels. The metric is returned unchanged
+# since non_existent doesn't exist on target_info but the matcher accepts empty strings.
+eval range from 0m to 10m step 5m info(metric, {non_existent=~".*"})
+    metric{instance="a", job="1", label="value"} 0 1 2
 
 # Info series data labels overlapping with those of base series are ignored.
 eval range from 0m to 10m step 5m info(metric_with_overlapping_label)
@@ -76,6 +82,40 @@ eval range from 0m to 10m step 5m info(build_info, {__name__=~".+_info", another
 # Info metrics themselves are ignored when it comes to enriching with info metric data labels.
 eval range from 0m to 10m step 5m info(build_info, {__name__=~".+_info"})
     build_info{instance="a", job="1", build_data="build"} 1 1 1
+
+# Negated __name__ matcher: exclude all *_info metrics.
+# Since no info metrics match, and data=~".+" doesn't match empty string, no results.
+# Regression test for https://github.com/prometheus/prometheus/issues/17931.
+eval range from 0m to 10m step 5m info(metric, {__name__!~".+_info", data=~".+"})
+
+# Negated __name__ matcher with matcher that accepts empty labels.
+# Since data=~".*" matches empty labels, the base metric is returned unchanged.
+eval range from 0m to 10m step 5m info(metric, {__name__!~".+_info", data=~".*"})
+    metric{instance="a", job="1", label="value"} 0 1 2
+
+# Negated exact __name__ matcher.
+# Excludes target_info, but build_info still matches.
+eval range from 0m to 10m step 5m info(metric, {__name__!="target_info"})
+    metric{instance="a", job="1", label="value", build_data="build"} 0 1 2
+
+# When a base series matches one positive __name__ matcher but not another,
+# it should NOT be ignored (AND semantics). build_info matches .+_info but
+# not target_.+, so it's not an info source for this query and gets enriched.
+eval range from 0m to 10m step 5m info(build_info, {__name__=~"target_.+", __name__=~".+_info"})
+    build_info{instance="a", job="1", build_data="build", data="info", another_data="another info"} 1 1 1
+
+clear
+
+# Test that a series matching positive __name__ matchers but excluded by negative
+# matchers is NOT ignored — it should be treated as a regular metric and enriched.
+load 5m
+    websvc_thing{instance="a", job="1", label="value"} 0 1 2
+    websvc_stuff_info{instance="a", job="1", build_data="build"} 2 3 4
+    target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 1
+
+eval range from 0m to 10m step 5m info({__name__=~"websvc_.+"}, {__name__=~".+_info", __name__!~"websvc_.+"})
+    websvc_thing{instance="a", job="1", label="value", data="info", another_data="another info"} 0 1 2
+    websvc_stuff_info{instance="a", job="1", build_data="build", data="info", another_data="another info"} 2 3 4
 
 clear
 

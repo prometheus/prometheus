@@ -118,10 +118,10 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
         const formatLabels = (labels: { [key: string]: string }): string => `
             <div class="labels">
               ${Object.keys(labels).length === 0 ? '<div class="mb-1 font-italic">no labels</div>' : ''}
-              ${labels['__name__'] ? `<div class="mb-1"><strong>${labels['__name__']}</strong></div>` : ''}
+              ${labels['__name__'] ? `<div class="mb-1"><strong>${escapeHTML(labels['__name__'])}</strong></div>` : ''}
               ${Object.keys(labels)
                 .filter((k) => k !== '__name__')
-                .map((k) => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
+                .map((k) => `<div class="mb-1"><strong>${escapeHTML(k)}</strong>: ${escapeHTML(labels[k])}</div>`)
                 .join('')}
             </div>`;
 
@@ -129,7 +129,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
             <div class="date">${dateTime.format('YYYY-MM-DD HH:mm:ss Z')}</div>
             <div>
               <span class="detail-swatch" style="background-color: ${color}"></span>
-              <span>${labels.__name__ || 'value'}: <strong>${yval}</strong></span>
+              <span>${labels.__name__ ? escapeHTML(labels.__name__) : 'value'}: <strong>${yval}</strong></span>
             </div>
             <div class="mt-2 mb-1 font-weight-bold">${'seriesLabels' in both ? 'Trace exemplar:' : 'Series:'}</div>
             ${formatLabels(labels)}

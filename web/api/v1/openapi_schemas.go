@@ -58,7 +58,6 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	// Series schemas.
 	schemas.Set("SeriesOutputBody", b.labelsArrayResponseBodySchema())
 	schemas.Set("SeriesPostInputBody", b.seriesPostInputBodySchema())
-	schemas.Set("SeriesDeleteOutputBody", b.simpleResponseBodySchema())
 
 	// Metadata schemas.
 	schemas.Set("Metadata", b.metadataSchema())
@@ -113,6 +112,7 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("StatusTSDBBlocksOutputBody", b.refResponseBodySchema("StatusTSDBBlocksData", "Response body for status TSDB blocks endpoint."))
 	schemas.Set("StatusWALReplayData", b.statusWALReplayDataSchema())
 	schemas.Set("StatusWALReplayOutputBody", b.refResponseBodySchema("StatusWALReplayData", "Response body for status WAL replay endpoint."))
+	schemas.Set("StatusSelfMetricsOutputBody", b.simpleResponseBodySchema())
 
 	// Admin schemas.
 	schemas.Set("DeleteSeriesOutputBody", b.statusOnlyResponseBodySchema())

@@ -1421,7 +1421,17 @@ subscription_id: <string>
 ### `<consul_sd_config>`
 
 Consul SD configurations allow retrieving scrape targets from [Consul's](https://www.consul.io)
-Catalog API.
+service catalog. Discovery uses two Consul API endpoints:
+
+1. The [Catalog API](https://developer.hashicorp.com/consul/api-docs/catalog) to list services
+   (used when `services` is empty, or when `tags` or `filter` are set).
+2. The [Health API](https://developer.hashicorp.com/consul/api-docs/health) to retrieve service
+   instances and their health status.
+
+Because these two APIs have different filtering field schemas, Prometheus exposes separate filter
+options for each: `filter` applies to the Catalog API and `health_filter` applies to the Health API.
+For example, tags are exposed as `ServiceTags` in the Catalog API but as `Service.Tags` in the
+Health API.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -1461,17 +1471,18 @@ The following meta labels are available on targets during [relabeling](#relabel_
 services:
   [ - <string> ]
 
-# A Consul Filter expression used to filter the catalog results
-# See https://www.consul.io/api-docs/catalog#list-services to know more
-# about the filter expressions that can be used.
+# Filter expression for the Catalog API. See https://developer.hashicorp.com/consul/api-docs/catalog#filtering for syntax.
 [ filter: <string> ]
 
-# The `tags` and `node_meta` fields are deprecated in Consul in favor of `filter`.
+# Filter expression for the Health API. See https://developer.hashicorp.com/consul/api-docs/health#filtering for syntax.
+[ health_filter: <string> ]
+
+# The `tags` and `node_meta` fields are deprecated in favor of `filter` and `health_filter`.
 # An optional list of tags used to filter nodes for a given service. Services must contain all tags in the list.
 tags:
   [ - <string> ]
 
-# Node metadata key/value pairs to filter nodes for a given service. As of Consul 1.14, consider `filter` instead.
+# Node metadata key/value pairs to filter nodes for a given service. As of Consul 1.14, consider `filter` or `health_filter` instead.
 [ node_meta:
   [ <string>: <string> ... ] ]
 
@@ -2535,7 +2546,7 @@ The role requires the `discovery.k8s.io/v1` API version (available since Kuberne
 
 Available meta labels:
 
-* `__meta_kubernetes_namespace`: The namespace of the endpoints object.
+* `__meta_kubernetes_namespace`: The namespace of the endpointslice object.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * `__meta_kubernetes_endpointslice_label_<labelname>`: Each label from the endpointslice object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_endpointslice_labelpresent_<labelname>`: `true` for each label from the endpointslice object, with any unsupported characters converted to an underscore.

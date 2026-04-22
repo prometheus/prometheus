@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.11.2 / 2026-04-13
+
+This release has a fix for a Stored XSS vulnerability that can be triggered via crafted metric names and label values in Prometheus web UI tooltips and metrics explorer. Thanks to Duc Anh Nguyen from TinyxLab for reporting it.
+
+- [SECURITY] UI: Fix stored XSS via unescaped metric names and labels. CVE-2026-40179. #18506
+- [ENHANCEMENT] Consul SD: Introduce `health_filter` field for Health API filtering. #18499
+- [BUGFIX] Consul SD: Fix filter parameter being incorrectly applied to the Health API. #18499
+
+## 3.11.1 / 2026-04-07
+
+- [BUGFIX] Tracing: Fix startup failure for OTLP HTTP tracing with `insecure: true`. #18469
+
 ## 3.11.0 / 2026-04-02
 
 - [CHANGE] Hetzner SD: The `__meta_hetzner_datacenter` label is deprecated for the role `robot` but kept for backward compatibility, use the `__meta_hetzner_robot_datacenter` label instead. For the role `hcloud`, the label is deprecated and will stop working after the 1 July 2026. #17850

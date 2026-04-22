@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Alert,
   Anchor,
   Badge,
@@ -27,7 +28,6 @@ import panelClasses from "../../Panel.module.css";
 import TargetLabels from "./TargetLabels";
 import ScrapeTimingDetails from "./ScrapeTimingDetails";
 import { targetPoolDisplayLimit } from "./TargetsPage";
-import { Accordion } from "../../components/Accordion";
 
 type ScrapePool = {
   targets: Target[];
@@ -209,6 +209,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
         <Accordion
           multiple
           variant="separated"
+          keepMounted={false}
           value={allPoolNames.filter((p) => !collapsedPools.includes(p))}
           onChange={(value) =>
             dispatch(

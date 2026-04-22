@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/almost"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/convertnhcb"
@@ -107,6 +108,7 @@ func NewTestEngine(tb testing.TB, enablePerStepStats bool, lookbackDelta time.Du
 		EnablePerStepStats:       enablePerStepStats,
 		LookbackDelta:            lookbackDelta,
 		EnableDelayedNameRemoval: true,
+		UseStartTimestamps:       true,
 		Parser:                   parser.NewParser(TestParserOpts),
 	})
 }
@@ -156,7 +158,12 @@ func GetBuiltInExprs() ([]string, error) {
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
 func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
-	RunBuiltinTestsWithStorage(t, engine, newTestStorage)
+	RunBuiltinTestsWithStorage(t, engine, func(t testing.TB) storage.Storage {
+		return teststorage.New(t, func(opt *tsdb.Options) {
+			opt.EnableSTStorage = true
+			opt.EnableXOR2Encoding = true
+		})
+	})
 }
 
 // RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
@@ -1579,10 +1586,14 @@ type atModifierTestCase struct {
 	evalTime time.Time
 }
 
-// parserForBuiltinTests is the parser used when parsing expressions in the
-// built-in test framework (e.g. atModifierTestCases). It must match the Parser
-// used by NewTestEngine so that expressions parse consistently.
-var parserForBuiltinTests = parser.NewParser(TestParserOpts)
+var (
+	// parserForBuiltinTests is the parser used when parsing expressions in the
+	// built-in test framework (e.g. atModifierTestCases). It must match the Parser
+	// used by NewTestEngine so that expressions parse consistently.
+	parserForBuiltinTests = parser.NewParser(TestParserOpts)
+	// reQueryContextFuncs matches start(), end(), range(), and step() calls, which depend on query context.
+	reQueryContextFuncs = regexp.MustCompile(`(start|end|range|step)\(\)`)
+)
 
 func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCase, error) {
 	expr, err := parserForBuiltinTests.ParseExpr(exprStr)
@@ -1794,8 +1805,8 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 
 	// Check query returns same result in range mode,
 	// by checking against the middle step.
-	// Skip this check for queries containing range() since it would resolve differently.
-	if strings.Contains(iq.expr, "range()") {
+	// Skip this check for queries containing range(), step(), start(), or end() since they would resolve differently.
+	if reQueryContextFuncs.MatchString(iq.expr) {
 		return nil
 	}
 	q, err = engine.NewRangeQuery(t.context, t.storage, nil, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
