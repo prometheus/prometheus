@@ -451,7 +451,7 @@ func histogramRate(
 //   - Valid deltas: currST = prevT (no overlap detected)
 //   - Valid cumulative: currST = prevST (no overlap detected)
 //   - Invalid overlap: currST < prevT && currST != prevST (overlap detected)
-func checkStartTimeOverlap(prevStartTimestamp, prevTimestamp, currStartTimestamp, currTimestamp int64) bool {
+func checkStartTimeOverlap(prevStartTimestamp, prevTimestamp, currStartTimestamp, _ int64) bool {
 	return currStartTimestamp != 0 && currStartTimestamp < prevTimestamp && currStartTimestamp != prevStartTimestamp
 }
 
