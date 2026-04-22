@@ -242,7 +242,7 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		}
 		for i, currPoint := range samples.Floats[1:] {
 			prevPoint := samples.Floats[i]
-			if currPoint.F < prevPoint.F || i+1 < len(startTimestamps) && isStartTimestampReset(startTimestamps[i], prevPoint.T, startTimestamps[i+1], currPoint.T) {
+			if currPoint.F < prevPoint.F || (i+1 < len(startTimestamps) && isStartTimestampReset(startTimestamps[i], prevPoint.T, startTimestamps[i+1], currPoint.T)) {
 				resultFloat += prevPoint.F
 			}
 		}
