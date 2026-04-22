@@ -371,7 +371,13 @@ func (rws *WriteStorage) Close() error {
 	rws.mtx.Lock()
 	defer rws.mtx.Unlock()
 
-	// Persist final savepoint before stopping queues.
+	for _, q := range rws.queues {
+		q.Stop()
+	}
+	close(rws.quit)
+
+	// Persist final savepoint after queues have stopped so CurrentSegment
+	// reflects the final, drained position of each watcher.
 	if rws.enableSavepoint {
 		if sp := rws.snapshotSavepoint(); len(sp) > 0 {
 			if err := sp.Save(rws.dir); err != nil {
@@ -379,11 +385,6 @@ func (rws *WriteStorage) Close() error {
 			}
 		}
 	}
-
-	for _, q := range rws.queues {
-		q.Stop()
-	}
-	close(rws.quit)
 
 	rws.watcherMetrics.Unregister()
 	rws.liveReaderMetrics.Unregister()
