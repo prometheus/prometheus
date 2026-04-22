@@ -53,7 +53,7 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .dockerignore .yamllint scripts/golangci-lint.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .dockerignore .yamllint scripts/golangci-lint.yml .github/workflows/govulncheck.yml .github/workflows/scorecards.yml .github/workflows/container_description.yml .github/workflows/stale.yml"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
@@ -128,7 +128,7 @@ process_repo() {
   local org_repo
   local default_branch
   org_repo="$1"
-  repo_log_green "Analyzing '${org_repo}'"
+  repo_log "Analyzing '${org_repo}'"
 
   default_branch="$(get_default_branch "${org_repo}")"
   if [[ -z "${default_branch}" ]]; then
@@ -140,9 +140,15 @@ process_repo() {
   local needs_update=()
   for source_file in ${SYNC_FILES}; do
     source_checksum="$(sha256sum "${source_dir}/${source_file}" | cut -d' ' -f1)"
-    if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] && ! check_go "${org_repo}" "${default_branch}" ; then
-      repo_log "${org_repo} is not Go, skipping golangci-lint.yml."
-      continue
+    if ! check_go "${org_repo}" "${default_branch}" ; then
+      if [[ "${source_file}" == 'scripts/golangci-lint.yml' ]] ; then
+        repo_log "${org_repo} is not Go, skipping golangci-lint.yml."
+        continue
+      fi
+      if [[ "${source_file}" == '.github/workflows/govulncheck.yml' ]] ; then
+        repo_log "${org_repo} is not Go, skipping govulncheck.yml."
+        continue
+      fi
     fi
     if ! check_docker "${org_repo}" "${default_branch}" ; then
       if [[ "${source_file}" == '.dockerignore' ]] ; then
@@ -166,7 +172,7 @@ process_repo() {
     if [[ -z "${target_file}" ]]; then
       repo_log "${target_filename} doesn't exist in ${org_repo}"
       case "${source_file}" in
-        CODE_OF_CONDUCT.md | SECURITY.md | .dockerignore | .github/workflows/container_description.yml)
+        CODE_OF_CONDUCT.md | SECURITY.md | .dockerignore | .github/workflows/container_description.yml | .github/workflows/govulncheck.yml)
           repo_log_yellow "${source_file} missing in ${org_repo}, force updating."
           needs_update+=("${source_file}")
           ;;
@@ -175,7 +181,7 @@ process_repo() {
     fi
     target_checksum="$(echo "${target_file}" | sha256sum | cut -d' ' -f1)"
     if [ "${source_checksum}" == "${target_checksum}" ]; then
-      repo_log_green "${source_file} is already in sync."
+      repo_log "${source_file} is already in sync."
       continue
     fi
     repo_log_yellow "${source_file} needs updating."
