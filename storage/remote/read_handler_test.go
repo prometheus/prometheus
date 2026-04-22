@@ -414,7 +414,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 				count++
 			}
 			require.NoError(t, iter.Err(), "frame %d chunk %d: iterator error", i, j)
-			require.Positive(t, count, 0, "frame %d chunk %d: no samples", i, j)
+			require.Positivef(t, count, "frame %d chunk %d: no samples", i, j)
 		}
 	}
 }
