@@ -201,7 +201,7 @@ func (cf *checkpointFlusher) writeSeries(seriesIter iter.Seq[ActiveSeries]) erro
 		})
 	}
 
-	// Fluch the last batch if we have one
+	// Flush the last batch if we have one
 	if len(cf.seriesRecords) != 0 {
 		return cf.flushRecords()
 	}
