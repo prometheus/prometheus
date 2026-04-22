@@ -47,8 +47,8 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	)
 
 	type openDBParams struct {
-		isNewCheckpoint bool
-		storageDir      string
+		isInMemCheckpoint bool
+		storageDir        string
 	}
 
 	openDBAndDo := func(params openDBParams, fn func(db *DB)) {
@@ -62,7 +62,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 
 		opts := DefaultOptions()
 		opts.OutOfOrderTimeWindow = math.MaxInt64 // Fixes "out of order sample" in benchmarks
-		opts.CheckpointFromInMemorySeries = params.isNewCheckpoint
+		opts.CheckpointFromInMemorySeries = params.isInMemCheckpoint
 		opts.WALSegmentSize = walSegmentSize // Set minimum size to get more segments for checkpoint.
 
 		db, err := Open(l, nil, rs, params.storageDir, opts)
@@ -112,8 +112,8 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	require.NoError(t, os.MkdirAll(wlogWalDir, os.ModePerm))
 
 	wlogParams := openDBParams{
-		isNewCheckpoint: false,
-		storageDir:      wlogStateRoot,
+		isInMemCheckpoint: false,
+		storageDir:        wlogStateRoot,
 	}
 
 	openDBAndDo(wlogParams, func(db *DB) {
@@ -128,7 +128,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	assertCheckpointExists(t, wlogWalDir, 1)
 
 	// Restore the database from the checkpoint.
-	wlogParams.isNewCheckpoint = true
+	wlogParams.isInMemCheckpoint = true
 	openDBAndDo(wlogParams, func(db *DB) {
 		defer db.Close()
 		wlogAfterSeries = db.series
@@ -140,8 +140,8 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	require.NoError(t, os.MkdirAll(agentWalDir, os.ModePerm))
 
 	newParams := openDBParams{
-		isNewCheckpoint: true,
-		storageDir:      agentStateRoot,
+		isInMemCheckpoint: true,
+		storageDir:        agentStateRoot,
 	}
 
 	openDBAndDo(newParams, func(db *DB) {
