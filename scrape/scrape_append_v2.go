@@ -314,15 +314,17 @@ loop:
 			// Append sample to the storage.
 			ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
 		}
+		if err == nil {
+			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
+				sl.cache.trackStaleness(ce.ref, ce)
+			}
+		}
 		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
 		if err != nil {
 			if !errors.Is(err, storage.ErrNotFound) {
 				sl.l.Debug("Unexpected error", "series", string(met), "err", err)
 			}
 			break loop
-		}
-		if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce != nil {
-			sl.cache.trackStaleness(ce.ref, ce)
 		}
 
 		// If series wasn't cached (is new, not seen on previous scrape) we need to add it to the scrape cache.
