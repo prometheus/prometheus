@@ -23,6 +23,8 @@ import (
 	"time"
 
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	"github.com/prometheus/client_golang/prometheus"
+	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -164,6 +166,80 @@ func TestWriteStorageSavepointMultipleDestinations(t *testing.T) {
 	// Verify savepoint entries were loaded with correct segments.
 	require.Equal(t, 2, s.savepoint[hashA].Segment)
 	require.Equal(t, 4, s.savepoint[hashB].Segment)
+}
+
+func TestWriteStorageSavepointMetrics(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		dir := t.TempDir()
+		reg := prometheus.NewRegistry()
+		s := NewWriteStorage(nil, reg, dir, defaultFlushDeadline, nil, false, true)
+		t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+		cfg := testRemoteWriteConfigForHost("http://metrics-success.com")
+		require.NoError(t, s.ApplyConfig(&config.Config{
+			GlobalConfig:       config.DefaultGlobalConfig,
+			RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+		}))
+
+		s.persistSavepoint()
+
+		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointPersistTotal))
+		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointPersistFailed))
+		require.Greater(t, client_testutil.ToFloat64(s.savepointLastPersistTime), 0.0)
+		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointEntries))
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		// Make sp.Save fail by creating a directory where the savepoint file
+		// should be written. os.Rename cannot replace a directory with a file.
+		dir := t.TempDir()
+		require.NoError(t, os.Mkdir(savepointFilePath(dir), 0o755))
+
+		reg := prometheus.NewRegistry()
+		s := NewWriteStorage(nil, reg, dir, defaultFlushDeadline, nil, false, true)
+		t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+		cfg := testRemoteWriteConfigForHost("http://metrics-fail.com")
+		require.NoError(t, s.ApplyConfig(&config.Config{
+			GlobalConfig:       config.DefaultGlobalConfig,
+			RemoteWriteConfigs: []*config.RemoteWriteConfig{cfg},
+		}))
+
+		s.persistSavepoint()
+
+		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointPersistTotal))
+		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointPersistFailed))
+		require.Equal(t, 0.0, client_testutil.ToFloat64(s.savepointLastPersistTime),
+			"timestamp must not advance on failure")
+		require.Equal(t, 1.0, client_testutil.ToFloat64(s.savepointEntries))
+	})
+
+	t.Run("disabled_not_registered", func(t *testing.T) {
+		dir := t.TempDir()
+		reg := prometheus.NewRegistry()
+		s := NewWriteStorage(nil, reg, dir, defaultFlushDeadline, nil, false, false)
+		t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+		require.Nil(t, s.savepointPersistTotal)
+		require.Nil(t, s.savepointPersistFailed)
+		require.Nil(t, s.savepointLastPersistTime)
+		require.Nil(t, s.savepointEntries)
+
+		mfs, err := reg.Gather()
+		require.NoError(t, err)
+		names := make([]string, 0, len(mfs))
+		for _, mf := range mfs {
+			names = append(names, mf.GetName())
+		}
+		for _, n := range []string{
+			"prometheus_remote_storage_savepoint_persist_total",
+			"prometheus_remote_storage_savepoint_persist_failed_total",
+			"prometheus_remote_storage_savepoint_last_persist_timestamp_seconds",
+			"prometheus_remote_storage_savepoint_entries",
+		} {
+			require.NotContains(t, names, n)
+		}
+	})
 }
 
 // walSegmentData describes the series and samples written to a single WAL segment.

@@ -78,7 +78,14 @@ type WriteStorage struct {
 	savepoint Savepoint
 
 	// For timestampTracker.
-	highestTimestamp        *maxTimestamp
+	highestTimestamp *maxTimestamp
+
+	// Savepoint observability metrics. Non-nil only when enableSavepoint is true.
+	savepointPersistTotal    prometheus.Counter
+	savepointPersistFailed   prometheus.Counter
+	savepointLastPersistTime prometheus.Gauge
+	savepointEntries         prometheus.Gauge
+
 	enableTypeAndUnitLabels bool
 	enableSavepoint         bool
 }
@@ -114,6 +121,39 @@ func NewWriteStorage(logger *slog.Logger, reg prometheus.Registerer, dir string,
 	}
 
 	if enableSavepoint {
+		rws.savepointPersistTotal = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "savepoint_persist_total",
+			Help:      "Total number of remote write savepoint persist attempts.",
+		})
+		rws.savepointPersistFailed = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "savepoint_persist_failed_total",
+			Help:      "Total number of remote write savepoint persist attempts that failed.",
+		})
+		rws.savepointLastPersistTime = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "savepoint_last_persist_timestamp_seconds",
+			Help:      "Unix timestamp of the last successful remote write savepoint persist.",
+		})
+		rws.savepointEntries = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "savepoint_entries",
+			Help:      "Number of queue entries in the most recent persisted remote write savepoint.",
+		})
+		if reg != nil {
+			reg.MustRegister(
+				rws.savepointPersistTotal,
+				rws.savepointPersistFailed,
+				rws.savepointLastPersistTime,
+				rws.savepointEntries,
+			)
+		}
+
 		sp, err := LoadSavepoint(dir)
 		if err != nil {
 			logger.Warn("Failed to load remote write savepoint, starting from current position", "err", err)
@@ -170,9 +210,23 @@ func (rws *WriteStorage) persistSavepoint() {
 	rws.savepoint = sp
 	rws.mtx.Unlock()
 
-	if err := sp.Save(rws.dir); err != nil {
+	err := sp.Save(rws.dir)
+	if err != nil {
 		rws.logger.Error("Failed to persist remote write savepoint", "err", err)
 	}
+	rws.recordPersistResult(sp, err == nil)
+}
+
+// recordPersistResult updates the savepoint metrics after an attempt to Save.
+// Precondition: rws.enableSavepoint is true, so the metric fields are non-nil.
+func (rws *WriteStorage) recordPersistResult(sp Savepoint, success bool) {
+	rws.savepointPersistTotal.Inc()
+	rws.savepointEntries.Set(float64(len(sp)))
+	if !success {
+		rws.savepointPersistFailed.Inc()
+		return
+	}
+	rws.savepointLastPersistTime.SetToCurrentTime()
 }
 
 func (rws *WriteStorage) Notify() {
@@ -380,9 +434,11 @@ func (rws *WriteStorage) Close() error {
 	// reflects the final, drained position of each watcher.
 	if rws.enableSavepoint {
 		if sp := rws.snapshotSavepoint(); len(sp) > 0 {
-			if err := sp.Save(rws.dir); err != nil {
+			err := sp.Save(rws.dir)
+			if err != nil {
 				rws.logger.Error("Failed to persist remote write savepoint", "err", err)
 			}
+			rws.recordPersistResult(sp, err == nil)
 		}
 	}
 
@@ -391,6 +447,12 @@ func (rws *WriteStorage) Close() error {
 
 	if rws.reg != nil {
 		rws.reg.Unregister(rws.highestTimestamp.Gauge)
+		if rws.enableSavepoint {
+			rws.reg.Unregister(rws.savepointPersistTotal)
+			rws.reg.Unregister(rws.savepointPersistFailed)
+			rws.reg.Unregister(rws.savepointLastPersistTime)
+			rws.reg.Unregister(rws.savepointEntries)
+		}
 	}
 
 	return nil
