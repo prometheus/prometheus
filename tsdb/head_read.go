@@ -714,7 +714,7 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 		ix -= len(s.mmappedChunks)
 		if s.headChunks != nil {
 			// Iterate all head chunks from the oldest to the newest.
-			var buf [16]*memChunk
+			var buf [collectHeadChunksBufSize]*memChunk
 			hc := collectHeadChunks(s.headChunks, buf[:0])
 			for j, chk := range hc {
 				chkSamples := chk.chunk.NumSamples()
