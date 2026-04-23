@@ -1029,7 +1029,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			// Hence remove this chunk.
 			ms.nextAt = 0
 			if ms.headChunkCount.Load() >= 2 {
-				h.series.mmapReady[h.series.refStripe(ms.ref)].Add(-1)
+				h.series.decMmapReady(ms.ref)
 			}
 			ms.headChunks = nil
 			ms.headChunkCount.Store(0)
@@ -1964,7 +1964,7 @@ func (h *Head) mmapHeadChunks() {
 			series.Unlock()
 			if n > 0 {
 				count += n
-				h.series.mmapReady[i].Add(-1)
+				h.series.decMmapReady(series.ref)
 			}
 		}
 		h.series.locks[i].RUnlock()
@@ -2123,7 +2123,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		wasMmapReady := series.headChunkCount.Load() >= 2
 		rmChunks += series.truncateChunksBefore(mint, minOOOMmapRef)
 		if wasMmapReady && series.headChunkCount.Load() < 2 {
-			s.mmapReady[s.refStripe(series.ref)].Add(-1)
+			s.decMmapReady(series.ref)
 		}
 
 		if len(series.mmappedChunks) > 0 {
@@ -2161,10 +2161,10 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		// series alike.
 		// If we don't hold them all, there's a very small chance that a series receives
 		// samples again while we are half-way into deleting it.
-		refShard := s.refStripe(series.ref)
-		if hashShard != refShard {
-			s.locks[refShard].Lock()
-			defer s.locks[refShard].Unlock()
+		stripe := s.refStripe(series.ref)
+		if hashShard != stripe {
+			s.locks[stripe].Lock()
+			defer s.locks[stripe].Unlock()
 		}
 
 		if value.IsStaleNaN(series.lastValue) ||
@@ -2176,7 +2176,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
-		delete(s.series[refShard], series.ref)
+		delete(s.series[stripe], series.ref)
 		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
 	}
 
@@ -2241,22 +2241,22 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 	for _, ref := range refs {
 		// Delete the reference from the series map.
 		// Copying getByID here to avoid locking and unlocking twice.
-		refShard := h.series.refStripe(ref)
-		h.series.locks[refShard].Lock()
-		series := h.series.series[refShard][ref]
+		stripe := h.series.refStripe(ref)
+		h.series.locks[stripe].Lock()
+		series := h.series.series[stripe][ref]
 		if series == nil {
-			h.series.locks[refShard].Unlock()
+			h.series.locks[stripe].Unlock()
 			continue
 		}
-		delete(h.series.series[refShard], series.ref)
-		h.series.locks[refShard].Unlock()
+		delete(h.series.series[stripe], series.ref)
+		h.series.locks[stripe].Unlock()
 
 		// Delete the reference from the hash.
 		hash := series.lset.Hash()
-		hashShard := int(hash) & (h.series.size - 1)
-		h.series.locks[hashShard].Lock()
-		h.series.hashes[hashShard].del(hash, series.ref)
-		h.series.locks[hashShard].Unlock()
+		hashStripe := int(hash) & (h.series.size - 1)
+		h.series.locks[hashStripe].Lock()
+		h.series.hashes[hashStripe].del(hash, series.ref)
+		h.series.locks[hashStripe].Unlock()
 
 		if value.IsStaleNaN(series.lastValue) ||
 			(series.lastHistogramValue != nil && value.IsStaleNaN(series.lastHistogramValue.Sum)) ||
@@ -2269,7 +2269,7 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 			chunksRemoved += series.headChunks.len()
 		}
 		if series.headChunkCount.Load() >= 2 {
-			h.series.mmapReady[refShard].Add(-1)
+			h.series.decMmapReady(series.ref)
 		}
 		// Clear to prevent a double-subtraction from the chunksRemoved gauge if
 		// resetSeriesWithMMappedChunks is queued on the same WAL-replay processor
@@ -2339,19 +2339,19 @@ func (s *stripeSeries) gcStaleSeries(seriesRefs []storage.SeriesRef, maxt int64)
 		// series alike.
 		// If we don't hold them all, there's a very small chance that a series receives
 		// samples again while we are half-way into deleting it.
-		refShard := s.refStripe(series.ref)
+		stripe := s.refStripe(series.ref)
 		if series.headChunkCount.Load() >= 2 {
-			s.mmapReady[refShard].Add(-1)
+			s.decMmapReady(series.ref)
 		}
-		if hashShard != refShard {
-			s.locks[refShard].Lock()
-			defer s.locks[refShard].Unlock()
+		if hashShard != stripe {
+			s.locks[stripe].Lock()
+			defer s.locks[stripe].Unlock()
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
 		series.lset.Range(func(l labels.Label) { affected[l] = struct{}{} })
 		s.hashes[hashShard].del(hash, series.ref)
-		delete(s.series[refShard], series.ref)
+		delete(s.series[stripe], series.ref)
 		deletedForCallback[series.ref] = series.lset // OK to access lset; series is locked at the top of this function.
 	}
 
@@ -2394,6 +2394,16 @@ func (s *stripeSeries) refStripe(ref chunks.HeadSeriesRef) int {
 	return int(uint64(ref) & uint64(s.size-1))
 }
 
+// incMmapReady increments the per-stripe mmap-ready counter for the given series.
+func (s *stripeSeries) incMmapReady(ref chunks.HeadSeriesRef) {
+	s.mmapReady[s.refStripe(ref)].Add(1)
+}
+
+// decMmapReady decrements the per-stripe mmap-ready counter for the given series.
+func (s *stripeSeries) decMmapReady(ref chunks.HeadSeriesRef) {
+	s.mmapReady[s.refStripe(ref)].Add(-1)
+}
+
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
 	i := s.refStripe(id)
 
@@ -2424,11 +2434,11 @@ func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, seri
 	s.hashes[i].set(hash, series)
 	s.locks[i].Unlock()
 
-	refShard := s.refStripe(series.ref)
+	stripe := s.refStripe(series.ref)
 
-	s.locks[refShard].Lock()
-	s.series[refShard][series.ref] = series
-	s.locks[refShard].Unlock()
+	s.locks[stripe].Lock()
+	s.series[stripe][series.ref] = series
+	s.locks[stripe].Unlock()
 
 	return series, true
 }
