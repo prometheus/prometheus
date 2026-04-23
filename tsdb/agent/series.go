@@ -22,17 +22,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
-type ActiveSeries interface {
-	Ref() chunks.HeadSeriesRef
-	Labels() labels.Labels
-	LastSampleTimestamp() int64
-}
-
-type DeletedSeries interface {
-	Ref() chunks.HeadSeriesRef
-	Labels() labels.Labels
-}
-
 // memSeries is a chunkless version of tsdb.memSeries.
 type memSeries struct {
 	sync.Mutex
@@ -336,6 +325,8 @@ func (s *stripeSeries) refLock(ref chunks.HeadSeriesRef) uint64 {
 	return uint64(ref) & uint64(s.size-1)
 }
 
+var _ ActiveSeries = (*seriesSnapshot)(nil)
+
 // seriesSnapshot is a point-in-time copy of a memSeries fields.
 // It is used to avoid holding series locks during checkpoint I/O.
 type seriesSnapshot struct {
@@ -402,6 +393,8 @@ func deletedSeriesIter(m map[chunks.HeadSeriesRef]deletedRefMeta, last int) iter
 		}
 	}
 }
+
+var _ DeletedSeries = deletedSeries{}
 
 type deletedSeries struct {
 	ref    chunks.HeadSeriesRef

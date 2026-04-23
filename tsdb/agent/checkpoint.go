@@ -20,6 +20,8 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
@@ -27,8 +29,30 @@ import (
 
 const defaultBatchSize = 1000
 
+// ActiveSeries describes a live series to be written by [Checkpoint].
+//
+// This interface is intentionally exported so external TSDB implementations can
+// use [Checkpoint] without depending on Prometheus internal series types.
+type ActiveSeries interface {
+	Ref() chunks.HeadSeriesRef
+	Labels() labels.Labels
+	LastSampleTimestamp() int64
+}
+
+// DeletedSeries describes a deleted series to be written by [Checkpoint].
+//
+// This interface is intentionally exported so external TSDB implementations can
+// use [Checkpoint] without depending on Prometheus internal series types.
+type DeletedSeries interface {
+	Ref() chunks.HeadSeriesRef
+	Labels() labels.Labels
+}
+
 // Checkpoint creates an unindexed checkpoint containing record.RefSeries and
-// last timestamp for ActiveSeries and a record.RefSeries for the recentlyDeleted series.
+// last timestamp for ActiveSeries and record.RefSeries for DeletedSeries.
+//
+// This API accepts interfaces so external TSDB implementations can provide
+// their own series storage while reusing Prometheus checkpoint writing logic.
 //
 // The difference between this implementation and [wlog.Checkpoint] is that it skips re-read current checkpoint + segments
 // and relies on data in memory.
