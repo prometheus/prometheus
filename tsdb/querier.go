@@ -170,10 +170,10 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	return selectSeriesSet(ctx, sortSeries, hints, ms, q.index, q.chunks, q.tombstones, q.mint, q.maxt)
 }
 
-// chunkCacheToggler is an optional interface implemented by chunk readers that
+// chunkCacheEnabler is an optional interface implemented by chunk readers that
 // support an in-memory head-chunk cache. The cache is beneficial when every
 // chunk of a series is accessed sequentially, such as range queries and compaction.
-type chunkCacheToggler interface {
+type chunkCacheEnabler interface {
 	EnableChunkCache()
 }
 
@@ -184,8 +184,8 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 	sharded := hints != nil && hints.ShardCount > 0
 
 	if hints != nil && hints.Step > 0 {
-		if toggler, ok := chunks.(chunkCacheToggler); ok {
-			toggler.EnableChunkCache()
+		if enabler, ok := chunks.(chunkCacheEnabler); ok {
+			enabler.EnableChunkCache()
 		}
 	}
 
@@ -238,8 +238,8 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 	sharded := hints != nil && hints.ShardCount > 0
 
 	if hints != nil && hints.Step > 0 {
-		if toggler, ok := chunks.(chunkCacheToggler); ok {
-			toggler.EnableChunkCache()
+		if enabler, ok := chunks.(chunkCacheEnabler); ok {
+			enabler.EnableChunkCache()
 		}
 	}
 

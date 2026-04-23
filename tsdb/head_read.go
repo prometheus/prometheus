@@ -596,18 +596,9 @@ func (h *Head) chunkFromSeries(s *memSeries, cid chunks.HeadChunkID, isOOO bool,
 // (and not the chunkenc.Chunk inside it) can be garbage collected after its usage.
 // if isOpen is true, it means that the returned *memChunk is used for appends.
 func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, headChunks []*memChunk) (chunk *memChunk, headChunk, isOpen bool, err error) {
-	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
-	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
-	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
-	// is >= len(s.mmappedChunks), it represents one of the chunks on s.headChunks linked list.
-	// The order of elements is different for slice and linked list.
-	// For s.mmappedChunks slice newer chunks are appended to it.
-	// For s.headChunks list newer chunks are prepended to it.
-	//
-	// memSeries {
-	//   mmappedChunks: [t0, t1, t2]
-	//   headChunk:     {t5}->{t4}->{t3}
-	// }
+	// ix is the chunk's position in the logical sequence: mmappedChunks first
+	// (oldest at index 0), then headChunks (oldest first). Values 0..len(mmappedChunks)-1
+	// refer to mmapped chunks; values >= len(mmappedChunks) refer to head chunks.
 	ix := int(id) - int(s.firstChunkID)
 	if ix < 0 {
 		return nil, false, false, storage.ErrNotFound
@@ -629,7 +620,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 		return mc, false, false, nil
 	}
 
-	// Head chunk lookup — walk directly (no collect+reverse needed).
+	// Head chunk lookup.
 	ix -= len(s.mmappedChunks)
 
 	// Fast path: use pre-collected slice for O(1) indexed lookup.
@@ -644,10 +635,6 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	headChunksLen := int(s.headChunkCount.Load())
 	if ix >= headChunksLen {
 		return nil, false, false, storage.ErrNotFound
-	}
-	// Fast path: single head chunk (the common case).
-	if headChunksLen == 1 {
-		return s.headChunks, true, true, nil
 	}
 	// Walk from newest (offset 0) to target. The list is newest-first,
 	// but ix is oldest-first, so reverse the offset.
@@ -714,8 +701,7 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 		ix -= len(s.mmappedChunks)
 		if s.headChunks != nil {
 			// Iterate all head chunks from the oldest to the newest.
-			var buf [collectHeadChunksBufSize]*memChunk
-			hc := collectHeadChunks(s.headChunks, buf[:0])
+			hc := collectHeadChunks(s.headChunks, make([]*memChunk, 0, s.headChunkCount.Load()))
 			for j, chk := range hc {
 				chkSamples := chk.chunk.NumSamples()
 				totalSamples += chkSamples

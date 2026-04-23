@@ -1324,7 +1324,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 
 // TestCompactionFromHeadWithMultipleHeadChunks verifies that compaction from
 // a Head with multiple head chunks per series produces correct blocks. This
-// exercises the chunkCacheToggler path in PopulateBlock, which enables the
+// exercises the chunkCacheEnabler path in PopulateBlock, which enables the
 // head-chunk cache during compaction for O(1) chunk lookups.
 func TestCompactionFromHeadWithMultipleHeadChunks(t *testing.T) {
 	opts := DefaultHeadOptions()
