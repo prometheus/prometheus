@@ -1459,7 +1459,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
 			if series.headChunkCount.Load() == 2 {
-				a.head.series.mmapReady[a.head.series.refStripe(series.ref)].Add(1)
+				a.head.series.incMmapReady(series.ref)
 			}
 		}
 
@@ -1573,7 +1573,7 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
 			if series.headChunkCount.Load() == 2 {
-				a.head.series.mmapReady[a.head.series.refStripe(series.ref)].Add(1)
+				a.head.series.incMmapReady(series.ref)
 			}
 		}
 
@@ -1687,7 +1687,7 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
 			if series.headChunkCount.Load() == 2 {
-				a.head.series.mmapReady[a.head.series.refStripe(series.ref)].Add(1)
+				a.head.series.incMmapReady(series.ref)
 			}
 		}
 
