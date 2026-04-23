@@ -7172,6 +7172,22 @@ func TestHeadAppender_AppendHistogramSTZeroSample(t *testing.T) {
 			},
 			expectedError: storage.ErrDuplicateSampleForTimestamp,
 		},
+		{
+			name: "integer histogram ST is out of order",
+			appendableSamples: []appendableSamples{
+				{ts: 200, h: tsdbutil.GenerateTestHistogram(1)},
+				{ts: 300, h: tsdbutil.GenerateTestHistogram(1), st: 100},
+			},
+			expectedError: storage.ErrOutOfOrderST,
+		},
+		{
+			name: "float histogram ST is out of order",
+			appendableSamples: []appendableSamples{
+				{ts: 200, fh: tsdbutil.GenerateTestFloatHistogram(1)},
+				{ts: 300, fh: tsdbutil.GenerateTestFloatHistogram(1), st: 100},
+			},
+			expectedError: storage.ErrOutOfOrderST,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, _ := newTestHead(t, DefaultBlockDuration, compression.None, false)
@@ -7188,6 +7204,72 @@ func TestHeadAppender_AppendHistogramSTZeroSample(t *testing.T) {
 				}
 
 				ref, err = a.AppendHistogram(ref, lbls, sample.ts, sample.h, sample.fh)
+				require.NoError(t, err)
+				require.NoError(t, a.Commit())
+			}
+		})
+	}
+}
+
+func TestHeadAppender_AppendSTZeroSample(t *testing.T) {
+	type appendableSample struct {
+		ts      int64
+		fSample float64
+		st      int64
+	}
+	for _, tc := range []struct {
+		name              string
+		oooEnabled        bool
+		appendableSamples []appendableSample
+		expectedError     error
+	}{
+		{
+			name: "ST lower than minValidTime returns ErrOutOfBounds",
+			appendableSamples: []appendableSample{
+				{ts: 100, fSample: 1.0, st: -1},
+			},
+			expectedError: storage.ErrOutOfBounds,
+		},
+		{
+			name: "ST duplicates an existing sample",
+			appendableSamples: []appendableSample{
+				{ts: 100, fSample: 1.0},
+				{ts: 200, fSample: 2.0, st: 100},
+			},
+			expectedError: storage.ErrDuplicateSampleForTimestamp,
+		},
+		{
+			name: "ST is out of order when OOO is disabled",
+			appendableSamples: []appendableSample{
+				{ts: 200, fSample: 2.0},
+				{ts: 300, fSample: 3.0, st: 100},
+			},
+			expectedError: storage.ErrOutOfOrderSample,
+		},
+		{
+			name:       "ST is out of order when OOO is enabled",
+			oooEnabled: true,
+			appendableSamples: []appendableSample{
+				{ts: 200, fSample: 2.0},
+				{ts: 300, fSample: 3.0, st: 100},
+			},
+			expectedError: storage.ErrOutOfOrderST,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := newTestHead(t, DefaultBlockDuration, compression.None, tc.oooEnabled)
+
+			lbls := labels.FromStrings("foo", "bar")
+
+			var ref storage.SeriesRef
+			for _, sample := range tc.appendableSamples {
+				a := h.Appender(context.Background())
+				var err error
+				if sample.st != 0 {
+					ref, err = a.AppendSTZeroSample(ref, lbls, sample.ts, sample.st)
+					require.ErrorIs(t, err, tc.expectedError)
+				}
+				ref, err = a.Append(ref, lbls, sample.ts, sample.fSample)
 				require.NoError(t, err)
 				require.NoError(t, a.Commit())
 			}
