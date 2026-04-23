@@ -2268,6 +2268,12 @@ func pickSchema(bucketFactor float64) int32 {
 	}
 }
 
+// unixRoundTripperPrefix is used to mark hosts that should be routed
+// through the custom unixRoundTripper, which then forwards them to a
+// Unix domain socket. The prefix uses "_" because underscores aren't
+// allowed in valid DNS hostnames, preventing collisions.
+const unixRoundTripperPrefix = "_unix-"
+
 func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...config_util.HTTPClientOption) (*http.Client, error) {
 	client, err := config_util.NewClientFromConfig(cfg, name, optFuncs...)
 	if err != nil {
@@ -2278,10 +2284,9 @@ func newScrapeClient(cfg config_util.HTTPClientConfig, name string, optFuncs ...
 		oldDialContext := t.DialContext
 		t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, _, err := net.SplitHostPort(addr)
-			// Intercept "_unix-" prefixed hosts (generated in unixRoundTripper) and dial the unix socket directly.
-			// We use "_" (underscore) prefix because it is not allowed in valid DNS hostnames, preventing collisions.
-			if err == nil && strings.HasPrefix(host, "_unix-") {
-				decodedBytes, err := hex.DecodeString(strings.TrimPrefix(host, "_unix-"))
+			// Intercept unixRoundTripperPrefix prefixed hosts (generated in unixRoundTripper) and dial the unix socket directly.
+			if err == nil && strings.HasPrefix(host, unixRoundTripperPrefix) {
+				decodedBytes, err := hex.DecodeString(strings.TrimPrefix(host, unixRoundTripperPrefix))
 				if err == nil {
 					if oldDialContext != nil {
 						return oldDialContext(ctx, "unix", string(decodedBytes))
@@ -2329,7 +2334,7 @@ func (t *unixRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	newReq.URL.RawQuery = q.Encode()
 
 	newReq.URL.Scheme = scheme
-	newReq.URL.Host = "_unix-" + hex.EncodeToString([]byte(socketPath))
+	newReq.URL.Host = unixRoundTripperPrefix + hex.EncodeToString([]byte(socketPath))
 
 	return t.rt.RoundTrip(newReq)
 }
