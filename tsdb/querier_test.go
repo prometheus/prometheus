@@ -418,6 +418,41 @@ func TestBlockQuerier(t *testing.T) {
 	}
 }
 
+func TestBlockBaseQuerier_LabelNamesLimit(t *testing.T) {
+	ix := newMockIndex()
+	ls := labels.FromStrings("aaa", "1", "bbb", "2", "ccc", "3")
+	require.NoError(t, ix.AddSeries(1, ls))
+	ls.Range(func(lbl labels.Label) {
+		require.NoError(t, ix.WritePostings(lbl.Name, lbl.Value, index.NewListPostings([]storage.SeriesRef{1})))
+	})
+
+	q := &blockBaseQuerier{index: ix, chunks: mockChunkReader(nil), tombstones: tombstones.NewMemTombstones()}
+
+	t.Run("no limit", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), nil)
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb", "ccc"}, names)
+	})
+
+	t.Run("limit applied", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), &storage.LabelHints{Limit: 2})
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb"}, names)
+	})
+
+	t.Run("limit larger than result", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), &storage.LabelHints{Limit: 10})
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb", "ccc"}, names)
+	})
+
+	t.Run("zero limit means no limit", func(t *testing.T) {
+		names, _, err := q.LabelNames(context.Background(), &storage.LabelHints{Limit: 0})
+		require.NoError(t, err)
+		require.Equal(t, []string{"aaa", "bbb", "ccc"}, names)
+	})
+}
+
 func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 	for _, c := range []blockQuerierTestCase{
 		{
