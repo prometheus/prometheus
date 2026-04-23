@@ -81,9 +81,17 @@ func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, hints *
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *blockBaseQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, err := q.index.LabelNames(ctx, matchers...)
-	return res, nil, err
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if hints != nil && hints.Limit > 0 && len(res) > hints.Limit {
+		res = res[:hints.Limit]
+	}
+
+	return res, nil, nil
 }
 
 func (q *blockBaseQuerier) Close() error {
