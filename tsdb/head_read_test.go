@@ -820,7 +820,11 @@ func TestHeadChunkReaderCache(t *testing.T) {
 }
 
 // benchSink prevents the compiler from eliding benchmark calls.
-var benchSink any
+var (
+	benchSinkChunk  *memChunk
+	benchSinkChunks []*memChunk
+	benchSinkMeta   []chunks.Meta
+)
 
 // BenchmarkSeriesChunkIteration measures iterating all N head chunks of a series
 // oldest-to-newest (the real query pattern) using the cached head-chunks slice.
@@ -837,7 +841,7 @@ func BenchmarkSeriesChunkIteration(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				for i := range n {
-					benchSink, _, _, _ = s.chunk(chunks.HeadChunkID(i), nil, nil, hc)
+					benchSinkChunk, _, _, _ = s.chunk(chunks.HeadChunkID(i), nil, nil, hc)
 				}
 			}
 		})
@@ -888,7 +892,7 @@ func BenchmarkAppendSeriesChunks(b *testing.B) {
 			for b.Loop() {
 				chks, _ = appendSeriesChunks(s, mint, maxt, chks[:0], nil)
 			}
-			benchSink = chks
+			benchSinkMeta = chks
 		})
 
 		b.Run(fmt.Sprintf("withMmapped/%d", numHeadChunks), func(b *testing.B) {
@@ -914,7 +918,7 @@ func BenchmarkAppendSeriesChunks(b *testing.B) {
 			for b.Loop() {
 				chks, _ = appendSeriesChunks(s, mint, maxt, chks[:0], nil)
 			}
-			benchSink = chks
+			benchSinkMeta = chks
 		})
 	}
 }
@@ -926,8 +930,7 @@ func BenchmarkCollectHeadChunks(b *testing.B) {
 
 			b.ReportAllocs()
 			for b.Loop() {
-				var buf [collectHeadChunksBufSize]*memChunk
-				benchSink = collectHeadChunks(head, buf[:0])
+				benchSinkChunks = collectHeadChunks(head, make([]*memChunk, 0, n))
 			}
 		})
 	}
@@ -951,7 +954,7 @@ func BenchmarkSeriesChunk(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				benchSink = c
+				benchSinkChunk = c
 			}
 		})
 	}
@@ -975,7 +978,7 @@ func BenchmarkChunkLookup(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				benchSink = c
+				benchSinkChunk = c
 			}
 		})
 	}
