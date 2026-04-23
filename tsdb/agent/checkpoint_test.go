@@ -46,25 +46,20 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		agentAfterSeries *stripeSeries
 	)
 
-	type openDBParams struct {
-		isInMemCheckpoint bool
-		storageDir        string
-	}
-
-	openDBAndDo := func(params openDBParams, fn func(db *DB)) {
+	openDBAndDo := func(isInMemCheckpoint bool, storageDir string, fn func(db *DB)) {
 		l := promslog.NewNopLogger()
 		rs := remote.NewStorage(
 			promslog.NewNopLogger(), nil,
-			startTime, params.storageDir,
+			startTime, storageDir,
 			30*time.Second, nil, false,
 		)
 		defer rs.Close()
 
 		opts := DefaultOptions()
-		opts.CheckpointFromInMemorySeries = params.isInMemCheckpoint
+		opts.CheckpointFromInMemorySeries = isInMemCheckpoint
 		opts.WALSegmentSize = walSegmentSize // Set minimum size to get more segments for checkpoint.
 
-		db, err := Open(l, nil, rs, params.storageDir, opts)
+		db, err := Open(l, nil, rs, storageDir, opts)
 		require.NoError(t, err, "Open")
 		fn(db)
 	}
@@ -126,12 +121,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	wlogWalDir := filepath.Join(wlogStateRoot, "wal")
 	require.NoError(t, os.MkdirAll(wlogWalDir, os.ModePerm))
 
-	wlogParams := openDBParams{
-		isInMemCheckpoint: false,
-		storageDir:        wlogStateRoot,
-	}
-
-	openDBAndDo(wlogParams, func(db *DB) {
+	openDBAndDo(false, wlogStateRoot, func(db *DB) {
 		appendData(db)
 
 		// Trigger checkpoint call.
@@ -142,8 +132,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	assertCheckpointExists(t, wlogWalDir, 1)
 
 	// Restore the database from the checkpoint.
-	wlogParams.isInMemCheckpoint = true
-	openDBAndDo(wlogParams, func(db *DB) {
+	openDBAndDo(true, wlogStateRoot, func(db *DB) {
 		defer db.Close()
 		wlogAfterSeries = db.series
 	})
@@ -153,12 +142,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	agentWalDir := filepath.Join(agentStateRoot, "wal")
 	require.NoError(t, os.MkdirAll(agentWalDir, os.ModePerm))
 
-	newParams := openDBParams{
-		isInMemCheckpoint: true,
-		storageDir:        agentStateRoot,
-	}
-
-	openDBAndDo(newParams, func(db *DB) {
+	openDBAndDo(true, agentStateRoot, func(db *DB) {
 		appendData(db)
 
 		err := db.truncate(-1)
@@ -167,7 +151,7 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 	})
 
 	assertCheckpointExists(t, agentWalDir, 1)
-	openDBAndDo(newParams, func(db *DB) {
+	openDBAndDo(true, agentStateRoot, func(db *DB) {
 		defer db.Close()
 		agentAfterSeries = db.series
 	})

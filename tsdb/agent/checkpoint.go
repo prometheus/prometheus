@@ -91,8 +91,6 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, atIndex, batchSize int, activeS
 		return fmt.Errorf("close checkpoint: %w", err)
 	}
 
-	// The original wlog.Checkpoint syncs temporary directory before rename.
-	// See tsdb/wlog/checkpoint.go:390
 	df, err := fileutil.OpenDir(cpTmpDir)
 	if err != nil {
 		return fmt.Errorf("open temporary checkpoint directory: %w", err)
