@@ -1954,3 +1954,54 @@ func (h *Head) findLastSeriesID(state SeriesLifecycleState, endSegment int) (uin
 	// the ID from our state file has to be used.
 	return state.LastSeriesID, nil
 }
+
+// mergeWALSeries is called once the WAL replay is done, and merges the data in the WAL map, into the live scraper map.
+func (h *Head) mergeWALSeries() {
+	h.logger.Info("Starting to merge WAL series into live series")
+	start := time.Now()
+
+	for i := 0; i < h.walSeries.size; i++ {
+		addedSeries := make([]labels.Labels, 0)
+
+		h.series.locks[i].Lock()
+
+		// Helper function to process a single series. 
+		processWALSeries := func(hash uint64, walS *memSeries) {
+			liveS, exists := h.series.series[i][walS.ref]
+
+			if !exists {
+				// First case: The scraper hasn't seen this series yet.
+				// Move it over to the live maps.
+				h.series.series[i][walS.ref] = walS
+				h.series.hashes[i].set(hash, walS) 				
+				addedSeries = append(addedSeries, walS.lset)
+				return
+			}
+
+			// Other case: overlap
+			// liveS.Lock()
+			// walS.Lock()
+			
+			// TODO: Implement this: h.mergeOverlappingSeries(walS, liveS)
+			
+			// walS.Unlock()
+			// liveS.Unlock()
+		}
+
+		// Iterate conflicts first
+		for hash, all := range h.walSeries.hashes[i].conflicts {
+			for _, walS := range all {
+				processWALSeries(hash, walS)
+			}
+		}
+
+		// Iterate uniques 
+		for hash, walS := range h.walSeries.hashes[i].unique {
+			processWALSeries(hash, walS)
+		}
+
+		h.series.locks[i].Unlock()
+	}
+
+	h.logger.Info("WAL series merge completed", "duration", time.Since(start).String())
+}
