@@ -59,9 +59,6 @@ func Checkpoint(logger *slog.Logger, w *wlog.WL, atIndex, batchSize int, activeS
 
 	cpDir := wlog.CheckpointDir(w.Dir(), atIndex)
 	cpTmpDir := cpDir + wlog.CheckpointTempFileSuffix
-	if err := os.RemoveAll(cpTmpDir); err != nil {
-		return fmt.Errorf("remove previous temporary checkpoint dir: %w", err)
-	}
 
 	if err := os.MkdirAll(cpTmpDir, os.ModePerm); err != nil {
 		return fmt.Errorf("create checkpoint dir: %w", err)
