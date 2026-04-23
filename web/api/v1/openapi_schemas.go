@@ -54,6 +54,9 @@ func (b *OpenAPIBuilder) buildComponents() *v3.Components {
 	schemas.Set("LabelsOutputBody", b.stringArrayResponseBodySchema())
 	schemas.Set("LabelsPostInputBody", b.labelsPostInputBodySchema())
 	schemas.Set("LabelValuesOutputBody", b.stringArrayResponseBodySchema())
+	schemas.Set("SearchMetricNamesPostInputBody", b.searchMetricNamesPostInputBodySchema())
+	schemas.Set("SearchLabelNamesPostInputBody", b.searchLabelNamesPostInputBodySchema())
+	schemas.Set("SearchLabelValuesPostInputBody", b.searchLabelValuesPostInputBodySchema())
 
 	// Series schemas.
 	schemas.Set("SeriesOutputBody", b.labelsArrayResponseBodySchema())
@@ -732,6 +735,82 @@ func (*OpenAPIBuilder) seriesPostInputBodySchema() *base.SchemaProxy {
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
 		Required:             []string{"match[]"},
 		Properties:           props,
+	})
+}
+
+// schemaProp is a name/schema pair used to build ordered property maps.
+type schemaProp struct {
+	name   string
+	schema *base.SchemaProxy
+}
+
+// propsMap converts a slice of schemaProp into an ordered map, preserving order.
+func propsMap(pairs []schemaProp) *orderedmap.Map[string, *base.SchemaProxy] {
+	m := orderedmap.New[string, *base.SchemaProxy]()
+	for _, p := range pairs {
+		m.Set(p.name, p.schema)
+	}
+	return m
+}
+
+// commonSearchPostProps returns the properties shared by all three search POST bodies.
+func commonSearchPostProps() []schemaProp {
+	return []schemaProp{
+		{"fuzz_threshold", integerSchemaWithDescriptionAndExample("Form field: Fuzzy threshold in the range 0-100. Default is 0, the lowest fuzzy threshold.", 80)},
+		{"fuzz_alg", enumStringSchemaWithDescription("Form field: Fuzzy algorithm. Supported values are subsequence (default) and jarowinkler.", FuzzAlgorithms...)},
+		{"case_sensitive", booleanSchemaWithDescription("Form field: Whether matching is case-sensitive.")},
+		{"sort_by", enumStringSchemaWithDescription("Form field: Sort mode. Supported values are alpha and score. If unset, results are returned in natural order.", "alpha", "score")},
+		{"sort_dir", enumStringSchemaWithDescription("Form field: Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.", "asc", "dsc")},
+		{"include_score", booleanSchemaWithDescription("Form field: Include the relevance score in each result record.")},
+		{"start", stringSchemaWithDescriptionAndExample("Form field: The start time of the query.", "2026-01-02T12:37:00.000Z")},
+		{"end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2026-01-02T13:37:00.000Z")},
+		{"limit", integerSchemaWithDescriptionAndExample("Form field: The maximum number of results to return.", 20)},
+		{"batch_size", integerSchemaWithDescriptionAndExample("Form field: Preferred number of results per NDJSON batch.", 20)},
+	}
+}
+
+func (*OpenAPIBuilder) searchMetricNamesPostInputBodySchema() *base.SchemaProxy {
+	props := append([]schemaProp{
+		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope metric discovery.", []string{"{job=\"prometheus\"}"})},
+		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against metric names (OR logic).", []string{"http_req"})},
+	}, commonSearchPostProps()...)
+	props = append(props, schemaProp{"include_metadata", booleanSchemaWithDescription("Form field: Include metric metadata in each result.")})
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for metric name search.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           propsMap(props),
+	})
+}
+
+func (*OpenAPIBuilder) searchLabelNamesPostInputBodySchema() *base.SchemaProxy {
+	props := append([]schemaProp{
+		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label discovery.", []string{"{__name__=\"up\"}"})},
+		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label names (OR logic).", []string{"inst"})},
+	}, commonSearchPostProps()...)
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for label name search.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Properties:           propsMap(props),
+	})
+}
+
+func (*OpenAPIBuilder) searchLabelValuesPostInputBodySchema() *base.SchemaProxy {
+	props := append([]schemaProp{
+		{"label", stringSchemaWithDescriptionAndExample("Form field: Label name whose values should be searched.", "instance")},
+		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label value discovery.", []string{"up"})},
+		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label values (OR logic).", []string{"909"})},
+	}, commonSearchPostProps()...)
+
+	return base.CreateSchemaProxy(&base.Schema{
+		Type:                 []string{"object"},
+		Description:          "POST request body for label value search.",
+		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
+		Required:             []string{"label"},
+		Properties:           propsMap(props),
 	})
 }
 

@@ -10,6 +10,9 @@
     "query_stats": true,
     "query_warnings": true,
     "remote_write_receiver": false,
+    "search": false,
+    "search_fuzz_alg_jarowinkler": true,
+    "search_fuzz_alg_subsequence": true,
     "time_range_labels": true,
     "time_range_series": true
   },

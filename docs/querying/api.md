@@ -521,6 +521,99 @@ curl http://localhost:9090/api/v1/label/U__http_2e_status_code/values
 }
 ```
 
+### Searching metric names, label names, and label values
+
+These endpoints are experimental and must be enabled with
+`--enable-feature=search-api`.
+
+The following endpoints provide streamed discovery results for metric names,
+label names, and label values:
+
+```
+GET /api/v1/search/metric_names
+POST /api/v1/search/metric_names
+GET /api/v1/search/label_names
+POST /api/v1/search/label_names
+GET /api/v1/search/label_values
+POST /api/v1/search/label_values
+```
+
+These endpoints return newline-delimited JSON with content type
+`application/x-ndjson`. Each response contains one or more result batches,
+followed by a final trailer line:
+
+```json
+{"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
+{"status":"success","has_more":false}
+```
+
+If an error occurs before streaming starts, the API returns the usual
+Prometheus JSON error object. If an error occurs after streaming starts, the
+stream ends with an NDJSON error line instead.
+
+Common URL query parameters:
+
+- `match[]=<series_selector>`: Repeated series selector used to scope the
+  search. Optional.
+- `search[]=<string>`: Repeated search string matched against names or values.
+  Multiple values use OR semantics. Optional.
+- `fuzz_threshold=<number>`: Fuzzy threshold from 0 to 100. Optional. A value
+  of 0 is the lowest fuzzy threshold.
+- `fuzz_alg=<subsequence | jarowinkler>`: Matching algorithm. Optional. Default
+  is `subsequence`.
+- `case_sensitive=<bool>`: Toggle case-sensitive matching. Optional.
+- `sort_by=<string>`: Sort mode. Supported values depend on the endpoint.
+- `sort_dir=<asc | dsc>`: Sort direction. Optional. Only valid with
+  `sort_by=alpha`.
+- `include_score=<bool>`: Include the relevance score in each result. Optional.
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
+- `limit=<number>`: Maximum number of returned results. Optional. Default is
+  100.
+- `batch_size=<number>`: Preferred number of results per NDJSON batch.
+  Optional. Default is 100.
+
+The `start` and `end` parameters narrow results to the selected time window.
+Results may include values from series active slightly outside that window,
+because Prometheus stores data in fixed-size blocks (typically 2 hours each).
+
+Additional parameters for `/api/v1/search/metric_names`:
+
+- `include_metadata=<bool>`: Include metric metadata in each result.
+- `sort_by=<alpha | score>`
+
+Additional parameters for `/api/v1/search/label_names`:
+
+- `sort_by=<alpha | score>`
+
+Additional parameters for `/api/v1/search/label_values`:
+
+- `label=<label_name>`: Label name whose values should be searched. Required.
+- `sort_by=<alpha | score>`
+
+This example searches metric names for autocomplete:
+
+```bash
+curl -g 'http://localhost:9090/api/v1/search/metric_names?search[]=http_req&sort_by=score&include_metadata=true&limit=5'
+```
+
+```json
+{"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
+{"status":"success","has_more":false}
+```
+
+This example searches label values for the `instance` label within the `up`
+metric:
+
+```bash
+curl -g 'http://localhost:9090/api/v1/search/label_values?label=instance&match[]=up&search[]=909&sort_by=score'
+```
+
+```json
+{"results":[{"name":"localhost:9090"},{"name":"localhost:9091"}]}
+{"status":"success","has_more":true}
+```
+
 ## Querying exemplars
 
 This is **experimental** and might change in the future.

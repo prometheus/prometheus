@@ -295,6 +295,7 @@ type Options struct {
 	UseOldUI                   bool
 	EnableLifecycle            bool
 	EnableAdminAPI             bool
+	EnableSearch               bool
 	PageTitle                  string
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
@@ -401,6 +402,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		h.options.LocalStorage,
 		h.options.TSDBDir,
 		h.options.EnableAdminAPI,
+		h.options.EnableSearch,
 		logger,
 		FactoryRr,
 		h.options.RemoteReadSampleLimit,
@@ -439,6 +441,10 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Set(features.API, "admin", o.EnableAdminAPI)
 		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
+		r.Set(features.API, "search", o.EnableSearch)
+		for _, alg := range api_v1.FuzzAlgorithms {
+			r.Enable(features.API, "search_fuzz_alg_"+alg)
+		}
 		r.Set(features.OTLPReceiver, "delta_conversion", o.ConvertOTLPDelta)
 		r.Set(features.OTLPReceiver, "native_delta_ingestion", o.NativeOTLPDeltaIngestion)
 		r.Enable(features.API, "label_values_match") // match[] parameter for label values endpoint.

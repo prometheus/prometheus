@@ -163,6 +163,58 @@ func labelsPostExamples() *orderedmap.Map[string, *base.Example] {
 	return examples
 }
 
+// searchMetricNamesPostExamples returns examples for POST /search/metric_names endpoint.
+func searchMetricNamesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("metricAutocomplete", &base.Example{
+		Summary: "Search metric names for autocomplete",
+		Value: createYAMLNode(map[string]any{
+			"search[]":         []string{"http_req"},
+			"include_metadata": true,
+			"sort_by":          "score",
+			"limit":            20,
+		}),
+	})
+
+	return examples
+}
+
+// searchLabelNamesPostExamples returns examples for POST /search/label_names endpoint.
+func searchLabelNamesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("labelsForMetric", &base.Example{
+		Summary: "Search label names for a metric",
+		Value: createYAMLNode(map[string]any{
+			"match[]":  []string{"{__name__=\"http_requests_total\"}"},
+			"search[]": []string{"sta"},
+			"sort_by":  "score",
+			"limit":    20,
+		}),
+	})
+
+	return examples
+}
+
+// searchLabelValuesPostExamples returns examples for POST /search/label_values endpoint.
+func searchLabelValuesPostExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("valuesForLabel", &base.Example{
+		Summary: "Search values for a label",
+		Value: createYAMLNode(map[string]any{
+			"label":    "instance",
+			"match[]":  []string{"up"},
+			"search[]": []string{"909"},
+			"sort_by":  "score",
+			"limit":    10,
+		}),
+	})
+
+	return examples
+}
+
 // seriesPostExamples returns examples for POST /series endpoint.
 func seriesPostExamples() *orderedmap.Map[string, *base.Example] {
 	examples := orderedmap.New[string, *base.Example]()
@@ -1026,6 +1078,42 @@ func featuresResponseExamples() *orderedmap.Map[string, *base.Example] {
 			"status": "success",
 			"data":   []string{"exemplar-storage", "remote-write-receiver"},
 		}),
+	})
+
+	return examples
+}
+
+// searchMetricNamesResponseExamples returns examples for /search/metric_names response.
+func searchMetricNamesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("metricNamesStream", &base.Example{
+		Summary: "NDJSON stream of metric names",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"http_requests_total\",\"type\":\"counter\",\"help\":\"Total HTTP requests.\"}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+
+	return examples
+}
+
+// searchLabelNamesResponseExamples returns examples for /search/label_names response.
+func searchLabelNamesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("labelNamesStream", &base.Example{
+		Summary: "NDJSON stream of label names",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"instance\"},{\"name\":\"job\"}]}\n{\"status\":\"success\",\"has_more\":false}\n"),
+	})
+
+	return examples
+}
+
+// searchLabelValuesResponseExamples returns examples for /search/label_values response.
+func searchLabelValuesResponseExamples() *orderedmap.Map[string, *base.Example] {
+	examples := orderedmap.New[string, *base.Example]()
+
+	examples.Set("labelValuesStream", &base.Example{
+		Summary: "NDJSON stream of label values",
+		Value:   createYAMLNode("{\"results\":[{\"name\":\"localhost:9090\"},{\"name\":\"localhost:9091\"}]}\n{\"status\":\"success\",\"has_more\":true}\n"),
 	})
 
 	return examples
