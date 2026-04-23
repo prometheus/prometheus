@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/compression"
 )
 
@@ -1113,4 +1114,113 @@ func TestSortMetaByMinTimeAndMinRef(t *testing.T) {
 			require.Equal(t, tc.expMetas, tc.inputMetas)
 		})
 	}
+}
+
+// mockSearchQuerier is a minimal storage.Querier that also implements storage.Searcher.
+type mockSearchQuerier struct {
+	labelNames  []string
+	labelValues []string
+}
+
+func (*mockSearchQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+	return storage.EmptySeriesSet()
+}
+
+func (m *mockSearchQuerier) LabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return m.labelValues, nil, nil
+}
+
+func (m *mockSearchQuerier) LabelNames(_ context.Context, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return m.labelNames, nil, nil
+}
+
+func (*mockSearchQuerier) Close() error { return nil }
+
+func (m *mockSearchQuerier) SearchLabelNames(_ context.Context, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+	results := make([]storage.SearchResult, len(m.labelNames))
+	for i, n := range m.labelNames {
+		results[i] = storage.SearchResult{Value: n, Score: 1.0}
+	}
+	return storage.NewSearchResultSetFromSlice(results, nil)
+}
+
+func (m *mockSearchQuerier) SearchLabelValues(_ context.Context, _ string, _ *storage.SearchHints, _ ...*labels.Matcher) storage.SearchResultSet {
+	results := make([]storage.SearchResult, len(m.labelValues))
+	for i, v := range m.labelValues {
+		results[i] = storage.SearchResult{Value: v, Score: 1.0}
+	}
+	return storage.NewSearchResultSetFromSlice(results, nil)
+}
+
+// mockSearchQuerierNoSearch is a storage.Querier that does not implement storage.Searcher.
+type mockSearchQuerierNoSearch struct{}
+
+func (mockSearchQuerierNoSearch) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+	return storage.EmptySeriesSet()
+}
+
+func (mockSearchQuerierNoSearch) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+
+func (mockSearchQuerierNoSearch) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+
+func (mockSearchQuerierNoSearch) Close() error { return nil }
+
+func TestHeadAndOOOQuerierSearch(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("nil inner querier returns empty", func(t *testing.T) {
+		q := &HeadAndOOOQuerier{}
+		rs := q.SearchLabelNames(ctx, nil)
+		require.False(t, rs.Next())
+		require.NoError(t, rs.Err())
+		require.NoError(t, rs.Close())
+
+		rs = q.SearchLabelValues(ctx, "env", nil)
+		require.False(t, rs.Next())
+		require.NoError(t, rs.Err())
+		require.NoError(t, rs.Close())
+	})
+
+	t.Run("delegates to inner searcher", func(t *testing.T) {
+		inner := &mockSearchQuerier{
+			labelNames:  []string{"env", "job"},
+			labelValues: []string{"prod", "dev"},
+		}
+		q := &HeadAndOOOQuerier{querier: inner}
+
+		rs := q.SearchLabelNames(ctx, nil)
+		var names []string
+		for rs.Next() {
+			names = append(names, rs.At().Value)
+		}
+		require.NoError(t, rs.Err())
+		require.NoError(t, rs.Close())
+		require.Equal(t, []string{"env", "job"}, names)
+
+		rs = q.SearchLabelValues(ctx, "env", nil)
+		var values []string
+		for rs.Next() {
+			values = append(values, rs.At().Value)
+		}
+		require.NoError(t, rs.Err())
+		require.NoError(t, rs.Close())
+		require.Equal(t, []string{"prod", "dev"}, values)
+	})
+
+	t.Run("non-searcher inner querier returns empty", func(t *testing.T) {
+		inner := mockSearchQuerierNoSearch{}
+		q := &HeadAndOOOQuerier{querier: inner}
+
+		rs := q.SearchLabelNames(ctx, nil)
+		require.False(t, rs.Next())
+		require.NoError(t, rs.Close())
+
+		rs = q.SearchLabelValues(ctx, "env", nil)
+		require.False(t, rs.Next())
+		require.NoError(t, rs.Close())
+	})
 }
