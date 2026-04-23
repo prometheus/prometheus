@@ -61,7 +61,6 @@ func TestCheckpointReplayCompatibility(t *testing.T) {
 		defer rs.Close()
 
 		opts := DefaultOptions()
-		opts.OutOfOrderTimeWindow = math.MaxInt64 // Fixes "out of order sample" in benchmarks
 		opts.CheckpointFromInMemorySeries = params.isInMemCheckpoint
 		opts.WALSegmentSize = walSegmentSize // Set minimum size to get more segments for checkpoint.
 
@@ -329,7 +328,7 @@ func benchCheckpoint(b testing.TB, p benchCheckpointParams) {
 	defer rs.Close()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderTimeWindow = math.MaxInt64 // Fixes "out of order sample" in benchmarks
+	opts.OutOfOrderTimeWindow = math.MaxInt64 // Fixes "out of order sample" in benchmarks.
 	opts.CheckpointFromInMemorySeries = p.skipCurrentCheckpointReRead
 	opts.WALSegmentSize = walSegmentSize // Set minimum size to get more segments for checkpoint.
 
