@@ -2635,13 +2635,9 @@ func (mc *memChunk) len() (count int) {
 	return count
 }
 
-// collectHeadChunksBufSize is the stack-allocated buffer size for collectHeadChunks.
-// Most series have ≤16 head chunks between mmap cycles, so this avoids heap allocation
-// in the common case.
-const collectHeadChunksBufSize = 16
-
 // collectHeadChunks walks the headChunks linked list once and returns a slice
 // in oldest-first order (matching mmappedChunks ordering).
+// For example, given head{t4} -> t3 -> t2 -> t1 -> t0, it returns [t0, t1, t2, t3, t4].
 // buf must have length 0 but may have non-zero capacity for reuse.
 func collectHeadChunks(head *memChunk, buf []*memChunk) []*memChunk {
 	if head == nil {
