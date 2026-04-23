@@ -302,7 +302,9 @@ type benchCheckpointParams struct {
 	samples                     checkpointTestSamples
 }
 
-func benchCheckpoint(b testing.TB, p benchCheckpointParams) {
+func benchCheckpoint(b *testing.B, p benchCheckpointParams) {
+	b.StopTimer()
+
 	l := promslog.NewNopLogger()
 	rs := remote.NewStorage(
 		promslog.NewNopLogger(), nil,
@@ -369,6 +371,7 @@ func benchCheckpoint(b testing.TB, p benchCheckpointParams) {
 	require.NoError(b, app.Commit())
 
 	// Trigger checkpoint call.
+	b.StartTimer()
 	err = db.truncate(-1)
 	require.NoError(b, err, "db.truncate")
 	require.NoError(b, db.Close())
