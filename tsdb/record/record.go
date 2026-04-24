@@ -421,15 +421,14 @@ func (*Decoder) samplesV2(dec *encoding.Decbuf, samples []RefSample) ([]RefSampl
 func readSTMarker(buf *encoding.Decbuf, prevST, firstST int64) int64 {
 	stMarker := buf.Byte()
 	switch stMarker {
-		case noST:
-			return 0
-		case sameST:
-			return prevST
-		default:
-			return firstST + buf.Varint64()
+	case noST:
+		return 0
+	case sameST:
+		return prevST
+	default:
+		return firstST + buf.Varint64()
 	}
 }
-
 
 // Tombstones appends tombstones in rec to the given slice.
 func (*Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombstones.Stone, error) {
@@ -1006,14 +1005,14 @@ func (*Encoder) samplesV2(samples []RefSample, b []byte) []byte {
 
 func writeSTMarker(buf *encoding.Encbuf, st, firstST, prevST int64) {
 	switch st {
-		case 0:
-			buf.PutByte(noST)
-		case prevST:
-			buf.PutByte(sameST)
-		default:
-			buf.PutByte(explicitST)
-			buf.PutVarint64(st - firstST)
-		}
+	case 0:
+		buf.PutByte(noST)
+	case prevST:
+		buf.PutByte(sameST)
+	default:
+		buf.PutByte(explicitST)
+		buf.PutVarint64(st - firstST)
+	}
 }
 
 // Tombstones appends the encoded tombstones to b and returns the resulting slice.
