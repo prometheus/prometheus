@@ -23,7 +23,7 @@ import (
 )
 
 func TestDurationVisitor(t *testing.T) {
-	p := parser.NewParser(parser.Options{ExperimentalDurationExpr: true})
+	p := parser.NewParser(parser.Options{})
 	complexExpr := `sum_over_time(
 		rate(metric[5m] offset 1h)[10m:30s] offset 2h
 	) + 

@@ -5301,7 +5301,6 @@ func readable(s string) string {
 func TestParseExpressions(t *testing.T) {
 	optsParser := NewParser(Options{
 		EnableExperimentalFunctions: true,
-		ExperimentalDurationExpr:    true,
 	})
 
 	for _, test := range testExpr {
@@ -6058,7 +6057,6 @@ func TestParseCustomFunctions(t *testing.T) {
 func TestNewParser(t *testing.T) {
 	p := NewParser(Options{
 		EnableExperimentalFunctions: true,
-		ExperimentalDurationExpr:    true,
 	})
 
 	// ParseExpr should work.

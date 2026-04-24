@@ -23,7 +23,6 @@ import (
 
 func TestExprString(t *testing.T) {
 	optsParser := NewParser(Options{
-		ExperimentalDurationExpr:     true,
 		EnableExtendedRangeSelectors: true,
 		EnableBinopFillModifiers:     true,
 	})

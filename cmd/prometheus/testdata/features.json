@@ -29,7 +29,7 @@
     "bool": true,
     "by": true,
     "delayed_name_removal": false,
-    "duration_expr": false,
+    "duration_expr": true,
     "fill": false,
     "fill_left": false,
     "fill_right": false,
