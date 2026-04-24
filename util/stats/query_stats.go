@@ -461,9 +461,7 @@ func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples, subqRa
 		numParent = len(qs.SamplesReadPerStep)
 	}
 	numParentForWindow := qs.numSteps
-	if numParent > numParentForWindow {
-		numParentForWindow = numParent
-	}
+	numParentForWindow = max(numParentForWindow, numParent)
 
 	for k := range child.SamplesReadPerStep {
 		n := child.SamplesReadPerStep[k]
@@ -485,10 +483,8 @@ func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples, subqRa
 			if tk <= parentTs-subqRange {
 				continue
 			}
-		} else {
-			if numParent > 0 && outerStep >= numParent {
-				outerStep = numParent - 1
-			}
+		} else if numParent > 0 && outerStep >= numParent {
+			outerStep = numParent - 1
 		}
 
 		qs.SamplesRead += n
