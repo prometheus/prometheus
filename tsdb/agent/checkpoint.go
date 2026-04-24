@@ -31,8 +31,8 @@ const defaultBatchSize = 1000
 
 // ActiveSeries describes a live series to be written by [Checkpoint].
 //
-// This interface is intentionally exported so external TSDB implementations can
-// use [Checkpoint] without depending on Prometheus internal series types.
+// This interface is intentionally exported so downstream users of this package
+// can use [Checkpoint] without depending on Prometheus internal series types.
 type ActiveSeries interface {
 	Ref() chunks.HeadSeriesRef
 	Labels() labels.Labels
@@ -41,8 +41,8 @@ type ActiveSeries interface {
 
 // DeletedSeries describes a deleted series to be written by [Checkpoint].
 //
-// This interface is intentionally exported so external TSDB implementations can
-// use [Checkpoint] without depending on Prometheus internal series types.
+// This interface is intentionally exported so downstream users of this package
+// can use [Checkpoint] without depending on Prometheus internal series types.
 type DeletedSeries interface {
 	Ref() chunks.HeadSeriesRef
 	Labels() labels.Labels
@@ -51,7 +51,7 @@ type DeletedSeries interface {
 // Checkpoint creates an unindexed checkpoint containing record.RefSeries and
 // last timestamp for ActiveSeries and record.RefSeries for DeletedSeries.
 //
-// This API accepts interfaces so external TSDB implementations can provide
+// This API accepts interfaces so downstream users of this package can provide
 // their own series storage while reusing Prometheus checkpoint writing logic.
 //
 // The difference between this implementation and [wlog.Checkpoint] is that it skips re-read current checkpoint + segments
