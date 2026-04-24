@@ -384,33 +384,26 @@ func (*Decoder) samplesV2(dec *encoding.Decbuf, samples []RefSample) ([]RefSampl
 	var firstT, firstST int64
 	for len(dec.B) > 0 && dec.Err() == nil {
 		var prev RefSample
-		var ref, t, ST int64
+		var ref, t, st int64
 		var val uint64
 
 		if len(samples) == 0 {
 			ref = dec.Varint64()
 			firstT = dec.Varint64()
 			t = firstT
-			ST = dec.Varint64()
-			firstST = ST
+			st = dec.Varint64()
+			firstST = st
 		} else {
 			prev = samples[len(samples)-1]
 			ref = int64(prev.Ref) + dec.Varint64()
 			t = firstT + dec.Varint64()
-			stMarker := dec.Byte()
-			switch stMarker {
-			case noST:
-			case sameST:
-				ST = prev.ST
-			default:
-				ST = firstST + dec.Varint64()
-			}
+			st = readSTMarker(dec, prev.ST, firstST)
 		}
 
 		val = dec.Be64()
 		samples = append(samples, RefSample{
 			Ref: chunks.HeadSeriesRef(ref),
-			ST:  ST,
+			ST:  st,
 			T:   t,
 			V:   math.Float64frombits(val),
 		})
@@ -424,6 +417,19 @@ func (*Decoder) samplesV2(dec *encoding.Decbuf, samples []RefSample) ([]RefSampl
 	}
 	return samples, nil
 }
+
+func readSTMarker(buf *encoding.Decbuf, prevST, firstST int64) int64 {
+	stMarker := buf.Byte()
+	switch stMarker {
+		case noST:
+			return 0
+		case sameST:
+			return prevST
+		default:
+			return firstST + buf.Varint64()
+	}
+}
+
 
 // Tombstones appends tombstones in rec to the given slice.
 func (*Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombstones.Stone, error) {
@@ -591,31 +597,24 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 	var prev *RefHistogramSample
 
 	for len(dec.B) > 0 && dec.Err() == nil {
-		var ref, t, ST int64
-		if prev == nil || len(histograms) == 0 {
+		var ref, t, st int64
+		if prev == nil {
 			prev = &RefHistogramSample{
 				Ref: firstRef,
 				ST:  firstST,
 			}
 			ref = int64(firstRef)
 			t = firstT
-			ST = firstST
+			st = firstST
 		} else {
 			ref = int64(prev.Ref) + dec.Varint64()
 			t = firstT + dec.Varint64()
-			stMarker := dec.Byte()
-			switch stMarker {
-			case noST:
-			case sameST:
-				ST = prev.ST
-			default:
-				ST = firstST + dec.Varint64()
-			}
+			st = readSTMarker(dec, prev.ST, firstST)
 		}
 
 		rh := RefHistogramSample{
 			Ref: chunks.HeadSeriesRef(ref),
-			ST:  ST,
+			ST:  st,
 			T:   t,
 			H:   &histogram.Histogram{},
 		}
@@ -773,31 +772,24 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 	var prev *RefFloatHistogramSample
 
 	for len(dec.B) > 0 && dec.Err() == nil {
-		var ref, t, ST int64
-		if prev == nil || len(histograms) == 0 {
+		var ref, t, st int64
+		if prev == nil {
 			prev = &RefFloatHistogramSample{
 				Ref: firstRef,
 				ST:  firstST,
 			}
 			ref = int64(firstRef)
 			t = firstT
-			ST = firstST
+			st = firstST
 		} else {
 			ref = int64(prev.Ref) + dec.Varint64()
 			t = firstT + dec.Varint64()
-			stMarker := dec.Byte()
-			switch stMarker {
-			case noST:
-			case sameST:
-				ST = prev.ST
-			default:
-				ST = firstST + dec.Varint64()
-			}
+			st = readSTMarker(dec, prev.ST, firstST)
 		}
 
 		rfh := RefFloatHistogramSample{
 			Ref: chunks.HeadSeriesRef(ref),
-			ST:  ST,
+			ST:  st,
 			T:   t,
 			FH:  &histogram.FloatHistogram{},
 		}
@@ -1006,32 +998,23 @@ func (*Encoder) samplesV2(samples []RefSample, b []byte) []byte {
 		buf.PutVarint64(int64(s.Ref) - int64(prev.Ref))
 		buf.PutVarint64(s.T - first.T)
 
-		switch s.ST {
-		case 0:
-			buf.PutByte(noST)
-		case prev.ST:
-			buf.PutByte(sameST)
-		default:
-			buf.PutByte(explicitST)
-			buf.PutVarint64(s.ST - first.ST)
-		}
+		writeSTMarker(&buf, s.ST, first.ST, prev.ST)
 		buf.PutBE64(math.Float64bits(s.V))
 	}
 	return buf.Get()
 }
 
-// func writeSTMarker(buf encoding.Encbuf, ST, prevST, firstST int64, V float64) {
-// 	switch ST {
-// 		case 0:
-// 			buf.PutByte(noST)
-// 		case prevST:
-// 			buf.PutByte(sameST)
-// 		default:
-// 			buf.PutByte(explicitST)
-// 			buf.PutVarint64(ST - firstST)
-// 		}
-// 		buf.PutBE64(math.Float64bits(V))
-// }
+func writeSTMarker(buf *encoding.Encbuf, st, firstST, prevST int64) {
+	switch st {
+		case 0:
+			buf.PutByte(noST)
+		case prevST:
+			buf.PutByte(sameST)
+		default:
+			buf.PutByte(explicitST)
+			buf.PutVarint64(st - firstST)
+		}
+}
 
 // Tombstones appends the encoded tombstones to b and returns the resulting slice.
 func (*Encoder) Tombstones(tstones []tombstones.Stone, b []byte) []byte {
@@ -1164,15 +1147,7 @@ func (*Encoder) histogramSamplesV2(histograms []RefHistogramSample, b []byte) []
 		buf.PutVarint64(int64(h.Ref) - int64(prev.Ref))
 		buf.PutVarint64(h.T - first.T)
 
-		switch h.ST {
-		case 0:
-			buf.PutByte(noST)
-		case prev.ST:
-			buf.PutByte(sameST)
-		default:
-			buf.PutByte(explicitST)
-			buf.PutVarint64(h.ST - first.ST)
-		}
+		writeSTMarker(&buf, h.ST, first.ST, prev.ST)
 		EncodeHistogram(&buf, h.H)
 		prev = &h
 	}
@@ -1184,7 +1159,6 @@ func (*Encoder) histogramSamplesV2(histograms []RefHistogramSample, b []byte) []
 // samples to b and returns the resulting slice.
 func (e *Encoder) CustomBucketsHistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
 	if e.EnableSTStorage {
-		// XXX Should we panic here? We should not reach this
 		return e.histogramSamplesV2(histograms, b)
 	}
 	return e.customBucketsHistogramSamplesV1(histograms, b)
@@ -1326,15 +1300,7 @@ func (*Encoder) floatHistogramSamplesV2(histograms []RefFloatHistogramSample, b 
 		buf.PutVarint64(int64(fh.Ref) - int64(prev.Ref))
 		buf.PutVarint64(fh.T - first.T)
 
-		switch fh.ST {
-		case 0:
-			buf.PutByte(noST)
-		case prev.ST:
-			buf.PutByte(sameST)
-		default:
-			buf.PutByte(explicitST)
-			buf.PutVarint64(fh.ST - first.ST)
-		}
+		writeSTMarker(&buf, fh.ST, first.ST, prev.ST)
 		EncodeFloatHistogram(&buf, fh.FH)
 		prev = &fh
 	}

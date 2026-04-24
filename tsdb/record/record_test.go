@@ -335,32 +335,6 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		})
 	}
 
-	// V2 encodes custom-bucket histograms in the same record as regular ones,
-	// so an all-custom input is just a specific case.
-	t.Run("V2 int-histogram all custom bucket", func(t *testing.T) {
-		allCustom := []RefHistogramSample{
-			{Ref: 56, T: 1234, ST: 1000, H: histograms[2].H},
-			{Ref: 67, T: 5678, ST: 1000, H: histograms[2].H},
-		}
-		histBuf, leftOver := enc.HistogramSamples(allCustom, nil)
-		require.Nil(t, leftOver)
-		decoded, err := dec.HistogramSamples(histBuf, nil)
-		require.NoError(t, err)
-		require.Equal(t, allCustom, decoded)
-	})
-
-	t.Run("V2 float-histogram all custom bucket", func(t *testing.T) {
-		allCustomFloat := []RefFloatHistogramSample{
-			{Ref: 56, T: 1234, ST: 1000, FH: histograms[2].H.ToFloat(nil)},
-			{Ref: 67, T: 5678, ST: 1000, FH: histograms[2].H.ToFloat(nil)},
-		}
-		floatBuf, leftOver := enc.FloatHistogramSamples(allCustomFloat, nil)
-		require.Nil(t, leftOver)
-		decoded, err := dec.FloatHistogramSamples(floatBuf, nil)
-		require.NoError(t, err)
-		require.Equal(t, allCustomFloat, decoded)
-	})
-
 	// When all histograms are custom-bucket, V1 HistogramSamples must return an
 	// empty buffer (buf.Reset path) and pass every sample through as custom.
 	t.Run("V1 int-histogram all custom bucket", func(t *testing.T) {
@@ -753,6 +727,116 @@ func TestRecord_DecodeInvalidFloatHistogramSchema(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestRecord_DecodeV2UnknownFirstHistogramSchema(t *testing.T) {
+	enc := Encoder{EnableSTStorage: true}
+
+	var output bytes.Buffer
+	logger := promslog.New(&promslog.Config{Writer: &output})
+	dec := NewDecoder(labels.NewSymbolTable(), logger)
+	histograms := []RefHistogramSample{
+		{
+			Ref: 56,
+			ST:  1000,
+			T:   1234,
+			H: &histogram.Histogram{
+				Count:         5,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           18.4,
+				Schema:        -100, // "unknown" schema
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+			},
+		},
+		{
+			Ref: 42,
+			ST:  1000,
+			T:   5678,
+			H: &histogram.Histogram{
+				Count:         11,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{1, 2, -1},
+			},
+		},
+	}
+	histSamples, _ := enc.HistogramSamples(histograms, nil)
+	decHistograms, err := dec.HistogramSamples(histSamples, nil)
+	require.NoError(t, err)
+	require.Equal(t, histograms[1:], decHistograms)
+	// Ensure that the schema ID above is actually unknown. If this fails then
+	// someone started using that value.
+	require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
+}
+
+func TestRecord_DecodeV2UnknownFirstFloatHistogramSchema(t *testing.T) {
+	enc := Encoder{EnableSTStorage: true}
+
+	var output bytes.Buffer
+	logger := promslog.New(&promslog.Config{Writer: &output})
+	dec := NewDecoder(labels.NewSymbolTable(), logger)
+	histograms := []RefFloatHistogramSample{
+		{
+			Ref: 56,
+			ST:  1000,
+			T:   1234,
+			FH: &histogram.FloatHistogram{
+				Count:         5,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           18.4,
+				Schema:        -100,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []float64{1, 1, -1, 0},
+			},
+		},
+		{
+			Ref: 42,
+			ST:  1000,
+			T:   5678,
+			FH: &histogram.FloatHistogram{
+				Count:         11,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           35.5,
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 2, Length: 2},
+				},
+				PositiveBuckets: []float64{1, 1, -1, 0},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 1},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []float64{1, 2, -1},
+			},
+		},
+	}
+	histSamples, _ := enc.FloatHistogramSamples(histograms, nil)
+	decHistograms, err := dec.FloatHistogramSamples(histSamples, nil)
+	require.NoError(t, err)
+	require.Equal(t, histograms[1:], decHistograms)
+	require.Contains(t, output.String(), "skipping histogram with unknown schema in WAL record")
 }
 
 func TestRecord_DecodeTooHighResolutionHistogramSchema(t *testing.T) {
