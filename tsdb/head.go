@@ -420,7 +420,8 @@ type headMetrics struct {
 	mmapChunkCorruptionTotal  prometheus.Counter
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
-	mmapChunksTotal           prometheus.Counter
+	mmapChunksTotal            prometheus.Counter
+	headChunksMaxPendingMmap   prometheus.Gauge
 	walReplayUnknownRefsTotal *prometheus.CounterVec
 	wblReplayUnknownRefsTotal *prometheus.CounterVec
 }
@@ -560,6 +561,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_mmap_chunks_total",
 			Help: "Total number of chunks that were memory-mapped.",
 		}),
+		headChunksMaxPendingMmap: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_head_chunks_max_pending_mmap",
+			Help: "Maximum number of head chunks pending m-mapping observed in any individual series during the last m-map pass.",
+		}),
 		walReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
 			Help: "Total number of unknown series references encountered during WAL replay.",
@@ -598,6 +603,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointCreationTotal,
 			m.oooHistogram,
 			m.mmapChunksTotal,
+			m.headChunksMaxPendingMmap,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
 			// Metrics bound to functions and not needed in tests
@@ -1945,11 +1951,16 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 // since holding the lock during an append could delay the next scrape or cause query timeouts.
 func (h *Head) mmapHeadChunks() {
 	var count int
+	var maxPendingMmapChunks uint32
 	for i := range h.series.size {
 		h.series.locks[i].RLock()
 		for _, series := range h.series.series[i] {
-			if series.headChunkCount.Load() < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
+			hcc := series.headChunkCount.Load()
+			if hcc < 2 { // < 2 means 0 or 1 head chunks, nothing to mmap.
 				continue
+			}
+			if hcc > maxPendingMmapChunks {
+				maxPendingMmapChunks = hcc
 			}
 
 			series.Lock()
@@ -1958,6 +1969,7 @@ func (h *Head) mmapHeadChunks() {
 		}
 		h.series.locks[i].RUnlock()
 	}
+	h.metrics.headChunksMaxPendingMmap.Set(float64(maxPendingMmapChunks))
 	h.metrics.mmapChunksTotal.Add(float64(count))
 }
 
