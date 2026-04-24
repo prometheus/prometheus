@@ -43,7 +43,6 @@ var parserPool = sync.Pool{
 // Options holds the configuration for the PromQL parser.
 type Options struct {
 	EnableExperimentalFunctions  bool
-	ExperimentalDurationExpr     bool
 	EnableExtendedRangeSelectors bool
 	EnableBinopFillModifiers     bool
 }
@@ -1191,12 +1190,6 @@ func (p *parser) getAtModifierVars(e Node) (**int64, *ItemType, *posrange.Pos, b
 	}
 
 	return timestampp, preprocp, endPosp, true
-}
-
-func (p *parser) experimentalDurationExpr(e Expr) {
-	if !p.options.ExperimentalDurationExpr {
-		p.addParseErrf(e.PositionRange(), "experimental duration expression is not enabled")
-	}
 }
 
 func MustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {

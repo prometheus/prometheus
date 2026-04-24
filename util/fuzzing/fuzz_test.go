@@ -363,7 +363,6 @@ func FuzzParseExpr(f *testing.F) {
 
 	p := parser.NewParser(parser.Options{
 		EnableExperimentalFunctions:  true,
-		ExperimentalDurationExpr:     true,
 		EnableExtendedRangeSelectors: true,
 		EnableBinopFillModifiers:     true,
 	})

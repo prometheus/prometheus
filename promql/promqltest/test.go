@@ -90,7 +90,6 @@ func LoadedStorage(t testing.TB, input string) *teststorage.TestStorage {
 // TestParserOpts are the parser options used for all built-in test engines.
 var TestParserOpts = parser.Options{
 	EnableExperimentalFunctions:  true,
-	ExperimentalDurationExpr:     true,
 	EnableExtendedRangeSelectors: true,
 	EnableBinopFillModifiers:     true,
 }

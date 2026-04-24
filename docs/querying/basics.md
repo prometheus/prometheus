@@ -174,6 +174,57 @@ Examples:
     12h34m56s # Equivalent to 45296s and thus 45296.
     54s321ms # Equivalent to 54.321.
 
+#### Duration expressions
+
+Duration expressions can be used in range selectors, subquery range and
+resolution fields, and offset durations.
+
+Examples:
+
+    rate(http_requests_total[5m * 2]) # 10 minute range.
+    rate(http_requests_total[(5 + 2) * 1m]) # 7 minute range.
+    http_requests_total offset (1h / 2) # 30 minute offset.
+    http_requests_total offset ((2 ^ 3) * 1m) # 8 minute offset.
+
+When using offset with duration expressions, you must wrap the expression in
+parentheses. Without parentheses, only the first duration value will be used in
+the offset calculation.
+
+`step()` can be used in duration expressions. For a range query, it resolves to
+the step width of the range query. For an instant query, it resolves to `0s`.
+
+`range()` can be used in duration expressions. For a range query, it resolves to
+the full range of the query (end time minus start time). For an instant query,
+it resolves to `0s`. This is particularly useful in combination with `@ end()`
+to look back over the entire query range, e.g.,
+`max_over_time(metric[range()] @ end())`.
+
+`min(<duration>, <duration>)` and `max(<duration>, <duration>)` can be used to
+find the minimum or maximum of two duration expressions.
+
+Duration expressions are not supported in the @ timestamp operator.
+
+The following operators are supported:
+
+* `+` - addition.
+* `-` - subtraction.
+* `*` - multiplication.
+* `/` - division.
+* `%` - modulo.
+* `^` - exponentiation.
+
+Examples of equivalent durations:
+
+* `5m * 2` is equivalent to `10m` or `600s`.
+* `10m - 1m` is equivalent to `9m` or `540s`.
+* `(5 + 2) * 1m` is equivalent to `7m` or `420s`.
+* `1h / 2` is equivalent to `30m` or `1800s`.
+* `4h % 3h` is equivalent to `1h` or `3600s`.
+* `(2 ^ 3) * 1m` is equivalent to `8m` or `480s`.
+* `step() + 1` is equivalent to the query step width increased by 1s.
+* `max(step(), 5s)` is equivalent to the larger of the query step width and `5s`.
+* `min(2 * step() + 5s, 5m)` is equivalent to the smaller of twice the query step increased by `5s` and `5m`.
+
 ## Time series selectors
 
 These are the basic building-blocks that instruct PromQL what data to fetch.
@@ -282,14 +333,13 @@ A workaround for this restriction is to use the `__name__` label:
 
 Range vector literals work like instant vector literals, except that they
 select a range of samples back from the current instant. Syntactically, a
-[float literal](#float-literals-and-time-durations) is appended in square
-brackets (`[]`) at the end of a vector selector to specify for how many seconds
-back in time values should be fetched for each resulting range vector element.
-Commonly, the float literal uses the syntax with one or more time units, e.g.
-`[5m]`. The range is a left-open and right-closed interval, i.e. samples with
-timestamps coinciding with the left boundary of the range are excluded from the
-selection, while samples coinciding with the right boundary of the range are
-included in the selection.
+[duration](#float-literals-and-time-durations) is appended in square brackets
+(`[]`) at the end of a vector selector to specify how far back in time values
+should be fetched for each resulting range vector element. Commonly, this uses
+one or more time units, e.g. `[5m]`. The range is a left-open and right-closed
+interval, i.e. samples with timestamps coinciding with the left boundary of the
+range are excluded from the selection, while samples coinciding with the right
+boundary of the range are included in the selection.
 
 In this example, we select all the values recorded less than 5m ago for all
 time series that have the metric name `http_requests_total` and a `job` label
@@ -379,8 +429,9 @@ Note that the `@` modifier allows a query to look ahead of its evaluation time.
 
 Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
 
-Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <float_literal> ]`
+Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <duration> ]`
 
+* `<range>`, `<resolution>`, and `offset` support duration expressions.
 * `<resolution>` is optional. Default is the global evaluation interval.
 
 ## Operators
