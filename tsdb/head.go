@@ -420,8 +420,8 @@ type headMetrics struct {
 	mmapChunkCorruptionTotal  prometheus.Counter
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
-	mmapChunksTotal            prometheus.Counter
-	headChunksMaxPendingMmap   prometheus.Gauge
+	mmapChunksTotal           prometheus.Counter
+	headChunksMaxPendingMmap  prometheus.Gauge
 	walReplayUnknownRefsTotal *prometheus.CounterVec
 	wblReplayUnknownRefsTotal *prometheus.CounterVec
 }
