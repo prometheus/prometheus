@@ -1,0 +1,27 @@
+---
+name: OpenAPI viewer
+on:
+  pull_request:
+    paths:
+      - 'web/api/v1/testdata/openapi_3.1_golden.yaml'
+      - '.github/workflows/openapi_viewer.yml'
+      - 'scripts/upload_openapi.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  openapi_viewer:
+    name: OpenAPI viewer
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: OpenAPI 3.1 Viewer status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: ./scripts/upload_openapi.sh web/api/v1/testdata/openapi_3.1_golden.yaml "OpenAPI 3.1"

@@ -251,3 +251,12 @@ bump-go-version:
 generate-fuzzing-seed-corpus:
 	@echo ">> Generating fuzzing seed corpus"
 	@$(GO) generate -tags fuzzing ./util/fuzzing/corpus_gen
+
+OPENAPI_UPLOAD_URL ?= https://www.openapiviewer.com/api/upload
+OPENAPI_31 = web/api/v1/testdata/openapi_3.1_golden.yaml
+OPENAPI_32 = web/api/v1/testdata/openapi_3.2_golden.yaml
+
+.PHONY: upload-openapi
+upload-openapi:
+	@./scripts/upload_openapi.sh $(OPENAPI_31)
+	@./scripts/upload_openapi.sh $(OPENAPI_32)
