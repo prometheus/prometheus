@@ -14,6 +14,7 @@
 package agent
 
 import (
+	"iter"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -43,6 +44,18 @@ func (m *memSeries) updateTimestamp(newTs int64) bool {
 		return true
 	}
 	return false
+}
+
+func (m *memSeries) Ref() chunks.HeadSeriesRef {
+	return m.ref
+}
+
+func (m *memSeries) Labels() labels.Labels {
+	return m.lset
+}
+
+func (m *memSeries) LastSampleTimestamp() int64 {
+	return m.lastTs
 }
 
 // seriesHashmap lets agent find a memSeries by its label set, via a 64-bit hash.
@@ -160,14 +173,15 @@ func newStripeSeries(stripeSize int) *stripeSeries {
 
 // GC garbage collects old series that have not received a sample after mint
 // and will fully delete them.
-func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
+func (s *stripeSeries) GC(mint int64, retainLabels bool) map[chunks.HeadSeriesRef]labels.Labels {
 	// gcMut serializes GC calls. Within a single GC pass, the check function
 	// holds hashLock and then acquires refLock — callers must never hold both
 	// simultaneously, which SetUnlessAlreadySet satisfies.
 	s.gcMut.Lock()
 	defer s.gcMut.Unlock()
 
-	deleted := map[chunks.HeadSeriesRef]struct{}{}
+	// labels of deleted series are used by agent.Checkpoint
+	deleted := map[chunks.HeadSeriesRef]labels.Labels{}
 
 	// For one series, truncate old chunks and check if any chunks left. If not, mark as deleted and collect the ID.
 	check := func(hashLock int, hash uint64, series *memSeries) {
@@ -186,7 +200,12 @@ func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
 			s.locks[refLock].Lock()
 		}
 
-		deleted[series.ref] = struct{}{}
+		if retainLabels {
+			deleted[series.ref] = series.lset
+		} else {
+			deleted[series.ref] = labels.EmptyLabels()
+		}
+
 		delete(s.series[refLock], series.ref)
 		s.hashes[hashLock].Delete(hash, series.ref)
 
@@ -304,4 +323,88 @@ func (s *stripeSeries) hashLock(hash uint64) uint64 {
 
 func (s *stripeSeries) refLock(ref chunks.HeadSeriesRef) uint64 {
 	return uint64(ref) & uint64(s.size-1)
+}
+
+var _ ActiveSeries = (*seriesSnapshot)(nil)
+
+// seriesSnapshot is a point-in-time copy of a memSeries fields.
+// It is used to avoid holding series locks during checkpoint I/O.
+type seriesSnapshot struct {
+	ref    chunks.HeadSeriesRef
+	lset   labels.Labels
+	lastTs int64
+}
+
+func (s *seriesSnapshot) Ref() chunks.HeadSeriesRef {
+	return s.ref
+}
+
+func (s *seriesSnapshot) Labels() labels.Labels {
+	return s.lset
+}
+
+func (s *seriesSnapshot) LastSampleTimestamp() int64 {
+	return s.lastTs
+}
+
+func (s *stripeSeries) allSeries() iter.Seq[ActiveSeries] {
+	return func(yield func(ActiveSeries) bool) {
+		var buf []*memSeries
+		for i := 0; i < s.size; i++ {
+			// Collect pointers under RLock to avoid blocking appenders during I/O.
+			s.locks[i].RLock()
+			buf = buf[:0]
+			for _, series := range s.series[i] {
+				buf = append(buf, series)
+			}
+			s.locks[i].RUnlock()
+
+			// Snapshot and yield outside the stripe lock so that
+			// slow consumers (e.g. checkpoint disk I/O) do not
+			// block appends that need a write lock on this stripe.
+			for _, series := range buf {
+				series.Lock()
+				snapshot := seriesSnapshot{
+					ref:    series.ref,
+					lset:   series.lset,
+					lastTs: series.lastTs,
+				}
+				series.Unlock()
+
+				if !yield(&snapshot) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// deletedSeriesIter returns an iterator over deleted series from the given map.
+// Only series whose lastSegment is greater than last are emitted, matching the
+// filtering behaviour of [wlog.Checkpoint] keep function.
+func deletedSeriesIter(m map[chunks.HeadSeriesRef]deletedRefMeta, last int) iter.Seq[DeletedSeries] {
+	return func(yield func(DeletedSeries) bool) {
+		for ref, meta := range m {
+			if meta.lastSegment > last {
+				if !yield(deletedSeries{ref: ref, labels: meta.labels}) {
+					return
+				}
+			}
+		}
+	}
+}
+
+var _ DeletedSeries = deletedSeries{}
+
+type deletedSeries struct {
+	ref    chunks.HeadSeriesRef
+	labels labels.Labels
+}
+
+func (series deletedSeries) Ref() chunks.HeadSeriesRef {
+	return series.ref
+}
+
+func (series deletedSeries) Labels() labels.Labels {
+	return series.labels
 }

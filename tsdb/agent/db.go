@@ -99,6 +99,15 @@ type Options struct {
 	// persisted to the WAL for samples that include a non-zero start timestamp in
 	// supported record types.
 	EnableSTStorage bool
+
+	// CheckpointFromInMemorySeries changes checkpoint implementation to use only in-memory series data when building a checkpoint.
+	// This prevents re-reading the previous checkpoint and segments from disk.
+	CheckpointFromInMemorySeries bool
+
+	// CheckpointBatchSize specifies a size of a single WAL log entry chunk to be flushed.
+	//
+	// Has no effect if CheckpointFromInMemorySeries is false.
+	CheckpointBatchSize int
 }
 
 // DefaultOptions used for the WAL storage. They are reasonable for setups using
@@ -238,6 +247,11 @@ func (m *dbMetrics) Unregister() {
 	}
 }
 
+type deletedRefMeta struct {
+	lastSegment int
+	labels      labels.Labels
+}
+
 // DB represents a WAL-only storage. It implements storage.DB.
 type DB struct {
 	mtx    sync.RWMutex
@@ -263,7 +277,7 @@ type DB struct {
 	series  *stripeSeries
 	// deleted is a map of (ref IDs that should be deleted from WAL) to (the WAL segment they
 	// must be kept around to).
-	deleted map[chunks.HeadSeriesRef]int
+	deleted map[chunks.HeadSeriesRef]deletedRefMeta
 
 	donec chan struct{}
 	stopc chan struct{}
@@ -305,7 +319,7 @@ func Open(l *slog.Logger, reg prometheus.Registerer, rs *remote.Storage, dir str
 
 		nextRef: atomic.NewUint64(0),
 		series:  newStripeSeries(opts.StripeSize),
-		deleted: make(map[chunks.HeadSeriesRef]int),
+		deleted: make(map[chunks.HeadSeriesRef]deletedRefMeta),
 
 		donec: make(chan struct{}),
 		stopc: make(chan struct{}),
@@ -566,8 +580,12 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 
 					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
 					// it remains in the checkpoint until we get past that segment.
-					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
-						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+					if meta := db.deleted[entry.Ref]; meta.lastSegment <= currentSegmentOrCheckpoint {
+						var lbls labels.Labels
+						if db.opts.CheckpointFromInMemorySeries {
+							lbls = entry.Labels
+						}
+						db.deleted[entry.Ref] = deletedRefMeta{lastSegment: currentSegmentOrCheckpoint, labels: lbls}
 					}
 				} else {
 					db.metrics.numActiveSeries.Inc()
@@ -582,8 +600,9 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
 					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
 					// it remains in the checkpoint until we get past that segment.
-					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
-						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+					if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
+						meta.lastSegment = currentSegmentOrCheckpoint
+						db.deleted[entry.Ref] = meta
 					}
 					entry.Ref = ref
 				}
@@ -605,8 +624,9 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
 					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
 					// it remains in the checkpoint until we get past that segment.
-					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
-						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+					if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
+						meta.lastSegment = currentSegmentOrCheckpoint
+						db.deleted[entry.Ref] = meta
 					}
 					entry.Ref = ref
 				}
@@ -628,8 +648,9 @@ func (db *DB) loadWAL(r *wlog.Reader, duplicateRefToValidRef map[chunks.HeadSeri
 				if ref, ok := duplicateRefToValidRef[entry.Ref]; ok {
 					// We want to track the largest segment where we encountered the duplicate ref, so we can ensure
 					// it remains in the checkpoint until we get past that segment.
-					if db.deleted[entry.Ref] <= currentSegmentOrCheckpoint {
-						db.deleted[entry.Ref] = currentSegmentOrCheckpoint
+					if meta, ok := db.deleted[entry.Ref]; ok && meta.lastSegment <= currentSegmentOrCheckpoint {
+						meta.lastSegment = currentSegmentOrCheckpoint
+						db.deleted[entry.Ref] = meta
 					}
 					entry.Ref = ref
 				}
@@ -713,8 +734,8 @@ func (db *DB) keepSeriesInWALCheckpointFn(last int) func(id chunks.HeadSeriesRef
 		}
 
 		// Keep the record if the series was recently deleted.
-		seg, ok := db.deleted[id]
-		return ok && seg > last
+		meta, ok := db.deleted[id]
+		return ok && meta.lastSegment > last
 	}
 }
 
@@ -753,7 +774,13 @@ func (db *DB) truncate(mint int64) error {
 
 	db.metrics.checkpointCreationTotal.Inc()
 
-	if _, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage); err != nil {
+	if db.opts.CheckpointFromInMemorySeries {
+		err = Checkpoint(db.logger, db.wal, last, db.opts.CheckpointBatchSize, db.series.allSeries(), deletedSeriesIter(db.deleted, last))
+	} else {
+		_, err = wlog.Checkpoint(db.logger, db.wal, first, last, db.keepSeriesInWALCheckpointFn(last), mint, db.opts.EnableSTStorage)
+	}
+
+	if err != nil {
 		db.metrics.checkpointCreationFail.Inc()
 		var cerr *wlog.CorruptionErr
 		if errors.As(err, &cerr) {
@@ -770,8 +797,8 @@ func (db *DB) truncate(mint int64) error {
 
 	// The checkpoint is written and segments before it are truncated, so we
 	// no longer need to track deleted series that were being kept around.
-	for ref, segment := range db.deleted {
-		if segment <= last {
+	for ref, meta := range db.deleted {
+		if meta.lastSegment <= last {
 			delete(db.deleted, ref)
 		}
 	}
@@ -795,7 +822,7 @@ func (db *DB) truncate(mint int64) error {
 // gc marks ref IDs that have not received a sample since mint as deleted in
 // s.deleted, along with the segment where they originally got deleted.
 func (db *DB) gc(mint int64) {
-	deleted := db.series.GC(mint)
+	deleted := db.series.GC(mint, db.opts.CheckpointFromInMemorySeries)
 	db.metrics.numActiveSeries.Sub(float64(len(deleted)))
 
 	_, last, _ := wlog.Segments(db.wal.Dir())
@@ -803,8 +830,8 @@ func (db *DB) gc(mint int64) {
 	// We want to keep series records for any newly deleted series
 	// until we've passed the last recorded segment. This prevents
 	// the WAL having samples for series records that no longer exist.
-	for ref := range deleted {
-		db.deleted[ref] = last
+	for ref, lset := range deleted {
+		db.deleted[ref] = deletedRefMeta{lastSegment: last, labels: lset}
 	}
 
 	db.metrics.numWALSeriesPendingDeletion.Set(float64(len(db.deleted)))

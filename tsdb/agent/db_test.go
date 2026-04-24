@@ -1533,7 +1533,7 @@ func BenchmarkGetOrCreate(b *testing.B) {
 		for i := range b.N {
 			if i%n == 0 && i > 0 {
 				b.StopTimer()
-				_ = s.series.GC(math.MaxInt64)
+				_ = s.series.GC(math.MaxInt64, false)
 				b.StartTimer()
 			}
 			app.getOrCreate(0, lbls[i%n])
