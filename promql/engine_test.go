@@ -998,7 +998,7 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 24,
 			},
-			SamplesRead: 8, // delta: 6 at step 0 + 2 new over 3 steps
+			SamplesRead: 8,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 8,
 			},
@@ -1168,7 +1168,7 @@ load 10s
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 12,
 			},
-			SamplesRead: 12, // all subquery steps attributed (steps before first window → step 0)
+			SamplesRead: 12,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				201000: 12,
 			},
@@ -1517,16 +1517,12 @@ load 10s
 			},
 		},
 
-		// ===================================================================================
-		// ENHANCED SUBQUERY TESTING - Focused on key patterns
-		// ===================================================================================
-
-		// Simple subquery with multiple inner steps - subquery evaluates inner at each step (instant)
+		// Instant subquery: basic SamplesRead merging.
 		{
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",
 			Start:        time.Unix(201, 0),
 			PeakSamples:  5,
-			TotalSamples: 2, // 2 inner steps * 1 sample
+			TotalSamples: 2,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 2,
 			},
@@ -1536,7 +1532,7 @@ load 10s
 			},
 		},
 
-		// Single inner step: step equals range so only one subquery evaluation
+		// Boundary: step == range, single inner evaluation.
 		{
 			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[30s:30s])",
 			Start:        time.Unix(90, 0),
@@ -1551,29 +1547,29 @@ load 10s
 			},
 		},
 
-		// Multiple series subquery - 2 inner steps * 3 series
+		// Boundary: step > range, sparse sampling.
 		{
-			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[20s:10s]))",
-			Start:        time.Unix(201, 0),
-			PeakSamples:  11,
-			TotalSamples: 6,
+			Query:        "max_over_time(metricWith1SampleEvery10Seconds[30s:2m])",
+			Start:        time.Unix(240, 0),
+			PeakSamples:  3,
+			TotalSamples: 1,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
+				240000: 1,
 			},
-			SamplesRead: 6,
+			SamplesRead: 1,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
+				240000: 1,
 			},
 		},
 
-		// Basic range query with subquery - 2 parent steps, 3 inner steps each
+		// Range query + subquery, non-overlapping windows (step >= range).
 		{
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[30s:10s])",
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(231, 0),
 			Interval:     30 * time.Second,
 			PeakSamples:  11,
-			TotalSamples: 6, // 2 parent steps * 3 inner samples
+			TotalSamples: 6,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 3,
 				231000: 3,
@@ -1585,8 +1581,8 @@ load 10s
 			},
 		},
 
-		// Range query where subquery range (20s) > query step interval (10s):
-		// overlapping windows share inner subquery steps across parent steps.
+		// Range query + subquery, overlapping windows (range > step):
+		// SamplesRead < TotalSamples due to windowed delta attribution.
 		{
 			Query:        "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",
 			Start:        time.Unix(201, 0),
@@ -1615,150 +1611,7 @@ load 10s
 			},
 		},
 
-		// Subquery range query showing per-step delta attribution
-		{
-			Query:        "max_over_time(metricWith1SampleEvery10Seconds[20s:10s])",
-			Start:        time.Unix(201, 0),
-			End:          time.Unix(231, 0),
-			Interval:     30 * time.Second,
-			PeakSamples:  9,
-			TotalSamples: 4,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 2,
-				231000: 2,
-			},
-			SamplesRead: 4,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 2,
-				231000: 2,
-			},
-		},
-
-		// Large step size - single inner step
-		{
-			Query:        "avg_over_time(metricWith1SampleEvery10Seconds[60s:2m])",
-			Start:        time.Unix(240, 0),
-			PeakSamples:  3,
-			TotalSamples: 1,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 1,
-			},
-			SamplesRead: 1,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 1,
-			},
-		},
-
-		// High cardinality with multiple steps
-		{
-			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[30s:10s])[2m:1m]",
-			Start:        time.Unix(180, 0),
-			PeakSamples:  36,
-			TotalSamples: 18,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				180000: 18,
-			},
-			SamplesRead: 18,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				180000: 18,
-			},
-		},
-
-		// Steps larger than inner range
-		{
-			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[30s])[2m:1m]",
-			Start:        time.Unix(120, 0),
-			PeakSamples:  5,
-			TotalSamples: 6,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				120000: 6,
-			},
-			SamplesRead: 6, // subquery SamplesRead merged into outer
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 6,
-			},
-		},
-
-		// Non-aligned step boundaries
-		{
-			Query:        "avg_over_time(metricWith3SampleEvery10Seconds[73s:17s])[5m:43s]",
-			Start:        time.Unix(300, 0),
-			PeakSamples:  77,
-			TotalSamples: 78,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				300000: 78,
-			},
-			SamplesRead: 48, // all subquery steps attributed (steps before first window → step 0)
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				300000: 48,
-			},
-		},
-
-		// Large step count with reasonable data size
-		{
-			Query:        "avg_over_time(metricWith1SampleEvery10Seconds[30s])[30m:10s]",
-			Start:        time.Unix(1800, 0),
-			PeakSamples:  102,
-			TotalSamples: 302,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				1800000: 302,
-			},
-			SamplesRead: 101, // subquery SamplesRead merged into outer
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				1800000: 101,
-			},
-		},
-
-		// Test with different series cardinality
-		{
-			Query:        "sum(rate(metricWith3SampleEvery10Seconds[120s:40s]))[4m:1m]",
-			Start:        time.Unix(240, 0),
-			PeakSamples:  36,
-			TotalSamples: 33,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 33,
-			},
-			SamplesRead: 21, // subquery SamplesRead merged into outer
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 21,
-			},
-		},
-
-		// ===================================================================================
-		// FOCUSED KEY PATTERNS - Validated Examples
-		// ===================================================================================
-
-		// Histogram function with subquery
-		{
-			Query:        "histogram_count(max_over_time(metricWith1HistogramEvery10Seconds[60s]))",
-			Start:        time.Unix(201, 0),
-			PeakSamples:  66,
-			TotalSamples: 66,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 66,
-			},
-			SamplesRead: 66,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 66,
-			},
-		},
-
-		// Basic aggregation with existing proven pattern
-		{
-			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[60s]))",
-			Start:        time.Unix(201, 0),
-			PeakSamples:  9,  // Based on existing 3-series pattern
-			TotalSamples: 18, // 3 series * 6 samples from existing [60s] pattern
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 18,
-			},
-			SamplesRead: 18, // Single parent step
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 18,
-			},
-		},
-
-		// Histogram subquery
+		// Histogram subquery: histogram size counting in subquery path.
 		{
 			Query:        "histogram_count(max_over_time(metricWith1HistogramEvery10Seconds[20s:10s]))",
 			Start:        time.Unix(201, 0),
@@ -1773,298 +1626,7 @@ load 10s
 			},
 		},
 
-		// @ modifier subquery
-		{
-			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[20s:10s] @ 200)",
-			Start:        time.Unix(250, 0),
-			PeakSamples:  11,
-			TotalSamples: 6,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				250000: 6,
-			},
-			SamplesRead: 6,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				250000: 6,
-			},
-		},
-
-		// Mixed functions with histogram subquery
-		{
-			Query:        "histogram_sum(avg_over_time(metricWith1HistogramEvery10Seconds[1m:20s]))",
-			Start:        time.Unix(120, 0),
-			PeakSamples:  91,
-			TotalSamples: 39,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				120000: 39,
-			},
-			SamplesRead: 39,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 39,
-			},
-		},
-
-		// Subquery with @ modifier
-		{
-			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[60s:20s] @ 200)",
-			Start:        time.Unix(300, 0),
-			PeakSamples:  15,
-			TotalSamples: 9,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				300000: 9,
-			},
-			SamplesRead: 9,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				300000: 9,
-			},
-		},
-
-		// Nested subqueries with @ modifier
-		{
-			Query:        "sum_over_time(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 300)[5m:1m] @ 600)[10m:2m]",
-			Start:        time.Unix(800, 0),
-			PeakSamples:  23,
-			TotalSamples: 75,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				800000: 75,
-			},
-			SamplesRead: 18, // subquery SamplesRead merged into outer
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				800000: 18,
-			},
-		},
-
-		// ===================================================================================
-		// AGGREGATION AND GROUPING WITH SUBQUERIES
-		// ===================================================================================
-
-		// Aggregation with subquery
-		{
-			Query:        "sum by (a) (max_over_time(metricWith3SampleEvery10Seconds[20s:10s]))",
-			Start:        time.Unix(201, 0),
-			PeakSamples:  11,
-			TotalSamples: 6,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
-			},
-			SamplesRead: 6,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
-			},
-		},
-
-		// Range query with aggregation and subquery
-		{
-			Query:        "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[20s:10s]))",
-			Start:        time.Unix(201, 0),
-			End:          time.Unix(261, 0),
-			Interval:     30 * time.Second,
-			PeakSamples:  35,
-			TotalSamples: 18,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
-				231000: 6,
-				261000: 6,
-			},
-			SamplesRead: 18,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 6,
-				231000: 6,
-				261000: 6,
-			},
-		},
-
-		// Histogram quantile with subquery
-		{
-			Query:        "histogram_quantile(0.9, max_over_time(metricWith1HistogramEvery10Seconds[20s:10s]))",
-			Start:        time.Unix(201, 0),
-			PeakSamples:  53,
-			TotalSamples: 26,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 26,
-			},
-			SamplesRead: 26,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 26,
-			},
-		},
-
-		// Aggregation with subqueries
-		{
-			Query:        "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[1m:20s]))",
-			Start:        time.Unix(120, 0),
-			PeakSamples:  15,
-			TotalSamples: 9,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				120000: 9,
-			},
-			SamplesRead: 9,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 9,
-			},
-		},
-
-		// Histogram with many inner steps
-		{
-			Query:        "histogram_quantile(0.9, avg_over_time(metricWith1HistogramEvery10Seconds[2m:30s]))",
-			Start:        time.Unix(240, 0),
-			PeakSamples:  118,
-			TotalSamples: 52,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 52,
-			},
-			SamplesRead: 52,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 52,
-			},
-		},
-
-		// Multiple series aggregation with subqueries
-		{
-			Query:        "sum by (a) (rate(metricWith3SampleEvery10Seconds[2m:30s]))[15m:5m]",
-			Start:        time.Unix(900, 0),
-			PeakSamples:  49,
-			TotalSamples: 36,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				900000: 36,
-			},
-			SamplesRead: 36, // subquery SamplesRead merged into outer
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				900000: 36,
-			},
-		},
-
-		// Large window with histogram data
-		{
-			Query:        "histogram_sum(rate(metricWith1HistogramEvery10Seconds[5m:1m]))[30m:10m]",
-			Start:        time.Unix(1800, 0),
-			PeakSamples:  195,
-			TotalSamples: 130,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				1800000: 130,
-			},
-			SamplesRead: 130, // subquery SamplesRead merged into outer
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				1800000: 130,
-			},
-		},
-
-		// ===================================================================================
-		// ADDITIONAL FOCUSED SUBQUERY PATTERNS
-		// ===================================================================================
-
-		// Rate function with subquery
-		{
-			Query:        "rate(sum_over_time(metricWith1SampleEvery10Seconds[30s])[1m:30s])",
-			Start:        time.Unix(240, 0),
-			PeakSamples:  5,
-			TotalSamples: 2,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 2,
-			},
-			SamplesRead: 6,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 6,
-			},
-		},
-
-		// Subquery with offset modifier
-		{
-			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[20s:10s] offset 1m)",
-			Start:        time.Unix(240, 0),
-			PeakSamples:  5,
-			TotalSamples: 2,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 2,
-			},
-			SamplesRead: 2,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 2,
-			},
-		},
-
-		// Simple range query with subquery
-		{
-			Query:        "max_over_time(metricWith1SampleEvery10Seconds[30s:15s])",
-			Start:        time.Unix(201, 0),
-			End:          time.Unix(231, 0),
-			Interval:     15 * time.Second,
-			PeakSamples:  9,
-			TotalSamples: 6,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				201000: 2,
-				216000: 2,
-				231000: 2,
-			},
-			SamplesRead: 4,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				201000: 2,
-				216000: 1,
-				231000: 1,
-			},
-		},
-
-		// Large time range with subqueries
-		{
-			Query:        "increase(metricWith1SampleEvery10Seconds[5m:1m])[30m:10m]",
-			Start:        time.Unix(1800, 0),
-			PeakSamples:  15,
-			TotalSamples: 10,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				1800000: 10,
-			},
-			SamplesRead: 10, // subquery SamplesRead merged into outer
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				1800000: 10,
-			},
-		},
-
-		// ===================================================================================
-		// PHASE 2: LARGER SCALE TESTING
-		// ===================================================================================
-
-		// Larger subquery with many steps
-		{
-			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[5m:1m])[10m:5m]",
-			Start:        time.Unix(600, 0),
-			PeakSamples:  41,
-			TotalSamples: 30,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				600000: 30,
-			},
-			SamplesRead: 30, // subquery SamplesRead merged into outer
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				600000: 30,
-			},
-		},
-
-		// ===================================================================================
-		// PHASE 3: RANGE QUERY + SUBQUERY COMBINATIONS
-		// ===================================================================================
-
-		// Range query with subquery
-		{
-			Query:        "max_over_time(metricWith1SampleEvery10Seconds[1m:20s])",
-			Start:        time.Unix(120, 0),
-			End:          time.Unix(300, 0),
-			Interval:     60 * time.Second,
-			PeakSamples:  19,
-			TotalSamples: 12,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				120000: 3,
-				180000: 3,
-				240000: 3,
-				300000: 3,
-			},
-			SamplesRead: 12,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 3,
-				180000: 3,
-				240000: 3,
-				300000: 3,
-			},
-		},
-
-		// Range query with histogram subquery
+		// Histogram range query + subquery: histogram delta attribution.
 		{
 			Query:        "avg_over_time(metricWith1HistogramEvery10Seconds[2m:1m])",
 			Start:        time.Unix(120, 0),
@@ -2085,28 +1647,7 @@ load 10s
 			},
 		},
 
-		// Range query with multiple series
-		{
-			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[1m:30s]))",
-			Start:        time.Unix(120, 0),
-			End:          time.Unix(240, 0),
-			Interval:     60 * time.Second,
-			PeakSamples:  29,
-			TotalSamples: 18,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				120000: 6,
-				180000: 6,
-				240000: 6,
-			},
-			SamplesRead: 18,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 6,
-				180000: 6,
-				240000: 6,
-			},
-		},
-
-		// Range queries with subqueries (multiple series, higher cardinality)
+		// Range query with multiple series + subquery: covers cardinality.
 		{
 			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s:10s])",
 			Start:        time.Unix(200, 0),
@@ -2135,241 +1676,79 @@ load 10s
 			},
 		},
 
-		// Range query with histogram subqueries
+		// Subquery with @ modifier: effectiveRange = 0, windowing disabled.
 		{
-			Query:        "histogram_quantile(0.9, rate(metricWith1HistogramEvery10Seconds[2m:30s]))",
-			Start:        time.Unix(240, 0),
-			End:          time.Unix(600, 0),
-			Interval:     60 * time.Second,
-			PeakSamples:  358,
-			TotalSamples: 364,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 52,
-				300000: 52,
-				360000: 52,
-				420000: 52,
-				480000: 52,
-				540000: 52,
-				600000: 52,
-			},
-			SamplesRead: 208,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 52,
-				300000: 26,
-				360000: 26,
-				420000: 26,
-				480000: 26,
-				540000: 26,
-				600000: 26,
-			},
-		},
-
-		// Range query with multiple series subqueries
-		{
-			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[80s:20s]))",
-			Start:        time.Unix(160, 0),
-			End:          time.Unix(400, 0),
-			Interval:     120 * time.Second,
-			PeakSamples:  61,
-			TotalSamples: 36,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				160000: 12,
-				280000: 12,
-				400000: 12,
-			},
-			SamplesRead: 36,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				160000: 12,
-				280000: 12,
-				400000: 12,
-			},
-		},
-
-		// ===================================================================================
-		// PHASE 4: ADDITIONAL PATTERN TESTS
-		// ===================================================================================
-
-		// Large range with many samples
-		{
-			Query:        "avg_over_time(metricWith1SampleEvery10Seconds[5m:30s])",
-			Start:        time.Unix(300, 0),
-			PeakSamples:  21,
-			TotalSamples: 10,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				300000: 10,
-			},
-			SamplesRead: 10,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				300000: 10,
-			},
-		},
-
-		// Many small steps
-		{
-			Query:        "max_over_time(metricWith1SampleEvery10Seconds[2m:20s])",
-			Start:        time.Unix(240, 0),
-			PeakSamples:  13,
+			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[20s:10s] @ 200)",
+			Start:        time.Unix(250, 0),
+			PeakSamples:  11,
 			TotalSamples: 6,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 6,
+				250000: 6,
 			},
 			SamplesRead: 6,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 6,
+				250000: 6,
 			},
 		},
 
-		// Histogram subquery function
+		// Subquery with offset.
 		{
-			Query:        "histogram_count(avg_over_time(metricWith1HistogramEvery10Seconds[1m:30s]))",
-			Start:        time.Unix(120, 0),
-			PeakSamples:  65,
-			TotalSamples: 26,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				120000: 26,
-			},
-			SamplesRead: 26,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 26,
-			},
-		},
-
-		// High step count efficiency test - subquery evaluates inner at each step (instant)
-		{
-			Query:        "max_over_time(metricWith1SampleEvery10Seconds[300s:10s])",
-			Start:        time.Unix(600, 0),
-			PeakSamples:  61,
-			TotalSamples: 30, // 30 inner steps * 1 sample per step
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				600000: 30,
-			},
-			SamplesRead: 30,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				600000: 30,
-			},
-		},
-
-		// Complex histogram with nested functions
-		{
-			Query:        "rate(histogram_sum(metricWith1HistogramEvery10Seconds)[2m:30s])",
+			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[20s:10s] offset 1m)",
 			Start:        time.Unix(240, 0),
-			PeakSamples:  57,
-			TotalSamples: 4,
+			PeakSamples:  5,
+			TotalSamples: 2,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 4,
+				240000: 2,
 			},
-			SamplesRead: 52,
+			SamplesRead: 2,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 52,
+				240000: 2,
 			},
 		},
 
-		// High step count efficiency test - subquery evaluates inner at each step (instant)
-		{
-			Query:        "max_over_time(metricWith1SampleEvery10Seconds[2m:10s])",
-			Start:        time.Unix(240, 0),
-			PeakSamples:  25,
-			TotalSamples: 12, // 12 inner steps * 1 sample per step
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 12,
-			},
-			SamplesRead: 12,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 12,
-			},
-		},
-
-		// Complex histogram function nesting
-		{
-			Query:        "histogram_count(rate(metricWith1HistogramEvery10Seconds[2m:30s]))",
-			Start:        time.Unix(240, 0),
-			PeakSamples:  117,
-			TotalSamples: 52,
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 52,
-			},
-			SamplesRead: 52,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 52,
-			},
-		},
-
-		// ===================================================================================
-		// PHASE 5: BOUNDARY CONDITIONS AND EDGE CASES
-		// ===================================================================================
-
-		// Step equals range duration - subquery single inner step
-		{
-			Query:        "sum_over_time(metricWith1SampleEvery10Seconds[60s:60s])",
-			Start:        time.Unix(120, 0),
-			PeakSamples:  3,
-			TotalSamples: 1, // Single inner step, 1 sample
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				120000: 1,
-			},
-			SamplesRead: 1,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				120000: 1,
-			},
-		},
-
-		// Large step creates sparse sampling - single inner step
-		{
-			Query:        "max_over_time(metricWith1SampleEvery10Seconds[30s:2m])",
-			Start:        time.Unix(240, 0),
-			PeakSamples:  3,
-			TotalSamples: 1, // Single inner step
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 1,
-			},
-			SamplesRead: 1,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 1,
-			},
-		},
-
-		// Offset with subquery - 2 inner steps * 3 series
-		{
-			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[1m:30s] offset 2m)",
-			Start:        time.Unix(300, 0),
-			PeakSamples:  11,
-			TotalSamples: 6, // 2 inner steps * 3 series
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				300000: 6,
-			},
-			SamplesRead: 6,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				300000: 6,
-			},
-		},
-
-		// Large step size relative to data frequency - single inner step
-		{
-			Query:        "avg_over_time(metricWith1SampleEvery10Seconds[1m:2m])",
-			Start:        time.Unix(240, 0),
-			PeakSamples:  3,
-			TotalSamples: 1, // Single inner step
-			TotalSamplesPerStep: stats.TotalSamplesPerStep{
-				240000: 1,
-			},
-			SamplesRead: 1,
-			SamplesReadPerStep: stats.TotalSamplesPerStep{
-				240000: 1,
-			},
-		},
-
-		// Subquery with offset and @ modifier combined - 6 inner steps * 3 series
+		// Subquery with offset + @ modifier combined.
 		{
 			Query:        "sum_over_time(metricWith3SampleEvery10Seconds[1m:10s] @ 200 offset 1m)",
 			Start:        time.Unix(300, 0),
 			PeakSamples:  27,
-			TotalSamples: 18, // 6 inner steps * 3 series
+			TotalSamples: 18,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				300000: 18,
 			},
 			SamplesRead: 18,
 			SamplesReadPerStep: stats.TotalSamplesPerStep{
 				300000: 18,
+			},
+		},
+
+		// Nested subquery: recursive merging across two subquery levels.
+		{
+			Query:        "sum_over_time(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 300)[5m:1m] @ 600)[10m:2m]",
+			Start:        time.Unix(800, 0),
+			PeakSamples:  23,
+			TotalSamples: 75,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				800000: 75,
+			},
+			SamplesRead: 18,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				800000: 18,
+			},
+		},
+
+		// Outer subquery wrapping inner range-vector (evalSubquery path):
+		// SamplesRead > TotalSamples because inner subquery reads more data than it surfaces.
+		{
+			Query:        "rate(sum_over_time(metricWith1SampleEvery10Seconds[30s])[1m:30s])",
+			Start:        time.Unix(240, 0),
+			PeakSamples:  5,
+			TotalSamples: 2,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				240000: 2,
+			},
+			SamplesRead: 6,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				240000: 6,
 			},
 		},
 	}

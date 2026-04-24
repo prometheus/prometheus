@@ -2179,8 +2179,6 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 						counter++
 					}
 				}
-				// Full window count for TotalSamples (unchanged semantics); delta for SamplesRead.
-				// When we reuse data (@ modifier), we don't increment either.
 				var fullWindowCount, samplesReadCount int64
 				// Evaluate the matrix selector for this series
 				// for this step, but only if this is the 1st
