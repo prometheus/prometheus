@@ -248,6 +248,11 @@ func (c *RDSSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery
 	return NewRDSDiscovery(c, opts)
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *RDSSDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the RDS Config.
 func (c *RDSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultRDSSDConfig

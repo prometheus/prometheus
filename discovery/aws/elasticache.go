@@ -217,6 +217,11 @@ func (c *ElasticacheSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (d
 	return NewElasticacheDiscovery(c, opts)
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *ElasticacheSDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Elasticache Config.
 func (c *ElasticacheSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultElasticacheSDConfig

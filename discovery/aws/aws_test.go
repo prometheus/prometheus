@@ -487,3 +487,89 @@ region = ` + randomRegion + `
 		require.Contains(t, err.Error(), "failed to get region from IMDS")
 	})
 }
+
+func TestSDConfigSetDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	tests := []struct {
+		name string
+		yaml string
+		role Role
+	}{
+		{
+			name: "EC2",
+			yaml: `
+role: ec2
+region: us-east-1
+`,
+			role: RoleEC2,
+		},
+		{
+			name: "ECS",
+			yaml: `
+role: ecs
+region: us-west-2
+clusters: [test-cluster]
+`,
+			role: RoleECS,
+		},
+		{
+			name: "Elasticache",
+			yaml: `
+role: elasticache
+region: eu-west-1
+`,
+			role: RoleElasticache,
+		},
+		{
+			name: "Lightsail",
+			yaml: `
+role: lightsail
+region: ap-south-1
+`,
+			role: RoleLightsail,
+		},
+		{
+			name: "MSK",
+			yaml: `
+role: msk
+region: us-east-2
+`,
+			role: RoleMSK,
+		},
+		{
+			name: "RDS",
+			yaml: `
+role: rds
+region: us-west-1
+`,
+			role: RoleRDS,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg SDConfig
+			err := yaml.Unmarshal([]byte(tt.yaml), &cfg)
+			require.NoError(t, err)
+			require.Equal(t, tt.role, cfg.Role)
+
+			// Call SetDirectory - should not panic
+			require.NotPanics(t, func() {
+				cfg.SetDirectory(tmpDir)
+			})
+		})
+	}
+
+	t.Run("SetDirectoryWithNilConfigs", func(t *testing.T) {
+		// Test that SetDirectory doesn't panic when called on an SDConfig
+		// where the role-specific config might be nil (this was the original bug)
+		cfg := SDConfig{
+			Role: RoleEC2,
+			// EC2SDConfig is nil - this would have caused a panic before the fix
+		}
+		// This should not panic
+		require.NotPanics(t, func() {
+			cfg.SetDirectory(tmpDir)
+		})
+	})
+}
