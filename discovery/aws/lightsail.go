@@ -97,6 +97,11 @@ func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (dis
 	return NewLightsailDiscovery(c, opts)
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *LightsailSDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Lightsail Config.
 func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultLightsailSDConfig

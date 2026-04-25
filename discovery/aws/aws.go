@@ -342,6 +342,36 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 	}
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	switch c.Role {
+	case RoleEC2:
+		if c.EC2SDConfig != nil {
+			c.EC2SDConfig.SetDirectory(dir)
+		}
+	case RoleECS:
+		if c.ECSSDConfig != nil {
+			c.ECSSDConfig.SetDirectory(dir)
+		}
+	case RoleElasticache:
+		if c.ElasticacheSDConfig != nil {
+			c.ElasticacheSDConfig.SetDirectory(dir)
+		}
+	case RoleLightsail:
+		if c.LightsailSDConfig != nil {
+			c.LightsailSDConfig.SetDirectory(dir)
+		}
+	case RoleMSK:
+		if c.MSKSDConfig != nil {
+			c.MSKSDConfig.SetDirectory(dir)
+		}
+	case RoleRDS:
+		if c.RDSSDConfig != nil {
+			c.RDSSDConfig.SetDirectory(dir)
+		}
+	}
+}
+
 // loadRegion finds the region in order: AWS config/env vars ->IMDS.
 func loadRegion(ctx context.Context, specifiedRegion string) (string, error) {
 	if specifiedRegion != "" {

@@ -129,6 +129,11 @@ func (c *ECSSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery
 	return NewECSDiscovery(c, opts)
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *ECSSDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the ECS Config.
 func (c *ECSSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultECSSDConfig
