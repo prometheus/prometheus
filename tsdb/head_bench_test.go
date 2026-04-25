@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	samplemod "github.com/prometheus/prometheus/model/sample"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/compression"
@@ -52,7 +53,7 @@ func appendV2Float(b *testing.B, h *Head, ts int64, series []storage.Series, sam
 	for _, s := range series {
 		var ref storage.SeriesRef
 		for sampleIndex := range samplesPerAppend {
-			ref, err = app.Append(ref, s.Labels(), 0, ts+sampleIndex, float64(ts+sampleIndex), nil, nil, storage.AOptions{})
+			ref, err = app.Append(ref, s.Labels(), 0, ts+sampleIndex, samplemod.Float(float64(ts+sampleIndex)), storage.AOptions{})
 			require.NoError(b, err)
 		}
 	}
@@ -137,7 +138,7 @@ func appendV2FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, seri
 					Value:  rand.Float64(),
 					Ts:     ts + sampleIndex,
 				})
-				ref, err = app.Append(ref, s.Labels(), 0, ts, float64(ts), nil, nil, aOpts)
+				ref, err = app.Append(ref, s.Labels(), 0, ts, samplemod.Float(float64(ts)), aOpts)
 				require.NoError(b, err)
 				continue
 			}
@@ -172,7 +173,7 @@ func appendV2FloatOrHistogramWithExemplars(b *testing.B, h *Head, ts int64, seri
 					Ts:     ts + sampleIndex,
 				},
 			)
-			ref, err = app.Append(ref, s.Labels(), 0, ts, 0, h, nil, aOpts)
+			ref, err = app.Append(ref, s.Labels(), 0, ts, samplemod.Histogram(h), aOpts)
 			require.NoError(b, err)
 		}
 	}
