@@ -3497,6 +3497,36 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	require.NoError(t, l.Release())
 }
 
+func TestNoGoroutineLeakOnTSDBOpenError(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a WAL directory with a valid segment so that wlog.NewSize() succeeds
+	// and starts its run() goroutine.
+	walDir := filepath.Join(dir, "wal")
+	require.NoError(t, os.MkdirAll(walDir, 0o777))
+	w, err := wlog.NewSize(nil, nil, walDir, 32768, compression.None)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	// Create a corrupt chunks_head file with an invalid magic number.
+	// This will cause NewChunkDiskMapper.openMMapFiles() to fail,
+	// which in turn causes NewHead() to fail.
+	chunksDir := filepath.Join(dir, "chunks_head")
+	require.NoError(t, os.MkdirAll(chunksDir, 0o777))
+	require.NoError(t, os.WriteFile(filepath.Join(chunksDir, "000001"), []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x00, 0x00, 0x00}, 0o666))
+
+	opts := DefaultOptions()
+	opts.HeadChunksWriteQueueSize = 1000
+
+	_, err = Open(dir, nil, nil, opts, nil)
+	require.Error(t, err)
+
+	// Verify that no goroutines were leaked. Without proper cleanup,
+	// wlog.(*WL).run and chunks.(*chunkWriteQueue).start.func1 goroutines
+	// would remain running after the failed Open().
+	goleak.VerifyNone(t)
+}
+
 func TestLockfile(t *testing.T) {
 	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
 		opts := DefaultOptions()
