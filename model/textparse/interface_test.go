@@ -222,6 +222,7 @@ func requireEntries(t *testing.T, exp, got []parsedEntry) {
 			_, yIsLabels := y.(labels.Labels)
 			return !xIsLabels && !yIsLabels
 		}, cmpopts.EquateEmpty()),
+		cmpopts.EquateNaNs(),
 		cmp.AllowUnexported(parsedEntry{}),
 	})
 }
