@@ -23,7 +23,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )

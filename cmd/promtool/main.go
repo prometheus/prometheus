@@ -44,7 +44,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -832,7 +832,9 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 	case ".yml", ".yaml":
-		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
+		dec := yaml.NewDecoder(bytes.NewReader(content))
+		dec.KnownFields(true)
+		if err := dec.Decode(&targetGroups); err != nil {
 			return nil, err
 		}
 	default:
