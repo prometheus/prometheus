@@ -258,7 +258,7 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 	if sortSeries {
 		p = index.SortedPostings(p)
 	}
-	return NewBlockChunkSeriesSet(blockID, index, chunks, tombstones, p, mint, maxt, disableTrimming)
+	return NewBlockChunkSeriesSet(blockID, index, chunks, tombstones, p, mint, maxt, disableTrimming, false)
 }
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
@@ -566,14 +566,15 @@ type blockBaseSeriesSet struct {
 
 	curr seriesData
 
-	bufChks []chunks.Meta
-	builder labels.ScratchBuilder
-	err     error
+	bufChks      []chunks.Meta
+	builder      labels.ScratchBuilder
+	err          error
+	seriesParams []index.SeriesParam
 }
 
 func (b *blockBaseSeriesSet) Next() bool {
 	for b.p.Next() {
-		if err := b.index.Series(b.p.At(), &b.builder, &b.bufChks); err != nil {
+		if err := b.index.Series(b.p.At(), &b.builder, &b.bufChks, b.seriesParams...); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.
 			if errors.Is(err, storage.ErrNotFound) {
 				continue
@@ -1174,7 +1175,12 @@ type blockChunkSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func NewBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
+func NewBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming, noCopy bool) storage.ChunkSeriesSet {
+	seriesParams := make([]index.SeriesParam, 0, 1)
+	if noCopy {
+		seriesParams = append(seriesParams, index.SeriesNoCopy)
+	}
+
 	return &blockChunkSeriesSet{
 		blockBaseSeriesSet{
 			blockID:         id,
@@ -1185,6 +1191,7 @@ func NewBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombst
 			mint:            mint,
 			maxt:            maxt,
 			disableTrimming: disableTrimming,
+			seriesParams:    seriesParams,
 		},
 	}
 }

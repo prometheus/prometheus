@@ -480,11 +480,11 @@ func TestSymbols(t *testing.T) {
 	require.Equal(t, 32, s.Size())
 
 	for i := 99; i >= 0; i-- {
-		s, err := s.Lookup(uint32(i))
+		s, err := s.Lookup(uint32(i), false)
 		require.NoError(t, err)
 		require.Equal(t, string(rune(i)), s)
 	}
-	_, err = s.Lookup(100)
+	_, err = s.Lookup(100, false)
 	require.Error(t, err)
 
 	for i := 99; i >= 0; i-- {
