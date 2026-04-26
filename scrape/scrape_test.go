@@ -3696,6 +3696,53 @@ func testScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 	require.Equal(t, 1, seriesAdded)
 }
 
+func TestScrapeLoopCreatesStaleMarkersOnAppendFailures(t *testing.T) {
+	foreachAppendable(t, func(t *testing.T, appV2 bool) {
+		testScrapeLoopCreatesStaleMarkersOnAppendFailures(t, appV2)
+	})
+}
+
+func testScrapeLoopCreatesStaleMarkersOnAppendFailures(t *testing.T, appV2 bool) {
+	appTest := teststorage.NewAppendable()
+	sl, _ := newTestScrapeLoop(t, withAppendable(appTest, appV2))
+
+	now := time.Unix(1, 0)
+	app := sl.appender()
+	_, _, _, err := app.append([]byte("metric1 1\n"), "text/plain", now)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	metric1Calls := 0
+	appTest.WithErrs(func(ls labels.Labels) error {
+		switch ls.Get(model.MetricNameLabel) {
+		case "metric1":
+			metric1Calls++
+			if metric1Calls == 1 {
+				return storage.ErrOutOfOrderSample
+			}
+			return nil
+		default:
+			return nil
+		}
+	}, nil, nil)
+
+	now2 := time.Unix(2, 0)
+	app2 := sl.appender()
+	_, _, _, err = app2.append([]byte("metric1 2\n"), "text/plain", now2)
+	require.NoError(t, err)
+	require.NoError(t, app2.Commit())
+
+	samples := appTest.ResultSamples()
+	foundStale := false
+	for _, s := range samples {
+		if s.L.Get(model.MetricNameLabel) == "metric1" && value.IsStaleNaN(s.V) {
+			foundStale = true
+			break
+		}
+	}
+	require.True(t, foundStale, "Stale NaN marker was expected for metric1 but was not found")
+}
+
 func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopOutOfBoundsTimeError(t, appV2)
