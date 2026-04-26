@@ -129,6 +129,11 @@ func (c *MSKSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery
 	return NewMSKDiscovery(c, opts)
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *MSKSDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the MSK Config.
 func (c *MSKSDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	*c = DefaultMSKSDConfig
