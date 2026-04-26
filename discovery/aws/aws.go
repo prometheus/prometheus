@@ -77,6 +77,7 @@ type SDConfig struct {
 	SecretKey        config.Secret           `yaml:"secret_key,omitempty"`
 	Profile          string                  `yaml:"profile,omitempty"`
 	RoleARN          string                  `yaml:"role_arn,omitempty"`
+	ExternalID       string                  `yaml:"external_id,omitempty"`
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 	Port             int                     `yaml:"port,omitempty"`
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
@@ -136,6 +137,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.RoleARN != "" {
 			c.EC2SDConfig.RoleARN = c.RoleARN
 		}
+		if c.ExternalID != "" {
+			c.EC2SDConfig.ExternalID = c.ExternalID
+		}
 		if c.Port != 0 {
 			c.EC2SDConfig.Port = c.Port
 		}
@@ -166,6 +170,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		if c.RoleARN != "" {
 			c.ECSSDConfig.RoleARN = c.RoleARN
+		}
+		if c.ExternalID != "" {
+			c.ECSSDConfig.ExternalID = c.ExternalID
 		}
 		if c.Port != 0 {
 			c.ECSSDConfig.Port = c.Port
@@ -198,6 +205,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.RoleARN != "" {
 			c.ElasticacheSDConfig.RoleARN = c.RoleARN
 		}
+		if c.ExternalID != "" {
+			c.ElasticacheSDConfig.ExternalID = c.ExternalID
+		}
 		if c.Port != 0 {
 			c.ElasticacheSDConfig.Port = c.Port
 		}
@@ -229,6 +239,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.RoleARN != "" {
 			c.LightsailSDConfig.RoleARN = c.RoleARN
 		}
+		if c.ExternalID != "" {
+			c.LightsailSDConfig.ExternalID = c.ExternalID
+		}
 		if c.Port != 0 {
 			c.LightsailSDConfig.Port = c.Port
 		}
@@ -256,6 +269,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		if c.RoleARN != "" {
 			c.MSKSDConfig.RoleARN = c.RoleARN
+		}
+		if c.ExternalID != "" {
+			c.MSKSDConfig.ExternalID = c.ExternalID
 		}
 		if c.Port != 0 {
 			c.MSKSDConfig.Port = c.Port
@@ -287,6 +303,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		if c.RoleARN != "" {
 			c.RDSSDConfig.RoleARN = c.RoleARN
+		}
+		if c.ExternalID != "" {
+			c.RDSSDConfig.ExternalID = c.ExternalID
 		}
 		if c.Port != 0 {
 			c.RDSSDConfig.Port = c.Port
