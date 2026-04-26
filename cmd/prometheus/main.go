@@ -1521,7 +1521,7 @@ func main() {
 					"MaxWALTime", cfg.agent.MaxWALTime,
 					"OutOfOrderTimeWindow", cfg.agent.OutOfOrderTimeWindow,
 					"EnableSTAsZeroSample", cfg.agent.EnableSTAsZeroSample,
-					"EnableSTStorage", cfg.tsdb.EnableSTStorage,
+					"EnableSTStorage", cfg.agent.EnableSTStorage,
 				)
 
 				localStorage.Set(db, 0)
