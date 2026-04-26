@@ -21,20 +21,16 @@ import (
 )
 
 func TestIsInf(t *testing.T) {
-	for _, tc := range []struct {
-		f    float64
-		want bool
-	}{
-		{math.Inf(1), true},
-		{math.Inf(-1), true},
-		{math.MaxFloat64, false},
-		{-math.MaxFloat64, false},
-		{1.0, false},
-		{-1.0, false},
-		{0, false},
-		{math.NaN(), false},
+	for _, f := range []float64{
+		math.Inf(1),
+		math.Inf(-1),
+		math.MaxFloat64,
+		-math.MaxFloat64,
+		1.0,
+		-1.0,
+		0,
+		math.NaN(),
 	} {
-		got := isInf(tc.f)
-		require.Equal(t, tc.want, got, "%e", tc.f)
+		require.Equal(t, math.IsInf(f, 0), isInf(f), "%e", f)
 	}
 }
