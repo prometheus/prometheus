@@ -4296,3 +4296,80 @@ func TestHistogram_CounterResetHint(t *testing.T) {
 		})
 	}
 }
+
+// TestSmoothedSelectorMixedHistogramSchemas reproduces the bug where
+// smoothSeries reads all histogram samples as schema=0 even when the series
+// alternates between exponential (schema=0) and custom-bucket (schema=-53)
+// histograms. The matrix-selector path (rate()) sees the correct schemas,
+// but the smoothed-vector-selector path (foo smoothed) does not, which
+// prevents the MixedExponentialCustomHistograms warning from firing.
+func TestSmoothedSelectorMixedHistogramSchemas(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := tsdb.DefaultHeadOptions()
+	opts.ChunkDirRoot = dir
+	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = head.Close() })
+
+	app := head.Appender(context.Background())
+	l := labels.FromStrings("__name__", "mixed")
+
+	base := int64(0) // timestamps in ms
+	step := int64(30_000)
+
+	expHist := &histogram.FloatHistogram{
+		Schema:          0,
+		Count:           1,
+		Sum:             1,
+		PositiveSpans:   []histogram.Span{{Offset: 1, Length: 1}},
+		PositiveBuckets: []float64{1},
+	}
+	customHist := &histogram.FloatHistogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           1,
+		Sum:             1,
+		CustomValues:    []float64{5, 10},
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+		PositiveBuckets: []float64{1},
+	}
+
+	// Alternate: exp, custom, exp, custom at t=0,30,60,90s.
+	for i, fh := range []*histogram.FloatHistogram{expHist, customHist, expHist, customHist} {
+		_, err = app.AppendHistogram(0, l, base+step*int64(i), nil, fh.Copy())
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+		return tsdb.NewBlockQuerier(head, mint, maxt)
+	})
+	engine := promql.NewEngine(promql.EngineOpts{
+		MaxSamples:    1_000_000,
+		Timeout:       10 * time.Second,
+		LookbackDelta: 5 * time.Minute,
+		Parser:        parser.NewParser(parser.Options{EnableExtendedRangeSelectors: true}),
+	})
+
+	// matrix path: rate() should see mixed schemas and emit the warning.
+	qRate, err := engine.NewInstantQuery(context.Background(), queryable, nil,
+		`rate(mixed[1m30s])`, time.UnixMilli(base+2*step))
+	require.NoError(t, err)
+	resRate := qRate.Exec(context.Background())
+	require.NoError(t, resRate.Err)
+	qRate.Close()
+	rateWarnStr := fmt.Sprintf("%v", resRate.Warnings)
+	require.Contains(t, rateWarnStr, "mix", "rate() should warn about mixed exponential/custom schemas")
+
+	// smoothed path: reading mixed schemas via the smoothed vector selector.
+	// This should also emit the mixed-schema warning.
+	qSmoothed, err := engine.NewInstantQuery(context.Background(), queryable, nil,
+		`histogram_count(mixed smoothed)`, time.UnixMilli(base+step+step/2))
+	require.NoError(t, err)
+	resSmoothed := qSmoothed.Exec(context.Background())
+	require.NoError(t, resSmoothed.Err)
+	qSmoothed.Close()
+	smoothWarnStr := fmt.Sprintf("%v", resSmoothed.Warnings)
+	require.Contains(t, smoothWarnStr, "mix",
+		"smoothed vector selector should warn about mixed exponential/custom schemas just like rate() does")
+}

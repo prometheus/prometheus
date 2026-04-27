@@ -457,3 +457,153 @@ eval range from 0s to 60s step 15s metric offset -100 smoothed
 
 eval range from 0s to 60s step 15s metric offset -100 smoothed + 0
     {} 10 11.5 13 14.5 16
+
+# Native histogram tests for smoothed/anchored modifiers.
+# Simple histogram counter incrementing by count:1, sum:1, buckets:[1] every 15s.
+clear
+load 15s
+  hist_counter {{schema:0 count:1 sum:1 buckets:[1] offset:1}}+{{count:1 sum:1 buckets:[1] offset:1}}x7
+
+# Anchored increase at 50s: left=count:1 (t=0), right=count:4 (t=45), increase=3.
+eval instant at 50s histogram_count(increase(hist_counter[1m] anchored))
+    {} 3
+
+eval instant at 50s histogram_sum(increase(hist_counter[1m] anchored))
+    {} 3
+
+# Smoothed increase at 50s: left=count:1 (t=0), right interpolated at t=50
+# between count:4 (t=45) and count:5 (t=60), fraction=1/3, right=count:4.333...,
+# increase=3.333...
+eval instant at 50s histogram_count(increase(hist_counter[1m] smoothed))
+    {} 3.333333333333333
+
+eval instant at 50s histogram_sum(increase(hist_counter[1m] smoothed))
+    {} 3.333333333333333
+
+# Smoothed increase at 5s: left=count:1 (t=0, not before rangeStart=-55s),
+# right interpolated at t=5 between count:1 (t=0) and count:2 (t=15),
+# fraction=1/3, right=count:1.333..., increase=0.333...
+eval instant at 5s histogram_count(increase(hist_counter[1m] smoothed))
+    {} 0.3333333333333333
+
+# Smoothed rate at 50s: increase / 60s.
+eval instant at 50s histogram_count(rate(hist_counter[1m] smoothed))
+    {} 0.05555555555555555
+
+# Anchored increase at 5s: only one sample (t=0) in range, increase from itself is 0.
+eval instant at 5s histogram_count(increase(hist_counter[1m] anchored))
+    {} 0
+
+eval instant at 5s histogram_sum(increase(hist_counter[1m] anchored))
+    {} 0
+
+# Smoothed delta (non-counter) at 50s: same values as smoothed increase
+# for a monotonic series (no counter reset correction needed).
+eval instant at 50s histogram_count(delta(hist_counter[1m] smoothed))
+    {} 3.333333333333333
+
+# Smoothed vector selector interpolation for native histograms.
+# At t=7s, interpolate between t=0 (count:1) and t=15 (count:2), fraction=7/15.
+eval instant at 7s histogram_count(hist_counter smoothed)
+    {} 1.4666666666666668
+
+# At t=15s, exact match: count:2.
+eval instant at 15s histogram_count(hist_counter smoothed)
+    {} 2
+
+# Anchored and smoothed native histogram modifiers with custom buckets.
+clear
+load 30s
+  mixed_hist {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+# Anchored rate should warn and return no result when the range mixes exponential
+# and custom buckets at the boundaries.
+eval instant at 1m rate(mixed_hist[1m] anchored)
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_hist"
+    # Should produce no results.
+
+# Smoothed rate should warn and return no result when interpolation would cross
+# exponential and custom buckets.
+eval instant at 45s rate(mixed_hist[1m] smoothed)
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "mixed_hist"
+    # Should produce no results.
+
+# Anchored increase should still account for resets for custom-bucket histograms.
+clear
+load 30s
+  reset_custom_hist {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:4 count:4 custom_values:[5 10] buckets:[4]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:reset}} {{schema:-53 sum:3 count:3 custom_values:[5 10] buckets:[3]}}
+
+eval instant at 90s histogram_count(increase(reset_custom_hist[90s] anchored))
+    {} 6
+
+eval instant at 90s histogram_sum(increase(reset_custom_hist[90s] anchored))
+    {} 6
+
+# A gauge-hint on a middle (non-boundary) sample must trigger the "not a counter"
+# warning for rate/increase, matching the behaviour of the non-extended path.
+clear
+load 30s
+  mid_gauge_hist {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3]}}
+
+eval instant at 90s histogram_count(rate(mid_gauge_hist[90s] anchored))
+    expect warn msg: PromQL warning: this native histogram metric is not a counter: "mid_gauge_hist"
+    {} 0.022222222222222223
+
+eval instant at 90s histogram_count(increase(mid_gauge_hist[90s] smoothed))
+    expect warn msg: PromQL warning: this native histogram metric is not a counter: "mid_gauge_hist"
+    {} 2
+
+# Gauge op on a counter-typed series must warn when a boundary sample lacks the
+# gauge hint.
+eval instant at 90s histogram_count(delta(mid_gauge_hist[90s] anchored))
+    expect warn msg: PromQL warning: this native histogram metric is not a gauge: "mid_gauge_hist"
+    {} 2
+
+# Smoothed rate on a custom-bucket-only series interpolates cleanly.
+clear
+load 15s
+  custom_only {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}+{{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}x7
+
+eval instant at 50s histogram_count(increase(custom_only[1m] smoothed))
+    {} 3.333333333333333
+
+eval instant at 50s histogram_sum(increase(custom_only[1m] smoothed))
+    {} 3.333333333333333
+
+# Smoothed vector-selector interpolation for a histogram counter crossing a
+# reset. With isCounter=false at selection time, interpolation treats the reset
+# as a linear drop, so the value at t=20s sits between h[1]=count:10 and
+# h[2]=count:2 (fraction=5/15), yielding count:10 - 8*(5/15) = 7.333...
+clear
+load 15s
+  reset_middle {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:reset}} {{schema:0 sum:6 count:6 buckets:[6]}}
+
+eval instant at 20s histogram_count(reset_middle smoothed)
+    {} 7.333333333333333
+
+# Smoothed histogram rate must not double-count the first post-reset sample when
+# the left range boundary is interpolated across the reset.
+clear
+load 10s
+  reset_boundary _ {{schema:0 sum:396 count:396 buckets:[396] counter_reset_hint:not_reset}} {{schema:0 sum:110 count:110 buckets:[110] counter_reset_hint:reset}} {{schema:0 sum:194 count:194 buckets:[194] counter_reset_hint:not_reset}}
+
+eval instant at 20s500ms histogram_count(rate(reset_boundary[1s] smoothed))
+    {} 9.7
+
+# Smoothed vector selector must emit a warning and produce no result when
+# interpolation would cross exponential and custom-bucket schemas.
+clear
+load 30s
+  smoothed_mix {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}
+
+eval instant at 45s histogram_count(smoothed_mix smoothed)
+    expect warn msg: PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "smoothed_mix"
+
+# Smoothed vector selector must emit a warning and produce no result when the
+# lookback window mixes floats and histograms.
+clear
+load 30s
+  mixed_types 1 2 {{schema:0 sum:3 count:3 buckets:[3]}} {{schema:0 sum:4 count:4 buckets:[4]}}
+
+eval instant at 45s sort(mixed_types smoothed)
+    expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_types"

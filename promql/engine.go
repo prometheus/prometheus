@@ -1717,7 +1717,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 
 // smoothSeries is a helper function that smooths the series by interpolating the values
 // based on values before and after the timestamp.
-func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration) Matrix {
+func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration, pos posrange.PositionRange) (Matrix, annotations.Annotations) {
 	dur := ev.endTimestamp - ev.startTimestamp
 
 	it := storage.NewBuffer(dur + 2*durationMilliseconds(ev.lookbackDelta))
@@ -1728,6 +1728,7 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 
 	var chkIter chunkenc.Iterator
 	mat := make(Matrix, 0, len(series))
+	var annos annotations.Annotations
 
 	for _, s := range series {
 		ss := Series{Metric: s.Labels()}
@@ -1749,40 +1750,70 @@ func (ev *evaluator) smoothSeries(series []storage.Series, offset time.Duration)
 				continue
 			}
 
-			if len(hists) > 0 {
-				// TODO: support native histograms.
-				ev.errorf("smoothed and anchored modifiers do not work with native histograms")
+			if len(hists) > 0 && len(floats) > 0 {
+				annos.Add(annotations.NewMixedFloatsHistogramsWarning(s.Labels().Get(labels.MetricName), pos))
+				continue
 			}
 
-			// Binary search for the first index with T >= dataTS.
-			i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= dataTS })
+			if len(hists) > 0 {
+				// Binary search for the first histogram index with T >= dataTS.
+				i := sort.Search(len(hists), func(i int) bool { return hists[i].T >= dataTS })
 
-			switch {
-			case i < len(floats) && floats[i].T == dataTS:
-				// Exact match.
-				ss.Floats = append(ss.Floats, FPoint{F: floats[i].F, T: evalTS})
+				switch {
+				case i < len(hists) && hists[i].T == dataTS:
+					// Exact match.
+					ss.Histograms = append(ss.Histograms, HPoint{H: hists[i].H.Copy(), T: evalTS})
 
-			case i > 0 && i < len(floats):
-				// Interpolate between prev and next.
-				// TODO: detect if the sample is a counter, based on __type__ or metadata.
-				prev, next := floats[i-1], floats[i]
-				val := interpolate(prev, next, dataTS, false)
-				ss.Floats = append(ss.Floats, FPoint{F: val, T: evalTS})
+				case i > 0 && i < len(hists):
+					// Interpolate between prev and next.
+					// TODO: detect if the sample is a counter, based on __type__ or metadata.
+					prev, next := hists[i-1], hists[i]
+					h, err := interpolateHistograms(prev.H, prev.T, next.H, next.T, dataTS, false)
+					if err != nil {
+						annos = annosFromInterpolationError(annos, err, s.Labels().Get(labels.MetricName), pos)
+						continue
+					}
+					ss.Histograms = append(ss.Histograms, HPoint{H: h, T: evalTS})
 
-			case i > 0:
-				// No next point yet; carry forward previous value.
-				prev := floats[i-1]
-				ss.Floats = append(ss.Floats, FPoint{F: prev.F, T: evalTS})
+				case i > 0:
+					// No next point yet; carry forward previous value.
+					prev := hists[i-1]
+					ss.Histograms = append(ss.Histograms, HPoint{H: prev.H.Copy(), T: evalTS})
 
-			default:
-				// i == 0 and floats[0].T > dataTS: there is no previous data yet; skip.
+				default:
+					// i == 0 and hists[0].T > dataTS: there is no previous data yet; skip.
+				}
+			} else {
+				// Binary search for the first index with T >= dataTS.
+				i := sort.Search(len(floats), func(i int) bool { return floats[i].T >= dataTS })
+
+				switch {
+				case i < len(floats) && floats[i].T == dataTS:
+					// Exact match.
+					ss.Floats = append(ss.Floats, FPoint{F: floats[i].F, T: evalTS})
+
+				case i > 0 && i < len(floats):
+					// Interpolate between prev and next.
+					// TODO: detect if the sample is a counter, based on __type__ or metadata.
+					prev, next := floats[i-1], floats[i]
+					val := interpolate(prev, next, dataTS, false)
+					ss.Floats = append(ss.Floats, FPoint{F: val, T: evalTS})
+
+				case i > 0:
+					// No next point yet; carry forward previous value.
+					prev := floats[i-1]
+					ss.Floats = append(ss.Floats, FPoint{F: prev.F, T: evalTS})
+
+				default:
+					// i == 0 and floats[0].T > dataTS: there is no previous data yet; skip.
+				}
 			}
 		}
 
 		mat = append(mat, ss)
 	}
 
-	return mat
+	return mat, annos
 }
 
 // evalSeries generates a Matrix between ev.startTimestamp and ev.endTimestamp (inclusive), each point spaced ev.interval apart, from series given offset.
@@ -2178,12 +2209,6 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				if len(floats)+len(histograms) == 0 {
 					continue
 				}
-				if selVS.Anchored || selVS.Smoothed {
-					if len(histograms) > 0 {
-						// TODO: support native histograms.
-						ev.errorf("smoothed and anchored modifiers do not work with native histograms")
-					}
-				}
 				inMatrix[0].Floats = floats
 				inMatrix[0].Histograms = histograms
 				enh.Ts = ts
@@ -2378,7 +2403,8 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
 		if e.Smoothed {
-			mat := ev.smoothSeries(e.Series, e.Offset)
+			mat, smoothAnnos := ev.smoothSeries(e.Series, e.Offset, e.PositionRange())
+			ws.Merge(smoothAnnos)
 			return mat, ws
 		}
 		mat := ev.evalSeries(ctx, e.Series, e.Offset, false)
