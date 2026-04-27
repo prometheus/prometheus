@@ -283,7 +283,7 @@ func StreamChunkedReadResponses(
 				return ss.Warnings(), fmt.Errorf("write to stream: %w", err)
 			}
 
-			// We immediately flush the Write() so it is safe to return to the pool.
+			// The Write() has consumed b, so it is safe to return to the pool.
 			marshalPool.Put(&b)
 			chks = chks[:0]
 			frameBytesLeft = maxDataLength

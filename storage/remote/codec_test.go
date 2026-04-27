@@ -1040,7 +1040,7 @@ func TestChunkedSeriesSet(t *testing.T) {
 		buf := &bytes.Buffer{}
 		flusher := &mockFlusher{}
 
-		w := NewChunkedWriter(buf, flusher)
+		w := NewChunkedWriter(buf, flusher, true)
 		wrappedReader := newOneShotCloser(buf)
 		r := NewChunkedReader(wrappedReader, config.DefaultChunkedReadLimit, nil)
 
@@ -1097,7 +1097,7 @@ func TestChunkedSeriesSet(t *testing.T) {
 		buf := &bytes.Buffer{}
 		flusher := &mockFlusher{}
 
-		w := NewChunkedWriter(buf, flusher)
+		w := NewChunkedWriter(buf, flusher, true)
 		r := NewChunkedReader(buf, config.DefaultChunkedReadLimit, nil)
 
 		chks := buildTestChunks(t)
