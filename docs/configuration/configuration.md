@@ -3425,7 +3425,7 @@ Initially, aside from the configured per-target labels, a target's `job`
 label is set to the `job_name` value of the respective scrape configuration.
 
 You can also use special labels like `__address__`, `__scheme__`, `__metrics_path__`,
-`__scrape_interval__`, `__scrape_timeout__` to customize the defined targets. These will
+`__scrape_interval__`, `__scrape_timeout__`, and `__proxy_url__` to customize the defined targets. These will
 override the respective settings in the scrape configuration.
 
 The `__address__` label is set to the `<host>:<port>` address of the target.
@@ -3440,6 +3440,10 @@ label is set to the value of the first passed URL parameter called `<name>`, as 
 
 The `__scrape_interval__` and `__scrape_timeout__` labels are set to the target's
 interval and timeout, as specified in `scrape_config`.
+
+The `__proxy_url__` label is set to the proxy URL of the scrape configuration, if
+one is configured. It can be overridden during relabeling to configure per-target
+proxy routing, allowing different targets within the same job to use different proxies.
 
 Additional labels prefixed with `__meta_` may be available during the
 relabeling phase. They are set by the service discovery mechanism that provided

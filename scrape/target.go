@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -42,6 +43,8 @@ const (
 	HealthGood    TargetHealth = "up"
 	HealthBad     TargetHealth = "down"
 )
+
+const proxyURLLabel = "__proxy_url__"
 
 // Target refers to a singular HTTP or HTTPS endpoint.
 type Target struct {
@@ -194,6 +197,7 @@ func (t *Target) DiscoveredLabels(lb *labels.Builder) labels.Labels {
 	cfg, tLabels, tgLabels := t.scrapeConfig, t.tLabels, t.tgLabels
 	t.mtx.RUnlock()
 	PopulateDiscoveredLabels(lb, cfg, tLabels, tgLabels)
+	RedactLabels(lb)
 	return lb.Labels()
 }
 
@@ -236,6 +240,19 @@ func (t *Target) URL() *url.URL {
 		Path:     t.labels.Get(model.MetricsPathLabel),
 		RawQuery: params.Encode(),
 	}
+}
+
+// ProxyURL returns the proxy URL for the target parsed from __proxy_url__.
+func (t *Target) ProxyURL() *url.URL {
+	v := t.labels.Get(proxyURLLabel)
+	if v == "" {
+		return nil
+	}
+	u, err := url.Parse(v)
+	if err != nil {
+		return nil
+	}
+	return u
 }
 
 // Report sets target data about the last scrape.
@@ -574,6 +591,11 @@ func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLab
 		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
 	}
+	if cfg.HTTPClientConfig.ProxyURL.URL != nil {
+		scrapeLabels = append(scrapeLabels, labels.Label{
+			Name: proxyURLLabel, Value: cfg.HTTPClientConfig.ProxyURL.Redacted(),
+		})
+	}
 
 	for _, l := range scrapeLabels {
 		if lb.Get(l.Name) == "" {
@@ -584,6 +606,17 @@ func PopulateDiscoveredLabels(lb *labels.Builder, cfg *config.ScrapeConfig, tLab
 	for k, v := range cfg.Params {
 		if name := model.ParamLabelPrefix + k; len(v) > 0 && lb.Get(name) == "" {
 			lb.Set(name, v[0])
+		}
+	}
+}
+
+// RedactLabels redacts sensitive label values to prevent credential exposure via the API.
+// Currently redacts __proxy_url__ which may contain embedded credentials.
+func RedactLabels(lb *labels.Builder) {
+	if v := lb.Get(proxyURLLabel); v != "" {
+		u, err := url.Parse(v)
+		if err == nil {
+			lb.Set(proxyURLLabel, config_util.URL{URL: u}.Redacted())
 		}
 	}
 }

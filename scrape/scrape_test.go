@@ -6956,3 +6956,59 @@ func TestScrapeOffsetDistribution(t *testing.T) {
 		}
 	})
 }
+
+func TestPerTargetProxyURL(t *testing.T) {
+	var proxiedRequests sync.Map
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxiedRequests.Store(r.URL.String(), true)
+		resp, err := http.DefaultTransport.RoundTrip(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		for k, vv := range resp.Header {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+	}))
+	defer proxy.Close()
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprint(w, "test_metric 1\n")
+	}))
+	defer target.Close()
+
+	proxyURL, _ := url.Parse(proxy.URL)
+
+	client, err := newScrapeClient(config_util.DefaultHTTPClientConfig, "test")
+	require.NoError(t, err)
+
+	targetURL, _ := url.Parse(target.URL + "/metrics")
+
+	// Without proxy context, request goes direct.
+	req, err := http.NewRequest(http.MethodGet, targetURL.String(), http.NoBody)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	_, wasProxied := proxiedRequests.Load(targetURL.String())
+	require.False(t, wasProxied, "expected direct request, not proxied")
+
+	// With proxy URL in context, request goes through proxy.
+	ctx := contextWithProxyURL(context.Background(), proxyURL)
+	req2, err := http.NewRequest(http.MethodGet, targetURL.String(), http.NoBody)
+	require.NoError(t, err)
+	resp2, err := client.Do(req2.WithContext(ctx))
+	require.NoError(t, err)
+	resp2.Body.Close()
+
+	_, wasProxied = proxiedRequests.Load(targetURL.String())
+	require.True(t, wasProxied, "expected request to go through proxy")
+}
