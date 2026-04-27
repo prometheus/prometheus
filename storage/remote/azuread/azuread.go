@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/google/uuid"
 	"github.com/grafana/regexp"
+	config_util "github.com/prometheus/common/config"
 )
 
 // Clouds.
@@ -75,7 +76,7 @@ type OAuthConfig struct {
 	ClientID string `yaml:"client_id,omitempty"`
 
 	// ClientSecret is the clientSecret of the azure active directory application that is being used to authenticate.
-	ClientSecret string `yaml:"client_secret,omitempty"`
+	ClientSecret config_util.Secret `yaml:"client_secret,omitempty"`
 
 	// TenantID is the tenantId of the azure active directory application that is being used to authenticate.
 	TenantID string `yaml:"tenant_id,omitempty"`
@@ -357,7 +358,7 @@ func newWorkloadIdentityTokenCredential(clientOpts *azcore.ClientOptions, worklo
 // newOAuthTokenCredential returns new OAuth token credential.
 func newOAuthTokenCredential(clientOpts *azcore.ClientOptions, oAuthConfig *OAuthConfig) (azcore.TokenCredential, error) {
 	opts := &azidentity.ClientSecretCredentialOptions{ClientOptions: *clientOpts}
-	return azidentity.NewClientSecretCredential(oAuthConfig.TenantID, oAuthConfig.ClientID, oAuthConfig.ClientSecret, opts)
+	return azidentity.NewClientSecretCredential(oAuthConfig.TenantID, oAuthConfig.ClientID, string(oAuthConfig.ClientSecret), opts)
 }
 
 // newSDKTokenCredential returns new SDK token credential.
