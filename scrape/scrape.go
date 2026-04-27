@@ -17,11 +17,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"reflect"
@@ -29,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -131,7 +135,7 @@ type scrapeLoopAppendAdapter interface {
 	Commit() error
 	Rollback() error
 
-	addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) error
+	addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool, extraLabels labels.Labels) error
 	append(b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error)
 }
 
@@ -705,6 +709,15 @@ type targetScraper struct {
 
 var errBodySizeLimit = errors.New("body size limit exceeded")
 
+type httpStatusError struct {
+	StatusCode int
+	Status     string
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("server returned HTTP status %s", e.Status)
+}
+
 // acceptHeader transforms preference from the options into specific header values as
 // https://www.rfc-editor.org/rfc/rfc9110.html#name-accept defines.
 // No validation is here, we expect scrape protocols to be validated already.
@@ -761,7 +774,7 @@ func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w i
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("server returned HTTP status %s", resp.Status)
+		return "", &httpStatusError{StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 
 	if s.bodySizeLimit <= 0 {
@@ -834,9 +847,10 @@ type scrapeLoop struct {
 	parentCtx context.Context
 	// appenderCtx is a parentCtx with some extra context for appender
 	// implementations. Potentially remove-able with removal of AppenderV1.
-	appenderCtx context.Context
-	l           *slog.Logger
-	cache       *scrapeCache
+	appenderCtx          context.Context
+	l                    *slog.Logger
+	cache                *scrapeCache
+	lastScrapeFailedArea string
 
 	interval            time.Duration
 	timeout             time.Duration
@@ -2101,6 +2115,14 @@ var (
 			Unit: "bytes",
 		},
 	}
+	scrapeFailedMetric = reportSample{
+		name: []byte("scrapes_failed" + "\xff"),
+		Metadata: metadata.Metadata{
+			Type: model.MetricTypeGauge,
+			Help: "The failure reason for the last scrape. The 'area' label indicates the failure reason.",
+			Unit: "",
+		},
+	}
 )
 
 func (sl *scrapeLoop) report(app scrapeLoopAppendAdapter, start time.Time, duration time.Duration, scraped, added, seriesAdded, bytes int, scrapeErr error) (err error) {
@@ -2114,31 +2136,47 @@ func (sl *scrapeLoop) report(app scrapeLoopAppendAdapter, start time.Time, durat
 	}
 	b := labels.NewBuilderWithSymbolTable(sl.symbolTable)
 
-	if err = app.addReportSample(scrapeHealthMetric, ts, health, b, false); err != nil {
+	if err = app.addReportSample(scrapeHealthMetric, ts, health, b, false, labels.EmptyLabels()); err != nil {
 		return err
 	}
-	if err = app.addReportSample(scrapeDurationMetric, ts, duration.Seconds(), b, false); err != nil {
+	if err = app.addReportSample(scrapeDurationMetric, ts, duration.Seconds(), b, false, labels.EmptyLabels()); err != nil {
 		return err
 	}
-	if err = app.addReportSample(scrapeSamplesMetric, ts, float64(scraped), b, false); err != nil {
+	if err = app.addReportSample(scrapeSamplesMetric, ts, float64(scraped), b, false, labels.EmptyLabels()); err != nil {
 		return err
 	}
-	if err = app.addReportSample(samplesPostRelabelMetric, ts, float64(added), b, false); err != nil {
+	if err = app.addReportSample(samplesPostRelabelMetric, ts, float64(added), b, false, labels.EmptyLabels()); err != nil {
 		return err
 	}
-	if err = app.addReportSample(scrapeSeriesAddedMetric, ts, float64(seriesAdded), b, false); err != nil {
+	if err = app.addReportSample(scrapeSeriesAddedMetric, ts, float64(seriesAdded), b, false, labels.EmptyLabels()); err != nil {
 		return err
 	}
 	if sl.reportExtraMetrics {
-		if err = app.addReportSample(scrapeTimeoutMetric, ts, sl.timeout.Seconds(), b, false); err != nil {
+		if err = app.addReportSample(scrapeTimeoutMetric, ts, sl.timeout.Seconds(), b, false, labels.EmptyLabels()); err != nil {
 			return err
 		}
-		if err = app.addReportSample(scrapeSampleLimitMetric, ts, float64(sl.sampleLimit), b, false); err != nil {
+		if err = app.addReportSample(scrapeSampleLimitMetric, ts, float64(sl.sampleLimit), b, false, labels.EmptyLabels()); err != nil {
 			return err
 		}
-		if err = app.addReportSample(scrapeBodySizeBytesMetric, ts, float64(bytes), b, false); err != nil {
+		if err = app.addReportSample(scrapeBodySizeBytesMetric, ts, float64(bytes), b, false, labels.EmptyLabels()); err != nil {
 			return err
 		}
+		var activeArea string
+		if scrapeErr != nil {
+			activeArea = classifyScrapeError(scrapeErr)
+			err = app.addReportSample(scrapeFailedMetric, ts, 1.0, b, false, labels.FromStrings("area", activeArea))
+			if err != nil {
+				return err
+			}
+		}
+
+		if sl.lastScrapeFailedArea != "" && sl.lastScrapeFailedArea != activeArea {
+			err = app.addReportSample(scrapeFailedMetric, ts, math.Float64frombits(value.StaleNaN), b, true, labels.FromStrings("area", sl.lastScrapeFailedArea))
+			if err != nil {
+				return err
+			}
+		}
+		sl.lastScrapeFailedArea = activeArea
 	}
 	return err
 }
@@ -2148,37 +2186,104 @@ func (sl *scrapeLoop) reportStale(app scrapeLoopAppendAdapter, start time.Time) 
 	stale := math.Float64frombits(value.StaleNaN)
 	b := labels.NewBuilder(labels.EmptyLabels())
 
-	if err = app.addReportSample(scrapeHealthMetric, ts, stale, b, true); err != nil {
+	if err = app.addReportSample(scrapeHealthMetric, ts, stale, b, true, labels.EmptyLabels()); err != nil {
 		return err
 	}
-	if err = app.addReportSample(scrapeDurationMetric, ts, stale, b, true); err != nil {
+	if err = app.addReportSample(scrapeDurationMetric, ts, stale, b, true, labels.EmptyLabels()); err != nil {
 		return err
 	}
-	if err = app.addReportSample(scrapeSamplesMetric, ts, stale, b, true); err != nil {
+	if err = app.addReportSample(scrapeSamplesMetric, ts, stale, b, true, labels.EmptyLabels()); err != nil {
 		return err
 	}
-	if err = app.addReportSample(samplesPostRelabelMetric, ts, stale, b, true); err != nil {
+	if err = app.addReportSample(samplesPostRelabelMetric, ts, stale, b, true, labels.EmptyLabels()); err != nil {
 		return err
 	}
-	if err = app.addReportSample(scrapeSeriesAddedMetric, ts, stale, b, true); err != nil {
+	if err = app.addReportSample(scrapeSeriesAddedMetric, ts, stale, b, true, labels.EmptyLabels()); err != nil {
 		return err
 	}
 	if sl.reportExtraMetrics {
-		if err = app.addReportSample(scrapeTimeoutMetric, ts, stale, b, true); err != nil {
+		if err = app.addReportSample(scrapeTimeoutMetric, ts, stale, b, true, labels.EmptyLabels()); err != nil {
 			return err
 		}
-		if err = app.addReportSample(scrapeSampleLimitMetric, ts, stale, b, true); err != nil {
+		if err = app.addReportSample(scrapeSampleLimitMetric, ts, stale, b, true, labels.EmptyLabels()); err != nil {
 			return err
 		}
-		if err = app.addReportSample(scrapeBodySizeBytesMetric, ts, stale, b, true); err != nil {
+		if err = app.addReportSample(scrapeBodySizeBytesMetric, ts, stale, b, true, labels.EmptyLabels()); err != nil {
 			return err
+		}
+		if sl.lastScrapeFailedArea != "" {
+			if err = app.addReportSample(scrapeFailedMetric, ts, stale, b, true, labels.FromStrings("area", sl.lastScrapeFailedArea)); err != nil {
+				return err
+			}
 		}
 	}
 	return err
 }
 
-func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	ce, ok, _ := sl.cache.get(s.name)
+func classifyScrapeError(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if errors.Is(err, errBodySizeLimit) {
+		return "body_size_limit"
+	}
+	var httpErr *httpStatusError
+	if errors.As(err, &httpErr) {
+		if httpErr.StatusCode >= 400 && httpErr.StatusCode < 500 {
+			return "client_http_error"
+		}
+		if httpErr.StatusCode >= 500 {
+			return "server_http_error"
+		}
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return "dns_error"
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return "connection_refused"
+	}
+	var netOpErr *net.OpError
+	if errors.As(err, &netOpErr) {
+		return "network_error"
+	}
+	// Check for TLS errors.
+	var (
+		tlsAlertErr tls.AlertError
+		tlsRecErr   *tls.RecordHeaderError
+		tlsCertErr  *tls.CertificateVerificationError
+		x509CertErr x509.CertificateInvalidError
+		x509HostErr x509.HostnameError
+		x509AuthErr x509.UnknownAuthorityError
+		x509RootErr x509.SystemRootsError
+		x509ConsErr x509.ConstraintViolationError
+		x509AlgoErr x509.InsecureAlgorithmError
+	)
+	if errors.As(err, &tlsAlertErr) ||
+		errors.As(err, &tlsRecErr) ||
+		errors.As(err, &tlsCertErr) ||
+		errors.As(err, &x509CertErr) ||
+		errors.As(err, &x509HostErr) ||
+		errors.As(err, &x509AuthErr) ||
+		errors.As(err, &x509RootErr) ||
+		errors.As(err, &x509ConsErr) ||
+		errors.As(err, &x509AlgoErr) {
+		return "tls_error"
+	}
+
+	return "other"
+}
+
+func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool, extraLabels labels.Labels) (err error) {
+	var cacheKey []byte
+	if extraLabels.IsEmpty() {
+		cacheKey = s.name
+	} else {
+		// Combine name (without \xff) and extra labels, and append \xff to avoid collisions.
+		cacheKey = []byte(string(s.name[:len(s.name)-1]) + "_" + extraLabels.String() + "\xff")
+	}
+
+	ce, ok, _ := sl.cache.get(cacheKey)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
@@ -2190,6 +2295,9 @@ func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64
 		// We have to drop it when building the actual metric.
 		b.Reset(labels.EmptyLabels())
 		b.Set(model.MetricNameLabel, string(s.name[:len(s.name)-1]))
+		extraLabels.Range(func(l labels.Label) {
+			b.Set(l.Name, l.Value)
+		})
 		lset = sl.reportSampleMutator(b.Labels())
 	}
 
@@ -2205,7 +2313,7 @@ func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64
 	switch {
 	case err == nil:
 		if !ok {
-			sl.cache.addRef(s.name, ref, lset, lset.Hash())
+			sl.cache.addRef(cacheKey, ref, lset, lset.Hash())
 			// We only need to add metadata once a scrape target appears.
 			if sl.appendMetadataToWAL {
 				if _, merr := sl.UpdateMetadata(ref, lset, s.Metadata); merr != nil {
