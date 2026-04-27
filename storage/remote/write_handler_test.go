@@ -245,6 +245,22 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 	}
 }
 
+func TestRemoteWriteHandlerTooLarge(t *testing.T) {
+	// 5-byte snappy stream whose header claims 256 MiB decoded length,
+	// well above decodeWriteLimit (32 MiB).
+	bomb := []byte{0x80, 0x80, 0x80, 0x80, 0x01}
+	req, err := http.NewRequest(http.MethodPost, "/", bytes.NewReader(bomb))
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{}
+	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []config.RemoteWriteProtoMsg{config.RemoteWriteProtoMsgV1}, false)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "exceeds limit")
+}
+
 func TestRemoteWriteHandler_V1Message(t *testing.T) {
 	payload, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
 	require.NoError(t, err)
