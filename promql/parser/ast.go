@@ -496,7 +496,7 @@ func (e *DurationExpr) PositionRange() posrange.PositionRange {
 	if e.RHS == nil {
 		return posrange.PositionRange{
 			Start: e.StartPos,
-			End:   e.RHS.PositionRange().End,
+			End:   e.LHS.PositionRange().End,
 		}
 	}
 	if e.LHS == nil {
