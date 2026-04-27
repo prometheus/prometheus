@@ -604,7 +604,11 @@ func TestReshardRaceWithStop(t *testing.T) {
 }
 
 func TestReshardPartialBatch(t *testing.T) {
-	t.Parallel()
+	// Intentionally not t.Parallel(): the 2s deadlock-detection deadline below
+	// assumes shards.stop() completes promptly, which is not reliable when the
+	// other reshard tests (TestReshard spawns up to 60 shards, TestReshardRaceWithStop
+	// drives 100 reshards) are running concurrently and starving the scheduler.
+	// See https://github.com/prometheus/prometheus/issues/18078.
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			recs := testwal.GenerateRecords(recCase{
