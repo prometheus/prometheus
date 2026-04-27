@@ -462,36 +462,36 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 }
 
 func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	// Limit is applied at the end, after filtering.
-	allValues, err := r.LabelValues(ctx, name, nil)
-	if err != nil {
-		return nil, fmt.Errorf("fetching values of label %s: %w", name, err)
-	}
-
 	// If we have a matcher for the label name, we can filter out values that don't match
 	// before we fetch postings. This is especially useful for labels with many values.
 	// e.g. __name__ with a selector like {__name__="xyz"}
 	hasMatchersForOtherLabels := false
+	// Construct a single function which chains all matchers on the label name.
+	var filter func(_ string) bool
 	for _, m := range matchers {
 		if m.Name != name {
 			hasMatchersForOtherLabels = true
 			continue
 		}
-
-		// re-use the allValues slice to avoid allocations
-		// this is safe because the iteration is always ahead of the append
-		filteredValues := allValues[:0]
-		count := 1
-		for _, v := range allValues {
-			if count%checkContextEveryNIterations == 0 && ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			count++
-			if m.Matches(v) {
-				filteredValues = append(filteredValues, v)
+		if filter == nil {
+			filter = m.Matches
+		} else {
+			prevFilter := filter
+			filter = func(s string) bool {
+				return prevFilter(s) && m.Matches(s)
 			}
 		}
-		allValues = filteredValues
+	}
+
+	var allValues []string
+	var err error
+	if filter == nil {
+		allValues, err = r.LabelValues(ctx, name, hints)
+	} else {
+		allValues, err = r.LabelValuesFiltered(ctx, name, hints, filter)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: fetching values of label %s", err, name)
 	}
 
 	if len(allValues) == 0 {
