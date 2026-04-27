@@ -194,10 +194,10 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 		return storage.ErrSeriesSet(err)
 	}
 	if sharded {
-		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = index.ShardedPostings(&contextAwarePostings{ctx: ctx, p: p}, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
-		p = index.SortedPostings(p)
+		p = index.SortedPostings(&contextAwarePostings{ctx: ctx, p: p})
 	}
 
 	if hints != nil {
@@ -253,10 +253,10 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 		return storage.ErrChunkSeriesSet(err)
 	}
 	if sharded {
-		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = index.ShardedPostings(&contextAwarePostings{ctx: ctx, p: p}, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
-		p = index.SortedPostings(p)
+		p = index.SortedPostings(&contextAwarePostings{ctx: ctx, p: p})
 	}
 	return NewBlockChunkSeriesSet(blockID, index, chunks, tombstones, p, mint, maxt, disableTrimming)
 }
@@ -1345,3 +1345,45 @@ func (cr nopChunkReader) ChunkOrIterable(chunks.Meta) (chunkenc.Chunk, chunkenc.
 }
 
 func (nopChunkReader) Close() error { return nil }
+
+// contextAwarePostings wraps a Postings iterator to check for context cancellation.
+type contextAwarePostings struct {
+	ctx context.Context
+	p   index.Postings
+	err error
+	i   int
+}
+
+func (c *contextAwarePostings) Next() bool {
+	if c.err != nil {
+		return false
+	}
+	c.i++
+	if c.i%checkContextEveryNIterations == 0 {
+		if err := c.ctx.Err(); err != nil {
+			c.err = err
+			return false
+		}
+	}
+	return c.p.Next()
+}
+
+func (c *contextAwarePostings) Seek(v storage.SeriesRef) bool {
+	if c.err != nil {
+		return false
+	}
+	if err := c.ctx.Err(); err != nil {
+		c.err = err
+		return false
+	}
+	return c.p.Seek(v)
+}
+
+func (c *contextAwarePostings) At() storage.SeriesRef { return c.p.At() }
+
+func (c *contextAwarePostings) Err() error {
+	if c.err != nil {
+		return c.err
+	}
+	return c.p.Err()
+}
