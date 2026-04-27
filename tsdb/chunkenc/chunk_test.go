@@ -15,7 +15,6 @@ package chunkenc
 
 import (
 	"errors"
-	"fmt"
 	"math/rand"
 	"testing"
 
@@ -37,7 +36,7 @@ func TestChunk(t *testing.T) {
 		{encoding: EncXOR2, supportsST: true, factory: func() Chunk { return NewXOR2Chunk() }},
 	}
 	for _, tc := range testcases {
-		t.Run(fmt.Sprintf("%v", tc.encoding), func(t *testing.T) {
+		t.Run(tc.encoding.String(), func(t *testing.T) {
 			for range make([]struct{}, 1) {
 				c := tc.factory()
 				testChunk(t, c, tc.supportsST)
