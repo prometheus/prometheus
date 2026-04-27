@@ -1946,10 +1946,16 @@ func TestDependentRulesWithNonMetricExpression(t *testing.T) {
 }
 
 func TestDependencyMapUpdatesOnGroupUpdate(t *testing.T) {
+	storage := teststorage.New(t)
+	engine := testEngine(t)
+
 	files := []string{"fixtures/rules.yaml"}
 	ruleManager := NewManager(&ManagerOptions{
-		Context: context.Background(),
-		Logger:  promslog.NewNopLogger(),
+		Appendable: storage,
+		Queryable:  storage,
+		QueryFunc:  EngineQueryFunc(engine, storage),
+		Context:    context.Background(),
+		Logger:     promslog.NewNopLogger(),
 	})
 
 	ruleManager.start()
