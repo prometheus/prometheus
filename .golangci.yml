@@ -179,17 +179,40 @@ linters:
       # Disable optimization of concat loop.
       concat-loop: false
     revive:
+      enable-all-rules: true
+      enable-default-rules: true
+      max-open-files: 2048
       # By default, revive will enable only the linting rules that are named in the configuration file.
       # So, it's needed to explicitly enable all required rules here.
+      # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md
       rules:
-        # https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md
+        - name: add-constant
+          disabled: true
+        - name: argument-limit
+          disabled: true
+        - name: bare-return
+          disabled: true
         - name: blank-imports
+        - name: bool-literal-in-expr
+          disabled: true
+        - name: cognitive-complexity
+          disabled: true
         - name: comment-spacings
+        - name: confusing-naming
+          disabled: true
+        - name: confusing-results
+          disabled: true
         - name: context-as-argument
           arguments:
             # Allow functions with test or bench signatures.
             - allowTypesBefore: '*testing.T,testing.TB'
         - name: context-keys-type
+        - name: cyclomatic
+          disabled: true
+        - name: deep-exit
+          disabled: true
+        - name: defer
+          disabled: true
         - name: dot-imports
         - name: early-return
           arguments:
@@ -198,29 +221,87 @@ linters:
         # See https://github.com/mgechev/revive/issues/386
         - name: empty-block
           disabled: true
+        - name: enforce-switch-style
+          arguments:
+            - "allowNoDefault"
+        - name: epoch-naming
+          disabled: true
         - name: error-naming
         - name: error-return
         - name: error-strings
         - name: errorf
         - name: exported
+        - name: flag-parameter
+          disabled: true
+        - name: function-length
+          disabled: true
+        - name: function-result-limit
+          disabled: true
+        - name: get-return
+          disabled: true
+        - name: identical-switch-branches
+          disabled: true
+        - name: if-return
+          disabled: true
+        - name: import-alias-naming
+          disabled: true
+        - name: import-shadowing
+          disabled: true
         - name: increment-decrement
         - name: indent-error-flow
           arguments:
             - "preserveScope"
+        - name: line-length-limit
+          disabled: true
+        - name: max-control-nesting
+          disabled: true
+        - name: max-public-structs
+          disabled: true
+        - name: nested-structs
+          disabled: true
         - name: package-comments
           # TODO(beorn7): Currently, we have a lot of missing package doc comments. Maybe we should have them.
+          disabled: true
+        - name: package-directory-mismatch
+          disabled: true
+        - name: package-naming
           disabled: true
         - name: range
         - name: receiver-naming
         - name: redefines-builtin-id
+        - name: redundant-import-alias
+          disabled: true
+        - name: redundant-test-main-exit
+          disabled: true
+        - name: struct-tag
+          disabled: true
         - name: superfluous-else
           arguments:
             - "preserveScope"
+        - name: time-date
+          disabled: true
         - name: time-naming
+        - name: unchecked-type-assertion
+          disabled: true
+        - name: unexported-naming
+          disabled: true
         - name: unexported-return
+        - name: unhandled-error
+          disabled: true
+        - name: unnecessary-format
+        - name: unnecessary-stmt
+          disabled: true
         - name: unreachable-code
+        - name: unsecure-url-scheme
+          disabled: true
         - name: unused-parameter
         - name: unused-receiver
+        - name: use-slices-sort
+          disabled: true
+        - name: use-waitgroup-go
+          disabled: true
+        - name: useless-break
+          disabled: true
         - name: var-declaration
         - name: var-naming
           # TODO(SuperQ): See: https://github.com/prometheus/prometheus/issues/17766
@@ -233,9 +314,6 @@ linters:
         - float-compare
         - go-require
       enable-all: true
-
-output:
-  show-stats: false
 
 run:
   timeout: 15m

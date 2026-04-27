@@ -674,7 +674,7 @@ func main() {
 	}
 
 	if cfg.memlimitRatio <= 0.0 || cfg.memlimitRatio > 1.0 {
-		fmt.Fprintf(os.Stderr, "--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1.")
+		fmt.Fprint(os.Stderr, "--auto-gomemlimit.ratio must be greater than 0 and less than or equal to 1.")
 		os.Exit(1)
 	}
 
