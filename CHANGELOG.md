@@ -157,6 +157,7 @@ User migrating from bind mounts might need to ajust permissions too, depending o
 
 ## 3.8.1 / 2025-12-16
 
+* [SECURITY] Remote-Write: Reject snappy-compressed requests whose declared decoded length exceeds the decode limit. #17683
 * [BUGFIX] remote: Fix Remote Write receiver, so it does not send wrong response headers for v1 flow and cause Prometheus senders to emit false partial error log and metrics. #17683
 
 ## 3.8.0 / 2025-11-28
