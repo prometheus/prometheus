@@ -900,3 +900,142 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 		}
 	}
 }
+
+// TestWatcher_StartSegment verifies that SetStartSegment controls which
+// historical segments deliver samples vs only series.
+func TestWatcher_StartSegment(t *testing.T) {
+	const (
+		seriesCount = 10
+		numSegments = 4 // Last segment is the tail that would block, so MaxSegment stops before it.
+	)
+
+	makeSeries := func(n int) []record.RefSeries {
+		s := make([]record.RefSeries, n)
+		for i := range n {
+			s[i] = record.RefSeries{
+				Ref:    chunks.HeadSeriesRef(i),
+				Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i), "job", "test"),
+			}
+		}
+		return s
+	}
+
+	makeSamples := func(refs []record.RefSeries, ts int64, val float64) []record.RefSample {
+		s := make([]record.RefSample, len(refs))
+		for i, r := range refs {
+			s[i] = record.RefSample{Ref: r.Ref, T: ts, V: val}
+		}
+		return s
+	}
+
+	series := makeSeries(seriesCount)
+	segSamples := [numSegments][]record.RefSample{
+		makeSamples(series, 1000, 0),
+		makeSamples(series, 2000, 1),
+		makeSamples(series, 3000, 2),
+		makeSamples(series, 4000, 3),
+	}
+
+	// Watcher stops after processing this segment (before the tail).
+	maxSegment := numSegments - 2
+
+	createWAL := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		wdir := path.Join(dir, "wal")
+		require.NoError(t, os.Mkdir(wdir, 0o777))
+
+		w, err := NewSize(nil, nil, wdir, 32*1024, compression.None)
+		require.NoError(t, err)
+
+		var enc record.Encoder
+		for i := range numSegments {
+			if i == 0 {
+				require.NoError(t, w.Log(enc.Series(series, nil)))
+			}
+			require.NoError(t, w.Log(enc.Samples(segSamples[i], nil)))
+			if i < numSegments-1 {
+				_, err := w.NextSegment()
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, w.Close())
+		return dir
+	}
+
+	valsOf := func(samples []record.RefSample) []float64 {
+		v := make([]float64, len(samples))
+		for i, s := range samples {
+			v[i] = s.V
+		}
+		return v
+	}
+
+	concat := func(slices ...[]float64) []float64 {
+		var out []float64
+		for _, s := range slices {
+			out = append(out, s...)
+		}
+		return out
+	}
+
+	tests := []struct {
+		name           string
+		startSegment   int
+		wantSampleVals []float64
+	}{
+		{
+			name:           "no savepoint skips historical samples",
+			startSegment:   -1,
+			wantSampleVals: nil,
+		},
+		{
+			name:         "savepoint at segment 1",
+			startSegment: 1,
+			wantSampleVals: concat(
+				valsOf(segSamples[1]),
+				valsOf(segSamples[2]),
+			),
+		},
+		{
+			name:         "savepoint at first segment replays everything",
+			startSegment: 0,
+			wantSampleVals: concat(
+				valsOf(segSamples[0]),
+				valsOf(segSamples[1]),
+				valsOf(segSamples[2]),
+			),
+		},
+		{
+			name:           "savepoint at last historical segment",
+			startSegment:   2,
+			wantSampleVals: valsOf(segSamples[2]),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := createWAL(t)
+
+			wt := newWriteToMock(0)
+			watcher := NewWatcher(wMetrics, nil, promslog.NewNopLogger(), "test", wt, dir, false, false, false, nil)
+			watcher.SetStartSegment(tc.startSegment)
+			watcher.MaxSegment = maxSegment
+			watcher.SetMetrics()
+
+			require.NoError(t, watcher.Run())
+
+			wt.mu.Lock()
+			defer wt.mu.Unlock()
+
+			require.Len(t, wt.seriesStored, seriesCount, "series count mismatch")
+
+			gotVals := valsOf(wt.samplesAppended)
+			if tc.wantSampleVals == nil {
+				require.Empty(t, gotVals, "expected no samples delivered")
+			} else {
+				require.Equal(t, tc.wantSampleVals, gotVals, "delivered sample values mismatch")
+			}
+		})
+	}
+}
