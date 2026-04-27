@@ -332,14 +332,14 @@ func TestCheckpoint(t *testing.T) {
 							require.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
 						}
 						samplesInCheckpoint += len(samples)
-					case record.HistogramSamples, record.CustomBucketsHistogramSamples:
+					case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
 						histograms, err := dec.HistogramSamples(rec, nil)
 						require.NoError(t, err)
 						for _, h := range histograms {
 							require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")
 						}
 						histogramsInCheckpoint += len(histograms)
-					case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples:
+					case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
 						floatHistograms, err := dec.FloatHistogramSamples(rec, nil)
 						require.NoError(t, err)
 						for _, h := range floatHistograms {
