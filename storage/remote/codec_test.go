@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"sync"
 	"testing"
 
@@ -727,6 +728,17 @@ func TestMergeLabels(t *testing.T) {
 	} {
 		require.Equal(t, tc.expected, MergeLabels(tc.primary, tc.secondary))
 	}
+}
+
+func TestDecodeReadRequestTooLarge(t *testing.T) {
+	// 5-byte snappy stream whose header claims 256 MiB decoded length,
+	// well above decodeReadLimit (32 MiB).
+	bomb := []byte{0x80, 0x80, 0x80, 0x80, 0x01}
+	req, err := http.NewRequest(http.MethodPost, "/", bytes.NewReader(bomb))
+	require.NoError(t, err)
+
+	_, err = DecodeReadRequest(req)
+	require.ErrorContains(t, err, "exceeds limit")
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
