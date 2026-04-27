@@ -133,7 +133,7 @@ func TestStartTimeOverlapWarning(t *testing.T) {
 	require.Len(t, warnings, 1)
 	require.Contains(t, warnings[0], "sample has start time that overlaps with previous sample timestamp")
 	require.Contains(t, warnings[0], "test_metric")
-	// Count increases by 1 each time we merge: first occurrence has count=0, after 2 merges count=2, displayed as 3 occurrences.
+	// Each warning starts with count=1. After merging 3 warnings: 1+1+1=3 occurrences.
 	require.Contains(t, warnings[0], "3 occurrences")
 }
 
