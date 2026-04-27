@@ -165,6 +165,7 @@ type AttachMetadataConfig struct {
 // PodMetadataConfig allows configuring which pod-related metadata to attach.
 type PodMetadataConfig struct {
 	Deployment bool `yaml:"deployment"`
+	DaemonSet  bool `yaml:"daemonset"`
 	Job        bool `yaml:"job"`
 	CronJob    bool `yaml:"cronjob"`
 }
@@ -465,6 +466,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				replicaSetInf,
 				jobInformer,
 				d.attachMetadata.Deployment,
+				d.attachMetadata.DaemonSet,
 				d.attachMetadata.Job,
 				d.attachMetadata.CronJob,
 				d.metrics.eventCount,
@@ -546,6 +548,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				replicaSetInf,
 				jobInformer,
 				d.attachMetadata.Deployment,
+				d.attachMetadata.DaemonSet,
 				d.attachMetadata.Job,
 				d.attachMetadata.CronJob,
 				d.metrics.eventCount,
@@ -598,6 +601,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				replicaSetInformer,
 				jobInformer,
 				d.attachMetadata.Deployment,
+				d.attachMetadata.DaemonSet,
 				d.attachMetadata.Job,
 				d.attachMetadata.CronJob,
 				d.metrics.eventCount,
