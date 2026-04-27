@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 	deltatocumulative "github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -58,7 +59,11 @@ type writeHandler struct {
 	ingestCTZeroSample bool
 }
 
-const maxAheadTime = 10 * time.Minute
+const (
+	maxAheadTime = 10 * time.Minute
+	// decodeWriteLimit is the maximum decoded size of a remote write request body in bytes.
+	decodeWriteLimit = 32 * 1024 * 1024
+)
 
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
 // the given message in acceptedProtoMsgs and writes them to the provided appendable.
@@ -158,6 +163,19 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Read the request body.
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		h.logger.Error("Error decoding remote write request", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	decodedLen, err := snappy.DecodedLen(body)
+	if err != nil {
+		h.logger.Error("Error decoding remote write request", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if decodedLen > decodeWriteLimit {
+		err := fmt.Errorf("snappy: decoded length %d exceeds limit %d", decodedLen, decodeWriteLimit)
 		h.logger.Error("Error decoding remote write request", "err", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
