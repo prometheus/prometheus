@@ -105,6 +105,8 @@ type queryTimings struct {
 type querySamples struct {
 	TotalQueryableSamplesPerStep []stepStat `json:"totalQueryableSamplesPerStep,omitempty"`
 	TotalQueryableSamples        int64      `json:"totalQueryableSamples"`
+	SamplesReadPerStep           []stepStat `json:"samplesReadPerStep,omitempty"`
+	SamplesRead                  int64      `json:"samplesRead"`
 	PeakSamples                  int        `json:"peakSamples"`
 }
 
@@ -154,9 +156,11 @@ func NewQueryStats(s *Statistics) QueryStats {
 	if sp != nil {
 		samples = &querySamples{
 			TotalQueryableSamples: sp.TotalSamples,
+			SamplesRead:           sp.SamplesRead,
 			PeakSamples:           sp.PeakSamples,
 		}
 		samples.TotalQueryableSamplesPerStep = sp.totalSamplesPerStepPoints()
+		samples.SamplesReadPerStep = sp.samplesReadPerStepPoints()
 	}
 
 	qs := BuiltinStats{Timings: qt, Samples: samples}
@@ -175,6 +179,19 @@ func (qs *QuerySamples) TotalSamplesPerStepMap() *TotalSamplesPerStep {
 	return &ts
 }
 
+// SamplesReadPerStepMap returns the per-step samples read as a map (timestamp -> count), or nil if per-step stats are disabled.
+func (qs *QuerySamples) SamplesReadPerStepMap() *TotalSamplesPerStep {
+	if !qs.EnablePerStepStats || qs.SamplesReadPerStep == nil {
+		return nil
+	}
+
+	ts := TotalSamplesPerStep{}
+	for _, s := range qs.samplesReadPerStepPoints() {
+		ts[s.T] = int(s.V)
+	}
+	return &ts
+}
+
 func (qs *QuerySamples) totalSamplesPerStepPoints() []stepStat {
 	if !qs.EnablePerStepStats {
 		return nil
@@ -182,6 +199,18 @@ func (qs *QuerySamples) totalSamplesPerStepPoints() []stepStat {
 
 	ts := make([]stepStat, len(qs.TotalSamplesPerStep))
 	for i, c := range qs.TotalSamplesPerStep {
+		ts[i] = stepStat{T: qs.StartTimestamp + int64(i)*qs.Interval, V: c}
+	}
+	return ts
+}
+
+func (qs *QuerySamples) samplesReadPerStepPoints() []stepStat {
+	if !qs.EnablePerStepStats || qs.SamplesReadPerStep == nil {
+		return nil
+	}
+
+	ts := make([]stepStat, len(qs.SamplesReadPerStep))
+	for i, c := range qs.SamplesReadPerStep {
 		ts[i] = stepStat{T: qs.StartTimestamp + int64(i)*qs.Interval, V: c}
 	}
 	return ts
@@ -234,8 +263,9 @@ type QuerySamples struct {
 	// configured in the engine.
 	PeakSamples int
 
-	// TotalSamples represents the total number of samples scanned
-	// while evaluating a query.
+	// TotalSamples represents the total number of samples loaded while
+	// evaluating a query. For range-vector functions, each step counts the
+	// full window (points may be counted in multiple steps).
 	TotalSamples int64
 
 	// TotalSamplesPerStep represents the total number of samples scanned
@@ -243,11 +273,25 @@ type QuerySamples struct {
 	// TotalSamples when a step is run as an instant query, which means
 	// we intentionally do not account for optimizations that happen inside the
 	// range query engine that reduce the actual work that happens.
+	// For range-vector functions, each step counts the full window at that step.
 	TotalSamplesPerStep []int64
+
+	// SamplesRead is the number of samples read (I/O). For range-vector functions
+	// in range queries, only new points per step are counted; elsewhere it
+	// equals TotalSamples.
+	SamplesRead int64
+
+	// SamplesReadPerStep is the number of samples read per step. For
+	// range-vector functions, step 0 is the full window, later steps only new points.
+	SamplesReadPerStep []int64
 
 	EnablePerStepStats bool
 	StartTimestamp     int64
 	Interval           int64
+	// numSteps is the number of evaluation steps. Always set by
+	// NewChildWithStepTracking so that MergeSamplesReadFromSubquery
+	// can compute parent windows even when per-step arrays are nil.
+	numSteps int
 }
 
 type Stats struct {
@@ -256,14 +300,25 @@ type Stats struct {
 }
 
 func (qs *QuerySamples) InitStepTracking(start, end, interval int64) {
+	if qs == nil {
+		return
+	}
 	if !qs.EnablePerStepStats {
 		return
 	}
 
 	numSteps := int((end-start)/interval) + 1
 	qs.TotalSamplesPerStep = make([]int64, numSteps)
+	qs.SamplesReadPerStep = make([]int64, numSteps)
 	qs.StartTimestamp = start
 	qs.Interval = interval
+}
+
+func (qs *QuerySamples) StepTrackingEnabled() bool {
+	if qs == nil {
+		return false
+	}
+	return qs.EnablePerStepStats
 }
 
 // IncrementSamplesAtStep increments the total samples count. Use this if you know the step index.
@@ -289,6 +344,31 @@ func (qs *QuerySamples) IncrementSamplesAtTimestamp(t, samples int64) {
 	if qs.TotalSamplesPerStep != nil {
 		i := int((t - qs.StartTimestamp) / qs.Interval)
 		qs.TotalSamplesPerStep[i] += samples
+	}
+}
+
+// IncrementSamplesReadAtStep increments the samples-read count. Use this when you know the step index.
+func (qs *QuerySamples) IncrementSamplesReadAtStep(i int, n int64) {
+	if qs == nil {
+		return
+	}
+	qs.SamplesRead += n
+	if qs.SamplesReadPerStep != nil && i < len(qs.SamplesReadPerStep) {
+		qs.SamplesReadPerStep[i] += n
+	}
+}
+
+// IncrementSamplesReadAtTimestamp increments the samples-read count. Use this when you only have the step timestamp.
+func (qs *QuerySamples) IncrementSamplesReadAtTimestamp(t, n int64) {
+	if qs == nil {
+		return
+	}
+	qs.SamplesRead += n
+	if qs.SamplesReadPerStep != nil {
+		i := int((t - qs.StartTimestamp) / qs.Interval)
+		if i >= 0 && i < len(qs.SamplesReadPerStep) {
+			qs.SamplesReadPerStep[i] += n
+		}
 	}
 }
 
@@ -325,6 +405,93 @@ func NewQuerySamples(enablePerStepStats bool) *QuerySamples {
 
 func (*QuerySamples) NewChild() *QuerySamples {
 	return NewQuerySamples(false)
+}
+
+// NewChildWithStepTracking creates a child QuerySamples and, when
+// enablePerStepStats is true, initializes per-step arrays. The step layout
+// (start, interval, numSteps) is always stored so that
+// MergeSamplesReadFromSubquery can compute parent windows for windowed
+// attribution even when the parent does not track per-step arrays.
+func NewChildWithStepTracking(enablePerStepStats bool, start, end, interval int64) *QuerySamples {
+	qs := NewQuerySamples(enablePerStepStats)
+	qs.StartTimestamp = start
+	qs.Interval = interval
+	if interval > 0 {
+		qs.numSteps = int((end-start)/interval) + 1
+	}
+	if enablePerStepStats {
+		qs.InitStepTracking(start, end, interval)
+	}
+	return qs
+}
+
+// MergeSamplesReadFromSubquery merges only SamplesRead and SamplesReadPerStep from
+// the child (subquery) into the parent. TotalSamples and TotalSamplesPerStep are
+// not merged, because the outer range-eval loop already counts those when it
+// iterates over the pre-computed matrix.
+//
+// When subqRange > 0, range-windowed attribution is used: only child steps whose
+// timestamp falls within a parent step's [parentTs-subqRange, parentTs] window are
+// counted. Child steps in gaps between parent windows (when the parent interval
+// exceeds subqRange) are not attributed, consistent with range vector selectors
+// where only samples inside the selected range are counted.
+//
+// When subqRange is 0, all child steps are attributed to the nearest parent step.
+//
+// The parent must have StartTimestamp and Interval set (via NewChildWithStepTracking)
+// for windowing to work. Per-step arrays on the parent are optional; when present
+// they receive per-step attribution, otherwise only SamplesRead is updated.
+func (qs *QuerySamples) MergeSamplesReadFromSubquery(child *QuerySamples, subqRange int64) {
+	if qs == nil || child == nil {
+		return
+	}
+	if child.SamplesReadPerStep == nil {
+		qs.SamplesRead += child.SamplesRead
+		return
+	}
+	if qs.Interval == 0 {
+		qs.SamplesRead += child.SamplesRead
+		return
+	}
+
+	parentStart := qs.StartTimestamp
+	parentInterval := qs.Interval
+	numParent := 0
+	if qs.SamplesReadPerStep != nil {
+		numParent = len(qs.SamplesReadPerStep)
+	}
+	numParentForWindow := qs.numSteps
+	numParentForWindow = max(numParentForWindow, numParent)
+
+	for k := range child.SamplesReadPerStep {
+		n := child.SamplesReadPerStep[k]
+		if n == 0 {
+			continue
+		}
+		tk := child.StartTimestamp + int64(k)*child.Interval
+
+		outerStep := 0
+		if tk > parentStart {
+			outerStep = int((tk - parentStart + parentInterval - 1) / parentInterval)
+		}
+
+		if subqRange > 0 {
+			if outerStep >= numParentForWindow {
+				continue
+			}
+			parentTs := parentStart + int64(outerStep)*parentInterval
+			if tk <= parentTs-subqRange {
+				continue
+			}
+		} else if numParent > 0 && outerStep >= numParent {
+			outerStep = numParent - 1
+		}
+
+		qs.SamplesRead += n
+		if numParent > 0 && outerStep < numParent {
+			qs.SamplesReadPerStep[outerStep] += n
+		}
+	}
 }
 
 func (qs *QueryTimers) GetSpanTimer(ctx context.Context, qt QueryTiming, observers ...prometheus.Observer) (*SpanTimer, context.Context) {
