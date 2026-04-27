@@ -504,8 +504,8 @@ func (e *startTimeOverlapErr) Error() string {
 		// Don't include count when query is empty to allow proper deduplication.
 		return fmt.Sprintf("%s for metric %q", e.Err, e.metricName)
 	}
-	if e.count > 0 {
-		return fmt.Sprintf("%s for metric %q (%d occurrences) (%s)", e.Err, e.metricName, e.count+1, e.PositionRange.StartPosInput(e.Query, 0))
+	if e.count > 1 {
+		return fmt.Sprintf("%s for metric %q (%d occurrences) (%s)", e.Err, e.metricName, e.count, e.PositionRange.StartPosInput(e.Query, 0))
 	}
 	return fmt.Sprintf("%s for metric %q (%s)", e.Err, e.metricName, e.PositionRange.StartPosInput(e.Query, 0))
 }
@@ -527,7 +527,7 @@ func (e *startTimeOverlapErr) Merge(other error) error {
 	if e.Err.Error() != o.Err.Error() || e.metricName != o.metricName {
 		return e
 	}
-	o.count += e.count + 1
+	o.count += e.count
 	return o
 }
 
@@ -539,5 +539,6 @@ func NewStartTimeOverlapWarning(metricName string, pos posrange.PositionRange) e
 		PositionRange: pos,
 		Err:           StartTimeOverlapWarning,
 		metricName:    metricName,
+		count:         1,
 	}
 }
