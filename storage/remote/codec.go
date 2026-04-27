@@ -67,6 +67,14 @@ func DecodeReadRequest(r *http.Request) (*prompb.ReadRequest, error) {
 		return nil, err
 	}
 
+	decodedLen, err := snappy.DecodedLen(compressed)
+	if err != nil {
+		return nil, err
+	}
+	if decodedLen > decodeReadLimit {
+		return nil, fmt.Errorf("snappy: decoded length %d exceeds limit %d", decodedLen, decodeReadLimit)
+	}
+
 	reqBuf, err := snappy.Decode(nil, compressed)
 	if err != nil {
 		return nil, err
