@@ -168,6 +168,24 @@ func timestampSchema() *base.SchemaProxy {
 	})
 }
 
+func durationSchema() *base.SchemaProxy {
+	return base.CreateSchemaProxy(&base.Schema{
+		OneOf: []*base.SchemaProxy{
+			base.CreateSchemaProxy(&base.Schema{
+				Type:        []string{"string"},
+				Format:      "duration",
+				Description: "Human-readable form such as 15s or 2m30s. Supported units are ms (milliseconds), s (seconds), m (minutes), h (hours), d (days), w (weeks) and y (years).",
+			}),
+			base.CreateSchemaProxy(&base.Schema{
+				Type:        []string{"number"},
+				Format:      "float",
+				Description: "Fractional number of seconds.",
+			}),
+		},
+		Description: "Duration in human-readable or numeric format.",
+	})
+}
+
 func stringSchemaWithConstValue(value string) *base.SchemaProxy {
 	node := &yaml.Node{Kind: yaml.ScalarNode, Value: value}
 	return base.CreateSchemaProxy(&base.Schema{
