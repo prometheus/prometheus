@@ -240,6 +240,7 @@ type API struct {
 	db                  TSDBAdminStats
 	dbDir               string
 	enableAdmin         bool
+	enableSearch        bool
 	logger              *slog.Logger
 	CORSOrigin          *regexp.Regexp
 	buildInfo           *PrometheusVersion
@@ -280,6 +281,7 @@ func NewAPI(
 	db TSDBAdminStats,
 	dbDir string,
 	enableAdmin bool,
+	enableSearch bool,
 	logger *slog.Logger,
 	rr func(context.Context) RulesRetriever,
 	remoteReadSampleLimit int,
@@ -323,6 +325,7 @@ func NewAPI(
 		db:                  db,
 		dbDir:               dbDir,
 		enableAdmin:         enableAdmin,
+		enableSearch:        enableSearch,
 		rulesRetriever:      rr,
 		logger:              logger,
 		CORSOrigin:          corsOrigin,
@@ -467,6 +470,14 @@ func (api *API) Register(r *route.Router) {
 	r.Post("/read", api.ready(api.remoteRead))
 	r.Post("/write", api.ready(api.remoteWrite))
 	r.Post("/otlp/v1/metrics", api.ready(api.otlpWrite))
+
+	// Search endpoints.
+	r.Get("/search/metric_names", api.ready(api.searchMetricNames))
+	r.Post("/search/metric_names", api.ready(api.searchMetricNames))
+	r.Get("/search/label_names", api.ready(api.searchLabelNames))
+	r.Post("/search/label_names", api.ready(api.searchLabelNames))
+	r.Get("/search/label_values", api.ready(api.searchLabelValues))
+	r.Post("/search/label_values", api.ready(api.searchLabelValues))
 
 	r.Get("/alerts", wrapAgent(api.alerts))
 	r.Get("/rules", wrapAgent(api.rules))
