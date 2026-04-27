@@ -164,3 +164,56 @@ eval range from 10m to 15m step 1m irate(delta[5m])
     {type="empty_range"}     {{schema:0 sum:0 count:0}}x5
 
 clear
+
+# Tests for start timestamp overlap warnings.
+# Overlaps occur when: currST != 0 && currST < prevT && currST != prevST
+
+# Test 1: Valid delta timeseries (OTel style) - no warning expected
+# Delta pattern: ST_curr = T_prev
+load 1m
+    valid_delta_total@st        _ _ -1m -1m -1m
+    valid_delta_total           _ _  60  60  60
+
+eval instant at 4m rate(valid_delta_total[3m])
+    {} 1
+    expect no_info
+    expect no_warn
+
+clear
+
+# Test 2: Valid cumulative timeseries - no warning expected  
+# Cumulative pattern: ST stays constant (use 0 to keep ST=0 for all samples)
+load 1m
+    valid_cumulative_total@st   _ _ 0 0 0
+    valid_cumulative_total      _ _ 60 120 180
+
+eval instant at 4m rate(valid_cumulative_total[3m])
+    {} 2
+    expect no_info
+    expect no_warn
+
+clear
+
+# Test 3: Samples without start timestamps - no warning expected
+load 1m
+    no_st_counter_total         _ _ 60 120 180
+
+eval instant at 4m rate(no_st_counter_total[3m])
+    {} 1
+    expect no_info
+    expect no_warn
+
+clear
+
+# Test 4: Invalid overlap detected - warning expected
+# ST goes backward creating overlap: T=2m/ST=0m, T=3m/ST=1m, T=4m/ST=2m
+# At T=4m: currST=2m < prevT=3m AND currST!=prevST(1m) → overlap!
+load 1m
+    overlap_counter_total@st    _ _ -2m -2m -2m
+    overlap_counter_total       _ _  60 120 180
+
+eval instant at 4m rate(overlap_counter_total[3m])
+    {} 1
+    expect warn msg: PromQL warning: sample has start time that overlaps with previous sample timestamp for metric "overlap_counter_total"
+
+clear

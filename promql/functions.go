@@ -242,6 +242,14 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		}
 		for i, currPoint := range samples.Floats[1:] {
 			prevPoint := samples.Floats[i]
+			// Check for start timestamp overlap once.
+			if i+1 < len(startTimestamps) {
+				if overlap := checkStartTimeOverlap(startTimestamps[i], prevPoint.T, startTimestamps[i+1]); overlap {
+					// Extract metric name only when needed.
+					annos.Add(annotations.NewStartTimeOverlapWarning(getMetricName(samples.Metric), args[0].PositionRange()))
+					break
+				}
+			}
 			if currPoint.F < prevPoint.F || (i+1 < len(startTimestamps) && isStartTimestampReset(startTimestamps[i], prevPoint.T, startTimestamps[i+1], currPoint.T)) {
 				resultFloat += prevPoint.F
 			}
@@ -401,6 +409,14 @@ func histogramRate(
 		// Second iteration to deal with counter resets.
 		for i, currPoint := range points[1:] {
 			curr := currPoint.H
+			// Check for start timestamp overlap once.
+			if i+1 < len(startTimestamps) {
+				if overlap := checkStartTimeOverlap(startTimestamps[i], points[i].T, startTimestamps[i+1]); overlap {
+					// Extract metric name only when needed.
+					annos.Add(annotations.NewStartTimeOverlapWarning(getMetricName(labels), pos))
+					break
+				}
+			}
 			// Check start timestamps first since it's potentially cheaper.
 			if i+1 < len(startTimestamps) && isStartTimestampReset(startTimestamps[i], points[i].T, startTimestamps[i+1], currPoint.T) || curr.DetectReset(prev) {
 				// Counter reset conflict ignored here for the same reason as above.
@@ -454,6 +470,19 @@ func isStartTimestampReset(prevStartTimestamp, prevTimestamp, currStartTimestamp
 		return false
 	}
 	return prevStartTimestamp != 0
+}
+
+// checkStartTimeOverlap detects when a sample's start timestamp overlaps with a
+// previous sample's timestamp, indicating potential data quality issues.
+// Works for both delta and cumulative counter metrics.
+//
+// Returns true when: currST != 0 && currST < prevT && currST != prevST
+// This correctly handles:
+//   - Valid deltas: currST = prevT (no overlap detected)
+//   - Valid cumulative: currST = prevST (no overlap detected)
+//   - Invalid overlap: currST < prevT && currST != prevST (overlap detected)
+func checkStartTimeOverlap(prevStartTimestamp, prevTimestamp, currStartTimestamp int64) bool {
+	return currStartTimestamp != 0 && currStartTimestamp < prevTimestamp && currStartTimestamp != prevStartTimestamp
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
