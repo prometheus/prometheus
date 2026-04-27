@@ -52,8 +52,12 @@ import (
 )
 
 const (
-	chunkHeaderSize               = 2
-	chunkAllocationSize           = 128
+	chunkHeaderSize = 2
+	// chunkInitialCapacity is the initial capacity for new chunk byte slices.
+	// We start small and let the slice grow naturally with append to avoid
+	// up-front over-allocation: profiling shows 128 wastes several GB of heap
+	// in large Prometheus instances (see issue #18502).
+	chunkInitialCapacity          = chunkHeaderSize
 	chunkCompactCapacityThreshold = 32
 )
 
@@ -64,7 +68,7 @@ type XORChunk struct {
 
 // NewXORChunk returns a new chunk with XOR encoding.
 func NewXORChunk() *XORChunk {
-	b := make([]byte, chunkHeaderSize, chunkAllocationSize)
+	b := make([]byte, chunkHeaderSize, chunkInitialCapacity)
 	return &XORChunk{b: bstream{stream: b, count: 0}}
 }
 
