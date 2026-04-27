@@ -1327,22 +1327,18 @@ duration_expr   : number_duration_literal
                 }
                 | duration_expr ADD duration_expr
                         {
-                        yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         $$ = &DurationExpr{Op: ADD, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }
                 | duration_expr SUB duration_expr
                         {
-                        yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         $$ = &DurationExpr{Op: SUB, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }
                 | duration_expr MUL duration_expr
                         {
-                        yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         $$ = &DurationExpr{Op: MUL, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }
                 | duration_expr DIV duration_expr
                         {
-                        yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         if nl, ok := $3.(*NumberLiteral); ok && nl.Val == 0 {
                                 yylex.(*parser).addParseErrf($2.PositionRange(), "division by zero")
                                 $$ = &NumberLiteral{Val: 0}
@@ -1352,7 +1348,6 @@ duration_expr   : number_duration_literal
                         }
                 | duration_expr MOD duration_expr
                         {
-                        yylex.(*parser).experimentalDurationExpr($1.(Expr))
                         if nl, ok := $3.(*NumberLiteral); ok && nl.Val == 0 {
                             yylex.(*parser).addParseErrf($2.PositionRange(), "modulo by zero")
                             $$ = &NumberLiteral{Val: 0}
@@ -1362,7 +1357,6 @@ duration_expr   : number_duration_literal
                         }
                 | duration_expr POW duration_expr
                         {
-                            yylex.(*parser).experimentalDurationExpr($1.(Expr))
                             $$ = &DurationExpr{Op: POW, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }
                 | STEP LEFT_PAREN RIGHT_PAREN
@@ -1396,7 +1390,6 @@ duration_expr   : number_duration_literal
 
 paren_duration_expr : LEFT_PAREN duration_expr RIGHT_PAREN
                         {
-                            yylex.(*parser).experimentalDurationExpr($2.(Expr))
                             if durationExpr, ok := $2.(*DurationExpr); ok {
                                 durationExpr.Wrapped = true
                                 $$ = durationExpr

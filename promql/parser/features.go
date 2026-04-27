@@ -53,6 +53,6 @@ func (pql *promQLParser) RegisterFeatures(r features.Collector) {
 		r.Set(features.PromQLFunctions, f, !fc.Experimental || pql.options.EnableExperimentalFunctions)
 	}
 
-	// Register experimental parser features.
-	r.Set(features.PromQL, "duration_expr", pql.options.ExperimentalDurationExpr)
+	// Register parser features.
+	r.Enable(features.PromQL, "duration_expr")
 }
