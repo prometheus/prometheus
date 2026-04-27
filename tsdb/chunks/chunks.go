@@ -797,3 +797,14 @@ func closeAll(cs []io.Closer) error {
 	}
 	return errors.Join(errs...)
 }
+
+// EncodedSizeInBytes calculates the total size in bytes of a given chunk,
+// when encoded by the chunks.Writer.
+// It requires a bytes buffer of at least MaxChunkLengthFieldSize size to avoid allocations.
+func EncodedSizeInBytes(chunk chunkenc.Chunk, buf []byte) int64 {
+	size := int64(len(chunk.Bytes()))                   // The chunk data itself.
+	size += int64(binary.PutUvarint(buf, uint64(size))) // The data length is a variable length field.
+	size += ChunkEncodingSize                           // The chunk encoding.
+	size += crc32.Size                                  // The 4 bytes of crc32.
+	return size
+}
