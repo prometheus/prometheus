@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 
 	promconfig "github.com/prometheus/common/config"
-	"go.yaml.in/yaml/v2"
+	"go.yaml.in/yaml/v3"
 )
 
 type ExternalFilesConfig struct {
