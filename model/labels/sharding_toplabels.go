@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !slicelabels && !dedupelabels && !toplabels
+//go:build toplabels
 
 package labels
 
@@ -21,6 +21,8 @@ import (
 
 // StableHash is a labels hashing implementation which is guaranteed to not change over time.
 // This function should be used whenever labels hashing backward compatibility must be guaranteed.
+// Note: StableHash always hashes the decoded label strings, so the hash is independent of
+// the mapped labels encoding and matches the stringlabels implementation.
 func StableHash(ls Labels) uint64 {
 	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)

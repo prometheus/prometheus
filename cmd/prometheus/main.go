@@ -1024,6 +1024,12 @@ func main() {
 		GoVersion: version.GoVersion,
 	}
 
+	cfg.tsdb.PreInitFunc = func(db *tsdb.DB) {
+		if err = mapCommonLabelSymbols(db, logger); err != nil {
+			logger.Warn("Failed to map common strings in labels", slog.Any("err", err))
+		}
+	}
+
 	cfg.web.Flags = map[string]string{}
 
 	// Exclude kingpin default flags to expose only Prometheus ones.
@@ -2051,6 +2057,7 @@ type tsdbOptions struct {
 	EnableXOR2Encoding             bool
 	StaleSeriesCompactionThreshold float64
 	EnableFastStartup              bool
+	PreInitFunc                    tsdb.PreInitFunc
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -2083,6 +2090,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableXOR2Encoding:             opts.EnableXOR2Encoding,
 		StaleSeriesCompactionThreshold: opts.StaleSeriesCompactionThreshold,
 		EnableFastStartup:              opts.EnableFastStartup,
+		PreInitFunc:                    opts.PreInitFunc,
 	}
 }
 
