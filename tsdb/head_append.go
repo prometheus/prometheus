@@ -2223,11 +2223,9 @@ func (s *memSeries) mmapChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (count i
 		return count
 	}
 
-	// Write chunks starting from the oldest one and stop before we get to current s.headChunks.
-	// If we have this chain: s.headChunks{t4} -> t3 -> t2 -> t1 -> t0
-	// then we need to write chunks t0 to t3, but skip s.headChunks.
-	for i := s.headChunks.len() - 1; i > 0; i-- {
-		chk := s.headChunks.atOffset(i)
+	// Collect head chunks in oldest-first order, then write all except the newest.
+	hc := collectHeadChunks(s.headChunks, make([]*memChunk, 0, s.headChunkCount.Load()))
+	for _, chk := range hc[:len(hc)-1] {
 		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, false, handleChunkWriteError)
 		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
